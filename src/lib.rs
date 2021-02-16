@@ -4,16 +4,9 @@ mod util;
 #[macro_use]
 mod test_util;
 
-
 mod asym;
 mod kem;
 mod hpke;
 mod kdf;
 mod aead;
 mod rand;
-
-
-
-fn main() {
-    println!("Hello, world!");
-}
