@@ -5,3 +5,7 @@ macro_rules! hex {
     };
 }
 
+#[inline]
+pub fn log2(x: u64) -> u64 {
+    (x as f32).log2().floor() as u64
+}
