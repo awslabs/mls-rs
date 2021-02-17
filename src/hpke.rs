@@ -425,7 +425,7 @@ mod tests {
 
     #[test]
     // Runs the test vectors in test_data/hpke.json
-    fn run_test_vectors() {
+    fn test_hpke_vectors() {
         let file = File::open("test_data/hpke.json")
             .expect("failed to open file");
 
