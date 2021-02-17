@@ -10,3 +10,4 @@ mod hpke;
 mod kdf;
 mod aead;
 mod rand;
+mod tree_math;
