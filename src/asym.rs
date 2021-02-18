@@ -133,7 +133,7 @@ mod ossl {
         ($nid:expr, $n_sk:expr, $n_pk:expr, $bitmask: expr) => {
 
             pub struct PublicKey {
-                key: EcKey<Public>,
+                pub (crate) key: EcKey<Public>,
             }
 
             impl From<EcKey<Public>> for PublicKey {
@@ -160,7 +160,7 @@ mod ossl {
             impl super::PublicKey for PublicKey {}
 
             pub struct SecretKey {
-                key: EcKey<Private>,
+                pub (crate) key: EcKey<Private>,
             }
 
             impl From<EcKey<Private>> for SecretKey {

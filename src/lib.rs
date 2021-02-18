@@ -14,4 +14,5 @@ mod tree_math;
 mod protocol_version;
 mod extension;
 mod ciphersuite;
+mod signature;
 mod hash;
