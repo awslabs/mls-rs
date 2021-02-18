@@ -1,6 +1,7 @@
 use thiserror::Error;
 use openssl::error::ErrorStack;
 use openssl::hash::{Hasher, MessageDigest, hash};
+use ossl::OpenSslHashFunction;
 
 #[derive(Error, Debug)]
 pub enum HashError {
@@ -8,7 +9,7 @@ pub enum HashError {
     OpenSSLError(#[from] ErrorStack),
 }
 
-trait HashFunction {
+pub trait HashFunction {
     const OUT_LEN: u16;
     fn update(&mut self, data: &[u8]) -> Result<(), HashError>;
     fn finish(&mut self) -> Result<Vec<u8>, HashError>;
@@ -16,7 +17,13 @@ trait HashFunction {
 }
 
 #[macro_use]
-mod ossl {
+pub (crate) mod ossl {
+    use openssl::hash::MessageDigest;
+
+    pub (crate) trait OpenSslHashFunction {
+        fn get_digest() -> MessageDigest;
+    }
+
     macro_rules! impl_openssl_hash {
         ($name:ident, $digest:expr, $out_size:expr) => {
             pub struct $name {
@@ -49,6 +56,12 @@ mod ossl {
                     hash($digest, data)
                         .map(|d| d.to_vec())
                         .map_err(|e| e.into())
+                }
+            }
+
+            impl OpenSslHashFunction for $name {
+                fn get_digest() -> MessageDigest {
+                    $digest
                 }
             }
         };
