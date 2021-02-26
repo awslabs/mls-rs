@@ -1,6 +1,6 @@
 use thiserror::Error;
 use openssl::error::ErrorStack;
-use crate::kdf::{LabeledKdf, KdfError};
+use crate::kdf::{KdfError};
 use rand_core::{CryptoRng, RngCore};
 
 #[derive(Error, Debug)]
@@ -17,7 +17,7 @@ pub enum AsymmetricKeyError {
     RngFailure(#[from] rand_core::Error)
 }
 
-pub trait AsymmetricKey: Sized {
+pub trait AsymmetricKey: Sized + Clone {
     fn from_bytes(bytes: &[u8]) -> Result<Self, AsymmetricKeyError>;
     fn to_bytes(&self) -> Result<Vec<u8>, AsymmetricKeyError>;
 }
@@ -30,29 +30,12 @@ pub trait AsymmetricKeyEngine {
     type SK: SecretKey;
     const SK_LEN: u16;
     fn random_key_pair<RNG: CryptoRng + RngCore>(rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError>;
-}
-
-pub trait KemKeyEngine : AsymmetricKeyEngine {
-
-    fn generate_kem_key_pair<
-        RNG: CryptoRng + RngCore,
-        KDF: LabeledKdf
-    >(mut rng: RNG, id: &[u8]) -> Result<(Self::PK, Self::SK), AsymmetricKeyError> {
-
-        let mut ikm: Vec<u8> = vec![0; Self::SK_LEN as usize];
-        rng.try_fill_bytes(&mut ikm)?;
-        Self::derive_key_pair::<KDF>(&id, &ikm)
-    }
-
-    fn derive_key_pair<KDF: LabeledKdf>(id: &[u8], ikm: &[u8])
-        -> Result<(Self::PK, Self::SK), AsymmetricKeyError>;
-
     fn get_pub_key(sk: &Self::SK) -> Result<Self::PK, AsymmetricKeyError>;
 }
 
-pub trait EcdhEngine: KemKeyEngine {
-    fn shared_secret(local_sk: &<Self as AsymmetricKeyEngine>::SK,
-                     remote_pk: &<Self as AsymmetricKeyEngine>::PK)
+pub trait EcdhEngine: AsymmetricKeyEngine {
+    fn shared_secret(local_sk: &Self::SK,
+                     remote_pk: &Self::PK)
                      -> Result<Vec<u8>, AsymmetricKeyError>;
 }
 
@@ -64,14 +47,6 @@ mod ossl {
     use openssl::pkey::{Public, Private, PKey};
     use openssl::bn::{BigNumContext, BigNum};
     use openssl::error::ErrorStack;
-
-    pub fn generate_key_pair(nid: Nid) -> Result<(EcKey<Public>, EcKey<Private>), ErrorStack> {
-        let group = EcGroup::from_curve_name(nid)?;
-        let pri_key = openssl::ec::EcKey::generate(&group)?;
-        let pub_key = openssl::ec::EcKey::from_public_key(&group,
-                                                          pri_key.public_key())?;
-        Ok((pub_key.into(), pri_key.into()))
-    }
 
     pub fn shared_secret(local_sk: &EcKey<Private>,
                          remote_pk: &EcKey<Public>) -> Result<Vec<u8>, ErrorStack> {
@@ -113,7 +88,7 @@ mod ossl {
         let sk_val = BigNum::from_slice(bytes)?;
 
         // The secret can't be greater than or equal to the order of the curve
-        if sk_val.ge(&order) {
+        if sk_val.ge(&order) || sk_val.eq(&BigNum::from_u32(0)?) {
             return Err(ErrorStack::get());
         }
 
@@ -130,8 +105,9 @@ mod ossl {
     }
 
     macro_rules! openssl_asym_key {
-        ($nid:expr, $n_sk:expr, $n_pk:expr, $bitmask: expr) => {
+        ($nid:expr, $n_sk:expr, $n_pk:expr, $bitmask:expr) => {
 
+            #[derive(Debug, Clone)]
             pub struct PublicKey {
                 pub (crate) key: EcKey<Public>,
             }
@@ -159,6 +135,7 @@ mod ossl {
 
             impl super::PublicKey for PublicKey {}
 
+            #[derive(Debug, Clone)]
             pub struct SecretKey {
                 pub (crate) key: EcKey<Private>,
             }
@@ -171,10 +148,6 @@ mod ossl {
 
             impl AsymmetricKey for SecretKey {
                 fn from_bytes(bytes: &[u8]) -> Result<Self, AsymmetricKeyError> {
-                    if (bytes.len() != $n_sk) {
-                        return Err(AsymmetricKeyError::InvalidKeyType())
-                    }
-
                     Ok(Self {
                         key: super::ossl::pri_key_from_bytes($nid, bytes)?
                     })
@@ -198,34 +171,9 @@ mod ossl {
                 // is in range for the curve
                 fn random_key_pair<RNG: CryptoRng + RngCore>(mut rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError> {
                     for _ in 0u8..255 {
-                        let mut bytes = vec![0; Self::SK_LEN.into()];
+                        let mut bytes = vec![0u8; Self::SK_LEN.into()];
                         rng.try_fill_bytes(&mut bytes)?;
 
-                        bytes[0] = bytes[0] & $bitmask;
-
-                        if let Ok(secret_key) = Self::SK::from_bytes(&bytes) {
-                            if let Ok(pub_key) = Self::get_pub_key(&secret_key) {
-                                return Ok((pub_key, secret_key));
-                            }
-                        }
-                    }
-                    Err(AsymmetricKeyError::KeyDerivationError())
-                }
-            }
-
-            impl KemKeyEngine for Engine {
-
-                fn derive_key_pair<KDF: LabeledKdf>(id: &[u8],
-                    ikm: &[u8]) -> Result<(Self::PK, Self::SK), AsymmetricKeyError> {
-
-                    let dkp_prk = KDF::labeled_extract(id,
-                                                      &[],
-                                                      b"dkp_prk",
-                                                      ikm)?;
-
-                    for i in 0u8..255 {
-                        let mut bytes = KDF::labeled_expand(id, &dkp_prk,
-                                                        b"candidate", &[i], Self::SK_LEN)?;
                         bytes[0] = bytes[0] & $bitmask;
 
                         if let Ok(secret_key) = Self::SK::from_bytes(&bytes) {
@@ -254,29 +202,52 @@ mod ossl {
     }
 }
 
+macro_rules! impl_serialization {
+    ($key_type:ty) => {
+        impl Serialize for $key_type {
+            fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
+                S: Serializer {
+                use serde::ser::Error;
+                serializer.serialize_bytes(&self.to_bytes().map_err(|_| S::Error::custom("failed key serialization"))?)
+            }
+        }
+
+        impl <'de> Deserialize<'de> for $key_type {
+            fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
+                D: Deserializer<'de> {
+                use serde::de::Error;
+                let bytes: Vec<u8> = Vec::deserialize(deserializer)?;
+                <$key_type>::from_bytes(&bytes)
+                    .map_err(|_| D::Error::custom("failed key deserialization"))
+            }
+        }
+    }
+}
+
 pub mod p521 {
     use openssl::ec::{EcKey};
     use openssl::pkey::{Public, Private};
     use openssl::nid::Nid;
-    use crate::kdf::LabeledKdf;
     use super::{
         AsymmetricKey,
         AsymmetricKeyError,
-        KemKeyEngine,
         EcdhEngine,
         AsymmetricKeyEngine,
     };
     use rand_core::{RngCore, CryptoRng};
+    use serde::{Deserialize, Serialize, Serializer, Deserializer};
 
     openssl_asym_key!(Nid::SECP521R1, 66, 133, 0x01);
+    impl_serialization!(PublicKey);
+    impl_serialization!(SecretKey);
 
     #[cfg(test)]
-    mod tests {
+    mod test {
         use super::PublicKey;
         use super::SecretKey;
         use super::Engine;
 
-        use crate::asym::tests::{
+        use crate::asym::test::{
             TestCase,
             run_ecdh_test_case,
             run_serialization_test,
@@ -329,25 +300,26 @@ pub mod p256 {
     use openssl::ec::{EcKey};
     use openssl::pkey::{Public, Private};
     use openssl::nid::Nid;
-    use crate::kdf::LabeledKdf;
     use super::{
         AsymmetricKey,
         AsymmetricKeyError,
-        KemKeyEngine,
         EcdhEngine,
         AsymmetricKeyEngine
     };
     use rand_core::{RngCore, CryptoRng};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     openssl_asym_key!(Nid::X9_62_PRIME256V1, 32, 65, 0xFF);
+    impl_serialization!(PublicKey);
+    impl_serialization!(SecretKey);
 
     #[cfg(test)]
-    mod tests {
+    mod test {
         use super::PublicKey;
         use super::SecretKey;
         use super::Engine;
 
-        use crate::asym::tests::{
+        use crate::asym::test::{
             TestCase,
             run_ecdh_test_case,
             run_serialization_test,
@@ -382,11 +354,11 @@ pub mod x25519 {
         AsymmetricKeyError,
         AsymmetricKeyEngine,
         EcdhEngine,
-        KemKeyEngine
     };
-    use crate::kdf::{ LabeledKdf };
     use rand_core::{CryptoRng, RngCore};
+    use serde::{ Serialize, Serializer, Deserialize, Deserializer };
 
+    #[derive(Clone, Debug)]
     pub struct PublicKey {
         key: x25519_dalek::PublicKey
     }
@@ -398,6 +370,8 @@ pub mod x25519 {
             }
         }
     }
+
+    impl_serialization!(PublicKey);
 
     impl AsymmetricKey for PublicKey {
         fn from_bytes(bytes: &[u8]) -> Result<Self, AsymmetricKeyError> {
@@ -419,6 +393,7 @@ pub mod x25519 {
 
     impl super::PublicKey for PublicKey {}
 
+    #[derive(Clone)]
     pub struct SecretKey {
         key: x25519_dalek::StaticSecret
     }
@@ -430,6 +405,8 @@ pub mod x25519 {
             }
         }
     }
+
+    impl_serialization!(SecretKey);
 
     impl AsymmetricKey for SecretKey {
         fn from_bytes(bytes: &[u8]) -> Result<Self, AsymmetricKeyError> {
@@ -463,17 +440,6 @@ pub mod x25519 {
             let pub_key = x25519_dalek::PublicKey::from(&secret_key);
             Ok((pub_key.into(), secret_key.into()))
         }
-    }
-
-    impl KemKeyEngine for Engine {
-
-        fn derive_key_pair<KDF: LabeledKdf>(id: &[u8], ikm: &[u8]) -> Result<(Self::PK, Self::SK), AsymmetricKeyError> {
-            let dkp_prk = KDF::labeled_extract(id, &[], b"dkp_prk", ikm)?;
-            let sk_vec = KDF::labeled_expand(id, &dkp_prk, b"sk", &[], Self::SK_LEN)?;
-            let sk = SecretKey::from_bytes(&sk_vec)?;
-            let pk = Self::get_pub_key(&sk)?;
-            Ok((pk, sk))
-        }
 
         fn get_pub_key(sk: &Self::SK) -> Result<Self::PK, AsymmetricKeyError> {
             Ok(x25519_dalek::PublicKey::from(&sk.key).into())
@@ -492,12 +458,12 @@ pub mod x25519 {
     }
 
     #[cfg(test)]
-    mod tests {
+    mod test {
         use super::PublicKey;
         use super::SecretKey;
         use super::Engine;
 
-        use crate::asym::tests::{
+        use crate::asym::test::{
             TestCase,
             run_ecdh_test_case,
             run_serialization_test,
@@ -529,14 +495,20 @@ pub mod x448 {
         AsymmetricKey,
         AsymmetricKeyError,
         EcdhEngine,
-        KemKeyEngine,
         AsymmetricKeyEngine
     };
-    use crate::kdf::{LabeledKdf};
     use rand_core::{CryptoRng, RngCore};
+    use serde::{Serialize, Serializer, Deserialize, Deserializer};
 
     pub struct PublicKey {
         key: x448::PublicKey
+    }
+
+    impl Clone for PublicKey {
+        fn clone(&self) -> Self {
+            let bytes = self.key.as_bytes();
+            Self { key: x448::PublicKey::from_bytes(bytes).unwrap() }
+        }
     }
 
     impl From<x448::PublicKey> for PublicKey {
@@ -546,6 +518,8 @@ pub mod x448 {
             }
         }
     }
+
+    impl_serialization!(PublicKey);
 
     impl AsymmetricKey for PublicKey {
         fn from_bytes(bytes: &[u8]) -> Result<Self, AsymmetricKeyError> {
@@ -566,6 +540,15 @@ pub mod x448 {
     pub struct SecretKey {
         key: x448::Secret
     }
+
+    impl Clone for SecretKey {
+        fn clone(&self) -> Self {
+            let bytes = self.key.as_bytes();
+            Self { key: x448::Secret::from_bytes(bytes).unwrap() }
+        }
+    }
+
+    impl_serialization!(SecretKey);
 
     impl From<x448::Secret> for SecretKey {
         fn from(key: x448::Secret) -> Self {
@@ -603,20 +586,6 @@ pub mod x448 {
             let pub_key = x448::PublicKey::from(&secret_key);
             Ok((pub_key.into(), secret_key.into()))
         }
-    }
-
-    impl KemKeyEngine for Engine {
-
-        fn derive_key_pair<KDF: LabeledKdf>(id: &[u8], ikm: &[u8]) -> Result<(Self::PK, Self::SK), AsymmetricKeyError> {
-            // Apply KDF extract and expand base on HPKE draft-07
-            let dkp_prk = KDF::labeled_extract(id, &[], b"dkp_prk", ikm)?;
-            let sk_vec = KDF::labeled_expand(id, &dkp_prk, b"sk", &[], Self::SK_LEN)?;
-
-            // Create a secret key from the resulting key material and derive it's public key
-            let sk = SecretKey::from_bytes(&sk_vec)?;
-            let pk = Self::get_pub_key(&sk)?;
-            Ok((pk, sk))
-        }
 
         fn get_pub_key(sk: &Self::SK) -> Result<Self::PK, AsymmetricKeyError> {
             Ok(x448::PublicKey::from(&sk.key).into())
@@ -635,12 +604,12 @@ pub mod x448 {
     }
 
     #[cfg(test)]
-    mod tests {
+    mod test {
         use super::PublicKey;
         use super::SecretKey;
         use super::Engine;
 
-        use crate::asym::tests::{TestCase, run_ecdh_test_case, run_serialization_test, run_pri_to_pub_test, run_random_key_test};
+        use crate::asym::test::{TestCase, run_ecdh_test_case, run_serialization_test, run_pri_to_pub_test, run_random_key_test};
 
         fn get_test_case() -> TestCase {
             TestCase {
@@ -669,9 +638,8 @@ pub mod x448 {
     }
 }
 
-
 #[cfg(test)]
-mod tests {
+mod test {
     use crate::asym::{PublicKey, SecretKey, EcdhEngine};
     use crate::rand::test_rng;
 
@@ -725,8 +693,8 @@ mod tests {
         assert_eq!(secret_key.to_bytes().expect("key serialize failed"), case.alice_pri);
 
         // Verify that incorrect byte counts result in non keys
-        assert_eq!(SK::from_bytes(b"not a key").is_err(), true);
-        assert_eq!(PK::from_bytes(b"not a key").is_err(), true);
+        assert_eq!(SK::from_bytes(&vec![0u8;1]).is_err(), true);
+        assert_eq!(PK::from_bytes(&vec![0u8;1]).is_err(), true);
     }
 
     pub fn run_pri_to_pub_test<
