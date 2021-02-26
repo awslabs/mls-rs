@@ -4,14 +4,13 @@ mod util;
 #[macro_use]
 mod test_util;
 
+#[macro_use]
 mod asym;
 mod kem;
 mod hpke;
 mod kdf;
 mod aead;
 mod rand;
-mod tree;
-mod node_vec;
 mod credential;
 mod tree_math;
 mod key_package;
@@ -20,3 +19,4 @@ mod extension;
 mod ciphersuite;
 mod signature;
 mod hash;
+mod client;
