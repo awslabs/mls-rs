@@ -3,6 +3,9 @@ use crate::hash::{HashFunction};
 use openssl::error::ErrorStack;
 use thiserror::Error;
 use rand_core::{CryptoRng, RngCore};
+use serde::ser::Error;
+use serde::{Deserialize, Serialize};
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 #[derive(Error, Debug)]
 pub enum SignatureError {
@@ -16,10 +19,15 @@ pub enum SignatureError {
     InvalidKeyData
 }
 
+#[derive(IntoPrimitive, TryFromPrimitive, Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(into = "u16", try_from = "u16")]
+#[repr(u16)]
 pub enum SignatureSchemeId {
     EcdsaSecp256r1Sha256 = 0x0403,
     EcdsaSecp521r1Sha512 = 0x0603,
-    Ed25519 = 0x0703
+    Ed25519 = 0x0703,
+    #[cfg(test)]
+    Test = 0x0042,
 }
 
 pub trait SignatureScheme {

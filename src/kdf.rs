@@ -1,7 +1,7 @@
 use openssl::error::ErrorStack;
 use thiserror::Error;
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+use serde::{Serialize, Deserialize};
 
 pub trait Kdf {
     const KDF_ID: u16;
@@ -143,7 +143,9 @@ impl_hkdf!(HkdfSha512, openssl::hash::MessageDigest::sha512(),KdfId::HkdfSha512 
 impl LabeledKdf for HkdfSha256 {}
 impl LabeledKdf for HkdfSha512 {}
 
-#[derive(FromPrimitive, Debug, PartialEq)]
+#[derive(IntoPrimitive, TryFromPrimitive, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(into = "u16", try_from = "u16")]
+#[repr(u16)]
 pub enum KdfId {
     HkdfSha256 = 0x0001,
     HkdfSha384 = 0x0002, // Unsupported
@@ -156,10 +158,6 @@ impl KdfId {
             Self::HkdfSha384 => false,
             _ => true
         }
-    }
-
-    pub fn from_u16(val: u16) -> Option<KdfId> {
-        FromPrimitive::from_u16(val)
     }
 }
 

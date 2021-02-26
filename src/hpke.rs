@@ -302,7 +302,6 @@ mod tests {
     use std::io::BufReader;
     use crate::aead::{AeadId};
     use crate::kdf::{KdfId};
-    use serde::de::Error;
     use std::ops::Deref;
 
     macro_rules! assert_eq_hpke {
@@ -368,30 +367,6 @@ mod tests {
             D: Deserializer<'de> {
             let string = String::deserialize(deserializer)?;
             Ok(HexData(hex::decode(string).unwrap()))
-        }
-    }
-
-    impl <'de> Deserialize<'de> for AeadId {
-        fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
-            D: Deserializer<'de> {
-            let int = Deserialize::deserialize(deserializer)?;
-            AeadId::from_u16(int).ok_or(D::Error::custom("failed to read aead"))
-        }
-    }
-
-    impl <'de> Deserialize<'de> for KemId {
-        fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
-            D: Deserializer<'de> {
-            let int = Deserialize::deserialize(deserializer)?;
-            KemId::from_u16(int).ok_or(D::Error::custom("failed to read kem"))
-        }
-    }
-
-    impl <'de> Deserialize<'de> for KdfId {
-        fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error> where
-            D: Deserializer<'de> {
-            let int = Deserialize::deserialize(deserializer)?;
-            KdfId::from_u16(int).ok_or(D::Error::custom("failed to read kdf"))
         }
     }
 
