@@ -95,7 +95,7 @@ mod test {
     use crate::signature::{ed25519::EdDsa25519, p256::EcDsaP256, p521::EcDsaP521, SignatureScheme, Verifier, Signer, test_utils::MockTestSignatureScheme, Signable};
     use crate::rand::test_rng::ZerosRng;
     use crate::client::Client;
-    use crate::credential::{Credential, BasicCredential};
+    use crate::credential::{Credential, BasicCredential, CredentialConvertable};
     use crate::asym::AsymmetricKey;
     use crate::extension::Lifetime;
     use crate::ciphersuite::CipherSuite;
@@ -109,11 +109,11 @@ mod test {
 
         Client {
             signature_key: sig_scheme.get_signer().to_bytes().expect("failed serialize"),
-            credential: Credential::Basic(BasicCredential {
-                identity: vec![0u8, 1],
+            credential: BasicCredential {
+                identity: vec![0u8; 15],
                 signature_key: signature_key.signature_key,
                 signature_scheme: signature_key.signature_scheme
-            }),
+            }.to_credential(),
             capabilities: Default::default(),
             key_lifetime: Lifetime { not_before: 0, not_after: 0 }
         }
