@@ -6,20 +6,9 @@ use crate::signature::{
     Signable,
     PublicSignatureKey
 };
-use serde::{Deserialize, Serialize, Serializer, Deserializer};
+use serde::{Deserialize, Serialize};
 use crate::asym::{AsymmetricKey};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use serde::de::{Error, DeserializeSeed, Visitor};
-use std::fmt;
-use std::convert::TryFrom;
-use thiserror::Error;
-
-#[derive(Error, Clone, Debug)]
-pub enum CredentialError {
-    #[error("invalid credential type")]
-    InvalidCredentialType
-}
-
 
 #[derive(IntoPrimitive, TryFromPrimitive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(into = "u16", try_from = "u16")]
@@ -28,63 +17,37 @@ pub enum CredentialIdentifier {
     Basic = 0x0001,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(into = "CredentialDescription", try_from = "CredentialDescription")]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub enum Credential {
-    Basic(BasicCredential),
+    Basic(BasicCredential)
     //TODO: X509
-}
-
-impl Into<CredentialDescription> for Credential {
-    fn into(self) -> CredentialDescription {
-        CredentialDescription {
-            credential_type: self.get_credential_type(),
-            data: self.clone()
-        }
-    }
-}
-
-impl TryFrom<CredentialDescription> for Credential {
-    type Error = CredentialError;
-
-    fn try_from(value: CredentialDescription) -> Result<Self, Self::Error> {
-        if value.credential_type != value.data.get_credential_type() {
-            Err(CredentialError::InvalidCredentialType)
-        } else {
-            Ok(value.data)
-        }
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-struct CredentialDescription {
-    credential_type: CredentialIdentifier,
-    data: Credential
 }
 
 impl Credential {
     pub fn get_signature_type(&self) -> &SignatureSchemeId {
         match self {
-            Credential::Basic(cred) => {
-                &cred.signature_scheme
-            }
-        }
-    }
-
-    pub fn get_credential_type(&self) -> CredentialIdentifier {
-        match self {
-            Credential::Basic(_) => {
-                CredentialIdentifier::Basic
+            Credential::Basic(credential) => {
+                &credential.signature_scheme
             }
         }
     }
 }
 
+pub trait CredentialConvertable {
+    fn to_credential(&self) -> Credential;
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct BasicCredential {
+    pub signature_key: Vec<u8>,
     pub identity: Vec<u8>,
     pub signature_scheme: SignatureSchemeId,
-    pub signature_key: Vec<u8>
+}
+
+impl CredentialConvertable for BasicCredential {
+    fn to_credential(&self) -> Credential {
+        Credential::Basic(self.clone())
+    }
 }
 
 impl BasicCredential {
@@ -115,31 +78,22 @@ impl Verifier for BasicCredential {
 #[cfg(test)]
 mod test {
     use crate::signature::test_utils::{MockTestSignatureScheme, get_test_verifier};
-    use crate::credential::{BasicCredential, Credential, CredentialDescription, CredentialIdentifier};
-    use crate::signature::{SignatureSchemeId, PublicSignatureKey, Verifier};
+    use crate::credential::{BasicCredential, Credential, CredentialConvertable};
+    use crate::signature::{SignatureSchemeId, Verifier};
 
-    #[test]
-    fn test_credential_get_signature_type() {
-        let cred = Credential::Basic(BasicCredential {
+    fn get_test_basic_credential() -> Credential {
+        BasicCredential {
             identity: vec![],
             signature_scheme: SignatureSchemeId::Test,
             signature_key: vec![]
-        });
-
-        let cred_sig_type = cred.get_signature_type().clone();
-        assert_eq!(cred_sig_type, SignatureSchemeId::Test);
+        }.to_credential()
     }
 
     #[test]
-    fn test_credential_get_type() {
-        let cred = Credential::Basic(BasicCredential {
-            identity: vec![],
-            signature_scheme: SignatureSchemeId::Test,
-            signature_key: vec![]
-        });
-
-        let cred_type = cred.get_credential_type();
-        assert_eq!(cred_type, CredentialIdentifier::Basic);
+    fn test_credential_get_signature_type() {
+        let cred = get_test_basic_credential();
+        let cred_sig_type = cred.get_signature_type().clone();
+        assert_eq!(cred_sig_type, SignatureSchemeId::Test);
     }
 
     #[test]

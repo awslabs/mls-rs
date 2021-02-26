@@ -7,6 +7,7 @@ use serde::{Serialize, Deserialize};
 use crate::signature::{SignatureError, Signable};
 use thiserror::Error;
 use std::convert::TryFrom;
+use bincode::Options;
 
 #[derive(Error, Debug)]
 pub enum KeyPackageError {
@@ -44,7 +45,7 @@ pub struct KeyPackageSecret {
 impl Signable for KeyPackageData {
     type E = bincode::Error;
     fn to_signable_vec(&self) -> Result<Vec<u8>, Self::E> {
-        bincode::serialize(self)
+        bincode::DefaultOptions::new().with_big_endian().serialize(self)
     }
 }
 
@@ -52,7 +53,7 @@ impl TryFrom<Vec<u8>> for KeyPackageData {
     type Error = bincode::Error;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        bincode::deserialize(&value)
+        bincode::DefaultOptions::new().with_big_endian().deserialize(&value)
     }
 }
 
@@ -62,8 +63,8 @@ mod test {
     use crate::protocol_version::ProtocolVersion;
     use crate::ciphersuite::CipherSuite;
     use crate::extension::{Lifetime, ExtensionTrait};
-    use crate::credential::{Credential, BasicCredential};
-    use crate::signature::{PublicSignatureKey, SignatureSchemeId, Signable};
+    use crate::credential::{BasicCredential, CredentialConvertable};
+    use crate::signature::{SignatureSchemeId, Signable};
     use std::convert::TryFrom;
 
     #[test]
@@ -72,11 +73,11 @@ mod test {
             version: ProtocolVersion::Mls10,
             cipher_suite: CipherSuite::MLS10_TEST,
             hpke_init_key: vec![0u8; 4],
-            credential: Credential::Basic(BasicCredential {
+            credential: BasicCredential {
                 identity: vec![0u8;4],
                 signature_scheme: SignatureSchemeId::Test,
                 signature_key: vec![0u8;4]
-            }),
+            }.to_credential(),
             extensions: vec![Lifetime { not_before: 42, not_after: 42 }.to_extension().unwrap()]
         };
 

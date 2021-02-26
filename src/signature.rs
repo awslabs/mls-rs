@@ -577,7 +577,7 @@ pub mod ed25519 {
 
 #[cfg(test)]
 pub (crate) mod test_utils {
-    use crate::signature::{Signer, SignatureError, Signable, Verifier, SignatureScheme, SignatureSchemeId, PublicSignatureKey};
+    use crate::signature::{Signer, SignatureError, Signable, Verifier, SignatureScheme, SignatureSchemeId};
     use rand_core::{CryptoRng, RngCore};
     use crate::asym::{AsymmetricKey, AsymmetricKeyError};
     use mockall::mock;

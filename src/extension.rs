@@ -5,7 +5,6 @@ use thiserror::Error;
 use crate::extension::ExtensionError::IncorrectExtensionType;
 use std::time::{SystemTime, SystemTimeError};
 use crate::ciphersuite::CipherSuite;
-use std::convert::TryFrom;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 #[derive(Error, Debug)]
