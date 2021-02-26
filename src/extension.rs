@@ -1,10 +1,12 @@
 use serde::{Serialize, Deserialize};
 use serde::de::{DeserializeOwned};
-use num_derive::{ FromPrimitive, ToPrimitive };
 use crate::protocol_version::ProtocolVersion;
 use thiserror::Error;
-use crate::ciphersuite::CipherSuiteId;
 use crate::extension::ExtensionError::IncorrectExtensionType;
+use std::time::{SystemTime, SystemTimeError};
+use crate::ciphersuite::CipherSuite;
+use std::convert::TryFrom;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 #[derive(Error, Debug)]
 pub enum ExtensionError {
@@ -14,7 +16,9 @@ pub enum ExtensionError {
     BincodeError(#[from] bincode::Error)
 }
 
-#[derive(Clone, FromPrimitive, ToPrimitive, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(IntoPrimitive, TryFromPrimitive, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[repr(u16)]
+#[serde(into = "u16", try_from = "u16")]
 pub enum ExtensionId {
     Capabilities = 0x0001,
     Lifetime = 0x0002,
@@ -23,7 +27,7 @@ pub enum ExtensionId {
     RatchetTree = 0x0005,
 }
 
-trait ExtensionTrait: Sized + Serialize + DeserializeOwned {
+pub trait ExtensionTrait: Sized + Serialize + DeserializeOwned {
     const IDENTIFIER: ExtensionId;
 
     fn to_extension(&self) -> Result<Extension, ExtensionError> {
@@ -40,7 +44,7 @@ trait ExtensionTrait: Sized + Serialize + DeserializeOwned {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct KeyId<T> {
     pub identifier: T,
 }
@@ -49,18 +53,54 @@ impl <T: DeserializeOwned + Serialize> ExtensionTrait for KeyId<T> {
     const IDENTIFIER: ExtensionId = ExtensionId::KeyId;
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Capabilities {
     pub protocol_versions: Vec<ProtocolVersion>,
-    pub ciphersuites: Vec<CipherSuiteId>,
+    pub ciphersuites: Vec<CipherSuite>,
     pub extensions: Vec<ExtensionId>,
+}
+
+impl Default for Capabilities {
+    fn default() -> Self {
+        Self {
+            protocol_versions: vec![ProtocolVersion::Mls10],
+            ciphersuites: vec![
+                CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256,
+                CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
+                CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
+                CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521
+            ],
+            extensions: vec![ExtensionId::Capabilities, ExtensionId::KeyId, ExtensionId::Lifetime]
+        }
+    }
 }
 
 impl ExtensionTrait for Capabilities {
     const IDENTIFIER: ExtensionId = ExtensionId::Capabilities;
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Lifetime {
+    pub not_before: u64,
+    pub not_after: u64
+}
+
+impl Lifetime {
+    pub fn days(d: u64, from: SystemTime) -> Result<Self, SystemTimeError> {
+        let start_time = from.duration_since(SystemTime::UNIX_EPOCH)?.as_secs();
+
+        Ok(Lifetime {
+            not_before: start_time,
+            not_after: d * 86400 + start_time
+        })
+    }
+}
+
+impl ExtensionTrait for Lifetime {
+    const IDENTIFIER: ExtensionId = ExtensionId::Lifetime;
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Extension {
     pub extension_id: ExtensionId,
     pub data: Vec<u8>
@@ -70,7 +110,10 @@ pub struct Extension {
 mod tests {
     use crate::extension::{ExtensionId, KeyId, Capabilities, ExtensionTrait, Extension, ExtensionError};
     use crate::protocol_version::ProtocolVersion;
-    use crate::ciphersuite::CipherSuiteId;
+    use crate::extension::Lifetime;
+    use std::time::{SystemTime, Duration};
+    use std::ops::Add;
+    use crate::ciphersuite::CipherSuite;
 
     #[test]
     fn test_key_extension() {
@@ -87,7 +130,7 @@ mod tests {
     #[test]
     fn test_capabilities() {
         let test_protocol_versions = vec![ProtocolVersion::Mls10];
-        let test_ciphersuites = vec![CipherSuiteId::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256, CipherSuiteId::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519];
+        let test_ciphersuites = vec![CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256, CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519];
         let test_extensions = vec![ExtensionId::ParentHash, ExtensionId::Lifetime, ExtensionId::KeyId];
 
         let test_extension = Capabilities {
@@ -103,6 +146,23 @@ mod tests {
         assert_eq!(restored.protocol_versions, test_protocol_versions);
         assert_eq!(restored.ciphersuites, test_ciphersuites);
         assert_eq!(restored.extensions, test_extensions);
+    }
+
+    #[test]
+    fn test_lifetime() {
+        let lifetime = Lifetime::days(1, SystemTime::UNIX_EPOCH
+            .add(Duration::from_secs(1)))
+            .expect("lifetime failure");
+
+        assert_eq!(lifetime.not_before, 1);
+        assert_eq!(lifetime.not_after, 86401);
+
+        let as_extension = lifetime.to_extension().expect("to extension error");
+        assert_eq!(as_extension.extension_id, ExtensionId::Lifetime);
+
+        let restored = Lifetime::from_extension(as_extension).expect("from extension error");
+        assert_eq!(lifetime.not_after, restored.not_after);
+        assert_eq!(lifetime.not_before, restored.not_before);
     }
 
     #[test]
