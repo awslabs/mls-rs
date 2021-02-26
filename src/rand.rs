@@ -65,6 +65,29 @@ pub mod test_rng {
             Ok(())
         }
     }
+
+    pub struct ZerosRng;
+
+    impl CryptoRng for ZerosRng {}
+
+    impl RngCore for ZerosRng {
+        fn next_u32(&mut self) -> u32 {
+            impls::next_u32_via_fill(self)
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            impls::next_u64_via_fill(self)
+        }
+
+        fn fill_bytes(&mut self, dest: &mut [u8]) {
+            dest.iter_mut().for_each(|i| *i = 0u8)
+        }
+
+        fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Error> {
+            self.fill_bytes(dest);
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
