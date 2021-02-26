@@ -162,7 +162,7 @@ impl KdfId {
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use crate::kdf::{HkdfSha256, Kdf, HkdfSha512};
 
     struct TestCase {
