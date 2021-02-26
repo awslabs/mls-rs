@@ -1,7 +1,7 @@
 use thiserror::Error;
 use openssl::error::ErrorStack;
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+use serde::{Serialize, Deserialize};
 
 #[derive(Error, Debug)]
 pub enum CipherError {
@@ -338,7 +338,9 @@ pub mod chacha20 {
     }
 }
 
-#[derive(FromPrimitive, Debug, PartialEq)]
+#[derive(IntoPrimitive, TryFromPrimitive, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(into = "u16", try_from = "u16")]
+#[repr(u16)]
 pub enum AeadId {
     Aes128Gcm = 0x0001,
     Aes256Gcm = 0x0002,
@@ -352,9 +354,6 @@ impl AeadId {
             Self::Unknown => false,
             _ => true
         }
-    }
-    pub fn from_u16(val: u16) -> Option<AeadId> {
-        FromPrimitive::from_u16(val)
     }
 }
 
