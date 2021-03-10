@@ -25,3 +25,4 @@ mod key_schedule;
 mod hpke_kdf;
 mod tree_path;
 mod tree_node;
+mod secret_tree;
