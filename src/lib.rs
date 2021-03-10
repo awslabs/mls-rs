@@ -20,5 +20,8 @@ mod ciphersuite;
 mod signature;
 mod hash;
 mod client;
+mod ratchet_tree;
 mod key_schedule;
 mod hpke_kdf;
+mod tree_path;
+mod tree_node;
