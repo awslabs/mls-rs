@@ -29,7 +29,7 @@ pub trait AsymmetricKeyEngine {
     type PK: PublicKey;
     type SK: SecretKey;
     const SK_LEN: u16;
-    fn random_key_pair<RNG: CryptoRng + RngCore>(rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError>;
+    fn random_key_pair<RNG: CryptoRng + RngCore + 'static>(rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError>;
     fn get_pub_key(sk: &Self::SK) -> Result<Self::PK, AsymmetricKeyError>;
 }
 
@@ -435,7 +435,7 @@ pub mod x25519 {
         type SK = SecretKey;
         const SK_LEN: u16 = 32;
 
-        fn random_key_pair<RNG: CryptoRng + RngCore>(rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError> {
+        fn random_key_pair<RNG: CryptoRng + RngCore + 'static>(rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError> {
             let secret_key = x25519_dalek::StaticSecret::new(rng);
             let pub_key = x25519_dalek::PublicKey::from(&secret_key);
             Ok((pub_key.into(), secret_key.into()))
@@ -725,7 +725,57 @@ mod test {
         assert_eq!(pk.to_bytes().expect("key serialize failed"), case.alice_pub);
         assert_eq!(sk.to_bytes().expect("key serialize failed"), case.alice_pri);
     }
+}
 
+#[cfg(test)]
+pub mod test_util {
+    use mockall::mock;
+    use super::{
+        AsymmetricKey, AsymmetricKeyEngine, AsymmetricKeyError,
+        CryptoRng, RngCore
+    };
+
+    mock! {
+        pub PublicKey {}
+
+        impl Clone for Signer {
+            fn clone(&self) -> Self;
+        }
+
+        impl AsymmetricKey for PublicKey {
+            fn from_bytes(bytes: &[u8]) -> Result<Self, AsymmetricKeyError>;
+            fn to_bytes(&self) -> Result<Vec<u8>, AsymmetricKeyError>;
+        }
+
+        impl super::PublicKey for PublicKey {}
+    }
+
+    mock! {
+        pub SecretKey {}
+
+        impl Clone for Verifier {
+            fn clone(&self) -> Self;
+        }
+
+        impl AsymmetricKey for SecretKey {
+            fn from_bytes(bytes: &[u8]) -> Result<Self, AsymmetricKeyError>;
+            fn to_bytes(&self) -> Result<Vec<u8>, AsymmetricKeyError>;
+        }
+
+        impl super::SecretKey for SecretKey {}
+    }
+
+    mock! {
+        pub TestKeyEngine {}
+
+        impl AsymmetricKeyEngine for TestKeyEngine {
+            type PK = MockPublicKey;
+            type SK = MockSecretKey;
+            const SK_LEN: u16 = 0;
+            fn random_key_pair<RNG: CryptoRng + RngCore + 'static>(rng: RNG) -> Result<(<MockTestKeyEngine as AsymmetricKeyEngine>::PK, <MockTestKeyEngine as AsymmetricKeyEngine>::SK), AsymmetricKeyError>;
+            fn get_pub_key(sk: &<MockTestKeyEngine as AsymmetricKeyEngine>::SK) -> Result<<MockTestKeyEngine as AsymmetricKeyEngine>::PK, AsymmetricKeyError>;
+        }
+    }
 }
 
 

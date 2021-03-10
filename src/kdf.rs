@@ -4,7 +4,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Serialize, Deserialize};
 
 pub trait Kdf {
-    const KDF_ID: u16;
+    const KDF_ID: KdfId;
     const EXTRACT_SIZE: u16;
 
     // RFC 5869 Extract-and-Expand HKDF
@@ -14,41 +14,12 @@ pub trait Kdf {
     fn expand(key: &[u8], info: &[u8], out_len: u16) -> Result<Vec<u8>, KdfError>;
 }
 
-pub trait LabeledKdf : Kdf {
-    /* draft-irtf-cfrg-hpke-07 section 4 Cryptographic Dependencies */
-    fn labeled_extract(suite_id: &[u8], salt: &[u8],
-                       label: &[u8], ikm: &[u8]) -> Result<Vec<u8>, KdfError> {
-        Self::extract(salt, &[b"HPKE-v1", suite_id, label, ikm].concat())
-    }
-
-    /* draft-irtf-cfrg-hpke-07 section 4 Cryptographic Dependencies */
-    fn labeled_expand(suite_id: &[u8], key: &[u8],
-                      label: &[u8], info: &[u8], out_len: u16) -> Result<Vec<u8>, KdfError> {
-        let labeled_info = [&out_len.to_be_bytes() as &[u8], b"HPKE-v1", suite_id, label, info]
-            .concat();
-        Self::expand(key, &labeled_info, out_len)
-    }
-
-    /* draft-irtf-cfrg-hpke-07 section 4.1 DH-Based KEM */
-    fn labeled_extract_and_expand(suite_id: &[u8], ikm: &[u8],
-                                  ctx: &[u8], out_len: u16) -> Result<Vec<u8>, KdfError> {
-        let eae_prk = Self::labeled_extract(&suite_id,
-                                            &[],
-                                            b"eae_prk",
-                                            ikm)?;
-
-        Self::labeled_expand(&suite_id,
-                             &eae_prk,
-                             b"shared_secret",
-                             ctx,
-                             out_len)
-    }
-}
-
 #[derive(Error, Debug)]
 pub enum KdfError {
     #[error("Openssl error: {0}")]
     OpenSSLError(#[from] ErrorStack),
+    #[error("kdf error {0}")]
+    Other(String)
 }
 
 /* Based on rust-crypto https://github.com/DaGenix/rust-crypto/blob/master/src/hkdf.rs
@@ -120,7 +91,7 @@ mod ossl {
             pub struct $name;
 
             impl Kdf for $name {
-                const KDF_ID: u16 = $kdf_id;
+                const KDF_ID: KdfId = $kdf_id;
                 const EXTRACT_SIZE: u16 = $extract_size;
 
                 fn extract(salt: &[u8], key: &[u8]) -> Result<Vec<u8>, KdfError> {
@@ -137,11 +108,10 @@ mod ossl {
     }
 }
 
-impl_hkdf!(HkdfSha256, openssl::hash::MessageDigest::sha256(),KdfId::HkdfSha256 as u16, 32);
-impl_hkdf!(HkdfSha512, openssl::hash::MessageDigest::sha512(),KdfId::HkdfSha512 as u16, 64);
+impl_hkdf!(HkdfSha256, openssl::hash::MessageDigest::sha256(),KdfId::HkdfSha256, 32);
+impl_hkdf!(HkdfSha512, openssl::hash::MessageDigest::sha512(),KdfId::HkdfSha512, 64);
 
-impl LabeledKdf for HkdfSha256 {}
-impl LabeledKdf for HkdfSha512 {}
+
 
 #[derive(IntoPrimitive, TryFromPrimitive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(into = "u16", try_from = "u16")]
@@ -149,7 +119,9 @@ impl LabeledKdf for HkdfSha512 {}
 pub enum KdfId {
     HkdfSha256 = 0x0001,
     HkdfSha384 = 0x0002, // Unsupported
-    HkdfSha512 = 0x0003
+    HkdfSha512 = 0x0003,
+    #[cfg(test)]
+    Test = 0xFFFF,
 }
 
 impl KdfId {

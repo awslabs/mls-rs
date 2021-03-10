@@ -282,6 +282,7 @@ name = "mls"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "cfg-if",
  "chacha20poly1305",
  "ed25519-dalek",
  "hex",

@@ -1,7 +1,5 @@
 use crate::util::log2;
 use thiserror::Error;
-use std::collections::BTreeSet;
-use std::iter::FromIterator;
 
 #[derive(Error, Debug)]
 pub enum TreeMathError {
@@ -10,15 +8,17 @@ pub enum TreeMathError {
     #[error("root node has no parent")]
     NoParent,
     #[error("no common ancestor")]
-    NoCommonAncestor
+    NoCommonAncestor,
+    #[error("index out of range")]
+    InvalidIndex
 }
 
-fn level(x: u64) -> u64 {
+pub fn level(x: usize) -> usize {
     if x & 0x01 == 0 {
         return 0;
     }
 
-    let mut k: u64 = 0;
+    let mut k: usize = 0;
     while ((x >> k) & 0x01) == 1 {
         k += 1;
     }
@@ -26,7 +26,7 @@ fn level(x: u64) -> u64 {
     k
 }
 
-fn node_width(n: u64) -> u64 {
+pub fn node_width(n: usize) -> usize {
     if n == 0 {
         return 0;
     } else {
@@ -34,12 +34,12 @@ fn node_width(n: u64) -> u64 {
     }
 }
 
-fn root(n: u64) -> u64 {
+pub fn root(n: usize) -> usize {
     let w = node_width(n);
     (1 << log2(w)) - 1
 }
 
-fn left(x: u64) -> Result<u64, TreeMathError> {
+pub fn left(x: usize) -> Result<usize, TreeMathError> {
     let k = level(x);
     if k == 0 {
         Err(TreeMathError::NoChildren)
@@ -48,7 +48,7 @@ fn left(x: u64) -> Result<u64, TreeMathError> {
     }
 }
 
-fn right(x: u64, n: u64) -> Result<u64, TreeMathError> {
+pub fn right(x: usize, n: usize) -> Result<usize, TreeMathError> {
     let k = level(x);
     if k == 0 {
         Err(TreeMathError::NoChildren)
@@ -61,13 +61,13 @@ fn right(x: u64, n: u64) -> Result<u64, TreeMathError> {
     }
 }
 
-fn parent_step(x: u64) -> u64 {
+pub fn parent_step(x: usize) -> usize {
     let k = level(x);
     let b = (x >> (k + 1)) & 0x01;
     (x | (1 << k)) ^ (b << (k + 1))
 }
 
-fn parent(x: u64, n: u64) -> Result<u64, TreeMathError> {
+pub fn parent(x: usize, n: usize) -> Result<usize, TreeMathError> {
     if x == root(n) {
         return Err(TreeMathError::NoParent)
     }
@@ -80,7 +80,7 @@ fn parent(x: u64, n: u64) -> Result<u64, TreeMathError> {
     Ok(p)
 }
 
-fn sibling(x: u64, n: u64) -> Result<u64, TreeMathError> {
+pub fn sibling(x: usize, n: usize) -> Result<usize, TreeMathError> {
     let p = parent(x, n)?;
     if x < p {
         right(p, n)
@@ -89,64 +89,40 @@ fn sibling(x: u64, n: u64) -> Result<u64, TreeMathError> {
     }
 }
 
-fn direct_path(x: u64, n: u64) -> Result<Vec<u64>, TreeMathError> {
+pub fn direct_path(x: usize, n: usize) -> Result<Vec<usize>, TreeMathError> {
     let r = root(n);
     let mut d = Vec::new();
 
     if x == r {
-        Ok(d)
-    } else {
-        let mut x_mut = x;
-
-        while x != r {
-            x_mut = parent(x_mut, n)?;
-            d.push(x_mut)
-        }
-
-        Ok(d)
+        return Ok(d)
     }
+
+    let mut x_mut = x;
+
+    while x_mut != r {
+        x_mut = parent(x_mut, n)?;
+        d.push(x_mut)
+    }
+
+    Ok(d)
 }
 
-fn copath(x: u64, n: u64) -> Result<Vec<u64>, TreeMathError> {
+pub fn copath(x: usize, n: usize) -> Result<Vec<usize>, TreeMathError> {
     let mut d = Vec::new();
 
     if x == root(n) {
-        Ok(d)
-    } else {
-        d = direct_path(x, n)?;
-        d.insert(0, x);
-        d.pop();
-        let copath: Result<Vec<_>, _> =
-            d.into_iter()
-                .map(|y| sibling(y, n))
-                .collect();
-        copath
+        return Ok(d)
     }
+
+    d = direct_path(x, n)?;
+    d.insert(0, x);
+    d.pop();
+    d.into_iter()
+        .map(|y| sibling(y, n))
+        .collect()
 }
 
-fn common_ancestor_semantic(x: u64, y: u64, n: u64) -> Result<u64, TreeMathError> {
-    let dx: BTreeSet<u64> = BTreeSet::from_iter([x].to_vec())
-        .union(&BTreeSet::from_iter(direct_path(x, n)?))
-        .cloned()
-        .collect();
-
-    let dy: BTreeSet<u64> = BTreeSet::from_iter([y].to_vec())
-        .union(&BTreeSet::from_iter(direct_path(y, n)?))
-        .cloned()
-        .collect();
-
-    let dxy: Vec<u64> = dx.intersection(&dy).cloned().collect();
-
-    if let Some(common_ancestor) = dxy.into_iter()
-        .map(|i| level(i))
-        .min() {
-        Ok(common_ancestor)
-    } else {
-        Err(TreeMathError::NoCommonAncestor)
-    }
-}
-
-fn common_ancestor_direct(x: u64, y: u64) -> u64 {
+pub fn common_ancestor_direct(x: usize, y: usize) -> usize {
     let lx = level(x) + 1;
     let ly = level(y) + 1;
 
@@ -178,13 +154,13 @@ mod test {
 
     #[derive(Deserialize)]
     struct TestCase {
-        n_leaves: u64,
-        n_nodes: u64,
-        root: Vec<u64>,
-        left: Vec<Option<u64>>,
-        right: Vec<Option<u64>>,
-        parent: Vec<Option<u64>>,
-        sibling: Vec<Option<u64>>
+        n_leaves: usize,
+        n_nodes: usize,
+        root: Vec<usize>,
+        left: Vec<Option<usize>>,
+        right: Vec<Option<usize>>,
+        parent: Vec<Option<usize>>,
+        sibling: Vec<Option<usize>>
     }
 
     fn run_test_case(case: &TestCase) {
@@ -208,5 +184,67 @@ mod test {
             .expect("failed to parse vector file");
 
         test_vectors.iter().for_each(|tv| run_test_case(tv));
+    }
+
+    #[test]
+    fn test_direct_path() {
+        let expected: Vec<Vec<usize>> = [
+            [0x01, 0x03, 0x07, 0x0f].to_vec(),
+            [0x03, 0x07, 0x0f].to_vec(),
+            [0x01, 0x03, 0x07, 0x0f].to_vec(),
+            [0x07, 0x0f].to_vec(),
+            [0x05, 0x03, 0x07, 0x0f].to_vec(),
+            [0x03, 0x07, 0x0f].to_vec(),
+            [0x05, 0x03, 0x07, 0x0f].to_vec(),
+            [0x0f].to_vec(),
+            [0x09, 0x0b, 0x07, 0x0f].to_vec(),
+            [0x0b, 0x07, 0x0f].to_vec(),
+            [0x09, 0x0b, 0x07, 0x0f].to_vec(),
+            [0x07, 0x0f].to_vec(),
+            [0x0d, 0x0b, 0x07, 0x0f].to_vec(),
+            [0x0b, 0x07, 0x0f].to_vec(),
+            [0x0d, 0x0b, 0x07, 0x0f].to_vec(),
+            [].to_vec(),
+            [0x11, 0x13, 0x0f].to_vec(),
+            [0x13, 0x0f].to_vec(),
+            [0x11, 0x13, 0x0f].to_vec(),
+            [0x0f].to_vec(),
+            [0x13, 0x0f].to_vec(),
+        ].to_vec();
+
+        for i in 0..11 {
+            assert_eq!(expected[i], direct_path(i, 11).unwrap())
+        }
+    }
+
+    #[test]
+    fn test_copath_path() {
+        let expected: Vec<Vec<usize>> = [
+            [0x02, 0x05, 0x0b, 0x13].to_vec(),
+            [0x05, 0x0b, 0x13].to_vec(),
+            [0x00, 0x05, 0x0b, 0x13].to_vec(),
+            [0x0b, 0x13].to_vec(),
+            [0x06, 0x01, 0x0b, 0x13].to_vec(),
+            [0x01, 0x0b, 0x13].to_vec(),
+            [0x04, 0x01, 0x0b, 0x13].to_vec(),
+            [0x13].to_vec(),
+            [0x0a, 0x0d, 0x03, 0x13].to_vec(),
+            [0x0d, 0x03, 0x13].to_vec(),
+            [0x08, 0x0d, 0x03, 0x13].to_vec(),
+            [0x03, 0x13].to_vec(),
+            [0x0e, 0x09, 0x03, 0x13].to_vec(),
+            [0x09, 0x03, 0x13].to_vec(),
+            [0x0c, 0x09, 0x03, 0x13].to_vec(),
+            [].to_vec(),
+            [0x12, 0x14, 0x07].to_vec(),
+            [0x14, 0x07].to_vec(),
+            [0x10, 0x14, 0x07].to_vec(),
+            [0x07].to_vec(),
+            [0x11, 0x07].to_vec(),
+        ].to_vec();
+
+        for i in 0..11 {
+            assert_eq!(expected[i], copath(i, 11).unwrap())
+        }
     }
 }

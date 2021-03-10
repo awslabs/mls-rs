@@ -72,6 +72,22 @@ impl_openssl_hash!(Sha256, MessageDigest::sha256(), 32);
 impl_openssl_hash!(Sha512, MessageDigest::sha512(), 64);
 
 #[cfg(test)]
+pub mod test_util {
+    use mockall::mock;
+    use super::{ HashFunction, HashError };
+
+    mock! {
+        pub TestHashFunction {}
+        impl HashFunction for TestHashFunction {
+            const OUT_LEN: u16 = 0;
+            fn update(&mut self, data: &[u8]) -> Result<(), HashError>;
+            fn finish(&mut self) -> Result<Vec<u8>, HashError>;
+            fn hash(data: &[u8]) -> Result<Vec<u8>, HashError>;
+        }
+    }
+}
+
+#[cfg(test)]
 mod test {
     use crate::hash::{Sha256, HashFunction, Sha512};
 

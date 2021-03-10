@@ -1,7 +1,14 @@
 use crate::asym::{
-    p256, p521, x25519, x448, AsymmetricKey, AsymmetricKeyEngine, AsymmetricKeyError, EcdhEngine,
+    p256,
+    p521,
+    x25519,
+    x448,
+    AsymmetricKey,
+    AsymmetricKeyEngine,
+    AsymmetricKeyError,
+    EcdhEngine,
 };
-use crate::kdf::{HkdfSha256, HkdfSha512, KdfError, LabeledKdf};
+use crate::kdf::{HkdfSha256, HkdfSha512, KdfError};
 use rand_core::{CryptoRng, RngCore};
 use thiserror::Error;
 use serde::{Serialize, Deserialize};
@@ -20,23 +27,23 @@ pub struct KemResult {
 }
 
 pub trait Kem {
-    type KDF: LabeledKdf;
+    type KDF: HpkeKdf;
     type E: AsymmetricKeyEngine;
 
-    const KEM_ID: u16;
+    const KEM_ID: KemId;
     const N_SECRET: u16;
     const CURVE_BITMASK: Option<u8>;
 
     #[inline]
     fn kem_suite_id() -> Vec<u8> {
-        [b"KEM", &Self::KEM_ID.to_be_bytes() as &[u8]].concat()
+        [b"KEM", &(Self::KEM_ID as u16).to_be_bytes() as &[u8]].concat()
     }
 
     /*
     draft-irtf-cfrg-hpke section 4.1 DH-Based KEM
     */
-    fn encap<RNG: CryptoRng + RngCore>(
-        rng: RNG,
+    fn encap<RNG: CryptoRng + RngCore + 'static>(
+        rng: &mut RNG,
         remote_key: &<Self::E as AsymmetricKeyEngine>::PK,
     ) -> Result<KemResult, KemError>;
 
@@ -48,35 +55,26 @@ pub trait Kem {
         secret_key: &<Self::E as AsymmetricKeyEngine>::SK,
     ) -> Result<Vec<u8>, KemError>;
 
-    fn generate_kem_key_pair<RNG: CryptoRng + RngCore>(mut rng: RNG)
-                                                       -> Result<
-                                                           (
+    fn generate_kem_key_pair<RNG: CryptoRng + RngCore + 'static>(rng: &mut RNG) -> Result<(
                                                                <Self::E as AsymmetricKeyEngine>::PK,
                                                                <Self::E as AsymmetricKeyEngine>::SK,
-                                                           ),
-                                                           AsymmetricKeyError,
-                                                       > {
+                                                           ), AsymmetricKeyError> {
         let mut ikm: Vec<u8> = vec![0; Self::E::SK_LEN as usize];
         rng.try_fill_bytes(&mut ikm)?;
-        Self::derive_key_pair(&Self::kem_suite_id(), &ikm)
+        Self::derive_key_pair(&ikm)
     }
 
-    fn derive_key_pair(
-        id: &[u8],
-        ikm: &[u8],
-    ) -> Result<
-        (
-            <Self::E as AsymmetricKeyEngine>::PK,
-            <Self::E as AsymmetricKeyEngine>::SK,
-        ),
-        AsymmetricKeyError,
-    > {
-        let dkp_prk = Self::KDF::labeled_extract(id, &[], b"dkp_prk", ikm)?;
+    fn derive_key_pair(ikm: &[u8]) -> Result<(
+        <Self::E as AsymmetricKeyEngine>::PK,
+        <Self::E as AsymmetricKeyEngine>::SK
+    ), AsymmetricKeyError> {
+        let dkp_prk = Self::KDF::labeled_extract(&Self::kem_suite_id(),
+                                                 &[], b"dkp_prk", ikm)?;
 
         // NIST curves require a special behavior here to ensure correctness
         if let Some(curve_bitmask) = Self::CURVE_BITMASK {
             for i in 0u8..255 {
-                let mut bytes = Self::KDF::labeled_expand(id,
+                let mut bytes = Self::KDF::labeled_expand(&Self::kem_suite_id(),
                                                           &dkp_prk,
                                                           b"candidate",
                                                           &[i],
@@ -91,8 +89,9 @@ pub trait Kem {
             }
             Err(AsymmetricKeyError::KeyDerivationError())
         } else {
-            let dkp_prk = Self::KDF::labeled_extract(id, &[], b"dkp_prk", ikm)?;
-            let sk_vec = Self::KDF::labeled_expand(id,
+            let dkp_prk = Self::KDF::labeled_extract(&Self::kem_suite_id(),
+                                                     &[], b"dkp_prk", ikm)?;
+            let sk_vec = Self::KDF::labeled_expand(&Self::kem_suite_id(),
                                                    &dkp_prk,
                                                    b"sk",
                                                    &[],
@@ -111,8 +110,8 @@ where
     /*
     draft-irtf-cfrg-hpke section 4.1 DH-Based KEM
     */
-    fn ecdh_encap<RNG: CryptoRng + RngCore>(
-        rng: RNG,
+    fn ecdh_encap<RNG: CryptoRng + RngCore + 'static>(
+        rng: &mut RNG,
         remote_key: &<Self::E as AsymmetricKeyEngine>::PK,
     ) -> Result<KemResult, KemError> {
         let (pk_e, sk_e) =
@@ -158,6 +157,7 @@ where
 }
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use crate::hpke_kdf::HpkeKdf;
 
 #[derive(IntoPrimitive, TryFromPrimitive, Serialize, Deserialize, Clone, PartialEq, Debug)]
 #[serde(into = "u16", try_from = "u16")]
@@ -168,6 +168,8 @@ pub enum KemId {
     P521HkdfSha512 = 0x0012,
     X25519HkdfSha256 = 0x0020,
     X448HkdfSha512 = 0x0021,
+    #[cfg(test)]
+    Test = 0xFFFF,
 }
 
 impl KemId {
@@ -189,12 +191,12 @@ macro_rules! impl_ecdh_kem {
         {
             type KDF = $kdf;
             type E = $engine;
-            const KEM_ID: u16 = $kem_id;
+            const KEM_ID: KemId = $kem_id;
             const N_SECRET: u16 = $n_secret;
             const CURVE_BITMASK: Option<u8> = $curve_bitmask;
 
-            fn encap<RNG: CryptoRng + RngCore>(
-                rng: RNG,
+            fn encap<RNG: CryptoRng + RngCore + 'static>(
+                rng: &mut RNG,
                 remote_key: &<Self::E as AsymmetricKeyEngine>::PK,
             ) -> Result<KemResult, KemError> {
                 Self::ecdh_encap(rng, remote_key)
@@ -212,12 +214,56 @@ macro_rules! impl_ecdh_kem {
     };
 }
 
+#[cfg(test)]
+pub mod test_util {
+    use mockall::mock;
+    use super::{
+        Kem, KemId, KemError, KemResult,
+        CryptoRng, RngCore, AsymmetricKeyEngine
+    };
+    use crate::hpke_kdf::test_util::MockTestHpkeKdf;
+    use crate::asym::test_util::MockTestKeyEngine;
+    use crate::asym::AsymmetricKeyError;
+
+    mock! {
+        pub TestKem {}
+        impl Kem for TestKem {
+            type KDF = MockTestHpkeKdf;
+            type E = MockTestKeyEngine;
+
+            const KEM_ID: KemId = KemId::Test;
+            const N_SECRET: u16 = 42;
+            const CURVE_BITMASK: Option<u8> = None;
+
+            fn encap<RNG: CryptoRng + RngCore + 'static>(
+                rng: &mut RNG,
+                remote_key: &<<MockTestKem as Kem>::E as AsymmetricKeyEngine>::PK,
+            ) -> Result<KemResult, KemError>;
+
+            fn decap(
+                enc: &[u8],
+                secret_key: &<<MockTestKem as Kem>::E as AsymmetricKeyEngine>::SK,
+            ) -> Result<Vec<u8>, KemError>;
+
+            fn generate_kem_key_pair<RNG: CryptoRng + RngCore + 'static>(rng: &mut RNG) -> Result<(
+                <<MockTestKem as Kem>::E as AsymmetricKeyEngine>::PK,
+                <<MockTestKem as Kem>::E as AsymmetricKeyEngine>::SK
+            ), AsymmetricKeyError>;
+
+            fn derive_key_pair(ikm: &[u8],) -> Result<(
+                <<MockTestKem as Kem>::E as AsymmetricKeyEngine>::PK,
+                <<MockTestKem as Kem>::E as AsymmetricKeyEngine>::SK,
+            ), AsymmetricKeyError>;
+        }
+    }
+}
+
 /* draft-irtf-cfrg-hpke */
 impl_ecdh_kem!(
     P256HkdfSha256,
     HkdfSha256,
     p256::Engine,
-    KemId::P256HkdfSha256 as u16,
+    KemId::P256HkdfSha256,
     32,
     Some(0xFF)
 );
@@ -225,7 +271,7 @@ impl_ecdh_kem!(
     P521HkdfSha512,
     HkdfSha512,
     p521::Engine,
-    KemId::P521HkdfSha512 as u16,
+    KemId::P521HkdfSha512,
     64,
     Some(0x01)
 );
@@ -233,7 +279,7 @@ impl_ecdh_kem!(
     X25519HkdfSha256,
     HkdfSha256,
     x25519::Engine,
-    KemId::X25519HkdfSha256 as u16,
+    KemId::X25519HkdfSha256,
     32,
     None
 );
@@ -241,7 +287,7 @@ impl_ecdh_kem!(
     X448HkdfSha512,
     HkdfSha512,
     x448::Engine,
-    KemId::X448HkdfSha512 as u16,
+    KemId::X448HkdfSha512,
     64,
     None
 );

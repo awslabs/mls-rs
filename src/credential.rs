@@ -33,6 +33,14 @@ impl Credential {
     }
 }
 
+impl Verifier for Credential {
+    fn verify<T: Signable + 'static>(&self, signature: &[u8], data: &T) -> Result<bool, SignatureError> {
+        match self {
+            Credential::Basic(b) => b.verify(signature, data)
+        }
+    }
+}
+
 pub trait CredentialConvertable {
     fn to_credential(&self) -> Credential;
 }
@@ -94,6 +102,19 @@ mod test {
         let cred = get_test_basic_credential();
         let cred_sig_type = cred.get_signature_type().clone();
         assert_eq!(cred_sig_type, SignatureSchemeId::Test);
+    }
+
+    #[test]
+    fn test_credential_verify() {
+        let cred = get_test_basic_credential();
+        // The test signature function returns true if length is 0 for sig and data
+        let pass = vec![];
+        let fail = vec![0u8];
+
+        assert_eq!(cred.verify(&pass, &pass).expect("failed verify"), true);
+        assert_eq!(cred.verify(&fail, &fail).expect("failed verify"), false);
+        assert_eq!(cred.verify(&pass, &fail).expect("failed verify"), false);
+        assert_eq!(cred.verify(&fail, &pass).expect("failed verify"), false);
     }
 
     #[test]

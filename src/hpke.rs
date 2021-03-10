@@ -1,10 +1,11 @@
 use crate::kem::{Kem, KemError, X25519HkdfSha256, P256HkdfSha256, P521HkdfSha512, X448HkdfSha512};
 use thiserror::Error;
 use crate::asym::{AsymmetricKeyEngine};
-use crate::kdf::{Kdf, LabeledKdf, KdfError};
+use crate::kdf::{Kdf, KdfError};
 use crate::aead::{ Cipher, CipherError, aes, chacha20 };
 use rand_core::{CryptoRng, RngCore};
 use std::fmt::Debug;
+use crate::hpke_kdf::HpkeKdf;
 
 #[derive(Error, Debug)]
 pub enum HPKEError {
@@ -44,12 +45,12 @@ pub struct KeySchedule {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct Context<CT: Cipher + PartialEq + Debug> {
+pub struct Context<CT: Cipher> {
     key_schedule: KeySchedule,
     cipher: CT
 }
 
-impl <CT: Cipher + PartialEq + Debug> Context<CT> {
+impl <CT: Cipher> Context<CT> {
     #[inline]
     //draft-irtf-cfrg-hpke Section 5.2.  Encryption and Decryption
     fn compute_nonce(&self) -> Vec<u8> {
@@ -80,7 +81,7 @@ impl <CT: Cipher + PartialEq + Debug> Context<CT> {
     /*
     draft-irtf-cfrg-hpke section 6.1. Encryption and Decryption
     */
-    pub fn seal(&mut self, aad: Option<&[u8]>, pt: &[u8]) -> Result<Vec<u8>, HPKEError> {
+    pub fn seal(&mut self, aad: &[u8], pt: &[u8]) -> Result<Vec<u8>, HPKEError> {
         let nonce = self.compute_nonce();
         let ct = self.cipher.encrypt(pt, aad, &nonce)?;
         self.increment_seq()?;
@@ -90,12 +91,17 @@ impl <CT: Cipher + PartialEq + Debug> Context<CT> {
     /*
     draft-irtf-cfrg-hpke section 6.1. Encryption and Decryption
     */
-    pub fn open(&mut self, ct: &Vec<u8>,
-                aad: Option<&[u8]>) -> Result<Vec<u8>, HPKEError> {
+    pub fn open(&mut self, ct: &[u8],
+                aad: &[u8]) -> Result<Vec<u8>, HPKEError> {
         let pt = self.cipher.decrypt(&self.compute_nonce(), ct, aad)?;
         self.increment_seq()?;
         Ok(pt)
     }
+}
+
+pub struct HPKECiphertext {
+    pub kem_output: Vec<u8>,
+    pub ciphertext: Vec<u8>,
 }
 
 pub trait Hpke: Sized {
@@ -106,9 +112,9 @@ pub trait Hpke: Sized {
     fn get_suite_id() -> Vec<u8> {
         [
             b"HPKE",
-            &Self::KEM::KEM_ID.to_be_bytes() as &[u8],
-            &<Self::KEM as Kem>::KDF::KDF_ID.to_be_bytes() as &[u8],
-            &Self::CT::CIPHER_ID.to_be_bytes() as &[u8]
+            &(Self::KEM::KEM_ID as u16).to_be_bytes() as &[u8],
+            &(<Self::KEM as Kem>::KDF::KDF_ID as u16).to_be_bytes() as &[u8],
+            &(Self::CT::CIPHER_ID as u16).to_be_bytes() as &[u8]
         ].concat()
     }
 
@@ -181,8 +187,8 @@ pub trait Hpke: Sized {
         })
     }
 
-    fn setup_basic_sender<RNG: CryptoRng + RngCore>(
-        rng: RNG,
+    fn setup_basic_sender<RNG: CryptoRng + RngCore + 'static>(
+        rng: &mut RNG,
         remote_key: &<<Self::KEM as Kem>::E as AsymmetricKeyEngine>::PK,
         info: &[u8]
     ) -> Result<(Vec<u8>, Context<Self::CT>), HPKEError> {
@@ -230,65 +236,84 @@ pub trait Hpke: Sized {
     /*
     draft-irtf-cfrg-hpke section 6 Single-Shot APIs
     */
-    fn seal_basic<RNG: CryptoRng + RngCore>(
-        rng: RNG,
+    fn seal_basic<RNG: CryptoRng + RngCore + 'static>(
+        rng: &mut RNG,
         remote_key: &<<Self::KEM as Kem>::E as AsymmetricKeyEngine>::PK,
-        info: &[u8], aad: Option<&[u8]>, pt: &[u8]) -> Result<(Vec<u8>, Vec<u8>), HPKEError> {
+        info: &[u8], aad: &[u8], pt: &[u8]) -> Result<HPKECiphertext, HPKEError> {
         let (enc, mut ctx) = Self::setup_basic_sender(rng,
                                                       remote_key,
                                                       info)?;
-        Ok((enc, ctx.seal(aad, pt)?))
+
+        Ok(HPKECiphertext {
+            kem_output: enc,
+            ciphertext: ctx.seal(aad, pt)?
+        })
     }
 
-    fn open_basic(enc: &[u8],
+    fn open_basic(ciphertext: &HPKECiphertext,
                   local_secret: &<<Self::KEM as Kem>::E as AsymmetricKeyEngine>::SK, info: &[u8],
-                  aad: Option<&[u8]>,
-                  ciphertext: &Vec<u8>) -> Result<Vec<u8>, HPKEError> {
-        let mut hpke_ctx = Self::setup_basic_receiver(enc, local_secret, info)?;
-        hpke_ctx.open(ciphertext, aad)
+                  aad: &[u8]) -> Result<Vec<u8>, HPKEError> {
+        let mut hpke_ctx = Self::setup_basic_receiver(&ciphertext.kem_output, local_secret, info)?;
+        hpke_ctx.open(&ciphertext.ciphertext, aad)
     }
 }
 
-struct X25519HkdfSha256Aes128Gcm();
+pub struct X25519HkdfSha256Aes128Gcm();
 
 impl Hpke for X25519HkdfSha256Aes128Gcm {
     type CT = aes::Gcm128;
     type KEM = X25519HkdfSha256;
 }
 
-struct X25519HkdfSha256ChaCha20();
+pub struct X25519HkdfSha256ChaCha20();
 
 impl Hpke for X25519HkdfSha256ChaCha20 {
     type CT = chacha20::Poly1305;
     type KEM = X25519HkdfSha256;
 }
 
-struct P256HkdfSha256Aes128Gcm();
+pub struct P256HkdfSha256Aes128Gcm();
 
 impl Hpke for P256HkdfSha256Aes128Gcm {
     type CT = aes::Gcm128;
     type KEM = P256HkdfSha256;
 }
 
-struct P521HkdfSha512Aes256Gcm();
+pub struct P521HkdfSha512Aes256Gcm();
 
 impl Hpke for P521HkdfSha512Aes256Gcm {
     type CT = aes::Gcm256;
     type KEM = P521HkdfSha512;
 }
 
-struct X448HkdfSha512Aes256Gcm();
+pub struct X448HkdfSha512Aes256Gcm();
 
 impl Hpke for X448HkdfSha512Aes256Gcm {
     type CT = aes::Gcm256;
     type KEM = X448HkdfSha512;
 }
 
-struct X448HkdfSha512ChaCha20();
+pub struct X448HkdfSha512ChaCha20();
 
 impl Hpke for X448HkdfSha512ChaCha20 {
     type CT = chacha20::Poly1305;
     type KEM = X448HkdfSha512;
+}
+
+#[cfg(test)]
+pub(crate) mod test_util {
+    use mockall::mock;
+    use crate::aead::test_util::MockTestCipher;
+    use crate::kem::test_util::MockTestKem;
+    use super::Hpke;
+
+    mock! {
+        pub TestHpke {}
+        impl Hpke for TestHpke {
+            type CT = MockTestCipher;
+            type KEM = MockTestKem;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -316,9 +341,9 @@ mod tests {
 
     fn setup_sender<OUT: Hpke>(ikm_e: &Vec<u8>, pk_rm: &Vec<u8>, info: &Vec<u8>) -> (Vec<u8>, super::Context<OUT::CT>) {
         /* Force the input of the ecdh ephemeral key generation to be what we need */
-        let sender_rng = OneValRng { val: ikm_e.clone() };
+        let mut sender_rng = OneValRng { val: ikm_e.clone() };
         let remote_key = <<OUT::KEM as Kem>::E as AsymmetricKeyEngine>::PK::from_bytes(pk_rm).unwrap();
-        OUT::setup_basic_sender(sender_rng, &remote_key, info).unwrap()
+        OUT::setup_basic_sender(&mut sender_rng, &remote_key, info).unwrap()
     }
 
     fn setup_receiver<OUT: Hpke>(enc: &Vec<u8>, sk_rm: &Vec<u8>, info: &Vec<u8>) -> super::Context<OUT::CT> {
@@ -340,12 +365,12 @@ mod tests {
 
         vector.encryptions.iter().enumerate().for_each(|(seq, one_vector)| {
             /* Encrypt */
-            let ct = s_context.seal(Some(&one_vector.aad.clone()), &one_vector.plaintext).unwrap();
+            let ct = s_context.seal(&one_vector.aad.clone(), &one_vector.plaintext).unwrap();
             assert_eq_hpke!(ct, *one_vector.ciphertext, vector);
             assert_eq_hpke!(s_context.key_schedule.seq_number, seq as u64 + 1, vector);
 
             /* Decrypt */
-            let pt = r_context.open(&ct, Some(&one_vector.aad.clone())).unwrap();
+            let pt = r_context.open(&ct, &one_vector.aad.clone()).unwrap();
             assert_eq_hpke!(pt, *one_vector.plaintext, vector);
             assert_eq_hpke!(s_context, r_context, vector);
         })
