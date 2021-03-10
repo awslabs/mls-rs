@@ -18,7 +18,7 @@ pub enum CipherError {
 }
 
 pub trait Cipher: Sized {
-    const CIPHER_ID: u16;
+    const CIPHER_ID: AeadId;
     const KEY_LEN: u16;
     const NONCE_LEN: u16;
     const TAG_LEN: u16;
@@ -27,13 +27,13 @@ pub trait Cipher: Sized {
 
     fn encrypt(&self,
                data: &[u8],
-               aad: Option<&[u8]>,
+               aad: &[u8],
                nonce: &[u8]) -> Result<Vec<u8>, CipherError>;
 
     fn decrypt(&self,
                nonce: &[u8],
                cipher_text: &[u8],
-               aad: Option<&[u8]>) -> Result<Vec<u8>, CipherError>;
+               aad: &[u8]) -> Result<Vec<u8>, CipherError>;
 }
 
 #[macro_use]
@@ -44,13 +44,13 @@ mod ossl {
     pub fn encrypt(cipher: openssl::symm::Cipher,
                    key: &[u8],
                    data: &[u8],
-                   aad: Option<&[u8]>,
+                   aad: &[u8],
                    nonce: &[u8]) -> Result<(Vec<u8>, Vec<u8>), ErrorStack> {
         let mut tag_out = vec![0; 16];
         let encrypted = encrypt_aead(cipher,
                                      &key,
                                      Some(nonce),
-                                     &aad.unwrap_or(&Vec::new()),
+                                     aad,
                                      data,
                                      &mut tag_out)?;
 
@@ -61,12 +61,12 @@ mod ossl {
                    key: &[u8],
                    ciphertext: &[u8],
                    nonce: &[u8],
-                   aad: Option<&[u8]>,
+                   aad: &[u8],
                    tag: &[u8]) -> Result<Vec<u8>, ErrorStack> {
         decrypt_aead(cipher,
                      key,
                      Some(nonce),
-                     aad.unwrap_or(&Vec::new()),
+                     aad,
                      ciphertext,
                      tag)
     }
@@ -80,7 +80,7 @@ mod ossl {
             }
 
             impl Cipher for $name {
-                const CIPHER_ID: u16 = $cipher_id;
+                const CIPHER_ID: AeadId = $cipher_id;
                 const KEY_LEN: u16 = $key_len;
                 const NONCE_LEN: u16 = $nonce_len;
                 const TAG_LEN: u16 = $tag_len;
@@ -94,7 +94,7 @@ mod ossl {
                 }
 
                 fn encrypt(&self, data: &[u8],
-                    aad: Option<&[u8]>, nonce: &[u8]) -> Result<Vec<u8>, CipherError> {
+                    aad: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CipherError> {
                     let (ciphertext, tag) = super::ossl::encrypt(
                         $cipher,
                         &self.key,
@@ -105,7 +105,7 @@ mod ossl {
                 }
 
                 fn decrypt(&self, nonce: &[u8], ciphertext: &[u8],
-                    aad: Option<&[u8]>) -> Result<Vec<u8>, CipherError> {
+                    aad: &[u8]) -> Result<Vec<u8>, CipherError> {
                     let ct = ciphertext.get(0..ciphertext.len() - Self::TAG_LEN as usize);
                     let tag = ciphertext.get(ciphertext.len() - (Self::TAG_LEN as usize)..ciphertext.len());
 
@@ -129,8 +129,8 @@ mod ossl {
 pub mod aes {
     use super::{Cipher, CipherError};
     use crate::aead::AeadId;
-    openssl_aead!(Gcm128, openssl::symm::Cipher::aes_128_gcm(), AeadId::Aes128Gcm as u16, 16, 12, 16);
-    openssl_aead!(Gcm256, openssl::symm::Cipher::aes_256_gcm(), AeadId::Aes256Gcm as u16, 32, 12, 16);
+    openssl_aead!(Gcm128, openssl::symm::Cipher::aes_128_gcm(), AeadId::Aes128Gcm, 16, 12, 16);
+    openssl_aead!(Gcm256, openssl::symm::Cipher::aes_256_gcm(), AeadId::Aes256Gcm, 32, 12, 16);
 
     #[cfg(test)]
     mod tests {
@@ -165,7 +165,7 @@ pub mod aes {
                 key: hex!("387218b246c1a8257748b56980e50c94"),
                 iv: hex!("dd7e014198672be39f95b69d"),
                 ct: hex!("cdba9e73eaf3d38eceb2b04a8decf90f4a47c9c626d6fb2c765d201556"),
-                aad: None,
+                aad: Vec::new(),
                 pt: hex!("48f5b426baca03064554cc2b30")
             };
 
@@ -178,7 +178,7 @@ pub mod aes {
                 key: hex!("660eb76f3d8b6ec54e01b8a36263124b"),
                 iv: hex!("3d8cf16e262880ddfe0c86eb"),
                 ct: hex!("b1ee05f1415a61d7637e97c5f3761cb84a963e1db1a4ab2c5f904c09db"),
-                aad: Some(hex!("8560b10c011a1d4190eb46a3692daa17")),
+                aad: hex!("8560b10c011a1d4190eb46a3692daa17"),
                 pt: hex!("2efbaedfec3cfe4ac32f201fa5")
             };
 
@@ -191,7 +191,7 @@ pub mod aes {
                 key: hex!("a71dac1377a3bf5d7fb1b5e36bee70d2e01de2a84a1c1009ba7448f7f26131dc"),
                 iv: hex!("c5b60dda3f333b1146e9da7c"),
                 ct: hex!("43af49ec1ae3738a20755034d66f80b6ef2d8830a55eb63680a8dff9e0"),
-                aad: None,
+                aad: Vec::new(),
                 pt: hex!("5b87141335f2becac1a559e05f")
             };
 
@@ -204,7 +204,7 @@ pub mod aes {
                 key: hex!("aef220035cbb9e47ce605698aa28e3b0ba50b4ffcd473bb8da2017889b38055f"),
                 iv: hex!("cde7af095360ea827778761d"),
                 ct: hex!("bb1cdf25717445e5a77444d488387aeee72340deabc1589125e9e4a2755512c7"),
-                aad: Some(hex!("f269837306abbcee2da1722f28be35163e3d8567")),
+                aad: hex!("f269837306abbcee2da1722f28be35163e3d8567"),
                 pt: hex!("9775db638e5d964fc9c70b5fe456ec14")
             };
 
@@ -224,7 +224,7 @@ pub mod chacha20 {
     }
 
     impl Cipher for Poly1305 {
-        const CIPHER_ID: u16 = AeadId::ChaCha20Poly1305 as u16;
+        const CIPHER_ID: AeadId = AeadId::ChaCha20Poly1305;
         const KEY_LEN: u16 = 32;
         const NONCE_LEN: u16 = 12;
         const TAG_LEN: u16 = 16;
@@ -238,7 +238,7 @@ pub mod chacha20 {
         }
 
         fn encrypt(&self, data: &[u8],
-                   aad: Option<&[u8]>, nonce: &[u8]) -> Result<Vec<u8>, CipherError> {
+                   aad: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CipherError> {
             let key = Key::from_slice(&self.key);
             let cipher = ChaCha20Poly1305::new(key);
 
@@ -247,17 +247,17 @@ pub mod chacha20 {
             }
 
             let nonce = Nonce::from_slice(nonce);
-            let payload = Payload { msg: data, aad: aad.unwrap_or(&[]) };
+            let payload = Payload { msg: data, aad };
 
             cipher.encrypt(&nonce, payload)
                 .map_err(|e| CipherError::ChaCha20Error(e))
         }
 
         fn decrypt(&self, nonce: &[u8],
-                   cipher_text: &[u8], aad: Option<&[u8]>) -> Result<Vec<u8>, CipherError> {
+                   cipher_text: &[u8], aad: &[u8]) -> Result<Vec<u8>, CipherError> {
             let key = Key::from_slice(&self.key);
             let cipher = ChaCha20Poly1305::new(key);
-            let payload = Payload { msg: cipher_text, aad:aad.unwrap_or(&[]) };
+            let payload = Payload { msg: cipher_text, aad };
             let nonce = Nonce::from_slice(nonce);
 
             cipher.decrypt(&nonce, payload)
@@ -294,7 +294,7 @@ pub mod chacha20 {
                           6053fa76991955ebd63159434ecebb4e466dae5a1073a6727627097a1049e617d\
                           91d361094fa68f0ff77987130305beaba2eda04df997b714d6c6f2c29a6ad5cb4\
                           022b02709b6e3570b1acaaf1f24f2a644f01acd12b"),
-                aad: None,
+                aad: Vec::new(),
                 pt: hex!("496e7465726e65742d4472616674732061726520647261667420646f63756d656\
                 e74732076616c696420666f722061206d6178696d756d206f6620736978206d6f6e74687320\
                 616e64206d617920626520757064617465642c207265706c616365642c206f72206f62736f6\
@@ -322,7 +322,7 @@ pub mod chacha20 {
                           6053fa76991955ebd63159434ecebb4e466dae5a1073a6727627097a1049e617d\
                           91d361094fa68f0ff77987130305beaba2eda04df997b714d6c6f2c29a6ad5cb4\
                           022b02709beead9d67890cbb22392336fea1851f38"),
-                aad: Some(hex!("f33388860000000000004e91")),
+                aad: hex!("f33388860000000000004e91"),
                 pt: hex!("496e7465726e65742d4472616674732061726520647261667420646f63756d656\
                 e74732076616c696420666f722061206d6178696d756d206f6620736978206d6f6e74687320\
                 616e64206d617920626520757064617465642c207265706c616365642c206f72206f62736f6\
@@ -346,6 +346,8 @@ pub enum AeadId {
     Aes256Gcm = 0x0002,
     ChaCha20Poly1305 = 0x0003,
     Unknown = 0xFFFF,
+    #[cfg(test)]
+    Test = 0x0000,
 }
 
 impl AeadId {
@@ -365,7 +367,7 @@ mod test {
         pub key: Vec<u8>,
         pub iv: Vec<u8>,
         pub ct: Vec<u8>,
-        pub aad: Option<Vec<u8>>,
+        pub aad: Vec<u8>,
         pub pt: Vec<u8>
     }
 
@@ -374,13 +376,13 @@ mod test {
             .expect("failed to create cipher");
 
         let cipher_text = cipher.encrypt(&case.pt,
-                                         case.aad.as_deref(), &case.iv)
+                                         &case.aad, &case.iv)
             .expect("failed to cipher");
 
         assert_eq!(cipher_text, case.ct);
 
         let plaintext = cipher.decrypt(&case.iv,
-                                       &cipher_text, case.aad.as_deref())
+                                       &cipher_text, &case.aad)
             .expect("failed to decrypt");
 
         assert_eq!(plaintext, case.pt);
@@ -388,11 +390,54 @@ mod test {
         // Test for handling a ciphertext with a bad tag as well as incorrect aad
         assert_eq!(cipher.decrypt(&case.iv,
                                   &vec![0; case.ct.len()],
-                                  case.aad.as_deref()).is_err(), true);
+                                  &case.aad).is_err(), true);
 
         assert_eq!(cipher.decrypt(&case.iv,
                                   &case.ct,
-                                  Some(&vec![0; 10])).is_err(), true);
+                                  &vec![0; 10]).is_err(), true);
+    }
+}
+
+#[cfg(test)]
+pub mod test_util {
+    use mockall::mock;
+    use super::{AeadId, Cipher, CipherError};
+    use std::fmt::{Debug, Formatter};
+    use core::fmt;
+
+    mock! {
+        pub TestCipher {}
+
+        impl Cipher for TestCipher {
+            const CIPHER_ID: AeadId = AeadId::Test;
+            const KEY_LEN: u16 = 0;
+            const NONCE_LEN: u16 = 0;
+            const TAG_LEN: u16 = 0;
+
+            fn new(key: Vec<u8>) -> Result<Self, CipherError>;
+
+            fn encrypt(&self,
+                       data: &[u8],
+                       aad: &[u8],
+                       nonce: &[u8]) -> Result<Vec<u8>, CipherError>;
+
+            fn decrypt(&self,
+                       nonce: &[u8],
+                       cipher_text: &[u8],
+                       aad: &[u8]) -> Result<Vec<u8>, CipherError>;
+        }
+    }
+
+    impl PartialEq for MockTestCipher {
+        fn eq(&self, other: &Self) -> bool {
+            true
+        }
+    }
+
+    impl Debug for MockTestCipher {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            unimplemented!()
+        }
     }
 }
 

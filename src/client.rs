@@ -2,11 +2,20 @@ use crate::credential::Credential;
 use crate::signature::{Signer, SignatureError, Signable, SignatureSchemeId, ed25519};
 use rand_core::{RngCore, CryptoRng};
 use crate::extension::{Lifetime, Capabilities, ExtensionTrait, ExtensionError, Extension};
-use crate::key_package::{KeyPackageData, KeyPackage, KeyPackageSecret};
-use crate::ciphersuite::{CipherSuite, CipherSuiteError};
+use crate::key_package::{KeyPackageData, KeyPackage, KeyPackageSecret, KeyPackageGenerator, KeyPackageGeneration, KeyPackageError};
+use crate::ciphersuite::{CipherSuiteError};
 use crate::asym::{AsymmetricKey};
 use serde::{Serialize, Deserialize};
 use thiserror::Error;
+use cfg_if::cfg_if;
+
+cfg_if! {
+    if #[cfg(test)] {
+        use crate::ciphersuite::test_util::MockCipherSuite as CipherSuite;
+    } else {
+        use crate::ciphersuite::{CipherSuite};
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum ClientError {
@@ -28,7 +37,7 @@ pub struct Client {
 
 impl Client {
     #[inline]
-    pub (crate) fn get_extensions(&self) -> Result<Vec<Extension>, ClientError> {
+    pub (crate) fn get_extensions(&self) -> Result<Vec<Extension>, ExtensionError> {
         Ok(vec![self.capabilities.to_extension()?, self.key_lifetime.to_extension()?])
     }
 }
@@ -56,37 +65,24 @@ impl Signer for Client {
     }
 }
 
-impl Client {
-
-    pub fn gen_init_key_package<RNG: RngCore + CryptoRng>(
-        &self,
-        rng: RNG,
-        cipher_suite: &CipherSuite,
-    ) -> Result<(KeyPackageSecret, KeyPackage) ,ClientError> {
-        let kem_key_pair = cipher_suite.generate_kem_key_pair(rng)?;
-
+impl KeyPackageGenerator for Client {
+    fn package_from_pub_key(
+        &self, cipher_suite: &CipherSuite, pub_key: Vec<u8>
+    ) -> Result<KeyPackage, KeyPackageError> {
         let package_data = KeyPackageData {
             version: cipher_suite.get_protocol_version(),
             cipher_suite: cipher_suite.clone(),
-            hpke_init_key: kem_key_pair.public_key,
+            hpke_init_key: pub_key,
             credential: self.credential.clone(),
             extensions: self.get_extensions()?
         };
 
         let signature = self.sign(&package_data)?;
 
-        let package = KeyPackage {
+        Ok(KeyPackage {
             data: package_data,
             signature
-        };
-
-        let secret = KeyPackageSecret {
-            cipher_suite: cipher_suite.clone(),
-            hpke_secret_key: kem_key_pair.secret_key,
-            extensions: vec![self.capabilities.to_extension()?, self.key_lifetime.to_extension()?]
-        };
-
-        Ok((secret, package))
+        })
     }
 }
 
@@ -98,11 +94,12 @@ mod test {
     use crate::credential::{Credential, BasicCredential, CredentialConvertable};
     use crate::asym::AsymmetricKey;
     use crate::extension::Lifetime;
-    use crate::ciphersuite::CipherSuite;
-    use crate::key_package::{KeyPackageData, KeyPackageSecret};
+    use crate::ciphersuite::test_util::MockCipherSuite;
+    use crate::key_package::{KeyPackageData, KeyPackageSecret, KeyPackageGenerator};
     use crate::protocol_version::ProtocolVersion;
     use crate::signature::test_utils::{get_test_signer, get_test_verifier};
     use crate::rand::OpenSslRng;
+    use crate::ciphersuite::KemKeyPair;
 
     fn get_test_client<SS: SignatureScheme>(sig_scheme: &SS) -> Client {
         let signature_key = sig_scheme.as_public_signature_key().expect("failed sig key");
@@ -146,6 +143,21 @@ mod test {
         test_signature(&client, sig_scheme.get_verifier())
     }
 
+    fn get_mock_cipher_suite() -> MockCipherSuite {
+        let mut cipher_suite = MockCipherSuite::new();
+
+        cipher_suite.expect_generate_kem_key_pair().return_once_st(move |_: &ZerosRng|
+            Ok(KemKeyPair {
+                public_key: vec![0u8; 4],
+                secret_key: vec![255u8; 4]
+            })
+        );
+
+        cipher_suite.expect_get_id().return_const(42u16);
+        cipher_suite.expect_get_protocol_version().return_const(ProtocolVersion::Test);
+        cipher_suite
+    }
+
     #[test]
     fn test_key_package_generation() {
         let mut mock_sig_scheme = MockTestSignatureScheme::new();
@@ -157,33 +169,29 @@ mod test {
             .return_const(get_test_verifier(&b"test".to_vec()));
 
         let client = get_test_client(&mock_sig_scheme);
-        let ciphersuite = CipherSuite::MLS10_TEST;
 
-        let (sec_package, pub_package) = client
-            .gen_init_key_package(ZerosRng, &ciphersuite)
+        let mut mock_cipher_suite = get_mock_cipher_suite();
+        mock_cipher_suite.expect_clone().returning_st(move || get_mock_cipher_suite());
+
+        let key_package_generation = client
+            .gen_key_package(&mut ZerosRng, &mock_cipher_suite)
             .expect("key error");
 
-        let expected_sec_package = KeyPackageSecret {
-            cipher_suite: ciphersuite.clone(),
-            hpke_secret_key: vec![0u8; 4],
-            extensions: client.get_extensions().expect("failed extensions")
-        };
-
-        assert_eq!(expected_sec_package, sec_package);
+        assert_eq!(key_package_generation.secret_key, vec![255u8; 4]);
 
         let expected_package_data = KeyPackageData {
             version: ProtocolVersion::Test,
-            cipher_suite: ciphersuite.clone(),
+            cipher_suite: get_mock_cipher_suite(),
             hpke_init_key: vec![0u8; 4],
             credential: client.credential.clone(),
             extensions: client.get_extensions().expect("failed extensions")
         };
 
-        assert_eq!(pub_package.data, expected_package_data);
+        assert_eq!(key_package_generation.key_package.data, expected_package_data);
 
         // The signature function for testing is just returning the input it receives
-        assert_eq!(pub_package.signature,
-                   pub_package.data.to_signable_vec()
+        assert_eq!(key_package_generation.key_package.signature,
+                   key_package_generation.key_package.data.to_signable_vec()
                        .expect("failed signing"))
     }
 }
