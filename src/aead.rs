@@ -429,13 +429,13 @@ pub mod test_util {
     }
 
     impl PartialEq for MockTestCipher {
-        fn eq(&self, other: &Self) -> bool {
+        fn eq(&self, _other: &Self) -> bool {
             true
         }
     }
 
     impl Debug for MockTestCipher {
-        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        fn fmt(&self, _f: &mut Formatter<'_>) -> fmt::Result {
             unimplemented!()
         }
     }

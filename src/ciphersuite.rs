@@ -1,8 +1,6 @@
-use crate::aead;
-use crate::asym::{AsymmetricKeyError, AsymmetricKeyEngine, PublicKey, SecretKey};
+use crate::asym::{AsymmetricKeyError, PublicKey, SecretKey};
 use crate::hash;
-use crate::hash::HashFunction;
-use crate::kem;
+use crate::hash::{HashFunction, HashError, Mac};
 use crate::hpke;
 use crate::kdf;
 use crate::kem::Kem;
@@ -14,10 +12,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use crate::asym::AsymmetricKey;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use crate::kdf::{Kdf, KdfError, KdfId};
+use crate::kdf::{Kdf};
 use crate::key_schedule::KeyScheduleKdf;
 use crate::hpke::{Hpke, HPKEError, HPKECiphertext};
-use crate::aead::Cipher;
+use crate::aead::{Cipher, aes, chacha20, CipherError};
 
 #[derive(IntoPrimitive, TryFromPrimitive, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[repr(u16)]
@@ -42,13 +40,17 @@ pub enum CipherSuiteError {
     #[error(transparent)]
     KdfError(#[from] kdf::KdfError),
     #[error(transparent)]
-    HpkeError(#[from] HPKEError)
+    HpkeError(#[from] HPKEError),
+    #[error(transparent)]
+    HashError(#[from] HashError),
+    #[error(transparent)]
+    CipherError(#[from] CipherError)
 }
 
 pub trait CipherSuiteType {
     type HPKE: Hpke;
     type KDF: KeyScheduleKdf;
-    type AEAD: aead::Cipher;
+    type AEAD: Cipher;
     type H: HashFunction;
     type SS: SignatureScheme;
 
@@ -75,9 +77,28 @@ pub trait CipherSuiteType {
         Self::PROTOCOL_VERSION
     }
 
+    fn extract_size() -> u16 {
+        Self::KDF::EXTRACT_SIZE
+    }
+
+    fn hmac(key: &[u8], message: &[u8]) -> Result<Mac, CipherSuiteError> {
+        Self::H::hmac(key, message).map_err(|e| e.into())
+    }
+
+    fn hash(value: &[u8]) -> Result<Vec<u8>, CipherSuiteError> {
+        Self::H::hash(value).map_err(|e| e.into())
+    }
+
     fn generate_leaf_secret<RNG: CryptoRng + RngCore + 'static>
         (rng: &mut RNG) -> Result<Vec<u8>, CipherSuiteError> {
         let mut ret = vec![0u8; <<Self::HPKE as Hpke>::KEM as Kem>::N_SECRET as usize];
+        rng.try_fill_bytes(&mut ret)?;
+        Ok(ret)
+    }
+
+    fn generate_init_secret<RNG: CryptoRng + RngCore + 'static>
+    (rng: &mut RNG) -> Result<Vec<u8>, CipherSuiteError> {
+        let mut ret = vec![0u8; Self::KDF::EXTRACT_SIZE as usize];
         rng.try_fill_bytes(&mut ret)?;
         Ok(ret)
     }
@@ -86,10 +107,21 @@ pub trait CipherSuiteType {
         Self::KDF::extract(salt, key).map_err(|e| e.into())
     }
 
+    fn expand(secret: &[u8], info: &[u8], e_type: ExpandType) -> Result<Vec<u8>, CipherSuiteError> {
+        let len = match e_type {
+            ExpandType::Secret => Self::KDF::EXTRACT_SIZE,
+            ExpandType::AeadKey => Self::AEAD::KEY_LEN,
+            ExpandType::AeadNonce => Self::AEAD::NONCE_LEN
+        };
+
+        Self::KDF::expand(&secret, info, len).map_err(|e| e.into())
+    }
+
     fn expand_with_label(secret: &[u8], label: &str, context: &[u8], e_type: ExpandType) -> Result<Vec<u8>, CipherSuiteError> {
         let len = match e_type {
             ExpandType::Secret => Self::KDF::EXTRACT_SIZE,
-            ExpandType::Aead => Self::AEAD::KEY_LEN
+            ExpandType::AeadKey => Self::AEAD::KEY_LEN,
+            ExpandType::AeadNonce => Self::AEAD::NONCE_LEN
         };
 
         Self::KDF::expand_with_label(secret, label, context, len)
@@ -103,7 +135,8 @@ pub trait CipherSuiteType {
     fn derive_tree_secret(secret: &[u8], label: &str, node: u32, generation: u32, e_type: ExpandType) -> Result<Vec<u8>, CipherSuiteError> {
         let len = match e_type {
             ExpandType::Secret => Self::KDF::EXTRACT_SIZE,
-            ExpandType::Aead => Self::AEAD::KEY_LEN
+            ExpandType::AeadKey => Self::AEAD::KEY_LEN,
+            ExpandType::AeadNonce => Self::AEAD::NONCE_LEN,
         };
         Self::KDF::derive_tree_secret(secret, label, node, generation, len)
             .map_err(|e| e.into())
@@ -134,6 +167,16 @@ pub trait CipherSuiteType {
         Self::HPKE::open_basic(ct, &secret_key, &[], aad)
             .map_err(|e| e.into())
     }
+
+    fn aead_encrypt(key: Vec<u8>, plaintext: &[u8], aad: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CipherSuiteError> {
+        let aead = Self::AEAD::new(key)?;
+        aead.encrypt(plaintext, aad, nonce).map_err(|e| e.into())
+    }
+
+    fn aead_decrypt(key: Vec<u8>, ciphertext: &[u8], aad: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CipherSuiteError> {
+        let aead = Self::AEAD::new(key)?;
+        aead.decrypt(nonce, ciphertext, aad).map_err(|e| e.into())
+    }
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -142,10 +185,11 @@ pub struct KemKeyPair {
     pub secret_key: Vec<u8>
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum ExpandType {
     Secret,
-    Aead
+    AeadKey,
+    AeadNonce
 }
 
 impl CipherSuite {
@@ -163,6 +207,74 @@ impl CipherSuite {
             }
             CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521 => {
                 Mls10DhKemP521Aes256GcmSha512P521::generate_leaf_secret(rng)
+            }
+        }
+    }
+
+    pub fn extract_size(&self) -> u16 {
+        match self {
+            CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519 => {
+                Mls10DhKem25519Aes128GcmSha256Ed25519::extract_size()
+            }
+            CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256 => {
+                Mls10DhKemP256Aes128GcmSha256P256::extract_size()
+            }
+            CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519 => {
+                Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::extract_size()
+            }
+            CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521 => {
+                Mls10DhKemP521Aes256GcmSha512P521::extract_size()
+            }
+        }
+    }
+
+    pub fn hmac(&self, key: &[u8], message: &[u8]) -> Result<Mac, CipherSuiteError> {
+        match self {
+            CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519 => {
+                Mls10DhKem25519Aes128GcmSha256Ed25519::hmac(key, message)
+            }
+            CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256 => {
+                Mls10DhKemP256Aes128GcmSha256P256::hmac(key, message)
+            }
+            CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519 => {
+                Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::hmac(key, message)
+            }
+            CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521 => {
+                Mls10DhKemP521Aes256GcmSha512P521::hmac(key, message)
+            }
+        }
+    }
+
+    pub fn hash(&self, value: &[u8]) -> Result<Vec<u8>, CipherSuiteError> {
+        match self {
+            CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519 => {
+                Mls10DhKem25519Aes128GcmSha256Ed25519::hash(value)
+            }
+            CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256 => {
+                Mls10DhKemP256Aes128GcmSha256P256::hash(value)
+            }
+            CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519 => {
+                Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::hash(value)
+            }
+            CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521 => {
+                Mls10DhKemP521Aes256GcmSha512P521::hash(value)
+            }
+        }
+    }
+
+    pub fn generate_init_secret<RNG: CryptoRng + RngCore + 'static>(&self, rng: &mut RNG) -> Result<Vec<u8>, CipherSuiteError> {
+        match self {
+            CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519 => {
+                Mls10DhKem25519Aes128GcmSha256Ed25519::generate_init_secret(rng)
+            }
+            CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256 => {
+                Mls10DhKemP256Aes128GcmSha256P256::generate_init_secret(rng)
+            }
+            CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519 => {
+                Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::generate_init_secret(rng)
+            }
+            CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521 => {
+                Mls10DhKemP521Aes256GcmSha512P521::generate_init_secret(rng)
             }
         }
     }
@@ -252,6 +364,23 @@ impl CipherSuite {
         }
     }
 
+    pub fn expand(&self, secret: &[u8], info: &[u8], e_type: ExpandType) -> Result<Vec<u8>, CipherSuiteError> {
+        match self {
+            CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519 => {
+                Mls10DhKem25519Aes128GcmSha256Ed25519::expand(secret, info, e_type)
+            }
+            CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256 => {
+                Mls10DhKemP256Aes128GcmSha256P256::expand(secret, info, e_type)
+            }
+            CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519 => {
+                Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::expand(secret, info, e_type)
+            }
+            CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521 => {
+                Mls10DhKemP521Aes256GcmSha512P521::expand(secret, info, e_type)
+            }
+        }
+    }
+
     pub fn expand_with_label(&self, secret: &[u8], label: &str, context: &[u8], e_type: ExpandType) -> Result<Vec<u8>, CipherSuiteError> {
 
         match self {
@@ -326,6 +455,40 @@ impl CipherSuite {
             }
         }
     }
+
+    pub fn aead_encrypt(&self, key: Vec<u8>, data: &[u8], aad: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CipherSuiteError> {
+        match self {
+            CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519 => {
+                Mls10DhKem25519Aes128GcmSha256Ed25519::aead_encrypt(key, data, aad, nonce)
+            }
+            CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256 => {
+                Mls10DhKemP256Aes128GcmSha256P256::aead_encrypt(key, data, aad, nonce)
+            }
+            CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519 => {
+                Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::aead_encrypt(key, data, aad, nonce)
+            }
+            CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521 => {
+                Mls10DhKemP521Aes256GcmSha512P521::aead_encrypt(key, data, aad, nonce)
+            }
+        }
+    }
+
+    pub fn aead_decrypt(&self, key: Vec<u8>, data: &[u8], aad: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CipherSuiteError> {
+        match self {
+            CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519 => {
+                Mls10DhKem25519Aes128GcmSha256Ed25519::aead_decrypt(key, data, aad, nonce)
+            }
+            CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256 => {
+                Mls10DhKemP256Aes128GcmSha256P256::aead_decrypt(key, data, aad, nonce)
+            }
+            CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519 => {
+                Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::aead_decrypt(key, data, aad, nonce)
+            }
+            CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521 => {
+                Mls10DhKemP521Aes256GcmSha512P521::aead_decrypt(key, data, aad, nonce)
+            }
+        }
+    }
 }
 
 macro_rules! impl_cipher_suite_type {
@@ -346,21 +509,14 @@ macro_rules! impl_cipher_suite_type {
     };
 }
 
-impl_cipher_suite_type!(Mls10DhKem25519Aes128GcmSha256Ed25519, hpke::X25519HkdfSha256Aes128Gcm, kdf::HkdfSha256, aead::aes::Gcm128, hash::Sha256, signature::ed25519::EdDsa25519, CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519 as u16, ProtocolVersion::Mls10);
-impl_cipher_suite_type!(Mls10DhKemP256Aes128GcmSha256P256, hpke::P256HkdfSha256Aes128Gcm, kdf::HkdfSha256, aead::aes::Gcm128, hash::Sha256, signature::p256::EcDsaP256, CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256 as u16, ProtocolVersion::Mls10);
-impl_cipher_suite_type!(Mls10DhKem25519ChaChaPoly1305Sha256Ed25519, hpke::X25519HkdfSha256ChaCha20, kdf::HkdfSha256, aead::chacha20::Poly1305, hash::Sha256, signature::ed25519::EdDsa25519, CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519 as u16, ProtocolVersion::Mls10);
-impl_cipher_suite_type!(Mls10DhKemP521Aes256GcmSha512P521, hpke::P521HkdfSha512Aes256Gcm, kdf::HkdfSha512, aead::aes::Gcm256, hash::Sha512, signature::p521::EcDsaP521, CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521 as u16, ProtocolVersion::Mls10);
+impl_cipher_suite_type!(Mls10DhKem25519Aes128GcmSha256Ed25519, hpke::X25519HkdfSha256Aes128Gcm, kdf::HkdfSha256, aes::Gcm128, hash::Sha256, signature::ed25519::EdDsa25519, CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519 as u16, ProtocolVersion::Mls10);
+impl_cipher_suite_type!(Mls10DhKemP256Aes128GcmSha256P256, hpke::P256HkdfSha256Aes128Gcm, kdf::HkdfSha256, aes::Gcm128, hash::Sha256, signature::p256::EcDsaP256, CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256 as u16, ProtocolVersion::Mls10);
+impl_cipher_suite_type!(Mls10DhKem25519ChaChaPoly1305Sha256Ed25519, hpke::X25519HkdfSha256ChaCha20, kdf::HkdfSha256, chacha20::Poly1305, hash::Sha256, signature::ed25519::EdDsa25519, CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519 as u16, ProtocolVersion::Mls10);
+impl_cipher_suite_type!(Mls10DhKemP521Aes256GcmSha512P521, hpke::P521HkdfSha512Aes256Gcm, kdf::HkdfSha512, aes::Gcm256, hash::Sha512, signature::p521::EcDsaP521, CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521 as u16, ProtocolVersion::Mls10);
 
 #[cfg(test)]
 mod test {
-    use crate::ciphersuite::{
-        CipherSuite,
-        Mls10DhKem25519Aes128GcmSha256Ed25519,
-        CipherSuiteType,
-        Mls10DhKemP256Aes128GcmSha256P256,
-        Mls10DhKem25519ChaChaPoly1305Sha256Ed25519,
-        Mls10DhKemP521Aes256GcmSha512P521
-    };
+    use crate::ciphersuite::{CipherSuite, Mls10DhKem25519Aes128GcmSha256Ed25519, CipherSuiteType, Mls10DhKemP256Aes128GcmSha256P256, Mls10DhKem25519ChaChaPoly1305Sha256Ed25519, Mls10DhKemP521Aes256GcmSha512P521, ExpandType};
     use crate::rand::test_rng::{ZerosRng, RepeatRng};
     use super::test_util;
     use crate::kem::test_util::MockTestKem;
@@ -408,27 +564,27 @@ mod test {
 
         assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
                        .generate_kem_key_pair(&mut ZerosRng)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKem25519Aes128GcmSha256Ed25519::generate_kem_key_pair(&mut ZerosRng)
-                       .expect("failed keypair generation"));
+                       .unwrap());
 
         assert_eq!(CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256
                        .generate_kem_key_pair(&mut ZerosRng)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKemP256Aes128GcmSha256P256::generate_kem_key_pair(&mut ZerosRng)
-                       .expect("failed keypair generation"));
+                       .unwrap());
 
         assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519
                        .generate_kem_key_pair(&mut ZerosRng)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::generate_kem_key_pair(&mut ZerosRng)
-                       .expect("failed keypair generation"));
+                       .unwrap());
 
         assert_eq!(CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521
                        .generate_kem_key_pair(&mut ZerosRng)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKemP521Aes256GcmSha512P521::generate_kem_key_pair(&mut ZerosRng)
-                       .expect("failed keypair generation"));
+                       .unwrap());
     }
 
     #[test]
@@ -460,27 +616,27 @@ mod test {
 
         assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
                        .derive_kem_key_pair(&ikm)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKem25519Aes128GcmSha256Ed25519::derive_kem_key_pair(&ikm)
-                       .expect("failed keypair generation"));
+                       .unwrap());
 
         assert_eq!(CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256
                        .derive_kem_key_pair(&ikm)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKemP256Aes128GcmSha256P256::derive_kem_key_pair(&ikm)
-                       .expect("failed keypair generation"));
+                       .unwrap());
 
         assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519
                        .derive_kem_key_pair(&ikm)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::derive_kem_key_pair(&ikm)
-                       .expect("failed keypair generation"));
+                       .unwrap());
 
         assert_eq!(CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521
                        .derive_kem_key_pair(&ikm)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKemP521Aes256GcmSha512P521::derive_kem_key_pair(&ikm)
-                       .expect("failed keypair generation"));
+                       .unwrap());
     }
 
     #[test]
@@ -498,27 +654,56 @@ mod test {
 
         assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
                        .generate_leaf_secret(&mut rng)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKem25519Aes128GcmSha256Ed25519::generate_leaf_secret(&mut rng)
-                       .expect("failed keypair generation"));
+                       .unwrap());
 
         assert_eq!(CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256
                        .generate_leaf_secret(&mut rng)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKemP256Aes128GcmSha256P256::generate_leaf_secret(&mut rng)
-                       .expect("failed keypair generation"));
+                       .unwrap());
 
         assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519
                        .generate_leaf_secret(&mut rng)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::generate_leaf_secret(&mut rng)
-                       .expect("failed keypair generation"));
+                       .unwrap());
 
         assert_eq!(CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521
                        .generate_leaf_secret(&mut rng)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKemP521Aes256GcmSha512P521::generate_leaf_secret(&mut rng)
-                       .expect("failed keypair generation"));
+                       .unwrap());
+    }
+
+    #[test]
+    fn test_generate_init_secret() {
+        let mut rng = RepeatRng { num: 42 };
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
+                       .generate_init_secret(&mut rng)
+                       .unwrap(),
+                   Mls10DhKem25519Aes128GcmSha256Ed25519::generate_init_secret(&mut rng)
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256
+                       .generate_init_secret(&mut rng)
+                       .unwrap(),
+                   Mls10DhKemP256Aes128GcmSha256P256::generate_init_secret(&mut rng)
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519
+                       .generate_init_secret(&mut rng)
+                       .unwrap(),
+                   Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::generate_init_secret(&mut rng)
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521
+                       .generate_init_secret(&mut rng)
+                       .unwrap(),
+                   Mls10DhKemP521Aes256GcmSha512P521::generate_init_secret(&mut rng)
+                       .unwrap());
     }
 
     #[test]
@@ -544,27 +729,173 @@ mod test {
 
         assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
                        .derive_secret(&secret, label)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKem25519Aes128GcmSha256Ed25519::derive_secret(&secret, label)
-                       .expect("failed keypair generation"));
+                       .unwrap());
 
         assert_eq!(CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256
                        .derive_secret(&secret, label)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKemP256Aes128GcmSha256P256::derive_secret(&secret, label)
-                       .expect("failed keypair generation"));
+                       .unwrap());
 
         assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519
                        .derive_secret(&secret, label)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::derive_secret(&secret, label)
-                       .expect("failed keypair generation"));
+                       .unwrap());
 
         assert_eq!(CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521
                        .derive_secret(&secret, label)
-                       .expect("failed keypair generation"),
+                       .unwrap(),
                    Mls10DhKemP521Aes256GcmSha512P521::derive_secret(&secret, label)
-                       .expect("failed keypair generation"));
+                       .unwrap());
+    }
+
+    #[test]
+    fn test_extract() {
+        let salt = vec![0u8;42];
+        let key = b"foo".to_vec();
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
+                       .extract(&salt, &key)
+                       .unwrap(),
+                   Mls10DhKem25519Aes128GcmSha256Ed25519::extract(&salt, &key)
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256
+                       .extract(&salt, &key)
+                       .unwrap(),
+                   Mls10DhKemP256Aes128GcmSha256P256::extract(&salt, &key)
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519
+                       .extract(&salt, &key)
+                       .unwrap(),
+                   Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::extract(&salt, &key)
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521
+                       .extract(&salt, &key)
+                       .unwrap(),
+                   Mls10DhKemP521Aes256GcmSha512P521::extract(&salt, &key)
+                       .unwrap());
+    }
+
+    #[test]
+    fn test_expand() {
+        let secret = vec![0u8;42];
+        let info = b"foo".to_vec();
+        let e_type = ExpandType::AeadNonce;
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
+                       .expand(&secret, &info, e_type)
+                       .unwrap(),
+                   Mls10DhKem25519Aes128GcmSha256Ed25519::expand(&secret, &info, e_type)
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256
+                       .expand(&secret, &info, e_type)
+                       .unwrap(),
+                   Mls10DhKemP256Aes128GcmSha256P256::expand(&secret, &info, e_type)
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519
+                       .expand(&secret, &info, e_type)
+                       .unwrap(),
+                   Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::expand(&secret, &info, e_type)
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521
+                       .expand(&secret, &info, e_type)
+                       .unwrap(),
+                   Mls10DhKemP521Aes256GcmSha512P521::expand(&secret, &info, e_type)
+                       .unwrap());
+    }
+
+    #[test]
+    fn test_hmac() {
+        let key = b"foo".to_vec();
+        let msg = vec![0u8;42];
+
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
+                       .hmac(&key, &msg)
+                       .unwrap(),
+                   Mls10DhKem25519Aes128GcmSha256Ed25519::hmac(&key, &msg)
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256
+                       .hmac(&key, &msg)
+                       .unwrap(),
+                   Mls10DhKemP256Aes128GcmSha256P256::hmac(&key, &msg)
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519
+                       .hmac(&key, &msg)
+                       .unwrap(),
+                   Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::hmac(&key, &msg)
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521
+                       .hmac(&key, &msg)
+                       .unwrap(),
+                   Mls10DhKemP521Aes256GcmSha512P521::hmac(&key, &msg)
+                       .unwrap());
+    }
+
+    #[test]
+    fn test_hash() {
+        let msg = vec![0u8;42];
+        
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519.hash(&msg)
+                       .unwrap(),
+                   Mls10DhKem25519Aes128GcmSha256Ed25519::hash(&msg)
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256.hash(&msg)
+                       .unwrap(),
+                   Mls10DhKemP256Aes128GcmSha256P256::hash(&msg).unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519.hash(&msg)
+                       .unwrap(),
+                   Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::hash(&msg).unwrap());
+
+        assert_eq!(CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521.hash(&msg)
+                       .unwrap(),
+                   Mls10DhKemP521Aes256GcmSha512P521::hash(&msg).unwrap());
+    }
+
+    #[test]
+    fn test_expand_with_label() {
+        let secret = b"foo".to_vec();
+        let label = "bar";
+        let context = b"baz".to_vec();
+        let e_type = ExpandType::AeadKey;
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
+                       .expand_with_label(&secret, &label, &context, e_type.clone())
+                       .unwrap(),
+                   Mls10DhKem25519Aes128GcmSha256Ed25519::expand_with_label(&secret, &label, &context, e_type.clone())
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256
+                       .expand_with_label(&secret, &label, &context, e_type.clone())
+                       .unwrap(),
+                   Mls10DhKemP256Aes128GcmSha256P256::expand_with_label(&secret, &label, &context, e_type.clone())
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519
+                       .expand_with_label(&secret, &label, &context, e_type.clone())
+                       .unwrap(),
+                   Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::expand_with_label(&secret, &label, &context, e_type.clone())
+                       .unwrap());
+
+        assert_eq!(CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521
+                       .expand_with_label(&secret, &label, &context, e_type.clone())
+                       .unwrap(),
+                   Mls10DhKemP521Aes256GcmSha512P521::expand_with_label(&secret, &label, &context, e_type)
+                       .unwrap());
     }
 }
 
@@ -583,10 +914,11 @@ pub mod test_util {
     use super::ExpandType;
     use super::hpke::test_util::MockTestHpke;
     use crate::key_schedule::test_util::MockTestKeyScheduleKdf;
-    use super::aead::test_util::MockTestCipher;
+    use crate::aead::test_util::MockTestCipher;
     use super::hash::test_util::MockTestHashFunction;
     use super::signature::test_utils::MockTestSignatureScheme;
     use crate::hpke::HPKECiphertext;
+    use crate::hash::Mac;
     // This is a test cipher suite that will mock out methods for testing purposes
 
     mock! {
@@ -595,13 +927,20 @@ pub mod test_util {
             pub fn derive_kem_key_pair(&self, ikm: &[u8]) -> Result<KemKeyPair, CipherSuiteError>;
             pub fn get_protocol_version(&self) -> ProtocolVersion;
             pub fn get_id(&self) -> u16;
+            pub fn extract_size(&self) -> u16;
+            pub fn hmac(&self, key: &[u8], message: &[u8]) -> Result<Mac, CipherSuiteError>;
+            pub fn hash(&self, value: &[u8]) -> Result<Vec<u8>, CipherSuiteError>;
             pub fn extract(&self, salt: &[u8], key: &[u8]) -> Result<Vec<u8>, CipherSuiteError>;
+            pub fn expand(&self, secret: &[u8], info: &[u8], e_type: ExpandType) -> Result<Vec<u8>, CipherSuiteError>;
             pub fn expand_with_label(&self, secret: &[u8], label: &str, context: &[u8], e_type: ExpandType) -> Result<Vec<u8>, CipherSuiteError>;
             pub fn derive_tree_secret(&self, secret: &[u8], label: &str, node: u32, generation: u32, e_type: ExpandType) -> Result<Vec<u8>, CipherSuiteError>;
             pub fn derive_secret(&self, secret: &[u8], label: &str) -> Result<Vec<u8>, CipherSuiteError>;
             pub fn generate_leaf_secret<RNG: CryptoRng + RngCore + 'static>(&self, rng: &RNG) -> Result<Vec<u8>, CipherSuiteError>;
+            pub fn generate_init_secret<RNG: CryptoRng + RngCore + 'static>(&self, rng: &mut RNG) -> Result<Vec<u8>, CipherSuiteError>;
             pub fn hpke_seal<RNG: CryptoRng + RngCore + 'static>(&self, rng: &mut RNG, public_key: &[u8],aad: &[u8], pt: &[u8]) -> Result<HPKECiphertext, CipherSuiteError>;
             pub fn hpke_open(&self, ct: &HPKECiphertext, secret_key: &[u8],aad: &[u8]) -> Result<Vec<u8>, CipherSuiteError>;
+            pub fn aead_encrypt(&self, key: Vec<u8>, data: &[u8], aad: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CipherSuiteError>;
+            pub fn aead_decrypt(&self, key: Vec<u8>, data: &[u8], aad: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CipherSuiteError>;
         }
 
         impl Clone for CipherSuite {
