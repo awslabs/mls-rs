@@ -1,15 +1,5 @@
 use crate::kdf::{Kdf, KdfError};
-use serde::{ Serialize, Deserialize };
-use crate::ciphersuite::{KemKeyPair, CipherSuiteError};
-use cfg_if::cfg_if;
-
-cfg_if! {
-    if #[cfg(test)] {
-        use crate::ciphersuite::test_util::MockCipherSuite as CipherSuite;
-    } else {
-        use crate::ciphersuite::{CipherSuite};
-    }
-}
+use serde::{ Serialize };
 
 #[derive(Serialize)]
 pub (crate) struct Label<'a> {

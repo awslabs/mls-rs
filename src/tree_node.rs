@@ -5,33 +5,32 @@ use std::convert::TryFrom;
 use std::ops::{Deref, DerefMut};
 use crate::tree_math;
 use thiserror::Error;
-use crate::tree_path::NodeSecrets;
-use crate::extension::ExtensionId::ParentHash;
+use serde::{Serialize, Deserialize};
+use std::hash::{Hash, Hasher};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub (crate) struct Leaf {
     pub key_package: KeyPackage,
-    pub secret_key: Option<Vec<u8>>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub (crate) struct Parent {
     pub public_key: Vec<u8>,
-    pub secret_key: Option<Vec<u8>>,
-    pub unmerged: Vec<LeafIndex>,
+    pub parent_hash: Vec<u8>,
+    pub unmerged_leaves: Vec<LeafIndex>,
 }
 
 impl From<KemKeyPair> for Parent {
     fn from(kp: KemKeyPair) -> Self {
         Self {
             public_key: kp.public_key,
-            secret_key: Some(kp.secret_key),
-            unmerged: vec![]
+            parent_hash: vec![], // TODO: Parent hash calculations
+            unmerged_leaves: vec![]
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LeafIndex(pub (crate) usize);
 
 impl TryFrom<NodeIndex> for LeafIndex {
@@ -43,6 +42,12 @@ impl TryFrom<NodeIndex> for LeafIndex {
         } else {
             Err(TreeMathError::InvalidIndex)
         }
+    }
+}
+
+impl Hash for LeafIndex {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state)
     }
 }
 
@@ -92,7 +97,7 @@ pub enum NodeVecError {
     UnexpectedEmptyNode
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub (crate) enum Node {
     Parent(Parent),
     Leaf(Leaf)
@@ -105,15 +110,8 @@ impl Node {
                 &p.public_key
             },
             Node::Leaf(l) => {
-                &l.key_package.data.hpke_init_key
+                &l.key_package.hpke_init_key
             }
-        }
-    }
-
-    pub fn get_secret_key(&self) -> &Option<Vec<u8>> {
-        match self {
-            Node::Parent(p) => &p.secret_key,
-            Node::Leaf(l) => &l.secret_key
         }
     }
 }
@@ -145,7 +143,6 @@ impl From<Leaf> for Node {
 impl From<KeyPackage> for Leaf {
     fn from(key_package: KeyPackage) -> Self {
         Leaf {
-            secret_key: None,
             key_package
         }
     }
@@ -201,7 +198,7 @@ impl NodeTypeResolver for Option<Node> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub (crate) struct NodeVec(Vec<Option<Node>>);
 
 impl From<Vec<Option<Node>>> for NodeVec {
@@ -238,15 +235,17 @@ impl NodeVec {
             .map(|(i,n)| (LeafIndex(i / 2), n))
     }
 
+    pub fn non_empty_leaves(&self) -> impl Iterator<Item=(LeafIndex, &Leaf)> + '_ {
+        self.iter()
+            .enumerate()
+            .step_by(2)
+            .map(|(i, n)| (LeafIndex(i / 2), n))
+            .filter_map(|(i, n)| n.as_leaf().ok().and_then(|l| Some((i, l))))
+    }
+
     pub fn direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
         // Direct path from leaf to root
         index.direct_path(self.len() / 2 + 1)
-    }
-
-    pub fn direct_path_with_leaf(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
-        let mut res = [NodeIndex::from(index)].to_vec();
-        res.append(&mut self.direct_path(index)?);
-        Ok(res)
     }
 
     pub fn copath(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
@@ -266,11 +265,17 @@ impl NodeVec {
             .and_then(|n| n.as_leaf_mut())
     }
 
+    pub fn get_leaf_node(&self, leaf_index: LeafIndex) -> Result<&Leaf, NodeVecError> {
+        let node_index = NodeIndex::from(leaf_index);
+        self.get(node_index)
+            .ok_or(NodeVecError::InvalidNodeIndex(node_index))
+            .and_then(|n| n.as_leaf())
+    }
+
     pub fn get_or_fill_parent_node(
         &mut self,
         node_index: NodeIndex,
         public_key: &Vec<u8>,
-        secret_key: Option<&Vec<u8>>
     ) -> Result<&mut Parent, NodeVecError> {
         self.get_mut(node_index)
             .ok_or(NodeVecError::InvalidNodeIndex(node_index))
@@ -278,15 +283,15 @@ impl NodeVec {
                 if n.is_none() {
                     *n = Parent {
                         public_key: public_key.clone(),
-                        secret_key: secret_key.cloned(),
-                        unmerged: vec![]
+                        parent_hash: vec![], // TODO Parent hash
+                        unmerged_leaves: vec![]
                     }.into();
                 }
                 n.as_parent_mut()
             })
     }
 
-    fn get_resolution_index(&self, index: NodeIndex) -> Result<Vec<NodeIndex>, NodeVecError> {
+    pub fn get_resolution_index(&self, index: NodeIndex) -> Result<Vec<NodeIndex>, NodeVecError> {
         if let Some(node) = self.get(index) {
             match node {
                 None => { // This node is blank
@@ -308,7 +313,7 @@ impl NodeVec {
                         Node::Parent(parent) => {
                             let mut ret = vec![index];
                             ret.extend(
-                                parent.unmerged.iter()
+                                parent.unmerged_leaves.iter()
                                     .map(|i| NodeIndex::from(i))
                             );
                             Ok(ret)
@@ -324,9 +329,10 @@ impl NodeVec {
         }
     }
 
-    pub fn get_resolution(&self, node_index: NodeIndex) -> Result<Vec<&Node>, NodeVecError> {
+    pub fn get_resolution(&self, node_index: NodeIndex, excluding: &Vec<NodeIndex>) -> Result<Vec<&Node>, NodeVecError> {
         self.get_resolution_index(node_index)?
             .iter()
+            .filter(|i|!excluding.contains(i))
             .map(|&i| {
                 self.get(i)
                     .ok_or(NodeVecError::InvalidNodeIndex(i))
@@ -336,24 +342,31 @@ impl NodeVec {
             .collect()
     }
 
-    pub fn copath_resolution(&self, index: LeafIndex) -> Result<Vec<Vec<&Node>>, NodeVecError> {
-        self.copath(index)?
+    pub fn direct_path_copath_resolution(&self, index: LeafIndex, excluding: &Vec<LeafIndex>)
+        -> Result<Vec<(NodeIndex, Vec<&Node>)>, NodeVecError> {
+        let excluding = excluding
             .iter()
-            .map(|&i| self.get_resolution(i) )
+            .map(|i| NodeIndex::from(i))
+            .collect();
+
+        self.direct_path(index)?
+            .iter()
+            .zip(self.copath(index)?)
+            .map(|(&dp, cp)| self.get_resolution(cp, &excluding)
+                .and_then(|r| Ok((dp, r))) )
             .collect()
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::tree_node::{NodeVec, Node, Parent, LeafIndex, NodeTypeResolver};
+    use crate::tree_node::{NodeVec, Node, Parent, LeafIndex, NodeTypeResolver, NodeIndex};
     use crate::tree_node::Leaf;
-    use crate::key_package::{KeyPackage, KeyPackageData};
+    use crate::key_package::{KeyPackage};
     use crate::protocol_version::ProtocolVersion;
     use crate::ciphersuite::test_util::MockCipherSuite;
     use crate::credential::{BasicCredential, CredentialConvertable};
     use crate::signature::SignatureSchemeId;
-    use crate::extension::ExtensionId::ParentHash;
 
     fn get_mock_cipher_suite() -> MockCipherSuite {
         let mut cipher_suite = MockCipherSuite::new();
@@ -363,7 +376,7 @@ mod test {
     }
 
     fn get_test_key_package(id: Vec<u8>) -> KeyPackage {
-        KeyPackage { data: KeyPackageData {
+        KeyPackage {
             version: ProtocolVersion::Test,
             cipher_suite: get_mock_cipher_suite(),
             hpke_init_key: vec![],
@@ -372,31 +385,29 @@ mod test {
                 identity: id,
                 signature_scheme: SignatureSchemeId::Test
             }.to_credential(),
-            extensions: vec![]
-        }, signature: vec![] }
+            extensions: vec![],
+            signature: vec![]
+        }
     }
 
     fn get_test_node_vec() -> NodeVec {
         let nodes = [
             Leaf {
                 key_package: get_test_key_package(b"A".to_vec()),
-                secret_key: None
             }.into(),
             None,
             None,
             None,
             Leaf {
                 key_package: get_test_key_package(b"C".to_vec()),
-                secret_key: None
             }.into(),
             Parent {
                 public_key: b"CD".to_vec(),
-                secret_key: None,
-                unmerged: vec![LeafIndex(2)]
+                parent_hash: vec![],
+                unmerged_leaves: vec![LeafIndex(2)]
             }.into(),
             Leaf {
                 key_package: get_test_key_package(b"D".to_vec()),
-                secret_key: None
             }.into()
         ];
 
@@ -407,22 +418,19 @@ mod test {
     fn node_key_getters() {
         let test_node_parent: Node = Parent {
             public_key: b"pub".to_vec(),
-            secret_key: b"pri".to_vec().into(),
-            unmerged: vec![]
+            parent_hash: vec![],
+            unmerged_leaves: vec![]
         }.into();
 
         let mut test_key_package = get_test_key_package(b"B".to_vec());
-        test_key_package.data.hpke_init_key = b"pub_leaf".to_vec();
+        test_key_package.hpke_init_key = b"pub_leaf".to_vec();
 
         let test_node_leaf: Node = Leaf {
             key_package: test_key_package,
-            secret_key: b"pri_leaf".to_vec().into()
         }.into();
 
         assert_eq!(test_node_parent.get_public_key(), &b"pub".to_vec());
-        assert_eq!(test_node_parent.get_secret_key(), &Some(b"pri".to_vec()));
         assert_eq!(test_node_leaf.get_public_key(), &b"pub_leaf".to_vec());
-        assert_eq!(test_node_leaf.get_secret_key(), &Some(b"pri_leaf".to_vec()));
     }
 
     #[test]
@@ -464,8 +472,8 @@ mod test {
         // Otherwise it should succeed
         let mut expected = Parent {
             public_key: b"CD".to_vec(),
-            secret_key: None,
-            unmerged: vec![LeafIndex(2)]
+            parent_hash: vec![],
+            unmerged_leaves: vec![LeafIndex(2)]
         };
 
         assert_eq!(test_vec.get_parent_node_mut(5).unwrap(), &mut expected);
@@ -475,19 +483,21 @@ mod test {
     fn test_get_resolution() {
         let test_vec = get_test_node_vec();
 
-        let resolution_node_5 = test_vec.get_resolution(5).unwrap();
-        let resolution_node_2 = test_vec.get_resolution(2).unwrap();
-        let resolution_node_3 = test_vec.get_resolution(3).unwrap();
+        let resolution_node_5 = test_vec.get_resolution(5, &vec![])
+            .unwrap();
+        let resolution_node_2 = test_vec.get_resolution(2, &vec![])
+            .unwrap();
+        let resolution_node_3 = test_vec.get_resolution(3, &vec![])
+            .unwrap();
 
         let expected_5: Vec<Node> = [
             Parent {
                 public_key: b"CD".to_vec(),
-                secret_key: None,
-                unmerged: vec![LeafIndex(2)]
+                parent_hash: vec![],
+                unmerged_leaves: vec![LeafIndex(2)]
             }.into(),
             Leaf {
                 key_package: get_test_key_package(b"C".to_vec()),
-                secret_key: None
             }.into()
         ].to_vec();
 
@@ -496,16 +506,14 @@ mod test {
         let expected_3: Vec<Node> = [
             Leaf {
                 key_package: get_test_key_package(b"A".to_vec()),
-                secret_key: None
             }.into(),
             Parent {
                 public_key: b"CD".to_vec(),
-                secret_key: None,
-                unmerged: vec![LeafIndex(2)]
+                parent_hash: vec![],
+                unmerged_leaves: vec![LeafIndex(2)]
             }.into(),
             Leaf {
                 key_package: get_test_key_package(b"C".to_vec()),
-                secret_key: None
             }.into()
         ].to_vec();
 
@@ -515,30 +523,72 @@ mod test {
     }
 
     #[test]
+    fn test_resolution_filter() {
+        let test_vec = get_test_node_vec();
+
+        let resolution_node_5 = test_vec.get_resolution(5, &vec![4])
+            .unwrap();
+
+        let expected_5: Vec<Node> = [
+            Parent {
+                public_key: b"CD".to_vec(),
+                parent_hash: vec![],
+                unmerged_leaves: vec![LeafIndex(2)]
+            }.into()
+        ].to_vec();
+
+        assert_eq!(resolution_node_5, expected_5.iter().map(|n| n).collect::<Vec<&Node>>());
+    }
+
+    #[test]
     fn test_copath_resolution() {
         let test_vec = get_test_node_vec();
 
-        let expected: Vec<Vec<Node>> = [[].to_vec(),
-            [
+        let expected: Vec<(NodeIndex, Vec<Node>)> = [(1,[].to_vec()),
+            (3, [
                 Parent {
                     public_key: b"CD".to_vec(),
-                    secret_key: None,
-                    unmerged: vec![LeafIndex(2)]
+                    parent_hash: vec![],
+                    unmerged_leaves: vec![LeafIndex(2)]
                 }.into(),
                 Leaf {
                     key_package: get_test_key_package(b"C".to_vec()),
-                    secret_key: None
                 }.into()
-            ].to_vec()
+            ].to_vec())
         ].to_vec();
 
         let copath_resolution = test_vec
-            .copath_resolution(LeafIndex(0))
+            .direct_path_copath_resolution(LeafIndex(0), &vec![])
             .unwrap();
 
-        let expected: Vec<Vec<&Node>> = expected
+        let expected: Vec<(NodeIndex, Vec<&Node>)> = expected
             .iter()
-            .map(|n| n.iter().map(|n| n).collect::<Vec<&Node>>()).collect();
+            .map(|(i,n)| (*i, n.iter().map(|n| n).collect())).collect();
+
+        assert_eq!(expected, copath_resolution)
+    }
+
+    #[test]
+    fn test_copath_resolution_filter() {
+        let test_vec = get_test_node_vec();
+
+        let expected: Vec<(NodeIndex, Vec<Node>)> = [(1,[].to_vec()),
+            (3, [
+                Parent {
+                    public_key: b"CD".to_vec(),
+                    parent_hash: vec![],
+                    unmerged_leaves: vec![LeafIndex(2)]
+                }.into(),
+            ].to_vec())
+        ].to_vec();
+
+        let copath_resolution = test_vec
+            .direct_path_copath_resolution(LeafIndex(0), &vec![LeafIndex(2)])
+            .unwrap();
+
+        let expected: Vec<(NodeIndex, Vec<&Node>)> = expected
+            .iter()
+            .map(|(i,n)| (*i, n.iter().map(|n| n).collect())).collect();
 
         assert_eq!(expected, copath_resolution)
     }
@@ -550,8 +600,7 @@ mod test {
 
         let expected = test_vec[5].as_parent_mut().unwrap();
         let actual = test_vec2.get_or_fill_parent_node(5,
-                                                      &vec![],
-                                                      Some(&vec![])).unwrap();
+                                                      &vec![]).unwrap();
 
         assert_eq!(actual, expected);
     }
@@ -562,13 +611,12 @@ mod test {
 
         let mut expected = Parent {
             public_key: vec![0u8;4],
-            secret_key: Some(vec![0u8;5]),
-            unmerged: vec![]
+            parent_hash: vec![],
+            unmerged_leaves: vec![]
         };
 
         let actual = test_vec.get_or_fill_parent_node(1,
-                                                       &vec![0u8;4],
-                                                       Some(&vec![0u8;5])).unwrap();
+                                                       &vec![0u8;4]).unwrap();
 
         assert_eq!(actual, &mut expected);
     }

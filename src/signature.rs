@@ -39,7 +39,7 @@ pub trait Signable {
 impl Signable for Vec<u8> {
     type E = bincode::Error;
     fn to_signable_vec(&self) -> Result<Vec<u8>, Self::E> {
-        Ok(self.clone())
+        Ok(self.clone()) //TODO: Remove clone
     }
 }
 

@@ -6,6 +6,7 @@ use crate::aead::{ Cipher, CipherError, aes, chacha20 };
 use rand_core::{CryptoRng, RngCore};
 use std::fmt::Debug;
 use crate::hpke_kdf::HpkeKdf;
+use serde::{Serialize, Deserialize};
 
 #[derive(Error, Debug)]
 pub enum HPKEError {
@@ -99,6 +100,7 @@ impl <CT: Cipher> Context<CT> {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct HPKECiphertext {
     pub kem_output: Vec<u8>,
     pub ciphertext: Vec<u8>,

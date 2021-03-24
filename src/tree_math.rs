@@ -1,4 +1,3 @@
-use crate::util::log2;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -11,6 +10,10 @@ pub enum TreeMathError {
     NoCommonAncestor,
     #[error("index out of range")]
     InvalidIndex
+}
+
+pub fn log2(x: usize) -> usize {
+    (x as f32).log2().floor() as usize
 }
 
 pub fn level(x: usize) -> usize {

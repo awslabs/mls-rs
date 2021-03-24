@@ -13,11 +13,9 @@ cfg_if! {
 }
 
 use serde::{Serialize, Deserialize};
-use crate::signature::{SignatureError, Signable, Signer};
+use crate::signature::{SignatureError, Signable, Signer, Verifier};
 use thiserror::Error;
-use std::convert::TryFrom;
 use bincode::Options;
-use std::error::Error;
 use rand_core::{RngCore, CryptoRng};
 use crate::ciphersuite::CipherSuiteError;
 
@@ -31,49 +29,53 @@ pub enum KeyPackageError {
     AsymmetricKeyError(#[from] AsymmetricKeyError),
     #[error(transparent)]
     CipherSuiteError(#[from] CipherSuiteError),
+    #[error(transparent)]
+    SerializationError(#[from] bincode::Error)
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct KeyPackageData {
+pub struct KeyPackage {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     pub hpke_init_key: Vec<u8>,
     pub credential: Credential,
     pub extensions: Vec<Extension>,
-}
-
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct KeyPackage {
-    #[serde(flatten)]
-    pub data: KeyPackageData,
     pub signature: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct KeyPackageSecret {
-    pub cipher_suite: CipherSuite,
-    pub hpke_secret_key: Vec<u8>,
-    pub extensions: Vec<Extension>
-}
-
-impl Signable for KeyPackageData {
+impl Signable for KeyPackage {
     type E = bincode::Error;
     fn to_signable_vec(&self) -> Result<Vec<u8>, Self::E> {
-        bincode::DefaultOptions::new().with_big_endian().serialize(self)
+        #[derive(Serialize)]
+        pub struct KeyPackageData<'a> {
+            pub version: &'a ProtocolVersion,
+            pub cipher_suite: &'a CipherSuite,
+            pub hpke_init_key: &'a Vec<u8>,
+            pub credential: &'a Credential,
+            pub extensions: &'a Vec<Extension>,
+        }
+        let key_package_data = KeyPackageData {
+            version: &self.version,
+            cipher_suite: &self.cipher_suite,
+            hpke_init_key: &self.hpke_init_key,
+            credential: &self.credential,
+            extensions: &self.extensions
+        };
+        bincode::DefaultOptions::new().with_big_endian().serialize(&key_package_data)
     }
 }
 
-impl TryFrom<Vec<u8>> for KeyPackageData {
-    type Error = bincode::Error;
-
-    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        bincode::DefaultOptions::new().with_big_endian().deserialize(&value)
+impl KeyPackage {
+    pub fn has_valid_signature(&self) -> bool {
+        self.credential.verify(&self.signature, self).unwrap_or(false)
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct KeyPackageGeneration {
     pub key_package: KeyPackage,
-    pub secret_key: Vec<u8>
+    pub secret_key: Vec<u8>,
+    pub key_package_hash: Vec<u8>
 }
 
 pub trait KeyPackageGenerator: Signer {
@@ -86,9 +88,13 @@ pub trait KeyPackageGenerator: Signer {
         let package = self.package_from_pub_key(cipher_suite,
                                                 kem_key_pair.public_key)?;
 
+        let key_package_hash = cipher_suite
+            .hash(&bincode::serialize(&package)?)?;
+
         Ok(KeyPackageGeneration {
             key_package: package,
-            secret_key: kem_key_pair.secret_key
+            secret_key: kem_key_pair.secret_key,
+            key_package_hash
         })
     }
 
@@ -127,39 +133,3 @@ pub mod test_util {
         }
     }
 }
-
-#[cfg(test)]
-mod test {
-    use crate::key_package::KeyPackageData;
-    use crate::protocol_version::ProtocolVersion;
-    use crate::ciphersuite::test_util::MockCipherSuite;
-    use crate::extension::{Lifetime, ExtensionTrait};
-    use crate::credential::{BasicCredential, CredentialConvertable};
-    use crate::signature::{SignatureSchemeId, Signable};
-    use std::convert::TryFrom;
-
-    #[test]
-    fn test_signable_key_package_data() {
-
-        let mut cipher_suite_mock = MockCipherSuite::new();
-        cipher_suite_mock.expect_get_id().return_const(42u16);
-
-        let data = KeyPackageData {
-            version: ProtocolVersion::Test,
-            cipher_suite: cipher_suite_mock,
-            hpke_init_key: vec![0u8; 4],
-            credential: BasicCredential {
-                identity: vec![0u8;4],
-                signature_scheme: SignatureSchemeId::Test,
-                signature_key: vec![0u8;4]
-            }.to_credential(),
-            extensions: vec![Lifetime { not_before: 42, not_after: 42 }.to_extension().unwrap()]
-        };
-
-        let serialized = data.to_signable_vec().expect("failed serialization");
-        let restored = KeyPackageData::try_from(serialized)
-            .expect("failed deserialization");
-        assert_eq!(data, restored);
-    }
-}
-

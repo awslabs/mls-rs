@@ -1,8 +1,7 @@
 use crate::credential::Credential;
 use crate::signature::{Signer, SignatureError, Signable, SignatureSchemeId, ed25519};
-use rand_core::{RngCore, CryptoRng};
 use crate::extension::{Lifetime, Capabilities, ExtensionTrait, ExtensionError, Extension};
-use crate::key_package::{KeyPackageData, KeyPackage, KeyPackageSecret, KeyPackageGenerator, KeyPackageGeneration, KeyPackageError};
+use crate::key_package::{KeyPackage, KeyPackageGenerator, KeyPackageError};
 use crate::ciphersuite::{CipherSuiteError};
 use crate::asym::{AsymmetricKey};
 use serde::{Serialize, Deserialize};
@@ -69,20 +68,19 @@ impl KeyPackageGenerator for Client {
     fn package_from_pub_key(
         &self, cipher_suite: &CipherSuite, pub_key: Vec<u8>
     ) -> Result<KeyPackage, KeyPackageError> {
-        let package_data = KeyPackageData {
+
+        let mut package = KeyPackage {
             version: cipher_suite.get_protocol_version(),
             cipher_suite: cipher_suite.clone(),
             hpke_init_key: pub_key,
             credential: self.credential.clone(),
-            extensions: self.get_extensions()?
+            extensions: self.get_extensions()?,
+            signature: vec![]
         };
 
-        let signature = self.sign(&package_data)?;
+        package.signature = self.sign(&package)?;
 
-        Ok(KeyPackage {
-            data: package_data,
-            signature
-        })
+        Ok(package)
     }
 }
 
@@ -91,11 +89,11 @@ mod test {
     use crate::signature::{ed25519::EdDsa25519, p256::EcDsaP256, p521::EcDsaP521, SignatureScheme, Verifier, Signer, test_utils::MockTestSignatureScheme, Signable};
     use crate::rand::test_rng::ZerosRng;
     use crate::client::Client;
-    use crate::credential::{Credential, BasicCredential, CredentialConvertable};
+    use crate::credential::{BasicCredential, CredentialConvertable};
     use crate::asym::AsymmetricKey;
     use crate::extension::Lifetime;
     use crate::ciphersuite::test_util::MockCipherSuite;
-    use crate::key_package::{KeyPackageData, KeyPackageSecret, KeyPackageGenerator};
+    use crate::key_package::{KeyPackageGenerator, KeyPackage};
     use crate::protocol_version::ProtocolVersion;
     use crate::signature::test_utils::{get_test_signer, get_test_verifier};
     use crate::rand::OpenSslRng;
@@ -107,7 +105,7 @@ mod test {
         Client {
             signature_key: sig_scheme.get_signer().to_bytes().expect("failed serialize"),
             credential: BasicCredential {
-                identity: vec![0u8; 15],
+                identity: vec![0u8; 4],
                 signature_key: signature_key.signature_key,
                 signature_scheme: signature_key.signature_scheme
             }.to_credential(),
@@ -172,26 +170,32 @@ mod test {
 
         let mut mock_cipher_suite = get_mock_cipher_suite();
         mock_cipher_suite.expect_clone().returning_st(move || get_mock_cipher_suite());
+        mock_cipher_suite.expect_hash().returning_st(move |value| Ok(value.to_vec()));
 
         let key_package_generation = client
             .gen_key_package(&mut ZerosRng, &mock_cipher_suite)
             .expect("key error");
 
-        assert_eq!(key_package_generation.secret_key, vec![255u8; 4]);
+        // The hash value was mocked out to be just the input to the hash function
+        let expected_hash_value = hex!("ff2a000400000000000000000000000000000004000000000\
+        0000074657374040000000000000000000000420002000000000000000100270000000000000001000000000000\
+        0001040000000000000002000100030005000300000000000000010003000200020010000000000000000000000\
+        00000000000000000000000004f00000000000000ff2a0400000000000474657374040000000042020127010000\
+        0000000000010400000000000000020001000300050003000000000000000100030002000210000000000000000\
+        00000000000000000");
 
-        let expected_package_data = KeyPackageData {
+        assert_eq!(key_package_generation.secret_key, vec![255u8; 4]);
+        assert_eq!(key_package_generation.key_package_hash, expected_hash_value);
+
+        let expected_package = KeyPackage {
             version: ProtocolVersion::Test,
             cipher_suite: get_mock_cipher_suite(),
             hpke_init_key: vec![0u8; 4],
             credential: client.credential.clone(),
-            extensions: client.get_extensions().expect("failed extensions")
+            extensions: client.get_extensions().expect("failed extensions"),
+            signature: key_package_generation.key_package.to_signable_vec().unwrap()
         };
 
-        assert_eq!(key_package_generation.key_package.data, expected_package_data);
-
-        // The signature function for testing is just returning the input it receives
-        assert_eq!(key_package_generation.key_package.signature,
-                   key_package_generation.key_package.data.to_signable_vec()
-                       .expect("failed signing"))
+        assert_eq!(key_package_generation.key_package, expected_package);
     }
 }

@@ -21,3 +21,10 @@ macro_rules! asym_key_tests { () => {
             run_ecdh_test_case::<PublicKey, SecretKey, Engine>(get_test_case());
         }
     };}
+
+#[cfg(test)]
+macro_rules! hex {
+    ($input:literal) => {
+        hex::decode($input).expect("invalid hex value")
+    };
+}
