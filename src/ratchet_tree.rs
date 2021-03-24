@@ -779,13 +779,4 @@ pub (crate) mod test {
         assert_eq!(receiver_tree, tree)
 
     }
-
-    #[test]
-    fn test_tree_hash() {
-        let mut test_tree = get_test_tree();
-        test_tree.add_nodes(get_test_key_packages()).unwrap();
-
-        let tree_hash = test_tree.tree_hash().unwrap();
-        println!("{:?}", tree_hash);
-    }
 }

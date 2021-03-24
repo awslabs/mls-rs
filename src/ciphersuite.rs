@@ -561,7 +561,6 @@ mod test {
 
     #[test]
     fn test_generate_kem_keypair() {
-
         assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
                        .generate_kem_key_pair(&mut ZerosRng)
                        .unwrap(),
@@ -753,6 +752,64 @@ mod test {
     }
 
     #[test]
+    fn test_derive_tree_secret() {
+        let secret = vec![0u8;42];
+        let label = "foo";
+        let node = 0;
+        let generation = 0;
+        let expand_type = ExpandType::AeadKey;
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
+                       .derive_tree_secret(&secret, label, node, generation, expand_type)
+                       .unwrap(),
+                   Mls10DhKem25519Aes128GcmSha256Ed25519::derive_tree_secret(
+                       &secret,
+                       label,
+                       node,
+                       generation,
+                       expand_type
+                   ).unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256
+                       .derive_tree_secret(&secret, label, node, generation, expand_type)
+                       .unwrap(),
+                   Mls10DhKemP256Aes128GcmSha256P256::derive_tree_secret(
+                       &secret,
+                       label,
+                       node,
+                       generation,
+                       expand_type
+                   ).unwrap());
+
+        assert_eq!(CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519
+                       .derive_tree_secret(&secret, label, node, generation, expand_type)
+                       .unwrap(),
+                   Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::derive_tree_secret(
+                       &secret,
+                       label,
+                       node,
+                       generation,
+                       expand_type
+                   ).unwrap());
+
+        assert_eq!(CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521
+                       .derive_tree_secret(
+                           &secret,
+                           label,
+                           node,
+                           generation,
+                           expand_type
+                       ).unwrap(),
+                   Mls10DhKemP521Aes256GcmSha512P521::derive_tree_secret(
+                       &secret,
+                       label,
+                       node,
+                       generation,
+                       expand_type
+                   ).unwrap());
+    }
+
+    #[test]
     fn test_extract() {
         let salt = vec![0u8;42];
         let key = b"foo".to_vec();
@@ -898,8 +955,6 @@ mod test {
                        .unwrap());
     }
 }
-
-
 
 #[cfg(test)]
 pub mod test_util {
