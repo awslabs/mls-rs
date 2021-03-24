@@ -1,6 +1,9 @@
 #[cfg(test)]
-#[macro_use]
-mod test_util;
+macro_rules! hex {
+    ($input:literal) => {
+        hex::decode($input).expect("invalid hex value")
+    };
+}
 
 #[macro_use]
 pub mod asym;
