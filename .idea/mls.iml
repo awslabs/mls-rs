@@ -67,6 +67,10 @@
       <sourceFolder url="file://$MODULE_DIR$/target/debug/build/serde_derive-fa302b318ce8141b/out" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/target/debug/build/syn-97c8fdd431ef44b6/out" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/target/debug/build/typenum-a977e62fce1cb81d/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/target/debug/build/num-traits-ee85f5582ff2fd0e/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
