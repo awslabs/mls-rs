@@ -29,7 +29,7 @@ pub enum EpochKeyScheduleError {
     KeyDerivationFailure
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpochKeySchedule {
     pub cipher_suite: CipherSuite,
     secret_tree: SecretTree,
@@ -44,6 +44,20 @@ pub struct EpochKeySchedule {
     pub init_secret: Vec<u8>,
     pub handshake_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
     pub application_ratchets: HashMap<LeafIndex, SecretKeyRatchet>
+}
+
+impl PartialEq for EpochKeySchedule {
+    fn eq(&self, other: &Self) -> bool {
+        self.cipher_suite == other.cipher_suite &&
+            self.sender_data_secret == other.sender_data_secret &&
+            self.exporter_secret == other.exporter_secret &&
+            self.authentication_secret == other.authentication_secret &&
+            self.external_secret == other.external_secret &&
+            self.confirmation_key == other.confirmation_key &&
+            self.membership_key == other.membership_key &&
+            self.resumption_secret == other.resumption_secret &&
+            self.init_secret == other.init_secret
+    }
 }
 
 pub struct EpochKeyScheduleDerivation {

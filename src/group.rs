@@ -286,15 +286,26 @@ pub struct Welcome {
     pub encrypted_group_info: Vec<u8>
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Group {
     pub cipher_suite: CipherSuite,
-    context: GroupContext,
+    pub context: GroupContext,
     pub public_tree: RatchetTree,
     pub private_tree: TreeKemPrivate,
-    key_schedule: EpochKeySchedule, //TODO: Need to support out of order packets by holding a few old epoch values too
+    pub key_schedule: EpochKeySchedule, //TODO: Need to support out of order packets by holding a few old epoch values too
     interim_transcript_hash: InterimTranscriptHash,
     pub proposals: HashMap<Vec<u8>, Proposal> // Hash of MLS Plaintext to proposal
+}
+
+impl PartialEq for Group {
+    fn eq(&self, other: &Self) -> bool {
+        self.cipher_suite == other.cipher_suite &&
+            self.context == other.context &&
+            self.public_tree == other.public_tree &&
+            self.key_schedule == other.key_schedule &&
+            self.interim_transcript_hash == other.interim_transcript_hash &&
+            self.proposals == other.proposals
+    }
 }
 
 struct GroupStateUpdate {
@@ -556,7 +567,7 @@ impl Group {
                 // parent_hash extension.
                 let context_bytes = bincode::serialize(&self.context)?;
                 let update_path = provisional_tree.gen_update_path(
-                    self.private_tree.self_index,
+                    &self.private_tree,
                     rng,
                     key_package_generator,
                     &context_bytes,
@@ -567,11 +578,12 @@ impl Group {
                 provisional_tree.apply_update_path(self.private_tree.self_index,
                                                    &update_path.update_path)?;
 
-                // Update the tree hash in the provisional group context
-                provisional_group_context.tree_hash = provisional_tree.tree_hash()?;
                 Some(update_path)
             }
         };
+
+        // Update the tree hash in the provisional group context
+        provisional_group_context.tree_hash = provisional_tree.tree_hash()?;
 
         let commit_secret = CommitSecret::from_update_path(&self.cipher_suite,
                                                            update_path.as_ref())?;

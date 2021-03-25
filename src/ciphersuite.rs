@@ -17,7 +17,7 @@ use crate::key_schedule::KeyScheduleKdf;
 use crate::hpke::{Hpke, HPKEError, HPKECiphertext};
 use crate::aead::{Cipher, aes, chacha20, CipherError};
 
-#[derive(IntoPrimitive, TryFromPrimitive, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(IntoPrimitive, TryFromPrimitive, Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[repr(u16)]
 #[serde(into = "u16", try_from = "u16")]
 pub enum CipherSuite {

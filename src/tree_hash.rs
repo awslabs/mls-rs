@@ -96,7 +96,7 @@ mod test {
     // This is done with a mock hash that returns its input as output
     #[test]
     fn test_leaf_hash() {
-        let test_tree = get_test_tree();
+        let test_tree = get_test_tree().0;
         let leaf = test_tree.nodes[0].as_leaf().unwrap();
 
         let hash = (0, Some(leaf)).get_hash(&test_tree).unwrap();
@@ -109,7 +109,7 @@ mod test {
 
     #[test]
     fn test_empty_leaf() {
-        let mut test_tree = get_test_tree();
+        let mut test_tree = get_test_tree().0;
         test_tree.nodes[0] = None;
 
         let hash = (0, None::<&Leaf>).get_hash(&test_tree).unwrap();
@@ -122,7 +122,7 @@ mod test {
     // This is done with a mock hash that returns its input as output
     #[test]
     fn test_parent_hash() {
-        let mut test_tree = get_test_tree();
+        let mut test_tree = get_test_tree().0;
         let test_key_packages = get_test_key_packages();
         test_tree.add_nodes(vec![test_key_packages[0].clone()]).unwrap();
 
@@ -148,7 +148,7 @@ mod test {
 
     #[test]
     fn test_empty_parent() {
-        let mut test_tree = get_test_tree();
+        let mut test_tree = get_test_tree().0;
         let test_key_packages = get_test_key_packages();
         test_tree.add_nodes(vec![test_key_packages[0].clone()]).unwrap();
 
@@ -166,7 +166,7 @@ mod test {
     // This is done with a mock hash that returns its input as output
     #[test]
     fn test_tree_hash() {
-        let mut test_tree = get_test_tree();
+        let mut test_tree = get_test_tree().0;
         let test_key_packages = get_test_key_packages();
         test_tree.add_nodes(vec![test_key_packages[0].clone()]).unwrap();
 

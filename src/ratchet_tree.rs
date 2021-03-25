@@ -345,7 +345,7 @@ impl RatchetTree {
     // we wind up cloning the tree anyways during the commit process
     pub fn gen_update_path<RNG: CryptoRng + RngCore + 'static, KPG: KeyPackageGenerator>(
         &self,
-        from: LeafIndex,
+        private_key: &TreeKemPrivate,
         rng: &mut RNG,
         key_generator: &KPG,
         context: &[u8],
@@ -366,7 +366,7 @@ impl RatchetTree {
         let (node_secrets, node_updates): (Vec<IndexedNodeSecrets>, Vec<UpdatePathNode>) =
             secret_generator
                 .flatten() //TODO: Remove flatmap + flatten
-                .zip(self.nodes.direct_path_copath_resolution(from, excluding)?)
+                .zip(self.nodes.direct_path_copath_resolution(private_key.self_index, excluding)?)
                 .flat_map(|(path_secret, (index, copath_nodes))| {
                     self.encrypt_copath_node_resolution(rng,
                                                         &path_secret,
@@ -376,7 +376,10 @@ impl RatchetTree {
                 })
                 .unzip();
 
-        let mut private_key = TreeKemPrivate::from(leaf_keypair.secret_key);
+        let mut private_key = private_key.clone();
+        private_key.secret_keys.insert(NodeIndex::from(private_key.self_index),
+                                       leaf_keypair.secret_key);
+
         node_secrets.iter().for_each(|ps| {
             private_key.secret_keys.insert(ps.index, ps.secrets.key_pair.secret_key.clone());
         });
@@ -538,7 +541,7 @@ pub struct UpdatePath {
 pub (crate) mod test {
     use super::RatchetTree;
     use crate::ciphersuite::test_util::MockCipherSuite;
-    use crate::tree_node::{LeafIndex, NodeVec, NodeTypeResolver};
+    use crate::tree_node::{LeafIndex, NodeTypeResolver, Node};
     use crate::tree_node::Leaf;
     use crate::key_package::{KeyPackage, KeyPackageGeneration};
     use crate::protocol_version::ProtocolVersion;
@@ -612,29 +615,21 @@ pub (crate) mod test {
         }
     }
 
-    pub fn get_test_tree() -> RatchetTree {
-        let self_leaf = Leaf {
-            key_package: get_test_key_package(b"foo".to_vec(), b"bar".to_vec()),
-        };
-
-        RatchetTree {
-            cipher_suite: get_mock_cipher_suite(),
-            nodes: NodeVec::from(vec![Some(self_leaf.into())]),
-        }
-    }
-
-    #[test]
-    fn test_tree_constructor() {
+    pub fn get_test_tree() -> (RatchetTree, TreeKemPrivate) {
         let test_key_package = KeyPackageGeneration {
             key_package: get_test_key_package(b"foo".to_vec(), b"bar".to_vec()),
             secret_key: b"foobar".to_vec(),
             key_package_hash: vec![]
         };
 
-        let (public, private) = RatchetTree::new(test_key_package).unwrap();
-        assert_eq!(public, get_test_tree());
-        assert_eq!(private.self_index, LeafIndex(0));
-        assert_eq!(private.secret_keys[&0], b"foobar".to_vec())
+        let test_tree = RatchetTree::new(test_key_package.clone()).unwrap();
+        assert_eq!(test_tree.0.nodes[0], Some(Node::Leaf(Leaf {
+            key_package: test_key_package.key_package
+        })));
+
+        assert_eq!(test_tree.1.self_index, LeafIndex(0));
+        assert_eq!(test_tree.1.secret_keys.get(&0).unwrap(), &test_key_package.secret_key);
+        test_tree
     }
 
     pub fn get_test_key_packages() -> Vec<KeyPackage> {
@@ -647,7 +642,7 @@ pub (crate) mod test {
 
     #[test]
     fn test_add_node_new_tree() {
-        let mut tree = get_test_tree();
+        let mut tree = get_test_tree().0;
 
         let key_packages = get_test_key_packages();
 
@@ -670,7 +665,7 @@ pub (crate) mod test {
 
     #[test]
     fn test_add_node_empty_leaf() {
-        let mut tree = get_test_tree();
+        let mut tree = get_test_tree().0;
         let key_packages = get_test_key_packages();
 
         tree.add_nodes([key_packages[0].clone()].to_vec()).unwrap();
@@ -685,7 +680,7 @@ pub (crate) mod test {
 
     #[test]
     fn test_add_node_unmerged() {
-        let mut tree = get_test_tree();
+        let mut tree = get_test_tree().0;
 
         let key_packages = get_test_key_packages();
 
@@ -704,7 +699,7 @@ pub (crate) mod test {
 
     #[test]
     fn test_update_path() {
-        let mut tree = get_test_tree();
+        let (mut tree, private_key) = get_test_tree();
         tree.add_nodes(get_test_key_packages()).unwrap();
 
         let mut receiver_tree = tree.clone();
@@ -720,7 +715,7 @@ pub (crate) mod test {
         });
 
         // Create a new update path with corresponding private key
-        let update_path = tree.gen_update_path(LeafIndex(0),
+        let update_path = tree.gen_update_path(&private_key,
                                                &mut ZerosRng,
                                                &kpg,
                                                &test_ctx,
