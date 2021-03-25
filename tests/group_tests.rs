@@ -6,7 +6,7 @@ use mls::credential::{Credential, BasicCredential};
 use mls::signature::ed25519::EdDsa25519;
 use mls::signature::SignatureScheme;
 use mls::asym::AsymmetricKey;
-use mls::key_package::{KeyPackageGenerator, KeyPackageGeneration};
+use mls::key_package::{KeyPackageGenerator, KeyPackageGeneration, KeyPackage};
 use mls::ciphersuite::CipherSuite;
 use mls::ciphersuite::CipherSuite::{
     Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
@@ -117,7 +117,7 @@ fn test_path_updates(cipher_suite: CipherSuite) {
     let add_members_proposal = test_group
         .add_member_proposals(&test_keys
             .iter()
-            .map(|g| g.key_package.clone()).collect())
+            .map(|g| g.key_package.clone()).collect::<Vec<KeyPackage>>())
         .unwrap();
 
     let commit = test_group.commit_proposals(
