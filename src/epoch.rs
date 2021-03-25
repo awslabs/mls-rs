@@ -233,7 +233,7 @@ impl WelcomeSecret {
         cipher_suite.derive_secret(
             &epoch_seed,
             "welcome"
-        ).map(|r| Self(r))
+        ).map(Self)
     }
 
     pub(crate) fn as_nonce(&self, cipher_suite: &CipherSuite) -> Result<Vec<u8>, CipherSuiteError> {

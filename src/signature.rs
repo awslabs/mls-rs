@@ -114,7 +114,7 @@ mod ossl {
     ) -> Result<Vec<u8>, ErrorStack> {
         let pkey = PKey::from_ec_key(sig_key)?;
         let mut signer = Signer::new(digest, &pkey)?;
-        signer.sign_oneshot_to_vec(data).map_err(|e| e.into())
+        signer.sign_oneshot_to_vec(data)
     }
 
     pub fn verify(
@@ -125,9 +125,7 @@ mod ossl {
     ) -> Result<bool, ErrorStack> {
         let pkey = PKey::from_ec_key(pub_key)?;
         let mut verifier = Verifier::new(digest, &pkey)?;
-        verifier
-            .verify_oneshot(signature, data)
-            .map_err(|e| e.into())
+        verifier.verify_oneshot(signature, data)
     }
 
     macro_rules! impl_openssl_signature {

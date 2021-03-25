@@ -73,24 +73,15 @@ pub enum Proposal {
 
 impl Proposal {
     pub fn is_add(&self) -> bool {
-        match self {
-            Self::Add(_) => true,
-            _ => false
-        }
+        matches!(self, Self::Add(_))
     }
 
     pub fn is_update(&self) -> bool {
-        match self {
-            Self::Update(_) => true,
-            _ => false
-        }
+        matches!(self, Self::Update(_))
     }
 
     pub fn is_remove(&self) -> bool {
-        match self {
-            Self::Remove(_) => true,
-            _ => false
-        }
+        matches!(self, Self::Remove(_))
     }
 }
 
@@ -205,7 +196,7 @@ impl From<&GroupInfo> for GroupContext {
     fn from(group_info: &GroupInfo) -> Self {
         GroupContext {
             group_id: group_info.group_id.clone(),
-            epoch: group_info.epoch.clone(),
+            epoch: group_info.epoch,
             tree_hash: group_info.tree_hash.clone(),
             confirmed_transcript_hash: group_info.confirmed_transcript_hash.clone(),
             extensions: group_info.extensions.clone()
@@ -336,7 +327,7 @@ impl Group {
         let init_secret = cipher_suite.generate_init_secret(rng)?;
         let tree_hash = public_tree.tree_hash()?;
 
-        let context = GroupContext::new_group(group_id, tree_hash, extensions.clone());
+        let context = GroupContext::new_group(group_id, tree_hash, extensions);
         let epoch = EpochKeySchedule::derive(
             cipher_suite.clone(),
             &init_secret,
@@ -399,7 +390,7 @@ impl Group {
         // are taken from the credential in the leaf node at position signer_index.
         // If this verification fails, return an error.
 
-        let sender_leaf = LeafIndex(group_info.signer_index.clone() as usize);
+        let sender_leaf = LeafIndex(group_info.signer_index as usize);
         let sender_key_package = public_tree.get_key_package(sender_leaf)?;
         if !sender_key_package.credential.verify(&group_info.signature, &group_info)? {
             return Err(GroupError::InvalidSignature);
@@ -478,21 +469,21 @@ impl Group {
 
     fn fetch_proposals<'a>(
         &'a self,
-        proposals: &'a Vec<ProposalOrRef>
+        proposals: &'a [ProposalOrRef]
     ) -> Result<Vec<&'a Proposal>, GroupError> {
         proposals.iter().map(|p| {
             match p {
                 ProposalOrRef::Proposal(p) => Ok(p),
                 ProposalOrRef::Reference(id) => self.proposals
                     .get(id)
-                    .ok_or(GroupError::MissingProposal(id.clone()))
+                    .ok_or_else(|| GroupError::MissingProposal(id.clone()))
             }
         }).collect::<Result<Vec<&Proposal>, GroupError>>()
     }
 
     fn apply_proposals(
         &self,
-        proposals: &Vec<ProposalOrRef>
+        proposals: &[ProposalOrRef]
     ) -> Result<(RatchetTree, Vec<LeafIndex>, bool), GroupError> {
         let proposals = self.fetch_proposals(proposals)?;
 
@@ -700,12 +691,12 @@ impl Group {
         rng: &mut RNG,
         provisional_tree: &RatchetTree,
         leaf_index: &LeafIndex,
-        joiner_secret: &Vec<u8>,
+        joiner_secret: &[u8],
         update_path: Option<&UpdatePathGeneration>
     ) -> Result<EncryptedGroupSecrets, GroupError> {
         let path_secret = update_path
             .and_then(|up| up.get_common_path_secret(*leaf_index))
-            .map(|ps| PathSecret::from(ps));
+            .map(PathSecret::from);
 
         // Ensure that we have a path secret if one is required
         if path_secret.is_none() && update_path.is_some() {
@@ -713,7 +704,7 @@ impl Group {
         }
 
         let group_secrets = GroupSecrets {
-            joiner_secret: joiner_secret.clone(),
+            joiner_secret: joiner_secret.to_vec(),
             path_secret
         };
 
@@ -736,18 +727,17 @@ impl Group {
         })
     }
 
-    fn path_update_required(&self, proposals: &Vec<&Proposal>) -> bool {
+    fn path_update_required(&self, proposals: &[&Proposal]) -> bool {
         let has_update_or_remove = proposals
             .iter()
-            .find(|p| p.is_update() || p.is_remove() )
-            .is_some();
+            .any(|p| p.is_update() || p.is_remove());
 
-        proposals.len() == 0 || has_update_or_remove
+        proposals.is_empty() || has_update_or_remove
     }
 
     pub fn add_member_proposals(
         &self,
-        key_packages: &Vec<KeyPackage>
+        key_packages: &[KeyPackage]
     ) -> Result<Vec<Proposal>, GroupError> {
         // Verify that the packages are all the correct cipher suite and mls version
         // TODO: Make sure the packages are the correct best cipher suite etc

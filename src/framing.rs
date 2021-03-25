@@ -100,13 +100,19 @@ impl <'de> Deserialize<'de> for Content {
                 Err(D::Error::custom("reserved content not allowed"))
             }
             ContentType::Application => {
-                deserialized.application_data.ok_or(D::Error::custom("missing application data")).and_then(|d| Ok(Content::Application(d)))
+                deserialized.application_data
+                    .ok_or_else(|| D::Error::custom("missing application data"))
+                    .map(Content::Application)
             }
             ContentType::Proposal => {
-                deserialized.proposal.ok_or(D::Error::custom("missing proposal data")).and_then(|p| Ok(Content::Proposal(p)))
+                deserialized.proposal
+                    .ok_or_else(|| D::Error::custom("missing proposal data"))
+                    .map(Content::Proposal)
             }
             ContentType::Commit => {
-                deserialized.commit.ok_or(D::Error::custom("missing proposal data")).and_then(|c| Ok(Content::Commit(c)))
+                deserialized.commit
+                    .ok_or_else(|| D::Error::custom("missing proposal data"))
+                    .map(Content::Commit)
             }
         }
     }

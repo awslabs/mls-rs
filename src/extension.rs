@@ -64,10 +64,10 @@ impl Default for Capabilities {
         Self {
             protocol_versions: vec![ProtocolVersion::Mls10],
             ciphersuites: vec![
-                CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256,
-                CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
-                CipherSuite::MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
-                CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521
+                CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256,
+                CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
+                CipherSuite::Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519,
+                CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521
             ],
             extensions: vec![ExtensionId::Capabilities, ExtensionId::KeyId, ExtensionId::Lifetime]
         }
@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn test_capabilities() {
         let test_protocol_versions = vec![ProtocolVersion::Mls10];
-        let test_ciphersuites = vec![CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256, CipherSuite::MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519];
+        let test_ciphersuites = vec![CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256, CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519];
         let test_extensions = vec![ExtensionId::ParentHash, ExtensionId::Lifetime, ExtensionId::KeyId];
 
         let test_extension = Capabilities {

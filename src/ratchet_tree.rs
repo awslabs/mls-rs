@@ -238,9 +238,9 @@ impl RatchetTree {
             .map_err(|e| e.into())
     }
 
-    pub fn is_valid(&self, expected_tree_hash: &Vec<u8>) -> Result<bool, RatchetTreeError> {
+    pub fn is_valid(&self, expected_tree_hash: &[u8]) -> Result<bool, RatchetTreeError> {
         //Verify that the tree hash of the ratchet tree matches the tree_hash field in the GroupInfo.
-        if &self.tree_hash()? != expected_tree_hash {
+        if self.tree_hash()? != expected_tree_hash {
             return Ok(false);
         }
 
@@ -254,7 +254,7 @@ impl RatchetTree {
 
         // For each non-empty leaf node, verify the signature on the KeyPackage.
         for one_leaf in self.nodes.non_empty_leaves().map(|l| l.1) {
-            if one_leaf.key_package.has_valid_signature() == false {
+            if !one_leaf.key_package.has_valid_signature() {
                 return Ok(false)
             }
         }
@@ -266,14 +266,16 @@ impl RatchetTree {
         // For a given leaf index, find parent nodes and add the leaf to the unmerged leaf
         self.nodes.direct_path(index)?
             .iter()
-            .try_for_each(|&i| {
-                self.nodes.get_parent_node_mut(i).ok()
-                    .and_then(|p| Some(p.unmerged_leaves.push(index) ));
-                Ok(())
-            })
+            .for_each(|&i| {
+                if let Ok(p) = self.nodes.get_parent_node_mut(i) {
+                    p.unmerged_leaves.push(index)
+                }
+            });
+
+        Ok(())
     }
 
-    fn fill_empty_leaves(&mut self, nodes: &Vec<Node>) -> Vec<LeafIndex> {
+    fn fill_empty_leaves(&mut self, nodes: &[Node]) -> Vec<LeafIndex> {
         // Fill a set of empty leaves given a particular array, return the amount of
         // nodes consumed
         self.nodes.empty_leaves()
@@ -324,9 +326,9 @@ impl RatchetTree {
             .iter()
             .map(|&copath_node| {
                 self.cipher_suite.hpke_seal(rng, &copath_node.get_public_key(),
-                                            context, &path_secret.path_secret).unwrap()
+                                            context, &path_secret.path_secret)
             })
-            .collect();
+            .collect::<Result<Vec<HPKECiphertext>, CipherSuiteError>>()?;
 
         let update_path_node = UpdatePathNode {
             public_key: path_secret.key_pair.public_key.clone(),
@@ -349,7 +351,7 @@ impl RatchetTree {
         rng: &mut RNG,
         key_generator: &KPG,
         context: &[u8],
-        excluding: &Vec<LeafIndex>
+        excluding: &[LeafIndex]
     ) -> Result<UpdatePathGeneration, RatchetTreeError> {
         // random leaf secret
         let leaf_secret = self.cipher_suite.generate_leaf_secret(rng)?;
@@ -404,7 +406,7 @@ impl RatchetTree {
         &self, private_key: &TreeKemPrivate,
         update_node: &UpdatePathNode,
         lca_direct_path_child: NodeIndex,
-        excluding: &Vec<NodeIndex>,
+        excluding: &[NodeIndex],
         context: &[u8]
     ) -> Result<Vec<u8>, RatchetTreeError> {
         self.nodes
@@ -413,7 +415,7 @@ impl RatchetTree {
             .zip(update_node.encrypted_path_secret.iter())
             .filter(|(i, _)| !excluding.contains(i))// Match up the nodes with their ciphertexts
             .find_map(|(i,ct)| {
-                private_key.secret_keys.get(i).map_or(None, |sk| Some((sk, ct)))
+                private_key.secret_keys.get(i).map(|sk| (sk, ct))
             })
             .ok_or(RatchetTreeError::UpdateErrorNoSecretKey)
             .and_then(|(sk, ct)| { // Decrypt the path secret
@@ -427,10 +429,9 @@ impl RatchetTree {
             .get_or_fill_parent_node(index,
                                      &pub_key)
             .map_err(|e| e.into())
-            .and_then(|p| {
+            .map(|p| {
                 p.public_key = pub_key;
                 p.unmerged_leaves = vec![];
-                Ok(())
             })
     }
 
@@ -440,12 +441,9 @@ impl RatchetTree {
         update_path: &UpdatePath
     ) -> Result<(), RatchetTreeError> {
         self.nodes.get_leaf_node_mut(NodeIndex::from(sender))
-            .map_err(|e| RatchetTreeError::NodeVecError(e))
-            .and_then(|l| {
+            .map(|l| {
                 l.key_package = update_path.leaf_key_package.clone();
-                Ok(())
             })?;
-
 
         update_path.nodes
             .iter()
@@ -466,7 +464,7 @@ impl RatchetTree {
         // Exclude newly added leaf indexes
         let excluding = excluding
             .iter()
-            .map(|i| NodeIndex::from(i)).collect();
+            .map(NodeIndex::from).collect::<Vec<NodeIndex>>();
 
         // Find the least common ancestor shared by us and the sender
         let lca = tree_math::common_ancestor_direct(private_key.self_index.into(),

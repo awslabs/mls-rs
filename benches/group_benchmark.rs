@@ -56,7 +56,7 @@ struct CreateInputs {
 }
 
 fn create_group_benchmark(c: &mut Criterion) {
-    let cipher_suite = CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521;
+    let cipher_suite = CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521;
     let alice = generate_client(b"alice".to_vec());
     let alice_key_package = alice.gen_key_package(&mut OpenSslRng, &cipher_suite).unwrap();
     let recipients = (0..500).into_iter().map(|_| generate_recipient_key_package(cipher_suite.clone()).key_package).collect::<Vec<KeyPackage>>();
@@ -80,7 +80,7 @@ struct ReceiveInputs {
 }
 
 fn receive_group_benchmark(c: &mut Criterion) {
-    let cipher_suite = CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521;
+    let cipher_suite = CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521;
     let alice = generate_client(b"alice".to_vec());
     let alice_key_package = alice.gen_key_package(&mut OpenSslRng, &cipher_suite).unwrap();
     let bob = generate_client(b"bob".to_vec());

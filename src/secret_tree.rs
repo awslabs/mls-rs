@@ -51,7 +51,7 @@ impl TreeSecretsVec {
     fn replace_node(&mut self, index: NodeIndex, value: Option<Vec<u8>>) -> Result<(), SecretTreeError> {
         self.get_mut(index)
             .ok_or(SecretTreeError::InvalidIndex)
-            .and_then(|n| Ok(*n = value))
+            .map(|n| *n = value)
     }
 
     fn get_secret(&self, index: NodeIndex) -> Option<&Vec<u8>> {

@@ -119,7 +119,7 @@ mod ossl {
                                   nonce,
                                   aad,
                                   tag.unwrap())
-                        .map_err(|e| CipherError::OpenSSLError(e))
+                        .map_err(CipherError::OpenSSLError)
                 }
             }
         };
@@ -250,7 +250,7 @@ pub mod chacha20 {
             let payload = Payload { msg: data, aad };
 
             cipher.encrypt(&nonce, payload)
-                .map_err(|e| CipherError::ChaCha20Error(e))
+                .map_err(CipherError::ChaCha20Error)
         }
 
         fn decrypt(&self, nonce: &[u8],
@@ -261,7 +261,7 @@ pub mod chacha20 {
             let nonce = Nonce::from_slice(nonce);
 
             cipher.decrypt(&nonce, payload)
-                .map_err(|e| CipherError::ChaCha20Error(e))
+                .map_err(CipherError::ChaCha20Error)
         }
     }
 
@@ -352,10 +352,7 @@ pub enum AeadId {
 
 impl AeadId {
     pub fn is_supported(&self) -> bool {
-        match self {
-            Self::Unknown => false,
-            _ => true
-        }
+        !matches!(self, Self::Unknown)
     }
 }
 

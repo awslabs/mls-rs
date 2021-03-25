@@ -31,7 +31,7 @@ pub fn level(x: usize) -> usize {
 
 pub fn node_width(n: usize) -> usize {
     if n == 0 {
-        return 0;
+        0
     } else {
         2 * (n - 1) + 1
     }
@@ -139,9 +139,9 @@ pub fn common_ancestor_direct(x: usize, y: usize) -> usize {
         let mut k = 0;
 
         while xn != yn {
-            xn = xn >> 1;
-            yn = yn >> 1;
-            k += 1;
+            xn >>= 1;
+            yn >>= 1;
+            k+= 1;
         }
 
         (xn << k) + (1 << (k - 1)) -1

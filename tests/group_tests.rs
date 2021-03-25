@@ -9,10 +9,10 @@ use mls::asym::AsymmetricKey;
 use mls::key_package::{KeyPackageGenerator, KeyPackageGeneration};
 use mls::ciphersuite::CipherSuite;
 use mls::ciphersuite::CipherSuite::{
-    MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
-    MLS10_256_DHKEMP521_AES256GCM_SHA512_P521,
-    MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
-    MLS10_128_DHKEMP256_AES128GCM_SHA256_P256,
+    Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
+    Mls10256Dhkemp521Aes256gcmSha512P521,
+    Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519,
+    Mls10128Dhkemp256Aes128gcmSha256P256,
 };
 
 fn generate_client(id: Vec<u8>) -> Client {
@@ -74,10 +74,10 @@ fn test_create(cipher_suite: CipherSuite, update_path: bool) {
 
 fn get_cipher_suites() -> Vec<CipherSuite> {
     [
-        MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
-        MLS10_256_DHKEMP521_AES256GCM_SHA512_P521,
-        MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
-        MLS10_128_DHKEMP256_AES128GCM_SHA256_P256
+        Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
+        Mls10256Dhkemp521Aes256gcmSha512P521,
+        Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519,
+        Mls10128Dhkemp256Aes128gcmSha256P256
     ].to_vec()
 }
 
@@ -85,14 +85,14 @@ fn get_cipher_suites() -> Vec<CipherSuite> {
 fn test_create_group_no_update() {
     get_cipher_suites()
         .iter()
-        .for_each(|&cs| test_create(cs, false))
+        .for_each(|cs| test_create(cs.clone(), false))
 }
 
 #[test]
 fn test_create_group_update() {
     get_cipher_suites()
         .iter()
-        .for_each(|&cs| test_create(cs, true))
+        .for_each(|cs| test_create(cs.clone(), true))
 }
 
 fn test_path_updates(cipher_suite: CipherSuite) {
@@ -168,5 +168,5 @@ fn test_path_updates(cipher_suite: CipherSuite) {
 fn test_group_path_updates() {
     get_cipher_suites()
         .iter()
-        .for_each(|&cs| test_path_updates(cs))
+        .for_each(|cs| test_path_updates(cs.clone()))
 }

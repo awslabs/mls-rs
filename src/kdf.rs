@@ -58,8 +58,7 @@ mod ossl {
      */
     pub fn expand(digest: MessageDigest, key: &[u8], info: &[u8], out_len: u16) -> Result<Vec<u8>, KdfError> {
         let key = PKey::hmac(key)?;
-        let ossl_digest = digest.clone().into();
-        let mut mac = Signer::new(ossl_digest, &key)?;
+        let mut mac = Signer::new(digest, &key)?;
 
         let os = digest.size();
         let mut t: Vec<u8> = vec![0; digest.size()];
@@ -78,7 +77,7 @@ mod ossl {
             mac.update(info)?;
             mac.update(&nbuf)?;
             mac.sign(&mut t)?;
-            mac = Signer::new(ossl_digest, &key)?;
+            mac = Signer::new(digest, &key)?;
             let chunk_len = chunk.len();
             copy_memory(&t[..chunk_len], chunk);
         }
@@ -126,10 +125,7 @@ pub enum KdfId {
 
 impl KdfId {
     pub fn is_supported(&self) -> bool {
-        match self {
-            Self::HkdfSha384 => false,
-            _ => true
-        }
+        !matches!(self, Self::HkdfSha384)
     }
 }
 

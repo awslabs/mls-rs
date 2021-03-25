@@ -6,7 +6,7 @@ use std::ops::{Deref, DerefMut};
 use crate::tree_math;
 use thiserror::Error;
 use serde::{Serialize, Deserialize};
-use std::hash::{Hash, Hasher};
+use std::hash::{Hash};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub (crate) struct Leaf {
@@ -30,7 +30,7 @@ impl From<KemKeyPair> for Parent {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
 pub struct LeafIndex(pub (crate) usize);
 
 impl TryFrom<NodeIndex> for LeafIndex {
@@ -42,12 +42,6 @@ impl TryFrom<NodeIndex> for LeafIndex {
         } else {
             Err(TreeMathError::InvalidIndex)
         }
-    }
-}
-
-impl Hash for LeafIndex {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state)
     }
 }
 
@@ -193,7 +187,6 @@ impl NodeTypeResolver for Option<Node> {
 
     fn as_non_empty(&self) -> Result<&Node, NodeVecError> {
         self.as_ref()
-            .and_then(|n| Some(n))
             .ok_or(NodeVecError::UnexpectedEmptyNode)
     }
 }
@@ -240,7 +233,7 @@ impl NodeVec {
             .enumerate()
             .step_by(2)
             .map(|(i, n)| (LeafIndex(i / 2), n))
-            .filter_map(|(i, n)| n.as_leaf().ok().and_then(|l| Some((i, l))))
+            .filter_map(|(i, n)| n.as_leaf().ok().map(|l| (i, l)))
     }
 
     pub fn direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
@@ -275,14 +268,14 @@ impl NodeVec {
     pub fn get_or_fill_parent_node(
         &mut self,
         node_index: NodeIndex,
-        public_key: &Vec<u8>,
+        public_key: &[u8],
     ) -> Result<&mut Parent, NodeVecError> {
         self.get_mut(node_index)
             .ok_or(NodeVecError::InvalidNodeIndex(node_index))
             .and_then(|n| {
                 if n.is_none() {
                     *n = Parent {
-                        public_key: public_key.clone(),
+                        public_key: public_key.to_vec(),
                         parent_hash: vec![], // TODO Parent hash
                         unmerged_leaves: vec![]
                     }.into();
@@ -314,7 +307,7 @@ impl NodeVec {
                             let mut ret = vec![index];
                             ret.extend(
                                 parent.unmerged_leaves.iter()
-                                    .map(|i| NodeIndex::from(i))
+                                    .map(NodeIndex::from)
                             );
                             Ok(ret)
                         }
@@ -329,7 +322,7 @@ impl NodeVec {
         }
     }
 
-    pub fn get_resolution(&self, node_index: NodeIndex, excluding: &Vec<NodeIndex>) -> Result<Vec<&Node>, NodeVecError> {
+    pub fn get_resolution(&self, node_index: NodeIndex, excluding: &[NodeIndex]) -> Result<Vec<&Node>, NodeVecError> {
         self.get_resolution_index(node_index)?
             .iter()
             .filter(|i|!excluding.contains(i))
@@ -342,18 +335,18 @@ impl NodeVec {
             .collect()
     }
 
-    pub fn direct_path_copath_resolution(&self, index: LeafIndex, excluding: &Vec<LeafIndex>)
+    pub fn direct_path_copath_resolution(&self, index: LeafIndex, excluding: &[LeafIndex])
         -> Result<Vec<(NodeIndex, Vec<&Node>)>, NodeVecError> {
         let excluding = excluding
             .iter()
-            .map(|i| NodeIndex::from(i))
-            .collect();
+            .map(NodeIndex::from)
+            .collect::<Vec<NodeIndex>>();
 
         self.direct_path(index)?
             .iter()
             .zip(self.copath(index)?)
             .map(|(&dp, cp)| self.get_resolution(cp, &excluding)
-                .and_then(|r| Ok((dp, r))) )
+                .map(|r| (dp, r)) )
             .collect()
     }
 }

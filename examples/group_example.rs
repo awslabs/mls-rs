@@ -84,7 +84,7 @@ struct ReceiveInputs {
 }
 
 fn main() {
-    let cipher_suite = CipherSuite::MLS10_256_DHKEMP521_AES256GCM_SHA512_P521;
+    let cipher_suite = CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521;
     let alice = generate_client(b"alice".to_vec());
     let bob = generate_client(b"bob".to_vec());
     let charlie = generate_client(b"charlie".to_vec());

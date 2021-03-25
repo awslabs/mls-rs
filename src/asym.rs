@@ -67,7 +67,7 @@ mod ossl {
         let group = EcGroup::from_curve_name(nid)?;
         let mut ctx = BigNumContext::new()?;
         let point = EcPoint::from_bytes(&group, bytes, &mut ctx)?;
-        EcKey::from_public_key(&group, &point).map_err(|e| e.into())
+        EcKey::from_public_key(&group, &point)
     }
 
     pub fn pub_key_to_bytes(public: &EcKey<Public>) -> Result<Vec<u8>, ErrorStack> {
@@ -174,7 +174,7 @@ mod ossl {
                         let mut bytes = vec![0u8; Self::SK_LEN.into()];
                         rng.try_fill_bytes(&mut bytes)?;
 
-                        bytes[0] = bytes[0] & $bitmask;
+                        bytes[0] &= $bitmask;
 
                         if let Ok(secret_key) = Self::SK::from_bytes(&bytes) {
                             if let Ok(pub_key) = Self::get_pub_key(&secret_key) {

@@ -55,6 +55,7 @@ pub trait Kem {
         secret_key: &<Self::E as AsymmetricKeyEngine>::SK,
     ) -> Result<Vec<u8>, KemError>;
 
+    #[allow(clippy::type_complexity)]
     fn generate_kem_key_pair<RNG: CryptoRng + RngCore + 'static>(rng: &mut RNG) -> Result<(
                                                                <Self::E as AsymmetricKeyEngine>::PK,
                                                                <Self::E as AsymmetricKeyEngine>::SK,
@@ -64,6 +65,7 @@ pub trait Kem {
         Self::derive_key_pair(&ikm)
     }
 
+    #[allow(clippy::type_complexity)]
     fn derive_key_pair(ikm: &[u8]) -> Result<(
         <Self::E as AsymmetricKeyEngine>::PK,
         <Self::E as AsymmetricKeyEngine>::SK
@@ -79,7 +81,7 @@ pub trait Kem {
                                                           b"candidate",
                                                           &[i],
                                                           Self::E::SK_LEN)?;
-                bytes[0] = bytes[0] & curve_bitmask;
+                bytes[0] &= curve_bitmask;
 
                 if let Ok(secret_key) = <Self::E as AsymmetricKeyEngine>::SK::from_bytes(&bytes) {
                     if let Ok(pub_key) = Self::E::get_pub_key(&secret_key) {
@@ -174,10 +176,7 @@ pub enum KemId {
 
 impl KemId {
     pub fn is_supported(&self) -> bool {
-        match self {
-            Self::P384HkdfSha384 => false,
-            _ => true,
-        }
+        !matches!(self, Self::P384HkdfSha384)
     }
 }
 
