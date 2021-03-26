@@ -28,6 +28,8 @@ pub enum SecretTreeError {
     InvalidNodeConsumption,
     #[error("leaf secret already consumed")]
     InvalidLeafConsumption,
+    #[error("key not available, invalid generation {0}")]
+    KeyMissing(u32)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -155,7 +157,22 @@ impl SecretTree {
 #[derive(Clone, Debug, PartialEq)]
 pub struct EncryptionKey {
     pub nonce: Vec<u8>,
-    pub key: Vec<u8>
+    pub key: Vec<u8>,
+    pub generation: u32
+}
+
+impl EncryptionKey {
+    pub fn reuse_safe_nonce(&self, reuse_guard: &[u8]) -> Vec<u8> {
+        let mut reuse_nonce = self.nonce.clone();
+        reuse_nonce
+            .iter_mut()
+            .zip(reuse_guard.iter())
+            .for_each(|(nonce_byte, &guard_byte)| {
+                *nonce_byte ^= guard_byte
+            });
+
+        reuse_nonce
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -203,23 +220,62 @@ impl SecretKeyRatchet {
         })
     }
 
-    fn derive_value(&self, label: &str) -> Result<Vec<u8>, SecretTreeError> {
+    fn derive_key(&self) -> Result<Vec<u8>, SecretTreeError> {
         self.cipher_suite
-            .derive_tree_secret(&self.secret, label,
+            .derive_tree_secret(&self.secret, "key",
                                 self.node_index as u32,
                                 self.generation,
                                 ExpandType::AeadKey)
             .map_err(|e| e.into())
     }
 
+    fn derive_nonce(&self) -> Result<Vec<u8>, SecretTreeError> {
+        self.cipher_suite
+            .derive_tree_secret(&self.secret, "nonce",
+                                self.node_index as u32,
+                                self.generation,
+                                ExpandType::AeadNonce)
+            .map_err(|e| e.into())
+    }
+
+    fn ratchet_secret(&mut self) -> Result<(), SecretTreeError> {
+        self.secret = self.cipher_suite
+            .derive_tree_secret(
+                &self.secret,
+                "secret",
+                self.node_index as u32,
+                self.generation,
+                ExpandType::Secret
+            )?;
+
+        Ok(())
+    }
+
+    pub fn get_key(&mut self, generation: u32) -> Result<EncryptionKey, SecretTreeError> {
+        if generation <= self.generation {
+            // TODO: Look at the cache and see if we can return an older key
+            return Err(SecretTreeError::KeyMissing(generation))
+        } else {
+            let generated_keys = self
+                .take((generation - self.generation) as usize)
+                .collect::<Result<Vec<EncryptionKey>, SecretTreeError>>()?;
+
+            // TODO: Store all these keys someplace to handle out of order packets
+            generated_keys.last()
+                .cloned()
+                .ok_or(SecretTreeError::KeyMissing(generation))
+        }
+    }
+
     pub fn next_key(&mut self) -> Result<EncryptionKey, SecretTreeError> {
         let key = EncryptionKey {
-            nonce: self.derive_value("nonce")?,
-            key: self.derive_value("key")?
+            nonce: self.derive_nonce()?,
+            key: self.derive_key()?,
+            generation: self.generation + 1
         };
 
+        self.ratchet_secret()?;
         self.generation += 1;
-
         Ok(key)
     }
 }
@@ -235,7 +291,6 @@ impl Iterator for SecretKeyRatchet {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::kdf::KdfError;
 
     fn get_mock_cipher_suite_tree() -> CipherSuite {
         let mut cipher_suite = CipherSuite::new();
@@ -283,30 +338,14 @@ mod test {
         assert_eq!(count, secrets.len());
     }
 
-    fn get_key_ratchet_cipher_suite() -> CipherSuite {
-        let mut mock_cipher = CipherSuite::new();
-        mock_cipher.expect_derive_tree_secret().returning_st(move |secret, label, index, generation, e_type| {
-            if e_type != ExpandType::AeadKey && generation != 0 {
-                Err(CipherSuiteError::KdfError(KdfError::Other("test failure".to_string())))
-            } else {
-                Ok([secret, label.as_bytes(),
-                    &generation.to_be_bytes().to_vec(),
-                    &index.to_be_bytes().to_vec()]
-                    .concat())
-            }
-        });
-        mock_cipher.expect_clone().returning_st(move || get_key_ratchet_cipher_suite());
-        mock_cipher
-    }
-
     #[test]
     fn test_secret_key_ratchet() {
-        let app_ratchet = SecretKeyRatchet::new(get_key_ratchet_cipher_suite(),
+        let app_ratchet = SecretKeyRatchet::new(get_mock_cipher_suite_tree(),
                                                 LeafIndex(42),
                                                 &b"foo".to_vec(),
                                                 KeyType::Application).unwrap();
 
-        let handshake_ratchet = SecretKeyRatchet::new(get_key_ratchet_cipher_suite(),
+        let handshake_ratchet = SecretKeyRatchet::new(get_mock_cipher_suite_tree(),
                                                       LeafIndex(42),
                                                       &b"foo".to_vec(),
                                                       KeyType::Handshake).unwrap();
@@ -325,5 +364,38 @@ mod test {
 
         // Verify that the keys at each generation are different
         assert_ne!(handshake_keys[0], handshake_keys[1]);
+    }
+
+    #[test]
+    fn test_get_key() {
+        let mut ratchet = SecretKeyRatchet::new(get_mock_cipher_suite_tree(),
+                                                LeafIndex(42),
+                                                &b"foo".to_vec(),
+                                                KeyType::Application).unwrap();
+
+        let mut ratchet_clone = ratchet.clone();
+        let _ = ratchet_clone.next_key().unwrap();
+        let clone_2 = ratchet_clone.next_key().unwrap();
+
+        // Going back in time should result in an error
+        assert_eq!(ratchet_clone.get_key(0).is_err(), true);
+
+        // Calling get key should be the same as calling next until hitting the desired generation
+        let second_key = ratchet.get_key(3).unwrap();
+        assert_eq!(second_key.generation, 3);
+        assert_eq!(clone_2, second_key)
+    }
+
+    #[test]
+    fn test_secret_ratchet() {
+        let mut ratchet = SecretKeyRatchet::new(get_mock_cipher_suite_tree(),
+                                                LeafIndex(42),
+                                                &b"foo".to_vec(),
+                                                KeyType::Application).unwrap();
+
+        let original_secret = ratchet.secret.clone();
+        let _ = ratchet.next_key().unwrap();
+        let new_secret = ratchet.secret;
+        assert_ne!(original_secret, new_secret)
     }
 }

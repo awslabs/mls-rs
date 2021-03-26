@@ -7,7 +7,6 @@ use crate::kem::Kem;
 use crate::protocol_version::ProtocolVersion;
 use crate::signature;
 use crate::signature::{SignatureError, SignatureScheme};
-use rand_core::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use crate::asym::AsymmetricKey;
@@ -16,6 +15,7 @@ use crate::kdf::{Kdf};
 use crate::key_schedule::KeyScheduleKdf;
 use crate::hpke::{Hpke, HPKEError, HPKECiphertext};
 use crate::aead::{Cipher, aes, chacha20, CipherError};
+use crate::rand::SecureRng;
 
 #[derive(IntoPrimitive, TryFromPrimitive, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[repr(u16)]
@@ -57,7 +57,7 @@ pub trait CipherSuiteType {
     const SUITE_ID: u16;
     const PROTOCOL_VERSION: ProtocolVersion;
 
-    fn generate_kem_key_pair<RNG: CryptoRng + RngCore + 'static>(rng: &mut RNG) -> Result<KemKeyPair, CipherSuiteError> {
+    fn generate_kem_key_pair<RNG: SecureRng + 'static>(rng: &mut RNG) -> Result<KemKeyPair, CipherSuiteError> {
         let (pk, sk) = <<Self::HPKE as Hpke>::KEM as Kem>::generate_kem_key_pair(rng)?;
         Ok(KemKeyPair {
             public_key: pk.to_bytes()?,
@@ -89,14 +89,14 @@ pub trait CipherSuiteType {
         Self::H::hash(value).map_err(|e| e.into())
     }
 
-    fn generate_leaf_secret<RNG: CryptoRng + RngCore + 'static>
+    fn generate_leaf_secret<RNG: SecureRng + 'static>
         (rng: &mut RNG) -> Result<Vec<u8>, CipherSuiteError> {
         let mut ret = vec![0u8; <<Self::HPKE as Hpke>::KEM as Kem>::N_SECRET as usize];
         rng.try_fill_bytes(&mut ret)?;
         Ok(ret)
     }
 
-    fn generate_init_secret<RNG: CryptoRng + RngCore + 'static>
+    fn generate_init_secret<RNG: SecureRng + 'static>
     (rng: &mut RNG) -> Result<Vec<u8>, CipherSuiteError> {
         let mut ret = vec![0u8; Self::KDF::EXTRACT_SIZE as usize];
         rng.try_fill_bytes(&mut ret)?;
@@ -150,7 +150,7 @@ pub trait CipherSuiteType {
         SK::from_bytes(data).map_err(|e| e.into())
     }
 
-    fn hpke_seal<RNG: CryptoRng + RngCore + 'static>(
+    fn hpke_seal<RNG: SecureRng + 'static>(
         rng: &mut RNG, public_key: &[u8],
         aad: &[u8], pt: &[u8]
     ) -> Result<HPKECiphertext, CipherSuiteError> {
@@ -194,7 +194,7 @@ pub enum ExpandType {
 
 impl CipherSuite {
 
-    pub fn generate_leaf_secret<RNG: CryptoRng + RngCore + 'static>(&self, rng: &mut RNG) -> Result<Vec<u8>, CipherSuiteError> {
+    pub fn generate_leaf_secret<RNG: SecureRng + 'static>(&self, rng: &mut RNG) -> Result<Vec<u8>, CipherSuiteError> {
         match self {
             CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => {
                 Mls10DhKem25519Aes128GcmSha256Ed25519::generate_leaf_secret(rng)
@@ -262,7 +262,7 @@ impl CipherSuite {
         }
     }
 
-    pub fn generate_init_secret<RNG: CryptoRng + RngCore + 'static>(&self, rng: &mut RNG) -> Result<Vec<u8>, CipherSuiteError> {
+    pub fn generate_init_secret<RNG: SecureRng + 'static>(&self, rng: &mut RNG) -> Result<Vec<u8>, CipherSuiteError> {
         match self {
             CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => {
                 Mls10DhKem25519Aes128GcmSha256Ed25519::generate_init_secret(rng)
@@ -279,7 +279,7 @@ impl CipherSuite {
         }
     }
 
-    pub fn generate_kem_key_pair<RNG: CryptoRng + RngCore + 'static>(&self, rng: &mut RNG) -> Result<KemKeyPair, CipherSuiteError> {
+    pub fn generate_kem_key_pair<RNG: SecureRng + 'static>(&self, rng: &mut RNG) -> Result<KemKeyPair, CipherSuiteError> {
         match self {
             CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => {
                 Mls10DhKem25519Aes128GcmSha256Ed25519::generate_kem_key_pair(rng)
@@ -416,7 +416,7 @@ impl CipherSuite {
         }
     }
 
-    pub fn hpke_seal<RNG: CryptoRng + RngCore + 'static>(
+    pub fn hpke_seal<RNG: SecureRng + 'static>(
         &self, rng: &mut RNG, public_key: &[u8],
         aad: &[u8], pt: &[u8]
     ) -> Result<HPKECiphertext, CipherSuiteError> {
@@ -960,7 +960,7 @@ mod test {
 pub mod test_util {
     use mockall::mock;
     use serde::{Serialize, Deserialize, Serializer, Deserializer};
-    use rand_core::{CryptoRng, RngCore};
+    use crate::rand::SecureRng;
     use crate::ciphersuite::{KemKeyPair, CipherSuiteError};
     use crate::protocol_version::ProtocolVersion;
     use std::fmt::{Debug};
@@ -978,7 +978,7 @@ pub mod test_util {
 
     mock! {
         pub CipherSuite {
-            pub fn generate_kem_key_pair<RNG: CryptoRng + RngCore + 'static>(&self, mut rng: &RNG) -> Result<KemKeyPair, CipherSuiteError>;
+            pub fn generate_kem_key_pair<RNG: SecureRng + 'static>(&self, mut rng: &RNG) -> Result<KemKeyPair, CipherSuiteError>;
             pub fn derive_kem_key_pair(&self, ikm: &[u8]) -> Result<KemKeyPair, CipherSuiteError>;
             pub fn get_protocol_version(&self) -> ProtocolVersion;
             pub fn get_id(&self) -> u16;
@@ -990,9 +990,9 @@ pub mod test_util {
             pub fn expand_with_label(&self, secret: &[u8], label: &str, context: &[u8], e_type: ExpandType) -> Result<Vec<u8>, CipherSuiteError>;
             pub fn derive_tree_secret(&self, secret: &[u8], label: &str, node: u32, generation: u32, e_type: ExpandType) -> Result<Vec<u8>, CipherSuiteError>;
             pub fn derive_secret(&self, secret: &[u8], label: &str) -> Result<Vec<u8>, CipherSuiteError>;
-            pub fn generate_leaf_secret<RNG: CryptoRng + RngCore + 'static>(&self, rng: &RNG) -> Result<Vec<u8>, CipherSuiteError>;
-            pub fn generate_init_secret<RNG: CryptoRng + RngCore + 'static>(&self, rng: &mut RNG) -> Result<Vec<u8>, CipherSuiteError>;
-            pub fn hpke_seal<RNG: CryptoRng + RngCore + 'static>(&self, rng: &mut RNG, public_key: &[u8],aad: &[u8], pt: &[u8]) -> Result<HPKECiphertext, CipherSuiteError>;
+            pub fn generate_leaf_secret<RNG: SecureRng + 'static>(&self, rng: &RNG) -> Result<Vec<u8>, CipherSuiteError>;
+            pub fn generate_init_secret<RNG: SecureRng + 'static>(&self, rng: &mut RNG) -> Result<Vec<u8>, CipherSuiteError>;
+            pub fn hpke_seal<RNG: SecureRng + 'static>(&self, rng: &mut RNG, public_key: &[u8],aad: &[u8], pt: &[u8]) -> Result<HPKECiphertext, CipherSuiteError>;
             pub fn hpke_open(&self, ct: &HPKECiphertext, secret_key: &[u8],aad: &[u8]) -> Result<Vec<u8>, CipherSuiteError>;
             pub fn aead_encrypt(&self, key: Vec<u8>, data: &[u8], aad: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CipherSuiteError>;
             pub fn aead_decrypt(&self, key: Vec<u8>, data: &[u8], aad: &[u8], nonce: &[u8]) -> Result<Vec<u8>, CipherSuiteError>;

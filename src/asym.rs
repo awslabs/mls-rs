@@ -1,7 +1,7 @@
 use thiserror::Error;
 use openssl::error::ErrorStack;
 use crate::kdf::{KdfError};
-use rand_core::{CryptoRng, RngCore};
+use crate::rand::SecureRng;
 
 #[derive(Error, Debug)]
 pub enum AsymmetricKeyError {
@@ -29,7 +29,7 @@ pub trait AsymmetricKeyEngine {
     type PK: PublicKey;
     type SK: SecretKey;
     const SK_LEN: u16;
-    fn random_key_pair<RNG: CryptoRng + RngCore + 'static>(rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError>;
+    fn random_key_pair<RNG: SecureRng + 'static>(rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError>;
     fn get_pub_key(sk: &Self::SK) -> Result<Self::PK, AsymmetricKeyError>;
 }
 
@@ -169,7 +169,7 @@ mod ossl {
 
                 // Heavily based on the derive_key_pair function which ensures the random value
                 // is in range for the curve
-                fn random_key_pair<RNG: CryptoRng + RngCore>(mut rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError> {
+                fn random_key_pair<RNG: SecureRng>(mut rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError> {
                     for _ in 0u8..255 {
                         let mut bytes = vec![0u8; Self::SK_LEN.into()];
                         rng.try_fill_bytes(&mut bytes)?;
@@ -257,7 +257,7 @@ pub mod p521 {
         EcdhEngine,
         AsymmetricKeyEngine,
     };
-    use rand_core::{RngCore, CryptoRng};
+    use crate::rand::SecureRng;
     use serde::{Deserialize, Serialize, Serializer, Deserializer};
 
     openssl_asym_key!(Nid::SECP521R1, 66, 133, 0x01);
@@ -329,7 +329,7 @@ pub mod p256 {
         EcdhEngine,
         AsymmetricKeyEngine
     };
-    use rand_core::{RngCore, CryptoRng};
+    use crate::rand::SecureRng;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     openssl_asym_key!(Nid::X9_62_PRIME256V1, 32, 65, 0xFF);
@@ -378,8 +378,8 @@ pub mod x25519 {
         AsymmetricKeyEngine,
         EcdhEngine,
     };
-    use rand_core::{CryptoRng, RngCore};
     use serde::{ Serialize, Serializer, Deserialize, Deserializer };
+    use crate::rand::SecureRng;
 
     #[derive(Clone, Debug)]
     pub struct PublicKey {
@@ -458,7 +458,7 @@ pub mod x25519 {
         type SK = SecretKey;
         const SK_LEN: u16 = 32;
 
-        fn random_key_pair<RNG: CryptoRng + RngCore + 'static>(rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError> {
+        fn random_key_pair<RNG: SecureRng + 'static>(rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError> {
             let secret_key = x25519_dalek::StaticSecret::new(rng);
             let pub_key = x25519_dalek::PublicKey::from(&secret_key);
             Ok((pub_key.into(), secret_key.into()))
@@ -520,8 +520,8 @@ pub mod x448 {
         EcdhEngine,
         AsymmetricKeyEngine
     };
-    use rand_core::{CryptoRng, RngCore};
     use serde::{Serialize, Serializer, Deserialize, Deserializer};
+    use crate::rand::SecureRng;
 
     pub struct PublicKey {
         key: x448::PublicKey
@@ -604,7 +604,7 @@ pub mod x448 {
         type SK = SecretKey;
         const SK_LEN: u16 = 56;
 
-        fn random_key_pair<RNG: CryptoRng + RngCore>(mut rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError> {
+        fn random_key_pair<RNG: SecureRng>(mut rng: RNG) -> Result<(Self::PK, Self::SK), AsymmetricKeyError> {
             let secret_key = x448::Secret::new(&mut rng);
             let pub_key = x448::PublicKey::from(&secret_key);
             Ok((pub_key.into(), secret_key.into()))
@@ -755,7 +755,7 @@ pub mod test_util {
     use mockall::mock;
     use super::{
         AsymmetricKey, AsymmetricKeyEngine, AsymmetricKeyError,
-        CryptoRng, RngCore
+        SecureRng
     };
 
     mock! {
@@ -795,7 +795,7 @@ pub mod test_util {
             type PK = MockPublicKey;
             type SK = MockSecretKey;
             const SK_LEN: u16 = 0;
-            fn random_key_pair<RNG: CryptoRng + RngCore + 'static>(rng: RNG) -> Result<(<MockTestKeyEngine as AsymmetricKeyEngine>::PK, <MockTestKeyEngine as AsymmetricKeyEngine>::SK), AsymmetricKeyError>;
+            fn random_key_pair<RNG: SecureRng + 'static>(rng: RNG) -> Result<(<MockTestKeyEngine as AsymmetricKeyEngine>::PK, <MockTestKeyEngine as AsymmetricKeyEngine>::SK), AsymmetricKeyError>;
             fn get_pub_key(sk: &<MockTestKeyEngine as AsymmetricKeyEngine>::SK) -> Result<<MockTestKeyEngine as AsymmetricKeyEngine>::PK, AsymmetricKeyError>;
         }
     }

@@ -8,19 +8,20 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use cfg_if::cfg_if;
 use std::collections::HashMap;
-use rand_core::{CryptoRng, RngCore};
 use crate::extension::Extension;
 use crate::tree_node::{LeafIndex};
 use crate::hash::Mac;
 use crate::hpke::HPKECiphertext;
 use crate::protocol_version::ProtocolVersion;
-use crate::signature::{Verifier, SignatureError, Signable};
+use crate::signature::{Verifier, SignatureError, Signable, Signer};
 use crate::group::Proposal::Add;
-use crate::framing::{MLSPlaintext, Content, Sender, MLSPlaintextCommitAuthData, MLSPlaintextCommitContent, CommitConversionError, SenderType};
+use crate::framing::{MLSPlaintext, Content, Sender, MLSPlaintextCommitAuthData, MLSPlaintextCommitContent, CommitConversionError, SenderType, MLSCiphertext, MLSCiphertextContent, MLSCiphertextContentAAD, ContentType, MLSSenderData, MLSSenderDataAAD};
 use crate::group::GroupError::InvalidPlaintextEpoch;
 use crate::transcript_hash::{ConfirmedTranscriptHash, TranscriptHashError, InterimTranscriptHash};
 use std::convert::TryFrom;
 use std::option::Option::Some;
+use crate::rand::SecureRng;
+use crate::secret_tree::KeyType;
 
 cfg_if! {
     if #[cfg(test)] {
@@ -149,6 +150,8 @@ pub enum GroupError {
     TranscriptHashError(#[from] TranscriptHashError),
     #[error(transparent)]
     CommitConversionError(#[from] CommitConversionError),
+    #[error(transparent)]
+    RngError(#[from] rand_core::Error),
     #[error("Cipher suite does not match")]
     CipherSuiteMismatch,
     #[error("Invalid key package signature")]
@@ -316,7 +319,7 @@ pub struct PendingCommit {
 }
 
 impl Group {
-    pub fn new<RNG: CryptoRng + RngCore + 'static>(
+    pub fn new<RNG: SecureRng + 'static>(
         rng: &mut RNG,
         group_id: Vec<u8>,
         creator_key_package: KeyPackageGeneration
@@ -506,8 +509,7 @@ impl Group {
         Ok((provisional_tree, added_leaves, self.path_update_required(&proposals)))
     }
 
-    // TODO: Add a filter here so that the user can choose not to send a specific proposal
-    pub fn commit_proposals<RNG: CryptoRng + RngCore + 'static, KPG: KeyPackageGenerator>(
+    pub fn commit_proposals<RNG: SecureRng + 'static, KPG: KeyPackageGenerator>(
         &self,
         proposals: Vec<Proposal>,
         update_path: bool,
@@ -600,7 +602,7 @@ impl Group {
             content: Content::Commit(commit),
             signature: vec![],
             confirmation_tag: None,
-            membership_tag: None
+            membership_tag: None //TODO: Membership tag is required for plaintext messages over the wire
         };
 
         // Sign the MLSPlaintext using the current epoch's GroupContext as context.
@@ -686,7 +688,7 @@ impl Group {
         })
     }
 
-    fn encrypt_group_secrets<RNG: CryptoRng + RngCore + 'static>(
+    fn encrypt_group_secrets<RNG: SecureRng + 'static>(
         &self,
         rng: &mut RNG,
         provisional_tree: &RatchetTree,
@@ -756,6 +758,153 @@ impl Group {
             .map(|_| ())
     }
 
+    pub fn encrypt_plaintext<RNG: SecureRng>(&mut self, rng: &mut RNG, plaintext: MLSPlaintext) -> Result<MLSCiphertext, GroupError> {
+        let content_type = ContentType::from(&plaintext.content);
+
+        // Build a ciphertext content using the plaintext content and signature
+        let ciphertext_content = MLSCiphertextContent {
+            content: plaintext.content,
+            signature: plaintext.signature,
+            confirmation_tag: None,
+            padding: vec![] //TODO: Implement a padding mechanism
+        };
+
+        // Build ciphertext aad using the plaintext message
+        let aad = MLSCiphertextContentAAD {
+            group_id: plaintext.group_id,
+            epoch: plaintext.epoch,
+            content_type,
+            authenticated_data: vec![]
+        };
+
+        // Generate a 4 byte reuse guard
+        let reuse_guard = rng.rand_bytes(4)?;
+
+        // Grab an encryption key from the current epoch's key schedule
+        let key_type = match &content_type {
+            ContentType::Application => KeyType::Application,
+            _=> KeyType::Handshake
+        };
+
+        let encryption_key = self.key_schedule.get_encryption_key(key_type)?;
+
+        // Encrypt the ciphertext content using the encryption key and a nonce that is
+        // reuse safe by xor the reuse guard with the first 4 bytes
+        let ciphertext = self.cipher_suite.aead_encrypt(
+            encryption_key.key.clone(), // TODO: We can avoid cloning if we refactor the cipher suite
+            &bincode::serialize(&ciphertext_content)?,
+            &bincode::serialize(&aad)?,
+            &encryption_key.reuse_safe_nonce(&reuse_guard)
+        )?;
+
+        // Construct an mls sender data struct using the plaintext sender info, the generation
+        // of the key schedule encryption key, and the reuse guard used to encrypt ciphertext
+        let sender_data = MLSSenderData {
+            sender: plaintext.sender.sender,
+            generation: encryption_key.generation,
+            reuse_guard
+        };
+
+        let sender_data_aad = MLSSenderDataAAD {
+            group_id: self.context.group_id.clone(),
+            epoch: self.context.epoch,
+            content_type
+        };
+
+        // Encrypt the sender data with the derived sender_key and sender_nonce from the current
+        // epoch's key schedule
+        let (sender_key, sender_nonce) = self.key_schedule
+            .get_sender_data_params(&ciphertext)?;
+
+        let encrypted_sender_data = self.cipher_suite.aead_encrypt(
+            sender_key,
+            &bincode::serialize(&sender_data)?,
+            &bincode::serialize(&sender_data_aad)?,
+            &sender_nonce
+        )?;
+
+        Ok(MLSCiphertext {
+            group_id: self.context.group_id.clone(),
+            epoch: self.context.epoch,
+            content_type: ContentType::Application,
+            authenticated_data: vec![],
+            encrypted_sender_data,
+            ciphertext
+        })
+    }
+
+    pub fn encrypt_application_message<RNG: SecureRng, S: Signer>(&mut self, rng: &mut RNG, message: Vec<u8>, signer: &S) -> Result<MLSCiphertext, GroupError> {
+        let mut plaintext = MLSPlaintext {
+            group_id: self.context.group_id.clone(),
+            epoch: self.context.epoch,
+            sender: Sender {
+                sender_type: SenderType::Member,
+                sender: self.private_tree.self_index.0 as u32
+            },
+            authenticated_data: vec![],
+            content: Content::Application(message),
+            signature: vec![],
+            confirmation_tag: None,
+            membership_tag: None
+        };
+
+        plaintext.signature = signer.sign(&plaintext.signable_representation(&self.context))?;
+
+        self.encrypt_plaintext(rng, plaintext)
+    }
+
+    pub fn process_ciphertext(&mut self, ciphertext: MLSCiphertext) -> Result<Option<Vec<u8>>, GroupError> {
+        // Decrypt the sender data with the derived sender_key and sender_nonce from the current
+        // epoch's key schedule
+        let (sender_key, sender_nonce) = self.key_schedule
+            .get_sender_data_params(&ciphertext.ciphertext)?;
+
+        let sender_data_aad = MLSSenderDataAAD {
+            group_id: self.context.group_id.clone(),
+            epoch: self.context.epoch,
+            content_type: ciphertext.content_type
+        };
+
+        let decrypted_sender = self.cipher_suite.aead_decrypt(sender_key, &ciphertext.encrypted_sender_data, &bincode::serialize(&sender_data_aad)?, &sender_nonce)?;
+        let sender_data = bincode::deserialize::<MLSSenderData>(&decrypted_sender)?;
+
+        // Grab an encryption key from the current epoch's key schedule
+        let key_type = match &ciphertext.content_type {
+            ContentType::Application => KeyType::Application,
+            _=> KeyType::Handshake
+        };
+
+        let decryption_key = self.key_schedule.get_decryption_key(LeafIndex(sender_data.sender as usize), sender_data.generation, key_type)?;
+
+        // Build ciphertext aad using the ciphertext message
+        let aad = MLSCiphertextContentAAD {
+            group_id: ciphertext.group_id.clone(),
+            epoch: ciphertext.epoch,
+            content_type: ciphertext.content_type,
+            authenticated_data: vec![]
+        };
+
+        let nonce = decryption_key.reuse_safe_nonce(&sender_data.reuse_guard);
+
+        // Decrypt the content of the message using the
+        let decrypted_content = self.cipher_suite.aead_decrypt(decryption_key.key, &ciphertext.ciphertext, &bincode::serialize(&aad)?, &nonce)?;
+        let ciphertext_content = bincode::deserialize::<MLSCiphertextContent>(&decrypted_content)?;
+
+        // Build the MLS plaintext object and process it
+        let plaintext = MLSPlaintext {
+            group_id: ciphertext.group_id.clone(),
+            epoch: ciphertext.epoch,
+            sender: Sender { sender_type: SenderType::Member, sender: sender_data.sender },
+            authenticated_data: vec![],
+            content: ciphertext_content.content,
+            signature: ciphertext_content.signature,
+            confirmation_tag: ciphertext_content.confirmation_tag,
+            membership_tag: None // TODO: Membership tag
+        };
+
+        self.process_plaintext(plaintext)
+    }
+
     fn process_plaintext_internal(
         &mut self,
         plaintext: MLSPlaintext,
@@ -784,9 +933,10 @@ impl Group {
 
         // Process the contents of the packet
         match &plaintext.content {
-            Content::Application(_) => { Ok(None) } //TODO: Decrypt application packet
+            Content::Application(content) => { Ok(content.clone().into()) }
             Content::Proposal(p) => {
-                let hash = bincode::serialize(&plaintext)?;
+                let hash = self.cipher_suite
+                    .hash(&bincode::serialize(&plaintext)?)?;
                 self.proposals.insert(hash, p.clone());
                 Ok(None)
             }
@@ -871,6 +1021,7 @@ impl Group {
                 let secrets = if let Some(pending) = local_pending {
                     Ok(pending.secrets)
                 } else {
+                    // TODO: Verify that the new leaf has a valid key package
                     provisional_tree.refresh_private_key(
                         &self.private_tree,
                         sender,

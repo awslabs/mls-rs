@@ -117,9 +117,12 @@ impl EpochKeySchedule {
         //TODO: PSK is not supported
         let epoch_seed = cipher_suite.extract(&joiner_secret, &[])?;
 
-        let epoch_secret = cipher_suite.expand_with_label(&epoch_seed,
-                                                 "epoch", &bincode::serialize(context)?,
-                                                 ExpandType::Secret)?;
+        let epoch_secret = cipher_suite.expand_with_label(
+            &epoch_seed,
+            "epoch",
+            &bincode::serialize(context)?,
+            ExpandType::Secret
+        )?;
 
         // Derive secrets from epoch secret
         let sender_data_secret = cipher_suite.derive_secret(&epoch_secret, "sender data")?;
@@ -133,7 +136,11 @@ impl EpochKeySchedule {
 
         let init_secret = cipher_suite.derive_secret(&epoch_secret, "init")?;
 
-        let secret_tree = SecretTree::new(cipher_suite.clone(), num_leaves, encryption_secret);
+        let secret_tree = SecretTree::new(
+            cipher_suite.clone(),
+            num_leaves,
+            encryption_secret
+        );
 
         Ok(Self {
             cipher_suite,
@@ -153,7 +160,11 @@ impl EpochKeySchedule {
     }
 
     #[inline]
-    fn get_ratchet(&mut self, leaf_index: LeafIndex, key_type: &KeyType) -> Option<&mut SecretKeyRatchet> {
+    fn get_ratchet(
+        &mut self,
+        leaf_index: LeafIndex,
+        key_type: &KeyType
+    ) -> Option<&mut SecretKeyRatchet> {
         match key_type {
             KeyType::Handshake => self.handshake_ratchets.get_mut(&leaf_index),
             KeyType::Application => self.application_ratchets.get_mut(&leaf_index)
@@ -161,57 +172,124 @@ impl EpochKeySchedule {
     }
 
     #[inline]
-    fn derive_ratchets(&mut self, leaf_index: LeafIndex, out_type: &KeyType) -> Result<&mut SecretKeyRatchet, EpochKeyScheduleError> {
+    fn derive_ratchets(
+        &mut self,
+        leaf_index: LeafIndex,
+        out_type: &KeyType
+    ) -> Result<&mut SecretKeyRatchet, EpochKeyScheduleError> {
         let ratchets = self.secret_tree.get_leaf_secret_ratchets(leaf_index)?;
         self.application_ratchets.insert(leaf_index, ratchets.application);
         self.handshake_ratchets.insert(leaf_index, ratchets.handshake);
-        self.get_ratchet(leaf_index, out_type).ok_or(EpochKeyScheduleError::KeyDerivationFailure)
+        self.get_ratchet(leaf_index, out_type)
+            .ok_or(EpochKeyScheduleError::KeyDerivationFailure)
     }
 
     #[inline]
-    //TODO: Make sure to support out of order / skipped packets by passing in pkt number
-    fn get_key(&mut self, leaf_index: LeafIndex, key_type: &KeyType) -> Result<EncryptionKey, EpochKeyScheduleError> {
+    fn get_key(
+        &mut self,
+        leaf_index: LeafIndex,
+        generation: Option<u32>,
+        key_type: &KeyType
+    ) -> Result<EncryptionKey, EpochKeyScheduleError> {
         if let Some(ratchet) = self.get_ratchet(leaf_index, &key_type) {
-            ratchet.next_key().map_err(|e| e.into())
+            match generation {
+                None => ratchet.next_key(),
+                Some(gen) => ratchet.get_key(gen)
+            }
+            .map_err(|e| e.into())
         } else {
-            self.derive_ratchets(leaf_index, &key_type).and_then(|r| r.next_key().map_err(|e| e.into()))
+            self.derive_ratchets(leaf_index, &key_type)
+                .and_then(|r| r.next_key().map_err(|e| e.into()))
         }
     }
 
-    //TODO: Make sure to support out of order / skipped packets by passing in pkt number
-    pub fn get_encryption_key(&mut self, key_type: KeyType) -> Result<EncryptionKey, EpochKeyScheduleError> {
-        self.get_key(self.self_index, &key_type)
+    pub fn get_encryption_key(
+        &mut self,
+        key_type: KeyType
+    ) -> Result<EncryptionKey, EpochKeyScheduleError> {
+        self.get_key(self.self_index, None, &key_type)
     }
 
-    //TODO: Make sure to support out of order / skipped packets by passing in pkt number
-    pub fn get_decryption_key(&mut self, sender: LeafIndex, key_type: KeyType) -> Result<EncryptionKey, EpochKeyScheduleError> {
-        self.get_key(sender, &key_type)
+    pub fn get_decryption_key(
+        &mut self,
+        sender: LeafIndex,
+        generation: u32,
+        key_type: KeyType
+    ) -> Result<EncryptionKey, EpochKeyScheduleError> {
+        self.get_key(sender, Some(generation), &key_type)
+    }
+
+    pub fn get_sender_data_params(
+        &self,
+        ciphertext: &[u8]
+    ) -> Result<(Vec<u8>, Vec<u8>), EpochKeyScheduleError> {
+        // Sample the first extract_size bytes of the ciphertext, and if it is shorter, just use
+        // the ciphertext itself
+        let ciphertext_sample = if ciphertext.len() <= self.cipher_suite.extract_size() as usize {
+            ciphertext
+        } else {
+            ciphertext.get(0..self.cipher_suite.extract_size() as usize).unwrap()
+        };
+
+        // Generate a sender data key and nonce using the sender_data_secret from the current
+        // epoch's key schedule
+        let sender_data_key = self.cipher_suite.expand_with_label(
+            &self.sender_data_secret,
+            "key",
+            ciphertext_sample,
+            ExpandType::AeadKey
+        )?;
+
+        let sender_data_nonce = self.cipher_suite.expand_with_label(
+            &self.sender_data_secret,
+            "nonce",
+            ciphertext_sample,
+            ExpandType::AeadNonce
+        )?;
+
+        Ok((sender_data_key, sender_data_nonce))
     }
 }
 
-pub struct CommitSecret();
+pub struct CommitSecret(Vec<u8>);
+
+impl Deref for CommitSecret {
+    type Target = Vec<u8>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl CommitSecret {
     // Define commit_secret as the value path_secret[n+1] derived from the path_secret[n] value
     // assigned to the root node.
-    pub fn from_update_path(cipher_suite: &CipherSuite, update_path: Option<&UpdatePathGeneration>) -> Result<Vec<u8>, CipherSuiteError> {
+    pub fn from_update_path(
+        cipher_suite: &CipherSuite,
+        update_path: Option<&UpdatePathGeneration>
+    ) -> Result<Self, CipherSuiteError> {
         Self::from_tree_secrets(cipher_suite,
                                 update_path.map(|up| &up.secrets))
     }
 
-    pub fn from_tree_secrets(cipher_suite: &CipherSuite, secrets: Option<&TreeSecrets>) -> Result<Vec<u8>, CipherSuiteError> {
+    pub fn from_tree_secrets(
+        cipher_suite: &CipherSuite,
+        secrets: Option<&TreeSecrets>
+    ) -> Result<Self, CipherSuiteError> {
         match secrets {
             Some(secrets) => {
-                cipher_suite.derive_secret(&secrets.secret_path.root_secret, "path")
+                let secret = cipher_suite.derive_secret(&secrets.secret_path.root_secret,
+                                                        "path")?;
+                Ok(CommitSecret(secret))
             },
             None => Ok(Self::empty(cipher_suite))
         }
     }
 
-    pub fn empty(cipher_suite: &CipherSuite) -> Vec<u8> {
+    pub fn empty(cipher_suite: &CipherSuite) -> Self {
         // Define commit_secret as the all-zero vector of the same length as a path_secret
         // value would be
-        vec![0u8; cipher_suite.extract_size() as usize]
+        CommitSecret(vec![0u8; cipher_suite.extract_size() as usize])
     }
 }
 
@@ -226,7 +304,10 @@ impl Deref for WelcomeSecret {
 }
 
 impl WelcomeSecret {
-    pub fn from_joiner_secret(cipher_suite: &CipherSuite, joiner_secret: &[u8]) -> Result<WelcomeSecret, CipherSuiteError> {
+    pub fn from_joiner_secret(
+        cipher_suite: &CipherSuite,
+        joiner_secret: &[u8]
+    ) -> Result<WelcomeSecret, CipherSuiteError> {
         //TODO: PSK is not supported
         let epoch_seed = cipher_suite.extract(&joiner_secret, &[])?;
 
@@ -244,13 +325,21 @@ impl WelcomeSecret {
         cipher_suite.expand(&self, b"key", ExpandType::AeadKey)
     }
 
-    pub fn encrypt(&self, cipher_suite: &CipherSuite, plaintext: &[u8]) -> Result<Vec<u8>, CipherSuiteError> {
+    pub fn encrypt(
+        &self,
+        cipher_suite: &CipherSuite,
+        plaintext: &[u8]
+    ) -> Result<Vec<u8>, CipherSuiteError> {
         let key = self.as_key(cipher_suite)?;
         let nonce = self.as_nonce(cipher_suite)?;
         cipher_suite.aead_encrypt(key, plaintext, &[], &nonce)
     }
 
-    pub fn decrypt(&self, cipher_suite: &CipherSuite, ciphertext: &[u8]) -> Result<Vec<u8>, CipherSuiteError> {
+    pub fn decrypt(
+        &self,
+        cipher_suite: &CipherSuite,
+        ciphertext: &[u8]
+    ) -> Result<Vec<u8>, CipherSuiteError> {
         let key = self.as_key(cipher_suite)?;
         let nonce = self.as_nonce(cipher_suite)?;
         cipher_suite.aead_decrypt(key, ciphertext, &[], &nonce)

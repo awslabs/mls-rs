@@ -3,10 +3,10 @@ use thiserror::Error;
 use crate::asym::{AsymmetricKeyEngine};
 use crate::kdf::{Kdf, KdfError};
 use crate::aead::{ Cipher, CipherError, aes, chacha20 };
-use rand_core::{CryptoRng, RngCore};
 use std::fmt::Debug;
 use crate::hpke_kdf::HpkeKdf;
 use serde::{Serialize, Deserialize};
+use crate::rand::SecureRng;
 
 #[derive(Error, Debug)]
 pub enum HPKEError {
@@ -189,7 +189,7 @@ pub trait Hpke: Sized {
         })
     }
 
-    fn setup_basic_sender<RNG: CryptoRng + RngCore + 'static>(
+    fn setup_basic_sender<RNG: SecureRng + 'static>(
         rng: &mut RNG,
         remote_key: &<<Self::KEM as Kem>::E as AsymmetricKeyEngine>::PK,
         info: &[u8]
@@ -238,7 +238,7 @@ pub trait Hpke: Sized {
     /*
     draft-irtf-cfrg-hpke section 6 Single-Shot APIs
     */
-    fn seal_basic<RNG: CryptoRng + RngCore + 'static>(
+    fn seal_basic<RNG: SecureRng + 'static>(
         rng: &mut RNG,
         remote_key: &<<Self::KEM as Kem>::E as AsymmetricKeyEngine>::PK,
         info: &[u8], aad: &[u8], pt: &[u8]) -> Result<HPKECiphertext, HPKEError> {

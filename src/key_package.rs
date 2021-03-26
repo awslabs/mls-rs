@@ -16,8 +16,8 @@ use serde::{Serialize, Deserialize};
 use crate::signature::{SignatureError, Signable, Signer, Verifier};
 use thiserror::Error;
 use bincode::Options;
-use rand_core::{RngCore, CryptoRng};
 use crate::ciphersuite::CipherSuiteError;
+use crate::rand::SecureRng;
 
 #[derive(Error, Debug)]
 pub enum KeyPackageError {
@@ -65,6 +65,7 @@ impl Signable for KeyPackage {
     }
 }
 
+// TODO: Make an is valid function that checks the lifetime as well as the signature
 impl KeyPackage {
     pub fn has_valid_signature(&self) -> bool {
         self.credential.verify(&self.signature, self).unwrap_or(false)
@@ -80,7 +81,7 @@ pub struct KeyPackageGeneration {
 
 pub trait KeyPackageGenerator: Signer {
 
-    fn gen_key_package<RNG: RngCore + CryptoRng + 'static>(
+    fn gen_key_package<RNG: SecureRng + 'static>(
         &self, rng: &mut RNG, cipher_suite: &CipherSuite
     ) -> Result<KeyPackageGeneration, KeyPackageError> {
         let kem_key_pair = cipher_suite.generate_kem_key_pair(rng)?;
@@ -113,8 +114,7 @@ pub mod test_util {
         KeyPackageError,
         KeyPackageGenerator,
         KeyPackageGeneration,
-        RngCore,
-        CryptoRng
+        SecureRng
     };
     
     mock! {
@@ -123,7 +123,7 @@ pub mod test_util {
             fn sign<T: Signable + 'static>(&self, data: &T) -> Result<Vec<u8>, SignatureError>;
         }
         impl KeyPackageGenerator for KeyPackageGenerator {
-            fn gen_key_package<RNG: RngCore + CryptoRng + 'static>(
+            fn gen_key_package<RNG: SecureRng + 'static>(
                 &self, rng: &mut RNG, cipher_suite: &CipherSuite
             ) -> Result<KeyPackageGeneration, KeyPackageError>;
     

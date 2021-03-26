@@ -3,9 +3,18 @@ use rand_core::CryptoRng;
 use rand_core::impls;
 use std::num::NonZeroU32;
 
+pub trait SecureRng: CryptoRng + RngCore {
+    fn rand_bytes(&mut self, count: usize) -> Result<Vec<u8>, Error> {
+        let mut out = vec![0u8; count];
+        self.try_fill_bytes(&mut out)?;
+        Ok(out)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct OpenSslRng;
 
+impl SecureRng for OpenSslRng {}
 impl CryptoRng for OpenSslRng {}
 
 impl RngCore for OpenSslRng {
@@ -33,12 +42,14 @@ impl RngCore for OpenSslRng {
 pub mod test_rng {
     use rand_core::{CryptoRng, RngCore, Error, impls};
     use std::num::NonZeroU32;
+    use crate::rand::SecureRng;
 
     pub struct OneValRng {
         pub val: Vec<u8>
     }
 
     impl CryptoRng for OneValRng {}
+    impl SecureRng for OneValRng {}
 
     impl RngCore for OneValRng {
         fn next_u32(&mut self) -> u32 {
@@ -69,6 +80,7 @@ pub mod test_rng {
     pub struct ZerosRng;
 
     impl CryptoRng for ZerosRng {}
+    impl SecureRng for ZerosRng {}
 
     impl RngCore for ZerosRng {
         fn next_u32(&mut self) -> u32 {
@@ -95,6 +107,7 @@ pub mod test_rng {
     }
 
     impl CryptoRng for RepeatRng {}
+    impl SecureRng for RepeatRng {}
 
     impl RngCore for RepeatRng {
         fn next_u32(&mut self) -> u32 {

@@ -1,10 +1,10 @@
 use crate::asym::{AsymmetricKeyError, AsymmetricKey};
 use openssl::error::ErrorStack;
-use rand_core::{CryptoRng, RngCore};
 use serde::ser::Error;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use crate::rand::SecureRng;
 
 #[derive(Error, Debug)]
 pub enum SignatureError {
@@ -57,7 +57,7 @@ pub trait SignatureScheme: Sized {
 
     const IDENTIFIER: SignatureSchemeId;
 
-    fn new_random<RNG: CryptoRng + RngCore + 'static>(rng: RNG) -> Result<Self, SignatureError>;
+    fn new_random<RNG: SecureRng + 'static>(rng: RNG) -> Result<Self, SignatureError>;
 
     fn get_signer(&self) -> &Self::SK;
     fn get_verifier(&self) -> &Self::PK;
@@ -164,7 +164,7 @@ mod ossl {
 
                 const IDENTIFIER: SignatureSchemeId = $scheme_id;
 
-                fn new_random<RNG: CryptoRng + RngCore + 'static>(
+                fn new_random<RNG: SecureRng + 'static>(
                     rng: RNG,
                 ) -> Result<Self, SignatureError> {
                     let (pk, sk) = <$eng_ty>::random_key_pair(rng)?;
@@ -192,7 +192,7 @@ pub mod p256 {
     use crate::asym::AsymmetricKeyEngine;
     use crate::signature::SignatureSchemeId;
     use openssl::hash::MessageDigest;
-    use rand_core::{CryptoRng, RngCore};
+    use crate::rand::SecureRng;
     use serde::{Deserialize, Serialize};
 
     impl_openssl_signature!(
@@ -286,7 +286,7 @@ pub mod p521 {
     use crate::asym::p521;
     use crate::asym::AsymmetricKeyEngine;
     use openssl::hash::MessageDigest;
-    use rand_core::{CryptoRng, RngCore};
+    use crate::rand::SecureRng;
     use serde::{Deserialize, Serialize};
 
     impl_openssl_signature!(
@@ -381,9 +381,9 @@ pub mod ed25519 {
     use crate::asym::{AsymmetricKey, AsymmetricKeyError};
     use crate::signature::{Signable, SignatureError, SignatureScheme, SignatureSchemeId};
     use ed25519_dalek::{Keypair, Signature, Signer, Verifier};
-    use rand_core::{CryptoRng, RngCore};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::convert::TryFrom;
+    use crate::rand::SecureRng;
 
     #[derive(Clone, Debug)]
     pub struct PublicKey {
@@ -476,7 +476,7 @@ pub mod ed25519 {
 
         const IDENTIFIER: SignatureSchemeId = SignatureSchemeId::Ed25519;
 
-        fn new_random<RNG: CryptoRng + RngCore + 'static>(
+        fn new_random<RNG: SecureRng + 'static>(
             mut rng: RNG,
         ) -> Result<Self, SignatureError> {
             let keypair = Keypair::generate(&mut rng);
@@ -576,7 +576,7 @@ pub mod ed25519 {
 #[cfg(test)]
 pub (crate) mod test_utils {
     use crate::signature::{Signer, SignatureError, Signable, Verifier, SignatureScheme, SignatureSchemeId};
-    use rand_core::{CryptoRng, RngCore};
+    use crate::rand::SecureRng;
     use crate::asym::{AsymmetricKey, AsymmetricKeyError};
     use mockall::mock;
 
@@ -622,7 +622,7 @@ pub (crate) mod test_utils {
             type SK = MockSigner;
             const IDENTIFIER: SignatureSchemeId = SignatureSchemeId::Test;
 
-            fn new_random<RNG: CryptoRng + RngCore + 'static>(rng: RNG) -> Result<Self, SignatureError>;
+            fn new_random<RNG: SecureRng + 'static>(rng: RNG) -> Result<Self, SignatureError>;
             fn get_signer(&self) -> &<MockTestSignatureScheme as SignatureScheme>::SK;
             fn get_verifier(&self) -> &<MockTestSignatureScheme as SignatureScheme>::PK;
         }

@@ -1,5 +1,4 @@
 use crate::ciphersuite::{CipherSuiteError};
-use rand_core::{CryptoRng, RngCore};
 use thiserror::Error;
 use crate::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageGenerator, KeyPackageError};
 use crate::tree_math;
@@ -12,6 +11,7 @@ use crate::tree_node::{NodeIndex, Node, NodeVecError, LeafIndex, Leaf, NodeVec};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use crate::group::GroupSecrets;
+use crate::rand::SecureRng;
 
 cfg_if! {
     if #[cfg(test)] {
@@ -314,7 +314,7 @@ impl RatchetTree {
         Ok(added_leaf_index)
     }
 
-    fn encrypt_copath_node_resolution<RNG: CryptoRng + RngCore + 'static>(
+    fn encrypt_copath_node_resolution<RNG: SecureRng + 'static>(
         &self,
         rng: &mut RNG,
         path_secret: &NodeSecrets,
@@ -343,9 +343,7 @@ impl RatchetTree {
         Ok((indexed_node_secrets, update_path_node))
     }
 
-    // TODO: This can be expressed as one method with apply_secret_update_path,
-    // we wind up cloning the tree anyways during the commit process
-    pub fn gen_update_path<RNG: CryptoRng + RngCore + 'static, KPG: KeyPackageGenerator>(
+    pub fn gen_update_path<RNG: SecureRng + 'static, KPG: KeyPackageGenerator>(
         &self,
         private_key: &TreeKemPrivate,
         rng: &mut RNG,

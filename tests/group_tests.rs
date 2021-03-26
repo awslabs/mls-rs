@@ -95,7 +95,16 @@ fn test_create_group_update() {
         .for_each(|cs| test_create(cs.clone(), true))
 }
 
-fn test_path_updates(cipher_suite: CipherSuite) {
+struct TestGroupCreation {
+    creator: Client,
+    creator_key: KeyPackageGeneration,
+    creator_group: Group,
+    receiver_clients: Vec<Client>,
+    receiver_private_keys: Vec<KeyPackageGeneration>,
+    receiver_groups: Vec<Group>
+}
+
+fn get_test_group(cipher_suite: CipherSuite, num_participants: usize) -> TestGroupCreation {
     // Create the group with Alice as the group initiator
     let alice = generate_client(b"alice".to_vec());
 
@@ -106,7 +115,7 @@ fn test_path_updates(cipher_suite: CipherSuite) {
                                     alice_key.clone()).unwrap();
 
     // Generate 10 random clients that will be members of the group
-    let clients = (0..10).into_iter()
+    let clients = (0..num_participants).into_iter()
         .map(|_| generate_client(b"test".to_vec())).collect::<Vec<Client>>();
 
     let test_keys = clients.iter()
@@ -130,7 +139,7 @@ fn test_path_updates(cipher_suite: CipherSuite) {
     test_group.process_pending_commit(commit.clone()).unwrap();
 
     // Create groups for each participant by processing Alice's welcome message
-    let mut receiver_groups = test_keys
+    let receiver_groups = test_keys
         .iter()
         .map(|kp|
             Group::from_welcome_message(commit.welcome.as_ref().unwrap().clone(),
@@ -139,29 +148,50 @@ fn test_path_updates(cipher_suite: CipherSuite) {
                 .unwrap())
         .collect::<Vec<Group>>();
 
+    TestGroupCreation {
+        creator: alice,
+        creator_key: alice_key,
+        creator_group: test_group,
+        receiver_clients: clients,
+        receiver_private_keys: test_keys,
+        receiver_groups
+    }
+}
+
+fn test_path_updates(cipher_suite: CipherSuite) {
+
+    let mut test_group_data = get_test_group(cipher_suite, 10);
 
     // Loop through each participant and send a path update
-    for i in 0..receiver_groups.len() {
-        let pending = receiver_groups[i].commit_proposals(
+    for i in 0..test_group_data.receiver_groups.len() {
+        let pending = test_group_data.receiver_groups[i].commit_proposals(
             vec![],
             true,
             &mut OpenSslRng,
-            &clients[i]
+            &test_group_data.receiver_clients[i]
         ).unwrap();
 
-        test_group.process_plaintext(pending.plaintext.clone()).unwrap();
+        test_group_data.creator_group.process_plaintext(pending.plaintext.clone()).unwrap();
 
-        for j in 0..receiver_groups.len() {
+        for j in 0..test_group_data.receiver_groups.len() {
             if i != j {
-                receiver_groups[j].process_plaintext(pending.plaintext.clone()).unwrap();
+                test_group_data.receiver_groups[j]
+                    .process_plaintext(pending.plaintext.clone())
+                    .unwrap();
             } else {
-                receiver_groups[j].process_pending_commit(pending.clone()).unwrap();
+                test_group_data.receiver_groups[j]
+                    .process_pending_commit(pending.clone())
+                    .unwrap();
             }
         }
     }
 
     // Validate that all the groups are in the same end state
-    receiver_groups.iter().for_each(|group| assert_eq!(group, &test_group));
+    test_group_data.receiver_groups
+        .iter()
+        .for_each(|group|
+            assert_eq!(group, &test_group_data.creator_group)
+        );
 }
 
 #[test]
@@ -169,4 +199,39 @@ fn test_group_path_updates() {
     get_cipher_suites()
         .iter()
         .for_each(|cs| test_path_updates(cs.clone()))
+}
+
+fn test_application_messages(cipher_suite: CipherSuite, message_count: usize) {
+    println!("Testing application messages, cipher suite: {:?}, message count: {}", cipher_suite.clone(), message_count);
+
+    let mut test_group_data = get_test_group(cipher_suite, 10);
+
+    // Loop through each participant and send 5 application messages
+    for i in 0..test_group_data.receiver_groups.len() {
+        for _ in 0..message_count {
+            let ciphertext = test_group_data.receiver_groups[i]
+                .encrypt_application_message(
+                    &mut OpenSslRng,
+                    b"test message".to_vec(),
+                    &test_group_data.receiver_clients[i]
+                ).unwrap();
+
+            test_group_data.creator_group.process_ciphertext(ciphertext.clone()).unwrap();
+
+            for j in 0..test_group_data.receiver_groups.len() {
+                if i != j {
+                    test_group_data.receiver_groups[j]
+                        .process_ciphertext(ciphertext.clone())
+                        .unwrap();
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_group_application_messages() {
+    get_cipher_suites()
+        .iter()
+        .for_each(|cs| test_application_messages(cs.clone(), 20))
 }

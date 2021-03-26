@@ -9,7 +9,6 @@ use crate::asym::{
     EcdhEngine,
 };
 use crate::kdf::{HkdfSha256, HkdfSha512, KdfError};
-use rand_core::{CryptoRng, RngCore};
 use thiserror::Error;
 use serde::{Serialize, Deserialize};
 
@@ -42,7 +41,7 @@ pub trait Kem {
     /*
     draft-irtf-cfrg-hpke section 4.1 DH-Based KEM
     */
-    fn encap<RNG: CryptoRng + RngCore + 'static>(
+    fn encap<RNG: SecureRng + 'static>(
         rng: &mut RNG,
         remote_key: &<Self::E as AsymmetricKeyEngine>::PK,
     ) -> Result<KemResult, KemError>;
@@ -56,7 +55,7 @@ pub trait Kem {
     ) -> Result<Vec<u8>, KemError>;
 
     #[allow(clippy::type_complexity)]
-    fn generate_kem_key_pair<RNG: CryptoRng + RngCore + 'static>(rng: &mut RNG) -> Result<(
+    fn generate_kem_key_pair<RNG: SecureRng + 'static>(rng: &mut RNG) -> Result<(
                                                                <Self::E as AsymmetricKeyEngine>::PK,
                                                                <Self::E as AsymmetricKeyEngine>::SK,
                                                            ), AsymmetricKeyError> {
@@ -112,7 +111,7 @@ where
     /*
     draft-irtf-cfrg-hpke section 4.1 DH-Based KEM
     */
-    fn ecdh_encap<RNG: CryptoRng + RngCore + 'static>(
+    fn ecdh_encap<RNG: SecureRng + 'static>(
         rng: &mut RNG,
         remote_key: &<Self::E as AsymmetricKeyEngine>::PK,
     ) -> Result<KemResult, KemError> {
@@ -160,6 +159,7 @@ where
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use crate::hpke_kdf::HpkeKdf;
+use crate::rand::SecureRng;
 
 #[derive(IntoPrimitive, TryFromPrimitive, Serialize, Deserialize, Clone, PartialEq, Debug)]
 #[serde(into = "u16", try_from = "u16")]
@@ -194,7 +194,7 @@ macro_rules! impl_ecdh_kem {
             const N_SECRET: u16 = $n_secret;
             const CURVE_BITMASK: Option<u8> = $curve_bitmask;
 
-            fn encap<RNG: CryptoRng + RngCore + 'static>(
+            fn encap<RNG: SecureRng + 'static>(
                 rng: &mut RNG,
                 remote_key: &<Self::E as AsymmetricKeyEngine>::PK,
             ) -> Result<KemResult, KemError> {
@@ -218,7 +218,7 @@ pub mod test_util {
     use mockall::mock;
     use super::{
         Kem, KemId, KemError, KemResult,
-        CryptoRng, RngCore, AsymmetricKeyEngine
+        SecureRng, AsymmetricKeyEngine
     };
     use crate::hpke_kdf::test_util::MockTestHpkeKdf;
     use crate::asym::test_util::MockTestKeyEngine;
@@ -234,7 +234,7 @@ pub mod test_util {
             const N_SECRET: u16 = 42;
             const CURVE_BITMASK: Option<u8> = None;
 
-            fn encap<RNG: CryptoRng + RngCore + 'static>(
+            fn encap<RNG: SecureRng + 'static>(
                 rng: &mut RNG,
                 remote_key: &<<MockTestKem as Kem>::E as AsymmetricKeyEngine>::PK,
             ) -> Result<KemResult, KemError>;
@@ -244,7 +244,7 @@ pub mod test_util {
                 secret_key: &<<MockTestKem as Kem>::E as AsymmetricKeyEngine>::SK,
             ) -> Result<Vec<u8>, KemError>;
 
-            fn generate_kem_key_pair<RNG: CryptoRng + RngCore + 'static>(rng: &mut RNG) -> Result<(
+            fn generate_kem_key_pair<RNG: SecureRng + 'static>(rng: &mut RNG) -> Result<(
                 <<MockTestKem as Kem>::E as AsymmetricKeyEngine>::PK,
                 <<MockTestKem as Kem>::E as AsymmetricKeyEngine>::SK
             ), AsymmetricKeyError>;
