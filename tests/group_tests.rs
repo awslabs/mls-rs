@@ -1,7 +1,6 @@
 use mls::group::Group;
 use mls::rand::OpenSslRng;
 use mls::client::Client;
-use mls::extension::Lifetime;
 use mls::credential::{Credential, BasicCredential};
 use mls::signature::ed25519::EdDsa25519;
 use mls::signature::SignatureScheme;
@@ -28,7 +27,7 @@ fn generate_client(id: Vec<u8>) -> Client {
         signature_key: signature_scheme.get_signer().to_bytes().unwrap(),
         credential: Credential::Basic(basic),
         capabilities: Default::default(),
-        key_lifetime: Lifetime { not_before: 0, not_after: 0 }
+        key_lifetime: 42
     }
 }
 

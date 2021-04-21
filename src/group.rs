@@ -8,7 +8,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use cfg_if::cfg_if;
 use std::collections::HashMap;
-use crate::extension::Extension;
+use crate::extension::{Extension, ExtensionList};
 use crate::tree_node::{LeafIndex};
 use crate::hash::Mac;
 use crate::hpke::HPKECiphertext;
@@ -152,6 +152,8 @@ pub enum GroupError {
     CommitConversionError(#[from] CommitConversionError),
     #[error(transparent)]
     RngError(#[from] rand_core::Error),
+    #[error(transparent)]
+    KeyPackageError(#[from] KeyPackageError),
     #[error("Cipher suite does not match")]
     CipherSuiteMismatch,
     #[error("Invalid key package signature")]
@@ -180,11 +182,11 @@ pub struct GroupContext {
     epoch: u64,
     tree_hash: Vec<u8>,
     confirmed_transcript_hash: Vec<u8>,
-    extensions: Vec<Extension>
+    extensions: ExtensionList
 }
 
 impl GroupContext {
-    pub fn new_group(group_id: Vec<u8>, tree_hash: Vec<u8>, extensions: Vec<Extension>) -> Self {
+    pub fn new_group(group_id: Vec<u8>, tree_hash: Vec<u8>, extensions: ExtensionList) -> Self {
         GroupContext {
             group_id,
             epoch: 0,
@@ -213,7 +215,7 @@ pub struct GroupInfo {
     pub epoch: u64,
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: Vec<u8>,
-    pub extensions: Vec<Extension>,
+    pub extensions: ExtensionList,
     pub confirmation_tag: Mac,
     pub signer_index: u32,
     pub signature: Vec<u8>
@@ -1021,7 +1023,6 @@ impl Group {
                 let secrets = if let Some(pending) = local_pending {
                     Ok(pending.secrets)
                 } else {
-                    // TODO: Verify that the new leaf has a valid key package
                     provisional_tree.refresh_private_key(
                         &self.private_tree,
                         sender,

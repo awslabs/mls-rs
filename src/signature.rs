@@ -77,6 +77,7 @@ pub struct PublicSignatureKey {
 }
 
 impl Verifier for PublicSignatureKey {
+    //TODO: Refactor to use cipher suite
     fn verify<T: Signable + 'static>(&self, signature: &[u8], data: &T) -> Result<bool, SignatureError> {
         match self.signature_scheme {
             SignatureSchemeId::EcdsaSecp256r1Sha256 => {
@@ -93,9 +94,10 @@ impl Verifier for PublicSignatureKey {
             },
             #[cfg(test)]
             SignatureSchemeId::Test => {
-                Ok(signature.len() == 0 && data.to_signable_vec().unwrap().len() == 0)
+                Ok(signature.len() > 0 && data.to_signable_vec().unwrap().len() > 0)
             }
         }
+
     }
 }
 

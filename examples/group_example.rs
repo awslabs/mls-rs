@@ -5,7 +5,6 @@ use mls::rand::OpenSslRng;
 use mls::client::Client;
 use mls::credential::{BasicCredential, Credential};
 use mls::asym::AsymmetricKey;
-use mls::extension::Lifetime;
 use mls::key_package::{KeyPackageGeneration, KeyPackageGenerator, KeyPackage};
 use mls::group::{Group, Welcome};
 use mls::ratchet_tree::RatchetTree;
@@ -25,7 +24,7 @@ fn generate_client(id: Vec<u8>) -> Client {
         signature_key: signature_scheme.get_signer().to_bytes().unwrap(),
         credential: Credential::Basic(basic),
         capabilities: Default::default(),
-        key_lifetime: Lifetime { not_before: 0, not_after: 0 }
+        key_lifetime: 42
     }
 }
 

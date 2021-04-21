@@ -1,12 +1,13 @@
 use crate::credential::Credential;
 use crate::signature::{Signer, SignatureError, Signable, SignatureSchemeId, ed25519};
-use crate::extension::{Lifetime, Capabilities, ExtensionTrait, ExtensionError, Extension};
+use crate::extension::{Lifetime, Capabilities, ExtensionTrait, ExtensionError, ExtensionList};
 use crate::key_package::{KeyPackage, KeyPackageGenerator, KeyPackageError};
 use crate::ciphersuite::{CipherSuiteError};
 use crate::asym::{AsymmetricKey};
 use serde::{Serialize, Deserialize};
 use thiserror::Error;
 use cfg_if::cfg_if;
+use std::time::SystemTime;
 
 cfg_if! {
     if #[cfg(test)] {
@@ -31,13 +32,21 @@ pub struct Client {
     pub signature_key: Vec<u8>,
     pub credential: Credential,
     pub capabilities: Capabilities,
-    pub key_lifetime: Lifetime
+    pub key_lifetime: u64
 }
 
 impl Client {
     #[inline]
-    pub (crate) fn get_extensions(&self) -> Result<Vec<Extension>, ExtensionError> {
-        Ok(vec![self.capabilities.to_extension()?, self.key_lifetime.to_extension()?])
+    pub (crate) fn get_extensions(&self) -> Result<ExtensionList, ExtensionError> {
+        Ok(
+            ExtensionList(
+                vec![
+                    self.capabilities.to_extension()?,
+                    Lifetime::seconds(self.key_lifetime, SystemTime::now())?
+                        .to_extension()?
+                ]
+            )
+        )
     }
 }
 
@@ -91,7 +100,6 @@ mod test {
     use crate::client::Client;
     use crate::credential::{BasicCredential, CredentialConvertable};
     use crate::asym::AsymmetricKey;
-    use crate::extension::Lifetime;
     use crate::ciphersuite::test_util::MockCipherSuite;
     use crate::key_package::{KeyPackageGenerator, KeyPackage};
     use crate::protocol_version::ProtocolVersion;
@@ -110,7 +118,7 @@ mod test {
                 signature_scheme: signature_key.signature_scheme
             }.to_credential(),
             capabilities: Default::default(),
-            key_lifetime: Lifetime { not_before: 0, not_after: 0 }
+            key_lifetime: 42
         }
     }
 
@@ -176,16 +184,7 @@ mod test {
             .gen_key_package(&mut ZerosRng, &mock_cipher_suite)
             .expect("key error");
 
-        // The hash value was mocked out to be just the input to the hash function
-        let expected_hash_value = hex!("ff2a000400000000000000000000000000000004000000000\
-        0000074657374040000000000000000000000420002000000000000000100270000000000000001000000000000\
-        0001040000000000000002000100030005000300000000000000010003000200020010000000000000000000000\
-        00000000000000000000000004f00000000000000ff2a0400000000000474657374040000000042020127010000\
-        0000000000010400000000000000020001000300050003000000000000000100030002000210000000000000000\
-        00000000000000000");
-
         assert_eq!(key_package_generation.secret_key, vec![255u8; 4]);
-        assert_eq!(key_package_generation.key_package_hash, expected_hash_value);
 
         let expected_package = KeyPackage {
             version: ProtocolVersion::Test,

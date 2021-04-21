@@ -360,6 +360,7 @@ mod test {
     use crate::ciphersuite::test_util::MockCipherSuite;
     use crate::credential::{BasicCredential, CredentialConvertable};
     use crate::signature::SignatureSchemeId;
+    use crate::extension::ExtensionList;
 
     fn get_mock_cipher_suite() -> MockCipherSuite {
         let mut cipher_suite = MockCipherSuite::new();
@@ -378,7 +379,7 @@ mod test {
                 identity: id,
                 signature_scheme: SignatureSchemeId::Test
             }.to_credential(),
-            extensions: vec![],
+            extensions: ExtensionList(vec![]),
             signature: vec![]
         }
     }

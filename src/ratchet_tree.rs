@@ -12,6 +12,7 @@ use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use crate::group::GroupSecrets;
 use crate::rand::SecureRng;
+use std::time::SystemTime;
 
 cfg_if! {
     if #[cfg(test)] {
@@ -41,6 +42,8 @@ pub enum RatchetTreeError {
     PubKeyMismatch,
     #[error("bad update: no suitable secret key")]
     UpdateErrorNoSecretKey,
+    #[error("invalid lca, not found on direct path")]
+    LcaNotFoundInDirectPath,
     #[error("bad state: missing own credential")]
     MissingSelfCredential,
 }
@@ -288,7 +291,12 @@ impl RatchetTree {
     }
 
     pub fn add_nodes(&mut self, key_packages: Vec<KeyPackage>) -> Result<Vec<LeafIndex>, RatchetTreeError> {
-        // Convert all the key packaes into nodes
+        // Validate the validity of the key signatures and lifetimes
+        key_packages
+            .iter()
+            .try_for_each(|kp| kp.validate(SystemTime::now()))?;
+
+        // Convert all the key packages into nodes
         let new_nodes: Vec<Node> = key_packages
             .iter()
             .map(|n| Node::from(n.clone()))
@@ -438,11 +446,16 @@ impl RatchetTree {
         sender: LeafIndex,
         update_path: &UpdatePath
     ) -> Result<(), RatchetTreeError> {
+        // Verify the signature on the key package
+        update_path.leaf_key_package.validate(SystemTime::now())?;
+
+        // Install the new leaf node
         self.nodes.get_leaf_node_mut(NodeIndex::from(sender))
             .map(|l| {
                 l.key_package = update_path.leaf_key_package.clone();
             })?;
 
+        // Update the rest of the nodes on the direct path
         update_path.nodes
             .iter()
             .zip(self.nodes.direct_path(sender)?)
@@ -595,6 +608,10 @@ pub (crate) mod test {
 
         let mut test_verifier = MockVerifier::new();
         test_verifier.expect_to_bytes().returning_st(move || Ok(b"42".to_vec()));
+        test_verifier.expect_verify().returning_st(move |_, _: &Vec<u8>|
+            Ok(true)
+        );
+
         let mut signature_scheme = MockTestSignatureScheme::new();
         signature_scheme.expect_get_verifier().return_const(test_verifier);
 
@@ -603,20 +620,39 @@ pub (crate) mod test {
             cipher_suite: get_mock_cipher_suite(),
             hpke_init_key: pk,
             credential: BasicCredential::new(id, signature_scheme).unwrap().to_credential(),
-            extensions: vec![Extension {
-                extension_id: ExtensionId::Capabilities,
-                data: vec![24u8;2]
-            }],
+            extensions: ExtensionList(
+                vec![
+                    Extension {
+                        extension_id: ExtensionId::Capabilities,
+                        data: vec![24u8;2]
+                    },
+                    Lifetime { not_before: 0, not_after: MAX }
+                        .to_extension()
+                        .unwrap()
+                ]
+            ),
             signature: vec![42u8;2]
         }
     }
 
-    pub fn get_test_tree() -> (RatchetTree, TreeKemPrivate) {
-        let test_key_package = KeyPackageGeneration {
-            key_package: get_test_key_package(b"foo".to_vec(), b"bar".to_vec()),
-            secret_key: b"foobar".to_vec(),
+    pub fn get_invalid_key_package() -> KeyPackage {
+        let mut key_package = get_test_key_package(b"test".to_vec(), b"pk".to_vec());
+        key_package.signature = vec![];
+        key_package
+    }
+
+    pub fn get_test_key_package_generation(id: Vec<u8>, pk: Vec<u8>, secret: Vec<u8>) -> KeyPackageGeneration {
+        KeyPackageGeneration {
+            key_package: get_test_key_package(id, pk),
+            secret_key: secret,
             key_package_hash: vec![]
-        };
+        }
+    }
+
+    pub fn get_test_tree() -> (RatchetTree, TreeKemPrivate) {
+        let test_key_package = get_test_key_package_generation(b"foo".to_vec(),
+                                                               b"bar".to_vec(),
+                                                               b"foobar".to_vec());
 
         let test_tree = RatchetTree::new(test_key_package.clone()).unwrap();
         assert_eq!(test_tree.0.nodes[0], Some(Node::Leaf(Leaf {

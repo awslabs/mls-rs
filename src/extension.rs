@@ -3,16 +3,21 @@ use serde::de::{DeserializeOwned};
 use crate::protocol_version::ProtocolVersion;
 use thiserror::Error;
 use crate::extension::ExtensionError::IncorrectExtensionType;
-use std::time::{SystemTime, SystemTimeError};
+use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 use crate::ciphersuite::CipherSuite;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use std::ops::Deref;
 
 #[derive(Error, Debug)]
 pub enum ExtensionError {
     #[error("Bad extension type")]
     IncorrectExtensionType(ExtensionId),
-    #[error("Serialization failure {0}")]
-    BincodeError(#[from] bincode::Error)
+    #[error(transparent)]
+    BincodeError(#[from] bincode::Error),
+    #[error("Missing lifetime")]
+    MissingLifetimeExt,
+    #[error(transparent)]
+    SystemTimeError(#[from] SystemTimeError),
 }
 
 #[derive(IntoPrimitive, TryFromPrimitive, Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -85,13 +90,18 @@ pub struct Lifetime {
 }
 
 impl Lifetime {
-    pub fn days(d: u64, from: SystemTime) -> Result<Self, SystemTimeError> {
+    pub fn seconds(s: u64, from: SystemTime) -> Result<Self, ExtensionError> {
         let start_time = from.duration_since(SystemTime::UNIX_EPOCH)?.as_secs();
 
         Ok(Lifetime {
             not_before: start_time,
-            not_after: d * 86400 + start_time
+            not_after: start_time + s
         })
+    }
+
+    pub fn within_lifetime(&self, system_time: SystemTime) -> Result<bool, ExtensionError> {
+        let since_epoch = system_time.duration_since(UNIX_EPOCH)?.as_secs();
+        Ok(since_epoch >= self.not_before && since_epoch <= self.not_after)
     }
 }
 
@@ -103,6 +113,26 @@ impl ExtensionTrait for Lifetime {
 pub struct Extension {
     pub extension_id: ExtensionId,
     pub data: Vec<u8>
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+pub struct ExtensionList(pub Vec<Extension>);
+
+impl Deref for ExtensionList {
+    type Target = Vec<Extension>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl ExtensionList {
+    pub fn get_lifetime(&self) -> Result<Lifetime, ExtensionError> {
+        match self.iter().find(|v| v.extension_id == ExtensionId::Lifetime) {
+            None => Err(ExtensionError::MissingLifetimeExt),
+            Some(ext) => Ok(bincode::deserialize(&ext.data)?)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -149,12 +179,12 @@ mod tests {
 
     #[test]
     fn test_lifetime() {
-        let lifetime = Lifetime::days(1, SystemTime::UNIX_EPOCH
+        let lifetime = Lifetime::seconds(1, SystemTime::UNIX_EPOCH
             .add(Duration::from_secs(1)))
             .expect("lifetime failure");
 
         assert_eq!(lifetime.not_before, 1);
-        assert_eq!(lifetime.not_after, 86401);
+        assert_eq!(lifetime.not_after, 2);
 
         let as_extension = lifetime.to_extension().expect("to extension error");
         assert_eq!(as_extension.extension_id, ExtensionId::Lifetime);

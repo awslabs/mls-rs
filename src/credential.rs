@@ -107,9 +107,9 @@ mod test {
     #[test]
     fn test_credential_verify() {
         let cred = get_test_basic_credential();
-        // The test signature function returns true if length is 0 for sig and data
-        let pass = vec![];
-        let fail = vec![0u8];
+        // The test signature function returns false if length is 0 for sig and data
+        let pass = vec![0u8];
+        let fail = vec![];
 
         assert_eq!(cred.verify(&pass, &pass).expect("failed verify"), true);
         assert_eq!(cred.verify(&fail, &fail).expect("failed verify"), false);
@@ -141,9 +141,9 @@ mod test {
             signature_key: vec![]
         };
 
-        // The test signature function returns true if length is 0 for sig and data
-        let pass = vec![];
-        let fail = vec![0u8];
+        // The test signature function returns true if length > 0 and data length > 0
+        let pass = vec![0u8];
+        let fail = vec![];
 
         assert_eq!(cred.verify(&pass, &pass).expect("failed verify"), true);
         assert_eq!(cred.verify(&fail, &fail).expect("failed verify"), false);
