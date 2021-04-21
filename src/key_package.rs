@@ -1,7 +1,7 @@
 use crate::credential::Credential;
 use crate::asym::{AsymmetricKeyError};
 use crate::protocol_version::ProtocolVersion;
-use crate::extension::{Extension, ExtensionError};
+use crate::extension::{Extension, ExtensionError, ExtensionList};
 use cfg_if::cfg_if;
 
 cfg_if! {
@@ -18,6 +18,7 @@ use thiserror::Error;
 use bincode::Options;
 use crate::ciphersuite::CipherSuiteError;
 use crate::rand::SecureRng;
+use std::time::SystemTime;
 
 #[derive(Error, Debug)]
 pub enum KeyPackageError {
@@ -30,7 +31,11 @@ pub enum KeyPackageError {
     #[error(transparent)]
     CipherSuiteError(#[from] CipherSuiteError),
     #[error(transparent)]
-    SerializationError(#[from] bincode::Error)
+    SerializationError(#[from] bincode::Error),
+    #[error("invalid signature")]
+    InvalidSignature,
+    #[error("not within lifetime")]
+    InvalidKeyLifetime()
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -39,7 +44,7 @@ pub struct KeyPackage {
     pub cipher_suite: CipherSuite,
     pub hpke_init_key: Vec<u8>,
     pub credential: Credential,
-    pub extensions: Vec<Extension>,
+    pub extensions: ExtensionList,
     pub signature: Vec<u8>,
 }
 
@@ -65,10 +70,21 @@ impl Signable for KeyPackage {
     }
 }
 
-// TODO: Make an is valid function that checks the lifetime as well as the signature
 impl KeyPackage {
     pub fn has_valid_signature(&self) -> bool {
         self.credential.verify(&self.signature, self).unwrap_or(false)
+    }
+
+    pub fn validate(&self, time: SystemTime) -> Result<(), KeyPackageError> {
+        if !self.has_valid_signature() {
+            return Err(KeyPackageError::InvalidSignature);
+        }
+
+        if self.extensions.get_lifetime()?.within_lifetime(time)? {
+            Ok(())
+        } else {
+            Err(KeyPackageError::InvalidKeyLifetime())
+        }
     }
 }
 
@@ -133,3 +149,5 @@ pub mod test_util {
         }
     }
 }
+
+//TODO: Tests for validate + has valid signature

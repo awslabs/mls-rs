@@ -158,6 +158,7 @@ fn get_test_group(cipher_suite: CipherSuite, num_participants: usize) -> TestGro
 }
 
 fn test_path_updates(cipher_suite: CipherSuite) {
+    println!("Testing path updates for cipher suite: {:?}", cipher_suite.clone());
 
     let mut test_group_data = get_test_group(cipher_suite, 10);
 
@@ -198,6 +199,73 @@ fn test_group_path_updates() {
     get_cipher_suites()
         .iter()
         .for_each(|cs| test_path_updates(cs.clone()))
+}
+
+fn test_update_proposals(cipher_suite: CipherSuite) {
+    println!("Testing update proposals for cipher suite: {:?}", cipher_suite.clone());
+
+    let mut test_group_data = get_test_group(cipher_suite, 10);
+
+    // Create an update from the ith member, have the ith + 1 member commit it
+    for i in 0..test_group_data.receiver_groups.len() - 1 {
+        let update_proposal = test_group_data.receiver_groups[i]
+            .update_proposal(
+                &mut OpenSslRng,
+                &test_group_data.receiver_clients[i]
+            ).unwrap();
+
+        let update_proposal_packet = test_group_data.receiver_groups[i].send_proposal(
+            update_proposal,
+            &test_group_data.receiver_clients[i]
+        ).unwrap();
+
+        // Everyone should process the proposal
+        test_group_data.creator_group.process_plaintext(update_proposal_packet.clone())
+            .unwrap();
+
+        for j in 0..test_group_data.receiver_groups.len() {
+            if i != j {
+                test_group_data.receiver_groups[j]
+                    .process_plaintext(update_proposal_packet.clone())
+                    .unwrap();
+            }
+        }
+
+        // Another user will later commit the proposal
+        let pending = test_group_data.receiver_groups[i + 1].commit_proposals(
+            vec![],
+            true,
+            &mut OpenSslRng,
+            &test_group_data.receiver_clients[i + 1]
+        ).unwrap();
+
+        test_group_data.creator_group.process_plaintext(pending.plaintext.clone()).unwrap();
+
+        // Everyone then receives the commit
+        for j in 0..test_group_data.receiver_groups.len() {
+            if i + 1 != j {
+                test_group_data.receiver_groups[j]
+                    .process_plaintext(pending.plaintext.clone()).unwrap();
+            } else {
+                test_group_data.receiver_groups[j]
+                    .process_pending_commit(pending.clone()).unwrap();
+            }
+        }
+
+        // Validate that all the groups are in the same end state
+        test_group_data.receiver_groups
+            .iter()
+            .for_each(|group|
+                assert_eq!(group, &test_group_data.creator_group)
+            );
+    }
+}
+
+#[test]
+fn test_group_update_proposals() {
+    get_cipher_suites()
+        .iter()
+        .for_each(|cs| test_update_proposals(cs.clone()))
 }
 
 fn test_application_messages(cipher_suite: CipherSuite, message_count: usize) {

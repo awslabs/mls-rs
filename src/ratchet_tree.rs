@@ -122,6 +122,27 @@ impl TreeKemPrivate {
 
         Ok(private_key)
     }
+
+    pub fn update_leaf(
+        &mut self,
+        num_leaves: usize,
+        new_leaf: &KeyPackageGeneration
+    ) -> Result<(), RatchetTreeError> {
+
+        self.secret_keys.insert(
+            NodeIndex::from(self.self_index),
+            new_leaf.secret_key.clone()
+        );
+
+        self.self_index
+            .direct_path(num_leaves)?
+            .iter()
+            .for_each(|i| {
+                self.secret_keys.remove(i);
+            });
+
+        Ok(())
+    }
 }
 
 impl From<Vec<u8>> for TreeKemPrivate {
@@ -322,6 +343,28 @@ impl RatchetTree {
         Ok(added_leaf_index)
     }
 
+    pub fn update_leaf(
+        &mut self,
+        leaf_index: LeafIndex,
+        key_package: KeyPackage
+    ) -> Result<(), RatchetTreeError> {
+        // Validate the validity of the key signature and lifetime
+        key_package.validate(SystemTime::now())?;
+
+        // Update the leaf node
+        self.nodes.get_leaf_node_mut(NodeIndex::from(leaf_index))?
+            .key_package = key_package;
+
+        // Blank the intermediate nodes along the path from the sender's leaf to the root
+        self.nodes.direct_path(leaf_index)?.iter().for_each(|&index| {
+            if let Some(node) = self.nodes.get_mut(index) {
+                *node = None
+            }
+        });
+
+        Ok(())
+    }
+
     fn encrypt_copath_node_resolution<RNG: SecureRng + 'static>(
         &self,
         rng: &mut RNG,
@@ -467,18 +510,29 @@ impl RatchetTree {
     pub fn refresh_private_key(
         &self,
         private_key: &TreeKemPrivate,
+        leaf_update: Option<KeyPackageGeneration>,
         sender: LeafIndex,
         update_path: &UpdatePath,
         excluding: Vec<LeafIndex>,
         context: &[u8]
     ) -> Result<TreeSecrets, RatchetTreeError> {
+        let mut new_private_key = private_key.clone();
+
+        // Update our own leaf if necessary
+        if let Some(updated_leaf_package) = leaf_update {
+            new_private_key.update_leaf(
+                self.leaf_count(),
+                &updated_leaf_package
+            )?
+        }
+
         // Exclude newly added leaf indexes
         let excluding = excluding
             .iter()
             .map(NodeIndex::from).collect::<Vec<NodeIndex>>();
 
         // Find the least common ancestor shared by us and the sender
-        let lca = tree_math::common_ancestor_direct(private_key.self_index.into(),
+        let lca = tree_math::common_ancestor_direct(new_private_key.self_index.into(),
                                                     sender.into());
 
         let sender_direct = self.nodes.direct_path(sender)?;
@@ -489,7 +543,7 @@ impl RatchetTree {
             .zip(sender_co.iter().zip(&update_path.nodes))
             .find_map(|(&direct_path_index, (&co_path_index, update_path_node))| {
                 if direct_path_index == lca {
-                    self.decrypt_parent_path_secret(private_key,
+                    self.decrypt_parent_path_secret(&new_private_key,
                                                     update_path_node,
                                                     co_path_index,
                                                     &excluding,
@@ -497,7 +551,7 @@ impl RatchetTree {
                 } else {
                     None
                 }
-        }).ok_or(RatchetTreeError::UpdateErrorNoSecretKey)??;
+        }).ok_or(RatchetTreeError::LcaNotFoundInDirectPath)??;
 
         // Derive the rest of the secrets for the tree and assign to the proper nodes
         let node_secret_gen = NodeSecretGenerator::new_from_path_secret(
@@ -507,7 +561,7 @@ impl RatchetTree {
 
         // Update secrets based on the decrypted path secret in the update
         let tree_secrets = node_secret_gen
-            .flatten() //TODO: Remove flatten
+            .flatten() //TODO: Remove flatten maybe this should just be a for loop
             .zip(
                 // Get a pairing of direct path index + associated update
                 // This will help us verify that the calculated public key is the expected one
@@ -517,7 +571,7 @@ impl RatchetTree {
                     .zip(update_path.nodes.iter())
                     .skip_while(|(dp, _)|**dp != lca)
             )
-            .try_fold(TreeSecrets::new(private_key.clone()), |mut secrets, (secret, (&index, update))| {
+            .try_fold(TreeSecrets::new(new_private_key), |mut secrets, (secret, (&index, update))| {
                 // Verify the private key we calculated properly matches the public key we were
                 // expecting
                 if secret.key_pair.public_key != update.public_key {
@@ -531,7 +585,6 @@ impl RatchetTree {
 
         Ok(tree_secrets)
     }
-
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -561,9 +614,11 @@ pub (crate) mod test {
     use crate::hpke::HPKECiphertext;
     use crate::signature::test_utils::{ MockTestSignatureScheme, MockVerifier };
     use crate::key_package::test_util::MockKeyPackageGenerator;
-    use crate::ratchet_tree::TreeKemPrivate;
+    use crate::ratchet_tree::{TreeKemPrivate, UpdatePathGeneration, UpdatePath, TreeSecrets};
     use std::collections::HashMap;
-    use crate::extension::{Extension, ExtensionId};
+    use crate::extension::{Extension, ExtensionId, ExtensionList, ExtensionTrait};
+    use crate::extension::Lifetime;
+    use std::u64::MAX;
 
     pub fn get_mock_cipher_suite() -> MockCipherSuite {
         let mut cipher_suite = MockCipherSuite::new();
@@ -730,17 +785,66 @@ pub (crate) mod test {
     }
 
     #[test]
-    fn test_update_path() {
-        let (mut tree, private_key) = get_test_tree();
-        tree.add_nodes(get_test_key_packages()).unwrap();
+    fn test_add_node_bad_package() {
+        let mut tree = get_test_tree().0;
+        let tree_clone = tree.clone();
 
-        let mut receiver_tree = tree.clone();
+        let mut key_packages = get_test_key_packages();
+        key_packages[0] = get_invalid_key_package();
 
-        let test_ctx = b"group_ctx".to_vec();
-        let mut kpg = MockKeyPackageGenerator::new();
+        let res = tree.add_nodes(
+            [key_packages[0].clone(),
+                key_packages[1].clone()].to_vec()
+        );
+
+        assert_eq!(res.is_err(), true);
+        assert_eq!(tree, tree_clone);
+    }
+
+    #[test]
+    fn test_update_leaf() {
+        // Create a tree
+        let mut tree = get_test_tree().0;
+        let key_packages = get_test_key_packages();
+        tree.add_nodes(key_packages).unwrap();
+
+        // Add in parent nodes so we can detect them clearing after update
+        tree.nodes.direct_path(LeafIndex(0))
+            .unwrap()
+            .iter()
+            .for_each(|&i| {
+                tree.nodes.get_or_fill_parent_node(i, &b"pub_key".to_vec()).unwrap();
+            });
+
+        let updated_leaf = get_test_key_package(b"new".to_vec(), b"newpk".to_vec());
+
+        tree.update_leaf(LeafIndex(0), updated_leaf.clone()).unwrap();
+        assert_eq!(tree.nodes.get_leaf_node(LeafIndex(0)).unwrap().key_package,
+                   updated_leaf);
+
+        // Verify that the direct path has been cleared
+        tree.nodes.direct_path(LeafIndex(0)).unwrap().iter().for_each(|&i| {
+            assert_eq!(tree.nodes[i].is_none(), true);
+        });
+    }
+
+    #[test]
+    fn test_update_bad_leaf() {
+        let mut tree = get_test_tree().0;
+        let bad_key_package = get_invalid_key_package();
+
+        let tree_clone = tree.clone();
+        let res = tree.update_leaf(LeafIndex(0), bad_key_package);
+        assert_eq!(res.is_err(), true);
+        assert_eq!(tree, tree_clone);
+    }
+
+    fn gen_path_update(tree: &RatchetTree, private_key: &TreeKemPrivate, test_ctx: &[u8]) -> (KeyPackage, UpdatePathGeneration) {
 
         let test_leaf = get_test_key_package(b"A".to_vec(), b"fooA".to_vec());
         let test_leaf_clone = test_leaf.clone();
+
+        let mut kpg = MockKeyPackageGenerator::new();
 
         kpg.expect_package_from_pub_key().returning_st(move |_cipher_suite, _pub_key| {
             Ok(test_leaf_clone.clone())
@@ -748,10 +852,39 @@ pub (crate) mod test {
 
         // Create a new update path with corresponding private key
         let update_path = tree.gen_update_path(&private_key,
-                                               &mut ZerosRng,
-                                               &kpg,
-                                               &test_ctx,
-                                               &vec![]).unwrap();
+                             &mut ZerosRng,
+                             &kpg,
+                             &test_ctx,
+                             &vec![]).unwrap();
+
+        (test_leaf, update_path)
+    }
+
+    fn make_receiver_tree(tree: &RatchetTree, index: LeafIndex) -> (RatchetTree, TreeKemPrivate) {
+        let receiver_tree = tree.clone();
+
+        let mut receiver_secrets = HashMap::new();
+        receiver_secrets.insert(2, Vec::new());
+
+        let receiver_private_key = TreeKemPrivate {
+            self_index: index,
+            secret_keys: receiver_secrets
+        };
+
+        (receiver_tree, receiver_private_key)
+    }
+
+    #[test]
+    fn test_update_path() {
+        let (mut tree, private_key) = get_test_tree();
+        tree.add_nodes(get_test_key_packages()).unwrap();
+
+        let (mut receiver_tree, receiver_private_key) = make_receiver_tree(&tree,
+                                                                           LeafIndex(1));
+
+        let test_ctx = b"group_ctx".to_vec();
+
+        let (test_leaf, update_path) = gen_path_update(&tree, &private_key, &test_ctx);
 
         // Apply the generated update path
         tree.apply_update_path(LeafIndex(0), &update_path.update_path).unwrap();
@@ -775,15 +908,8 @@ pub (crate) mod test {
         });
 
         // Apply the update path and ensure that the tree was updated properly
-        let mut receiver_secrets = HashMap::new();
-        receiver_secrets.insert(2, Vec::new());
-
-        let receiver_private_key = TreeKemPrivate {
-            self_index: LeafIndex(1),
-            secret_keys: receiver_secrets
-        };
-
         let tree_secrets = receiver_tree.refresh_private_key(&receiver_private_key,
+                                                           None,
                                                            LeafIndex(0),
                                                            &update_path.update_path,
                                                            vec![],
@@ -804,6 +930,85 @@ pub (crate) mod test {
         // Apply the public update path
         receiver_tree.apply_update_path(LeafIndex(0), &update_path.update_path).unwrap();
         assert_eq!(receiver_tree, tree)
+    }
 
+    #[test]
+    fn test_refresh_private_with_leaf_update() {
+        let (mut tree, private_key) = get_test_tree();
+        tree.add_nodes(get_test_key_packages()).unwrap();
+
+        let (receiver_tree, receiver_private_key) = make_receiver_tree(&tree,
+                                                                       LeafIndex(1));
+
+        let (_, update_path) = gen_path_update(
+            &tree,
+            &private_key,
+            &b"test".to_vec()
+        );
+
+        let leaf_update = get_test_key_package_generation(
+            b"foo".to_vec(),
+            b"bar".to_vec(),
+            b"foobar".to_vec()
+        );
+
+        let tree_secrets = receiver_tree.refresh_private_key(&receiver_private_key,
+                                                    Some(leaf_update.clone()),
+                                                    LeafIndex(0),
+                                                    &update_path.update_path,
+                                                    vec![],
+                                                    &b"ctx".to_vec()).unwrap();
+
+        let leaf_secret = tree_secrets.private_key.secret_keys[&2].clone();
+
+        assert_eq!(leaf_secret,
+                   leaf_update.secret_key)
+    }
+
+    #[test]
+    fn test_update_path_bad_cred() {
+        let (mut tree, private_key) = get_test_tree();
+        tree.add_nodes(get_test_key_packages()).unwrap();
+        let tree_copy = tree.clone();
+
+        let invalid_update_path = UpdatePathGeneration {
+            update_path: UpdatePath { leaf_key_package: get_invalid_key_package(), nodes: vec![] },
+            secrets: TreeSecrets { private_key, secret_path: Default::default() }
+        };
+
+        let apply_res = tree.apply_update_path(LeafIndex(0),
+                                               &invalid_update_path.update_path);
+        assert_eq!(apply_res.is_err(), true);
+        assert_eq!(tree, tree_copy);
+    }
+
+    #[test]
+    fn test_private_key_update_leaf() {
+        let (mut tree, mut private_key) = get_test_tree();
+        tree.add_nodes(get_test_key_packages()).unwrap();
+
+        // Insert private key values so we can determine the direct path was cleared
+        tree.nodes.direct_path(private_key.self_index).unwrap().iter().for_each(|&i| {
+            private_key.secret_keys.insert(i, b"testing".to_vec());
+        });
+
+        // Update your own key package
+        let key_package_generation = get_test_key_package_generation(
+            b"updated".to_vec(),
+            b"keypackage".to_vec(),
+            b"generation".to_vec()
+        );
+
+        private_key.update_leaf(tree.leaf_count(),
+                                &key_package_generation).unwrap();
+
+        // Verify the secret key value was updated properly
+        assert_eq!(private_key.self_index, LeafIndex(0));
+        assert_eq!(private_key.secret_keys[&0], key_package_generation.secret_key);
+
+        // Verify that the keys in the direct path were cleared
+        tree.nodes.direct_path(private_key.self_index).unwrap().iter().for_each(|i| {
+            assert_eq!(private_key.secret_keys.contains_key(i), false);
+        });
     }
 }
