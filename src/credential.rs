@@ -1,14 +1,9 @@
+use crate::asym::AsymmetricKey;
 use crate::signature::{
-    SignatureScheme,
-    SignatureSchemeId,
-    Verifier,
-    SignatureError,
-    Signable,
-    PublicSignatureKey
+    PublicSignatureKey, Signable, SignatureError, SignatureScheme, SignatureSchemeId, Verifier,
 };
-use serde::{Deserialize, Serialize};
-use crate::asym::{AsymmetricKey};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use serde::{Deserialize, Serialize};
 
 #[derive(IntoPrimitive, TryFromPrimitive, Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(into = "u16", try_from = "u16")]
@@ -19,24 +14,25 @@ pub enum CredentialIdentifier {
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub enum Credential {
-    Basic(BasicCredential)
-    //TODO: X509
+    Basic(BasicCredential), //TODO: X509
 }
 
 impl Credential {
     pub fn get_signature_type(&self) -> &SignatureSchemeId {
         match self {
-            Credential::Basic(credential) => {
-                &credential.signature_scheme
-            }
+            Credential::Basic(credential) => &credential.signature_scheme,
         }
     }
 }
 
 impl Verifier for Credential {
-    fn verify<T: Signable + 'static>(&self, signature: &[u8], data: &T) -> Result<bool, SignatureError> {
+    fn verify<T: Signable + 'static>(
+        &self,
+        signature: &[u8],
+        data: &T,
+    ) -> Result<bool, SignatureError> {
         match self {
-            Credential::Basic(b) => b.verify(signature, data)
+            Credential::Basic(b) => b.verify(signature, data),
         }
     }
 }
@@ -59,11 +55,14 @@ impl CredentialConvertable for BasicCredential {
 }
 
 impl BasicCredential {
-    pub fn new<SS: SignatureScheme>(identity: Vec<u8>, signature_scheme: SS) -> Result<Self, SignatureError> {
+    pub fn new<SS: SignatureScheme>(
+        identity: Vec<u8>,
+        signature_scheme: SS,
+    ) -> Result<Self, SignatureError> {
         Ok(Self {
             identity,
             signature_scheme: SS::IDENTIFIER,
-            signature_key: signature_scheme.get_verifier().to_bytes()?
+            signature_key: signature_scheme.get_verifier().to_bytes()?,
         })
     }
 }
@@ -72,29 +71,34 @@ impl From<&BasicCredential> for PublicSignatureKey {
     fn from(cred: &BasicCredential) -> Self {
         PublicSignatureKey {
             signature_scheme: cred.signature_scheme.clone(),
-            signature_key: cred.signature_key.clone()
+            signature_key: cred.signature_key.clone(),
         }
     }
 }
 
 impl Verifier for BasicCredential {
-    fn verify<T: Signable + 'static>(&self, signature: &[u8], data: &T) -> Result<bool, SignatureError> {
+    fn verify<T: Signable + 'static>(
+        &self,
+        signature: &[u8],
+        data: &T,
+    ) -> Result<bool, SignatureError> {
         PublicSignatureKey::from(self).verify(signature, data)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::signature::test_utils::{MockTestSignatureScheme, get_test_verifier};
     use crate::credential::{BasicCredential, Credential, CredentialConvertable};
+    use crate::signature::test_utils::{get_test_verifier, MockTestSignatureScheme};
     use crate::signature::{SignatureSchemeId, Verifier};
 
     fn get_test_basic_credential() -> Credential {
         BasicCredential {
             identity: vec![],
             signature_scheme: SignatureSchemeId::Test,
-            signature_key: vec![]
-        }.to_credential()
+            signature_key: vec![],
+        }
+        .to_credential()
     }
 
     #[test]
@@ -122,7 +126,9 @@ mod test {
         let test_data = b"test".to_vec();
         let test_verifier = get_test_verifier(&test_data);
         let mut signature_scheme = MockTestSignatureScheme::new();
-        signature_scheme.expect_get_verifier().return_const(test_verifier);
+        signature_scheme
+            .expect_get_verifier()
+            .return_const(test_verifier);
 
         let test_identity = b"identity".to_vec();
         let basic_cred = BasicCredential::new(test_identity.clone(), signature_scheme)
@@ -138,7 +144,7 @@ mod test {
         let cred = BasicCredential {
             identity: vec![],
             signature_scheme: SignatureSchemeId::Test,
-            signature_key: vec![]
+            signature_key: vec![],
         };
 
         // The test signature function returns true if length > 0 and data length > 0

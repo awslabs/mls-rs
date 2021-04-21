@@ -1,6 +1,6 @@
-use rand_core::{RngCore, Error};
-use rand_core::CryptoRng;
 use rand_core::impls;
+use rand_core::CryptoRng;
+use rand_core::{Error, RngCore};
 use std::num::NonZeroU32;
 
 pub trait SecureRng: CryptoRng + RngCore {
@@ -27,25 +27,24 @@ impl RngCore for OpenSslRng {
     }
 
     fn fill_bytes(&mut self, dest: &mut [u8]) {
-        if self.try_fill_bytes(dest).is_err()  {
+        if self.try_fill_bytes(dest).is_err() {
             panic!("OpenSSL RNG critical error!")
         }
     }
 
     fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Error> {
-        openssl::rand::rand_bytes(dest)
-            .map_err(|_| Error::from(NonZeroU32::new(1).unwrap()))
+        openssl::rand::rand_bytes(dest).map_err(|_| Error::from(NonZeroU32::new(1).unwrap()))
     }
 }
 
 #[cfg(test)]
 pub mod test_rng {
-    use rand_core::{CryptoRng, RngCore, Error, impls};
-    use std::num::NonZeroU32;
     use crate::rand::SecureRng;
+    use rand_core::{impls, CryptoRng, Error, RngCore};
+    use std::num::NonZeroU32;
 
     pub struct OneValRng {
-        pub val: Vec<u8>
+        pub val: Vec<u8>,
     }
 
     impl CryptoRng for OneValRng {}
@@ -68,7 +67,11 @@ pub mod test_rng {
 
         fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Error> {
             if dest.len() != self.val.len() {
-                println!("Invalid random length called {} expected {}", dest.len(), self.val.len());
+                println!(
+                    "Invalid random length called {} expected {}",
+                    dest.len(),
+                    self.val.len()
+                );
                 return Err(Error::from(NonZeroU32::new(1).unwrap()));
             } else {
                 dest.copy_from_slice(&self.val)
@@ -103,7 +106,7 @@ pub mod test_rng {
 
     #[derive(Clone)]
     pub struct RepeatRng {
-        pub num: u8
+        pub num: u8,
     }
 
     impl CryptoRng for RepeatRng {}

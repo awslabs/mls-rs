@@ -9,7 +9,7 @@ pub enum TreeMathError {
     #[error("no common ancestor")]
     NoCommonAncestor,
     #[error("index out of range")]
-    InvalidIndex
+    InvalidIndex,
 }
 
 pub fn log2(x: usize) -> usize {
@@ -72,7 +72,7 @@ pub fn parent_step(x: usize) -> usize {
 
 pub fn parent(x: usize, n: usize) -> Result<usize, TreeMathError> {
     if x == root(n) {
-        return Err(TreeMathError::NoParent)
+        return Err(TreeMathError::NoParent);
     }
 
     let mut p = parent_step(x);
@@ -97,7 +97,7 @@ pub fn direct_path(x: usize, n: usize) -> Result<Vec<usize>, TreeMathError> {
     let mut d = Vec::new();
 
     if x == r {
-        return Ok(d)
+        return Ok(d);
     }
 
     let mut x_mut = x;
@@ -114,15 +114,13 @@ pub fn copath(x: usize, n: usize) -> Result<Vec<usize>, TreeMathError> {
     let mut d = Vec::new();
 
     if x == root(n) {
-        return Ok(d)
+        return Ok(d);
     }
 
     d = direct_path(x, n)?;
     d.insert(0, x);
     d.pop();
-    d.into_iter()
-        .map(|y| sibling(y, n))
-        .collect()
+    d.into_iter().map(|y| sibling(y, n)).collect()
 }
 
 pub fn common_ancestor_direct(x: usize, y: usize) -> usize {
@@ -141,19 +139,19 @@ pub fn common_ancestor_direct(x: usize, y: usize) -> usize {
         while xn != yn {
             xn >>= 1;
             yn >>= 1;
-            k+= 1;
+            k += 1;
         }
 
-        (xn << k) + (1 << (k - 1)) -1
+        (xn << k) + (1 << (k - 1)) - 1
     }
 }
 
 #[cfg(test)]
 mod test {
-    use serde::{Deserialize};
+    use super::*;
+    use serde::Deserialize;
     use std::fs::File;
     use std::io::BufReader;
-    use super::*;
 
     #[derive(Deserialize)]
     struct TestCase {
@@ -163,7 +161,7 @@ mod test {
         left: Vec<Option<usize>>,
         right: Vec<Option<usize>>,
         parent: Vec<Option<usize>>,
-        sibling: Vec<Option<usize>>
+        sibling: Vec<Option<usize>>,
     }
 
     fn run_test_case(case: &TestCase) {
@@ -180,11 +178,10 @@ mod test {
 
     #[test]
     fn test_tree_math() {
-        let file = File::open("test_data/kat_treemath_openmls.json")
-            .expect("failed to open file");
+        let file = File::open("test_data/kat_treemath_openmls.json").expect("failed to open file");
 
-        let test_vectors: Vec<TestCase> = serde_json::from_reader(BufReader::new(file))
-            .expect("failed to parse vector file");
+        let test_vectors: Vec<TestCase> =
+            serde_json::from_reader(BufReader::new(file)).expect("failed to parse vector file");
 
         test_vectors.iter().for_each(|tv| run_test_case(tv));
     }
@@ -213,7 +210,8 @@ mod test {
             [0x11, 0x13, 0x0f].to_vec(),
             [0x0f].to_vec(),
             [0x13, 0x0f].to_vec(),
-        ].to_vec();
+        ]
+        .to_vec();
 
         for i in 0..11 {
             assert_eq!(expected[i], direct_path(i, 11).unwrap())
@@ -244,7 +242,8 @@ mod test {
             [0x10, 0x14, 0x07].to_vec(),
             [0x07].to_vec(),
             [0x11, 0x07].to_vec(),
-        ].to_vec();
+        ]
+        .to_vec();
 
         for i in 0..11 {
             assert_eq!(expected[i], copath(i, 11).unwrap())

@@ -1,4 +1,4 @@
-use crate::ciphersuite::{KemKeyPair, CipherSuiteError};
+use crate::ciphersuite::{CipherSuiteError, KemKeyPair};
 use cfg_if::cfg_if;
 
 cfg_if! {
@@ -12,12 +12,12 @@ cfg_if! {
 #[derive(Clone, Debug, PartialEq)]
 pub struct NodeSecrets {
     pub path_secret: Vec<u8>,
-    pub key_pair: KemKeyPair
+    pub key_pair: KemKeyPair,
 }
 
 pub struct NodeSecretGenerator {
     cipher_suite: CipherSuite,
-    pub next_path_secret: Vec<u8>
+    pub next_path_secret: Vec<u8>,
 }
 
 impl NodeSecretGenerator {
@@ -26,7 +26,7 @@ impl NodeSecretGenerator {
     pub fn new_from_path_secret(cipher_suite: CipherSuite, path_secret: Vec<u8>) -> Self {
         Self {
             cipher_suite,
-            next_path_secret: path_secret
+            next_path_secret: path_secret,
         }
     }
 
@@ -39,7 +39,7 @@ impl NodeSecretGenerator {
 
         Ok(NodeSecrets {
             path_secret,
-            key_pair
+            key_pair,
         })
     }
 }

@@ -1,27 +1,33 @@
-use crate::ratchet_tree::{RatchetTree, RatchetTreeError, UpdatePath, TreeKemPrivate, UpdatePathGeneration};
-use crate::epoch::{EpochKeySchedule, CommitSecret, EpochKeyScheduleError, WelcomeSecret};
-use crate::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageGenerator, KeyPackageError};
-use thiserror::Error;
-use crate::ciphersuite::{CipherSuiteError};
-use serde::{Serialize, Deserialize};
+use crate::ciphersuite::CipherSuiteError;
+use crate::epoch::{CommitSecret, EpochKeySchedule, EpochKeyScheduleError, WelcomeSecret};
+use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerator};
+use crate::ratchet_tree::{
+    RatchetTree, RatchetTreeError, TreeKemPrivate, UpdatePath, UpdatePathGeneration,
+};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-use cfg_if::cfg_if;
-use std::collections::HashMap;
 use crate::extension::{Extension, ExtensionList};
-use crate::tree_node::{LeafIndex};
+use crate::framing::{
+    CommitConversionError, Content, ContentType, MLSCiphertext, MLSCiphertextContent,
+    MLSCiphertextContentAAD, MLSPlaintext, MLSPlaintextCommitAuthData, MLSPlaintextCommitContent,
+    MLSSenderData, MLSSenderDataAAD, Sender, SenderType,
+};
+use crate::group::GroupError::InvalidPlaintextEpoch;
+use crate::group::Proposal::{Add, Update};
 use crate::hash::Mac;
 use crate::hpke::HPKECiphertext;
 use crate::protocol_version::ProtocolVersion;
-use crate::signature::{Verifier, SignatureError, Signable, Signer};
-use crate::group::Proposal::{Add, Update};
-use crate::framing::{MLSPlaintext, Content, Sender, MLSPlaintextCommitAuthData, MLSPlaintextCommitContent, CommitConversionError, SenderType, MLSCiphertext, MLSCiphertextContent, MLSCiphertextContentAAD, ContentType, MLSSenderData, MLSSenderDataAAD};
-use crate::group::GroupError::InvalidPlaintextEpoch;
-use crate::transcript_hash::{ConfirmedTranscriptHash, TranscriptHashError, InterimTranscriptHash};
-use std::convert::TryFrom;
-use std::option::Option::Some;
 use crate::rand::SecureRng;
 use crate::secret_tree::KeyType;
+use crate::signature::{Signable, SignatureError, Signer, Verifier};
+use crate::transcript_hash::{ConfirmedTranscriptHash, InterimTranscriptHash, TranscriptHashError};
+use crate::tree_node::LeafIndex;
+use cfg_if::cfg_if;
+use std::collections::HashMap;
+use std::convert::TryFrom;
+use std::option::Option::Some;
 
 cfg_if! {
     if #[cfg(test)] {
@@ -46,17 +52,17 @@ pub enum ProposalType {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AddProposal {
-    pub key_package: KeyPackage
+    pub key_package: KeyPackage,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UpdateProposal {
-    pub key_package: KeyPackage
+    pub key_package: KeyPackage,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RemoveProposal {
-    pub to_remove: u32
+    pub to_remove: u32,
 }
 
 //TODO: This should serialize with msg_type being a proposal type above
@@ -80,7 +86,7 @@ impl Proposal {
     pub fn as_add(&self) -> Option<&AddProposal> {
         match self {
             Add(add) => Some(add),
-            _ => None
+            _ => None,
         }
     }
 
@@ -91,7 +97,7 @@ impl Proposal {
     pub fn as_update(&self) -> Option<&UpdateProposal> {
         match self {
             Update(update) => Some(update),
-            _ => None
+            _ => None,
         }
     }
 
@@ -111,7 +117,7 @@ impl From<Proposal> for ProposalType {
         match p {
             Proposal::Add(_) => ProposalType::Add,
             Proposal::Update(_) => ProposalType::Update,
-            Proposal::Remove(_) => ProposalType::Remove
+            Proposal::Remove(_) => ProposalType::Remove,
         }
     }
 }
@@ -127,7 +133,7 @@ pub enum ProposalOrRefType {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ProposalOrRef {
     Proposal(Proposal),
-    Reference(Vec<u8>)
+    Reference(Vec<u8>),
 }
 
 impl From<Proposal> for ProposalOrRef {
@@ -145,7 +151,7 @@ impl From<Vec<u8>> for ProposalOrRef {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PendingProposal {
     proposal: Proposal,
-    sender: LeafIndex
+    sender: LeafIndex,
 }
 
 struct ProvisionalState {
@@ -153,13 +159,13 @@ struct ProvisionalState {
     // Set when there is a pending leaf update due to an update proposal
     leaf_update: Option<KeyPackageGeneration>,
     added_leaves: Vec<LeafIndex>,
-    path_update_required: bool
+    path_update_required: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Commit {
     pub proposals: Vec<ProposalOrRef>,
-    pub path: Option<UpdatePath>
+    pub path: Option<UpdatePath>,
 }
 
 #[derive(Error, Debug)]
@@ -201,7 +207,7 @@ pub enum GroupError {
     #[error("key package not found, unable to process")]
     WelcomeKeyPackageNotFound,
     #[error("ratchet tree integrity failure")]
-    InvalidRatchetTree
+    InvalidRatchetTree,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -210,7 +216,7 @@ pub struct GroupContext {
     epoch: u64,
     tree_hash: Vec<u8>,
     confirmed_transcript_hash: Vec<u8>,
-    extensions: ExtensionList
+    extensions: ExtensionList,
 }
 
 impl GroupContext {
@@ -220,7 +226,7 @@ impl GroupContext {
             epoch: 0,
             tree_hash,
             confirmed_transcript_hash: vec![],
-            extensions
+            extensions,
         }
     }
 }
@@ -232,7 +238,7 @@ impl From<&GroupInfo> for GroupContext {
             epoch: group_info.epoch,
             tree_hash: group_info.tree_hash.clone(),
             confirmed_transcript_hash: group_info.confirmed_transcript_hash.clone(),
-            extensions: group_info.extensions.clone()
+            extensions: group_info.extensions.clone(),
         }
     }
 }
@@ -246,7 +252,7 @@ pub struct GroupInfo {
     pub extensions: ExtensionList,
     pub confirmation_tag: Mac,
     pub signer_index: u32,
-    pub signature: Vec<u8>
+    pub signature: Vec<u8>,
 }
 
 impl Signable for GroupInfo {
@@ -271,21 +277,19 @@ impl Signable for GroupInfo {
             confirmed_transcript_hash: &self.confirmed_transcript_hash,
             extensions: &self.extensions,
             confirmation_tag: &self.confirmation_tag,
-            signer_index: self.signer_index
+            signer_index: self.signer_index,
         })
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PathSecret {
-    pub path_secret: Vec<u8>
+    pub path_secret: Vec<u8>,
 }
 
 impl From<Vec<u8>> for PathSecret {
     fn from(path_secret: Vec<u8>) -> Self {
-        Self {
-            path_secret
-        }
+        Self { path_secret }
     }
 }
 
@@ -307,7 +311,7 @@ pub struct Welcome {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     pub secrets: Vec<EncryptedGroupSecrets>,
-    pub encrypted_group_info: Vec<u8>
+    pub encrypted_group_info: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -319,17 +323,17 @@ pub struct Group {
     pub key_schedule: EpochKeySchedule, //TODO: Need to support out of order packets by holding a few old epoch values too
     interim_transcript_hash: InterimTranscriptHash,
     pub proposals: HashMap<Vec<u8>, PendingProposal>, // Hash of MLS Plaintext to pending proposal
-    pub pending_updates: HashMap<Vec<u8>, KeyPackageGeneration> // Hash of key package to key generation
+    pub pending_updates: HashMap<Vec<u8>, KeyPackageGeneration>, // Hash of key package to key generation
 }
 
 impl PartialEq for Group {
     fn eq(&self, other: &Self) -> bool {
-        self.cipher_suite == other.cipher_suite &&
-            self.context == other.context &&
-            self.public_tree == other.public_tree &&
-            self.key_schedule == other.key_schedule &&
-            self.interim_transcript_hash == other.interim_transcript_hash &&
-            self.proposals == other.proposals
+        self.cipher_suite == other.cipher_suite
+            && self.context == other.context
+            && self.public_tree == other.public_tree
+            && self.key_schedule == other.key_schedule
+            && self.interim_transcript_hash == other.interim_transcript_hash
+            && self.proposals == other.proposals
     }
 }
 
@@ -346,14 +350,14 @@ struct GroupStateUpdate {
 pub struct PendingCommit {
     pub plaintext: MLSPlaintext,
     update_path_data: Option<UpdatePathGeneration>,
-    pub welcome: Option<Welcome>
+    pub welcome: Option<Welcome>,
 }
 
 impl Group {
     pub fn new<RNG: SecureRng + 'static>(
         rng: &mut RNG,
         group_id: Vec<u8>,
-        creator_key_package: KeyPackageGeneration
+        creator_key_package: KeyPackageGeneration,
     ) -> Result<Self, GroupError> {
         let cipher_suite = creator_key_package.key_package.cipher_suite.clone();
         let extensions = creator_key_package.key_package.extensions.clone();
@@ -368,31 +372,33 @@ impl Group {
             &[],
             1,
             &context,
-            LeafIndex(0)
-        )?.key_schedule;
+            LeafIndex(0),
+        )?
+        .key_schedule;
 
-         Ok(Self {
-             cipher_suite: cipher_suite.clone(),
-             public_tree,
-             private_tree,
-             context,
-             key_schedule: epoch,
-             interim_transcript_hash: InterimTranscriptHash::new(cipher_suite, vec![]),
-             proposals: Default::default(),
-             pending_updates: Default::default()
-         })
+        Ok(Self {
+            cipher_suite: cipher_suite.clone(),
+            public_tree,
+            private_tree,
+            context,
+            key_schedule: epoch,
+            interim_transcript_hash: InterimTranscriptHash::new(cipher_suite, vec![]),
+            proposals: Default::default(),
+            pending_updates: Default::default(),
+        })
     }
 
     pub fn from_welcome_message(
         welcome: Welcome,
         public_tree: RatchetTree,
-        key_package: KeyPackageGeneration
+        key_package: KeyPackageGeneration,
     ) -> Result<Self, GroupError> {
         //Identify an entry in the secrets array where the key_package_hash value corresponds to
         // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
         // If no such field exists, or if the ciphersuite indicated in the KeyPackage does not
         // match the one in the Welcome message, return an error.
-        let encrypted_group_secrets = welcome.secrets
+        let encrypted_group_secrets = welcome
+            .secrets
             .iter()
             .find(|s| s.key_package_hash == key_package.key_package_hash)
             .ok_or(GroupError::WelcomeKeyPackageNotFound)?;
@@ -402,22 +408,23 @@ impl Group {
         // PreSharedKeyID is part of the GroupSecrets and the client is not in possession of
         // the corresponding PSK, return an error
         //TODO: PSK Support
-        let decrypted_group_secrets = welcome.cipher_suite
-            .hpke_open(&encrypted_group_secrets.encrypted_group_secrets,
-                       &key_package.secret_key,
-                       &[])?;
+        let decrypted_group_secrets = welcome.cipher_suite.hpke_open(
+            &encrypted_group_secrets.encrypted_group_secrets,
+            &key_package.secret_key,
+            &[],
+        )?;
 
         let group_secrets = bincode::deserialize::<GroupSecrets>(&decrypted_group_secrets)?;
 
         //From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
         // the GroupSecrets, derive the welcome_secret and using that the welcome_key and
         // welcome_nonce.
-        let welcome_secret = WelcomeSecret::from_joiner_secret(&welcome.cipher_suite,
-                                                               &group_secrets.joiner_secret)?;
+        let welcome_secret =
+            WelcomeSecret::from_joiner_secret(&welcome.cipher_suite, &group_secrets.joiner_secret)?;
 
         //Use the key and nonce to decrypt the encrypted_group_info field.
-        let decrypted_group_info = welcome_secret.decrypt(&welcome.cipher_suite,
-                                                          &welcome.encrypted_group_info)?;
+        let decrypted_group_info =
+            welcome_secret.decrypt(&welcome.cipher_suite, &welcome.encrypted_group_info)?;
         let group_info = bincode::deserialize::<GroupInfo>(&decrypted_group_info)?;
 
         //Verify the signature on the GroupInfo object. The signature input comprises all of the
@@ -427,13 +434,16 @@ impl Group {
 
         let sender_leaf = LeafIndex(group_info.signer_index as usize);
         let sender_key_package = public_tree.get_key_package(sender_leaf)?;
-        if !sender_key_package.credential.verify(&group_info.signature, &group_info)? {
+        if !sender_key_package
+            .credential
+            .verify(&group_info.signature, &group_info)?
+        {
             return Err(GroupError::InvalidSignature);
         }
 
         // Verify the integrity of the ratchet tree
         if !public_tree.is_valid(&group_info.tree_hash)? {
-            return Err(GroupError::InvalidRatchetTree)
+            return Err(GroupError::InvalidRatchetTree);
         }
 
         // Identify a leaf in the tree array (any even-numbered node) whose key_package field is
@@ -457,7 +467,7 @@ impl Group {
             key_package.secret_key,
             LeafIndex(group_info.signer_index as usize),
             public_tree.leaf_count(),
-            &group_secrets
+            &group_secrets,
         )?;
 
         // Use the joiner_secret from the GroupSecrets object to generate the epoch secret and
@@ -467,15 +477,16 @@ impl Group {
             &group_secrets.joiner_secret,
             public_tree.leaf_count(),
             &context,
-            self_index
+            self_index,
         )?;
 
         // Verify the confirmation tag in the GroupInfo using the derived confirmation key and the
         // confirmed_transcript_hash from the GroupInfo.
         // TODO: This is duplicate code
-        let confirmation_tag = welcome.cipher_suite.clone()
-            .hmac(&key_schedule.confirmation_key,
-                  &group_info.confirmed_transcript_hash)?;
+        let confirmation_tag = welcome.cipher_suite.clone().hmac(
+            &key_schedule.confirmation_key,
+            &group_info.confirmed_transcript_hash,
+        )?;
 
         if confirmation_tag != group_info.confirmation_tag {
             return Err(GroupError::InvalidConfirmationTag);
@@ -485,11 +496,11 @@ impl Group {
         // hash in the new state.
         let confirmed_transcript_hash = ConfirmedTranscriptHash::new(
             welcome.cipher_suite.clone(),
-            group_info.confirmed_transcript_hash
+            group_info.confirmed_transcript_hash,
         );
 
-        let interim_transcript_hash = confirmed_transcript_hash
-            .get_interim_transcript_hash(group_info.confirmation_tag)?;
+        let interim_transcript_hash =
+            confirmed_transcript_hash.get_interim_transcript_hash(group_info.confirmation_tag)?;
 
         Ok(Group {
             cipher_suite: welcome.cipher_suite.clone(),
@@ -499,7 +510,7 @@ impl Group {
             key_schedule,
             interim_transcript_hash,
             proposals: Default::default(),
-            pending_updates: Default::default()
+            pending_updates: Default::default(),
         })
     }
 
@@ -508,26 +519,26 @@ impl Group {
         proposals: &'a [ProposalOrRef],
         sender: LeafIndex,
     ) -> Result<Vec<PendingProposal>, GroupError> {
-        proposals.iter().map(|p| {
-            match p {
-                ProposalOrRef::Proposal(p) => {
-                    Ok(PendingProposal {
-                        proposal: p.clone(),
-                        sender
-                    })
-                },
-                ProposalOrRef::Reference(id) => self.proposals
+        proposals
+            .iter()
+            .map(|p| match p {
+                ProposalOrRef::Proposal(p) => Ok(PendingProposal {
+                    proposal: p.clone(),
+                    sender,
+                }),
+                ProposalOrRef::Reference(id) => self
+                    .proposals
                     .get(id)
                     .cloned()
-                    .ok_or_else(|| GroupError::MissingProposal(id.clone()))
-            }
-        }).collect::<Result<Vec<PendingProposal>, GroupError>>()
+                    .ok_or_else(|| GroupError::MissingProposal(id.clone())),
+            })
+            .collect::<Result<Vec<PendingProposal>, GroupError>>()
     }
 
     fn apply_proposals(
         &self,
         sender: LeafIndex,
-        proposals: &[ProposalOrRef]
+        proposals: &[ProposalOrRef],
     ) -> Result<ProvisionalState, GroupError> {
         let proposals = self.fetch_proposals(proposals, sender)?;
 
@@ -535,12 +546,15 @@ impl Group {
         let mut leaf_update = None;
 
         // Apply updates
-        for (sender, update) in proposals.iter().filter_map(|p| p.proposal.as_update().map(|u| (p.sender, u))) {
+        for (sender, update) in proposals
+            .iter()
+            .filter_map(|p| p.proposal.as_update().map(|u| (p.sender, u)))
+        {
             provisional_tree.update_leaf(sender, update.key_package.clone())?;
 
-            let key_package_hash = self.cipher_suite.hash(
-                &bincode::serialize(&update.key_package)?
-            )?;
+            let key_package_hash = self
+                .cipher_suite
+                .hash(&bincode::serialize(&update.key_package)?)?;
 
             if let Some(key_generation) = self.pending_updates.get(&key_package_hash) {
                 leaf_update = key_generation.clone().into();
@@ -568,24 +582,24 @@ impl Group {
             public_tree: provisional_tree,
             leaf_update,
             added_leaves,
-            path_update_required
+            path_update_required,
         })
     }
 
     pub fn send_proposal<S: Signer>(
         &mut self,
         proposal: Proposal,
-        signer: &S
+        signer: &S,
     ) -> Result<MLSPlaintext, GroupError> {
-        let plaintext = self.construct_mls_plaintext(Content::Proposal(proposal.clone()), signer)?;
+        let plaintext =
+            self.construct_mls_plaintext(Content::Proposal(proposal.clone()), signer)?;
 
         // Add the proposal ref to the current set
-        let hash = self.cipher_suite
-            .hash(&bincode::serialize(&plaintext)?)?;
+        let hash = self.cipher_suite.hash(&bincode::serialize(&plaintext)?)?;
 
         let pending_proposal = PendingProposal {
             proposal,
-            sender: self.private_tree.self_index
+            sender: self.private_tree.self_index,
         };
 
         self.proposals.insert(hash, pending_proposal);
@@ -593,25 +607,28 @@ impl Group {
         Ok(plaintext)
     }
 
-    fn construct_mls_plaintext<S: Signer>(&self, content: Content, signer: &S) -> Result<MLSPlaintext, GroupError> {
+    fn construct_mls_plaintext<S: Signer>(
+        &self,
+        content: Content,
+        signer: &S,
+    ) -> Result<MLSPlaintext, GroupError> {
         //Construct an MLSPlaintext object containing the content
         let mut plaintext = MLSPlaintext {
             group_id: self.context.group_id.clone(),
             epoch: self.context.epoch,
             sender: Sender {
                 sender_type: SenderType::Member,
-                sender: *self.private_tree.self_index as u32
+                sender: *self.private_tree.self_index as u32,
             },
             authenticated_data: vec![],
             content,
             signature: vec![],
             confirmation_tag: None,
-            membership_tag: None //TODO: Membership tag is required for plaintext messages over the wire
+            membership_tag: None, //TODO: Membership tag is required for plaintext messages over the wire
         };
 
         // Sign the MLSPlaintext using the current epoch's GroupContext as context.
-        plaintext.signature = signer
-            .sign(&plaintext.signable_representation(&self.context))?;
+        plaintext.signature = signer.sign(&plaintext.signable_representation(&self.context))?;
 
         Ok(plaintext)
     }
@@ -621,17 +638,22 @@ impl Group {
         proposals: Vec<Proposal>,
         update_path: bool,
         rng: &mut RNG,
-        key_package_generator: &KPG
+        key_package_generator: &KPG,
     ) -> Result<PendingCommit, GroupError> {
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
         // by value
         let proposals = [
-            self.proposals.keys()
-                .map(|v| ProposalOrRef::from(v.clone())).collect::<Vec<ProposalOrRef>>(),
-            proposals.iter()
-                .map(|p| ProposalOrRef::from(p.clone())).collect::<Vec<ProposalOrRef>>()
-        ].concat();
+            self.proposals
+                .keys()
+                .map(|v| ProposalOrRef::from(v.clone()))
+                .collect::<Vec<ProposalOrRef>>(),
+            proposals
+                .iter()
+                .map(|p| ProposalOrRef::from(p.clone()))
+                .collect::<Vec<ProposalOrRef>>(),
+        ]
+        .concat();
 
         // Generate a provisional GroupContext object by applying the proposals referenced in the
         // initial Commit object, as described in Section 11.1. Update proposals are applied first,
@@ -640,10 +662,8 @@ impl Group {
         // and always to the leftmost unoccupied leaf in the tree, or the right edge of
         // the tree if all leaves are occupied
 
-        let mut provisional_state = self.apply_proposals(
-            self.private_tree.self_index,
-            &proposals
-        )?;
+        let mut provisional_state =
+            self.apply_proposals(self.private_tree.self_index, &proposals)?;
 
         let mut provisional_group_context = self.context.clone();
         provisional_group_context.epoch += 1;
@@ -670,12 +690,13 @@ impl Group {
                     rng,
                     key_package_generator,
                     &context_bytes,
-                    &provisional_state.added_leaves
+                    &provisional_state.added_leaves,
                 )?;
 
                 // Update the tree in the provisional state by applying the direct path
-                provisional_state.public_tree.apply_update_path(self.private_tree.self_index,
-                                                                &update_path.update_path)?;
+                provisional_state
+                    .public_tree
+                    .apply_update_path(self.private_tree.self_index, &update_path.update_path)?;
 
                 Some(update_path)
             }
@@ -684,8 +705,8 @@ impl Group {
         // Update the tree hash in the provisional group context
         provisional_group_context.tree_hash = provisional_state.public_tree.tree_hash()?;
 
-        let commit_secret = CommitSecret::from_update_path(&self.cipher_suite,
-                                                           update_path.as_ref())?;
+        let commit_secret =
+            CommitSecret::from_update_path(&self.cipher_suite, update_path.as_ref())?;
 
         //TODO: If one or more PreSharedKey proposals are part of the commit, derive the psk_secret
         // as specified in Section 8.2, where the order of PSKs in the derivation corresponds to the
@@ -693,20 +714,19 @@ impl Group {
         // zero-length octet string
         let commit = Commit {
             proposals,
-            path: update_path.clone().map(|up| up.update_path)
+            path: update_path.clone().map(|up| up.update_path),
         };
 
         //Construct an MLSPlaintext object containing the Commit object
-        let mut plaintext = self.construct_mls_plaintext(
-            Content::Commit(commit),
-            key_package_generator
-        )?;
+        let mut plaintext =
+            self.construct_mls_plaintext(Content::Commit(commit), key_package_generator)?;
 
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
         // compute the confirmation_tag value in the MLSPlaintext.
         let plaintext_data = MLSPlaintextCommitContent::try_from(&plaintext)?;
 
-        let confirmed_transcript_hash = self.interim_transcript_hash
+        let confirmed_transcript_hash = self
+            .interim_transcript_hash
             .get_confirmed_transcript_hash(&plaintext_data)?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash.value;
@@ -715,12 +735,13 @@ impl Group {
             &self.key_schedule,
             &commit_secret,
             provisional_state.public_tree.leaf_count(),
-            &provisional_group_context
+            &provisional_group_context,
         )?;
 
-        let confirmation_tag = self.cipher_suite
-            .hmac(&new_key_schedule.key_schedule.confirmation_key,
-                  &provisional_group_context.confirmed_transcript_hash)?;
+        let confirmation_tag = self.cipher_suite.hmac(
+            &new_key_schedule.key_schedule.confirmation_key,
+            &provisional_group_context.confirmed_transcript_hash,
+        )?;
 
         plaintext.confirmation_tag = Some(confirmation_tag.clone());
 
@@ -734,7 +755,7 @@ impl Group {
             extensions: self.context.extensions.clone(),
             confirmation_tag, // The confirmation_tag from the MLSPlaintext object
             signer_index: *self.private_tree.self_index as u32,
-            signature: vec![]
+            signature: vec![],
         };
 
         // Sign the GroupInfo using the member's private signing key
@@ -742,16 +763,15 @@ impl Group {
 
         // Encrypt the GroupInfo using the key and nonce derived from the joiner_secret for
         // the new epoch
-        let welcome_secret = WelcomeSecret::from_joiner_secret(&self.cipher_suite,
-                                                               &new_key_schedule.joiner_secret)?;
+        let welcome_secret =
+            WelcomeSecret::from_joiner_secret(&self.cipher_suite, &new_key_schedule.joiner_secret)?;
 
         let group_info_data = bincode::serialize(&group_info)?;
-        let encrypted_group_info = welcome_secret.encrypt(&self.cipher_suite,
-                                                          &group_info_data)?;
-
+        let encrypted_group_info = welcome_secret.encrypt(&self.cipher_suite, &group_info_data)?;
 
         // Build welcome messages for each added member
-        let secrets = provisional_state.added_leaves
+        let secrets = provisional_state
+            .added_leaves
             .iter()
             .map(|i| {
                 self.encrypt_group_secrets(
@@ -759,27 +779,25 @@ impl Group {
                     &provisional_state.public_tree,
                     i,
                     &new_key_schedule.joiner_secret,
-                    update_path.as_ref()
+                    update_path.as_ref(),
                 )
             })
             .collect::<Result<Vec<EncryptedGroupSecrets>, GroupError>>()?;
 
         let welcome = match secrets.len() {
             0 => None,
-            _ => Some(
-                Welcome {
-                    protocol_version: self.cipher_suite.get_protocol_version(),
-                    cipher_suite: self.cipher_suite.clone(),
-                    secrets,
-                    encrypted_group_info
-                }
-            )
+            _ => Some(Welcome {
+                protocol_version: self.cipher_suite.get_protocol_version(),
+                cipher_suite: self.cipher_suite.clone(),
+                secrets,
+                encrypted_group_info,
+            }),
         };
 
         Ok(PendingCommit {
             plaintext,
             update_path_data: update_path,
-            welcome
+            welcome,
         })
     }
 
@@ -789,7 +807,7 @@ impl Group {
         provisional_tree: &RatchetTree,
         leaf_index: &LeafIndex,
         joiner_secret: &[u8],
-        update_path: Option<&UpdatePathGeneration>
+        update_path: Option<&UpdatePathGeneration>,
     ) -> Result<EncryptedGroupSecrets, GroupError> {
         let path_secret = update_path
             .and_then(|up| up.get_common_path_secret(*leaf_index))
@@ -797,47 +815,51 @@ impl Group {
 
         // Ensure that we have a path secret if one is required
         if path_secret.is_none() && update_path.is_some() {
-            return Err(GroupError::InvalidTreeKemPrivateKey)
+            return Err(GroupError::InvalidTreeKemPrivateKey);
         }
 
         let group_secrets = GroupSecrets {
             joiner_secret: joiner_secret.to_vec(),
-            path_secret
+            path_secret,
         };
 
         let group_secrets_bytes = bincode::serialize(&group_secrets)?;
         let key_package = provisional_tree.get_key_package(*leaf_index)?;
 
-        let key_package_hash = self.cipher_suite
-            .hash(&bincode::serialize(&key_package)?)?;
+        let key_package_hash = self.cipher_suite.hash(&bincode::serialize(&key_package)?)?;
 
         let encrypted_group_secrets = self.cipher_suite.hpke_seal(
             rng,
             &key_package.hpke_init_key,
             &[],
-            &group_secrets_bytes
+            &group_secrets_bytes,
         )?;
 
         Ok(EncryptedGroupSecrets {
             key_package_hash,
-            encrypted_group_secrets
+            encrypted_group_secrets,
         })
     }
 
     pub fn add_member_proposals(
         &self,
-        key_packages: &[KeyPackage]
+        key_packages: &[KeyPackage],
     ) -> Result<Vec<Proposal>, GroupError> {
         // Verify that the packages are all the correct cipher suite and mls version
         // TODO: Make sure the packages are the correct best cipher suite etc
-        key_packages.iter().map(|key_package| {
-            if key_package.cipher_suite != self.cipher_suite {
-                return Err(GroupError::CipherSuiteMismatch)
-            }
+        key_packages
+            .iter()
+            .map(|key_package| {
+                if key_package.cipher_suite != self.cipher_suite {
+                    return Err(GroupError::CipherSuiteMismatch);
+                }
 
-            // Create proposal
-            Ok(Proposal::from(AddProposal { key_package: key_package.clone() }))
-        }).collect()
+                // Create proposal
+                Ok(Proposal::from(AddProposal {
+                    key_package: key_package.clone(),
+                }))
+            })
+            .collect()
     }
 
     pub fn update_proposal<RNG: SecureRng + 'static, KPG: KeyPackageGenerator>(
@@ -846,13 +868,13 @@ impl Group {
         key_package_gen: &KPG,
     ) -> Result<Proposal, GroupError> {
         // Generate a new key package
-        let key_package = key_package_gen.gen_key_package(rng,
-                                                          &self.cipher_suite)?;
+        let key_package = key_package_gen.gen_key_package(rng, &self.cipher_suite)?;
 
-        self.pending_updates.insert(key_package.key_package_hash.clone(), key_package.clone());
+        self.pending_updates
+            .insert(key_package.key_package_hash.clone(), key_package.clone());
 
         Ok(Proposal::Update(UpdateProposal {
-            key_package: key_package.key_package
+            key_package: key_package.key_package,
         }))
     }
 
@@ -861,7 +883,11 @@ impl Group {
             .map(|_| ())
     }
 
-    pub fn encrypt_plaintext<RNG: SecureRng>(&mut self, rng: &mut RNG, plaintext: MLSPlaintext) -> Result<MLSCiphertext, GroupError> {
+    pub fn encrypt_plaintext<RNG: SecureRng>(
+        &mut self,
+        rng: &mut RNG,
+        plaintext: MLSPlaintext,
+    ) -> Result<MLSCiphertext, GroupError> {
         let content_type = ContentType::from(&plaintext.content);
 
         // Build a ciphertext content using the plaintext content and signature
@@ -869,7 +895,7 @@ impl Group {
             content: plaintext.content,
             signature: plaintext.signature,
             confirmation_tag: None,
-            padding: vec![] //TODO: Implement a padding mechanism
+            padding: vec![], //TODO: Implement a padding mechanism
         };
 
         // Build ciphertext aad using the plaintext message
@@ -877,7 +903,7 @@ impl Group {
             group_id: plaintext.group_id,
             epoch: plaintext.epoch,
             content_type,
-            authenticated_data: vec![]
+            authenticated_data: vec![],
         };
 
         // Generate a 4 byte reuse guard
@@ -886,7 +912,7 @@ impl Group {
         // Grab an encryption key from the current epoch's key schedule
         let key_type = match &content_type {
             ContentType::Application => KeyType::Application,
-            _=> KeyType::Handshake
+            _ => KeyType::Handshake,
         };
 
         let encryption_key = self.key_schedule.get_encryption_key(key_type)?;
@@ -897,7 +923,7 @@ impl Group {
             encryption_key.key.clone(), // TODO: We can avoid cloning if we refactor the cipher suite
             &bincode::serialize(&ciphertext_content)?,
             &bincode::serialize(&aad)?,
-            &encryption_key.reuse_safe_nonce(&reuse_guard)
+            &encryption_key.reuse_safe_nonce(&reuse_guard),
         )?;
 
         // Construct an mls sender data struct using the plaintext sender info, the generation
@@ -905,25 +931,24 @@ impl Group {
         let sender_data = MLSSenderData {
             sender: plaintext.sender.sender,
             generation: encryption_key.generation,
-            reuse_guard
+            reuse_guard,
         };
 
         let sender_data_aad = MLSSenderDataAAD {
             group_id: self.context.group_id.clone(),
             epoch: self.context.epoch,
-            content_type
+            content_type,
         };
 
         // Encrypt the sender data with the derived sender_key and sender_nonce from the current
         // epoch's key schedule
-        let (sender_key, sender_nonce) = self.key_schedule
-            .get_sender_data_params(&ciphertext)?;
+        let (sender_key, sender_nonce) = self.key_schedule.get_sender_data_params(&ciphertext)?;
 
         let encrypted_sender_data = self.cipher_suite.aead_encrypt(
             sender_key,
             &bincode::serialize(&sender_data)?,
             &bincode::serialize(&sender_data_aad)?,
-            &sender_nonce
+            &sender_nonce,
         )?;
 
         Ok(MLSCiphertext {
@@ -932,23 +957,28 @@ impl Group {
             content_type: ContentType::Application,
             authenticated_data: vec![],
             encrypted_sender_data,
-            ciphertext
+            ciphertext,
         })
     }
 
-    pub fn encrypt_application_message<RNG: SecureRng, S: Signer>(&mut self, rng: &mut RNG, message: Vec<u8>, signer: &S) -> Result<MLSCiphertext, GroupError> {
+    pub fn encrypt_application_message<RNG: SecureRng, S: Signer>(
+        &mut self,
+        rng: &mut RNG,
+        message: Vec<u8>,
+        signer: &S,
+    ) -> Result<MLSCiphertext, GroupError> {
         let mut plaintext = MLSPlaintext {
             group_id: self.context.group_id.clone(),
             epoch: self.context.epoch,
             sender: Sender {
                 sender_type: SenderType::Member,
-                sender: self.private_tree.self_index.0 as u32
+                sender: self.private_tree.self_index.0 as u32,
             },
             authenticated_data: vec![],
             content: Content::Application(message),
             signature: vec![],
             confirmation_tag: None,
-            membership_tag: None
+            membership_tag: None,
         };
 
         plaintext.signature = signer.sign(&plaintext.signable_representation(&self.context))?;
@@ -956,53 +986,74 @@ impl Group {
         self.encrypt_plaintext(rng, plaintext)
     }
 
-    pub fn process_ciphertext(&mut self, ciphertext: MLSCiphertext) -> Result<Option<Vec<u8>>, GroupError> {
+    pub fn process_ciphertext(
+        &mut self,
+        ciphertext: MLSCiphertext,
+    ) -> Result<Option<Vec<u8>>, GroupError> {
         // Decrypt the sender data with the derived sender_key and sender_nonce from the current
         // epoch's key schedule
-        let (sender_key, sender_nonce) = self.key_schedule
+        let (sender_key, sender_nonce) = self
+            .key_schedule
             .get_sender_data_params(&ciphertext.ciphertext)?;
 
         let sender_data_aad = MLSSenderDataAAD {
             group_id: self.context.group_id.clone(),
             epoch: self.context.epoch,
-            content_type: ciphertext.content_type
+            content_type: ciphertext.content_type,
         };
 
-        let decrypted_sender = self.cipher_suite.aead_decrypt(sender_key, &ciphertext.encrypted_sender_data, &bincode::serialize(&sender_data_aad)?, &sender_nonce)?;
+        let decrypted_sender = self.cipher_suite.aead_decrypt(
+            sender_key,
+            &ciphertext.encrypted_sender_data,
+            &bincode::serialize(&sender_data_aad)?,
+            &sender_nonce,
+        )?;
         let sender_data = bincode::deserialize::<MLSSenderData>(&decrypted_sender)?;
 
         // Grab an encryption key from the current epoch's key schedule
         let key_type = match &ciphertext.content_type {
             ContentType::Application => KeyType::Application,
-            _=> KeyType::Handshake
+            _ => KeyType::Handshake,
         };
 
-        let decryption_key = self.key_schedule.get_decryption_key(LeafIndex(sender_data.sender as usize), sender_data.generation, key_type)?;
+        let decryption_key = self.key_schedule.get_decryption_key(
+            LeafIndex(sender_data.sender as usize),
+            sender_data.generation,
+            key_type,
+        )?;
 
         // Build ciphertext aad using the ciphertext message
         let aad = MLSCiphertextContentAAD {
             group_id: ciphertext.group_id.clone(),
             epoch: ciphertext.epoch,
             content_type: ciphertext.content_type,
-            authenticated_data: vec![]
+            authenticated_data: vec![],
         };
 
         let nonce = decryption_key.reuse_safe_nonce(&sender_data.reuse_guard);
 
         // Decrypt the content of the message using the
-        let decrypted_content = self.cipher_suite.aead_decrypt(decryption_key.key, &ciphertext.ciphertext, &bincode::serialize(&aad)?, &nonce)?;
+        let decrypted_content = self.cipher_suite.aead_decrypt(
+            decryption_key.key,
+            &ciphertext.ciphertext,
+            &bincode::serialize(&aad)?,
+            &nonce,
+        )?;
         let ciphertext_content = bincode::deserialize::<MLSCiphertextContent>(&decrypted_content)?;
 
         // Build the MLS plaintext object and process it
         let plaintext = MLSPlaintext {
             group_id: ciphertext.group_id.clone(),
             epoch: ciphertext.epoch,
-            sender: Sender { sender_type: SenderType::Member, sender: sender_data.sender },
+            sender: Sender {
+                sender_type: SenderType::Member,
+                sender: sender_data.sender,
+            },
             authenticated_data: vec![],
             content: ciphertext_content.content,
             signature: ciphertext_content.signature,
             confirmation_tag: ciphertext_content.confirmation_tag,
-            membership_tag: None // TODO: Membership tag
+            membership_tag: None, // TODO: Membership tag
         };
 
         self.process_plaintext(plaintext)
@@ -1011,7 +1062,7 @@ impl Group {
     fn process_plaintext_internal(
         &mut self,
         plaintext: MLSPlaintext,
-        local_pending: Option<UpdatePathGeneration>
+        local_pending: Option<UpdatePathGeneration>,
     ) -> Result<Option<Vec<u8>>, GroupError> {
         // Verify that the epoch field of the enclosing MLSPlaintext message is equal
         // to the epoch field of the current GroupContext object
@@ -1021,12 +1072,14 @@ impl Group {
 
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
-        let sender_cred = &self.public_tree
-            .get_key_package(plaintext.sender.clone().into())?.credential;
+        let sender_cred = &self
+            .public_tree
+            .get_key_package(plaintext.sender.clone().into())?
+            .credential;
 
         if !sender_cred.verify(
             &plaintext.signature,
-            &plaintext.signable_representation(&self.context)
+            &plaintext.signable_representation(&self.context),
         )? {
             return Err(GroupError::InvalidSignature);
         }
@@ -1036,13 +1089,12 @@ impl Group {
 
         // Process the contents of the packet
         match &plaintext.content {
-            Content::Application(content) => { Ok(content.clone().into()) }
+            Content::Application(content) => Ok(content.clone().into()),
             Content::Proposal(p) => {
-                let hash = self.cipher_suite
-                    .hash(&bincode::serialize(&plaintext)?)?;
+                let hash = self.cipher_suite.hash(&bincode::serialize(&plaintext)?)?;
                 let pending_proposal = PendingProposal {
                     proposal: p.clone(),
-                    sender: LeafIndex(plaintext.sender.sender as usize)
+                    sender: LeafIndex(plaintext.sender.sender as usize),
                 };
                 self.proposals.insert(hash, pending_proposal);
                 Ok(None)
@@ -1051,18 +1103,23 @@ impl Group {
                 let commit_content = MLSPlaintextCommitContent::try_from(&plaintext)?;
                 let auth_data = MLSPlaintextCommitAuthData::try_from(&plaintext)?;
 
-                let res = self.process_commit(plaintext.sender.into(),
-                                              local_pending, commit_content, auth_data)?;
+                let res = self.process_commit(
+                    plaintext.sender.into(),
+                    local_pending,
+                    commit_content,
+                    auth_data,
+                )?;
 
                 // Use the confirmation_key for the new epoch to compute the confirmation tag for
                 // this message, as described below, and verify that it is the same as the
                 // confirmation_tag field in the MLSPlaintext object.
 
-                let confirmation_tag = plaintext.confirmation_tag
+                let confirmation_tag = plaintext
+                    .confirmation_tag
                     .ok_or(GroupError::InvalidConfirmationTag)?;
 
                 if res.confirmation_tag != confirmation_tag {
-                    return Err(GroupError::InvalidConfirmationTag)
+                    return Err(GroupError::InvalidConfirmationTag);
                 }
 
                 // If the above checks are successful, consider the updated GroupContext object
@@ -1093,7 +1150,7 @@ impl Group {
 
     pub fn process_plaintext(
         &mut self,
-        plaintext: MLSPlaintext
+        plaintext: MLSPlaintext,
     ) -> Result<Option<Vec<u8>>, GroupError> {
         self.process_plaintext_internal(plaintext, None)
     }
@@ -1104,7 +1161,7 @@ impl Group {
         sender: LeafIndex,
         local_pending: Option<UpdatePathGeneration>,
         commit_content: MLSPlaintextCommitContent,
-        auth_data: MLSPlaintextCommitAuthData
+        auth_data: MLSPlaintextCommitAuthData,
     ) -> Result<GroupStateUpdate, GroupError> {
         //Generate a provisional GroupContext object by applying the proposals referenced in the
         // initial Commit object, as described in Section 11.1. Update proposals are applied first,
@@ -1112,8 +1169,8 @@ impl Group {
         // in the order listed in the proposals vector, and always to the leftmost unoccupied leaf
         // in the tree, or the right edge of the tree if all leaves are occupied.
 
-        let mut provisional_state = self.apply_proposals(sender,
-                                                         &commit_content.commit.proposals)?;
+        let mut provisional_state =
+            self.apply_proposals(sender, &commit_content.commit.proposals)?;
 
         //Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
@@ -1135,28 +1192,31 @@ impl Group {
                         sender,
                         update_path,
                         provisional_state.added_leaves,
-                        &bincode::serialize(&self.context)?
+                        &bincode::serialize(&self.context)?,
                     )
                 }?;
 
-                provisional_state.public_tree.apply_update_path(sender, update_path)?;
+                provisional_state
+                    .public_tree
+                    .apply_update_path(sender, update_path)?;
                 Some(secrets)
             }
         };
 
-        let commit_secret =  CommitSecret::from_tree_secrets(&self.cipher_suite,
-                                                             updated_secrets.as_ref())?;
+        let commit_secret =
+            CommitSecret::from_tree_secrets(&self.cipher_suite, updated_secrets.as_ref())?;
 
         let mut provisional_group_context = self.context.clone();
         // Bump up the epoch in the provisional group context
         provisional_group_context.epoch += 1;
 
         // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
-        let confirmed_transcript_hash = self.interim_transcript_hash
+        let confirmed_transcript_hash = self
+            .interim_transcript_hash
             .get_confirmed_transcript_hash(&commit_content)?;
 
-        let interim_transcript_hash = confirmed_transcript_hash
-            .get_interim_transcript_hash(auth_data.confirmation_tag)?;
+        let interim_transcript_hash =
+            confirmed_transcript_hash.get_interim_transcript_hash(auth_data.confirmation_tag)?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash.value;
         provisional_group_context.tree_hash = provisional_state.public_tree.tree_hash()?;
@@ -1171,12 +1231,13 @@ impl Group {
             &self.key_schedule,
             &commit_secret,
             provisional_state.public_tree.leaf_count(),
-            &provisional_group_context
+            &provisional_group_context,
         )?;
 
-        let confirmation_tag = self.cipher_suite
-            .hmac(&new_epoch.key_schedule.confirmation_key,
-                  &provisional_group_context.confirmed_transcript_hash)?;
+        let confirmation_tag = self.cipher_suite.hmac(
+            &new_epoch.key_schedule.confirmation_key,
+            &provisional_group_context.confirmed_transcript_hash,
+        )?;
 
         Ok(GroupStateUpdate {
             public_tree: provisional_state.public_tree,

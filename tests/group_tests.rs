@@ -1,18 +1,16 @@
-use mls::group::Group;
-use mls::rand::OpenSslRng;
-use mls::client::Client;
-use mls::credential::{Credential, BasicCredential};
-use mls::signature::ed25519::EdDsa25519;
-use mls::signature::SignatureScheme;
 use mls::asym::AsymmetricKey;
-use mls::key_package::{KeyPackageGenerator, KeyPackageGeneration, KeyPackage};
 use mls::ciphersuite::CipherSuite;
 use mls::ciphersuite::CipherSuite::{
-    Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
-    Mls10256Dhkemp521Aes256gcmSha512P521,
-    Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519,
-    Mls10128Dhkemp256Aes128gcmSha256P256,
+    Mls10128Dhkemp256Aes128gcmSha256P256, Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
+    Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519, Mls10256Dhkemp521Aes256gcmSha512P521,
 };
+use mls::client::Client;
+use mls::credential::{BasicCredential, Credential};
+use mls::group::Group;
+use mls::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageGenerator};
+use mls::rand::OpenSslRng;
+use mls::signature::ed25519::EdDsa25519;
+use mls::signature::SignatureScheme;
 
 fn generate_client(id: Vec<u8>) -> Client {
     let signature_scheme = EdDsa25519::new_random(OpenSslRng).unwrap();
@@ -20,14 +18,14 @@ fn generate_client(id: Vec<u8>) -> Client {
     let basic = BasicCredential {
         signature_key: signature_key.signature_key,
         identity: id,
-        signature_scheme: signature_key.signature_scheme
+        signature_scheme: signature_key.signature_scheme,
     };
 
     Client {
         signature_key: signature_scheme.get_signer().to_bytes().unwrap(),
         credential: Credential::Basic(basic),
         capabilities: Default::default(),
-        key_lifetime: 42
+        key_lifetime: 42,
     }
 }
 
@@ -41,22 +39,15 @@ fn test_create(cipher_suite: CipherSuite, update_path: bool) {
     let bob_key = bob.gen_key_package(&mut rng, &cipher_suite).unwrap();
 
     // Alice creates a group and adds bob to the group
-    let mut test_group = Group::new(
-        &mut rng,
-        b"group".to_vec(),
-        alice_key.clone()
-    ).unwrap();
+    let mut test_group = Group::new(&mut rng, b"group".to_vec(), alice_key.clone()).unwrap();
 
-    let add_members = test_group.add_member_proposals(
-        &vec![bob_key.key_package.clone()]
-    ).unwrap();
+    let add_members = test_group
+        .add_member_proposals(&vec![bob_key.key_package.clone()])
+        .unwrap();
 
-    let commit = test_group.commit_proposals(
-        add_members,
-        update_path,
-        &mut rng,
-        &alice
-    ).unwrap();
+    let commit = test_group
+        .commit_proposals(add_members, update_path, &mut rng, &alice)
+        .unwrap();
 
     // Upon server confirmation, alice applies the commit to her own state
     test_group.process_pending_commit(commit.clone()).unwrap();
@@ -65,8 +56,9 @@ fn test_create(cipher_suite: CipherSuite, update_path: bool) {
     let bob_group = Group::from_welcome_message(
         commit.welcome.unwrap(),
         test_group.public_tree.clone(),
-        bob_key
-    ).unwrap();
+        bob_key,
+    )
+    .unwrap();
 
     assert_eq!(test_group, bob_group);
 }
@@ -76,8 +68,9 @@ fn get_cipher_suites() -> Vec<CipherSuite> {
         Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
         Mls10256Dhkemp521Aes256gcmSha512P521,
         Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519,
-        Mls10128Dhkemp256Aes128gcmSha256P256
-    ].to_vec()
+        Mls10128Dhkemp256Aes128gcmSha256P256,
+    ]
+    .to_vec()
 }
 
 #[test]
@@ -100,39 +93,46 @@ struct TestGroupCreation {
     creator_group: Group,
     receiver_clients: Vec<Client>,
     receiver_private_keys: Vec<KeyPackageGeneration>,
-    receiver_groups: Vec<Group>
+    receiver_groups: Vec<Group>,
 }
 
 fn get_test_group(cipher_suite: CipherSuite, num_participants: usize) -> TestGroupCreation {
     // Create the group with Alice as the group initiator
     let alice = generate_client(b"alice".to_vec());
 
-    let alice_key = alice.gen_key_package(&mut OpenSslRng, &cipher_suite)
+    let alice_key = alice
+        .gen_key_package(&mut OpenSslRng, &cipher_suite)
         .unwrap();
 
-    let mut test_group = Group::new(&mut OpenSslRng, b"group".to_vec(),
-                                    alice_key.clone()).unwrap();
+    let mut test_group = Group::new(&mut OpenSslRng, b"group".to_vec(), alice_key.clone()).unwrap();
 
     // Generate 10 random clients that will be members of the group
-    let clients = (0..num_participants).into_iter()
-        .map(|_| generate_client(b"test".to_vec())).collect::<Vec<Client>>();
+    let clients = (0..num_participants)
+        .into_iter()
+        .map(|_| generate_client(b"test".to_vec()))
+        .collect::<Vec<Client>>();
 
-    let test_keys = clients.iter()
-        .map(|client| client.gen_key_package(&mut OpenSslRng, &cipher_suite).unwrap())
+    let test_keys = clients
+        .iter()
+        .map(|client| {
+            client
+                .gen_key_package(&mut OpenSslRng, &cipher_suite)
+                .unwrap()
+        })
         .collect::<Vec<KeyPackageGeneration>>();
 
     // Add the generated clients to the group Alice created
     let add_members_proposal = test_group
-        .add_member_proposals(&test_keys
-            .iter()
-            .map(|g| g.key_package.clone()).collect::<Vec<KeyPackage>>())
+        .add_member_proposals(
+            &test_keys
+                .iter()
+                .map(|g| g.key_package.clone())
+                .collect::<Vec<KeyPackage>>(),
+        )
         .unwrap();
 
-    let commit = test_group.commit_proposals(
-        add_members_proposal,
-        true,
-        &mut OpenSslRng,
-        &alice)
+    let commit = test_group
+        .commit_proposals(add_members_proposal, true, &mut OpenSslRng, &alice)
         .unwrap();
 
     test_group.process_pending_commit(commit.clone()).unwrap();
@@ -140,11 +140,14 @@ fn get_test_group(cipher_suite: CipherSuite, num_participants: usize) -> TestGro
     // Create groups for each participant by processing Alice's welcome message
     let receiver_groups = test_keys
         .iter()
-        .map(|kp|
-            Group::from_welcome_message(commit.welcome.as_ref().unwrap().clone(),
-                                        test_group.public_tree.clone(),
-                                        kp.clone())
-                .unwrap())
+        .map(|kp| {
+            Group::from_welcome_message(
+                commit.welcome.as_ref().unwrap().clone(),
+                test_group.public_tree.clone(),
+                kp.clone(),
+            )
+            .unwrap()
+        })
         .collect::<Vec<Group>>();
 
     TestGroupCreation {
@@ -153,25 +156,33 @@ fn get_test_group(cipher_suite: CipherSuite, num_participants: usize) -> TestGro
         creator_group: test_group,
         receiver_clients: clients,
         receiver_private_keys: test_keys,
-        receiver_groups
+        receiver_groups,
     }
 }
 
 fn test_path_updates(cipher_suite: CipherSuite) {
-    println!("Testing path updates for cipher suite: {:?}", cipher_suite.clone());
+    println!(
+        "Testing path updates for cipher suite: {:?}",
+        cipher_suite.clone()
+    );
 
     let mut test_group_data = get_test_group(cipher_suite, 10);
 
     // Loop through each participant and send a path update
     for i in 0..test_group_data.receiver_groups.len() {
-        let pending = test_group_data.receiver_groups[i].commit_proposals(
-            vec![],
-            true,
-            &mut OpenSslRng,
-            &test_group_data.receiver_clients[i]
-        ).unwrap();
+        let pending = test_group_data.receiver_groups[i]
+            .commit_proposals(
+                vec![],
+                true,
+                &mut OpenSslRng,
+                &test_group_data.receiver_clients[i],
+            )
+            .unwrap();
 
-        test_group_data.creator_group.process_plaintext(pending.plaintext.clone()).unwrap();
+        test_group_data
+            .creator_group
+            .process_plaintext(pending.plaintext.clone())
+            .unwrap();
 
         for j in 0..test_group_data.receiver_groups.len() {
             if i != j {
@@ -187,11 +198,10 @@ fn test_path_updates(cipher_suite: CipherSuite) {
     }
 
     // Validate that all the groups are in the same end state
-    test_group_data.receiver_groups
+    test_group_data
+        .receiver_groups
         .iter()
-        .for_each(|group|
-            assert_eq!(group, &test_group_data.creator_group)
-        );
+        .for_each(|group| assert_eq!(group, &test_group_data.creator_group));
 }
 
 #[test]
@@ -202,25 +212,27 @@ fn test_group_path_updates() {
 }
 
 fn test_update_proposals(cipher_suite: CipherSuite) {
-    println!("Testing update proposals for cipher suite: {:?}", cipher_suite.clone());
+    println!(
+        "Testing update proposals for cipher suite: {:?}",
+        cipher_suite.clone()
+    );
 
     let mut test_group_data = get_test_group(cipher_suite, 10);
 
     // Create an update from the ith member, have the ith + 1 member commit it
     for i in 0..test_group_data.receiver_groups.len() - 1 {
         let update_proposal = test_group_data.receiver_groups[i]
-            .update_proposal(
-                &mut OpenSslRng,
-                &test_group_data.receiver_clients[i]
-            ).unwrap();
+            .update_proposal(&mut OpenSslRng, &test_group_data.receiver_clients[i])
+            .unwrap();
 
-        let update_proposal_packet = test_group_data.receiver_groups[i].send_proposal(
-            update_proposal,
-            &test_group_data.receiver_clients[i]
-        ).unwrap();
+        let update_proposal_packet = test_group_data.receiver_groups[i]
+            .send_proposal(update_proposal, &test_group_data.receiver_clients[i])
+            .unwrap();
 
         // Everyone should process the proposal
-        test_group_data.creator_group.process_plaintext(update_proposal_packet.clone())
+        test_group_data
+            .creator_group
+            .process_plaintext(update_proposal_packet.clone())
             .unwrap();
 
         for j in 0..test_group_data.receiver_groups.len() {
@@ -232,32 +244,38 @@ fn test_update_proposals(cipher_suite: CipherSuite) {
         }
 
         // Another user will later commit the proposal
-        let pending = test_group_data.receiver_groups[i + 1].commit_proposals(
-            vec![],
-            true,
-            &mut OpenSslRng,
-            &test_group_data.receiver_clients[i + 1]
-        ).unwrap();
+        let pending = test_group_data.receiver_groups[i + 1]
+            .commit_proposals(
+                vec![],
+                true,
+                &mut OpenSslRng,
+                &test_group_data.receiver_clients[i + 1],
+            )
+            .unwrap();
 
-        test_group_data.creator_group.process_plaintext(pending.plaintext.clone()).unwrap();
+        test_group_data
+            .creator_group
+            .process_plaintext(pending.plaintext.clone())
+            .unwrap();
 
         // Everyone then receives the commit
         for j in 0..test_group_data.receiver_groups.len() {
             if i + 1 != j {
                 test_group_data.receiver_groups[j]
-                    .process_plaintext(pending.plaintext.clone()).unwrap();
+                    .process_plaintext(pending.plaintext.clone())
+                    .unwrap();
             } else {
                 test_group_data.receiver_groups[j]
-                    .process_pending_commit(pending.clone()).unwrap();
+                    .process_pending_commit(pending.clone())
+                    .unwrap();
             }
         }
 
         // Validate that all the groups are in the same end state
-        test_group_data.receiver_groups
+        test_group_data
+            .receiver_groups
             .iter()
-            .for_each(|group|
-                assert_eq!(group, &test_group_data.creator_group)
-            );
+            .for_each(|group| assert_eq!(group, &test_group_data.creator_group));
     }
 }
 
@@ -269,7 +287,11 @@ fn test_group_update_proposals() {
 }
 
 fn test_application_messages(cipher_suite: CipherSuite, message_count: usize) {
-    println!("Testing application messages, cipher suite: {:?}, message count: {}", cipher_suite.clone(), message_count);
+    println!(
+        "Testing application messages, cipher suite: {:?}, message count: {}",
+        cipher_suite.clone(),
+        message_count
+    );
 
     let mut test_group_data = get_test_group(cipher_suite, 10);
 
@@ -280,10 +302,14 @@ fn test_application_messages(cipher_suite: CipherSuite, message_count: usize) {
                 .encrypt_application_message(
                     &mut OpenSslRng,
                     b"test message".to_vec(),
-                    &test_group_data.receiver_clients[i]
-                ).unwrap();
+                    &test_group_data.receiver_clients[i],
+                )
+                .unwrap();
 
-            test_group_data.creator_group.process_ciphertext(ciphertext.clone()).unwrap();
+            test_group_data
+                .creator_group
+                .process_ciphertext(ciphertext.clone())
+                .unwrap();
 
             for j in 0..test_group_data.receiver_groups.len() {
                 if i != j {

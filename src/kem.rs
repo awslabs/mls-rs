@@ -1,16 +1,9 @@
 use crate::asym::{
-    p256,
-    p521,
-    x25519,
-    x448,
-    AsymmetricKey,
-    AsymmetricKeyEngine,
-    AsymmetricKeyError,
-    EcdhEngine,
+    p256, p521, x25519, x448, AsymmetricKey, AsymmetricKeyEngine, AsymmetricKeyError, EcdhEngine,
 };
 use crate::kdf::{HkdfSha256, HkdfSha512, KdfError};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use serde::{Serialize, Deserialize};
 
 #[derive(Error, Debug)]
 pub enum KemError {
@@ -55,31 +48,42 @@ pub trait Kem {
     ) -> Result<Vec<u8>, KemError>;
 
     #[allow(clippy::type_complexity)]
-    fn generate_kem_key_pair<RNG: SecureRng + 'static>(rng: &mut RNG) -> Result<(
-                                                               <Self::E as AsymmetricKeyEngine>::PK,
-                                                               <Self::E as AsymmetricKeyEngine>::SK,
-                                                           ), AsymmetricKeyError> {
+    fn generate_kem_key_pair<RNG: SecureRng + 'static>(
+        rng: &mut RNG,
+    ) -> Result<
+        (
+            <Self::E as AsymmetricKeyEngine>::PK,
+            <Self::E as AsymmetricKeyEngine>::SK,
+        ),
+        AsymmetricKeyError,
+    > {
         let mut ikm: Vec<u8> = vec![0; Self::E::SK_LEN as usize];
         rng.try_fill_bytes(&mut ikm)?;
         Self::derive_key_pair(&ikm)
     }
 
     #[allow(clippy::type_complexity)]
-    fn derive_key_pair(ikm: &[u8]) -> Result<(
-        <Self::E as AsymmetricKeyEngine>::PK,
-        <Self::E as AsymmetricKeyEngine>::SK
-    ), AsymmetricKeyError> {
-        let dkp_prk = Self::KDF::labeled_extract(&Self::kem_suite_id(),
-                                                 &[], b"dkp_prk", ikm)?;
+    fn derive_key_pair(
+        ikm: &[u8],
+    ) -> Result<
+        (
+            <Self::E as AsymmetricKeyEngine>::PK,
+            <Self::E as AsymmetricKeyEngine>::SK,
+        ),
+        AsymmetricKeyError,
+    > {
+        let dkp_prk = Self::KDF::labeled_extract(&Self::kem_suite_id(), &[], b"dkp_prk", ikm)?;
 
         // NIST curves require a special behavior here to ensure correctness
         if let Some(curve_bitmask) = Self::CURVE_BITMASK {
             for i in 0u8..255 {
-                let mut bytes = Self::KDF::labeled_expand(&Self::kem_suite_id(),
-                                                          &dkp_prk,
-                                                          b"candidate",
-                                                          &[i],
-                                                          Self::E::SK_LEN)?;
+                let mut bytes = Self::KDF::labeled_expand(
+                    &Self::kem_suite_id(),
+                    &dkp_prk,
+                    b"candidate",
+                    &[i],
+                    Self::E::SK_LEN,
+                )?;
                 bytes[0] &= curve_bitmask;
 
                 if let Ok(secret_key) = <Self::E as AsymmetricKeyEngine>::SK::from_bytes(&bytes) {
@@ -90,13 +94,14 @@ pub trait Kem {
             }
             Err(AsymmetricKeyError::KeyDerivationError())
         } else {
-            let dkp_prk = Self::KDF::labeled_extract(&Self::kem_suite_id(),
-                                                     &[], b"dkp_prk", ikm)?;
-            let sk_vec = Self::KDF::labeled_expand(&Self::kem_suite_id(),
-                                                   &dkp_prk,
-                                                   b"sk",
-                                                   &[],
-                                                   Self::E::SK_LEN)?;
+            let dkp_prk = Self::KDF::labeled_extract(&Self::kem_suite_id(), &[], b"dkp_prk", ikm)?;
+            let sk_vec = Self::KDF::labeled_expand(
+                &Self::kem_suite_id(),
+                &dkp_prk,
+                b"sk",
+                &[],
+                Self::E::SK_LEN,
+            )?;
             let sk = <Self::E as AsymmetricKeyEngine>::SK::from_bytes(&sk_vec)?;
             let pk = Self::E::get_pub_key(&sk)?;
             Ok((pk, sk))
@@ -115,8 +120,7 @@ where
         rng: &mut RNG,
         remote_key: &<Self::E as AsymmetricKeyEngine>::PK,
     ) -> Result<KemResult, KemError> {
-        let (pk_e, sk_e) =
-            Self::generate_kem_key_pair(rng)?;
+        let (pk_e, sk_e) = Self::generate_kem_key_pair(rng)?;
 
         let ecdh_res = Self::E::shared_secret(&sk_e, remote_key)?;
         let enc = pk_e.to_bytes()?;
@@ -157,9 +161,9 @@ where
     }
 }
 
-use num_enum::{IntoPrimitive, TryFromPrimitive};
 use crate::hpke_kdf::HpkeKdf;
 use crate::rand::SecureRng;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 #[derive(IntoPrimitive, TryFromPrimitive, Serialize, Deserialize, Clone, PartialEq, Debug)]
 #[serde(into = "u16", try_from = "u16")]
@@ -215,14 +219,11 @@ macro_rules! impl_ecdh_kem {
 
 #[cfg(test)]
 pub mod test_util {
-    use mockall::mock;
-    use super::{
-        Kem, KemId, KemError, KemResult,
-        SecureRng, AsymmetricKeyEngine
-    };
-    use crate::hpke_kdf::test_util::MockTestHpkeKdf;
+    use super::{AsymmetricKeyEngine, Kem, KemError, KemId, KemResult, SecureRng};
     use crate::asym::test_util::MockTestKeyEngine;
     use crate::asym::AsymmetricKeyError;
+    use crate::hpke_kdf::test_util::MockTestHpkeKdf;
+    use mockall::mock;
 
     mock! {
         pub TestKem {}

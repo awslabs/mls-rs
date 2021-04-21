@@ -1,19 +1,19 @@
 use crate::kdf::{Kdf, KdfError};
-use serde::{ Serialize };
+use serde::Serialize;
 
 #[derive(Serialize)]
-pub (crate) struct Label<'a> {
+pub(crate) struct Label<'a> {
     length: u16,
     label: String,
-    context: &'a[u8]
+    context: &'a [u8],
 }
 
-impl <'a> Label<'a> {
-    fn new(length: u16, label: &'a str, context: &'a[u8]) -> Self {
+impl<'a> Label<'a> {
+    fn new(length: u16, label: &'a str, context: &'a [u8]) -> Self {
         Self {
             length,
             label: ["mls10 ", label].concat(),
-            context
+            context,
         }
     }
 }
@@ -21,14 +21,18 @@ impl <'a> Label<'a> {
 #[derive(Serialize)]
 struct TreeContext {
     node: u32,
-    generation: u32
+    generation: u32,
 }
 
 pub trait KeyScheduleKdf: Kdf {
-    fn expand_with_label(secret: &[u8], label: &str, context: &[u8], len: u16) -> Result<Vec<u8>, KdfError> {
+    fn expand_with_label(
+        secret: &[u8],
+        label: &str,
+        context: &[u8],
+        len: u16,
+    ) -> Result<Vec<u8>, KdfError> {
         let label = Label::new(Self::EXTRACT_SIZE, label, context);
-        let label_bytes = bincode::serialize(&label)
-            .map_err(|e| KdfError::Other(e.to_string()))?;
+        let label_bytes = bincode::serialize(&label).map_err(|e| KdfError::Other(e.to_string()))?;
         Self::expand(secret, &label_bytes, len)
     }
 
@@ -36,14 +40,17 @@ pub trait KeyScheduleKdf: Kdf {
         Self::expand_with_label(secret, &label, &[], Self::EXTRACT_SIZE)
     }
 
-    fn derive_tree_secret(secret: &[u8], label: &str, node: u32, generation: u32, len: u16) -> Result<Vec<u8>, KdfError> {
-        let tree_context = TreeContext {
-            node,
-            generation
-        };
+    fn derive_tree_secret(
+        secret: &[u8],
+        label: &str,
+        node: u32,
+        generation: u32,
+        len: u16,
+    ) -> Result<Vec<u8>, KdfError> {
+        let tree_context = TreeContext { node, generation };
 
-        let tree_context_bytes = bincode::serialize(&tree_context)
-            .map_err(|e| KdfError::Other(e.to_string()))?;
+        let tree_context_bytes =
+            bincode::serialize(&tree_context).map_err(|e| KdfError::Other(e.to_string()))?;
 
         Self::expand_with_label(secret, label, &tree_context_bytes, len)
     }
@@ -52,12 +59,11 @@ pub trait KeyScheduleKdf: Kdf {
 impl KeyScheduleKdf for crate::kdf::HkdfSha256 {}
 impl KeyScheduleKdf for crate::kdf::HkdfSha512 {}
 
-
 #[cfg(test)]
 pub mod test_util {
-    use mockall::mock;
+    use super::{Kdf, KdfError, KeyScheduleKdf};
     use crate::kdf::KdfId;
-    use super::{Kdf, KeyScheduleKdf, KdfError};
+    use mockall::mock;
 
     mock! {
         pub TestKeyScheduleKdf {}

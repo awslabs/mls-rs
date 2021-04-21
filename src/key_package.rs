@@ -1,7 +1,7 @@
+use crate::asym::AsymmetricKeyError;
 use crate::credential::Credential;
-use crate::asym::{AsymmetricKeyError};
-use crate::protocol_version::ProtocolVersion;
 use crate::extension::{Extension, ExtensionError, ExtensionList};
+use crate::protocol_version::ProtocolVersion;
 use cfg_if::cfg_if;
 
 cfg_if! {
@@ -12,13 +12,13 @@ cfg_if! {
     }
 }
 
-use serde::{Serialize, Deserialize};
-use crate::signature::{SignatureError, Signable, Signer, Verifier};
-use thiserror::Error;
-use bincode::Options;
 use crate::ciphersuite::CipherSuiteError;
 use crate::rand::SecureRng;
+use crate::signature::{Signable, SignatureError, Signer, Verifier};
+use bincode::Options;
+use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum KeyPackageError {
@@ -35,7 +35,7 @@ pub enum KeyPackageError {
     #[error("invalid signature")]
     InvalidSignature,
     #[error("not within lifetime")]
-    InvalidKeyLifetime()
+    InvalidKeyLifetime(),
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -64,15 +64,19 @@ impl Signable for KeyPackage {
             cipher_suite: &self.cipher_suite,
             hpke_init_key: &self.hpke_init_key,
             credential: &self.credential,
-            extensions: &self.extensions
+            extensions: &self.extensions,
         };
-        bincode::DefaultOptions::new().with_big_endian().serialize(&key_package_data)
+        bincode::DefaultOptions::new()
+            .with_big_endian()
+            .serialize(&key_package_data)
     }
 }
 
 impl KeyPackage {
     pub fn has_valid_signature(&self) -> bool {
-        self.credential.verify(&self.signature, self).unwrap_or(false)
+        self.credential
+            .verify(&self.signature, self)
+            .unwrap_or(false)
     }
 
     pub fn validate(&self, time: SystemTime) -> Result<(), KeyPackageError> {
@@ -92,47 +96,44 @@ impl KeyPackage {
 pub struct KeyPackageGeneration {
     pub key_package: KeyPackage,
     pub secret_key: Vec<u8>,
-    pub key_package_hash: Vec<u8>
+    pub key_package_hash: Vec<u8>,
 }
 
 pub trait KeyPackageGenerator: Signer {
-
     fn gen_key_package<RNG: SecureRng + 'static>(
-        &self, rng: &mut RNG, cipher_suite: &CipherSuite
+        &self,
+        rng: &mut RNG,
+        cipher_suite: &CipherSuite,
     ) -> Result<KeyPackageGeneration, KeyPackageError> {
         let kem_key_pair = cipher_suite.generate_kem_key_pair(rng)?;
 
-        let package = self.package_from_pub_key(cipher_suite,
-                                                kem_key_pair.public_key)?;
+        let package = self.package_from_pub_key(cipher_suite, kem_key_pair.public_key)?;
 
-        let key_package_hash = cipher_suite
-            .hash(&bincode::serialize(&package)?)?;
+        let key_package_hash = cipher_suite.hash(&bincode::serialize(&package)?)?;
 
         Ok(KeyPackageGeneration {
             key_package: package,
             secret_key: kem_key_pair.secret_key,
-            key_package_hash
+            key_package_hash,
         })
     }
 
     fn package_from_pub_key(
-        &self, cipher_suite: &CipherSuite, pub_key: Vec<u8>
+        &self,
+        cipher_suite: &CipherSuite,
+        pub_key: Vec<u8>,
     ) -> Result<KeyPackage, KeyPackageError>;
 }
 
 #[cfg(test)]
 pub mod test_util {
-    use mockall::mock;
-    use crate::signature::{ Signer, Signable , SignatureError };
-    use super::{ 
-        CipherSuite,
-        KeyPackage,
-        KeyPackageError,
-        KeyPackageGenerator,
-        KeyPackageGeneration,
-        SecureRng
+    use super::{
+        CipherSuite, KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerator,
+        SecureRng,
     };
-    
+    use crate::signature::{Signable, SignatureError, Signer};
+    use mockall::mock;
+
     mock! {
         pub KeyPackageGenerator {}
         impl Signer for KeyPackageGenerator {
@@ -142,7 +143,7 @@ pub mod test_util {
             fn gen_key_package<RNG: SecureRng + 'static>(
                 &self, rng: &mut RNG, cipher_suite: &CipherSuite
             ) -> Result<KeyPackageGeneration, KeyPackageError>;
-    
+
             fn package_from_pub_key(
                 &self, cipher_suite: &CipherSuite, pub_key: Vec<u8>
             ) -> Result<KeyPackage, KeyPackageError>;

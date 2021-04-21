@@ -1,9 +1,9 @@
-use crate::group::{Proposal, Commit, GroupContext};
-use crate::tree_node::LeafIndex;
-use crate::signature::Signable;
-use std::convert::{TryFrom};
-use serde::{Serialize, Deserialize};
+use crate::group::{Commit, GroupContext, Proposal};
 use crate::hash::Mac;
+use crate::signature::Signable;
+use crate::tree_node::LeafIndex;
+use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
 use thiserror::Error;
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -11,7 +11,7 @@ pub enum ContentType {
     Reserved = 0,
     Application,
     Proposal,
-    Commit
+    Commit,
 }
 
 impl From<&Content> for ContentType {
@@ -29,13 +29,13 @@ pub enum SenderType {
     Reserved = 0,
     Member,
     Preconfigured,
-    NewMember
+    NewMember,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Sender {
     pub sender_type: SenderType,
-    pub sender: u32
+    pub sender: u32,
 }
 
 impl Into<LeafIndex> for Sender {
@@ -49,7 +49,7 @@ impl Into<LeafIndex> for Sender {
 pub enum Content {
     Application(Vec<u8>),
     Proposal(Proposal),
-    Commit(Commit)
+    Commit(Commit),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -61,21 +61,21 @@ pub struct MLSPlaintext {
     pub content: Content,
     pub signature: Vec<u8>,
     pub confirmation_tag: Option<Mac>,
-    pub membership_tag: Option<Vec<u8>>
+    pub membership_tag: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub (crate) struct MLSPlaintextTBS {
+pub(crate) struct MLSPlaintextTBS {
     context: Option<GroupContext>,
     group_id: Vec<u8>,
     epoch: u64,
     sender: Sender,
     authenticated_data: Vec<u8>,
-    content: Content
+    content: Content,
 }
 
 impl MLSPlaintext {
-    pub (crate) fn signable_representation(&self, group_context: &GroupContext) -> MLSPlaintextTBS {
+    pub(crate) fn signable_representation(&self, group_context: &GroupContext) -> MLSPlaintextTBS {
         let context = match self.sender.sender_type {
             SenderType::Member => Some(group_context.clone()),
             _ => None,
@@ -87,7 +87,7 @@ impl MLSPlaintext {
             epoch: self.epoch,
             sender: self.sender.clone(),
             authenticated_data: self.authenticated_data.clone(),
-            content: self.content.clone()
+            content: self.content.clone(),
         }
     }
 }
@@ -107,13 +107,13 @@ pub enum CommitConversionError {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub (crate) struct MLSPlaintextCommitContent {
+pub(crate) struct MLSPlaintextCommitContent {
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub sender: Sender,
     pub content_type: ContentType,
     pub commit: Commit,
-    pub signature: Vec<u8>
+    pub signature: Vec<u8>,
 }
 
 impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitContent {
@@ -121,24 +121,22 @@ impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitContent {
 
     fn try_from(value: &MLSPlaintext) -> Result<Self, Self::Error> {
         match &value.content {
-            Content::Commit(c) => {
-                Ok(MLSPlaintextCommitContent {
-                    group_id: value.group_id.clone(),
-                    epoch: value.epoch,
-                    sender: value.sender.clone(),
-                    content_type: ContentType::Commit,
-                    commit: c.clone(),
-                    signature: value.signature.clone()
-                })
-            }
-            _ => Err(CommitConversionError::NonCommitMessage)
+            Content::Commit(c) => Ok(MLSPlaintextCommitContent {
+                group_id: value.group_id.clone(),
+                epoch: value.epoch,
+                sender: value.sender.clone(),
+                content_type: ContentType::Commit,
+                commit: c.clone(),
+                signature: value.signature.clone(),
+            }),
+            _ => Err(CommitConversionError::NonCommitMessage),
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub (crate) struct MLSPlaintextCommitAuthData {
-    pub confirmation_tag: Mac
+pub(crate) struct MLSPlaintextCommitAuthData {
+    pub confirmation_tag: Mac,
 }
 
 impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitAuthData {
@@ -146,8 +144,11 @@ impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitAuthData {
 
     fn try_from(plaintext: &MLSPlaintext) -> Result<Self, Self::Error> {
         Ok(MLSPlaintextCommitAuthData {
-            confirmation_tag: plaintext.confirmation_tag.as_ref()
-                .ok_or(CommitConversionError::NonCommitMessage)?.clone()
+            confirmation_tag: plaintext
+                .confirmation_tag
+                .as_ref()
+                .ok_or(CommitConversionError::NonCommitMessage)?
+                .clone(),
         })
     }
 }
@@ -157,7 +158,7 @@ pub struct MLSCiphertextContent {
     pub content: Content,
     pub signature: Vec<u8>,
     pub confirmation_tag: Option<Mac>,
-    pub padding: Vec<u8>
+    pub padding: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -165,7 +166,7 @@ pub struct MLSCiphertextContentAAD {
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub content_type: ContentType,
-    pub authenticated_data: Vec<u8>
+    pub authenticated_data: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -175,19 +176,19 @@ pub struct MLSCiphertext {
     pub content_type: ContentType,
     pub authenticated_data: Vec<u8>,
     pub encrypted_sender_data: Vec<u8>,
-    pub ciphertext: Vec<u8>
+    pub ciphertext: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MLSSenderData {
     pub sender: u32,
     pub generation: u32,
-    pub reuse_guard: Vec<u8>
+    pub reuse_guard: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MLSSenderDataAAD {
     pub group_id: Vec<u8>,
     pub epoch: u64,
-    pub content_type: ContentType
+    pub content_type: ContentType,
 }

@@ -1,10 +1,10 @@
-use thiserror::Error;
 use openssl::error::ErrorStack;
-use openssl::hash::{Hasher, MessageDigest, hash};
+use openssl::hash::{hash, Hasher, MessageDigest};
 use openssl::pkey::PKey;
 use openssl::sign::Signer;
-use serde::{Serialize, Deserialize};
 use ossl::OpenSslHashFunction;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum HashError {
@@ -14,7 +14,7 @@ pub enum HashError {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Mac {
-    pub mac_value: Vec<u8>
+    pub mac_value: Vec<u8>,
 }
 
 pub trait HashFunction {
@@ -26,23 +26,23 @@ pub trait HashFunction {
 }
 
 #[macro_use]
-pub (crate) mod ossl {
+pub(crate) mod ossl {
     use openssl::hash::MessageDigest;
 
-    pub (crate) trait OpenSslHashFunction {
+    pub(crate) trait OpenSslHashFunction {
         fn get_digest() -> MessageDigest;
     }
 
     macro_rules! impl_openssl_hash {
         ($name:ident, $digest:expr, $out_size:expr) => {
             pub struct $name {
-                hasher: Hasher
+                hasher: Hasher,
             }
 
             impl $name {
                 fn new() -> Result<Self, HashError> {
                     Ok(Self {
-                        hasher: Hasher::new($digest)?
+                        hasher: Hasher::new($digest)?,
                     })
                 }
             }
@@ -51,12 +51,12 @@ pub (crate) mod ossl {
                 const OUT_LEN: u16 = $out_size as u16;
 
                 fn update(&mut self, data: &[u8]) -> Result<(), HashError> {
-                    self.hasher.update(data)
-                        .map_err(|e| e.into())
+                    self.hasher.update(data).map_err(|e| e.into())
                 }
 
                 fn finish(&mut self) -> Result<Vec<u8>, HashError> {
-                    self.hasher.finish()
+                    self.hasher
+                        .finish()
                         .map(|d| d.to_vec())
                         .map_err(|e| e.into())
                 }
@@ -70,7 +70,8 @@ pub (crate) mod ossl {
                 fn hmac(key: &[u8], message: &[u8]) -> Result<Mac, HashError> {
                     let ossl_key = PKey::hmac(key)?;
                     let mut signer = Signer::new($digest, &ossl_key)?;
-                    signer.sign_oneshot_to_vec(message)
+                    signer
+                        .sign_oneshot_to_vec(message)
                         .map(|o| Mac { mac_value: o })
                         .map_err(|e| e.into())
                 }
@@ -90,8 +91,8 @@ impl_openssl_hash!(Sha512, MessageDigest::sha512(), 64);
 
 #[cfg(test)]
 pub mod test_util {
+    use super::{HashError, HashFunction, Mac};
     use mockall::mock;
-    use super::{ HashFunction, HashError, Mac };
 
     mock! {
         pub TestHashFunction {}
@@ -107,12 +108,14 @@ pub mod test_util {
 
 #[cfg(test)]
 mod test {
-    use crate::hash::{Sha256, HashFunction, Sha512};
+    use crate::hash::{HashFunction, Sha256, Sha512};
 
     #[test]
     fn test_sha256() {
-        let expected = hex!("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace\
-                                      2efcde9");
+        let expected = hex!(
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace\
+                                      2efcde9"
+        );
 
         let mut sha_256 = Sha256::new().expect("failed to create hasher");
         sha_256.update(b"hello").expect("failed to update hasher");
@@ -120,15 +123,20 @@ mod test {
 
         let output = sha_256.finish().expect("failed to finish hasher");
         assert_eq!(output, expected);
-        assert_eq!(Sha256::hash(b"hello world").expect("failed to hash"), expected);
+        assert_eq!(
+            Sha256::hash(b"hello world").expect("failed to hash"),
+            expected
+        );
     }
 
     #[test]
     fn test_hmac_sha256() {
         let key = hex!("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
         let message = hex!("4869205468657265");
-        let expected = hex!("b0344c61d8db38535ca8afceaf0bf12b\
-                                      881dc200c9833da726e9376c2e32cff7");
+        let expected = hex!(
+            "b0344c61d8db38535ca8afceaf0bf12b\
+                                      881dc200c9833da726e9376c2e32cff7"
+        );
 
         let output = Sha256::hmac(&key, &message).unwrap();
         assert_eq!(output.mac_value, expected);
@@ -136,9 +144,11 @@ mod test {
 
     #[test]
     fn test_sha512() {
-        let expected = hex!("309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca\
+        let expected = hex!(
+            "309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca\
                                       86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7\
-                                      dc5542e93ae9cd76f");
+                                      dc5542e93ae9cd76f"
+        );
 
         let mut sha_512 = Sha512::new().expect("failed to create hasher");
         sha_512.update(b"hello").expect("failed to update hasher");
@@ -146,24 +156,24 @@ mod test {
 
         let output = sha_512.finish().expect("failed to finish hasher");
         assert_eq!(output, expected);
-        assert_eq!(Sha512::hash(b"hello world").expect("failed to hash"), expected);
+        assert_eq!(
+            Sha512::hash(b"hello world").expect("failed to hash"),
+            expected
+        );
     }
 
     #[test]
     fn test_hmac_sha512() {
         let key = hex!("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
         let message = hex!("4869205468657265");
-        let expected = hex!("87aa7cdea5ef619d4ff0b4241a1d6cb0\
+        let expected = hex!(
+            "87aa7cdea5ef619d4ff0b4241a1d6cb0\
                                       2379f4e2ce4ec2787ad0b30545e17cde\
                                       daa833b7d6b8a702038b274eaea3f4e4\
-                                      be9d914eeb61f1702e696c203a126854");
+                                      be9d914eeb61f1702e696c203a126854"
+        );
 
         let output = Sha512::hmac(&key, &message).unwrap();
         assert_eq!(output.mac_value, expected);
     }
 }
-
-
-
-
-

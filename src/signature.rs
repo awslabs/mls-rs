@@ -1,10 +1,10 @@
-use crate::asym::{AsymmetricKeyError, AsymmetricKey};
+use crate::asym::{AsymmetricKey, AsymmetricKeyError};
+use crate::rand::SecureRng;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 use openssl::error::ErrorStack;
 use serde::ser::Error;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
-use crate::rand::SecureRng;
 
 #[derive(Error, Debug)]
 pub enum SignatureError {
@@ -29,8 +29,6 @@ pub enum SignatureSchemeId {
     Test = 0x0042,
 }
 
-
-
 pub trait Signable {
     type E: Error;
     fn to_signable_vec(&self) -> Result<Vec<u8>, Self::E>;
@@ -48,7 +46,11 @@ pub trait Signer {
 }
 
 pub trait Verifier {
-    fn verify<T: Signable + 'static>(&self, signature: &[u8], data: &T) -> Result<bool, SignatureError>;
+    fn verify<T: Signable + 'static>(
+        &self,
+        signature: &[u8],
+        data: &T,
+    ) -> Result<bool, SignatureError>;
 }
 
 pub trait SignatureScheme: Sized {
@@ -65,7 +67,7 @@ pub trait SignatureScheme: Sized {
     fn as_public_signature_key(&self) -> Result<PublicSignatureKey, SignatureError> {
         Ok(PublicSignatureKey {
             signature_scheme: Self::IDENTIFIER,
-            signature_key: self.get_verifier().to_bytes()?
+            signature_key: self.get_verifier().to_bytes()?,
         })
     }
 }
@@ -73,12 +75,16 @@ pub trait SignatureScheme: Sized {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PublicSignatureKey {
     pub signature_scheme: SignatureSchemeId,
-    pub signature_key: Vec<u8>
+    pub signature_key: Vec<u8>,
 }
 
 impl Verifier for PublicSignatureKey {
     //TODO: Refactor to use cipher suite
-    fn verify<T: Signable + 'static>(&self, signature: &[u8], data: &T) -> Result<bool, SignatureError> {
+    fn verify<T: Signable + 'static>(
+        &self,
+        signature: &[u8],
+        data: &T,
+    ) -> Result<bool, SignatureError> {
         match self.signature_scheme {
             SignatureSchemeId::EcdsaSecp256r1Sha256 => {
                 let key = crate::asym::p256::PublicKey::from_bytes(&self.signature_key)?;
@@ -91,13 +97,12 @@ impl Verifier for PublicSignatureKey {
             SignatureSchemeId::Ed25519 => {
                 let key = ed25519::PublicKey::from_bytes(&self.signature_key)?;
                 key.verify(signature, data)
-            },
+            }
             #[cfg(test)]
             SignatureSchemeId::Test => {
                 Ok(signature.len() > 0 && data.to_signable_vec().unwrap().len() > 0)
             }
         }
-
     }
 }
 
@@ -135,7 +140,7 @@ mod ossl {
             #[derive(Clone, Debug, Serialize, Deserialize)]
             pub struct $name {
                 signer: $sk_ty,
-                verifier: $pk_ty
+                verifier: $pk_ty,
             }
 
             impl Signer for $sk_ty {
@@ -143,16 +148,17 @@ mod ossl {
                     let vec_to_sign = data
                         .to_signable_vec()
                         .map_err(|_| SignatureError::SerializationFailure)?;
-                    super::ossl::sign($digest, self.key.clone(), &vec_to_sign)
-                        .map_err(|e| e.into())
+                    super::ossl::sign($digest, self.key.clone(), &vec_to_sign).map_err(|e| e.into())
                 }
             }
 
             impl Verifier for $pk_ty {
                 fn verify<T: Signable>(
-                    &self, signature: &[u8], data: &T
+                    &self,
+                    signature: &[u8],
+                    data: &T,
                 ) -> Result<bool, SignatureError> {
-                     let vec_to_verify = data
+                    let vec_to_verify = data
                         .to_signable_vec()
                         .map_err(|_| SignatureError::SerializationFailure)?;
                     super::ossl::verify($digest, self.key.clone(), signature, &vec_to_verify)
@@ -166,13 +172,11 @@ mod ossl {
 
                 const IDENTIFIER: SignatureSchemeId = $scheme_id;
 
-                fn new_random<RNG: SecureRng + 'static>(
-                    rng: RNG,
-                ) -> Result<Self, SignatureError> {
+                fn new_random<RNG: SecureRng + 'static>(rng: RNG) -> Result<Self, SignatureError> {
                     let (pk, sk) = <$eng_ty>::random_key_pair(rng)?;
                     Ok(Self {
                         signer: sk,
-                        verifier: pk
+                        verifier: pk,
                     })
                 }
 
@@ -192,9 +196,9 @@ pub mod p256 {
     use super::{Signable, SignatureError, SignatureScheme, Signer, Verifier};
     use crate::asym::p256;
     use crate::asym::AsymmetricKeyEngine;
+    use crate::rand::SecureRng;
     use crate::signature::SignatureSchemeId;
     use openssl::hash::MessageDigest;
-    use crate::rand::SecureRng;
     use serde::{Deserialize, Serialize};
 
     impl_openssl_signature!(
@@ -232,7 +236,8 @@ pub mod p256 {
 
             let signaure = test_secret.sign(&test_msg).expect("failed to sign");
 
-            let verification = test_public.verify(&signaure, &test_msg)
+            let verification = test_public
+                .verify(&signaure, &test_msg)
                 .expect("failed to verify");
 
             assert_eq!(verification, true);
@@ -240,18 +245,17 @@ pub mod p256 {
 
         #[test]
         fn test_p256_signature_fail() {
-            let p256_a =
-                super::EcDsaP256::new_random(OpenSslRng).expect("keypair gen failed");
+            let p256_a = super::EcDsaP256::new_random(OpenSslRng).expect("keypair gen failed");
 
-            let p256_b =
-                super::EcDsaP256::new_random(OpenSslRng).expect("keypair gen failed");
+            let p256_b = super::EcDsaP256::new_random(OpenSslRng).expect("keypair gen failed");
 
             let test_data = b"hello world".to_vec();
 
-            let signature =
-                p256_a.signer.sign(&test_data).expect("signature failed");
+            let signature = p256_a.signer.sign(&test_data).expect("signature failed");
 
-            let verification = p256_b.verifier.verify(&signature, &test_data)
+            let verification = p256_b
+                .verifier
+                .verify(&signature, &test_data)
                 .expect("validation failed");
 
             assert_eq!(verification, false);
@@ -259,26 +263,30 @@ pub mod p256 {
 
         #[test]
         fn test_p256_public_signature_key() {
-            let sig_key = super::EcDsaP256::new_random(OpenSslRng)
-                .expect("key error");
+            let sig_key = super::EcDsaP256::new_random(OpenSslRng).expect("key error");
 
-            let bad_key = super::EcDsaP256::new_random(OpenSslRng)
-                .expect("key error");
+            let bad_key = super::EcDsaP256::new_random(OpenSslRng).expect("key error");
 
             let test_data = b"test".to_vec();
             let signature = sig_key.get_signer().sign(&test_data).expect("sig error");
 
-            assert_eq!(sig_key.as_public_signature_key()
-                           .expect("pub key error")
-                           .verify(&signature, &test_data)
-                           .expect("sig error")
-                       ,true);
+            assert_eq!(
+                sig_key
+                    .as_public_signature_key()
+                    .expect("pub key error")
+                    .verify(&signature, &test_data)
+                    .expect("sig error"),
+                true
+            );
 
-            assert_eq!(bad_key.as_public_signature_key()
-                           .expect("pub key error")
-                           .verify(&signature, &test_data)
-                           .expect("sig error")
-                       ,false);
+            assert_eq!(
+                bad_key
+                    .as_public_signature_key()
+                    .expect("pub key error")
+                    .verify(&signature, &test_data)
+                    .expect("sig error"),
+                false
+            );
         }
     }
 }
@@ -287,8 +295,8 @@ pub mod p521 {
     use super::{Signable, SignatureError, SignatureScheme, SignatureSchemeId, Signer, Verifier};
     use crate::asym::p521;
     use crate::asym::AsymmetricKeyEngine;
-    use openssl::hash::MessageDigest;
     use crate::rand::SecureRng;
+    use openssl::hash::MessageDigest;
     use serde::{Deserialize, Serialize};
 
     impl_openssl_signature!(
@@ -325,10 +333,10 @@ pub mod p521 {
             ))
             .expect("invalid key");
 
-            let signature =
-                test_secret.sign(&test_msg).expect("signature failed");
+            let signature = test_secret.sign(&test_msg).expect("signature failed");
 
-            let verification = test_public.verify(&signature, &test_msg)
+            let verification = test_public
+                .verify(&signature, &test_msg)
                 .expect("validation failed");
 
             assert_eq!(verification, true);
@@ -336,18 +344,17 @@ pub mod p521 {
 
         #[test]
         fn test_p521_signature_fail() {
-            let p521_a =
-                super::EcDsaP521::new_random(OpenSslRng).expect("keypair gen failed");
+            let p521_a = super::EcDsaP521::new_random(OpenSslRng).expect("keypair gen failed");
 
-            let p521_b =
-                super::EcDsaP521::new_random(OpenSslRng).expect("keypair gen failed");
+            let p521_b = super::EcDsaP521::new_random(OpenSslRng).expect("keypair gen failed");
 
             let test_data = b"hello world".to_vec();
 
-            let signature =
-                p521_a.signer.sign(&test_data).expect("signature failed");
+            let signature = p521_a.signer.sign(&test_data).expect("signature failed");
 
-            let verification = p521_b.verifier.verify(&signature, &test_data)
+            let verification = p521_b
+                .verifier
+                .verify(&signature, &test_data)
                 .expect("validation failed");
 
             assert_eq!(verification, false);
@@ -355,37 +362,41 @@ pub mod p521 {
 
         #[test]
         fn test_p521_public_signature_key() {
-            let sig_key = super::EcDsaP521::new_random(OpenSslRng)
-                .expect("key error");
+            let sig_key = super::EcDsaP521::new_random(OpenSslRng).expect("key error");
 
-            let bad_key = super::EcDsaP521::new_random(OpenSslRng)
-                .expect("key error");
+            let bad_key = super::EcDsaP521::new_random(OpenSslRng).expect("key error");
 
             let test_data = b"test".to_vec();
             let signature = sig_key.get_signer().sign(&test_data).expect("sig error");
 
-            assert_eq!(sig_key.as_public_signature_key()
-                           .expect("pub key error")
-                           .verify(&signature, &test_data)
-                           .expect("sig error")
-                       ,true);
+            assert_eq!(
+                sig_key
+                    .as_public_signature_key()
+                    .expect("pub key error")
+                    .verify(&signature, &test_data)
+                    .expect("sig error"),
+                true
+            );
 
-            assert_eq!(bad_key.as_public_signature_key()
-                           .expect("pub key error")
-                           .verify(&signature, &test_data)
-                           .expect("sig error")
-                       ,false);
+            assert_eq!(
+                bad_key
+                    .as_public_signature_key()
+                    .expect("pub key error")
+                    .verify(&signature, &test_data)
+                    .expect("sig error"),
+                false
+            );
         }
     }
 }
 
 pub mod ed25519 {
     use crate::asym::{AsymmetricKey, AsymmetricKeyError};
+    use crate::rand::SecureRng;
     use crate::signature::{Signable, SignatureError, SignatureScheme, SignatureSchemeId};
     use ed25519_dalek::{Keypair, Signature, Signer, Verifier};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::convert::TryFrom;
-    use crate::rand::SecureRng;
 
     #[derive(Clone, Debug)]
     pub struct PublicKey {
@@ -469,7 +480,7 @@ pub mod ed25519 {
     #[derive(Clone, Debug)]
     pub struct EdDsa25519 {
         signer: SecretKey,
-        verifier: PublicKey
+        verifier: PublicKey,
     }
 
     impl SignatureScheme for EdDsa25519 {
@@ -478,13 +489,15 @@ pub mod ed25519 {
 
         const IDENTIFIER: SignatureSchemeId = SignatureSchemeId::Ed25519;
 
-        fn new_random<RNG: SecureRng + 'static>(
-            mut rng: RNG,
-        ) -> Result<Self, SignatureError> {
+        fn new_random<RNG: SecureRng + 'static>(mut rng: RNG) -> Result<Self, SignatureError> {
             let keypair = Keypair::generate(&mut rng);
             Ok(Self {
-                signer: SecretKey { key: keypair.secret },
-                verifier: PublicKey { key: keypair.public }
+                signer: SecretKey {
+                    key: keypair.secret,
+                },
+                verifier: PublicKey {
+                    key: keypair.public,
+                },
             })
         }
 
@@ -501,8 +514,8 @@ pub mod ed25519 {
     mod test {
         use crate::asym::AsymmetricKey;
         use crate::rand::OpenSslRng;
-        use crate::signature::{SignatureScheme, Signer, Verifier};
         use crate::signature::ed25519::EdDsa25519;
+        use crate::signature::{SignatureScheme, Signer, Verifier};
 
         #[test]
         fn test_ed25519_signature() {
@@ -519,10 +532,10 @@ pub mod ed25519 {
             ))
             .expect("invalid key");
 
-            let signaure =
-                test_secret.sign(&test_msg).expect("failed to sign");
+            let signaure = test_secret.sign(&test_msg).expect("failed to sign");
 
-            let verification = test_public.verify(&signaure, &test_msg)
+            let verification = test_public
+                .verify(&signaure, &test_msg)
                 .expect("failed to verify");
 
             assert_eq!(verification, true);
@@ -530,19 +543,16 @@ pub mod ed25519 {
 
         #[test]
         fn test_ed25519_signature_fail() {
-            let ed25519_a =
-                EdDsa25519::new_random(OpenSslRng)
-                    .expect("keypair gen failed");
+            let ed25519_a = EdDsa25519::new_random(OpenSslRng).expect("keypair gen failed");
 
-            let ed25519_b =
-                EdDsa25519::new_random(OpenSslRng)
-                    .expect("keypair gen failed");
+            let ed25519_b = EdDsa25519::new_random(OpenSslRng).expect("keypair gen failed");
 
             let test_data = b"hello world".to_vec();
 
             let signature = ed25519_a.signer.sign(&test_data).expect("signature failed");
 
-            let verification = ed25519_b.verifier
+            let verification = ed25519_b
+                .verifier
                 .verify(&signature, &test_data)
                 .expect("validation failed");
 
@@ -551,35 +561,41 @@ pub mod ed25519 {
 
         #[test]
         fn test_ed25519_public_signature_key() {
-            let sig_key = EdDsa25519::new_random(OpenSslRng)
-                .expect("key error");
+            let sig_key = EdDsa25519::new_random(OpenSslRng).expect("key error");
 
-            let bad_key = EdDsa25519::new_random(OpenSslRng)
-                .expect("key error");
+            let bad_key = EdDsa25519::new_random(OpenSslRng).expect("key error");
 
             let test_data = b"test".to_vec();
             let signature = sig_key.get_signer().sign(&test_data).expect("sig error");
 
-            assert_eq!(sig_key.as_public_signature_key()
-                           .expect("pub key error")
-                           .verify(&signature, &test_data)
-                           .expect("sig error")
-                       ,true);
+            assert_eq!(
+                sig_key
+                    .as_public_signature_key()
+                    .expect("pub key error")
+                    .verify(&signature, &test_data)
+                    .expect("sig error"),
+                true
+            );
 
-            assert_eq!(bad_key.as_public_signature_key()
-                           .expect("pub key error")
-                           .verify(&signature, &test_data)
-                           .expect("sig error")
-                       ,false);
+            assert_eq!(
+                bad_key
+                    .as_public_signature_key()
+                    .expect("pub key error")
+                    .verify(&signature, &test_data)
+                    .expect("sig error"),
+                false
+            );
         }
     }
 }
 
 #[cfg(test)]
-pub (crate) mod test_utils {
-    use crate::signature::{Signer, SignatureError, Signable, Verifier, SignatureScheme, SignatureSchemeId};
-    use crate::rand::SecureRng;
+pub(crate) mod test_utils {
     use crate::asym::{AsymmetricKey, AsymmetricKeyError};
+    use crate::rand::SecureRng;
+    use crate::signature::{
+        Signable, SignatureError, SignatureScheme, SignatureSchemeId, Signer, Verifier,
+    };
     use mockall::mock;
 
     mock! {
@@ -633,31 +649,37 @@ pub (crate) mod test_utils {
     pub fn get_test_verifier(test_bytes: &[u8]) -> MockVerifier {
         let mut verifier = MockVerifier::new();
         let copy_test_bytes = test_bytes.clone().to_vec();
-        verifier.expect_to_bytes().returning(move || Ok(copy_test_bytes.clone()));
+        verifier
+            .expect_to_bytes()
+            .returning(move || Ok(copy_test_bytes.clone()));
         verifier
     }
 
     pub fn get_test_signer(test_bytes: &[u8]) -> MockSigner {
         let mut signer = MockSigner::new();
         let copy_test_bytes = test_bytes.clone().to_vec();
-        signer.expect_to_bytes().returning(move || Ok(copy_test_bytes.clone()));
+        signer
+            .expect_to_bytes()
+            .returning(move || Ok(copy_test_bytes.clone()));
         signer
     }
 }
 
 #[cfg(test)]
 mod test {
+    use super::test_utils::get_test_verifier;
     use super::test_utils::MockTestSignatureScheme;
     use super::SignatureSchemeId;
-    use crate::signature::{SignatureScheme};
-    use super::test_utils::get_test_verifier;
+    use crate::signature::SignatureScheme;
 
     #[test]
     fn test_signature_scheme() {
         let test_bytes = b"test".to_vec();
 
         let mut scheme = MockTestSignatureScheme::new();
-        scheme.expect_get_verifier().return_const(get_test_verifier(&test_bytes));
+        scheme
+            .expect_get_verifier()
+            .return_const(get_test_verifier(&test_bytes));
 
         let res = scheme.as_public_signature_key().expect("failed public key");
         assert_eq!(res.signature_scheme, SignatureSchemeId::Test);
