@@ -6,7 +6,7 @@ use mls::ciphersuite::CipherSuite::{
 };
 use mls::client::Client;
 use mls::credential::{BasicCredential, Credential};
-use mls::group::Group;
+use mls::group::{Event, Group};
 use mls::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageGenerator};
 use mls::rand::OpenSslRng;
 use mls::signature::ed25519::EdDsa25519;
@@ -135,7 +135,13 @@ fn get_test_group(cipher_suite: CipherSuite, num_participants: usize) -> TestGro
         .commit_proposals(add_members_proposal, true, &mut OpenSslRng, &alice)
         .unwrap();
 
-    test_group.process_pending_commit(commit.clone()).unwrap();
+    let events = test_group.process_pending_commit(commit.clone()).unwrap();
+    assert_eq!(events.len(), 1);
+    let credentials = test_keys
+        .iter()
+        .map(|k| k.key_package.credential.clone())
+        .collect();
+    assert_eq!(events[0], Event::MembersAdded(credentials));
 
     // Create groups for each participant by processing Alice's welcome message
     let receiver_groups = test_keys
@@ -261,9 +267,10 @@ fn test_update_proposals(cipher_suite: CipherSuite) {
         // Everyone then receives the commit
         for j in 0..test_group_data.receiver_groups.len() {
             if i + 1 != j {
-                test_group_data.receiver_groups[j]
+                let events = test_group_data.receiver_groups[j]
                     .process_plaintext(pending.plaintext.clone())
                     .unwrap();
+                assert_eq!(events.len(), 0);
             } else {
                 test_group_data.receiver_groups[j]
                     .process_pending_commit(pending.clone())
@@ -286,6 +293,71 @@ fn test_group_update_proposals() {
         .for_each(|cs| test_update_proposals(cs.clone()))
 }
 
+fn test_remove_proposals(cipher_suite: CipherSuite) {
+    println!(
+        "Testing remove proposals for cipher suite: {:?}",
+        cipher_suite.clone()
+    );
+
+    let mut test_group_data = get_test_group(cipher_suite, 10);
+
+    // Remove people from the group one at a time
+    while test_group_data.receiver_groups.len() > 0 {
+        let removal = test_group_data
+            .creator_group
+            .remove_proposal((test_group_data.creator_group.public_tree.leaf_count() - 1) as u32)
+            .unwrap();
+
+        let pending = test_group_data
+            .creator_group
+            .commit_proposals(
+                vec![removal],
+                true,
+                &mut OpenSslRng,
+                &test_group_data.creator,
+            )
+            .unwrap();
+
+        // Process the removal in the creator group
+        test_group_data
+            .creator_group
+            .process_pending_commit(pending.clone())
+            .unwrap();
+
+        // Process the removal in the other receiver groups
+        for j in 0..test_group_data.receiver_groups.len() {
+            let events = test_group_data.receiver_groups[j]
+                .process_plaintext(pending.plaintext.clone())
+                .unwrap();
+
+            let removed_index = test_group_data.receiver_groups.len() - 1;
+            let removed_cred = test_group_data.receiver_clients[removed_index]
+                .credential
+                .clone();
+
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0], Event::MembersRemoved(vec![removed_cred]))
+        }
+
+        // Validate that all the groups are in the same end state
+        test_group_data
+            .receiver_groups
+            .remove(test_group_data.receiver_groups.len() - 1);
+
+        test_group_data
+            .receiver_groups
+            .iter()
+            .for_each(|group| assert_eq!(group, &test_group_data.creator_group));
+    }
+}
+
+#[test]
+fn test_group_remove_proposals() {
+    get_cipher_suites()
+        .iter()
+        .for_each(|cs| test_remove_proposals(cs.clone()))
+}
+
 fn test_application_messages(cipher_suite: CipherSuite, message_count: usize) {
     println!(
         "Testing application messages, cipher suite: {:?}, message count: {}",
@@ -297,11 +369,13 @@ fn test_application_messages(cipher_suite: CipherSuite, message_count: usize) {
 
     // Loop through each participant and send 5 application messages
     for i in 0..test_group_data.receiver_groups.len() {
+        let test_message = b"hello world";
+
         for _ in 0..message_count {
             let ciphertext = test_group_data.receiver_groups[i]
                 .encrypt_application_message(
                     &mut OpenSslRng,
-                    b"test message".to_vec(),
+                    test_message.to_vec(),
                     &test_group_data.receiver_clients[i],
                 )
                 .unwrap();
@@ -313,9 +387,11 @@ fn test_application_messages(cipher_suite: CipherSuite, message_count: usize) {
 
             for j in 0..test_group_data.receiver_groups.len() {
                 if i != j {
-                    test_group_data.receiver_groups[j]
+                    let events = test_group_data.receiver_groups[j]
                         .process_ciphertext(ciphertext.clone())
                         .unwrap();
+                    assert_eq!(events.len(), 1);
+                    assert_eq!(events[0], Event::ApplicationData(test_message.to_vec()));
                 }
             }
         }

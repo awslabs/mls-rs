@@ -8,6 +8,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::credential::Credential;
 use crate::extension::{Extension, ExtensionList};
 use crate::framing::{
     CommitConversionError, Content, ContentType, MLSCiphertext, MLSCiphertextContent,
@@ -15,7 +16,7 @@ use crate::framing::{
     MLSSenderData, MLSSenderDataAAD, Sender, SenderType,
 };
 use crate::group::GroupError::InvalidPlaintextEpoch;
-use crate::group::Proposal::{Add, Update};
+use crate::group::Proposal::{Add, Remove, Update};
 use crate::hash::Mac;
 use crate::hpke::HPKECiphertext;
 use crate::protocol_version::ProtocolVersion;
@@ -104,6 +105,13 @@ impl Proposal {
     pub fn is_remove(&self) -> bool {
         matches!(self, Self::Remove(_))
     }
+
+    pub fn as_remove(&self) -> Option<&RemoveProposal> {
+        match self {
+            Remove(removal) => Some(removal),
+            _ => None,
+        }
+    }
 }
 
 impl From<AddProposal> for Proposal {
@@ -156,10 +164,45 @@ pub struct PendingProposal {
 
 struct ProvisionalState {
     public_tree: RatchetTree,
-    // Set when there is a pending leaf update due to an update proposal
-    leaf_update: Option<KeyPackageGeneration>,
+    private_tree: TreeKemPrivate,
     added_leaves: Vec<LeafIndex>,
+    removed_leaves: Vec<(LeafIndex, KeyPackage)>,
     path_update_required: bool,
+}
+
+impl ProvisionalState {
+    fn self_removed(&self, self_index: LeafIndex) -> bool {
+        self.removed_leaves
+            .iter()
+            .find(|(i, _)| *i == self_index)
+            .is_some()
+    }
+
+    fn get_events(&self) -> Result<Vec<Event>, GroupError> {
+        let adds: Vec<Credential> = self
+            .added_leaves
+            .iter()
+            .map(|i| self.public_tree.get_credential(*i))
+            .collect::<Result<Vec<Credential>, RatchetTreeError>>()?;
+
+        let removes: Vec<Credential> = self
+            .removed_leaves
+            .iter()
+            .map(|(_, kp)| kp.credential.clone())
+            .collect();
+
+        let mut events = Vec::new();
+
+        if !adds.is_empty() {
+            events.push(Event::MembersAdded(adds));
+        }
+
+        if !removes.is_empty() {
+            events.push(Event::MembersRemoved(removes));
+        }
+
+        Ok(events)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -208,6 +251,8 @@ pub enum GroupError {
     WelcomeKeyPackageNotFound,
     #[error("ratchet tree integrity failure")]
     InvalidRatchetTree,
+    #[error("invalid participant {0}")]
+    InvalidGroupParticipant(u32),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -337,20 +382,24 @@ impl PartialEq for Group {
     }
 }
 
-struct GroupStateUpdate {
-    pub public_tree: RatchetTree,
-    pub private_tree: Option<TreeKemPrivate>,
-    pub key_schedule: EpochKeySchedule,
-    pub confirmation_tag: Mac,
-    pub interim_transcript_hash: InterimTranscriptHash,
-    pub group_context: GroupContext,
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PendingCommit {
     pub plaintext: MLSPlaintext,
     update_path_data: Option<UpdatePathGeneration>,
     pub welcome: Option<Welcome>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Event {
+    MembersAdded(Vec<Credential>),
+    MembersRemoved(Vec<Credential>),
+    ApplicationData(Vec<u8>),
+}
+
+impl From<Vec<u8>> for Event {
+    fn from(data: Vec<u8>) -> Self {
+        Event::ApplicationData(data)
+    }
 }
 
 impl Group {
@@ -543,25 +592,47 @@ impl Group {
         let proposals = self.fetch_proposals(proposals, sender)?;
 
         let mut provisional_tree = self.public_tree.clone();
-        let mut leaf_update = None;
+        let mut provisional_private_tree = self.private_tree.clone();
+
+        //TODO: This has to loop through the proposal array 3 times, maybe this should be optimized
 
         // Apply updates
-        for (sender, update) in proposals
+        let updates = proposals
             .iter()
-            .filter_map(|p| p.proposal.as_update().map(|u| (p.sender, u)))
-        {
+            .filter_map(|p| p.proposal.as_update().map(|u| (p.sender, u)));
+
+        for (sender, update) in updates {
+            // Update the leaf in the provisional tree
             provisional_tree.update_leaf(sender, update.key_package.clone())?;
 
             let key_package_hash = self
                 .cipher_suite
                 .hash(&bincode::serialize(&update.key_package)?)?;
 
+            // Update the leaf in the private tree if this is our update
             if let Some(key_generation) = self.pending_updates.get(&key_package_hash) {
-                leaf_update = key_generation.clone().into();
+                provisional_private_tree
+                    .update_leaf(provisional_tree.leaf_count(), &key_generation)?;
             }
         }
 
-        // TODO: Process removes
+        // Apply removes
+        let removes: Vec<LeafIndex> = proposals
+            .iter()
+            .filter_map(|p| {
+                p.proposal
+                    .as_remove()
+                    .map(|r| LeafIndex(r.to_remove as usize))
+            })
+            .collect();
+
+        // Remove elements from the private tree
+        removes.iter().try_for_each(|&index| {
+            provisional_private_tree.remove_leaf(provisional_tree.leaf_count(), index)
+        })?;
+
+        // Remove elements from the public tree
+        let removed_leaves = provisional_tree.remove_nodes(removes)?;
 
         // Apply adds
         let adds = proposals
@@ -580,8 +651,9 @@ impl Group {
 
         Ok(ProvisionalState {
             public_tree: provisional_tree,
-            leaf_update,
+            private_tree: provisional_private_tree,
             added_leaves,
+            removed_leaves,
             path_update_required,
         })
     }
@@ -878,9 +950,24 @@ impl Group {
         }))
     }
 
-    pub fn process_pending_commit(&mut self, pending: PendingCommit) -> Result<(), GroupError> {
+    pub fn remove_proposal(&mut self, index: u32) -> Result<Proposal, GroupError> {
+        if self
+            .public_tree
+            .nodes
+            .get_leaf_node(LeafIndex(index as usize))
+            .is_err()
+        {
+            return Err(GroupError::InvalidGroupParticipant(index));
+        }
+
+        Ok(Proposal::Remove(RemoveProposal { to_remove: index }))
+    }
+
+    pub fn process_pending_commit(
+        &mut self,
+        pending: PendingCommit,
+    ) -> Result<Vec<Event>, GroupError> {
         self.process_plaintext_internal(pending.plaintext, pending.update_path_data)
-            .map(|_| ())
     }
 
     pub fn encrypt_plaintext<RNG: SecureRng>(
@@ -989,7 +1076,7 @@ impl Group {
     pub fn process_ciphertext(
         &mut self,
         ciphertext: MLSCiphertext,
-    ) -> Result<Option<Vec<u8>>, GroupError> {
+    ) -> Result<Vec<Event>, GroupError> {
         // Decrypt the sender data with the derived sender_key and sender_nonce from the current
         // epoch's key schedule
         let (sender_key, sender_nonce) = self
@@ -1063,7 +1150,7 @@ impl Group {
         &mut self,
         plaintext: MLSPlaintext,
         local_pending: Option<UpdatePathGeneration>,
-    ) -> Result<Option<Vec<u8>>, GroupError> {
+    ) -> Result<Vec<Event>, GroupError> {
         // Verify that the epoch field of the enclosing MLSPlaintext message is equal
         // to the epoch field of the current GroupContext object
         if plaintext.epoch != self.context.epoch {
@@ -1089,7 +1176,7 @@ impl Group {
 
         // Process the contents of the packet
         match &plaintext.content {
-            Content::Application(content) => Ok(content.clone().into()),
+            Content::Application(content) => Ok(vec![Event::from(content.clone())]),
             Content::Proposal(p) => {
                 let hash = self.cipher_suite.hash(&bincode::serialize(&plaintext)?)?;
                 let pending_proposal = PendingProposal {
@@ -1097,49 +1184,18 @@ impl Group {
                     sender: LeafIndex(plaintext.sender.sender as usize),
                 };
                 self.proposals.insert(hash, pending_proposal);
-                Ok(None)
+                Ok(vec![])
             }
             Content::Commit(_) => {
                 let commit_content = MLSPlaintextCommitContent::try_from(&plaintext)?;
                 let auth_data = MLSPlaintextCommitAuthData::try_from(&plaintext)?;
 
-                let res = self.process_commit(
+                self.process_commit(
                     plaintext.sender.into(),
                     local_pending,
                     commit_content,
                     auth_data,
-                )?;
-
-                // Use the confirmation_key for the new epoch to compute the confirmation tag for
-                // this message, as described below, and verify that it is the same as the
-                // confirmation_tag field in the MLSPlaintext object.
-
-                let confirmation_tag = plaintext
-                    .confirmation_tag
-                    .ok_or(GroupError::InvalidConfirmationTag)?;
-
-                if res.confirmation_tag != confirmation_tag {
-                    return Err(GroupError::InvalidConfirmationTag);
-                }
-
-                // If the above checks are successful, consider the updated GroupContext object
-                // as the current state of the group
-                self.public_tree = res.public_tree;
-
-                if let Some(private_tree) = res.private_tree {
-                    self.private_tree = private_tree
-                }
-
-                self.context = res.group_context;
-                self.key_schedule = res.key_schedule;
-                self.interim_transcript_hash = res.interim_transcript_hash;
-
-                // Clear the proposals list
-                self.proposals = Default::default();
-                // Clear the pending updates list
-                self.pending_updates = Default::default();
-
-                Ok(None)
+                )
             }
         }
 
@@ -1148,21 +1204,18 @@ impl Group {
         // and check that
     }
 
-    pub fn process_plaintext(
-        &mut self,
-        plaintext: MLSPlaintext,
-    ) -> Result<Option<Vec<u8>>, GroupError> {
+    pub fn process_plaintext(&mut self, plaintext: MLSPlaintext) -> Result<Vec<Event>, GroupError> {
         self.process_plaintext_internal(plaintext, None)
     }
 
     // This function takes a provisional copy of the tree and returns an updated tree and epoch key schedule
     fn process_commit(
-        &self,
+        &mut self,
         sender: LeafIndex,
         local_pending: Option<UpdatePathGeneration>,
         commit_content: MLSPlaintextCommitContent,
         auth_data: MLSPlaintextCommitAuthData,
-    ) -> Result<GroupStateUpdate, GroupError> {
+    ) -> Result<Vec<Event>, GroupError> {
         //Generate a provisional GroupContext object by applying the proposals referenced in the
         // initial Commit object, as described in Section 11.1. Update proposals are applied first,
         // followed by Remove proposals, and then finally Add proposals. Add proposals are applied
@@ -1172,10 +1225,16 @@ impl Group {
         let mut provisional_state =
             self.apply_proposals(sender, &commit_content.commit.proposals)?;
 
+        let events = provisional_state.get_events()?;
+
         //Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
         if provisional_state.path_update_required && commit_content.commit.path.is_none() {
             return Err(GroupError::InvalidCommit);
+        }
+
+        if provisional_state.self_removed(self.private_tree.self_index) {
+            return Ok(events);
         }
 
         let updated_secrets = match &commit_content.commit.path {
@@ -1185,10 +1244,8 @@ impl Group {
                 let secrets = if let Some(pending) = local_pending {
                     Ok(pending.secrets)
                 } else {
-                    // TODO: This is a bit messy, we should just update the provisional state directly
                     provisional_state.public_tree.refresh_private_key(
-                        &self.private_tree,
-                        provisional_state.leaf_update,
+                        provisional_state.private_tree,
                         sender,
                         update_path,
                         provisional_state.added_leaves,
@@ -1215,8 +1272,8 @@ impl Group {
             .interim_transcript_hash
             .get_confirmed_transcript_hash(&commit_content)?;
 
-        let interim_transcript_hash =
-            confirmed_transcript_hash.get_interim_transcript_hash(auth_data.confirmation_tag)?;
+        let interim_transcript_hash = confirmed_transcript_hash
+            .get_interim_transcript_hash(auth_data.confirmation_tag.clone())?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash.value;
         provisional_group_context.tree_hash = provisional_state.public_tree.tree_hash()?;
@@ -1234,19 +1291,36 @@ impl Group {
             &provisional_group_context,
         )?;
 
+        // Use the confirmation_key for the new epoch to compute the confirmation tag for
+        // this message, as described below, and verify that it is the same as the
+        // confirmation_tag field in the MLSPlaintext object.
         let confirmation_tag = self.cipher_suite.hmac(
             &new_epoch.key_schedule.confirmation_key,
             &provisional_group_context.confirmed_transcript_hash,
         )?;
 
-        Ok(GroupStateUpdate {
-            public_tree: provisional_state.public_tree,
-            private_tree: updated_secrets.map(|us| us.private_key),
-            key_schedule: new_epoch.key_schedule,
-            confirmation_tag,
-            interim_transcript_hash,
-            group_context: provisional_group_context,
-        })
+        if confirmation_tag != auth_data.confirmation_tag {
+            return Err(GroupError::InvalidConfirmationTag);
+        }
+
+        // If the above checks are successful, consider the updated GroupContext object
+        // as the current state of the group
+        self.public_tree = provisional_state.public_tree;
+
+        if let Some(private_tree) = updated_secrets.map(|us| us.private_key) {
+            self.private_tree = private_tree
+        }
+
+        self.context = provisional_group_context;
+        self.key_schedule = new_epoch.key_schedule;
+        self.interim_transcript_hash = interim_transcript_hash;
+
+        // Clear the proposals list
+        self.proposals = Default::default();
+        // Clear the pending updates list
+        self.pending_updates = Default::default();
+
+        Ok(events)
     }
 }
 

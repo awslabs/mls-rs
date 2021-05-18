@@ -247,6 +247,54 @@ impl NodeVec {
         index.copath(self.len() / 2 + 1)
     }
 
+    // Blank a previously filled leaf node, and return the existing leaf
+    pub fn blank_leaf_node(&mut self, leaf_index: LeafIndex) -> Result<Option<Leaf>, NodeVecError> {
+        let node_index = NodeIndex::from(leaf_index);
+        let blanked_leaf = self.blank_node(node_index)?.and_then(|node| match node {
+            Node::Leaf(l) => Some(l),
+            Node::Parent(_) => None,
+        });
+
+        Ok(blanked_leaf)
+    }
+
+    pub fn blank_node(&mut self, node_index: NodeIndex) -> Result<Option<Node>, NodeVecError> {
+        self.get_mut(node_index)
+            .ok_or(NodeVecError::InvalidNodeIndex(node_index))
+            .and_then(|node| {
+                let res = node.clone();
+                *node = None;
+                Ok(res)
+            })
+    }
+
+    pub fn blank_direct_path(
+        &mut self,
+        leaf: LeafIndex,
+    ) -> Result<Vec<Option<Node>>, NodeVecError> {
+        self.direct_path(leaf)?
+            .iter()
+            .map(|&index| self.blank_node(index))
+            .collect()
+    }
+
+    // Remove elements until the last leaf is non-blank
+    pub fn trim(&mut self) {
+        // Find the last full leaf
+        let last_full = self
+            .iter()
+            .enumerate()
+            .rev()
+            .step_by(2)
+            .find(|(_, node)| node.is_some())
+            .map(|r| r.0);
+
+        // Truncate the node vector to the last full leaf
+        if let Some(last_full) = last_full {
+            self.truncate(last_full + 1)
+        }
+    }
+
     pub fn get_parent_node_mut(
         &mut self,
         node_index: NodeIndex,
