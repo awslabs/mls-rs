@@ -30,9 +30,9 @@ pub enum EpochKeyScheduleError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EpochKeySchedule {
+pub(crate) struct EpochKeySchedule {
     pub cipher_suite: CipherSuite,
-    secret_tree: SecretTree,
+    pub secret_tree: SecretTree,
     pub self_index: LeafIndex,
     pub sender_data_secret: Vec<u8>,
     pub exporter_secret: Vec<u8>,
@@ -60,7 +60,7 @@ impl PartialEq for EpochKeySchedule {
     }
 }
 
-pub struct EpochKeyScheduleDerivation {
+pub(crate) struct EpochKeyScheduleDerivation {
     pub key_schedule: EpochKeySchedule,
     pub joiner_secret: Vec<u8>,
 }
@@ -339,5 +339,35 @@ impl WelcomeSecret {
         let key = self.as_key(cipher_suite)?;
         let nonce = self.as_nonce(cipher_suite)?;
         cipher_suite.aead_decrypt(key, ciphertext, &[], &nonce)
+    }
+}
+
+//TODO: Unit tests
+
+#[cfg(test)]
+pub mod test_utils {
+    use super::*;
+    use crate::secret_tree::test::get_test_tree;
+
+    pub(crate) fn get_test_epoch_key_schedule(
+        ciphersuite: CipherSuite,
+        membership_key: Vec<u8>,
+        confirmation_key: Vec<u8>,
+    ) -> EpochKeySchedule {
+        EpochKeySchedule {
+            cipher_suite: ciphersuite.clone(),
+            secret_tree: get_test_tree(vec![], 1),
+            self_index: LeafIndex(0),
+            sender_data_secret: vec![],
+            exporter_secret: vec![],
+            authentication_secret: vec![],
+            external_secret: vec![],
+            confirmation_key,
+            membership_key,
+            resumption_secret: vec![],
+            init_secret: vec![],
+            handshake_ratchets: Default::default(),
+            application_ratchets: Default::default(),
+        }
     }
 }

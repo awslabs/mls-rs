@@ -315,7 +315,7 @@ impl Iterator for SecretKeyRatchet {
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use super::*;
 
     fn get_mock_cipher_suite_tree() -> CipherSuite {
@@ -338,7 +338,7 @@ mod test {
         cipher_suite
     }
 
-    fn get_test_tree(secret: Vec<u8>, leaf_count: usize) -> SecretTree {
+    pub(crate) fn get_test_tree(secret: Vec<u8>, leaf_count: usize) -> SecretTree {
         let mock_cipher = get_mock_cipher_suite_tree();
         SecretTree::new(mock_cipher, leaf_count, secret)
     }

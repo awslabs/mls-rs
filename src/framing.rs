@@ -1,6 +1,7 @@
-use crate::group::{Commit, GroupContext, Proposal};
-use crate::hash::Mac;
-use crate::signature::Signable;
+use crate::confirmation_tag::ConfirmationTag;
+use crate::group::{Commit, Proposal};
+use crate::membership_tag::MembershipTag;
+use crate::message_signature::MessageSignature;
 use crate::tree_node::LeafIndex;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -38,9 +39,9 @@ pub struct Sender {
     pub sender: u32,
 }
 
-impl Into<LeafIndex> for Sender {
-    fn into(self) -> LeafIndex {
-        LeafIndex(self.sender as usize)
+impl From<Sender> for LeafIndex {
+    fn from(s: Sender) -> Self {
+        LeafIndex(s.sender as usize)
     }
 }
 
@@ -59,45 +60,9 @@ pub struct MLSPlaintext {
     pub sender: Sender,
     pub authenticated_data: Vec<u8>,
     pub content: Content,
-    pub signature: Vec<u8>,
-    pub confirmation_tag: Option<Mac>,
-    pub membership_tag: Option<Vec<u8>>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(crate) struct MLSPlaintextTBS {
-    context: Option<GroupContext>,
-    group_id: Vec<u8>,
-    epoch: u64,
-    sender: Sender,
-    authenticated_data: Vec<u8>,
-    content: Content,
-}
-
-impl MLSPlaintext {
-    pub(crate) fn signable_representation(&self, group_context: &GroupContext) -> MLSPlaintextTBS {
-        let context = match self.sender.sender_type {
-            SenderType::Member => Some(group_context.clone()),
-            _ => None,
-        };
-
-        MLSPlaintextTBS {
-            context,
-            group_id: self.group_id.clone(),
-            epoch: self.epoch,
-            sender: self.sender.clone(),
-            authenticated_data: self.authenticated_data.clone(),
-            content: self.content.clone(),
-        }
-    }
-}
-
-impl Signable for MLSPlaintextTBS {
-    type E = bincode::Error;
-
-    fn to_signable_vec(&self) -> Result<Vec<u8>, Self::E> {
-        bincode::serialize(&self)
-    }
+    pub signature: MessageSignature,
+    pub confirmation_tag: Option<ConfirmationTag>,
+    pub membership_tag: Option<MembershipTag>,
 }
 
 #[derive(Error, Debug)]
@@ -113,7 +78,7 @@ pub(crate) struct MLSPlaintextCommitContent {
     pub sender: Sender,
     pub content_type: ContentType,
     pub commit: Commit,
-    pub signature: Vec<u8>,
+    pub signature: MessageSignature,
 }
 
 impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitContent {
@@ -134,30 +99,29 @@ impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitContent {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(crate) struct MLSPlaintextCommitAuthData {
-    pub confirmation_tag: Mac,
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub(crate) struct MLSPlaintextCommitAuthData<'a> {
+    pub confirmation_tag: &'a ConfirmationTag,
 }
 
-impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitAuthData {
+impl<'a> TryFrom<&'a MLSPlaintext> for MLSPlaintextCommitAuthData<'a> {
     type Error = CommitConversionError;
 
-    fn try_from(plaintext: &MLSPlaintext) -> Result<Self, Self::Error> {
-        Ok(MLSPlaintextCommitAuthData {
-            confirmation_tag: plaintext
-                .confirmation_tag
-                .as_ref()
-                .ok_or(CommitConversionError::NonCommitMessage)?
-                .clone(),
-        })
+    fn try_from(plaintext: &'a MLSPlaintext) -> Result<Self, Self::Error> {
+        let confirmation_tag = plaintext
+            .confirmation_tag
+            .as_ref()
+            .ok_or(CommitConversionError::NonCommitMessage)?;
+
+        Ok(MLSPlaintextCommitAuthData { confirmation_tag })
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MLSCiphertextContent {
     pub content: Content,
-    pub signature: Vec<u8>,
-    pub confirmation_tag: Option<Mac>,
+    pub signature: MessageSignature,
+    pub confirmation_tag: Option<ConfirmationTag>,
     pub padding: Vec<u8>,
 }
 
@@ -191,4 +155,25 @@ pub struct MLSSenderDataAAD {
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub content_type: ContentType,
+}
+
+#[cfg(test)]
+pub mod test_utils {
+    use super::*;
+
+    pub fn get_test_plaintext(test_content: Vec<u8>) -> MLSPlaintext {
+        MLSPlaintext {
+            group_id: vec![],
+            epoch: 0,
+            sender: Sender {
+                sender_type: SenderType::Member,
+                sender: 0,
+            },
+            authenticated_data: vec![],
+            content: Content::Application(test_content),
+            signature: MessageSignature::empty(),
+            confirmation_tag: None,
+            membership_tag: None,
+        }
+    }
 }

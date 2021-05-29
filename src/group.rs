@@ -8,6 +8,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::confirmation_tag::ConfirmationTag;
 use crate::credential::Credential;
 use crate::extension::{Extension, ExtensionList};
 use crate::framing::{
@@ -19,6 +20,7 @@ use crate::group::GroupError::InvalidPlaintextEpoch;
 use crate::group::Proposal::{Add, Remove, Update};
 use crate::hash::Mac;
 use crate::hpke::HPKECiphertext;
+use crate::message_signature::{MessageSignature, MessageSignatureError};
 use crate::protocol_version::ProtocolVersion;
 use crate::rand::SecureRng;
 use crate::secret_tree::KeyType;
@@ -222,6 +224,8 @@ pub enum GroupError {
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
     #[error(transparent)]
+    MessageSignatureError(#[from] MessageSignatureError),
+    #[error(transparent)]
     BincodeError(#[from] bincode::Error),
     #[error(transparent)]
     TranscriptHashError(#[from] TranscriptHashError),
@@ -256,12 +260,12 @@ pub enum GroupError {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct GroupContext {
-    group_id: Vec<u8>,
-    epoch: u64,
-    tree_hash: Vec<u8>,
-    confirmed_transcript_hash: Vec<u8>,
-    extensions: ExtensionList,
+pub(crate) struct GroupContext {
+    pub group_id: Vec<u8>,
+    pub epoch: u64,
+    pub tree_hash: Vec<u8>,
+    pub confirmed_transcript_hash: ConfirmedTranscriptHash,
+    pub extensions: ExtensionList,
 }
 
 impl GroupContext {
@@ -270,7 +274,7 @@ impl GroupContext {
             group_id,
             epoch: 0,
             tree_hash,
-            confirmed_transcript_hash: vec![],
+            confirmed_transcript_hash: ConfirmedTranscriptHash::from(vec![]),
             extensions,
         }
     }
@@ -289,13 +293,13 @@ impl From<&GroupInfo> for GroupContext {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct GroupInfo {
+struct GroupInfo {
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub tree_hash: Vec<u8>,
-    pub confirmed_transcript_hash: Vec<u8>,
+    pub confirmed_transcript_hash: ConfirmedTranscriptHash,
     pub extensions: ExtensionList,
-    pub confirmation_tag: Mac,
+    pub confirmation_tag: ConfirmationTag,
     pub signer_index: u32,
     pub signature: Vec<u8>,
 }
@@ -362,10 +366,10 @@ pub struct Welcome {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Group {
     pub cipher_suite: CipherSuite,
-    pub context: GroupContext,
+    context: GroupContext,
     pub public_tree: RatchetTree,
-    pub private_tree: TreeKemPrivate,
-    pub key_schedule: EpochKeySchedule, //TODO: Need to support out of order packets by holding a few old epoch values too
+    private_tree: TreeKemPrivate,
+    key_schedule: EpochKeySchedule, //TODO: Need to support out of order packets by holding a few old epoch values too
     interim_transcript_hash: InterimTranscriptHash,
     pub proposals: HashMap<Vec<u8>, PendingProposal>, // Hash of MLS Plaintext to pending proposal
     pub pending_updates: HashMap<Vec<u8>, KeyPackageGeneration>, // Hash of key package to key generation
@@ -415,6 +419,7 @@ impl Group {
         let tree_hash = public_tree.tree_hash()?;
 
         let context = GroupContext::new_group(group_id, tree_hash, extensions);
+
         let epoch = EpochKeySchedule::derive(
             cipher_suite.clone(),
             &init_secret,
@@ -431,7 +436,7 @@ impl Group {
             private_tree,
             context,
             key_schedule: epoch,
-            interim_transcript_hash: InterimTranscriptHash::new(cipher_suite, vec![]),
+            interim_transcript_hash: InterimTranscriptHash::from(vec![]),
             proposals: Default::default(),
             pending_updates: Default::default(),
         })
@@ -531,25 +536,20 @@ impl Group {
 
         // Verify the confirmation tag in the GroupInfo using the derived confirmation key and the
         // confirmed_transcript_hash from the GroupInfo.
-        // TODO: This is duplicate code
-        let confirmation_tag = welcome.cipher_suite.clone().hmac(
-            &key_schedule.confirmation_key,
-            &group_info.confirmed_transcript_hash,
-        )?;
-
-        if confirmation_tag != group_info.confirmation_tag {
+        if !group_info
+            .confirmation_tag
+            .matches(&key_schedule, &group_info.confirmed_transcript_hash)?
+        {
             return Err(GroupError::InvalidConfirmationTag);
         }
 
         // Use the confirmed transcript hash and confirmation tag to compute the interim transcript
         // hash in the new state.
-        let confirmed_transcript_hash = ConfirmedTranscriptHash::new(
+        let interim_transcript_hash = InterimTranscriptHash::create(
             welcome.cipher_suite.clone(),
-            group_info.confirmed_transcript_hash,
-        );
-
-        let interim_transcript_hash =
-            confirmed_transcript_hash.get_interim_transcript_hash(group_info.confirmation_tag)?;
+            &group_info.confirmed_transcript_hash,
+            &group_info.confirmation_tag,
+        )?;
 
         Ok(Group {
             cipher_suite: welcome.cipher_suite.clone(),
@@ -694,13 +694,13 @@ impl Group {
             },
             authenticated_data: vec![],
             content,
-            signature: vec![],
+            signature: MessageSignature::empty(),
             confirmation_tag: None,
-            membership_tag: None, //TODO: Membership tag is required for plaintext messages over the wire
+            membership_tag: None,
         };
 
         // Sign the MLSPlaintext using the current epoch's GroupContext as context.
-        plaintext.signature = signer.sign(&plaintext.signable_representation(&self.context))?;
+        plaintext.sign(signer, &self.context)?;
 
         Ok(plaintext)
     }
@@ -797,11 +797,13 @@ impl Group {
         // compute the confirmation_tag value in the MLSPlaintext.
         let plaintext_data = MLSPlaintextCommitContent::try_from(&plaintext)?;
 
-        let confirmed_transcript_hash = self
-            .interim_transcript_hash
-            .get_confirmed_transcript_hash(&plaintext_data)?;
+        let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
+            self.cipher_suite.clone(),
+            &self.interim_transcript_hash,
+            &plaintext_data,
+        )?;
 
-        provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash.value;
+        provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
 
         let new_key_schedule = EpochKeySchedule::evolved_from(
             &self.key_schedule,
@@ -810,12 +812,20 @@ impl Group {
             &provisional_group_context,
         )?;
 
-        let confirmation_tag = self.cipher_suite.hmac(
-            &new_key_schedule.key_schedule.confirmation_key,
+        let confirmation_tag = ConfirmationTag::create(
+            &new_key_schedule.key_schedule,
             &provisional_group_context.confirmed_transcript_hash,
         )?;
 
         plaintext.confirmation_tag = Some(confirmation_tag.clone());
+
+        /* FIXME: It's easier to just always make the tag and sometimes not send it, can be removed
+           if the goal is to send a ciphertext
+        */
+        // Create the membership tag using the current group context and key schedule
+        let membership_tag = MembershipTag::create(&plaintext, &self.context, &self.key_schedule)?;
+
+        plaintext.membership_tag = Some(membership_tag);
 
         // Construct a GroupInfo reflecting the new state
         // Group ID, epoch, tree, and confirmed transcript hash from the new state
@@ -1063,12 +1073,12 @@ impl Group {
             },
             authenticated_data: vec![],
             content: Content::Application(message),
-            signature: vec![],
+            signature: MessageSignature::empty(),
             confirmation_tag: None,
             membership_tag: None,
         };
 
-        plaintext.signature = signer.sign(&plaintext.signable_representation(&self.context))?;
+        plaintext.sign(signer, &self.context)?;
 
         self.encrypt_plaintext(rng, plaintext)
     }
@@ -1159,15 +1169,7 @@ impl Group {
 
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
-        let sender_cred = &self
-            .public_tree
-            .get_key_package(plaintext.sender.clone().into())?
-            .credential;
-
-        if !sender_cred.verify(
-            &plaintext.signature,
-            &plaintext.signable_representation(&self.context),
-        )? {
+        if !plaintext.verify_signature(&self.public_tree, &self.context)? {
             return Err(GroupError::InvalidSignature);
         }
 
@@ -1191,7 +1193,7 @@ impl Group {
                 let auth_data = MLSPlaintextCommitAuthData::try_from(&plaintext)?;
 
                 self.process_commit(
-                    plaintext.sender.into(),
+                    LeafIndex::from(plaintext.sender.clone()),
                     local_pending,
                     commit_content,
                     auth_data,
@@ -1268,14 +1270,19 @@ impl Group {
         provisional_group_context.epoch += 1;
 
         // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
-        let confirmed_transcript_hash = self
-            .interim_transcript_hash
-            .get_confirmed_transcript_hash(&commit_content)?;
+        let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
+            self.cipher_suite.clone(),
+            &self.interim_transcript_hash,
+            &commit_content,
+        )?;
 
-        let interim_transcript_hash = confirmed_transcript_hash
-            .get_interim_transcript_hash(auth_data.confirmation_tag.clone())?;
+        let interim_transcript_hash = InterimTranscriptHash::create(
+            self.cipher_suite.clone(),
+            &confirmed_transcript_hash,
+            &auth_data.confirmation_tag,
+        )?;
 
-        provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash.value;
+        provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
         provisional_group_context.tree_hash = provisional_state.public_tree.tree_hash()?;
 
         // TODO: If the proposals vector contains any PreSharedKey proposals, derive the psk_secret
@@ -1294,12 +1301,12 @@ impl Group {
         // Use the confirmation_key for the new epoch to compute the confirmation tag for
         // this message, as described below, and verify that it is the same as the
         // confirmation_tag field in the MLSPlaintext object.
-        let confirmation_tag = self.cipher_suite.hmac(
-            &new_epoch.key_schedule.confirmation_key,
+        let confirmation_tag = ConfirmationTag::create(
+            &new_epoch.key_schedule,
             &provisional_group_context.confirmed_transcript_hash,
         )?;
 
-        if confirmation_tag != auth_data.confirmation_tag {
+        if &confirmation_tag != auth_data.confirmation_tag {
             return Err(GroupError::InvalidConfirmationTag);
         }
 
@@ -1324,4 +1331,18 @@ impl Group {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use super::*;
+
+    pub(crate) fn get_test_group_context(epoch: u64) -> GroupContext {
+        GroupContext {
+            group_id: vec![],
+            epoch,
+            tree_hash: vec![],
+            confirmed_transcript_hash: ConfirmedTranscriptHash::from(vec![]),
+            extensions: ExtensionList(vec![]),
+        }
+    }
+}
 //TODO: Group unit tests

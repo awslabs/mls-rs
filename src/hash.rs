@@ -17,6 +17,12 @@ pub struct Mac {
     pub mac_value: Vec<u8>,
 }
 
+impl From<Vec<u8>> for Mac {
+    fn from(mac_value: Vec<u8>) -> Self {
+        Mac { mac_value }
+    }
+}
+
 pub trait HashFunction {
     const OUT_LEN: u16;
     fn update(&mut self, data: &[u8]) -> Result<(), HashError>;
