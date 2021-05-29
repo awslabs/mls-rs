@@ -20,6 +20,7 @@ use crate::group::GroupError::InvalidPlaintextEpoch;
 use crate::group::Proposal::{Add, Remove, Update};
 use crate::hash::Mac;
 use crate::hpke::HPKECiphertext;
+use crate::membership_tag::{MembershipTag, MembershipTagError};
 use crate::message_signature::{MessageSignature, MessageSignatureError};
 use crate::protocol_version::ProtocolVersion;
 use crate::rand::SecureRng;
@@ -235,6 +236,8 @@ pub enum GroupError {
     RngError(#[from] rand_core::Error),
     #[error(transparent)]
     KeyPackageError(#[from] KeyPackageError),
+    #[error(transparent)]
+    MembershipTagError(#[from] MembershipTagError),
     #[error("Cipher suite does not match")]
     CipherSuiteMismatch,
     #[error("Invalid key package signature")]
@@ -249,6 +252,8 @@ pub enum GroupError {
     InvalidSignature,
     #[error("invalid confirmation tag")]
     InvalidConfirmationTag,
+    #[error("invalid membership tag")]
+    InvalidMembershipTag,
     #[error("corrupt private key, missing required values")]
     InvalidTreeKemPrivateKey,
     #[error("key package not found, unable to process")]
@@ -663,8 +668,12 @@ impl Group {
         proposal: Proposal,
         signer: &S,
     ) -> Result<MLSPlaintext, GroupError> {
-        let plaintext =
+        let mut plaintext =
             self.construct_mls_plaintext(Content::Proposal(proposal.clone()), signer)?;
+
+        let membership_tag = MembershipTag::create(&plaintext, &self.context, &self.key_schedule)?;
+
+        plaintext.membership_tag = Some(membership_tag);
 
         // Add the proposal ref to the current set
         let hash = self.cipher_suite.hash(&bincode::serialize(&plaintext)?)?;
@@ -977,7 +986,7 @@ impl Group {
         &mut self,
         pending: PendingCommit,
     ) -> Result<Vec<Event>, GroupError> {
-        self.process_plaintext_internal(pending.plaintext, pending.update_path_data)
+        self.process_plaintext_internal(pending.plaintext, pending.update_path_data, false)
     }
 
     pub fn encrypt_plaintext<RNG: SecureRng>(
@@ -1150,21 +1159,36 @@ impl Group {
             content: ciphertext_content.content,
             signature: ciphertext_content.signature,
             confirmation_tag: ciphertext_content.confirmation_tag,
-            membership_tag: None, // TODO: Membership tag
+            membership_tag: None, // Membership tag is always None for ciphertext messages
         };
 
-        self.process_plaintext(plaintext)
+        self.process_plaintext_internal(plaintext, None, false)
     }
 
     fn process_plaintext_internal(
         &mut self,
         plaintext: MLSPlaintext,
         local_pending: Option<UpdatePathGeneration>,
+        enforce_membership_tag: bool,
     ) -> Result<Vec<Event>, GroupError> {
         // Verify that the epoch field of the enclosing MLSPlaintext message is equal
         // to the epoch field of the current GroupContext object
         if plaintext.epoch != self.context.epoch {
             return Err(InvalidPlaintextEpoch);
+        }
+
+        // Verify that the membership tag is correct
+        if enforce_membership_tag {
+            match &plaintext.membership_tag {
+                None => {
+                    return Err(GroupError::InvalidMembershipTag);
+                }
+                Some(tag) => {
+                    if !tag.matches(&plaintext, &self.context, &self.key_schedule)? {
+                        return Err(GroupError::InvalidMembershipTag);
+                    }
+                }
+            }
         }
 
         //Verify that the signature on the MLSPlaintext message verifies using the public key
@@ -1207,7 +1231,7 @@ impl Group {
     }
 
     pub fn process_plaintext(&mut self, plaintext: MLSPlaintext) -> Result<Vec<Event>, GroupError> {
-        self.process_plaintext_internal(plaintext, None)
+        self.process_plaintext_internal(plaintext, None, true)
     }
 
     // This function takes a provisional copy of the tree and returns an updated tree and epoch key schedule

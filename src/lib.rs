@@ -23,6 +23,7 @@ pub mod kdf;
 pub mod kem;
 pub mod key_package;
 pub mod key_schedule;
+mod membership_tag;
 mod message_signature;
 pub mod protocol_version;
 pub mod rand;
