@@ -1,7 +1,7 @@
 use crate::ciphersuite::{CipherSuiteError, ExpandType};
-use crate::tree_math;
-use crate::tree_math::TreeMathError;
-use crate::tree_node::{LeafIndex, NodeIndex};
+use crate::tree_kem::math as tree_math;
+use crate::tree_kem::math::TreeMathError;
+use crate::tree_kem::node::{LeafIndex, NodeIndex};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

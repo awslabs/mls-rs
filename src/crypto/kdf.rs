@@ -27,7 +27,7 @@ pub enum KdfError {
 */
 #[macro_use]
 mod ossl {
-    use crate::kdf::KdfError;
+    use crate::crypto::kdf::KdfError;
     use core::ptr;
     use openssl::hash::MessageDigest;
     use openssl::pkey::PKey;
@@ -142,7 +142,7 @@ impl KdfId {
 
 #[cfg(test)]
 mod test {
-    use crate::kdf::{HkdfSha256, HkdfSha512, Kdf};
+    use crate::crypto::kdf::{HkdfSha256, HkdfSha512, Kdf};
 
     struct TestCase {
         ikm: Vec<u8>,

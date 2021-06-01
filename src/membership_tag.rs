@@ -1,9 +1,9 @@
 use crate::ciphersuite::CipherSuiteError;
 use crate::confirmation_tag::ConfirmationTag;
+use crate::crypto::hash::Mac;
 use crate::epoch::EpochKeySchedule;
 use crate::framing::MLSPlaintext;
 use crate::group::GroupContext;
-use crate::hash::Mac;
 use crate::message_signature::{MLSPlaintextTBS, MessageSignature};
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
@@ -83,11 +83,11 @@ impl MembershipTag {
 mod tests {
     use super::*;
     use crate::ciphersuite::test_util::MockCipherSuite as CipherSuite;
+    use crate::crypto::hash::HashFunction;
+    use crate::crypto::hash::Sha256;
     use crate::epoch::test_utils::get_test_epoch_key_schedule;
     use crate::framing::test_utils::get_test_plaintext;
     use crate::group::test_utils::get_test_group_context;
-    use crate::hash::HashFunction;
-    use crate::hash::Sha256;
 
     // Mock cipher suite that just takes a SHA256 of the key and message
     fn get_mock_cipher_suite() -> CipherSuite {

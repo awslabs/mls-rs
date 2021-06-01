@@ -1,6 +1,6 @@
 use crate::ciphersuite::CipherSuiteError;
+use crate::crypto::hash::Mac;
 use crate::epoch::EpochKeySchedule;
-use crate::hash::Mac;
 use crate::transcript_hash::ConfirmedTranscriptHash;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
@@ -42,8 +42,8 @@ impl ConfirmationTag {
 mod test {
     use super::*;
     use crate::ciphersuite::test_util::MockCipherSuite as CipherSuite;
+    use crate::crypto::hash::{HashFunction, Sha256};
     use crate::epoch::test_utils::get_test_epoch_key_schedule;
-    use crate::hash::{HashFunction, Sha256};
 
     // Mock cipher suite that just takes a SHA256 of the key and message
     fn get_mock_cipher_suite() -> CipherSuite {

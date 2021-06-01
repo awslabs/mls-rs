@@ -1,9 +1,11 @@
-use crate::aead::{aes, chacha20, Cipher, CipherError};
-use crate::asym::AsymmetricKeyEngine;
-use crate::hpke_kdf::HpkeKdf;
-use crate::kdf::{Kdf, KdfError};
-use crate::kem::{Kem, KemError, P256HkdfSha256, P521HkdfSha512, X25519HkdfSha256, X448HkdfSha512};
-use crate::rand::SecureRng;
+use crate::crypto::aead::{aes, chacha20, Cipher, CipherError};
+use crate::crypto::asym::AsymmetricKeyEngine;
+use crate::crypto::hpke_kdf::HpkeKdf;
+use crate::crypto::kdf::{Kdf, KdfError};
+use crate::crypto::kem::{
+    Kem, KemError, P256HkdfSha256, P521HkdfSha512, X25519HkdfSha256, X448HkdfSha512,
+};
+use crate::crypto::rand::SecureRng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use thiserror::Error;
@@ -302,8 +304,8 @@ impl Hpke for X448HkdfSha512ChaCha20 {
 #[cfg(test)]
 pub(crate) mod test_util {
     use super::Hpke;
-    use crate::aead::test_util::MockTestCipher;
-    use crate::kem::test_util::MockTestKem;
+    use crate::crypto::aead::test_util::MockTestCipher;
+    use crate::crypto::kem::test_util::MockTestKem;
     use mockall::mock;
 
     mock! {
@@ -317,15 +319,15 @@ pub(crate) mod test_util {
 
 #[cfg(test)]
 mod tests {
-    use crate::aead::AeadId;
-    use crate::asym::{AsymmetricKey, AsymmetricKeyEngine};
-    use crate::hpke::{
+    use crate::crypto::aead::AeadId;
+    use crate::crypto::asym::{AsymmetricKey, AsymmetricKeyEngine};
+    use crate::crypto::hpke::{
         Hpke, Mode, P256HkdfSha256Aes128Gcm, P521HkdfSha512Aes256Gcm, X25519HkdfSha256Aes128Gcm,
         X25519HkdfSha256ChaCha20, X448HkdfSha512Aes256Gcm, X448HkdfSha512ChaCha20,
     };
-    use crate::kdf::KdfId;
-    use crate::kem::{Kem, KemId};
-    use crate::rand::test_rng::OneValRng;
+    use crate::crypto::kdf::KdfId;
+    use crate::crypto::kem::{Kem, KemId};
+    use crate::crypto::rand::test_rng::OneValRng;
     use serde::{Deserialize, Deserializer};
     use std::fs::File;
     use std::io::BufReader;

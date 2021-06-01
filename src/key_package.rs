@@ -1,8 +1,15 @@
-use crate::asym::AsymmetricKeyError;
+use crate::ciphersuite::CipherSuiteError;
 use crate::credential::Credential;
+use crate::crypto::asym::AsymmetricKeyError;
+use crate::crypto::rand::SecureRng;
+use crate::crypto::signature::{Signable, SignatureError, Signer, Verifier};
 use crate::extension::{Extension, ExtensionError, ExtensionList};
 use crate::protocol_version::ProtocolVersion;
+use bincode::Options;
 use cfg_if::cfg_if;
+use serde::{Deserialize, Serialize};
+use std::time::SystemTime;
+use thiserror::Error;
 
 cfg_if! {
     if #[cfg(test)] {
@@ -11,14 +18,6 @@ cfg_if! {
         use crate::ciphersuite::{CipherSuite};
     }
 }
-
-use crate::ciphersuite::CipherSuiteError;
-use crate::rand::SecureRng;
-use crate::signature::{Signable, SignatureError, Signer, Verifier};
-use bincode::Options;
-use serde::{Deserialize, Serialize};
-use std::time::SystemTime;
-use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum KeyPackageError {
@@ -131,7 +130,7 @@ pub mod test_util {
         CipherSuite, KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerator,
         SecureRng,
     };
-    use crate::signature::{Signable, SignatureError, Signer};
+    use crate::crypto::signature::{Signable, SignatureError, Signer};
     use mockall::mock;
 
     mock! {

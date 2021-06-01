@@ -2,7 +2,7 @@ use crate::confirmation_tag::ConfirmationTag;
 use crate::group::{Commit, Proposal};
 use crate::membership_tag::MembershipTag;
 use crate::message_signature::MessageSignature;
-use crate::tree_node::LeafIndex;
+use crate::tree_kem::node::LeafIndex;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use thiserror::Error;

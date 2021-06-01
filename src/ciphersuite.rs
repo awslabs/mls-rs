@@ -1,18 +1,18 @@
-use crate::aead::{aes, chacha20, Cipher, CipherError};
-use crate::asym::AsymmetricKey;
-use crate::asym::{AsymmetricKeyError, PublicKey, SecretKey};
-use crate::hash;
-use crate::hash::{HashError, HashFunction, Mac};
-use crate::hpke;
-use crate::hpke::{HPKECiphertext, HPKEError, Hpke};
-use crate::kdf;
-use crate::kdf::Kdf;
-use crate::kem::Kem;
+use crate::crypto::aead::{aes, chacha20, Cipher, CipherError};
+use crate::crypto::asym::AsymmetricKey;
+use crate::crypto::asym::{AsymmetricKeyError, PublicKey, SecretKey};
+use crate::crypto::hash;
+use crate::crypto::hash::{HashError, HashFunction, Mac};
+use crate::crypto::hpke;
+use crate::crypto::hpke::{HPKECiphertext, HPKEError, Hpke};
+use crate::crypto::kdf;
+use crate::crypto::kdf::Kdf;
+use crate::crypto::kem::Kem;
+use crate::crypto::rand::SecureRng;
+use crate::crypto::signature;
+use crate::crypto::signature::{SignatureError, SignatureScheme};
 use crate::key_schedule::KeyScheduleKdf;
 use crate::protocol_version::ProtocolVersion;
-use crate::rand::SecureRng;
-use crate::signature;
-use crate::signature::{SignatureError, SignatureScheme};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -636,16 +636,16 @@ impl_cipher_suite_type!(
 #[cfg(test)]
 mod test {
     use super::test_util;
-    use crate::asym::test_util::MockPublicKey;
-    use crate::asym::test_util::MockSecretKey;
     use crate::ciphersuite::{
         CipherSuite, CipherSuiteType, ExpandType, Mls10DhKem25519Aes128GcmSha256Ed25519,
         Mls10DhKem25519ChaChaPoly1305Sha256Ed25519, Mls10DhKemP256Aes128GcmSha256P256,
         Mls10DhKemP521Aes256GcmSha512P521,
     };
-    use crate::kem::test_util::MockTestKem;
+    use crate::crypto::asym::test_util::MockPublicKey;
+    use crate::crypto::asym::test_util::MockSecretKey;
+    use crate::crypto::kem::test_util::MockTestKem;
+    use crate::crypto::rand::test_rng::{RepeatRng, ZerosRng};
     use crate::key_schedule::test_util::MockTestKeyScheduleKdf;
-    use crate::rand::test_rng::{RepeatRng, ZerosRng};
 
     #[test]
     fn test_protocol_version() {
@@ -1172,13 +1172,13 @@ pub mod test_util {
     use super::signature::test_utils::MockTestSignatureScheme;
     use super::CipherSuiteType;
     use super::ExpandType;
-    use crate::aead::test_util::MockTestCipher;
     use crate::ciphersuite::{CipherSuiteError, KemKeyPair};
-    use crate::hash::Mac;
-    use crate::hpke::HPKECiphertext;
+    use crate::crypto::aead::test_util::MockTestCipher;
+    use crate::crypto::hash::Mac;
+    use crate::crypto::hpke::HPKECiphertext;
+    use crate::crypto::rand::SecureRng;
     use crate::key_schedule::test_util::MockTestKeyScheduleKdf;
     use crate::protocol_version::ProtocolVersion;
-    use crate::rand::SecureRng;
     use mockall::mock;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::fmt;

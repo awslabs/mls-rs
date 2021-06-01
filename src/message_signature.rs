@@ -1,8 +1,8 @@
+use crate::crypto::signature::{Signable, SignatureError, Signer, Verifier};
 use crate::framing::{Content, MLSPlaintext, Sender, SenderType};
 use crate::group::GroupContext;
-use crate::ratchet_tree::{RatchetTree, RatchetTreeError};
-use crate::signature::{Signable, SignatureError, Signer, Verifier};
-use crate::tree_node::LeafIndex;
+use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::{RatchetTree, RatchetTreeError};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::ops::Deref;

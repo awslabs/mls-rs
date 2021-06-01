@@ -1,7 +1,7 @@
 use crate::ciphersuite::KemKeyPair;
 use crate::key_package::KeyPackage;
-use crate::tree_math;
-use crate::tree_math::TreeMathError;
+use crate::tree_kem::math as tree_math;
+use crate::tree_kem::math::TreeMathError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::hash::Hash;
@@ -411,14 +411,12 @@ impl NodeVec {
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::ciphersuite::test_util::MockCipherSuite;
     use crate::credential::{BasicCredential, CredentialConvertable};
+    use crate::crypto::signature::SignatureSchemeId;
     use crate::extension::ExtensionList;
-    use crate::key_package::KeyPackage;
     use crate::protocol_version::ProtocolVersion;
-    use crate::signature::SignatureSchemeId;
-    use crate::tree_node::Leaf;
-    use crate::tree_node::{LeafIndex, Node, NodeIndex, NodeTypeResolver, NodeVec, Parent};
 
     fn get_mock_cipher_suite() -> MockCipherSuite {
         let mut cipher_suite = MockCipherSuite::new();
@@ -509,7 +507,7 @@ mod test {
     fn test_direct_path() {
         let test_vec = get_test_node_vec();
         // Tree math is already tested in that module, just ensure equality
-        let expected = crate::tree_math::direct_path(0, 4).unwrap();
+        let expected = tree_math::direct_path(0, 4).unwrap();
         let actual = test_vec.direct_path(LeafIndex(0)).unwrap();
         assert_eq!(actual, expected);
     }
@@ -518,7 +516,7 @@ mod test {
     fn test_copath() {
         let test_vec = get_test_node_vec();
         // Tree math is already tested in that module, just ensure equality
-        let expected = crate::tree_math::copath(0, 4).unwrap();
+        let expected = tree_math::copath(0, 4).unwrap();
         let actual = test_vec.copath(LeafIndex(0)).unwrap();
         assert_eq!(actual, expected);
     }

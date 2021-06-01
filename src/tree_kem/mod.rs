@@ -1,15 +1,20 @@
+pub(crate) mod math;
+pub mod node;
+mod node_secrets;
+mod tree_hash;
+
 use crate::ciphersuite::CipherSuiteError;
 use crate::credential::Credential;
+use crate::crypto::hpke::HPKECiphertext;
+use crate::crypto::rand::SecureRng;
+use crate::crypto::signature::SignatureError;
 use crate::group::GroupSecrets;
-use crate::hpke::HPKECiphertext;
 use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerator};
-use crate::rand::SecureRng;
-use crate::signature::SignatureError;
-use crate::tree_math;
-use crate::tree_math::TreeMathError;
-use crate::tree_node::{Leaf, LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
-use crate::tree_path::{NodeSecretGenerator, NodeSecrets};
 use cfg_if::cfg_if;
+use math as tree_math;
+use math::TreeMathError;
+use node::{Leaf, LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
+use node_secrets::{NodeSecretGenerator, NodeSecrets};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTime;
@@ -665,22 +670,16 @@ pub struct UpdatePath {
 
 #[cfg(test)]
 pub(crate) mod test {
-    use super::RatchetTree;
+    use super::*;
     use crate::ciphersuite::test_util::MockCipherSuite;
     use crate::ciphersuite::KemKeyPair;
     use crate::credential::{BasicCredential, CredentialConvertable};
-    use crate::extension::Lifetime;
-    use crate::extension::{Extension, ExtensionId, ExtensionList, ExtensionTrait};
-    use crate::hpke::HPKECiphertext;
+    use crate::crypto::rand::test_rng::ZerosRng;
+    use crate::crypto::signature::test_utils::{MockTestSignatureScheme, MockVerifier};
+    use crate::extension::{Extension, ExtensionId, ExtensionList, ExtensionTrait, Lifetime};
     use crate::key_package::test_util::MockKeyPackageGenerator;
-    use crate::key_package::{KeyPackage, KeyPackageGeneration};
     use crate::protocol_version::ProtocolVersion;
-    use crate::rand::test_rng::ZerosRng;
-    use crate::ratchet_tree::{TreeKemPrivate, TreeSecrets, UpdatePath, UpdatePathGeneration};
-    use crate::signature::test_utils::{MockTestSignatureScheme, MockVerifier};
-    use crate::tree_node::Leaf;
-    use crate::tree_node::Parent;
-    use crate::tree_node::{LeafIndex, Node, NodeTypeResolver};
+    use crate::tree_kem::node::{NodeTypeResolver, Parent};
     use std::collections::HashMap;
     use std::u64::MAX;
 
@@ -1007,7 +1006,7 @@ pub(crate) mod test {
         assert_eq!(update_path.update_path.leaf_key_package, test_leaf);
         assert_eq!(update_path.secrets.private_key.self_index, LeafIndex(0));
 
-        let root_node = crate::tree_math::root(tree.leaf_count());
+        let root_node = tree_math::root(tree.leaf_count());
         assert_eq!(
             update_path.secrets.secret_path.root_secret,
             update_path

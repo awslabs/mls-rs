@@ -1,7 +1,7 @@
-use crate::asym::{
+use crate::crypto::asym::{
     p256, p521, x25519, x448, AsymmetricKey, AsymmetricKeyEngine, AsymmetricKeyError, EcdhEngine,
 };
-use crate::kdf::{HkdfSha256, HkdfSha512, KdfError};
+use crate::crypto::kdf::{HkdfSha256, HkdfSha512, KdfError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -161,8 +161,8 @@ where
     }
 }
 
-use crate::hpke_kdf::HpkeKdf;
-use crate::rand::SecureRng;
+use crate::crypto::hpke_kdf::HpkeKdf;
+use crate::crypto::rand::SecureRng;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 #[derive(IntoPrimitive, TryFromPrimitive, Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -220,9 +220,9 @@ macro_rules! impl_ecdh_kem {
 #[cfg(test)]
 pub mod test_util {
     use super::{AsymmetricKeyEngine, Kem, KemError, KemId, KemResult, SecureRng};
-    use crate::asym::test_util::MockTestKeyEngine;
-    use crate::asym::AsymmetricKeyError;
-    use crate::hpke_kdf::test_util::MockTestHpkeKdf;
+    use crate::crypto::asym::test_util::MockTestKeyEngine;
+    use crate::crypto::asym::AsymmetricKeyError;
+    use crate::crypto::hpke_kdf::test_util::MockTestHpkeKdf;
     use mockall::mock;
 
     mock! {

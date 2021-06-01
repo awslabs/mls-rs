@@ -1,5 +1,5 @@
-use crate::asym::AsymmetricKey;
-use crate::signature::{
+use crate::crypto::asym::AsymmetricKey;
+use crate::crypto::signature::{
     PublicSignatureKey, Signable, SignatureError, SignatureScheme, SignatureSchemeId, Verifier,
 };
 use num_enum::{IntoPrimitive, TryFromPrimitive};
@@ -89,8 +89,8 @@ impl Verifier for BasicCredential {
 #[cfg(test)]
 mod test {
     use crate::credential::{BasicCredential, Credential, CredentialConvertable};
-    use crate::signature::test_utils::{get_test_verifier, MockTestSignatureScheme};
-    use crate::signature::{SignatureSchemeId, Verifier};
+    use crate::crypto::signature::test_utils::{get_test_verifier, MockTestSignatureScheme};
+    use crate::crypto::signature::{SignatureSchemeId, Verifier};
 
     fn get_test_basic_credential() -> Credential {
         BasicCredential {

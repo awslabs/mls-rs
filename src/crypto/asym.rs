@@ -1,5 +1,5 @@
-use crate::kdf::KdfError;
-use crate::rand::SecureRng;
+use crate::crypto::kdf::KdfError;
+use crate::crypto::rand::SecureRng;
 use openssl::error::ErrorStack;
 use thiserror::Error;
 
@@ -270,7 +270,7 @@ macro_rules! asym_key_tests {
 
 pub mod p521 {
     use super::{AsymmetricKey, AsymmetricKeyEngine, AsymmetricKeyError, EcdhEngine};
-    use crate::rand::SecureRng;
+    use crate::crypto::rand::SecureRng;
     use openssl::ec::EcKey;
     use openssl::nid::Nid;
     use openssl::pkey::{Private, Public};
@@ -286,7 +286,7 @@ pub mod p521 {
         use super::PublicKey;
         use super::SecretKey;
 
-        use crate::asym::test::{
+        use crate::crypto::asym::test::{
             run_ecdh_test_case, run_pri_to_pub_test, run_random_key_test, run_serialization_test,
             TestCase,
         };
@@ -344,7 +344,7 @@ pub mod p521 {
 
 pub mod p256 {
     use super::{AsymmetricKey, AsymmetricKeyEngine, AsymmetricKeyError, EcdhEngine};
-    use crate::rand::SecureRng;
+    use crate::crypto::rand::SecureRng;
     use openssl::ec::EcKey;
     use openssl::nid::Nid;
     use openssl::pkey::{Private, Public};
@@ -360,7 +360,7 @@ pub mod p256 {
         use super::PublicKey;
         use super::SecretKey;
 
-        use crate::asym::test::{
+        use crate::crypto::asym::test::{
             run_ecdh_test_case, run_pri_to_pub_test, run_random_key_test, run_serialization_test,
             TestCase,
         };
@@ -397,8 +397,8 @@ pub mod p256 {
 }
 
 pub mod x25519 {
-    use crate::asym::{AsymmetricKey, AsymmetricKeyEngine, AsymmetricKeyError, EcdhEngine};
-    use crate::rand::SecureRng;
+    use crate::crypto::asym::{AsymmetricKey, AsymmetricKeyEngine, AsymmetricKeyError, EcdhEngine};
+    use crate::crypto::rand::SecureRng;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     #[derive(Clone, Debug)]
@@ -508,7 +508,7 @@ pub mod x25519 {
         use super::PublicKey;
         use super::SecretKey;
 
-        use crate::asym::test::{
+        use crate::crypto::asym::test::{
             run_ecdh_test_case, run_pri_to_pub_test, run_random_key_test, run_serialization_test,
             TestCase,
         };
@@ -543,8 +543,8 @@ pub mod x25519 {
 }
 
 pub mod x448 {
-    use crate::asym::{AsymmetricKey, AsymmetricKeyEngine, AsymmetricKeyError, EcdhEngine};
-    use crate::rand::SecureRng;
+    use crate::crypto::asym::{AsymmetricKey, AsymmetricKeyEngine, AsymmetricKeyError, EcdhEngine};
+    use crate::crypto::rand::SecureRng;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub struct PublicKey {
@@ -660,7 +660,7 @@ pub mod x448 {
         use super::PublicKey;
         use super::SecretKey;
 
-        use crate::asym::test::{
+        use crate::crypto::asym::test::{
             run_ecdh_test_case, run_pri_to_pub_test, run_random_key_test, run_serialization_test,
             TestCase,
         };
@@ -704,8 +704,8 @@ pub mod x448 {
 
 #[cfg(test)]
 mod test {
-    use crate::asym::{EcdhEngine, PublicKey, SecretKey};
-    use crate::rand::test_rng;
+    use crate::crypto::asym::{EcdhEngine, PublicKey, SecretKey};
+    use crate::crypto::rand::test_rng;
 
     pub struct TestCase {
         pub alice_pub: Vec<u8>,

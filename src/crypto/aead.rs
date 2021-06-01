@@ -116,8 +116,7 @@ mod ossl {
 }
 
 pub mod aes {
-    use super::{Cipher, CipherError};
-    use crate::aead::AeadId;
+    use super::*;
     openssl_aead!(
         Gcm128,
         openssl::symm::Cipher::aes_128_gcm(),
@@ -137,10 +136,8 @@ pub mod aes {
 
     #[cfg(test)]
     mod tests {
-        use super::Gcm128;
-        use super::Gcm256;
-        use crate::aead::test::{run_encrypt_decrypt, TestCase};
-        use crate::aead::Cipher;
+        use super::test::*;
+        use super::*;
 
         // NIST GCM test vectors: http://csrc.nist.gov/groups/STM/cavp/documents/mac/gcmtestvectors.zip
 
@@ -217,7 +214,7 @@ pub mod aes {
 }
 
 pub mod chacha20 {
-    use crate::aead::{AeadId, Cipher, CipherError};
+    use super::{AeadId, Cipher, CipherError};
     use chacha20poly1305::aead::{Aead, NewAead, Payload};
     use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 
@@ -278,9 +275,8 @@ pub mod chacha20 {
 
     #[cfg(test)]
     mod test {
-        use super::Poly1305;
-        use crate::aead::test::{run_encrypt_decrypt, TestCase};
-        use crate::aead::Cipher;
+        use super::*;
+        use crate::crypto::aead::test::{run_encrypt_decrypt, TestCase};
 
         #[test]
         fn test_invalid_key() {
@@ -377,7 +373,7 @@ impl AeadId {
 
 #[cfg(test)]
 mod test {
-    use crate::aead::Cipher;
+    use super::*;
 
     pub struct TestCase {
         pub key: Vec<u8>,

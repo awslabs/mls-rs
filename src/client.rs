@@ -1,9 +1,9 @@
-use crate::asym::AsymmetricKey;
 use crate::ciphersuite::CipherSuiteError;
 use crate::credential::Credential;
+use crate::crypto::asym::AsymmetricKey;
+use crate::crypto::signature::{ed25519, Signable, SignatureError, SignatureSchemeId, Signer};
 use crate::extension::{Capabilities, ExtensionError, ExtensionList, ExtensionTrait, Lifetime};
 use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGenerator};
-use crate::signature::{ed25519, Signable, SignatureError, SignatureSchemeId, Signer};
 use cfg_if::cfg_if;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
@@ -49,11 +49,11 @@ impl Signer for Client {
     fn sign<T: Signable + 'static>(&self, data: &T) -> Result<Vec<u8>, SignatureError> {
         match self.credential.get_signature_type() {
             SignatureSchemeId::EcdsaSecp256r1Sha256 => {
-                let key = crate::asym::p256::SecretKey::from_bytes(&self.signature_key)?;
+                let key = crate::crypto::asym::p256::SecretKey::from_bytes(&self.signature_key)?;
                 key.sign(data)
             }
             SignatureSchemeId::EcdsaSecp521r1Sha512 => {
-                let key = crate::asym::p521::SecretKey::from_bytes(&self.signature_key)?;
+                let key = crate::crypto::asym::p521::SecretKey::from_bytes(&self.signature_key)?;
                 key.sign(data)
             }
             SignatureSchemeId::Ed25519 => {
@@ -89,20 +89,20 @@ impl KeyPackageGenerator for Client {
 
 #[cfg(test)]
 mod test {
-    use crate::asym::AsymmetricKey;
     use crate::ciphersuite::test_util::MockCipherSuite;
     use crate::ciphersuite::KemKeyPair;
     use crate::client::Client;
     use crate::credential::{BasicCredential, CredentialConvertable};
-    use crate::key_package::{KeyPackage, KeyPackageGenerator};
-    use crate::protocol_version::ProtocolVersion;
-    use crate::rand::test_rng::ZerosRng;
-    use crate::rand::OpenSslRng;
-    use crate::signature::test_utils::{get_test_signer, get_test_verifier};
-    use crate::signature::{
+    use crate::crypto::asym::AsymmetricKey;
+    use crate::crypto::rand::test_rng::ZerosRng;
+    use crate::crypto::rand::OpenSslRng;
+    use crate::crypto::signature::test_utils::{get_test_signer, get_test_verifier};
+    use crate::crypto::signature::{
         ed25519::EdDsa25519, p256::EcDsaP256, p521::EcDsaP521, test_utils::MockTestSignatureScheme,
         Signable, SignatureScheme, Signer, Verifier,
     };
+    use crate::key_package::{KeyPackage, KeyPackageGenerator};
+    use crate::protocol_version::ProtocolVersion;
 
     fn get_test_client<SS: SignatureScheme>(sig_scheme: &SS) -> Client {
         let signature_key = sig_scheme

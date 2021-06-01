@@ -1,8 +1,8 @@
 use crate::ciphersuite::{CipherSuiteError, ExpandType};
 use crate::group::GroupContext;
-use crate::ratchet_tree::{TreeSecrets, UpdatePathGeneration};
 use crate::secret_tree::{EncryptionKey, KeyType, SecretKeyRatchet, SecretTree, SecretTreeError};
-use crate::tree_node::LeafIndex;
+use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::{TreeSecrets, UpdatePathGeneration};
 use cfg_if::cfg_if;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

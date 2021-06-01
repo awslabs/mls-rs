@@ -39,7 +39,7 @@ impl RngCore for OpenSslRng {
 
 #[cfg(test)]
 pub mod test_rng {
-    use crate::rand::SecureRng;
+    use crate::crypto::rand::SecureRng;
     use rand_core::{impls, CryptoRng, Error, RngCore};
     use std::num::NonZeroU32;
 
@@ -134,7 +134,7 @@ pub mod test_rng {
 
 #[cfg(test)]
 mod tests {
-    use crate::rand::OpenSslRng;
+    use crate::crypto::rand::OpenSslRng;
     use rand_core::RngCore;
 
     #[test]

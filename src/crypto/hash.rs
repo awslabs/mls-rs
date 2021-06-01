@@ -114,7 +114,7 @@ pub mod test_util {
 
 #[cfg(test)]
 mod test {
-    use crate::hash::{HashFunction, Sha256, Sha512};
+    use crate::crypto::hash::{HashFunction, Sha256, Sha512};
 
     #[test]
     fn test_sha256() {

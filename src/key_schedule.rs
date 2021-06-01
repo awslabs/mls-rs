@@ -1,4 +1,4 @@
-use crate::kdf::{Kdf, KdfError};
+use crate::crypto::kdf::{Kdf, KdfError};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -56,13 +56,13 @@ pub trait KeyScheduleKdf: Kdf {
     }
 }
 
-impl KeyScheduleKdf for crate::kdf::HkdfSha256 {}
-impl KeyScheduleKdf for crate::kdf::HkdfSha512 {}
+impl KeyScheduleKdf for crate::crypto::kdf::HkdfSha256 {}
+impl KeyScheduleKdf for crate::crypto::kdf::HkdfSha512 {}
 
 #[cfg(test)]
 pub mod test_util {
     use super::{Kdf, KdfError, KeyScheduleKdf};
-    use crate::kdf::KdfId;
+    use crate::crypto::kdf::KdfId;
     use mockall::mock;
 
     mock! {

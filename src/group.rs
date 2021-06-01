@@ -1,7 +1,7 @@
 use crate::ciphersuite::CipherSuiteError;
 use crate::epoch::{CommitSecret, EpochKeySchedule, EpochKeyScheduleError, WelcomeSecret};
 use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerator};
-use crate::ratchet_tree::{
+use crate::tree_kem::{
     RatchetTree, RatchetTreeError, TreeKemPrivate, UpdatePath, UpdatePathGeneration,
 };
 use num_enum::{IntoPrimitive, TryFromPrimitive};
@@ -10,6 +10,10 @@ use thiserror::Error;
 
 use crate::confirmation_tag::ConfirmationTag;
 use crate::credential::Credential;
+use crate::crypto::hash::Mac;
+use crate::crypto::hpke::HPKECiphertext;
+use crate::crypto::rand::SecureRng;
+use crate::crypto::signature::{Signable, SignatureError, Signer, Verifier};
 use crate::extension::{Extension, ExtensionList};
 use crate::framing::{
     CommitConversionError, Content, ContentType, MLSCiphertext, MLSCiphertextContent,
@@ -18,16 +22,12 @@ use crate::framing::{
 };
 use crate::group::GroupError::InvalidPlaintextEpoch;
 use crate::group::Proposal::{Add, Remove, Update};
-use crate::hash::Mac;
-use crate::hpke::HPKECiphertext;
 use crate::membership_tag::{MembershipTag, MembershipTagError};
 use crate::message_signature::{MessageSignature, MessageSignatureError};
 use crate::protocol_version::ProtocolVersion;
-use crate::rand::SecureRng;
 use crate::secret_tree::KeyType;
-use crate::signature::{Signable, SignatureError, Signer, Verifier};
 use crate::transcript_hash::{ConfirmedTranscriptHash, InterimTranscriptHash, TranscriptHashError};
-use crate::tree_node::LeafIndex;
+use crate::tree_kem::node::LeafIndex;
 use cfg_if::cfg_if;
 use std::collections::HashMap;
 use std::convert::TryFrom;

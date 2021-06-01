@@ -1,4 +1,4 @@
-use crate::kdf::{HkdfSha256, HkdfSha512, Kdf, KdfError};
+use crate::crypto::kdf::{HkdfSha256, HkdfSha512, Kdf, KdfError};
 
 pub trait HpkeKdf: Kdf {
     /* draft-irtf-cfrg-hpke-07 section 4 Cryptographic Dependencies */
@@ -48,8 +48,8 @@ impl HpkeKdf for HkdfSha512 {}
 
 #[cfg(test)]
 pub mod test_util {
-    use crate::hpke_kdf::HpkeKdf;
-    use crate::kdf::{Kdf, KdfError, KdfId};
+    use crate::crypto::hpke_kdf::HpkeKdf;
+    use crate::crypto::kdf::{Kdf, KdfError, KdfId};
     use mockall::mock;
 
     mock! {

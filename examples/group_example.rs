@@ -1,14 +1,14 @@
-use mls::asym::AsymmetricKey;
 use mls::ciphersuite::CipherSuite;
 use mls::client::Client;
 use mls::credential::{BasicCredential, Credential};
+use mls::crypto::asym::AsymmetricKey;
+use mls::crypto::rand::OpenSslRng;
+use mls::crypto::signature::ed25519::EdDsa25519;
+use mls::crypto::signature::SignatureScheme;
 use mls::framing::MLSPlaintext;
 use mls::group::{Group, Welcome};
 use mls::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageGenerator};
-use mls::rand::OpenSslRng;
-use mls::ratchet_tree::RatchetTree;
-use mls::signature::ed25519::EdDsa25519;
-use mls::signature::SignatureScheme;
+use mls::tree_kem::RatchetTree;
 use std::time::Instant;
 
 fn generate_client(id: Vec<u8>) -> Client {

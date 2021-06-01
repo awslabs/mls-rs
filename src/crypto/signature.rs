@@ -1,5 +1,5 @@
-use crate::asym::{AsymmetricKey, AsymmetricKeyError};
-use crate::rand::SecureRng;
+use crate::crypto::asym::{AsymmetricKey, AsymmetricKeyError};
+use crate::crypto::rand::SecureRng;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use openssl::error::ErrorStack;
 use serde::ser::Error;
@@ -87,11 +87,11 @@ impl Verifier for PublicSignatureKey {
     ) -> Result<bool, SignatureError> {
         match self.signature_scheme {
             SignatureSchemeId::EcdsaSecp256r1Sha256 => {
-                let key = crate::asym::p256::PublicKey::from_bytes(&self.signature_key)?;
+                let key = crate::crypto::asym::p256::PublicKey::from_bytes(&self.signature_key)?;
                 key.verify(signature, data)
             }
             SignatureSchemeId::EcdsaSecp521r1Sha512 => {
-                let key = crate::asym::p521::PublicKey::from_bytes(&self.signature_key)?;
+                let key = crate::crypto::asym::p521::PublicKey::from_bytes(&self.signature_key)?;
                 key.verify(signature, data)
             }
             SignatureSchemeId::Ed25519 => {
@@ -194,10 +194,10 @@ mod ossl {
 
 pub mod p256 {
     use super::{Signable, SignatureError, SignatureScheme, Signer, Verifier};
-    use crate::asym::p256;
-    use crate::asym::AsymmetricKeyEngine;
-    use crate::rand::SecureRng;
-    use crate::signature::SignatureSchemeId;
+    use crate::crypto::asym::p256;
+    use crate::crypto::asym::AsymmetricKeyEngine;
+    use crate::crypto::rand::SecureRng;
+    use crate::crypto::signature::SignatureSchemeId;
     use openssl::hash::MessageDigest;
     use serde::{Deserialize, Serialize};
 
@@ -212,9 +212,9 @@ pub mod p256 {
 
     #[cfg(test)]
     mod test {
-        use crate::asym::{p256, AsymmetricKey};
-        use crate::rand::OpenSslRng;
-        use crate::signature::{SignatureScheme, Signer, Verifier};
+        use crate::crypto::asym::{p256, AsymmetricKey};
+        use crate::crypto::rand::OpenSslRng;
+        use crate::crypto::signature::{SignatureScheme, Signer, Verifier};
 
         #[test]
         //RFC 6979 Deterministic DSA and ECDSA
@@ -293,9 +293,9 @@ pub mod p256 {
 
 pub mod p521 {
     use super::{Signable, SignatureError, SignatureScheme, SignatureSchemeId, Signer, Verifier};
-    use crate::asym::p521;
-    use crate::asym::AsymmetricKeyEngine;
-    use crate::rand::SecureRng;
+    use crate::crypto::asym::p521;
+    use crate::crypto::asym::AsymmetricKeyEngine;
+    use crate::crypto::rand::SecureRng;
     use openssl::hash::MessageDigest;
     use serde::{Deserialize, Serialize};
 
@@ -310,9 +310,9 @@ pub mod p521 {
 
     #[cfg(test)]
     mod test {
-        use crate::asym::{p521, AsymmetricKey};
-        use crate::rand::OpenSslRng;
-        use crate::signature::{SignatureScheme, Signer, Verifier};
+        use crate::crypto::asym::{p521, AsymmetricKey};
+        use crate::crypto::rand::OpenSslRng;
+        use crate::crypto::signature::{SignatureScheme, Signer, Verifier};
 
         #[test]
         //RFC 6979 Deterministic DSA and ECDSA
@@ -391,9 +391,9 @@ pub mod p521 {
 }
 
 pub mod ed25519 {
-    use crate::asym::{AsymmetricKey, AsymmetricKeyError};
-    use crate::rand::SecureRng;
-    use crate::signature::{Signable, SignatureError, SignatureScheme, SignatureSchemeId};
+    use crate::crypto::asym::{AsymmetricKey, AsymmetricKeyError};
+    use crate::crypto::rand::SecureRng;
+    use crate::crypto::signature::{Signable, SignatureError, SignatureScheme, SignatureSchemeId};
     use ed25519_dalek::{Keypair, Signature, Signer, Verifier};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::convert::TryFrom;
@@ -417,7 +417,7 @@ pub mod ed25519 {
         }
     }
 
-    impl crate::asym::PublicKey for PublicKey {}
+    impl crate::crypto::asym::PublicKey for PublicKey {}
 
     impl super::Verifier for PublicKey {
         fn verify<T: Signable>(&self, signature: &[u8], data: &T) -> Result<bool, SignatureError> {
@@ -475,7 +475,7 @@ pub mod ed25519 {
         }
     }
 
-    impl crate::asym::SecretKey for SecretKey {}
+    impl crate::crypto::asym::SecretKey for SecretKey {}
 
     #[derive(Clone, Debug)]
     pub struct EdDsa25519 {
@@ -512,10 +512,10 @@ pub mod ed25519 {
 
     #[cfg(test)]
     mod test {
-        use crate::asym::AsymmetricKey;
-        use crate::rand::OpenSslRng;
-        use crate::signature::ed25519::EdDsa25519;
-        use crate::signature::{SignatureScheme, Signer, Verifier};
+        use crate::crypto::asym::AsymmetricKey;
+        use crate::crypto::rand::OpenSslRng;
+        use crate::crypto::signature::ed25519::EdDsa25519;
+        use crate::crypto::signature::{SignatureScheme, Signer, Verifier};
 
         #[test]
         fn test_ed25519_signature() {
@@ -591,9 +591,9 @@ pub mod ed25519 {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use crate::asym::{AsymmetricKey, AsymmetricKeyError};
-    use crate::rand::SecureRng;
-    use crate::signature::{
+    use crate::crypto::asym::{AsymmetricKey, AsymmetricKeyError};
+    use crate::crypto::rand::SecureRng;
+    use crate::crypto::signature::{
         Signable, SignatureError, SignatureScheme, SignatureSchemeId, Signer, Verifier,
     };
     use mockall::mock;
@@ -670,7 +670,7 @@ mod test {
     use super::test_utils::get_test_verifier;
     use super::test_utils::MockTestSignatureScheme;
     use super::SignatureSchemeId;
-    use crate::signature::SignatureScheme;
+    use crate::crypto::signature::SignatureScheme;
 
     #[test]
     fn test_signature_scheme() {
