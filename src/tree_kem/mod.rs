@@ -2,15 +2,15 @@ pub(crate) mod math;
 pub mod node;
 mod node_secrets;
 mod tree_hash;
+pub mod parent_hash;
 
 use crate::ciphersuite::CipherSuiteError;
 use crate::credential::Credential;
 use crate::crypto::hpke::HPKECiphertext;
 use crate::crypto::rand::SecureRng;
-use crate::crypto::signature::SignatureError;
+use crate::crypto::signature::{SignatureError, Signer};
 use crate::group::GroupSecrets;
 use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerator};
-use cfg_if::cfg_if;
 use math as tree_math;
 use math::TreeMathError;
 use node::{Leaf, LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
@@ -45,16 +45,30 @@ pub enum RatchetTreeError {
     NodeVecError(#[from] NodeVecError),
     #[error(transparent)]
     BincodeError(#[from] bincode::Error),
+    #[error(transparent)]
+    ParentHashError(#[from] ParentHashError),
+    #[error(transparent)]
+    ExtensionError(#[from] ExtensionError),
     #[error("invalid update path signature")]
     InvalidUpdatePathSignature,
     #[error("update path pub key mismatch")]
     PubKeyMismatch,
+    #[error("invalid leaf signature")]
+    InvalidLeafSignature,
+    #[error("tree hash mismatch")]
+    TreeHashMismatch,
     #[error("bad update: no suitable secret key")]
     UpdateErrorNoSecretKey,
     #[error("invalid lca, not found on direct path")]
     LcaNotFoundInDirectPath,
     #[error("bad state: missing own credential")]
     MissingSelfCredential,
+    #[error("update path missing parent hash")]
+    ParentHashNotFound,
+    #[error("update path parent hash mismatch")]
+    ParentHashMismatch,
+    #[error("invalid parent hash: {0}")]
+    InvalidParentHash(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -285,39 +299,34 @@ impl RatchetTree {
 
     pub fn get_key_package(&self, leaf: LeafIndex) -> Result<&KeyPackage, RatchetTreeError> {
         self.nodes
-            .get_leaf_node(leaf)
+            .borrow_as_leaf(leaf)
             .map(|l| &l.key_package)
             .map_err(|e| e.into())
     }
 
-    pub fn is_valid(&self, expected_tree_hash: &[u8]) -> Result<bool, RatchetTreeError> {
+    pub fn validate(&self, expected_tree_hash: &[u8]) -> Result<(), RatchetTreeError> {
         //Verify that the tree hash of the ratchet tree matches the tree_hash field in the GroupInfo.
         if self.tree_hash()? != expected_tree_hash {
-            return Ok(false);
+            return Err(RatchetTreeError::TreeHashMismatch);
         }
 
-        //For each non-empty parent node, verify that exactly one of the node's children are
-        // non-empty and have the hash of this node set as their parent_hash value (if the child
-        // is another parent) or has a parent_hash extension in the KeyPackage containing the same
-        // value (if the child is a leaf). If either of the node's children is empty, and in
-        // particular does not have a parent hash, then its respective children's
-        // values have to be considered instead.
-        // TODO: Parent hash calculation / validation
+        // Validate the parent hashes in the tree
+        self.validate_parent_hashes()?;
 
         // For each non-empty leaf node, verify the signature on the KeyPackage.
         for one_leaf in self.nodes.non_empty_leaves().map(|l| l.1) {
-            if !one_leaf.key_package.has_valid_signature() {
-                return Ok(false);
+            if !one_leaf.key_package.has_valid_signature()? {
+                return Err(RatchetTreeError::InvalidLeafSignature);
             }
         }
 
-        Ok(true)
+        Ok(())
     }
 
     fn update_unmerged(&mut self, index: LeafIndex) -> Result<(), RatchetTreeError> {
         // For a given leaf index, find parent nodes and add the leaf to the unmerged leaf
         self.nodes.direct_path(index)?.iter().for_each(|&i| {
-            if let Ok(p) = self.nodes.get_parent_node_mut(i) {
+            if let Ok(p) = self.nodes.borrow_as_parent_mut(i) {
                 p.unmerged_leaves.push(index)
             }
         });
@@ -394,12 +403,12 @@ impl RatchetTree {
         leaf_index: LeafIndex,
         key_package: KeyPackage,
     ) -> Result<(), RatchetTreeError> {
-        // Validate the validity of the key signature and lifetime
+        // Validate the validity of the key signature
         key_package.validate(SystemTime::now())?;
 
         // Update the leaf node
         self.nodes
-            .get_leaf_node_mut(NodeIndex::from(leaf_index))?
+            .borrow_as_leaf_mut(leaf_index)?
             .key_package = key_package;
 
         // Blank the intermediate nodes along the path from the sender's leaf to the root
@@ -410,7 +419,7 @@ impl RatchetTree {
     }
 
     pub fn get_credential(&self, leaf_index: LeafIndex) -> Result<Credential, RatchetTreeError> {
-        let leaf = self.nodes.get_leaf_node(leaf_index)?;
+        let leaf = self.nodes.borrow_as_leaf(leaf_index)?;
         Ok(leaf.key_package.credential.clone())
     }
 
@@ -454,11 +463,12 @@ impl RatchetTree {
         Ok((indexed_node_secrets, update_path_node))
     }
 
-    pub fn gen_update_path<RNG: SecureRng + 'static, KPG: KeyPackageGenerator>(
-        &self,
+    pub fn ratchet<RNG: SecureRng + 'static, KPG: KeyPackageGenerator, S: Signer>(
+        &mut self,
         private_key: &TreeKemPrivate,
         rng: &mut RNG,
         key_generator: &KPG,
+        signer: &S,
         context: &[u8],
         excluding: &[LeafIndex],
     ) -> Result<UpdatePathGeneration, RatchetTreeError> {
@@ -507,10 +517,27 @@ impl RatchetTree {
 
         let secret_path = SecretPath::from(node_secrets);
 
-        let update_path = UpdatePath {
+        let mut update_path = UpdatePath {
             leaf_key_package,
             nodes: node_updates,
         };
+
+        // Apply the new update path to the tree
+        self.apply_update_path(private_key.self_index, &update_path)?;
+
+        // Apply the parent hash updates to the tree
+        let leaf_parent_hash = self.update_parent_hashes(
+            private_key.self_index,
+            None,
+        )?;
+
+        // Update the leaf in the tree by applying the parent hash and signing the package
+        let leaf = self.nodes.borrow_as_leaf_mut(private_key.self_index)?;
+        leaf.key_package.extensions.set_extension(ParentHashExt::from(leaf_parent_hash))?;
+        leaf.key_package.signature = signer.sign(&leaf.key_package)?;
+
+        // Overwrite the key package in the update path with the signed version
+        update_path.leaf_key_package = leaf.key_package.clone();
 
         Ok(UpdatePathGeneration {
             update_path,
@@ -546,7 +573,7 @@ impl RatchetTree {
 
     fn update_node(&mut self, pub_key: Vec<u8>, index: NodeIndex) -> Result<(), RatchetTreeError> {
         self.nodes
-            .get_or_fill_parent_node(index, &pub_key)
+            .borrow_or_fill_node_as_parent(index, &pub_key)
             .map_err(|e| e.into())
             .map(|p| {
                 p.public_key = pub_key;
@@ -554,17 +581,14 @@ impl RatchetTree {
             })
     }
 
-    pub fn apply_update_path(
+    fn apply_update_path(
         &mut self,
         sender: LeafIndex,
         update_path: &UpdatePath,
     ) -> Result<(), RatchetTreeError> {
-        // Verify the signature on the key package
-        update_path.leaf_key_package.validate(SystemTime::now())?;
-
         // Install the new leaf node
         self.nodes
-            .get_leaf_node_mut(NodeIndex::from(sender))
+            .borrow_as_leaf_mut(sender)
             .map(|l| {
                 l.key_package = update_path.leaf_key_package.clone();
             })?;
@@ -576,17 +600,36 @@ impl RatchetTree {
             .zip(self.nodes.direct_path(sender)?)
             .try_for_each(|(one_node, node_index)| {
                 self.update_node(one_node.public_key.clone(), node_index)
-            })
+            })?;
+
+        Ok(())
+    }
+
+    pub fn apply_pending_update(
+        &mut self,
+        update_path_generation: &UpdatePathGeneration
+    ) -> Result<(), RatchetTreeError> {
+        let sender = update_path_generation.secrets.private_key.self_index;
+        self.apply_update_path(sender, &update_path_generation.update_path)?;
+
+        // Verify the parent hash of the new sender leaf node and update the parent hash values
+        // in the local tree
+        self.update_parent_hashes(sender, Some(&update_path_generation.update_path))?;
+
+        Ok(())
     }
 
     pub fn refresh_private_key(
-        &self,
+        &mut self,
         private_key: TreeKemPrivate,
         sender: LeafIndex,
         update_path: &UpdatePath,
         added_leaves: Vec<LeafIndex>,
         context: &[u8],
     ) -> Result<TreeSecrets, RatchetTreeError> {
+        // Verify the signature on the key package
+        update_path.leaf_key_package.validate(SystemTime::now())?;
+
         // Exclude newly added leaf indexes
         let excluding = added_leaves
             .iter()
@@ -655,6 +698,12 @@ impl RatchetTree {
                 },
             )?;
 
+        self.apply_update_path(sender, update_path)?;
+
+        // Verify the parent hash of the new sender leaf node and update the parent hash values
+        // in the local tree
+        self.update_parent_hashes(sender, Some(update_path))?;
+
         Ok(tree_secrets)
     }
 }
@@ -678,13 +727,15 @@ pub(crate) mod test {
     use crate::ciphersuite::KemKeyPair;
     use crate::credential::{BasicCredential, CredentialConvertable};
     use crate::crypto::rand::test_rng::ZerosRng;
-    use crate::crypto::signature::test_utils::{MockTestSignatureScheme, MockVerifier};
-    use crate::extension::{Extension, ExtensionId, ExtensionList, ExtensionTrait, Lifetime};
+    use crate::crypto::signature::test_utils::{MockTestSignatureScheme, MockVerifier, MockSigner};
+    use crate::extension::{Extension, ExtensionId, ExtensionList, ExtensionTrait, LifetimeExt};
     use crate::key_package::test_util::MockKeyPackageGenerator;
     use crate::protocol_version::ProtocolVersion;
     use crate::tree_kem::node::{NodeTypeResolver, Parent};
     use std::collections::HashMap;
     use std::u64::MAX;
+    use crate::tree_kem::parent_hash::ParentHash;
+    use crate::crypto::hash::{Sha256, HashFunction};
 
     pub fn get_mock_cipher_suite() -> MockCipherSuite {
         let mut cipher_suite = MockCipherSuite::new();
@@ -730,7 +781,7 @@ pub(crate) mod test {
             });
         cipher_suite
             .expect_hash()
-            .returning_st(move |input| Ok(input.to_vec()));
+            .returning_st(move |input| Ok(Sha256::hash(input).unwrap()));
         cipher_suite
     }
 
@@ -760,7 +811,7 @@ pub(crate) mod test {
                     extension_id: ExtensionId::Capabilities,
                     data: vec![24u8; 2],
                 },
-                Lifetime {
+                LifetimeExt {
                     not_before: 0,
                     not_after: MAX,
                 }
@@ -879,7 +930,7 @@ pub(crate) mod test {
 
         tree.nodes[3] = Parent {
             public_key: vec![],
-            parent_hash: vec![],
+            parent_hash: ParentHash::empty(),
             unmerged_leaves: vec![],
         }
         .into();
@@ -920,7 +971,7 @@ pub(crate) mod test {
             .iter()
             .for_each(|&i| {
                 tree.nodes
-                    .get_or_fill_parent_node(i, &b"pub_key".to_vec())
+                    .borrow_or_fill_node_as_parent(i, &b"pub_key".to_vec())
                     .unwrap();
             });
 
@@ -929,7 +980,7 @@ pub(crate) mod test {
         tree.update_leaf(LeafIndex(0), updated_leaf.clone())
             .unwrap();
         assert_eq!(
-            tree.nodes.get_leaf_node(LeafIndex(0)).unwrap().key_package,
+            tree.nodes.borrow_as_leaf(LeafIndex(0)).unwrap().key_package,
             updated_leaf
         );
 
@@ -955,7 +1006,7 @@ pub(crate) mod test {
     }
 
     fn gen_path_update(
-        tree: &RatchetTree,
+        tree: &mut RatchetTree,
         private_key: &TreeKemPrivate,
         test_ctx: &[u8],
     ) -> (KeyPackage, UpdatePathGeneration) {
@@ -967,9 +1018,12 @@ pub(crate) mod test {
         kpg.expect_package_from_pub_key()
             .returning_st(move |_cipher_suite, _pub_key| Ok(test_leaf_clone.clone()));
 
+        let mut signer = MockSigner::new();
+        signer.expect_sign::<KeyPackage>().returning_st(move |input| Ok(input.hpke_init_key.clone()));
+
         // Create a new update path with corresponding private key
         let update_path = tree
-            .gen_update_path(&private_key, &mut ZerosRng, &kpg, &test_ctx, &vec![])
+            .ratchet(&private_key, &mut ZerosRng, &kpg, &signer, &test_ctx, &vec![])
             .unwrap();
 
         (test_leaf, update_path)
@@ -998,15 +1052,21 @@ pub(crate) mod test {
 
         let test_ctx = b"group_ctx".to_vec();
 
-        let (test_leaf, update_path) = gen_path_update(&tree, &private_key, &test_ctx);
-
-        // Apply the generated update path
-        tree.apply_update_path(LeafIndex(0), &update_path.update_path)
-            .unwrap();
+        let (test_leaf, update_path) = gen_path_update(&mut tree, &private_key, &test_ctx);
 
         // This test just exercises the code with basic sanity checking, actual algorithm
         // testing is done via integration tests
-        assert_eq!(update_path.update_path.leaf_key_package, test_leaf);
+        assert_eq!(update_path.update_path.leaf_key_package.hpke_init_key, test_leaf.hpke_init_key);
+        assert_eq!(
+            update_path.update_path
+                .leaf_key_package
+                .extensions
+                .get_parent_hash()
+                .unwrap()
+                .is_some(),
+            true
+        );
+
         assert_eq!(update_path.secrets.private_key.self_index, LeafIndex(0));
 
         let root_node = tree_math::root(tree.leaf_count());
@@ -1077,10 +1137,6 @@ pub(crate) mod test {
                 assert!(tree_secrets.secret_path.path_secrets.get(i).is_some());
             });
 
-        // Apply the public update path
-        receiver_tree
-            .apply_update_path(LeafIndex(0), &update_path.update_path)
-            .unwrap();
         assert_eq!(receiver_tree, tree)
     }
 
@@ -1096,12 +1152,19 @@ pub(crate) mod test {
                 nodes: vec![],
             },
             secrets: TreeSecrets {
-                private_key,
+                private_key: private_key.clone(),
                 secret_path: Default::default(),
             },
         };
 
-        let apply_res = tree.apply_update_path(LeafIndex(0), &invalid_update_path.update_path);
+        let apply_res = tree.refresh_private_key(
+            private_key,
+            LeafIndex(0),
+            &invalid_update_path.update_path,
+            vec![],
+            &[],
+        );
+
         assert_eq!(apply_res.is_err(), true);
         assert_eq!(tree, tree_copy);
     }

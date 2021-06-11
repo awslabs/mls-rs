@@ -2,6 +2,7 @@ use crate::ciphersuite::KemKeyPair;
 use crate::key_package::KeyPackage;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
+use crate::tree_kem::parent_hash::ParentHash;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::hash::Hash;
@@ -16,7 +17,7 @@ pub(crate) struct Leaf {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Parent {
     pub public_key: Vec<u8>,
-    pub parent_hash: Vec<u8>,
+    pub parent_hash: ParentHash,
     pub unmerged_leaves: Vec<LeafIndex>,
 }
 
@@ -24,7 +25,7 @@ impl From<KemKeyPair> for Parent {
     fn from(kp: KemKeyPair) -> Self {
         Self {
             public_key: kp.public_key,
-            parent_hash: vec![], // TODO: Parent hash calculations
+            parent_hash: ParentHash::empty(), // TODO: Parent hash calculations
             unmerged_leaves: vec![],
         }
     }
@@ -98,7 +99,7 @@ pub(crate) enum Node {
 }
 
 impl Node {
-    pub fn get_public_key(&self) -> &Vec<u8> {
+    pub fn get_public_key(&self) -> &[u8] {
         match self {
             Node::Parent(p) => &p.public_key,
             Node::Leaf(l) => &l.key_package.hpke_init_key,
@@ -220,6 +221,17 @@ impl NodeVec {
         self.len() / 2 + 1
     }
 
+    #[inline]
+    pub fn borrow_node(&self, index: NodeIndex) -> Result<&Option<Node>, NodeVecError> {
+        self.get(index).ok_or(NodeVecError::InvalidNodeIndex(index))
+    }
+
+    #[inline]
+    pub fn borrow_node_mut(&mut self, index: NodeIndex) -> Result<&mut Option<Node>, NodeVecError> {
+        self.get_mut(index)
+            .ok_or(NodeVecError::InvalidNodeIndex(index))
+    }
+
     pub fn empty_leaves(&mut self) -> impl Iterator<Item = (LeafIndex, &mut Option<Node>)> + '_ {
         // List of empty leaves from left to right
         self.iter_mut()
@@ -237,14 +249,35 @@ impl NodeVec {
             .filter_map(|(i, n)| n.as_leaf().ok().map(|l| (i, l)))
     }
 
+    pub fn non_empty_parents(&self) -> impl Iterator<Item = (NodeIndex, &Parent)> + '_ {
+        self.iter()
+            .enumerate()
+            .skip(1)
+            .step_by(2)
+            .map(|(i, n)| (i, n))
+            .filter_map(|(i, n)| n.as_parent().ok().map(|p| (i, p)))
+    }
+
+    #[inline]
     pub fn direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
         // Direct path from leaf to root
         index.direct_path(self.len() / 2 + 1)
     }
 
+    #[inline]
     pub fn copath(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
         // Co path from leaf to root
         index.copath(self.len() / 2 + 1)
+    }
+
+    #[inline]
+    pub fn is_blank(&self, index: NodeIndex) -> Result<bool, NodeVecError> {
+        self.borrow_node(index).and_then(|n| Ok(n.is_none()))
+    }
+
+    #[inline]
+    pub fn is_leaf(&self, index: NodeIndex) -> bool {
+        index % 2 == 0
     }
 
     // Blank a previously filled leaf node, and return the existing leaf
@@ -259,13 +292,11 @@ impl NodeVec {
     }
 
     pub fn blank_node(&mut self, node_index: NodeIndex) -> Result<Option<Node>, NodeVecError> {
-        self.get_mut(node_index)
-            .ok_or(NodeVecError::InvalidNodeIndex(node_index))
-            .and_then(|node| {
-                let res = node.clone();
-                *node = None;
-                Ok(res)
-            })
+        self.borrow_node_mut(node_index).and_then(|node| {
+            let res = node.clone();
+            *node = None;
+            Ok(res)
+        })
     }
 
     pub fn blank_direct_path(
@@ -295,46 +326,45 @@ impl NodeVec {
         }
     }
 
-    pub fn get_parent_node_mut(
+    pub fn borrow_as_parent(&self, node_index: NodeIndex) -> Result<&Parent, NodeVecError> {
+        self.borrow_node(node_index).and_then(|n| n.as_parent())
+    }
+
+    pub fn borrow_as_parent_mut(
         &mut self,
         node_index: NodeIndex,
     ) -> Result<&mut Parent, NodeVecError> {
-        self.get_mut(node_index)
-            .ok_or(NodeVecError::InvalidNodeIndex(node_index))
+        self.borrow_node_mut(node_index)
             .and_then(|n| n.as_parent_mut())
     }
 
-    pub fn get_leaf_node_mut(&mut self, node_index: NodeIndex) -> Result<&mut Leaf, NodeVecError> {
-        self.get_mut(node_index)
-            .ok_or(NodeVecError::InvalidNodeIndex(node_index))
+    pub fn borrow_as_leaf_mut(&mut self, index: LeafIndex) -> Result<&mut Leaf, NodeVecError> {
+        let node_index = NodeIndex::from(index);
+        self.borrow_node_mut(node_index)
             .and_then(|n| n.as_leaf_mut())
     }
 
-    pub fn get_leaf_node(&self, leaf_index: LeafIndex) -> Result<&Leaf, NodeVecError> {
-        let node_index = NodeIndex::from(leaf_index);
-        self.get(node_index)
-            .ok_or(NodeVecError::InvalidNodeIndex(node_index))
-            .and_then(|n| n.as_leaf())
+    pub fn borrow_as_leaf(&self, index: LeafIndex) -> Result<&Leaf, NodeVecError> {
+        let node_index = NodeIndex::from(index);
+        self.borrow_node(node_index).and_then(|n| n.as_leaf())
     }
 
-    pub fn get_or_fill_parent_node(
+    pub fn borrow_or_fill_node_as_parent(
         &mut self,
         node_index: NodeIndex,
         public_key: &[u8],
     ) -> Result<&mut Parent, NodeVecError> {
-        self.get_mut(node_index)
-            .ok_or(NodeVecError::InvalidNodeIndex(node_index))
-            .and_then(|n| {
-                if n.is_none() {
-                    *n = Parent {
-                        public_key: public_key.to_vec(),
-                        parent_hash: vec![], // TODO Parent hash
-                        unmerged_leaves: vec![],
-                    }
-                    .into();
+        self.borrow_node_mut(node_index).and_then(|n| {
+            if n.is_none() {
+                *n = Parent {
+                    public_key: public_key.to_vec(),
+                    parent_hash: ParentHash::empty(),
+                    unmerged_leaves: vec![],
                 }
-                n.as_parent_mut()
-            })
+                .into();
+            }
+            n.as_parent_mut()
+        })
     }
 
     pub fn get_resolution_index(&self, index: NodeIndex) -> Result<Vec<NodeIndex>, NodeVecError> {
@@ -363,7 +393,8 @@ impl NodeVec {
                     match node {
                         Node::Parent(parent) => {
                             let mut ret = vec![index];
-                            ret.extend(parent.unmerged_leaves.iter().map(NodeIndex::from));
+                            let unmerged = parent.unmerged_leaves.iter().map(NodeIndex::from);
+                            ret.extend(unmerged);
                             Ok(ret)
                         }
                         Node::Leaf(_) => Ok(vec![index]),
@@ -383,11 +414,7 @@ impl NodeVec {
         self.get_resolution_index(node_index)?
             .iter()
             .filter(|i| !excluding.contains(i))
-            .map(|&i| {
-                self.get(i)
-                    .ok_or(NodeVecError::InvalidNodeIndex(i))
-                    .and_then(|n| n.as_non_empty())
-            })
+            .map(|&i| self.borrow_node(i).and_then(|n| n.as_non_empty()))
             .collect()
     }
 
@@ -410,7 +437,7 @@ impl NodeVec {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use super::*;
     use crate::ciphersuite::test_util::MockCipherSuite;
     use crate::credential::{BasicCredential, CredentialConvertable};
@@ -443,7 +470,7 @@ mod test {
         }
     }
 
-    fn get_test_node_vec() -> NodeVec {
+    pub(crate) fn get_test_node_vec() -> NodeVec {
         let nodes = [
             Leaf {
                 key_package: get_test_key_package(b"A".to_vec()),
@@ -458,7 +485,7 @@ mod test {
             .into(),
             Parent {
                 public_key: b"CD".to_vec(),
-                parent_hash: vec![],
+                parent_hash: ParentHash::empty(),
                 unmerged_leaves: vec![LeafIndex(2)],
             }
             .into(),
@@ -475,7 +502,7 @@ mod test {
     fn node_key_getters() {
         let test_node_parent: Node = Parent {
             public_key: b"pub".to_vec(),
-            parent_hash: vec![],
+            parent_hash: ParentHash::empty(),
             unmerged_leaves: vec![],
         }
         .into();
@@ -526,19 +553,19 @@ mod test {
         let mut test_vec = get_test_node_vec();
 
         // If the node is a leaf it should fail
-        assert_eq!(test_vec.get_parent_node_mut(0).is_err(), true);
+        assert_eq!(test_vec.borrow_as_parent_mut(0).is_err(), true);
 
         // If the node index is out of range it should fail
-        assert_eq!(test_vec.get_parent_node_mut(test_vec.len()).is_err(), true);
+        assert_eq!(test_vec.borrow_as_parent_mut(test_vec.len()).is_err(), true);
 
         // Otherwise it should succeed
         let mut expected = Parent {
             public_key: b"CD".to_vec(),
-            parent_hash: vec![],
+            parent_hash: ParentHash::empty(),
             unmerged_leaves: vec![LeafIndex(2)],
         };
 
-        assert_eq!(test_vec.get_parent_node_mut(5).unwrap(), &mut expected);
+        assert_eq!(test_vec.borrow_as_parent_mut(5).unwrap(), &mut expected);
     }
 
     #[test]
@@ -552,7 +579,7 @@ mod test {
         let expected_5: Vec<Node> = [
             Parent {
                 public_key: b"CD".to_vec(),
-                parent_hash: vec![],
+                parent_hash: ParentHash::empty(),
                 unmerged_leaves: vec![LeafIndex(2)],
             }
             .into(),
@@ -572,7 +599,7 @@ mod test {
             .into(),
             Parent {
                 public_key: b"CD".to_vec(),
-                parent_hash: vec![],
+                parent_hash: ParentHash::empty(),
                 unmerged_leaves: vec![LeafIndex(2)],
             }
             .into(),
@@ -602,7 +629,7 @@ mod test {
 
         let expected_5: Vec<Node> = [Parent {
             public_key: b"CD".to_vec(),
-            parent_hash: vec![],
+            parent_hash: ParentHash::empty(),
             unmerged_leaves: vec![LeafIndex(2)],
         }
         .into()]
@@ -625,7 +652,7 @@ mod test {
                 [
                     Parent {
                         public_key: b"CD".to_vec(),
-                        parent_hash: vec![],
+                        parent_hash: ParentHash::empty(),
                         unmerged_leaves: vec![LeafIndex(2)],
                     }
                     .into(),
@@ -661,7 +688,7 @@ mod test {
                 3,
                 [Parent {
                     public_key: b"CD".to_vec(),
-                    parent_hash: vec![],
+                    parent_hash: ParentHash::empty(),
                     unmerged_leaves: vec![LeafIndex(2)],
                 }
                 .into()]
@@ -688,7 +715,7 @@ mod test {
         let mut test_vec2 = test_vec.clone();
 
         let expected = test_vec[5].as_parent_mut().unwrap();
-        let actual = test_vec2.get_or_fill_parent_node(5, &vec![]).unwrap();
+        let actual = test_vec2.borrow_or_fill_node_as_parent(5, &vec![]).unwrap();
 
         assert_eq!(actual, expected);
     }
@@ -699,11 +726,13 @@ mod test {
 
         let mut expected = Parent {
             public_key: vec![0u8; 4],
-            parent_hash: vec![],
+            parent_hash: ParentHash::empty(),
             unmerged_leaves: vec![],
         };
 
-        let actual = test_vec.get_or_fill_parent_node(1, &vec![0u8; 4]).unwrap();
+        let actual = test_vec
+            .borrow_or_fill_node_as_parent(1, &vec![0u8; 4])
+            .unwrap();
 
         assert_eq!(actual, &mut expected);
     }

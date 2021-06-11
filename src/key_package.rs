@@ -33,8 +33,10 @@ pub enum KeyPackageError {
     SerializationError(#[from] bincode::Error),
     #[error("invalid signature")]
     InvalidSignature,
+    #[error("key lifetime not found")]
+    MissingKeyLifetime,
     #[error("not within lifetime")]
-    InvalidKeyLifetime(),
+    InvalidKeyLifetime,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -72,22 +74,32 @@ impl Signable for KeyPackage {
 }
 
 impl KeyPackage {
-    pub fn has_valid_signature(&self) -> bool {
+    pub fn has_valid_signature(&self) -> Result<bool, KeyPackageError> {
         self.credential
             .verify(&self.signature, self)
-            .unwrap_or(false)
+            .map_err(KeyPackageError::from)
+    }
+
+    pub fn has_valid_lifetime(&self, time: SystemTime) -> Result<bool, KeyPackageError> {
+        self.extensions
+            .get_lifetime()?
+            .ok_or(KeyPackageError::MissingKeyLifetime)
+            .and_then(|l| {
+                l.within_lifetime(time)
+                    .map_err(KeyPackageError::from)
+            })
     }
 
     pub fn validate(&self, time: SystemTime) -> Result<(), KeyPackageError> {
-        if !self.has_valid_signature() {
+        if !self.has_valid_signature()? {
             return Err(KeyPackageError::InvalidSignature);
         }
 
-        if self.extensions.get_lifetime()?.within_lifetime(time)? {
-            Ok(())
-        } else {
-            Err(KeyPackageError::InvalidKeyLifetime())
+        if !self.has_valid_lifetime(time)? {
+            return Err(KeyPackageError::InvalidKeyLifetime);
         }
+
+        Ok(())
     }
 }
 
@@ -106,7 +118,8 @@ pub trait KeyPackageGenerator: Signer {
     ) -> Result<KeyPackageGeneration, KeyPackageError> {
         let kem_key_pair = cipher_suite.generate_kem_key_pair(rng)?;
 
-        let package = self.package_from_pub_key(cipher_suite, kem_key_pair.public_key)?;
+        let mut package = self.package_from_pub_key(cipher_suite, kem_key_pair.public_key)?;
+        package.signature = self.sign(&package)?;
 
         let key_package_hash = cipher_suite.hash(&bincode::serialize(&package)?)?;
 

@@ -87,6 +87,7 @@ mod test {
     use super::*;
     use crate::tree_kem::node::LeafIndex;
     use crate::tree_kem::test::{get_test_key_packages, get_test_tree};
+    use crate::tree_kem::parent_hash::ParentHash;
 
     // Sanity check test to verify the input to the hash function isn't changing between releases
     // This is done with a mock hash that returns its input as output
@@ -95,11 +96,9 @@ mod test {
         let test_tree = get_test_tree().0;
         let leaf = test_tree.nodes[0].as_leaf().unwrap();
         let hash = (0, Some(leaf)).get_hash(&test_tree).unwrap();
+
         let expected = hex!(
-            "0000000001ff2a0003000000000000006261720000000002000000000000\
-             0034320300000000000000666f6f42000200000000000000010002000000\
-             000000001818020010000000000000000000000000000000ffffffffffff\
-             ffff02000000000000002a2a"
+            "3f57a57f6fc7bee186e67bfdd8aa84431ad8406033bc31be14c8e86d543e570e"
         );
 
         assert_eq!(expected, hash)
@@ -111,7 +110,10 @@ mod test {
         test_tree.nodes[0] = None;
 
         let hash = (0, None::<&Leaf>).get_hash(&test_tree).unwrap();
-        let expected = hex!("0000000000");
+
+        let expected = hex!(
+            "8855508aade16ec573d21e6a485dfd0a7624085c1a14b5ecdd6485de0c6839a4"
+        );
 
         assert_eq!(expected, hash)
     }
@@ -128,7 +130,7 @@ mod test {
 
         let test_parent = Parent {
             public_key: vec![0u8; 2],
-            parent_hash: vec![1u8; 2],
+            parent_hash: ParentHash::from(vec![1u8; 2]),
             unmerged_leaves: vec![LeafIndex(2)],
         };
 
@@ -137,15 +139,7 @@ mod test {
         let hash = (1, Some(&test_parent)).get_hash(&test_tree).unwrap();
 
         let expected = hex!(
-            "010000000102000000000000000000020000000000000001010100000000\
-             000000020000000000000066000000000000000000000001ff2a00030000\
-             000000000062617200000000020000000000000034320300000000000000\
-             666f6f420002000000000000000100020000000000000018180200100000\
-             00000000000000000000000000ffffffffffffffff02000000000000002a\
-             2a65000000000000000200000001ff2a000400000000000000666f6f4100\
-             000000020000000000000034320100000000000000414200020000000000\
-             000001000200000000000000181802001000000000000000000000000000\
-             0000ffffffffffffffff02000000000000002a2a"
+            "413c6bfce4aae0ca5ea11e0717c1776e17d3c7222973abc502f818c71fd0c9b6"
         );
 
         assert_eq!(hash, expected)
@@ -160,15 +154,9 @@ mod test {
             .unwrap();
 
         let hash = (1, None::<&Parent>).get_hash(&test_tree).unwrap();
+
         let expected = hex!(
-            "010000000066000000000000000000000001ff2a0003000000000000006\
-             2617200000000020000000000000034320300000000000000666f6f4200\
-             02000000000000000100020000000000000018180200100000000000000\
-             00000000000000000ffffffffffffffff02000000000000002a2a650000\
-             00000000000200000001ff2a000400000000000000666f6f41000000000\
-             20000000000000034320100000000000000414200020000000000000001\
-             0002000000000000001818020010000000000000000000000000000000f\
-             fffffffffffffff02000000000000002a2a"
+            "6ab23496612c266ccf7222bb7e3e21255574393e91d89ba0efd9f9147d5851d6"
         );
         assert_eq!(hash, expected)
     }
@@ -186,14 +174,7 @@ mod test {
         let hash = test_tree.tree_hash().unwrap();
 
         let expected = hex!(
-            "010000000066000000000000000000000001ff2a00030000000000000062\
-             617200000000020000000000000034320300000000000000666f6f420002\
-             000000000000000100020000000000000018180200100000000000000000\
-             00000000000000ffffffffffffffff02000000000000002a2a6500000000\
-             0000000200000001ff2a000400000000000000666f6f4100000000020000\
-             000000000034320100000000000000414200020000000000000001000200\
-             0000000000001818020010000000000000000000000000000000ffffffff\
-             ffffffff02000000000000002a2a"
+            "6ab23496612c266ccf7222bb7e3e21255574393e91d89ba0efd9f9147d5851d6"
         );
 
         assert_eq!(hash, expected)

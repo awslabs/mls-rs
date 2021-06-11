@@ -46,7 +46,7 @@ fn test_create(cipher_suite: CipherSuite, update_path: bool) {
         .unwrap();
 
     let commit = test_group
-        .commit_proposals(add_members, update_path, &mut rng, &alice)
+        .commit_proposals(add_members, update_path, &mut rng, &alice, &alice)
         .unwrap();
 
     // Upon server confirmation, alice applies the commit to her own state
@@ -106,7 +106,7 @@ fn get_test_group(cipher_suite: CipherSuite, num_participants: usize) -> TestGro
 
     let mut test_group = Group::new(&mut OpenSslRng, b"group".to_vec(), alice_key.clone()).unwrap();
 
-    // Generate 10 random clients that will be members of the group
+    // Generate random clients that will be members of the group
     let clients = (0..num_participants)
         .into_iter()
         .map(|_| generate_client(b"test".to_vec()))
@@ -132,7 +132,7 @@ fn get_test_group(cipher_suite: CipherSuite, num_participants: usize) -> TestGro
         .unwrap();
 
     let commit = test_group
-        .commit_proposals(add_members_proposal, true, &mut OpenSslRng, &alice)
+        .commit_proposals(add_members_proposal, true, &mut OpenSslRng, &alice, &alice)
         .unwrap();
 
     let events = test_group.process_pending_commit(commit.clone()).unwrap();
@@ -181,6 +181,7 @@ fn test_path_updates(cipher_suite: CipherSuite) {
                 vec![],
                 true,
                 &mut OpenSslRng,
+                &test_group_data.receiver_clients[i],
                 &test_group_data.receiver_clients[i],
             )
             .unwrap();
@@ -256,6 +257,7 @@ fn test_update_proposals(cipher_suite: CipherSuite) {
                 true,
                 &mut OpenSslRng,
                 &test_group_data.receiver_clients[i + 1],
+                &test_group_data.receiver_clients[i + 1],
             )
             .unwrap();
 
@@ -314,6 +316,7 @@ fn test_remove_proposals(cipher_suite: CipherSuite) {
                 vec![removal],
                 true,
                 &mut OpenSslRng,
+                &test_group_data.creator,
                 &test_group_data.creator,
             )
             .unwrap();

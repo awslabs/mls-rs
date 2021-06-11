@@ -114,6 +114,21 @@ impl ExtensionTrait for LifetimeExt {
     const IDENTIFIER: ExtensionId = ExtensionId::Lifetime;
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ParentHashExt {
+    pub parent_hash: ParentHash
+}
+
+impl From<ParentHash> for ParentHashExt {
+    fn from(parent_hash: ParentHash) -> Self {
+        Self { parent_hash }
+    }
+}
+
+impl ExtensionTrait for ParentHashExt {
+    const IDENTIFIER: ExtensionId = ExtensionId::ParentHash;
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Extension {
     pub extension_id: ExtensionId,

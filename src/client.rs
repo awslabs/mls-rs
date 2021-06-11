@@ -72,18 +72,14 @@ impl KeyPackageGenerator for Client {
         cipher_suite: &CipherSuite,
         pub_key: Vec<u8>,
     ) -> Result<KeyPackage, KeyPackageError> {
-        let mut package = KeyPackage {
+        Ok(KeyPackage {
             version: cipher_suite.get_protocol_version(),
             cipher_suite: cipher_suite.clone(),
             hpke_init_key: pub_key,
             credential: self.credential.clone(),
             extensions: self.get_extensions()?,
             signature: vec![],
-        };
-
-        package.signature = self.sign(&package)?;
-
-        Ok(package)
+        })
     }
 }
 

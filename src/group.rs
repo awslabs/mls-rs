@@ -258,10 +258,10 @@ pub enum GroupError {
     InvalidTreeKemPrivateKey,
     #[error("key package not found, unable to process")]
     WelcomeKeyPackageNotFound,
-    #[error("ratchet tree integrity failure")]
-    InvalidRatchetTree,
     #[error("invalid participant {0}")]
     InvalidGroupParticipant(u32),
+    #[error("self not found in ratchet tree")]
+    TreeMissingSelfUser,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -394,8 +394,9 @@ impl PartialEq for Group {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PendingCommit {
     pub plaintext: MLSPlaintext,
-    update_path_data: Option<UpdatePathGeneration>,
     pub welcome: Option<Welcome>,
+    update_path_data: Option<UpdatePathGeneration>,
+
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -501,9 +502,7 @@ impl Group {
         }
 
         // Verify the integrity of the ratchet tree
-        if !public_tree.is_valid(&group_info.tree_hash)? {
-            return Err(GroupError::InvalidRatchetTree);
-        }
+        public_tree.validate(&group_info.tree_hash)?;
 
         // Identify a leaf in the tree array (any even-numbered node) whose key_package field is
         // identical to the the KeyPackage. If no such field exists, return an error. Let index
@@ -511,7 +510,7 @@ impl Group {
         // node in the tree array divided by two.
         let self_index = public_tree
             .find_leaf(&key_package.key_package)
-            .ok_or(GroupError::InvalidRatchetTree)?;
+            .ok_or(GroupError::TreeMissingSelfUser)?;
 
         // Construct a new group state using the information in the GroupInfo object. The new
         // member's position in the tree is index, as defined above. In particular, the confirmed
@@ -606,9 +605,9 @@ impl Group {
             .iter()
             .filter_map(|p| p.proposal.as_update().map(|u| (p.sender, u)));
 
-        for (sender, update) in updates {
+        for (update_sender, update) in updates {
             // Update the leaf in the provisional tree
-            provisional_tree.update_leaf(sender, update.key_package.clone())?;
+            provisional_tree.update_leaf(update_sender, update.key_package.clone())?;
 
             let key_package_hash = self
                 .cipher_suite
@@ -714,12 +713,13 @@ impl Group {
         Ok(plaintext)
     }
 
-    pub fn commit_proposals<RNG: SecureRng + 'static, KPG: KeyPackageGenerator>(
+    pub fn commit_proposals<RNG: SecureRng + 'static, KPG: KeyPackageGenerator, S: Signer>(
         &self,
         proposals: Vec<Proposal>,
         update_path: bool,
         rng: &mut RNG,
         key_package_generator: &KPG,
+        signer: &S,
     ) -> Result<PendingCommit, GroupError> {
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
@@ -766,18 +766,14 @@ impl Group {
                 // GroupContext object. The leaf_key_package for this UpdatePath must have a
                 // parent_hash extension.
                 let context_bytes = bincode::serialize(&self.context)?;
-                let update_path = provisional_state.public_tree.gen_update_path(
+                let update_path = provisional_state.public_tree.ratchet(
                     &self.private_tree,
                     rng,
                     key_package_generator,
+                    signer,
                     &context_bytes,
                     &provisional_state.added_leaves,
                 )?;
-
-                // Update the tree in the provisional state by applying the direct path
-                provisional_state
-                    .public_tree
-                    .apply_update_path(self.private_tree.self_index, &update_path.update_path)?;
 
                 Some(update_path)
             }
@@ -973,7 +969,7 @@ impl Group {
         if self
             .public_tree
             .nodes
-            .get_leaf_node(LeafIndex(index as usize))
+            .borrow_as_leaf(LeafIndex(index as usize))
             .is_err()
         {
             return Err(GroupError::InvalidGroupParticipant(index));
@@ -1268,6 +1264,7 @@ impl Group {
             Some(update_path) => {
                 // Receiving from yourself is a special case, we already have the new private keys
                 let secrets = if let Some(pending) = local_pending {
+                    provisional_state.public_tree.apply_pending_update(&pending)?;
                     Ok(pending.secrets)
                 } else {
                     provisional_state.public_tree.refresh_private_key(
@@ -1279,9 +1276,6 @@ impl Group {
                     )
                 }?;
 
-                provisional_state
-                    .public_tree
-                    .apply_update_path(sender, update_path)?;
                 Some(secrets)
             }
         };
