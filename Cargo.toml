@@ -23,15 +23,7 @@ cfg-if = "^1.0"
 serde_json = "^1.0"
 mockall = "^0.9"
 hex = "^0.4.2"
-criterion = "^0.3.4"
 
 [[test]]
 name = "integration"
 path = "tests/group_tests.rs"
-
-[[bench]]
-name = "group_benchmark"
-harness = false
-
-[[example]]
-name = "group_example"
