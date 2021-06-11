@@ -56,7 +56,7 @@ mod test {
             });
         cipher_suite
             .expect_clone()
-            .returning_st(move || get_mock_cipher_suite());
+            .returning_st(get_mock_cipher_suite);
         cipher_suite
     }
 
@@ -88,25 +88,16 @@ mod test {
 
         let confirmation_tag = ConfirmationTag::create(&epoch_a, &confirmed_hash_a).unwrap();
 
-        assert_eq!(
-            confirmation_tag
-                .matches(&epoch_a, &confirmed_hash_a)
-                .unwrap(),
-            true
-        );
+        assert!(confirmation_tag
+            .matches(&epoch_a, &confirmed_hash_a)
+            .unwrap());
 
-        assert_eq!(
-            confirmation_tag
-                .matches(&epoch_b, &confirmed_hash_a)
-                .unwrap(),
-            false
-        );
+        assert!(!confirmation_tag
+            .matches(&epoch_b, &confirmed_hash_a)
+            .unwrap());
 
-        assert_eq!(
-            confirmation_tag
-                .matches(&epoch_a, &confirmed_hash_b)
-                .unwrap(),
-            false
-        );
+        assert!(!confirmation_tag
+            .matches(&epoch_a, &confirmed_hash_b)
+            .unwrap());
     }
 }

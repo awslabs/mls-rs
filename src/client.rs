@@ -2,7 +2,9 @@ use crate::ciphersuite::CipherSuiteError;
 use crate::credential::Credential;
 use crate::crypto::asym::AsymmetricKey;
 use crate::crypto::signature::{ed25519, Signable, SignatureError, SignatureSchemeId, Signer};
-use crate::extension::{CapabilitiesExt, ExtensionError, ExtensionList, ExtensionTrait, LifetimeExt};
+use crate::extension::{
+    CapabilitiesExt, ExtensionError, ExtensionList, ExtensionTrait, LifetimeExt,
+};
 use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGenerator};
 use cfg_if::cfg_if;
 use serde::{Deserialize, Serialize};
@@ -184,7 +186,7 @@ mod test {
         let mut mock_cipher_suite = get_mock_cipher_suite();
         mock_cipher_suite
             .expect_clone()
-            .returning_st(move || get_mock_cipher_suite());
+            .returning_st(get_mock_cipher_suite);
         mock_cipher_suite
             .expect_hash()
             .returning_st(move |value| Ok(value.to_vec()));

@@ -60,7 +60,7 @@ pub mod test_rng {
         }
 
         fn fill_bytes(&mut self, dest: &mut [u8]) {
-            if let Err(_) = self.try_fill_bytes(dest) {
+            if self.try_fill_bytes(dest).is_err() {
                 panic!("OpenSSL RNG critical error!")
             }
         }

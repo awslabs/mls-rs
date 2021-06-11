@@ -759,8 +759,8 @@ mod test {
         );
 
         // Verify that incorrect byte counts result in non keys
-        assert_eq!(SK::from_bytes(&vec![0u8; 1]).is_err(), true);
-        assert_eq!(PK::from_bytes(&vec![0u8; 1]).is_err(), true);
+        assert!(SK::from_bytes(&[0u8; 1]).is_err());
+        assert!(PK::from_bytes(&[0u8; 1]).is_err());
     }
 
     pub fn run_pri_to_pub_test<PK: PublicKey, SK: SecretKey, E: EcdhEngine<PK = PK, SK = SK>>(

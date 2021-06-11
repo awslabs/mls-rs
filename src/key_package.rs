@@ -84,10 +84,7 @@ impl KeyPackage {
         self.extensions
             .get_lifetime()?
             .ok_or(KeyPackageError::MissingKeyLifetime)
-            .and_then(|l| {
-                l.within_lifetime(time)
-                    .map_err(KeyPackageError::from)
-            })
+            .and_then(|l| l.within_lifetime(time).map_err(KeyPackageError::from))
     }
 
     pub fn validate(&self, time: SystemTime) -> Result<(), KeyPackageError> {

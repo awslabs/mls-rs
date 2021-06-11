@@ -225,6 +225,11 @@ pub mod test_util {
     use crate::crypto::hpke_kdf::test_util::MockTestHpkeKdf;
     use mockall::mock;
 
+    type MockKeyKeypair = (
+        <<MockTestKem as Kem>::E as AsymmetricKeyEngine>::PK,
+        <<MockTestKem as Kem>::E as AsymmetricKeyEngine>::SK,
+    );
+
     mock! {
         pub TestKem {}
         impl Kem for TestKem {
@@ -245,15 +250,10 @@ pub mod test_util {
                 secret_key: &<<MockTestKem as Kem>::E as AsymmetricKeyEngine>::SK,
             ) -> Result<Vec<u8>, KemError>;
 
-            fn generate_kem_key_pair<RNG: SecureRng + 'static>(rng: &mut RNG) -> Result<(
-                <<MockTestKem as Kem>::E as AsymmetricKeyEngine>::PK,
-                <<MockTestKem as Kem>::E as AsymmetricKeyEngine>::SK
-            ), AsymmetricKeyError>;
+            fn generate_kem_key_pair<RNG: SecureRng + 'static>(rng: &mut RNG)
+                -> Result<MockKeyKeypair, AsymmetricKeyError>;
 
-            fn derive_key_pair(ikm: &[u8],) -> Result<(
-                <<MockTestKem as Kem>::E as AsymmetricKeyEngine>::PK,
-                <<MockTestKem as Kem>::E as AsymmetricKeyEngine>::SK,
-            ), AsymmetricKeyError>;
+            fn derive_key_pair(ikm: &[u8],) -> Result<MockKeyKeypair, AsymmetricKeyError>;
         }
     }
 }

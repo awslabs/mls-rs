@@ -1,13 +1,13 @@
 use crate::ciphersuite::CipherSuite;
 use crate::extension::ExtensionError::IncorrectExtensionType;
 use crate::protocol_version::ProtocolVersion;
+use crate::tree_kem::parent_hash::ParentHash;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
 use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 use thiserror::Error;
-use crate::tree_kem::parent_hash::ParentHash;
 
 #[derive(Error, Debug)]
 pub enum ExtensionError {
@@ -116,7 +116,7 @@ impl ExtensionTrait for LifetimeExt {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ParentHashExt {
-    pub parent_hash: ParentHash
+    pub parent_hash: ParentHash,
 }
 
 impl From<ParentHash> for ParentHashExt {
@@ -164,12 +164,15 @@ impl ExtensionList {
     }
 
     pub fn set_extension<T: ExtensionTrait>(&mut self, ext: T) -> Result<(), ExtensionError> {
-        match self
-            .iter_mut()
-            .find(|v| v.extension_id == T::IDENTIFIER)
-        {
-            None => Ok(self.push(ext.to_extension()?)),
-            Some(existing) => Ok(*existing = ext.to_extension()?)
+        match self.iter_mut().find(|v| v.extension_id == T::IDENTIFIER) {
+            None => {
+                self.push(ext.to_extension()?);
+                Ok(())
+            }
+            Some(existing) => {
+                *existing = ext.to_extension()?;
+                Ok(())
+            }
         }
     }
 
@@ -230,7 +233,8 @@ mod tests {
         let as_extension = test_extension.to_extension().expect("serialization error");
         assert_eq!(as_extension.extension_id, ExtensionId::Capabilities);
 
-        let restored = CapabilitiesExt::from_extension(as_extension).expect("deserialization error");
+        let restored =
+            CapabilitiesExt::from_extension(as_extension).expect("deserialization error");
         assert_eq!(restored.protocol_versions, test_protocol_versions);
         assert_eq!(restored.ciphersuites, test_ciphersuites);
         assert_eq!(restored.extensions, test_extensions);
@@ -257,11 +261,11 @@ mod tests {
         let bad_data = vec![255u8; 32];
         let test_extension = Extension {
             extension_id: ExtensionId::KeyId,
-            data: bad_data.clone(),
+            data: bad_data,
         };
         let key_id: Result<KeyId<CapabilitiesExt>, ExtensionError> =
             KeyId::from_extension(test_extension);
-        assert_eq!(key_id.is_err(), true);
+        assert!(key_id.is_err());
     }
 
     #[test]
@@ -270,6 +274,6 @@ mod tests {
             extension_id: ExtensionId::KeyId,
             data: vec![0u8; 32],
         };
-        assert_eq!(CapabilitiesExt::from_extension(test_extension).is_err(), true);
+        assert!(CapabilitiesExt::from_extension(test_extension).is_err());
     }
 }

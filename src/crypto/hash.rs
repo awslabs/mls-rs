@@ -46,6 +46,7 @@ pub(crate) mod ossl {
             }
 
             impl $name {
+                #[allow(dead_code)]
                 fn new() -> Result<Self, HashError> {
                     Ok(Self {
                         hasher: Hasher::new($digest)?,

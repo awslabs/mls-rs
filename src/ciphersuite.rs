@@ -118,7 +118,7 @@ pub trait CipherSuiteType {
             ExpandType::AeadNonce => Self::AEAD::NONCE_LEN,
         };
 
-        Self::KDF::expand(&secret, info, len).map_err(|e| e.into())
+        Self::KDF::expand(secret, info, len).map_err(|e| e.into())
     }
 
     fn expand_with_label(
@@ -184,7 +184,7 @@ pub trait CipherSuiteType {
         secret_key: &[u8],
         aad: &[u8],
     ) -> Result<Vec<u8>, CipherSuiteError> {
-        let secret_key = Self::import_secret_key(&secret_key)?;
+        let secret_key = Self::import_secret_key(secret_key)?;
         Self::HPKE::open_basic(ct, &secret_key, &[], aad).map_err(|e| e.into())
     }
 
@@ -743,7 +743,7 @@ mod test {
         let expected_public = vec![42u8; 10];
         let expected_secret = vec![0u8; 10];
 
-        let res = test_util::MockTestCipherSuiteType::derive_kem_key_pair(&expected_public.clone())
+        let res = test_util::MockTestCipherSuiteType::derive_kem_key_pair(&expected_public)
             .expect("failed key pair gen");
 
         assert_eq!(res.public_key, expected_public);
@@ -1118,48 +1118,37 @@ mod test {
 
         assert_eq!(
             CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519
-                .expand_with_label(&secret, &label, &context, e_type.clone())
+                .expand_with_label(&secret, label, &context, e_type)
                 .unwrap(),
             Mls10DhKem25519Aes128GcmSha256Ed25519::expand_with_label(
-                &secret,
-                &label,
-                &context,
-                e_type.clone()
+                &secret, label, &context, e_type
             )
             .unwrap()
         );
 
         assert_eq!(
             CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256
-                .expand_with_label(&secret, &label, &context, e_type.clone())
+                .expand_with_label(&secret, label, &context, e_type)
                 .unwrap(),
-            Mls10DhKemP256Aes128GcmSha256P256::expand_with_label(
-                &secret,
-                &label,
-                &context,
-                e_type.clone()
-            )
-            .unwrap()
+            Mls10DhKemP256Aes128GcmSha256P256::expand_with_label(&secret, label, &context, e_type)
+                .unwrap()
         );
 
         assert_eq!(
             CipherSuite::Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519
-                .expand_with_label(&secret, &label, &context, e_type.clone())
+                .expand_with_label(&secret, label, &context, e_type)
                 .unwrap(),
             Mls10DhKem25519ChaChaPoly1305Sha256Ed25519::expand_with_label(
-                &secret,
-                &label,
-                &context,
-                e_type.clone()
+                &secret, label, &context, e_type
             )
             .unwrap()
         );
 
         assert_eq!(
             CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521
-                .expand_with_label(&secret, &label, &context, e_type.clone())
+                .expand_with_label(&secret, label, &context, e_type)
                 .unwrap(),
-            Mls10DhKemP521Aes256GcmSha512P521::expand_with_label(&secret, &label, &context, e_type)
+            Mls10DhKemP521Aes256GcmSha512P521::expand_with_label(&secret, label, &context, e_type)
                 .unwrap()
         );
     }

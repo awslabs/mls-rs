@@ -175,10 +175,7 @@ struct ProvisionalState {
 
 impl ProvisionalState {
     fn self_removed(&self, self_index: LeafIndex) -> bool {
-        self.removed_leaves
-            .iter()
-            .find(|(i, _)| *i == self_index)
-            .is_some()
+        self.removed_leaves.iter().any(|(i, _)| *i == self_index)
     }
 
     fn get_events(&self) -> Result<Vec<Event>, GroupError> {
@@ -396,7 +393,6 @@ pub struct PendingCommit {
     pub plaintext: MLSPlaintext,
     pub welcome: Option<Welcome>,
     update_path_data: Option<UpdatePathGeneration>,
-
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -437,7 +433,7 @@ impl Group {
         .key_schedule;
 
         Ok(Self {
-            cipher_suite: cipher_suite.clone(),
+            cipher_suite,
             public_tree,
             private_tree,
             context,
@@ -616,7 +612,7 @@ impl Group {
             // Update the leaf in the private tree if this is our update
             if let Some(key_generation) = self.pending_updates.get(&key_package_hash) {
                 provisional_private_tree
-                    .update_leaf(provisional_tree.leaf_count(), &key_generation)?;
+                    .update_leaf(provisional_tree.leaf_count(), key_generation)?;
             }
         }
 
@@ -1264,7 +1260,9 @@ impl Group {
             Some(update_path) => {
                 // Receiving from yourself is a special case, we already have the new private keys
                 let secrets = if let Some(pending) = local_pending {
-                    provisional_state.public_tree.apply_pending_update(&pending)?;
+                    provisional_state
+                        .public_tree
+                        .apply_pending_update(&pending)?;
                     Ok(pending.secrets)
                 } else {
                     provisional_state.public_tree.refresh_private_key(
@@ -1297,7 +1295,7 @@ impl Group {
         let interim_transcript_hash = InterimTranscriptHash::create(
             self.cipher_suite.clone(),
             &confirmed_transcript_hash,
-            &auth_data.confirmation_tag,
+            auth_data.confirmation_tag,
         )?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;

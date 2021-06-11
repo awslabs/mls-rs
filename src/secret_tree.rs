@@ -279,7 +279,7 @@ impl SecretKeyRatchet {
     pub fn get_key(&mut self, generation: u32) -> Result<EncryptionKey, SecretTreeError> {
         if generation <= self.generation {
             // TODO: Look at the cache and see if we can return an older key
-            return Err(SecretTreeError::KeyMissing(generation));
+            Err(SecretTreeError::KeyMissing(generation))
         } else {
             let generated_keys = self
                 .take((generation - self.generation) as usize)
@@ -334,7 +334,7 @@ pub(crate) mod test {
         cipher_suite.expect_get_id().returning_st(move || 42);
         cipher_suite
             .expect_clone()
-            .returning_st(move || get_mock_cipher_suite_tree());
+            .returning_st(get_mock_cipher_suite_tree);
         cipher_suite
     }
 
@@ -429,7 +429,7 @@ pub(crate) mod test {
         let clone_2 = ratchet_clone.next_key().unwrap();
 
         // Going back in time should result in an error
-        assert_eq!(ratchet_clone.get_key(0).is_err(), true);
+        assert!(ratchet_clone.get_key(0).is_err());
 
         // Calling get key should be the same as calling next until hitting the desired generation
         let second_key = ratchet.get_key(3).unwrap();

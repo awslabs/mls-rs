@@ -115,7 +115,7 @@ impl EpochKeySchedule {
         self_index: LeafIndex,
     ) -> Result<Self, EpochKeyScheduleError> {
         //TODO: PSK is not supported
-        let epoch_seed = cipher_suite.extract(&joiner_secret, &[])?;
+        let epoch_seed = cipher_suite.extract(joiner_secret, &[])?;
 
         let epoch_secret = cipher_suite.expand_with_label(
             &epoch_seed,
@@ -189,14 +189,14 @@ impl EpochKeySchedule {
         generation: Option<u32>,
         key_type: &KeyType,
     ) -> Result<EncryptionKey, EpochKeyScheduleError> {
-        if let Some(ratchet) = self.get_ratchet(leaf_index, &key_type) {
+        if let Some(ratchet) = self.get_ratchet(leaf_index, key_type) {
             match generation {
                 None => ratchet.next_key(),
                 Some(gen) => ratchet.get_key(gen),
             }
             .map_err(|e| e.into())
         } else {
-            self.derive_ratchets(leaf_index, &key_type)
+            self.derive_ratchets(leaf_index, key_type)
                 .and_then(|r| r.next_key().map_err(|e| e.into()))
         }
     }
@@ -308,17 +308,17 @@ impl WelcomeSecret {
         joiner_secret: &[u8],
     ) -> Result<WelcomeSecret, CipherSuiteError> {
         //TODO: PSK is not supported
-        let epoch_seed = cipher_suite.extract(&joiner_secret, &[])?;
+        let epoch_seed = cipher_suite.extract(joiner_secret, &[])?;
 
         cipher_suite.derive_secret(&epoch_seed, "welcome").map(Self)
     }
 
     pub(crate) fn as_nonce(&self, cipher_suite: &CipherSuite) -> Result<Vec<u8>, CipherSuiteError> {
-        cipher_suite.expand(&self, b"nonce", ExpandType::AeadNonce)
+        cipher_suite.expand(self, b"nonce", ExpandType::AeadNonce)
     }
 
     pub(crate) fn as_key(&self, cipher_suite: &CipherSuite) -> Result<Vec<u8>, CipherSuiteError> {
-        cipher_suite.expand(&self, b"key", ExpandType::AeadKey)
+        cipher_suite.expand(self, b"key", ExpandType::AeadKey)
     }
 
     pub fn encrypt(
@@ -350,12 +350,12 @@ pub mod test_utils {
     use crate::secret_tree::test::get_test_tree;
 
     pub(crate) fn get_test_epoch_key_schedule(
-        ciphersuite: CipherSuite,
+        cipher_suite: CipherSuite,
         membership_key: Vec<u8>,
         confirmation_key: Vec<u8>,
     ) -> EpochKeySchedule {
         EpochKeySchedule {
-            cipher_suite: ciphersuite.clone(),
+            cipher_suite,
             secret_tree: get_test_tree(vec![], 1),
             self_index: LeafIndex(0),
             sender_data_secret: vec![],

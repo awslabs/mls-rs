@@ -39,10 +39,10 @@ fn test_create(cipher_suite: CipherSuite, update_path: bool) {
     let bob_key = bob.gen_key_package(&mut rng, &cipher_suite).unwrap();
 
     // Alice creates a group and adds bob to the group
-    let mut test_group = Group::new(&mut rng, b"group".to_vec(), alice_key.clone()).unwrap();
+    let mut test_group = Group::new(&mut rng, b"group".to_vec(), alice_key).unwrap();
 
     let add_members = test_group
-        .add_member_proposals(&vec![bob_key.key_package.clone()])
+        .add_member_proposals(&[bob_key.key_package.clone()])
         .unwrap();
 
     let commit = test_group
@@ -89,9 +89,11 @@ fn test_create_group_update() {
 
 struct TestGroupCreation {
     creator: Client,
+    #[allow(dead_code)]
     creator_key: KeyPackageGeneration,
     creator_group: Group,
     receiver_clients: Vec<Client>,
+    #[allow(dead_code)]
     receiver_private_keys: Vec<KeyPackageGeneration>,
     receiver_groups: Vec<Group>,
 }
@@ -167,10 +169,7 @@ fn get_test_group(cipher_suite: CipherSuite, num_participants: usize) -> TestGro
 }
 
 fn test_path_updates(cipher_suite: CipherSuite) {
-    println!(
-        "Testing path updates for cipher suite: {:?}",
-        cipher_suite.clone()
-    );
+    println!("Testing path updates for cipher suite: {:?}", cipher_suite);
 
     let mut test_group_data = get_test_group(cipher_suite, 10);
 
@@ -221,7 +220,7 @@ fn test_group_path_updates() {
 fn test_update_proposals(cipher_suite: CipherSuite) {
     println!(
         "Testing update proposals for cipher suite: {:?}",
-        cipher_suite.clone()
+        cipher_suite
     );
 
     let mut test_group_data = get_test_group(cipher_suite, 10);
@@ -298,13 +297,13 @@ fn test_group_update_proposals() {
 fn test_remove_proposals(cipher_suite: CipherSuite) {
     println!(
         "Testing remove proposals for cipher suite: {:?}",
-        cipher_suite.clone()
+        cipher_suite
     );
 
     let mut test_group_data = get_test_group(cipher_suite, 10);
 
     // Remove people from the group one at a time
-    while test_group_data.receiver_groups.len() > 0 {
+    while !test_group_data.receiver_groups.is_empty() {
         let removal = test_group_data
             .creator_group
             .remove_proposal((test_group_data.creator_group.public_tree.leaf_count() - 1) as u32)
@@ -364,8 +363,7 @@ fn test_group_remove_proposals() {
 fn test_application_messages(cipher_suite: CipherSuite, message_count: usize) {
     println!(
         "Testing application messages, cipher suite: {:?}, message count: {}",
-        cipher_suite.clone(),
-        message_count
+        cipher_suite, message_count
     );
 
     let mut test_group_data = get_test_group(cipher_suite, 10);

@@ -155,7 +155,7 @@ pub trait Hpke: Sized {
 
         let secret = <Self::KEM as Kem>::KDF::labeled_extract(
             &Self::get_suite_id(),
-            &shared_secret,
+            shared_secret,
             b"secret",
             psk,
         )?;
@@ -344,22 +344,20 @@ mod tests {
     }
 
     fn setup_sender<OUT: Hpke>(
-        ikm_e: &Vec<u8>,
-        pk_rm: &Vec<u8>,
-        info: &Vec<u8>,
+        ikm_e: &[u8],
+        pk_rm: &[u8],
+        info: &[u8],
     ) -> (Vec<u8>, super::Context<OUT::CT>) {
         /* Force the input of the ecdh ephemeral key generation to be what we need */
-        let mut sender_rng = OneValRng { val: ikm_e.clone() };
+        let mut sender_rng = OneValRng {
+            val: ikm_e.to_vec(),
+        };
         let remote_key =
             <<OUT::KEM as Kem>::E as AsymmetricKeyEngine>::PK::from_bytes(pk_rm).unwrap();
         OUT::setup_basic_sender(&mut sender_rng, &remote_key, info).unwrap()
     }
 
-    fn setup_receiver<OUT: Hpke>(
-        enc: &Vec<u8>,
-        sk_rm: &Vec<u8>,
-        info: &Vec<u8>,
-    ) -> super::Context<OUT::CT> {
+    fn setup_receiver<OUT: Hpke>(enc: &[u8], sk_rm: &[u8], info: &[u8]) -> super::Context<OUT::CT> {
         let local_secret =
             <<OUT::KEM as Kem>::E as AsymmetricKeyEngine>::SK::from_bytes(sk_rm).unwrap();
         OUT::setup_basic_receiver(enc, &local_secret, info).unwrap()

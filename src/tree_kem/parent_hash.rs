@@ -122,7 +122,7 @@ impl RatchetTree {
         let node = self.nodes.borrow_as_parent(node_index)?;
         let ocr = self
             .nodes
-            .original_child_resolution(&node, co_path_child_index)?;
+            .original_child_resolution(node, co_path_child_index)?;
         ParentHash::new(
             self.cipher_suite.clone(),
             &node.public_key,
@@ -180,7 +180,9 @@ impl RatchetTree {
         changes.drain().try_for_each(|(index, hash)| {
             self.nodes
                 .borrow_as_parent_mut(index)
-                .and_then(|p| Ok(p.parent_hash = hash))
+                .map(|p| {
+                    p.parent_hash = hash;
+                })
                 .map_err(RatchetTreeError::from)
         })?;
 
@@ -241,9 +243,9 @@ impl RatchetTree {
         }
 
         //Otherwise, the check fails
-        return Err(RatchetTreeError::InvalidParentHash(
+        Err(RatchetTreeError::InvalidParentHash(
             "no match found".to_string(),
-        ));
+        ))
     }
 
     pub fn validate_parent_hashes(&self) -> Result<(), RatchetTreeError> {
@@ -277,12 +279,12 @@ mod test {
         for i in 0..tree.leaf_count() - 1 {
             tree.nodes
                 .borrow_node_mut(i * 2 + 1)
-                .and_then(|node| {
-                    Ok(*node = Some(Node::Parent(Parent {
+                .map(|node| {
+                    *node = Some(Node::Parent(Parent {
                         public_key: vec![i as u8],
                         parent_hash: ParentHash::empty(),
                         unmerged_leaves: vec![],
-                    })))
+                    }))
                 })
                 .unwrap()
         }
@@ -327,7 +329,7 @@ mod test {
             nodes: vec![],
         };
 
-        let test_tree = get_phash_test_tree();
+        let mut test_tree = get_phash_test_tree();
 
         let parent_hash = test_tree
             .clone()
@@ -343,9 +345,9 @@ mod test {
             .clone()
             .update_parent_hashes(LeafIndex(0), Some(&missing_parent_hash));
 
-        assert_eq!(missing_parent_hash_res.is_err(), true);
+        assert!(missing_parent_hash_res.is_err());
 
-        let mut invalid_parent_hash = expected_update_path.clone();
+        let mut invalid_parent_hash = expected_update_path;
         invalid_parent_hash.leaf_key_package.extensions.clear();
         let unexpected_parent_hash = ParentHashExt::from(ParentHash::from(hex!("f00d")));
 
@@ -355,11 +357,10 @@ mod test {
             .set_extension(unexpected_parent_hash)
             .unwrap();
 
-        let invalid_parent_hash_res = test_tree
-            .clone()
-            .update_parent_hashes(LeafIndex(0), Some(&invalid_parent_hash));
+        let invalid_parent_hash_res =
+            test_tree.update_parent_hashes(LeafIndex(0), Some(&invalid_parent_hash));
 
-        assert_eq!(invalid_parent_hash_res.is_err(), true);
+        assert!(invalid_parent_hash_res.is_err());
     }
 
     //TODO: Tests based on test vectors once TLS encoding is implemented

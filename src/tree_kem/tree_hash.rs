@@ -86,8 +86,8 @@ impl RatchetTree {
 mod test {
     use super::*;
     use crate::tree_kem::node::LeafIndex;
-    use crate::tree_kem::test::{get_test_key_packages, get_test_tree};
     use crate::tree_kem::parent_hash::ParentHash;
+    use crate::tree_kem::test::{get_test_key_packages, get_test_tree};
 
     // Sanity check test to verify the input to the hash function isn't changing between releases
     // This is done with a mock hash that returns its input as output
@@ -97,9 +97,7 @@ mod test {
         let leaf = test_tree.nodes[0].as_leaf().unwrap();
         let hash = (0, Some(leaf)).get_hash(&test_tree).unwrap();
 
-        let expected = hex!(
-            "3f57a57f6fc7bee186e67bfdd8aa84431ad8406033bc31be14c8e86d543e570e"
-        );
+        let expected = hex!("3f57a57f6fc7bee186e67bfdd8aa84431ad8406033bc31be14c8e86d543e570e");
 
         assert_eq!(expected, hash)
     }
@@ -111,9 +109,7 @@ mod test {
 
         let hash = (0, None::<&Leaf>).get_hash(&test_tree).unwrap();
 
-        let expected = hex!(
-            "8855508aade16ec573d21e6a485dfd0a7624085c1a14b5ecdd6485de0c6839a4"
-        );
+        let expected = hex!("8855508aade16ec573d21e6a485dfd0a7624085c1a14b5ecdd6485de0c6839a4");
 
         assert_eq!(expected, hash)
     }
@@ -138,9 +134,7 @@ mod test {
 
         let hash = (1, Some(&test_parent)).get_hash(&test_tree).unwrap();
 
-        let expected = hex!(
-            "413c6bfce4aae0ca5ea11e0717c1776e17d3c7222973abc502f818c71fd0c9b6"
-        );
+        let expected = hex!("413c6bfce4aae0ca5ea11e0717c1776e17d3c7222973abc502f818c71fd0c9b6");
 
         assert_eq!(hash, expected)
     }
@@ -155,9 +149,7 @@ mod test {
 
         let hash = (1, None::<&Parent>).get_hash(&test_tree).unwrap();
 
-        let expected = hex!(
-            "6ab23496612c266ccf7222bb7e3e21255574393e91d89ba0efd9f9147d5851d6"
-        );
+        let expected = hex!("6ab23496612c266ccf7222bb7e3e21255574393e91d89ba0efd9f9147d5851d6");
         assert_eq!(hash, expected)
     }
 
@@ -173,9 +165,7 @@ mod test {
 
         let hash = test_tree.tree_hash().unwrap();
 
-        let expected = hex!(
-            "6ab23496612c266ccf7222bb7e3e21255574393e91d89ba0efd9f9147d5851d6"
-        );
+        let expected = hex!("6ab23496612c266ccf7222bb7e3e21255574393e91d89ba0efd9f9147d5851d6");
 
         assert_eq!(hash, expected)
     }

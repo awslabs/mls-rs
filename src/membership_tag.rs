@@ -75,7 +75,7 @@ impl MembershipTag {
         key_schedule: &EpochKeySchedule,
     ) -> Result<bool, MembershipTagError> {
         let local = MembershipTag::create(plaintext, group_context, key_schedule)?;
-        return Ok(&local == self); //FIXME: Constant time equals
+        Ok(&local == self) //FIXME: Constant time equals
     }
 }
 
@@ -100,7 +100,7 @@ mod tests {
             });
         cipher_suite
             .expect_clone()
-            .returning_st(move || get_mock_cipher_suite());
+            .returning_st(get_mock_cipher_suite);
         cipher_suite
     }
 
@@ -144,24 +144,12 @@ mod tests {
 
         let tag = MembershipTag::create(&plaintext_a, &context_a, &epoch_a).unwrap();
 
-        assert_eq!(
-            tag.matches(&plaintext_a, &context_a, &epoch_a).unwrap(),
-            true
-        );
+        assert!(tag.matches(&plaintext_a, &context_a, &epoch_a).unwrap());
 
-        assert_eq!(
-            tag.matches(&plaintext_b, &context_a, &epoch_a).unwrap(),
-            false
-        );
+        assert!(!tag.matches(&plaintext_b, &context_a, &epoch_a).unwrap(),);
 
-        assert_eq!(
-            tag.matches(&plaintext_a, &context_b, &epoch_a).unwrap(),
-            false
-        );
+        assert!(!tag.matches(&plaintext_a, &context_b, &epoch_a).unwrap());
 
-        assert_eq!(
-            tag.matches(&plaintext_a, &context_a, &epoch_b).unwrap(),
-            false
-        );
+        assert!(!tag.matches(&plaintext_a, &context_a, &epoch_b).unwrap());
     }
 }

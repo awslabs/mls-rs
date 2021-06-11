@@ -37,9 +37,9 @@ pub trait HpkeKdf: Kdf {
         ctx: &[u8],
         out_len: u16,
     ) -> Result<Vec<u8>, KdfError> {
-        let eae_prk = Self::labeled_extract(&suite_id, &[], b"eae_prk", ikm)?;
+        let eae_prk = Self::labeled_extract(suite_id, &[], b"eae_prk", ikm)?;
 
-        Self::labeled_expand(&suite_id, &eae_prk, b"shared_secret", ctx, out_len)
+        Self::labeled_expand(suite_id, &eae_prk, b"shared_secret", ctx, out_len)
     }
 }
 

@@ -100,7 +100,7 @@ impl Verifier for PublicSignatureKey {
             }
             #[cfg(test)]
             SignatureSchemeId::Test => {
-                Ok(signature.len() > 0 && data.to_signable_vec().unwrap().len() > 0)
+                Ok(!signature.is_empty() && !data.to_signable_vec().unwrap().is_empty())
             }
         }
     }
@@ -240,7 +240,7 @@ pub mod p256 {
                 .verify(&signaure, &test_msg)
                 .expect("failed to verify");
 
-            assert_eq!(verification, true);
+            assert!(verification);
         }
 
         #[test]
@@ -258,7 +258,7 @@ pub mod p256 {
                 .verify(&signature, &test_data)
                 .expect("validation failed");
 
-            assert_eq!(verification, false);
+            assert!(!verification);
         }
 
         #[test]
@@ -270,23 +270,17 @@ pub mod p256 {
             let test_data = b"test".to_vec();
             let signature = sig_key.get_signer().sign(&test_data).expect("sig error");
 
-            assert_eq!(
-                sig_key
-                    .as_public_signature_key()
-                    .expect("pub key error")
-                    .verify(&signature, &test_data)
-                    .expect("sig error"),
-                true
-            );
+            assert!(sig_key
+                .as_public_signature_key()
+                .expect("pub key error")
+                .verify(&signature, &test_data)
+                .expect("sig error"));
 
-            assert_eq!(
-                bad_key
-                    .as_public_signature_key()
-                    .expect("pub key error")
-                    .verify(&signature, &test_data)
-                    .expect("sig error"),
-                false
-            );
+            assert!(!bad_key
+                .as_public_signature_key()
+                .expect("pub key error")
+                .verify(&signature, &test_data)
+                .expect("sig error"));
         }
     }
 }
@@ -339,7 +333,7 @@ pub mod p521 {
                 .verify(&signature, &test_msg)
                 .expect("validation failed");
 
-            assert_eq!(verification, true);
+            assert!(verification);
         }
 
         #[test]
@@ -357,7 +351,7 @@ pub mod p521 {
                 .verify(&signature, &test_data)
                 .expect("validation failed");
 
-            assert_eq!(verification, false);
+            assert!(!verification);
         }
 
         #[test]
@@ -369,23 +363,17 @@ pub mod p521 {
             let test_data = b"test".to_vec();
             let signature = sig_key.get_signer().sign(&test_data).expect("sig error");
 
-            assert_eq!(
-                sig_key
-                    .as_public_signature_key()
-                    .expect("pub key error")
-                    .verify(&signature, &test_data)
-                    .expect("sig error"),
-                true
-            );
+            assert!(sig_key
+                .as_public_signature_key()
+                .expect("pub key error")
+                .verify(&signature, &test_data)
+                .expect("sig error"));
 
-            assert_eq!(
-                bad_key
-                    .as_public_signature_key()
-                    .expect("pub key error")
-                    .verify(&signature, &test_data)
-                    .expect("sig error"),
-                false
-            );
+            assert!(!bad_key
+                .as_public_signature_key()
+                .expect("pub key error")
+                .verify(&signature, &test_data)
+                .expect("sig error"));
         }
     }
 }
@@ -538,7 +526,7 @@ pub mod ed25519 {
                 .verify(&signaure, &test_msg)
                 .expect("failed to verify");
 
-            assert_eq!(verification, true);
+            assert!(verification);
         }
 
         #[test]
@@ -556,7 +544,7 @@ pub mod ed25519 {
                 .verify(&signature, &test_data)
                 .expect("validation failed");
 
-            assert_eq!(verification, false);
+            assert!(!verification);
         }
 
         #[test]
@@ -568,23 +556,17 @@ pub mod ed25519 {
             let test_data = b"test".to_vec();
             let signature = sig_key.get_signer().sign(&test_data).expect("sig error");
 
-            assert_eq!(
-                sig_key
-                    .as_public_signature_key()
-                    .expect("pub key error")
-                    .verify(&signature, &test_data)
-                    .expect("sig error"),
-                true
-            );
+            assert!(sig_key
+                .as_public_signature_key()
+                .expect("pub key error")
+                .verify(&signature, &test_data)
+                .expect("sig error"));
 
-            assert_eq!(
-                bad_key
-                    .as_public_signature_key()
-                    .expect("pub key error")
-                    .verify(&signature, &test_data)
-                    .expect("sig error"),
-                false
-            );
+            assert!(!bad_key
+                .as_public_signature_key()
+                .expect("pub key error")
+                .verify(&signature, &test_data)
+                .expect("sig error"));
         }
     }
 }
@@ -648,7 +630,7 @@ pub(crate) mod test_utils {
 
     pub fn get_test_verifier(test_bytes: &[u8]) -> MockVerifier {
         let mut verifier = MockVerifier::new();
-        let copy_test_bytes = test_bytes.clone().to_vec();
+        let copy_test_bytes = test_bytes.to_vec();
         verifier
             .expect_to_bytes()
             .returning(move || Ok(copy_test_bytes.clone()));
@@ -657,7 +639,7 @@ pub(crate) mod test_utils {
 
     pub fn get_test_signer(test_bytes: &[u8]) -> MockSigner {
         let mut signer = MockSigner::new();
-        let copy_test_bytes = test_bytes.clone().to_vec();
+        let copy_test_bytes = test_bytes.to_vec();
         signer
             .expect_to_bytes()
             .returning(move || Ok(copy_test_bytes.clone()));

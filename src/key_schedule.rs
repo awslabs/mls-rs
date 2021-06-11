@@ -37,7 +37,7 @@ pub trait KeyScheduleKdf: Kdf {
     }
 
     fn derive_secret(secret: &[u8], label: &str) -> Result<Vec<u8>, KdfError> {
-        Self::expand_with_label(secret, &label, &[], Self::EXTRACT_SIZE)
+        Self::expand_with_label(secret, label, &[], Self::EXTRACT_SIZE)
     }
 
     fn derive_tree_secret(

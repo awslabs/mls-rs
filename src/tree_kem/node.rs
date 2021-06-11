@@ -93,6 +93,8 @@ pub enum NodeVecError {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
+//TODO: Research if this should actually be a Box<Leaf> for memory / performance reasons
 pub(crate) enum Node {
     Parent(Parent),
     Leaf(Leaf),
@@ -272,7 +274,7 @@ impl NodeVec {
 
     #[inline]
     pub fn is_blank(&self, index: NodeIndex) -> Result<bool, NodeVecError> {
-        self.borrow_node(index).and_then(|n| Ok(n.is_none()))
+        self.borrow_node(index).map(|n| n.is_none())
     }
 
     #[inline]
@@ -292,10 +294,10 @@ impl NodeVec {
     }
 
     pub fn blank_node(&mut self, node_index: NodeIndex) -> Result<Option<Node>, NodeVecError> {
-        self.borrow_node_mut(node_index).and_then(|node| {
+        self.borrow_node_mut(node_index).map(|node| {
             let res = node.clone();
             *node = None;
-            Ok(res)
+            res
         })
     }
 
@@ -449,7 +451,7 @@ pub mod test {
         let mut cipher_suite = MockCipherSuite::new();
         cipher_suite
             .expect_clone()
-            .returning_st(move || get_mock_cipher_suite());
+            .returning_st(get_mock_cipher_suite);
         cipher_suite.expect_get_id().returning_st(move || 42);
         cipher_suite
     }
@@ -553,10 +555,10 @@ pub mod test {
         let mut test_vec = get_test_node_vec();
 
         // If the node is a leaf it should fail
-        assert_eq!(test_vec.borrow_as_parent_mut(0).is_err(), true);
+        assert!(test_vec.borrow_as_parent_mut(0).is_err());
 
         // If the node index is out of range it should fail
-        assert_eq!(test_vec.borrow_as_parent_mut(test_vec.len()).is_err(), true);
+        assert!(test_vec.borrow_as_parent_mut(test_vec.len()).is_err());
 
         // Otherwise it should succeed
         let mut expected = Parent {
@@ -572,9 +574,9 @@ pub mod test {
     fn test_get_resolution() {
         let test_vec = get_test_node_vec();
 
-        let resolution_node_5 = test_vec.get_resolution(5, &vec![]).unwrap();
-        let resolution_node_2 = test_vec.get_resolution(2, &vec![]).unwrap();
-        let resolution_node_3 = test_vec.get_resolution(3, &vec![]).unwrap();
+        let resolution_node_5 = test_vec.get_resolution(5, &[]).unwrap();
+        let resolution_node_2 = test_vec.get_resolution(2, &[]).unwrap();
+        let resolution_node_3 = test_vec.get_resolution(3, &[]).unwrap();
 
         let expected_5: Vec<Node> = [
             Parent {
@@ -610,22 +612,16 @@ pub mod test {
         ]
         .to_vec();
 
-        assert_eq!(
-            resolution_node_5,
-            expected_5.iter().map(|n| n).collect::<Vec<&Node>>()
-        );
+        assert_eq!(resolution_node_5, expected_5.iter().collect::<Vec<&Node>>());
         assert_eq!(resolution_node_2, expected_2);
-        assert_eq!(
-            resolution_node_3,
-            expected_3.iter().map(|n| n).collect::<Vec<&Node>>()
-        );
+        assert_eq!(resolution_node_3, expected_3.iter().collect::<Vec<&Node>>());
     }
 
     #[test]
     fn test_resolution_filter() {
         let test_vec = get_test_node_vec();
 
-        let resolution_node_5 = test_vec.get_resolution(5, &vec![4]).unwrap();
+        let resolution_node_5 = test_vec.get_resolution(5, &[4]).unwrap();
 
         let expected_5: Vec<Node> = [Parent {
             public_key: b"CD".to_vec(),
@@ -635,10 +631,7 @@ pub mod test {
         .into()]
         .to_vec();
 
-        assert_eq!(
-            resolution_node_5,
-            expected_5.iter().map(|n| n).collect::<Vec<&Node>>()
-        );
+        assert_eq!(resolution_node_5, expected_5.iter().collect::<Vec<&Node>>());
     }
 
     #[test]
@@ -667,12 +660,12 @@ pub mod test {
         .to_vec();
 
         let copath_resolution = test_vec
-            .direct_path_copath_resolution(LeafIndex(0), &vec![])
+            .direct_path_copath_resolution(LeafIndex(0), &[])
             .unwrap();
 
         let expected: Vec<(NodeIndex, Vec<&Node>)> = expected
             .iter()
-            .map(|(i, n)| (*i, n.iter().map(|n| n).collect()))
+            .map(|(i, n)| (*i, n.iter().collect()))
             .collect();
 
         assert_eq!(expected, copath_resolution)
@@ -698,12 +691,12 @@ pub mod test {
         .to_vec();
 
         let copath_resolution = test_vec
-            .direct_path_copath_resolution(LeafIndex(0), &vec![LeafIndex(2)])
+            .direct_path_copath_resolution(LeafIndex(0), &[LeafIndex(2)])
             .unwrap();
 
         let expected: Vec<(NodeIndex, Vec<&Node>)> = expected
             .iter()
-            .map(|(i, n)| (*i, n.iter().map(|n| n).collect()))
+            .map(|(i, n)| (*i, n.iter().collect()))
             .collect();
 
         assert_eq!(expected, copath_resolution)
@@ -715,7 +708,7 @@ pub mod test {
         let mut test_vec2 = test_vec.clone();
 
         let expected = test_vec[5].as_parent_mut().unwrap();
-        let actual = test_vec2.borrow_or_fill_node_as_parent(5, &vec![]).unwrap();
+        let actual = test_vec2.borrow_or_fill_node_as_parent(5, &[]).unwrap();
 
         assert_eq!(actual, expected);
     }
@@ -731,7 +724,7 @@ pub mod test {
         };
 
         let actual = test_vec
-            .borrow_or_fill_node_as_parent(1, &vec![0u8; 4])
+            .borrow_or_fill_node_as_parent(1, &[0u8; 4])
             .unwrap();
 
         assert_eq!(actual, &mut expected);

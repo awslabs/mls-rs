@@ -1,16 +1,19 @@
 pub(crate) mod math;
 pub mod node;
 mod node_secrets;
-mod tree_hash;
 pub mod parent_hash;
+mod tree_hash;
 
 use crate::ciphersuite::CipherSuiteError;
 use crate::credential::Credential;
 use crate::crypto::hpke::HPKECiphertext;
 use crate::crypto::rand::SecureRng;
 use crate::crypto::signature::{SignatureError, Signer};
+use crate::extension::{ExtensionError, ParentHashExt};
 use crate::group::GroupSecrets;
 use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerator};
+use crate::tree_kem::parent_hash::ParentHashError;
+use cfg_if::cfg_if;
 use math as tree_math;
 use math::TreeMathError;
 use node::{Leaf, LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
@@ -19,9 +22,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTime;
 use thiserror::Error;
-use crate::tree_kem::parent_hash::ParentHashError;
-use cfg_if::cfg_if;
-use crate::extension::{ExtensionError, ParentHashExt};
 
 cfg_if! {
     if #[cfg(test)] {
@@ -407,9 +407,7 @@ impl RatchetTree {
         key_package.validate(SystemTime::now())?;
 
         // Update the leaf node
-        self.nodes
-            .borrow_as_leaf_mut(leaf_index)?
-            .key_package = key_package;
+        self.nodes.borrow_as_leaf_mut(leaf_index)?.key_package = key_package;
 
         // Blank the intermediate nodes along the path from the sender's leaf to the root
         self.nodes
@@ -443,7 +441,7 @@ impl RatchetTree {
             .map(|&copath_node| {
                 self.cipher_suite.hpke_seal(
                     rng,
-                    &copath_node.get_public_key(),
+                    copath_node.get_public_key(),
                     context,
                     &path_secret.path_secret,
                 )
@@ -498,7 +496,7 @@ impl RatchetTree {
                         &path_secret,
                         index,
                         copath_nodes,
-                        &context,
+                        context,
                     )
                 })
                 .unzip();
@@ -526,14 +524,13 @@ impl RatchetTree {
         self.apply_update_path(private_key.self_index, &update_path)?;
 
         // Apply the parent hash updates to the tree
-        let leaf_parent_hash = self.update_parent_hashes(
-            private_key.self_index,
-            None,
-        )?;
+        let leaf_parent_hash = self.update_parent_hashes(private_key.self_index, None)?;
 
         // Update the leaf in the tree by applying the parent hash and signing the package
         let leaf = self.nodes.borrow_as_leaf_mut(private_key.self_index)?;
-        leaf.key_package.extensions.set_extension(ParentHashExt::from(leaf_parent_hash))?;
+        leaf.key_package
+            .extensions
+            .set_extension(ParentHashExt::from(leaf_parent_hash))?;
         leaf.key_package.signature = signer.sign(&leaf.key_package)?;
 
         // Overwrite the key package in the update path with the signed version
@@ -566,7 +563,7 @@ impl RatchetTree {
             .and_then(|(sk, ct)| {
                 // Decrypt the path secret
                 self.cipher_suite
-                    .hpke_open(ct, &sk, context)
+                    .hpke_open(ct, sk, context)
                     .map_err(|e| e.into())
             })
     }
@@ -587,11 +584,9 @@ impl RatchetTree {
         update_path: &UpdatePath,
     ) -> Result<(), RatchetTreeError> {
         // Install the new leaf node
-        self.nodes
-            .borrow_as_leaf_mut(sender)
-            .map(|l| {
-                l.key_package = update_path.leaf_key_package.clone();
-            })?;
+        self.nodes.borrow_as_leaf_mut(sender).map(|l| {
+            l.key_package = update_path.leaf_key_package.clone();
+        })?;
 
         // Update the rest of the nodes on the direct path
         update_path
@@ -607,7 +602,7 @@ impl RatchetTree {
 
     pub fn apply_pending_update(
         &mut self,
-        update_path_generation: &UpdatePathGeneration
+        update_path_generation: &UpdatePathGeneration,
     ) -> Result<(), RatchetTreeError> {
         let sender = update_path_generation.secrets.private_key.self_index;
         self.apply_update_path(sender, &update_path_generation.update_path)?;
@@ -726,22 +721,22 @@ pub(crate) mod test {
     use crate::ciphersuite::test_util::MockCipherSuite;
     use crate::ciphersuite::KemKeyPair;
     use crate::credential::{BasicCredential, CredentialConvertable};
+    use crate::crypto::hash::{HashFunction, Sha256};
     use crate::crypto::rand::test_rng::ZerosRng;
-    use crate::crypto::signature::test_utils::{MockTestSignatureScheme, MockVerifier, MockSigner};
+    use crate::crypto::signature::test_utils::{MockSigner, MockTestSignatureScheme, MockVerifier};
     use crate::extension::{Extension, ExtensionId, ExtensionList, ExtensionTrait, LifetimeExt};
     use crate::key_package::test_util::MockKeyPackageGenerator;
     use crate::protocol_version::ProtocolVersion;
     use crate::tree_kem::node::{NodeTypeResolver, Parent};
+    use crate::tree_kem::parent_hash::ParentHash;
     use std::collections::HashMap;
     use std::u64::MAX;
-    use crate::tree_kem::parent_hash::ParentHash;
-    use crate::crypto::hash::{Sha256, HashFunction};
 
     pub fn get_mock_cipher_suite() -> MockCipherSuite {
         let mut cipher_suite = MockCipherSuite::new();
         cipher_suite
             .expect_clone()
-            .returning_st(move || get_mock_cipher_suite());
+            .returning_st(get_mock_cipher_suite);
         cipher_suite.expect_get_id().returning_st(move || 42);
         cipher_suite
             .expect_generate_leaf_secret()
@@ -752,18 +747,18 @@ pub(crate) mod test {
         cipher_suite
             .expect_derive_kem_key_pair()
             .returning_st(move |ikm| {
-                let mut ikm_clone = ikm.clone().to_vec();
+                let mut ikm_clone = ikm.to_vec();
                 ikm_clone.reverse();
 
                 Ok(KemKeyPair {
                     public_key: ikm_clone,
-                    secret_key: ikm.to_vec().clone(),
+                    secret_key: ikm.to_vec(),
                 })
             });
         cipher_suite
             .expect_hpke_seal()
             .returning_st(move |_rng: &mut ZerosRng, pk, aad, pt| {
-                let mut ct = pt.clone().to_vec();
+                let mut ct = pt.to_vec();
                 ct.reverse();
 
                 Ok(HPKECiphertext {
@@ -953,7 +948,7 @@ pub(crate) mod test {
 
         let res = tree.add_nodes([key_packages[0].clone(), key_packages[1].clone()].to_vec());
 
-        assert_eq!(res.is_err(), true);
+        assert!(res.is_err());
         assert_eq!(tree, tree_clone);
     }
 
@@ -990,7 +985,7 @@ pub(crate) mod test {
             .unwrap()
             .iter()
             .for_each(|&i| {
-                assert_eq!(tree.nodes[i].is_none(), true);
+                assert!(tree.nodes[i].is_none());
             });
     }
 
@@ -1001,7 +996,7 @@ pub(crate) mod test {
 
         let tree_clone = tree.clone();
         let res = tree.update_leaf(LeafIndex(0), bad_key_package);
-        assert_eq!(res.is_err(), true);
+        assert!(res.is_err());
         assert_eq!(tree, tree_clone);
     }
 
@@ -1019,11 +1014,13 @@ pub(crate) mod test {
             .returning_st(move |_cipher_suite, _pub_key| Ok(test_leaf_clone.clone()));
 
         let mut signer = MockSigner::new();
-        signer.expect_sign::<KeyPackage>().returning_st(move |input| Ok(input.hpke_init_key.clone()));
+        signer
+            .expect_sign::<KeyPackage>()
+            .returning_st(move |input| Ok(input.hpke_init_key.clone()));
 
         // Create a new update path with corresponding private key
         let update_path = tree
-            .ratchet(&private_key, &mut ZerosRng, &kpg, &signer, &test_ctx, &vec![])
+            .ratchet(private_key, &mut ZerosRng, &kpg, &signer, test_ctx, &[])
             .unwrap();
 
         (test_leaf, update_path)
@@ -1056,16 +1053,17 @@ pub(crate) mod test {
 
         // This test just exercises the code with basic sanity checking, actual algorithm
         // testing is done via integration tests
-        assert_eq!(update_path.update_path.leaf_key_package.hpke_init_key, test_leaf.hpke_init_key);
         assert_eq!(
-            update_path.update_path
-                .leaf_key_package
-                .extensions
-                .get_parent_hash()
-                .unwrap()
-                .is_some(),
-            true
+            update_path.update_path.leaf_key_package.hpke_init_key,
+            test_leaf.hpke_init_key
         );
+        assert!(update_path
+            .update_path
+            .leaf_key_package
+            .extensions
+            .get_parent_hash()
+            .unwrap()
+            .is_some());
 
         assert_eq!(update_path.secrets.private_key.self_index, LeafIndex(0));
 
@@ -1165,7 +1163,7 @@ pub(crate) mod test {
             &[],
         );
 
-        assert_eq!(apply_res.is_err(), true);
+        assert!(apply_res.is_err());
         assert_eq!(tree, tree_copy);
     }
 
@@ -1207,7 +1205,7 @@ pub(crate) mod test {
             .unwrap()
             .iter()
             .for_each(|i| {
-                assert_eq!(private_key.secret_keys.contains_key(i), false);
+                assert!(!private_key.secret_keys.contains_key(i));
             });
     }
 }

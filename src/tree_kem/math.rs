@@ -213,8 +213,8 @@ mod test {
         ]
         .to_vec();
 
-        for i in 0..11 {
-            assert_eq!(expected[i], direct_path(i, 11).unwrap())
+        for (i, item) in expected.iter().enumerate() {
+            assert_eq!(item, &direct_path(i, 11).unwrap())
         }
     }
 
@@ -245,8 +245,8 @@ mod test {
         ]
         .to_vec();
 
-        for i in 0..11 {
-            assert_eq!(expected[i], copath(i, 11).unwrap())
+        for (i, item) in expected.iter().enumerate() {
+            assert_eq!(item, &copath(i, 11).unwrap())
         }
     }
 }

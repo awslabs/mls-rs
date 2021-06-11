@@ -44,7 +44,7 @@ mod ossl {
         nonce: &[u8],
     ) -> Result<(Vec<u8>, Vec<u8>), ErrorStack> {
         let mut tag_out = vec![0; 16];
-        let encrypted = encrypt_aead(cipher, &key, Some(nonce), aad, data, &mut tag_out)?;
+        let encrypted = encrypt_aead(cipher, key, Some(nonce), aad, data, &mut tag_out)?;
 
         Ok((encrypted, tag_out))
     }
@@ -146,8 +146,8 @@ pub mod aes {
             let too_short: Vec<u8> = vec![0; 10];
             let too_long: Vec<u8> = vec![0; 17];
 
-            assert_eq!(Gcm128::new(too_long).is_err(), true);
-            assert_eq!(Gcm128::new(too_short).is_err(), true);
+            assert!(Gcm128::new(too_long).is_err());
+            assert!(Gcm128::new(too_short).is_err());
         }
 
         #[test]
@@ -155,8 +155,8 @@ pub mod aes {
             let too_short: Vec<u8> = vec![0; 10];
             let too_long: Vec<u8> = vec![0; 33];
 
-            assert_eq!(Gcm256::new(too_long).is_err(), true);
-            assert_eq!(Gcm256::new(too_short).is_err(), true);
+            assert!(Gcm256::new(too_long).is_err());
+            assert!(Gcm256::new(too_short).is_err());
         }
 
         #[test]
@@ -249,7 +249,7 @@ pub mod chacha20 {
             let payload = Payload { msg: data, aad };
 
             cipher
-                .encrypt(&nonce, payload)
+                .encrypt(nonce, payload)
                 .map_err(CipherError::ChaCha20Error)
         }
 
@@ -268,7 +268,7 @@ pub mod chacha20 {
             let nonce = Nonce::from_slice(nonce);
 
             cipher
-                .decrypt(&nonce, payload)
+                .decrypt(nonce, payload)
                 .map_err(CipherError::ChaCha20Error)
         }
     }
@@ -283,8 +283,8 @@ pub mod chacha20 {
             let too_short: Vec<u8> = vec![0; 10];
             let too_long: Vec<u8> = vec![0; 17];
 
-            assert_eq!(Poly1305::new(too_long).is_err(), true);
-            assert_eq!(Poly1305::new(too_short).is_err(), true);
+            assert!(Poly1305::new(too_long).is_err());
+            assert!(Poly1305::new(too_short).is_err());
         }
 
         #[test]
@@ -399,17 +399,11 @@ mod test {
         assert_eq!(plaintext, case.pt);
 
         // Test for handling a ciphertext with a bad tag as well as incorrect aad
-        assert_eq!(
-            cipher
-                .decrypt(&case.iv, &vec![0; case.ct.len()], &case.aad)
-                .is_err(),
-            true
-        );
+        assert!(cipher
+            .decrypt(&case.iv, &vec![0; case.ct.len()], &case.aad)
+            .is_err());
 
-        assert_eq!(
-            cipher.decrypt(&case.iv, &case.ct, &vec![0; 10]).is_err(),
-            true
-        );
+        assert!(cipher.decrypt(&case.iv, &case.ct, &[0; 10]).is_err());
     }
 }
 

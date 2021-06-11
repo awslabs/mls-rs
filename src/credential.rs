@@ -115,10 +115,10 @@ mod test {
         let pass = vec![0u8];
         let fail = vec![];
 
-        assert_eq!(cred.verify(&pass, &pass).expect("failed verify"), true);
-        assert_eq!(cred.verify(&fail, &fail).expect("failed verify"), false);
-        assert_eq!(cred.verify(&pass, &fail).expect("failed verify"), false);
-        assert_eq!(cred.verify(&fail, &pass).expect("failed verify"), false);
+        assert!(cred.verify(&pass, &pass).expect("failed verify"));
+        assert!(!cred.verify(&fail, &fail).expect("failed verify"));
+        assert!(!cred.verify(&pass, &fail).expect("failed verify"));
+        assert!(!cred.verify(&fail, &pass).expect("failed verify"));
     }
 
     #[test]
@@ -151,9 +151,9 @@ mod test {
         let pass = vec![0u8];
         let fail = vec![];
 
-        assert_eq!(cred.verify(&pass, &pass).expect("failed verify"), true);
-        assert_eq!(cred.verify(&fail, &fail).expect("failed verify"), false);
-        assert_eq!(cred.verify(&pass, &fail).expect("failed verify"), false);
-        assert_eq!(cred.verify(&fail, &pass).expect("failed verify"), false);
+        assert!(cred.verify(&pass, &pass).expect("failed verify"));
+        assert!(!cred.verify(&fail, &fail).expect("failed verify"));
+        assert!(!cred.verify(&pass, &fail).expect("failed verify"));
+        assert!(!cred.verify(&fail, &pass).expect("failed verify"));
     }
 }
