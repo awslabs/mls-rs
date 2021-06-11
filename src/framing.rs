@@ -65,7 +65,7 @@ pub struct MLSPlaintext {
     pub membership_tag: Option<MembershipTag>,
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum CommitConversionError {
     #[error("attempted to add non commit message to the transcript hash")]
     NonCommitMessage,

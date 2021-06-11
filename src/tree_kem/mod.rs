@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTime;
 use thiserror::Error;
+use crate::tree_kem::parent_hash::ParentHashError;
+use cfg_if::cfg_if;
+use crate::extension::{ExtensionError, ParentHashExt};
 
 cfg_if! {
     if #[cfg(test)] {

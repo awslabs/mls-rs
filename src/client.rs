@@ -2,7 +2,7 @@ use crate::ciphersuite::CipherSuiteError;
 use crate::credential::Credential;
 use crate::crypto::asym::AsymmetricKey;
 use crate::crypto::signature::{ed25519, Signable, SignatureError, SignatureSchemeId, Signer};
-use crate::extension::{Capabilities, ExtensionError, ExtensionList, ExtensionTrait, Lifetime};
+use crate::extension::{CapabilitiesExt, ExtensionError, ExtensionList, ExtensionTrait, LifetimeExt};
 use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGenerator};
 use cfg_if::cfg_if;
 use serde::{Deserialize, Serialize};
@@ -31,7 +31,7 @@ pub enum ClientError {
 pub struct Client {
     pub signature_key: Vec<u8>,
     pub credential: Credential,
-    pub capabilities: Capabilities,
+    pub capabilities: CapabilitiesExt,
     pub key_lifetime: u64,
 }
 
@@ -40,7 +40,7 @@ impl Client {
     pub(crate) fn get_extensions(&self) -> Result<ExtensionList, ExtensionError> {
         Ok(ExtensionList(vec![
             self.capabilities.to_extension()?,
-            Lifetime::seconds(self.key_lifetime, SystemTime::now())?.to_extension()?,
+            LifetimeExt::seconds(self.key_lifetime, SystemTime::now())?.to_extension()?,
         ]))
     }
 }

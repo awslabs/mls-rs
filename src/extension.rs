@@ -4,9 +4,10 @@ use crate::protocol_version::ProtocolVersion;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 use thiserror::Error;
+use crate::tree_kem::parent_hash::ParentHash;
 
 #[derive(Error, Debug)]
 pub enum ExtensionError {
@@ -14,8 +15,6 @@ pub enum ExtensionError {
     IncorrectExtensionType(ExtensionId),
     #[error(transparent)]
     BincodeError(#[from] bincode::Error),
-    #[error("Missing lifetime")]
-    MissingLifetimeExt,
     #[error(transparent)]
     SystemTimeError(#[from] SystemTimeError),
 }
@@ -60,13 +59,13 @@ impl<T: DeserializeOwned + Serialize> ExtensionTrait for KeyId<T> {
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub struct Capabilities {
+pub struct CapabilitiesExt {
     pub protocol_versions: Vec<ProtocolVersion>,
     pub ciphersuites: Vec<CipherSuite>,
     pub extensions: Vec<ExtensionId>,
 }
 
-impl Default for Capabilities {
+impl Default for CapabilitiesExt {
     fn default() -> Self {
         Self {
             protocol_versions: vec![ProtocolVersion::Mls10],
@@ -85,21 +84,21 @@ impl Default for Capabilities {
     }
 }
 
-impl ExtensionTrait for Capabilities {
+impl ExtensionTrait for CapabilitiesExt {
     const IDENTIFIER: ExtensionId = ExtensionId::Capabilities;
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct Lifetime {
+pub struct LifetimeExt {
     pub not_before: u64,
     pub not_after: u64,
 }
 
-impl Lifetime {
+impl LifetimeExt {
     pub fn seconds(s: u64, from: SystemTime) -> Result<Self, ExtensionError> {
         let start_time = from.duration_since(SystemTime::UNIX_EPOCH)?.as_secs();
 
-        Ok(Lifetime {
+        Ok(LifetimeExt {
             not_before: start_time,
             not_after: start_time + s,
         })
@@ -111,7 +110,7 @@ impl Lifetime {
     }
 }
 
-impl ExtensionTrait for Lifetime {
+impl ExtensionTrait for LifetimeExt {
     const IDENTIFIER: ExtensionId = ExtensionId::Lifetime;
 }
 
@@ -132,24 +131,48 @@ impl Deref for ExtensionList {
     }
 }
 
+impl DerefMut for ExtensionList {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 impl ExtensionList {
-    pub fn get_lifetime(&self) -> Result<Lifetime, ExtensionError> {
-        match self
-            .iter()
-            .find(|v| v.extension_id == ExtensionId::Lifetime)
-        {
-            None => Err(ExtensionError::MissingLifetimeExt),
-            Some(ext) => Ok(bincode::deserialize(&ext.data)?),
+    pub fn get_extension<T: ExtensionTrait>(&self) -> Result<Option<T>, ExtensionError> {
+        let ext = self.iter().find(|v| v.extension_id == T::IDENTIFIER);
+
+        if let Some(ext) = ext {
+            Ok(Some(bincode::deserialize(&ext.data)?))
+        } else {
+            Ok(None)
         }
+    }
+
+    pub fn set_extension<T: ExtensionTrait>(&mut self, ext: T) -> Result<(), ExtensionError> {
+        match self
+            .iter_mut()
+            .find(|v| v.extension_id == T::IDENTIFIER)
+        {
+            None => Ok(self.push(ext.to_extension()?)),
+            Some(existing) => Ok(*existing = ext.to_extension()?)
+        }
+    }
+
+    pub fn get_lifetime(&self) -> Result<Option<LifetimeExt>, ExtensionError> {
+        self.get_extension()
+    }
+
+    pub fn get_parent_hash(&self) -> Result<Option<ParentHashExt>, ExtensionError> {
+        self.get_extension()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::ciphersuite::CipherSuite;
-    use crate::extension::Lifetime;
+    use crate::extension::LifetimeExt;
     use crate::extension::{
-        Capabilities, Extension, ExtensionError, ExtensionId, ExtensionTrait, KeyId,
+        CapabilitiesExt, Extension, ExtensionError, ExtensionId, ExtensionTrait, KeyId,
     };
     use crate::protocol_version::ProtocolVersion;
     use std::ops::Add;
@@ -183,7 +206,7 @@ mod tests {
             ExtensionId::KeyId,
         ];
 
-        let test_extension = Capabilities {
+        let test_extension = CapabilitiesExt {
             protocol_versions: test_protocol_versions.clone(),
             ciphersuites: test_ciphersuites.clone(),
             extensions: test_extensions.clone(),
@@ -192,7 +215,7 @@ mod tests {
         let as_extension = test_extension.to_extension().expect("serialization error");
         assert_eq!(as_extension.extension_id, ExtensionId::Capabilities);
 
-        let restored = Capabilities::from_extension(as_extension).expect("deserialization error");
+        let restored = CapabilitiesExt::from_extension(as_extension).expect("deserialization error");
         assert_eq!(restored.protocol_versions, test_protocol_versions);
         assert_eq!(restored.ciphersuites, test_ciphersuites);
         assert_eq!(restored.extensions, test_extensions);
@@ -200,7 +223,7 @@ mod tests {
 
     #[test]
     fn test_lifetime() {
-        let lifetime = Lifetime::seconds(1, SystemTime::UNIX_EPOCH.add(Duration::from_secs(1)))
+        let lifetime = LifetimeExt::seconds(1, SystemTime::UNIX_EPOCH.add(Duration::from_secs(1)))
             .expect("lifetime failure");
 
         assert_eq!(lifetime.not_before, 1);
@@ -209,7 +232,7 @@ mod tests {
         let as_extension = lifetime.to_extension().expect("to extension error");
         assert_eq!(as_extension.extension_id, ExtensionId::Lifetime);
 
-        let restored = Lifetime::from_extension(as_extension).expect("from extension error");
+        let restored = LifetimeExt::from_extension(as_extension).expect("from extension error");
         assert_eq!(lifetime.not_after, restored.not_after);
         assert_eq!(lifetime.not_before, restored.not_before);
     }
@@ -221,7 +244,7 @@ mod tests {
             extension_id: ExtensionId::KeyId,
             data: bad_data.clone(),
         };
-        let key_id: Result<KeyId<Capabilities>, ExtensionError> =
+        let key_id: Result<KeyId<CapabilitiesExt>, ExtensionError> =
             KeyId::from_extension(test_extension);
         assert_eq!(key_id.is_err(), true);
     }
@@ -232,6 +255,6 @@ mod tests {
             extension_id: ExtensionId::KeyId,
             data: vec![0u8; 32],
         };
-        assert_eq!(Capabilities::from_extension(test_extension).is_err(), true);
+        assert_eq!(CapabilitiesExt::from_extension(test_extension).is_err(), true);
     }
 }
