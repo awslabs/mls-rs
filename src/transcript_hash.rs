@@ -1,23 +1,12 @@
-use crate::ciphersuite::CipherSuiteError;
+use crate::ciphersuite::CipherSuite;
 use crate::confirmation_tag::ConfirmationTag;
 use crate::framing::{MLSPlaintextCommitAuthData, MLSPlaintextCommitContent};
-use cfg_if::cfg_if;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 use thiserror::Error;
 
-cfg_if! {
-    if #[cfg(test)] {
-        use crate::ciphersuite::test_util::MockCipherSuite as CipherSuite;
-    } else {
-        use crate::ciphersuite::{CipherSuite};
-    }
-}
-
 #[derive(Error, Debug)]
 pub enum TranscriptHashError {
-    #[error(transparent)]
-    CipherSuiteError(#[from] CipherSuiteError),
     #[error(transparent)]
     BincodeError(#[from] bincode::Error),
 }
@@ -51,7 +40,7 @@ impl ConfirmedTranscriptHash {
         ]
         .concat();
 
-        let value = cipher_suite.hash(&confirmed_input)?;
+        let value = cipher_suite.hash_function().digest(&confirmed_input);
 
         Ok(Self::from(value))
     }
@@ -84,7 +73,7 @@ impl InterimTranscriptHash {
 
         let interim_input = [confirmed.0.deref(), &bincode::serialize(&auth_data)?].concat();
 
-        let value = cipher_suite.hash(&interim_input)?;
+        let value = cipher_suite.hash_function().digest(&interim_input);
 
         Ok(InterimTranscriptHash::from(value))
     }

@@ -11,7 +11,15 @@ jobs:
           toolchain: nightly
           override: true
           components: rustfmt
+      - name: Setup SSH Keys and known_hosts
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+        run: |
+          ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+          ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
       - uses: actions-rs/cargo@v1
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
         with:
           command: fmt
           args: --all -- --check

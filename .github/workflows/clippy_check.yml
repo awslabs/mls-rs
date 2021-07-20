@@ -14,9 +14,16 @@ jobs:
           toolchain: nightly
           override: true
           components: clippy
-
+      - name: Setup SSH Keys and known_hosts
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+        run: |
+          ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+          ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
       - name: Run cargo clippy
         uses: actions-rs/cargo@v1
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
         with:
           command: clippy
           args: -- -D warnings

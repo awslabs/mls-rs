@@ -13,7 +13,15 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
+      - name: Setup SSH Keys and known_hosts
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+        run: |
+          ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+          ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
       - uses: actions/checkout@v2
       - uses: actions-rs/audit-check@v1
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

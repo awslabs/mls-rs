@@ -1,4 +1,3 @@
-use crate::ciphersuite::KemKeyPair;
 use crate::key_package::KeyPackage;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
@@ -21,10 +20,10 @@ pub(crate) struct Parent {
     pub unmerged_leaves: Vec<LeafIndex>,
 }
 
-impl From<KemKeyPair> for Parent {
-    fn from(kp: KemKeyPair) -> Self {
+impl From<Vec<u8>> for Parent {
+    fn from(pk: Vec<u8>) -> Self {
         Self {
-            public_key: kp.public_key,
+            public_key: pk,
             parent_hash: ParentHash::empty(), // TODO: Parent hash calculations
             unmerged_leaves: vec![],
         }
@@ -441,35 +440,39 @@ impl NodeVec {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::ciphersuite::test_util::MockCipherSuite;
-    use crate::credential::{BasicCredential, CredentialConvertable};
-    use crate::crypto::signature::SignatureSchemeId;
+    use crate::ciphersuite::{CipherSuite, SignatureScheme};
+    use crate::credential::{BasicCredential, CredentialConvertible};
     use crate::extension::ExtensionList;
-    use crate::protocol_version::ProtocolVersion;
+    use ferriscrypt::asym::ec_key::{generate_keypair, Curve, SecretKey};
+    use ferriscrypt::Signer;
 
-    fn get_mock_cipher_suite() -> MockCipherSuite {
-        let mut cipher_suite = MockCipherSuite::new();
-        cipher_suite
-            .expect_clone()
-            .returning_st(get_mock_cipher_suite);
-        cipher_suite.expect_get_id().returning_st(move || 42);
-        cipher_suite
-    }
-
+    // We can put any values for most fields, they aren't relevant to these tests
     fn get_test_key_package(id: Vec<u8>) -> KeyPackage {
-        KeyPackage {
-            version: ProtocolVersion::Test,
-            cipher_suite: get_mock_cipher_suite(),
-            hpke_init_key: vec![],
+        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let signing_key =
+            SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
+        let (hpke_pub, _) = generate_keypair(cipher_suite.kem_type().curve()).unwrap();
+
+        let mut kp = KeyPackage {
+            version: cipher_suite.protocol_version(),
+            cipher_suite,
+            hpke_init_key: hpke_pub.to_uncompressed_bytes().unwrap(),
             credential: BasicCredential {
-                signature_key: vec![],
+                signature_key: signing_key
+                    .to_public()
+                    .unwrap()
+                    .to_uncompressed_bytes()
+                    .unwrap(),
                 identity: id,
-                signature_scheme: SignatureSchemeId::Test,
+                signature_scheme: SignatureScheme::Ed25519,
             }
             .to_credential(),
             extensions: ExtensionList(vec![]),
             signature: vec![],
-        }
+        };
+
+        kp.signature = signing_key.sign(&kp.to_signable_vec().unwrap()).unwrap();
+        kp
     }
 
     pub(crate) fn get_test_node_vec() -> NodeVec {
@@ -579,36 +582,17 @@ pub mod test {
         let resolution_node_3 = test_vec.get_resolution(3, &[]).unwrap();
 
         let expected_5: Vec<Node> = [
-            Parent {
-                public_key: b"CD".to_vec(),
-                parent_hash: ParentHash::empty(),
-                unmerged_leaves: vec![LeafIndex(2)],
-            }
-            .into(),
-            Leaf {
-                key_package: get_test_key_package(b"C".to_vec()),
-            }
-            .into(),
+            test_vec[5].as_ref().unwrap().clone(),
+            test_vec[4].as_ref().unwrap().clone(),
         ]
         .to_vec();
 
         let expected_2: Vec<&Node> = [].to_vec();
 
         let expected_3: Vec<Node> = [
-            Leaf {
-                key_package: get_test_key_package(b"A".to_vec()),
-            }
-            .into(),
-            Parent {
-                public_key: b"CD".to_vec(),
-                parent_hash: ParentHash::empty(),
-                unmerged_leaves: vec![LeafIndex(2)],
-            }
-            .into(),
-            Leaf {
-                key_package: get_test_key_package(b"C".to_vec()),
-            }
-            .into(),
+            test_vec[0].as_ref().unwrap().clone(),
+            test_vec[5].as_ref().unwrap().clone(),
+            test_vec[4].as_ref().unwrap().clone(),
         ]
         .to_vec();
 
@@ -620,16 +604,8 @@ pub mod test {
     #[test]
     fn test_resolution_filter() {
         let test_vec = get_test_node_vec();
-
         let resolution_node_5 = test_vec.get_resolution(5, &[4]).unwrap();
-
-        let expected_5: Vec<Node> = [Parent {
-            public_key: b"CD".to_vec(),
-            parent_hash: ParentHash::empty(),
-            unmerged_leaves: vec![LeafIndex(2)],
-        }
-        .into()]
-        .to_vec();
+        let expected_5: Vec<Node> = [test_vec[5].as_ref().unwrap().clone()].to_vec();
 
         assert_eq!(resolution_node_5, expected_5.iter().collect::<Vec<&Node>>());
     }
@@ -643,16 +619,8 @@ pub mod test {
             (
                 3,
                 [
-                    Parent {
-                        public_key: b"CD".to_vec(),
-                        parent_hash: ParentHash::empty(),
-                        unmerged_leaves: vec![LeafIndex(2)],
-                    }
-                    .into(),
-                    Leaf {
-                        key_package: get_test_key_package(b"C".to_vec()),
-                    }
-                    .into(),
+                    test_vec[5].as_ref().unwrap().clone(),
+                    test_vec[4].as_ref().unwrap().clone(),
                 ]
                 .to_vec(),
             ),
@@ -677,16 +645,7 @@ pub mod test {
 
         let expected: Vec<(NodeIndex, Vec<Node>)> = [
             (1, [].to_vec()),
-            (
-                3,
-                [Parent {
-                    public_key: b"CD".to_vec(),
-                    parent_hash: ParentHash::empty(),
-                    unmerged_leaves: vec![LeafIndex(2)],
-                }
-                .into()]
-                .to_vec(),
-            ),
+            (3, [test_vec[5].as_ref().unwrap().clone()].to_vec()),
         ]
         .to_vec();
 

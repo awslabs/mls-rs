@@ -1,4 +1,4 @@
-use crate::ciphersuite::CipherSuiteError;
+use crate::ciphersuite::CipherSuite;
 use crate::extension::ExtensionError;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
@@ -10,18 +10,8 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
 
-cfg_if::cfg_if! {
-    if #[cfg(test)] {
-        use crate::ciphersuite::test_util::MockCipherSuite as CipherSuite;
-    } else {
-        use crate::ciphersuite::{CipherSuite};
-    }
-}
-
 #[derive(Error, Debug)]
 pub enum ParentHashError {
-    #[error(transparent)]
-    CipherSuiteError(#[from] CipherSuiteError),
     #[error(transparent)]
     SerializationError(#[from] bincode::Error),
     #[error(transparent)]
@@ -68,7 +58,7 @@ impl ParentHash {
         };
 
         let input_bytes = bincode::serialize(&input)?;
-        let hash = cipher_suite.hash(&input_bytes)?;
+        let hash = cipher_suite.hash_function().digest(&input_bytes);
         Ok(Self(hash))
     }
 
@@ -123,13 +113,8 @@ impl RatchetTree {
         let ocr = self
             .nodes
             .original_child_resolution(node, co_path_child_index)?;
-        ParentHash::new(
-            self.cipher_suite.clone(),
-            &node.public_key,
-            parent_parent_hash,
-            ocr,
-        )
-        .map_err(RatchetTreeError::from)
+        ParentHash::new(self.cipher_suite, &node.public_key, parent_parent_hash, ocr)
+            .map_err(RatchetTreeError::from)
     }
 
     fn parent_hash_for_leaf<T>(
@@ -270,9 +255,9 @@ mod test {
     use crate::tree_kem::node::test::get_test_node_vec;
     use crate::tree_kem::test::{get_test_key_package, get_test_key_packages, get_test_tree};
 
-    fn get_phash_test_tree() -> RatchetTree {
-        let (mut tree, _) = get_test_tree();
-        let key_packages = get_test_key_packages();
+    fn get_phash_test_tree(cipher_suite: CipherSuite) -> RatchetTree {
+        let (mut tree, _) = get_test_tree(cipher_suite);
+        let key_packages = get_test_key_packages(cipher_suite);
         tree.add_nodes(key_packages).unwrap();
 
         // Fill in parent nodes
@@ -302,63 +287,46 @@ mod test {
     }
 
     #[test]
-    fn test_leaf_parent_hash_calculation() {
-        let mut test_tree = get_phash_test_tree();
-        let parent_hash = test_tree.update_parent_hashes(LeafIndex(0), None).unwrap();
-        let expected = ParentHash::from(hex!(
-            "c8874987d29907fec1f846552a9b929b9db9d1b051bffe7528f2f2be38bb0952"
-        ));
-        assert_eq!(parent_hash, expected);
-    }
+    fn test_missing_parent_hash() {
+        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
 
-    #[test]
-    fn test_leaf_parent_hash_calculation_verify() {
-        let mut test_key_package = get_test_key_package(b"update".to_vec(), b"pk".to_vec());
+        let test_tree = get_phash_test_tree(cipher_suite);
+        let test_key_package = get_test_key_package(cipher_suite, b"foo".to_vec());
 
-        let expected_parent_hash = ParentHash::from(hex!(
-            "c8874987d29907fec1f846552a9b929b9db9d1b051bffe7528f2f2be38bb0952"
-        ));
-
-        test_key_package
-            .extensions
-            .set_extension(ParentHashExt::from(expected_parent_hash.clone()))
-            .unwrap();
-
-        let expected_update_path = UpdatePath {
-            leaf_key_package: test_key_package,
+        let test_update_path = UpdatePath {
+            leaf_key_package: test_key_package.key_package,
             nodes: vec![],
         };
 
-        let mut test_tree = get_phash_test_tree();
-
-        let parent_hash = test_tree
-            .clone()
-            .update_parent_hashes(LeafIndex(0), Some(&expected_update_path))
-            .unwrap();
-
-        assert_eq!(parent_hash, expected_parent_hash);
-
-        let mut missing_parent_hash = expected_update_path.clone();
-        missing_parent_hash.leaf_key_package.extensions.clear();
-
         let missing_parent_hash_res = test_tree
             .clone()
-            .update_parent_hashes(LeafIndex(0), Some(&missing_parent_hash));
+            .update_parent_hashes(LeafIndex(0), Some(&test_update_path));
 
         assert!(missing_parent_hash_res.is_err());
+    }
 
-        let mut invalid_parent_hash = expected_update_path;
-        invalid_parent_hash.leaf_key_package.extensions.clear();
+    #[test]
+    fn test_invalid_parent_hash() {
+        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+
+        let mut test_tree = get_phash_test_tree(cipher_suite);
+        let test_key_package = get_test_key_package(cipher_suite, b"foo".to_vec());
+
+        let mut test_update_path = UpdatePath {
+            leaf_key_package: test_key_package.key_package,
+            nodes: vec![],
+        };
+
         let unexpected_parent_hash = ParentHashExt::from(ParentHash::from(hex!("f00d")));
 
-        invalid_parent_hash
+        test_update_path
             .leaf_key_package
             .extensions
             .set_extension(unexpected_parent_hash)
             .unwrap();
 
         let invalid_parent_hash_res =
-            test_tree.update_parent_hashes(LeafIndex(0), Some(&invalid_parent_hash));
+            test_tree.update_parent_hashes(LeafIndex(0), Some(&test_update_path));
 
         assert!(invalid_parent_hash_res.is_err());
     }

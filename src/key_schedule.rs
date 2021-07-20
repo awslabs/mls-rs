@@ -1,5 +1,18 @@
-use crate::crypto::kdf::{Kdf, KdfError};
+use ferriscrypt::digest::HashFunction;
+use ferriscrypt::hpke::KdfId;
+use ferriscrypt::kdf::hkdf::Hkdf;
+use ferriscrypt::kdf::KdfError;
 use serde::Serialize;
+use std::ops::Deref;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum KeyScheduleKdfError {
+    #[error(transparent)]
+    HkdfError(#[from] KdfError),
+    #[error(transparent)]
+    SerializationError(#[from] bincode::Error),
+}
 
 #[derive(Serialize)]
 pub(crate) struct Label<'a> {
@@ -24,63 +37,60 @@ struct TreeContext {
     generation: u32,
 }
 
-pub trait KeyScheduleKdf: Kdf {
-    fn expand_with_label(
+#[derive(Clone, Debug)]
+pub struct KeyScheduleKdf(Hkdf);
+
+impl Deref for KeyScheduleKdf {
+    type Target = Hkdf;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl KeyScheduleKdf {
+    pub fn new(kdf_id: KdfId) -> KeyScheduleKdf {
+        let hkdf = match kdf_id {
+            KdfId::HkdfSha256 => Hkdf::new(HashFunction::Sha256),
+            KdfId::HkdfSha384 => Hkdf::new(HashFunction::Sha384),
+            KdfId::HkdfSha512 => Hkdf::new(HashFunction::Sha512),
+        };
+
+        KeyScheduleKdf(hkdf)
+    }
+
+    pub fn expand_with_label(
+        &self,
         secret: &[u8],
         label: &str,
         context: &[u8],
-        len: u16,
-    ) -> Result<Vec<u8>, KdfError> {
-        let label = Label::new(Self::EXTRACT_SIZE, label, context);
-        let label_bytes = bincode::serialize(&label).map_err(|e| KdfError::Other(e.to_string()))?;
-        Self::expand(secret, &label_bytes, len)
+        len: usize,
+    ) -> Result<Vec<u8>, KeyScheduleKdfError> {
+        let label = Label::new(self.extract_size() as u16, label, context);
+        let label_bytes = bincode::serialize(&label)?;
+        let mut buf = vec![0u8; len];
+        self.expand(secret, &label_bytes, &mut buf)?;
+        Ok(buf)
     }
 
-    fn derive_secret(secret: &[u8], label: &str) -> Result<Vec<u8>, KdfError> {
-        Self::expand_with_label(secret, label, &[], Self::EXTRACT_SIZE)
+    pub fn derive_secret(
+        &self,
+        secret: &[u8],
+        label: &str,
+    ) -> Result<Vec<u8>, KeyScheduleKdfError> {
+        self.expand_with_label(secret, label, &[], self.extract_size())
     }
 
-    fn derive_tree_secret(
+    pub fn derive_tree_secret(
+        &self,
         secret: &[u8],
         label: &str,
         node: u32,
         generation: u32,
-        len: u16,
-    ) -> Result<Vec<u8>, KdfError> {
+        len: usize,
+    ) -> Result<Vec<u8>, KeyScheduleKdfError> {
         let tree_context = TreeContext { node, generation };
-
-        let tree_context_bytes =
-            bincode::serialize(&tree_context).map_err(|e| KdfError::Other(e.to_string()))?;
-
-        Self::expand_with_label(secret, label, &tree_context_bytes, len)
-    }
-}
-
-impl KeyScheduleKdf for crate::crypto::kdf::HkdfSha256 {}
-impl KeyScheduleKdf for crate::crypto::kdf::HkdfSha512 {}
-
-#[cfg(test)]
-pub mod test_util {
-    use super::{Kdf, KdfError, KeyScheduleKdf};
-    use crate::crypto::kdf::KdfId;
-    use mockall::mock;
-
-    mock! {
-        pub TestKeyScheduleKdf {}
-
-        impl Kdf for TestKeyScheduleKdf {
-            const KDF_ID: KdfId = KdfId::Test;
-            const EXTRACT_SIZE: u16 = 42;
-
-            // RFC 5869 Extract-and-Expand HKDF
-            fn extract(salt: &[u8], key: &[u8]) -> Result<Vec<u8>, KdfError>;
-
-            // RFC 5869 Extract-and-Expand HKDF
-            fn expand(key: &[u8], info: &[u8], out_len: u16) -> Result<Vec<u8>, KdfError>;
-        }
-
-        impl KeyScheduleKdf for TestKeyScheduleKdf {
-            fn derive_secret(secret: &[u8], label: &str) -> Result<Vec<u8>, KdfError>;
-        }
+        let tree_context_bytes = bincode::serialize(&tree_context)?;
+        self.expand_with_label(secret, label, &tree_context_bytes, len)
     }
 }

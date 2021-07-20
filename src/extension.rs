@@ -61,7 +61,7 @@ impl<T: DeserializeOwned + Serialize> ExtensionTrait for KeyId<T> {
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct CapabilitiesExt {
     pub protocol_versions: Vec<ProtocolVersion>,
-    pub ciphersuites: Vec<CipherSuite>,
+    pub cipher_suites: Vec<CipherSuite>,
     pub extensions: Vec<ExtensionId>,
 }
 
@@ -69,7 +69,7 @@ impl Default for CapabilitiesExt {
     fn default() -> Self {
         Self {
             protocol_versions: vec![ProtocolVersion::Mls10],
-            ciphersuites: vec![
+            cipher_suites: vec![
                 CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256,
                 CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
                 CipherSuite::Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519,
@@ -102,6 +102,14 @@ impl LifetimeExt {
             not_before: start_time,
             not_after: start_time + s,
         })
+    }
+
+    pub fn days(d: u32, from: SystemTime) -> Result<Self, ExtensionError> {
+        Self::seconds((d * 86400) as u64, from)
+    }
+
+    pub fn years(y: u8, from: SystemTime) -> Result<Self, ExtensionError> {
+        Self::days(365 * y as u32, from)
     }
 
     pub fn within_lifetime(&self, system_time: SystemTime) -> Result<bool, ExtensionError> {
@@ -226,7 +234,7 @@ mod tests {
 
         let test_extension = CapabilitiesExt {
             protocol_versions: test_protocol_versions.clone(),
-            ciphersuites: test_ciphersuites.clone(),
+            cipher_suites: test_ciphersuites.clone(),
             extensions: test_extensions.clone(),
         };
 
@@ -236,7 +244,7 @@ mod tests {
         let restored =
             CapabilitiesExt::from_extension(as_extension).expect("deserialization error");
         assert_eq!(restored.protocol_versions, test_protocol_versions);
-        assert_eq!(restored.ciphersuites, test_ciphersuites);
+        assert_eq!(restored.cipher_suites, test_ciphersuites);
         assert_eq!(restored.extensions, test_extensions);
     }
 

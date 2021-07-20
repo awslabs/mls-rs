@@ -1,11 +1,7 @@
-use num_enum::{IntoPrimitive, TryFromPrimitive};
-use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 
-#[derive(IntoPrimitive, TryFromPrimitive, Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize_repr, Deserialize_repr, Debug, Clone, Copy, PartialEq)]
 #[repr(u8)]
-#[serde(into = "u8", try_from = "u8")]
 pub enum ProtocolVersion {
     Mls10 = 0x01,
-    #[cfg(test)]
-    Test = 0xff,
 }

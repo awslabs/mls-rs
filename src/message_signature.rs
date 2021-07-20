@@ -1,8 +1,10 @@
-use crate::crypto::signature::{Signable, SignatureError, Signer, Verifier};
+use crate::credential::CredentialError;
 use crate::framing::{Content, MLSPlaintext, Sender, SenderType};
 use crate::group::GroupContext;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{RatchetTree, RatchetTreeError};
+use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
+use ferriscrypt::{Signer, Verifier};
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::ops::Deref;
@@ -11,9 +13,13 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum MessageSignatureError {
     #[error(transparent)]
-    SignatureError(#[from] SignatureError),
+    SignatureError(#[from] EcKeyError),
     #[error(transparent)]
     RatchetTreeError(#[from] RatchetTreeError),
+    #[error(transparent)]
+    SerializationError(#[from] bincode::Error),
+    #[error(transparent)]
+    CredentialError(#[from] CredentialError),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -45,9 +51,9 @@ impl MLSPlaintextTBS {
 }
 
 impl MLSPlaintext {
-    pub(crate) fn sign<S: Signer>(
+    pub(crate) fn sign(
         &mut self,
-        signer: &S,
+        signer: &SecretKey,
         group_context: &GroupContext,
     ) -> Result<(), MessageSignatureError> {
         self.signature = MessageSignature::create(signer, self, group_context)?;
@@ -63,13 +69,6 @@ impl MLSPlaintext {
     }
 }
 
-impl Signable for MLSPlaintextTBS {
-    type E = bincode::Error;
-    fn to_signable_vec(&self) -> Result<Vec<u8>, Self::E> {
-        bincode::serialize(&self)
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MessageSignature(Vec<u8>);
 
@@ -78,13 +77,13 @@ impl MessageSignature {
         MessageSignature { 0: vec![] }
     }
 
-    fn create<S: Signer>(
-        signer: &S,
+    fn create(
+        signer: &SecretKey,
         plaintext: &MLSPlaintext,
         group_context: &GroupContext,
     ) -> Result<Self, MessageSignatureError> {
-        let signature_data =
-            signer.sign(&MLSPlaintextTBS::from_plaintext(plaintext, group_context))?;
+        let to_be_signed = MLSPlaintextTBS::from_plaintext(plaintext, group_context);
+        let signature_data = signer.sign(&bincode::serialize(&to_be_signed)?)?;
 
         Ok(MessageSignature(signature_data))
     }
@@ -102,10 +101,10 @@ impl MessageSignature {
             .credential
             .borrow();
 
-        let is_signature_valid = sender_cred.verify(
-            &plaintext.signature,
-            &MLSPlaintextTBS::from_plaintext(plaintext, group_context),
-        )?;
+        let to_be_verified = MLSPlaintextTBS::from_plaintext(plaintext, group_context);
+
+        let is_signature_valid =
+            sender_cred.verify(&plaintext.signature, &bincode::serialize(&to_be_verified)?)?;
 
         Ok(is_signature_valid)
     }

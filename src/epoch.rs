@@ -1,30 +1,29 @@
-use crate::ciphersuite::{CipherSuiteError, ExpandType};
+use crate::ciphersuite::CipherSuite;
 use crate::group::GroupContext;
+use crate::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
 use crate::secret_tree::{EncryptionKey, KeyType, SecretKeyRatchet, SecretTree, SecretTreeError};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{TreeSecrets, UpdatePathGeneration};
-use cfg_if::cfg_if;
+use ferriscrypt::cipher::AeadError;
+use ferriscrypt::cipher::{Key, Nonce};
+use ferriscrypt::kdf::KdfError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
 
-cfg_if! {
-    if #[cfg(test)] {
-        use crate::ciphersuite::test_util::MockCipherSuite as CipherSuite;
-    } else {
-        use crate::ciphersuite::{CipherSuite};
-    }
-}
-
 #[derive(Error, Debug)]
 pub enum EpochKeyScheduleError {
     #[error(transparent)]
-    CipherSuiteError(#[from] CipherSuiteError),
+    KeyScheduleKdfError(#[from] KeyScheduleKdfError),
+    #[error(transparent)]
+    KdfError(#[from] KdfError),
     #[error(transparent)]
     SecretTreeError(#[from] SecretTreeError),
     #[error(transparent)]
     BincodeError(#[from] bincode::Error),
+    #[error(transparent)]
+    AeadError(#[from] AeadError),
     #[error("key derivation failure")]
     KeyDerivationFailure,
 }
@@ -74,8 +73,9 @@ impl EpochKeySchedule {
         context: &GroupContext,
         self_index: LeafIndex,
     ) -> Result<EpochKeyScheduleDerivation, EpochKeyScheduleError> {
-        let joiner_secret = cipher_suite
-            .derive_secret(&cipher_suite.extract(last_init, commit_secret)?, "joiner")?;
+        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
+
+        let joiner_secret = kdf.derive_secret(&kdf.extract(last_init, commit_secret)?, "joiner")?;
 
         let schedule = Self::new_joiner(
             cipher_suite,
@@ -98,7 +98,7 @@ impl EpochKeySchedule {
         context: &GroupContext,
     ) -> Result<EpochKeyScheduleDerivation, EpochKeyScheduleError> {
         Self::derive(
-            epoch.cipher_suite.clone(),
+            epoch.cipher_suite,
             &epoch.init_secret,
             commit_secret,
             num_leaves,
@@ -114,29 +114,31 @@ impl EpochKeySchedule {
         context: &GroupContext,
         self_index: LeafIndex,
     ) -> Result<Self, EpochKeyScheduleError> {
-        //TODO: PSK is not supported
-        let epoch_seed = cipher_suite.extract(joiner_secret, &[])?;
+        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
-        let epoch_secret = cipher_suite.expand_with_label(
+        //TODO: PSK is not supported
+        let epoch_seed = kdf.extract(joiner_secret, &[])?;
+
+        let epoch_secret = kdf.expand_with_label(
             &epoch_seed,
             "epoch",
             &bincode::serialize(context)?,
-            ExpandType::Secret,
+            kdf.extract_size(),
         )?;
 
         // Derive secrets from epoch secret
-        let sender_data_secret = cipher_suite.derive_secret(&epoch_secret, "sender data")?;
-        let encryption_secret = cipher_suite.derive_secret(&epoch_secret, "encryption")?;
-        let exporter_secret = cipher_suite.derive_secret(&epoch_secret, "exporter")?;
-        let authentication_secret = cipher_suite.derive_secret(&epoch_secret, "authentication")?;
-        let external_secret = cipher_suite.derive_secret(&epoch_secret, "external")?;
-        let confirmation_key = cipher_suite.derive_secret(&epoch_secret, "confirm")?;
-        let membership_key = cipher_suite.derive_secret(&epoch_secret, "membership")?;
-        let resumption_secret = cipher_suite.derive_secret(&epoch_secret, "resumption")?;
+        let sender_data_secret = kdf.derive_secret(&epoch_secret, "sender data")?;
+        let encryption_secret = kdf.derive_secret(&epoch_secret, "encryption")?;
+        let exporter_secret = kdf.derive_secret(&epoch_secret, "exporter")?;
+        let authentication_secret = kdf.derive_secret(&epoch_secret, "authentication")?;
+        let external_secret = kdf.derive_secret(&epoch_secret, "external")?;
+        let confirmation_key = kdf.derive_secret(&epoch_secret, "confirm")?;
+        let membership_key = kdf.derive_secret(&epoch_secret, "membership")?;
+        let resumption_secret = kdf.derive_secret(&epoch_secret, "resumption")?;
 
-        let init_secret = cipher_suite.derive_secret(&epoch_secret, "init")?;
+        let init_secret = kdf.derive_secret(&epoch_secret, "init")?;
 
-        let secret_tree = SecretTree::new(cipher_suite.clone(), num_leaves, encryption_secret);
+        let secret_tree = SecretTree::new(cipher_suite, num_leaves, encryption_secret);
 
         Ok(Self {
             cipher_suite,
@@ -220,34 +222,36 @@ impl EpochKeySchedule {
     pub fn get_sender_data_params(
         &self,
         ciphertext: &[u8],
-    ) -> Result<(Vec<u8>, Vec<u8>), EpochKeyScheduleError> {
+    ) -> Result<(Key, Nonce), EpochKeyScheduleError> {
+        let kdf = KeyScheduleKdf::new(self.cipher_suite.kdf_type());
         // Sample the first extract_size bytes of the ciphertext, and if it is shorter, just use
         // the ciphertext itself
-        let ciphertext_sample = if ciphertext.len() <= self.cipher_suite.extract_size() as usize {
+        let ciphertext_sample = if ciphertext.len() <= kdf.extract_size() as usize {
             ciphertext
         } else {
-            ciphertext
-                .get(0..self.cipher_suite.extract_size() as usize)
-                .unwrap()
+            ciphertext.get(0..kdf.extract_size() as usize).unwrap()
         };
 
         // Generate a sender data key and nonce using the sender_data_secret from the current
         // epoch's key schedule
-        let sender_data_key = self.cipher_suite.expand_with_label(
+        let sender_data_key = kdf.expand_with_label(
             &self.sender_data_secret,
             "key",
             ciphertext_sample,
-            ExpandType::AeadKey,
+            self.cipher_suite.aead_type().key_size(),
         )?;
 
-        let sender_data_nonce = self.cipher_suite.expand_with_label(
+        let sender_data_nonce = kdf.expand_with_label(
             &self.sender_data_secret,
             "nonce",
             ciphertext_sample,
-            ExpandType::AeadNonce,
+            self.cipher_suite.aead_type().nonce_size(),
         )?;
 
-        Ok((sender_data_key, sender_data_nonce))
+        Ok((
+            Key::new(self.cipher_suite.aead_type(), sender_data_key)?,
+            Nonce::new(&sender_data_nonce)?,
+        ))
     }
 }
 
@@ -267,18 +271,19 @@ impl CommitSecret {
     pub fn from_update_path(
         cipher_suite: &CipherSuite,
         update_path: Option<&UpdatePathGeneration>,
-    ) -> Result<Self, CipherSuiteError> {
+    ) -> Result<Self, KeyScheduleKdfError> {
         Self::from_tree_secrets(cipher_suite, update_path.map(|up| &up.secrets))
     }
 
     pub fn from_tree_secrets(
         cipher_suite: &CipherSuite,
         secrets: Option<&TreeSecrets>,
-    ) -> Result<Self, CipherSuiteError> {
+    ) -> Result<Self, KeyScheduleKdfError> {
+        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
+
         match secrets {
             Some(secrets) => {
-                let secret =
-                    cipher_suite.derive_secret(&secrets.secret_path.root_secret, "path")?;
+                let secret = kdf.derive_secret(&secrets.secret_path.root_secret, "path")?;
                 Ok(CommitSecret(secret))
             }
             None => Ok(Self::empty(cipher_suite)),
@@ -286,59 +291,60 @@ impl CommitSecret {
     }
 
     pub fn empty(cipher_suite: &CipherSuite) -> Self {
+        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
         // Define commit_secret as the all-zero vector of the same length as a path_secret
         // value would be
-        CommitSecret(vec![0u8; cipher_suite.extract_size() as usize])
+        CommitSecret(vec![0u8; kdf.extract_size()])
     }
 }
 
-pub struct WelcomeSecret(Vec<u8>);
+pub struct WelcomeSecret {
+    pub data: Vec<u8>,
+    key: Key,
+    nonce: Nonce,
+}
 
 impl Deref for WelcomeSecret {
     type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.data
     }
 }
 
 impl WelcomeSecret {
     pub fn from_joiner_secret(
-        cipher_suite: &CipherSuite,
+        cipher_suite: CipherSuite,
         joiner_secret: &[u8],
-    ) -> Result<WelcomeSecret, CipherSuiteError> {
+    ) -> Result<WelcomeSecret, EpochKeyScheduleError> {
         //TODO: PSK is not supported
-        let epoch_seed = cipher_suite.extract(joiner_secret, &[])?;
+        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
+        let epoch_seed = kdf.extract(joiner_secret, &[])?;
+        let data = kdf.derive_secret(&epoch_seed, "welcome")?;
 
-        cipher_suite.derive_secret(&epoch_seed, "welcome").map(Self)
+        let aead = cipher_suite.aead_type();
+
+        let mut key_buf = vec![0u8; aead.key_size()];
+        kdf.expand(&data, b"key", &mut key_buf)?;
+        let key = Key::new(aead, key_buf)?;
+
+        let mut nonce_buf = vec![0u8; aead.nonce_size()];
+        kdf.expand(&data, b"nonce", &mut nonce_buf)?;
+        let nonce = Nonce::new(&nonce_buf)?;
+
+        Ok(WelcomeSecret { data, key, nonce })
     }
 
-    pub(crate) fn as_nonce(&self, cipher_suite: &CipherSuite) -> Result<Vec<u8>, CipherSuiteError> {
-        cipher_suite.expand(self, b"nonce", ExpandType::AeadNonce)
+    pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, EpochKeyScheduleError> {
+        self.key
+            .encrypt(plaintext, None, self.nonce.clone())
+            .map_err(Into::into)
     }
 
-    pub(crate) fn as_key(&self, cipher_suite: &CipherSuite) -> Result<Vec<u8>, CipherSuiteError> {
-        cipher_suite.expand(self, b"key", ExpandType::AeadKey)
-    }
-
-    pub fn encrypt(
-        &self,
-        cipher_suite: &CipherSuite,
-        plaintext: &[u8],
-    ) -> Result<Vec<u8>, CipherSuiteError> {
-        let key = self.as_key(cipher_suite)?;
-        let nonce = self.as_nonce(cipher_suite)?;
-        cipher_suite.aead_encrypt(key, plaintext, &[], &nonce)
-    }
-
-    pub fn decrypt(
-        &self,
-        cipher_suite: &CipherSuite,
-        ciphertext: &[u8],
-    ) -> Result<Vec<u8>, CipherSuiteError> {
-        let key = self.as_key(cipher_suite)?;
-        let nonce = self.as_nonce(cipher_suite)?;
-        cipher_suite.aead_decrypt(key, ciphertext, &[], &nonce)
+    pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, EpochKeyScheduleError> {
+        self.key
+            .decrypt(ciphertext, None, self.nonce.clone())
+            .map_err(Into::into)
     }
 }
 
@@ -356,7 +362,7 @@ pub mod test_utils {
     ) -> EpochKeySchedule {
         EpochKeySchedule {
             cipher_suite,
-            secret_tree: get_test_tree(vec![], 1),
+            secret_tree: get_test_tree(cipher_suite, vec![], 1),
             self_index: LeafIndex(0),
             sender_data_secret: vec![],
             exporter_secret: vec![],

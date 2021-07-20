@@ -1,214 +1,210 @@
-use crate::ciphersuite::CipherSuiteError;
+use crate::ciphersuite::CipherSuite;
 use crate::credential::Credential;
-use crate::crypto::asym::AsymmetricKey;
-use crate::crypto::signature::{ed25519, Signable, SignatureError, SignatureSchemeId, Signer};
 use crate::extension::{
     CapabilitiesExt, ExtensionError, ExtensionList, ExtensionTrait, LifetimeExt,
 };
-use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGenerator};
-use cfg_if::cfg_if;
+use crate::key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageGenerator};
+use ferriscrypt::asym::ec_key::Curve;
+use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
+use ferriscrypt::Signer;
 use serde::{Deserialize, Serialize};
-use std::time::SystemTime;
+use std::marker::PhantomData;
 use thiserror::Error;
-
-cfg_if! {
-    if #[cfg(test)] {
-        use crate::ciphersuite::test_util::MockCipherSuite as CipherSuite;
-    } else {
-        use crate::ciphersuite::{CipherSuite};
-    }
-}
 
 #[derive(Error, Debug)]
 pub enum ClientError {
     #[error(transparent)]
-    CipherSuiteError(#[from] CipherSuiteError),
-    #[error(transparent)]
     ExtensionError(#[from] ExtensionError),
     #[error(transparent)]
-    SignatureError(#[from] SignatureError),
+    EcKeyError(#[from] EcKeyError),
+    #[error(transparent)]
+    KeyPackageError(#[from] KeyPackageError),
+    #[error("signature key provided does not match the selected cipher suite")]
+    SignatureCipherSuiteMismatch,
+    #[error("credential provided does not match the selected cipher suite")]
+    CredentialCipherSuiteMismatch,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Client {
-    pub signature_key: Vec<u8>,
+    pub cipher_suite: CipherSuite,
+    pub signature_key: SecretKey,
     pub credential: Credential,
     pub capabilities: CapabilitiesExt,
-    pub key_lifetime: u64,
+    phantom: PhantomData<u8>, // Don't allow direct construction
 }
 
 impl Client {
-    #[inline]
-    pub(crate) fn get_extensions(&self) -> Result<ExtensionList, ExtensionError> {
-        Ok(ExtensionList(vec![
-            self.capabilities.to_extension()?,
-            LifetimeExt::seconds(self.key_lifetime, SystemTime::now())?.to_extension()?,
-        ]))
+    pub fn new(
+        cipher_suite: CipherSuite,
+        signature_key: SecretKey,
+        credential: Credential,
+    ) -> Result<Client, ClientError> {
+        if signature_key.curve != Curve::from(cipher_suite.signature_scheme()) {
+            return Err(ClientError::SignatureCipherSuiteMismatch);
+        }
+
+        if credential.get_signature_scheme() != cipher_suite.signature_scheme() {
+            return Err(ClientError::CredentialCipherSuiteMismatch);
+        }
+
+        Ok(Client {
+            cipher_suite,
+            signature_key,
+            credential,
+            capabilities: CapabilitiesExt::default(),
+            phantom: PhantomData::default(),
+        })
+    }
+}
+
+impl Client {
+    pub fn gen_key_package(
+        &self,
+        lifetime: &LifetimeExt,
+    ) -> Result<KeyPackageGeneration, ClientError> {
+        let key_package_generator = KeyPackageGenerator {
+            cipher_suite: self.cipher_suite,
+            credential: &self.credential,
+            extensions: ExtensionList(vec![
+                self.capabilities.to_extension()?,
+                lifetime.to_extension()?,
+            ]),
+            signing_key: &self.signature_key,
+        };
+
+        key_package_generator.generate().map_err(Into::into)
     }
 }
 
 impl Signer for Client {
-    fn sign<T: Signable + 'static>(&self, data: &T) -> Result<Vec<u8>, SignatureError> {
-        match self.credential.get_signature_type() {
-            SignatureSchemeId::EcdsaSecp256r1Sha256 => {
-                let key = crate::crypto::asym::p256::SecretKey::from_bytes(&self.signature_key)?;
-                key.sign(data)
-            }
-            SignatureSchemeId::EcdsaSecp521r1Sha512 => {
-                let key = crate::crypto::asym::p521::SecretKey::from_bytes(&self.signature_key)?;
-                key.sign(data)
-            }
-            SignatureSchemeId::Ed25519 => {
-                let key = ed25519::SecretKey::from_bytes(&self.signature_key)?;
-                key.sign(data)
-            }
-            #[cfg(test)]
-            SignatureSchemeId::Test => Ok(data.to_signable_vec().unwrap()),
-        }
-    }
-}
+    type ErrorType = ClientError;
+    type SignatureType = Vec<u8>;
 
-impl KeyPackageGenerator for Client {
-    fn package_from_pub_key(
-        &self,
-        cipher_suite: &CipherSuite,
-        pub_key: Vec<u8>,
-    ) -> Result<KeyPackage, KeyPackageError> {
-        Ok(KeyPackage {
-            version: cipher_suite.get_protocol_version(),
-            cipher_suite: cipher_suite.clone(),
-            hpke_init_key: pub_key,
-            credential: self.credential.clone(),
-            extensions: self.get_extensions()?,
-            signature: vec![],
-        })
+    #[inline(always)]
+    fn sign(&self, data: &[u8]) -> Result<Self::SignatureType, Self::ErrorType> {
+        self.signature_key.sign(data).map_err(Into::into)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::ciphersuite::test_util::MockCipherSuite;
-    use crate::ciphersuite::KemKeyPair;
-    use crate::client::Client;
-    use crate::credential::{BasicCredential, CredentialConvertable};
-    use crate::crypto::asym::AsymmetricKey;
-    use crate::crypto::rand::test_rng::ZerosRng;
-    use crate::crypto::rand::OpenSslRng;
-    use crate::crypto::signature::test_utils::{get_test_signer, get_test_verifier};
-    use crate::crypto::signature::{
-        ed25519::EdDsa25519, p256::EcDsaP256, p521::EcDsaP521, test_utils::MockTestSignatureScheme,
-        Signable, SignatureScheme, Signer, Verifier,
-    };
-    use crate::key_package::{KeyPackage, KeyPackageGenerator};
-    use crate::protocol_version::ProtocolVersion;
+    use super::*;
+    use crate::credential::BasicCredential;
+    use ferriscrypt::asym::ec_key::Curve;
+    use ferriscrypt::rand::SecureRng;
+    use ferriscrypt::Verifier;
+    use std::time::SystemTime;
 
-    fn get_test_client<SS: SignatureScheme>(sig_scheme: &SS) -> Client {
-        let signature_key = sig_scheme
-            .as_public_signature_key()
-            .expect("failed sig key");
+    fn get_test_credential(identity: Vec<u8>, signature_key: &SecretKey) -> Credential {
+        Credential::Basic(
+            BasicCredential::new(identity, signature_key.to_public().unwrap()).unwrap(),
+        )
+    }
 
-        Client {
-            signature_key: sig_scheme
-                .get_signer()
-                .to_bytes()
-                .expect("failed serialize"),
-            credential: BasicCredential {
-                identity: vec![0u8; 4],
-                signature_key: signature_key.signature_key,
-                signature_scheme: signature_key.signature_scheme,
-            }
-            .to_credential(),
-            capabilities: Default::default(),
-            key_lifetime: 42,
+    fn get_test_client(identity: Vec<u8>, cipher_suite: CipherSuite) -> Client {
+        let signature_key =
+            SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
+        let credential = get_test_credential(identity, &signature_key);
+
+        Client::new(cipher_suite, signature_key, credential).unwrap()
+    }
+
+    #[test]
+    fn test_construction() {
+        for cipher_suite in CipherSuite::all() {
+            println!("Running client construction for {:?}", cipher_suite);
+            let identity = SecureRng::gen(42).unwrap();
+            let test_client = get_test_client(identity, cipher_suite);
+            assert_eq!(test_client.cipher_suite, cipher_suite);
+            assert_eq!(test_client.capabilities, CapabilitiesExt::default());
+            assert_eq!(
+                test_client
+                    .credential
+                    .get_public_key()
+                    .unwrap()
+                    .to_uncompressed_bytes()
+                    .unwrap(),
+                test_client
+                    .signature_key
+                    .to_public()
+                    .unwrap()
+                    .to_uncompressed_bytes()
+                    .unwrap()
+            );
         }
     }
 
-    fn test_signature<V: Verifier>(client: &Client, verifier: &V) {
-        let test_input = b"test".to_vec();
-        let signature = client.sign(&test_input).expect("failed signature");
-        assert!(verifier
-            .verify(&signature, &test_input)
-            .expect("failed verify"))
+    #[test]
+    fn test_bad_sig_key() {
+        // Signature key is P256 but cipher suite expects Ed25519
+        let sig_key = SecretKey::generate(Curve::P256).unwrap();
+        let credential = get_test_credential(vec![], &sig_key);
+        let client_res = Client::new(
+            CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
+            sig_key,
+            credential,
+        );
+        assert!(client_res.is_err());
     }
 
     #[test]
-    fn test_client_signatures_ed25519() {
-        let sig_scheme = EdDsa25519::new_random(OpenSslRng).expect("keygen fail");
-        let client = get_test_client(&sig_scheme);
-        test_signature(&client, sig_scheme.get_verifier())
+    fn test_bad_credential() {
+        let sig_key = SecretKey::generate(Curve::P256).unwrap();
+        let other_sig_key = SecretKey::generate(Curve::Ed25519).unwrap();
+
+        let credential = Credential::Basic(
+            BasicCredential::new(vec![], other_sig_key.to_public().unwrap()).unwrap(),
+        );
+
+        let client_res = Client::new(
+            CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256,
+            sig_key,
+            credential,
+        );
+        assert!(client_res.is_err());
     }
 
     #[test]
-    fn test_client_signatures_p256() {
-        let sig_scheme = EcDsaP256::new_random(OpenSslRng).expect("keygen fail");
-        let client = get_test_client(&sig_scheme);
-        test_signature(&client, sig_scheme.get_verifier())
+    fn test_signing() {
+        for cipher_suite in CipherSuite::all() {
+            println!("Running client signatures for {:?}", cipher_suite);
+            let client = get_test_client(vec![], cipher_suite);
+            let test_input = SecureRng::gen(42).unwrap();
+
+            // Signatures created by the client should be able to be verified by the credential
+            let signature = client.sign(&test_input).unwrap();
+            assert!(client.credential.verify(&signature, &test_input).unwrap());
+        }
     }
 
     #[test]
-    fn test_client_signatures_p521() {
-        let sig_scheme = EcDsaP521::new_random(OpenSslRng).expect("keygen fail");
-        let client = get_test_client(&sig_scheme);
-        test_signature(&client, sig_scheme.get_verifier())
-    }
+    fn test_keygen() {
+        // This is meant to test the inputs to the internal key package generator
+        // See KeyPackageGenerator tests for key generation specific tests
+        for cipher_suite in CipherSuite::all() {
+            println!("Running client keygen for {:?}", cipher_suite);
 
-    fn get_mock_cipher_suite() -> MockCipherSuite {
-        let mut cipher_suite = MockCipherSuite::new();
+            let cred_identity = SecureRng::gen(42).unwrap();
+            let client = get_test_client(cred_identity, cipher_suite);
+            let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
+            let package_gen = client.gen_key_package(&key_lifetime).unwrap();
 
-        cipher_suite
-            .expect_generate_kem_key_pair()
-            .return_once_st(move |_: &ZerosRng| {
-                Ok(KemKeyPair {
-                    public_key: vec![0u8; 4],
-                    secret_key: vec![255u8; 4],
-                })
-            });
+            assert_eq!(package_gen.key_package.cipher_suite, cipher_suite);
+            assert_eq!(package_gen.key_package.credential, client.credential);
+            assert_eq!(
+                package_gen
+                    .key_package
+                    .extensions
+                    .get_lifetime()
+                    .unwrap()
+                    .unwrap(),
+                key_lifetime
+            );
 
-        cipher_suite.expect_get_id().return_const(42u16);
-        cipher_suite
-            .expect_get_protocol_version()
-            .return_const(ProtocolVersion::Test);
-        cipher_suite
-    }
-
-    #[test]
-    fn test_key_package_generation() {
-        let mut mock_sig_scheme = MockTestSignatureScheme::new();
-        mock_sig_scheme
-            .expect_get_signer()
-            .return_const(get_test_signer(&b"test".to_vec()));
-        mock_sig_scheme
-            .expect_get_verifier()
-            .return_const(get_test_verifier(&b"test".to_vec()));
-
-        let client = get_test_client(&mock_sig_scheme);
-
-        let mut mock_cipher_suite = get_mock_cipher_suite();
-        mock_cipher_suite
-            .expect_clone()
-            .returning_st(get_mock_cipher_suite);
-        mock_cipher_suite
-            .expect_hash()
-            .returning_st(move |value| Ok(value.to_vec()));
-
-        let key_package_generation = client
-            .gen_key_package(&mut ZerosRng, &mock_cipher_suite)
-            .expect("key error");
-
-        assert_eq!(key_package_generation.secret_key, vec![255u8; 4]);
-
-        let expected_package = KeyPackage {
-            version: ProtocolVersion::Test,
-            cipher_suite: get_mock_cipher_suite(),
-            hpke_init_key: vec![0u8; 4],
-            credential: client.credential.clone(),
-            extensions: client.get_extensions().expect("failed extensions"),
-            signature: key_package_generation
-                .key_package
-                .to_signable_vec()
-                .unwrap(),
-        };
-
-        assert_eq!(key_package_generation.key_package, expected_package);
+            let capabilities: Option<CapabilitiesExt> =
+                package_gen.key_package.extensions.get_extension().unwrap();
+            assert_eq!(capabilities, Some(client.capabilities));
+        }
     }
 }

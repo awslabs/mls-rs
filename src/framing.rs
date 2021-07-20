@@ -147,7 +147,7 @@ pub struct MLSCiphertext {
 pub struct MLSSenderData {
     pub sender: u32,
     pub generation: u32,
-    pub reuse_guard: Vec<u8>,
+    pub reuse_guard: [u8; 4],
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

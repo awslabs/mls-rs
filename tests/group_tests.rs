@@ -1,3 +1,4 @@
+use ferriscrypt::asym::ec_key::{generate_keypair, Curve};
 use mls::ciphersuite::CipherSuite;
 use mls::ciphersuite::CipherSuite::{
     Mls10128Dhkemp256Aes128gcmSha256P256, Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
@@ -5,48 +6,35 @@ use mls::ciphersuite::CipherSuite::{
 };
 use mls::client::Client;
 use mls::credential::{BasicCredential, Credential};
-use mls::crypto::asym::AsymmetricKey;
-use mls::crypto::rand::OpenSslRng;
-use mls::crypto::signature::ed25519::EdDsa25519;
-use mls::crypto::signature::SignatureScheme;
+use mls::extension::LifetimeExt;
 use mls::group::{Event, Group};
-use mls::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageGenerator};
+use mls::key_package::{KeyPackage, KeyPackageGeneration};
+use std::time::SystemTime;
 
-fn generate_client(id: Vec<u8>) -> Client {
-    let signature_scheme = EdDsa25519::new_random(OpenSslRng).unwrap();
-    let signature_key = signature_scheme.as_public_signature_key().unwrap();
-    let basic = BasicCredential {
-        signature_key: signature_key.signature_key,
-        identity: id,
-        signature_scheme: signature_key.signature_scheme,
-    };
-
-    Client {
-        signature_key: signature_scheme.get_signer().to_bytes().unwrap(),
-        credential: Credential::Basic(basic),
-        capabilities: Default::default(),
-        key_lifetime: 42,
-    }
+fn generate_client(cipher_suite: CipherSuite, id: Vec<u8>) -> Client {
+    let (public_key, secret_key) =
+        generate_keypair(Curve::from(cipher_suite.signature_scheme())).unwrap();
+    let credential = Credential::Basic(BasicCredential::new(id, public_key).unwrap());
+    Client::new(cipher_suite, secret_key, credential).unwrap()
 }
 
 fn test_create(cipher_suite: CipherSuite, update_path: bool) {
-    let mut rng = OpenSslRng;
+    let alice = generate_client(cipher_suite, b"alice".to_vec());
+    let bob = generate_client(cipher_suite, b"bob".to_vec());
+    let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
 
-    let alice = generate_client(b"alice".to_vec());
-    let bob = generate_client(b"bob".to_vec());
-
-    let alice_key = alice.gen_key_package(&mut rng, &cipher_suite).unwrap();
-    let bob_key = bob.gen_key_package(&mut rng, &cipher_suite).unwrap();
+    let alice_key = alice.gen_key_package(&key_lifetime).unwrap();
+    let bob_key = bob.gen_key_package(&key_lifetime).unwrap();
 
     // Alice creates a group and adds bob to the group
-    let mut test_group = Group::new(&mut rng, b"group".to_vec(), alice_key).unwrap();
+    let mut test_group = Group::new(b"group".to_vec(), alice_key).unwrap();
 
     let add_members = test_group
         .add_member_proposals(&[bob_key.key_package.clone()])
         .unwrap();
 
     let commit = test_group
-        .commit_proposals(add_members, update_path, &mut rng, &alice, &alice)
+        .commit_proposals(add_members, update_path, &alice.signature_key)
         .unwrap();
 
     // Upon server confirmation, alice applies the commit to her own state
@@ -100,27 +88,22 @@ struct TestGroupCreation {
 
 fn get_test_group(cipher_suite: CipherSuite, num_participants: usize) -> TestGroupCreation {
     // Create the group with Alice as the group initiator
-    let alice = generate_client(b"alice".to_vec());
+    let alice = generate_client(cipher_suite, b"alice".to_vec());
+    let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
 
-    let alice_key = alice
-        .gen_key_package(&mut OpenSslRng, &cipher_suite)
-        .unwrap();
+    let alice_key = alice.gen_key_package(&key_lifetime).unwrap();
 
-    let mut test_group = Group::new(&mut OpenSslRng, b"group".to_vec(), alice_key.clone()).unwrap();
+    let mut test_group = Group::new(b"group".to_vec(), alice_key.clone()).unwrap();
 
     // Generate random clients that will be members of the group
     let clients = (0..num_participants)
         .into_iter()
-        .map(|_| generate_client(b"test".to_vec()))
+        .map(|_| generate_client(cipher_suite, b"test".to_vec()))
         .collect::<Vec<Client>>();
 
     let test_keys = clients
         .iter()
-        .map(|client| {
-            client
-                .gen_key_package(&mut OpenSslRng, &cipher_suite)
-                .unwrap()
-        })
+        .map(|client| client.gen_key_package(&key_lifetime).unwrap())
         .collect::<Vec<KeyPackageGeneration>>();
 
     // Add the generated clients to the group Alice created
@@ -134,7 +117,7 @@ fn get_test_group(cipher_suite: CipherSuite, num_participants: usize) -> TestGro
         .unwrap();
 
     let commit = test_group
-        .commit_proposals(add_members_proposal, true, &mut OpenSslRng, &alice, &alice)
+        .commit_proposals(add_members_proposal, true, &alice.signature_key)
         .unwrap();
 
     let events = test_group.process_pending_commit(commit.clone()).unwrap();
@@ -179,9 +162,7 @@ fn test_path_updates(cipher_suite: CipherSuite) {
             .commit_proposals(
                 vec![],
                 true,
-                &mut OpenSslRng,
-                &test_group_data.receiver_clients[i],
-                &test_group_data.receiver_clients[i],
+                &test_group_data.receiver_clients[i].signature_key,
             )
             .unwrap();
 
@@ -224,15 +205,23 @@ fn test_update_proposals(cipher_suite: CipherSuite) {
     );
 
     let mut test_group_data = get_test_group(cipher_suite, 10);
+    let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
 
     // Create an update from the ith member, have the ith + 1 member commit it
     for i in 0..test_group_data.receiver_groups.len() - 1 {
+        let key_package = test_group_data.receiver_clients[i]
+            .gen_key_package(&key_lifetime)
+            .unwrap();
+
         let update_proposal = test_group_data.receiver_groups[i]
-            .update_proposal(&mut OpenSslRng, &test_group_data.receiver_clients[i])
+            .update_proposal(key_package)
             .unwrap();
 
         let update_proposal_packet = test_group_data.receiver_groups[i]
-            .send_proposal(update_proposal, &test_group_data.receiver_clients[i])
+            .send_proposal(
+                update_proposal,
+                &test_group_data.receiver_clients[i].signature_key,
+            )
             .unwrap();
 
         // Everyone should process the proposal
@@ -254,9 +243,7 @@ fn test_update_proposals(cipher_suite: CipherSuite) {
             .commit_proposals(
                 vec![],
                 true,
-                &mut OpenSslRng,
-                &test_group_data.receiver_clients[i + 1],
-                &test_group_data.receiver_clients[i + 1],
+                &test_group_data.receiver_clients[i + 1].signature_key,
             )
             .unwrap();
 
@@ -303,7 +290,7 @@ fn test_remove_proposals(cipher_suite: CipherSuite) {
     let mut test_group_data = get_test_group(cipher_suite, 10);
 
     // Remove people from the group one at a time
-    while !test_group_data.receiver_groups.is_empty() {
+    while test_group_data.receiver_groups.len() > 1 {
         let removal = test_group_data
             .creator_group
             .remove_proposal((test_group_data.creator_group.public_tree.leaf_count() - 1) as u32)
@@ -311,13 +298,7 @@ fn test_remove_proposals(cipher_suite: CipherSuite) {
 
         let pending = test_group_data
             .creator_group
-            .commit_proposals(
-                vec![removal],
-                true,
-                &mut OpenSslRng,
-                &test_group_data.creator,
-                &test_group_data.creator,
-            )
+            .commit_proposals(vec![removal], true, &test_group_data.creator.signature_key)
             .unwrap();
 
         // Process the removal in the creator group
@@ -375,9 +356,8 @@ fn test_application_messages(cipher_suite: CipherSuite, message_count: usize) {
         for _ in 0..message_count {
             let ciphertext = test_group_data.receiver_groups[i]
                 .encrypt_application_message(
-                    &mut OpenSslRng,
                     test_message.to_vec(),
-                    &test_group_data.receiver_clients[i],
+                    &test_group_data.receiver_clients[i].signature_key,
                 )
                 .unwrap();
 
