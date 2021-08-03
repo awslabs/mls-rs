@@ -1,4 +1,7 @@
 use crate::ciphersuite::CipherSuite;
+use crate::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
+use ferriscrypt::hpke::kem::{KemPublicKey, KemSecretKey, KemType};
+use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
 use std::ops::Deref;
 use thiserror::Error;
@@ -7,27 +10,37 @@ use thiserror::Error;
 pub enum LeafSecretError {
     #[error(transparent)]
     RngError(#[from] SecureRngError),
+    #[error(transparent)]
+    KeyDerivationError(#[from] KeyScheduleKdfError),
+    #[error(transparent)]
+    KemError(#[from] HpkeError),
 }
 
-pub struct LeafSecret(Vec<u8>);
+pub struct LeafSecret {
+    cipher_suite: CipherSuite,
+    pub data: Vec<u8>,
+}
 
 impl Deref for LeafSecret {
     type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.data
     }
 }
 
 impl LeafSecret {
-    pub fn new(cipher_suite: CipherSuite) -> Result<LeafSecret, LeafSecretError> {
+    pub fn generate(cipher_suite: CipherSuite) -> Result<LeafSecret, LeafSecretError> {
         let data = SecureRng::gen(cipher_suite.kem_type().sk_len())?;
-        Ok(LeafSecret(data))
+        Ok(LeafSecret { cipher_suite, data })
     }
-}
 
-impl From<Vec<u8>> for LeafSecret {
-    fn from(data: Vec<u8>) -> Self {
-        Self(data)
+    pub fn as_leaf_key_pair(&self) -> Result<(KemSecretKey, KemPublicKey), LeafSecretError> {
+        let kdf = KeyScheduleKdf::new(self.cipher_suite.kdf_type());
+        let leaf_node_secret = kdf.derive_secret(&self.data, "node")?;
+        self.cipher_suite
+            .kem()
+            .derive(&leaf_node_secret)
+            .map_err(Into::into)
     }
 }

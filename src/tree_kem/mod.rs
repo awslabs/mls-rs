@@ -15,7 +15,6 @@ use crate::tree_kem::node_secrets::NodeSecretGeneratorError;
 use crate::tree_kem::parent_hash::ParentHashError;
 use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
 use ferriscrypt::hpke::{HPKECiphertext, HpkeError};
-use ferriscrypt::Signer;
 use math as tree_math;
 use math::TreeMathError;
 use node::{Leaf, LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
@@ -153,12 +152,10 @@ impl TreeKemPrivate {
     pub fn update_leaf(
         &mut self,
         num_leaves: usize,
-        new_leaf: &KeyPackageGeneration,
+        new_leaf: SecretKey,
     ) -> Result<(), RatchetTreeError> {
-        self.secret_keys.insert(
-            NodeIndex::from(self.self_index),
-            new_leaf.secret_key.clone(),
-        );
+        self.secret_keys
+            .insert(NodeIndex::from(self.self_index), new_leaf);
 
         self.self_index
             .direct_path(num_leaves)?
@@ -477,7 +474,7 @@ impl RatchetTree {
         excluding: &[LeafIndex],
     ) -> Result<UpdatePathGeneration, RatchetTreeError> {
         // random leaf secret
-        let leaf_secret = LeafSecret::new(self.cipher_suite)?;
+        let leaf_secret = LeafSecret::generate(self.cipher_suite)?;
 
         let mut secret_generator =
             NodeSecretGenerator::new_from_leaf_secret(self.cipher_suite, leaf_secret);
@@ -539,7 +536,7 @@ impl RatchetTree {
             .extensions
             .set_extension(ParentHashExt::from(leaf_parent_hash))?;
 
-        leaf.key_package.signature = signer.sign(&leaf.key_package.to_signable_vec()?)?;
+        leaf.key_package.sign(signer)?;
 
         // Overwrite the key package in the update path with the signed version
         update_path.leaf_key_package = leaf.key_package.clone();
@@ -1136,7 +1133,7 @@ pub(crate) mod test {
             get_test_key_package_sig_key(cipher_suite, b"foo".to_vec(), &signing_key);
 
         private_key
-            .update_leaf(tree.leaf_count(), &key_package_generation)
+            .update_leaf(tree.leaf_count(), key_package_generation.secret_key.clone())
             .unwrap();
 
         // Verify the secret key value was updated properly

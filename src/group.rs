@@ -953,19 +953,26 @@ impl Group {
             .collect()
     }
 
-    pub fn update_proposal(
-        &mut self,
-        key_package_generation: KeyPackageGeneration,
-    ) -> Result<Proposal, GroupError> {
-        // Generate a new key package
-        self.pending_updates.insert(
-            key_package_generation.key_package_hash.clone(),
-            key_package_generation.clone(),
-        );
+    pub fn update_proposal(&mut self, signing_key: &SecretKey) -> Result<Proposal, GroupError> {
+        let leaf_secret = LeafSecret::generate(self.cipher_suite)?;
+        let (leaf_sec, leaf_pub) = leaf_secret.as_leaf_key_pair()?;
 
-        Ok(Proposal::Update(UpdateProposal {
-            key_package: key_package_generation.key_package,
-        }))
+        // Update the public key in the key package
+        let mut key_package = self
+            .public_tree
+            .get_key_package(self.private_tree.self_index)?
+            .clone();
+
+        key_package.hpke_init_key = leaf_pub;
+
+        // Re-sign the key package
+        key_package.sign(signing_key)?;
+
+        // Store the secret key in the pending updates storage for later
+        let secret_key = SecretKey::from_bytes(&leaf_sec, self.cipher_suite.kem_type().curve())?;
+        self.pending_updates.insert(key_package.hash()?, secret_key);
+
+        Ok(Proposal::Update(UpdateProposal { key_package }))
     }
 
     pub fn remove_proposal(&mut self, index: u32) -> Result<Proposal, GroupError> {
