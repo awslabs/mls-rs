@@ -712,6 +712,17 @@ impl RatchetTree {
 
         Ok(tree_secrets)
     }
+
+    pub fn direct_path_keys(
+        &self,
+        index: LeafIndex,
+    ) -> Result<Vec<Option<Vec<u8>>>, RatchetTreeError> {
+        let indexes = self.nodes.direct_path(index)?;
+        Ok(indexes
+            .iter()
+            .map(|&i| self.nodes[i].as_ref().map(|n| n.get_public_key().to_vec()))
+            .collect())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

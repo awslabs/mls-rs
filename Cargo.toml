@@ -17,9 +17,9 @@ serde_repr = "^0.1"
 
 [dev-dependencies]
 serde_json = "^1.0"
-mockall = "^0.9"
 hex = "^0.4.2"
 
 [[test]]
 name = "integration"
-path = "tests/group_tests.rs"
+path = "tests/client_tests.rs"
+

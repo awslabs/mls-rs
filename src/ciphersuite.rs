@@ -83,7 +83,6 @@ pub enum CipherSuite {
 }
 
 impl CipherSuite {
-    #[cfg(test)]
     pub fn all() -> Vec<CipherSuite> {
         vec![
             CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519,

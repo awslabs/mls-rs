@@ -24,5 +24,6 @@ mod membership_tag;
 mod message_signature;
 pub mod protocol_version;
 pub mod secret_tree;
+pub mod session;
 pub mod transcript_hash;
 pub mod tree_kem;

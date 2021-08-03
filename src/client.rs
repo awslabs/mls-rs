@@ -1,12 +1,12 @@
 use crate::ciphersuite::CipherSuite;
-use crate::credential::Credential;
+use crate::credential::{BasicCredential, Credential, CredentialError};
 use crate::extension::{
     CapabilitiesExt, ExtensionError, ExtensionList, ExtensionTrait, LifetimeExt,
 };
 use crate::key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageGenerator};
+use crate::session::{Session, SessionError, SessionOpts};
 use ferriscrypt::asym::ec_key::Curve;
 use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
-use ferriscrypt::Signer;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use thiserror::Error;
@@ -19,6 +19,10 @@ pub enum ClientError {
     EcKeyError(#[from] EcKeyError),
     #[error(transparent)]
     KeyPackageError(#[from] KeyPackageError),
+    #[error(transparent)]
+    SessionError(#[from] SessionError),
+    #[error(transparent)]
+    CredentialError(#[from] CredentialError),
     #[error("signature key provided does not match the selected cipher suite")]
     SignatureCipherSuiteMismatch,
     #[error("credential provided does not match the selected cipher suite")]
@@ -56,9 +60,19 @@ impl Client {
             phantom: PhantomData::default(),
         })
     }
-}
 
-impl Client {
+    pub fn generate_basic(
+        cipher_suite: CipherSuite,
+        identifier: Vec<u8>,
+    ) -> Result<Client, ClientError> {
+        let signature_key = SecretKey::generate(Curve::from(cipher_suite.signature_scheme()))?;
+        let credential = Credential::Basic(BasicCredential::new(
+            identifier,
+            signature_key.to_public()?,
+        )?);
+        Client::new(cipher_suite, signature_key, credential)
+    }
+
     pub fn gen_key_package(
         &self,
         lifetime: &LifetimeExt,
@@ -75,15 +89,31 @@ impl Client {
 
         key_package_generator.generate().map_err(Into::into)
     }
-}
 
-impl Signer for Client {
-    type ErrorType = ClientError;
-    type SignatureType = Vec<u8>;
+    pub fn create_session(
+        &self,
+        key_package: KeyPackageGeneration,
+        group_id: Vec<u8>,
+        opts: SessionOpts,
+    ) -> Result<Session, ClientError> {
+        Session::create(group_id, self.signature_key.clone(), key_package, opts).map_err(Into::into)
+    }
 
-    #[inline(always)]
-    fn sign(&self, data: &[u8]) -> Result<Self::SignatureType, Self::ErrorType> {
-        self.signature_key.sign(data).map_err(Into::into)
+    pub fn join_session(
+        &self,
+        key_package: KeyPackageGeneration,
+        tree_data: &[u8],
+        welcome_message: &[u8],
+        opts: SessionOpts,
+    ) -> Result<Session, ClientError> {
+        Session::join(
+            self.signature_key.clone(),
+            key_package,
+            tree_data,
+            welcome_message,
+            opts,
+        )
+        .map_err(Into::into)
     }
 }
 
@@ -93,7 +123,6 @@ mod test {
     use crate::credential::BasicCredential;
     use ferriscrypt::asym::ec_key::Curve;
     use ferriscrypt::rand::SecureRng;
-    use ferriscrypt::Verifier;
     use std::time::SystemTime;
 
     fn get_test_credential(identity: Vec<u8>, signature_key: &SecretKey) -> Credential {
@@ -163,19 +192,6 @@ mod test {
             credential,
         );
         assert!(client_res.is_err());
-    }
-
-    #[test]
-    fn test_signing() {
-        for cipher_suite in CipherSuite::all() {
-            println!("Running client signatures for {:?}", cipher_suite);
-            let client = get_test_client(vec![], cipher_suite);
-            let test_input = SecureRng::gen(42).unwrap();
-
-            // Signatures created by the client should be able to be verified by the credential
-            let signature = client.sign(&test_input).unwrap();
-            assert!(client.credential.verify(&signature, &test_input).unwrap());
-        }
     }
 
     #[test]
