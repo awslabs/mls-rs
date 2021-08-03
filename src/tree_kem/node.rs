@@ -444,7 +444,6 @@ pub mod test {
     use crate::credential::{BasicCredential, CredentialConvertible};
     use crate::extension::ExtensionList;
     use ferriscrypt::asym::ec_key::{generate_keypair, Curve, SecretKey};
-    use ferriscrypt::Signer;
 
     // We can put any values for most fields, they aren't relevant to these tests
     fn get_test_key_package(id: Vec<u8>) -> KeyPackage {
@@ -471,7 +470,7 @@ pub mod test {
             signature: vec![],
         };
 
-        kp.signature = signing_key.sign(&kp.to_signable_vec().unwrap()).unwrap();
+        kp.sign(&signing_key).unwrap();
         kp
     }
 

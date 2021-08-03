@@ -19,6 +19,7 @@ use crate::framing::{
 use crate::group::GroupError::InvalidPlaintextEpoch;
 use crate::group::Proposal::{Add, Remove, Update};
 use crate::key_schedule::KeyScheduleKdfError;
+use crate::leaf_secret::{LeafSecret, LeafSecretError};
 use crate::membership_tag::{MembershipTag, MembershipTagError};
 use crate::message_signature::{MessageSignature, MessageSignatureError};
 use crate::protocol_version::ProtocolVersion;
@@ -34,6 +35,7 @@ use ferriscrypt::rand::{SecureRng, SecureRngError};
 use ferriscrypt::{Signer, Verifier};
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::ops::Deref;
 use std::option::Option::Some;
 
 #[repr(u8)]
@@ -238,6 +240,8 @@ pub enum GroupError {
     KeyScheduleKdfError(#[from] KeyScheduleKdfError),
     #[error(transparent)]
     AeadError(#[from] AeadError),
+    #[error(transparent)]
+    LeafSecretError(#[from] LeafSecretError),
     #[error("Cipher suite does not match")]
     CipherSuiteMismatch,
     #[error("Invalid key package signature")]
@@ -337,6 +341,12 @@ impl GroupInfo {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CommitGeneration {
+    pub plaintext: MLSPlaintext,
+    pub secrets: Option<UpdatePathGeneration>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PathSecret {
     pub path_secret: Vec<u8>,
@@ -378,7 +388,7 @@ pub struct Group {
     key_schedule: EpochKeySchedule, //TODO: Need to support out of order packets by holding a few old epoch values too
     interim_transcript_hash: InterimTranscriptHash,
     pub proposals: HashMap<Vec<u8>, PendingProposal>, // Hash of MLS Plaintext to pending proposal
-    pub pending_updates: HashMap<Vec<u8>, KeyPackageGeneration>, // Hash of key package to key generation
+    pub pending_updates: HashMap<Vec<u8>, SecretKey>, // Hash of key package to key generation
 }
 
 impl PartialEq for Group {
@@ -392,11 +402,33 @@ impl PartialEq for Group {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PendingCommit {
-    pub plaintext: MLSPlaintext,
-    pub welcome: Option<Welcome>,
-    update_path_data: Option<UpdatePathGeneration>,
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VerifiedPlaintext(MLSPlaintext);
+
+impl Deref for VerifiedPlaintext {
+    type Target = MLSPlaintext;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitContent {
+    type Error = CommitConversionError;
+
+    fn try_from(value: &MLSPlaintext) -> Result<Self, Self::Error> {
+        match &value.content {
+            Content::Commit(c) => Ok(MLSPlaintextCommitContent {
+                group_id: value.group_id.clone(),
+                epoch: value.epoch,
+                sender: value.sender.clone(),
+                content_type: ContentType::Commit,
+                commit: c.clone(),
+                signature: value.signature.clone(),
+            }),
+            _ => Err(CommitConversionError::NonCommitMessage),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -404,6 +436,7 @@ pub enum Event {
     MembersAdded(Vec<Credential>),
     MembersRemoved(Vec<Credential>),
     ApplicationData(Vec<u8>),
+    NewEpoch(usize),
 }
 
 impl From<Vec<u8>> for Event {
@@ -452,14 +485,15 @@ impl Group {
         // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
         // If no such field exists, or if the ciphersuite indicated in the KeyPackage does not
         // match the one in the Welcome message, return an error.
+        let package_hash = key_package.key_package.hash()?;
         let encrypted_group_secrets = welcome
             .secrets
             .iter()
-            .find(|s| s.key_package_hash == key_package.key_package_hash)
+            .find(|s| s.key_package_hash == package_hash)
             .ok_or(GroupError::WelcomeKeyPackageNotFound)?;
 
         //Decrypt the encrypted_group_secrets using HPKE with the algorithms indicated by the
-        // ciphersuite and the HPKE private key corresponding to the GroupSecrets. If a
+        // cipher suite and the HPKE private key corresponding to the GroupSecrets. If a
         // PreSharedKeyID is part of the GroupSecrets and the client is not in possession of
         // the corresponding PSK, return an error
         //TODO: PSK Support
@@ -566,6 +600,10 @@ impl Group {
         })
     }
 
+    pub fn current_user_index(&self) -> u32 {
+        self.private_tree.self_index.0 as u32
+    }
+
     fn fetch_proposals<'a>(
         &'a self,
         proposals: &'a [ProposalOrRef],
@@ -608,15 +646,11 @@ impl Group {
             // Update the leaf in the provisional tree
             provisional_tree.update_leaf(update_sender, update.key_package.clone())?;
 
-            let key_package_hash = self
-                .cipher_suite
-                .hash_function()
-                .digest(&bincode::serialize(&update.key_package)?);
+            let key_package_hash = update.key_package.hash()?;
 
             // Update the leaf in the private tree if this is our update
-            if let Some(key_generation) = self.pending_updates.get(&key_package_hash) {
-                provisional_private_tree
-                    .update_leaf(provisional_tree.leaf_count(), key_generation)?;
+            if let Some(new_leaf_sk) = self.pending_updates.get(&key_package_hash).cloned() {
+                provisional_private_tree.update_leaf(provisional_tree.leaf_count(), new_leaf_sk)?;
             }
         }
 
@@ -723,10 +757,10 @@ impl Group {
 
     pub fn commit_proposals(
         &self,
-        proposals: Vec<Proposal>,
+        proposals: &[Proposal],
         update_path: bool,
         signer: &SecretKey,
-    ) -> Result<PendingCommit, GroupError> {
+    ) -> Result<(CommitGeneration, Option<Welcome>), GroupError> {
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
         // by value
@@ -883,11 +917,12 @@ impl Group {
             }),
         };
 
-        Ok(PendingCommit {
+        let pending_commit = CommitGeneration {
             plaintext,
-            update_path_data: update_path,
-            welcome,
-        })
+            secrets: update_path,
+        };
+
+        Ok((pending_commit, welcome))
     }
 
     fn encrypt_group_secrets(
@@ -932,6 +967,17 @@ impl Group {
         })
     }
 
+    pub fn add_member_proposal(&self, key_package: &KeyPackage) -> Result<Proposal, GroupError> {
+        if key_package.cipher_suite != self.cipher_suite {
+            return Err(GroupError::CipherSuiteMismatch);
+        }
+
+        // Create proposal
+        Ok(Proposal::from(AddProposal {
+            key_package: key_package.clone(),
+        }))
+    }
+
     pub fn add_member_proposals(
         &self,
         key_packages: &[KeyPackage],
@@ -940,16 +986,7 @@ impl Group {
         // TODO: Make sure the packages are the correct best cipher suite etc
         key_packages
             .iter()
-            .map(|key_package| {
-                if key_package.cipher_suite != self.cipher_suite {
-                    return Err(GroupError::CipherSuiteMismatch);
-                }
-
-                // Create proposal
-                Ok(Proposal::from(AddProposal {
-                    key_package: key_package.clone(),
-                }))
-            })
+            .map(|kp| self.add_member_proposal(kp))
             .collect()
     }
 
@@ -986,13 +1023,6 @@ impl Group {
         }
 
         Ok(Proposal::Remove(RemoveProposal { to_remove: index }))
-    }
-
-    pub fn process_pending_commit(
-        &mut self,
-        pending: PendingCommit,
-    ) -> Result<Vec<Event>, GroupError> {
-        self.process_plaintext_internal(pending.plaintext, pending.update_path_data, false)
     }
 
     pub fn encrypt_plaintext(
@@ -1073,7 +1103,7 @@ impl Group {
 
     pub fn encrypt_application_message(
         &mut self,
-        message: Vec<u8>,
+        message: &[u8],
         signer: &SecretKey,
     ) -> Result<MLSCiphertext, GroupError> {
         let mut plaintext = MLSPlaintext {
@@ -1084,7 +1114,7 @@ impl Group {
                 sender: self.private_tree.self_index.0 as u32,
             },
             authenticated_data: vec![],
-            content: Content::Application(message),
+            content: Content::Application(message.to_vec()),
             signature: MessageSignature::empty(),
             confirmation_tag: None,
             membership_tag: None,
@@ -1095,10 +1125,10 @@ impl Group {
         self.encrypt_plaintext(plaintext)
     }
 
-    pub fn process_ciphertext(
+    pub fn decrypt_ciphertext(
         &mut self,
         ciphertext: MLSCiphertext,
-    ) -> Result<Vec<Event>, GroupError> {
+    ) -> Result<VerifiedPlaintext, GroupError> {
         // Decrypt the sender data with the derived sender_key and sender_nonce from the current
         // epoch's key schedule
         let (sender_key, sender_nonce) = self
@@ -1163,15 +1193,14 @@ impl Group {
             membership_tag: None, // Membership tag is always None for ciphertext messages
         };
 
-        self.process_plaintext_internal(plaintext, None, false)
+        self.verify_plaintext_internal(plaintext, false)
     }
 
-    fn process_plaintext_internal(
-        &mut self,
+    fn verify_plaintext_internal(
+        &self,
         plaintext: MLSPlaintext,
-        local_pending: Option<UpdatePathGeneration>,
-        enforce_membership_tag: bool,
-    ) -> Result<Vec<Event>, GroupError> {
+        verify_membership_tag: bool,
+    ) -> Result<VerifiedPlaintext, GroupError> {
         // Verify that the epoch field of the enclosing MLSPlaintext message is equal
         // to the epoch field of the current GroupContext object
         if plaintext.epoch != self.context.epoch {
@@ -1179,16 +1208,13 @@ impl Group {
         }
 
         // Verify that the membership tag is correct
-        if enforce_membership_tag {
-            match &plaintext.membership_tag {
-                None => {
-                    return Err(GroupError::InvalidMembershipTag);
-                }
-                Some(tag) => {
-                    if !tag.matches(&plaintext, &self.context, &self.key_schedule)? {
-                        return Err(GroupError::InvalidMembershipTag);
-                    }
-                }
+        if verify_membership_tag {
+            let tag = plaintext
+                .membership_tag
+                .as_ref()
+                .ok_or(GroupError::InvalidMembershipTag)?;
+            if !tag.matches(&plaintext, &self.context, &self.key_schedule)? {
+                return Err(GroupError::InvalidMembershipTag);
             }
         }
 
@@ -1201,6 +1227,35 @@ impl Group {
         //TODO: PSK Verify that all PSKs specified in any PreSharedKey proposals in the proposals
         // vector are available.
 
+        Ok(VerifiedPlaintext(plaintext))
+    }
+
+    pub fn verify_plaintext(
+        &self,
+        plaintext: MLSPlaintext,
+    ) -> Result<VerifiedPlaintext, GroupError> {
+        self.verify_plaintext_internal(plaintext, false)
+    }
+
+    pub fn process_plaintext(
+        &mut self,
+        plaintext: VerifiedPlaintext,
+    ) -> Result<Vec<Event>, GroupError> {
+        self.process_plaintext_internal(plaintext, None)
+    }
+
+    pub fn process_pending_commit(
+        &mut self,
+        commit: CommitGeneration,
+    ) -> Result<Vec<Event>, GroupError> {
+        self.process_plaintext_internal(VerifiedPlaintext(commit.plaintext), commit.secrets)
+    }
+
+    fn process_plaintext_internal(
+        &mut self,
+        plaintext: VerifiedPlaintext,
+        local_pending_secrets: Option<UpdatePathGeneration>,
+    ) -> Result<Vec<Event>, GroupError> {
         // Process the contents of the packet
         match &plaintext.content {
             Content::Application(content) => Ok(vec![Event::from(content.clone())]),
@@ -1217,12 +1272,12 @@ impl Group {
                 Ok(vec![])
             }
             Content::Commit(_) => {
-                let commit_content = MLSPlaintextCommitContent::try_from(&plaintext)?;
-                let auth_data = MLSPlaintextCommitAuthData::try_from(&plaintext)?;
+                let commit_content = MLSPlaintextCommitContent::try_from(&plaintext.0)?;
+                let auth_data = MLSPlaintextCommitAuthData::try_from(&plaintext.0)?;
 
                 self.process_commit(
                     LeafIndex::from(plaintext.sender.clone()),
-                    local_pending,
+                    local_pending_secrets,
                     commit_content,
                     auth_data,
                 )
@@ -1232,10 +1287,6 @@ impl Group {
         //TODO: If the Commit included a ReInit proposal, the client MUST NOT use the group to send
         // messages anymore. Instead, it MUST wait for a Welcome message from the committer
         // and check that
-    }
-
-    pub fn process_plaintext(&mut self, plaintext: MLSPlaintext) -> Result<Vec<Event>, GroupError> {
-        self.process_plaintext_internal(plaintext, None, true)
     }
 
     // This function takes a provisional copy of the tree and returns an updated tree and epoch key schedule
@@ -1255,7 +1306,8 @@ impl Group {
         let mut provisional_state =
             self.apply_proposals(sender, &commit_content.commit.proposals)?;
 
-        let events = provisional_state.get_events()?;
+        let mut events = provisional_state.get_events()?;
+        events.push(Event::NewEpoch((self.context.epoch + 1) as usize));
 
         //Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
@@ -1356,6 +1408,12 @@ impl Group {
         self.pending_updates = Default::default();
 
         Ok(events)
+    }
+
+    pub fn current_direct_path(&self) -> Result<Vec<Option<Vec<u8>>>, GroupError> {
+        self.public_tree
+            .direct_path_keys(self.private_tree.self_index)
+            .map_err(Into::into)
     }
 }
 

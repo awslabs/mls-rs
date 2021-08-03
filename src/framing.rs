@@ -81,24 +81,6 @@ pub(crate) struct MLSPlaintextCommitContent {
     pub signature: MessageSignature,
 }
 
-impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitContent {
-    type Error = CommitConversionError;
-
-    fn try_from(value: &MLSPlaintext) -> Result<Self, Self::Error> {
-        match &value.content {
-            Content::Commit(c) => Ok(MLSPlaintextCommitContent {
-                group_id: value.group_id.clone(),
-                epoch: value.epoch,
-                sender: value.sender.clone(),
-                content_type: ContentType::Commit,
-                commit: c.clone(),
-                signature: value.signature.clone(),
-            }),
-            _ => Err(CommitConversionError::NonCommitMessage),
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub(crate) struct MLSPlaintextCommitAuthData<'a> {
     pub confirmation_tag: &'a ConfirmationTag,

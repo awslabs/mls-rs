@@ -2,7 +2,6 @@ use crate::ciphersuite::CipherSuite;
 use crate::credential::{Credential, CredentialError};
 use crate::extension::{Extension, ExtensionError, ExtensionList};
 use crate::protocol_version::ProtocolVersion;
-use bincode::Options;
 use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError, SecretKey};
 use ferriscrypt::{Signer, Verifier};
 use serde::{Deserialize, Serialize};
@@ -37,6 +36,12 @@ pub struct KeyPackage {
     pub signature: Vec<u8>,
 }
 
+impl KeyPackage {
+    pub fn to_vec(&self) -> Result<Vec<u8>, KeyPackageError> {
+        bincode::serialize(self).map_err(Into::into)
+    }
+}
+
 pub(crate) struct KeyPackageGenerator<'a> {
     pub(crate) cipher_suite: CipherSuite,
     pub(crate) credential: &'a Credential,
@@ -48,7 +53,16 @@ pub(crate) struct KeyPackageGenerator<'a> {
 pub struct KeyPackageGeneration {
     pub key_package: KeyPackage,
     pub secret_key: SecretKey,
-    pub key_package_hash: Vec<u8>,
+}
+
+impl KeyPackageGeneration {
+    pub fn key_package_id(&self) -> Result<Vec<u8>, KeyPackageError> {
+        Ok(self
+            .key_package
+            .cipher_suite
+            .hash_function()
+            .digest(&bincode::serialize(&self.key_package)?))
+    }
 }
 
 impl<'a> KeyPackageGenerator<'a> {
@@ -64,23 +78,24 @@ impl<'a> KeyPackageGenerator<'a> {
             signature: vec![],
         };
 
-        package.signature = self.signing_key.sign(&package.to_signable_vec()?)?;
-
-        let key_package_hash = self
-            .cipher_suite
-            .hash_function()
-            .digest(&bincode::serialize(&package)?);
+        package.sign(self.signing_key)?;
 
         Ok(KeyPackageGeneration {
             key_package: package,
             secret_key: secret,
-            key_package_hash,
         })
     }
 }
 
 impl KeyPackage {
-    pub(crate) fn to_signable_vec(&self) -> Result<Vec<u8>, KeyPackageError> {
+    pub fn hash(&self) -> Result<Vec<u8>, KeyPackageError> {
+        Ok(self
+            .cipher_suite
+            .hash_function()
+            .digest(&bincode::serialize(&self)?))
+    }
+
+    fn to_signable_bytes(&self) -> Result<Vec<u8>, KeyPackageError> {
         #[derive(Serialize)]
         pub struct KeyPackageData<'a> {
             pub version: &'a ProtocolVersion,
@@ -98,15 +113,17 @@ impl KeyPackage {
             extensions: &self.extensions,
         };
 
-        bincode::DefaultOptions::new()
-            .with_big_endian()
-            .serialize(&key_package_data)
-            .map_err(Into::into)
+        bincode::serialize(&key_package_data).map_err(Into::into)
+    }
+
+    pub fn sign(&mut self, key: &SecretKey) -> Result<(), KeyPackageError> {
+        self.signature = key.sign(&self.to_signable_bytes()?)?;
+        Ok(())
     }
 
     pub fn has_valid_signature(&self) -> Result<bool, KeyPackageError> {
         self.credential
-            .verify(&self.signature, &self.to_signable_vec()?)
+            .verify(&self.signature, &self.to_signable_bytes()?)
             .map_err(Into::into)
     }
 
