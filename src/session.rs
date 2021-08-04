@@ -30,6 +30,12 @@ pub struct SessionOpts {
     pub encrypt_controls: bool,
 }
 
+impl SessionOpts {
+    pub fn new(encrypt_controls: bool) -> SessionOpts {
+        SessionOpts { encrypt_controls }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct PendingCommit {
     packet_hash: Vec<u8>,
