@@ -4,7 +4,6 @@ use mls::ciphersuite::CipherSuite;
 use mls::client::Client;
 use mls::credential::{BasicCredential, Credential};
 use mls::extension::LifetimeExt;
-use mls::group::Event;
 use mls::key_package::KeyPackageGeneration;
 use mls::session::{Session, SessionOpts};
 use std::time::SystemTime;
@@ -113,16 +112,21 @@ fn get_test_sessions(
     let commit = creator_session.commit(add_members_proposals).unwrap();
 
     // Creator can confirm the commit was processed by the server
-    let events = creator_session
+    let state_update = creator_session
         .handle_handshake_data(&commit.commit_packet)
         .unwrap();
-    assert_eq!(events.len(), 2);
+
+    let update = state_update.unwrap();
+    assert!(update.active);
+    assert_eq!(update.epoch, 1);
+
     let credentials = receiver_keys
         .iter()
         .map(|k| k.key_package.credential.clone())
-        .collect();
-    assert_eq!(events[0], Event::MembersAdded(credentials));
-    assert_eq!(events[1], Event::NewEpoch(1));
+        .collect::<Vec<Credential>>();
+
+    assert_eq!(update.added, credentials);
+    assert!(update.removed.is_empty());
 
     // Export the tree for receivers
     let tree_data = creator_session.export_tree().unwrap();
@@ -236,11 +240,14 @@ fn test_update_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
             .unwrap();
 
         for j in 0..receiver_sessions.len() {
-            let events = receiver_sessions[j]
+            let state_update = receiver_sessions[j]
                 .handle_handshake_data(&commit.commit_packet)
                 .unwrap();
-            assert_eq!(events.len(), 1);
-            assert_eq!(events[0], Event::NewEpoch(i + 2));
+            let update = state_update.unwrap();
+            assert!(update.active);
+            assert_eq!(update.epoch, (i as u64) + 2);
+            assert!(update.added.is_empty());
+            assert!(update.removed.is_empty());
             assert!(receiver_sessions[j].has_equal_state(&creator_session));
         }
     }
@@ -294,16 +301,24 @@ fn test_remove_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
         epoch_count += 1;
 
         // Process the removal in the other receiver groups
-        for one_session in receiver_sessions.iter_mut() {
+        for (index, one_session) in receiver_sessions.iter_mut().enumerate() {
             let removed_cred = one_session.roster().last().unwrap().clone();
+            let expect_inactive = one_session.roster().len() - 2;
 
-            let events = one_session
+            let state_update = one_session
                 .handle_handshake_data(&commit.commit_packet)
                 .unwrap();
 
-            assert_eq!(events.len(), 2);
-            assert_eq!(events[0], Event::MembersRemoved(vec![removed_cred]));
-            assert_eq!(events[1], Event::NewEpoch(epoch_count))
+            let update = state_update.unwrap();
+            assert_eq!(update.epoch, epoch_count as u64);
+            assert_eq!(update.removed, vec![removed_cred]);
+            assert!(update.added.is_empty());
+
+            if index != expect_inactive {
+                assert!(update.active)
+            } else {
+                assert!(!update.active)
+            }
         }
 
         // Remove the last group off the list
@@ -367,11 +382,10 @@ fn test_application_messages(
             // Everyone else receives the application message
             for j in 0..receiver_sessions.len() {
                 if i != j {
-                    let events = receiver_sessions[j]
+                    let decrypted = receiver_sessions[j]
                         .decrypt_application_data(&ciphertext)
                         .unwrap();
-                    assert_eq!(events.len(), 1);
-                    assert_eq!(events[0], Event::ApplicationData(test_message.clone()));
+                    assert_eq!(&decrypted, &test_message);
                 }
             }
         }
@@ -389,13 +403,13 @@ fn test_group_application_messages() {
                 encrypt_controls: false,
             },
         );
-        // test_application_messages(
-        //     cs,
-        //     10,
-        //     20,
-        //     SessionOpts {
-        //         encrypt_controls: true,
-        //     },
-        // );
+        test_application_messages(
+            cs,
+            10,
+            20,
+            SessionOpts {
+                encrypt_controls: true,
+            },
+        );
     })
 }

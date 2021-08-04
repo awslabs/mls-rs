@@ -1,6 +1,6 @@
 use crate::credential::Credential;
-use crate::framing::{Content, ContentType, MLSCiphertext, MLSPlaintext};
-use crate::group::{CommitGeneration, Event, Group, GroupError, Proposal, VerifiedPlaintext};
+use crate::framing::{Content, MLSCiphertext, MLSPlaintext};
+use crate::group::{CommitGeneration, Group, GroupError, Proposal, StateUpdate, VerifiedPlaintext};
 use crate::key_package::KeyPackageGeneration;
 use crate::tree_kem::UpdatePathGeneration;
 use ferriscrypt::asym::ec_key::SecretKey;
@@ -21,8 +21,6 @@ pub enum SessionError {
     PendingCommitNotFound,
     #[error("pending commit mismatch")]
     PendingCommitMismatch,
-    #[error("invalid message content type, found {0:?}")]
-    InvalidContentType(ContentType),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -54,6 +52,13 @@ pub struct Session {
     protocol: Group,
     pending_commit: Option<CommitGeneration>,
     opts: SessionOpts,
+}
+
+#[derive(Clone, Debug)]
+pub struct TreeStats {
+    pub total_leaves: usize,
+    pub current_index: usize,
+    pub direct_path: Vec<Vec<u8>>,
 }
 
 impl Session {
@@ -175,7 +180,10 @@ impl Session {
         })
     }
 
-    fn handle_commit(&mut self, plaintext: VerifiedPlaintext) -> Result<Vec<Event>, SessionError> {
+    fn handle_commit(
+        &mut self,
+        plaintext: VerifiedPlaintext,
+    ) -> Result<Option<StateUpdate>, SessionError> {
         // If the sender is the current user, then verify that the pending commit matches the
         // one received and apply the pending commit
         let res = if plaintext.sender.sender == self.protocol.current_user_index() {
@@ -192,7 +200,7 @@ impl Session {
         } else {
             // This came from a different user, process as normal
             self.protocol
-                .process_plaintext(plaintext)
+                .handle_handshake(plaintext)
                 .map_err(Into::into)
         }?;
 
@@ -201,7 +209,10 @@ impl Session {
         Ok(res)
     }
 
-    pub fn handle_handshake_data(&mut self, data: &[u8]) -> Result<Vec<Event>, SessionError> {
+    pub fn handle_handshake_data(
+        &mut self,
+        data: &[u8],
+    ) -> Result<Option<StateUpdate>, SessionError> {
         let plaintext = match self.opts.encrypt_controls {
             true => {
                 let ciphertext = bincode::deserialize(data)?;
@@ -213,15 +224,12 @@ impl Session {
             }
         }?;
 
-        match plaintext.content {
-            Content::Application(_) => {
-                Err(SessionError::InvalidContentType(ContentType::Application))
-            }
-            Content::Proposal(_) => self
-                .protocol
-                .process_plaintext(plaintext)
-                .map_err(Into::into),
-            Content::Commit(_) => self.handle_commit(plaintext),
+        if matches!(plaintext.content, Content::Commit(_)) {
+            self.handle_commit(plaintext)
+        } else {
+            self.protocol
+                .handle_handshake(plaintext)
+                .map_err(Into::into)
         }
     }
 
@@ -232,20 +240,10 @@ impl Session {
         bincode::serialize(&ciphertext).map_err(Into::into)
     }
 
-    pub fn decrypt_application_data(
-        &mut self,
-        ciphertext: &[u8],
-    ) -> Result<Vec<Event>, SessionError> {
+    pub fn decrypt_application_data(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>, SessionError> {
         let ciphertext: MLSCiphertext = bincode::deserialize(ciphertext)?;
-
-        if ciphertext.content_type != ContentType::Application {
-            return Err(SessionError::InvalidContentType(ciphertext.content_type));
-        }
-
-        let plaintext = self.protocol.decrypt_ciphertext(ciphertext)?;
-
         self.protocol
-            .process_plaintext(plaintext)
+            .decrypt_application_message(ciphertext)
             .map_err(Into::into)
     }
 
@@ -253,11 +251,17 @@ impl Session {
         self.protocol == other.protocol
     }
 
-    pub fn current_direct_path(&self) -> Result<Vec<Vec<u8>>, SessionError> {
-        let path = self.protocol.current_direct_path()?;
-        Ok(path
+    pub fn tree_stats(&self) -> Result<TreeStats, SessionError> {
+        let direct_path = self
+            .protocol
+            .current_direct_path()?
             .iter()
             .map(|p| p.as_ref().unwrap_or(&vec![]).clone())
-            .collect())
+            .collect();
+        Ok(TreeStats {
+            total_leaves: self.protocol.public_tree.leaf_count(),
+            current_index: self.protocol.current_user_index() as usize,
+            direct_path,
+        })
     }
 }

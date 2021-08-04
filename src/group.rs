@@ -166,39 +166,48 @@ struct ProvisionalState {
     public_tree: RatchetTree,
     private_tree: TreeKemPrivate,
     added_leaves: Vec<LeafIndex>,
-    removed_leaves: Vec<(LeafIndex, KeyPackage)>,
+    removed_leaves: HashMap<LeafIndex, KeyPackage>,
+    epoch: u64,
     path_update_required: bool,
 }
 
-impl ProvisionalState {
-    fn self_removed(&self, self_index: LeafIndex) -> bool {
-        self.removed_leaves.iter().any(|(i, _)| *i == self_index)
-    }
+#[derive(Clone, Debug)]
+pub struct StateUpdate {
+    pub added: Vec<Credential>,
+    pub removed: Vec<Credential>,
+    pub active: bool,
+    pub epoch: u64,
+}
 
-    fn get_events(&self) -> Result<Vec<Event>, GroupError> {
-        let adds: Vec<Credential> = self
+impl TryFrom<&ProvisionalState> for StateUpdate {
+    type Error = GroupError;
+
+    fn try_from(provisional: &ProvisionalState) -> Result<Self, Self::Error> {
+        let added: Vec<Credential> = provisional
             .added_leaves
             .iter()
-            .map(|i| self.public_tree.get_credential(*i))
+            .map(|i| provisional.public_tree.get_credential(*i))
             .collect::<Result<Vec<Credential>, RatchetTreeError>>()?;
 
-        let removes: Vec<Credential> = self
+        let removed: Vec<Credential> = provisional
             .removed_leaves
             .iter()
             .map(|(_, kp)| kp.credential.clone())
             .collect();
 
-        let mut events = Vec::new();
+        Ok(StateUpdate {
+            added,
+            removed,
+            active: !provisional.self_removed(),
+            epoch: provisional.epoch,
+        })
+    }
+}
 
-        if !adds.is_empty() {
-            events.push(Event::MembersAdded(adds));
-        }
-
-        if !removes.is_empty() {
-            events.push(Event::MembersRemoved(removes));
-        }
-
-        Ok(events)
+impl ProvisionalState {
+    fn self_removed(&self) -> bool {
+        self.removed_leaves
+            .contains_key(&self.private_tree.self_index)
     }
 }
 
@@ -268,6 +277,10 @@ pub enum GroupError {
     TreeMissingSelfUser,
     #[error("remove not allowed on single leaf tree")]
     RemoveNotAllowed,
+    #[error("handle_handshake passed application data")]
+    UnexpectedApplicationData,
+    #[error("decrypt_application_message passed non-application data")]
+    UnexpectedHandshakeMessage,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -428,20 +441,6 @@ impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitContent {
             }),
             _ => Err(CommitConversionError::NonCommitMessage),
         }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Event {
-    MembersAdded(Vec<Credential>),
-    MembersRemoved(Vec<Credential>),
-    ApplicationData(Vec<u8>),
-    NewEpoch(usize),
-}
-
-impl From<Vec<u8>> for Event {
-    fn from(data: Vec<u8>) -> Self {
-        Event::ApplicationData(data)
     }
 }
 
@@ -675,7 +674,13 @@ impl Group {
         })?;
 
         // Remove elements from the public tree
-        let removed_leaves = provisional_tree.remove_nodes(removes)?;
+        let removed_leaves = provisional_tree.remove_nodes(removes)?.drain(..).fold(
+            HashMap::new(),
+            |mut map, (i, kp)| {
+                map.insert(i, kp);
+                map
+            },
+        );
 
         // Apply adds
         let adds = proposals
@@ -697,6 +702,7 @@ impl Group {
             private_tree: provisional_private_tree,
             added_leaves,
             removed_leaves,
+            epoch: self.context.epoch + 1,
             path_update_required,
         })
     }
@@ -1125,6 +1131,22 @@ impl Group {
         self.encrypt_plaintext(plaintext)
     }
 
+    pub fn decrypt_application_message(
+        &mut self,
+        message: MLSCiphertext,
+    ) -> Result<Vec<u8>, GroupError> {
+        if message.content_type != ContentType::Application {
+            return Err(GroupError::UnexpectedHandshakeMessage);
+        }
+
+        let plaintext = self.decrypt_ciphertext(message)?;
+
+        match &plaintext.content {
+            Content::Application(data) => Ok(data.clone()),
+            _ => Err(GroupError::UnexpectedHandshakeMessage),
+        }
+    }
+
     pub fn decrypt_ciphertext(
         &mut self,
         ciphertext: MLSCiphertext,
@@ -1237,28 +1259,28 @@ impl Group {
         self.verify_plaintext_internal(plaintext, false)
     }
 
-    pub fn process_plaintext(
+    pub fn handle_handshake(
         &mut self,
         plaintext: VerifiedPlaintext,
-    ) -> Result<Vec<Event>, GroupError> {
-        self.process_plaintext_internal(plaintext, None)
+    ) -> Result<Option<StateUpdate>, GroupError> {
+        self.handle_handshake_internal(plaintext, None)
     }
 
     pub fn process_pending_commit(
         &mut self,
         commit: CommitGeneration,
-    ) -> Result<Vec<Event>, GroupError> {
-        self.process_plaintext_internal(VerifiedPlaintext(commit.plaintext), commit.secrets)
+    ) -> Result<Option<StateUpdate>, GroupError> {
+        self.handle_handshake_internal(VerifiedPlaintext(commit.plaintext), commit.secrets)
     }
 
-    fn process_plaintext_internal(
+    fn handle_handshake_internal(
         &mut self,
         plaintext: VerifiedPlaintext,
         local_pending_secrets: Option<UpdatePathGeneration>,
-    ) -> Result<Vec<Event>, GroupError> {
+    ) -> Result<Option<StateUpdate>, GroupError> {
         // Process the contents of the packet
         match &plaintext.content {
-            Content::Application(content) => Ok(vec![Event::from(content.clone())]),
+            Content::Application(_) => Err(GroupError::UnexpectedApplicationData),
             Content::Proposal(p) => {
                 let hash = self
                     .cipher_suite
@@ -1269,7 +1291,7 @@ impl Group {
                     sender: LeafIndex(plaintext.sender.sender as usize),
                 };
                 self.proposals.insert(hash, pending_proposal);
-                Ok(vec![])
+                Ok(None)
             }
             Content::Commit(_) => {
                 let commit_content = MLSPlaintextCommitContent::try_from(&plaintext.0)?;
@@ -1281,6 +1303,7 @@ impl Group {
                     commit_content,
                     auth_data,
                 )
+                .map(Some)
             }
         }
 
@@ -1296,7 +1319,7 @@ impl Group {
         local_pending: Option<UpdatePathGeneration>,
         commit_content: MLSPlaintextCommitContent,
         auth_data: MLSPlaintextCommitAuthData,
-    ) -> Result<Vec<Event>, GroupError> {
+    ) -> Result<StateUpdate, GroupError> {
         //Generate a provisional GroupContext object by applying the proposals referenced in the
         // initial Commit object, as described in Section 11.1. Update proposals are applied first,
         // followed by Remove proposals, and then finally Add proposals. Add proposals are applied
@@ -1306,8 +1329,7 @@ impl Group {
         let mut provisional_state =
             self.apply_proposals(sender, &commit_content.commit.proposals)?;
 
-        let mut events = provisional_state.get_events()?;
-        events.push(Event::NewEpoch((self.context.epoch + 1) as usize));
+        let state_updates = StateUpdate::try_from(&provisional_state)?;
 
         //Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
@@ -1315,8 +1337,8 @@ impl Group {
             return Err(GroupError::InvalidCommit);
         }
 
-        if provisional_state.self_removed(self.private_tree.self_index) {
-            return Ok(events);
+        if provisional_state.self_removed() {
+            return Ok(state_updates);
         }
 
         let updated_secrets = match &commit_content.commit.path {
@@ -1347,7 +1369,7 @@ impl Group {
 
         let mut provisional_group_context = self.context.clone();
         // Bump up the epoch in the provisional group context
-        provisional_group_context.epoch += 1;
+        provisional_group_context.epoch = provisional_state.epoch;
 
         // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
         let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
@@ -1407,7 +1429,7 @@ impl Group {
         // Clear the pending updates list
         self.pending_updates = Default::default();
 
-        Ok(events)
+        Ok(state_updates)
     }
 
     pub fn current_direct_path(&self) -> Result<Vec<Option<Vec<u8>>>, GroupError> {
