@@ -1,11 +1,9 @@
 use crate::credential::Credential;
 use crate::framing::{Content, MLSCiphertext, MLSPlaintext};
-use crate::group::{CommitGeneration, Group, GroupError, Proposal, StateUpdate, VerifiedPlaintext};
+use crate::group::{CommitGeneration, Group, GroupError, Proposal, StateUpdate};
 use crate::key_package::KeyPackageGeneration;
-use crate::tree_kem::UpdatePathGeneration;
 use ferriscrypt::asym::ec_key::SecretKey;
 use serde::{Deserialize, Serialize};
-use std::ops::Deref;
 use std::option::Option::Some;
 use thiserror::Error;
 
@@ -21,23 +19,31 @@ pub enum SessionError {
     PendingCommitNotFound,
     #[error("pending commit mismatch")]
     PendingCommitMismatch,
+    #[error(
+        "pending commit action denied, commit reflection must be disabled to use this feature"
+    )]
+    PendingCommitDenied,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SessionOpts {
     pub encrypt_controls: bool,
+    pub commit_reflection: bool,
 }
 
 impl SessionOpts {
-    pub fn new(encrypt_controls: bool) -> SessionOpts {
-        SessionOpts { encrypt_controls }
+    pub fn new(encrypt_controls: bool, commit_reflection: bool) -> SessionOpts {
+        SessionOpts {
+            encrypt_controls,
+            commit_reflection,
+        }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct PendingCommit {
-    packet_hash: Vec<u8>,
-    commit: Option<UpdatePathGeneration>,
+    packet_data: Vec<u8>,
+    commit: CommitGeneration,
 }
 
 #[derive(Clone, Debug)]
@@ -50,7 +56,7 @@ pub struct CommitResult {
 pub struct Session {
     signing_key: SecretKey,
     protocol: Group,
-    pending_commit: Option<CommitGeneration>,
+    pending_commit: Option<PendingCommit>,
     opts: SessionOpts,
 }
 
@@ -157,7 +163,9 @@ impl Session {
     }
 
     fn send_proposal(&mut self, proposal: Proposal) -> Result<Vec<u8>, SessionError> {
-        let packet = self.protocol.send_proposal(proposal, &self.signing_key)?;
+        let packet =
+            self.protocol
+                .sign_proposal(proposal, &self.signing_key, self.opts.encrypt_controls)?;
         self.serialize_control(packet)
     }
 
@@ -172,7 +180,10 @@ impl Session {
 
         let serialized_commit = self.serialize_control(commit_data.plaintext.clone())?;
 
-        self.pending_commit = Some(commit_data);
+        self.pending_commit = Some(PendingCommit {
+            packet_data: serialized_commit.clone(),
+            commit: commit_data,
+        });
 
         Ok(CommitResult {
             commit_packet: serialized_commit,
@@ -180,39 +191,29 @@ impl Session {
         })
     }
 
-    fn handle_commit(
-        &mut self,
-        plaintext: VerifiedPlaintext,
-    ) -> Result<Option<StateUpdate>, SessionError> {
-        // If the sender is the current user, then verify that the pending commit matches the
-        // one received and apply the pending commit
-        let res = if plaintext.sender.sender == self.protocol.current_user_index() {
-            let pending = self
-                .pending_commit
-                .take()
-                .ok_or(SessionError::PendingCommitNotFound)?;
-
-            if &pending.plaintext != plaintext.deref() {
-                return Err(SessionError::PendingCommitMismatch);
-            }
-
-            self.protocol.process_pending_commit(pending)
-        } else {
-            // This came from a different user, process as normal
-            self.protocol
-                .handle_handshake(plaintext)
-                .map_err(Into::into)
-        }?;
-
-        self.pending_commit = None;
-
-        Ok(res)
-    }
-
     pub fn handle_handshake_data(
         &mut self,
         data: &[u8],
     ) -> Result<Option<StateUpdate>, SessionError> {
+        /*
+            NOTE: This only matters if commit_reflection is on. If not commits have to be manually
+            accepted or rejected based on server feedback.
+
+            If there is a pending commit, check to see if the packet we received is that commit
+            If it is, we will just process the pending commit and set pending_commit to None
+        */
+        if let Some(pending) = &self.pending_commit {
+            if self.opts.commit_reflection && pending.packet_data == data {
+                let pending = self.pending_commit.take().unwrap();
+                return self
+                    .protocol
+                    .process_pending_commit(pending.commit)
+                    .map_err(Into::into)
+                    .map(Some);
+            }
+        }
+
+        // This is not the pending commit to process as normal
         let plaintext = match self.opts.encrypt_controls {
             true => {
                 let ciphertext = bincode::deserialize(data)?;
@@ -224,13 +225,36 @@ impl Session {
             }
         }?;
 
-        if matches!(plaintext.content, Content::Commit(_)) {
-            self.handle_commit(plaintext)
-        } else {
-            self.protocol
-                .handle_handshake(plaintext)
-                .map_err(Into::into)
+        let is_commit = matches!(plaintext.content, Content::Commit(_));
+
+        let res = self.protocol.handle_handshake(plaintext)?;
+
+        // This commit beat our current pending commit to the server, our commit is no longer
+        // relevant
+        if is_commit {
+            self.pending_commit = None;
         }
+
+        Ok(res)
+    }
+
+    pub fn apply_pending_commit(&mut self) -> Result<StateUpdate, SessionError> {
+        if self.opts.commit_reflection {
+            return Err(SessionError::PendingCommitDenied);
+        }
+
+        // take() will give us the value and set it to None in the session
+        let pending = self
+            .pending_commit
+            .take()
+            .ok_or(SessionError::PendingCommitNotFound)?;
+        self.protocol
+            .process_pending_commit(pending.commit)
+            .map_err(Into::into)
+    }
+
+    pub fn clear_pending_commit(&mut self) {
+        self.pending_commit = None
     }
 
     pub fn encrypt_application_data(&mut self, data: &[u8]) -> Result<Vec<u8>, SessionError> {

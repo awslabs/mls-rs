@@ -12,9 +12,9 @@ use crate::confirmation_tag::{ConfirmationTag, ConfirmationTagError};
 use crate::credential::{Credential, CredentialError};
 use crate::extension::{Extension, ExtensionList};
 use crate::framing::{
-    CommitConversionError, Content, ContentType, MLSCiphertext, MLSCiphertextContent,
-    MLSCiphertextContentAAD, MLSPlaintext, MLSPlaintextCommitAuthData, MLSPlaintextCommitContent,
-    MLSSenderData, MLSSenderDataAAD, Sender, SenderType,
+    Content, ContentType, MLSCiphertext, MLSCiphertextContent, MLSCiphertextContentAAD,
+    MLSPlaintext, MLSPlaintextCommitAuthData, MLSPlaintextCommitContent, MLSSenderData,
+    MLSSenderDataAAD, Sender, SenderType,
 };
 use crate::group::GroupError::InvalidPlaintextEpoch;
 use crate::group::Proposal::{Add, Remove, Update};
@@ -232,8 +232,6 @@ pub enum GroupError {
     #[error(transparent)]
     TranscriptHashError(#[from] TranscriptHashError),
     #[error(transparent)]
-    CommitConversionError(#[from] CommitConversionError),
-    #[error(transparent)]
     KeyPackageError(#[from] KeyPackageError),
     #[error(transparent)]
     MembershipTagError(#[from] MembershipTagError),
@@ -281,6 +279,8 @@ pub enum GroupError {
     UnexpectedApplicationData,
     #[error("decrypt_application_message passed non-application data")]
     UnexpectedHandshakeMessage,
+    #[error("expected commit, found: {0:?}")]
+    NotCommitContent(ContentType),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -427,7 +427,7 @@ impl Deref for VerifiedPlaintext {
 }
 
 impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitContent {
-    type Error = CommitConversionError;
+    type Error = GroupError;
 
     fn try_from(value: &MLSPlaintext) -> Result<Self, Self::Error> {
         match &value.content {
@@ -439,8 +439,22 @@ impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitContent {
                 commit: c.clone(),
                 signature: value.signature.clone(),
             }),
-            _ => Err(CommitConversionError::NonCommitMessage),
+            Content::Proposal(_) => Err(GroupError::NotCommitContent(ContentType::Proposal)),
+            Content::Application(_) => Err(GroupError::NotCommitContent(ContentType::Application)),
         }
+    }
+}
+
+impl<'a> TryFrom<&'a MLSPlaintext> for MLSPlaintextCommitAuthData<'a> {
+    type Error = GroupError;
+
+    fn try_from(plaintext: &'a MLSPlaintext) -> Result<Self, Self::Error> {
+        let confirmation_tag = plaintext
+            .confirmation_tag
+            .as_ref()
+            .ok_or(GroupError::InvalidConfirmationTag)?;
+
+        Ok(MLSPlaintextCommitAuthData { confirmation_tag })
     }
 }
 
@@ -707,24 +721,29 @@ impl Group {
         })
     }
 
-    pub fn send_proposal(
+    pub fn sign_proposal(
         &mut self,
         proposal: Proposal,
         signer: &SecretKey,
+        for_ciphertext: bool,
     ) -> Result<MLSPlaintext, GroupError> {
         let mut plaintext =
             self.construct_mls_plaintext(Content::Proposal(proposal.clone()), signer)?;
 
-        let membership_tag = MembershipTag::create(&plaintext, &self.context, &self.key_schedule)?;
+        if !for_ciphertext {
+            // If we are going to encrypt then the tag will be dropped so it shouldn't be included
+            // in the hash
+            let membership_tag =
+                MembershipTag::create(&plaintext, &self.context, &self.key_schedule)?;
+            plaintext.membership_tag = Some(membership_tag);
+        };
 
-        plaintext.membership_tag = Some(membership_tag);
-
-        // Add the proposal ref to the current set
         let hash = self
             .cipher_suite
             .hash_function()
             .digest(&bincode::serialize(&plaintext)?);
 
+        // Add the proposal ref to the current set
         let pending_proposal = PendingProposal {
             proposal,
             sender: self.private_tree.self_index,
@@ -1041,7 +1060,7 @@ impl Group {
         let ciphertext_content = MLSCiphertextContent {
             content: plaintext.content,
             signature: plaintext.signature,
-            confirmation_tag: None,
+            confirmation_tag: plaintext.confirmation_tag,
             padding: vec![], //TODO: Implement a padding mechanism
         };
 
@@ -1100,7 +1119,7 @@ impl Group {
         Ok(MLSCiphertext {
             group_id: self.context.group_id.clone(),
             epoch: self.context.epoch,
-            content_type: ContentType::Application,
+            content_type,
             authenticated_data: vec![],
             encrypted_sender_data,
             ciphertext,
@@ -1263,21 +1282,6 @@ impl Group {
         &mut self,
         plaintext: VerifiedPlaintext,
     ) -> Result<Option<StateUpdate>, GroupError> {
-        self.handle_handshake_internal(plaintext, None)
-    }
-
-    pub fn process_pending_commit(
-        &mut self,
-        commit: CommitGeneration,
-    ) -> Result<Option<StateUpdate>, GroupError> {
-        self.handle_handshake_internal(VerifiedPlaintext(commit.plaintext), commit.secrets)
-    }
-
-    fn handle_handshake_internal(
-        &mut self,
-        plaintext: VerifiedPlaintext,
-        local_pending_secrets: Option<UpdatePathGeneration>,
-    ) -> Result<Option<StateUpdate>, GroupError> {
         // Process the contents of the packet
         match &plaintext.content {
             Content::Application(_) => Err(GroupError::UnexpectedApplicationData),
@@ -1293,18 +1297,7 @@ impl Group {
                 self.proposals.insert(hash, pending_proposal);
                 Ok(None)
             }
-            Content::Commit(_) => {
-                let commit_content = MLSPlaintextCommitContent::try_from(&plaintext.0)?;
-                let auth_data = MLSPlaintextCommitAuthData::try_from(&plaintext.0)?;
-
-                self.process_commit(
-                    LeafIndex::from(plaintext.sender.clone()),
-                    local_pending_secrets,
-                    commit_content,
-                    auth_data,
-                )
-                .map(Some)
-            }
+            Content::Commit(_) => self.process_commit(plaintext, None).map(Some),
         }
 
         //TODO: If the Commit included a ReInit proposal, the client MUST NOT use the group to send
@@ -1312,14 +1305,23 @@ impl Group {
         // and check that
     }
 
+    pub fn process_pending_commit(
+        &mut self,
+        commit: CommitGeneration,
+    ) -> Result<StateUpdate, GroupError> {
+        self.process_commit(VerifiedPlaintext(commit.plaintext), commit.secrets)
+    }
+
     // This function takes a provisional copy of the tree and returns an updated tree and epoch key schedule
     fn process_commit(
         &mut self,
-        sender: LeafIndex,
+        plaintext: VerifiedPlaintext,
         local_pending: Option<UpdatePathGeneration>,
-        commit_content: MLSPlaintextCommitContent,
-        auth_data: MLSPlaintextCommitAuthData,
     ) -> Result<StateUpdate, GroupError> {
+        let commit_content = MLSPlaintextCommitContent::try_from(&plaintext.0)?;
+        let auth_data = MLSPlaintextCommitAuthData::try_from(&plaintext.0)?;
+        let sender = LeafIndex(plaintext.sender.sender as usize);
+
         //Generate a provisional GroupContext object by applying the proposals referenced in the
         // initial Commit object, as described in Section 11.1. Update proposals are applied first,
         // followed by Remove proposals, and then finally Add proposals. Add proposals are applied

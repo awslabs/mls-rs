@@ -2,10 +2,7 @@ use crate::confirmation_tag::ConfirmationTag;
 use crate::group::{Commit, Proposal};
 use crate::membership_tag::MembershipTag;
 use crate::message_signature::MessageSignature;
-use crate::tree_kem::node::LeafIndex;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
-use thiserror::Error;
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ContentType {
@@ -39,12 +36,6 @@ pub struct Sender {
     pub sender: u32,
 }
 
-impl From<Sender> for LeafIndex {
-    fn from(s: Sender) -> Self {
-        LeafIndex(s.sender as usize)
-    }
-}
-
 // TODO: We need to serialize this with proper TLS encoding
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Content {
@@ -65,12 +56,6 @@ pub struct MLSPlaintext {
     pub membership_tag: Option<MembershipTag>,
 }
 
-#[derive(Error, Debug, PartialEq)]
-pub enum CommitConversionError {
-    #[error("attempted to add non commit message to the transcript hash")]
-    NonCommitMessage,
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct MLSPlaintextCommitContent {
     pub group_id: Vec<u8>,
@@ -84,19 +69,6 @@ pub(crate) struct MLSPlaintextCommitContent {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub(crate) struct MLSPlaintextCommitAuthData<'a> {
     pub confirmation_tag: &'a ConfirmationTag,
-}
-
-impl<'a> TryFrom<&'a MLSPlaintext> for MLSPlaintextCommitAuthData<'a> {
-    type Error = CommitConversionError;
-
-    fn try_from(plaintext: &'a MLSPlaintext) -> Result<Self, Self::Error> {
-        let confirmation_tag = plaintext
-            .confirmation_tag
-            .as_ref()
-            .ok_or(CommitConversionError::NonCommitMessage)?;
-
-        Ok(MLSPlaintextCommitAuthData { confirmation_tag })
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

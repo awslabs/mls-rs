@@ -66,15 +66,17 @@ fn test_create_session() {
             cs.clone(),
             SessionOpts {
                 encrypt_controls: false,
+                commit_reflection: true,
             },
         );
 
-        // test_create(
-        //     cs.clone(),
-        //     SessionOpts {
-        //         encrypt_controls: true,
-        //     },
-        // )
+        test_create(
+            cs.clone(),
+            SessionOpts {
+                encrypt_controls: true,
+                commit_reflection: true,
+            },
+        )
     });
 }
 
@@ -193,15 +195,17 @@ fn test_group_path_updates() {
             10,
             SessionOpts {
                 encrypt_controls: false,
+                commit_reflection: true,
             },
         );
-        // test_empty_commits(
-        //     cs,
-        //     10,
-        //     SessionOpts {
-        //         encrypt_controls: true,
-        //     },
-        // );
+        test_empty_commits(
+            cs,
+            10,
+            SessionOpts {
+                encrypt_controls: true,
+                commit_reflection: true,
+            },
+        );
     })
 }
 
@@ -261,15 +265,17 @@ fn test_group_update_proposals() {
             10,
             SessionOpts {
                 encrypt_controls: false,
+                commit_reflection: true,
             },
         );
-        // test_update_proposals(
-        //     cs,
-        //     10,
-        //     SessionOpts {
-        //         encrypt_controls: true,
-        //     },
-        // );
+        test_update_proposals(
+            cs,
+            10,
+            SessionOpts {
+                encrypt_controls: true,
+                commit_reflection: true,
+            },
+        );
     })
 }
 
@@ -338,15 +344,17 @@ fn test_group_remove_proposals() {
             10,
             SessionOpts {
                 encrypt_controls: false,
+                commit_reflection: true,
             },
         );
-        // test_remove_proposals(
-        //     cs,
-        //     10,
-        //     SessionOpts {
-        //         encrypt_controls: true,
-        //     },
-        // );
+        test_remove_proposals(
+            cs,
+            10,
+            SessionOpts {
+                encrypt_controls: true,
+                commit_reflection: true,
+            },
+        );
     })
 }
 
@@ -401,6 +409,7 @@ fn test_group_application_messages() {
             20,
             SessionOpts {
                 encrypt_controls: false,
+                commit_reflection: true,
             },
         );
         test_application_messages(
@@ -409,6 +418,7 @@ fn test_group_application_messages() {
             20,
             SessionOpts {
                 encrypt_controls: true,
+                commit_reflection: true,
             },
         );
     })
