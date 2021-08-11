@@ -1,8 +1,8 @@
-use crate::confirmation_tag::ConfirmationTag;
-use crate::epoch::EpochKeySchedule;
-use crate::framing::MLSPlaintext;
+use crate::group::confirmation_tag::ConfirmationTag;
+use crate::group::epoch::EpochKeySchedule;
+use crate::group::framing::MLSPlaintext;
+use crate::group::message_signature::{MLSPlaintextTBS, MessageSignature};
 use crate::group::GroupContext;
-use crate::message_signature::{MLSPlaintextTBS, MessageSignature};
 use ferriscrypt::hmac::{HMacError, Key, Tag};
 use ferriscrypt::Signer;
 use serde::{Deserialize, Serialize};
@@ -88,8 +88,8 @@ impl MembershipTag {
 mod tests {
     use super::*;
     use crate::ciphersuite::CipherSuite;
-    use crate::epoch::test_utils::get_test_epoch_key_schedule;
-    use crate::framing::test_utils::get_test_plaintext;
+    use crate::group::epoch::test_utils::get_test_epoch_key_schedule;
+    use crate::group::framing::test_utils::get_test_plaintext;
     use crate::group::test_utils::get_test_group_context;
 
     #[test]

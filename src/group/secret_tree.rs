@@ -1,5 +1,5 @@
 use crate::ciphersuite::CipherSuite;
-use crate::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
+use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, NodeIndex};

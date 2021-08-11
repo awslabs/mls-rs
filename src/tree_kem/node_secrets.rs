@@ -1,6 +1,6 @@
 use crate::ciphersuite::CipherSuite;
-use crate::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
-use crate::leaf_secret::LeafSecret;
+use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
+use crate::tree_kem::leaf_secret::LeafSecret;
 use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
 use ferriscrypt::hpke::kem::{Kem, KemType};
 use ferriscrypt::hpke::HpkeError;

@@ -1,7 +1,9 @@
 use crate::ciphersuite::CipherSuite;
+use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
+use crate::group::secret_tree::{
+    EncryptionKey, KeyType, SecretKeyRatchet, SecretTree, SecretTreeError,
+};
 use crate::group::GroupContext;
-use crate::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
-use crate::secret_tree::{EncryptionKey, KeyType, SecretKeyRatchet, SecretTree, SecretTreeError};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{TreeSecrets, UpdatePathGeneration};
 use ferriscrypt::cipher::AeadError;
@@ -353,7 +355,7 @@ impl WelcomeSecret {
 #[cfg(test)]
 pub mod test_utils {
     use super::*;
-    use crate::secret_tree::test::get_test_tree;
+    use crate::group::secret_tree::test::get_test_tree;
 
     pub(crate) fn get_test_epoch_key_schedule(
         cipher_suite: CipherSuite,

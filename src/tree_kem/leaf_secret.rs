@@ -1,5 +1,5 @@
 use crate::ciphersuite::CipherSuite;
-use crate::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
+use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
 use ferriscrypt::hpke::kem::{KemPublicKey, KemSecretKey, KemType};
 use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::rand::{SecureRng, SecureRngError};

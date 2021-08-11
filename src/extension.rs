@@ -2,9 +2,9 @@ use crate::ciphersuite::CipherSuite;
 use crate::extension::ExtensionError::IncorrectExtensionType;
 use crate::protocol_version::ProtocolVersion;
 use crate::tree_kem::parent_hash::ParentHash;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::ops::{Deref, DerefMut};
 use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 use thiserror::Error;
@@ -19,9 +19,8 @@ pub enum ExtensionError {
     SystemTimeError(#[from] SystemTimeError),
 }
 
-#[derive(IntoPrimitive, TryFromPrimitive, Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Serialize_repr, Deserialize_repr, Clone, Debug, PartialEq)]
 #[repr(u16)]
-#[serde(into = "u16", try_from = "u16")]
 pub enum ExtensionId {
     Capabilities = 0x0001,
     Lifetime = 0x0002,

@@ -1,5 +1,5 @@
 use crate::credential::CredentialError;
-use crate::framing::{Content, MLSPlaintext, Sender, SenderType};
+use crate::group::framing::{Content, MLSPlaintext, Sender, SenderType};
 use crate::group::GroupContext;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{RatchetTree, RatchetTreeError};

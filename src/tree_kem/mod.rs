@@ -1,28 +1,32 @@
+use std::collections::HashMap;
+use std::time::SystemTime;
+
+use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
+use ferriscrypt::hpke::{HPKECiphertext, HpkeError};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use math as tree_math;
+use math::TreeMathError;
+use node::{Leaf, LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
+use node_secrets::{NodeSecretGenerator, NodeSecrets};
+
+use crate::ciphersuite::{CipherSuite, HpkeCiphertext};
+use crate::credential::Credential;
+use crate::extension::{ExtensionError, ParentHashExt};
+use crate::group::key_schedule::KeyScheduleKdfError;
+use crate::group::GroupSecrets;
+use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration};
+use crate::tree_kem::leaf_secret::{LeafSecret, LeafSecretError};
+use crate::tree_kem::node_secrets::NodeSecretGeneratorError;
+use crate::tree_kem::parent_hash::ParentHashError;
+
+pub mod leaf_secret;
 pub(crate) mod math;
 pub mod node;
 mod node_secrets;
 pub mod parent_hash;
 mod tree_hash;
-
-use crate::ciphersuite::{CipherSuite, HpkeCiphertext};
-use crate::credential::Credential;
-use crate::extension::{ExtensionError, ParentHashExt};
-use crate::group::GroupSecrets;
-use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration};
-use crate::key_schedule::KeyScheduleKdfError;
-use crate::leaf_secret::{LeafSecret, LeafSecretError};
-use crate::tree_kem::node_secrets::NodeSecretGeneratorError;
-use crate::tree_kem::parent_hash::ParentHashError;
-use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
-use ferriscrypt::hpke::{HPKECiphertext, HpkeError};
-use math as tree_math;
-use math::TreeMathError;
-use node::{Leaf, LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
-use node_secrets::{NodeSecretGenerator, NodeSecrets};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::time::SystemTime;
-use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum RatchetTreeError {
@@ -739,13 +743,15 @@ pub struct UpdatePath {
 
 #[cfg(test)]
 pub(crate) mod test {
-    use super::*;
+    use ferriscrypt::asym::ec_key::Curve;
+
     use crate::credential::BasicCredential;
     use crate::extension::{CapabilitiesExt, ExtensionList, ExtensionTrait, LifetimeExt};
     use crate::key_package::KeyPackageGenerator;
     use crate::tree_kem::node::{NodeTypeResolver, Parent};
     use crate::tree_kem::parent_hash::ParentHash;
-    use ferriscrypt::asym::ec_key::Curve;
+
+    use super::*;
 
     pub fn get_test_key_package_sig_key(
         cipher_suite: CipherSuite,

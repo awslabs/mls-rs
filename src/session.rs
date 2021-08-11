@@ -1,6 +1,6 @@
 use crate::credential::Credential;
-use crate::framing::{Content, MLSCiphertext, MLSPlaintext};
-use crate::group::{CommitGeneration, Group, GroupError, Proposal, StateUpdate};
+use crate::group::framing::{Content, MLSCiphertext, MLSPlaintext};
+use crate::group::{proposal::Proposal, CommitGeneration, Group, GroupError, StateUpdate};
 use crate::key_package::KeyPackageGeneration;
 use ferriscrypt::asym::ec_key::SecretKey;
 use serde::{Deserialize, Serialize};

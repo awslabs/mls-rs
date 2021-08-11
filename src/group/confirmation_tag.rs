@@ -1,5 +1,5 @@
-use crate::epoch::EpochKeySchedule;
-use crate::transcript_hash::ConfirmedTranscriptHash;
+use crate::group::epoch::EpochKeySchedule;
+use crate::group::transcript_hash::ConfirmedTranscriptHash;
 use ferriscrypt::hmac::{HMacError, Key, Tag};
 use ferriscrypt::Signer;
 use serde::{Deserialize, Serialize};
@@ -49,7 +49,7 @@ impl ConfirmationTag {
 mod test {
     use super::*;
     use crate::ciphersuite::CipherSuite;
-    use crate::epoch::test_utils::get_test_epoch_key_schedule;
+    use crate::group::epoch::test_utils::get_test_epoch_key_schedule;
 
     #[test]
     fn test_confirmation_tag_matching() {

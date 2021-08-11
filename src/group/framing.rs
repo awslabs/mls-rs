@@ -1,7 +1,5 @@
-use crate::confirmation_tag::ConfirmationTag;
-use crate::group::{Commit, Proposal};
-use crate::membership_tag::MembershipTag;
-use crate::message_signature::MessageSignature;
+use super::proposal::Proposal;
+use super::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -1,6 +1,6 @@
 use crate::ciphersuite::CipherSuite;
-use crate::confirmation_tag::ConfirmationTag;
-use crate::framing::{MLSPlaintextCommitAuthData, MLSPlaintextCommitContent};
+use crate::group::confirmation_tag::ConfirmationTag;
+use crate::group::framing::{MLSPlaintextCommitAuthData, MLSPlaintextCommitContent};
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 use thiserror::Error;

@@ -1,31 +1,8 @@
-use crate::epoch::{CommitSecret, EpochKeySchedule, EpochKeyScheduleError, WelcomeSecret};
-use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration};
-use crate::tree_kem::{
-    RatchetTree, RatchetTreeError, TreeKemPrivate, UpdatePath, UpdatePathGeneration,
-};
-use num_enum::{IntoPrimitive, TryFromPrimitive};
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
+use std::collections::HashMap;
+use std::convert::TryFrom;
+use std::ops::Deref;
+use std::option::Option::Some;
 
-use crate::ciphersuite::{CipherSuite, HpkeCiphertext};
-use crate::confirmation_tag::{ConfirmationTag, ConfirmationTagError};
-use crate::credential::{Credential, CredentialError};
-use crate::extension::{Extension, ExtensionList};
-use crate::framing::{
-    Content, ContentType, MLSCiphertext, MLSCiphertextContent, MLSCiphertextContentAAD,
-    MLSPlaintext, MLSPlaintextCommitAuthData, MLSPlaintextCommitContent, MLSSenderData,
-    MLSSenderDataAAD, Sender, SenderType,
-};
-use crate::group::GroupError::InvalidPlaintextEpoch;
-use crate::group::Proposal::{Add, Remove, Update};
-use crate::key_schedule::KeyScheduleKdfError;
-use crate::leaf_secret::{LeafSecret, LeafSecretError};
-use crate::membership_tag::{MembershipTag, MembershipTagError};
-use crate::message_signature::{MessageSignature, MessageSignatureError};
-use crate::protocol_version::ProtocolVersion;
-use crate::secret_tree::KeyType;
-use crate::transcript_hash::{ConfirmedTranscriptHash, InterimTranscriptHash, TranscriptHashError};
-use crate::tree_kem::node::LeafIndex;
 use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
 use ferriscrypt::cipher::AeadError;
 use ferriscrypt::hmac::Tag;
@@ -33,134 +10,39 @@ use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
 use ferriscrypt::{Signer, Verifier};
-use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::ops::Deref;
-use std::option::Option::Some;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[repr(u8)]
-#[derive(Clone, Debug, PartialEq, IntoPrimitive, TryFromPrimitive, Serialize, Deserialize)]
-pub enum ProposalType {
-    Reserved = 0,
-    Add,
-    Update,
-    Remove,
-    //TODO: Psk,
-    //TODO: ReInit,
-    //TODO: ExternalInit,
-    //TODO: AppAck
-}
+use crate::ciphersuite::{CipherSuite, HpkeCiphertext};
+use crate::credential::{Credential, CredentialError};
+use crate::extension::{Extension, ExtensionList};
+use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration};
+use crate::protocol_version::ProtocolVersion;
+use crate::tree_kem::leaf_secret::{LeafSecret, LeafSecretError};
+use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::{
+    RatchetTree, RatchetTreeError, TreeKemPrivate, UpdatePath, UpdatePathGeneration,
+};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct AddProposal {
-    pub key_package: KeyPackage,
-}
+use confirmation_tag::*;
+use epoch::*;
+use framing::*;
+use key_schedule::*;
+use membership_tag::*;
+use message_signature::*;
+use proposal::*;
+use secret_tree::*;
+use transcript_hash::*;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct UpdateProposal {
-    pub key_package: KeyPackage,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct RemoveProposal {
-    pub to_remove: u32,
-}
-
-//TODO: This should serialize with msg_type being a proposal type above
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum Proposal {
-    Add(AddProposal),
-    Update(UpdateProposal),
-    Remove(RemoveProposal),
-    //TODO: PSK
-    //TODO: Psk,
-    //TODO: ReInit,
-    //TODO: ExternalInit,
-    //TODO: AppAck
-}
-
-impl Proposal {
-    pub fn is_add(&self) -> bool {
-        matches!(self, Self::Add(_))
-    }
-
-    pub fn as_add(&self) -> Option<&AddProposal> {
-        match self {
-            Add(add) => Some(add),
-            _ => None,
-        }
-    }
-
-    pub fn is_update(&self) -> bool {
-        matches!(self, Self::Update(_))
-    }
-
-    pub fn as_update(&self) -> Option<&UpdateProposal> {
-        match self {
-            Update(update) => Some(update),
-            _ => None,
-        }
-    }
-
-    pub fn is_remove(&self) -> bool {
-        matches!(self, Self::Remove(_))
-    }
-
-    pub fn as_remove(&self) -> Option<&RemoveProposal> {
-        match self {
-            Remove(removal) => Some(removal),
-            _ => None,
-        }
-    }
-}
-
-impl From<AddProposal> for Proposal {
-    fn from(ap: AddProposal) -> Self {
-        Proposal::Add(ap)
-    }
-}
-
-impl From<Proposal> for ProposalType {
-    fn from(p: Proposal) -> Self {
-        match p {
-            Proposal::Add(_) => ProposalType::Add,
-            Proposal::Update(_) => ProposalType::Update,
-            Proposal::Remove(_) => ProposalType::Remove,
-        }
-    }
-}
-
-#[repr(u8)]
-#[derive(Clone, Debug, PartialEq, IntoPrimitive, TryFromPrimitive, Serialize, Deserialize)]
-pub enum ProposalOrRefType {
-    Reserved = 0,
-    Proposal,
-    Reference,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum ProposalOrRef {
-    Proposal(Proposal),
-    Reference(Vec<u8>),
-}
-
-impl From<Proposal> for ProposalOrRef {
-    fn from(proposal: Proposal) -> Self {
-        Self::Proposal(proposal)
-    }
-}
-
-impl From<Vec<u8>> for ProposalOrRef {
-    fn from(v: Vec<u8>) -> Self {
-        Self::Reference(v)
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct PendingProposal {
-    proposal: Proposal,
-    sender: LeafIndex,
-}
+mod confirmation_tag;
+mod epoch;
+pub mod framing;
+pub mod key_schedule;
+mod membership_tag;
+mod message_signature;
+pub mod proposal;
+mod secret_tree;
+mod transcript_hash;
 
 struct ProvisionalState {
     public_tree: RatchetTree,
@@ -1245,7 +1127,7 @@ impl Group {
         // Verify that the epoch field of the enclosing MLSPlaintext message is equal
         // to the epoch field of the current GroupContext object
         if plaintext.epoch != self.context.epoch {
-            return Err(InvalidPlaintextEpoch);
+            return Err(GroupError::InvalidPlaintextEpoch);
         }
 
         // Verify that the membership tag is correct
