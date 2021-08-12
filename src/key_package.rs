@@ -116,7 +116,7 @@ impl KeyPackage {
         bincode::serialize(&key_package_data).map_err(Into::into)
     }
 
-    pub fn sign(&mut self, key: &SecretKey) -> Result<(), KeyPackageError> {
+    pub(crate) fn sign(&mut self, key: &SecretKey) -> Result<(), KeyPackageError> {
         self.signature = key.sign(&self.to_signable_bytes()?)?;
         Ok(())
     }

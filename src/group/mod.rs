@@ -874,6 +874,7 @@ impl Group {
     }
 
     pub fn add_member_proposal(&self, key_package: &KeyPackage) -> Result<Proposal, GroupError> {
+        // TODO: Make sure the packages are the correct best cipher suite etc
         if key_package.cipher_suite != self.cipher_suite {
             return Err(GroupError::CipherSuiteMismatch);
         }
@@ -882,18 +883,6 @@ impl Group {
         Ok(Proposal::from(AddProposal {
             key_package: key_package.clone(),
         }))
-    }
-
-    pub fn add_member_proposals(
-        &self,
-        key_packages: &[KeyPackage],
-    ) -> Result<Vec<Proposal>, GroupError> {
-        // Verify that the packages are all the correct cipher suite and mls version
-        // TODO: Make sure the packages are the correct best cipher suite etc
-        key_packages
-            .iter()
-            .map(|kp| self.add_member_proposal(kp))
-            .collect()
     }
 
     pub fn update_proposal(&mut self, signing_key: &SecretKey) -> Result<Proposal, GroupError> {

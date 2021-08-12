@@ -93,14 +93,6 @@ impl From<KeyPackageGeneration> for TreeKemPrivate {
 }
 
 impl TreeKemPrivate {
-    pub fn new(self_index: LeafIndex) -> Self {
-        TreeKemPrivate {
-            self_index,
-            secret_keys: Default::default(),
-        }
-    }
-
-    //TODO: This function should take SecretKey not Vec<u8>
     pub fn new_self_leaf(self_index: LeafIndex, leaf_secret: SecretKey) -> Self {
         let mut private_key = TreeKemPrivate {
             self_index,
@@ -282,13 +274,6 @@ impl RatchetTree {
         let private_tree = TreeKemPrivate::from(key_package);
 
         Ok((public_tree, private_tree))
-    }
-
-    pub fn new(cipher_suite: CipherSuite) -> RatchetTree {
-        RatchetTree {
-            cipher_suite,
-            nodes: NodeVec::from(vec![]),
-        }
     }
 
     pub fn leaf_count(&self) -> usize {
@@ -772,7 +757,7 @@ pub(crate) mod test {
         let key_package_gen = KeyPackageGenerator {
             cipher_suite,
             credential: &credential,
-            extensions: ExtensionList(extensions),
+            extensions: ExtensionList::from(extensions),
             signing_key: &sig_key,
         };
 
@@ -823,7 +808,11 @@ pub(crate) mod test {
     fn test_add_node_new_tree() {
         let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
 
-        let mut tree = RatchetTree::new(cipher_suite);
+        let mut tree = RatchetTree {
+            cipher_suite,
+            nodes: NodeVec::from(vec![]),
+        };
+
         let key_packages = get_test_key_packages(cipher_suite);
         tree.add_nodes(key_packages.clone()).unwrap();
 
@@ -1035,7 +1024,11 @@ pub(crate) mod test {
             .collect();
 
         // Build a test tree we can clone for all leaf nodes
-        let mut test_tree = RatchetTree::new(cipher_suite);
+        let mut test_tree = RatchetTree {
+            cipher_suite,
+            nodes: NodeVec::from(vec![]),
+        };
+
         test_tree.add_nodes(key_packages).unwrap();
 
         // Clone the tree for the first leaf, generate a new key package for that leaf

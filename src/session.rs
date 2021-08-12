@@ -57,7 +57,7 @@ pub struct Session {
     signing_key: SecretKey,
     protocol: Group,
     pending_commit: Option<PendingCommit>,
-    opts: SessionOpts,
+    pub opts: SessionOpts,
 }
 
 #[derive(Clone, Debug)]

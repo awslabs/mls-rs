@@ -1,18 +1,14 @@
-use ferriscrypt::asym::ec_key::{generate_keypair, Curve};
 use ferriscrypt::rand::SecureRng;
 use mls::cipher_suite::CipherSuite;
 use mls::client::Client;
-use mls::credential::{BasicCredential, Credential};
+use mls::credential::Credential;
 use mls::extension::LifetimeExt;
 use mls::key_package::KeyPackageGeneration;
 use mls::session::{Session, SessionOpts};
 use std::time::SystemTime;
 
 fn generate_client(cipher_suite: CipherSuite, id: Vec<u8>) -> Client {
-    let (public_key, secret_key) =
-        generate_keypair(Curve::from(cipher_suite.signature_scheme())).unwrap();
-    let credential = Credential::Basic(BasicCredential::new(id, public_key).unwrap());
-    Client::new(cipher_suite, secret_key, credential).unwrap()
+    Client::generate_basic(cipher_suite, id).unwrap()
 }
 
 fn test_create(cipher_suite: CipherSuite, opts: SessionOpts) {

@@ -57,7 +57,7 @@ impl Verifier for Credential {
     }
 }
 
-pub trait CredentialConvertible {
+pub(crate) trait CredentialConvertible {
     fn to_credential(&self) -> Credential;
 }
 
