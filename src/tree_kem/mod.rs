@@ -11,7 +11,7 @@ use math::TreeMathError;
 use node::{Leaf, LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
 use node_secrets::{NodeSecretGenerator, NodeSecrets};
 
-use crate::ciphersuite::{CipherSuite, HpkeCiphertext};
+use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
 use crate::credential::Credential;
 use crate::extension::{ExtensionError, ParentHashExt};
 use crate::group::key_schedule::KeyScheduleKdfError;

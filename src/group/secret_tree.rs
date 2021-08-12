@@ -1,4 +1,4 @@
-use crate::ciphersuite::CipherSuite;
+use crate::cipher_suite::CipherSuite;
 use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;

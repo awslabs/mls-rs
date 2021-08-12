@@ -1,6 +1,5 @@
-use crate::ciphersuite::CipherSuite;
+use crate::cipher_suite::{CipherSuite, ProtocolVersion};
 use crate::extension::ExtensionError::IncorrectExtensionType;
-use crate::protocol_version::ProtocolVersion;
 use crate::tree_kem::parent_hash::ParentHash;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};

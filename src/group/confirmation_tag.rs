@@ -48,7 +48,7 @@ impl ConfirmationTag {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::ciphersuite::CipherSuite;
+    use crate::cipher_suite::CipherSuite;
     use crate::group::epoch::test_utils::get_test_epoch_key_schedule;
 
     #[test]

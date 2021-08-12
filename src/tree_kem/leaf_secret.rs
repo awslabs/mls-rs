@@ -1,4 +1,4 @@
-use crate::ciphersuite::CipherSuite;
+use crate::cipher_suite::CipherSuite;
 use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
 use ferriscrypt::hpke::kem::{KemPublicKey, KemSecretKey, KemType};
 use ferriscrypt::hpke::HpkeError;

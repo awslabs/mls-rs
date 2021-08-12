@@ -440,7 +440,7 @@ impl NodeVec {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::ciphersuite::{CipherSuite, SignatureScheme};
+    use crate::cipher_suite::{CipherSuite, SignatureScheme};
     use crate::credential::{BasicCredential, CredentialConvertible};
     use crate::extension::ExtensionList;
     use ferriscrypt::asym::ec_key::{generate_keypair, Curve, SecretKey};

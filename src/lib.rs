@@ -9,12 +9,11 @@ macro_rules! hex {
 }
 
 #[macro_use]
-pub mod ciphersuite;
+pub mod cipher_suite;
 pub mod client;
 pub mod credential;
 pub mod extension;
 pub mod group;
 pub mod key_package;
-pub mod protocol_version;
 pub mod session;
 pub mod tree_kem;

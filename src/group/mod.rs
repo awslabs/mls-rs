@@ -13,11 +13,10 @@ use ferriscrypt::{Signer, Verifier};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::ciphersuite::{CipherSuite, HpkeCiphertext};
+use crate::cipher_suite::{CipherSuite, HpkeCiphertext, ProtocolVersion};
 use crate::credential::{Credential, CredentialError};
 use crate::extension::{Extension, ExtensionList};
 use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration};
-use crate::protocol_version::ProtocolVersion;
 use crate::tree_kem::leaf_secret::{LeafSecret, LeafSecretError};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{

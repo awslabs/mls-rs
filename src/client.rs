@@ -1,4 +1,4 @@
-use crate::ciphersuite::CipherSuite;
+use crate::cipher_suite::CipherSuite;
 use crate::credential::{BasicCredential, Credential, CredentialError};
 use crate::extension::{
     CapabilitiesExt, ExtensionError, ExtensionList, ExtensionTrait, LifetimeExt,

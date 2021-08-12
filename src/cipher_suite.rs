@@ -1,4 +1,3 @@
-use crate::protocol_version::ProtocolVersion;
 use ferriscrypt::asym::ec_key::{Curve, EcKeyError};
 use ferriscrypt::cipher::Aead;
 use ferriscrypt::digest::HashFunction;
@@ -7,6 +6,12 @@ use ferriscrypt::hpke::{AeadId, HPKECiphertext, Hpke, KdfId, KemId};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::convert::TryInto;
+
+#[derive(Serialize_repr, Deserialize_repr, Debug, Clone, Copy, PartialEq)]
+#[repr(u8)]
+pub enum ProtocolVersion {
+    Mls10 = 0x01,
+}
 
 #[derive(Deserialize_repr, Serialize_repr, Clone, Copy, Debug, PartialEq)]
 #[repr(u16)]
@@ -100,7 +105,7 @@ impl CipherSuite {
     }
 
     #[inline(always)]
-    pub fn aead_type(&self) -> Aead {
+    pub(crate) fn aead_type(&self) -> Aead {
         match self {
             CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => Aead::Aes128Gcm,
             CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256 => Aead::Aes128Gcm,
@@ -112,7 +117,7 @@ impl CipherSuite {
     }
 
     #[inline(always)]
-    pub fn kem_type(&self) -> KemId {
+    pub(crate) fn kem_type(&self) -> KemId {
         match self {
             CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => KemId::X25519HkdfSha256,
             CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256 => KemId::P256HkdfSha256,
@@ -126,7 +131,7 @@ impl CipherSuite {
     }
 
     #[inline(always)]
-    pub fn hash_function(&self) -> HashFunction {
+    pub(crate) fn hash_function(&self) -> HashFunction {
         match self {
             CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => HashFunction::Sha256,
             CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256 => HashFunction::Sha256,
@@ -138,7 +143,7 @@ impl CipherSuite {
     }
 
     #[inline(always)]
-    pub fn signature_scheme(&self) -> SignatureScheme {
+    pub(crate) fn signature_scheme(&self) -> SignatureScheme {
         match self {
             CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => SignatureScheme::Ed25519,
             CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256 => {
@@ -156,12 +161,12 @@ impl CipherSuite {
     }
 
     #[inline(always)]
-    pub fn kdf_type(&self) -> KdfId {
+    pub(crate) fn kdf_type(&self) -> KdfId {
         self.kem_type().kdf()
     }
 
     #[inline(always)]
-    pub fn hpke(&self) -> Hpke {
+    pub(crate) fn hpke(&self) -> Hpke {
         Hpke::new(
             self.kem_type(),
             self.kdf_type(),
@@ -169,7 +174,7 @@ impl CipherSuite {
         )
     }
 
-    pub fn kem(&self) -> Kem {
+    pub(crate) fn kem(&self) -> Kem {
         Kem::new(self.kem_type())
     }
 }

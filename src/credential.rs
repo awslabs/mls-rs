@@ -1,4 +1,4 @@
-use crate::ciphersuite::SignatureScheme;
+use crate::cipher_suite::SignatureScheme;
 use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey};
 use ferriscrypt::Verifier;
 use serde::{Deserialize, Serialize};

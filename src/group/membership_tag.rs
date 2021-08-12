@@ -87,7 +87,7 @@ impl MembershipTag {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ciphersuite::CipherSuite;
+    use crate::cipher_suite::CipherSuite;
     use crate::group::epoch::test_utils::get_test_epoch_key_schedule;
     use crate::group::framing::test_utils::get_test_plaintext;
     use crate::group::test_utils::get_test_group_context;

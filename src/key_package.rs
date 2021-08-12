@@ -1,7 +1,7 @@
-use crate::ciphersuite::CipherSuite;
+use crate::cipher_suite::CipherSuite;
+use crate::cipher_suite::ProtocolVersion;
 use crate::credential::{Credential, CredentialError};
 use crate::extension::{Extension, ExtensionError, ExtensionList};
-use crate::protocol_version::ProtocolVersion;
 use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError, SecretKey};
 use ferriscrypt::{Signer, Verifier};
 use serde::{Deserialize, Serialize};

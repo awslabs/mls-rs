@@ -1,4 +1,4 @@
-use crate::ciphersuite::CipherSuite;
+use crate::cipher_suite::CipherSuite;
 use crate::group::confirmation_tag::ConfirmationTag;
 use crate::group::framing::{MLSPlaintextCommitAuthData, MLSPlaintextCommitContent};
 use serde::{Deserialize, Serialize};
