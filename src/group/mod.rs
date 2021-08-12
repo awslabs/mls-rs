@@ -1332,7 +1332,7 @@ pub(crate) mod test_utils {
             epoch,
             tree_hash: vec![],
             confirmed_transcript_hash: ConfirmedTranscriptHash::from(vec![]),
-            extensions: ExtensionList(vec![]),
+            extensions: ExtensionList::from(vec![]),
         }
     }
 }

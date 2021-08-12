@@ -80,7 +80,7 @@ impl Client {
         let key_package_generator = KeyPackageGenerator {
             cipher_suite: self.cipher_suite,
             credential: &self.credential,
-            extensions: ExtensionList(vec![
+            extensions: ExtensionList::from(vec![
                 self.capabilities.to_extension()?,
                 lifetime.to_extension()?,
             ]),

@@ -28,7 +28,7 @@ pub enum ExtensionId {
     RatchetTree = 0x0005,
 }
 
-pub trait ExtensionTrait: Sized + Serialize + DeserializeOwned {
+pub(crate) trait ExtensionTrait: Sized + Serialize + DeserializeOwned {
     const IDENTIFIER: ExtensionId;
 
     fn to_extension(&self) -> Result<Extension, ExtensionError> {
@@ -48,11 +48,11 @@ pub trait ExtensionTrait: Sized + Serialize + DeserializeOwned {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct KeyId<T> {
-    pub identifier: T,
+pub struct KeyIdExt {
+    pub identifier: Vec<u8>,
 }
 
-impl<T: DeserializeOwned + Serialize> ExtensionTrait for KeyId<T> {
+impl ExtensionTrait for KeyIdExt {
     const IDENTIFIER: ExtensionId = ExtensionId::KeyId;
 }
 
@@ -142,7 +142,13 @@ pub struct Extension {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct ExtensionList(pub Vec<Extension>);
+pub struct ExtensionList(Vec<Extension>);
+
+impl From<Vec<Extension>> for ExtensionList {
+    fn from(v: Vec<Extension>) -> Self {
+        Self(v)
+    }
+}
 
 impl Deref for ExtensionList {
     type Target = Vec<Extension>;
@@ -159,7 +165,7 @@ impl DerefMut for ExtensionList {
 }
 
 impl ExtensionList {
-    pub fn get_extension<T: ExtensionTrait>(&self) -> Result<Option<T>, ExtensionError> {
+    pub(crate) fn get_extension<T: ExtensionTrait>(&self) -> Result<Option<T>, ExtensionError> {
         let ext = self.iter().find(|v| v.extension_id == T::IDENTIFIER);
 
         if let Some(ext) = ext {
@@ -169,7 +175,10 @@ impl ExtensionList {
         }
     }
 
-    pub fn set_extension<T: ExtensionTrait>(&mut self, ext: T) -> Result<(), ExtensionError> {
+    pub(crate) fn set_extension<T: ExtensionTrait>(
+        &mut self,
+        ext: T,
+    ) -> Result<(), ExtensionError> {
         match self.iter_mut().find(|v| v.extension_id == T::IDENTIFIER) {
             None => {
                 self.push(ext.to_extension()?);
@@ -182,38 +191,32 @@ impl ExtensionList {
         }
     }
 
-    pub fn get_lifetime(&self) -> Result<Option<LifetimeExt>, ExtensionError> {
+    pub(crate) fn get_lifetime(&self) -> Result<Option<LifetimeExt>, ExtensionError> {
         self.get_extension()
     }
 
-    pub fn get_parent_hash(&self) -> Result<Option<ParentHashExt>, ExtensionError> {
+    pub(crate) fn get_parent_hash(&self) -> Result<Option<ParentHashExt>, ExtensionError> {
         self.get_extension()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::ciphersuite::CipherSuite;
-    use crate::extension::LifetimeExt;
-    use crate::extension::{
-        CapabilitiesExt, Extension, ExtensionError, ExtensionId, ExtensionTrait, KeyId,
-    };
-    use crate::protocol_version::ProtocolVersion;
+    use super::*;
     use std::ops::Add;
     use std::time::{Duration, SystemTime};
 
     #[test]
-    fn test_key_extension() {
-        let test_id = 42;
-        let test_extension = KeyId {
-            identifier: test_id,
+    fn test_key_id_extension() {
+        let test_id = vec![0u8; 32];
+        let test_extension = KeyIdExt {
+            identifier: test_id.clone(),
         };
 
-        let as_extension = test_extension.to_extension().expect("serialization error");
+        let as_extension = test_extension.to_extension().unwrap();
         assert_eq!(as_extension.extension_id, ExtensionId::KeyId);
 
-        let restored: KeyId<i32> =
-            KeyId::from_extension(as_extension).expect("deserialization error");
+        let restored = KeyIdExt::from_extension(as_extension).unwrap();
         assert_eq!(restored.identifier, test_id);
     }
 
@@ -266,12 +269,12 @@ mod tests {
     fn test_bad_deserialize_data() {
         let bad_data = vec![255u8; 32];
         let test_extension = Extension {
-            extension_id: ExtensionId::KeyId,
+            extension_id: ExtensionId::Capabilities,
             data: bad_data,
         };
-        let key_id: Result<KeyId<CapabilitiesExt>, ExtensionError> =
-            KeyId::from_extension(test_extension);
-        assert!(key_id.is_err());
+        let capabilities: Result<CapabilitiesExt, ExtensionError> =
+            CapabilitiesExt::from_extension(test_extension);
+        assert!(capabilities.is_err());
     }
 
     #[test]

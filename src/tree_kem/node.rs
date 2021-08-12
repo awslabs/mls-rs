@@ -466,7 +466,7 @@ pub mod test {
                 signature_scheme: SignatureScheme::Ed25519,
             }
             .to_credential(),
-            extensions: ExtensionList(vec![]),
+            extensions: ExtensionList::from(vec![]),
             signature: vec![],
         };
 

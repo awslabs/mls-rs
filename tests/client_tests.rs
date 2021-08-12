@@ -1,6 +1,6 @@
 use ferriscrypt::asym::ec_key::{generate_keypair, Curve};
 use ferriscrypt::rand::SecureRng;
-use mls::ciphersuite::CipherSuite;
+use mls::cipher_suite::CipherSuite;
 use mls::client::Client;
 use mls::credential::{BasicCredential, Credential};
 use mls::extension::LifetimeExt;
