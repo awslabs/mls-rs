@@ -3,7 +3,8 @@ use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, NodeIndex};
-use ferriscrypt::cipher::{AeadError, Key, Nonce};
+use ferriscrypt::cipher::aead::{AeadError, AeadNonce, Key};
+use ferriscrypt::cipher::NonceError;
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
@@ -16,6 +17,8 @@ pub enum SecretTreeError {
     KeyScheduleKdfError(#[from] KeyScheduleKdfError),
     #[error(transparent)]
     AeadError(#[from] AeadError),
+    #[error(transparent)]
+    NonceError(#[from] NonceError),
     #[error("requested invalid index")]
     InvalidIndex,
     #[error("attempted to consume an already consumed node")]
@@ -161,13 +164,13 @@ impl SecretTree {
 
 #[derive(Debug, PartialEq)]
 pub struct EncryptionKey {
-    pub nonce: Nonce,
+    pub nonce: AeadNonce,
     pub key: Key,
     pub generation: u32,
 }
 
 impl EncryptionKey {
-    fn reuse_safe_nonce(&self, reuse_guard: &[u8; 4]) -> Nonce {
+    fn reuse_safe_nonce(&self, reuse_guard: &[u8; 4]) -> AeadNonce {
         let mut data: Vec<u8> = self
             .nonce
             .iter()
@@ -177,7 +180,7 @@ impl EncryptionKey {
 
         data.append(&mut self.nonce[reuse_guard.len()..self.nonce.len()].to_vec());
 
-        Nonce::new(&data).unwrap()
+        AeadNonce::new(&data).unwrap()
     }
 
     pub fn encrypt(
@@ -187,7 +190,7 @@ impl EncryptionKey {
         reuse_guard: &[u8; 4],
     ) -> Result<Vec<u8>, AeadError> {
         self.key
-            .encrypt(data, Some(aad), self.reuse_safe_nonce(reuse_guard))
+            .encrypt_to_vec(data, Some(aad), self.reuse_safe_nonce(reuse_guard))
     }
 
     pub fn decrypt(
@@ -197,7 +200,7 @@ impl EncryptionKey {
         reuse_guard: &[u8; 4],
     ) -> Result<Vec<u8>, AeadError> {
         self.key
-            .decrypt(data, Some(aad), self.reuse_safe_nonce(reuse_guard))
+            .decrypt_from_vec(data, Some(aad), self.reuse_safe_nonce(reuse_guard))
     }
 }
 
@@ -266,7 +269,7 @@ impl SecretKeyRatchet {
         Ok(key)
     }
 
-    fn derive_nonce(&self) -> Result<Nonce, SecretTreeError> {
+    fn derive_nonce(&self) -> Result<AeadNonce, SecretTreeError> {
         let kdf = KeyScheduleKdf::new(self.cipher_suite.kdf_type());
 
         let nonce_buf = kdf.derive_tree_secret(
@@ -277,7 +280,7 @@ impl SecretKeyRatchet {
             self.cipher_suite.aead_type().nonce_size(),
         )?;
 
-        let nonce = Nonce::new(&nonce_buf)?;
+        let nonce = AeadNonce::new(&nonce_buf)?;
         Ok(nonce)
     }
 

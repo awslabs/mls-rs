@@ -6,8 +6,8 @@ use crate::group::secret_tree::{
 use crate::group::GroupContext;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{TreeSecrets, UpdatePathGeneration};
-use ferriscrypt::cipher::AeadError;
-use ferriscrypt::cipher::{Key, Nonce};
+use ferriscrypt::cipher::aead::{AeadError, AeadNonce, Key};
+use ferriscrypt::cipher::NonceError;
 use ferriscrypt::kdf::KdfError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -26,6 +26,8 @@ pub enum EpochKeyScheduleError {
     BincodeError(#[from] bincode::Error),
     #[error(transparent)]
     AeadError(#[from] AeadError),
+    #[error(transparent)]
+    NonceError(#[from] NonceError),
     #[error("key derivation failure")]
     KeyDerivationFailure,
 }
@@ -224,7 +226,7 @@ impl EpochKeySchedule {
     pub fn get_sender_data_params(
         &self,
         ciphertext: &[u8],
-    ) -> Result<(Key, Nonce), EpochKeyScheduleError> {
+    ) -> Result<(Key, AeadNonce), EpochKeyScheduleError> {
         let kdf = KeyScheduleKdf::new(self.cipher_suite.kdf_type());
         // Sample the first extract_size bytes of the ciphertext, and if it is shorter, just use
         // the ciphertext itself
@@ -252,7 +254,7 @@ impl EpochKeySchedule {
 
         Ok((
             Key::new(self.cipher_suite.aead_type(), sender_data_key)?,
-            Nonce::new(&sender_data_nonce)?,
+            AeadNonce::new(&sender_data_nonce)?,
         ))
     }
 }
@@ -303,7 +305,7 @@ impl CommitSecret {
 pub struct WelcomeSecret {
     pub data: Vec<u8>,
     key: Key,
-    nonce: Nonce,
+    nonce: AeadNonce,
 }
 
 impl Deref for WelcomeSecret {
@@ -332,20 +334,20 @@ impl WelcomeSecret {
 
         let mut nonce_buf = vec![0u8; aead.nonce_size()];
         kdf.expand(&data, b"nonce", &mut nonce_buf)?;
-        let nonce = Nonce::new(&nonce_buf)?;
+        let nonce = AeadNonce::new(&nonce_buf)?;
 
         Ok(WelcomeSecret { data, key, nonce })
     }
 
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, EpochKeyScheduleError> {
         self.key
-            .encrypt(plaintext, None, self.nonce.clone())
+            .encrypt_to_vec(plaintext, None, self.nonce.clone())
             .map_err(Into::into)
     }
 
     pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, EpochKeyScheduleError> {
         self.key
-            .decrypt(ciphertext, None, self.nonce.clone())
+            .decrypt_from_vec(ciphertext, None, self.nonce.clone())
             .map_err(Into::into)
     }
 }

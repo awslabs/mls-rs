@@ -4,7 +4,7 @@ use std::ops::Deref;
 use std::option::Option::Some;
 
 use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
-use ferriscrypt::cipher::AeadError;
+use ferriscrypt::cipher::aead::AeadError;
 use ferriscrypt::hmac::Tag;
 use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::kdf::hkdf::Hkdf;
@@ -980,7 +980,7 @@ impl Group {
         // epoch's key schedule
         let (sender_key, sender_nonce) = self.key_schedule.get_sender_data_params(&ciphertext)?;
 
-        let encrypted_sender_data = sender_key.encrypt(
+        let encrypted_sender_data = sender_key.encrypt_to_vec(
             &bincode::serialize(&sender_data)?,
             Some(&bincode::serialize(&sender_data_aad)?),
             sender_nonce,
@@ -1052,7 +1052,7 @@ impl Group {
             content_type: ciphertext.content_type,
         };
 
-        let decrypted_sender = sender_key.decrypt(
+        let decrypted_sender = sender_key.decrypt_from_vec(
             &ciphertext.encrypted_sender_data,
             Some(&bincode::serialize(&sender_data_aad)?),
             sender_nonce,

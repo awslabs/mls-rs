@@ -1,5 +1,5 @@
 use ferriscrypt::asym::ec_key::{Curve, EcKeyError};
-use ferriscrypt::cipher::Aead;
+use ferriscrypt::cipher::aead::Aead;
 use ferriscrypt::digest::HashFunction;
 use ferriscrypt::hpke::kem::Kem;
 use ferriscrypt::hpke::{AeadId, HPKECiphertext, Hpke, KdfId, KemId};
