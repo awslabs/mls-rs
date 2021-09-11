@@ -88,6 +88,19 @@ pub enum CipherSuite {
 }
 
 impl CipherSuite {
+    #[inline(always)]
+    pub fn from_raw(raw: u16) -> Option<Self> {
+        match raw {
+            1 => Some(CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519),
+            2 => Some(CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256),
+            3 => Some(CipherSuite::Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519),
+            4 => Some(CipherSuite::Mls10256Dhkemx448Aes256gcmSha512Ed448),
+            5 => Some(CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521),
+            6 => Some(CipherSuite::Mls10256Dhkemx448Aes256gcmSha512Ed448),
+            _ => None,
+        }
+    }
+
     pub fn all() -> Vec<CipherSuite> {
         vec![
             CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
