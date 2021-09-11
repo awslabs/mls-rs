@@ -190,7 +190,7 @@ impl From<SecretKey> for TreeKemPrivate {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct SecretPath {
     pub root_secret: Vec<u8>,
     path_secrets: HashMap<NodeIndex, Vec<u8>>,
@@ -199,15 +199,6 @@ pub struct SecretPath {
 impl SecretPath {
     pub fn get_path_secret(&self, index: NodeIndex) -> Option<Vec<u8>> {
         self.path_secrets.get(&index).cloned()
-    }
-}
-
-impl Default for SecretPath {
-    fn default() -> Self {
-        SecretPath {
-            root_secret: vec![],
-            path_secrets: Default::default(),
-        }
     }
 }
 
