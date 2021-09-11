@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 thiserror = "^1"
-ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", tag = "0.10.0" }
+ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", tag = "0.10.1" }
 serde = { version = "^1.0", features = ["derive"] }
 bincode = "^1.3"
 serde_repr = "^0.1"

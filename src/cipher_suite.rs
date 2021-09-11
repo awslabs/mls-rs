@@ -105,7 +105,7 @@ impl CipherSuite {
     }
 
     #[inline(always)]
-    pub(crate) fn aead_type(&self) -> Aead {
+    pub fn aead_type(&self) -> Aead {
         match self {
             CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => Aead::Aes128Gcm,
             CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256 => Aead::Aes128Gcm,
@@ -131,7 +131,7 @@ impl CipherSuite {
     }
 
     #[inline(always)]
-    pub(crate) fn hash_function(&self) -> HashFunction {
+    pub fn hash_function(&self) -> HashFunction {
         match self {
             CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => HashFunction::Sha256,
             CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256 => HashFunction::Sha256,
@@ -143,7 +143,7 @@ impl CipherSuite {
     }
 
     #[inline(always)]
-    pub(crate) fn signature_scheme(&self) -> SignatureScheme {
+    pub fn signature_scheme(&self) -> SignatureScheme {
         match self {
             CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => SignatureScheme::Ed25519,
             CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256 => {
