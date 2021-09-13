@@ -96,7 +96,7 @@ impl CipherSuite {
             3 => Some(CipherSuite::Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519),
             4 => Some(CipherSuite::Mls10256Dhkemx448Aes256gcmSha512Ed448),
             5 => Some(CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521),
-            6 => Some(CipherSuite::Mls10256Dhkemx448Aes256gcmSha512Ed448),
+            6 => Some(CipherSuite::Mls10256Dhkemx448Chacha20poly1305Sha512Ed448),
             _ => None,
         }
     }
