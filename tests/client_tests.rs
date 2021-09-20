@@ -1,11 +1,11 @@
 use ferriscrypt::rand::SecureRng;
-use mls::cipher_suite::CipherSuite;
-use mls::client::Client;
-use mls::credential::Credential;
-use mls::extension::LifetimeExt;
-use mls::key_package::KeyPackageGeneration;
-use mls::session::{Session, SessionOpts};
 use std::time::SystemTime;
+use wickr_bgm::cipher_suite::CipherSuite;
+use wickr_bgm::client::Client;
+use wickr_bgm::credential::Credential;
+use wickr_bgm::extension::LifetimeExt;
+use wickr_bgm::key_package::KeyPackageGeneration;
+use wickr_bgm::session::{Session, SessionOpts};
 
 fn generate_client(cipher_suite: CipherSuite, id: Vec<u8>) -> Client {
     Client::generate_basic(cipher_suite, id).unwrap()

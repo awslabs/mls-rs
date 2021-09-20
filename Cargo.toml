@@ -1,6 +1,6 @@
 [package]
-name = "mls"
-version = "0.1.0"
+name = "wickr-bgm"
+version = "0.1.1"
 authors = ["Tom Leavy <tom@wickr.com>"]
 edition = "2018"
 
@@ -16,8 +16,4 @@ serde_repr = "^0.1"
 [dev-dependencies]
 serde_json = "^1.0"
 hex = "^0.4.2"
-
-[[test]]
-name = "integration"
-path = "tests/client_tests.rs"
 
