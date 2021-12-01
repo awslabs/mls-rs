@@ -1,18 +1,18 @@
 use crate::credential::Credential;
 use crate::group::framing::{Content, MLSCiphertext, MLSPlaintext};
 use crate::group::{proposal::Proposal, CommitGeneration, Group, GroupError, StateUpdate};
-use crate::key_package::KeyPackageGeneration;
+use crate::key_package::{KeyPackage, KeyPackageGeneration};
 use ferriscrypt::asym::ec_key::SecretKey;
-use serde::{Deserialize, Serialize};
-use std::option::Option::Some;
 use thiserror::Error;
+use tls_codec::{Deserialize, Serialize};
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum SessionError {
     #[error(transparent)]
     ProtocolError(#[from] GroupError),
     #[error(transparent)]
-    Serialization(#[from] bincode::Error),
+    Serialization(#[from] tls_codec::Error),
     #[error("commit already pending, please wait")]
     ExistingPendingCommit,
     #[error("pending commit not found")]
@@ -25,9 +25,11 @@ pub enum SessionError {
     PendingCommitDenied,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct SessionOpts {
+    #[tls_codec(with = "crate::tls::Boolean")]
     pub encrypt_controls: bool,
+    #[tls_codec(with = "crate::tls::Boolean")]
     pub commit_reflection: bool,
 }
 
@@ -40,8 +42,9 @@ impl SessionOpts {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 struct PendingCommit {
+    #[tls_codec(with = "crate::tls::ByteVec")]
     packet_data: Vec<u8>,
     commit: CommitGeneration,
 }
@@ -52,8 +55,9 @@ pub struct CommitResult {
     pub welcome_packet: Option<Vec<u8>>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Session {
+    #[tls_codec(with = "crate::tls::SecretKeySer")]
     signing_key: SecretKey,
     protocol: Group,
     pending_commit: Option<PendingCommit>,
@@ -62,8 +66,8 @@ pub struct Session {
 
 #[derive(Clone, Debug)]
 pub struct TreeStats {
-    pub total_leaves: usize,
-    pub current_index: usize,
+    pub total_leaves: u32,
+    pub current_index: u32,
     pub direct_path: Vec<Vec<u8>>,
 }
 
@@ -90,8 +94,8 @@ impl Session {
         welcome_message_data: &[u8],
         opts: SessionOpts,
     ) -> Result<Session, SessionError> {
-        let welcome_message = bincode::deserialize(welcome_message_data)?;
-        let ratchet_tree = bincode::deserialize(ratchet_tree_data)?;
+        let welcome_message = Deserialize::tls_deserialize(&mut &*welcome_message_data)?;
+        let ratchet_tree = Deserialize::tls_deserialize(&mut &*ratchet_tree_data)?;
         let group = Group::from_welcome_message(welcome_message, ratchet_tree, key_package)?;
 
         Ok(Session {
@@ -103,10 +107,10 @@ impl Session {
     }
 
     pub fn export_tree(&self) -> Result<Vec<u8>, SessionError> {
-        bincode::serialize(&self.protocol.public_tree).map_err(Into::into)
+        Ok(self.protocol.public_tree.tls_serialize_detached()?)
     }
 
-    pub fn participant_count(&self) -> usize {
+    pub fn participant_count(&self) -> u32 {
         self.protocol.public_tree.leaf_count()
     }
 
@@ -116,7 +120,7 @@ impl Session {
 
     #[inline]
     pub fn add_proposal(&mut self, key_package_data: &[u8]) -> Result<Proposal, SessionError> {
-        let key_package = bincode::deserialize(key_package_data)?;
+        let key_package = Deserialize::tls_deserialize(&mut &*key_package_data)?;
         self.protocol
             .add_member_proposal(&key_package)
             .map_err(Into::into)
@@ -136,7 +140,7 @@ impl Session {
 
     #[inline(always)]
     pub fn propose_add(&mut self, key_package_data: &[u8]) -> Result<Vec<u8>, SessionError> {
-        let key_package = bincode::deserialize(key_package_data)?;
+        let key_package = KeyPackage::tls_deserialize(&mut &*key_package_data)?;
         self.send_proposal(self.protocol.add_member_proposal(&key_package)?)
     }
 
@@ -155,10 +159,10 @@ impl Session {
     #[inline(always)]
     fn serialize_control(&mut self, plaintext: MLSPlaintext) -> Result<Vec<u8>, SessionError> {
         if !self.opts.encrypt_controls {
-            bincode::serialize(&plaintext).map_err(Into::into)
+            Ok(plaintext.tls_serialize_detached()?)
         } else {
             let ciphertext = self.protocol.encrypt_plaintext(plaintext)?;
-            bincode::serialize(&ciphertext).map_err(Into::into)
+            Ok(ciphertext.tls_serialize_detached()?)
         }
     }
 
@@ -187,13 +191,13 @@ impl Session {
 
         Ok(CommitResult {
             commit_packet: serialized_commit,
-            welcome_packet: welcome.map(|w| bincode::serialize(&w)).transpose()?,
+            welcome_packet: welcome.map(|w| w.tls_serialize_detached()).transpose()?,
         })
     }
 
     pub fn handle_handshake_data(
         &mut self,
-        data: &[u8],
+        mut data: &[u8],
     ) -> Result<Option<StateUpdate>, SessionError> {
         /*
             NOTE: This only matters if commit_reflection is on. If not commits have to be manually
@@ -216,11 +220,11 @@ impl Session {
         // This is not the pending commit to process as normal
         let plaintext = match self.opts.encrypt_controls {
             true => {
-                let ciphertext = bincode::deserialize(data)?;
+                let ciphertext = MLSCiphertext::tls_deserialize(&mut data)?;
                 self.protocol.decrypt_ciphertext(ciphertext)
             }
             false => {
-                let plaintext = bincode::deserialize(data)?;
+                let plaintext = MLSPlaintext::tls_deserialize(&mut data)?;
                 self.protocol.verify_plaintext(plaintext)
             }
         }?;
@@ -261,11 +265,11 @@ impl Session {
         let ciphertext = self
             .protocol
             .encrypt_application_message(data, &self.signing_key)?;
-        bincode::serialize(&ciphertext).map_err(Into::into)
+        Ok(ciphertext.tls_serialize_detached()?)
     }
 
     pub fn decrypt_application_data(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>, SessionError> {
-        let ciphertext: MLSCiphertext = bincode::deserialize(ciphertext)?;
+        let ciphertext = MLSCiphertext::tls_deserialize(&mut &*ciphertext)?;
         self.protocol
             .decrypt_application_message(ciphertext)
             .map_err(Into::into)
@@ -284,7 +288,7 @@ impl Session {
             .collect();
         Ok(TreeStats {
             total_leaves: self.protocol.public_tree.leaf_count(),
-            current_index: self.protocol.current_user_index() as usize,
+            current_index: self.protocol.current_user_index(),
             direct_path,
         })
     }

@@ -12,16 +12,16 @@ pub enum TreeMathError {
     InvalidIndex,
 }
 
-pub fn log2(x: usize) -> usize {
-    (x as f32).log2().floor() as usize
+pub fn log2(x: u32) -> u32 {
+    (x as f32).log2().floor() as u32
 }
 
-pub fn level(x: usize) -> usize {
+pub fn level(x: u32) -> u32 {
     if x & 0x01 == 0 {
         return 0;
     }
 
-    let mut k: usize = 0;
+    let mut k: u32 = 0;
     while ((x >> k) & 0x01) == 1 {
         k += 1;
     }
@@ -29,7 +29,7 @@ pub fn level(x: usize) -> usize {
     k
 }
 
-pub fn node_width(n: usize) -> usize {
+pub fn node_width(n: u32) -> u32 {
     if n == 0 {
         0
     } else {
@@ -37,12 +37,12 @@ pub fn node_width(n: usize) -> usize {
     }
 }
 
-pub fn root(n: usize) -> usize {
+pub fn root(n: u32) -> u32 {
     let w = node_width(n);
     (1 << log2(w)) - 1
 }
 
-pub fn left(x: usize) -> Result<usize, TreeMathError> {
+pub fn left(x: u32) -> Result<u32, TreeMathError> {
     let k = level(x);
     if k == 0 {
         Err(TreeMathError::NoChildren)
@@ -51,7 +51,7 @@ pub fn left(x: usize) -> Result<usize, TreeMathError> {
     }
 }
 
-pub fn right(x: usize, n: usize) -> Result<usize, TreeMathError> {
+pub fn right(x: u32, n: u32) -> Result<u32, TreeMathError> {
     let k = level(x);
     if k == 0 {
         Err(TreeMathError::NoChildren)
@@ -64,13 +64,13 @@ pub fn right(x: usize, n: usize) -> Result<usize, TreeMathError> {
     }
 }
 
-pub fn parent_step(x: usize) -> usize {
+pub fn parent_step(x: u32) -> u32 {
     let k = level(x);
     let b = (x >> (k + 1)) & 0x01;
     (x | (1 << k)) ^ (b << (k + 1))
 }
 
-pub fn parent(x: usize, n: usize) -> Result<usize, TreeMathError> {
+pub fn parent(x: u32, n: u32) -> Result<u32, TreeMathError> {
     if x == root(n) {
         return Err(TreeMathError::NoParent);
     }
@@ -83,7 +83,7 @@ pub fn parent(x: usize, n: usize) -> Result<usize, TreeMathError> {
     Ok(p)
 }
 
-pub fn sibling(x: usize, n: usize) -> Result<usize, TreeMathError> {
+pub fn sibling(x: u32, n: u32) -> Result<u32, TreeMathError> {
     let p = parent(x, n)?;
     if x < p {
         right(p, n)
@@ -92,7 +92,7 @@ pub fn sibling(x: usize, n: usize) -> Result<usize, TreeMathError> {
     }
 }
 
-pub fn direct_path(x: usize, n: usize) -> Result<Vec<usize>, TreeMathError> {
+pub fn direct_path(x: u32, n: u32) -> Result<Vec<u32>, TreeMathError> {
     let r = root(n);
     let mut d = Vec::new();
 
@@ -110,7 +110,7 @@ pub fn direct_path(x: usize, n: usize) -> Result<Vec<usize>, TreeMathError> {
     Ok(d)
 }
 
-pub fn copath(x: usize, n: usize) -> Result<Vec<usize>, TreeMathError> {
+pub fn copath(x: u32, n: u32) -> Result<Vec<u32>, TreeMathError> {
     let mut d = Vec::new();
 
     if x == root(n) {
@@ -123,7 +123,7 @@ pub fn copath(x: usize, n: usize) -> Result<Vec<usize>, TreeMathError> {
     d.into_iter().map(|y| sibling(y, n)).collect()
 }
 
-pub fn common_ancestor_direct(x: usize, y: usize) -> usize {
+pub fn common_ancestor_direct(x: u32, y: u32) -> u32 {
     let lx = level(x) + 1;
     let ly = level(y) + 1;
 
@@ -155,13 +155,13 @@ mod test {
 
     #[derive(Deserialize)]
     struct TestCase {
-        n_leaves: usize,
-        n_nodes: usize,
-        root: Vec<usize>,
-        left: Vec<Option<usize>>,
-        right: Vec<Option<usize>>,
-        parent: Vec<Option<usize>>,
-        sibling: Vec<Option<usize>>,
+        n_leaves: u32,
+        n_nodes: u32,
+        root: Vec<u32>,
+        left: Vec<Option<u32>>,
+        right: Vec<Option<u32>>,
+        parent: Vec<Option<u32>>,
+        sibling: Vec<Option<u32>>,
     }
 
     fn run_test_case(case: &TestCase) {
@@ -188,7 +188,7 @@ mod test {
 
     #[test]
     fn test_direct_path() {
-        let expected: Vec<Vec<usize>> = [
+        let expected: Vec<Vec<u32>> = [
             [0x01, 0x03, 0x07, 0x0f].to_vec(),
             [0x03, 0x07, 0x0f].to_vec(),
             [0x01, 0x03, 0x07, 0x0f].to_vec(),
@@ -214,13 +214,13 @@ mod test {
         .to_vec();
 
         for (i, item) in expected.iter().enumerate() {
-            assert_eq!(item, &direct_path(i, 11).unwrap())
+            assert_eq!(item, &direct_path(i as u32, 11).unwrap())
         }
     }
 
     #[test]
     fn test_copath_path() {
-        let expected: Vec<Vec<usize>> = [
+        let expected: Vec<Vec<u32>> = [
             [0x02, 0x05, 0x0b, 0x13].to_vec(),
             [0x05, 0x0b, 0x13].to_vec(),
             [0x00, 0x05, 0x0b, 0x13].to_vec(),
@@ -246,7 +246,7 @@ mod test {
         .to_vec();
 
         for (i, item) in expected.iter().enumerate() {
-            assert_eq!(item, &copath(i, 11).unwrap())
+            assert_eq!(item, &copath(i as u32, 11).unwrap())
         }
     }
 }

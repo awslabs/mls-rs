@@ -1,18 +1,19 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::confirmation_tag::ConfirmationTag;
 use crate::group::framing::{MLSPlaintextCommitAuthData, MLSPlaintextCommitContent};
-use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 use thiserror::Error;
+use tls_codec::Serialize;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum TranscriptHashError {
     #[error(transparent)]
-    BincodeError(#[from] bincode::Error),
+    TlsCodecError(#[from] tls_codec::Error),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(crate) struct ConfirmedTranscriptHash(Vec<u8>);
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub(crate) struct ConfirmedTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl Deref for ConfirmedTranscriptHash {
     type Target = Vec<u8>;
@@ -36,7 +37,7 @@ impl ConfirmedTranscriptHash {
     ) -> Result<Self, TranscriptHashError> {
         let confirmed_input = [
             interim_transcript_hash.0.deref(),
-            &bincode::serialize(commit_content)?,
+            &commit_content.tls_serialize_detached()?,
         ]
         .concat();
 
@@ -46,8 +47,8 @@ impl ConfirmedTranscriptHash {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(crate) struct InterimTranscriptHash(Vec<u8>);
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub(crate) struct InterimTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl Deref for InterimTranscriptHash {
     type Target = Vec<u8>;
@@ -71,7 +72,7 @@ impl InterimTranscriptHash {
     ) -> Result<Self, TranscriptHashError> {
         let auth_data = MLSPlaintextCommitAuthData { confirmation_tag };
 
-        let interim_input = [confirmed.0.deref(), &bincode::serialize(&auth_data)?].concat();
+        let interim_input = [confirmed.0.deref(), &auth_data.tls_serialize_detached()?].concat();
 
         let value = cipher_suite.hash_function().digest(&interim_input);
 

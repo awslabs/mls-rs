@@ -1,9 +1,8 @@
 use crate::key_package::KeyPackage;
 use crate::tree_kem::node::LeafIndex;
-use serde::{Deserialize, Serialize};
-use serde_repr::*;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-#[derive(Clone, Debug, PartialEq, Serialize_repr, Deserialize_repr)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u8)]
 pub enum ProposalType {
     Reserved = 0,
@@ -16,24 +15,25 @@ pub enum ProposalType {
     //TODO: AppAck
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct AddProposal {
     pub key_package: KeyPackage,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct UpdateProposal {
     pub key_package: KeyPackage,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct RemoveProposal {
     pub to_remove: u32,
 }
 
-//TODO: This should serialize with msg_type being a proposal type above
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[repr(u16)]
 pub enum Proposal {
+    #[tls_codec(discriminant = 1)]
     Add(AddProposal),
     Update(UpdateProposal),
     Remove(RemoveProposal),
@@ -95,7 +95,7 @@ impl From<Proposal> for ProposalType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize_repr, Deserialize_repr)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u8)]
 pub enum ProposalOrRefType {
     Reserved = 0,
@@ -103,10 +103,12 @@ pub enum ProposalOrRefType {
     Reference,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[repr(u8)]
 pub enum ProposalOrRef {
+    #[tls_codec(discriminant = 1)]
     Proposal(Proposal),
-    Reference(Vec<u8>),
+    Reference(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>),
 }
 
 impl From<Proposal> for ProposalOrRef {
@@ -121,7 +123,7 @@ impl From<Vec<u8>> for ProposalOrRef {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct PendingProposal {
     pub proposal: Proposal,
     pub sender: LeafIndex,

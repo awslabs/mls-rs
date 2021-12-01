@@ -4,9 +4,10 @@ use crate::credential::{Credential, CredentialError};
 use crate::extension::{Extension, ExtensionError, ExtensionList};
 use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError, SecretKey};
 use ferriscrypt::{Signer, Verifier};
-use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 use thiserror::Error;
+use tls_codec::Serialize;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum KeyPackageError {
@@ -15,7 +16,7 @@ pub enum KeyPackageError {
     #[error(transparent)]
     ExtensionError(#[from] ExtensionError),
     #[error(transparent)]
-    SerializationError(#[from] bincode::Error),
+    SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
     #[error("invalid signature")]
@@ -26,19 +27,21 @@ pub enum KeyPackageError {
     InvalidKeyLifetime,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+#[derive(PartialEq, Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct KeyPackage {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub hpke_init_key: Vec<u8>,
     pub credential: Credential,
     pub extensions: ExtensionList,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub signature: Vec<u8>,
 }
 
 impl KeyPackage {
     pub fn to_vec(&self) -> Result<Vec<u8>, KeyPackageError> {
-        bincode::serialize(self).map_err(Into::into)
+        Ok(self.tls_serialize_detached()?)
     }
 }
 
@@ -49,9 +52,10 @@ pub(crate) struct KeyPackageGenerator<'a> {
     pub(crate) signing_key: &'a SecretKey,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct KeyPackageGeneration {
     pub key_package: KeyPackage,
+    #[tls_codec(with = "crate::tls::SecretKeySer")]
     pub secret_key: SecretKey,
 }
 
@@ -61,7 +65,7 @@ impl KeyPackageGeneration {
             .key_package
             .cipher_suite
             .hash_function()
-            .digest(&bincode::serialize(&self.key_package)?))
+            .digest(&self.key_package.tls_serialize_detached()?))
     }
 }
 
@@ -92,16 +96,18 @@ impl KeyPackage {
         Ok(self
             .cipher_suite
             .hash_function()
-            .digest(&bincode::serialize(&self)?))
+            .digest(&self.tls_serialize_detached()?))
     }
 
     fn to_signable_bytes(&self) -> Result<Vec<u8>, KeyPackageError> {
-        #[derive(Serialize)]
+        #[derive(TlsSerialize, TlsSize)]
         pub struct KeyPackageData<'a> {
             pub version: &'a ProtocolVersion,
             pub cipher_suite: &'a CipherSuite,
+            #[tls_codec(with = "crate::tls::ByteVec")]
             pub hpke_init_key: &'a Vec<u8>,
             pub credential: &'a Credential,
+            #[tls_codec(with = "crate::tls::DefVec::<u32>")]
             pub extensions: &'a Vec<Extension>,
         }
 
@@ -112,8 +118,7 @@ impl KeyPackage {
             credential: &self.credential,
             extensions: &self.extensions,
         };
-
-        bincode::serialize(&key_package_data).map_err(Into::into)
+        Ok(key_package_data.tls_serialize_detached()?)
     }
 
     pub(crate) fn sign(&mut self, key: &SecretKey) -> Result<(), KeyPackageError> {

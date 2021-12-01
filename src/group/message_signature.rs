@@ -5,10 +5,11 @@ use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{RatchetTree, RatchetTreeError};
 use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
 use ferriscrypt::{Signer, Verifier};
-use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::ops::Deref;
 use thiserror::Error;
+use tls_codec::Serialize;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum MessageSignatureError {
@@ -17,17 +18,19 @@ pub enum MessageSignatureError {
     #[error(transparent)]
     RatchetTreeError(#[from] RatchetTreeError),
     #[error(transparent)]
-    SerializationError(#[from] bincode::Error),
+    SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct MLSPlaintextTBS {
     context: Option<GroupContext>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     group_id: Vec<u8>,
     epoch: u64,
     sender: Sender,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     authenticated_data: Vec<u8>,
     content: Content,
 }
@@ -69,8 +72,8 @@ impl MLSPlaintext {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct MessageSignature(Vec<u8>);
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct MessageSignature(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl MessageSignature {
     pub(crate) fn empty() -> Self {
@@ -83,7 +86,7 @@ impl MessageSignature {
         group_context: &GroupContext,
     ) -> Result<Self, MessageSignatureError> {
         let to_be_signed = MLSPlaintextTBS::from_plaintext(plaintext, group_context);
-        let signature_data = signer.sign(&bincode::serialize(&to_be_signed)?)?;
+        let signature_data = signer.sign(&to_be_signed.tls_serialize_detached()?)?;
 
         Ok(MessageSignature(signature_data))
     }
@@ -97,14 +100,16 @@ impl MessageSignature {
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
         let sender_cred = tree
-            .get_key_package(LeafIndex(plaintext.sender.sender as usize))?
+            .get_key_package(LeafIndex(plaintext.sender.sender))?
             .credential
             .borrow();
 
         let to_be_verified = MLSPlaintextTBS::from_plaintext(plaintext, group_context);
 
-        let is_signature_valid =
-            sender_cred.verify(&plaintext.signature, &bincode::serialize(&to_be_verified)?)?;
+        let is_signature_valid = sender_cred.verify(
+            &plaintext.signature,
+            &to_be_verified.tls_serialize_detached()?,
+        )?;
 
         Ok(is_signature_valid)
     }

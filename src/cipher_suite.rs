@@ -3,17 +3,16 @@ use ferriscrypt::cipher::aead::Aead;
 use ferriscrypt::digest::HashFunction;
 use ferriscrypt::hpke::kem::Kem;
 use ferriscrypt::hpke::{AeadId, HPKECiphertext, Hpke, KdfId, KemId};
-use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::convert::TryInto;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-#[derive(Serialize_repr, Deserialize_repr, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u8)]
 pub enum ProtocolVersion {
     Mls10 = 0x01,
 }
 
-#[derive(Deserialize_repr, Serialize_repr, Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u16)]
 pub enum SignatureScheme {
     EcdsaSecp256r1Sha256 = 0x0403,
@@ -50,9 +49,11 @@ impl SignatureScheme {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct HpkeCiphertext {
+    #[tls_codec(with = "crate::tls::ByteVec")]
     kem_output: Vec<u8>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     ciphertext: Vec<u8>,
 }
 
@@ -75,9 +76,8 @@ impl From<HpkeCiphertext> for HPKECiphertext {
     }
 }
 
-#[derive(Serialize_repr, Deserialize_repr, Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u16)]
-#[serde(into = "u16", try_from = "u16")]
 pub enum CipherSuite {
     Mls10128Dhkemx25519Aes128gcmSha256Ed25519 = 0x0001,
     Mls10128Dhkemp256Aes128gcmSha256P256 = 0x0002,

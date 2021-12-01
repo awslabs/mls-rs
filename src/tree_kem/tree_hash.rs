@@ -2,19 +2,22 @@ use crate::key_package::KeyPackage;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::{Leaf, Node, NodeIndex, NodeTypeResolver, Parent};
 use crate::tree_kem::{RatchetTree, RatchetTreeError};
-use serde::{Deserialize, Serialize};
+use tls_codec::Serialize;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(TlsDeserialize, TlsSerialize, TlsSize)]
 struct LeafNodeHashInput {
     node_index: u32,
     key_package: Option<KeyPackage>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(TlsDeserialize, TlsSerialize, TlsSize)]
 struct ParentNodeTreeHashInput {
     node_index: u32,
     parent_node: Option<Parent>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     left_hash: Vec<u8>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     right_hash: Vec<u8>,
 }
 
@@ -53,7 +56,7 @@ impl TreeHashable for (NodeIndex, Option<&Leaf>) {
         Ok(tree
             .cipher_suite
             .hash_function()
-            .digest(&bincode::serialize(&input)?))
+            .digest(&input.tls_serialize_detached()?))
     }
 }
 
@@ -61,8 +64,8 @@ impl TreeHashable for (NodeIndex, Option<&Parent>) {
     fn get_hash(&self, tree: &RatchetTree) -> Result<Vec<u8>, RatchetTreeError> {
         let left = tree_math::left(self.0)?;
         let right = tree_math::right(self.0, tree.leaf_count())?;
-        let left_hash = (left, &tree.nodes[left]).get_hash(tree)?;
-        let right_hash = (right, &tree.nodes[right]).get_hash(tree)?;
+        let left_hash = (left, &tree.nodes[left as usize]).get_hash(tree)?;
+        let right_hash = (right, &tree.nodes[right as usize]).get_hash(tree)?;
 
         let input = ParentNodeTreeHashInput {
             node_index: self.0 as u32,
@@ -74,14 +77,14 @@ impl TreeHashable for (NodeIndex, Option<&Parent>) {
         Ok(tree
             .cipher_suite
             .hash_function()
-            .digest(&bincode::serialize(&input)?))
+            .digest(&input.tls_serialize_detached()?))
     }
 }
 
 impl RatchetTree {
     pub fn tree_hash(&self) -> Result<Vec<u8>, RatchetTreeError> {
         let root = tree_math::root(self.leaf_count());
-        (root, &self.nodes[root]).get_hash(self)
+        (root, &self.nodes[root as usize]).get_hash(self)
     }
 }
 

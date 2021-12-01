@@ -7,9 +7,8 @@ use crate::key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageGenera
 use crate::session::{Session, SessionError, SessionOpts};
 use ferriscrypt::asym::ec_key::Curve;
 use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
-use serde::{Deserialize, Serialize};
-use std::marker::PhantomData;
 use thiserror::Error;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum ClientError {
@@ -29,13 +28,14 @@ pub enum ClientError {
     CredentialCipherSuiteMismatch,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Client {
     pub cipher_suite: CipherSuite,
+    #[tls_codec(with = "crate::tls::SecretKeySer")]
     pub signature_key: SecretKey,
     pub credential: Credential,
     pub capabilities: CapabilitiesExt,
-    phantom: PhantomData<u8>, // Don't allow direct construction
+    private: (),
 }
 
 impl Client {
@@ -57,7 +57,7 @@ impl Client {
             signature_key,
             credential,
             capabilities: CapabilitiesExt::default(),
-            phantom: PhantomData::default(),
+            private: (),
         })
     }
 

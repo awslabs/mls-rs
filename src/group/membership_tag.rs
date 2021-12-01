@@ -5,19 +5,20 @@ use crate::group::message_signature::{MLSPlaintextTBS, MessageSignature};
 use crate::group::GroupContext;
 use ferriscrypt::hmac::{HMacError, Key, Tag};
 use ferriscrypt::Signer;
-use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 use thiserror::Error;
+use tls_codec::Serialize;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum MembershipTagError {
     #[error(transparent)]
     HMacError(#[from] HMacError),
     #[error(transparent)]
-    SerializationError(#[from] bincode::Error),
+    SerializationError(#[from] tls_codec::Error),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 struct MLSPlaintextTBM {
     tbs: MLSPlaintextTBS,
     signature: MessageSignature,
@@ -37,8 +38,8 @@ impl MLSPlaintextTBM {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct MembershipTag(Tag);
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct MembershipTag(#[tls_codec(with = "crate::tls::ByteVec")] Tag);
 
 impl Deref for MembershipTag {
     type Target = Tag;
@@ -61,7 +62,7 @@ impl MembershipTag {
         key_schedule: &EpochKeySchedule,
     ) -> Result<Self, MembershipTagError> {
         let plaintext_tbm = MLSPlaintextTBM::from_plaintext(plaintext, group_context);
-        let serialized_tbm = bincode::serialize(&plaintext_tbm)?;
+        let serialized_tbm = plaintext_tbm.tls_serialize_detached()?;
 
         let hmac_key = Key::new(
             &key_schedule.membership_key,

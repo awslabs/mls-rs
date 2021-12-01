@@ -10,8 +10,9 @@ use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
 use ferriscrypt::{Signer, Verifier};
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tls_codec::{Deserialize, Serialize};
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext, ProtocolVersion};
 use crate::credential::{Credential, CredentialError};
@@ -92,8 +93,9 @@ impl ProvisionalState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Commit {
+    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
     pub proposals: Vec<ProposalOrRef>,
     pub path: Option<UpdatePath>,
 }
@@ -109,7 +111,7 @@ pub enum GroupError {
     #[error(transparent)]
     MessageSignatureError(#[from] MessageSignatureError),
     #[error(transparent)]
-    BincodeError(#[from] bincode::Error),
+    TlsCodecError(#[from] tls_codec::Error),
     #[error(transparent)]
     TranscriptHashError(#[from] TranscriptHashError),
     #[error(transparent)]
@@ -164,10 +166,12 @@ pub enum GroupError {
     NotCommitContent(ContentType),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct GroupContext {
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,
     pub extensions: ExtensionList,
@@ -197,32 +201,40 @@ impl From<&GroupInfo> for GroupContext {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 struct GroupInfo {
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,
     pub extensions: ExtensionList,
     pub confirmation_tag: ConfirmationTag,
     pub signer_index: u32,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub signature: Vec<u8>,
 }
 
 impl GroupInfo {
     fn to_signable_vec(&self) -> Result<Vec<u8>, GroupError> {
-        #[derive(Serialize)]
+        #[derive(TlsSerialize, TlsSize)]
         struct SignableGroupInfo<'a> {
+            #[tls_codec(with = "crate::tls::ByteVec")]
             pub group_id: &'a Vec<u8>,
             pub epoch: u64,
+            #[tls_codec(with = "crate::tls::ByteVec")]
             pub tree_hash: &'a Vec<u8>,
+            #[tls_codec(with = "crate::tls::ByteVec")]
             pub confirmed_transcript_hash: &'a Vec<u8>,
+            #[tls_codec(with = "crate::tls::DefVec::<u32>")]
             pub extensions: &'a Vec<Extension>,
+            #[tls_codec(with = "crate::tls::ByteVec")]
             pub confirmation_tag: &'a Tag,
             pub signer_index: u32,
         }
 
-        bincode::serialize(&SignableGroupInfo {
+        SignableGroupInfo {
             group_id: &self.group_id,
             epoch: self.epoch,
             tree_hash: &self.tree_hash,
@@ -230,19 +242,21 @@ impl GroupInfo {
             extensions: &self.extensions,
             confirmation_tag: &self.confirmation_tag,
             signer_index: self.signer_index,
-        })
+        }
+        .tls_serialize_detached()
         .map_err(Into::into)
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct CommitGeneration {
     pub plaintext: MLSPlaintext,
     pub secrets: Option<UpdatePathGeneration>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct PathSecret {
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub path_secret: Vec<u8>,
 }
 
@@ -252,28 +266,32 @@ impl From<Vec<u8>> for PathSecret {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct GroupSecrets {
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub joiner_secret: Vec<u8>,
     pub path_secret: Option<PathSecret>,
     //TODO: PSK not currently supported
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct EncryptedGroupSecrets {
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub key_package_hash: Vec<u8>,
     pub encrypted_group_secrets: HpkeCiphertext,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Welcome {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
+    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
     pub secrets: Vec<EncryptedGroupSecrets>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub encrypted_group_info: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Group {
     pub cipher_suite: CipherSuite,
     context: GroupContext,
@@ -281,7 +299,9 @@ pub struct Group {
     private_tree: TreeKemPrivate,
     key_schedule: EpochKeySchedule, //TODO: Need to support out of order packets by holding a few old epoch values too
     interim_transcript_hash: InterimTranscriptHash,
+    #[tls_codec(with = "crate::tls::Map::<crate::tls::ByteVec, crate::tls::DefaultSer>")]
     pub proposals: HashMap<Vec<u8>, PendingProposal>, // Hash of MLS Plaintext to pending proposal
+    #[tls_codec(with = "crate::tls::Map::<crate::tls::ByteVec, crate::tls::SecretKeySer>")]
     pub pending_updates: HashMap<Vec<u8>, SecretKey>, // Hash of key package to key generation
 }
 
@@ -296,7 +316,7 @@ impl PartialEq for Group {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct VerifiedPlaintext(MLSPlaintext);
 
 impl Deref for VerifiedPlaintext {
@@ -402,7 +422,7 @@ impl Group {
             None,
         )?;
 
-        let group_secrets = bincode::deserialize::<GroupSecrets>(&decrypted_group_secrets)?;
+        let group_secrets = GroupSecrets::tls_deserialize(&mut &*decrypted_group_secrets)?;
 
         //From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
         // the GroupSecrets, derive the welcome_secret and using that the welcome_key and
@@ -412,14 +432,14 @@ impl Group {
 
         //Use the key and nonce to decrypt the encrypted_group_info field.
         let decrypted_group_info = welcome_secret.decrypt(&welcome.encrypted_group_info)?;
-        let group_info = bincode::deserialize::<GroupInfo>(&decrypted_group_info)?;
+        let group_info = GroupInfo::tls_deserialize(&mut &*decrypted_group_info)?;
 
         //Verify the signature on the GroupInfo object. The signature input comprises all of the
         // fields in the GroupInfo object except the signature field. The public key and algorithm
         // are taken from the credential in the leaf node at position signer_index.
         // If this verification fails, return an error.
 
-        let sender_leaf = LeafIndex(group_info.signer_index as usize);
+        let sender_leaf = LeafIndex(group_info.signer_index);
         let sender_key_package = public_tree.get_key_package(sender_leaf)?;
         if !sender_key_package
             .credential
@@ -450,7 +470,7 @@ impl Group {
             welcome.cipher_suite,
             self_index,
             key_package.secret_key,
-            LeafIndex(group_info.signer_index as usize),
+            LeafIndex(group_info.signer_index),
             public_tree.leaf_count(),
             &group_secrets,
         )?;
@@ -551,11 +571,7 @@ impl Group {
         // Apply removes
         let removes: Vec<LeafIndex> = proposals
             .iter()
-            .filter_map(|p| {
-                p.proposal
-                    .as_remove()
-                    .map(|r| LeafIndex(r.to_remove as usize))
-            })
+            .filter_map(|p| p.proposal.as_remove().map(|r| LeafIndex(r.to_remove)))
             .collect();
 
         // If there is only one user in the tree, they can't be removed
@@ -622,7 +638,7 @@ impl Group {
         let hash = self
             .cipher_suite
             .hash_function()
-            .digest(&bincode::serialize(&plaintext)?);
+            .digest(&plaintext.tls_serialize_detached()?);
 
         // Add the proposal ref to the current set
         let pending_proposal = PendingProposal {
@@ -711,7 +727,7 @@ impl Group {
                 // group_id, epoch, tree_hash, and confirmed_transcript_hash values in the initial
                 // GroupContext object. The leaf_key_package for this UpdatePath must have a
                 // parent_hash extension.
-                let context_bytes = bincode::serialize(&self.context)?;
+                let context_bytes = self.context.tls_serialize_detached()?;
                 let update_path = provisional_state.public_tree.encap(
                     &self.private_tree,
                     signer,
@@ -796,7 +812,7 @@ impl Group {
         let welcome_secret =
             WelcomeSecret::from_joiner_secret(self.cipher_suite, &new_key_schedule.joiner_secret)?;
 
-        let group_info_data = bincode::serialize(&group_info)?;
+        let group_info_data = group_info.tls_serialize_detached()?;
         let encrypted_group_info = welcome_secret.encrypt(&group_info_data)?;
 
         // Build welcome messages for each added member
@@ -852,13 +868,13 @@ impl Group {
             path_secret,
         };
 
-        let group_secrets_bytes = bincode::serialize(&group_secrets)?;
+        let group_secrets_bytes = group_secrets.tls_serialize_detached()?;
         let key_package = provisional_tree.get_key_package(*leaf_index)?;
 
         let key_package_hash = self
             .cipher_suite
             .hash_function()
-            .digest(&bincode::serialize(&key_package)?);
+            .digest(&key_package.tls_serialize_detached()?);
 
         let encrypted_group_secrets = self.cipher_suite.hpke().seal_base(
             &key_package.hpke_init_key,
@@ -911,7 +927,7 @@ impl Group {
         if self
             .public_tree
             .nodes
-            .borrow_as_leaf(LeafIndex(index as usize))
+            .borrow_as_leaf(LeafIndex(index))
             .is_err()
         {
             return Err(GroupError::InvalidGroupParticipant(index));
@@ -957,8 +973,8 @@ impl Group {
         // Encrypt the ciphertext content using the encryption key and a nonce that is
         // reuse safe by xor the reuse guard with the first 4 bytes
         let ciphertext = encryption_key.encrypt(
-            &bincode::serialize(&ciphertext_content)?,
-            &bincode::serialize(&aad)?,
+            &ciphertext_content.tls_serialize_detached()?,
+            &aad.tls_serialize_detached()?,
             &reuse_guard,
         )?;
 
@@ -981,8 +997,8 @@ impl Group {
         let (sender_key, sender_nonce) = self.key_schedule.get_sender_data_params(&ciphertext)?;
 
         let encrypted_sender_data = sender_key.encrypt_to_vec(
-            &bincode::serialize(&sender_data)?,
-            Some(&bincode::serialize(&sender_data_aad)?),
+            &sender_data.tls_serialize_detached()?,
+            Some(&sender_data_aad.tls_serialize_detached()?),
             sender_nonce,
         )?;
 
@@ -1054,11 +1070,11 @@ impl Group {
 
         let decrypted_sender = sender_key.decrypt_from_vec(
             &ciphertext.encrypted_sender_data,
-            Some(&bincode::serialize(&sender_data_aad)?),
+            Some(&sender_data_aad.tls_serialize_detached()?),
             sender_nonce,
         )?;
 
-        let sender_data = bincode::deserialize::<MLSSenderData>(&decrypted_sender)?;
+        let sender_data = MLSSenderData::tls_deserialize(&mut &*decrypted_sender)?;
 
         // Grab an encryption key from the current epoch's key schedule
         let key_type = match &ciphertext.content_type {
@@ -1067,7 +1083,7 @@ impl Group {
         };
 
         let decryption_key = self.key_schedule.get_decryption_key(
-            LeafIndex(sender_data.sender as usize),
+            LeafIndex(sender_data.sender),
             sender_data.generation,
             key_type,
         )?;
@@ -1083,11 +1099,11 @@ impl Group {
         // Decrypt the content of the message using the
         let decrypted_content = decryption_key.decrypt(
             &ciphertext.ciphertext,
-            &bincode::serialize(&aad)?,
+            &aad.tls_serialize_detached()?,
             &sender_data.reuse_guard,
         )?;
 
-        let ciphertext_content = bincode::deserialize::<MLSCiphertextContent>(&decrypted_content)?;
+        let ciphertext_content = MLSCiphertextContent::tls_deserialize(&mut &*decrypted_content)?;
 
         // Build the MLS plaintext object and process it
         let plaintext = MLSPlaintext {
@@ -1159,10 +1175,10 @@ impl Group {
                 let hash = self
                     .cipher_suite
                     .hash_function()
-                    .digest(&bincode::serialize(&plaintext)?);
+                    .digest(&plaintext.tls_serialize_detached()?);
                 let pending_proposal = PendingProposal {
                     proposal: p.clone(),
-                    sender: LeafIndex(plaintext.sender.sender as usize),
+                    sender: LeafIndex(plaintext.sender.sender),
                 };
                 self.proposals.insert(hash, pending_proposal);
                 Ok(None)
@@ -1190,7 +1206,7 @@ impl Group {
     ) -> Result<StateUpdate, GroupError> {
         let commit_content = MLSPlaintextCommitContent::try_from(&plaintext.0)?;
         let auth_data = MLSPlaintextCommitAuthData::try_from(&plaintext.0)?;
-        let sender = LeafIndex(plaintext.sender.sender as usize);
+        let sender = LeafIndex(plaintext.sender.sender);
 
         //Generate a provisional GroupContext object by applying the proposals referenced in the
         // initial Commit object, as described in Section 11.1. Update proposals are applied first,
@@ -1228,7 +1244,7 @@ impl Group {
                         sender,
                         update_path,
                         provisional_state.added_leaves,
-                        &bincode::serialize(&self.context)?,
+                        &self.context.tls_serialize_detached()?,
                     )
                 }?;
 

@@ -9,10 +9,11 @@ use crate::tree_kem::{TreeSecrets, UpdatePathGeneration};
 use ferriscrypt::cipher::aead::{AeadError, AeadNonce, Key};
 use ferriscrypt::cipher::NonceError;
 use ferriscrypt::kdf::KdfError;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
+use tls_codec::Serialize;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum EpochKeyScheduleError {
@@ -23,7 +24,7 @@ pub enum EpochKeyScheduleError {
     #[error(transparent)]
     SecretTreeError(#[from] SecretTreeError),
     #[error(transparent)]
-    BincodeError(#[from] bincode::Error),
+    TlsCodecError(#[from] tls_codec::Error),
     #[error(transparent)]
     AeadError(#[from] AeadError),
     #[error(transparent)]
@@ -32,20 +33,30 @@ pub enum EpochKeyScheduleError {
     KeyDerivationFailure,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct EpochKeySchedule {
     pub cipher_suite: CipherSuite,
     pub secret_tree: SecretTree,
     pub self_index: LeafIndex,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub sender_data_secret: Vec<u8>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub exporter_secret: Vec<u8>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub authentication_secret: Vec<u8>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub external_secret: Vec<u8>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub confirmation_key: Vec<u8>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub membership_key: Vec<u8>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub resumption_secret: Vec<u8>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub init_secret: Vec<u8>,
+    #[tls_codec(with = "crate::tls::DefMap")]
     pub handshake_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
+    #[tls_codec(with = "crate::tls::DefMap")]
     pub application_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
 }
 
@@ -73,7 +84,7 @@ impl EpochKeySchedule {
         cipher_suite: CipherSuite,
         last_init: &[u8],
         commit_secret: &[u8],
-        num_leaves: usize,
+        num_leaves: u32,
         context: &GroupContext,
         self_index: LeafIndex,
     ) -> Result<EpochKeyScheduleDerivation, EpochKeyScheduleError> {
@@ -98,7 +109,7 @@ impl EpochKeySchedule {
     pub fn evolved_from(
         epoch: &EpochKeySchedule,
         commit_secret: &[u8],
-        num_leaves: usize,
+        num_leaves: u32,
         context: &GroupContext,
     ) -> Result<EpochKeyScheduleDerivation, EpochKeyScheduleError> {
         Self::derive(
@@ -114,7 +125,7 @@ impl EpochKeySchedule {
     pub fn new_joiner(
         cipher_suite: CipherSuite,
         joiner_secret: &[u8],
-        num_leaves: usize,
+        num_leaves: u32,
         context: &GroupContext,
         self_index: LeafIndex,
     ) -> Result<Self, EpochKeyScheduleError> {
@@ -126,7 +137,7 @@ impl EpochKeySchedule {
         let epoch_secret = kdf.expand_with_label(
             &epoch_seed,
             "epoch",
-            &bincode::serialize(context)?,
+            &context.tls_serialize_detached()?,
             kdf.extract_size(),
         )?;
 

@@ -5,9 +5,9 @@ use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, NodeIndex};
 use ferriscrypt::cipher::aead::{AeadError, AeadNonce, Key};
 use ferriscrypt::cipher::NonceError;
-use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum SecretTreeError {
@@ -29,8 +29,11 @@ pub enum SecretTreeError {
     KeyMissing(u32),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-struct TreeSecretsVec(Vec<Option<Vec<u8>>>);
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+struct TreeSecretsVec(
+    #[tls_codec(with = "crate::tls::Vector::<u32, crate::tls::Optional<crate::tls::ByteVec>>")]
+    Vec<Option<Vec<u8>>>,
+);
 
 impl Deref for TreeSecretsVec {
     type Target = Vec<Option<Vec<u8>>>;
@@ -52,28 +55,28 @@ impl TreeSecretsVec {
         index: NodeIndex,
         value: Option<Vec<u8>>,
     ) -> Result<(), SecretTreeError> {
-        self.get_mut(index)
+        self.get_mut(index as usize)
             .ok_or(SecretTreeError::InvalidIndex)
             .map(|n| *n = value)
     }
 
     fn get_secret(&self, index: NodeIndex) -> Option<&Vec<u8>> {
-        self.get(index).and_then(|n| n.as_ref())
+        self.get(index as usize).and_then(|n| n.as_ref())
     }
 
     fn direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
-        index.direct_path(self.len() / 2 + 1)
+        index.direct_path((self.len() / 2 + 1) as u32)
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct SecretTree {
     cipher_suite: CipherSuite,
     known_secrets: TreeSecretsVec,
-    leaf_count: usize,
+    leaf_count: u32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(TlsDeserialize, TlsSerialize, TlsSize)]
 struct TreeContext {
     node: u32,
     generation: u32,
@@ -88,11 +91,11 @@ pub struct SecretRatchets {
 impl SecretTree {
     pub fn new(
         cipher_suite: CipherSuite,
-        leaf_count: usize,
+        leaf_count: u32,
         encryption_secret: Vec<u8>,
     ) -> SecretTree {
-        let mut known_secrets = TreeSecretsVec(vec![None; leaf_count * 2 - 1]);
-        known_secrets[tree_math::root(leaf_count)] = Some(encryption_secret);
+        let mut known_secrets = TreeSecretsVec(vec![None; (leaf_count * 2 - 1) as usize]);
+        known_secrets[tree_math::root(leaf_count) as usize] = Some(encryption_secret);
 
         Self {
             cipher_suite,
@@ -219,9 +222,10 @@ impl ToString for KeyType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct SecretKeyRatchet {
     cipher_suite: CipherSuite,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     secret: Vec<u8>,
     node_index: NodeIndex,
     generation: u32,
@@ -342,7 +346,7 @@ pub(crate) mod test {
     pub(crate) fn get_test_tree(
         cipher_suite: CipherSuite,
         secret: Vec<u8>,
-        leaf_count: usize,
+        leaf_count: u32,
     ) -> SecretTree {
         SecretTree::new(cipher_suite, leaf_count, secret)
     }

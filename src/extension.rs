@@ -1,24 +1,23 @@
 use crate::cipher_suite::{CipherSuite, ProtocolVersion};
 use crate::extension::ExtensionError::IncorrectExtensionType;
 use crate::tree_kem::parent_hash::ParentHash;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::ops::{Deref, DerefMut};
 use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 use thiserror::Error;
+use tls_codec::{Deserialize, Serialize};
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum ExtensionError {
     #[error("Bad extension type")]
     IncorrectExtensionType(ExtensionId),
     #[error(transparent)]
-    BincodeError(#[from] bincode::Error),
+    TlsCodecError(#[from] tls_codec::Error),
     #[error(transparent)]
     SystemTimeError(#[from] SystemTimeError),
 }
 
-#[derive(Serialize_repr, Deserialize_repr, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u16)]
 pub enum ExtensionId {
     Capabilities = 0x0001,
@@ -28,13 +27,13 @@ pub enum ExtensionId {
     RatchetTree = 0x0005,
 }
 
-pub(crate) trait ExtensionTrait: Sized + Serialize + DeserializeOwned {
+pub(crate) trait ExtensionTrait: Sized + Serialize + Deserialize {
     const IDENTIFIER: ExtensionId;
 
     fn to_extension(&self) -> Result<Extension, ExtensionError> {
         Ok(Extension {
             extension_id: Self::IDENTIFIER,
-            data: bincode::serialize(self)?,
+            data: self.tls_serialize_detached()?,
         })
     }
 
@@ -42,13 +41,14 @@ pub(crate) trait ExtensionTrait: Sized + Serialize + DeserializeOwned {
         if extension.extension_id != Self::IDENTIFIER {
             Err(IncorrectExtensionType(extension.extension_id))
         } else {
-            bincode::deserialize(&extension.data).map_err(|e| e.into())
+            Self::tls_deserialize(&mut &*extension.data).map_err(|e| e.into())
         }
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct KeyIdExt {
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub identifier: Vec<u8>,
 }
 
@@ -56,10 +56,13 @@ impl ExtensionTrait for KeyIdExt {
     const IDENTIFIER: ExtensionId = ExtensionId::KeyId;
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct CapabilitiesExt {
+    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
     pub protocol_versions: Vec<ProtocolVersion>,
+    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
     pub cipher_suites: Vec<CipherSuite>,
+    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
     pub extensions: Vec<ExtensionId>,
 }
 
@@ -86,7 +89,7 @@ impl ExtensionTrait for CapabilitiesExt {
     const IDENTIFIER: ExtensionId = ExtensionId::Capabilities;
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct LifetimeExt {
     pub not_before: u64,
     pub not_after: u64,
@@ -120,7 +123,7 @@ impl ExtensionTrait for LifetimeExt {
     const IDENTIFIER: ExtensionId = ExtensionId::Lifetime;
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct ParentHashExt {
     pub parent_hash: ParentHash,
 }
@@ -135,14 +138,15 @@ impl ExtensionTrait for ParentHashExt {
     const IDENTIFIER: ExtensionId = ExtensionId::ParentHash;
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Extension {
     pub extension_id: ExtensionId,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub data: Vec<u8>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct ExtensionList(Vec<Extension>);
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct ExtensionList(#[tls_codec(with = "crate::tls::DefVec::<u32>")] Vec<Extension>);
 
 impl From<Vec<Extension>> for ExtensionList {
     fn from(v: Vec<Extension>) -> Self {
@@ -169,7 +173,7 @@ impl ExtensionList {
         let ext = self.iter().find(|v| v.extension_id == T::IDENTIFIER);
 
         if let Some(ext) = ext {
-            Ok(Some(bincode::deserialize(&ext.data)?))
+            Ok(Some(T::tls_deserialize(&mut &*ext.data)?))
         } else {
             Ok(None)
         }

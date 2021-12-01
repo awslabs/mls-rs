@@ -2,21 +2,23 @@ use crate::key_package::KeyPackage;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::parent_hash::ParentHash;
-use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct Leaf {
     pub key_package: KeyPackage,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct Parent {
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub public_key: Vec<u8>,
     pub parent_hash: ParentHash,
+    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
     pub unmerged_leaves: Vec<LeafIndex>,
 }
 
@@ -30,13 +32,13 @@ impl From<Vec<u8>> for Parent {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
-pub struct LeafIndex(pub(crate) usize);
+#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct LeafIndex(pub(crate) u32);
 
 impl TryFrom<NodeIndex> for LeafIndex {
     type Error = TreeMathError;
 
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
+    fn try_from(value: NodeIndex) -> Result<Self, Self::Error> {
         if value % 2 == 0 {
             Ok(Self(value / 2))
         } else {
@@ -46,7 +48,7 @@ impl TryFrom<NodeIndex> for LeafIndex {
 }
 
 impl Deref for LeafIndex {
-    type Target = usize;
+    type Target = u32;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -66,16 +68,16 @@ impl From<LeafIndex> for NodeIndex {
 }
 
 impl LeafIndex {
-    pub(crate) fn direct_path(&self, leaf_count: usize) -> Result<Vec<NodeIndex>, TreeMathError> {
+    pub(crate) fn direct_path(&self, leaf_count: u32) -> Result<Vec<NodeIndex>, TreeMathError> {
         tree_math::direct_path(NodeIndex::from(self), leaf_count)
     }
 
-    fn copath(&self, leaf_count: usize) -> Result<Vec<NodeIndex>, TreeMathError> {
+    fn copath(&self, leaf_count: u32) -> Result<Vec<NodeIndex>, TreeMathError> {
         tree_math::copath(NodeIndex::from(self), leaf_count)
     }
 }
 
-pub(crate) type NodeIndex = usize;
+pub(crate) type NodeIndex = u32;
 
 #[derive(Error, Debug)]
 pub enum NodeVecError {
@@ -91,12 +93,14 @@ pub enum NodeVecError {
     UnexpectedEmptyNode,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[allow(clippy::large_enum_variant)]
+#[repr(u8)]
 //TODO: Research if this should actually be a Box<Leaf> for memory / performance reasons
 pub(crate) enum Node {
-    Parent(Parent),
+    #[tls_codec(discriminant = 1)]
     Leaf(Leaf),
+    Parent(Parent),
 }
 
 impl Node {
@@ -194,8 +198,8 @@ impl NodeTypeResolver for Option<Node> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(crate) struct NodeVec(Vec<Option<Node>>);
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub(crate) struct NodeVec(#[tls_codec(with = "crate::tls::DefVec::<u32>")] Vec<Option<Node>>);
 
 impl From<Vec<Option<Node>>> for NodeVec {
     fn from(x: Vec<Option<Node>>) -> Self {
@@ -218,18 +222,19 @@ impl DerefMut for NodeVec {
 }
 
 impl NodeVec {
-    pub fn leaf_count(&self) -> usize {
-        self.len() / 2 + 1
+    pub fn leaf_count(&self) -> u32 {
+        self.len() as u32 / 2 + 1
     }
 
     #[inline]
     pub fn borrow_node(&self, index: NodeIndex) -> Result<&Option<Node>, NodeVecError> {
-        self.get(index).ok_or(NodeVecError::InvalidNodeIndex(index))
+        self.get(index as usize)
+            .ok_or(NodeVecError::InvalidNodeIndex(index))
     }
 
     #[inline]
     pub fn borrow_node_mut(&mut self, index: NodeIndex) -> Result<&mut Option<Node>, NodeVecError> {
-        self.get_mut(index)
+        self.get_mut(index as usize)
             .ok_or(NodeVecError::InvalidNodeIndex(index))
     }
 
@@ -239,14 +244,14 @@ impl NodeVec {
             .enumerate()
             .step_by(2)
             .filter(|(_, n)| n.is_none())
-            .map(|(i, n)| (LeafIndex(i / 2), n))
+            .map(|(i, n)| (LeafIndex(i as u32 / 2), n))
     }
 
     pub fn non_empty_leaves(&self) -> impl Iterator<Item = (LeafIndex, &Leaf)> + '_ {
         self.iter()
             .enumerate()
             .step_by(2)
-            .map(|(i, n)| (LeafIndex(i / 2), n))
+            .map(|(i, n)| (LeafIndex(i as u32 / 2), n))
             .filter_map(|(i, n)| n.as_leaf().ok().map(|l| (i, l)))
     }
 
@@ -255,20 +260,20 @@ impl NodeVec {
             .enumerate()
             .skip(1)
             .step_by(2)
-            .map(|(i, n)| (i, n))
+            .map(|(i, n)| (i as NodeIndex, n))
             .filter_map(|(i, n)| n.as_parent().ok().map(|p| (i, p)))
     }
 
     #[inline]
     pub fn direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
         // Direct path from leaf to root
-        index.direct_path(self.len() / 2 + 1)
+        index.direct_path((self.len() / 2 + 1) as u32)
     }
 
     #[inline]
     pub fn copath(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
         // Co path from leaf to root
-        index.copath(self.len() / 2 + 1)
+        index.copath((self.len() / 2 + 1) as u32)
     }
 
     #[inline]
@@ -369,7 +374,7 @@ impl NodeVec {
     }
 
     pub fn get_resolution_index(&self, index: NodeIndex) -> Result<Vec<NodeIndex>, NodeVecError> {
-        if let Some(node) = self.get(index) {
+        if let Some(node) = self.get(index as usize) {
             match node {
                 None => {
                     // This node is blank
@@ -383,7 +388,7 @@ impl NodeVec {
                             self.get_resolution_index(tree_math::left(index)?)?,
                             self.get_resolution_index(tree_math::right(
                                 index,
-                                self.len() / 2 + 1,
+                                (self.len() / 2 + 1) as u32,
                             )?)?,
                         ]
                         .concat())
@@ -560,7 +565,9 @@ pub mod test {
         assert!(test_vec.borrow_as_parent_mut(0).is_err());
 
         // If the node index is out of range it should fail
-        assert!(test_vec.borrow_as_parent_mut(test_vec.len()).is_err());
+        assert!(test_vec
+            .borrow_as_parent_mut(test_vec.len() as u32)
+            .is_err());
 
         // Otherwise it should succeed
         let mut expected = Parent {

@@ -2,9 +2,9 @@ use crate::group::epoch::EpochKeySchedule;
 use crate::group::transcript_hash::ConfirmedTranscriptHash;
 use ferriscrypt::hmac::{HMacError, Key, Tag};
 use ferriscrypt::Signer;
-use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 use thiserror::Error;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Debug, Error)]
 pub enum ConfirmationTagError {
@@ -12,8 +12,8 @@ pub enum ConfirmationTagError {
     HMacError(#[from] HMacError),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ConfirmationTag(Tag);
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct ConfirmationTag(#[tls_codec(with = "crate::tls::ByteVec")] Tag);
 
 impl Deref for ConfirmationTag {
     type Target = Tag;

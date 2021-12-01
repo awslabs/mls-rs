@@ -5,30 +5,34 @@ use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVec, NodeVecError, Parent};
 use crate::tree_kem::RatchetTree;
 use crate::tree_kem::{RatchetTreeError, UpdatePath};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
+use tls_codec::Serialize;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum ParentHashError {
     #[error(transparent)]
-    SerializationError(#[from] bincode::Error),
+    SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
     NodeVecError(#[from] NodeVecError),
     #[error(transparent)]
     TreeMathError(#[from] TreeMathError),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, TlsSerialize, TlsSize)]
 struct ParentHashInput<'a> {
+    #[tls_codec(with = "crate::tls::ByteVec")]
     public_key: &'a [u8],
+    #[tls_codec(with = "crate::tls::ByteVec")]
     parent_hash: &'a [u8],
+    #[tls_codec(with = "crate::tls::Vector::<u32, crate::tls::ByteVec>")]
     original_child_resolution: Vec<&'a [u8]>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ParentHash(Vec<u8>);
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct ParentHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl From<Vec<u8>> for ParentHash {
     fn from(v: Vec<u8>) -> Self {
@@ -57,7 +61,7 @@ impl ParentHash {
             original_child_resolution,
         };
 
-        let input_bytes = bincode::serialize(&input)?;
+        let input_bytes = input.tls_serialize_detached()?;
         let hash = cipher_suite.hash_function().digest(&input_bytes);
         Ok(Self(hash))
     }

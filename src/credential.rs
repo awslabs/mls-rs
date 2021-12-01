@@ -1,12 +1,11 @@
 use crate::cipher_suite::SignatureScheme;
 use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey};
 use ferriscrypt::Verifier;
-use serde::{Deserialize, Serialize};
-use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::convert::TryInto;
 use thiserror::Error;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-#[derive(Serialize_repr, Deserialize_repr, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u16)]
 pub enum CredentialIdentifier {
     Basic = 0x0001,
@@ -18,8 +17,10 @@ pub enum CredentialError {
     EcKeyError(#[from] EcKeyError),
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[repr(u16)]
 pub enum Credential {
+    #[tls_codec(discriminant = 1)]
     Basic(BasicCredential), //TODO: X509
 }
 
@@ -61,10 +62,12 @@ pub(crate) trait CredentialConvertible {
     fn to_credential(&self) -> Credential;
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct BasicCredential {
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub identity: Vec<u8>,
     pub signature_scheme: SignatureScheme,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub signature_key: Vec<u8>,
 }
 

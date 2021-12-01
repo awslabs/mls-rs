@@ -16,4 +16,5 @@ pub mod extension;
 mod group;
 pub mod key_package;
 pub mod session;
+mod tls;
 mod tree_kem;

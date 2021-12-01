@@ -2,22 +2,25 @@ use ferriscrypt::digest::HashFunction;
 use ferriscrypt::hpke::KdfId;
 use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::kdf::KdfError;
-use serde::Serialize;
 use std::ops::Deref;
 use thiserror::Error;
+use tls_codec::Serialize;
+use tls_codec_derive::{TlsSerialize, TlsSize};
 
 #[derive(Debug, Error)]
 pub enum KeyScheduleKdfError {
     #[error(transparent)]
     HkdfError(#[from] KdfError),
     #[error(transparent)]
-    SerializationError(#[from] bincode::Error),
+    SerializationError(#[from] tls_codec::Error),
 }
 
-#[derive(Serialize)]
+#[derive(TlsSerialize, TlsSize)]
 pub(crate) struct Label<'a> {
     length: u16,
-    label: String,
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    label: Vec<u8>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
     context: &'a [u8],
 }
 
@@ -25,13 +28,13 @@ impl<'a> Label<'a> {
     fn new(length: u16, label: &'a str, context: &'a [u8]) -> Self {
         Self {
             length,
-            label: ["mls10 ", label].concat(),
+            label: [b"mls10 ", label.as_bytes()].concat(),
             context,
         }
     }
 }
 
-#[derive(Serialize)]
+#[derive(TlsSerialize, TlsSize)]
 struct TreeContext {
     node: u32,
     generation: u32,
@@ -67,9 +70,8 @@ impl KeyScheduleKdf {
         len: usize,
     ) -> Result<Vec<u8>, KeyScheduleKdfError> {
         let label = Label::new(self.extract_size() as u16, label, context);
-        let label_bytes = bincode::serialize(&label)?;
         let mut buf = vec![0u8; len];
-        self.expand(secret, &label_bytes, &mut buf)?;
+        self.expand(secret, &label.tls_serialize_detached()?, &mut buf)?;
         Ok(buf)
     }
 
@@ -90,7 +92,7 @@ impl KeyScheduleKdf {
         len: usize,
     ) -> Result<Vec<u8>, KeyScheduleKdfError> {
         let tree_context = TreeContext { node, generation };
-        let tree_context_bytes = bincode::serialize(&tree_context)?;
+        let tree_context_bytes = tree_context.tls_serialize_detached()?;
         self.expand_with_label(secret, label, &tree_context_bytes, len)
     }
 }
