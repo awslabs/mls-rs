@@ -44,7 +44,7 @@ impl SessionOpts {
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 struct PendingCommit {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     packet_data: Vec<u8>,
     commit: CommitGeneration,
 }

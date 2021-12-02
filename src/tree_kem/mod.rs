@@ -193,7 +193,7 @@ impl From<SecretKey> for TreeKemPrivate {
 
 #[derive(Clone, Debug, Default, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct SecretPath {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub root_secret: Vec<u8>,
     #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::ByteVec>")]
     path_secrets: HashMap<NodeIndex, Vec<u8>>,
@@ -714,7 +714,7 @@ impl RatchetTree {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct UpdatePathNode {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub public_key: Vec<u8>,
     #[tls_codec(with = "crate::tls::DefVec::<u32>")]
     pub encrypted_path_secret: Vec<HpkeCiphertext>,

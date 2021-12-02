@@ -1,16 +1,26 @@
 use crate::tls::{Deserializer, Serializer, Sizer};
-use std::io::{Read, Write};
-use tls_codec::{Deserialize, Serialize, Size, TlsByteSliceU32, TlsByteVecU32};
+use std::convert::{TryFrom, TryInto};
+use std::{
+    io::{Read, Write},
+    mem::size_of,
+};
+use tls_codec::{Deserialize, Serialize};
 
-pub struct ByteVec;
+pub struct ByteVec<I = u32>(I);
 
-impl ByteVec {
+impl<I> ByteVec<I>
+where
+    I: TryFrom<usize> + TryInto<usize> + Serialize + Deserialize,
+{
     pub fn tls_serialized_len(v: &[u8]) -> usize {
-        TlsByteSliceU32(v).tls_serialized_len()
+        size_of::<I>() + v.len()
     }
 
     pub fn tls_serialize<W: Write>(v: &[u8], writer: &mut W) -> Result<usize, tls_codec::Error> {
-        TlsByteSliceU32(v).tls_serialize(writer)
+        let len = I::try_from(v.len()).map_err(|_| tls_codec::Error::InvalidVectorLength)?;
+        let written = len.tls_serialize(writer)?;
+        writer.write_all(v)?;
+        Ok(written + v.len())
     }
 
     pub fn tls_deserialize<T, R>(reader: &mut R) -> Result<T, tls_codec::Error>
@@ -18,23 +28,41 @@ impl ByteVec {
         T: From<Vec<u8>>,
         R: Read,
     {
-        Ok(TlsByteVecU32::tls_deserialize(reader)?.into_vec().into())
+        let len = I::tls_deserialize(reader)?;
+        let len: usize = len
+            .try_into()
+            .map_err(|_| tls_codec::Error::InvalidVectorLength)?;
+        let mut buffer = vec![0; len];
+        reader.read_exact(&mut buffer)?;
+        Ok(buffer.into())
     }
 }
 
-impl<T: AsRef<[u8]> + ?Sized> Sizer<T> for ByteVec {
+impl<I, T> Sizer<T> for ByteVec<I>
+where
+    I: TryFrom<usize> + TryInto<usize> + Serialize + Deserialize,
+    T: AsRef<[u8]> + ?Sized,
+{
     fn serialized_len(x: &T) -> usize {
         Self::tls_serialized_len(x.as_ref())
     }
 }
 
-impl<T: AsRef<[u8]> + ?Sized> Serializer<T> for ByteVec {
+impl<I, T> Serializer<T> for ByteVec<I>
+where
+    I: TryFrom<usize> + TryInto<usize> + Serialize + Deserialize,
+    T: AsRef<[u8]> + ?Sized,
+{
     fn serialize<W: Write>(x: &T, writer: &mut W) -> Result<usize, tls_codec::Error> {
         Self::tls_serialize(x.as_ref(), writer)
     }
 }
 
-impl<T: From<Vec<u8>>> Deserializer<T> for ByteVec {
+impl<I, T> Deserializer<T> for ByteVec<I>
+where
+    I: TryFrom<usize> + TryInto<usize> + Serialize + Deserialize,
+    T: From<Vec<u8>>,
+{
     fn deserialize<R: Read>(reader: &mut R) -> Result<T, tls_codec::Error> {
         Self::tls_deserialize(reader)
     }

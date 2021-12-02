@@ -51,9 +51,9 @@ impl SignatureScheme {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct HpkeCiphertext {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     kem_output: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     ciphertext: Vec<u8>,
 }
 

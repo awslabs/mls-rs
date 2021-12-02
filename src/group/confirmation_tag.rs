@@ -13,7 +13,7 @@ pub enum ConfirmationTagError {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct ConfirmationTag(#[tls_codec(with = "crate::tls::ByteVec")] Tag);
+pub struct ConfirmationTag(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Tag);
 
 impl Deref for ConfirmationTag {
     type Target = Tag;

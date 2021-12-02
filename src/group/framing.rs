@@ -39,18 +39,18 @@ pub struct Sender {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u8)]
 pub enum Content {
-    Application(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>),
+    Application(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>),
     Proposal(Proposal),
     Commit(Commit),
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSPlaintext {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub sender: Sender,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub authenticated_data: Vec<u8>,
     pub content: Content,
     pub signature: MessageSignature,
@@ -60,7 +60,7 @@ pub struct MLSPlaintext {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct MLSPlaintextCommitContent {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub sender: Sender,
@@ -79,31 +79,31 @@ pub struct MLSCiphertextContent {
     pub content: Content,
     pub signature: MessageSignature,
     pub confirmation_tag: Option<ConfirmationTag>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub padding: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSCiphertextContentAAD {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub content_type: ContentType,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub authenticated_data: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSCiphertext {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub content_type: ContentType,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub authenticated_data: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub encrypted_sender_data: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub ciphertext: Vec<u8>,
 }
 
@@ -116,7 +116,7 @@ pub struct MLSSenderData {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSSenderDataAAD {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub content_type: ContentType,

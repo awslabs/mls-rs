@@ -108,7 +108,7 @@ pub enum ProposalOrRefType {
 pub enum ProposalOrRef {
     #[tls_codec(discriminant = 1)]
     Proposal(Proposal),
-    Reference(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>),
+    Reference(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>),
 }
 
 impl From<Proposal> for ProposalOrRef {

@@ -26,11 +26,11 @@ pub enum MessageSignatureError {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct MLSPlaintextTBS {
     context: Option<GroupContext>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     group_id: Vec<u8>,
     epoch: u64,
     sender: Sender,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     authenticated_data: Vec<u8>,
     content: Content,
 }
@@ -73,7 +73,7 @@ impl MLSPlaintext {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct MessageSignature(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct MessageSignature(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>);
 
 impl MessageSignature {
     pub(crate) fn empty() -> Self {

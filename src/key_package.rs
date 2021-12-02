@@ -31,11 +31,11 @@ pub enum KeyPackageError {
 pub struct KeyPackage {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub hpke_init_key: Vec<u8>,
     pub credential: Credential,
     pub extensions: ExtensionList,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub signature: Vec<u8>,
 }
 
@@ -104,7 +104,7 @@ impl KeyPackage {
         pub struct KeyPackageData<'a> {
             pub version: &'a ProtocolVersion,
             pub cipher_suite: &'a CipherSuite,
-            #[tls_codec(with = "crate::tls::ByteVec")]
+            #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
             pub hpke_init_key: &'a Vec<u8>,
             pub credential: &'a Credential,
             #[tls_codec(with = "crate::tls::DefVec::<u32>")]

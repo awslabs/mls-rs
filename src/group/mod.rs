@@ -168,10 +168,10 @@ pub enum GroupError {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct GroupContext {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,
     pub extensions: ExtensionList,
@@ -203,16 +203,16 @@ impl From<&GroupInfo> for GroupContext {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 struct GroupInfo {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,
     pub extensions: ExtensionList,
     pub confirmation_tag: ConfirmationTag,
     pub signer_index: u32,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub signature: Vec<u8>,
 }
 
@@ -220,16 +220,16 @@ impl GroupInfo {
     fn to_signable_vec(&self) -> Result<Vec<u8>, GroupError> {
         #[derive(TlsSerialize, TlsSize)]
         struct SignableGroupInfo<'a> {
-            #[tls_codec(with = "crate::tls::ByteVec")]
+            #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
             pub group_id: &'a Vec<u8>,
             pub epoch: u64,
-            #[tls_codec(with = "crate::tls::ByteVec")]
+            #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
             pub tree_hash: &'a Vec<u8>,
-            #[tls_codec(with = "crate::tls::ByteVec")]
+            #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
             pub confirmed_transcript_hash: &'a Vec<u8>,
             #[tls_codec(with = "crate::tls::DefVec::<u32>")]
             pub extensions: &'a Vec<Extension>,
-            #[tls_codec(with = "crate::tls::ByteVec")]
+            #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
             pub confirmation_tag: &'a Tag,
             pub signer_index: u32,
         }
@@ -256,7 +256,7 @@ pub struct CommitGeneration {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct PathSecret {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub path_secret: Vec<u8>,
 }
 
@@ -268,7 +268,7 @@ impl From<Vec<u8>> for PathSecret {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct GroupSecrets {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub joiner_secret: Vec<u8>,
     pub path_secret: Option<PathSecret>,
     //TODO: PSK not currently supported
@@ -276,7 +276,7 @@ pub struct GroupSecrets {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct EncryptedGroupSecrets {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub key_package_hash: Vec<u8>,
     pub encrypted_group_secrets: HpkeCiphertext,
 }
@@ -287,7 +287,7 @@ pub struct Welcome {
     pub cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::DefVec::<u32>")]
     pub secrets: Vec<EncryptedGroupSecrets>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub encrypted_group_info: Vec<u8>,
 }
 

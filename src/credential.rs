@@ -64,10 +64,10 @@ pub(crate) trait CredentialConvertible {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct BasicCredential {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub identity: Vec<u8>,
     pub signature_scheme: SignatureScheme,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub signature_key: Vec<u8>,
 }
 

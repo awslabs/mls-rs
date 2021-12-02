@@ -15,9 +15,9 @@ struct LeafNodeHashInput {
 struct ParentNodeTreeHashInput {
     node_index: u32,
     parent_node: Option<Parent>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     left_hash: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     right_hash: Vec<u8>,
 }
 

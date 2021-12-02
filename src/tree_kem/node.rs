@@ -15,7 +15,7 @@ pub(crate) struct Leaf {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct Parent {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub public_key: Vec<u8>,
     pub parent_hash: ParentHash,
     #[tls_codec(with = "crate::tls::DefVec::<u32>")]

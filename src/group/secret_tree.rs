@@ -225,7 +225,7 @@ impl ToString for KeyType {
 #[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct SecretKeyRatchet {
     cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     secret: Vec<u8>,
     node_index: NodeIndex,
     generation: u32,

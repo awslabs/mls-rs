@@ -23,16 +23,16 @@ pub enum ParentHashError {
 
 #[derive(Clone, Debug, TlsSerialize, TlsSize)]
 struct ParentHashInput<'a> {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     public_key: &'a [u8],
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     parent_hash: &'a [u8],
     #[tls_codec(with = "crate::tls::Vector::<u32, crate::tls::ByteVec>")]
     original_child_resolution: Vec<&'a [u8]>,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct ParentHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct ParentHash(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>);
 
 impl From<Vec<u8>> for ParentHash {
     fn from(v: Vec<u8>) -> Self {

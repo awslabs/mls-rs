@@ -38,21 +38,21 @@ pub(crate) struct EpochKeySchedule {
     pub cipher_suite: CipherSuite,
     pub secret_tree: SecretTree,
     pub self_index: LeafIndex,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub sender_data_secret: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub exporter_secret: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub authentication_secret: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub external_secret: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub confirmation_key: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub membership_key: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub resumption_secret: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub init_secret: Vec<u8>,
     #[tls_codec(with = "crate::tls::DefMap")]
     pub handshake_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,

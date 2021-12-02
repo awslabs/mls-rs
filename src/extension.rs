@@ -48,7 +48,7 @@ pub(crate) trait ExtensionTrait: Sized + Serialize + Deserialize {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct KeyIdExt {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub identifier: Vec<u8>,
 }
 
@@ -141,7 +141,7 @@ impl ExtensionTrait for ParentHashExt {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Extension {
     pub extension_id: ExtensionId,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub data: Vec<u8>,
 }
 

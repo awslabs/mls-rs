@@ -39,7 +39,7 @@ impl MLSPlaintextTBM {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct MembershipTag(#[tls_codec(with = "crate::tls::ByteVec")] Tag);
+pub struct MembershipTag(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Tag);
 
 impl Deref for MembershipTag {
     type Target = Tag;

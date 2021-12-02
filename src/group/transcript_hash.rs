@@ -13,7 +13,9 @@ pub enum TranscriptHashError {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub(crate) struct ConfirmedTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub(crate) struct ConfirmedTranscriptHash(
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>,
+);
 
 impl Deref for ConfirmedTranscriptHash {
     type Target = Vec<u8>;
@@ -48,7 +50,7 @@ impl ConfirmedTranscriptHash {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub(crate) struct InterimTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub(crate) struct InterimTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>);
 
 impl Deref for InterimTranscriptHash {
     type Target = Vec<u8>;
