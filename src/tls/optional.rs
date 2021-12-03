@@ -2,6 +2,10 @@ use crate::tls::{DefaultSer, Deserializer, Serializer, Sizer};
 use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize};
 
+/// Adapter for TLS serialization of optional values
+///
+/// `None` is serialized as `0u8` and `Some(x)` is serialized as `1u8` followed by the serialization
+/// of `x` using the `S` adapter.
 pub struct Optional<S = DefaultSer>(S);
 
 impl<S> Optional<S> {

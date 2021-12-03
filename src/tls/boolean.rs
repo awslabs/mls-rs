@@ -2,6 +2,9 @@ use crate::tls::{Deserializer, Serializer, Sizer};
 use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize};
 
+/// Adapter for TLS serialization of boolean values
+///
+/// `false` is serialized as `0u8` and `true` is serialized as `1u8`.
 pub struct Boolean;
 
 impl Boolean {

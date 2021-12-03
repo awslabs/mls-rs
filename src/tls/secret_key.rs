@@ -3,6 +3,7 @@ use ferriscrypt::asym::ec_key::SecretKey;
 use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize, Size, TlsByteVecU32};
 
+/// Adapter for TLS serialization of secret keys
 pub struct SecretKeySer;
 
 impl SecretKeySer {

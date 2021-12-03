@@ -8,6 +8,9 @@ use std::{
 };
 use tls_codec::{Deserialize, Serialize};
 
+/// Adapter for TLS serialization of maps
+///
+/// A map is serialized as a sequence of value-key pairs.
 pub struct Map<KeySer = DefaultSer, ValueSer = DefaultSer>(KeySer, ValueSer);
 
 pub type DefMap = Map;

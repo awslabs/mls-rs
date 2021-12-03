@@ -6,6 +6,9 @@ use std::{
 };
 use tls_codec::{Deserialize, Serialize};
 
+/// Adapter for TLS serialization of vectors
+///
+/// `I` is the index type specifying how many bytes to use for the length in bytes of the vector.
 pub struct Vector<I = u32, S = DefaultSer>(I, S);
 
 pub type DefVec<I> = Vector<I>;

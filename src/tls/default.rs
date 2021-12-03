@@ -2,6 +2,7 @@ use crate::tls::{Deserializer, Serializer, Sizer};
 use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize, Size};
 
+/// Adapter for TLS serialization of values already implementing the `tls_codec` traits.
 pub struct DefaultSer;
 
 impl DefaultSer {
