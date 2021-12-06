@@ -46,3 +46,19 @@ impl Deserializer<SecretKey> for SecretKeySer {
         Self::tls_deserialize(reader)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::tls::ser_deser;
+    use ferriscrypt::asym::ec_key::{Curve, SecretKey};
+    use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+
+    #[derive(Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+    struct Data(#[tls_codec(with = "crate::tls::SecretKeySer")] SecretKey);
+
+    #[test]
+    fn data_round_trips() {
+        let key = Data(SecretKey::generate(Curve::Ed25519).unwrap());
+        assert_eq!(key, ser_deser(&key).unwrap());
+    }
+}

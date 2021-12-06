@@ -105,3 +105,56 @@ where
         Self::tls_deserialize(reader)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::tls::ser_deser;
+    use tls_codec::{Deserialize, Serialize};
+    use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+
+    #[derive(Clone, Copy, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+    struct Item(u8);
+
+    #[derive(Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+    struct Data(#[tls_codec(with = "crate::tls::DefVec::<u16>")] Vec<Item>);
+
+    #[test]
+    fn serialization_works() {
+        assert_eq!(
+            vec![0, 3, 1, 2, 3],
+            Data(vec![Item(1), Item(2), Item(3)])
+                .tls_serialize_detached()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn data_round_trips() {
+        let x = Data(vec![Item(1), Item(2), Item(3)]);
+        assert_eq!(x, ser_deser(&x).unwrap());
+    }
+
+    #[test]
+    fn empty_vec_can_be_deserialized() {
+        assert_eq!(
+            Data(Vec::new()),
+            Data::tls_deserialize(&mut &[0u8, 0][..]).unwrap()
+        );
+    }
+
+    #[test]
+    fn too_few_items_to_deserialize_gives_an_error() {
+        assert!(matches!(
+            Data::tls_deserialize(&mut &[0u8, 2, 3][..]),
+            Err(tls_codec::Error::EndOfStream)
+        ));
+    }
+
+    #[test]
+    fn serializing_oversized_vec_fails() {
+        assert!(matches!(
+            Data(vec![Item(1); usize::from(u16::MAX) + 1]).tls_serialize_detached(),
+            Err(tls_codec::Error::InvalidVectorLength)
+        ));
+    }
+}

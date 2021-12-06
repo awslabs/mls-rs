@@ -35,10 +35,16 @@ impl<KeySer, ValueSer> Map<KeySer, ValueSer> {
         KeySer: Sizer<K> + Serializer<K>,
         ValueSer: Sizer<V> + Serializer<V>,
         W: Write,
+        K: Ord,
     {
         let len = Self::tls_serialized_len(m) - size_of::<u32>();
         let len = u32::try_from(len).map_err(|_| tls_codec::Error::InvalidVectorLength)?;
-        m.iter()
+        // HashMap item order is not deterministic so sort by key to regain determinism when
+        // serializing.
+        let mut items = m.iter().collect::<Vec<_>>();
+        items.sort_by_key(|&(k, _)| k);
+        items
+            .iter()
             .try_fold(len.tls_serialize(writer)?, |acc, (k, v)| {
                 Ok(acc + KeySer::serialize(k, writer)? + ValueSer::serialize(v, writer)?)
             })
@@ -80,6 +86,7 @@ impl<KeySer, ValueSer, K, V> Serializer<HashMap<K, V>> for Map<KeySer, ValueSer>
 where
     KeySer: Sizer<K> + Serializer<K>,
     ValueSer: Sizer<V> + Serializer<V>,
+    K: Ord,
 {
     fn serialize<W: Write>(m: &HashMap<K, V>, writer: &mut W) -> Result<usize, tls_codec::Error> {
         Self::tls_serialize(m, writer)
@@ -94,5 +101,48 @@ where
 {
     fn deserialize<R: Read>(reader: &mut R) -> Result<HashMap<K, V>, tls_codec::Error> {
         Self::tls_deserialize(reader)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::tls::ser_deser;
+    use std::collections::HashMap;
+    use tls_codec::{Deserialize, Serialize};
+    use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+
+    #[derive(Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+    struct Data(#[tls_codec(with = "crate::tls::DefMap")] HashMap<u8, u16>);
+
+    #[test]
+    fn serialization_works() {
+        assert_eq!(
+            vec![0, 0, 0, 6, 1, 0, 10, 2, 0, 20],
+            Data(std::array::IntoIter::new([(1, 10), (2, 20)]).collect())
+                .tls_serialize_detached()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn data_round_trips() {
+        let x = Data(std::array::IntoIter::new([(1, 10), (2, 20)]).collect());
+        assert_eq!(x, ser_deser(&x).unwrap());
+    }
+
+    #[test]
+    fn empty_map_can_be_deserialized() {
+        assert_eq!(
+            Data(Default::default()),
+            Data::tls_deserialize(&mut &[0, 0, 0, 0][..]).unwrap()
+        );
+    }
+
+    #[test]
+    fn missing_value_gives_an_error() {
+        assert!(matches!(
+            Data::tls_deserialize(&mut &[0, 0, 0, 6, 1, 0, 10, 2][..]),
+            Err(tls_codec::Error::EndOfStream)
+        ));
     }
 }

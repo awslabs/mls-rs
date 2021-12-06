@@ -68,3 +68,46 @@ where
         Self::tls_deserialize(reader)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::tls::ser_deser;
+    use tls_codec::{Deserialize, Serialize};
+    use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+
+    #[derive(Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+    struct Data(#[tls_codec(with = "crate::tls::Optional::<crate::tls::DefaultSer>")] Option<u8>);
+
+    #[test]
+    fn none_is_serialized_correctly() {
+        assert_eq!(vec![0u8], Data(None).tls_serialize_detached().unwrap());
+    }
+
+    #[test]
+    fn some_is_serialized_correctly() {
+        assert_eq!(
+            vec![1u8, 2],
+            Data(Some(2)).tls_serialize_detached().unwrap()
+        );
+    }
+
+    #[test]
+    fn none_round_trips() {
+        let x = Data(None);
+        assert_eq!(x, ser_deser(&x).unwrap());
+    }
+
+    #[test]
+    fn some_round_trips() {
+        let x = Data(Some(2));
+        assert_eq!(x, ser_deser(&x).unwrap());
+    }
+
+    #[test]
+    fn deserializing_invalid_discriminant_fails() {
+        assert!(matches!(
+            Data::tls_deserialize(&mut &[2u8][..]),
+            Err(tls_codec::Error::DecodingError(_))
+        ));
+    }
+}

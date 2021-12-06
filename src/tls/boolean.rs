@@ -38,3 +38,35 @@ impl Deserializer<bool> for Boolean {
         Self::tls_deserialize(reader)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::tls::ser_deser;
+    use tls_codec::Serialize;
+    use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+
+    #[derive(Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+    struct Data(#[tls_codec(with = "crate::tls::Boolean")] bool);
+
+    #[test]
+    fn false_is_serialized_correctly() {
+        assert_eq!(vec![0u8], Data(false).tls_serialize_detached().unwrap());
+    }
+
+    #[test]
+    fn true_is_serialized_correctly() {
+        assert_eq!(vec![1u8], Data(true).tls_serialize_detached().unwrap());
+    }
+
+    #[test]
+    fn false_round_trips() {
+        let x = Data(false);
+        assert_eq!(x, ser_deser(&x).unwrap());
+    }
+
+    #[test]
+    fn true_round_trips() {
+        let x = Data(true);
+        assert_eq!(x, ser_deser(&x).unwrap());
+    }
+}

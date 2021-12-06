@@ -32,7 +32,9 @@ impl From<Vec<u8>> for Parent {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone, Copy, Debug, Ord, PartialEq, PartialOrd, Hash, Eq, TlsDeserialize, TlsSerialize, TlsSize,
+)]
 pub struct LeafIndex(pub(crate) u32);
 
 impl TryFrom<NodeIndex> for LeafIndex {
