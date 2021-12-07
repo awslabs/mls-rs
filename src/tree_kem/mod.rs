@@ -126,8 +126,7 @@ impl TreeKemPrivate {
             let path_gen = NodeSecretGenerator::new_from_path_secret(
                 cipher_suite,
                 path_secret.path_secret.clone(),
-            )
-            .flatten(); //TODO: This is skipping errors
+            );
 
             // For each parent of the common ancestor, up to the root of the tree, derive a new
             // path secret and set the private key for the node to the private key derived from the
@@ -138,9 +137,10 @@ impl TreeKemPrivate {
                 .iter()
                 .skip_while(|&&i| i != lca)
                 .zip(path_gen)
-                .for_each(|(&index, secrets)| {
-                    private_key.secret_keys.insert(index, secrets.secret_key);
-                });
+                .try_for_each(|(&index, secrets)| {
+                    private_key.secret_keys.insert(index, secrets?.secret_key);
+                    Ok::<_, RatchetTreeError>(())
+                })?;
         }
 
         Ok(private_key)
@@ -477,15 +477,22 @@ impl RatchetTree {
         // Generate all the new path secrets and encrypt them to their copath node resolutions
         let (node_secrets, node_updates): (Vec<IndexedNodeSecrets>, Vec<UpdatePathNode>) =
             secret_generator
-                .flatten() //TODO: Remove flatmap + flatten
                 .zip(
                     self.nodes
                         .direct_path_copath_resolution(private_key.self_index, excluding)?,
                 )
-                .flat_map(|(path_secret, (index, copath_nodes))| {
-                    self.encrypt_copath_node_resolution(&path_secret, index, copath_nodes, context)
+                .map(|(path_secret, (index, copath_nodes))| {
+                    self.encrypt_copath_node_resolution(&path_secret?, index, copath_nodes, context)
                 })
-                .unzip();
+                .try_fold(
+                    (Vec::new(), Vec::new()),
+                    |(mut secrets, mut updates), resolution| {
+                        let (secret, update) = resolution?;
+                        secrets.push(secret);
+                        updates.push(update);
+                        Ok::<_, RatchetTreeError>((secrets, updates))
+                    },
+                )?;
 
         let mut private_key = private_key.clone();
         private_key.secret_keys.insert(
@@ -656,7 +663,6 @@ impl RatchetTree {
 
         // Update secrets based on the decrypted path secret in the update
         let tree_secrets = node_secret_gen
-            .flatten() //TODO: Remove flatten maybe this should just be a for loop
             .zip(
                 // Get a pairing of direct path index + associated update
                 // This will help us verify that the calculated public key is the expected one
@@ -669,6 +675,7 @@ impl RatchetTree {
             .try_fold(
                 TreeSecrets::new(private_key),
                 |mut secrets, (secret, (&index, update))| {
+                    let secret = secret?;
                     // Verify the private key we calculated properly matches the public key we were
                     // expecting
                     if secret.public_key != update.public_key {
