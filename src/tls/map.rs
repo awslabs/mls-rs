@@ -106,7 +106,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::tls::ser_deser;
+    use crate::tls::test_util::ser_deser;
     use std::collections::HashMap;
     use tls_codec::{Deserialize, Serialize};
     use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};

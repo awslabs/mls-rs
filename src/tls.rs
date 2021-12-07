@@ -17,6 +17,8 @@ mod default;
 mod map;
 mod optional;
 mod secret_key;
+#[cfg(test)]
+mod test_util;
 mod vector;
 
 pub use boolean::Boolean;
@@ -49,12 +51,4 @@ pub trait Serializer<T: ?Sized> {
 /// The methods mirror the methods from `Deserialize`.
 pub trait Deserializer<T> {
     fn deserialize<R: Read>(reader: &mut R) -> Result<T, tls_codec::Error>;
-}
-
-/// Serializes and deserializes its parameter.
-#[cfg(test)]
-fn ser_deser<T: tls_codec::Serialize + tls_codec::Deserialize>(
-    x: &T,
-) -> Result<T, tls_codec::Error> {
-    T::tls_deserialize(&mut &*x.tls_serialize_detached()?)
 }

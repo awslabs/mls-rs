@@ -49,7 +49,7 @@ impl Deserializer<SecretKey> for SecretKeySer {
 
 #[cfg(test)]
 mod tests {
-    use crate::tls::ser_deser;
+    use crate::tls::test_util::ser_deser;
     use ferriscrypt::asym::ec_key::{Curve, SecretKey};
     use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
