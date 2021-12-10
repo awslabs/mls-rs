@@ -911,13 +911,14 @@ impl Group {
             .get_key_package(self.private_tree.self_index)?
             .clone();
 
-        key_package.hpke_init_key = leaf_pub;
+        key_package.hpke_init_key = leaf_pub.into();
 
         // Re-sign the key package
         key_package.sign(signing_key)?;
 
         // Store the secret key in the pending updates storage for later
-        let secret_key = SecretKey::from_bytes(&leaf_sec, self.cipher_suite.kem_type().curve())?;
+        let secret_key =
+            SecretKey::from_bytes(leaf_sec.as_ref(), self.cipher_suite.kem_type().curve())?;
         self.pending_updates.insert(key_package.hash()?, secret_key);
 
         Ok(Proposal::Update(UpdateProposal { key_package }))

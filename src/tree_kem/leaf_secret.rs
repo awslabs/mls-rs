@@ -1,6 +1,6 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
-use ferriscrypt::hpke::kem::{KemPublicKey, KemSecretKey, KemType};
+use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey, KemType};
 use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
 use std::ops::Deref;
@@ -35,7 +35,7 @@ impl LeafSecret {
         Ok(LeafSecret { cipher_suite, data })
     }
 
-    pub fn as_leaf_key_pair(&self) -> Result<(KemSecretKey, KemPublicKey), LeafSecretError> {
+    pub fn as_leaf_key_pair(&self) -> Result<(HpkeSecretKey, HpkePublicKey), LeafSecretError> {
         let kdf = KeyScheduleKdf::new(self.cipher_suite.kdf_type());
         let leaf_node_secret = kdf.derive_secret(&self.data, "node")?;
         self.cipher_suite

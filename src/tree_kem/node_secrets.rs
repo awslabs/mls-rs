@@ -56,8 +56,11 @@ impl NodeSecretGenerator {
 
         Ok(NodeSecrets {
             path_secret,
-            public_key,
-            secret_key: SecretKey::from_bytes(&secret_key, self.cipher_suite.kem_type().curve())?,
+            public_key: public_key.into(),
+            secret_key: SecretKey::from_bytes(
+                secret_key.as_ref(),
+                self.cipher_suite.kem_type().curve(),
+            )?,
         })
     }
 }

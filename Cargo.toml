@@ -8,7 +8,7 @@ edition = "2021"
 
 [dependencies]
 thiserror = "^1"
-ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", tag = "0.12.1" }
+ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", tag = "0.13.1" }
 tls_codec = { git = "https://github.com/stephaneyfx/formats.git", branch = "wip" }
 tls_codec_derive = { git = "https://github.com/stephaneyfx/formats.git", branch = "wip" }
 
