@@ -1,8 +1,8 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
 use crate::tree_kem::leaf_secret::LeafSecret;
-use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
-use ferriscrypt::hpke::kem::{Kem, KemType};
+use ferriscrypt::asym::ec_key::EcKeyError;
+use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey, Kem, KemType};
 use ferriscrypt::hpke::HpkeError;
 use thiserror::Error;
 
@@ -19,15 +19,14 @@ pub enum NodeSecretGeneratorError {
 #[derive(Clone, Debug)]
 pub struct NodeSecrets {
     pub path_secret: Vec<u8>,
-    pub public_key: Vec<u8>,
-    pub secret_key: SecretKey,
+    pub public_key: HpkePublicKey,
+    pub secret_key: HpkeSecretKey,
 }
 
 pub struct NodeSecretGenerator {
     pub next_path_secret: Vec<u8>,
     kdf: KeyScheduleKdf,
     kem: Kem,
-    cipher_suite: CipherSuite,
 }
 
 impl NodeSecretGenerator {
@@ -38,7 +37,6 @@ impl NodeSecretGenerator {
             kdf: KeyScheduleKdf::new(cipher_suite.kdf_type()),
             next_path_secret: path_secret,
             kem: cipher_suite.kem(),
-            cipher_suite,
         }
     }
 
@@ -56,11 +54,8 @@ impl NodeSecretGenerator {
 
         Ok(NodeSecrets {
             path_secret,
-            public_key: public_key.into(),
-            secret_key: SecretKey::from_bytes(
-                secret_key.as_ref(),
-                self.cipher_suite.kem_type().curve(),
-            )?,
+            public_key,
+            secret_key,
         })
     }
 }

@@ -2,6 +2,7 @@ use crate::key_package::KeyPackage;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::parent_hash::ParentHash;
+use ferriscrypt::hpke::kem::HpkePublicKey;
 use std::convert::TryFrom;
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
@@ -16,7 +17,7 @@ pub(crate) struct Leaf {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct Parent {
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub public_key: Vec<u8>,
+    pub public_key: HpkePublicKey,
     pub parent_hash: ParentHash,
     #[tls_codec(with = "crate::tls::DefVec::<u32>")]
     pub unmerged_leaves: Vec<LeafIndex>,
@@ -25,7 +26,7 @@ pub(crate) struct Parent {
 impl From<Vec<u8>> for Parent {
     fn from(pk: Vec<u8>) -> Self {
         Self {
-            public_key: pk,
+            public_key: pk.into(),
             parent_hash: ParentHash::empty(), // TODO: Parent hash calculations
             unmerged_leaves: vec![],
         }
@@ -106,7 +107,7 @@ pub(crate) enum Node {
 }
 
 impl Node {
-    pub fn get_public_key(&self) -> &[u8] {
+    pub fn get_public_key(&self) -> &HpkePublicKey {
         match self {
             Node::Parent(p) => &p.public_key,
             Node::Leaf(l) => &l.key_package.hpke_init_key,
@@ -360,12 +361,12 @@ impl NodeVec {
     pub fn borrow_or_fill_node_as_parent(
         &mut self,
         node_index: NodeIndex,
-        public_key: &[u8],
+        public_key: &HpkePublicKey,
     ) -> Result<&mut Parent, NodeVecError> {
         self.borrow_node_mut(node_index).and_then(|n| {
             if n.is_none() {
                 *n = Parent {
-                    public_key: public_key.to_vec(),
+                    public_key: public_key.clone(),
                     parent_hash: ParentHash::empty(),
                     unmerged_leaves: vec![],
                 }
@@ -462,7 +463,7 @@ pub mod test {
         let mut kp = KeyPackage {
             version: cipher_suite.protocol_version(),
             cipher_suite,
-            hpke_init_key: hpke_pub.to_uncompressed_bytes().unwrap(),
+            hpke_init_key: hpke_pub.try_into().unwrap(),
             credential: BasicCredential {
                 signature_key: signing_key
                     .to_public()
@@ -495,7 +496,7 @@ pub mod test {
             }
             .into(),
             Parent {
-                public_key: b"CD".to_vec(),
+                public_key: b"CD".to_vec().into(),
                 parent_hash: ParentHash::empty(),
                 unmerged_leaves: vec![LeafIndex(2)],
             }
@@ -512,22 +513,22 @@ pub mod test {
     #[test]
     fn node_key_getters() {
         let test_node_parent: Node = Parent {
-            public_key: b"pub".to_vec(),
+            public_key: b"pub".to_vec().into(),
             parent_hash: ParentHash::empty(),
             unmerged_leaves: vec![],
         }
         .into();
 
         let mut test_key_package = get_test_key_package(b"B".to_vec());
-        test_key_package.hpke_init_key = b"pub_leaf".to_vec();
+        test_key_package.hpke_init_key = b"pub_leaf".to_vec().into();
 
         let test_node_leaf: Node = Leaf {
             key_package: test_key_package,
         }
         .into();
 
-        assert_eq!(test_node_parent.get_public_key(), &b"pub".to_vec());
-        assert_eq!(test_node_leaf.get_public_key(), &b"pub_leaf".to_vec());
+        assert_eq!(test_node_parent.get_public_key().as_ref(), b"pub");
+        assert_eq!(test_node_leaf.get_public_key().as_ref(), b"pub_leaf");
     }
 
     #[test]
@@ -573,7 +574,7 @@ pub mod test {
 
         // Otherwise it should succeed
         let mut expected = Parent {
-            public_key: b"CD".to_vec(),
+            public_key: b"CD".to_vec().into(),
             parent_hash: ParentHash::empty(),
             unmerged_leaves: vec![LeafIndex(2)],
         };
@@ -675,7 +676,9 @@ pub mod test {
         let mut test_vec2 = test_vec.clone();
 
         let expected = test_vec[5].as_parent_mut().unwrap();
-        let actual = test_vec2.borrow_or_fill_node_as_parent(5, &[]).unwrap();
+        let actual = test_vec2
+            .borrow_or_fill_node_as_parent(5, &Vec::new().into())
+            .unwrap();
 
         assert_eq!(actual, expected);
     }
@@ -685,13 +688,13 @@ pub mod test {
         let mut test_vec = get_test_node_vec();
 
         let mut expected = Parent {
-            public_key: vec![0u8; 4],
+            public_key: vec![0u8; 4].into(),
             parent_hash: ParentHash::empty(),
             unmerged_leaves: vec![],
         };
 
         let actual = test_vec
-            .borrow_or_fill_node_as_parent(1, &[0u8; 4])
+            .borrow_or_fill_node_as_parent(1, &vec![0u8; 4].into())
             .unwrap();
 
         assert_eq!(actual, &mut expected);

@@ -3,6 +3,7 @@ use crate::cipher_suite::ProtocolVersion;
 use crate::credential::{Credential, CredentialError};
 use crate::extension::{Extension, ExtensionError, ExtensionList};
 use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError, SecretKey};
+use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::{Signer, Verifier};
 use std::time::SystemTime;
 use thiserror::Error;
@@ -32,7 +33,7 @@ pub struct KeyPackage {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub hpke_init_key: Vec<u8>,
+    pub hpke_init_key: HpkePublicKey,
     pub credential: Credential,
     pub extensions: ExtensionList,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
@@ -55,8 +56,8 @@ pub(crate) struct KeyPackageGenerator<'a> {
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct KeyPackageGeneration {
     pub key_package: KeyPackage,
-    #[tls_codec(with = "crate::tls::SecretKeySer")]
-    pub secret_key: SecretKey,
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    pub secret_key: HpkeSecretKey,
 }
 
 impl KeyPackageGeneration {
@@ -76,7 +77,7 @@ impl<'a> KeyPackageGenerator<'a> {
         let mut package = KeyPackage {
             version: self.cipher_suite.protocol_version(),
             cipher_suite: self.cipher_suite,
-            hpke_init_key: public.to_uncompressed_bytes()?,
+            hpke_init_key: public.try_into()?,
             credential: self.credential.clone(),
             extensions: self.extensions.clone(),
             signature: vec![],
@@ -86,7 +87,7 @@ impl<'a> KeyPackageGenerator<'a> {
 
         Ok(KeyPackageGeneration {
             key_package: package,
-            secret_key: secret,
+            secret_key: secret.try_into()?,
         })
     }
 }
@@ -105,7 +106,7 @@ impl KeyPackage {
             pub version: &'a ProtocolVersion,
             pub cipher_suite: &'a CipherSuite,
             #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-            pub hpke_init_key: &'a Vec<u8>,
+            pub hpke_init_key: &'a HpkePublicKey,
             pub credential: &'a Credential,
             #[tls_codec(with = "crate::tls::DefVec::<u32>")]
             pub extensions: &'a Vec<Extension>,

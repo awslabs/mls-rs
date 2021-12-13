@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 
 use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
+use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::hpke::{HPKECiphertext, HpkeError};
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -83,8 +84,8 @@ pub struct RatchetTree {
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct TreeKemPrivate {
     pub self_index: LeafIndex,
-    #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::SecretKeySer>")]
-    pub secret_keys: HashMap<NodeIndex, SecretKey>,
+    #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::ByteVec::<u32>>")]
+    pub secret_keys: HashMap<NodeIndex, HpkeSecretKey>,
 }
 
 impl From<KeyPackageGeneration> for TreeKemPrivate {
@@ -94,7 +95,7 @@ impl From<KeyPackageGeneration> for TreeKemPrivate {
 }
 
 impl TreeKemPrivate {
-    pub fn new_self_leaf(self_index: LeafIndex, leaf_secret: SecretKey) -> Self {
+    pub fn new_self_leaf(self_index: LeafIndex, leaf_secret: HpkeSecretKey) -> Self {
         let mut private_key = TreeKemPrivate {
             self_index,
             secret_keys: Default::default(),
@@ -108,7 +109,7 @@ impl TreeKemPrivate {
     pub fn new_from_secret(
         cipher_suite: CipherSuite,
         self_index: LeafIndex,
-        leaf_secret: SecretKey,
+        leaf_secret: HpkeSecretKey,
         sender_index: LeafIndex,
         leaf_count: u32,
         group_secrets: &GroupSecrets,
@@ -149,7 +150,7 @@ impl TreeKemPrivate {
     pub fn update_leaf(
         &mut self,
         num_leaves: u32,
-        new_leaf: SecretKey,
+        new_leaf: HpkeSecretKey,
     ) -> Result<(), RatchetTreeError> {
         self.secret_keys
             .insert(NodeIndex::from(self.self_index), new_leaf);
@@ -179,8 +180,8 @@ impl TreeKemPrivate {
     }
 }
 
-impl From<SecretKey> for TreeKemPrivate {
-    fn from(secret_key: SecretKey) -> Self {
+impl From<HpkeSecretKey> for TreeKemPrivate {
+    fn from(secret_key: HpkeSecretKey) -> Self {
         let mut secret_keys = HashMap::new();
         secret_keys.insert(0, secret_key);
 
@@ -559,17 +560,16 @@ impl RatchetTree {
                 // Decrypt the path secret
                 self.cipher_suite
                     .hpke()
-                    .open_base(
-                        &HPKECiphertext::from(ct.clone()),
-                        &sk.to_bytes()?,
-                        &[],
-                        Some(context),
-                    )
+                    .open_base(&HPKECiphertext::from(ct.clone()), sk, &[], Some(context))
                     .map_err(Into::into)
             })
     }
 
-    fn update_node(&mut self, pub_key: Vec<u8>, index: NodeIndex) -> Result<(), RatchetTreeError> {
+    fn update_node(
+        &mut self,
+        pub_key: HpkePublicKey,
+        index: NodeIndex,
+    ) -> Result<(), RatchetTreeError> {
         self.nodes
             .borrow_or_fill_node_as_parent(index, &pub_key)
             .map_err(|e| e.into())
@@ -706,14 +706,15 @@ impl RatchetTree {
     pub fn direct_path_keys(
         &self,
         index: LeafIndex,
-    ) -> Result<Vec<Option<Vec<u8>>>, RatchetTreeError> {
+    ) -> Result<Vec<Option<HpkePublicKey>>, RatchetTreeError> {
         let indexes = self.nodes.direct_path(index)?;
         Ok(indexes
             .iter()
             .map(|&i| {
                 self.nodes[i as usize]
                     .as_ref()
-                    .map(|n| n.get_public_key().to_vec())
+                    .map(|n| n.get_public_key())
+                    .cloned()
             })
             .collect())
     }
@@ -722,7 +723,7 @@ impl RatchetTree {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct UpdatePathNode {
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub public_key: Vec<u8>,
+    pub public_key: HpkePublicKey,
     #[tls_codec(with = "crate::tls::DefVec::<u32>")]
     pub encrypted_path_secret: Vec<HpkeCiphertext>,
 }
@@ -796,10 +797,7 @@ pub(crate) mod test {
         );
 
         assert_eq!(test_tree.1.self_index, LeafIndex(0));
-        assert_eq!(
-            test_tree.1.secret_keys.get(&0).unwrap().to_bytes().unwrap(),
-            test_key_package.secret_key.to_bytes().unwrap()
-        );
+        assert_eq!(test_tree.1.secret_keys[&0], test_key_package.secret_key);
         test_tree
     }
 
@@ -879,7 +877,7 @@ pub(crate) mod test {
             .unwrap();
 
         tree.nodes[3] = Parent {
-            public_key: vec![],
+            public_key: vec![].into(),
             parent_hash: ParentHash::empty(),
             unmerged_leaves: vec![],
         }
@@ -925,7 +923,7 @@ pub(crate) mod test {
             .iter()
             .for_each(|&i| {
                 tree.nodes
-                    .borrow_or_fill_node_as_parent(i, &b"pub_key".to_vec())
+                    .borrow_or_fill_node_as_parent(i, &b"pub_key".to_vec().into())
                     .unwrap();
             });
 
@@ -967,7 +965,7 @@ pub(crate) mod test {
         let direct_path = tree.nodes.direct_path(index).unwrap();
         for (i, &dpi) in direct_path.iter().enumerate() {
             assert_eq!(
-                tree.nodes[dpi as usize].as_ref().unwrap().get_public_key(),
+                *tree.nodes[dpi as usize].as_ref().unwrap().get_public_key(),
                 update_path.nodes[i].public_key
             );
         }
@@ -983,6 +981,7 @@ pub(crate) mod test {
     }
 
     fn verify_tree_private_path(
+        cipher_suite: &CipherSuite,
         public_tree: &RatchetTree,
         private_tree: &TreeKemPrivate,
         index: LeafIndex,
@@ -995,13 +994,18 @@ pub(crate) mod test {
                 .as_ref()
                 .unwrap()
                 .get_public_key();
+            let secret_key =
+                SecretKey::from_bytes(secret_key.as_ref(), cipher_suite.kem_type().curve())
+                    .unwrap();
             assert_eq!(
-                secret_key
-                    .to_public()
-                    .unwrap()
-                    .to_uncompressed_bytes()
-                    .unwrap(),
-                public_key
+                HpkePublicKey::from(
+                    secret_key
+                        .to_public()
+                        .unwrap()
+                        .to_uncompressed_bytes()
+                        .unwrap()
+                ),
+                *public_key
             );
         }
     }
@@ -1059,6 +1063,7 @@ pub(crate) mod test {
 
         // Verify that the private key matches the data in the public key
         verify_tree_private_path(
+            &cipher_suite,
             &encap_tree,
             &update_path_gen.secrets.private_key,
             LeafIndex(0),
@@ -1144,7 +1149,10 @@ pub(crate) mod test {
             .for_each(|&i| {
                 private_key.secret_keys.insert(
                     i,
-                    SecretKey::generate(cipher_suite.kem_type().curve()).unwrap(),
+                    SecretKey::generate(cipher_suite.kem_type().curve())
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
                 );
             });
 
@@ -1159,8 +1167,8 @@ pub(crate) mod test {
         // Verify the secret key value was updated properly
         assert_eq!(private_key.self_index, LeafIndex(0));
         assert_eq!(
-            private_key.secret_keys[&0].to_bytes().unwrap(),
-            key_package_generation.secret_key.to_bytes().unwrap()
+            private_key.secret_keys[&0],
+            key_package_generation.secret_key
         );
 
         // Verify that the keys in the direct path were cleared

@@ -3,6 +3,7 @@ use crate::group::framing::{Content, MLSCiphertext, MLSPlaintext};
 use crate::group::{proposal::Proposal, CommitGeneration, Group, GroupError, StateUpdate};
 use crate::key_package::{KeyPackage, KeyPackageGeneration};
 use ferriscrypt::asym::ec_key::SecretKey;
+use ferriscrypt::hpke::kem::HpkePublicKey;
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -68,7 +69,7 @@ pub struct Session {
 pub struct TreeStats {
     pub total_leaves: u32,
     pub current_index: u32,
-    pub direct_path: Vec<Vec<u8>>,
+    pub direct_path: Vec<HpkePublicKey>,
 }
 
 impl Session {
@@ -284,7 +285,7 @@ impl Session {
             .protocol
             .current_direct_path()?
             .iter()
-            .map(|p| p.as_ref().unwrap_or(&vec![]).clone())
+            .map(|p| p.as_ref().unwrap_or(&vec![].into()).clone())
             .collect();
         Ok(TreeStats {
             total_leaves: self.protocol.public_tree.leaf_count(),

@@ -6,6 +6,7 @@ use std::option::Option::Some;
 use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
 use ferriscrypt::cipher::aead::AeadError;
 use ferriscrypt::hmac::Tag;
+use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
@@ -301,8 +302,8 @@ pub struct Group {
     interim_transcript_hash: InterimTranscriptHash,
     #[tls_codec(with = "crate::tls::Map::<crate::tls::ByteVec, crate::tls::DefaultSer>")]
     pub proposals: HashMap<Vec<u8>, PendingProposal>, // Hash of MLS Plaintext to pending proposal
-    #[tls_codec(with = "crate::tls::Map::<crate::tls::ByteVec, crate::tls::SecretKeySer>")]
-    pub pending_updates: HashMap<Vec<u8>, SecretKey>, // Hash of key package to key generation
+    #[tls_codec(with = "crate::tls::Map::<crate::tls::ByteVec, crate::tls::ByteVec>")]
+    pub pending_updates: HashMap<Vec<u8>, HpkeSecretKey>, // Hash of key package to key generation
 }
 
 impl PartialEq for Group {
@@ -416,8 +417,7 @@ impl Group {
                 .encrypted_group_secrets
                 .clone()
                 .into(),
-            //TODO: This spot is weird because we loaded the key already but need to pass it as bytes
-            &key_package.secret_key.to_bytes()?,
+            &key_package.secret_key,
             &[],
             None,
         )?;
@@ -911,15 +911,13 @@ impl Group {
             .get_key_package(self.private_tree.self_index)?
             .clone();
 
-        key_package.hpke_init_key = leaf_pub.into();
+        key_package.hpke_init_key = leaf_pub;
 
         // Re-sign the key package
         key_package.sign(signing_key)?;
 
         // Store the secret key in the pending updates storage for later
-        let secret_key =
-            SecretKey::from_bytes(leaf_sec.as_ref(), self.cipher_suite.kem_type().curve())?;
-        self.pending_updates.insert(key_package.hash()?, secret_key);
+        self.pending_updates.insert(key_package.hash()?, leaf_sec);
 
         Ok(Proposal::Update(UpdateProposal { key_package }))
     }
@@ -1321,7 +1319,7 @@ impl Group {
         Ok(state_updates)
     }
 
-    pub fn current_direct_path(&self) -> Result<Vec<Option<Vec<u8>>>, GroupError> {
+    pub fn current_direct_path(&self) -> Result<Vec<Option<HpkePublicKey>>, GroupError> {
         self.public_tree
             .direct_path_keys(self.private_tree.self_index)
             .map_err(Into::into)

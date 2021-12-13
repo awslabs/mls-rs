@@ -5,6 +5,7 @@ use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVec, NodeVecError, Parent};
 use crate::tree_kem::RatchetTree;
 use crate::tree_kem::{RatchetTreeError, UpdatePath};
+use ferriscrypt::hpke::kem::HpkePublicKey;
 use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
@@ -24,11 +25,11 @@ pub enum ParentHashError {
 #[derive(Clone, Debug, TlsSerialize, TlsSize)]
 struct ParentHashInput<'a> {
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    public_key: &'a [u8],
+    public_key: &'a HpkePublicKey,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     parent_hash: &'a [u8],
     #[tls_codec(with = "crate::tls::Vector::<u32, crate::tls::ByteVec>")]
-    original_child_resolution: Vec<&'a [u8]>,
+    original_child_resolution: Vec<&'a HpkePublicKey>,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -51,9 +52,9 @@ impl Deref for ParentHash {
 impl ParentHash {
     pub fn new(
         cipher_suite: CipherSuite,
-        public_key: &[u8],
+        public_key: &HpkePublicKey,
         parent_hash: &ParentHash,
-        original_child_resolution: Vec<&[u8]>,
+        original_child_resolution: Vec<&HpkePublicKey>,
     ) -> Result<Self, ParentHashError> {
         let input = ParentHashInput {
             public_key,
@@ -94,7 +95,7 @@ impl NodeVec {
         &self,
         parent: &Parent,
         index: NodeIndex,
-    ) -> Result<Vec<&[u8]>, NodeVecError> {
+    ) -> Result<Vec<&HpkePublicKey>, NodeVecError> {
         let unmerged_leaves: Vec<NodeIndex> =
             parent.unmerged_leaves.iter().map(NodeIndex::from).collect();
 
@@ -270,7 +271,7 @@ mod test {
                 .borrow_node_mut(i * 2 + 1)
                 .map(|node| {
                     *node = Some(Node::Parent(Parent {
-                        public_key: vec![i as u8],
+                        public_key: vec![i as u8].into(),
                         parent_hash: ParentHash::empty(),
                         unmerged_leaves: vec![],
                     }))
@@ -284,10 +285,10 @@ mod test {
     #[test]
     fn test_original_child_resolution() {
         let node_vec = get_test_node_vec();
-        let expected = vec![&[67u8, 68u8] as &[u8]];
+        let expected = HpkePublicKey::from(vec![67u8, 68u8]);
         let parent = node_vec.borrow_as_parent(5).unwrap();
         let child_resolution = node_vec.original_child_resolution(parent, 5).unwrap();
-        assert_eq!(expected, child_resolution);
+        assert_eq!(vec![&expected], child_resolution);
     }
 
     #[test]
