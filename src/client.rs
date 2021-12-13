@@ -24,8 +24,8 @@ pub enum ClientError {
     CredentialError(#[from] CredentialError),
     #[error("signature key provided does not match the selected cipher suite")]
     SignatureCipherSuiteMismatch,
-    #[error("credential provided does not match the selected cipher suite")]
-    CredentialCipherSuiteMismatch,
+    #[error("the secret key provided does not match the public key in the credential")]
+    IncorrectSecretKey,
 }
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -48,8 +48,8 @@ impl Client {
             return Err(ClientError::SignatureCipherSuiteMismatch);
         }
 
-        if credential.get_signature_scheme() != cipher_suite.signature_scheme() {
-            return Err(ClientError::CredentialCipherSuiteMismatch);
+        if credential.public_key()? != signature_key.to_public()? {
+            return Err(ClientError::IncorrectSecretKey);
         }
 
         Ok(Client {
@@ -124,6 +124,7 @@ mod test {
     use ferriscrypt::asym::ec_key::Curve;
     use ferriscrypt::rand::SecureRng;
     use std::time::SystemTime;
+    use tls_codec::Serialize;
 
     fn get_test_credential(identity: Vec<u8>, signature_key: &SecretKey) -> Credential {
         Credential::Basic(
@@ -150,7 +151,7 @@ mod test {
             assert_eq!(
                 test_client
                     .credential
-                    .get_public_key()
+                    .public_key()
                     .unwrap()
                     .to_uncompressed_bytes()
                     .unwrap(),
@@ -207,7 +208,21 @@ mod test {
             let package_gen = client.gen_key_package(&key_lifetime).unwrap();
 
             assert_eq!(package_gen.key_package.cipher_suite, cipher_suite);
-            assert_eq!(package_gen.key_package.credential, client.credential);
+
+            assert!(matches!(
+                package_gen.key_package.credential,
+                Credential::Basic(_)
+            ));
+
+            assert_eq!(
+                package_gen
+                    .key_package
+                    .credential
+                    .tls_serialize_detached()
+                    .unwrap(),
+                client.credential.tls_serialize_detached().unwrap()
+            );
+
             assert_eq!(
                 package_gen
                     .key_package

@@ -28,7 +28,7 @@ pub enum KeyPackageError {
     InvalidKeyLifetime,
 }
 
-#[derive(PartialEq, Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct KeyPackage {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
@@ -43,6 +43,14 @@ pub struct KeyPackage {
 impl KeyPackage {
     pub fn to_vec(&self) -> Result<Vec<u8>, KeyPackageError> {
         Ok(self.tls_serialize_detached()?)
+    }
+}
+
+// TODO FIXME: This is suboptimal for various reasons but will be replaced when we implement key package
+// changes to the protocol as part of the Draft 12 series of tickets
+impl PartialEq for KeyPackage {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash().ok() == other.hash().ok()
     }
 }
 

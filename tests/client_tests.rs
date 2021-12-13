@@ -1,5 +1,6 @@
 use ferriscrypt::rand::SecureRng;
 use std::time::SystemTime;
+use tls_codec::Serialize;
 use wickr_bgm::cipher_suite::CipherSuite;
 use wickr_bgm::client::Client;
 use wickr_bgm::credential::Credential;
@@ -123,7 +124,18 @@ fn get_test_sessions(
         .map(|k| k.key_package.credential.clone())
         .collect::<Vec<Credential>>();
 
-    assert_eq!(update.added, credentials);
+    assert_eq!(
+        update
+            .added
+            .iter()
+            .map(|c| c.tls_serialize_detached().unwrap())
+            .collect::<Vec<Vec<u8>>>(),
+        credentials
+            .iter()
+            .map(|c| c.tls_serialize_detached().unwrap())
+            .collect::<Vec<Vec<u8>>>()
+    );
+
     assert!(update.removed.is_empty());
 
     // Export the tree for receivers
@@ -313,7 +325,16 @@ fn test_remove_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
 
             let update = state_update.unwrap();
             assert_eq!(update.epoch, epoch_count as u64);
-            assert_eq!(update.removed, vec![removed_cred]);
+
+            assert_eq!(
+                update
+                    .removed
+                    .iter()
+                    .map(|c| c.tls_serialize_detached().unwrap())
+                    .collect::<Vec<Vec<u8>>>(),
+                vec![removed_cred.tls_serialize_detached().unwrap()]
+            );
+
             assert!(update.added.is_empty());
 
             if index != expect_inactive {
