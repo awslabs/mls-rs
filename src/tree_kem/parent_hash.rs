@@ -102,7 +102,7 @@ impl NodeVec {
         Ok(self
             .get_resolution(index, &unmerged_leaves)?
             .iter()
-            .map(|n| n.get_public_key())
+            .map(|n| n.public_key())
             .collect())
     }
 }

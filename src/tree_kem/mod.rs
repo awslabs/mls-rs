@@ -428,7 +428,7 @@ impl RatchetTree {
                 self.cipher_suite
                     .hpke()
                     .seal_base(
-                        copath_node.get_public_key(),
+                        copath_node.public_key(),
                         &[],
                         Some(context),
                         &path_secret.path_secret,
@@ -713,7 +713,7 @@ impl RatchetTree {
             .map(|&i| {
                 self.nodes[i as usize]
                     .as_ref()
-                    .map(|n| n.get_public_key())
+                    .map(|n| n.public_key())
                     .cloned()
             })
             .collect())
@@ -965,7 +965,7 @@ pub(crate) mod test {
         let direct_path = tree.nodes.direct_path(index).unwrap();
         for (i, &dpi) in direct_path.iter().enumerate() {
             assert_eq!(
-                *tree.nodes[dpi as usize].as_ref().unwrap().get_public_key(),
+                *tree.nodes[dpi as usize].as_ref().unwrap().public_key(),
                 update_path.nodes[i].public_key
             );
         }
@@ -993,7 +993,7 @@ pub(crate) mod test {
             let public_key = public_tree.nodes[one_index as usize]
                 .as_ref()
                 .unwrap()
-                .get_public_key();
+                .public_key();
             let secret_key =
                 SecretKey::from_bytes(secret_key.as_ref(), cipher_suite.kem_type().curve())
                     .unwrap();

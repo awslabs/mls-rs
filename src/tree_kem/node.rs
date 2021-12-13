@@ -107,7 +107,7 @@ pub(crate) enum Node {
 }
 
 impl Node {
-    pub fn get_public_key(&self) -> &HpkePublicKey {
+    pub fn public_key(&self) -> &HpkePublicKey {
         match self {
             Node::Parent(p) => &p.public_key,
             Node::Leaf(l) => &l.key_package.hpke_init_key,
@@ -473,7 +473,7 @@ pub mod test {
                 identity: id,
                 signature_scheme: SignatureScheme::Ed25519,
             }
-            .to_credential(),
+            .into_credential(),
             extensions: ExtensionList::from(vec![]),
             signature: vec![],
         };
@@ -527,8 +527,8 @@ pub mod test {
         }
         .into();
 
-        assert_eq!(test_node_parent.get_public_key().as_ref(), b"pub");
-        assert_eq!(test_node_leaf.get_public_key().as_ref(), b"pub_leaf");
+        assert_eq!(test_node_parent.public_key().as_ref(), b"pub");
+        assert_eq!(test_node_leaf.public_key().as_ref(), b"pub_leaf");
     }
 
     #[test]
