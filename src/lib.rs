@@ -16,5 +16,10 @@ pub mod extension;
 mod group;
 pub mod key_package;
 pub mod session;
-pub mod tls;
 mod tree_kem;
+
+#[cfg(feature = "benchmark")]
+pub mod tls;
+
+#[cfg(not(feature = "benchmark"))]
+mod tls;
