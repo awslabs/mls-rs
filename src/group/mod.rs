@@ -106,7 +106,7 @@ pub enum GroupError {
     #[error(transparent)]
     RatchetTreeError(#[from] RatchetTreeError),
     #[error(transparent)]
-    EpochError(#[from] EpochKeyScheduleError),
+    EpochError(#[from] EpochError),
     #[error(transparent)]
     EcKeyError(#[from] EcKeyError),
     #[error(transparent)]
@@ -296,9 +296,8 @@ pub struct Welcome {
 pub struct Group {
     pub cipher_suite: CipherSuite,
     context: GroupContext,
-    pub public_tree: RatchetTree,
     private_tree: TreeKemPrivate,
-    key_schedule: EpochKeySchedule, //TODO: Need to support out of order packets by holding a few old epoch values too
+    epoch: Epoch, //TODO: Need to support out of order packets by holding a few old epoch values too
     interim_transcript_hash: InterimTranscriptHash,
     #[tls_codec(with = "crate::tls::Map::<crate::tls::ByteVec, crate::tls::DefaultSer>")]
     pub proposals: HashMap<Vec<u8>, PendingProposal>, // Hash of MLS Plaintext to pending proposal
@@ -310,8 +309,7 @@ impl PartialEq for Group {
     fn eq(&self, other: &Self) -> bool {
         self.cipher_suite == other.cipher_suite
             && self.context == other.context
-            && self.public_tree == other.public_tree
-            && self.key_schedule == other.key_schedule
+            && self.epoch == other.epoch
             && self.interim_transcript_hash == other.interim_transcript_hash
             && self.proposals == other.proposals
     }
@@ -375,16 +373,20 @@ impl Group {
 
         let context = GroupContext::new_group(group_id, tree_hash, extensions);
 
-        let epoch =
-            EpochKeySchedule::derive(cipher_suite, &init_secret, &[], 1, &context, LeafIndex(0))?
-                .key_schedule;
+        let (epoch, _) = Epoch::derive(
+            cipher_suite,
+            &init_secret,
+            &[],
+            public_tree,
+            &context,
+            LeafIndex(0),
+        )?;
 
         Ok(Self {
             cipher_suite,
-            public_tree,
             private_tree,
             context,
-            key_schedule: epoch,
+            epoch,
             interim_transcript_hash: InterimTranscriptHash::from(vec![]),
             proposals: Default::default(),
             pending_updates: Default::default(),
@@ -477,10 +479,10 @@ impl Group {
 
         // Use the joiner_secret from the GroupSecrets object to generate the epoch secret and
         // other derived secrets for the current epoch.
-        let key_schedule = EpochKeySchedule::new_joiner(
+        let epoch = Epoch::new_joiner(
             welcome.cipher_suite,
             &group_secrets.joiner_secret,
-            public_tree.leaf_count(),
+            public_tree,
             &context,
             self_index,
         )?;
@@ -489,7 +491,7 @@ impl Group {
         // confirmed_transcript_hash from the GroupInfo.
         if !group_info
             .confirmation_tag
-            .matches(&key_schedule, &group_info.confirmed_transcript_hash)?
+            .matches(&epoch, &group_info.confirmed_transcript_hash)?
         {
             return Err(GroupError::InvalidConfirmationTag);
         }
@@ -505,13 +507,16 @@ impl Group {
         Ok(Group {
             cipher_suite: welcome.cipher_suite,
             context,
-            public_tree,
             private_tree,
-            key_schedule,
+            epoch,
             interim_transcript_hash,
             proposals: Default::default(),
             pending_updates: Default::default(),
         })
+    }
+
+    pub fn public_tree(&self) -> &RatchetTree {
+        &self.epoch.public_tree
     }
 
     pub fn current_user_index(&self) -> u32 {
@@ -546,7 +551,7 @@ impl Group {
     ) -> Result<ProvisionalState, GroupError> {
         let proposals = self.fetch_proposals(proposals, sender)?;
 
-        let mut provisional_tree = self.public_tree.clone();
+        let mut provisional_tree = self.epoch.public_tree.clone();
         let mut provisional_private_tree = self.private_tree.clone();
 
         //TODO: This has to loop through the proposal array 3 times, maybe this should be optimized
@@ -630,8 +635,7 @@ impl Group {
         if !for_ciphertext {
             // If we are going to encrypt then the tag will be dropped so it shouldn't be included
             // in the hash
-            let membership_tag =
-                MembershipTag::create(&plaintext, &self.context, &self.key_schedule)?;
+            let membership_tag = MembershipTag::create(&plaintext, &self.context, &self.epoch)?;
             plaintext.membership_tag = Some(membership_tag);
         };
 
@@ -769,15 +773,15 @@ impl Group {
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
 
-        let new_key_schedule = EpochKeySchedule::evolved_from(
-            &self.key_schedule,
+        let (next_epoch, joiner_secret) = Epoch::evolved_from(
+            &self.epoch,
             &commit_secret,
-            provisional_state.public_tree.leaf_count(),
+            provisional_state.public_tree,
             &provisional_group_context,
         )?;
 
         let confirmation_tag = ConfirmationTag::create(
-            &new_key_schedule.key_schedule,
+            &next_epoch,
             &provisional_group_context.confirmed_transcript_hash,
         )?;
 
@@ -787,7 +791,7 @@ impl Group {
            if the goal is to send a ciphertext
         */
         // Create the membership tag using the current group context and key schedule
-        let membership_tag = MembershipTag::create(&plaintext, &self.context, &self.key_schedule)?;
+        let membership_tag = MembershipTag::create(&plaintext, &self.context, &self.epoch)?;
 
         plaintext.membership_tag = Some(membership_tag);
 
@@ -809,8 +813,7 @@ impl Group {
 
         // Encrypt the GroupInfo using the key and nonce derived from the joiner_secret for
         // the new epoch
-        let welcome_secret =
-            WelcomeSecret::from_joiner_secret(self.cipher_suite, &new_key_schedule.joiner_secret)?;
+        let welcome_secret = WelcomeSecret::from_joiner_secret(self.cipher_suite, &joiner_secret)?;
 
         let group_info_data = group_info.tls_serialize_detached()?;
         let encrypted_group_info = welcome_secret.encrypt(&group_info_data)?;
@@ -821,9 +824,9 @@ impl Group {
             .iter()
             .map(|i| {
                 self.encrypt_group_secrets(
-                    &provisional_state.public_tree,
+                    &next_epoch.public_tree,
                     i,
-                    &new_key_schedule.joiner_secret,
+                    &joiner_secret,
                     update_path.as_ref(),
                 )
             })
@@ -907,6 +910,7 @@ impl Group {
 
         // Update the public key in the key package
         let mut key_package = self
+            .epoch
             .public_tree
             .get_key_package(self.private_tree.self_index)?
             .clone();
@@ -924,6 +928,7 @@ impl Group {
 
     pub fn remove_proposal(&mut self, index: u32) -> Result<Proposal, GroupError> {
         if self
+            .epoch
             .public_tree
             .nodes
             .borrow_as_leaf(LeafIndex(index))
@@ -967,7 +972,7 @@ impl Group {
             _ => KeyType::Handshake,
         };
 
-        let encryption_key = self.key_schedule.get_encryption_key(key_type)?;
+        let encryption_key = self.epoch.get_encryption_key(key_type)?;
 
         // Encrypt the ciphertext content using the encryption key and a nonce that is
         // reuse safe by xor the reuse guard with the first 4 bytes
@@ -993,7 +998,7 @@ impl Group {
 
         // Encrypt the sender data with the derived sender_key and sender_nonce from the current
         // epoch's key schedule
-        let (sender_key, sender_nonce) = self.key_schedule.get_sender_data_params(&ciphertext)?;
+        let (sender_key, sender_nonce) = self.epoch.get_sender_data_params(&ciphertext)?;
 
         let encrypted_sender_data = sender_key.encrypt_to_vec(
             &sender_data.tls_serialize_detached()?,
@@ -1057,9 +1062,8 @@ impl Group {
     ) -> Result<VerifiedPlaintext, GroupError> {
         // Decrypt the sender data with the derived sender_key and sender_nonce from the current
         // epoch's key schedule
-        let (sender_key, sender_nonce) = self
-            .key_schedule
-            .get_sender_data_params(&ciphertext.ciphertext)?;
+        let (sender_key, sender_nonce) =
+            self.epoch.get_sender_data_params(&ciphertext.ciphertext)?;
 
         let sender_data_aad = MLSSenderDataAAD {
             group_id: self.context.group_id.clone(),
@@ -1081,7 +1085,7 @@ impl Group {
             _ => KeyType::Handshake,
         };
 
-        let decryption_key = self.key_schedule.get_decryption_key(
+        let decryption_key = self.epoch.get_decryption_key(
             LeafIndex(sender_data.sender),
             sender_data.generation,
             key_type,
@@ -1139,14 +1143,14 @@ impl Group {
                 .membership_tag
                 .as_ref()
                 .ok_or(GroupError::InvalidMembershipTag)?;
-            if !tag.matches(&plaintext, &self.context, &self.key_schedule)? {
+            if !tag.matches(&plaintext, &self.context, &self.epoch)? {
                 return Err(GroupError::InvalidMembershipTag);
             }
         }
 
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
-        if !plaintext.verify_signature(&self.public_tree, &self.context)? {
+        if !plaintext.verify_signature(&self.epoch.public_tree, &self.context)? {
             return Err(GroupError::InvalidSignature);
         }
 
@@ -1280,10 +1284,10 @@ impl Group {
 
         // Use the commit_secret, the psk_secret, the provisional GroupContext, and the init secret
         // from the previous epoch to compute the epoch secret and derived secrets for the new epoch
-        let new_epoch = EpochKeySchedule::evolved_from(
-            &self.key_schedule,
+        let (next_epoch, _) = Epoch::evolved_from(
+            &self.epoch,
             &commit_secret,
-            provisional_state.public_tree.leaf_count(),
+            provisional_state.public_tree,
             &provisional_group_context,
         )?;
 
@@ -1291,7 +1295,7 @@ impl Group {
         // this message, as described below, and verify that it is the same as the
         // confirmation_tag field in the MLSPlaintext object.
         let confirmation_tag = ConfirmationTag::create(
-            &new_epoch.key_schedule,
+            &next_epoch,
             &provisional_group_context.confirmed_transcript_hash,
         )?;
 
@@ -1301,14 +1305,12 @@ impl Group {
 
         // If the above checks are successful, consider the updated GroupContext object
         // as the current state of the group
-        self.public_tree = provisional_state.public_tree;
-
         if let Some(private_tree) = updated_secrets.map(|us| us.private_key) {
             self.private_tree = private_tree
         }
 
         self.context = provisional_group_context;
-        self.key_schedule = new_epoch.key_schedule;
+        self.epoch = next_epoch;
         self.interim_transcript_hash = interim_transcript_hash;
 
         // Clear the proposals list
@@ -1320,7 +1322,8 @@ impl Group {
     }
 
     pub fn current_direct_path(&self) -> Result<Vec<Option<HpkePublicKey>>, GroupError> {
-        self.public_tree
+        self.epoch
+            .public_tree
             .direct_path_keys(self.private_tree.self_index)
             .map_err(Into::into)
     }

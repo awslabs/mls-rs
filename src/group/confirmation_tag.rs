@@ -1,4 +1,4 @@
-use crate::group::epoch::EpochKeySchedule;
+use crate::group::epoch::Epoch;
 use crate::group::transcript_hash::ConfirmedTranscriptHash;
 use ferriscrypt::hmac::{HMacError, Key, Tag};
 use ferriscrypt::Signer;
@@ -24,23 +24,20 @@ impl Deref for ConfirmationTag {
 
 impl ConfirmationTag {
     pub(crate) fn create(
-        key_schedule: &EpochKeySchedule,
+        epoch: &Epoch,
         confirmed_transcript_hash: &ConfirmedTranscriptHash,
     ) -> Result<Self, ConfirmationTagError> {
-        let hmac_key = Key::new(
-            &key_schedule.confirmation_key,
-            key_schedule.cipher_suite.hash_function(),
-        )?;
+        let hmac_key = Key::new(&epoch.confirmation_key, epoch.cipher_suite.hash_function())?;
         let mac = hmac_key.sign(confirmed_transcript_hash)?;
         Ok(ConfirmationTag(mac))
     }
 
     pub(crate) fn matches(
         &self,
-        key_schedule: &EpochKeySchedule,
+        epoch: &Epoch,
         confirmed_transcript_hash: &ConfirmedTranscriptHash,
     ) -> Result<bool, ConfirmationTagError> {
-        let tag = ConfirmationTag::create(key_schedule, confirmed_transcript_hash)?;
+        let tag = ConfirmationTag::create(epoch, confirmed_transcript_hash)?;
         Ok(&tag == self)
     }
 }
@@ -49,7 +46,7 @@ impl ConfirmationTag {
 mod test {
     use super::*;
     use crate::cipher_suite::CipherSuite;
-    use crate::group::epoch::test_utils::get_test_epoch_key_schedule;
+    use crate::group::epoch::test_utils::get_test_epoch;
 
     #[test]
     fn test_confirmation_tag_matching() {
@@ -58,11 +55,11 @@ mod test {
 
             let confirmed_hash_a = ConfirmedTranscriptHash::from(b"foo_a".to_vec());
 
-            let epoch_a = get_test_epoch_key_schedule(cipher_suite, vec![], b"bar_a".to_vec());
+            let epoch_a = get_test_epoch(cipher_suite, vec![], b"bar_a".to_vec());
 
             let confirmed_hash_b = ConfirmedTranscriptHash::from(b"foo_b".to_vec());
 
-            let epoch_b = get_test_epoch_key_schedule(cipher_suite, vec![], b"bar_b".to_vec());
+            let epoch_b = get_test_epoch(cipher_suite, vec![], b"bar_b".to_vec());
 
             let confirmation_tag = ConfirmationTag::create(&epoch_a, &confirmed_hash_a).unwrap();
 

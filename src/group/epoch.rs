@@ -5,7 +5,7 @@ use crate::group::secret_tree::{
 };
 use crate::group::GroupContext;
 use crate::tree_kem::node::LeafIndex;
-use crate::tree_kem::{TreeSecrets, UpdatePathGeneration};
+use crate::tree_kem::{RatchetTree, TreeSecrets, UpdatePathGeneration};
 use ferriscrypt::cipher::aead::{AeadError, AeadNonce, Key};
 use ferriscrypt::cipher::NonceError;
 use ferriscrypt::kdf::KdfError;
@@ -16,7 +16,7 @@ use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
-pub enum EpochKeyScheduleError {
+pub enum EpochError {
     #[error(transparent)]
     KeyScheduleKdfError(#[from] KeyScheduleKdfError),
     #[error(transparent)]
@@ -34,8 +34,9 @@ pub enum EpochKeyScheduleError {
 }
 
 #[derive(Debug, Clone, TlsDeserialize, TlsSerialize, TlsSize)]
-pub(crate) struct EpochKeySchedule {
+pub(crate) struct Epoch {
     pub cipher_suite: CipherSuite,
+    pub public_tree: RatchetTree,
     pub secret_tree: SecretTree,
     pub self_index: LeafIndex,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
@@ -60,10 +61,11 @@ pub(crate) struct EpochKeySchedule {
     pub application_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
 }
 
-impl PartialEq for EpochKeySchedule {
+impl PartialEq for Epoch {
     fn eq(&self, other: &Self) -> bool {
         self.cipher_suite == other.cipher_suite
             && self.sender_data_secret == other.sender_data_secret
+            && self.public_tree == other.public_tree
             && self.exporter_secret == other.exporter_secret
             && self.authentication_secret == other.authentication_secret
             && self.external_secret == other.external_secret
@@ -74,49 +76,43 @@ impl PartialEq for EpochKeySchedule {
     }
 }
 
-pub(crate) struct EpochKeyScheduleDerivation {
-    pub key_schedule: EpochKeySchedule,
-    pub joiner_secret: Vec<u8>,
-}
-
-impl EpochKeySchedule {
+impl Epoch {
+    // Returns the derived epoch as well as the joiner secret required for building welcome
+    // messages
     pub fn derive(
         cipher_suite: CipherSuite,
         last_init: &[u8],
         commit_secret: &[u8],
-        num_leaves: u32,
+        public_tree: RatchetTree,
         context: &GroupContext,
         self_index: LeafIndex,
-    ) -> Result<EpochKeyScheduleDerivation, EpochKeyScheduleError> {
+    ) -> Result<(Epoch, Vec<u8>), EpochError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
         let joiner_secret = kdf.derive_secret(&kdf.extract(last_init, commit_secret)?, "joiner")?;
 
-        let schedule = Self::new_joiner(
+        let epoch = Self::new_joiner(
             cipher_suite,
             &joiner_secret,
-            num_leaves,
+            public_tree,
             context,
             self_index,
         )?;
 
-        Ok(EpochKeyScheduleDerivation {
-            key_schedule: schedule,
-            joiner_secret,
-        })
+        Ok((epoch, joiner_secret))
     }
 
     pub fn evolved_from(
-        epoch: &EpochKeySchedule,
+        epoch: &Epoch,
         commit_secret: &[u8],
-        num_leaves: u32,
+        public_tree: RatchetTree,
         context: &GroupContext,
-    ) -> Result<EpochKeyScheduleDerivation, EpochKeyScheduleError> {
+    ) -> Result<(Epoch, Vec<u8>), EpochError> {
         Self::derive(
             epoch.cipher_suite,
             &epoch.init_secret,
             commit_secret,
-            num_leaves,
+            public_tree,
             context,
             epoch.self_index,
         )
@@ -125,10 +121,10 @@ impl EpochKeySchedule {
     pub fn new_joiner(
         cipher_suite: CipherSuite,
         joiner_secret: &[u8],
-        num_leaves: u32,
+        public_tree: RatchetTree,
         context: &GroupContext,
         self_index: LeafIndex,
-    ) -> Result<Self, EpochKeyScheduleError> {
+    ) -> Result<Self, EpochError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
         //TODO: PSK is not supported
@@ -150,13 +146,14 @@ impl EpochKeySchedule {
         let confirmation_key = kdf.derive_secret(&epoch_secret, "confirm")?;
         let membership_key = kdf.derive_secret(&epoch_secret, "membership")?;
         let resumption_secret = kdf.derive_secret(&epoch_secret, "resumption")?;
-
         let init_secret = kdf.derive_secret(&epoch_secret, "init")?;
 
-        let secret_tree = SecretTree::new(cipher_suite, num_leaves, encryption_secret);
+        let secret_tree =
+            SecretTree::new(cipher_suite, public_tree.leaf_count(), encryption_secret);
 
         Ok(Self {
             cipher_suite,
+            public_tree,
             secret_tree,
             sender_data_secret,
             exporter_secret,
@@ -189,14 +186,14 @@ impl EpochKeySchedule {
         &mut self,
         leaf_index: LeafIndex,
         out_type: &KeyType,
-    ) -> Result<&mut SecretKeyRatchet, EpochKeyScheduleError> {
+    ) -> Result<&mut SecretKeyRatchet, EpochError> {
         let ratchets = self.secret_tree.get_leaf_secret_ratchets(leaf_index)?;
         self.application_ratchets
             .insert(leaf_index, ratchets.application);
         self.handshake_ratchets
             .insert(leaf_index, ratchets.handshake);
         self.get_ratchet(leaf_index, out_type)
-            .ok_or(EpochKeyScheduleError::KeyDerivationFailure)
+            .ok_or(EpochError::KeyDerivationFailure)
     }
 
     #[inline]
@@ -205,7 +202,7 @@ impl EpochKeySchedule {
         leaf_index: LeafIndex,
         generation: Option<u32>,
         key_type: &KeyType,
-    ) -> Result<EncryptionKey, EpochKeyScheduleError> {
+    ) -> Result<EncryptionKey, EpochError> {
         if let Some(ratchet) = self.get_ratchet(leaf_index, key_type) {
             match generation {
                 None => ratchet.next_key(),
@@ -218,10 +215,7 @@ impl EpochKeySchedule {
         }
     }
 
-    pub fn get_encryption_key(
-        &mut self,
-        key_type: KeyType,
-    ) -> Result<EncryptionKey, EpochKeyScheduleError> {
+    pub fn get_encryption_key(&mut self, key_type: KeyType) -> Result<EncryptionKey, EpochError> {
         self.get_key(self.self_index, None, &key_type)
     }
 
@@ -230,14 +224,14 @@ impl EpochKeySchedule {
         sender: LeafIndex,
         generation: u32,
         key_type: KeyType,
-    ) -> Result<EncryptionKey, EpochKeyScheduleError> {
+    ) -> Result<EncryptionKey, EpochError> {
         self.get_key(sender, Some(generation), &key_type)
     }
 
     pub fn get_sender_data_params(
         &self,
         ciphertext: &[u8],
-    ) -> Result<(Key, AeadNonce), EpochKeyScheduleError> {
+    ) -> Result<(Key, AeadNonce), EpochError> {
         let kdf = KeyScheduleKdf::new(self.cipher_suite.kdf_type());
         // Sample the first extract_size bytes of the ciphertext, and if it is shorter, just use
         // the ciphertext itself
@@ -331,7 +325,7 @@ impl WelcomeSecret {
     pub fn from_joiner_secret(
         cipher_suite: CipherSuite,
         joiner_secret: &[u8],
-    ) -> Result<WelcomeSecret, EpochKeyScheduleError> {
+    ) -> Result<WelcomeSecret, EpochError> {
         //TODO: PSK is not supported
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
         let epoch_seed = kdf.extract(joiner_secret, &[])?;
@@ -350,13 +344,13 @@ impl WelcomeSecret {
         Ok(WelcomeSecret { data, key, nonce })
     }
 
-    pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, EpochKeyScheduleError> {
+    pub fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, EpochError> {
         self.key
             .encrypt_to_vec(plaintext, None, self.nonce.clone())
             .map_err(Into::into)
     }
 
-    pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, EpochKeyScheduleError> {
+    pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, EpochError> {
         self.key
             .decrypt_from_vec(ciphertext, None, self.nonce.clone())
             .map_err(Into::into)
@@ -368,15 +362,19 @@ impl WelcomeSecret {
 #[cfg(test)]
 pub mod test_utils {
     use super::*;
-    use crate::group::secret_tree::test::get_test_tree;
+    use crate::{group::secret_tree::test::get_test_tree, tree_kem::node::NodeVec};
 
-    pub(crate) fn get_test_epoch_key_schedule(
+    pub(crate) fn get_test_epoch(
         cipher_suite: CipherSuite,
         membership_key: Vec<u8>,
         confirmation_key: Vec<u8>,
-    ) -> EpochKeySchedule {
-        EpochKeySchedule {
+    ) -> Epoch {
+        Epoch {
             cipher_suite,
+            public_tree: RatchetTree {
+                cipher_suite,
+                nodes: NodeVec::from(Vec::new()),
+            },
             secret_tree: get_test_tree(cipher_suite, vec![], 1),
             self_index: LeafIndex(0),
             sender_data_secret: vec![],

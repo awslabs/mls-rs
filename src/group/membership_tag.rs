@@ -1,5 +1,5 @@
 use crate::group::confirmation_tag::ConfirmationTag;
-use crate::group::epoch::EpochKeySchedule;
+use crate::group::epoch::Epoch;
 use crate::group::framing::MLSPlaintext;
 use crate::group::message_signature::{MLSPlaintextTBS, MessageSignature};
 use crate::group::GroupContext;
@@ -59,15 +59,12 @@ impl MembershipTag {
     pub(crate) fn create(
         plaintext: &MLSPlaintext,
         group_context: &GroupContext,
-        key_schedule: &EpochKeySchedule,
+        epoch: &Epoch,
     ) -> Result<Self, MembershipTagError> {
         let plaintext_tbm = MLSPlaintextTBM::from_plaintext(plaintext, group_context);
         let serialized_tbm = plaintext_tbm.tls_serialize_detached()?;
 
-        let hmac_key = Key::new(
-            &key_schedule.membership_key,
-            key_schedule.cipher_suite.hash_function(),
-        )?;
+        let hmac_key = Key::new(&epoch.membership_key, epoch.cipher_suite.hash_function())?;
 
         let tag = hmac_key.sign(&serialized_tbm)?;
 
@@ -78,9 +75,9 @@ impl MembershipTag {
         &self,
         plaintext: &MLSPlaintext,
         group_context: &GroupContext,
-        key_schedule: &EpochKeySchedule,
+        epoch: &Epoch,
     ) -> Result<bool, MembershipTagError> {
-        let local = MembershipTag::create(plaintext, group_context, key_schedule)?;
+        let local = MembershipTag::create(plaintext, group_context, epoch)?;
         Ok(&local == self)
     }
 }
@@ -89,7 +86,7 @@ impl MembershipTag {
 mod tests {
     use super::*;
     use crate::cipher_suite::CipherSuite;
-    use crate::group::epoch::test_utils::get_test_epoch_key_schedule;
+    use crate::group::epoch::test_utils::get_test_epoch;
     use crate::group::framing::test_utils::get_test_plaintext;
     use crate::group::test_utils::get_test_group_context;
 
@@ -101,11 +98,9 @@ mod tests {
             let plaintext_a = get_test_plaintext(b"hello".to_vec());
             let plaintext_b = get_test_plaintext(b"world".to_vec());
 
-            let epoch_a =
-                get_test_epoch_key_schedule(cipher_suite, b"membership_key_a".to_vec(), vec![]);
+            let epoch_a = get_test_epoch(cipher_suite, b"membership_key_a".to_vec(), vec![]);
 
-            let epoch_b =
-                get_test_epoch_key_schedule(cipher_suite, b"membership_key_b".to_vec(), vec![]);
+            let epoch_b = get_test_epoch(cipher_suite, b"membership_key_b".to_vec(), vec![]);
 
             let tag = MembershipTag::create(&plaintext_a, &context_a, &epoch_a).unwrap();
 

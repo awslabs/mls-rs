@@ -108,15 +108,15 @@ impl Session {
     }
 
     pub fn export_tree(&self) -> Result<Vec<u8>, SessionError> {
-        Ok(self.protocol.public_tree.tls_serialize_detached()?)
+        Ok(self.protocol.public_tree().tls_serialize_detached()?)
     }
 
     pub fn participant_count(&self) -> u32 {
-        self.protocol.public_tree.leaf_count()
+        self.protocol.public_tree().leaf_count()
     }
 
     pub fn roster(&self) -> Vec<Credential> {
-        self.protocol.public_tree.get_credentials()
+        self.protocol.public_tree().get_credentials()
     }
 
     #[inline]
@@ -288,7 +288,7 @@ impl Session {
             .map(|p| p.as_ref().unwrap_or(&vec![].into()).clone())
             .collect();
         Ok(TreeStats {
-            total_leaves: self.protocol.public_tree.leaf_count(),
+            total_leaves: self.protocol.public_tree().leaf_count(),
             current_index: self.protocol.current_user_index(),
             direct_path,
         })
