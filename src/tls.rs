@@ -20,6 +20,7 @@ mod optional;
 mod secret_key;
 #[cfg(test)]
 mod test_util;
+mod vec_deque;
 mod vector;
 
 pub use boolean::Boolean;
@@ -29,6 +30,7 @@ pub use default::DefaultSer;
 pub use map::{DefMap, Map};
 pub use optional::Optional;
 pub use secret_key::SecretKeySer;
+pub use vec_deque::{DefVecDeque, VectorDeque};
 pub use vector::{DefVec, Vector};
 
 /// Helper trait to derive [`tls_codec::Size`] when foreign types not implementing `Size` are

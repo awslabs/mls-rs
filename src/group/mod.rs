@@ -35,8 +35,11 @@ use proposal::*;
 use secret_tree::*;
 use transcript_hash::*;
 
+use self::epoch_repo::{EpochRepository, EpochRepositoryError};
+
 mod confirmation_tag;
 mod epoch;
+mod epoch_repo;
 pub mod framing;
 pub mod key_schedule;
 mod membership_tag;
@@ -133,6 +136,8 @@ pub enum GroupError {
     AeadError(#[from] AeadError),
     #[error(transparent)]
     LeafSecretError(#[from] LeafSecretError),
+    #[error(transparent)]
+    EpochRepositoryError(#[from] EpochRepositoryError),
     #[error("Cipher suite does not match")]
     CipherSuiteMismatch,
     #[error("Invalid key package signature")]
@@ -297,7 +302,7 @@ pub struct Group {
     pub cipher_suite: CipherSuite,
     context: GroupContext,
     private_tree: TreeKemPrivate,
-    epoch: Epoch, //TODO: Need to support out of order packets by holding a few old epoch values too
+    epoch_repo: EpochRepository,
     interim_transcript_hash: InterimTranscriptHash,
     #[tls_codec(with = "crate::tls::Map::<crate::tls::ByteVec, crate::tls::DefaultSer>")]
     pub proposals: HashMap<Vec<u8>, PendingProposal>, // Hash of MLS Plaintext to pending proposal
@@ -309,7 +314,7 @@ impl PartialEq for Group {
     fn eq(&self, other: &Self) -> bool {
         self.cipher_suite == other.cipher_suite
             && self.context == other.context
-            && self.epoch == other.epoch
+            && self.epoch_repo.current().ok() == other.epoch_repo.current().ok()
             && self.interim_transcript_hash == other.interim_transcript_hash
             && self.proposals == other.proposals
     }
@@ -382,11 +387,14 @@ impl Group {
             LeafIndex(0),
         )?;
 
+        // TODO: Make the repository bounds configurable somehow
+        let epoch_repo = EpochRepository::new(epoch, 3);
+
         Ok(Self {
             cipher_suite,
             private_tree,
             context,
-            epoch,
+            epoch_repo,
             interim_transcript_hash: InterimTranscriptHash::from(vec![]),
             proposals: Default::default(),
             pending_updates: Default::default(),
@@ -504,19 +512,25 @@ impl Group {
             &group_info.confirmation_tag,
         )?;
 
+        // TODO: Make the repository bounds configurable somehow
+        let epoch_repo = EpochRepository::new(epoch, 3);
+
         Ok(Group {
             cipher_suite: welcome.cipher_suite,
             context,
             private_tree,
-            epoch,
+            epoch_repo,
             interim_transcript_hash,
             proposals: Default::default(),
             pending_updates: Default::default(),
         })
     }
 
-    pub fn public_tree(&self) -> &RatchetTree {
-        &self.epoch.public_tree
+    pub fn public_tree(&self) -> Result<&RatchetTree, GroupError> {
+        self.epoch_repo
+            .current()
+            .map(|t| &t.public_tree)
+            .map_err(Into::into)
     }
 
     pub fn current_user_index(&self) -> u32 {
@@ -551,7 +565,7 @@ impl Group {
     ) -> Result<ProvisionalState, GroupError> {
         let proposals = self.fetch_proposals(proposals, sender)?;
 
-        let mut provisional_tree = self.epoch.public_tree.clone();
+        let mut provisional_tree = self.epoch_repo.current()?.public_tree.clone();
         let mut provisional_private_tree = self.private_tree.clone();
 
         //TODO: This has to loop through the proposal array 3 times, maybe this should be optimized
@@ -635,7 +649,8 @@ impl Group {
         if !for_ciphertext {
             // If we are going to encrypt then the tag will be dropped so it shouldn't be included
             // in the hash
-            let membership_tag = MembershipTag::create(&plaintext, &self.context, &self.epoch)?;
+            let membership_tag =
+                MembershipTag::create(&plaintext, &self.context, self.epoch_repo.current()?)?;
             plaintext.membership_tag = Some(membership_tag);
         };
 
@@ -773,8 +788,10 @@ impl Group {
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
 
+        let current_epoch = self.epoch_repo.current()?;
+
         let (next_epoch, joiner_secret) = Epoch::evolved_from(
-            &self.epoch,
+            current_epoch,
             &commit_secret,
             provisional_state.public_tree,
             &provisional_group_context,
@@ -791,7 +808,7 @@ impl Group {
            if the goal is to send a ciphertext
         */
         // Create the membership tag using the current group context and key schedule
-        let membership_tag = MembershipTag::create(&plaintext, &self.context, &self.epoch)?;
+        let membership_tag = MembershipTag::create(&plaintext, &self.context, current_epoch)?;
 
         plaintext.membership_tag = Some(membership_tag);
 
@@ -910,7 +927,8 @@ impl Group {
 
         // Update the public key in the key package
         let mut key_package = self
-            .epoch
+            .epoch_repo
+            .current()?
             .public_tree
             .get_key_package(self.private_tree.self_index)?
             .clone();
@@ -928,7 +946,8 @@ impl Group {
 
     pub fn remove_proposal(&mut self, index: u32) -> Result<Proposal, GroupError> {
         if self
-            .epoch
+            .epoch_repo
+            .current()?
             .public_tree
             .nodes
             .borrow_as_leaf(LeafIndex(index))
@@ -972,7 +991,9 @@ impl Group {
             _ => KeyType::Handshake,
         };
 
-        let encryption_key = self.epoch.get_encryption_key(key_type)?;
+        let current_epoch = self.epoch_repo.current_mut()?;
+
+        let encryption_key = current_epoch.get_encryption_key(key_type)?;
 
         // Encrypt the ciphertext content using the encryption key and a nonce that is
         // reuse safe by xor the reuse guard with the first 4 bytes
@@ -998,7 +1019,7 @@ impl Group {
 
         // Encrypt the sender data with the derived sender_key and sender_nonce from the current
         // epoch's key schedule
-        let (sender_key, sender_nonce) = self.epoch.get_sender_data_params(&ciphertext)?;
+        let (sender_key, sender_nonce) = current_epoch.get_sender_data_params(&ciphertext)?;
 
         let encrypted_sender_data = sender_key.encrypt_to_vec(
             &sender_data.tls_serialize_detached()?,
@@ -1060,10 +1081,14 @@ impl Group {
         &mut self,
         ciphertext: MLSCiphertext,
     ) -> Result<VerifiedPlaintext, GroupError> {
+        // Get the epoch associated with this ciphertext
+
+        let msg_epoch = self.epoch_repo.get_mut(ciphertext.epoch)?;
+
         // Decrypt the sender data with the derived sender_key and sender_nonce from the current
         // epoch's key schedule
         let (sender_key, sender_nonce) =
-            self.epoch.get_sender_data_params(&ciphertext.ciphertext)?;
+            msg_epoch.get_sender_data_params(&ciphertext.ciphertext)?;
 
         let sender_data_aad = MLSSenderDataAAD {
             group_id: self.context.group_id.clone(),
@@ -1085,7 +1110,7 @@ impl Group {
             _ => KeyType::Handshake,
         };
 
-        let decryption_key = self.epoch.get_decryption_key(
+        let decryption_key = msg_epoch.get_decryption_key(
             LeafIndex(sender_data.sender),
             sender_data.generation,
             key_type,
@@ -1123,39 +1148,11 @@ impl Group {
             membership_tag: None, // Membership tag is always None for ciphertext messages
         };
 
-        self.verify_plaintext_internal(plaintext, false)
-    }
-
-    fn verify_plaintext_internal(
-        &self,
-        plaintext: MLSPlaintext,
-        verify_membership_tag: bool,
-    ) -> Result<VerifiedPlaintext, GroupError> {
-        // Verify that the epoch field of the enclosing MLSPlaintext message is equal
-        // to the epoch field of the current GroupContext object
-        if plaintext.epoch != self.context.epoch {
-            return Err(GroupError::InvalidPlaintextEpoch);
-        }
-
-        // Verify that the membership tag is correct
-        if verify_membership_tag {
-            let tag = plaintext
-                .membership_tag
-                .as_ref()
-                .ok_or(GroupError::InvalidMembershipTag)?;
-            if !tag.matches(&plaintext, &self.context, &self.epoch)? {
-                return Err(GroupError::InvalidMembershipTag);
-            }
-        }
-
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
-        if !plaintext.verify_signature(&self.epoch.public_tree, &self.context)? {
+        if !plaintext.verify_signature(&msg_epoch.public_tree, &self.context)? {
             return Err(GroupError::InvalidSignature);
         }
-
-        //TODO: PSK Verify that all PSKs specified in any PreSharedKey proposals in the proposals
-        // vector are available.
 
         Ok(VerifiedPlaintext(plaintext))
     }
@@ -1164,13 +1161,35 @@ impl Group {
         &self,
         plaintext: MLSPlaintext,
     ) -> Result<VerifiedPlaintext, GroupError> {
-        self.verify_plaintext_internal(plaintext, false)
+        let msg_epoch = self.epoch_repo.get(plaintext.epoch)?;
+
+        let tag = plaintext
+            .membership_tag
+            .as_ref()
+            .ok_or(GroupError::InvalidMembershipTag)?;
+        if !tag.matches(&plaintext, &self.context, msg_epoch)? {
+            return Err(GroupError::InvalidMembershipTag);
+        }
+
+        //Verify that the signature on the MLSPlaintext message verifies using the public key
+        // from the credential stored at the leaf in the tree indicated by the sender field.
+        if !plaintext.verify_signature(&msg_epoch.public_tree, &self.context)? {
+            return Err(GroupError::InvalidSignature);
+        }
+
+        Ok(VerifiedPlaintext(plaintext))
     }
 
     pub fn handle_handshake(
         &mut self,
         plaintext: VerifiedPlaintext,
     ) -> Result<Option<StateUpdate>, GroupError> {
+        // Verify that the epoch field of the enclosing MLSPlaintext message is equal
+        // to the epoch field of the current GroupContext object
+        if plaintext.epoch != self.context.epoch {
+            return Err(GroupError::InvalidPlaintextEpoch);
+        }
+
         // Process the contents of the packet
         match &plaintext.content {
             Content::Application(_) => Err(GroupError::UnexpectedApplicationData),
@@ -1207,6 +1226,9 @@ impl Group {
         plaintext: VerifiedPlaintext,
         local_pending: Option<UpdatePathGeneration>,
     ) -> Result<StateUpdate, GroupError> {
+        //TODO: PSK Verify that all PSKs specified in any PreSharedKey proposals in the proposals
+        // vector are available.
+
         let commit_content = MLSPlaintextCommitContent::try_from(&plaintext.0)?;
         let auth_data = MLSPlaintextCommitAuthData::try_from(&plaintext.0)?;
         let sender = LeafIndex(plaintext.sender.sender);
@@ -1285,7 +1307,7 @@ impl Group {
         // Use the commit_secret, the psk_secret, the provisional GroupContext, and the init secret
         // from the previous epoch to compute the epoch secret and derived secrets for the new epoch
         let (next_epoch, _) = Epoch::evolved_from(
-            &self.epoch,
+            self.epoch_repo.current()?,
             &commit_secret,
             provisional_state.public_tree,
             &provisional_group_context,
@@ -1310,7 +1332,8 @@ impl Group {
         }
 
         self.context = provisional_group_context;
-        self.epoch = next_epoch;
+        self.epoch_repo.add(next_epoch);
+
         self.interim_transcript_hash = interim_transcript_hash;
 
         // Clear the proposals list
@@ -1322,7 +1345,8 @@ impl Group {
     }
 
     pub fn current_direct_path(&self) -> Result<Vec<Option<HpkePublicKey>>, GroupError> {
-        self.epoch
+        self.epoch_repo
+            .current()?
             .public_tree
             .direct_path_keys(self.private_tree.self_index)
             .map_err(Into::into)

@@ -35,6 +35,7 @@ pub enum EpochError {
 
 #[derive(Debug, Clone, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct Epoch {
+    pub identifier: u64,
     pub cipher_suite: CipherSuite,
     pub public_tree: RatchetTree,
     pub secret_tree: SecretTree,
@@ -64,6 +65,7 @@ pub(crate) struct Epoch {
 impl PartialEq for Epoch {
     fn eq(&self, other: &Self) -> bool {
         self.cipher_suite == other.cipher_suite
+            && self.identifier == other.identifier
             && self.sender_data_secret == other.sender_data_secret
             && self.public_tree == other.public_tree
             && self.exporter_secret == other.exporter_secret
@@ -152,6 +154,7 @@ impl Epoch {
             SecretTree::new(cipher_suite, public_tree.leaf_count(), encryption_secret);
 
         Ok(Self {
+            identifier: context.epoch,
             cipher_suite,
             public_tree,
             secret_tree,
@@ -370,6 +373,7 @@ pub mod test_utils {
         confirmation_key: Vec<u8>,
     ) -> Epoch {
         Epoch {
+            identifier: 1,
             cipher_suite,
             public_tree: RatchetTree {
                 cipher_suite,
