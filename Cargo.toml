@@ -10,8 +10,8 @@ benchmark = []
 [dependencies]
 thiserror = "^1"
 ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", tag = "0.15.0" }
-tls_codec = { git = "https://github.com/stephaneyfx/formats.git", branch = "wip" }
-tls_codec_derive = { git = "https://github.com/stephaneyfx/formats.git", branch = "wip" }
+tls_codec = "0.2.0-pre.3"
+tls_codec_derive = "0.2.0-pre.3"
 
 [dev-dependencies]
 criterion = { version = "0.3.5", features = ["html_reports"] }
