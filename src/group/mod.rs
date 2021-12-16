@@ -340,6 +340,7 @@ impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitContent {
                 group_id: value.group_id.clone(),
                 epoch: value.epoch,
                 sender: value.sender.clone(),
+                authenticated_data: value.authenticated_data.clone(),
                 content_type: ContentType::Commit,
                 commit: c.clone(),
                 signature: value.signature.clone(),
@@ -350,16 +351,10 @@ impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitContent {
     }
 }
 
-impl<'a> TryFrom<&'a MLSPlaintext> for MLSPlaintextCommitAuthData<'a> {
-    type Error = GroupError;
-
-    fn try_from(plaintext: &'a MLSPlaintext) -> Result<Self, Self::Error> {
-        let confirmation_tag = plaintext
-            .confirmation_tag
-            .as_ref()
-            .ok_or(GroupError::InvalidConfirmationTag)?;
-
-        Ok(MLSPlaintextCommitAuthData { confirmation_tag })
+impl<'a> From<&'a MLSPlaintext> for MLSPlaintextCommitAuthData<'a> {
+    fn from(plaintext: &'a MLSPlaintext) -> Self {
+        let confirmation_tag = plaintext.confirmation_tag.as_ref();
+        MLSPlaintextCommitAuthData { confirmation_tag }
     }
 }
 
@@ -509,7 +504,7 @@ impl Group {
         let interim_transcript_hash = InterimTranscriptHash::create(
             welcome.cipher_suite,
             &group_info.confirmed_transcript_hash,
-            &group_info.confirmation_tag,
+            Some(&group_info.confirmation_tag),
         )?;
 
         // TODO: Make the repository bounds configurable somehow
@@ -1230,7 +1225,6 @@ impl Group {
         // vector are available.
 
         let commit_content = MLSPlaintextCommitContent::try_from(&plaintext.0)?;
-        let auth_data = MLSPlaintextCommitAuthData::try_from(&plaintext.0)?;
         let sender = LeafIndex(plaintext.sender.sender);
 
         //Generate a provisional GroupContext object by applying the proposals referenced in the
@@ -1294,7 +1288,7 @@ impl Group {
         let interim_transcript_hash = InterimTranscriptHash::create(
             self.cipher_suite,
             &confirmed_transcript_hash,
-            auth_data.confirmation_tag,
+            plaintext.confirmation_tag.as_ref(),
         )?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
@@ -1321,7 +1315,7 @@ impl Group {
             &provisional_group_context.confirmed_transcript_hash,
         )?;
 
-        if &confirmation_tag != auth_data.confirmation_tag {
+        if Some(confirmation_tag) != plaintext.confirmation_tag {
             return Err(GroupError::InvalidConfirmationTag);
         }
 

@@ -70,7 +70,7 @@ impl InterimTranscriptHash {
     pub fn create(
         cipher_suite: CipherSuite,
         confirmed: &ConfirmedTranscriptHash,
-        confirmation_tag: &ConfirmationTag,
+        confirmation_tag: Option<&ConfirmationTag>,
     ) -> Result<Self, TranscriptHashError> {
         let auth_data = MLSPlaintextCommitAuthData { confirmation_tag };
 

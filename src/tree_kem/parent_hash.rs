@@ -33,7 +33,7 @@ struct ParentHashInput<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct ParentHash(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>);
+pub struct ParentHash(#[tls_codec(with = "crate::tls::ByteVec::<u8>")] Vec<u8>);
 
 impl From<Vec<u8>> for ParentHash {
     fn from(v: Vec<u8>) -> Self {
