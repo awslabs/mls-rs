@@ -1,4 +1,4 @@
-use crate::tls::{DefaultSer, Deserializer, Serializer, Sizer};
+use crate::tls::{DefaultSer, Deserializer, ReadWithCount, Serializer, Sizer};
 use std::{
     convert::{TryFrom, TryInto},
     io::{Read, Write},
@@ -29,11 +29,14 @@ where
         S: Sizer<T> + Serializer<T>,
         W: Write,
     {
-        let len = Self::tls_serialized_len(v) - size_of::<I>();
+        let mut buffer = Vec::new();
+        let len = v.iter().try_fold(0, |acc, x| {
+            Ok::<_, tls_codec::Error>(acc + S::serialize(x, &mut buffer)?)
+        })?;
         let len = I::try_from(len).map_err(|_| tls_codec::Error::InvalidVectorLength)?;
-        v.iter().try_fold(len.tls_serialize(writer)?, |acc, x| {
-            Ok(acc + S::serialize(x, writer)?)
-        })
+        let written = len.tls_serialize(writer)?;
+        writer.write_all(&buffer)?;
+        Ok(written + buffer.len())
     }
 
     pub fn tls_deserialize<T, R>(reader: &mut R) -> Result<Vec<T>, tls_codec::Error>
@@ -45,12 +48,10 @@ where
         let len: usize = len
             .try_into()
             .map_err(|_| tls_codec::Error::InvalidVectorLength)?;
-        let mut read_len = 0;
-        let mut items = Vec::with_capacity(len);
-        while read_len < len {
-            let item = S::deserialize(reader)?;
-            read_len += S::serialized_len(&item);
-            items.push(item);
+        let reader = &mut ReadWithCount::new(reader);
+        let mut items = Vec::new();
+        while reader.bytes_read() < len {
+            items.push(S::deserialize(reader)?);
         }
         Ok(items)
     }

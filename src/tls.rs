@@ -17,6 +17,7 @@ mod certificate_chain;
 mod default;
 mod map;
 mod optional;
+mod read_with_count;
 mod secret_key;
 #[cfg(test)]
 mod test_util;
@@ -29,6 +30,7 @@ pub use certificate_chain::CertificateChainSer;
 pub use default::DefaultSer;
 pub use map::{DefMap, Map};
 pub use optional::Optional;
+use read_with_count::ReadWithCount;
 pub use secret_key::SecretKeySer;
 pub use vec_deque::{DefVecDeque, VectorDeque};
 pub use vector::{DefVec, Vector};
