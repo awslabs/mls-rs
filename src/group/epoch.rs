@@ -91,7 +91,14 @@ impl Epoch {
     ) -> Result<(Epoch, Vec<u8>), EpochError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
-        let joiner_secret = kdf.derive_secret(&kdf.extract(last_init, commit_secret)?, "joiner")?;
+        let joiner_seed = kdf.extract(last_init, commit_secret)?;
+
+        let joiner_secret = kdf.expand_with_label(
+            &joiner_seed,
+            "joiner",
+            &context.tls_serialize_detached()?,
+            kdf.extract_size(),
+        )?;
 
         let epoch = Self::new_joiner(
             cipher_suite,
