@@ -12,7 +12,6 @@ pub enum ProposalType {
     //TODO: Psk,
     //TODO: ReInit,
     //TODO: ExternalInit,
-    //TODO: AppAck
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -41,7 +40,6 @@ pub enum Proposal {
     //TODO: Psk,
     //TODO: ReInit,
     //TODO: ExternalInit,
-    //TODO: AppAck
 }
 
 impl Proposal {
