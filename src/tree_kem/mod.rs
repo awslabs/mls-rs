@@ -429,8 +429,8 @@ impl RatchetTree {
                     .hpke()
                     .seal_base(
                         copath_node.public_key(),
-                        &[],
-                        Some(context),
+                        context,
+                        None,
                         &path_secret.path_secret,
                     )
                     .map(HpkeCiphertext::from)
@@ -560,7 +560,7 @@ impl RatchetTree {
                 // Decrypt the path secret
                 self.cipher_suite
                     .hpke()
-                    .open_base(&HPKECiphertext::from(ct.clone()), sk, &[], Some(context))
+                    .open_base(&HPKECiphertext::from(ct.clone()), sk, context, None)
                     .map_err(Into::into)
             })
     }
