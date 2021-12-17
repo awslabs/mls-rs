@@ -9,7 +9,7 @@ benchmark = []
 
 [dependencies]
 thiserror = "^1"
-ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", tag = "0.15.0" }
+ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", tag = "0.15.1" }
 tls_codec = "0.2.0-pre.3"
 tls_codec_derive = "0.2.0-pre.3"
 
