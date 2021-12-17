@@ -254,7 +254,7 @@ impl GroupInfo {
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct CommitGeneration {
-    pub plaintext: MLSPlaintext,
+    pub plaintext: OutboundPlaintext,
     pub secrets: Option<UpdatePathGeneration>,
 }
 
@@ -318,7 +318,7 @@ impl PartialEq for Group {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VerifiedPlaintext(MLSPlaintext);
 
 impl Deref for VerifiedPlaintext {
@@ -326,6 +326,29 @@ impl Deref for VerifiedPlaintext {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, TlsSerialize, TlsDeserialize, TlsSize)]
+pub struct OutboundPlaintext(MLSPlaintext);
+
+impl Deref for OutboundPlaintext {
+    type Target = MLSPlaintext;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<OutboundPlaintext> for MLSPlaintext {
+    fn from(outbound: OutboundPlaintext) -> Self {
+        outbound.0
+    }
+}
+
+impl From<OutboundPlaintext> for VerifiedPlaintext {
+    fn from(outbound: OutboundPlaintext) -> Self {
+        VerifiedPlaintext(outbound.0)
     }
 }
 
@@ -608,7 +631,7 @@ impl Group {
         proposal: Proposal,
         signer: &SecretKey,
         for_ciphertext: bool,
-    ) -> Result<MLSPlaintext, GroupError> {
+    ) -> Result<OutboundPlaintext, GroupError> {
         let mut plaintext =
             self.construct_mls_plaintext(Content::Proposal(proposal.clone()), signer)?;
 
@@ -633,7 +656,7 @@ impl Group {
 
         self.proposals.insert(hash, pending_proposal);
 
-        Ok(plaintext)
+        Ok(OutboundPlaintext(plaintext))
     }
 
     fn construct_mls_plaintext(
@@ -824,7 +847,7 @@ impl Group {
         };
 
         let pending_commit = CommitGeneration {
-            plaintext,
+            plaintext: OutboundPlaintext(plaintext),
             secrets: update_path,
         };
 
@@ -1181,7 +1204,7 @@ impl Group {
         &mut self,
         commit: CommitGeneration,
     ) -> Result<StateUpdate, GroupError> {
-        self.process_commit(VerifiedPlaintext(commit.plaintext), commit.secrets)
+        self.process_commit(commit.plaintext.into(), commit.secrets)
     }
 
     // This function takes a provisional copy of the tree and returns an updated tree and epoch key schedule
@@ -1193,7 +1216,7 @@ impl Group {
         //TODO: PSK Verify that all PSKs specified in any PreSharedKey proposals in the proposals
         // vector are available.
 
-        let commit_content = MLSPlaintextCommitContent::try_from(&plaintext.0)?;
+        let commit_content = MLSPlaintextCommitContent::try_from(plaintext.deref())?;
         let sender = LeafIndex(plaintext.sender.sender);
 
         //Generate a provisional GroupContext object by applying the proposals referenced in the
@@ -1257,7 +1280,7 @@ impl Group {
         let interim_transcript_hash = InterimTranscriptHash::create(
             self.cipher_suite,
             &confirmed_transcript_hash,
-            MLSPlaintextCommitAuthData::from(&plaintext.0),
+            MLSPlaintextCommitAuthData::from(plaintext.deref()),
         )?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;

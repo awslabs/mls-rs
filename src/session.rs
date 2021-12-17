@@ -1,5 +1,6 @@
 use crate::credential::Credential;
 use crate::group::framing::{Content, MLSCiphertext, MLSPlaintext};
+use crate::group::OutboundPlaintext;
 use crate::group::{proposal::Proposal, CommitGeneration, Group, GroupError, StateUpdate};
 use crate::key_package::{KeyPackage, KeyPackageGeneration};
 use ferriscrypt::asym::ec_key::SecretKey;
@@ -160,11 +161,11 @@ impl Session {
     }
 
     #[inline(always)]
-    fn serialize_control(&mut self, plaintext: MLSPlaintext) -> Result<Vec<u8>, SessionError> {
+    fn serialize_control(&mut self, plaintext: OutboundPlaintext) -> Result<Vec<u8>, SessionError> {
         if !self.opts.encrypt_controls {
             Ok(plaintext.tls_serialize_detached()?)
         } else {
-            let ciphertext = self.protocol.encrypt_plaintext(plaintext)?;
+            let ciphertext = self.protocol.encrypt_plaintext(plaintext.into())?;
             Ok(ciphertext.tls_serialize_detached()?)
         }
     }
