@@ -16,7 +16,6 @@ use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
 use crate::credential::Credential;
 use crate::extension::{ExtensionError, ParentHashExt};
 use crate::group::key_schedule::KeyScheduleKdfError;
-use crate::group::GroupSecrets;
 use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration};
 use crate::tree_kem::leaf_secret::{LeafSecret, LeafSecretError};
 use crate::tree_kem::node_secrets::NodeSecretGeneratorError;
@@ -27,7 +26,10 @@ pub(crate) mod math;
 pub mod node;
 mod node_secrets;
 pub mod parent_hash;
+mod private;
 mod tree_hash;
+
+pub use self::private::TreeKemPrivate;
 
 #[derive(Error, Debug)]
 pub enum RatchetTreeError {
@@ -55,6 +57,7 @@ pub enum RatchetTreeError {
     NodeSecretGeneratorError(#[from] NodeSecretGeneratorError),
     #[error("invalid update path signature")]
     InvalidUpdatePathSignature,
+    // TODO: This should probably tell you the expected key vs actual key
     #[error("update path pub key mismatch")]
     PubKeyMismatch,
     #[error("invalid leaf signature")]
@@ -79,117 +82,6 @@ pub enum RatchetTreeError {
 pub struct RatchetTree {
     pub cipher_suite: CipherSuite,
     pub(crate) nodes: NodeVec,
-}
-
-#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct TreeKemPrivate {
-    pub self_index: LeafIndex,
-    #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::ByteVec::<u32>>")]
-    pub secret_keys: HashMap<NodeIndex, HpkeSecretKey>,
-}
-
-impl From<KeyPackageGeneration> for TreeKemPrivate {
-    fn from(kg: KeyPackageGeneration) -> Self {
-        Self::from(kg.secret_key)
-    }
-}
-
-impl TreeKemPrivate {
-    pub fn new_self_leaf(self_index: LeafIndex, leaf_secret: HpkeSecretKey) -> Self {
-        let mut private_key = TreeKemPrivate {
-            self_index,
-            secret_keys: Default::default(),
-        };
-        private_key
-            .secret_keys
-            .insert(NodeIndex::from(self_index), leaf_secret);
-        private_key
-    }
-
-    pub fn new_from_secret(
-        cipher_suite: CipherSuite,
-        self_index: LeafIndex,
-        leaf_secret: HpkeSecretKey,
-        sender_index: LeafIndex,
-        leaf_count: u32,
-        group_secrets: &GroupSecrets,
-    ) -> Result<Self, RatchetTreeError> {
-        // Update the leaf at index index with the private key corresponding to the public key
-        // in the node.
-        let mut private_key = TreeKemPrivate::new_self_leaf(self_index, leaf_secret);
-
-        if let Some(path_secret) = &group_secrets.path_secret {
-            // If the path_secret value is set in the GroupSecrets object: Identify the lowest common
-            // ancestor of the leaves at index and at GroupInfo.signer_index. Set the private key
-            // for this node to the private key derived from the path_secret.
-            let lca = tree_math::common_ancestor_direct(sender_index.into(), self_index.into());
-
-            let path_gen = NodeSecretGenerator::new_from_path_secret(
-                cipher_suite,
-                path_secret.path_secret.clone(),
-            );
-
-            // For each parent of the common ancestor, up to the root of the tree, derive a new
-            // path secret and set the private key for the node to the private key derived from the
-            // path secret. The private key MUST be the private key that corresponds to the public
-            // key in the node.
-            self_index
-                .direct_path(leaf_count)?
-                .iter()
-                .skip_while(|&&i| i != lca)
-                .zip(path_gen)
-                .try_for_each(|(&index, secrets)| {
-                    private_key.secret_keys.insert(index, secrets?.secret_key);
-                    Ok::<_, RatchetTreeError>(())
-                })?;
-        }
-
-        Ok(private_key)
-    }
-
-    pub fn update_leaf(
-        &mut self,
-        num_leaves: u32,
-        new_leaf: HpkeSecretKey,
-    ) -> Result<(), RatchetTreeError> {
-        self.secret_keys
-            .insert(NodeIndex::from(self.self_index), new_leaf);
-
-        self.self_index
-            .direct_path(num_leaves)?
-            .iter()
-            .for_each(|i| {
-                self.secret_keys.remove(i);
-            });
-
-        Ok(())
-    }
-
-    pub fn remove_leaf(
-        &mut self,
-        num_leaves: u32,
-        index: LeafIndex,
-    ) -> Result<(), RatchetTreeError> {
-        self.secret_keys.remove(&NodeIndex::from(index));
-
-        index.direct_path(num_leaves)?.iter().for_each(|i| {
-            self.secret_keys.remove(i);
-        });
-
-        Ok(())
-    }
-}
-
-impl From<HpkeSecretKey> for TreeKemPrivate {
-    fn from(secret_key: HpkeSecretKey) -> Self {
-        let mut secret_keys = HashMap::new();
-        secret_keys.insert(0, secret_key);
-
-        TreeKemPrivate {
-            self_index: LeafIndex(0),
-            secret_keys,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -767,7 +659,7 @@ pub(crate) mod test {
             cipher_suite,
             credential: &credential,
             extensions: ExtensionList::from(extensions),
-            signing_key: &sig_key,
+            signing_key: sig_key,
         };
 
         key_package_gen.generate().unwrap()
@@ -1137,7 +1029,7 @@ pub(crate) mod test {
             SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
         let test_key_package =
             get_test_key_package_sig_key(cipher_suite, b"foo".to_vec(), &signing_key);
-        let (mut tree, mut private_key) = RatchetTree::derive(test_key_package.clone()).unwrap();
+        let (mut tree, mut private_key) = RatchetTree::derive(test_key_package).unwrap();
 
         tree.add_nodes(get_test_key_packages(cipher_suite)).unwrap();
 

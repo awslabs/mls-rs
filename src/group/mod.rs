@@ -464,15 +464,17 @@ impl Group {
         // object.
         let context = GroupContext::from(&group_info);
 
-        // TODO: Verify the tree by making sure the private keys match the expected public ones
-        let private_tree = TreeKemPrivate::new_from_secret(
-            welcome.cipher_suite,
-            self_index,
-            key_package.secret_key,
-            LeafIndex(group_info.signer_index),
-            public_tree.leaf_count(),
-            &group_secrets,
-        )?;
+        let mut private_tree = TreeKemPrivate::new_self_leaf(self_index, key_package.secret_key);
+
+        // If the path_secret value is set in the GroupSecrets object
+        if let Some(path_secret) = group_secrets.path_secret {
+            private_tree.update_secrets(
+                welcome.cipher_suite,
+                LeafIndex(group_info.signer_index),
+                path_secret.path_secret,
+                &public_tree,
+            )?;
+        }
 
         // Use the joiner_secret from the GroupSecrets object to generate the epoch secret and
         // other derived secrets for the current epoch.
