@@ -59,24 +59,6 @@ pub struct MLSPlaintext {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub(crate) struct MLSPlaintextCommitContent {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub group_id: Vec<u8>,
-    pub epoch: u64,
-    pub sender: Sender,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub authenticated_data: Vec<u8>,
-    pub content_type: ContentType,
-    pub commit: Commit,
-    pub signature: MessageSignature,
-}
-
-#[derive(Clone, Debug, PartialEq, TlsSerialize, TlsSize)]
-pub(crate) struct MLSPlaintextCommitAuthData<'a> {
-    pub confirmation_tag: Option<&'a ConfirmationTag>,
-}
-
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSCiphertextContent {
     pub content: Content,
     pub signature: MessageSignature,

@@ -168,8 +168,6 @@ pub enum GroupError {
     UnexpectedApplicationData,
     #[error("decrypt_application_message passed non-application data")]
     UnexpectedHandshakeMessage,
-    #[error("expected commit, found: {0:?}")]
-    NotCommitContent(ContentType),
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -331,33 +329,6 @@ impl Deref for VerifiedPlaintext {
     }
 }
 
-impl TryFrom<&MLSPlaintext> for MLSPlaintextCommitContent {
-    type Error = GroupError;
-
-    fn try_from(value: &MLSPlaintext) -> Result<Self, Self::Error> {
-        match &value.content {
-            Content::Commit(c) => Ok(MLSPlaintextCommitContent {
-                group_id: value.group_id.clone(),
-                epoch: value.epoch,
-                sender: value.sender.clone(),
-                authenticated_data: value.authenticated_data.clone(),
-                content_type: ContentType::Commit,
-                commit: c.clone(),
-                signature: value.signature.clone(),
-            }),
-            Content::Proposal(_) => Err(GroupError::NotCommitContent(ContentType::Proposal)),
-            Content::Application(_) => Err(GroupError::NotCommitContent(ContentType::Application)),
-        }
-    }
-}
-
-impl<'a> From<&'a MLSPlaintext> for MLSPlaintextCommitAuthData<'a> {
-    fn from(plaintext: &'a MLSPlaintext) -> Self {
-        let confirmation_tag = plaintext.confirmation_tag.as_ref();
-        MLSPlaintextCommitAuthData { confirmation_tag }
-    }
-}
-
 impl Group {
     pub fn new(
         group_id: Vec<u8>,
@@ -504,7 +475,7 @@ impl Group {
         let interim_transcript_hash = InterimTranscriptHash::create(
             welcome.cipher_suite,
             &group_info.confirmed_transcript_hash,
-            Some(&group_info.confirmation_tag),
+            MLSPlaintextCommitAuthData::from(&group_info.confirmation_tag),
         )?;
 
         // TODO: Make the repository bounds configurable somehow
@@ -773,12 +744,10 @@ impl Group {
 
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
         // compute the confirmation_tag value in the MLSPlaintext.
-        let plaintext_data = MLSPlaintextCommitContent::try_from(&plaintext)?;
-
         let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
             self.cipher_suite,
             &self.interim_transcript_hash,
-            &plaintext_data,
+            MLSPlaintextCommitContent::try_from(&plaintext)?,
         )?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
@@ -1282,13 +1251,13 @@ impl Group {
         let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
             self.cipher_suite,
             &self.interim_transcript_hash,
-            &commit_content,
+            commit_content,
         )?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
             self.cipher_suite,
             &confirmed_transcript_hash,
-            plaintext.confirmation_tag.as_ref(),
+            MLSPlaintextCommitAuthData::from(&plaintext.0),
         )?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
