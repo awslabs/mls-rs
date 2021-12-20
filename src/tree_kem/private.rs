@@ -15,27 +15,23 @@ impl From<KeyPackageGeneration> for TreeKemPrivate {
 
 impl TreeKemPrivate {
     pub fn new_self_leaf(self_index: LeafIndex, leaf_secret: HpkeSecretKey) -> Self {
-        let mut private_key = TreeKemPrivate {
+        TreeKemPrivate {
             self_index,
-            secret_keys: Default::default(),
-        };
-        private_key
-            .secret_keys
-            .insert(NodeIndex::from(self_index), leaf_secret);
-        private_key
+            secret_keys: HashMap::from([(NodeIndex::from(self_index), leaf_secret)]),
+        }
     }
 
     pub fn update_secrets(
         &mut self,
         cipher_suite: CipherSuite,
-        sender_index: LeafIndex,
+        signer_index: LeafIndex,
         path_secret: Vec<u8>,
         public_tree: &RatchetTree,
     ) -> Result<(), RatchetTreeError> {
         // Identify the lowest common
         // ancestor of the leaves at index and at GroupInfo.signer_index. Set the private key
         // for this node to the private key derived from the path_secret.
-        let lca = tree_math::common_ancestor_direct(sender_index.into(), self.self_index.into());
+        let lca = tree_math::common_ancestor_direct(signer_index.into(), self.self_index.into());
 
         // For each parent of the common ancestor, up to the root of the tree, derive a new
         // path secret and set the private key for the node to the private key derived from the
@@ -158,6 +154,7 @@ mod test {
 
     // Create a ratchet tree for Alice, Bob and Charlie. Alice generates an update path for
     // Charlie. Return (Public Tree, Charlie's private key, update path, path secret)
+    // The ratchet tree returned has leaf indexes as [alice, bob, charlie]
     fn update_secrets_setup(
         cipher_suite: CipherSuite,
     ) -> (RatchetTree, TreeKemPrivate, UpdatePathGeneration, Vec<u8>) {
@@ -255,7 +252,7 @@ mod test {
         // Sabotage the public tree
         public_tree
             .nodes
-            .borrow_as_parent_mut(tree_math::root(3))
+            .borrow_as_parent_mut(tree_math::root(public_tree.leaf_count()))
             .unwrap()
             .public_key = HpkePublicKey::from(SecureRng::gen(32).unwrap());
 
