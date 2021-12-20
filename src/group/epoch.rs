@@ -83,7 +83,7 @@ impl Epoch {
     // messages
     pub fn derive(
         cipher_suite: CipherSuite,
-        last_init: &[u8],
+        last_init_secret: &[u8],
         commit_secret: &[u8],
         public_tree: RatchetTree,
         context: &GroupContext,
@@ -91,7 +91,7 @@ impl Epoch {
     ) -> Result<(Epoch, Vec<u8>), EpochError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
-        let joiner_seed = kdf.extract(last_init, commit_secret)?;
+        let joiner_seed = kdf.extract(commit_secret, last_init_secret)?;
 
         let joiner_secret = kdf.expand_with_label(
             &joiner_seed,
@@ -137,7 +137,7 @@ impl Epoch {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
         //TODO: PSK is not supported
-        let epoch_seed = kdf.extract(joiner_secret, &[])?;
+        let epoch_seed = kdf.extract(&vec![0u8; kdf.extract_size()], joiner_secret)?;
 
         let epoch_secret = kdf.expand_with_label(
             &epoch_seed,
@@ -338,7 +338,7 @@ impl WelcomeSecret {
     ) -> Result<WelcomeSecret, EpochError> {
         //TODO: PSK is not supported
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
-        let epoch_seed = kdf.extract(joiner_secret, &[])?;
+        let epoch_seed = kdf.extract(&vec![0u8; kdf.extract_size()], joiner_secret)?;
         let data = kdf.derive_secret(&epoch_seed, "welcome")?;
 
         let aead = cipher_suite.aead_type();
