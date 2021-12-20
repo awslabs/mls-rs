@@ -84,7 +84,7 @@ impl Epoch {
     pub fn derive(
         cipher_suite: CipherSuite,
         last_init_secret: &[u8],
-        commit_secret: &[u8],
+        commit_secret: &CommitSecret,
         public_tree: RatchetTree,
         context: &GroupContext,
         self_index: LeafIndex,
@@ -113,7 +113,7 @@ impl Epoch {
 
     pub fn evolved_from(
         epoch: &Epoch,
-        commit_secret: &[u8],
+        commit_secret: &CommitSecret,
         public_tree: RatchetTree,
         context: &GroupContext,
     ) -> Result<(Epoch, Vec<u8>), EpochError> {
@@ -274,6 +274,7 @@ impl Epoch {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct CommitSecret(Vec<u8>);
 
 impl Deref for CommitSecret {
@@ -288,14 +289,14 @@ impl CommitSecret {
     // Define commit_secret as the value path_secret[n+1] derived from the path_secret[n] value
     // assigned to the root node.
     pub fn from_update_path(
-        cipher_suite: &CipherSuite,
+        cipher_suite: CipherSuite,
         update_path: Option<&UpdatePathGeneration>,
     ) -> Result<Self, KeyScheduleKdfError> {
         Self::from_tree_secrets(cipher_suite, update_path.map(|up| &up.secrets))
     }
 
     pub fn from_tree_secrets(
-        cipher_suite: &CipherSuite,
+        cipher_suite: CipherSuite,
         secrets: Option<&TreeSecrets>,
     ) -> Result<Self, KeyScheduleKdfError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
@@ -309,14 +310,13 @@ impl CommitSecret {
         }
     }
 
-    pub fn empty(cipher_suite: &CipherSuite) -> Self {
+    pub fn empty(cipher_suite: CipherSuite) -> Self {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
         // Define commit_secret as the all-zero vector of the same length as a path_secret
         // value would be
         CommitSecret(vec![0u8; kdf.extract_size()])
     }
 }
-
 pub struct WelcomeSecret {
     pub data: Vec<u8>,
     key: Key,

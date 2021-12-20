@@ -370,7 +370,7 @@ impl Group {
         let (epoch, _) = Epoch::derive(
             cipher_suite,
             &init_secret,
-            &[],
+            &CommitSecret::empty(cipher_suite),
             public_tree,
             &context,
             LeafIndex(0),
@@ -753,7 +753,7 @@ impl Group {
         provisional_group_context.tree_hash = provisional_state.public_tree.tree_hash()?;
 
         let commit_secret =
-            CommitSecret::from_update_path(&self.cipher_suite, update_path.as_ref())?;
+            CommitSecret::from_update_path(self.cipher_suite, update_path.as_ref())?;
 
         //TODO: If one or more PreSharedKey proposals are part of the commit, derive the psk_secret
         // as specified in Section 8.2, where the order of PSKs in the derivation corresponds to the
@@ -1266,7 +1266,7 @@ impl Group {
         };
 
         let commit_secret =
-            CommitSecret::from_tree_secrets(&self.cipher_suite, updated_secrets.as_ref())?;
+            CommitSecret::from_tree_secrets(self.cipher_suite, updated_secrets.as_ref())?;
 
         let mut provisional_group_context = self.context.clone();
         // Bump up the epoch in the provisional group context
