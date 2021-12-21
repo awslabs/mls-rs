@@ -145,7 +145,7 @@ pub struct Extension {
     pub data: Vec<u8>,
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Default)]
 pub struct ExtensionList(#[tls_codec(with = "crate::tls::DefVec::<u32>")] Vec<Extension>);
 
 impl From<Vec<Extension>> for ExtensionList {
@@ -169,6 +169,10 @@ impl DerefMut for ExtensionList {
 }
 
 impl ExtensionList {
+    pub fn new() -> ExtensionList {
+        Default::default()
+    }
+
     pub(crate) fn get_extension<T: ExtensionTrait>(&self) -> Result<Option<T>, ExtensionError> {
         let ext = self.iter().find(|v| v.extension_id == T::IDENTIFIER);
 

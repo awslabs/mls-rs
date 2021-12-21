@@ -1,18 +1,12 @@
-use crate::key_package::KeyPackage;
+use std::ops::Deref;
+
+use crate::cipher_suite::CipherSuite;
 use crate::tree_kem::node::LeafIndex;
+use crate::{hash_reference::HashReference, key_package::KeyPackage};
+use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-#[repr(u8)]
-pub enum ProposalType {
-    Reserved = 0,
-    Add,
-    Update,
-    Remove,
-    //TODO: Psk,
-    //TODO: ReInit,
-    //TODO: ExternalInit,
-}
+use super::GroupError;
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct AddProposal {
@@ -29,6 +23,19 @@ pub struct RemoveProposal {
     pub to_remove: u32,
 }
 
+#[derive(
+    Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, TlsDeserialize, TlsSerialize, TlsSize,
+)]
+pub struct ProposalRef(HashReference);
+
+impl Deref for ProposalRef {
+    type Target = HashReference;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u16)]
 pub enum Proposal {
@@ -36,13 +43,19 @@ pub enum Proposal {
     Add(AddProposal),
     Update(UpdateProposal),
     Remove(RemoveProposal),
-    //TODO: PSK
     //TODO: Psk,
     //TODO: ReInit,
     //TODO: ExternalInit,
 }
 
 impl Proposal {
+    pub fn to_reference(&self, cipher_suite: CipherSuite) -> Result<ProposalRef, GroupError> {
+        Ok(ProposalRef(HashReference::from_value(
+            &self.tls_serialize_detached()?,
+            cipher_suite,
+        )?))
+    }
+
     pub fn is_add(&self) -> bool {
         matches!(self, Self::Add(_))
     }
@@ -83,30 +96,12 @@ impl From<AddProposal> for Proposal {
     }
 }
 
-impl From<Proposal> for ProposalType {
-    fn from(p: Proposal) -> Self {
-        match p {
-            Proposal::Add(_) => ProposalType::Add,
-            Proposal::Update(_) => ProposalType::Update,
-            Proposal::Remove(_) => ProposalType::Remove,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-#[repr(u8)]
-pub enum ProposalOrRefType {
-    Reserved = 0,
-    Proposal,
-    Reference,
-}
-
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u8)]
 pub enum ProposalOrRef {
     #[tls_codec(discriminant = 1)]
     Proposal(Proposal),
-    Reference(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>),
+    Reference(ProposalRef),
 }
 
 impl From<Proposal> for ProposalOrRef {
@@ -115,9 +110,9 @@ impl From<Proposal> for ProposalOrRef {
     }
 }
 
-impl From<Vec<u8>> for ProposalOrRef {
-    fn from(v: Vec<u8>) -> Self {
-        Self::Reference(v)
+impl From<ProposalRef> for ProposalOrRef {
+    fn from(r: ProposalRef) -> Self {
+        Self::Reference(r)
     }
 }
 
@@ -125,4 +120,82 @@ impl From<Vec<u8>> for ProposalOrRef {
 pub struct PendingProposal {
     pub proposal: Proposal,
     pub sender: LeafIndex,
+}
+
+#[cfg(test)]
+mod test {
+    use ferriscrypt::asym::ec_key::{generate_keypair, Curve};
+
+    use crate::{
+        cipher_suite::CipherSuite,
+        credential::{BasicCredential, CredentialConvertible},
+        extension::ExtensionList,
+        key_package::{KeyPackage, KeyPackageGenerator},
+    };
+
+    use super::{AddProposal, Proposal, RemoveProposal, UpdateProposal};
+
+    fn test_key_package(cipher_suite: CipherSuite) -> KeyPackage {
+        let (public, secret) =
+            generate_keypair(Curve::from(cipher_suite.signature_scheme())).unwrap();
+
+        let key_package_generator = KeyPackageGenerator {
+            cipher_suite,
+            credential: &BasicCredential::new(b"foo".to_vec(), public)
+                .unwrap()
+                .into_credential(),
+            extensions: ExtensionList::new(),
+            signing_key: &secret,
+        };
+
+        key_package_generator.generate().unwrap().key_package
+    }
+
+    #[test]
+    fn test_add() {
+        let add_proposal = AddProposal {
+            key_package: test_key_package(CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256),
+        };
+
+        let proposal = Proposal::Add(add_proposal.clone());
+
+        assert!(proposal.is_add());
+        assert!(!proposal.is_update());
+        assert!(!proposal.is_remove());
+        assert_eq!(proposal.as_add(), Some(&add_proposal));
+        assert_eq!(proposal.as_update(), None);
+        assert_eq!(proposal.as_remove(), None);
+    }
+
+    #[test]
+    fn test_update() {
+        let update_proposal = UpdateProposal {
+            key_package: test_key_package(CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256),
+        };
+
+        let proposal = Proposal::Update(update_proposal.clone());
+
+        assert!(proposal.is_update());
+        assert!(!proposal.is_add());
+        assert!(!proposal.is_remove());
+        assert_eq!(proposal.as_update(), Some(&update_proposal));
+        assert_eq!(proposal.as_add(), None);
+        assert_eq!(proposal.as_remove(), None);
+    }
+
+    #[test]
+    fn test_remove() {
+        let remove_proposal = RemoveProposal { to_remove: 42 };
+
+        let proposal = Proposal::Remove(remove_proposal.clone());
+
+        assert!(proposal.is_remove());
+        assert!(!proposal.is_add());
+        assert!(!proposal.is_update());
+        assert_eq!(proposal.as_remove(), Some(&remove_proposal));
+        assert_eq!(proposal.as_add(), None);
+        assert_eq!(proposal.as_update(), None);
+    }
+
+    // TODO: Generate test cases for ProposalRef and make a test around them
 }

@@ -14,6 +14,7 @@ pub mod client;
 pub mod credential;
 pub mod extension;
 mod group;
+mod hash_reference;
 pub mod key_package;
 pub mod session;
 mod tree_kem;

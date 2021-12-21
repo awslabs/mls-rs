@@ -9,6 +9,7 @@ use ferriscrypt::hmac::Tag;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::kdf::hkdf::Hkdf;
+use ferriscrypt::kdf::KdfError;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
 use ferriscrypt::{Signer, Verifier};
 use thiserror::Error;
@@ -138,12 +139,14 @@ pub enum GroupError {
     LeafSecretError(#[from] LeafSecretError),
     #[error(transparent)]
     EpochRepositoryError(#[from] EpochRepositoryError),
+    #[error(transparent)]
+    KdfError(#[from] KdfError),
     #[error("Cipher suite does not match")]
     CipherSuiteMismatch,
     #[error("Invalid key package signature")]
     InvalidKeyPackage,
-    #[error("Proposal not found")]
-    MissingProposal(Vec<u8>),
+    #[error("Proposal not found: {0}")]
+    MissingProposal(String),
     #[error("Invalid commit, missing required path")]
     InvalidCommit,
     #[error("plaintext message for incorrect epoch")]
@@ -302,8 +305,8 @@ pub struct Group {
     private_tree: TreeKemPrivate,
     epoch_repo: EpochRepository,
     interim_transcript_hash: InterimTranscriptHash,
-    #[tls_codec(with = "crate::tls::Map::<crate::tls::ByteVec, crate::tls::DefaultSer>")]
-    pub proposals: HashMap<Vec<u8>, PendingProposal>, // Hash of MLS Plaintext to pending proposal
+    #[tls_codec(with = "crate::tls::DefMap")]
+    pub proposals: HashMap<ProposalRef, PendingProposal>, // Hash of MLS Plaintext to pending proposal
     #[tls_codec(with = "crate::tls::Map::<crate::tls::ByteVec, crate::tls::ByteVec>")]
     pub pending_updates: HashMap<Vec<u8>, HpkeSecretKey>, // Hash of key package to key generation
 }
@@ -540,11 +543,11 @@ impl Group {
                     proposal: p.clone(),
                     sender,
                 }),
-                ProposalOrRef::Reference(id) => self
+                ProposalOrRef::Reference(r) => self
                     .proposals
-                    .get(id)
+                    .get(r)
                     .cloned()
-                    .ok_or_else(|| GroupError::MissingProposal(id.clone())),
+                    .ok_or_else(|| GroupError::MissingProposal(hex::encode(r.deref()))),
             })
             .collect::<Result<Vec<PendingProposal>, GroupError>>()
     }
@@ -645,10 +648,7 @@ impl Group {
             plaintext.membership_tag = Some(membership_tag);
         };
 
-        let hash = self
-            .cipher_suite
-            .hash_function()
-            .digest(&plaintext.tls_serialize_detached()?);
+        let reference = proposal.to_reference(self.cipher_suite)?;
 
         // Add the proposal ref to the current set
         let pending_proposal = PendingProposal {
@@ -656,7 +656,7 @@ impl Group {
             sender: self.private_tree.self_index,
         };
 
-        self.proposals.insert(hash, pending_proposal);
+        self.proposals.insert(reference, pending_proposal);
 
         Ok(OutboundPlaintext(plaintext))
     }
@@ -1183,15 +1183,12 @@ impl Group {
         match &plaintext.content {
             Content::Application(_) => Err(GroupError::UnexpectedApplicationData),
             Content::Proposal(p) => {
-                let hash = self
-                    .cipher_suite
-                    .hash_function()
-                    .digest(&plaintext.tls_serialize_detached()?);
                 let pending_proposal = PendingProposal {
                     proposal: p.clone(),
                     sender: LeafIndex(plaintext.sender.sender),
                 };
-                self.proposals.insert(hash, pending_proposal);
+                self.proposals
+                    .insert(p.to_reference(self.cipher_suite)?, pending_proposal);
                 Ok(None)
             }
             Content::Commit(_) => self.process_commit(plaintext, None).map(Some),

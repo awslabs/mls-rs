@@ -2,8 +2,10 @@ use crate::cipher_suite::CipherSuite;
 use crate::cipher_suite::ProtocolVersion;
 use crate::credential::{Credential, CredentialError};
 use crate::extension::{Extension, ExtensionError, ExtensionList};
+use crate::hash_reference::HashReference;
 use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError, SecretKey};
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
+use ferriscrypt::kdf::KdfError;
 use ferriscrypt::{Signer, Verifier};
 use std::time::SystemTime;
 use thiserror::Error;
@@ -20,6 +22,8 @@ pub enum KeyPackageError {
     SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
+    #[error(transparent)]
+    KdfError(#[from] KdfError),
     #[error("invalid signature")]
     InvalidSignature,
     #[error("key lifetime not found")]
@@ -44,7 +48,17 @@ impl KeyPackage {
     pub fn to_vec(&self) -> Result<Vec<u8>, KeyPackageError> {
         Ok(self.tls_serialize_detached()?)
     }
+
+    pub fn to_reference(&self) -> Result<KeyPackageRef, KeyPackageError> {
+        Ok(KeyPackageRef(HashReference::from_value(
+            &self.tls_serialize_detached()?,
+            self.cipher_suite,
+        )?))
+    }
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyPackageRef(HashReference);
 
 // TODO FIXME: This is suboptimal for various reasons but will be replaced when we implement key package
 // changes to the protocol as part of the Draft 12 series of tickets
@@ -66,16 +80,6 @@ pub struct KeyPackageGeneration {
     pub key_package: KeyPackage,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub secret_key: HpkeSecretKey,
-}
-
-impl KeyPackageGeneration {
-    pub fn key_package_id(&self) -> Result<Vec<u8>, KeyPackageError> {
-        Ok(self
-            .key_package
-            .cipher_suite
-            .hash_function()
-            .digest(&self.key_package.tls_serialize_detached()?))
-    }
 }
 
 impl<'a> KeyPackageGenerator<'a> {
@@ -161,4 +165,34 @@ impl KeyPackage {
     }
 }
 
-//TODO: Tests for validate + has valid signature
+//TODO: Tests for validate + has valid signature + key generation + lifetimes
+#[cfg(test)]
+mod test {
+    use super::*;
+    use tls_codec::Deserialize;
+
+    #[test]
+    fn test_key_package_ref() {
+        #[derive(serde::Deserialize)]
+        struct TestCase {
+            #[serde(deserialize_with = "hex::serde::deserialize")]
+            input: Vec<u8>,
+            #[serde(deserialize_with = "hex::serde::deserialize")]
+            output: Vec<u8>,
+        }
+
+        let cases: Vec<TestCase> =
+            serde_json::from_slice(include_bytes!("../test_data/key_package_ref.json")).unwrap();
+
+        for one_case in cases {
+            let key_package = KeyPackage::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
+            let key_package_ref = key_package.to_reference().unwrap();
+
+            let expected_out = KeyPackageRef(HashReference::from(
+                <[u8; 16]>::try_from(one_case.output).unwrap(),
+            ));
+
+            assert_eq!(expected_out, key_package_ref);
+        }
+    }
+}
