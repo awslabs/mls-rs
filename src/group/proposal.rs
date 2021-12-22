@@ -124,7 +124,10 @@ pub struct PendingProposal {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+    use crate::hash_reference::HashReference;
     use ferriscrypt::asym::ec_key::{generate_keypair, Curve};
+    use tls_codec::Deserialize;
 
     use crate::{
         cipher_suite::CipherSuite,
@@ -132,8 +135,6 @@ mod test {
         extension::ExtensionList,
         key_package::{KeyPackage, KeyPackageGenerator},
     };
-
-    use super::{AddProposal, Proposal, RemoveProposal, UpdateProposal};
 
     fn test_key_package(cipher_suite: CipherSuite) -> KeyPackage {
         let (public, secret) =
@@ -197,5 +198,31 @@ mod test {
         assert_eq!(proposal.as_update(), None);
     }
 
-    // TODO: Generate test cases for ProposalRef and make a test around them
+    #[test]
+    fn test_proposal_ref() {
+        #[derive(serde::Deserialize)]
+        struct TestCase {
+            cipher_suite: u16,
+            #[serde(deserialize_with = "hex::serde::deserialize")]
+            input: Vec<u8>,
+            #[serde(deserialize_with = "hex::serde::deserialize")]
+            output: Vec<u8>,
+        }
+
+        let test_cases: Vec<TestCase> =
+            serde_json::from_slice(include_bytes!("../../test_data/proposal_ref.json")).unwrap();
+
+        for one_case in test_cases {
+            let proposal = Proposal::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
+            let proposal_ref = proposal
+                .to_reference(CipherSuite::from_raw(one_case.cipher_suite).unwrap())
+                .unwrap();
+
+            let expected_out = ProposalRef(HashReference::from(
+                <[u8; 16]>::try_from(one_case.output).unwrap(),
+            ));
+
+            assert_eq!(expected_out, proposal_ref);
+        }
+    }
 }
