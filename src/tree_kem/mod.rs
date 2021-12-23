@@ -82,7 +82,7 @@ pub enum RatchetTreeError {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct RatchetTree {
+pub struct TreeKemPublic {
     pub cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::DefMap")]
     key_package_index: HashMap<KeyPackageRef, LeafIndex>,
@@ -154,9 +154,9 @@ impl TreeSecrets {
     }
 }
 
-impl RatchetTree {
-    pub fn new(cipher_suite: CipherSuite) -> RatchetTree {
-        RatchetTree {
+impl TreeKemPublic {
+    pub fn new(cipher_suite: CipherSuite) -> TreeKemPublic {
+        TreeKemPublic {
             cipher_suite,
             key_package_index: Default::default(),
             nodes: Default::default(),
@@ -165,8 +165,8 @@ impl RatchetTree {
 
     pub fn derive(
         key_package: KeyPackageGeneration,
-    ) -> Result<(RatchetTree, TreeKemPrivate), RatchetTreeError> {
-        let mut public_tree = RatchetTree::new(key_package.key_package.cipher_suite);
+    ) -> Result<(TreeKemPublic, TreeKemPrivate), RatchetTreeError> {
+        let mut public_tree = TreeKemPublic::new(key_package.key_package.cipher_suite);
 
         let key_package_ref = key_package.key_package.to_reference()?;
 
@@ -323,7 +323,7 @@ impl RatchetTree {
     // function. Removes must be based on an initial state before updates are applied.
     pub fn remove_leaves(
         &mut self,
-        lookup_tree: &RatchetTree,
+        lookup_tree: &TreeKemPublic,
         key_package_refs: Vec<KeyPackageRef>,
     ) -> Result<Vec<(KeyPackageRef, KeyPackage)>, RatchetTreeError> {
         // Identify a leaf node containing a key package matching removed.
@@ -802,10 +802,10 @@ pub(crate) mod test {
 
     pub fn get_test_tree(
         cipher_suite: CipherSuite,
-    ) -> (RatchetTree, TreeKemPrivate, KeyPackageGeneration) {
+    ) -> (TreeKemPublic, TreeKemPrivate, KeyPackageGeneration) {
         let test_key_package = get_test_key_package(cipher_suite, b"foo".to_vec());
 
-        let (test_public, test_private) = RatchetTree::derive(test_key_package.clone()).unwrap();
+        let (test_public, test_private) = TreeKemPublic::derive(test_key_package.clone()).unwrap();
         assert_eq!(
             test_public.nodes[0],
             Some(Node::Leaf(Leaf {
@@ -836,7 +836,7 @@ pub(crate) mod test {
     fn test_add_leaf() {
         let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
 
-        let mut tree = RatchetTree::new(cipher_suite);
+        let mut tree = TreeKemPublic::new(cipher_suite);
 
         let key_packages = get_test_key_packages(cipher_suite);
         let res = tree.add_leaves(key_packages.clone()).unwrap();
@@ -896,7 +896,7 @@ pub(crate) mod test {
     fn test_get_key_packages() {
         let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
 
-        let mut tree = RatchetTree::new(cipher_suite);
+        let mut tree = TreeKemPublic::new(cipher_suite);
 
         let key_packages = get_test_key_packages(cipher_suite);
         tree.add_leaves(key_packages).unwrap();
@@ -909,7 +909,7 @@ pub(crate) mod test {
     fn test_find_leaf() {
         let cipher_suite = CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521;
 
-        let mut tree = RatchetTree::new(cipher_suite);
+        let mut tree = TreeKemPublic::new(cipher_suite);
 
         let key_packages = get_test_key_packages(cipher_suite);
 
@@ -927,7 +927,7 @@ pub(crate) mod test {
     fn test_add_leaf_duplicate() {
         let cipher_suite = CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521;
 
-        let mut tree = RatchetTree::new(cipher_suite);
+        let mut tree = TreeKemPublic::new(cipher_suite);
 
         let key_packages = get_test_key_packages(cipher_suite);
         tree.add_leaves(key_packages.clone()).unwrap();
@@ -1178,7 +1178,7 @@ pub(crate) mod test {
     }
 
     // Verify that the tree is in the correct state after generating an update path
-    fn verify_tree_update_path(tree: &RatchetTree, update_path: &UpdatePath, index: LeafIndex) {
+    fn verify_tree_update_path(tree: &TreeKemPublic, update_path: &UpdatePath, index: LeafIndex) {
         // Make sure the update path is based on the direct path of the sender
         let direct_path = tree.nodes.direct_path(index).unwrap();
         for (i, &dpi) in direct_path.iter().enumerate() {
@@ -1201,7 +1201,7 @@ pub(crate) mod test {
 
     fn verify_tree_private_path(
         cipher_suite: &CipherSuite,
-        public_tree: &RatchetTree,
+        public_tree: &TreeKemPublic,
         private_tree: &TreeKemPrivate,
         index: LeafIndex,
     ) {
@@ -1261,7 +1261,7 @@ pub(crate) mod test {
             .collect();
 
         // Build a test tree we can clone for all leaf nodes
-        let mut test_tree = RatchetTree::new(cipher_suite);
+        let mut test_tree = TreeKemPublic::new(cipher_suite);
         test_tree.add_leaves(key_packages).unwrap();
 
         // Clone the tree for the first leaf, generate a new key package for that leaf
@@ -1289,7 +1289,7 @@ pub(crate) mod test {
         );
 
         // Apply the update path to the rest of the leaf nodes using the decap function
-        let mut receiver_trees: Vec<RatchetTree> = (1..size).map(|_| test_tree.clone()).collect();
+        let mut receiver_trees: Vec<TreeKemPublic> = (1..size).map(|_| test_tree.clone()).collect();
 
         for (i, tree) in receiver_trees.iter_mut().enumerate() {
             let secrets = tree

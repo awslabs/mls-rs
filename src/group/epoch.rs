@@ -5,7 +5,7 @@ use crate::group::secret_tree::{
 };
 use crate::group::GroupContext;
 use crate::tree_kem::node::LeafIndex;
-use crate::tree_kem::{RatchetTree, TreeSecrets, UpdatePathGeneration};
+use crate::tree_kem::{TreeKemPublic, TreeSecrets, UpdatePathGeneration};
 use ferriscrypt::cipher::aead::{AeadError, AeadNonce, Key};
 use ferriscrypt::cipher::NonceError;
 use ferriscrypt::kdf::KdfError;
@@ -37,7 +37,7 @@ pub enum EpochError {
 pub(crate) struct Epoch {
     pub identifier: u64,
     pub cipher_suite: CipherSuite,
-    pub public_tree: RatchetTree,
+    pub public_tree: TreeKemPublic,
     pub secret_tree: SecretTree,
     pub self_index: LeafIndex,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
@@ -85,7 +85,7 @@ impl Epoch {
         cipher_suite: CipherSuite,
         last_init_secret: &[u8],
         commit_secret: &CommitSecret,
-        public_tree: RatchetTree,
+        public_tree: TreeKemPublic,
         context: &GroupContext,
         self_index: LeafIndex,
     ) -> Result<(Epoch, Vec<u8>), EpochError> {
@@ -114,7 +114,7 @@ impl Epoch {
     pub fn evolved_from(
         epoch: &Epoch,
         commit_secret: &CommitSecret,
-        public_tree: RatchetTree,
+        public_tree: TreeKemPublic,
         context: &GroupContext,
     ) -> Result<(Epoch, Vec<u8>), EpochError> {
         Self::derive(
@@ -130,7 +130,7 @@ impl Epoch {
     pub fn new_joiner(
         cipher_suite: CipherSuite,
         joiner_secret: &[u8],
-        public_tree: RatchetTree,
+        public_tree: TreeKemPublic,
         context: &GroupContext,
         self_index: LeafIndex,
     ) -> Result<Self, EpochError> {
@@ -382,7 +382,7 @@ pub mod test_utils {
         Epoch {
             identifier: 1,
             cipher_suite,
-            public_tree: RatchetTree::new(cipher_suite),
+            public_tree: TreeKemPublic::new(cipher_suite),
             secret_tree: get_test_tree(cipher_suite, vec![], 1),
             self_index: LeafIndex(0),
             sender_data_secret: vec![],

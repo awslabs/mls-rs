@@ -22,7 +22,7 @@ use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration, KeyP
 use crate::tree_kem::leaf_secret::{LeafSecret, LeafSecretError};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{
-    RatchetTree, RatchetTreeError, TreeKemPrivate, UpdatePath, UpdatePathGeneration,
+    RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathGeneration,
 };
 
 use confirmation_tag::*;
@@ -49,7 +49,7 @@ mod secret_tree;
 mod transcript_hash;
 
 struct ProvisionalState {
-    public_tree: RatchetTree,
+    public_tree: TreeKemPublic,
     private_tree: TreeKemPrivate,
     added_leaves: Vec<KeyPackageRef>,
     removed_leaves: HashMap<KeyPackageRef, KeyPackage>,
@@ -380,7 +380,7 @@ impl Group {
         let kdf = Hkdf::from(cipher_suite.kdf_type());
 
         let extensions = creator_key_package.key_package.extensions.clone();
-        let (public_tree, private_tree) = RatchetTree::derive(creator_key_package)?;
+        let (public_tree, private_tree) = TreeKemPublic::derive(creator_key_package)?;
         let init_secret = SecureRng::gen(kdf.extract_size())?;
         let tree_hash = public_tree.tree_hash()?;
 
@@ -411,7 +411,7 @@ impl Group {
 
     pub fn from_welcome_message(
         welcome: Welcome,
-        public_tree: RatchetTree,
+        public_tree: TreeKemPublic,
         key_package: KeyPackageGeneration,
     ) -> Result<Self, GroupError> {
         //Identify an entry in the secrets array where the key_package_hash value corresponds to
@@ -539,7 +539,7 @@ impl Group {
         })
     }
 
-    pub fn public_tree(&self) -> Result<&RatchetTree, GroupError> {
+    pub fn public_tree(&self) -> Result<&TreeKemPublic, GroupError> {
         self.epoch_repo
             .current()
             .map(|t| &t.public_tree)
@@ -893,7 +893,7 @@ impl Group {
 
     fn encrypt_group_secrets(
         &self,
-        provisional_tree: &RatchetTree,
+        provisional_tree: &TreeKemPublic,
         new_member: KeyPackageRef,
         joiner_secret: &[u8],
         update_path: Option<&UpdatePathGeneration>,

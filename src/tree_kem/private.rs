@@ -26,7 +26,7 @@ impl TreeKemPrivate {
         cipher_suite: CipherSuite,
         signer_index: LeafIndex,
         path_secret: Vec<u8>,
-        public_tree: &RatchetTree,
+        public_tree: &TreeKemPublic,
     ) -> Result<(), RatchetTreeError> {
         // Identify the lowest common
         // ancestor of the leaves at index and at GroupInfo.signer_index. Set the private key
@@ -144,7 +144,7 @@ mod test {
     // The ratchet tree returned has leaf indexes as [alice, bob, charlie]
     fn update_secrets_setup(
         cipher_suite: CipherSuite,
-    ) -> (RatchetTree, TreeKemPrivate, UpdatePathGeneration, Vec<u8>) {
+    ) -> (TreeKemPublic, TreeKemPrivate, UpdatePathGeneration, Vec<u8>) {
         let alice_signing =
             SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
 
@@ -154,7 +154,7 @@ mod test {
         let charlie_key_package = get_test_key_package(cipher_suite, b"charlie".to_vec());
 
         // Create a new public tree with Alice
-        let (mut public_tree, alice_private) = RatchetTree::derive(alice_key_package).unwrap();
+        let (mut public_tree, alice_private) = TreeKemPublic::derive(alice_key_package).unwrap();
 
         // Add bob and charlie to the tree
         public_tree

@@ -3,7 +3,7 @@ use crate::extension::ExtensionError;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVec, NodeVecError, Parent};
-use crate::tree_kem::RatchetTree;
+use crate::tree_kem::TreeKemPublic;
 use crate::tree_kem::{RatchetTreeError, UpdatePath};
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use std::collections::HashMap;
@@ -107,7 +107,7 @@ impl NodeVec {
     }
 }
 
-impl RatchetTree {
+impl TreeKemPublic {
     fn parent_hash(
         &self,
         parent_parent_hash: &ParentHash,
@@ -260,7 +260,7 @@ mod test {
     use crate::tree_kem::node::test::get_test_node_vec;
     use crate::tree_kem::test::{get_test_key_package, get_test_key_packages, get_test_tree};
 
-    fn get_phash_test_tree(cipher_suite: CipherSuite) -> RatchetTree {
+    fn get_phash_test_tree(cipher_suite: CipherSuite) -> TreeKemPublic {
         let (mut tree, _, _) = get_test_tree(cipher_suite);
         let key_packages = get_test_key_packages(cipher_suite);
         tree.add_leaves(key_packages).unwrap();

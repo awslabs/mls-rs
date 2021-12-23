@@ -1,7 +1,7 @@
 use crate::key_package::KeyPackage;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::{Leaf, Node, NodeIndex, NodeTypeResolver, Parent};
-use crate::tree_kem::{RatchetTree, RatchetTreeError};
+use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -22,11 +22,11 @@ struct ParentNodeTreeHashInput {
 }
 
 trait TreeHashable {
-    fn get_hash(&self, tree: &RatchetTree) -> Result<Vec<u8>, RatchetTreeError>;
+    fn get_hash(&self, tree: &TreeKemPublic) -> Result<Vec<u8>, RatchetTreeError>;
 }
 
 impl TreeHashable for (NodeIndex, &Option<Node>) {
-    fn get_hash(&self, tree: &RatchetTree) -> Result<Vec<u8>, RatchetTreeError> {
+    fn get_hash(&self, tree: &TreeKemPublic) -> Result<Vec<u8>, RatchetTreeError> {
         match self.1 {
             None => {
                 if self.0 % 2 == 0 {
@@ -47,7 +47,7 @@ impl TreeHashable for (NodeIndex, &Option<Node>) {
 }
 
 impl TreeHashable for (NodeIndex, Option<&Leaf>) {
-    fn get_hash(&self, tree: &RatchetTree) -> Result<Vec<u8>, RatchetTreeError> {
+    fn get_hash(&self, tree: &TreeKemPublic) -> Result<Vec<u8>, RatchetTreeError> {
         let input = LeafNodeHashInput {
             node_index: self.0 as u32,
             key_package: self.1.map(|l| l.key_package.clone()),
@@ -61,7 +61,7 @@ impl TreeHashable for (NodeIndex, Option<&Leaf>) {
 }
 
 impl TreeHashable for (NodeIndex, Option<&Parent>) {
-    fn get_hash(&self, tree: &RatchetTree) -> Result<Vec<u8>, RatchetTreeError> {
+    fn get_hash(&self, tree: &TreeKemPublic) -> Result<Vec<u8>, RatchetTreeError> {
         let left = tree_math::left(self.0)?;
         let right = tree_math::right(self.0, tree.leaf_count())?;
         let left_hash = (left, &tree.nodes[left as usize]).get_hash(tree)?;
@@ -81,7 +81,7 @@ impl TreeHashable for (NodeIndex, Option<&Parent>) {
     }
 }
 
-impl RatchetTree {
+impl TreeKemPublic {
     pub fn tree_hash(&self) -> Result<Vec<u8>, RatchetTreeError> {
         let root = tree_math::root(self.leaf_count());
         (root, &self.nodes[root as usize]).get_hash(self)

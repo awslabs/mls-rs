@@ -1,7 +1,7 @@
 use crate::credential::CredentialError;
 use crate::group::framing::{Content, MLSPlaintext, Sender, SenderType, WireFormat};
 use crate::group::GroupContext;
-use crate::tree_kem::{RatchetTree, RatchetTreeError};
+use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
 use ferriscrypt::{Signer, Verifier};
 use std::borrow::Borrow;
@@ -71,7 +71,7 @@ impl MLSPlaintext {
 
     pub(crate) fn verify_signature(
         &self,
-        tree: &RatchetTree,
+        tree: &TreeKemPublic,
         group_context: &GroupContext,
         wire_format: WireFormat,
     ) -> Result<bool, MessageSignatureError> {
@@ -103,7 +103,7 @@ impl MessageSignature {
     fn is_valid(
         &self,
         plaintext: &MLSPlaintext,
-        tree: &RatchetTree,
+        tree: &TreeKemPublic,
         group_context: &GroupContext,
         wire_format: WireFormat,
     ) -> Result<bool, MessageSignatureError> {
