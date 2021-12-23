@@ -629,10 +629,7 @@ impl Group {
         let removed_leaves = provisional_tree
             .remove_leaves(old_tree, removes)?
             .drain(..)
-            .fold(HashMap::new(), |mut map, (i, kp)| {
-                map.insert(i, kp);
-                map
-            });
+            .collect::<HashMap<_, _>>();
 
         // Apply adds
         let adds = proposals
