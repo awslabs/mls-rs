@@ -1,8 +1,7 @@
-use crate::credential::Credential;
 use crate::group::framing::{MLSMessage, WireFormat};
 use crate::group::OutboundPlaintext;
 use crate::group::{proposal::Proposal, CommitGeneration, Group, StateUpdate};
-use crate::key_package::{KeyPackage, KeyPackageGeneration};
+use crate::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageRef};
 use ferriscrypt::asym::ec_key::SecretKey;
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use thiserror::Error;
@@ -117,10 +116,10 @@ impl Session {
         self.protocol.public_tree().map_or(0, |t| t.leaf_count())
     }
 
-    pub fn roster(&self) -> Vec<Credential> {
+    pub fn roster(&self) -> Vec<&KeyPackage> {
         self.protocol
             .public_tree()
-            .map_or(vec![], |t| t.get_credentials())
+            .map_or(vec![], |t| t.get_key_packages())
     }
 
     #[inline]
@@ -139,8 +138,13 @@ impl Session {
     }
 
     #[inline(always)]
-    pub fn remove_proposal(&mut self, index: u32) -> Result<Proposal, SessionError> {
-        self.protocol.remove_proposal(index).map_err(Into::into)
+    pub fn remove_proposal(
+        &mut self,
+        key_package_ref: &KeyPackageRef,
+    ) -> Result<Proposal, SessionError> {
+        self.protocol
+            .remove_proposal(key_package_ref)
+            .map_err(Into::into)
     }
 
     #[inline(always)]
@@ -156,8 +160,11 @@ impl Session {
     }
 
     #[inline(always)]
-    pub fn propose_remove(&mut self, index: u32) -> Result<Vec<u8>, SessionError> {
-        let remove = self.remove_proposal(index)?;
+    pub fn propose_remove(
+        &mut self,
+        key_package_ref: &KeyPackageRef,
+    ) -> Result<Vec<u8>, SessionError> {
+        let remove = self.remove_proposal(key_package_ref)?;
         self.send_proposal(remove)
     }
 

@@ -27,7 +27,7 @@ impl From<Vec<u8>> for Parent {
     fn from(pk: Vec<u8>) -> Self {
         Self {
             public_key: pk.into(),
-            parent_hash: ParentHash::empty(), // TODO: Parent hash calculations
+            parent_hash: ParentHash::empty(),
             unmerged_leaves: vec![],
         }
     }
@@ -201,7 +201,7 @@ impl NodeTypeResolver for Option<Node> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Default)]
 pub(crate) struct NodeVec(#[tls_codec(with = "crate::tls::DefVec::<u32>")] Vec<Option<Node>>);
 
 impl From<Vec<Option<Node>>> for NodeVec {

@@ -3,21 +3,21 @@ use super::*;
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct TreeKemPrivate {
     pub self_index: LeafIndex,
+    pub key_package_ref: KeyPackageRef,
     #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::ByteVec::<u32>>")]
     pub secret_keys: HashMap<NodeIndex, HpkeSecretKey>,
 }
 
-impl From<KeyPackageGeneration> for TreeKemPrivate {
-    fn from(kg: KeyPackageGeneration) -> Self {
-        Self::from(kg.secret_key)
-    }
-}
-
 impl TreeKemPrivate {
-    pub fn new_self_leaf(self_index: LeafIndex, leaf_secret: HpkeSecretKey) -> Self {
+    pub fn new_self_leaf(
+        self_index: LeafIndex,
+        key_package_ref: KeyPackageRef,
+        leaf_secret: HpkeSecretKey,
+    ) -> Self {
         TreeKemPrivate {
             self_index,
             secret_keys: HashMap::from([(NodeIndex::from(self_index), leaf_secret)]),
+            key_package_ref,
         }
     }
 
@@ -68,6 +68,7 @@ impl TreeKemPrivate {
     pub fn update_leaf(
         &mut self,
         num_leaves: u32,
+        key_package_ref: KeyPackageRef,
         new_leaf: HpkeSecretKey,
     ) -> Result<(), RatchetTreeError> {
         self.secret_keys
@@ -79,6 +80,8 @@ impl TreeKemPrivate {
             .for_each(|i| {
                 self.secret_keys.remove(i);
             });
+
+        self.key_package_ref = key_package_ref;
 
         Ok(())
     }
@@ -95,18 +98,6 @@ impl TreeKemPrivate {
         });
 
         Ok(())
-    }
-}
-
-impl From<HpkeSecretKey> for TreeKemPrivate {
-    fn from(secret_key: HpkeSecretKey) -> Self {
-        let mut secret_keys = HashMap::new();
-        secret_keys.insert(0, secret_key);
-
-        TreeKemPrivate {
-            self_index: LeafIndex(0),
-            secret_keys,
-        }
     }
 }
 
@@ -128,23 +119,19 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_from_hpke_secret() {
-        let secret = HpkeSecretKey::from(SecureRng::gen(32).unwrap());
-
-        let private_key = TreeKemPrivate::from(secret.clone());
-
-        assert_eq!(private_key.self_index, LeafIndex(0));
-        assert_eq!(private_key.secret_keys.len(), 1);
-        assert_eq!(private_key.secret_keys.get(&0).unwrap(), &secret);
-    }
-
-    #[test]
     fn test_create_self_leaf() {
         let secret = HpkeSecretKey::try_from(SecretKey::generate(Curve::Ed25519).unwrap()).unwrap();
         let self_index = LeafIndex(42);
+        let mut key_package_ref_data = [0u8; 16];
+        SecureRng::fill(&mut key_package_ref_data).unwrap();
 
-        let private_key = TreeKemPrivate::new_self_leaf(self_index, secret.clone());
+        let key_package_ref = KeyPackageRef::from(key_package_ref_data);
+
+        let private_key =
+            TreeKemPrivate::new_self_leaf(self_index, key_package_ref.clone(), secret.clone());
+
         assert_eq!(private_key.self_index, self_index);
+        assert_eq!(private_key.key_package_ref, key_package_ref);
         assert_eq!(private_key.secret_keys.len(), 1);
         assert_eq!(
             private_key.secret_keys.get(&self_index.into()).unwrap(),
@@ -171,9 +158,9 @@ mod test {
 
         // Add bob and charlie to the tree
         public_tree
-            .add_nodes(vec![
+            .add_leaves(vec![
                 bob_key_package.key_package,
-                charlie_key_package.key_package,
+                charlie_key_package.key_package.clone(),
             ])
             .unwrap();
 
@@ -188,8 +175,11 @@ mod test {
             .unwrap();
 
         // Private key for Charlie
-        let charlie_private =
-            TreeKemPrivate::new_self_leaf(LeafIndex(2), charlie_key_package.secret_key);
+        let charlie_private = TreeKemPrivate::new_self_leaf(
+            LeafIndex(2),
+            charlie_key_package.key_package.to_reference().unwrap(),
+            charlie_key_package.secret_key,
+        );
 
         (public_tree, charlie_private, update_path_gen, path_secret)
     }
@@ -266,7 +256,8 @@ mod test {
     fn setup_direct_path(self_index: LeafIndex, leaf_count: u32) -> TreeKemPrivate {
         let secret = HpkeSecretKey::try_from(SecretKey::generate(Curve::Ed25519).unwrap()).unwrap();
 
-        let mut private_key = TreeKemPrivate::new_self_leaf(self_index, secret);
+        let mut private_key =
+            TreeKemPrivate::new_self_leaf(self_index, KeyPackageRef::from([0u8; 16]), secret);
 
         self_index
             .direct_path(leaf_count)
@@ -289,7 +280,11 @@ mod test {
         let new_secret =
             HpkeSecretKey::try_from(SecretKey::generate(Curve::Ed25519).unwrap()).unwrap();
 
-        private_key.update_leaf(128, new_secret.clone()).unwrap();
+        let new_key_package_ref = KeyPackageRef::from([0u8; 16]);
+
+        private_key
+            .update_leaf(128, new_key_package_ref.clone(), new_secret.clone())
+            .unwrap();
 
         // The update operation should have removed all the other keys in our direct path we
         // previously added
@@ -300,6 +295,8 @@ mod test {
             private_key.secret_keys.get(&self_leaf.into()).unwrap(),
             &new_secret
         );
+
+        assert_eq!(private_key.key_package_ref, new_key_package_ref);
     }
 
     #[test]

@@ -33,7 +33,7 @@ pub enum SenderType {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Sender {
     pub sender_type: SenderType,
-    pub sender: u32,
+    pub sender: KeyPackageRef,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -93,7 +93,7 @@ pub struct MLSCiphertext {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSSenderData {
-    pub sender: u32,
+    pub sender: KeyPackageRef,
     pub generation: u32,
     pub reuse_guard: [u8; 4],
 }
@@ -147,6 +147,7 @@ pub enum WireFormat {
 
 #[cfg(test)]
 pub mod test_utils {
+
     use super::*;
 
     pub fn get_test_plaintext(test_content: Vec<u8>) -> MLSPlaintext {
@@ -155,7 +156,7 @@ pub mod test_utils {
             epoch: 0,
             sender: Sender {
                 sender_type: SenderType::Member,
-                sender: 0,
+                sender: KeyPackageRef::from([0u8; 16]),
             },
             authenticated_data: vec![],
             content: Content::Application(test_content),

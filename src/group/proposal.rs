@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use crate::cipher_suite::CipherSuite;
-use crate::tree_kem::node::LeafIndex;
+use crate::key_package::KeyPackageRef;
 use crate::{hash_reference::HashReference, key_package::KeyPackage};
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -20,7 +20,7 @@ pub struct UpdateProposal {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct RemoveProposal {
-    pub to_remove: u32,
+    pub to_remove: KeyPackageRef,
 }
 
 #[derive(
@@ -119,14 +119,17 @@ impl From<ProposalRef> for ProposalOrRef {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct PendingProposal {
     pub proposal: Proposal,
-    pub sender: LeafIndex,
+    pub sender: KeyPackageRef,
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::hash_reference::HashReference;
-    use ferriscrypt::asym::ec_key::{generate_keypair, Curve};
+    use crate::{hash_reference::HashReference, tree_kem::test::get_test_key_package};
+    use ferriscrypt::{
+        asym::ec_key::{generate_keypair, Curve},
+        rand::SecureRng,
+    };
     use tls_codec::Deserialize;
 
     use crate::{
@@ -186,7 +189,9 @@ mod test {
 
     #[test]
     fn test_remove() {
-        let remove_proposal = RemoveProposal { to_remove: 42 };
+        let remove_proposal = RemoveProposal {
+            to_remove: KeyPackageRef::from([0u8; 16]),
+        };
 
         let proposal = Proposal::Remove(remove_proposal.clone());
 
@@ -198,17 +203,69 @@ mod test {
         assert_eq!(proposal.as_update(), None);
     }
 
-    #[test]
-    fn test_proposal_ref() {
-        #[derive(serde::Deserialize)]
-        struct TestCase {
-            cipher_suite: u16,
-            #[serde(deserialize_with = "hex::serde::deserialize")]
-            input: Vec<u8>,
-            #[serde(deserialize_with = "hex::serde::deserialize")]
-            output: Vec<u8>,
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct TestCase {
+        cipher_suite: u16,
+        #[serde(with = "hex::serde")]
+        input: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        output: Vec<u8>,
+    }
+
+    #[allow(dead_code)]
+    fn generate_proposal_test_cases() -> Vec<TestCase> {
+        let mut test_cases = Vec::new();
+
+        for cipher_suite in CipherSuite::all() {
+            let add = Proposal::from(AddProposal {
+                key_package: get_test_key_package(cipher_suite, SecureRng::gen(16).unwrap())
+                    .key_package,
+            });
+
+            let update = Proposal::Update(UpdateProposal {
+                key_package: get_test_key_package(cipher_suite, SecureRng::gen(16).unwrap())
+                    .key_package,
+            });
+
+            let mut key_package_ref = [0u8; 16];
+            SecureRng::fill(&mut key_package_ref).unwrap();
+
+            let remove = Proposal::Remove(RemoveProposal {
+                to_remove: key_package_ref.into(),
+            });
+
+            test_cases.push(TestCase {
+                cipher_suite: cipher_suite as u16,
+                input: add.tls_serialize_detached().unwrap(),
+                output: add.to_reference(cipher_suite).unwrap().to_vec(),
+            });
+
+            test_cases.push(TestCase {
+                cipher_suite: cipher_suite as u16,
+                input: update.tls_serialize_detached().unwrap(),
+                output: update.to_reference(cipher_suite).unwrap().to_vec(),
+            });
+
+            test_cases.push(TestCase {
+                cipher_suite: cipher_suite as u16,
+                input: remove.tls_serialize_detached().unwrap(),
+                output: remove.to_reference(cipher_suite).unwrap().to_vec(),
+            });
         }
 
+        /*
+        std::fs::write(
+            "path/to/test_data/proposal_ref.json",
+            serde_json::to_vec_pretty(&test_cases).unwrap(),
+        )
+        .unwrap();
+        */
+
+        test_cases
+    }
+
+    #[test]
+    fn test_proposal_ref() {
         let test_cases: Vec<TestCase> =
             serde_json::from_slice(include_bytes!("../../test_data/proposal_ref.json")).unwrap();
 

@@ -1,7 +1,6 @@
 use crate::credential::CredentialError;
 use crate::group::framing::{Content, MLSPlaintext, Sender, SenderType, WireFormat};
 use crate::group::GroupContext;
-use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{RatchetTree, RatchetTreeError};
 use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
 use ferriscrypt::{Signer, Verifier};
@@ -111,7 +110,7 @@ impl MessageSignature {
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
         let sender_cred = tree
-            .get_key_package(LeafIndex(plaintext.sender.sender))?
+            .get_key_package(&plaintext.sender.sender)?
             .credential
             .borrow();
 

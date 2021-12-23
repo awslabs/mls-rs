@@ -1,11 +1,9 @@
 use ferriscrypt::rand::SecureRng;
 use std::time::SystemTime;
-use tls_codec::Serialize;
 use wickr_bgm::cipher_suite::CipherSuite;
 use wickr_bgm::client::Client;
-use wickr_bgm::credential::Credential;
 use wickr_bgm::extension::LifetimeExt;
-use wickr_bgm::key_package::KeyPackageGeneration;
+use wickr_bgm::key_package::{KeyPackageGeneration, KeyPackageRef};
 use wickr_bgm::session::{GroupError, ProcessedMessage, Session, SessionError, SessionOpts};
 
 fn generate_client(cipher_suite: CipherSuite, id: Vec<u8>) -> Client {
@@ -43,12 +41,7 @@ fn test_create(cipher_suite: CipherSuite, opts: SessionOpts) {
 
     // Bob receives the welcome message and joins the group
     let bob_session = bob
-        .join_session(
-            bob_key,
-            &tree,
-            &packets.welcome_packet.unwrap(),
-            opts.clone(),
-        )
+        .join_session(bob_key, &tree, &packets.welcome_packet.unwrap(), opts)
         .unwrap();
 
     assert!(alice_session.has_equal_state(&bob_session));
@@ -56,16 +49,16 @@ fn test_create(cipher_suite: CipherSuite, opts: SessionOpts) {
 
 #[test]
 fn test_create_session() {
-    CipherSuite::all().iter().for_each(|cs| {
+    CipherSuite::all().into_iter().for_each(|cs| {
         test_create(
-            cs.clone(),
+            cs,
             SessionOpts {
                 encrypt_controls: false,
             },
         );
 
         test_create(
-            cs.clone(),
+            cs,
             SessionOpts {
                 encrypt_controls: true,
             },
@@ -112,21 +105,12 @@ fn get_test_sessions(
     assert!(update.active);
     assert_eq!(update.epoch, 1);
 
-    let credentials = receiver_keys
-        .iter()
-        .map(|k| k.key_package.credential.clone())
-        .collect::<Vec<Credential>>();
-
     assert_eq!(
-        update
-            .added
+        update.added,
+        receiver_keys
             .iter()
-            .map(|c| c.tls_serialize_detached().unwrap())
-            .collect::<Vec<Vec<u8>>>(),
-        credentials
-            .iter()
-            .map(|c| c.tls_serialize_detached().unwrap())
-            .collect::<Vec<Vec<u8>>>()
+            .map(|kpg| kpg.key_package.to_reference().unwrap())
+            .collect::<Vec<KeyPackageRef>>()
     );
 
     assert!(update.removed.is_empty());
@@ -143,7 +127,7 @@ fn get_test_sessions(
                 .join_session(
                     key.clone(),
                     &tree_data,
-                    &commit.welcome_packet.as_ref().unwrap(),
+                    commit.welcome_packet.as_ref().unwrap(),
                     opts.clone(),
                 )
                 .unwrap()
@@ -151,7 +135,7 @@ fn get_test_sessions(
         .collect::<Vec<Session>>();
 
     for one_receiver in &receiver_sessions {
-        assert!(creator_session.has_equal_state(&one_receiver))
+        assert!(creator_session.has_equal_state(one_receiver))
     }
 
     (creator_session, receiver_sessions)
@@ -230,13 +214,13 @@ fn test_update_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
             .process_incoming_bytes(&update_proposal)
             .unwrap();
 
-        for j in 0..receiver_sessions.len() {
+        (0..receiver_sessions.len()).for_each(|j| {
             if i != j {
                 receiver_sessions[j]
                     .process_incoming_bytes(&update_proposal)
                     .unwrap();
             }
-        }
+        });
 
         // Everyone receives the commit
         let committer_index = i + 1;
@@ -260,6 +244,7 @@ fn test_update_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
                 }
             }
             .unwrap();
+
             assert!(update.active);
             assert_eq!(update.epoch, (i as u64) + 2);
             assert!(update.added.is_empty());
@@ -302,8 +287,10 @@ fn test_remove_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
 
     // Remove people from the group one at a time
     while receiver_sessions.len() > 1 {
+        let to_remove = creator_session.roster().last().cloned().cloned().unwrap();
+
         let removal = creator_session
-            .remove_proposal((creator_session.participant_count() - 1) as u32)
+            .remove_proposal(&to_remove.to_reference().unwrap())
             .unwrap();
 
         let commit = creator_session.commit(vec![removal]).unwrap();
@@ -316,7 +303,6 @@ fn test_remove_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
 
         // Process the removal in the other receiver groups
         for (index, one_session) in receiver_sessions.iter_mut().enumerate() {
-            let removed_cred = one_session.roster().last().unwrap().clone();
             let expect_inactive = one_session.roster().len() - 2;
 
             let state_update = one_session
@@ -328,16 +314,7 @@ fn test_remove_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
                 _ => panic!("Expected commit result"),
             };
             assert_eq!(update.epoch, epoch_count as u64);
-
-            assert_eq!(
-                update
-                    .removed
-                    .iter()
-                    .map(|c| c.tls_serialize_detached().unwrap())
-                    .collect::<Vec<Vec<u8>>>(),
-                vec![removed_cred.tls_serialize_detached().unwrap()]
-            );
-
+            assert_eq!(update.removed, vec![to_remove.clone()]);
             assert!(update.added.is_empty());
 
             if index != expect_inactive {
@@ -404,7 +381,7 @@ fn test_application_messages(
             creator_session.process_incoming_bytes(&ciphertext).unwrap();
 
             // Everyone else receives the application message
-            for j in 0..receiver_sessions.len() {
+            (0..receiver_sessions.len()).for_each(|j| {
                 if i != j {
                     let decrypted = receiver_sessions[j]
                         .process_incoming_bytes(&ciphertext)
@@ -413,7 +390,7 @@ fn test_application_messages(
                         matches!(decrypted, ProcessedMessage::Application(m) if m == test_message)
                     );
                 }
-            }
+            });
         }
     }
 }

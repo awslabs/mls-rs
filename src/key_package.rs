@@ -7,6 +7,7 @@ use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError, SecretKey};
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::kdf::KdfError;
 use ferriscrypt::{Signer, Verifier};
+use std::ops::Deref;
 use std::time::SystemTime;
 use thiserror::Error;
 use tls_codec::Serialize;
@@ -48,7 +49,6 @@ impl KeyPackage {
     pub fn to_vec(&self) -> Result<Vec<u8>, KeyPackageError> {
         Ok(self.tls_serialize_detached()?)
     }
-
     pub fn to_reference(&self) -> Result<KeyPackageRef, KeyPackageError> {
         Ok(KeyPackageRef(HashReference::from_value(
             &self.tls_serialize_detached()?,
@@ -57,14 +57,34 @@ impl KeyPackage {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, TlsSerialize, TlsDeserialize, TlsSize,
+)]
 pub struct KeyPackageRef(HashReference);
 
-// TODO FIXME: This is suboptimal for various reasons but will be replaced when we implement key package
-// changes to the protocol as part of the Draft 12 series of tickets
+impl Deref for KeyPackageRef {
+    type Target = [u8; 16];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl ToString for KeyPackageRef {
+    fn to_string(&self) -> String {
+        hex::encode(self.deref())
+    }
+}
+
+impl From<[u8; 16]> for KeyPackageRef {
+    fn from(v: [u8; 16]) -> Self {
+        Self(HashReference::from(v))
+    }
+}
+
 impl PartialEq for KeyPackage {
     fn eq(&self, other: &Self) -> bool {
-        self.hash().ok() == other.hash().ok()
+        self.to_reference().ok() == other.to_reference().ok()
     }
 }
 
@@ -105,13 +125,6 @@ impl<'a> KeyPackageGenerator<'a> {
 }
 
 impl KeyPackage {
-    pub fn hash(&self) -> Result<Vec<u8>, KeyPackageError> {
-        Ok(self
-            .cipher_suite
-            .hash_function()
-            .digest(&self.tls_serialize_detached()?))
-    }
-
     fn to_signable_bytes(&self) -> Result<Vec<u8>, KeyPackageError> {
         #[derive(TlsSerialize, TlsSize)]
         pub struct KeyPackageData<'a> {

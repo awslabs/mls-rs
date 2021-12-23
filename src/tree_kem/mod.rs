@@ -13,10 +13,9 @@ use node::{Leaf, LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
 use node_secrets::{NodeSecretGenerator, NodeSecrets};
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
-use crate::credential::Credential;
 use crate::extension::{ExtensionError, ParentHashExt};
 use crate::group::key_schedule::KeyScheduleKdfError;
-use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration};
+use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageRef};
 use crate::tree_kem::leaf_secret::{LeafSecret, LeafSecretError};
 use crate::tree_kem::node_secrets::NodeSecretGeneratorError;
 use crate::tree_kem::parent_hash::ParentHashError;
@@ -76,12 +75,18 @@ pub enum RatchetTreeError {
     ParentHashMismatch,
     #[error("invalid parent hash: {0}")]
     InvalidParentHash(String),
+    #[error("duplicate key packages found: {0:?}")]
+    DuplicateKeyPackages(Vec<String>),
+    #[error("key package not found: {0}")]
+    KeyPackageNotFound(String),
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct RatchetTree {
     pub cipher_suite: CipherSuite,
-    pub(crate) nodes: NodeVec,
+    #[tls_codec(with = "crate::tls::DefMap")]
+    key_package_index: HashMap<KeyPackageRef, LeafIndex>,
+    nodes: NodeVec,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -150,15 +155,25 @@ impl TreeSecrets {
 }
 
 impl RatchetTree {
+    pub fn new(cipher_suite: CipherSuite) -> RatchetTree {
+        RatchetTree {
+            cipher_suite,
+            key_package_index: Default::default(),
+            nodes: Default::default(),
+        }
+    }
+
     pub fn derive(
         key_package: KeyPackageGeneration,
     ) -> Result<(RatchetTree, TreeKemPrivate), RatchetTreeError> {
-        let public_tree = RatchetTree {
-            cipher_suite: key_package.key_package.cipher_suite,
-            nodes: vec![Leaf::from(key_package.key_package.clone()).into()].into(),
-        };
+        let mut public_tree = RatchetTree::new(key_package.key_package.cipher_suite);
 
-        let private_tree = TreeKemPrivate::from(key_package);
+        let key_package_ref = key_package.key_package.to_reference()?;
+
+        public_tree.add_leaves(vec![key_package.key_package])?;
+
+        let private_tree =
+            TreeKemPrivate::new_self_leaf(LeafIndex(0), key_package_ref, key_package.secret_key);
 
         Ok((public_tree, private_tree))
     }
@@ -167,16 +182,24 @@ impl RatchetTree {
         self.nodes.leaf_count()
     }
 
-    pub fn find_leaf(&self, key_package: &KeyPackage) -> Option<LeafIndex> {
-        self.nodes
-            .non_empty_leaves()
-            .find(|(_, leaf)| &leaf.key_package == key_package)
-            .map(|r| r.0)
+    pub fn package_leaf_index(
+        &self,
+        key_package_ref: &KeyPackageRef,
+    ) -> Result<LeafIndex, RatchetTreeError> {
+        self.key_package_index
+            .get(key_package_ref)
+            .cloned()
+            .ok_or_else(|| RatchetTreeError::KeyPackageNotFound(key_package_ref.to_string()))
     }
 
-    pub fn get_key_package(&self, leaf: LeafIndex) -> Result<&KeyPackage, RatchetTreeError> {
+    pub fn get_key_package(
+        &self,
+        key_package_ref: &KeyPackageRef,
+    ) -> Result<&KeyPackage, RatchetTreeError> {
+        let index = self.package_leaf_index(key_package_ref)?;
+
         self.nodes
-            .borrow_as_leaf(leaf)
+            .borrow_as_leaf(index)
             .map(|l| &l.key_package)
             .map_err(|e| e.into())
     }
@@ -200,7 +223,9 @@ impl RatchetTree {
         Ok(())
     }
 
-    fn update_unmerged(&mut self, index: LeafIndex) -> Result<(), RatchetTreeError> {
+    fn update_unmerged(&mut self, key_package_ref: &KeyPackageRef) -> Result<(), RatchetTreeError> {
+        let index = self.package_leaf_index(key_package_ref)?;
+
         // For a given leaf index, find parent nodes and add the leaf to the unmerged leaf
         self.nodes.direct_path(index)?.iter().for_each(|&i| {
             if let Ok(p) = self.nodes.borrow_as_parent_mut(i) {
@@ -211,65 +236,119 @@ impl RatchetTree {
         Ok(())
     }
 
-    fn fill_empty_leaves(&mut self, nodes: &[Node]) -> Vec<LeafIndex> {
-        // Fill a set of empty leaves given a particular array, return the amount of
-        // nodes consumed
-        self.nodes.empty_leaves().zip(nodes.iter()).fold(
+    fn fill_empty_leaves(
+        &mut self,
+        key_packages: &[(KeyPackageRef, KeyPackage)],
+    ) -> Vec<KeyPackageRef> {
+        // Fill a set of empty leaves given a particular array, return the leaf indexes that were
+        // overwritten
+        self.nodes.empty_leaves().zip(key_packages.iter()).fold(
             Vec::new(),
-            |mut indexs, ((index, empty_node), new_node)| {
-                *empty_node = Some(new_node.clone());
-                indexs.push(index);
+            |mut indexs, ((index, empty_node), (package_ref, package))| {
+                // See TODO in add_nodes, we have to clone here because we can't iterate the list
+                // of packages to insert a single time
+                *empty_node = Some(Node::from(Leaf::from(package.clone())));
+                self.key_package_index.insert(package_ref.clone(), index);
+                indexs.push(package_ref.clone());
                 indexs
             },
         )
     }
 
-    pub fn add_nodes(
+    pub fn add_leaves(
         &mut self,
         key_packages: Vec<KeyPackage>,
-    ) -> Result<Vec<LeafIndex>, RatchetTreeError> {
+    ) -> Result<Vec<KeyPackageRef>, RatchetTreeError> {
         // Validate the validity of the key signatures and lifetimes
         key_packages
             .iter()
             .try_for_each(|kp| kp.validate(SystemTime::now()))?;
 
         // Convert all the key packages into nodes
-        let new_nodes: Vec<Node> = key_packages.iter().map(|n| Node::from(n.clone())).collect();
+        let packages_to_insert = key_packages
+            .into_iter()
+            .map(|kp| {
+                let reference = kp.to_reference()?;
+                Ok((reference, kp))
+            })
+            .collect::<Result<Vec<(KeyPackageRef, KeyPackage)>, RatchetTreeError>>()?;
+
+        // Determine if there are any duplicate entries in the existing tree
+        let duplicate_kpr: Vec<KeyPackageRef> = packages_to_insert
+            .iter()
+            .filter(|(kp_ref, _)| self.key_package_index.contains_key(kp_ref))
+            .map(|(kp_ref, _)| kp_ref.clone())
+            .collect();
+
+        if !duplicate_kpr.is_empty() {
+            return Err(RatchetTreeError::DuplicateKeyPackages(
+                duplicate_kpr
+                    .into_iter()
+                    .map(|kpr| kpr.to_string())
+                    .collect(),
+            ));
+        }
 
         // Fill empty leaves first, then add the remaining nodes by extending
         // the tree to the right
-        let mut added_leaf_index = self.fill_empty_leaves(&new_nodes);
 
-        new_nodes.iter().skip(added_leaf_index.len()).for_each(|n| {
-            if !self.nodes.is_empty() {
-                self.nodes.push(None);
-            }
-            self.nodes.push(n.clone().into());
-            added_leaf_index.push(LeafIndex(self.nodes.len() as u32 / 2))
-        });
+        // TODO: Find a way to predetermine a single list of nodes to fill by pre-populating new
+        // empty nodes and iterating through a chain of empty leaves + new leaves
+        let mut added_leaf_indexs = self.fill_empty_leaves(&packages_to_insert);
 
-        added_leaf_index
+        packages_to_insert
+            .into_iter()
+            .skip(added_leaf_indexs.len())
+            .for_each(|(package_ref, package)| {
+                if !self.nodes.is_empty() {
+                    self.nodes.push(None);
+                }
+
+                self.nodes.push(Some(Node::from(Leaf::from(package))));
+
+                let index = LeafIndex(self.nodes.len() as u32 / 2);
+                self.key_package_index.insert(package_ref.clone(), index);
+                added_leaf_indexs.push(package_ref);
+            });
+
+        added_leaf_indexs
             .iter()
-            .try_for_each(|&i| self.update_unmerged(i))?;
+            .try_for_each(|kpr| self.update_unmerged(kpr))?;
 
-        Ok(added_leaf_index)
+        Ok(added_leaf_indexs)
     }
 
-    pub fn remove_nodes(
+    // Remove a node given a lookup tree. The lookup tree aids with situations where the reference
+    // you are removing might have changed via an update that was applied before calling this
+    // function. Removes must be based on an initial state before updates are applied.
+    pub fn remove_leaves(
         &mut self,
-        indexes: Vec<LeafIndex>,
-    ) -> Result<Vec<(LeafIndex, KeyPackage)>, RatchetTreeError> {
-        let mut removed_leaves = Vec::new();
+        lookup_tree: &RatchetTree,
+        key_package_refs: Vec<KeyPackageRef>,
+    ) -> Result<Vec<(KeyPackageRef, KeyPackage)>, RatchetTreeError> {
+        // Identify a leaf node containing a key package matching removed.
+        // This lookup MUST be done on the tree before any non-Remove proposals have been applied
 
-        for one_index in indexes {
-            // Replace the leaf node at position removed with a blank node
-            if let Some(removed) = self.nodes.blank_leaf_node(one_index)? {
-                removed_leaves.push((one_index, removed.key_package));
-            }
+        let indexes = key_package_refs
+            .iter()
+            .map(|reference| lookup_tree.package_leaf_index(reference))
+            .collect::<Result<Vec<LeafIndex>, RatchetTreeError>>()?;
 
-            // Blank the intermediate nodes along the path from the removed leaf to the root
-            self.nodes.blank_direct_path(one_index)?;
-        }
+        let removed_leaves = indexes.iter().zip(key_package_refs).try_fold(
+            Vec::new(),
+            |mut vec, (index, package_ref)| {
+                // Replace the leaf node at position removed with a blank node
+                if let Some(removed) = self.nodes.blank_leaf_node(*index)? {
+                    self.key_package_index.remove(&package_ref);
+                    vec.push((package_ref.clone(), removed.key_package));
+                }
+
+                // Blank the intermediate nodes along the path from the removed leaf to the root
+                self.nodes.blank_direct_path(*index)?;
+
+                Ok::<_, RatchetTreeError>(vec)
+            },
+        )?;
 
         // Truncate the tree by reducing the size of tree until the rightmost non-blank leaf node
         self.nodes.trim();
@@ -279,14 +358,29 @@ impl RatchetTree {
 
     pub fn update_leaf(
         &mut self,
-        leaf_index: LeafIndex,
+        package_ref: &KeyPackageRef,
         key_package: KeyPackage,
     ) -> Result<(), RatchetTreeError> {
         // Validate the validity of the key signature
         key_package.validate(SystemTime::now())?;
 
+        // Determine if this key package is unique
+        let new_key_package_ref = key_package.to_reference()?;
+
+        if self.package_leaf_index(&new_key_package_ref).is_ok() {
+            return Err(RatchetTreeError::DuplicateKeyPackages(vec![
+                new_key_package_ref.to_string(),
+            ]));
+        }
+
         // Update the leaf node
+        let leaf_index = self.package_leaf_index(package_ref)?;
         self.nodes.borrow_as_leaf_mut(leaf_index)?.key_package = key_package;
+
+        // Update the cache
+        self.key_package_index.remove(package_ref);
+        self.key_package_index
+            .insert(new_key_package_ref, leaf_index);
 
         // Blank the intermediate nodes along the path from the sender's leaf to the root
         self.nodes
@@ -295,15 +389,10 @@ impl RatchetTree {
             .map_err(RatchetTreeError::from)
     }
 
-    pub fn get_credential(&self, leaf_index: LeafIndex) -> Result<Credential, RatchetTreeError> {
-        let leaf = self.nodes.borrow_as_leaf(leaf_index)?;
-        Ok(leaf.key_package.credential.clone())
-    }
-
-    pub fn get_credentials(&self) -> Vec<Credential> {
+    pub fn get_key_packages(&self) -> Vec<&KeyPackage> {
         self.nodes
             .non_empty_leaves()
-            .map(|(_, l)| l.key_package.credential.clone())
+            .map(|(_, l)| &l.key_package)
             .collect()
     }
 
@@ -342,12 +431,13 @@ impl RatchetTree {
         Ok((indexed_node_secrets, update_path_node))
     }
 
+    // TODO: Make UpdatePathGeneration not return a private key to simplify this function
     pub fn encap(
         &mut self,
         private_key: &TreeKemPrivate,
         signer: &SecretKey,
         context: &[u8],
-        excluding: &[LeafIndex],
+        excluding: &[KeyPackageRef],
     ) -> Result<UpdatePathGeneration, RatchetTreeError> {
         // random leaf secret
         let leaf_secret = LeafSecret::generate(self.cipher_suite)?;
@@ -367,12 +457,17 @@ impl RatchetTree {
 
         leaf_key_package.hpke_init_key = leaf_secrets.public_key;
 
+        let excluding: Vec<LeafIndex> = excluding
+            .iter()
+            .flat_map(|kpr| self.package_leaf_index(kpr))
+            .collect();
+
         // Generate all the new path secrets and encrypt them to their copath node resolutions
         let (node_secrets, node_updates): (Vec<IndexedNodeSecrets>, Vec<UpdatePathNode>) =
             secret_generator
                 .zip(
                     self.nodes
-                        .direct_path_copath_resolution(private_key.self_index, excluding)?,
+                        .direct_path_copath_resolution(private_key.self_index, &excluding)?,
                 )
                 .map(|(path_secret, (index, copath_nodes))| {
                     self.encrypt_copath_node_resolution(&path_secret?, index, copath_nodes, context)
@@ -420,6 +515,16 @@ impl RatchetTree {
             .set_extension(ParentHashExt::from(leaf_parent_hash))?;
 
         leaf.key_package.sign(signer)?;
+
+        let key_package_ref = leaf.key_package.to_reference()?;
+
+        // Update the key package index with the new reference value
+        self.key_package_index.remove(&private_key.key_package_ref);
+        self.key_package_index
+            .insert(key_package_ref.clone(), private_key.self_index);
+
+        // Update the private key with the new reference value
+        private_key.key_package_ref = key_package_ref;
 
         // Overwrite the key package in the update path with the signed version
         update_path.leaf_key_package = leaf.key_package.clone();
@@ -496,10 +601,21 @@ impl RatchetTree {
     pub fn apply_pending_update(
         &mut self,
         update_path_generation: &UpdatePathGeneration,
+        original_key_package_ref: &KeyPackageRef,
     ) -> Result<(), RatchetTreeError> {
         let sender = update_path_generation.secrets.private_key.self_index;
         self.apply_update_path(sender, &update_path_generation.update_path)?;
 
+        self.key_package_index.remove(original_key_package_ref);
+
+        self.key_package_index.insert(
+            update_path_generation
+                .secrets
+                .private_key
+                .key_package_ref
+                .clone(),
+            sender,
+        );
         // Verify the parent hash of the new sender leaf node and update the parent hash values
         // in the local tree
         self.update_parent_hashes(sender, Some(&update_path_generation.update_path))?;
@@ -510,25 +626,28 @@ impl RatchetTree {
     pub fn decap(
         &mut self,
         private_key: TreeKemPrivate,
-        sender: LeafIndex,
+        sender: &KeyPackageRef,
         update_path: &UpdatePath,
-        added_leaves: Vec<LeafIndex>,
+        added_leaves: &[KeyPackageRef],
         context: &[u8],
     ) -> Result<TreeSecrets, RatchetTreeError> {
         // Verify the signature on the key package
         update_path.leaf_key_package.validate(SystemTime::now())?;
 
+        let sender_index = self.package_leaf_index(sender)?;
+
         // Exclude newly added leaf indexes
         let excluding = added_leaves
             .iter()
-            .map(NodeIndex::from)
+            .flat_map(|kpr| self.package_leaf_index(kpr).map(Into::into))
             .collect::<Vec<NodeIndex>>();
 
         // Find the least common ancestor shared by us and the sender
-        let lca = tree_math::common_ancestor_direct(private_key.self_index.into(), sender.into());
+        let lca =
+            tree_math::common_ancestor_direct(private_key.self_index.into(), sender_index.into());
 
-        let sender_direct = self.nodes.direct_path(sender)?;
-        let sender_co = self.nodes.copath(sender)?;
+        let sender_direct = self.nodes.direct_path(sender_index)?;
+        let sender_co = self.nodes.copath(sender_index)?;
 
         let lca_path_secret = sender_direct
             .iter()
@@ -559,7 +678,7 @@ impl RatchetTree {
                 // Get a pairing of direct path index + associated update
                 // This will help us verify that the calculated public key is the expected one
                 self.nodes
-                    .direct_path(sender)?
+                    .direct_path(sender_index)?
                     .iter()
                     .zip(update_path.nodes.iter())
                     .skip_while(|(dp, _)| **dp != lca),
@@ -586,11 +705,15 @@ impl RatchetTree {
                 },
             )?;
 
-        self.apply_update_path(sender, update_path)?;
+        self.apply_update_path(sender_index, update_path)?;
+
+        self.key_package_index.remove(sender);
+        self.key_package_index
+            .insert(update_path.leaf_key_package.to_reference()?, sender_index);
 
         // Verify the parent hash of the new sender leaf node and update the parent hash values
         // in the local tree
-        self.update_parent_hashes(sender, Some(update_path))?;
+        self.update_parent_hashes(sender_index, Some(update_path))?;
 
         Ok(tree_secrets)
     }
@@ -631,7 +754,7 @@ pub struct UpdatePath {
 pub(crate) mod test {
     use ferriscrypt::asym::ec_key::Curve;
 
-    use crate::credential::BasicCredential;
+    use crate::credential::{BasicCredential, Credential};
     use crate::extension::{CapabilitiesExt, ExtensionList, ExtensionTrait, LifetimeExt};
     use crate::key_package::KeyPackageGenerator;
     use crate::tree_kem::node::{NodeTypeResolver, Parent};
@@ -677,20 +800,27 @@ pub(crate) mod test {
         key_package
     }
 
-    pub fn get_test_tree(cipher_suite: CipherSuite) -> (RatchetTree, TreeKemPrivate) {
+    pub fn get_test_tree(
+        cipher_suite: CipherSuite,
+    ) -> (RatchetTree, TreeKemPrivate, KeyPackageGeneration) {
         let test_key_package = get_test_key_package(cipher_suite, b"foo".to_vec());
 
-        let test_tree = RatchetTree::derive(test_key_package.clone()).unwrap();
+        let (test_public, test_private) = RatchetTree::derive(test_key_package.clone()).unwrap();
         assert_eq!(
-            test_tree.0.nodes[0],
+            test_public.nodes[0],
             Some(Node::Leaf(Leaf {
-                key_package: test_key_package.key_package
+                key_package: test_key_package.key_package.clone()
             }))
         );
 
-        assert_eq!(test_tree.1.self_index, LeafIndex(0));
-        assert_eq!(test_tree.1.secret_keys[&0], test_key_package.secret_key);
-        test_tree
+        assert_eq!(test_private.self_index, LeafIndex(0));
+        assert_eq!(
+            test_private.key_package_ref,
+            test_key_package.key_package.to_reference().unwrap()
+        );
+        assert_eq!(test_private.secret_keys[&0], test_key_package.secret_key);
+
+        (test_public, test_private, test_key_package)
     }
 
     pub fn get_test_key_packages(cipher_suite: CipherSuite) -> Vec<KeyPackage> {
@@ -703,16 +833,38 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn test_add_node_new_tree() {
+    fn test_add_leaf() {
         let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
 
-        let mut tree = RatchetTree {
-            cipher_suite,
-            nodes: NodeVec::from(vec![]),
-        };
+        let mut tree = RatchetTree::new(cipher_suite);
 
         let key_packages = get_test_key_packages(cipher_suite);
-        tree.add_nodes(key_packages.clone()).unwrap();
+        let res = tree.add_leaves(key_packages.clone()).unwrap();
+
+        // The result of adding a node should be all the references that were added
+        assert_eq!(
+            res,
+            key_packages
+                .iter()
+                .map(|kp| kp.to_reference().unwrap())
+                .collect::<Vec<KeyPackageRef>>()
+        );
+
+        // The leaf count should be equal to the number of packages we added
+        assert_eq!(tree.leaf_count(), key_packages.len() as u32);
+
+        // Each added package should be at the proper index and searchable in the tree
+        res.iter()
+            .zip(key_packages.clone())
+            .enumerate()
+            .for_each(|(index, (r, kp))| {
+                assert_eq!(tree.get_key_package(r).unwrap(), &kp);
+                assert_eq!(tree.package_leaf_index(r).unwrap(), LeafIndex(index as u32));
+            });
+
+        // Verify the underlying state
+
+        assert_eq!(tree.key_package_index.len(), tree.leaf_count() as usize);
 
         assert_eq!(tree.nodes.len(), 5);
         assert_eq!(
@@ -741,15 +893,63 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn test_add_node_empty_leaf() {
+    fn test_get_key_packages() {
         let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
 
-        let (mut tree, _) = get_test_tree(cipher_suite);
+        let mut tree = RatchetTree::new(cipher_suite);
+
+        let key_packages = get_test_key_packages(cipher_suite);
+        tree.add_leaves(key_packages).unwrap();
+
+        let key_packages = tree.get_key_packages();
+        assert_eq!(key_packages, key_packages.to_owned());
+    }
+
+    #[test]
+    fn test_find_leaf() {
+        let cipher_suite = CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521;
+
+        let mut tree = RatchetTree::new(cipher_suite);
+
         let key_packages = get_test_key_packages(cipher_suite);
 
-        tree.add_nodes([key_packages[0].clone()].to_vec()).unwrap();
+        tree.add_leaves(key_packages.clone()).unwrap();
+
+        for (index, key_package_generation) in key_packages.iter().enumerate() {
+            let key_package_index = tree
+                .package_leaf_index(&key_package_generation.to_reference().unwrap())
+                .unwrap();
+            assert_eq!(key_package_index, LeafIndex(index as u32));
+        }
+    }
+
+    #[test]
+    fn test_add_leaf_duplicate() {
+        let cipher_suite = CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521;
+
+        let mut tree = RatchetTree::new(cipher_suite);
+
+        let key_packages = get_test_key_packages(cipher_suite);
+        tree.add_leaves(key_packages.clone()).unwrap();
+
+        let add_res = tree.add_leaves(key_packages);
+
+        assert!(matches!(
+            add_res,
+            Err(RatchetTreeError::DuplicateKeyPackages(_))
+        ));
+    }
+
+    #[test]
+    fn test_add_leaf_empty_leaf() {
+        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+
+        let (mut tree, _, _) = get_test_tree(cipher_suite);
+        let key_packages = get_test_key_packages(cipher_suite);
+
+        tree.add_leaves([key_packages[0].clone()].to_vec()).unwrap();
         tree.nodes[0] = None; // Set the original first node to none
-        tree.add_nodes([key_packages[1].clone()].to_vec()).unwrap();
+        tree.add_leaves([key_packages[1].clone()].to_vec()).unwrap();
 
         assert_eq!(tree.nodes[0], Leaf::from(key_packages[1].clone()).into());
         assert_eq!(tree.nodes[1], None);
@@ -758,14 +958,14 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn test_add_node_unmerged() {
+    fn test_add_leaf_unmerged() {
         let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
 
-        let (mut tree, _) = get_test_tree(cipher_suite);
+        let (mut tree, _, _) = get_test_tree(cipher_suite);
 
         let key_packages = get_test_key_packages(cipher_suite);
 
-        tree.add_nodes([key_packages[0].clone(), key_packages[1].clone()].to_vec())
+        tree.add_leaves([key_packages[0].clone(), key_packages[1].clone()].to_vec())
             .unwrap();
 
         tree.nodes[3] = Parent {
@@ -775,7 +975,7 @@ pub(crate) mod test {
         }
         .into();
 
-        tree.add_nodes([key_packages[2].clone()].to_vec()).unwrap();
+        tree.add_leaves([key_packages[2].clone()].to_vec()).unwrap();
 
         assert_eq!(
             tree.nodes[3].as_parent().unwrap().unmerged_leaves,
@@ -787,13 +987,13 @@ pub(crate) mod test {
     fn test_add_node_bad_package() {
         let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
 
-        let (mut tree, _) = get_test_tree(cipher_suite);
+        let (mut tree, _, _) = get_test_tree(cipher_suite);
         let tree_clone = tree.clone();
 
         let mut key_packages = get_test_key_packages(cipher_suite);
         key_packages[0] = get_invalid_key_package(cipher_suite);
 
-        let res = tree.add_nodes([key_packages[0].clone(), key_packages[1].clone()].to_vec());
+        let res = tree.add_leaves([key_packages[0].clone(), key_packages[1].clone()].to_vec());
 
         assert!(res.is_err());
         assert_eq!(tree, tree_clone);
@@ -804,9 +1004,9 @@ pub(crate) mod test {
         let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
 
         // Create a tree
-        let (mut tree, _) = get_test_tree(cipher_suite);
+        let (mut tree, _, _) = get_test_tree(cipher_suite);
         let key_packages = get_test_key_packages(cipher_suite);
-        tree.add_nodes(key_packages).unwrap();
+        tree.add_leaves(key_packages.clone()).unwrap();
 
         // Add in parent nodes so we can detect them clearing after update
         tree.nodes
@@ -819,14 +1019,43 @@ pub(crate) mod test {
                     .unwrap();
             });
 
-        let updated_leaf = get_test_key_package(cipher_suite, b"newpk".to_vec()).key_package;
+        let original_size = tree.leaf_count();
+        let original_package_ref = key_packages[0].to_reference().unwrap();
+        let original_leaf_index = tree.package_leaf_index(&original_package_ref).unwrap();
 
-        tree.update_leaf(LeafIndex(0), updated_leaf.clone())
+        let updated_leaf = get_test_key_package(cipher_suite, b"newpk".to_vec()).key_package;
+        let updated_key_ref = updated_leaf.to_reference().unwrap();
+
+        tree.update_leaf(&original_package_ref, updated_leaf.clone())
             .unwrap();
+
+        // The tree should not have grown due to an update
+        assert_eq!(tree.leaf_count(), original_size);
+
+        // The leaf should not have moved due to an update
         assert_eq!(
-            tree.nodes.borrow_as_leaf(LeafIndex(0)).unwrap().key_package,
-            updated_leaf
+            tree.package_leaf_index(&updated_key_ref).unwrap(),
+            original_leaf_index
         );
+
+        // The cache of tree package indexs should not have grown
+        assert_eq!(tree.key_package_index.len() as u32, tree.leaf_count());
+
+        // The key package should be updated in the tree
+        assert_eq!(
+            tree.get_key_package(&updated_key_ref).unwrap(),
+            &updated_leaf
+        );
+
+        // There should be an error when looking for the original key package ref
+        assert!(matches!(
+            tree.get_key_package(&original_package_ref),
+            Err(RatchetTreeError::KeyPackageNotFound(_))
+        ));
+        assert!(matches!(
+            tree.package_leaf_index(&original_package_ref),
+            Err(RatchetTreeError::KeyPackageNotFound(_))
+        ));
 
         // Verify that the direct path has been cleared
         tree.nodes
@@ -839,16 +1068,113 @@ pub(crate) mod test {
     }
 
     #[test]
-    fn test_update_bad_leaf() {
+    fn test_update_leaf_bad_leaf() {
         let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
 
-        let (mut tree, _) = get_test_tree(cipher_suite);
+        let (mut tree, _, key_package_generation) = get_test_tree(cipher_suite);
         let bad_key_package = get_invalid_key_package(cipher_suite);
 
         let tree_clone = tree.clone();
-        let res = tree.update_leaf(LeafIndex(0), bad_key_package);
+        let res = tree.update_leaf(
+            &key_package_generation.key_package.to_reference().unwrap(),
+            bad_key_package,
+        );
         assert!(res.is_err());
         assert_eq!(tree, tree_clone);
+    }
+
+    #[test]
+    fn test_update_leaf_not_found() {
+        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+
+        // Create a tree
+        let (mut tree, _, _) = get_test_tree(cipher_suite);
+        let key_packages = get_test_key_packages(cipher_suite);
+        tree.add_leaves(key_packages).unwrap();
+
+        let new_key_package = get_test_key_package(cipher_suite, b"new".to_vec());
+
+        assert!(matches!(
+            tree.update_leaf(&KeyPackageRef::from([0u8; 16]), new_key_package.key_package),
+            Err(RatchetTreeError::KeyPackageNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn test_update_leaf_duplicate() {
+        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+
+        // Create a tree
+        let (mut tree, _, _) = get_test_tree(cipher_suite);
+        let key_packages = get_test_key_packages(cipher_suite);
+        tree.add_leaves(key_packages.clone()).unwrap();
+
+        let duplicate_key_package = key_packages[1].clone();
+        let key_package_ref = key_packages[0].to_reference().unwrap();
+
+        assert!(matches!(
+            tree.update_leaf(&key_package_ref, duplicate_key_package),
+            Err(RatchetTreeError::DuplicateKeyPackages(_))
+        ));
+    }
+
+    #[test]
+    fn test_remove_leaf() {
+        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+
+        // Create a tree
+        let (mut tree, _, _) = get_test_tree(cipher_suite);
+        let key_packages = get_test_key_packages(cipher_suite);
+        tree.add_leaves(key_packages.clone()).unwrap();
+
+        let original_leaf_count = tree.leaf_count();
+
+        let to_remove = vec![
+            key_packages[1].to_reference().unwrap(),
+            key_packages[2].to_reference().unwrap(),
+        ];
+
+        // Remove two leaves from the tree
+        let res = tree
+            .remove_leaves(&tree.clone(), to_remove.clone())
+            .unwrap();
+
+        let expected_result: Vec<(KeyPackageRef, KeyPackage)> = to_remove
+            .clone()
+            .into_iter()
+            .zip(key_packages[1..].to_owned())
+            .collect();
+
+        assert_eq!(res, expected_result);
+
+        // The leaf count should have been reduced by 2
+        assert_eq!(tree.leaf_count(), original_leaf_count - 2);
+
+        // We should no longer be able to find the removed leaves
+        for key_package_ref in to_remove {
+            assert!(matches!(
+                tree.get_key_package(&key_package_ref),
+                Err(RatchetTreeError::KeyPackageNotFound(_))
+            ));
+
+            assert!(matches!(
+                tree.package_leaf_index(&key_package_ref),
+                Err(RatchetTreeError::KeyPackageNotFound(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn test_remove_leaf_failure() {
+        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+
+        // Create a tree
+        let (mut tree, _, _) = get_test_tree(cipher_suite);
+
+        assert!(matches!(
+            tree.remove_leaves(&tree.clone(), vec![KeyPackageRef::from([0u8; 16])]),
+            Err(RatchetTreeError::KeyPackageNotFound(_))
+        ));
     }
 
     // Verify that the tree is in the correct state after generating an update path
@@ -864,7 +1190,8 @@ pub(crate) mod test {
 
         // Verify that the leaf from the update path has been installed
         assert_eq!(
-            tree.find_leaf(&update_path.leaf_key_package).unwrap(),
+            tree.package_leaf_index(&update_path.leaf_key_package.to_reference().unwrap())
+                .unwrap(),
             index
         );
 
@@ -925,17 +1252,17 @@ pub(crate) mod test {
             .iter()
             .enumerate()
             .map(|(index, p)| {
-                TreeKemPrivate::new_self_leaf(LeafIndex(index as u32), p.secret_key.clone())
+                TreeKemPrivate::new_self_leaf(
+                    LeafIndex(index as u32),
+                    p.key_package.to_reference().unwrap(),
+                    p.secret_key.clone(),
+                )
             })
             .collect();
 
         // Build a test tree we can clone for all leaf nodes
-        let mut test_tree = RatchetTree {
-            cipher_suite,
-            nodes: NodeVec::from(vec![]),
-        };
-
-        test_tree.add_nodes(key_packages).unwrap();
+        let mut test_tree = RatchetTree::new(cipher_suite);
+        test_tree.add_leaves(key_packages).unwrap();
 
         // Clone the tree for the first leaf, generate a new key package for that leaf
         let mut encap_tree = test_tree.clone();
@@ -968,9 +1295,12 @@ pub(crate) mod test {
             let secrets = tree
                 .decap(
                     private_keys[i + 1].clone(),
-                    LeafIndex(0),
+                    &key_package_generations[0]
+                        .key_package
+                        .to_reference()
+                        .unwrap(),
                     &update_path_gen.update_path,
-                    vec![],
+                    &[],
                     &b"test_ctx".to_vec(),
                 )
                 .unwrap();
@@ -994,8 +1324,9 @@ pub(crate) mod test {
     fn test_encap_bad_cred() {
         let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
 
-        let (mut tree, private_key) = get_test_tree(cipher_suite);
-        tree.add_nodes(get_test_key_packages(cipher_suite)).unwrap();
+        let (mut tree, private_key, key_package_generation) = get_test_tree(cipher_suite);
+        tree.add_leaves(get_test_key_packages(cipher_suite))
+            .unwrap();
         let tree_copy = tree.clone();
 
         let invalid_update_path = UpdatePathGeneration {
@@ -1011,65 +1342,13 @@ pub(crate) mod test {
 
         let apply_res = tree.decap(
             private_key,
-            LeafIndex(0),
+            &key_package_generation.key_package.to_reference().unwrap(),
             &invalid_update_path.update_path,
-            vec![],
+            &[],
             &[],
         );
 
         assert!(apply_res.is_err());
         assert_eq!(tree, tree_copy);
-    }
-
-    #[test]
-    fn test_private_key_update_leaf() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
-
-        let signing_key =
-            SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
-        let test_key_package =
-            get_test_key_package_sig_key(cipher_suite, b"foo".to_vec(), &signing_key);
-        let (mut tree, mut private_key) = RatchetTree::derive(test_key_package).unwrap();
-
-        tree.add_nodes(get_test_key_packages(cipher_suite)).unwrap();
-
-        // Insert private key values so we can determine the direct path was cleared
-        tree.nodes
-            .direct_path(private_key.self_index)
-            .unwrap()
-            .iter()
-            .for_each(|&i| {
-                private_key.secret_keys.insert(
-                    i,
-                    SecretKey::generate(cipher_suite.kem_type().curve())
-                        .unwrap()
-                        .try_into()
-                        .unwrap(),
-                );
-            });
-
-        // Update your own key package
-        let key_package_generation =
-            get_test_key_package_sig_key(cipher_suite, b"foo".to_vec(), &signing_key);
-
-        private_key
-            .update_leaf(tree.leaf_count(), key_package_generation.secret_key.clone())
-            .unwrap();
-
-        // Verify the secret key value was updated properly
-        assert_eq!(private_key.self_index, LeafIndex(0));
-        assert_eq!(
-            private_key.secret_keys[&0],
-            key_package_generation.secret_key
-        );
-
-        // Verify that the keys in the direct path were cleared
-        tree.nodes
-            .direct_path(private_key.self_index)
-            .unwrap()
-            .iter()
-            .for_each(|i| {
-                assert!(!private_key.secret_keys.contains_key(i));
-            });
     }
 }

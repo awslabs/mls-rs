@@ -372,7 +372,7 @@ impl WelcomeSecret {
 #[cfg(test)]
 pub mod test_utils {
     use super::*;
-    use crate::{group::secret_tree::test::get_test_tree, tree_kem::node::NodeVec};
+    use crate::group::secret_tree::test::get_test_tree;
 
     pub(crate) fn get_test_epoch(
         cipher_suite: CipherSuite,
@@ -382,10 +382,7 @@ pub mod test_utils {
         Epoch {
             identifier: 1,
             cipher_suite,
-            public_tree: RatchetTree {
-                cipher_suite,
-                nodes: NodeVec::from(Vec::new()),
-            },
+            public_tree: RatchetTree::new(cipher_suite),
             secret_tree: get_test_tree(cipher_suite, vec![], 1),
             self_index: LeafIndex(0),
             sender_data_secret: vec![],

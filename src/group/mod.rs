@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use std::ops::Deref;
 use std::option::Option::Some;
 
@@ -17,9 +16,9 @@ use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext, ProtocolVersion};
-use crate::credential::{Credential, CredentialError};
+use crate::credential::CredentialError;
 use crate::extension::{Extension, ExtensionList};
-use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration};
+use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageRef};
 use crate::tree_kem::leaf_secret::{LeafSecret, LeafSecretError};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{
@@ -52,49 +51,43 @@ mod transcript_hash;
 struct ProvisionalState {
     public_tree: RatchetTree,
     private_tree: TreeKemPrivate,
-    added_leaves: Vec<LeafIndex>,
-    removed_leaves: HashMap<LeafIndex, KeyPackage>,
+    added_leaves: Vec<KeyPackageRef>,
+    removed_leaves: HashMap<KeyPackageRef, KeyPackage>,
     epoch: u64,
     path_update_required: bool,
 }
 
 #[derive(Clone, Debug)]
 pub struct StateUpdate {
-    pub added: Vec<Credential>,
-    pub removed: Vec<Credential>,
+    pub added: Vec<KeyPackageRef>,
+    pub removed: Vec<KeyPackage>,
     pub active: bool,
     pub epoch: u64,
 }
 
-impl TryFrom<&ProvisionalState> for StateUpdate {
-    type Error = GroupError;
+impl From<&ProvisionalState> for StateUpdate {
+    fn from(provisional: &ProvisionalState) -> Self {
+        let self_removed = provisional.self_removed();
 
-    fn try_from(provisional: &ProvisionalState) -> Result<Self, Self::Error> {
-        let added: Vec<Credential> = provisional
-            .added_leaves
-            .iter()
-            .map(|i| provisional.public_tree.get_credential(*i))
-            .collect::<Result<Vec<Credential>, RatchetTreeError>>()?;
-
-        let removed: Vec<Credential> = provisional
+        let removed: Vec<KeyPackage> = provisional
             .removed_leaves
             .iter()
-            .map(|(_, kp)| kp.credential.clone())
+            .map(|(_, kp)| kp.clone())
             .collect();
 
-        Ok(StateUpdate {
-            added,
+        StateUpdate {
+            added: provisional.added_leaves.clone(),
             removed,
-            active: !provisional.self_removed(),
+            active: !self_removed,
             epoch: provisional.epoch,
-        })
+        }
     }
 }
 
 impl ProvisionalState {
     fn self_removed(&self) -> bool {
         self.removed_leaves
-            .contains_key(&self.private_tree.self_index)
+            .contains_key(&self.private_tree.key_package_ref)
     }
 }
 
@@ -165,6 +158,8 @@ pub enum GroupError {
     InvalidGroupParticipant(u32),
     #[error("self not found in ratchet tree")]
     TreeMissingSelfUser,
+    #[error("leaf not found in tree for ref {0}")]
+    LeafNotFound(String),
     #[error("remove not allowed on single leaf tree")]
     RemoveNotAllowed,
     #[error("message from self can't be processed")]
@@ -216,7 +211,7 @@ struct GroupInfo {
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,
     pub extensions: ExtensionList,
     pub confirmation_tag: ConfirmationTag,
-    pub signer_index: u32,
+    pub signer: KeyPackageRef,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub signature: Vec<u8>,
 }
@@ -236,7 +231,7 @@ impl GroupInfo {
             pub extensions: &'a Vec<Extension>,
             #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
             pub confirmation_tag: &'a Tag,
-            pub signer_index: u32,
+            pub signer: &'a KeyPackageRef,
         }
 
         SignableGroupInfo {
@@ -246,7 +241,7 @@ impl GroupInfo {
             confirmed_transcript_hash: &self.confirmed_transcript_hash,
             extensions: &self.extensions,
             confirmation_tag: &self.confirmation_tag,
-            signer_index: self.signer_index,
+            signer: &self.signer,
         }
         .tls_serialize_detached()
         .map_err(Into::into)
@@ -281,8 +276,7 @@ pub struct GroupSecrets {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct EncryptedGroupSecrets {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub key_package_hash: Vec<u8>,
+    pub new_member: KeyPackageRef,
     pub encrypted_group_secrets: HpkeCiphertext,
 }
 
@@ -305,8 +299,8 @@ pub struct Group {
     interim_transcript_hash: InterimTranscriptHash,
     #[tls_codec(with = "crate::tls::DefMap")]
     pub proposals: HashMap<ProposalRef, PendingProposal>, // Hash of MLS Plaintext to pending proposal
-    #[tls_codec(with = "crate::tls::Map::<crate::tls::ByteVec, crate::tls::ByteVec>")]
-    pub pending_updates: HashMap<Vec<u8>, HpkeSecretKey>, // Hash of key package to key generation
+    #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::ByteVec>")]
+    pub pending_updates: HashMap<KeyPackageRef, HpkeSecretKey>, // Hash of key package to key generation
 }
 
 impl PartialEq for Group {
@@ -424,11 +418,12 @@ impl Group {
         // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
         // If no such field exists, or if the ciphersuite indicated in the KeyPackage does not
         // match the one in the Welcome message, return an error.
-        let package_hash = key_package.key_package.hash()?;
+        let package_ref = key_package.key_package.to_reference()?;
+
         let encrypted_group_secrets = welcome
             .secrets
             .iter()
-            .find(|s| s.key_package_hash == package_hash)
+            .find(|s| s.new_member == package_ref)
             .ok_or(GroupError::WelcomeKeyPackageNotFound)?;
 
         //Decrypt the encrypted_group_secrets using HPKE with the algorithms indicated by the
@@ -463,8 +458,8 @@ impl Group {
         // are taken from the credential in the leaf node at position signer_index.
         // If this verification fails, return an error.
 
-        let sender_leaf = LeafIndex(group_info.signer_index);
-        let sender_key_package = public_tree.get_key_package(sender_leaf)?;
+        let sender_key_package = public_tree.get_key_package(&group_info.signer)?;
+
         if !sender_key_package
             .credential
             .verify(&group_info.signature, &group_info.to_signable_vec()?)?
@@ -479,9 +474,10 @@ impl Group {
         // identical to the the KeyPackage. If no such field exists, return an error. Let index
         // represent the index of this node among the leaves in the tree, namely the index of the
         // node in the tree array divided by two.
-        let self_index = public_tree
-            .find_leaf(&key_package.key_package)
-            .ok_or(GroupError::TreeMissingSelfUser)?;
+
+        let key_package_ref = key_package.key_package.to_reference()?;
+
+        let self_index = public_tree.package_leaf_index(&key_package_ref)?;
 
         // Construct a new group state using the information in the GroupInfo object. The new
         // member's position in the tree is index, as defined above. In particular, the confirmed
@@ -489,13 +485,14 @@ impl Group {
         // object.
         let context = GroupContext::from(&group_info);
 
-        let mut private_tree = TreeKemPrivate::new_self_leaf(self_index, key_package.secret_key);
+        let mut private_tree =
+            TreeKemPrivate::new_self_leaf(self_index, key_package_ref, key_package.secret_key);
 
         // If the path_secret value is set in the GroupSecrets object
         if let Some(path_secret) = group_secrets.path_secret {
             private_tree.update_secrets(
                 welcome.cipher_suite,
-                LeafIndex(group_info.signer_index),
+                public_tree.package_leaf_index(&group_info.signer)?,
                 path_secret.path_secret,
                 &public_tree,
             )?;
@@ -556,14 +553,14 @@ impl Group {
     fn fetch_proposals<'a>(
         &'a self,
         proposals: &'a [ProposalOrRef],
-        sender: LeafIndex,
+        sender: &KeyPackageRef,
     ) -> Result<Vec<PendingProposal>, GroupError> {
         proposals
             .iter()
             .map(|p| match p {
                 ProposalOrRef::Proposal(p) => Ok(PendingProposal {
                     proposal: p.clone(),
-                    sender,
+                    sender: sender.clone(),
                 }),
                 ProposalOrRef::Reference(r) => self
                     .proposals
@@ -576,7 +573,7 @@ impl Group {
 
     fn apply_proposals(
         &self,
-        sender: LeafIndex,
+        sender: &KeyPackageRef,
         proposals: &[ProposalOrRef],
     ) -> Result<ProvisionalState, GroupError> {
         let proposals = self.fetch_proposals(proposals, sender)?;
@@ -589,44 +586,53 @@ impl Group {
         // Apply updates
         let updates = proposals
             .iter()
-            .filter_map(|p| p.proposal.as_update().map(|u| (p.sender, u)));
+            .filter_map(|p| p.proposal.as_update().map(|u| (p.sender.clone(), u)));
 
         for (update_sender, update) in updates {
             // Update the leaf in the provisional tree
-            provisional_tree.update_leaf(update_sender, update.key_package.clone())?;
+            provisional_tree.update_leaf(&update_sender, update.key_package.clone())?;
 
-            let key_package_hash = update.key_package.hash()?;
+            let key_package_ref = update.key_package.to_reference()?;
 
             // Update the leaf in the private tree if this is our update
-            if let Some(new_leaf_sk) = self.pending_updates.get(&key_package_hash).cloned() {
-                provisional_private_tree.update_leaf(provisional_tree.leaf_count(), new_leaf_sk)?;
+            if let Some(new_leaf_sk) = self.pending_updates.get(&key_package_ref).cloned() {
+                provisional_private_tree.update_leaf(
+                    provisional_tree.leaf_count(),
+                    key_package_ref,
+                    new_leaf_sk,
+                )?;
             }
         }
 
         // Apply removes
-        let removes: Vec<LeafIndex> = proposals
+        let removes: Vec<KeyPackageRef> = proposals
             .iter()
-            .filter_map(|p| p.proposal.as_remove().map(|r| LeafIndex(r.to_remove)))
+            .filter_map(|p| p.proposal.as_remove().map(|r| r.to_remove.clone()))
             .collect();
 
         // If there is only one user in the tree, they can't be removed
-        if !removes.is_empty() && provisional_tree.nodes.len() == 1 {
+        if !removes.is_empty() && provisional_tree.leaf_count() == 1 {
             return Err(GroupError::RemoveNotAllowed);
         }
 
+        let old_tree = self.public_tree()?;
+
         // Remove elements from the private tree
-        removes.iter().try_for_each(|&index| {
-            provisional_private_tree.remove_leaf(provisional_tree.leaf_count(), index)
+        removes.iter().try_for_each(|key_package_ref| {
+            let leaf = old_tree.package_leaf_index(key_package_ref)?;
+            provisional_private_tree.remove_leaf(provisional_tree.leaf_count(), leaf)?;
+
+            Ok::<_, GroupError>(())
         })?;
 
         // Remove elements from the public tree
-        let removed_leaves = provisional_tree.remove_nodes(removes)?.drain(..).fold(
-            HashMap::new(),
-            |mut map, (i, kp)| {
+        let removed_leaves = provisional_tree
+            .remove_leaves(old_tree, removes)?
+            .drain(..)
+            .fold(HashMap::new(), |mut map, (i, kp)| {
                 map.insert(i, kp);
                 map
-            },
-        );
+            });
 
         // Apply adds
         let adds = proposals
@@ -634,7 +640,7 @@ impl Group {
             .filter_map(|p| p.proposal.as_add().map(|a| a.key_package.clone()))
             .collect();
 
-        let added_leaves = provisional_tree.add_nodes(adds)?;
+        let added_leaves = provisional_tree.add_leaves(adds)?;
 
         // Determine if a path update is required
         let has_update_or_remove = proposals
@@ -680,7 +686,7 @@ impl Group {
         // Add the proposal ref to the current set
         let pending_proposal = PendingProposal {
             proposal,
-            sender: self.private_tree.self_index,
+            sender: self.private_tree.key_package_ref.clone(),
         };
 
         self.proposals.insert(reference, pending_proposal);
@@ -699,7 +705,7 @@ impl Group {
             epoch: self.context.epoch,
             sender: Sender {
                 sender_type: SenderType::Member,
-                sender: *self.private_tree.self_index as u32,
+                sender: self.private_tree.key_package_ref.clone(),
             },
             authenticated_data: vec![],
             content,
@@ -744,7 +750,7 @@ impl Group {
         // the tree if all leaves are occupied
 
         let mut provisional_state =
-            self.apply_proposals(self.private_tree.self_index, &proposals)?;
+            self.apply_proposals(&self.private_tree.key_package_ref, &proposals)?;
 
         let mut provisional_group_context = self.context.clone();
         provisional_group_context.epoch += 1;
@@ -837,7 +843,10 @@ impl Group {
             confirmed_transcript_hash: provisional_group_context.confirmed_transcript_hash,
             extensions: self.context.extensions.clone(),
             confirmation_tag, // The confirmation_tag from the MLSPlaintext object
-            signer_index: *self.private_tree.self_index as u32,
+            signer: update_path
+                .as_ref()
+                .map(|up| up.secrets.private_key.key_package_ref.clone())
+                .unwrap_or_else(|| self.private_tree.key_package_ref.clone()),
             signature: vec![],
         };
 
@@ -854,7 +863,7 @@ impl Group {
         // Build welcome messages for each added member
         let secrets = provisional_state
             .added_leaves
-            .iter()
+            .into_iter()
             .map(|i| {
                 self.encrypt_group_secrets(
                     &next_epoch.public_tree,
@@ -885,12 +894,14 @@ impl Group {
     fn encrypt_group_secrets(
         &self,
         provisional_tree: &RatchetTree,
-        leaf_index: &LeafIndex,
+        new_member: KeyPackageRef,
         joiner_secret: &[u8],
         update_path: Option<&UpdatePathGeneration>,
     ) -> Result<EncryptedGroupSecrets, GroupError> {
+        let leaf_index = provisional_tree.package_leaf_index(&new_member)?;
+
         let path_secret = update_path
-            .and_then(|up| up.get_common_path_secret(*leaf_index))
+            .and_then(|up| up.get_common_path_secret(leaf_index))
             .map(PathSecret::from);
 
         // Ensure that we have a path secret if one is required
@@ -904,12 +915,7 @@ impl Group {
         };
 
         let group_secrets_bytes = group_secrets.tls_serialize_detached()?;
-        let key_package = provisional_tree.get_key_package(*leaf_index)?;
-
-        let key_package_hash = self
-            .cipher_suite
-            .hash_function()
-            .digest(&key_package.tls_serialize_detached()?);
+        let key_package = provisional_tree.get_key_package(&new_member)?;
 
         let encrypted_group_secrets = self.cipher_suite.hpke().seal_base(
             &key_package.hpke_init_key,
@@ -919,7 +925,7 @@ impl Group {
         )?;
 
         Ok(EncryptedGroupSecrets {
-            key_package_hash,
+            new_member,
             encrypted_group_secrets: encrypted_group_secrets.into(),
         })
     }
@@ -945,7 +951,7 @@ impl Group {
             .epoch_repo
             .current()?
             .public_tree
-            .get_key_package(self.private_tree.self_index)?
+            .get_key_package(&self.private_tree.key_package_ref)?
             .clone();
 
         key_package.hpke_init_key = leaf_pub;
@@ -954,24 +960,21 @@ impl Group {
         key_package.sign(signing_key)?;
 
         // Store the secret key in the pending updates storage for later
-        self.pending_updates.insert(key_package.hash()?, leaf_sec);
+        self.pending_updates
+            .insert(key_package.to_reference()?, leaf_sec);
 
         Ok(Proposal::Update(UpdateProposal { key_package }))
     }
 
-    pub fn remove_proposal(&mut self, index: u32) -> Result<Proposal, GroupError> {
-        if self
-            .epoch_repo
-            .current()?
-            .public_tree
-            .nodes
-            .borrow_as_leaf(LeafIndex(index))
-            .is_err()
-        {
-            return Err(GroupError::InvalidGroupParticipant(index));
-        }
+    pub fn remove_proposal(
+        &mut self,
+        key_package_ref: &KeyPackageRef,
+    ) -> Result<Proposal, GroupError> {
+        self.public_tree()?.package_leaf_index(key_package_ref)?;
 
-        Ok(Proposal::Remove(RemoveProposal { to_remove: index }))
+        Ok(Proposal::Remove(RemoveProposal {
+            to_remove: key_package_ref.clone(),
+        }))
     }
 
     pub fn format_for_wire(
@@ -1071,7 +1074,7 @@ impl Group {
             epoch: self.context.epoch,
             sender: Sender {
                 sender_type: SenderType::Member,
-                sender: self.private_tree.self_index.0 as u32,
+                sender: self.private_tree.key_package_ref.clone(),
             },
             authenticated_data: vec![],
             content: Content::Application(message.to_vec()),
@@ -1111,7 +1114,7 @@ impl Group {
         )?;
 
         let sender_data = MLSSenderData::tls_deserialize(&mut &*decrypted_sender)?;
-        if self.private_tree.self_index.0 == sender_data.sender {
+        if self.private_tree.key_package_ref == sender_data.sender {
             return Err(GroupError::CantProcessMessageFromSelf);
         }
 
@@ -1122,7 +1125,9 @@ impl Group {
         };
 
         let decryption_key = msg_epoch.get_decryption_key(
-            LeafIndex(sender_data.sender),
+            msg_epoch
+                .public_tree
+                .package_leaf_index(&sender_data.sender)?,
             sender_data.generation,
             key_type,
         )?;
@@ -1205,7 +1210,7 @@ impl Group {
             MLSMessage::Plain(m) => self.verify_plaintext(m),
             MLSMessage::Cipher(m) => self.decrypt_ciphertext(m),
         }?;
-        if self.private_tree.self_index.0 == plaintext.sender.sender {
+        if self.private_tree.key_package_ref == plaintext.sender.sender {
             return Err(GroupError::CantProcessMessageFromSelf);
         }
         match plaintext.plaintext.content {
@@ -1225,7 +1230,7 @@ impl Group {
                 if plaintext.plaintext.epoch == self.context.epoch {
                     let pending_proposal = PendingProposal {
                         proposal: p.clone(),
-                        sender: LeafIndex(plaintext.plaintext.sender.sender),
+                        sender: plaintext.plaintext.sender.sender.clone(),
                     };
                     self.proposals
                         .insert(p.to_reference(self.cipher_suite)?, pending_proposal);
@@ -1255,7 +1260,6 @@ impl Group {
 
         let commit_content =
             MLSPlaintextCommitContent::new(plaintext.deref(), plaintext.wire_format)?;
-        let sender = LeafIndex(plaintext.sender.sender);
 
         //Generate a provisional GroupContext object by applying the proposals referenced in the
         // initial Commit object, as described in Section 11.1. Update proposals are applied first,
@@ -1264,9 +1268,9 @@ impl Group {
         // in the tree, or the right edge of the tree if all leaves are occupied.
 
         let mut provisional_state =
-            self.apply_proposals(sender, &commit_content.commit.proposals)?;
+            self.apply_proposals(&plaintext.sender.sender, &commit_content.commit.proposals)?;
 
-        let state_updates = StateUpdate::try_from(&provisional_state)?;
+        let state_update = StateUpdate::from(&provisional_state);
 
         //Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
@@ -1275,7 +1279,7 @@ impl Group {
         }
 
         if provisional_state.self_removed() {
-            return Ok(state_updates);
+            return Ok(state_update);
         }
 
         let updated_secrets = match &commit_content.commit.path {
@@ -1285,14 +1289,14 @@ impl Group {
                 let secrets = if let Some(pending) = local_pending {
                     provisional_state
                         .public_tree
-                        .apply_pending_update(&pending)?;
+                        .apply_pending_update(&pending, &plaintext.sender.sender)?;
                     Ok(pending.secrets)
                 } else {
                     provisional_state.public_tree.decap(
                         provisional_state.private_tree,
-                        sender,
+                        &plaintext.sender.sender,
                         update_path,
-                        provisional_state.added_leaves,
+                        &provisional_state.added_leaves,
                         &self.context.tls_serialize_detached()?,
                     )
                 }?;
@@ -1330,6 +1334,7 @@ impl Group {
 
         // Use the commit_secret, the psk_secret, the provisional GroupContext, and the init secret
         // from the previous epoch to compute the epoch secret and derived secrets for the new epoch
+
         let (next_epoch, _) = Epoch::evolved_from(
             self.epoch_repo.current()?,
             &commit_secret,
@@ -1365,7 +1370,7 @@ impl Group {
         // Clear the pending updates list
         self.pending_updates = Default::default();
 
-        Ok(state_updates)
+        Ok(state_update)
     }
 
     pub fn current_direct_path(&self) -> Result<Vec<Option<HpkePublicKey>>, GroupError> {

@@ -261,9 +261,9 @@ mod test {
     use crate::tree_kem::test::{get_test_key_package, get_test_key_packages, get_test_tree};
 
     fn get_phash_test_tree(cipher_suite: CipherSuite) -> RatchetTree {
-        let (mut tree, _) = get_test_tree(cipher_suite);
+        let (mut tree, _, _) = get_test_tree(cipher_suite);
         let key_packages = get_test_key_packages(cipher_suite);
-        tree.add_nodes(key_packages).unwrap();
+        tree.add_leaves(key_packages).unwrap();
 
         // Fill in parent nodes
         for i in 0..tree.leaf_count() - 1 {
@@ -295,7 +295,7 @@ mod test {
     fn test_missing_parent_hash() {
         let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
 
-        let test_tree = get_phash_test_tree(cipher_suite);
+        let mut test_tree = get_phash_test_tree(cipher_suite);
         let test_key_package = get_test_key_package(cipher_suite, b"foo".to_vec());
 
         let test_update_path = UpdatePath {
@@ -303,9 +303,8 @@ mod test {
             nodes: vec![],
         };
 
-        let missing_parent_hash_res = test_tree
-            .clone()
-            .update_parent_hashes(LeafIndex(0), Some(&test_update_path));
+        let missing_parent_hash_res =
+            test_tree.update_parent_hashes(LeafIndex(0), Some(&test_update_path));
 
         assert!(missing_parent_hash_res.is_err());
     }
