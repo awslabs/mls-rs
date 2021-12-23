@@ -167,10 +167,8 @@ pub enum GroupError {
     TreeMissingSelfUser,
     #[error("remove not allowed on single leaf tree")]
     RemoveNotAllowed,
-    #[error("handle_handshake passed application data")]
-    UnexpectedApplicationData,
-    #[error("decrypt_application_message passed non-application data")]
-    UnexpectedHandshakeMessage,
+    #[error("message from self can't be processed")]
+    CantProcessMessageFromSelf,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -322,37 +320,61 @@ impl PartialEq for Group {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct VerifiedPlaintext(MLSPlaintext);
+pub struct VerifiedPlaintext {
+    wire_format: WireFormat,
+    plaintext: MLSPlaintext,
+}
 
 impl Deref for VerifiedPlaintext {
     type Target = MLSPlaintext;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.plaintext
     }
 }
 
 #[derive(Debug, Clone, PartialEq, TlsSerialize, TlsDeserialize, TlsSize)]
-pub struct OutboundPlaintext(MLSPlaintext);
+pub struct OutboundPlaintext {
+    /// The original plaintext
+    plaintext: MLSPlaintext,
+    /// Plaintext or ciphertext to send over the wire
+    message: MLSMessage,
+}
+
+impl OutboundPlaintext {
+    pub fn message(&self) -> &MLSMessage {
+        &self.message
+    }
+}
 
 impl Deref for OutboundPlaintext {
     type Target = MLSPlaintext;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.plaintext
     }
 }
 
 impl From<OutboundPlaintext> for MLSPlaintext {
     fn from(outbound: OutboundPlaintext) -> Self {
-        outbound.0
+        outbound.plaintext
     }
 }
 
 impl From<OutboundPlaintext> for VerifiedPlaintext {
     fn from(outbound: OutboundPlaintext) -> Self {
-        VerifiedPlaintext(outbound.0)
+        VerifiedPlaintext {
+            wire_format: outbound.message.wire_format(),
+            plaintext: outbound.plaintext,
+        }
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum ProcessedMessage {
+    Application(Vec<u8>),
+    Commit(StateUpdate),
+    Proposal(Proposal),
 }
 
 impl Group {
@@ -631,23 +653,28 @@ impl Group {
         })
     }
 
-    pub fn sign_proposal(
+    pub fn create_proposal(
         &mut self,
         proposal: Proposal,
         signer: &SecretKey,
-        for_ciphertext: bool,
+        wire_format: WireFormat,
     ) -> Result<OutboundPlaintext, GroupError> {
-        let mut plaintext =
-            self.construct_mls_plaintext(Content::Proposal(proposal.clone()), signer)?;
-
-        if !for_ciphertext {
+        let plaintext =
+            self.construct_mls_plaintext(Content::Proposal(proposal.clone()), signer, wire_format)?;
+        let membership_tag = match wire_format {
             // If we are going to encrypt then the tag will be dropped so it shouldn't be included
             // in the hash
-            let membership_tag =
-                MembershipTag::create(&plaintext, &self.context, self.epoch_repo.current()?)?;
-            plaintext.membership_tag = Some(membership_tag);
+            WireFormat::Cipher => None,
+            WireFormat::Plain => Some(MembershipTag::create(
+                &plaintext,
+                &self.context,
+                self.epoch_repo.current()?,
+            )?),
         };
-
+        let plaintext = MLSPlaintext {
+            membership_tag,
+            ..plaintext
+        };
         let reference = proposal.to_reference(self.cipher_suite)?;
 
         // Add the proposal ref to the current set
@@ -657,14 +684,14 @@ impl Group {
         };
 
         self.proposals.insert(reference, pending_proposal);
-
-        Ok(OutboundPlaintext(plaintext))
+        self.format_for_wire(plaintext, wire_format)
     }
 
     fn construct_mls_plaintext(
         &self,
         content: Content,
         signer: &SecretKey,
+        wire_format: WireFormat,
     ) -> Result<MLSPlaintext, GroupError> {
         //Construct an MLSPlaintext object containing the content
         let mut plaintext = MLSPlaintext {
@@ -682,16 +709,17 @@ impl Group {
         };
 
         // Sign the MLSPlaintext using the current epoch's GroupContext as context.
-        plaintext.sign(signer, &self.context)?;
+        plaintext.sign(signer, &self.context, wire_format)?;
 
         Ok(plaintext)
     }
 
     pub fn commit_proposals(
-        &self,
+        &mut self,
         proposals: &[Proposal],
         update_path: bool,
         signer: &SecretKey,
+        wire_format: WireFormat,
     ) -> Result<(CommitGeneration, Option<Welcome>), GroupError> {
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
@@ -765,14 +793,15 @@ impl Group {
         };
 
         //Construct an MLSPlaintext object containing the Commit object
-        let mut plaintext = self.construct_mls_plaintext(Content::Commit(commit), signer)?;
+        let mut plaintext =
+            self.construct_mls_plaintext(Content::Commit(commit), signer, wire_format)?;
 
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
         // compute the confirmation_tag value in the MLSPlaintext.
         let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
             self.cipher_suite,
             &self.interim_transcript_hash,
-            MLSPlaintextCommitContent::try_from(&plaintext)?,
+            MLSPlaintextCommitContent::new(&plaintext, wire_format)?,
         )?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
@@ -793,13 +822,11 @@ impl Group {
 
         plaintext.confirmation_tag = Some(confirmation_tag.clone());
 
-        /* FIXME: It's easier to just always make the tag and sometimes not send it, can be removed
-           if the goal is to send a ciphertext
-        */
-        // Create the membership tag using the current group context and key schedule
-        let membership_tag = MembershipTag::create(&plaintext, &self.context, current_epoch)?;
-
-        plaintext.membership_tag = Some(membership_tag);
+        if wire_format == WireFormat::Plain {
+            // Create the membership tag using the current group context and key schedule
+            let membership_tag = MembershipTag::create(&plaintext, &self.context, current_epoch)?;
+            plaintext.membership_tag = Some(membership_tag);
+        }
 
         // Construct a GroupInfo reflecting the new state
         // Group ID, epoch, tree, and confirmed transcript hash from the new state
@@ -847,9 +874,8 @@ impl Group {
                 encrypted_group_info,
             }),
         };
-
         let pending_commit = CommitGeneration {
-            plaintext: OutboundPlaintext(plaintext),
+            plaintext: self.format_for_wire(plaintext, wire_format)?,
             secrets: update_path,
         };
 
@@ -948,10 +974,19 @@ impl Group {
         Ok(Proposal::Remove(RemoveProposal { to_remove: index }))
     }
 
-    pub fn encrypt_plaintext(
+    pub fn format_for_wire(
         &mut self,
         plaintext: MLSPlaintext,
-    ) -> Result<MLSCiphertext, GroupError> {
+        wire_format: WireFormat,
+    ) -> Result<OutboundPlaintext, GroupError> {
+        let message = match wire_format {
+            WireFormat::Plain => MLSMessage::Plain(plaintext.clone()),
+            WireFormat::Cipher => MLSMessage::Cipher(self.encrypt_plaintext(plaintext.clone())?),
+        };
+        Ok(OutboundPlaintext { plaintext, message })
+    }
+
+    fn encrypt_plaintext(&mut self, plaintext: MLSPlaintext) -> Result<MLSCiphertext, GroupError> {
         let content_type = ContentType::from(&plaintext.content);
 
         // Build a ciphertext content using the plaintext content and signature
@@ -1045,25 +1080,9 @@ impl Group {
             membership_tag: None,
         };
 
-        plaintext.sign(signer, &self.context)?;
+        plaintext.sign(signer, &self.context, WireFormat::Cipher)?;
 
         self.encrypt_plaintext(plaintext)
-    }
-
-    pub fn decrypt_application_message(
-        &mut self,
-        message: MLSCiphertext,
-    ) -> Result<Vec<u8>, GroupError> {
-        if message.content_type != ContentType::Application {
-            return Err(GroupError::UnexpectedHandshakeMessage);
-        }
-
-        let plaintext = self.decrypt_ciphertext(message)?;
-
-        match &plaintext.content {
-            Content::Application(data) => Ok(data.clone()),
-            _ => Err(GroupError::UnexpectedHandshakeMessage),
-        }
     }
 
     pub fn decrypt_ciphertext(
@@ -1092,6 +1111,9 @@ impl Group {
         )?;
 
         let sender_data = MLSSenderData::tls_deserialize(&mut &*decrypted_sender)?;
+        if self.private_tree.self_index.0 == sender_data.sender {
+            return Err(GroupError::CantProcessMessageFromSelf);
+        }
 
         // Grab an encryption key from the current epoch's key schedule
         let key_type = match &ciphertext.content_type {
@@ -1139,11 +1161,14 @@ impl Group {
 
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
-        if !plaintext.verify_signature(&msg_epoch.public_tree, &self.context)? {
+        if !plaintext.verify_signature(&msg_epoch.public_tree, &self.context, WireFormat::Cipher)? {
             return Err(GroupError::InvalidSignature);
         }
 
-        Ok(VerifiedPlaintext(plaintext))
+        Ok(VerifiedPlaintext {
+            wire_format: WireFormat::Cipher,
+            plaintext,
+        })
     }
 
     pub fn verify_plaintext(
@@ -1162,41 +1187,54 @@ impl Group {
 
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
-        if !plaintext.verify_signature(&msg_epoch.public_tree, &self.context)? {
+        if !plaintext.verify_signature(&msg_epoch.public_tree, &self.context, WireFormat::Plain)? {
             return Err(GroupError::InvalidSignature);
         }
 
-        Ok(VerifiedPlaintext(plaintext))
+        Ok(VerifiedPlaintext {
+            wire_format: WireFormat::Plain,
+            plaintext,
+        })
     }
 
-    pub fn handle_handshake(
+    pub fn process_incoming_message(
         &mut self,
-        plaintext: VerifiedPlaintext,
-    ) -> Result<Option<StateUpdate>, GroupError> {
-        // Verify that the epoch field of the enclosing MLSPlaintext message is equal
-        // to the epoch field of the current GroupContext object
-        if plaintext.epoch != self.context.epoch {
-            return Err(GroupError::InvalidPlaintextEpoch);
+        message: MLSMessage,
+    ) -> Result<ProcessedMessage, GroupError> {
+        let plaintext = match message {
+            MLSMessage::Plain(m) => self.verify_plaintext(m),
+            MLSMessage::Cipher(m) => self.decrypt_ciphertext(m),
+        }?;
+        if self.private_tree.self_index.0 == plaintext.sender.sender {
+            return Err(GroupError::CantProcessMessageFromSelf);
         }
-
-        // Process the contents of the packet
-        match &plaintext.content {
-            Content::Application(_) => Err(GroupError::UnexpectedApplicationData),
-            Content::Proposal(p) => {
-                let pending_proposal = PendingProposal {
-                    proposal: p.clone(),
-                    sender: LeafIndex(plaintext.sender.sender),
-                };
-                self.proposals
-                    .insert(p.to_reference(self.cipher_suite)?, pending_proposal);
-                Ok(None)
+        match plaintext.plaintext.content {
+            Content::Application(data) => Ok(ProcessedMessage::Application(data)),
+            Content::Commit(_) => {
+                if plaintext.epoch == self.context.epoch {
+                    self.process_commit(plaintext, None)
+                        .map(ProcessedMessage::Commit)
+                } else {
+                    Err(GroupError::InvalidPlaintextEpoch)
+                }
+                //TODO: If the Commit included a ReInit proposal, the client MUST NOT use the group to send
+                // messages anymore. Instead, it MUST wait for a Welcome message from the committer
+                // and check that
             }
-            Content::Commit(_) => self.process_commit(plaintext, None).map(Some),
+            Content::Proposal(p) => {
+                if plaintext.plaintext.epoch == self.context.epoch {
+                    let pending_proposal = PendingProposal {
+                        proposal: p.clone(),
+                        sender: LeafIndex(plaintext.plaintext.sender.sender),
+                    };
+                    self.proposals
+                        .insert(p.to_reference(self.cipher_suite)?, pending_proposal);
+                    Ok(ProcessedMessage::Proposal(p))
+                } else {
+                    Err(GroupError::InvalidPlaintextEpoch)
+                }
+            }
         }
-
-        //TODO: If the Commit included a ReInit proposal, the client MUST NOT use the group to send
-        // messages anymore. Instead, it MUST wait for a Welcome message from the committer
-        // and check that
     }
 
     pub fn process_pending_commit(
@@ -1215,7 +1253,8 @@ impl Group {
         //TODO: PSK Verify that all PSKs specified in any PreSharedKey proposals in the proposals
         // vector are available.
 
-        let commit_content = MLSPlaintextCommitContent::try_from(plaintext.deref())?;
+        let commit_content =
+            MLSPlaintextCommitContent::new(plaintext.deref(), plaintext.wire_format)?;
         let sender = LeafIndex(plaintext.sender.sender);
 
         //Generate a provisional GroupContext object by applying the proposals referenced in the

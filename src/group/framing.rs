@@ -106,6 +106,45 @@ pub struct MLSSenderDataAAD {
     pub content_type: ContentType,
 }
 
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[repr(u8)]
+pub enum MLSMessage {
+    #[tls_codec(discriminant = 1)]
+    Plain(MLSPlaintext),
+    Cipher(MLSCiphertext),
+}
+
+impl MLSMessage {
+    pub fn wire_format(&self) -> WireFormat {
+        match self {
+            MLSMessage::Plain(_) => WireFormat::Plain,
+            MLSMessage::Cipher(_) => WireFormat::Cipher,
+        }
+    }
+}
+
+impl From<MLSPlaintext> for MLSMessage {
+    fn from(m: MLSPlaintext) -> Self {
+        Self::Plain(m)
+    }
+}
+
+impl From<MLSCiphertext> for MLSMessage {
+    fn from(m: MLSCiphertext) -> Self {
+        Self::Cipher(m)
+    }
+}
+
+#[derive(
+    Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, TlsDeserialize, TlsSerialize, TlsSize,
+)]
+#[repr(u8)]
+pub enum WireFormat {
+    Plain = 1,
+    Cipher,
+}
+
 #[cfg(test)]
 pub mod test_utils {
     use super::*;

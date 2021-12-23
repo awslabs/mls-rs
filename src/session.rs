@@ -1,13 +1,15 @@
 use crate::credential::Credential;
-use crate::group::framing::{Content, MLSCiphertext, MLSPlaintext};
+use crate::group::framing::{MLSMessage, WireFormat};
 use crate::group::OutboundPlaintext;
-use crate::group::{proposal::Proposal, CommitGeneration, Group, GroupError, StateUpdate};
+use crate::group::{proposal::Proposal, CommitGeneration, Group, StateUpdate};
 use crate::key_package::{KeyPackage, KeyPackageGeneration};
 use ferriscrypt::asym::ec_key::SecretKey;
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+
+pub use crate::group::{GroupError, ProcessedMessage};
 
 #[derive(Error, Debug)]
 pub enum SessionError {
@@ -21,25 +23,24 @@ pub enum SessionError {
     PendingCommitNotFound,
     #[error("pending commit mismatch")]
     PendingCommitMismatch,
-    #[error(
-        "pending commit action denied, commit reflection must be disabled to use this feature"
-    )]
-    PendingCommitDenied,
 }
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct SessionOpts {
     #[tls_codec(with = "crate::tls::Boolean")]
     pub encrypt_controls: bool,
-    #[tls_codec(with = "crate::tls::Boolean")]
-    pub commit_reflection: bool,
 }
 
 impl SessionOpts {
-    pub fn new(encrypt_controls: bool, commit_reflection: bool) -> SessionOpts {
-        SessionOpts {
-            encrypt_controls,
-            commit_reflection,
+    pub fn new(encrypt_controls: bool) -> SessionOpts {
+        SessionOpts { encrypt_controls }
+    }
+
+    pub fn wire_format(&self) -> WireFormat {
+        if self.encrypt_controls {
+            WireFormat::Cipher
+        } else {
+            WireFormat::Plain
         }
     }
 }
@@ -162,18 +163,13 @@ impl Session {
 
     #[inline(always)]
     fn serialize_control(&mut self, plaintext: OutboundPlaintext) -> Result<Vec<u8>, SessionError> {
-        if !self.opts.encrypt_controls {
-            Ok(plaintext.tls_serialize_detached()?)
-        } else {
-            let ciphertext = self.protocol.encrypt_plaintext(plaintext.into())?;
-            Ok(ciphertext.tls_serialize_detached()?)
-        }
+        Ok(plaintext.message().tls_serialize_detached()?)
     }
 
     fn send_proposal(&mut self, proposal: Proposal) -> Result<Vec<u8>, SessionError> {
         let packet =
             self.protocol
-                .sign_proposal(proposal, &self.signing_key, self.opts.encrypt_controls)?;
+                .create_proposal(proposal, &self.signing_key, self.opts.wire_format())?;
         self.serialize_control(packet)
     }
 
@@ -181,10 +177,12 @@ impl Session {
         if self.pending_commit.is_some() {
             return Err(SessionError::ExistingPendingCommit);
         }
-
-        let (commit_data, welcome) =
-            self.protocol
-                .commit_proposals(&proposals, true, &self.signing_key)?;
+        let (commit_data, welcome) = self.protocol.commit_proposals(
+            &proposals,
+            true,
+            &self.signing_key,
+            self.opts.wire_format(),
+        )?;
 
         let serialized_commit = self.serialize_control(commit_data.plaintext.clone())?;
 
@@ -199,58 +197,27 @@ impl Session {
         })
     }
 
-    pub fn handle_handshake_data(
+    pub fn process_incoming_bytes(
         &mut self,
-        mut data: &[u8],
-    ) -> Result<Option<StateUpdate>, SessionError> {
-        /*
-            NOTE: This only matters if commit_reflection is on. If not commits have to be manually
-            accepted or rejected based on server feedback.
+        data: &[u8],
+    ) -> Result<ProcessedMessage, SessionError> {
+        self.process_incoming_message(MLSMessage::tls_deserialize(&mut &*data)?)
+    }
 
-            If there is a pending commit, check to see if the packet we received is that commit
-            If it is, we will just process the pending commit and set pending_commit to None
-        */
-        if let Some(pending) = &self.pending_commit {
-            if self.opts.commit_reflection && pending.packet_data == data {
-                let pending = self.pending_commit.take().unwrap();
-                return self
-                    .protocol
-                    .process_pending_commit(pending.commit)
-                    .map_err(Into::into)
-                    .map(Some);
-            }
-        }
-
-        // This is not the pending commit to process as normal
-        let plaintext = match self.opts.encrypt_controls {
-            true => {
-                let ciphertext = MLSCiphertext::tls_deserialize(&mut data)?;
-                self.protocol.decrypt_ciphertext(ciphertext)
-            }
-            false => {
-                let plaintext = MLSPlaintext::tls_deserialize(&mut data)?;
-                self.protocol.verify_plaintext(plaintext)
-            }
-        }?;
-
-        let is_commit = matches!(plaintext.content, Content::Commit(_));
-
-        let res = self.protocol.handle_handshake(plaintext)?;
-
+    pub fn process_incoming_message(
+        &mut self,
+        message: MLSMessage,
+    ) -> Result<ProcessedMessage, SessionError> {
+        let res = self.protocol.process_incoming_message(message)?;
         // This commit beat our current pending commit to the server, our commit is no longer
         // relevant
-        if is_commit {
+        if let ProcessedMessage::Commit(_) = res {
             self.pending_commit = None;
         }
-
         Ok(res)
     }
 
     pub fn apply_pending_commit(&mut self) -> Result<StateUpdate, SessionError> {
-        if self.opts.commit_reflection {
-            return Err(SessionError::PendingCommitDenied);
-        }
-
         // take() will give us the value and set it to None in the session
         let pending = self
             .pending_commit
@@ -269,14 +236,7 @@ impl Session {
         let ciphertext = self
             .protocol
             .encrypt_application_message(data, &self.signing_key)?;
-        Ok(ciphertext.tls_serialize_detached()?)
-    }
-
-    pub fn decrypt_application_data(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>, SessionError> {
-        let ciphertext = MLSCiphertext::tls_deserialize(&mut &*ciphertext)?;
-        self.protocol
-            .decrypt_application_message(ciphertext)
-            .map_err(Into::into)
+        Ok(MLSMessage::Cipher(ciphertext).tls_serialize_detached()?)
     }
 
     pub fn has_equal_state(&self, other: &Session) -> bool {

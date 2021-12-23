@@ -6,7 +6,7 @@ use wickr_bgm::client::Client;
 use wickr_bgm::credential::Credential;
 use wickr_bgm::extension::LifetimeExt;
 use wickr_bgm::key_package::KeyPackageGeneration;
-use wickr_bgm::session::{Session, SessionOpts};
+use wickr_bgm::session::{GroupError, ProcessedMessage, Session, SessionError, SessionOpts};
 
 fn generate_client(cipher_suite: CipherSuite, id: Vec<u8>) -> Client {
     Client::generate_basic(cipher_suite, id).unwrap()
@@ -37,9 +37,7 @@ fn test_create(cipher_suite: CipherSuite, opts: SessionOpts) {
     let packets = alice_session.commit(vec![add_bob]).unwrap();
 
     // Upon server confirmation, alice applies the commit to her own state
-    alice_session
-        .handle_handshake_data(&packets.commit_packet)
-        .unwrap();
+    alice_session.apply_pending_commit().unwrap();
 
     let tree = alice_session.export_tree().unwrap();
 
@@ -63,7 +61,6 @@ fn test_create_session() {
             cs.clone(),
             SessionOpts {
                 encrypt_controls: false,
-                commit_reflection: true,
             },
         );
 
@@ -71,7 +68,6 @@ fn test_create_session() {
             cs.clone(),
             SessionOpts {
                 encrypt_controls: true,
-                commit_reflection: true,
             },
         )
     });
@@ -111,11 +107,8 @@ fn get_test_sessions(
     let commit = creator_session.commit(add_members_proposals).unwrap();
 
     // Creator can confirm the commit was processed by the server
-    let state_update = creator_session
-        .handle_handshake_data(&commit.commit_packet)
-        .unwrap();
+    let update = creator_session.apply_pending_commit().unwrap();
 
-    let update = state_update.unwrap();
     assert!(update.active);
     assert_eq!(update.epoch, 1);
 
@@ -182,14 +175,18 @@ fn test_empty_commits(cipher_suite: CipherSuite, participants: usize, opts: Sess
 
         // Creator group processes the commit
         creator_session
-            .handle_handshake_data(&commit.commit_packet)
+            .process_incoming_bytes(&commit.commit_packet)
             .unwrap();
 
         // Receiver groups process the commit
-        for one_receiver in receiver_sessions.iter_mut() {
-            one_receiver
-                .handle_handshake_data(&commit.commit_packet)
-                .unwrap();
+        for (j, one_receiver) in receiver_sessions.iter_mut().enumerate() {
+            if i == j {
+                one_receiver.apply_pending_commit().unwrap();
+            } else {
+                one_receiver
+                    .process_incoming_bytes(&commit.commit_packet)
+                    .unwrap();
+            }
             assert!(one_receiver.has_equal_state(&creator_session));
         }
     }
@@ -203,7 +200,6 @@ fn test_group_path_updates() {
             10,
             SessionOpts {
                 encrypt_controls: false,
-                commit_reflection: true,
             },
         );
         test_empty_commits(
@@ -211,7 +207,6 @@ fn test_group_path_updates() {
             10,
             SessionOpts {
                 encrypt_controls: true,
-                commit_reflection: true,
             },
         );
     })
@@ -232,35 +227,44 @@ fn test_update_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
 
         // Everyone should process the proposal
         creator_session
-            .handle_handshake_data(&update_proposal)
+            .process_incoming_bytes(&update_proposal)
             .unwrap();
 
         for j in 0..receiver_sessions.len() {
             if i != j {
                 receiver_sessions[j]
-                    .handle_handshake_data(&update_proposal)
+                    .process_incoming_bytes(&update_proposal)
                     .unwrap();
             }
         }
 
         // Everyone receives the commit
-        let commit = receiver_sessions[i + 1].commit(vec![]).unwrap();
+        let committer_index = i + 1;
+        let commit = receiver_sessions[committer_index].commit(vec![]).unwrap();
         assert!(commit.welcome_packet.is_none());
 
         creator_session
-            .handle_handshake_data(&commit.commit_packet)
+            .process_incoming_bytes(&commit.commit_packet)
             .unwrap();
 
-        for j in 0..receiver_sessions.len() {
-            let state_update = receiver_sessions[j]
-                .handle_handshake_data(&commit.commit_packet)
-                .unwrap();
-            let update = state_update.unwrap();
+        for (j, receiver) in receiver_sessions.iter_mut().enumerate() {
+            let update = if j == committer_index {
+                receiver.apply_pending_commit()
+            } else {
+                let state_update = receiver
+                    .process_incoming_bytes(&commit.commit_packet)
+                    .unwrap();
+                match state_update {
+                    ProcessedMessage::Commit(update) => Ok(update),
+                    _ => panic!("Expected commit result"),
+                }
+            }
+            .unwrap();
             assert!(update.active);
             assert_eq!(update.epoch, (i as u64) + 2);
             assert!(update.added.is_empty());
             assert!(update.removed.is_empty());
-            assert!(receiver_sessions[j].has_equal_state(&creator_session));
+            assert!(receiver.has_equal_state(&creator_session));
         }
     }
 }
@@ -273,7 +277,6 @@ fn test_group_update_proposals() {
             10,
             SessionOpts {
                 encrypt_controls: false,
-                commit_reflection: true,
             },
         );
         test_update_proposals(
@@ -281,7 +284,6 @@ fn test_group_update_proposals() {
             10,
             SessionOpts {
                 encrypt_controls: true,
-                commit_reflection: true,
             },
         );
     })
@@ -308,9 +310,7 @@ fn test_remove_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
         assert!(commit.welcome_packet.is_none());
 
         // Process the removal in the creator group
-        creator_session
-            .handle_handshake_data(&commit.commit_packet)
-            .unwrap();
+        creator_session.apply_pending_commit().unwrap();
 
         epoch_count += 1;
 
@@ -320,10 +320,13 @@ fn test_remove_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
             let expect_inactive = one_session.roster().len() - 2;
 
             let state_update = one_session
-                .handle_handshake_data(&commit.commit_packet)
+                .process_incoming_bytes(&commit.commit_packet)
                 .unwrap();
 
-            let update = state_update.unwrap();
+            let update = match state_update {
+                ProcessedMessage::Commit(update) => update,
+                _ => panic!("Expected commit result"),
+            };
             assert_eq!(update.epoch, epoch_count as u64);
 
             assert_eq!(
@@ -361,7 +364,6 @@ fn test_group_remove_proposals() {
             10,
             SessionOpts {
                 encrypt_controls: false,
-                commit_reflection: true,
             },
         );
         test_remove_proposals(
@@ -369,7 +371,6 @@ fn test_group_remove_proposals() {
             10,
             SessionOpts {
                 encrypt_controls: true,
-                commit_reflection: true,
             },
         );
     })
@@ -400,17 +401,17 @@ fn test_application_messages(
                 .unwrap();
 
             // Creator receives the application message
-            creator_session
-                .decrypt_application_data(&ciphertext)
-                .unwrap();
+            creator_session.process_incoming_bytes(&ciphertext).unwrap();
 
             // Everyone else receives the application message
             for j in 0..receiver_sessions.len() {
                 if i != j {
                     let decrypted = receiver_sessions[j]
-                        .decrypt_application_data(&ciphertext)
+                        .process_incoming_bytes(&ciphertext)
                         .unwrap();
-                    assert_eq!(&decrypted, &test_message);
+                    assert!(
+                        matches!(decrypted, ProcessedMessage::Application(m) if m == test_message)
+                    );
                 }
             }
         }
@@ -426,7 +427,6 @@ fn test_group_application_messages() {
             20,
             SessionOpts {
                 encrypt_controls: false,
-                commit_reflection: true,
             },
         );
         test_application_messages(
@@ -435,8 +435,37 @@ fn test_group_application_messages() {
             20,
             SessionOpts {
                 encrypt_controls: true,
-                commit_reflection: true,
             },
         );
+    })
+}
+
+fn processing_message_from_self_returns_error(cipher_suite: CipherSuite, opts: SessionOpts) {
+    println!(
+        "Verifying that processing one's own message returns an error for cipher suite: {:?}, opts: {:?}",
+        cipher_suite, opts
+    );
+    let (mut creator_session, _) = get_test_sessions(cipher_suite, 1, opts);
+    let commit = creator_session.commit(Vec::new()).unwrap();
+    let error = creator_session
+        .process_incoming_bytes(&commit.commit_packet)
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            SessionError::ProtocolError(GroupError::CantProcessMessageFromSelf)
+        ),
+        "Expected {:?} but got {:?}",
+        SessionError::ProtocolError(GroupError::CantProcessMessageFromSelf),
+        error
+    );
+}
+
+#[test]
+fn test_processing_message_from_self_returns_error() {
+    CipherSuite::all().into_iter().for_each(|cs| {
+        for encrypt_controls in [false, true] {
+            processing_message_from_self_returns_error(cs, SessionOpts { encrypt_controls });
+        }
     })
 }

@@ -15,6 +15,7 @@ pub enum TranscriptHashError {
 
 #[derive(Clone, Debug, PartialEq, TlsSerialize, TlsSize)]
 pub(crate) struct MLSPlaintextCommitContent<'a> {
+    pub wire_format: WireFormat,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub group_id: &'a [u8],
     pub epoch: u64,
@@ -31,12 +32,14 @@ pub(crate) struct MLSPlaintextCommitAuthData<'a> {
     pub confirmation_tag: Option<&'a ConfirmationTag>,
 }
 
-impl<'a> TryFrom<&'a MLSPlaintext> for MLSPlaintextCommitContent<'a> {
-    type Error = TranscriptHashError;
-
-    fn try_from(value: &'a MLSPlaintext) -> Result<Self, Self::Error> {
+impl<'a> MLSPlaintextCommitContent<'a> {
+    pub fn new(
+        value: &'a MLSPlaintext,
+        wire_format: WireFormat,
+    ) -> Result<Self, TranscriptHashError> {
         match &value.content {
             Content::Commit(c) => Ok(MLSPlaintextCommitContent {
+                wire_format,
                 group_id: &value.group_id,
                 epoch: value.epoch,
                 sender: &value.sender,

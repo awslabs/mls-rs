@@ -1,6 +1,6 @@
 use crate::group::confirmation_tag::ConfirmationTag;
 use crate::group::epoch::Epoch;
-use crate::group::framing::MLSPlaintext;
+use crate::group::framing::{MLSPlaintext, WireFormat};
 use crate::group::message_signature::{MLSPlaintextTBS, MessageSignature};
 use crate::group::GroupContext;
 use ferriscrypt::hmac::{HMacError, Key, Tag};
@@ -29,9 +29,10 @@ impl MLSPlaintextTBM {
     pub fn from_plaintext(
         plaintext: &MLSPlaintext,
         group_context: &GroupContext,
+        wire_format: WireFormat,
     ) -> MLSPlaintextTBM {
         MLSPlaintextTBM {
-            tbs: MLSPlaintextTBS::from_plaintext(plaintext, group_context),
+            tbs: MLSPlaintextTBS::from_plaintext(plaintext, group_context, wire_format),
             signature: plaintext.signature.clone(),
             confirmation_tag: plaintext.confirmation_tag.clone(),
         }
@@ -61,7 +62,8 @@ impl MembershipTag {
         group_context: &GroupContext,
         epoch: &Epoch,
     ) -> Result<Self, MembershipTagError> {
-        let plaintext_tbm = MLSPlaintextTBM::from_plaintext(plaintext, group_context);
+        let plaintext_tbm =
+            MLSPlaintextTBM::from_plaintext(plaintext, group_context, WireFormat::Plain);
         let serialized_tbm = plaintext_tbm.tls_serialize_detached()?;
 
         let hmac_key = Key::new(&epoch.membership_key, epoch.cipher_suite.hash_function())?;

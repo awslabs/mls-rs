@@ -1,5 +1,5 @@
 use crate::credential::CredentialError;
-use crate::group::framing::{Content, MLSPlaintext, Sender, SenderType};
+use crate::group::framing::{Content, MLSPlaintext, Sender, SenderType, WireFormat};
 use crate::group::GroupContext;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{RatchetTree, RatchetTreeError};
@@ -26,6 +26,7 @@ pub enum MessageSignatureError {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct MLSPlaintextTBS {
     context: Option<GroupContext>,
+    wire_format: WireFormat,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     group_id: Vec<u8>,
     epoch: u64,
@@ -36,7 +37,11 @@ pub(crate) struct MLSPlaintextTBS {
 }
 
 impl MLSPlaintextTBS {
-    pub(crate) fn from_plaintext(plaintext: &MLSPlaintext, group_context: &GroupContext) -> Self {
+    pub(crate) fn from_plaintext(
+        plaintext: &MLSPlaintext,
+        group_context: &GroupContext,
+        wire_format: WireFormat,
+    ) -> Self {
         let context = match plaintext.sender.sender_type {
             SenderType::Member => Some(group_context.clone()),
             _ => None,
@@ -44,6 +49,7 @@ impl MLSPlaintextTBS {
 
         MLSPlaintextTBS {
             context,
+            wire_format,
             group_id: plaintext.group_id.clone(),
             epoch: plaintext.epoch,
             sender: plaintext.sender.clone(),
@@ -58,8 +64,9 @@ impl MLSPlaintext {
         &mut self,
         signer: &SecretKey,
         group_context: &GroupContext,
+        wire_format: WireFormat,
     ) -> Result<(), MessageSignatureError> {
-        self.signature = MessageSignature::create(signer, self, group_context)?;
+        self.signature = MessageSignature::create(signer, self, group_context, wire_format)?;
         Ok(())
     }
 
@@ -67,8 +74,10 @@ impl MLSPlaintext {
         &self,
         tree: &RatchetTree,
         group_context: &GroupContext,
+        wire_format: WireFormat,
     ) -> Result<bool, MessageSignatureError> {
-        self.signature.is_valid(self, tree, group_context)
+        self.signature
+            .is_valid(self, tree, group_context, wire_format)
     }
 }
 
@@ -84,8 +93,9 @@ impl MessageSignature {
         signer: &SecretKey,
         plaintext: &MLSPlaintext,
         group_context: &GroupContext,
+        wire_format: WireFormat,
     ) -> Result<Self, MessageSignatureError> {
-        let to_be_signed = MLSPlaintextTBS::from_plaintext(plaintext, group_context);
+        let to_be_signed = MLSPlaintextTBS::from_plaintext(plaintext, group_context, wire_format);
         let signature_data = signer.sign(&to_be_signed.tls_serialize_detached()?)?;
 
         Ok(MessageSignature(signature_data))
@@ -96,6 +106,7 @@ impl MessageSignature {
         plaintext: &MLSPlaintext,
         tree: &RatchetTree,
         group_context: &GroupContext,
+        wire_format: WireFormat,
     ) -> Result<bool, MessageSignatureError> {
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
@@ -104,7 +115,7 @@ impl MessageSignature {
             .credential
             .borrow();
 
-        let to_be_verified = MLSPlaintextTBS::from_plaintext(plaintext, group_context);
+        let to_be_verified = MLSPlaintextTBS::from_plaintext(plaintext, group_context, wire_format);
 
         let is_signature_valid = sender_cred.verify(
             &plaintext.signature,
