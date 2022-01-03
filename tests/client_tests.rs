@@ -1,10 +1,10 @@
+use aws_mls::cipher_suite::CipherSuite;
+use aws_mls::client::Client;
+use aws_mls::extension::LifetimeExt;
+use aws_mls::key_package::{KeyPackageGeneration, KeyPackageRef};
+use aws_mls::session::{GroupError, ProcessedMessage, Session, SessionError, SessionOpts};
 use ferriscrypt::rand::SecureRng;
 use std::time::SystemTime;
-use wickr_bgm::cipher_suite::CipherSuite;
-use wickr_bgm::client::Client;
-use wickr_bgm::extension::LifetimeExt;
-use wickr_bgm::key_package::{KeyPackageGeneration, KeyPackageRef};
-use wickr_bgm::session::{GroupError, ProcessedMessage, Session, SessionError, SessionOpts};
 
 fn generate_client(cipher_suite: CipherSuite, id: Vec<u8>) -> Client {
     Client::generate_basic(cipher_suite, id).unwrap()

@@ -1,5 +1,5 @@
 [package]
-name = "wickr-bgm"
+name = "aws-mls"
 version = "0.1.1"
 authors = ["Tom Leavy <tom@wickr.com>"]
 edition = "2021"
