@@ -1,3 +1,4 @@
+use enum_iterator::IntoEnumIterator;
 use ferriscrypt::asym::ec_key::{Curve, EcKeyError};
 use ferriscrypt::cipher::aead::Aead;
 use ferriscrypt::digest::HashFunction;
@@ -12,7 +13,9 @@ pub enum ProtocolVersion {
     Mls10 = 0x01,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone, Copy, Debug, IntoEnumIterator, PartialEq, TlsDeserialize, TlsSerialize, TlsSize,
+)]
 #[repr(u16)]
 pub enum SignatureScheme {
     EcdsaSecp256r1Sha256 = 0x0403,
@@ -37,15 +40,9 @@ impl TryInto<SignatureScheme> for Curve {
     }
 }
 
-#[cfg(test)]
 impl SignatureScheme {
-    pub(crate) fn all() -> Vec<SignatureScheme> {
-        vec![
-            SignatureScheme::Ed25519,
-            SignatureScheme::Ed448,
-            SignatureScheme::EcdsaSecp256r1Sha256,
-            SignatureScheme::EcdsaSecp521r1Sha512,
-        ]
+    pub fn all() -> impl Iterator<Item = SignatureScheme> {
+        Self::into_enum_iter()
     }
 }
 
@@ -76,7 +73,9 @@ impl From<HpkeCiphertext> for HPKECiphertext {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Debug, Copy, Clone, IntoEnumIterator, PartialEq, TlsDeserialize, TlsSerialize, TlsSize,
+)]
 #[repr(u16)]
 pub enum CipherSuite {
     Mls10128Dhkemx25519Aes128gcmSha256Ed25519 = 0x0001,
@@ -101,15 +100,8 @@ impl CipherSuite {
         }
     }
 
-    pub fn all() -> Vec<CipherSuite> {
-        vec![
-            CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
-            CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256,
-            CipherSuite::Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519,
-            CipherSuite::Mls10256Dhkemx448Aes256gcmSha512Ed448,
-            CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521,
-            CipherSuite::Mls10256Dhkemx448Chacha20poly1305Sha512Ed448,
-        ]
+    pub fn all() -> impl Iterator<Item = CipherSuite> {
+        Self::into_enum_iter()
     }
 
     #[inline(always)]

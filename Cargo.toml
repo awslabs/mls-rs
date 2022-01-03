@@ -13,6 +13,7 @@ ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", tag = "0.
 tls_codec = "0.2.0-pre.3"
 tls_codec_derive = "0.2.0-pre.3"
 hex = { version = "^0.4.3", features = ["serde"] }
+enum-iterator = "0.7.0"
 
 [dev-dependencies]
 criterion = { version = "0.3.5", features = ["html_reports"] }

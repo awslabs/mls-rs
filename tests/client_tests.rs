@@ -178,7 +178,7 @@ fn test_empty_commits(cipher_suite: CipherSuite, participants: usize, opts: Sess
 
 #[test]
 fn test_group_path_updates() {
-    CipherSuite::all().iter().for_each(|&cs| {
+    CipherSuite::all().for_each(|cs| {
         test_empty_commits(
             cs,
             10,
@@ -256,7 +256,7 @@ fn test_update_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
 
 #[test]
 fn test_group_update_proposals() {
-    CipherSuite::all().iter().for_each(|&cs| {
+    CipherSuite::all().for_each(|cs| {
         test_update_proposals(
             cs,
             10,
@@ -335,7 +335,7 @@ fn test_remove_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
 
 #[test]
 fn test_group_remove_proposals() {
-    CipherSuite::all().iter().for_each(|&cs| {
+    CipherSuite::all().for_each(|cs| {
         test_remove_proposals(
             cs,
             10,
@@ -397,7 +397,7 @@ fn test_application_messages(
 
 #[test]
 fn test_group_application_messages() {
-    CipherSuite::all().iter().for_each(|&cs| {
+    CipherSuite::all().for_each(|cs| {
         test_application_messages(
             cs,
             10,
