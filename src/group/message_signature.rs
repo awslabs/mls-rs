@@ -85,7 +85,7 @@ pub struct MessageSignature(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Ve
 
 impl MessageSignature {
     pub(crate) fn empty() -> Self {
-        MessageSignature { 0: vec![] }
+        MessageSignature(vec![])
     }
 
     fn create(
