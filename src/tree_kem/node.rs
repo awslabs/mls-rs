@@ -447,39 +447,21 @@ impl NodeVec {
 
 #[cfg(test)]
 pub mod test {
+    use std::time::SystemTime;
+
     use super::*;
-    use crate::cipher_suite::{CipherSuite, SignatureScheme};
-    use crate::credential::{BasicCredential, CredentialConvertible};
-    use crate::extension::ExtensionList;
-    use ferriscrypt::asym::ec_key::{generate_keypair, Curve, SecretKey};
+    use crate::cipher_suite::CipherSuite;
+    use crate::client::Client;
+    use crate::extension::LifetimeExt;
 
-    // We can put any values for most fields, they aren't relevant to these tests
     fn get_test_key_package(id: Vec<u8>) -> KeyPackage {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
-        let signing_key =
-            SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
-        let (hpke_pub, _) = generate_keypair(cipher_suite.kem_type().curve()).unwrap();
+        let client =
+            Client::generate_basic(CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256, id).unwrap();
 
-        let mut kp = KeyPackage {
-            version: cipher_suite.protocol_version(),
-            cipher_suite,
-            hpke_init_key: hpke_pub.try_into().unwrap(),
-            credential: BasicCredential {
-                signature_key: signing_key
-                    .to_public()
-                    .unwrap()
-                    .to_uncompressed_bytes()
-                    .unwrap(),
-                identity: id,
-                signature_scheme: SignatureScheme::Ed25519,
-            }
-            .into_credential(),
-            extensions: ExtensionList::from(vec![]),
-            signature: vec![],
-        };
-
-        kp.sign(&signing_key).unwrap();
-        kp
+        client
+            .gen_key_package(&LifetimeExt::years(1, SystemTime::now()).unwrap())
+            .unwrap()
+            .key_package
     }
 
     pub(crate) fn get_test_node_vec() -> NodeVec {

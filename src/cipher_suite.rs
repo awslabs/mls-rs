@@ -1,5 +1,5 @@
 use enum_iterator::IntoEnumIterator;
-use ferriscrypt::asym::ec_key::{Curve, EcKeyError};
+use ferriscrypt::asym::ec_key::{Curve, EcKeyError, SecretKey};
 use ferriscrypt::cipher::aead::Aead;
 use ferriscrypt::digest::HashFunction;
 use ferriscrypt::hpke::kem::Kem;
@@ -181,6 +181,10 @@ impl CipherSuite {
 
     pub(crate) fn kem(&self) -> Kem {
         Kem::new(self.kem_type())
+    }
+
+    pub fn generate_secret_key(&self) -> Result<SecretKey, EcKeyError> {
+        SecretKey::generate(Curve::from(self.signature_scheme()))
     }
 }
 

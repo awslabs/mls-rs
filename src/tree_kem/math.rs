@@ -183,7 +183,7 @@ mod test {
         let test_vectors: Vec<TestCase> =
             serde_json::from_reader(BufReader::new(file)).expect("failed to parse vector file");
 
-        test_vectors.iter().for_each(|tv| run_test_case(tv));
+        test_vectors.iter().for_each(run_test_case);
     }
 
     #[test]
