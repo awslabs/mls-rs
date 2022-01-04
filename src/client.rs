@@ -28,6 +28,7 @@ pub enum ClientError {
     IncorrectSecretKey,
 }
 
+#[non_exhaustive]
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Client {
     pub cipher_suite: CipherSuite,
@@ -35,7 +36,6 @@ pub struct Client {
     pub signature_key: SecretKey,
     pub credential: Credential,
     pub capabilities: CapabilitiesExt,
-    private: (),
 }
 
 impl Client {
@@ -57,7 +57,6 @@ impl Client {
             signature_key,
             credential,
             capabilities: CapabilitiesExt::default(),
-            private: (),
         })
     }
 

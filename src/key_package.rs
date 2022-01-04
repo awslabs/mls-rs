@@ -33,6 +33,7 @@ pub enum KeyPackageError {
     InvalidKeyLifetime,
 }
 
+#[non_exhaustive]
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct KeyPackage {
     pub version: ProtocolVersion,
@@ -43,7 +44,6 @@ pub struct KeyPackage {
     pub extensions: ExtensionList,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub signature: Vec<u8>,
-    private: (),
 }
 
 impl KeyPackage {
@@ -114,7 +114,6 @@ impl<'a> KeyPackageGenerator<'a> {
             credential: self.credential.clone(),
             extensions: self.extensions.clone(),
             signature: vec![],
-            private: (),
         };
 
         package.sign(self.signing_key)?;
