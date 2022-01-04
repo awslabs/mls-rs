@@ -172,6 +172,12 @@ pub enum GroupError {
     InvalidCommitSelfUpdate,
     #[error("ratchet tree not provided or discovered in GroupInfo")]
     RatchetTreeNotFound,
+    #[error("Only members can encrypt messages")]
+    OnlyMembersCanEncryptMessages,
+    #[error("Only members can commit")]
+    OnlyMembersCanCommit,
+    #[error("Only members can update")]
+    OnlyMembersCanUpdate,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -580,7 +586,7 @@ impl Group {
             .map(|p| match p {
                 ProposalOrRef::Proposal(p) => Ok(PendingProposal {
                     proposal: p.clone(),
-                    sender: sender.clone(),
+                    sender: Sender::Member(sender.clone()),
                 }),
                 ProposalOrRef::Reference(r) => self
                     .proposals
@@ -606,7 +612,15 @@ impl Group {
         // Apply updates
         let updates = proposals
             .iter()
-            .filter_map(|p| p.proposal.as_update().map(|u| (p.sender.clone(), u)));
+            .filter_map(|p| {
+                p.proposal.as_update().map(|u| match &p.sender {
+                    Sender::Member(sender) => Ok((sender.clone(), u)),
+                    Sender::Preconfigured(_) | Sender::NewMember => {
+                        Err(GroupError::OnlyMembersCanUpdate)
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         for (update_sender, update) in updates {
             // Update the leaf in the provisional tree
@@ -703,7 +717,7 @@ impl Group {
         // Add the proposal ref to the current set
         let pending_proposal = PendingProposal {
             proposal,
-            sender: self.private_tree.key_package_ref.clone(),
+            sender: Sender::Member(self.private_tree.key_package_ref.clone()),
         };
 
         self.proposals.insert(reference, pending_proposal);
@@ -720,10 +734,7 @@ impl Group {
         let mut plaintext = MLSPlaintext {
             group_id: self.context.group_id.clone(),
             epoch: self.context.epoch,
-            sender: Sender {
-                sender_type: SenderType::Member,
-                sender: self.private_tree.key_package_ref.clone(),
-            },
+            sender: Sender::Member(self.private_tree.key_package_ref.clone()),
             authenticated_data: vec![],
             content,
             signature: MessageSignature::empty(),
@@ -1068,7 +1079,12 @@ impl Group {
         // Construct an mls sender data struct using the plaintext sender info, the generation
         // of the key schedule encryption key, and the reuse guard used to encrypt ciphertext
         let sender_data = MLSSenderData {
-            sender: plaintext.sender.sender,
+            sender: match plaintext.sender {
+                Sender::Member(sender) => Ok(sender),
+                Sender::Preconfigured(_) | Sender::NewMember => {
+                    Err(GroupError::OnlyMembersCanEncryptMessages)
+                }
+            }?,
             generation: encryption_key.generation,
             reuse_guard,
         };
@@ -1113,10 +1129,7 @@ impl Group {
         let mut plaintext = MLSPlaintext {
             group_id: self.context.group_id.clone(),
             epoch: self.context.epoch,
-            sender: Sender {
-                sender_type: SenderType::Member,
-                sender: self.private_tree.key_package_ref.clone(),
-            },
+            sender: Sender::Member(self.private_tree.key_package_ref.clone()),
             authenticated_data: vec![],
             content: Content::Application(message.to_vec()),
             signature: MessageSignature::empty(),
@@ -1194,10 +1207,7 @@ impl Group {
         let plaintext = MLSPlaintext {
             group_id: ciphertext.group_id.clone(),
             epoch: ciphertext.epoch,
-            sender: Sender {
-                sender_type: SenderType::Member,
-                sender: sender_data.sender,
-            },
+            sender: Sender::Member(sender_data.sender),
             authenticated_data: vec![],
             content: ciphertext_content.content,
             signature: ciphertext_content.signature,
@@ -1251,9 +1261,12 @@ impl Group {
             MLSMessage::Plain(m) => self.verify_plaintext(m),
             MLSMessage::Cipher(m) => self.decrypt_ciphertext(m),
         }?;
-        if self.private_tree.key_package_ref == plaintext.sender.sender {
-            return Err(GroupError::CantProcessMessageFromSelf);
-        }
+        match &plaintext.sender {
+            Sender::Member(sender) if *sender == self.private_tree.key_package_ref => {
+                Err(GroupError::CantProcessMessageFromSelf)
+            }
+            _ => Ok(()),
+        }?;
         match plaintext.plaintext.content {
             Content::Application(data) => Ok(ProcessedMessage::Application(data)),
             Content::Commit(_) => {
@@ -1271,7 +1284,7 @@ impl Group {
                 if plaintext.plaintext.epoch == self.context.epoch {
                     let pending_proposal = PendingProposal {
                         proposal: p.clone(),
-                        sender: plaintext.plaintext.sender.sender.clone(),
+                        sender: plaintext.plaintext.sender,
                     };
                     self.proposals
                         .insert(p.to_reference(self.cipher_suite)?, pending_proposal);
@@ -1301,6 +1314,10 @@ impl Group {
 
         let commit_content =
             MLSPlaintextCommitContent::new(plaintext.deref(), plaintext.wire_format)?;
+        let sender = match &plaintext.sender {
+            Sender::Member(sender) => Ok(sender),
+            Sender::Preconfigured(_) | Sender::NewMember => Err(GroupError::OnlyMembersCanCommit),
+        }?;
 
         //Generate a provisional GroupContext object by applying the proposals referenced in the
         // initial Commit object, as described in Section 11.1. Update proposals are applied first,
@@ -1309,7 +1326,7 @@ impl Group {
         // in the tree, or the right edge of the tree if all leaves are occupied.
 
         let mut provisional_state =
-            self.apply_proposals(&plaintext.sender.sender, &commit_content.commit.proposals)?;
+            self.apply_proposals(sender, &commit_content.commit.proposals)?;
 
         let state_update = StateUpdate::from(&provisional_state);
 
@@ -1330,12 +1347,12 @@ impl Group {
                 let secrets = if let Some(pending) = local_pending {
                     provisional_state
                         .public_tree
-                        .apply_pending_update(&pending, &plaintext.sender.sender)?;
+                        .apply_pending_update(&pending, sender)?;
                     Ok(pending.secrets)
                 } else {
                     provisional_state.public_tree.decap(
                         provisional_state.private_tree,
-                        &plaintext.sender.sender,
+                        sender,
                         update_path,
                         &provisional_state.added_leaves,
                         &self.context.tls_serialize_detached()?,

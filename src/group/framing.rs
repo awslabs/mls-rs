@@ -21,19 +21,13 @@ impl From<&Content> for ContentType {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-#[repr(u16)]
-pub enum SenderType {
-    Reserved = 0,
-    Member,
-    Preconfigured,
-    NewMember,
-}
-
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct Sender {
-    pub sender_type: SenderType,
-    pub sender: KeyPackageRef,
+#[repr(u8)]
+pub enum Sender {
+    #[tls_codec(discriminant = 1)]
+    Member(KeyPackageRef),
+    Preconfigured(#[tls_codec(with = "crate::tls::ByteVec::<u8>")] Vec<u8>),
+    NewMember,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -154,10 +148,7 @@ pub mod test_utils {
         MLSPlaintext {
             group_id: vec![],
             epoch: 0,
-            sender: Sender {
-                sender_type: SenderType::Member,
-                sender: KeyPackageRef::from([0u8; 16]),
-            },
+            sender: Sender::Member(KeyPackageRef::from([0u8; 16])),
             authenticated_data: vec![],
             content: Content::Application(test_content),
             signature: MessageSignature::empty(),

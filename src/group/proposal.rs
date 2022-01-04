@@ -6,7 +6,7 @@ use crate::{hash_reference::HashReference, key_package::KeyPackage};
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-use super::GroupError;
+use super::{GroupError, Sender};
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct AddProposal {
@@ -119,7 +119,7 @@ impl From<ProposalRef> for ProposalOrRef {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct PendingProposal {
     pub proposal: Proposal,
-    pub sender: KeyPackageRef,
+    pub sender: Sender,
 }
 
 #[cfg(test)]

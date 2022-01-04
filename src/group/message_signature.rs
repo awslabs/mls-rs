@@ -1,10 +1,9 @@
 use crate::credential::CredentialError;
-use crate::group::framing::{Content, MLSPlaintext, Sender, SenderType, WireFormat};
-use crate::group::GroupContext;
+use crate::group::framing::{Content, MLSPlaintext, Sender, WireFormat};
+use crate::group::{AddProposal, GroupContext, Proposal};
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
 use ferriscrypt::{Signer, Verifier};
-use std::borrow::Borrow;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;
@@ -20,6 +19,8 @@ pub enum MessageSignatureError {
     SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
+    #[error("New members can only propose adding themselves")]
+    NewMembersCanOnlyProposeAddingThemselves,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -41,8 +42,8 @@ impl MLSPlaintextTBS {
         group_context: &GroupContext,
         wire_format: WireFormat,
     ) -> Self {
-        let context = match plaintext.sender.sender_type {
-            SenderType::Member => Some(group_context.clone()),
+        let context = match plaintext.sender {
+            Sender::Member(_) => Some(group_context.clone()),
             _ => None,
         };
 
@@ -109,10 +110,16 @@ impl MessageSignature {
     ) -> Result<bool, MessageSignatureError> {
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
-        let sender_cred = tree
-            .get_key_package(&plaintext.sender.sender)?
-            .credential
-            .borrow();
+        let sender_cred = match &plaintext.sender {
+            Sender::Member(sender) => Ok(&tree.get_key_package(sender)?.credential),
+            Sender::Preconfigured(_) => todo!(),
+            Sender::NewMember => match &plaintext.content {
+                Content::Proposal(Proposal::Add(AddProposal { key_package })) => {
+                    Ok(&key_package.credential)
+                }
+                _ => Err(MessageSignatureError::NewMembersCanOnlyProposeAddingThemselves),
+            },
+        }?;
 
         let to_be_verified = MLSPlaintextTBS::from_plaintext(plaintext, group_context, wire_format);
 
