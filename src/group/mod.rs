@@ -543,11 +543,9 @@ impl Group {
         })
     }
 
-    pub fn public_tree(&self) -> Result<&TreeKemPublic, GroupError> {
-        self.epoch_repo
-            .current()
-            .map(|t| &t.public_tree)
-            .map_err(Into::into)
+    #[inline(always)]
+    pub fn current_epoch_tree(&self) -> Result<&TreeKemPublic, GroupError> {
+        Ok(&self.epoch_repo.current()?.public_tree)
     }
 
     pub fn current_user_index(&self) -> u32 {
@@ -582,7 +580,7 @@ impl Group {
     ) -> Result<ProvisionalState, GroupError> {
         let proposals = self.fetch_proposals(proposals, sender)?;
 
-        let mut provisional_tree = self.epoch_repo.current()?.public_tree.clone();
+        let mut provisional_tree = self.current_epoch_tree()?.clone();
         let mut provisional_private_tree = self.private_tree.clone();
 
         //TODO: This has to loop through the proposal array 3 times, maybe this should be optimized
@@ -619,7 +617,7 @@ impl Group {
             return Err(GroupError::RemoveNotAllowed);
         }
 
-        let old_tree = self.public_tree()?;
+        let old_tree = self.current_epoch_tree()?;
 
         // Remove elements from the private tree
         removes.iter().try_for_each(|key_package_ref| {
@@ -976,7 +974,8 @@ impl Group {
         &mut self,
         key_package_ref: &KeyPackageRef,
     ) -> Result<Proposal, GroupError> {
-        self.public_tree()?.package_leaf_index(key_package_ref)?;
+        self.current_epoch_tree()?
+            .package_leaf_index(key_package_ref)?;
 
         Ok(Proposal::Remove(RemoveProposal {
             to_remove: key_package_ref.clone(),

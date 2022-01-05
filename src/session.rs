@@ -1,7 +1,8 @@
 use crate::group::framing::{MLSMessage, WireFormat};
-use crate::group::OutboundPlaintext;
 use crate::group::{proposal::Proposal, CommitGeneration, Group, StateUpdate};
+use crate::group::{OutboundPlaintext, Welcome};
 use crate::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageRef};
+use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use ferriscrypt::asym::ec_key::SecretKey;
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use thiserror::Error;
@@ -16,6 +17,8 @@ pub enum SessionError {
     ProtocolError(#[from] GroupError),
     #[error(transparent)]
     Serialization(#[from] tls_codec::Error),
+    #[error(transparent)]
+    RatchetTreeError(#[from] RatchetTreeError),
     #[error("commit already pending, please wait")]
     ExistingPendingCommit,
     #[error("pending commit not found")]
@@ -96,8 +99,11 @@ impl Session {
         welcome_message_data: &[u8],
         opts: SessionOpts,
     ) -> Result<Session, SessionError> {
-        let welcome_message = Deserialize::tls_deserialize(&mut &*welcome_message_data)?;
-        let ratchet_tree = Deserialize::tls_deserialize(&mut &*ratchet_tree_data)?;
+        let welcome_message = Welcome::tls_deserialize(&mut &*welcome_message_data)?;
+
+        let ratchet_tree =
+            TreeKemPublic::import_node_data(welcome_message.cipher_suite, ratchet_tree_data)?;
+
         let group = Group::from_welcome_message(welcome_message, ratchet_tree, key_package)?;
 
         Ok(Session {
@@ -108,17 +114,15 @@ impl Session {
         })
     }
 
-    pub fn export_tree(&self) -> Result<Vec<u8>, SessionError> {
-        Ok(self.protocol.public_tree()?.tls_serialize_detached()?)
-    }
-
     pub fn participant_count(&self) -> u32 {
-        self.protocol.public_tree().map_or(0, |t| t.leaf_count())
+        self.protocol
+            .current_epoch_tree()
+            .map_or(0, |t| t.leaf_count())
     }
 
     pub fn roster(&self) -> Vec<&KeyPackage> {
         self.protocol
-            .public_tree()
+            .current_epoch_tree()
             .map_or(vec![], |t| t.get_key_packages())
     }
 
@@ -246,6 +250,13 @@ impl Session {
         Ok(MLSMessage::Cipher(ciphertext).tls_serialize_detached()?)
     }
 
+    pub fn export_tree(&self) -> Result<Vec<u8>, GroupError> {
+        self.protocol
+            .current_epoch_tree()?
+            .export_node_data()
+            .map_err(Into::into)
+    }
+
     pub fn has_equal_state(&self, other: &Session) -> bool {
         self.protocol == other.protocol
     }
@@ -257,8 +268,9 @@ impl Session {
             .iter()
             .map(|p| p.as_ref().unwrap_or(&vec![].into()).clone())
             .collect();
+
         Ok(TreeStats {
-            total_leaves: self.protocol.public_tree()?.leaf_count(),
+            total_leaves: self.participant_count(),
             current_index: self.protocol.current_user_index(),
             direct_path,
         })
