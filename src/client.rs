@@ -1,4 +1,5 @@
 use crate::cipher_suite::CipherSuite;
+use crate::client_config::{ClientConfig, DefaultClientConfig};
 use crate::credential::{BasicCredential, Credential, CredentialError};
 use crate::extension::{CapabilitiesExt, ExtensionError, ExtensionList, LifetimeExt, MlsExtension};
 use crate::group::framing::{Content, MLSMessage, MLSPlaintext, Sender, WireFormat};
@@ -9,7 +10,6 @@ use crate::session::{Session, SessionError, SessionOpts};
 use ferriscrypt::asym::ec_key::{Curve, EcKeyError, SecretKey};
 use thiserror::Error;
 use tls_codec::Serialize;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum ClientError {
@@ -34,21 +34,22 @@ pub enum ClientError {
 }
 
 #[non_exhaustive]
-#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct Client {
+#[derive(Clone, Debug)]
+pub struct Client<C = DefaultClientConfig> {
     pub cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::SecretKeySer")]
     pub signature_key: SecretKey,
     pub credential: Credential,
     pub capabilities: CapabilitiesExt,
+    pub config: C,
 }
 
-impl Client {
+impl<C: ClientConfig + Clone> Client<C> {
     pub fn new(
         cipher_suite: CipherSuite,
         signature_key: SecretKey,
         credential: Credential,
-    ) -> Result<Client, ClientError> {
+        config: C,
+    ) -> Result<Self, ClientError> {
         if signature_key.curve != Curve::from(cipher_suite.signature_scheme()) {
             return Err(ClientError::SignatureCipherSuiteMismatch);
         }
@@ -62,19 +63,8 @@ impl Client {
             signature_key,
             credential,
             capabilities: CapabilitiesExt::default(),
+            config,
         })
-    }
-
-    pub fn generate_basic(
-        cipher_suite: CipherSuite,
-        identifier: Vec<u8>,
-    ) -> Result<Client, ClientError> {
-        let signature_key = SecretKey::generate(Curve::from(cipher_suite.signature_scheme()))?;
-        let credential = Credential::Basic(BasicCredential::new(
-            identifier,
-            signature_key.to_public()?,
-        )?);
-        Client::new(cipher_suite, signature_key, credential)
     }
 
     pub fn gen_key_package(
@@ -99,8 +89,15 @@ impl Client {
         key_package: KeyPackageGeneration,
         group_id: Vec<u8>,
         opts: SessionOpts,
-    ) -> Result<Session, ClientError> {
-        Session::create(group_id, self.signature_key.clone(), key_package, opts).map_err(Into::into)
+    ) -> Result<Session<C>, ClientError> {
+        Session::create(
+            group_id,
+            self.signature_key.clone(),
+            key_package,
+            opts,
+            self.config.clone(),
+        )
+        .map_err(Into::into)
     }
 
     pub fn join_session(
@@ -109,13 +106,14 @@ impl Client {
         tree_data: Option<&[u8]>,
         welcome_message: &[u8],
         opts: SessionOpts,
-    ) -> Result<Session, ClientError> {
+    ) -> Result<Session<C>, ClientError> {
         Session::join(
             self.signature_key.clone(),
             key_package,
             tree_data,
             welcome_message,
             opts,
+            self.config.clone(),
         )
         .map_err(Into::into)
     }
@@ -163,6 +161,25 @@ impl Client {
     }
 }
 
+impl Client<DefaultClientConfig> {
+    pub fn generate_basic(
+        cipher_suite: CipherSuite,
+        identifier: Vec<u8>,
+    ) -> Result<Self, ClientError> {
+        let signature_key = SecretKey::generate(Curve::from(cipher_suite.signature_scheme()))?;
+        let credential = Credential::Basic(BasicCredential::new(
+            identifier,
+            signature_key.to_public()?,
+        )?);
+        Client::new(
+            cipher_suite,
+            signature_key,
+            credential,
+            DefaultClientConfig::default(),
+        )
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -183,7 +200,13 @@ mod test {
             SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
         let credential = get_test_credential(identity, &signature_key);
 
-        Client::new(cipher_suite, signature_key, credential).unwrap()
+        Client::new(
+            cipher_suite,
+            signature_key,
+            credential,
+            DefaultClientConfig::default(),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -216,7 +239,12 @@ mod test {
         // Signature key is P256 but cipher suite expects Ed25519
         let sig_key = SecretKey::generate(Curve::P256).unwrap();
         let credential = get_test_credential(vec![], &sig_key);
-        let client_res = Client::new(CipherSuite::Curve25519Aes128V1, sig_key, credential);
+        let client_res = Client::new(
+            CipherSuite::Curve25519Aes128V1,
+            sig_key,
+            credential,
+            DefaultClientConfig::default(),
+        );
         assert!(client_res.is_err());
     }
 
@@ -229,7 +257,12 @@ mod test {
             BasicCredential::new(vec![], other_sig_key.to_public().unwrap()).unwrap(),
         );
 
-        let client_res = Client::new(CipherSuite::P256Aes128V1, sig_key, credential);
+        let client_res = Client::new(
+            CipherSuite::P256Aes128V1,
+            sig_key,
+            credential,
+            DefaultClientConfig::default(),
+        );
         assert!(client_res.is_err());
     }
 

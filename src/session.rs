@@ -1,9 +1,10 @@
+use crate::client_config::{ClientConfig, DefaultClientConfig};
 use crate::group::framing::{MLSMessage, WireFormat};
 use crate::group::{proposal::Proposal, CommitGeneration, Group, StateUpdate};
 use crate::group::{OutboundPlaintext, Welcome};
 use crate::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageRef};
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
-use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
+use ferriscrypt::asym::ec_key::SecretKey;
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
@@ -65,13 +66,13 @@ pub struct CommitResult {
     pub welcome_packet: Option<Vec<u8>>,
 }
 
-#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct Session {
-    #[tls_codec(with = "crate::tls::SecretKeySer")]
+#[derive(Clone, Debug)]
+pub struct Session<C = DefaultClientConfig> {
     signing_key: SecretKey,
     protocol: Group,
     pending_commit: Option<PendingCommit>,
     pub opts: SessionOpts,
+    config: C,
 }
 
 #[derive(Clone, Debug)]
@@ -81,19 +82,21 @@ pub struct TreeStats {
     pub direct_path: Vec<HpkePublicKey>,
 }
 
-impl Session {
+impl<C: ClientConfig> Session<C> {
     pub(crate) fn create(
         group_id: Vec<u8>,
         signing_key: SecretKey,
         key_package: KeyPackageGeneration,
         opts: SessionOpts,
-    ) -> Result<Session, SessionError> {
+        config: C,
+    ) -> Result<Self, SessionError> {
         let group = Group::new(group_id, key_package)?;
         Ok(Session {
             signing_key,
             protocol: group,
             pending_commit: None,
             opts,
+            config,
         })
     }
 
@@ -103,11 +106,12 @@ impl Session {
         ratchet_tree_data: Option<&[u8]>,
         welcome_message_data: &[u8],
         opts: SessionOpts,
-    ) -> Result<Session, SessionError> {
+        config: C,
+    ) -> Result<Self, SessionError> {
         let welcome_message = Welcome::tls_deserialize(&mut &*welcome_message_data)?;
 
         let ratchet_tree = ratchet_tree_data
-            .map(|rt| Session::import_ratchet_tree(&welcome_message, rt))
+            .map(|rt| Self::import_ratchet_tree(&welcome_message, rt))
             .transpose()?;
 
         let group = Group::from_welcome_message(welcome_message, ratchet_tree, key_package)?;
@@ -117,6 +121,7 @@ impl Session {
             protocol: group,
             pending_commit: None,
             opts,
+            config,
         })
     }
 
@@ -227,34 +232,16 @@ impl Session {
         &mut self,
         data: &[u8],
     ) -> Result<ProcessedMessage, SessionError> {
-        self.process_incoming_bytes_with_external(data, |_| None)
+        self.process_incoming_message(MLSMessage::tls_deserialize(&mut &*data)?)
     }
 
-    pub fn process_incoming_bytes_with_external<F>(
-        &mut self,
-        data: &[u8],
-        external_key_id_to_signing_key: F,
-    ) -> Result<ProcessedMessage, SessionError>
-    where
-        F: FnMut(&[u8]) -> Option<PublicKey>,
-    {
-        self.process_incoming_message(
-            MLSMessage::tls_deserialize(&mut &*data)?,
-            external_key_id_to_signing_key,
-        )
-    }
-
-    pub fn process_incoming_message<F>(
+    pub fn process_incoming_message(
         &mut self,
         message: MLSMessage,
-        external_key_id_to_signing_key: F,
-    ) -> Result<ProcessedMessage, SessionError>
-    where
-        F: FnMut(&[u8]) -> Option<PublicKey>,
-    {
+    ) -> Result<ProcessedMessage, SessionError> {
         let res = self
             .protocol
-            .process_incoming_message(message, external_key_id_to_signing_key)?;
+            .process_incoming_message(message, |id| self.config.external_signing_key(id))?;
         // This commit beat our current pending commit to the server, our commit is no longer
         // relevant
         if let ProcessedMessage::Commit(_) = res {

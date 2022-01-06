@@ -11,6 +11,7 @@ macro_rules! hex {
 #[macro_use]
 pub mod cipher_suite;
 pub mod client;
+pub mod client_config;
 pub mod credential;
 pub mod extension;
 mod group;
