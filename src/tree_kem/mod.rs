@@ -778,7 +778,7 @@ pub(crate) mod test {
     use ferriscrypt::asym::ec_key::Curve;
 
     use crate::credential::{BasicCredential, Credential};
-    use crate::extension::{CapabilitiesExt, ExtensionList, ExtensionTrait, LifetimeExt};
+    use crate::extension::{CapabilitiesExt, ExtensionList, LifetimeExt, MlsExtension};
     use crate::key_package::KeyPackageGenerator;
     use crate::tree_kem::node::{NodeTypeResolver, Parent};
     use crate::tree_kem::parent_hash::ParentHash;

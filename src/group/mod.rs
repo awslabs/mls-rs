@@ -133,6 +133,8 @@ pub enum GroupError {
     #[error(transparent)]
     EpochRepositoryError(#[from] EpochRepositoryError),
     #[error(transparent)]
+    ExtensionError(#[from] ExtensionError),
+    #[error(transparent)]
     KdfError(#[from] KdfError),
     #[error("Cipher suite does not match")]
     CipherSuiteMismatch,
@@ -200,7 +202,7 @@ impl From<&GroupInfo> for GroupContext {
             epoch: group_info.epoch,
             tree_hash: group_info.tree_hash.clone(),
             confirmed_transcript_hash: group_info.confirmed_transcript_hash.clone(),
-            extensions: group_info.extensions.clone(),
+            extensions: group_info.group_context_extensions.clone(),
         }
     }
 }
@@ -213,7 +215,8 @@ struct GroupInfo {
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,
-    pub extensions: ExtensionList,
+    pub group_context_extensions: ExtensionList,
+    pub other_extensions: ExtensionList,
     pub confirmation_tag: ConfirmationTag,
     pub signer: KeyPackageRef,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
@@ -232,7 +235,9 @@ impl GroupInfo {
             #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
             pub confirmed_transcript_hash: &'a Vec<u8>,
             #[tls_codec(with = "crate::tls::DefVec::<u32>")]
-            pub extensions: &'a Vec<Extension>,
+            pub group_context_extensions: &'a Vec<Extension>,
+            #[tls_codec(with = "crate::tls::DefVec::<u32>")]
+            pub other_extensions: &'a Vec<Extension>,
             #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
             pub confirmation_tag: &'a Tag,
             pub signer: &'a KeyPackageRef,
@@ -243,7 +248,8 @@ impl GroupInfo {
             epoch: self.epoch,
             tree_hash: &self.tree_hash,
             confirmed_transcript_hash: &self.confirmed_transcript_hash,
-            extensions: &self.extensions,
+            group_context_extensions: &self.group_context_extensions,
+            other_extensions: &self.other_extensions,
             confirmation_tag: &self.confirmation_tag,
             signer: &self.signer,
         }
@@ -383,12 +389,12 @@ impl Group {
         let cipher_suite = creator_key_package.key_package.cipher_suite;
         let kdf = Hkdf::from(cipher_suite.kdf_type());
 
-        let extensions = creator_key_package.key_package.extensions.clone();
         let (public_tree, private_tree) = TreeKemPublic::derive(creator_key_package)?;
         let init_secret = SecureRng::gen(kdf.extract_size())?;
         let tree_hash = public_tree.tree_hash()?;
 
-        let context = GroupContext::new_group(group_id, tree_hash, extensions);
+        // TODO: Proper support for group context extensions
+        let context = GroupContext::new_group(group_id, tree_hash, ExtensionList::new());
 
         let (epoch, _) = Epoch::derive(
             cipher_suite,
@@ -816,6 +822,7 @@ impl Group {
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
 
+        let mut extensions = ExtensionList::new();
         let current_epoch = self.epoch_repo.current()?;
 
         let (next_epoch, joiner_secret) = Epoch::evolved_from(
@@ -845,7 +852,8 @@ impl Group {
             epoch: provisional_group_context.epoch,
             tree_hash: provisional_group_context.tree_hash,
             confirmed_transcript_hash: provisional_group_context.confirmed_transcript_hash,
-            extensions: self.context.extensions.clone(),
+            other_extensions: extensions,
+            group_context_extensions: ExtensionList::new(), // TODO: Support group context extensions
             confirmation_tag, // The confirmation_tag from the MLSPlaintext object
             signer: update_path
                 .as_ref()
@@ -1413,8 +1421,8 @@ mod test {
     use std::time::SystemTime;
 
     use crate::{
-        credential::BasicCredential, credential::CredentialConvertible, extension::ExtensionTrait,
-        extension::LifetimeExt, key_package::KeyPackageGenerator,
+        credential::BasicCredential, credential::CredentialConvertible, extension::LifetimeExt,
+        extension::MlsExtension, key_package::KeyPackageGenerator,
     };
 
     use super::*;

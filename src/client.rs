@@ -226,7 +226,7 @@ mod test {
                 package_gen
                     .key_package
                     .extensions
-                    .get_lifetime()
+                    .get_extension::<LifetimeExt>()
                     .unwrap()
                     .unwrap(),
                 key_lifetime

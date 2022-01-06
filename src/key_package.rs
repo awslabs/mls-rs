@@ -1,6 +1,7 @@
 use crate::cipher_suite::CipherSuite;
 use crate::cipher_suite::ProtocolVersion;
 use crate::credential::{Credential, CredentialError};
+use crate::extension::LifetimeExt;
 use crate::extension::{Extension, ExtensionError, ExtensionList};
 use crate::hash_reference::HashReference;
 use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError, SecretKey};
@@ -161,7 +162,7 @@ impl KeyPackage {
 
     pub fn has_valid_lifetime(&self, time: SystemTime) -> Result<bool, KeyPackageError> {
         self.extensions
-            .get_lifetime()?
+            .get_extension::<LifetimeExt>()?
             .ok_or(KeyPackageError::MissingKeyLifetime)
             .and_then(|l| l.within_lifetime(time).map_err(KeyPackageError::from))
     }

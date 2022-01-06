@@ -1,5 +1,5 @@
 use crate::cipher_suite::CipherSuite;
-use crate::extension::ExtensionError;
+use crate::extension::{ExtensionError, ParentHashExt};
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVec, NodeVecError, Parent};
@@ -84,7 +84,7 @@ impl Node {
             Node::Leaf(l) => Ok(l
                 .key_package
                 .extensions
-                .get_parent_hash()?
+                .get_extension::<ParentHashExt>()?
                 .map(|ext| ext.parent_hash)),
         }
     }
@@ -182,7 +182,7 @@ impl TreeKemPublic {
             let received_parent_hash = update_path
                 .leaf_key_package
                 .extensions
-                .get_parent_hash()?
+                .get_extension::<ParentHashExt>()?
                 .ok_or(RatchetTreeError::ParentHashNotFound)?;
 
             if !leaf_hash.matches(received_parent_hash.parent_hash) {
