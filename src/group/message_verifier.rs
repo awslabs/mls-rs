@@ -6,15 +6,20 @@ use crate::{
     },
     tree_kem::TreeKemPrivate,
 };
+use ferriscrypt::asym::ec_key::PublicKey;
 use tls_codec::{Deserialize, Serialize};
 
-pub(crate) struct MessageVerifier<'a> {
+pub(crate) struct MessageVerifier<'a, F> {
     pub(crate) epoch_repo: &'a mut EpochRepository,
     pub(crate) context: &'a GroupContext,
     pub(crate) private_tree: &'a TreeKemPrivate,
+    pub(crate) external_key_id_to_signing_key: F,
 }
 
-impl MessageVerifier<'_> {
+impl<F> MessageVerifier<'_, F>
+where
+    F: FnMut(&[u8]) -> Option<PublicKey>,
+{
     pub(crate) fn verify(&mut self, message: MLSMessage) -> Result<VerifiedPlaintext, GroupError> {
         match message {
             MLSMessage::Plain(m) => self.verify_plaintext(m),
@@ -22,7 +27,10 @@ impl MessageVerifier<'_> {
         }
     }
 
-    fn verify_plaintext(&self, plaintext: MLSPlaintext) -> Result<VerifiedPlaintext, GroupError> {
+    fn verify_plaintext(
+        &mut self,
+        plaintext: MLSPlaintext,
+    ) -> Result<VerifiedPlaintext, GroupError> {
         let msg_epoch = self.epoch_repo.get(plaintext.epoch)?;
 
         let tag = plaintext
@@ -35,7 +43,12 @@ impl MessageVerifier<'_> {
 
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
-        if !plaintext.verify_signature(&msg_epoch.public_tree, self.context, WireFormat::Plain)? {
+        if !plaintext.verify_signature(
+            &msg_epoch.public_tree,
+            self.context,
+            WireFormat::Plain,
+            &mut self.external_key_id_to_signing_key,
+        )? {
             return Err(GroupError::InvalidSignature);
         }
 
@@ -119,7 +132,12 @@ impl MessageVerifier<'_> {
 
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
-        if !plaintext.verify_signature(&msg_epoch.public_tree, self.context, WireFormat::Cipher)? {
+        if !plaintext.verify_signature(
+            &msg_epoch.public_tree,
+            self.context,
+            WireFormat::Cipher,
+            &mut self.external_key_id_to_signing_key,
+        )? {
             return Err(GroupError::InvalidSignature);
         }
 

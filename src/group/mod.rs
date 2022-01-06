@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::option::Option::Some;
 
-use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
+use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey, SecretKey};
 use ferriscrypt::cipher::aead::AeadError;
 use ferriscrypt::hmac::Tag;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
@@ -1144,14 +1144,19 @@ impl Group {
         self.encrypt_plaintext(plaintext)
     }
 
-    pub fn process_incoming_message(
+    pub fn process_incoming_message<F>(
         &mut self,
         message: MLSMessage,
-    ) -> Result<ProcessedMessage, GroupError> {
+        external_key_id_to_signing_key: F,
+    ) -> Result<ProcessedMessage, GroupError>
+    where
+        F: FnMut(&[u8]) -> Option<PublicKey>,
+    {
         let mut verifier = MessageVerifier {
             epoch_repo: &mut self.epoch_repo,
             context: &self.context,
             private_tree: &self.private_tree,
+            external_key_id_to_signing_key,
         };
         let plaintext = verifier.verify(message)?;
         match &plaintext.sender {

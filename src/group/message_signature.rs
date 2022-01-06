@@ -2,7 +2,7 @@ use crate::credential::CredentialError;
 use crate::group::framing::{Content, MLSPlaintext, Sender, WireFormat};
 use crate::group::{AddProposal, GroupContext, Proposal};
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
-use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
+use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey, SecretKey};
 use ferriscrypt::{Signer, Verifier};
 use std::ops::Deref;
 use thiserror::Error;
@@ -21,6 +21,8 @@ pub enum MessageSignatureError {
     CredentialError(#[from] CredentialError),
     #[error("New members can only propose adding themselves")]
     NewMembersCanOnlyProposeAddingThemselves,
+    #[error("Signing key of preconfigured external sender is unknown")]
+    UnknownSigningKeyForExternalSender,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -70,14 +72,23 @@ impl MLSPlaintext {
         Ok(())
     }
 
-    pub(crate) fn verify_signature(
+    pub(crate) fn verify_signature<F>(
         &self,
         tree: &TreeKemPublic,
         group_context: &GroupContext,
         wire_format: WireFormat,
-    ) -> Result<bool, MessageSignatureError> {
-        self.signature
-            .is_valid(self, tree, group_context, wire_format)
+        external_key_id_to_signing_key: F,
+    ) -> Result<bool, MessageSignatureError>
+    where
+        F: FnMut(&[u8]) -> Option<PublicKey>,
+    {
+        self.signature.is_valid(
+            self,
+            tree,
+            group_context,
+            wire_format,
+            external_key_id_to_signing_key,
+        )
     }
 }
 
@@ -101,34 +112,41 @@ impl MessageSignature {
         Ok(MessageSignature(signature_data))
     }
 
-    fn is_valid(
+    fn is_valid<F>(
         &self,
         plaintext: &MLSPlaintext,
         tree: &TreeKemPublic,
         group_context: &GroupContext,
         wire_format: WireFormat,
-    ) -> Result<bool, MessageSignatureError> {
-        //Verify that the signature on the MLSPlaintext message verifies using the public key
+        mut external_key_id_to_signing_key: F,
+    ) -> Result<bool, MessageSignatureError>
+    where
+        F: FnMut(&[u8]) -> Option<PublicKey>,
+    {
+        let to_be_verified = MLSPlaintextTBS::from_plaintext(plaintext, group_context, wire_format)
+            .tls_serialize_detached()?;
+        // Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
-        let sender_cred = match &plaintext.sender {
-            Sender::Member(sender) => Ok(&tree.get_key_package(sender)?.credential),
-            Sender::Preconfigured(_) => todo!(),
-            Sender::NewMember => match &plaintext.content {
-                Content::Proposal(Proposal::Add(AddProposal { key_package })) => {
-                    Ok(&key_package.credential)
+        match &plaintext.sender {
+            Sender::Member(sender) => Ok(tree
+                .get_key_package(sender)?
+                .credential
+                .verify(&plaintext.signature, &to_be_verified)?),
+            Sender::Preconfigured(external_key_id) => {
+                match external_key_id_to_signing_key(external_key_id) {
+                    Some(signing_key) => {
+                        Ok(signing_key.verify(&plaintext.signature, &to_be_verified)?)
+                    }
+                    None => Err(MessageSignatureError::UnknownSigningKeyForExternalSender),
                 }
+            }
+            Sender::NewMember => match &plaintext.content {
+                Content::Proposal(Proposal::Add(AddProposal { key_package })) => Ok(key_package
+                    .credential
+                    .verify(&plaintext.signature, &to_be_verified)?),
                 _ => Err(MessageSignatureError::NewMembersCanOnlyProposeAddingThemselves),
             },
-        }?;
-
-        let to_be_verified = MLSPlaintextTBS::from_plaintext(plaintext, group_context, wire_format);
-
-        let is_signature_valid = sender_cred.verify(
-            &plaintext.signature,
-            &to_be_verified.tls_serialize_detached()?,
-        )?;
-
-        Ok(is_signature_valid)
+        }
     }
 }
 

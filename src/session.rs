@@ -3,7 +3,7 @@ use crate::group::{proposal::Proposal, CommitGeneration, Group, StateUpdate};
 use crate::group::{OutboundPlaintext, Welcome};
 use crate::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageRef};
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
-use ferriscrypt::asym::ec_key::SecretKey;
+use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
@@ -227,14 +227,34 @@ impl Session {
         &mut self,
         data: &[u8],
     ) -> Result<ProcessedMessage, SessionError> {
-        self.process_incoming_message(MLSMessage::tls_deserialize(&mut &*data)?)
+        self.process_incoming_bytes_with_external(data, |_| None)
     }
 
-    pub fn process_incoming_message(
+    pub fn process_incoming_bytes_with_external<F>(
+        &mut self,
+        data: &[u8],
+        external_key_id_to_signing_key: F,
+    ) -> Result<ProcessedMessage, SessionError>
+    where
+        F: FnMut(&[u8]) -> Option<PublicKey>,
+    {
+        self.process_incoming_message(
+            MLSMessage::tls_deserialize(&mut &*data)?,
+            external_key_id_to_signing_key,
+        )
+    }
+
+    pub fn process_incoming_message<F>(
         &mut self,
         message: MLSMessage,
-    ) -> Result<ProcessedMessage, SessionError> {
-        let res = self.protocol.process_incoming_message(message)?;
+        external_key_id_to_signing_key: F,
+    ) -> Result<ProcessedMessage, SessionError>
+    where
+        F: FnMut(&[u8]) -> Option<PublicKey>,
+    {
+        let res = self
+            .protocol
+            .process_incoming_message(message, external_key_id_to_signing_key)?;
         // This commit beat our current pending commit to the server, our commit is no longer
         // relevant
         if let ProcessedMessage::Commit(_) = res {
