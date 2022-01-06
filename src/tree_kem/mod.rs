@@ -854,7 +854,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_import_export() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256;
+        let cipher_suite = CipherSuite::P256Aes128V1;
         let (mut test_tree, _, _) = get_test_tree(cipher_suite);
 
         let additional_key_packages = get_test_key_packages(cipher_suite);
@@ -869,7 +869,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_add_leaf() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let mut tree = TreeKemPublic::new(cipher_suite);
 
@@ -929,7 +929,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_get_key_packages() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let mut tree = TreeKemPublic::new(cipher_suite);
 
@@ -942,7 +942,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_find_leaf() {
-        let cipher_suite = CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521;
+        let cipher_suite = CipherSuite::P521Aes256V1;
 
         let mut tree = TreeKemPublic::new(cipher_suite);
 
@@ -960,7 +960,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_add_leaf_duplicate() {
-        let cipher_suite = CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521;
+        let cipher_suite = CipherSuite::P521Aes256V1;
 
         let mut tree = TreeKemPublic::new(cipher_suite);
 
@@ -977,7 +977,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_add_leaf_empty_leaf() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let (mut tree, _, _) = get_test_tree(cipher_suite);
         let key_packages = get_test_key_packages(cipher_suite);
@@ -994,7 +994,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_add_leaf_unmerged() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let (mut tree, _, _) = get_test_tree(cipher_suite);
 
@@ -1020,7 +1020,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_add_node_bad_package() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let (mut tree, _, _) = get_test_tree(cipher_suite);
         let tree_clone = tree.clone();
@@ -1036,7 +1036,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_update_leaf() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
         let (mut tree, _, _) = get_test_tree(cipher_suite);
@@ -1104,7 +1104,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_update_leaf_bad_leaf() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let (mut tree, _, key_package_generation) = get_test_tree(cipher_suite);
         let bad_key_package = get_invalid_key_package(cipher_suite);
@@ -1120,7 +1120,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_update_leaf_not_found() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
         let (mut tree, _, _) = get_test_tree(cipher_suite);
@@ -1137,7 +1137,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_update_leaf_duplicate() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
         let (mut tree, _, _) = get_test_tree(cipher_suite);
@@ -1155,7 +1155,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_remove_leaf() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
         let (mut tree, _, _) = get_test_tree(cipher_suite);
@@ -1201,7 +1201,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_remove_leaf_failure() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
         let (mut tree, _, _) = get_test_tree(cipher_suite);
@@ -1357,7 +1357,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_encap_bad_cred() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let (mut tree, private_key, key_package_generation) = get_test_tree(cipher_suite);
         tree.add_leaves(get_test_key_packages(cipher_suite))

@@ -73,7 +73,7 @@ mod test {
 
     fn test_epoch(identifier: u64) -> Epoch {
         let mut epoch = get_test_epoch(
-            CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
+            CipherSuite::Curve25519Aes128V1,
             SecureRng::gen(32).unwrap(),
             SecureRng::gen(32).unwrap(),
         );

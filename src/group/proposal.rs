@@ -158,7 +158,7 @@ mod test {
     #[test]
     fn test_add() {
         let add_proposal = AddProposal {
-            key_package: test_key_package(CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256),
+            key_package: test_key_package(CipherSuite::P256Aes128V1),
         };
 
         let proposal = Proposal::Add(add_proposal.clone());
@@ -174,7 +174,7 @@ mod test {
     #[test]
     fn test_update() {
         let update_proposal = UpdateProposal {
-            key_package: test_key_package(CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256),
+            key_package: test_key_package(CipherSuite::P256Aes128V1),
         };
 
         let proposal = Proposal::Update(update_proposal.clone());

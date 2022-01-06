@@ -167,11 +167,7 @@ mod test {
         // Signature key is P256 but cipher suite expects Ed25519
         let sig_key = SecretKey::generate(Curve::P256).unwrap();
         let credential = get_test_credential(vec![], &sig_key);
-        let client_res = Client::new(
-            CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
-            sig_key,
-            credential,
-        );
+        let client_res = Client::new(CipherSuite::Curve25519Aes128V1, sig_key, credential);
         assert!(client_res.is_err());
     }
 
@@ -184,11 +180,7 @@ mod test {
             BasicCredential::new(vec![], other_sig_key.to_public().unwrap()).unwrap(),
         );
 
-        let client_res = Client::new(
-            CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256,
-            sig_key,
-            credential,
-        );
+        let client_res = Client::new(CipherSuite::P256Aes128V1, sig_key, credential);
         assert!(client_res.is_err());
     }
 

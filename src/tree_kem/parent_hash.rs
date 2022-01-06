@@ -293,7 +293,7 @@ mod test {
 
     #[test]
     fn test_missing_parent_hash() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let mut test_tree = get_phash_test_tree(cipher_suite);
         let test_key_package = get_test_key_package(cipher_suite, b"foo".to_vec());
@@ -311,7 +311,7 @@ mod test {
 
     #[test]
     fn test_invalid_parent_hash() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let mut test_tree = get_phash_test_tree(cipher_suite);
         let test_key_package = get_test_key_package(cipher_suite, b"foo".to_vec());

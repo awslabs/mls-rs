@@ -19,6 +19,7 @@ pub enum ProtocolVersion {
 #[repr(u16)]
 pub enum SignatureScheme {
     EcdsaSecp256r1Sha256 = 0x0403,
+    EcdsaSecp384r1Sha384 = 0x0503,
     EcdsaSecp521r1Sha512 = 0x0603,
     Ed25519 = 0x0703,
     Ed448 = 0x0808,
@@ -30,7 +31,7 @@ impl TryInto<SignatureScheme> for Curve {
     fn try_into(self) -> Result<SignatureScheme, Self::Error> {
         match self {
             Curve::P256 => Ok(SignatureScheme::EcdsaSecp256r1Sha256),
-            Curve::P384 => Err(EcKeyError::UnsupportedCurveType(self as i32)),
+            Curve::P384 => Ok(SignatureScheme::EcdsaSecp384r1Sha384),
             Curve::P521 => Ok(SignatureScheme::EcdsaSecp521r1Sha512),
             Curve::X25519 => Err(EcKeyError::NotSigningKey(self)),
             Curve::Ed25519 => Ok(SignatureScheme::Ed25519),
@@ -78,24 +79,43 @@ impl From<HpkeCiphertext> for HPKECiphertext {
 )]
 #[repr(u16)]
 pub enum CipherSuite {
-    Mls10128Dhkemx25519Aes128gcmSha256Ed25519 = 0x0001,
-    Mls10128Dhkemp256Aes128gcmSha256P256 = 0x0002,
-    Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519 = 0x0003,
-    Mls10256Dhkemx448Aes256gcmSha512Ed448 = 0x0004,
-    Mls10256Dhkemp521Aes256gcmSha512P521 = 0x0005,
-    Mls10256Dhkemx448Chacha20poly1305Sha512Ed448 = 0x0006,
+    Curve25519Aes128V1 = 0x0001,
+    P256Aes128V1 = 0x0002,
+    Curve25519ChaCha20V1 = 0x0003,
+    Curve448Aes256V1 = 0x0004,
+    P521Aes256V1 = 0x0005,
+    Curve448ChaCha20V1 = 0x0006,
+    P384Aes256V1 = 0x0007,
+}
+
+impl ToString for CipherSuite {
+    fn to_string(&self) -> String {
+        match self {
+            CipherSuite::Curve25519Aes128V1 => "MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
+            CipherSuite::P256Aes128V1 => "MLS10_128_DHKEMP256_AES128GCM_SHA256_P256",
+            CipherSuite::Curve25519ChaCha20V1 => {
+                "MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519"
+            }
+            CipherSuite::Curve448Aes256V1 => "MLS10_256_DHKEMX448_AES256GCM_SHA512_Ed448",
+            CipherSuite::P521Aes256V1 => "MLS10_256_DHKEMP521_AES256GCM_SHA512_P521",
+            CipherSuite::Curve448ChaCha20V1 => "MLS10_256_DHKEMX448_CHACHA20POLY1305_SHA512_Ed448",
+            CipherSuite::P384Aes256V1 => "MLS10_256_DHKEMP384_AES256GCM_SHA384_P384",
+        }
+        .to_string()
+    }
 }
 
 impl CipherSuite {
     #[inline(always)]
     pub fn from_raw(raw: u16) -> Option<Self> {
         match raw {
-            1 => Some(CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519),
-            2 => Some(CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256),
-            3 => Some(CipherSuite::Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519),
-            4 => Some(CipherSuite::Mls10256Dhkemx448Aes256gcmSha512Ed448),
-            5 => Some(CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521),
-            6 => Some(CipherSuite::Mls10256Dhkemx448Chacha20poly1305Sha512Ed448),
+            1 => Some(CipherSuite::Curve25519Aes128V1),
+            2 => Some(CipherSuite::P256Aes128V1),
+            3 => Some(CipherSuite::Curve25519ChaCha20V1),
+            4 => Some(CipherSuite::Curve448Aes256V1),
+            5 => Some(CipherSuite::P521Aes256V1),
+            6 => Some(CipherSuite::Curve448ChaCha20V1),
+            7 => Some(CipherSuite::P384Aes256V1),
             _ => None,
         }
     }
@@ -112,56 +132,52 @@ impl CipherSuite {
     #[inline(always)]
     pub fn aead_type(&self) -> Aead {
         match self {
-            CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => Aead::Aes128Gcm,
-            CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256 => Aead::Aes128Gcm,
-            CipherSuite::Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519 => Aead::Chacha20Poly1305,
-            CipherSuite::Mls10256Dhkemx448Aes256gcmSha512Ed448 => Aead::Aes256Gcm,
-            CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521 => Aead::Aes256Gcm,
-            CipherSuite::Mls10256Dhkemx448Chacha20poly1305Sha512Ed448 => Aead::Chacha20Poly1305,
+            CipherSuite::Curve25519Aes128V1 => Aead::Aes128Gcm,
+            CipherSuite::P256Aes128V1 => Aead::Aes128Gcm,
+            CipherSuite::Curve25519ChaCha20V1 => Aead::Chacha20Poly1305,
+            CipherSuite::Curve448Aes256V1 => Aead::Aes256Gcm,
+            CipherSuite::P521Aes256V1 => Aead::Aes256Gcm,
+            CipherSuite::Curve448ChaCha20V1 => Aead::Chacha20Poly1305,
+            CipherSuite::P384Aes256V1 => Aead::Aes256Gcm,
         }
     }
 
     #[inline(always)]
     pub(crate) fn kem_type(&self) -> KemId {
         match self {
-            CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => KemId::X25519HkdfSha256,
-            CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256 => KemId::P256HkdfSha256,
-            CipherSuite::Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519 => {
-                KemId::X25519HkdfSha256
-            }
-            CipherSuite::Mls10256Dhkemx448Aes256gcmSha512Ed448 => KemId::X448HkdfSha512,
-            CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521 => KemId::P521HkdfSha512,
-            CipherSuite::Mls10256Dhkemx448Chacha20poly1305Sha512Ed448 => KemId::X448HkdfSha512,
+            CipherSuite::Curve25519Aes128V1 => KemId::X25519HkdfSha256,
+            CipherSuite::P256Aes128V1 => KemId::P256HkdfSha256,
+            CipherSuite::Curve25519ChaCha20V1 => KemId::X25519HkdfSha256,
+            CipherSuite::Curve448Aes256V1 => KemId::X448HkdfSha512,
+            CipherSuite::P521Aes256V1 => KemId::P521HkdfSha512,
+            CipherSuite::Curve448ChaCha20V1 => KemId::X448HkdfSha512,
+            CipherSuite::P384Aes256V1 => KemId::P384HkdfSha384,
         }
     }
 
     #[inline(always)]
     pub fn hash_function(&self) -> HashFunction {
         match self {
-            CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => HashFunction::Sha256,
-            CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256 => HashFunction::Sha256,
-            CipherSuite::Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519 => HashFunction::Sha256,
-            CipherSuite::Mls10256Dhkemx448Aes256gcmSha512Ed448 => HashFunction::Sha512,
-            CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521 => HashFunction::Sha512,
-            CipherSuite::Mls10256Dhkemx448Chacha20poly1305Sha512Ed448 => HashFunction::Sha512,
+            CipherSuite::Curve25519Aes128V1 => HashFunction::Sha256,
+            CipherSuite::P256Aes128V1 => HashFunction::Sha256,
+            CipherSuite::Curve25519ChaCha20V1 => HashFunction::Sha256,
+            CipherSuite::Curve448Aes256V1 => HashFunction::Sha512,
+            CipherSuite::P521Aes256V1 => HashFunction::Sha512,
+            CipherSuite::Curve448ChaCha20V1 => HashFunction::Sha512,
+            CipherSuite::P384Aes256V1 => HashFunction::Sha384,
         }
     }
 
     #[inline(always)]
     pub fn signature_scheme(&self) -> SignatureScheme {
         match self {
-            CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519 => SignatureScheme::Ed25519,
-            CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256 => {
-                SignatureScheme::EcdsaSecp256r1Sha256
-            }
-            CipherSuite::Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519 => {
-                SignatureScheme::Ed25519
-            }
-            CipherSuite::Mls10256Dhkemx448Aes256gcmSha512Ed448 => SignatureScheme::Ed448,
-            CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521 => {
-                SignatureScheme::EcdsaSecp521r1Sha512
-            }
-            CipherSuite::Mls10256Dhkemx448Chacha20poly1305Sha512Ed448 => SignatureScheme::Ed448,
+            CipherSuite::Curve25519Aes128V1 => SignatureScheme::Ed25519,
+            CipherSuite::P256Aes128V1 => SignatureScheme::EcdsaSecp256r1Sha256,
+            CipherSuite::Curve25519ChaCha20V1 => SignatureScheme::Ed25519,
+            CipherSuite::Curve448Aes256V1 => SignatureScheme::Ed448,
+            CipherSuite::P521Aes256V1 => SignatureScheme::EcdsaSecp521r1Sha512,
+            CipherSuite::Curve448ChaCha20V1 => SignatureScheme::Ed448,
+            CipherSuite::P384Aes256V1 => SignatureScheme::EcdsaSecp384r1Sha384,
         }
     }
 
@@ -195,6 +211,7 @@ impl From<SignatureScheme> for Curve {
             SignatureScheme::EcdsaSecp521r1Sha512 => Curve::P521,
             SignatureScheme::Ed25519 => Curve::Ed25519,
             SignatureScheme::Ed448 => Curve::Ed448,
+            SignatureScheme::EcdsaSecp384r1Sha384 => Curve::P384,
         }
     }
 }

@@ -1486,12 +1486,10 @@ mod test {
 
     #[test]
     fn test_pending_proposals_application_data() {
-        let (mut test_group, signing_key) =
-            test_group(CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256);
+        let (mut test_group, signing_key) = test_group(CipherSuite::P256Aes128V1);
 
         // Create a proposal
-        let (bob_key_package, _) =
-            test_member(CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256, b"bob");
+        let (bob_key_package, _) = test_member(CipherSuite::P256Aes128V1, b"bob");
 
         let proposal = test_group
             .add_member_proposal(&bob_key_package.key_package)
@@ -1519,8 +1517,7 @@ mod test {
 
     #[test]
     fn test_invalid_commit_self_update() {
-        let (mut test_group, signing_key) =
-            test_group(CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256);
+        let (mut test_group, signing_key) = test_group(CipherSuite::P256Aes128V1);
 
         // Create an update proposal
         let proposal = test_group.update_proposal(&signing_key).unwrap();
@@ -1534,8 +1531,7 @@ mod test {
 
     #[test]
     fn test_invalid_commit_self_update_cached() {
-        let (mut test_group, signing_key) =
-            test_group(CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256);
+        let (mut test_group, signing_key) = test_group(CipherSuite::P256Aes128V1);
 
         // Create an update proposal
         let proposal = test_group.update_proposal(&signing_key).unwrap();
@@ -1551,7 +1547,7 @@ mod test {
     }
 
     fn test_welcome_processing(tree_ext: bool) {
-        let cipher_suite = CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256;
+        let cipher_suite = CipherSuite::P256Aes128V1;
         let (mut test_group, signing_key) = test_group(cipher_suite);
         let (bob_key_package, _) = test_member(cipher_suite, b"bob");
 
@@ -1600,7 +1596,7 @@ mod test {
 
     #[test]
     fn test_welcome_processing_missing_tree() {
-        let cipher_suite = CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256;
+        let cipher_suite = CipherSuite::P256Aes128V1;
         let (mut test_group, signing_key) = test_group(cipher_suite);
         let (bob_key_package, _) = test_member(cipher_suite, b"bob");
 

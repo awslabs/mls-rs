@@ -70,10 +70,10 @@ impl Default for CapabilitiesExt {
         Self {
             protocol_versions: vec![ProtocolVersion::Mls10],
             cipher_suites: vec![
-                CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256,
-                CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
-                CipherSuite::Mls10128Dhkemx25519Chacha20poly1305Sha256Ed25519,
-                CipherSuite::Mls10256Dhkemp521Aes256gcmSha512P521,
+                CipherSuite::P256Aes128V1,
+                CipherSuite::Curve25519Aes128V1,
+                CipherSuite::Curve25519ChaCha20V1,
+                CipherSuite::P521Aes256V1,
             ],
             extensions: vec![
                 CapabilitiesExt::IDENTIFIER,
@@ -230,10 +230,7 @@ mod tests {
     #[test]
     fn test_capabilities() {
         let test_protocol_versions = vec![ProtocolVersion::Mls10];
-        let test_ciphersuites = vec![
-            CipherSuite::Mls10128Dhkemp256Aes128gcmSha256P256,
-            CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519,
-        ];
+        let test_ciphersuites = vec![CipherSuite::P256Aes128V1, CipherSuite::Curve25519Aes128V1];
 
         let test_extensions = vec![
             ParentHashExt::IDENTIFIER,
