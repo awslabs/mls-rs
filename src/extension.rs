@@ -137,6 +137,13 @@ impl MlsExtension for ParentHashExt {
     const IDENTIFIER: u16 = PARENT_HASH_EXT_ID;
 }
 
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct RatchetTreeExt {
+    pub(crate) tree_data: NodeVec,
+}
+
+impl MlsExtension for RatchetTreeExt {
+    const IDENTIFIER: u16 = RATCHET_TREE_EXT_ID;
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -264,6 +271,19 @@ mod tests {
         let restored = LifetimeExt::from_extension(as_extension).expect("from extension error");
         assert_eq!(lifetime.not_after, restored.not_after);
         assert_eq!(lifetime.not_before, restored.not_before);
+    }
+
+    #[test]
+    fn test_ratchet_tree() {
+        let ext = RatchetTreeExt {
+            tree_data: NodeVec::from(vec![None, None]),
+        };
+
+        let as_extension = ext.to_extension().unwrap();
+        assert_eq!(as_extension.extension_id, RatchetTreeExt::IDENTIFIER);
+
+        let restored = RatchetTreeExt::from_extension(as_extension).unwrap();
+        assert_eq!(ext, restored)
     }
 
     #[test]

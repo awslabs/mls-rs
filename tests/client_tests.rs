@@ -41,7 +41,7 @@ fn test_create(cipher_suite: CipherSuite, opts: SessionOpts) {
 
     // Bob receives the welcome message and joins the group
     let bob_session = bob
-        .join_session(bob_key, &tree, &packets.welcome_packet.unwrap(), opts)
+        .join_session(bob_key, Some(&tree), &packets.welcome_packet.unwrap(), opts)
         .unwrap();
 
     assert!(alice_session.has_equal_state(&bob_session));
@@ -54,6 +54,7 @@ fn test_create_session() {
             cs,
             SessionOpts {
                 encrypt_controls: false,
+                ratchet_tree_extension: false,
             },
         );
 
@@ -61,6 +62,7 @@ fn test_create_session() {
             cs,
             SessionOpts {
                 encrypt_controls: true,
+                ratchet_tree_extension: false,
             },
         )
     });
@@ -126,7 +128,7 @@ fn get_test_sessions(
             client
                 .join_session(
                     key.clone(),
-                    &tree_data,
+                    Some(&tree_data),
                     commit.welcome_packet.as_ref().unwrap(),
                     opts.clone(),
                 )
@@ -184,6 +186,7 @@ fn test_group_path_updates() {
             10,
             SessionOpts {
                 encrypt_controls: false,
+                ratchet_tree_extension: false,
             },
         );
         test_empty_commits(
@@ -191,6 +194,7 @@ fn test_group_path_updates() {
             10,
             SessionOpts {
                 encrypt_controls: true,
+                ratchet_tree_extension: false,
             },
         );
     })
@@ -262,6 +266,7 @@ fn test_group_update_proposals() {
             10,
             SessionOpts {
                 encrypt_controls: false,
+                ratchet_tree_extension: false,
             },
         );
         test_update_proposals(
@@ -269,6 +274,7 @@ fn test_group_update_proposals() {
             10,
             SessionOpts {
                 encrypt_controls: true,
+                ratchet_tree_extension: false,
             },
         );
     })
@@ -341,6 +347,7 @@ fn test_group_remove_proposals() {
             10,
             SessionOpts {
                 encrypt_controls: false,
+                ratchet_tree_extension: false,
             },
         );
         test_remove_proposals(
@@ -348,6 +355,7 @@ fn test_group_remove_proposals() {
             10,
             SessionOpts {
                 encrypt_controls: true,
+                ratchet_tree_extension: false,
             },
         );
     })
@@ -404,6 +412,7 @@ fn test_group_application_messages() {
             20,
             SessionOpts {
                 encrypt_controls: false,
+                ratchet_tree_extension: false,
             },
         );
         test_application_messages(
@@ -412,6 +421,7 @@ fn test_group_application_messages() {
             20,
             SessionOpts {
                 encrypt_controls: true,
+                ratchet_tree_extension: false,
             },
         );
     })
@@ -442,7 +452,13 @@ fn processing_message_from_self_returns_error(cipher_suite: CipherSuite, opts: S
 fn test_processing_message_from_self_returns_error() {
     CipherSuite::all().into_iter().for_each(|cs| {
         for encrypt_controls in [false, true] {
-            processing_message_from_self_returns_error(cs, SessionOpts { encrypt_controls });
+            processing_message_from_self_returns_error(
+                cs,
+                SessionOpts {
+                    encrypt_controls,
+                    ratchet_tree_extension: false,
+                },
+            );
         }
     })
 }

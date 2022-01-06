@@ -1,8 +1,6 @@
 use crate::cipher_suite::CipherSuite;
 use crate::credential::{BasicCredential, Credential, CredentialError};
-use crate::extension::{
-    CapabilitiesExt, ExtensionError, ExtensionList, ExtensionTrait, LifetimeExt,
-};
+use crate::extension::{CapabilitiesExt, ExtensionError, ExtensionList, LifetimeExt, MlsExtension};
 use crate::key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageGenerator};
 use crate::session::{Session, SessionError, SessionOpts};
 use ferriscrypt::asym::ec_key::Curve;
@@ -101,7 +99,7 @@ impl Client {
     pub fn join_session(
         &self,
         key_package: KeyPackageGeneration,
-        tree_data: &[u8],
+        tree_data: Option<&[u8]>,
         welcome_message: &[u8],
         opts: SessionOpts,
     ) -> Result<Session, ClientError> {

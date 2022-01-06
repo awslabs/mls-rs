@@ -5,7 +5,6 @@ use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::hpke::{HPKECiphertext, HpkeError};
 use thiserror::Error;
-use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use math as tree_math;
@@ -164,12 +163,10 @@ impl TreeKemPublic {
         }
     }
 
-    pub fn import_node_data(
+    pub(crate) fn import_node_data(
         cipher_suite: CipherSuite,
-        data: &[u8],
+        nodes: NodeVec,
     ) -> Result<TreeKemPublic, RatchetTreeError> {
-        let nodes = NodeVec::tls_deserialize(&mut &*data)?;
-
         let key_package_index = nodes
             .non_empty_leaves()
             .map(|(index, leaf)| Ok((leaf.key_package.to_reference()?, index)))
@@ -182,8 +179,8 @@ impl TreeKemPublic {
         })
     }
 
-    pub fn export_node_data(&self) -> Result<Vec<u8>, RatchetTreeError> {
-        self.nodes.tls_serialize_detached().map_err(Into::into)
+    pub(crate) fn export_node_data(&self) -> NodeVec {
+        self.nodes.clone()
     }
 
     pub fn derive(
@@ -864,8 +861,8 @@ pub(crate) mod test {
 
         test_tree.add_leaves(additional_key_packages).unwrap();
 
-        let exported = test_tree.export_node_data().unwrap();
-        let imported = TreeKemPublic::import_node_data(cipher_suite, &exported).unwrap();
+        let exported = test_tree.export_node_data();
+        let imported = TreeKemPublic::import_node_data(cipher_suite, exported).unwrap();
 
         assert_eq!(test_tree, imported);
     }

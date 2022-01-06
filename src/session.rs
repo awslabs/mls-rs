@@ -31,11 +31,16 @@ pub enum SessionError {
 pub struct SessionOpts {
     #[tls_codec(with = "crate::tls::Boolean")]
     pub encrypt_controls: bool,
+    #[tls_codec(with = "crate::tls::Boolean")]
+    pub ratchet_tree_extension: bool,
 }
 
 impl SessionOpts {
-    pub fn new(encrypt_controls: bool) -> SessionOpts {
-        SessionOpts { encrypt_controls }
+    pub fn new(encrypt_controls: bool, ratchet_tree_extension: bool) -> SessionOpts {
+        SessionOpts {
+            encrypt_controls,
+            ratchet_tree_extension,
+        }
     }
 
     pub fn wire_format(&self) -> WireFormat {
@@ -95,14 +100,15 @@ impl Session {
     pub(crate) fn join(
         signing_key: SecretKey,
         key_package: KeyPackageGeneration,
-        ratchet_tree_data: &[u8],
+        ratchet_tree_data: Option<&[u8]>,
         welcome_message_data: &[u8],
         opts: SessionOpts,
     ) -> Result<Session, SessionError> {
         let welcome_message = Welcome::tls_deserialize(&mut &*welcome_message_data)?;
 
-        let ratchet_tree =
-            TreeKemPublic::import_node_data(welcome_message.cipher_suite, ratchet_tree_data)?;
+        let ratchet_tree = ratchet_tree_data
+            .map(|rt| Session::import_ratchet_tree(&welcome_message, rt))
+            .transpose()?;
 
         let group = Group::from_welcome_message(welcome_message, ratchet_tree, key_package)?;
 
@@ -112,6 +118,14 @@ impl Session {
             pending_commit: None,
             opts,
         })
+    }
+
+    fn import_ratchet_tree(
+        welcome_message: &Welcome,
+        tree_data: &[u8],
+    ) -> Result<TreeKemPublic, SessionError> {
+        let nodes = Deserialize::tls_deserialize(&mut &*tree_data)?;
+        TreeKemPublic::import_node_data(welcome_message.cipher_suite, nodes).map_err(Into::into)
     }
 
     pub fn participant_count(&self) -> u32 {
@@ -193,6 +207,7 @@ impl Session {
             true,
             &self.signing_key,
             self.opts.wire_format(),
+            self.opts.ratchet_tree_extension,
         )?;
 
         let serialized_commit = self.serialize_control(commit_data.plaintext.clone())?;
@@ -254,6 +269,7 @@ impl Session {
         self.protocol
             .current_epoch_tree()?
             .export_node_data()
+            .tls_serialize_detached()
             .map_err(Into::into)
     }
 
