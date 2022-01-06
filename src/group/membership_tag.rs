@@ -32,7 +32,7 @@ impl MLSPlaintextTBM {
         wire_format: WireFormat,
     ) -> MLSPlaintextTBM {
         MLSPlaintextTBM {
-            tbs: MLSPlaintextTBS::from_plaintext(plaintext, group_context, wire_format),
+            tbs: MLSPlaintextTBS::from_plaintext(plaintext, Some(group_context), wire_format),
             signature: plaintext.signature.clone(),
             confirmation_tag: plaintext.confirmation_tag.clone(),
         }

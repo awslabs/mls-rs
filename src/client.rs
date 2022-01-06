@@ -1,11 +1,14 @@
 use crate::cipher_suite::CipherSuite;
 use crate::credential::{BasicCredential, Credential, CredentialError};
 use crate::extension::{CapabilitiesExt, ExtensionError, ExtensionList, LifetimeExt, MlsExtension};
-use crate::key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageGenerator};
+use crate::group::framing::{Content, MLSMessage, MLSPlaintext, Sender, WireFormat};
+use crate::group::message_signature::{MessageSignature, MessageSignatureError};
+use crate::group::proposal::{AddProposal, Proposal};
+use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerator};
 use crate::session::{Session, SessionError, SessionOpts};
-use ferriscrypt::asym::ec_key::Curve;
-use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
+use ferriscrypt::asym::ec_key::{Curve, EcKeyError, SecretKey};
 use thiserror::Error;
+use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
@@ -24,6 +27,10 @@ pub enum ClientError {
     SignatureCipherSuiteMismatch,
     #[error("the secret key provided does not match the public key in the credential")]
     IncorrectSecretKey,
+    #[error(transparent)]
+    SerializationError(#[from] tls_codec::Error),
+    #[error(transparent)]
+    MessageSignatureError(#[from] MessageSignatureError),
 }
 
 #[non_exhaustive]
@@ -111,6 +118,48 @@ impl Client {
             opts,
         )
         .map_err(Into::into)
+    }
+
+    pub fn propose_as_external_new_member(
+        &self,
+        group_id: Vec<u8>,
+        key_package: KeyPackage,
+    ) -> Result<Vec<u8>, ClientError> {
+        self.propose_as_external(
+            group_id,
+            Sender::NewMember,
+            Proposal::Add(AddProposal { key_package }),
+        )
+    }
+
+    pub fn propose_as_external_preconfigured(
+        &self,
+        group_id: Vec<u8>,
+        external_key_id: Vec<u8>,
+        proposal: Proposal,
+    ) -> Result<Vec<u8>, ClientError> {
+        self.propose_as_external(group_id, Sender::Preconfigured(external_key_id), proposal)
+    }
+
+    fn propose_as_external(
+        &self,
+        group_id: Vec<u8>,
+        sender: Sender,
+        proposal: Proposal,
+    ) -> Result<Vec<u8>, ClientError> {
+        let mut message = MLSPlaintext {
+            group_id,
+            epoch: 0,
+            sender,
+            authenticated_data: Vec::new(),
+            content: Content::Proposal(proposal),
+            signature: MessageSignature::empty(),
+            confirmation_tag: None,
+            membership_tag: None,
+        };
+        message.sign(&self.signature_key, None, WireFormat::Plain)?;
+        let message = MLSMessage::Plain(message);
+        Ok(message.tls_serialize_detached()?)
     }
 }
 

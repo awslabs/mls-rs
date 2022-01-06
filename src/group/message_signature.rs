@@ -39,18 +39,14 @@ pub(crate) struct MLSPlaintextTBS {
 }
 
 impl MLSPlaintextTBS {
+    /// The group context should not be `None` when the sender is a member.
     pub(crate) fn from_plaintext(
         plaintext: &MLSPlaintext,
-        group_context: &GroupContext,
+        group_context: Option<&GroupContext>,
         wire_format: WireFormat,
     ) -> Self {
-        let context = match plaintext.sender {
-            Sender::Member(_) => Some(group_context.clone()),
-            _ => None,
-        };
-
         MLSPlaintextTBS {
-            context,
+            context: group_context.cloned(),
             wire_format,
             group_id: plaintext.group_id.clone(),
             epoch: plaintext.epoch,
@@ -65,7 +61,7 @@ impl MLSPlaintext {
     pub(crate) fn sign(
         &mut self,
         signer: &SecretKey,
-        group_context: &GroupContext,
+        group_context: Option<&GroupContext>,
         wire_format: WireFormat,
     ) -> Result<(), MessageSignatureError> {
         self.signature = MessageSignature::create(signer, self, group_context, wire_format)?;
@@ -103,7 +99,7 @@ impl MessageSignature {
     fn create(
         signer: &SecretKey,
         plaintext: &MLSPlaintext,
-        group_context: &GroupContext,
+        group_context: Option<&GroupContext>,
         wire_format: WireFormat,
     ) -> Result<Self, MessageSignatureError> {
         let to_be_signed = MLSPlaintextTBS::from_plaintext(plaintext, group_context, wire_format);
@@ -123,8 +119,9 @@ impl MessageSignature {
     where
         F: FnMut(&[u8]) -> Option<PublicKey>,
     {
-        let to_be_verified = MLSPlaintextTBS::from_plaintext(plaintext, group_context, wire_format)
-            .tls_serialize_detached()?;
+        let to_be_verified =
+            MLSPlaintextTBS::from_plaintext(plaintext, Some(group_context), wire_format)
+                .tls_serialize_detached()?;
         // Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
         match &plaintext.sender {

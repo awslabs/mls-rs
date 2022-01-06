@@ -44,7 +44,7 @@ mod epoch_repo;
 pub mod framing;
 pub mod key_schedule;
 mod membership_tag;
-mod message_signature;
+pub mod message_signature;
 mod message_verifier;
 pub mod proposal;
 mod secret_tree;
@@ -745,7 +745,7 @@ impl Group {
         };
 
         // Sign the MLSPlaintext using the current epoch's GroupContext as context.
-        plaintext.sign(signer, &self.context, wire_format)?;
+        plaintext.sign(signer, Some(&self.context), wire_format)?;
 
         Ok(plaintext)
     }
@@ -1139,7 +1139,7 @@ impl Group {
             membership_tag: None,
         };
 
-        plaintext.sign(signer, &self.context, WireFormat::Cipher)?;
+        plaintext.sign(signer, Some(&self.context), WireFormat::Cipher)?;
 
         self.encrypt_plaintext(plaintext)
     }
