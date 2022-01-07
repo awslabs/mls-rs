@@ -1,4 +1,5 @@
 use ferriscrypt::asym::ec_key::PublicKey;
+use std::collections::HashMap;
 
 pub trait ClientConfig {
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
@@ -19,6 +20,7 @@ pub trait ClientConfig {
 pub struct DefaultClientConfig {
     encrypt_controls: bool,
     ratchet_tree_extension: bool,
+    external_signing_keys: HashMap<Vec<u8>, PublicKey>,
 }
 
 impl DefaultClientConfig {
@@ -35,11 +37,16 @@ impl DefaultClientConfig {
             ..self
         }
     }
+
+    pub fn with_external_signing_key(mut self, id: &[u8], key: PublicKey) -> Self {
+        self.external_signing_keys.insert(id.to_vec(), key);
+        self
+    }
 }
 
 impl ClientConfig for DefaultClientConfig {
-    fn external_signing_key(&self, _: &[u8]) -> Option<PublicKey> {
-        None
+    fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
+        self.external_signing_keys.get(external_key_id).cloned()
     }
 
     fn encrypt_controls(&self) -> bool {
