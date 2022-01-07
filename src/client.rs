@@ -31,6 +31,8 @@ pub enum ClientError {
     SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
     MessageSignatureError(#[from] MessageSignatureError),
+    #[error("proposing as external without external key ID")]
+    ProposingAsExternalWithoutExternalKeyId,
 }
 
 #[non_exhaustive]
@@ -144,13 +146,16 @@ impl<C: ClientConfig + Clone> Client<C> {
     pub fn propose_add_as_external_preconfigured(
         &self,
         group_id: Vec<u8>,
-        external_key_id: Vec<u8>,
         proposal: AddProposal,
         epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
         self.propose_as_external(
             group_id,
-            Sender::Preconfigured(external_key_id),
+            Sender::Preconfigured(
+                self.config
+                    .external_key_id()
+                    .ok_or(ClientError::ProposingAsExternalWithoutExternalKeyId)?,
+            ),
             Proposal::Add(proposal),
             epoch,
         )
@@ -159,13 +164,16 @@ impl<C: ClientConfig + Clone> Client<C> {
     pub fn propose_remove_as_external_preconfigured(
         &self,
         group_id: Vec<u8>,
-        external_key_id: Vec<u8>,
         proposal: RemoveProposal,
         epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
         self.propose_as_external(
             group_id,
-            Sender::Preconfigured(external_key_id),
+            Sender::Preconfigured(
+                self.config
+                    .external_key_id()
+                    .ok_or(ClientError::ProposingAsExternalWithoutExternalKeyId)?,
+            ),
             Proposal::Remove(proposal),
             epoch,
         )

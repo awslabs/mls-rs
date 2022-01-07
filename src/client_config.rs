@@ -13,6 +13,10 @@ pub trait ClientConfig {
     fn ratchet_tree_extension(&self) -> bool {
         DefaultClientConfig::default().ratchet_tree_extension()
     }
+
+    fn external_key_id(&self) -> Option<Vec<u8>> {
+        DefaultClientConfig::default().external_key_id()
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -21,6 +25,7 @@ pub struct DefaultClientConfig {
     encrypt_controls: bool,
     ratchet_tree_extension: bool,
     external_signing_keys: HashMap<Vec<u8>, PublicKey>,
+    external_key_id: Option<Vec<u8>>,
 }
 
 impl DefaultClientConfig {
@@ -38,9 +43,16 @@ impl DefaultClientConfig {
         }
     }
 
-    pub fn with_external_signing_key(mut self, id: &[u8], key: PublicKey) -> Self {
-        self.external_signing_keys.insert(id.to_vec(), key);
+    pub fn with_external_signing_key(mut self, id: Vec<u8>, key: PublicKey) -> Self {
+        self.external_signing_keys.insert(id, key);
         self
+    }
+
+    pub fn with_external_key_id(self, id: Vec<u8>) -> Self {
+        Self {
+            external_key_id: Some(id),
+            ..self
+        }
     }
 }
 
@@ -55,5 +67,9 @@ impl ClientConfig for DefaultClientConfig {
 
     fn ratchet_tree_extension(&self) -> bool {
         self.ratchet_tree_extension
+    }
+
+    fn external_key_id(&self) -> Option<Vec<u8>> {
+        self.external_key_id.clone()
     }
 }
