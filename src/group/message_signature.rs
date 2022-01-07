@@ -46,7 +46,10 @@ impl MLSPlaintextTBS {
         wire_format: WireFormat,
     ) -> Self {
         MLSPlaintextTBS {
-            context: group_context.cloned(),
+            context: match plaintext.sender {
+                Sender::Member(_) => group_context.cloned(),
+                Sender::NewMember | Sender::Preconfigured(_) => None,
+            },
             wire_format,
             group_id: plaintext.group_id.clone(),
             epoch: plaintext.epoch,
