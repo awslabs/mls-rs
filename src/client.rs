@@ -205,11 +205,81 @@ impl<C: ClientConfig + Clone> Client<C> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::credential::BasicCredential;
+    use crate::{credential::BasicCredential, group::ProcessedMessage};
     use ferriscrypt::asym::ec_key::Curve;
     use ferriscrypt::rand::SecureRng;
     use std::time::SystemTime;
     use tls_codec::Serialize;
+
+    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+    const TEST_GROUP: &[u8] = b"group";
+
+    struct TestClientBuilder<C = DefaultClientConfig> {
+        identity: Vec<u8>,
+        cipher_suite: Option<CipherSuite>,
+        signing_key: Option<SecretKey>,
+        config: C,
+    }
+
+    impl TestClientBuilder<DefaultClientConfig> {
+        fn new(identity: Vec<u8>) -> Self {
+            TestClientBuilder {
+                identity,
+                cipher_suite: None,
+                signing_key: None,
+                config: DefaultClientConfig::default(),
+            }
+        }
+
+        fn named(s: &str) -> Self {
+            Self::new(s.as_bytes().to_vec())
+        }
+    }
+
+    impl<C: ClientConfig + Clone> TestClientBuilder<C> {
+        fn with_cipher_suite(self, cipher_suite: CipherSuite) -> Self {
+            Self {
+                cipher_suite: Some(cipher_suite),
+                ..self
+            }
+        }
+
+        fn with_signing_key(self, signing_key: SecretKey) -> Self {
+            Self {
+                signing_key: Some(signing_key),
+                ..self
+            }
+        }
+
+        fn with_config<D>(self, config: D) -> TestClientBuilder<D>
+        where
+            D: ClientConfig + Clone,
+        {
+            TestClientBuilder {
+                identity: self.identity,
+                cipher_suite: self.cipher_suite,
+                signing_key: self.signing_key,
+                config,
+            }
+        }
+
+        fn build(self) -> Client<C> {
+            let cipher_suite = self.cipher_suite.unwrap_or(TEST_CIPHER_SUITE);
+            let signature_key = self.signing_key.unwrap_or_else(|| {
+                SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap()
+            });
+            let credential = get_test_credential(self.identity, &signature_key);
+            Client::new(cipher_suite, signature_key, credential, self.config).unwrap()
+        }
+
+        fn build_with_key_pkg(self) -> (Client<C>, KeyPackageGeneration) {
+            let client = self.build();
+            let gen = client
+                .gen_key_package(&LifetimeExt::years(1, SystemTime::now()).unwrap())
+                .unwrap();
+            (client, gen)
+        }
+    }
 
     fn get_test_credential(identity: Vec<u8>, signature_key: &SecretKey) -> Credential {
         Credential::Basic(
@@ -218,17 +288,9 @@ mod test {
     }
 
     fn get_test_client(identity: Vec<u8>, cipher_suite: CipherSuite) -> Client {
-        let signature_key =
-            SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
-        let credential = get_test_credential(identity, &signature_key);
-
-        Client::new(
-            cipher_suite,
-            signature_key,
-            credential,
-            DefaultClientConfig::default(),
-        )
-        .unwrap()
+        TestClientBuilder::new(identity)
+            .with_cipher_suite(cipher_suite)
+            .build()
     }
 
     #[test]
@@ -330,5 +392,114 @@ mod test {
                 package_gen.key_package.extensions.get_extension().unwrap();
             assert_eq!(capabilities, Some(client.capabilities));
         }
+    }
+
+    #[test]
+    fn new_member_proposition_is_interpreted_by_members() {
+        let (alice, alice_key_gen) = TestClientBuilder::named("alice").build_with_key_pkg();
+        let mut session = alice
+            .create_session(alice_key_gen, TEST_GROUP.to_vec())
+            .unwrap();
+        let (bob, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
+        let proposal = bob
+            .propose_as_external_new_member(
+                TEST_GROUP.to_vec(),
+                bob_key_gen.key_package.clone(),
+                session.group_stats().unwrap().epoch,
+            )
+            .unwrap();
+        let message = session.process_incoming_bytes(&proposal).unwrap();
+        assert!(matches!(
+            message,
+            ProcessedMessage::Proposal(Proposal::Add(AddProposal { key_package })) if key_package == bob_key_gen.key_package
+        ));
+    }
+
+    fn preconfigured_external_proposition_is_interpreted_by_members<F>(mut propose: F)
+    where
+        F: FnMut(&Client, KeyPackage, u64) -> (Proposal, Vec<u8>),
+    {
+        const TED_EXTERNAL_KEY_ID: &[u8] = b"ted";
+        let ted_signing_key =
+            SecretKey::generate(Curve::from(TEST_CIPHER_SUITE.signature_scheme())).unwrap();
+        let ted = TestClientBuilder::named("ted")
+            .with_signing_key(ted_signing_key.clone())
+            .with_config(
+                DefaultClientConfig::default().with_external_key_id(TED_EXTERNAL_KEY_ID.to_vec()),
+            )
+            .build();
+        let (alice, alice_key_gen) = TestClientBuilder::named("alice")
+            .with_config(DefaultClientConfig::default().with_external_signing_key(
+                TED_EXTERNAL_KEY_ID.to_vec(),
+                ted_signing_key.to_public().unwrap(),
+            ))
+            .build_with_key_pkg();
+        let mut session = alice
+            .create_session(alice_key_gen, TEST_GROUP.to_vec())
+            .unwrap();
+        let (_, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
+        let (expected_proposal, msg) = propose(
+            &ted,
+            bob_key_gen.key_package,
+            session.group_stats().unwrap().epoch,
+        );
+        let msg = session.process_incoming_bytes(&msg).unwrap();
+        assert!(matches!(
+            msg,
+            ProcessedMessage::Proposal(actual_proposal) if expected_proposal == actual_proposal
+        ));
+    }
+
+    #[test]
+    fn preconfigured_external_addition_is_interpreted_by_members() {
+        preconfigured_external_proposition_is_interpreted_by_members(
+            |client, key_package, epoch| {
+                let proposal = AddProposal { key_package };
+                let msg = client
+                    .propose_add_as_external_preconfigured(
+                        TEST_GROUP.to_vec(),
+                        proposal.clone(),
+                        epoch,
+                    )
+                    .unwrap();
+                (Proposal::Add(proposal), msg)
+            },
+        );
+    }
+
+    #[test]
+    fn preconfigured_external_removal_is_interpreted_by_members() {
+        preconfigured_external_proposition_is_interpreted_by_members(|client, key_pkg, epoch| {
+            let proposal = RemoveProposal {
+                to_remove: key_pkg.to_reference().unwrap(),
+            };
+            let msg = client
+                .propose_remove_as_external_preconfigured(
+                    TEST_GROUP.to_vec(),
+                    proposal.clone(),
+                    epoch,
+                )
+                .unwrap();
+            (Proposal::Remove(proposal), msg)
+        });
+    }
+
+    #[test]
+    fn proposition_from_unknown_external_is_rejected_by_members() {
+        let ted = TestClientBuilder::named("ted").build();
+        let (alice, alice_key_gen) = TestClientBuilder::named("alice").build_with_key_pkg();
+        let mut session = alice
+            .create_session(alice_key_gen, TEST_GROUP.to_vec())
+            .unwrap();
+        let (_, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
+        let msg = ted
+            .propose_as_external_new_member(
+                TEST_GROUP.to_vec(),
+                bob_key_gen.key_package,
+                session.group_stats().unwrap().epoch,
+            )
+            .unwrap();
+        let msg = session.process_incoming_bytes(&msg);
+        assert!(msg.is_err());
     }
 }
