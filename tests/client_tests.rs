@@ -1,23 +1,52 @@
 use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client::Client;
+use aws_mls::client_config::{ClientConfig, DefaultClientConfig};
 use aws_mls::extension::LifetimeExt;
 use aws_mls::key_package::{KeyPackageGeneration, KeyPackageRef};
-use aws_mls::session::{GroupError, ProcessedMessage, Session, SessionError, SessionOpts};
+use aws_mls::session::{GroupError, ProcessedMessage, Session, SessionError};
 use ferriscrypt::rand::SecureRng;
-use std::time::SystemTime;
+use std::{
+    fmt::{self, Display},
+    time::SystemTime,
+};
 
-fn generate_client(cipher_suite: CipherSuite, id: Vec<u8>) -> Client {
-    Client::generate_basic(cipher_suite, id).unwrap()
+struct ConfigDescription<'a, C>(&'a C);
+
+impl<C: ClientConfig> Display for ConfigDescription<'_, C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "encrypt controls: {}, ratchet tree extension: {}",
+            self.0.encrypt_controls(),
+            self.0.ratchet_tree_extension()
+        )
+    }
 }
 
-fn test_create(cipher_suite: CipherSuite, opts: SessionOpts) {
+fn test_params() -> impl Iterator<Item = (CipherSuite, bool)> {
+    CipherSuite::all().flat_map(|cs| [false, true].into_iter().map(move |encrypt| (cs, encrypt)))
+}
+
+fn generate_client<C>(cipher_suite: CipherSuite, id: Vec<u8>, config: C) -> Client<C>
+where
+    C: ClientConfig + Clone,
+{
+    Client::generate_basic(cipher_suite, id, config).unwrap()
+}
+
+fn test_create<C>(cipher_suite: CipherSuite, config: C)
+where
+    C: ClientConfig + Clone,
+{
     println!(
-        "Testing session creation for cipher suite: {:?}, participants: {}, opts: {:?}",
-        cipher_suite, 1, opts
+        "Testing session creation for cipher suite: {:?}, participants: {}, {}",
+        cipher_suite,
+        1,
+        ConfigDescription(&config),
     );
 
-    let alice = Client::generate_basic(cipher_suite, b"alice".to_vec()).unwrap();
-    let bob = Client::generate_basic(cipher_suite, b"bob".to_vec()).unwrap();
+    let alice = Client::generate_basic(cipher_suite, b"alice".to_vec(), config.clone()).unwrap();
+    let bob = Client::generate_basic(cipher_suite, b"bob".to_vec(), config).unwrap();
 
     let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
 
@@ -25,9 +54,7 @@ fn test_create(cipher_suite: CipherSuite, opts: SessionOpts) {
     let bob_key = bob.gen_key_package(&key_lifetime).unwrap();
 
     // Alice creates a session and adds bob
-    let mut alice_session = alice
-        .create_session(alice_key, b"group".to_vec(), opts.clone())
-        .unwrap();
+    let mut alice_session = alice.create_session(alice_key, b"group".to_vec()).unwrap();
     let add_bob = alice_session
         .add_proposal(&bob_key.key_package.to_vec().unwrap())
         .unwrap();
@@ -41,7 +68,7 @@ fn test_create(cipher_suite: CipherSuite, opts: SessionOpts) {
 
     // Bob receives the welcome message and joins the group
     let bob_session = bob
-        .join_session(bob_key, Some(&tree), &packets.welcome_packet.unwrap(), opts)
+        .join_session(bob_key, Some(&tree), &packets.welcome_packet.unwrap())
         .unwrap();
 
     assert!(alice_session.has_equal_state(&bob_session));
@@ -49,44 +76,35 @@ fn test_create(cipher_suite: CipherSuite, opts: SessionOpts) {
 
 #[test]
 fn test_create_session() {
-    CipherSuite::all().into_iter().for_each(|cs| {
+    test_params().for_each(|(cs, encrypt_controls)| {
         test_create(
             cs,
-            SessionOpts {
-                encrypt_controls: false,
-                ratchet_tree_extension: false,
-            },
+            DefaultClientConfig::default()
+                .with_control_encryption(encrypt_controls)
+                .with_ratchet_tree_extension(false),
         );
-
-        test_create(
-            cs,
-            SessionOpts {
-                encrypt_controls: true,
-                ratchet_tree_extension: false,
-            },
-        )
     });
 }
 
-fn get_test_sessions(
+fn get_test_sessions<C: ClientConfig + Clone>(
     cipher_suite: CipherSuite,
     num_participants: usize,
-    opts: SessionOpts,
-) -> (Session, Vec<Session>) {
+    config: C,
+) -> (Session<C>, Vec<Session<C>>) {
     // Create the group with Alice as the group initiator
-    let creator = generate_client(cipher_suite, b"alice".to_vec());
+    let creator = generate_client(cipher_suite, b"alice".to_vec(), config.clone());
     let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
 
     let creator_key = creator.gen_key_package(&key_lifetime).unwrap();
     let mut creator_session = creator
-        .create_session(creator_key, b"group".to_vec(), opts.clone())
+        .create_session(creator_key, b"group".to_vec())
         .unwrap();
 
     // Generate random clients that will be members of the group
     let receiver_clients = (0..num_participants)
         .into_iter()
-        .map(|_| generate_client(cipher_suite, b"test".to_vec()))
-        .collect::<Vec<Client>>();
+        .map(|_| generate_client(cipher_suite, b"test".to_vec(), config.clone()))
+        .collect::<Vec<_>>();
 
     let receiver_keys = receiver_clients
         .iter()
@@ -130,11 +148,10 @@ fn get_test_sessions(
                     key.clone(),
                     Some(&tree_data),
                     commit.welcome_packet.as_ref().unwrap(),
-                    opts.clone(),
                 )
                 .unwrap()
         })
-        .collect::<Vec<Session>>();
+        .collect::<Vec<_>>();
 
     for one_receiver in &receiver_sessions {
         assert!(creator_session.has_equal_state(one_receiver))
@@ -143,14 +160,19 @@ fn get_test_sessions(
     (creator_session, receiver_sessions)
 }
 
-fn test_empty_commits(cipher_suite: CipherSuite, participants: usize, opts: SessionOpts) {
+fn test_empty_commits<C>(cipher_suite: CipherSuite, participants: usize, config: C)
+where
+    C: ClientConfig + Clone,
+{
     println!(
-        "Testing empty commits for cipher suite: {:?}, participants: {}, opts: {:?}",
-        cipher_suite, participants, opts
+        "Testing empty commits for cipher suite: {:?}, participants: {}, {}",
+        cipher_suite,
+        participants,
+        ConfigDescription(&config),
     );
 
     let (mut creator_session, mut receiver_sessions) =
-        get_test_sessions(cipher_suite, participants, opts);
+        get_test_sessions(cipher_suite, participants, config);
 
     // Loop through each participant and send a path update
 
@@ -180,34 +202,30 @@ fn test_empty_commits(cipher_suite: CipherSuite, participants: usize, opts: Sess
 
 #[test]
 fn test_group_path_updates() {
-    CipherSuite::all().for_each(|cs| {
+    test_params().for_each(|(cs, encrypt_controls)| {
         test_empty_commits(
             cs,
             10,
-            SessionOpts {
-                encrypt_controls: false,
-                ratchet_tree_extension: false,
-            },
+            DefaultClientConfig::default()
+                .with_control_encryption(encrypt_controls)
+                .with_ratchet_tree_extension(false),
         );
-        test_empty_commits(
-            cs,
-            10,
-            SessionOpts {
-                encrypt_controls: true,
-                ratchet_tree_extension: false,
-            },
-        );
-    })
+    });
 }
 
-fn test_update_proposals(cipher_suite: CipherSuite, participants: usize, opts: SessionOpts) {
+fn test_update_proposals<C>(cipher_suite: CipherSuite, participants: usize, config: C)
+where
+    C: ClientConfig + Clone,
+{
     println!(
-        "Testing update proposals for cipher suite: {:?}, participants: {}, opts: {:?}",
-        cipher_suite, participants, opts
+        "Testing update proposals for cipher suite: {:?}, participants: {}, {}",
+        cipher_suite,
+        participants,
+        ConfigDescription(&config),
     );
 
     let (mut creator_session, mut receiver_sessions) =
-        get_test_sessions(cipher_suite, participants, opts);
+        get_test_sessions(cipher_suite, participants, config);
 
     // Create an update from the ith member, have the ith + 1 member commit it
     for i in 0..receiver_sessions.len() - 1 {
@@ -260,34 +278,30 @@ fn test_update_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
 
 #[test]
 fn test_group_update_proposals() {
-    CipherSuite::all().for_each(|cs| {
+    test_params().for_each(|(cs, encrypt_controls)| {
         test_update_proposals(
             cs,
             10,
-            SessionOpts {
-                encrypt_controls: false,
-                ratchet_tree_extension: false,
-            },
+            DefaultClientConfig::default()
+                .with_control_encryption(encrypt_controls)
+                .with_ratchet_tree_extension(false),
         );
-        test_update_proposals(
-            cs,
-            10,
-            SessionOpts {
-                encrypt_controls: true,
-                ratchet_tree_extension: false,
-            },
-        );
-    })
+    });
 }
 
-fn test_remove_proposals(cipher_suite: CipherSuite, participants: usize, opts: SessionOpts) {
+fn test_remove_proposals<C>(cipher_suite: CipherSuite, participants: usize, config: C)
+where
+    C: ClientConfig + Clone,
+{
     println!(
-        "Testing remove proposals for cipher suite: {:?}, participants: {}, opts: {:?}",
-        cipher_suite, participants, opts
+        "Testing remove proposals for cipher suite: {:?}, participants: {}, {}",
+        cipher_suite,
+        participants,
+        ConfigDescription(&config),
     );
 
     let (mut creator_session, mut receiver_sessions) =
-        get_test_sessions(cipher_suite, participants, opts);
+        get_test_sessions(cipher_suite, participants, config);
 
     let mut epoch_count = 1;
 
@@ -341,39 +355,30 @@ fn test_remove_proposals(cipher_suite: CipherSuite, participants: usize, opts: S
 
 #[test]
 fn test_group_remove_proposals() {
-    CipherSuite::all().for_each(|cs| {
+    test_params().for_each(|(cs, encrypt_controls)| {
         test_remove_proposals(
             cs,
             10,
-            SessionOpts {
-                encrypt_controls: false,
-                ratchet_tree_extension: false,
-            },
+            DefaultClientConfig::default()
+                .with_control_encryption(encrypt_controls)
+                .with_ratchet_tree_extension(false),
         );
-        test_remove_proposals(
-            cs,
-            10,
-            SessionOpts {
-                encrypt_controls: true,
-                ratchet_tree_extension: false,
-            },
-        );
-    })
+    });
 }
 
-fn test_application_messages(
+fn test_application_messages<C: ClientConfig + Clone>(
     cipher_suite: CipherSuite,
     participants: usize,
     message_count: usize,
-    opts: SessionOpts,
+    config: C,
 ) {
     println!(
-        "Testing application messages for cipher suite: {:?}, participants: {}, message count: {}, opts: {:?}",
-        cipher_suite, participants, message_count, opts
+        "Testing application messages for cipher suite: {:?}, participants: {}, message count: {}, {}",
+        cipher_suite, participants, message_count, ConfigDescription(&config),
     );
 
     let (mut creator_session, mut receiver_sessions) =
-        get_test_sessions(cipher_suite, participants, opts);
+        get_test_sessions(cipher_suite, participants, config);
 
     // Loop through each participant and send application messages
     for i in 0..receiver_sessions.len() {
@@ -405,34 +410,28 @@ fn test_application_messages(
 
 #[test]
 fn test_group_application_messages() {
-    CipherSuite::all().for_each(|cs| {
+    test_params().for_each(|(cs, encrypt_controls)| {
         test_application_messages(
             cs,
             10,
             20,
-            SessionOpts {
-                encrypt_controls: false,
-                ratchet_tree_extension: false,
-            },
+            DefaultClientConfig::default()
+                .with_control_encryption(encrypt_controls)
+                .with_ratchet_tree_extension(false),
         );
-        test_application_messages(
-            cs,
-            10,
-            20,
-            SessionOpts {
-                encrypt_controls: true,
-                ratchet_tree_extension: false,
-            },
-        );
-    })
+    });
 }
 
-fn processing_message_from_self_returns_error(cipher_suite: CipherSuite, opts: SessionOpts) {
+fn processing_message_from_self_returns_error<C>(cipher_suite: CipherSuite, config: C)
+where
+    C: ClientConfig + Clone,
+{
     println!(
-        "Verifying that processing one's own message returns an error for cipher suite: {:?}, opts: {:?}",
-        cipher_suite, opts
+        "Verifying that processing one's own message returns an error for cipher suite: {:?}, {}",
+        cipher_suite,
+        ConfigDescription(&config),
     );
-    let (mut creator_session, _) = get_test_sessions(cipher_suite, 1, opts);
+    let (mut creator_session, _) = get_test_sessions(cipher_suite, 1, config);
     let commit = creator_session.commit(Vec::new()).unwrap();
     let error = creator_session
         .process_incoming_bytes(&commit.commit_packet)
@@ -450,15 +449,12 @@ fn processing_message_from_self_returns_error(cipher_suite: CipherSuite, opts: S
 
 #[test]
 fn test_processing_message_from_self_returns_error() {
-    CipherSuite::all().into_iter().for_each(|cs| {
-        for encrypt_controls in [false, true] {
-            processing_message_from_self_returns_error(
-                cs,
-                SessionOpts {
-                    encrypt_controls,
-                    ratchet_tree_extension: false,
-                },
-            );
-        }
-    })
+    test_params().for_each(|(cs, encrypt_controls)| {
+        processing_message_from_self_returns_error(
+            cs,
+            DefaultClientConfig::default()
+                .with_control_encryption(encrypt_controls)
+                .with_ratchet_tree_extension(false),
+        );
+    });
 }

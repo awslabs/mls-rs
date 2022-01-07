@@ -29,31 +29,6 @@ pub enum SessionError {
 }
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct SessionOpts {
-    #[tls_codec(with = "crate::tls::Boolean")]
-    pub encrypt_controls: bool,
-    #[tls_codec(with = "crate::tls::Boolean")]
-    pub ratchet_tree_extension: bool,
-}
-
-impl SessionOpts {
-    pub fn new(encrypt_controls: bool, ratchet_tree_extension: bool) -> SessionOpts {
-        SessionOpts {
-            encrypt_controls,
-            ratchet_tree_extension,
-        }
-    }
-
-    pub fn wire_format(&self) -> WireFormat {
-        if self.encrypt_controls {
-            WireFormat::Cipher
-        } else {
-            WireFormat::Plain
-        }
-    }
-}
-
-#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 struct PendingCommit {
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     packet_data: Vec<u8>,
@@ -71,7 +46,6 @@ pub struct Session<C = DefaultClientConfig> {
     signing_key: SecretKey,
     protocol: Group,
     pending_commit: Option<PendingCommit>,
-    pub opts: SessionOpts,
     config: C,
 }
 
@@ -87,7 +61,6 @@ impl<C: ClientConfig> Session<C> {
         group_id: Vec<u8>,
         signing_key: SecretKey,
         key_package: KeyPackageGeneration,
-        opts: SessionOpts,
         config: C,
     ) -> Result<Self, SessionError> {
         let group = Group::new(group_id, key_package)?;
@@ -95,7 +68,6 @@ impl<C: ClientConfig> Session<C> {
             signing_key,
             protocol: group,
             pending_commit: None,
-            opts,
             config,
         })
     }
@@ -105,7 +77,6 @@ impl<C: ClientConfig> Session<C> {
         key_package: KeyPackageGeneration,
         ratchet_tree_data: Option<&[u8]>,
         welcome_message_data: &[u8],
-        opts: SessionOpts,
         config: C,
     ) -> Result<Self, SessionError> {
         let welcome_message = Welcome::tls_deserialize(&mut &*welcome_message_data)?;
@@ -120,7 +91,6 @@ impl<C: ClientConfig> Session<C> {
             signing_key,
             protocol: group,
             pending_commit: None,
-            opts,
             config,
         })
     }
@@ -197,9 +167,11 @@ impl<C: ClientConfig> Session<C> {
     }
 
     fn send_proposal(&mut self, proposal: Proposal) -> Result<Vec<u8>, SessionError> {
-        let packet =
-            self.protocol
-                .create_proposal(proposal, &self.signing_key, self.opts.wire_format())?;
+        let packet = self.protocol.create_proposal(
+            proposal,
+            &self.signing_key,
+            wire_format(&self.config),
+        )?;
         self.serialize_control(packet)
     }
 
@@ -211,8 +183,8 @@ impl<C: ClientConfig> Session<C> {
             &proposals,
             true,
             &self.signing_key,
-            self.opts.wire_format(),
-            self.opts.ratchet_tree_extension,
+            wire_format(&self.config),
+            self.config.ratchet_tree_extension(),
         )?;
 
         let serialized_commit = self.serialize_control(commit_data.plaintext.clone())?;
@@ -280,7 +252,7 @@ impl<C: ClientConfig> Session<C> {
             .map_err(Into::into)
     }
 
-    pub fn has_equal_state(&self, other: &Session) -> bool {
+    pub fn has_equal_state(&self, other: &Self) -> bool {
         self.protocol == other.protocol
     }
 
@@ -297,5 +269,13 @@ impl<C: ClientConfig> Session<C> {
             current_index: self.protocol.current_user_index(),
             direct_path,
         })
+    }
+}
+
+fn wire_format<C: ClientConfig>(config: &C) -> WireFormat {
+    if config.encrypt_controls() {
+        WireFormat::Cipher
+    } else {
+        WireFormat::Plain
     }
 }

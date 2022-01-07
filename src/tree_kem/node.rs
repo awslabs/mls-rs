@@ -452,10 +452,16 @@ pub mod test {
     use super::*;
     use crate::cipher_suite::CipherSuite;
     use crate::client::Client;
+    use crate::client_config::DefaultClientConfig;
     use crate::extension::LifetimeExt;
 
     fn get_test_key_package(id: Vec<u8>) -> KeyPackage {
-        let client = Client::generate_basic(CipherSuite::P256Aes128V1, id).unwrap();
+        let client = Client::generate_basic(
+            CipherSuite::P256Aes128V1,
+            id,
+            DefaultClientConfig::default(),
+        )
+        .unwrap();
 
         client
             .gen_key_package(&LifetimeExt::years(1, SystemTime::now()).unwrap())

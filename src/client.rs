@@ -6,7 +6,7 @@ use crate::group::framing::{Content, MLSMessage, MLSPlaintext, Sender, WireForma
 use crate::group::message_signature::{MessageSignature, MessageSignatureError};
 use crate::group::proposal::{AddProposal, Proposal};
 use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerator};
-use crate::session::{Session, SessionError, SessionOpts};
+use crate::session::{Session, SessionError};
 use ferriscrypt::asym::ec_key::{Curve, EcKeyError, SecretKey};
 use thiserror::Error;
 use tls_codec::Serialize;
@@ -67,6 +67,19 @@ impl<C: ClientConfig + Clone> Client<C> {
         })
     }
 
+    pub fn generate_basic(
+        cipher_suite: CipherSuite,
+        identifier: Vec<u8>,
+        config: C,
+    ) -> Result<Self, ClientError> {
+        let signature_key = SecretKey::generate(Curve::from(cipher_suite.signature_scheme()))?;
+        let credential = Credential::Basic(BasicCredential::new(
+            identifier,
+            signature_key.to_public()?,
+        )?);
+        Client::new(cipher_suite, signature_key, credential, config)
+    }
+
     pub fn gen_key_package(
         &self,
         lifetime: &LifetimeExt,
@@ -88,13 +101,11 @@ impl<C: ClientConfig + Clone> Client<C> {
         &self,
         key_package: KeyPackageGeneration,
         group_id: Vec<u8>,
-        opts: SessionOpts,
     ) -> Result<Session<C>, ClientError> {
         Session::create(
             group_id,
             self.signature_key.clone(),
             key_package,
-            opts,
             self.config.clone(),
         )
         .map_err(Into::into)
@@ -105,14 +116,12 @@ impl<C: ClientConfig + Clone> Client<C> {
         key_package: KeyPackageGeneration,
         tree_data: Option<&[u8]>,
         welcome_message: &[u8],
-        opts: SessionOpts,
     ) -> Result<Session<C>, ClientError> {
         Session::join(
             self.signature_key.clone(),
             key_package,
             tree_data,
             welcome_message,
-            opts,
             self.config.clone(),
         )
         .map_err(Into::into)
@@ -158,25 +167,6 @@ impl<C: ClientConfig + Clone> Client<C> {
         message.sign(&self.signature_key, None, WireFormat::Plain)?;
         let message = MLSMessage::Plain(message);
         Ok(message.tls_serialize_detached()?)
-    }
-}
-
-impl Client<DefaultClientConfig> {
-    pub fn generate_basic(
-        cipher_suite: CipherSuite,
-        identifier: Vec<u8>,
-    ) -> Result<Self, ClientError> {
-        let signature_key = SecretKey::generate(Curve::from(cipher_suite.signature_scheme()))?;
-        let credential = Credential::Basic(BasicCredential::new(
-            identifier,
-            signature_key.to_public()?,
-        )?);
-        Client::new(
-            cipher_suite,
-            signature_key,
-            credential,
-            DefaultClientConfig::default(),
-        )
     }
 }
 
