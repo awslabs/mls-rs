@@ -4,7 +4,7 @@ use crate::credential::{BasicCredential, Credential, CredentialError};
 use crate::extension::{CapabilitiesExt, ExtensionError, ExtensionList, LifetimeExt, MlsExtension};
 use crate::group::framing::{Content, MLSMessage, MLSPlaintext, Sender, WireFormat};
 use crate::group::message_signature::{MessageSignature, MessageSignatureError};
-use crate::group::proposal::{AddProposal, Proposal};
+use crate::group::proposal::{AddProposal, Proposal, RemoveProposal};
 use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerator};
 use crate::session::{Session, SessionError};
 use ferriscrypt::asym::ec_key::{Curve, EcKeyError, SecretKey};
@@ -139,13 +139,30 @@ impl<C: ClientConfig + Clone> Client<C> {
         )
     }
 
-    pub fn propose_as_external_preconfigured(
+    pub fn propose_add_as_external_preconfigured(
         &self,
         group_id: Vec<u8>,
         external_key_id: Vec<u8>,
-        proposal: Proposal,
+        proposal: AddProposal,
     ) -> Result<Vec<u8>, ClientError> {
-        self.propose_as_external(group_id, Sender::Preconfigured(external_key_id), proposal)
+        self.propose_as_external(
+            group_id,
+            Sender::Preconfigured(external_key_id),
+            Proposal::Add(proposal),
+        )
+    }
+
+    pub fn propose_remove_as_external_preconfigured(
+        &self,
+        group_id: Vec<u8>,
+        external_key_id: Vec<u8>,
+        proposal: RemoveProposal,
+    ) -> Result<Vec<u8>, ClientError> {
+        self.propose_as_external(
+            group_id,
+            Sender::Preconfigured(external_key_id),
+            Proposal::Remove(proposal),
+        )
     }
 
     fn propose_as_external(
