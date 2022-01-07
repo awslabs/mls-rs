@@ -50,10 +50,11 @@ pub struct Session<C = DefaultClientConfig> {
 }
 
 #[derive(Clone, Debug)]
-pub struct TreeStats {
+pub struct GroupStats {
     pub total_leaves: u32,
     pub current_index: u32,
     pub direct_path: Vec<HpkePublicKey>,
+    pub epoch: u64,
 }
 
 impl<C: ClientConfig> Session<C> {
@@ -256,7 +257,7 @@ impl<C: ClientConfig> Session<C> {
         self.protocol == other.protocol
     }
 
-    pub fn tree_stats(&self) -> Result<TreeStats, SessionError> {
+    pub fn group_stats(&self) -> Result<GroupStats, SessionError> {
         let direct_path = self
             .protocol
             .current_direct_path()?
@@ -264,10 +265,11 @@ impl<C: ClientConfig> Session<C> {
             .map(|p| p.as_ref().unwrap_or(&vec![].into()).clone())
             .collect();
 
-        Ok(TreeStats {
+        Ok(GroupStats {
             total_leaves: self.participant_count(),
             current_index: self.protocol.current_user_index(),
             direct_path,
+            epoch: self.protocol.current_epoch(),
         })
     }
 }

@@ -574,6 +574,10 @@ impl Group {
         Ok(&self.epoch_repo.current()?.public_tree)
     }
 
+    pub fn current_epoch(&self) -> u64 {
+        self.context.epoch
+    }
+
     pub fn current_user_index(&self) -> u32 {
         self.private_tree.self_index.0 as u32
     }
