@@ -131,11 +131,13 @@ impl<C: ClientConfig + Clone> Client<C> {
         &self,
         group_id: Vec<u8>,
         key_package: KeyPackage,
+        epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
         self.propose_as_external(
             group_id,
             Sender::NewMember,
             Proposal::Add(AddProposal { key_package }),
+            epoch,
         )
     }
 
@@ -144,11 +146,13 @@ impl<C: ClientConfig + Clone> Client<C> {
         group_id: Vec<u8>,
         external_key_id: Vec<u8>,
         proposal: AddProposal,
+        epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
         self.propose_as_external(
             group_id,
             Sender::Preconfigured(external_key_id),
             Proposal::Add(proposal),
+            epoch,
         )
     }
 
@@ -157,11 +161,13 @@ impl<C: ClientConfig + Clone> Client<C> {
         group_id: Vec<u8>,
         external_key_id: Vec<u8>,
         proposal: RemoveProposal,
+        epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
         self.propose_as_external(
             group_id,
             Sender::Preconfigured(external_key_id),
             Proposal::Remove(proposal),
+            epoch,
         )
     }
 
@@ -170,10 +176,11 @@ impl<C: ClientConfig + Clone> Client<C> {
         group_id: Vec<u8>,
         sender: Sender,
         proposal: Proposal,
+        epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
         let mut message = MLSPlaintext {
             group_id,
-            epoch: 0,
+            epoch,
             sender,
             authenticated_data: Vec::new(),
             content: Content::Proposal(proposal),
