@@ -32,13 +32,23 @@ where
         plaintext: MLSPlaintext,
     ) -> Result<VerifiedPlaintext, GroupError> {
         let msg_epoch = self.epoch_repo.get(plaintext.epoch)?;
-
-        let tag = plaintext
-            .membership_tag
-            .as_ref()
-            .ok_or(GroupError::InvalidMembershipTag)?;
-        if !tag.matches(&plaintext, self.context, msg_epoch)? {
-            return Err(GroupError::InvalidMembershipTag);
+        match plaintext.sender {
+            Sender::Member(_) => {
+                plaintext
+                    .membership_tag
+                    .as_ref()
+                    .map(|tag| tag.matches(&plaintext, self.context, msg_epoch))
+                    .transpose()?
+                    .filter(|&matched| matched)
+                    .ok_or(GroupError::InvalidMembershipTag)?;
+            }
+            Sender::NewMember | Sender::Preconfigured(_) => {
+                plaintext
+                    .membership_tag
+                    .is_none()
+                    .then(|| ())
+                    .ok_or(GroupError::InvalidMembershipTag)?;
+            }
         }
 
         //Verify that the signature on the MLSPlaintext message verifies using the public key
