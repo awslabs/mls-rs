@@ -29,6 +29,7 @@ pub struct DefaultClientConfig {
 }
 
 impl DefaultClientConfig {
+    #[must_use]
     pub fn with_control_encryption(self, yes: bool) -> Self {
         Self {
             encrypt_controls: yes,
@@ -36,6 +37,7 @@ impl DefaultClientConfig {
         }
     }
 
+    #[must_use]
     pub fn with_ratchet_tree_extension(self, yes: bool) -> Self {
         Self {
             ratchet_tree_extension: yes,
@@ -43,11 +45,13 @@ impl DefaultClientConfig {
         }
     }
 
+    #[must_use]
     pub fn with_external_signing_key(mut self, id: Vec<u8>, key: PublicKey) -> Self {
         self.external_signing_keys.insert(id, key);
         self
     }
 
+    #[must_use]
     pub fn with_external_key_id(self, id: Vec<u8>) -> Self {
         Self {
             external_key_id: Some(id),
