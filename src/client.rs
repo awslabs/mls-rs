@@ -129,13 +129,13 @@ impl<C: ClientConfig + Clone> Client<C> {
         .map_err(Into::into)
     }
 
-    pub fn propose_as_external_new_member(
+    pub fn propose_add_from_new_member(
         &self,
         group_id: Vec<u8>,
         key_package: KeyPackage,
         epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
-        self.propose_as_external(
+        self.propose_from_external(
             group_id,
             Sender::NewMember,
             Proposal::Add(AddProposal { key_package }),
@@ -143,13 +143,13 @@ impl<C: ClientConfig + Clone> Client<C> {
         )
     }
 
-    pub fn propose_add_as_external_preconfigured(
+    pub fn propose_add_from_preconfigured(
         &self,
         group_id: Vec<u8>,
         proposal: AddProposal,
         epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
-        self.propose_as_external(
+        self.propose_from_external(
             group_id,
             Sender::Preconfigured(
                 self.config
@@ -161,13 +161,13 @@ impl<C: ClientConfig + Clone> Client<C> {
         )
     }
 
-    pub fn propose_remove_as_external_preconfigured(
+    pub fn propose_remove_from_preconfigured(
         &self,
         group_id: Vec<u8>,
         proposal: RemoveProposal,
         epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
-        self.propose_as_external(
+        self.propose_from_external(
             group_id,
             Sender::Preconfigured(
                 self.config
@@ -179,7 +179,7 @@ impl<C: ClientConfig + Clone> Client<C> {
         )
     }
 
-    fn propose_as_external(
+    fn propose_from_external(
         &self,
         group_id: Vec<u8>,
         sender: Sender,
@@ -402,7 +402,7 @@ mod test {
             .unwrap();
         let (bob, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
         let proposal = bob
-            .propose_as_external_new_member(
+            .propose_add_from_new_member(
                 TEST_GROUP.to_vec(),
                 bob_key_gen.key_package.clone(),
                 session.group_stats().unwrap().epoch,
@@ -455,7 +455,7 @@ mod test {
         preconfigured_external_proposal_is_interpreted_by_members(|client, key_package, epoch| {
             let proposal = AddProposal { key_package };
             let msg = client
-                .propose_add_as_external_preconfigured(TEST_GROUP.to_vec(), proposal.clone(), epoch)
+                .propose_add_from_preconfigured(TEST_GROUP.to_vec(), proposal.clone(), epoch)
                 .unwrap();
             (Proposal::Add(proposal), msg)
         });
@@ -468,11 +468,7 @@ mod test {
                 to_remove: key_pkg.to_reference().unwrap(),
             };
             let msg = client
-                .propose_remove_as_external_preconfigured(
-                    TEST_GROUP.to_vec(),
-                    proposal.clone(),
-                    epoch,
-                )
+                .propose_remove_from_preconfigured(TEST_GROUP.to_vec(), proposal.clone(), epoch)
                 .unwrap();
             (Proposal::Remove(proposal), msg)
         });
@@ -487,7 +483,7 @@ mod test {
             .unwrap();
         let (_, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
         let msg = ted
-            .propose_as_external_new_member(
+            .propose_add_from_new_member(
                 TEST_GROUP.to_vec(),
                 bob_key_gen.key_package,
                 session.group_stats().unwrap().epoch,
