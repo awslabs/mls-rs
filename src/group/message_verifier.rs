@@ -1,8 +1,8 @@
 use crate::{
     group::{
-        ContentType, EpochRepository, GroupContext, GroupError, KeyType, MLSCiphertext,
-        MLSCiphertextContent, MLSCiphertextContentAAD, MLSMessage, MLSPlaintext, MLSSenderData,
-        MLSSenderDataAAD, Sender, VerifiedPlaintext, WireFormat,
+        ContentType, Epoch, GroupContext, GroupError, KeyType, MLSCiphertext, MLSCiphertextContent,
+        MLSCiphertextContentAAD, MLSMessage, MLSPlaintext, MLSSenderData, MLSSenderDataAAD, Sender,
+        VerifiedPlaintext, WireFormat,
     },
     tree_kem::TreeKemPrivate,
 };
@@ -10,7 +10,7 @@ use ferriscrypt::asym::ec_key::PublicKey;
 use tls_codec::{Deserialize, Serialize};
 
 pub(crate) struct MessageVerifier<'a, F> {
-    pub(crate) epoch_repo: &'a mut EpochRepository,
+    pub(crate) msg_epoch: &'a mut Epoch,
     pub(crate) context: &'a GroupContext,
     pub(crate) private_tree: &'a TreeKemPrivate,
     pub(crate) external_key_id_to_signing_key: F,
@@ -31,13 +31,12 @@ where
         &mut self,
         plaintext: MLSPlaintext,
     ) -> Result<VerifiedPlaintext, GroupError> {
-        let msg_epoch = self.epoch_repo.get(plaintext.epoch)?;
         match plaintext.sender {
             Sender::Member(_) => {
                 plaintext
                     .membership_tag
                     .as_ref()
-                    .map(|tag| tag.matches(&plaintext, self.context, msg_epoch))
+                    .map(|tag| tag.matches(&plaintext, self.context, self.msg_epoch))
                     .transpose()?
                     .filter(|&matched| matched)
                     .ok_or(GroupError::InvalidMembershipTag)?;
@@ -54,7 +53,7 @@ where
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
         if !plaintext.verify_signature(
-            &msg_epoch.public_tree,
+            &self.msg_epoch.public_tree,
             self.context,
             WireFormat::Plain,
             &mut self.external_key_id_to_signing_key,
@@ -72,13 +71,11 @@ where
         &mut self,
         ciphertext: MLSCiphertext,
     ) -> Result<VerifiedPlaintext, GroupError> {
-        // Get the epoch associated with this ciphertext
-        let msg_epoch = self.epoch_repo.get_mut(ciphertext.epoch)?;
-
         // Decrypt the sender data with the derived sender_key and sender_nonce from the current
         // epoch's key schedule
-        let (sender_key, sender_nonce) =
-            msg_epoch.get_sender_data_params(&ciphertext.ciphertext)?;
+        let (sender_key, sender_nonce) = self
+            .msg_epoch
+            .get_sender_data_params(&ciphertext.ciphertext)?;
 
         let sender_data_aad = MLSSenderDataAAD {
             group_id: self.context.group_id.clone(),
@@ -103,8 +100,8 @@ where
             _ => KeyType::Handshake,
         };
 
-        let decryption_key = msg_epoch.get_decryption_key(
-            msg_epoch
+        let decryption_key = self.msg_epoch.get_decryption_key(
+            self.msg_epoch
                 .public_tree
                 .package_leaf_index(&sender_data.sender)?,
             sender_data.generation,
@@ -143,7 +140,7 @@ where
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
         if !plaintext.verify_signature(
-            &msg_epoch.public_tree,
+            &self.msg_epoch.public_tree,
             self.context,
             WireFormat::Cipher,
             &mut self.external_key_id_to_signing_key,

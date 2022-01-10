@@ -50,6 +50,7 @@ impl EpochRepository {
             .ok_or(EpochRepositoryError::EmptyRepository)
     }
 
+    #[allow(unused)]
     pub fn get(&self, epoch_id: u64) -> Result<&Epoch, EpochRepositoryError> {
         self.internal_queue
             .iter()

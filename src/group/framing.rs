@@ -116,6 +116,13 @@ impl MLSMessage {
             MLSMessage::Cipher(_) => WireFormat::Cipher,
         }
     }
+
+    pub fn epoch(&self) -> u64 {
+        match self {
+            MLSMessage::Plain(m) => m.epoch,
+            MLSMessage::Cipher(m) => m.epoch,
+        }
+    }
 }
 
 impl From<MLSPlaintext> for MLSMessage {

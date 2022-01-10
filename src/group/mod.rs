@@ -1157,7 +1157,7 @@ impl Group {
         F: FnMut(&[u8]) -> Option<PublicKey>,
     {
         let mut verifier = MessageVerifier {
-            epoch_repo: &mut self.epoch_repo,
+            msg_epoch: self.epoch_repo.get_mut(message.epoch())?,
             context: &self.context,
             private_tree: &self.private_tree,
             external_key_id_to_signing_key,
