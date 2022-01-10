@@ -395,7 +395,7 @@ mod test {
     }
 
     #[test]
-    fn new_member_proposition_is_interpreted_by_members() {
+    fn new_member_proposal_is_interpreted_by_members() {
         let (alice, alice_key_gen) = TestClientBuilder::named("alice").build_with_key_pkg();
         let mut session = alice
             .create_session(alice_key_gen, TEST_GROUP.to_vec())
@@ -415,7 +415,7 @@ mod test {
         ));
     }
 
-    fn preconfigured_external_proposition_is_interpreted_by_members<F>(mut propose: F)
+    fn preconfigured_external_proposal_is_interpreted_by_members<F>(mut propose: F)
     where
         F: FnMut(&Client, KeyPackage, u64) -> (Proposal, Vec<u8>),
     {
@@ -452,24 +452,18 @@ mod test {
 
     #[test]
     fn preconfigured_external_addition_is_interpreted_by_members() {
-        preconfigured_external_proposition_is_interpreted_by_members(
-            |client, key_package, epoch| {
-                let proposal = AddProposal { key_package };
-                let msg = client
-                    .propose_add_as_external_preconfigured(
-                        TEST_GROUP.to_vec(),
-                        proposal.clone(),
-                        epoch,
-                    )
-                    .unwrap();
-                (Proposal::Add(proposal), msg)
-            },
-        );
+        preconfigured_external_proposal_is_interpreted_by_members(|client, key_package, epoch| {
+            let proposal = AddProposal { key_package };
+            let msg = client
+                .propose_add_as_external_preconfigured(TEST_GROUP.to_vec(), proposal.clone(), epoch)
+                .unwrap();
+            (Proposal::Add(proposal), msg)
+        });
     }
 
     #[test]
     fn preconfigured_external_removal_is_interpreted_by_members() {
-        preconfigured_external_proposition_is_interpreted_by_members(|client, key_pkg, epoch| {
+        preconfigured_external_proposal_is_interpreted_by_members(|client, key_pkg, epoch| {
             let proposal = RemoveProposal {
                 to_remove: key_pkg.to_reference().unwrap(),
             };
@@ -485,7 +479,7 @@ mod test {
     }
 
     #[test]
-    fn proposition_from_unknown_external_is_rejected_by_members() {
+    fn proposal_from_unknown_external_is_rejected_by_members() {
         let ted = TestClientBuilder::named("ted").build();
         let (alice, alice_key_gen) = TestClientBuilder::named("alice").build_with_key_pkg();
         let mut session = alice
