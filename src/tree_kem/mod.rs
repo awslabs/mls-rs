@@ -514,8 +514,12 @@ impl TreeKemPublic {
                 .insert(one_secret.index, one_secret.secrets.secret_key.clone());
         }
 
-        let secret_path = SecretPath::from(node_secrets);
-
+        let mut secret_path = SecretPath::from(node_secrets);
+        // In case there are no secrets to send, our cache still needs to contain the new
+        // `path_secret` for our node.
+        if secret_path.root_secret.is_empty() {
+            secret_path.root_secret = leaf_secrets.path_secret;
+        }
         let mut update_path = UpdatePath {
             leaf_key_package,
             nodes: node_updates,
