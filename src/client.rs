@@ -395,7 +395,7 @@ mod test {
     }
 
     #[test]
-    fn new_member_proposal_is_interpreted_by_members() {
+    fn new_member_add_proposal_adds_to_group() {
         let (alice, alice_key_gen) = TestClientBuilder::named("alice").build_with_key_pkg();
         let mut session = alice
             .create_session(alice_key_gen, TEST_GROUP.to_vec())
@@ -413,65 +413,120 @@ mod test {
             message,
             ProcessedMessage::Proposal(Proposal::Add(AddProposal { key_package })) if key_package == bob_key_gen.key_package
         ));
+        let expected_proposal = AddProposal {
+            key_package: bob_key_gen.key_package.clone(),
+        };
+        let proposal = match session.process_incoming_bytes(&proposal).unwrap() {
+            ProcessedMessage::Proposal(Proposal::Add(p)) if p == expected_proposal => {
+                Proposal::Add(p)
+            }
+            m => panic!("Expected {:?} but got {:?}", expected_proposal, m),
+        };
+        let _ = session.commit(vec![proposal]).unwrap();
+        let state_update = session.apply_pending_commit().unwrap();
+        let expected_ref = bob_key_gen.key_package.to_reference().unwrap();
+        assert!(state_update.added.iter().any(|r| *r == expected_ref));
     }
 
-    fn preconfigured_external_proposal_is_interpreted_by_members<F>(mut propose: F)
-    where
-        F: FnMut(&Client, KeyPackage, u64) -> (Proposal, Vec<u8>),
-    {
-        const TED_EXTERNAL_KEY_ID: &[u8] = b"ted";
-        let ted_signing_key =
-            SecretKey::generate(Curve::from(TEST_CIPHER_SUITE.signature_scheme())).unwrap();
-        let ted = TestClientBuilder::named("ted")
-            .with_signing_key(ted_signing_key.clone())
-            .with_config(
-                DefaultClientConfig::default().with_external_key_id(TED_EXTERNAL_KEY_ID.to_vec()),
+    struct PreconfiguredEnv {
+        ted: Client,
+        bob_key_gen: KeyPackageGeneration,
+        session: Session,
+    }
+
+    impl PreconfiguredEnv {
+        fn new() -> Self {
+            const TED_EXTERNAL_KEY_ID: &[u8] = b"ted";
+            let ted_signing_key =
+                SecretKey::generate(Curve::from(TEST_CIPHER_SUITE.signature_scheme())).unwrap();
+            let ted = TestClientBuilder::named("ted")
+                .with_signing_key(ted_signing_key.clone())
+                .with_config(
+                    DefaultClientConfig::default()
+                        .with_external_key_id(TED_EXTERNAL_KEY_ID.to_vec()),
+                )
+                .build();
+            let (alice, alice_key_gen) = TestClientBuilder::named("alice")
+                .with_config(DefaultClientConfig::default().with_external_signing_key(
+                    TED_EXTERNAL_KEY_ID.to_vec(),
+                    ted_signing_key.to_public().unwrap(),
+                ))
+                .build_with_key_pkg();
+            let session = alice
+                .create_session(alice_key_gen, TEST_GROUP.to_vec())
+                .unwrap();
+            let (_, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
+            PreconfiguredEnv {
+                ted,
+                bob_key_gen,
+                session,
+            }
+        }
+    }
+
+    #[test]
+    fn preconfigured_add_proposal_adds_to_group() {
+        let mut env = PreconfiguredEnv::new();
+        let proposal = AddProposal {
+            key_package: env.bob_key_gen.key_package.clone(),
+        };
+        let msg = env
+            .ted
+            .propose_add_from_preconfigured(
+                TEST_GROUP.to_vec(),
+                proposal.clone(),
+                env.session.group_stats().unwrap().epoch,
             )
-            .build();
-        let (alice, alice_key_gen) = TestClientBuilder::named("alice")
-            .with_config(DefaultClientConfig::default().with_external_signing_key(
-                TED_EXTERNAL_KEY_ID.to_vec(),
-                ted_signing_key.to_public().unwrap(),
-            ))
-            .build_with_key_pkg();
-        let mut session = alice
-            .create_session(alice_key_gen, TEST_GROUP.to_vec())
             .unwrap();
-        let (_, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
-        let (expected_proposal, msg) = propose(
-            &ted,
-            bob_key_gen.key_package,
-            session.group_stats().unwrap().epoch,
-        );
-        let msg = session.process_incoming_bytes(&msg).unwrap();
-        assert!(matches!(
-            msg,
-            ProcessedMessage::Proposal(actual_proposal) if expected_proposal == actual_proposal
-        ));
+        let msg = env.session.process_incoming_bytes(&msg).unwrap();
+        let received_proposal = match msg {
+            ProcessedMessage::Proposal(Proposal::Add(p)) if p == proposal => Proposal::Add(p),
+            m => panic!("Expected {:?} but got {:?}", proposal, m),
+        };
+        let _ = env.session.commit(vec![received_proposal]).unwrap();
+        let state_update = env.session.apply_pending_commit().unwrap();
+        let expected_ref = env.bob_key_gen.key_package.to_reference().unwrap();
+        assert!(state_update.added.iter().any(|r| *r == expected_ref));
     }
 
     #[test]
-    fn preconfigured_external_addition_is_interpreted_by_members() {
-        preconfigured_external_proposal_is_interpreted_by_members(|client, key_package, epoch| {
-            let proposal = AddProposal { key_package };
-            let msg = client
-                .propose_add_from_preconfigured(TEST_GROUP.to_vec(), proposal.clone(), epoch)
-                .unwrap();
-            (Proposal::Add(proposal), msg)
-        });
-    }
-
-    #[test]
-    fn preconfigured_external_removal_is_interpreted_by_members() {
-        preconfigured_external_proposal_is_interpreted_by_members(|client, key_pkg, epoch| {
-            let proposal = RemoveProposal {
-                to_remove: key_pkg.to_reference().unwrap(),
-            };
-            let msg = client
-                .propose_remove_from_preconfigured(TEST_GROUP.to_vec(), proposal.clone(), epoch)
-                .unwrap();
-            (Proposal::Remove(proposal), msg)
-        });
+    fn preconfigured_remove_proposal_removes_from_group() {
+        let mut env = PreconfiguredEnv::new();
+        let _ = env
+            .session
+            .commit(vec![Proposal::Add(AddProposal {
+                key_package: env.bob_key_gen.key_package.clone(),
+            })])
+            .unwrap();
+        let _ = env.session.apply_pending_commit().unwrap();
+        assert!(env
+            .session
+            .roster()
+            .iter()
+            .any(|&p| *p == env.bob_key_gen.key_package));
+        let bob_key_pkg_ref = env.bob_key_gen.key_package.to_reference().unwrap();
+        let proposal = RemoveProposal {
+            to_remove: bob_key_pkg_ref,
+        };
+        let msg = env
+            .ted
+            .propose_remove_from_preconfigured(
+                TEST_GROUP.to_vec(),
+                proposal.clone(),
+                env.session.group_stats().unwrap().epoch,
+            )
+            .unwrap();
+        let msg = env.session.process_incoming_bytes(&msg).unwrap();
+        let _ = match msg {
+            ProcessedMessage::Proposal(Proposal::Remove(p)) if p == proposal => Proposal::Remove(p),
+            m => panic!("Expected {:?} but got {:?}", proposal, m),
+        };
+        let _ = env.session.commit(Vec::new()).unwrap();
+        let state_update = env.session.apply_pending_commit().unwrap();
+        assert!(state_update
+            .removed
+            .iter()
+            .any(|p| *p == env.bob_key_gen.key_package));
     }
 
     #[test]
