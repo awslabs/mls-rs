@@ -1345,6 +1345,12 @@ impl Group {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::*;
+    use crate::{
+        credential::{BasicCredential, CredentialConvertible},
+        extension::{LifetimeExt, MlsExtension},
+        key_package::KeyPackageGenerator,
+    };
+    use std::time::SystemTime;
 
     pub(crate) fn get_test_group_context(epoch: u64) -> GroupContext {
         GroupContext {
@@ -1355,20 +1361,8 @@ pub(crate) mod test_utils {
             extensions: ExtensionList::from(vec![]),
         }
     }
-}
 
-#[cfg(test)]
-mod test {
-    use std::time::SystemTime;
-
-    use crate::{
-        credential::BasicCredential, credential::CredentialConvertible, extension::LifetimeExt,
-        extension::MlsExtension, key_package::KeyPackageGenerator,
-    };
-
-    use super::*;
-
-    fn test_member(
+    pub(crate) fn test_member(
         cipher_suite: CipherSuite,
         identifier: &[u8],
     ) -> (KeyPackageGeneration, SecretKey) {
@@ -1396,12 +1390,20 @@ mod test {
         (key_package, signing_key)
     }
 
-    fn test_group(cipher_suite: CipherSuite) -> (Group, SecretKey) {
+    pub(crate) fn test_group(cipher_suite: CipherSuite) -> (Group, SecretKey) {
         let (key_package, signing_key) = test_member(cipher_suite, b"alice");
 
         let group = Group::new(b"test group".to_vec(), key_package).unwrap();
         (group, signing_key)
     }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{
+        test_utils::{test_group, test_member},
+        *,
+    };
 
     #[test]
     fn test_pending_proposals_application_data() {
