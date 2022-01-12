@@ -211,7 +211,7 @@ mod test {
     use std::time::SystemTime;
     use tls_codec::Serialize;
 
-    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Mls10128Dhkemx25519Aes128gcmSha256Ed25519;
+    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
     const TEST_GROUP: &[u8] = b"group";
 
     struct TestClientBuilder<C = DefaultClientConfig> {
