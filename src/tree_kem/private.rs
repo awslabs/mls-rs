@@ -111,9 +111,12 @@ mod test {
         rand::SecureRng,
     };
 
-    use crate::tree_kem::{
-        node::LeafIndex,
-        test::{get_test_key_package, get_test_key_package_sig_key},
+    use crate::{
+        key_package::KeyPackageGenerator,
+        tree_kem::{
+            node::LeafIndex,
+            test::{get_test_key_package, get_test_key_package_sig_key},
+        },
     };
 
     use super::*;
@@ -154,7 +157,8 @@ mod test {
         let charlie_key_package = get_test_key_package(cipher_suite, b"charlie".to_vec());
 
         // Create a new public tree with Alice
-        let (mut public_tree, alice_private) = TreeKemPublic::derive(alice_key_package).unwrap();
+        let (mut public_tree, alice_private) =
+            TreeKemPublic::derive(alice_key_package.clone()).unwrap();
 
         // Add bob and charlie to the tree
         public_tree
@@ -164,9 +168,24 @@ mod test {
             ])
             .unwrap();
 
+        let key_package_generator = KeyPackageGenerator {
+            cipher_suite,
+            signing_key: &alice_signing,
+            credential: &alice_key_package.key_package.credential,
+            extensions: &alice_key_package.key_package.extensions,
+        };
+
+        let key_package_update = key_package_generator.generate(None).unwrap();
+
         // Generate an update path for Alice
         let update_path_gen = public_tree
-            .encap(&alice_private, &alice_signing, &[], &[])
+            .encap(
+                &alice_private,
+                key_package_update,
+                &b"test_ctx".to_vec(),
+                &[],
+                |_| Ok::<_, RatchetTreeError>(()),
+            )
             .unwrap();
 
         // Get a path secret from Alice for Charlie

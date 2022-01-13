@@ -159,6 +159,7 @@ where
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
+        extension::ExtensionList,
         group::{
             membership_tag::MembershipTag,
             proposal::{AddProposal, Proposal},
@@ -166,7 +167,7 @@ mod tests {
             Content, Group, GroupError, MLSMessage, MLSPlaintext, MessageSignature,
             MessageVerifier, Sender, WireFormat,
         },
-        key_package::KeyPackageGeneration,
+        key_package::KeyPackageGenerator,
     };
     use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 
@@ -206,14 +207,13 @@ mod tests {
             MembershipTag::create(
                 message,
                 &group.context,
-                &group.epoch_repo.get(epoch).unwrap(),
+                group.epoch_repo.get(epoch).unwrap(),
             )
             .unwrap(),
         );
     }
 
     struct TestMember {
-        key_pkg_gen: KeyPackageGeneration,
         signing_key: SecretKey,
         group: Group,
     }
@@ -221,7 +221,7 @@ mod tests {
     impl TestMember {
         fn make_member_plaintext(&self) -> MLSPlaintext {
             make_plaintext(
-                Sender::Member(self.key_pkg_gen.key_package.to_reference().unwrap()),
+                Sender::Member(self.group.private_tree.key_package_ref.clone()),
                 self.group.current_epoch(),
             )
         }
@@ -241,27 +241,40 @@ mod tests {
     impl TestEnv {
         fn new() -> Self {
             let (key_pkg_gen, signing_key) = test_member(TEST_CIPHER_SUITE, b"alice");
-            let group = Group::new(TEST_GROUP.to_vec(), key_pkg_gen.clone()).unwrap();
-            let mut alice = TestMember {
-                key_pkg_gen,
-                signing_key,
-                group,
+
+            let alice_key_package_generator = KeyPackageGenerator {
+                cipher_suite: key_pkg_gen.key_package.cipher_suite,
+                credential: &key_pkg_gen.key_package.credential.clone(),
+                extensions: &key_pkg_gen.key_package.extensions.clone(),
+                signing_key: &signing_key.clone(),
             };
+
+            let group = Group::new(
+                TEST_GROUP.to_vec(),
+                alice_key_package_generator.clone(),
+                ExtensionList::new(),
+            )
+            .unwrap();
+
+            let mut alice = TestMember { signing_key, group };
+
             let (key_pkg_gen, signing_key) = test_member(TEST_CIPHER_SUITE, b"bob");
             let proposal = alice
                 .group
-                .add_member_proposal(&key_pkg_gen.key_package)
+                .add_member_proposal(key_pkg_gen.key_package.clone().into())
                 .unwrap();
+
             let (commit_generation, welcome) = alice
                 .group
                 .commit_proposals(
                     &[proposal],
+                    &alice_key_package_generator,
                     false,
-                    &alice.signing_key,
                     WireFormat::Plain,
                     false,
                 )
                 .unwrap();
+
             alice
                 .group
                 .process_pending_commit(commit_generation)
@@ -269,14 +282,10 @@ mod tests {
             let group = Group::from_welcome_message(
                 welcome.unwrap(),
                 Some(alice.group.current_epoch_tree().unwrap().clone()),
-                key_pkg_gen.clone(),
+                key_pkg_gen,
             )
             .unwrap();
-            let bob = TestMember {
-                key_pkg_gen,
-                signing_key,
-                group,
-            };
+            let bob = TestMember { signing_key, group };
             Self { alice, bob }
         }
     }
@@ -332,7 +341,7 @@ mod tests {
         let (mut group, _) = test_group(TEST_CIPHER_SUITE);
         let mut message = MLSPlaintext {
             content: Content::Proposal(Proposal::Add(AddProposal {
-                key_package: key_pkg_gen.key_package.clone(),
+                key_package: key_pkg_gen.key_package.into(),
             })),
             ..make_plaintext(Sender::NewMember, group.current_epoch())
         };
@@ -348,7 +357,7 @@ mod tests {
         let (mut group, _) = test_group(TEST_CIPHER_SUITE);
         let mut message = MLSPlaintext {
             content: Content::Proposal(Proposal::Add(AddProposal {
-                key_package: key_pkg_gen.key_package.clone(),
+                key_package: key_pkg_gen.key_package.into(),
             })),
             ..make_plaintext(Sender::NewMember, group.current_epoch())
         };
@@ -367,7 +376,7 @@ mod tests {
         let (mut group, _) = test_group(TEST_CIPHER_SUITE);
         let mut message = MLSPlaintext {
             content: Content::Proposal(Proposal::Add(AddProposal {
-                key_package: bob_key_pkg_gen.key_package.clone(),
+                key_package: bob_key_pkg_gen.key_package.into(),
             })),
             ..make_plaintext(
                 Sender::Preconfigured(TED_EXTERNAL_KEY_ID.to_vec()),
@@ -389,7 +398,7 @@ mod tests {
         let (mut group, _) = test_group(TEST_CIPHER_SUITE);
         let mut message = MLSPlaintext {
             content: Content::Proposal(Proposal::Add(AddProposal {
-                key_package: bob_key_pkg_gen.key_package.clone(),
+                key_package: bob_key_pkg_gen.key_package.into(),
             })),
             ..make_plaintext(
                 Sender::Preconfigured(TED_EXTERNAL_KEY_ID.to_vec()),

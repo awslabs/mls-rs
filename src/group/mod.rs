@@ -18,11 +18,16 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext, ProtocolVersion};
 use crate::credential::CredentialError;
 use crate::extension::{Extension, ExtensionError, ExtensionList, RatchetTreeExt};
-use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageRef};
-use crate::tree_kem::leaf_secret::{LeafSecret, LeafSecretError};
+use crate::key_package::{
+    KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerationError,
+    KeyPackageGenerator, KeyPackageRef, KeyPackageValidationError, KeyPackageValidationOptions,
+    KeyPackageValidator,
+};
+use crate::tree_kem::leaf_secret::LeafSecretError;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{
     RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathGeneration,
+    UpdatePathValidationError, UpdatePathValidator,
 };
 
 use confirmation_tag::*;
@@ -138,6 +143,12 @@ pub enum GroupError {
     ExtensionError(#[from] ExtensionError),
     #[error(transparent)]
     KdfError(#[from] KdfError),
+    #[error(transparent)]
+    KeyPackageGenerationError(#[from] KeyPackageGenerationError),
+    #[error(transparent)]
+    KeyPackageValidationError(#[from] KeyPackageValidationError),
+    #[error(transparent)]
+    UpdatePathValidationError(#[from] UpdatePathValidationError),
     #[error("Cipher suite does not match")]
     CipherSuiteMismatch,
     #[error("Invalid key package signature")]
@@ -394,17 +405,21 @@ pub enum ProcessedMessage {
 impl Group {
     pub fn new(
         group_id: Vec<u8>,
-        creator_key_package: KeyPackageGeneration,
+        key_package_generator: KeyPackageGenerator,
+        group_context_extensions: ExtensionList,
     ) -> Result<Self, GroupError> {
+        let required_capabilities = group_context_extensions.get_extension()?;
+        let creator_key_package = key_package_generator.generate(required_capabilities.as_ref())?;
+
         let cipher_suite = creator_key_package.key_package.cipher_suite;
         let kdf = Hkdf::from(cipher_suite.kdf_type());
 
         let (public_tree, private_tree) = TreeKemPublic::derive(creator_key_package)?;
+
         let init_secret = SecureRng::gen(kdf.extract_size())?;
         let tree_hash = public_tree.tree_hash()?;
 
-        // TODO: Proper support for group context extensions
-        let context = GroupContext::new_group(group_id, tree_hash, ExtensionList::new());
+        let context = GroupContext::new_group(group_id, tree_hash, group_context_extensions);
 
         let (epoch, _) = Epoch::derive(
             cipher_suite,
@@ -497,8 +512,16 @@ impl Group {
             return Err(GroupError::InvalidSignature);
         }
 
+        let extensions = group_info.group_context_extensions.get_extension()?;
+
+        let key_package_validator = KeyPackageValidator {
+            cipher_suite: welcome.cipher_suite,
+            required_capabilities: extensions.as_ref(),
+            options: Default::default(),
+        };
+
         // Verify the integrity of the ratchet tree
-        public_tree.validate(&group_info.tree_hash)?;
+        public_tree.validate(&group_info.tree_hash, &key_package_validator)?;
 
         // Identify a leaf in the tree array (any even-numbered node) whose key_package field is
         // identical to the the KeyPackage. If no such field exists, return an error. Let index
@@ -613,6 +636,15 @@ impl Group {
         let mut provisional_tree = self.current_epoch_tree()?.clone();
         let mut provisional_private_tree = self.private_tree.clone();
 
+        // TODO: When we implement group context proposal this will need to take potential new
+        // requirements from that proposal
+        let required_capabilities = self.context.extensions.get_extension()?;
+
+        let key_package_validator = KeyPackageValidator {
+            cipher_suite: self.cipher_suite,
+            required_capabilities: required_capabilities.as_ref(),
+            options: Default::default(),
+        };
         //TODO: This has to loop through the proposal array 3 times, maybe this should be optimized
 
         // Apply updates
@@ -629,8 +661,10 @@ impl Group {
             .collect::<Result<Vec<_>, _>>()?;
 
         for (update_sender, update) in updates {
+            let validated = key_package_validator.validate(update.key_package.clone())?;
+
             // Update the leaf in the provisional tree
-            provisional_tree.update_leaf(&update_sender, update.key_package.clone())?;
+            provisional_tree.update_leaf(&update_sender, validated)?;
 
             let key_package_ref = update.key_package.to_reference()?;
 
@@ -674,8 +708,12 @@ impl Group {
         // Apply adds
         let adds = proposals
             .iter()
-            .filter_map(|p| p.proposal.as_add().map(|a| a.key_package.clone()))
-            .collect();
+            .filter_map(|p| {
+                p.proposal
+                    .as_add()
+                    .map(|a| key_package_validator.validate(a.key_package.clone()))
+            })
+            .collect::<Result<_, _>>()?;
 
         let added_leaves = provisional_tree.add_leaves(adds)?;
 
@@ -757,8 +795,8 @@ impl Group {
     pub fn commit_proposals(
         &mut self,
         proposals: &[Proposal],
+        key_package_generator: &KeyPackageGenerator,
         update_path: bool,
-        signer: &SecretKey,
         wire_format: WireFormat,
         ratchet_tree_extension: bool,
     ) -> Result<(CommitGeneration, Option<Welcome>), GroupError> {
@@ -797,30 +835,34 @@ impl Group {
             return Err(GroupError::CommitMissingPath);
         }
 
-        let update_path = match update_path {
-            false => None,
-            true => {
-                // The committer MUST NOT include any Update proposals generated by the committer, since they would be duplicative with the path field in the Commit
-                if !self.pending_updates.is_empty() {
-                    return Err(GroupError::InvalidCommitSelfUpdate);
-                }
-
-                //If populating the path field: Create an UpdatePath using the new tree. Any new
-                // member (from an add proposal) MUST be excluded from the resolution during the
-                // computation of the UpdatePath. The GroupContext for this operation uses the
-                // group_id, epoch, tree_hash, and confirmed_transcript_hash values in the initial
-                // GroupContext object. The leaf_key_package for this UpdatePath must have a
-                // parent_hash extension.
-                let context_bytes = self.context.tls_serialize_detached()?;
-                let update_path = provisional_state.public_tree.encap(
-                    &self.private_tree,
-                    signer,
-                    &context_bytes,
-                    &provisional_state.added_leaves,
-                )?;
-
-                Some(update_path)
+        let update_path = if update_path {
+            // The committer MUST NOT include any Update proposals generated by the committer, since they would be duplicative with the path field in the Commit
+            if !self.pending_updates.is_empty() {
+                return Err(GroupError::InvalidCommitSelfUpdate);
             }
+
+            //If populating the path field: Create an UpdatePath using the new tree. Any new
+            // member (from an add proposal) MUST be excluded from the resolution during the
+            // computation of the UpdatePath. The GroupContext for this operation uses the
+            // group_id, epoch, tree_hash, and confirmed_transcript_hash values in the initial
+            // GroupContext object. The leaf_key_package for this UpdatePath must have a
+            // parent_hash extension.
+            let context_bytes = self.context.tls_serialize_detached()?;
+
+            let new_key_package = key_package_generator
+                .generate(self.context.extensions.get_extension()?.as_ref())?;
+
+            let update_path = provisional_state.public_tree.encap(
+                &self.private_tree,
+                new_key_package,
+                &context_bytes,
+                &provisional_state.added_leaves,
+                |package| key_package_generator.sign(package),
+            )?;
+
+            Some(update_path)
+        } else {
+            None
         };
 
         // Update the tree hash in the provisional group context
@@ -839,8 +881,11 @@ impl Group {
         };
 
         //Construct an MLSPlaintext object containing the Commit object
-        let mut plaintext =
-            self.construct_mls_plaintext(Content::Commit(commit), signer, wire_format)?;
+        let mut plaintext = self.construct_mls_plaintext(
+            Content::Commit(commit),
+            key_package_generator.signing_key,
+            wire_format,
+        )?;
 
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
         // compute the confirmation_tag value in the MLSPlaintext.
@@ -892,7 +937,7 @@ impl Group {
             tree_hash: provisional_group_context.tree_hash,
             confirmed_transcript_hash: provisional_group_context.confirmed_transcript_hash,
             other_extensions: extensions,
-            group_context_extensions: ExtensionList::new(), // TODO: Support group context extensions
+            group_context_extensions: provisional_group_context.extensions,
             confirmation_tag, // The confirmation_tag from the MLSPlaintext object
             signer: update_path
                 .as_ref()
@@ -902,7 +947,9 @@ impl Group {
         };
 
         // Sign the GroupInfo using the member's private signing key
-        group_info.signature = signer.sign(&group_info.to_signable_vec()?)?;
+        group_info.signature = key_package_generator
+            .signing_key
+            .sign(&group_info.to_signable_vec()?)?;
 
         // Encrypt the GroupInfo using the key and nonce derived from the joiner_secret for
         // the new epoch
@@ -981,40 +1028,27 @@ impl Group {
         })
     }
 
-    pub fn add_member_proposal(&self, key_package: &KeyPackage) -> Result<Proposal, GroupError> {
-        // TODO: Make sure the packages are the correct best cipher suite etc
-        if key_package.cipher_suite != self.cipher_suite {
-            return Err(GroupError::CipherSuiteMismatch);
-        }
-
-        // Create proposal
-        Ok(Proposal::from(AddProposal {
-            key_package: key_package.clone(),
-        }))
+    pub fn add_member_proposal(&self, key_package: KeyPackage) -> Result<Proposal, GroupError> {
+        Ok(Proposal::from(AddProposal { key_package }))
     }
 
-    pub fn update_proposal(&mut self, signing_key: &SecretKey) -> Result<Proposal, GroupError> {
-        let leaf_secret = LeafSecret::generate(self.cipher_suite)?;
-        let (leaf_sec, leaf_pub) = leaf_secret.as_leaf_key_pair()?;
-
+    pub fn update_proposal(
+        &mut self,
+        key_package_generator: &KeyPackageGenerator,
+    ) -> Result<Proposal, GroupError> {
         // Update the public key in the key package
-        let mut key_package = self
-            .epoch_repo
-            .current()?
-            .public_tree
-            .get_key_package(&self.private_tree.key_package_ref)?
-            .clone();
-
-        key_package.hpke_init_key = leaf_pub;
-
-        // Re-sign the key package
-        key_package.sign(signing_key)?;
+        let key_package_generation =
+            key_package_generator.generate(self.context.extensions.get_extension()?.as_ref())?;
 
         // Store the secret key in the pending updates storage for later
-        self.pending_updates
-            .insert(key_package.to_reference()?, leaf_sec);
+        self.pending_updates.insert(
+            key_package_generation.key_package.to_reference()?,
+            key_package_generation.secret_key,
+        );
 
-        Ok(Proposal::Update(UpdateProposal { key_package }))
+        Ok(Proposal::Update(UpdateProposal {
+            key_package: key_package_generation.key_package.into(),
+        }))
     }
 
     pub fn remove_proposal(
@@ -1245,17 +1279,34 @@ impl Group {
         let updated_secrets = match &commit_content.commit.path {
             None => None,
             Some(update_path) => {
-                // Receiving from yourself is a special case, we already have the new private keys
+                let required_capabilities = self.context.extensions.get_extension()?;
+
+                let options = if local_pending.is_some() {
+                    [KeyPackageValidationOptions::SkipSignatureCheck].into()
+                } else {
+                    Default::default()
+                };
+
+                let key_package_validator = KeyPackageValidator {
+                    cipher_suite: self.cipher_suite,
+                    required_capabilities: required_capabilities.as_ref(),
+                    options,
+                };
+
+                let update_path_validator = UpdatePathValidator::new(key_package_validator);
+                let validated_update_path = update_path_validator.validate(update_path.clone())?;
+
                 let secrets = if let Some(pending) = local_pending {
+                    // Receiving from yourself is a special case, we already have the new private keys
                     provisional_state
                         .public_tree
-                        .apply_pending_update(&pending, sender)?;
+                        .apply_self_update(&validated_update_path, sender)?;
                     Ok(pending.secrets)
                 } else {
                     provisional_state.public_tree.decap(
                         provisional_state.private_tree,
                         sender,
-                        update_path,
+                        &validated_update_path,
                         &provisional_state.added_leaves,
                         &self.context.tls_serialize_detached()?,
                     )
@@ -1346,8 +1397,8 @@ impl Group {
 pub(crate) mod test_utils {
     use super::*;
     use crate::{
-        credential::{BasicCredential, CredentialConvertible},
-        extension::{LifetimeExt, MlsExtension},
+        credential::{BasicCredential, Credential, CredentialConvertible},
+        extension::{CapabilitiesExt, LifetimeExt, MlsExtension, RequiredCapabilitiesExt},
         key_package::KeyPackageGenerator,
     };
     use std::time::SystemTime;
@@ -1362,38 +1413,69 @@ pub(crate) mod test_utils {
         }
     }
 
+    pub(crate) fn credential(signing_key: &SecretKey, identifier: &[u8]) -> Credential {
+        BasicCredential::new(identifier.to_vec(), signing_key.to_public().unwrap())
+            .unwrap()
+            .into_credential()
+    }
+
+    pub(crate) fn extensions() -> ExtensionList {
+        let lifetime_ext = LifetimeExt::years(1, SystemTime::now()).unwrap();
+
+        let capabilities_ext = CapabilitiesExt::default();
+
+        let mut extensions = ExtensionList::new();
+        extensions.set_extension(lifetime_ext).unwrap();
+        extensions.set_extension(capabilities_ext).unwrap();
+
+        extensions
+    }
+
+    pub(crate) fn group_extensions() -> ExtensionList {
+        let required_capabilities = RequiredCapabilitiesExt {
+            extensions: vec![RatchetTreeExt::IDENTIFIER],
+            proposals: vec![],
+        };
+
+        let mut extensions = ExtensionList::new();
+        extensions.set_extension(required_capabilities).unwrap();
+        extensions
+    }
+
     pub(crate) fn test_member(
         cipher_suite: CipherSuite,
         identifier: &[u8],
     ) -> (KeyPackageGeneration, SecretKey) {
         let signing_key = cipher_suite.generate_secret_key().unwrap();
 
-        let credential =
-            BasicCredential::new(identifier.to_vec(), signing_key.to_public().unwrap())
-                .unwrap()
-                .into_credential();
-
-        let lifetime_ext = LifetimeExt::years(1, SystemTime::now())
-            .unwrap()
-            .to_extension()
-            .unwrap();
-
-        let kpg = KeyPackageGenerator {
+        let key_package_generator = KeyPackageGenerator {
             cipher_suite,
-            credential: &credential,
-            extensions: ExtensionList::from(vec![lifetime_ext]),
+            credential: &credential(&signing_key, identifier),
+            extensions: &extensions(),
             signing_key: &signing_key,
         };
 
-        let key_package = kpg.generate().unwrap();
-
+        let key_package = key_package_generator.generate(None).unwrap();
         (key_package, signing_key)
     }
 
     pub(crate) fn test_group(cipher_suite: CipherSuite) -> (Group, SecretKey) {
-        let (key_package, signing_key) = test_member(cipher_suite, b"alice");
+        let signing_key = cipher_suite.generate_secret_key().unwrap();
 
-        let group = Group::new(b"test group".to_vec(), key_package).unwrap();
+        let key_package_generator = KeyPackageGenerator {
+            cipher_suite,
+            credential: &credential(&signing_key, b"alice"),
+            extensions: &extensions(),
+            signing_key: &signing_key,
+        };
+
+        let group = Group::new(
+            b"test group".to_vec(),
+            key_package_generator,
+            group_extensions(),
+        )
+        .unwrap();
+
         (group, signing_key)
     }
 }
@@ -1401,19 +1483,53 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod test {
     use super::{
-        test_utils::{test_group, test_member},
+        test_utils::{credential, extensions, group_extensions, test_group, test_member},
         *,
     };
 
     #[test]
+    fn test_create_group() {
+        for cipher_suite in CipherSuite::all() {
+            let (group, secret_key) = test_group(cipher_suite);
+            assert_eq!(group.cipher_suite, cipher_suite);
+            assert_eq!(group.context.epoch, 0);
+            assert_eq!(group.context.group_id, b"test group".to_vec());
+            assert_eq!(group.context.extensions, group_extensions());
+            assert_eq!(
+                group.context.confirmed_transcript_hash,
+                ConfirmedTranscriptHash::from(vec![])
+            );
+            assert!(group.proposals.is_empty());
+            assert!(group.pending_updates.is_empty());
+            assert!(group.epoch_repo.current().is_ok());
+            assert_eq!(group.private_tree.self_index.0, group.current_user_index());
+
+            assert_eq!(
+                group
+                    .epoch_repo
+                    .current()
+                    .unwrap()
+                    .public_tree
+                    .get_key_packages()[0]
+                    .credential
+                    .public_key()
+                    .unwrap(),
+                secret_key.to_public().unwrap()
+            );
+        }
+    }
+
+    #[test]
     fn test_pending_proposals_application_data() {
-        let (mut test_group, signing_key) = test_group(CipherSuite::P256Aes128V1);
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+
+        let (mut test_group, signing_key) = test_group(cipher_suite);
 
         // Create a proposal
-        let (bob_key_package, _) = test_member(CipherSuite::P256Aes128V1, b"bob");
+        let (bob_key_package, _) = test_member(cipher_suite, b"bob");
 
         let proposal = test_group
-            .add_member_proposal(&bob_key_package.key_package)
+            .add_member_proposal(bob_key_package.key_package.into())
             .unwrap();
 
         test_group
@@ -1424,9 +1540,16 @@ mod test {
         let res = test_group.encrypt_application_message(b"test", &signing_key);
         assert!(matches!(res, Err(GroupError::CommitRequired)));
 
+        let generator = KeyPackageGenerator {
+            cipher_suite,
+            credential: &credential(&signing_key, b"alice"),
+            extensions: &extensions(),
+            signing_key: &signing_key,
+        };
+
         // We should be able to send application messages after a commit
         let (commit, _) = test_group
-            .commit_proposals(&[], true, &signing_key, WireFormat::Plain, false)
+            .commit_proposals(&[], &generator, true, WireFormat::Plain, false)
             .unwrap();
 
         test_group.process_pending_commit(commit).unwrap();
@@ -1438,24 +1561,43 @@ mod test {
 
     #[test]
     fn test_invalid_commit_self_update() {
-        let (mut test_group, signing_key) = test_group(CipherSuite::P256Aes128V1);
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+
+        let (mut test_group, signing_key) = test_group(cipher_suite);
+
+        let generator = KeyPackageGenerator {
+            cipher_suite,
+            credential: &credential(&signing_key, b"alice"),
+            extensions: &extensions(),
+            signing_key: &signing_key,
+        };
 
         // Create an update proposal
-        let proposal = test_group.update_proposal(&signing_key).unwrap();
+        let proposal = test_group.update_proposal(&generator).unwrap();
 
         // There should be an error because path_update is set to `true` while there is a pending
         // update proposal for the commiter
         let res =
-            test_group.commit_proposals(&[proposal], true, &signing_key, WireFormat::Plain, false);
+            test_group.commit_proposals(&[proposal], &generator, true, WireFormat::Plain, false);
+
         assert!(matches!(res, Err(GroupError::InvalidCommitSelfUpdate)));
     }
 
     #[test]
     fn test_invalid_commit_self_update_cached() {
-        let (mut test_group, signing_key) = test_group(CipherSuite::P256Aes128V1);
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+
+        let (mut test_group, signing_key) = test_group(cipher_suite);
+
+        let generator = KeyPackageGenerator {
+            cipher_suite,
+            credential: &credential(&signing_key, b"alice"),
+            extensions: &extensions(),
+            signing_key: &signing_key,
+        };
 
         // Create an update proposal
-        let proposal = test_group.update_proposal(&signing_key).unwrap();
+        let proposal = test_group.update_proposal(&generator).unwrap();
 
         test_group
             .create_proposal(proposal, &signing_key, WireFormat::Plain)
@@ -1463,25 +1605,88 @@ mod test {
 
         // There should be an error because path_update is set to `true` while there is a pending
         // update proposal for the commiter
-        let res = test_group.commit_proposals(&[], true, &signing_key, WireFormat::Plain, false);
+        let res = test_group.commit_proposals(&[], &generator, true, WireFormat::Plain, false);
+
         assert!(matches!(res, Err(GroupError::InvalidCommitSelfUpdate)));
+    }
+
+    #[test]
+    fn test_invalid_add_bad_key_package() {
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+
+        let (mut test_group, signing_key) = test_group(cipher_suite);
+        let (mut bob_keys, _) = test_member(cipher_suite, b"bob");
+        bob_keys.key_package.signature = SecureRng::gen(32).unwrap();
+
+        let proposal = test_group
+            .add_member_proposal(bob_keys.key_package.into())
+            .unwrap();
+
+        let generator = KeyPackageGenerator {
+            cipher_suite,
+            credential: &credential(&signing_key, b"alice"),
+            extensions: &extensions(),
+            signing_key: &signing_key,
+        };
+
+        let res =
+            test_group.commit_proposals(&[proposal], &generator, false, WireFormat::Plain, false);
+
+        assert!(matches!(res, Err(GroupError::KeyPackageValidationError(_))));
+    }
+
+    #[test]
+    fn test_invalid_update_bad_key_package() {
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+
+        let (mut test_group, signing_key) = test_group(cipher_suite);
+        let (mut bob_keys, _) = test_member(cipher_suite, b"bob");
+        bob_keys.key_package.signature = SecureRng::gen(32).unwrap();
+
+        let generator = KeyPackageGenerator {
+            cipher_suite,
+            credential: &credential(&signing_key, b"alice"),
+            extensions: &extensions(),
+            signing_key: &signing_key,
+        };
+
+        let mut proposal = test_group.update_proposal(&generator).unwrap();
+
+        if let Proposal::Update(ref mut update) = proposal {
+            update.key_package.extensions = ExtensionList::new()
+        } else {
+            panic!("Invalid update proposal")
+        }
+
+        let res =
+            test_group.commit_proposals(&[proposal], &generator, false, WireFormat::Plain, false);
+
+        assert!(matches!(res, Err(GroupError::KeyPackageValidationError(_))));
     }
 
     fn test_welcome_processing(tree_ext: bool) {
         let cipher_suite = CipherSuite::P256Aes128V1;
         let (mut test_group, signing_key) = test_group(cipher_suite);
+
+        let generator = KeyPackageGenerator {
+            cipher_suite,
+            credential: &credential(&signing_key, b"alice"),
+            extensions: &extensions(),
+            signing_key: &signing_key,
+        };
+
         let (bob_key_package, _) = test_member(cipher_suite, b"bob");
 
         // Add bob to the group
         let add_bob_proposal = test_group
-            .add_member_proposal(&bob_key_package.key_package)
+            .add_member_proposal(bob_key_package.key_package.clone().into())
             .unwrap();
 
         let (commit_generation, welcome) = test_group
             .commit_proposals(
                 &[add_bob_proposal],
+                &generator,
                 false,
-                &signing_key,
                 WireFormat::Plain,
                 tree_ext,
             )
@@ -1521,16 +1726,23 @@ mod test {
         let (mut test_group, signing_key) = test_group(cipher_suite);
         let (bob_key_package, _) = test_member(cipher_suite, b"bob");
 
+        let generator = KeyPackageGenerator {
+            cipher_suite,
+            credential: &credential(&signing_key, b"alice"),
+            extensions: &extensions(),
+            signing_key: &signing_key,
+        };
+
         // Add bob to the group
         let add_bob_proposal = test_group
-            .add_member_proposal(&bob_key_package.key_package)
+            .add_member_proposal(bob_key_package.key_package.clone().into())
             .unwrap();
 
         let (_, welcome) = test_group
             .commit_proposals(
                 &[add_bob_proposal],
+                &generator,
                 false,
-                &signing_key,
                 WireFormat::Plain,
                 false,
             )

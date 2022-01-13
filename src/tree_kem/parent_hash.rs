@@ -3,14 +3,16 @@ use crate::extension::{ExtensionError, ParentHashExt};
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVec, NodeVecError, Parent};
+use crate::tree_kem::RatchetTreeError;
 use crate::tree_kem::TreeKemPublic;
-use crate::tree_kem::{RatchetTreeError, UpdatePath};
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+
+use super::ValidatedUpdatePath;
 
 #[derive(Error, Debug)]
 pub enum ParentHashError {
@@ -157,7 +159,7 @@ impl TreeKemPublic {
     pub fn update_parent_hashes(
         &mut self,
         index: LeafIndex,
-        update_path: Option<&UpdatePath>,
+        update_path: Option<&ValidatedUpdatePath>,
     ) -> Result<ParentHash, RatchetTreeError> {
         let mut changes = HashMap::new();
 
@@ -298,7 +300,7 @@ mod test {
         let mut test_tree = get_phash_test_tree(cipher_suite);
         let test_key_package = get_test_key_package(cipher_suite, b"foo".to_vec());
 
-        let test_update_path = UpdatePath {
+        let test_update_path = ValidatedUpdatePath {
             leaf_key_package: test_key_package.key_package,
             nodes: vec![],
         };
@@ -316,7 +318,7 @@ mod test {
         let mut test_tree = get_phash_test_tree(cipher_suite);
         let test_key_package = get_test_key_package(cipher_suite, b"foo".to_vec());
 
-        let mut test_update_path = UpdatePath {
+        let mut test_update_path = ValidatedUpdatePath {
             leaf_key_package: test_key_package.key_package,
             nodes: vec![],
         };

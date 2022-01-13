@@ -40,14 +40,21 @@ impl NodeSecretGenerator {
         }
     }
 
-    pub fn new_from_leaf_secret(cipher_suite: CipherSuite, leaf_secret: LeafSecret) -> Self {
-        Self::new_from_path_secret(cipher_suite, leaf_secret.clone())
+    pub fn new_from_leaf_secret(
+        cipher_suite: CipherSuite,
+        leaf_secret: LeafSecret,
+    ) -> Result<(Self, Vec<u8>), NodeSecretGeneratorError> {
+        let mut res = Self::new_from_path_secret(cipher_suite, leaf_secret.to_vec());
+        // Burn a secret to set the proper path secret for the next node
+        // TODO: Rework this struct based on how we currently use it to be cleaner
+        let secrets = res.next_secret()?;
+
+        Ok((res, secrets.path_secret))
     }
 
     pub fn next_secret(&mut self) -> Result<NodeSecrets, NodeSecretGeneratorError> {
         let path_secret = self.next_path_secret.clone();
         let node_secret = self.kdf.derive_secret(&path_secret, "node")?;
-        //TODO: This should be somehow updated to avoid dealing with bytes for secret key here
         let (secret_key, public_key) = self.kem.derive(&node_secret)?;
 
         self.next_path_secret = self.kdf.derive_secret(&path_secret, "path")?;

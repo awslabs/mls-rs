@@ -1,14 +1,14 @@
-use crate::key_package::KeyPackage;
+use crate::key_package::ValidatedKeyPackage;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::{Leaf, Node, NodeIndex, NodeTypeResolver, Parent};
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-#[derive(TlsDeserialize, TlsSerialize, TlsSize)]
-struct LeafNodeHashInput {
+#[derive(TlsSerialize, TlsSize)]
+struct LeafNodeHashInput<'a> {
     node_index: u32,
-    key_package: Option<KeyPackage>,
+    key_package: Option<&'a ValidatedKeyPackage>,
 }
 
 #[derive(TlsDeserialize, TlsSerialize, TlsSize)]
@@ -50,7 +50,7 @@ impl TreeHashable for (NodeIndex, Option<&Leaf>) {
     fn get_hash(&self, tree: &TreeKemPublic) -> Result<Vec<u8>, RatchetTreeError> {
         let input = LeafNodeHashInput {
             node_index: self.0 as u32,
-            key_package: self.1.map(|l| l.key_package.clone()),
+            key_package: self.1.map(|l| &l.key_package),
         };
 
         Ok(tree

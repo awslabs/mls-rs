@@ -1,7 +1,7 @@
 use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client::Client;
 use aws_mls::client_config::{ClientConfig, DefaultClientConfig};
-use aws_mls::extension::LifetimeExt;
+use aws_mls::extension::{ExtensionList, LifetimeExt};
 use aws_mls::key_package::{KeyPackageGeneration, KeyPackageRef};
 use aws_mls::session::{GroupError, ProcessedMessage, Session, SessionError};
 use ferriscrypt::rand::SecureRng;
@@ -49,12 +49,13 @@ where
     let bob = Client::generate_basic(cipher_suite, b"bob".to_vec(), config).unwrap();
 
     let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
-
-    let alice_key = alice.gen_key_package(&key_lifetime).unwrap();
-    let bob_key = bob.gen_key_package(&key_lifetime).unwrap();
+    let bob_key = bob.gen_key_package(key_lifetime.clone()).unwrap();
 
     // Alice creates a session and adds bob
-    let mut alice_session = alice.create_session(alice_key, b"group".to_vec()).unwrap();
+    let mut alice_session = alice
+        .create_session(key_lifetime, b"group".to_vec(), ExtensionList::new())
+        .unwrap();
+
     let add_bob = alice_session
         .add_proposal(&bob_key.key_package.to_vec().unwrap())
         .unwrap();
@@ -95,9 +96,8 @@ fn get_test_sessions<C: ClientConfig + Clone>(
     let creator = generate_client(cipher_suite, b"alice".to_vec(), config.clone());
     let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
 
-    let creator_key = creator.gen_key_package(&key_lifetime).unwrap();
     let mut creator_session = creator
-        .create_session(creator_key, b"group".to_vec())
+        .create_session(key_lifetime.clone(), b"group".to_vec(), Default::default())
         .unwrap();
 
     // Generate random clients that will be members of the group
@@ -108,7 +108,7 @@ fn get_test_sessions<C: ClientConfig + Clone>(
 
     let receiver_keys = receiver_clients
         .iter()
-        .map(|client| client.gen_key_package(&key_lifetime).unwrap())
+        .map(|client| client.gen_key_package(key_lifetime.clone()).unwrap())
         .collect::<Vec<KeyPackageGeneration>>();
 
     // Add the generated clients to the group the creator made

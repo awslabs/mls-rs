@@ -1,8 +1,12 @@
 use crate::client_config::{ClientConfig, DefaultClientConfig};
+use crate::credential::Credential;
+use crate::extension::ExtensionList;
 use crate::group::framing::{MLSMessage, WireFormat};
 use crate::group::{proposal::Proposal, CommitGeneration, Group, StateUpdate};
 use crate::group::{OutboundPlaintext, Welcome};
-use crate::key_package::{KeyPackage, KeyPackageGeneration, KeyPackageRef};
+use crate::key_package::{
+    KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
+};
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use ferriscrypt::asym::ec_key::SecretKey;
 use ferriscrypt::hpke::kem::HpkePublicKey;
@@ -20,6 +24,8 @@ pub enum SessionError {
     Serialization(#[from] tls_codec::Error),
     #[error(transparent)]
     RatchetTreeError(#[from] RatchetTreeError),
+    #[error(transparent)]
+    KeyPackageGenerationError(#[from] KeyPackageGenerationError),
     #[error("commit already pending, please wait")]
     ExistingPendingCommit,
     #[error("pending commit not found")]
@@ -44,6 +50,8 @@ pub struct CommitResult {
 #[derive(Clone, Debug)]
 pub struct Session<C = DefaultClientConfig> {
     signing_key: SecretKey,
+    credential: Credential,
+    extensions: ExtensionList,
     protocol: Group,
     pending_commit: Option<PendingCommit>,
     config: C,
@@ -61,21 +69,28 @@ impl<C: ClientConfig> Session<C> {
     pub(crate) fn create(
         group_id: Vec<u8>,
         signing_key: SecretKey,
-        key_package: KeyPackageGeneration,
+        key_package_generator: KeyPackageGenerator,
+        group_context_extensions: ExtensionList,
         config: C,
     ) -> Result<Self, SessionError> {
-        let group = Group::new(group_id, key_package)?;
+        let credential = key_package_generator.credential.clone();
+        let extensions = key_package_generator.extensions.clone();
+
+        let group = Group::new(group_id, key_package_generator, group_context_extensions)?;
+
         Ok(Session {
             signing_key,
             protocol: group,
             pending_commit: None,
             config,
+            credential,
+            extensions,
         })
     }
 
     pub(crate) fn join(
         signing_key: SecretKey,
-        key_package: KeyPackageGeneration,
+        key_package_generation: KeyPackageGeneration,
         ratchet_tree_data: Option<&[u8]>,
         welcome_message_data: &[u8],
         config: C,
@@ -86,13 +101,19 @@ impl<C: ClientConfig> Session<C> {
             .map(|rt| Self::import_ratchet_tree(&welcome_message, rt))
             .transpose()?;
 
-        let group = Group::from_welcome_message(welcome_message, ratchet_tree, key_package)?;
+        let credential = key_package_generation.key_package.credential.clone();
+        let extensions = key_package_generation.key_package.extensions.clone();
+
+        let group =
+            Group::from_welcome_message(welcome_message, ratchet_tree, key_package_generation)?;
 
         Ok(Session {
             signing_key,
             protocol: group,
             pending_commit: None,
             config,
+            credential,
+            extensions,
         })
     }
 
@@ -120,14 +141,21 @@ impl<C: ClientConfig> Session<C> {
     pub fn add_proposal(&mut self, key_package_data: &[u8]) -> Result<Proposal, SessionError> {
         let key_package = Deserialize::tls_deserialize(&mut &*key_package_data)?;
         self.protocol
-            .add_member_proposal(&key_package)
+            .add_member_proposal(key_package)
             .map_err(Into::into)
     }
 
     #[inline(always)]
     pub fn update_proposal(&mut self) -> Result<Proposal, SessionError> {
+        let generator = KeyPackageGenerator {
+            cipher_suite: self.protocol.cipher_suite,
+            signing_key: &self.signing_key,
+            credential: &self.credential,
+            extensions: &self.extensions,
+        };
+
         self.protocol
-            .update_proposal(&self.signing_key)
+            .update_proposal(&generator)
             .map_err(Into::into)
     }
 
@@ -144,13 +172,13 @@ impl<C: ClientConfig> Session<C> {
     #[inline(always)]
     pub fn propose_add(&mut self, key_package_data: &[u8]) -> Result<Vec<u8>, SessionError> {
         let key_package = KeyPackage::tls_deserialize(&mut &*key_package_data)?;
-        self.send_proposal(self.protocol.add_member_proposal(&key_package)?)
+        self.send_proposal(self.protocol.add_member_proposal(key_package)?)
     }
 
     #[inline(always)]
     pub fn propose_update(&mut self) -> Result<Vec<u8>, SessionError> {
-        let update = self.protocol.update_proposal(&self.signing_key)?;
-        self.send_proposal(update)
+        let proposal = self.update_proposal()?;
+        self.send_proposal(proposal)
     }
 
     #[inline(always)]
@@ -176,14 +204,23 @@ impl<C: ClientConfig> Session<C> {
         self.serialize_control(packet)
     }
 
+    // TODO: You should be able to skip sending a path update if this is an add only commit
     pub fn commit(&mut self, proposals: Vec<Proposal>) -> Result<CommitResult, SessionError> {
         if self.pending_commit.is_some() {
             return Err(SessionError::ExistingPendingCommit);
         }
+
+        let key_package_generator = KeyPackageGenerator {
+            cipher_suite: self.protocol.cipher_suite,
+            credential: &self.credential,
+            extensions: &self.extensions,
+            signing_key: &self.signing_key,
+        };
+
         let (commit_data, welcome) = self.protocol.commit_proposals(
             &proposals,
+            &key_package_generator,
             true,
-            &self.signing_key,
             wire_format(&self.config),
             self.config.ratchet_tree_extension(),
         )?;

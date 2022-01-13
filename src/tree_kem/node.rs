@@ -1,4 +1,4 @@
-use crate::key_package::KeyPackage;
+use crate::key_package::ValidatedKeyPackage;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::parent_hash::ParentHash;
@@ -11,7 +11,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct Leaf {
-    pub key_package: KeyPackage,
+    pub key_package: ValidatedKeyPackage,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -139,14 +139,14 @@ impl From<Leaf> for Node {
     }
 }
 
-impl From<KeyPackage> for Leaf {
-    fn from(key_package: KeyPackage) -> Self {
+impl From<ValidatedKeyPackage> for Leaf {
+    fn from(key_package: ValidatedKeyPackage) -> Self {
         Leaf { key_package }
     }
 }
 
-impl From<KeyPackage> for Node {
-    fn from(key_package: KeyPackage) -> Self {
+impl From<ValidatedKeyPackage> for Node {
+    fn from(key_package: ValidatedKeyPackage) -> Self {
         Node::Leaf(key_package.into())
     }
 }
@@ -455,16 +455,16 @@ pub mod test {
     use crate::client_config::DefaultClientConfig;
     use crate::extension::LifetimeExt;
 
-    fn get_test_key_package(id: Vec<u8>) -> KeyPackage {
+    fn get_test_key_package(id: Vec<u8>) -> ValidatedKeyPackage {
         let client = Client::generate_basic(
-            CipherSuite::P256Aes128V1,
+            CipherSuite::Curve25519Aes128V1,
             id,
             DefaultClientConfig::default(),
         )
         .unwrap();
 
         client
-            .gen_key_package(&LifetimeExt::years(1, SystemTime::now()).unwrap())
+            .gen_key_package(LifetimeExt::years(1, SystemTime::now()).unwrap())
             .unwrap()
             .key_package
     }

@@ -1,37 +1,34 @@
 use crate::cipher_suite::CipherSuite;
 use crate::cipher_suite::ProtocolVersion;
 use crate::credential::{Credential, CredentialError};
+use crate::extension::CapabilitiesExt;
 use crate::extension::LifetimeExt;
-use crate::extension::{Extension, ExtensionError, ExtensionList};
+use crate::extension::RequiredCapabilitiesExt;
+use crate::extension::{Extension, ExtensionError, ExtensionList, ExtensionType};
+use crate::group::proposal::ProposalType;
 use crate::hash_reference::HashReference;
-use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError, SecretKey};
+use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::kdf::KdfError;
-use ferriscrypt::{Signer, Verifier};
+use ferriscrypt::Verifier;
 use std::ops::Deref;
 use std::time::SystemTime;
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
+mod validator;
+pub use validator::*;
+
+mod generator;
+pub use generator::*;
+
 #[derive(Error, Debug)]
 pub enum KeyPackageError {
     #[error(transparent)]
-    EcKeyError(#[from] EcKeyError),
-    #[error(transparent)]
-    ExtensionError(#[from] ExtensionError),
-    #[error(transparent)]
     SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
-    CredentialError(#[from] CredentialError),
-    #[error(transparent)]
     KdfError(#[from] KdfError),
-    #[error("invalid signature")]
-    InvalidSignature,
-    #[error("key lifetime not found")]
-    MissingKeyLifetime,
-    #[error("not within lifetime")]
-    InvalidKeyLifetime,
 }
 
 #[non_exhaustive]
@@ -45,18 +42,6 @@ pub struct KeyPackage {
     pub extensions: ExtensionList,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub signature: Vec<u8>,
-}
-
-impl KeyPackage {
-    pub fn to_vec(&self) -> Result<Vec<u8>, KeyPackageError> {
-        Ok(self.tls_serialize_detached()?)
-    }
-    pub fn to_reference(&self) -> Result<KeyPackageRef, KeyPackageError> {
-        Ok(KeyPackageRef(HashReference::from_value(
-            &self.tls_serialize_detached()?,
-            self.cipher_suite,
-        )?))
-    }
 }
 
 #[derive(
@@ -90,42 +75,6 @@ impl PartialEq for KeyPackage {
     }
 }
 
-pub(crate) struct KeyPackageGenerator<'a> {
-    pub(crate) cipher_suite: CipherSuite,
-    pub(crate) credential: &'a Credential,
-    pub(crate) extensions: ExtensionList,
-    pub(crate) signing_key: &'a SecretKey,
-}
-
-#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct KeyPackageGeneration {
-    pub key_package: KeyPackage,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub secret_key: HpkeSecretKey,
-}
-
-impl<'a> KeyPackageGenerator<'a> {
-    pub fn generate(&self) -> Result<KeyPackageGeneration, KeyPackageError> {
-        let (public, secret) = generate_keypair(self.cipher_suite.kem_type().curve())?;
-
-        let mut package = KeyPackage {
-            version: self.cipher_suite.protocol_version(),
-            cipher_suite: self.cipher_suite,
-            hpke_init_key: public.try_into()?,
-            credential: self.credential.clone(),
-            extensions: self.extensions.clone(),
-            signature: vec![],
-        };
-
-        package.sign(self.signing_key)?;
-
-        Ok(KeyPackageGeneration {
-            key_package: package,
-            secret_key: secret.try_into()?,
-        })
-    }
-}
-
 impl KeyPackage {
     fn to_signable_bytes(&self) -> Result<Vec<u8>, KeyPackageError> {
         #[derive(TlsSerialize, TlsSize)]
@@ -146,41 +95,24 @@ impl KeyPackage {
             credential: &self.credential,
             extensions: &self.extensions,
         };
-        Ok(key_package_data.tls_serialize_detached()?)
-    }
 
-    pub(crate) fn sign(&mut self, key: &SecretKey) -> Result<(), KeyPackageError> {
-        self.signature = key.sign(&self.to_signable_bytes()?)?;
-        Ok(())
-    }
-
-    pub fn has_valid_signature(&self) -> Result<bool, KeyPackageError> {
-        self.credential
-            .verify(&self.signature, &self.to_signable_bytes()?)
+        key_package_data
+            .tls_serialize_detached()
             .map_err(Into::into)
     }
 
-    pub fn has_valid_lifetime(&self, time: SystemTime) -> Result<bool, KeyPackageError> {
-        self.extensions
-            .get_extension::<LifetimeExt>()?
-            .ok_or(KeyPackageError::MissingKeyLifetime)
-            .and_then(|l| l.within_lifetime(time).map_err(KeyPackageError::from))
+    pub fn to_vec(&self) -> Result<Vec<u8>, KeyPackageError> {
+        Ok(self.tls_serialize_detached()?)
     }
 
-    pub fn validate(&self, time: SystemTime) -> Result<(), KeyPackageError> {
-        if !self.has_valid_signature()? {
-            return Err(KeyPackageError::InvalidSignature);
-        }
-
-        if !self.has_valid_lifetime(time)? {
-            return Err(KeyPackageError::InvalidKeyLifetime);
-        }
-
-        Ok(())
+    pub fn to_reference(&self) -> Result<KeyPackageRef, KeyPackageError> {
+        Ok(KeyPackageRef(HashReference::from_value(
+            &self.tls_serialize_detached()?,
+            self.cipher_suite,
+        )?))
     }
 }
 
-//TODO: Tests for validate + has valid signature + key generation + lifetimes
 #[cfg(test)]
 mod test {
     use super::*;
@@ -197,7 +129,7 @@ mod test {
         }
 
         let cases: Vec<TestCase> =
-            serde_json::from_slice(include_bytes!("../test_data/key_package_ref.json")).unwrap();
+            serde_json::from_slice(include_bytes!("../../test_data/key_package_ref.json")).unwrap();
 
         for one_case in cases {
             let key_package = KeyPackage::tls_deserialize(&mut one_case.input.as_slice()).unwrap();

@@ -1,4 +1,5 @@
 use crate::cipher_suite::{CipherSuite, ProtocolVersion};
+use crate::group::proposal::ProposalType;
 use crate::tree_kem::node::NodeVec;
 use crate::tree_kem::parent_hash::ParentHash;
 use std::ops::{Deref, DerefMut};
@@ -10,82 +11,86 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 #[derive(Error, Debug)]
 pub enum ExtensionError {
     #[error("Unexpected extension type: {0}, expected: {1}")]
-    UnexpectedExtensionType(u16, u16),
+    UnexpectedExtensionType(ExtensionType, ExtensionType),
     #[error(transparent)]
     TlsCodecError(#[from] tls_codec::Error),
     #[error(transparent)]
     SystemTimeError(#[from] SystemTimeError),
 }
 
-const CAPABILITIES_EXT_ID: u16 = 1u16;
-const LIFETIME_EXT_ID: u16 = 2u16;
-const KEY_ID_EXT_ID: u16 = 3u16;
-const PARENT_HASH_EXT_ID: u16 = 4u16;
-const RATCHET_TREE_EXT_ID: u16 = 5u16;
+pub type ExtensionType = u16;
+
+const CAPABILITIES_EXT_ID: ExtensionType = 1u16;
+const LIFETIME_EXT_ID: ExtensionType = 2u16;
+const KEY_ID_EXT_ID: ExtensionType = 3u16;
+const PARENT_HASH_EXT_ID: ExtensionType = 4u16;
+const RATCHET_TREE_EXT_ID: ExtensionType = 5u16;
+const REQUIRED_CAPABILITIES_EXT_ID: ExtensionType = 6u16;
 
 pub trait MlsExtension: Sized + Serialize + Deserialize {
-    const IDENTIFIER: u16;
+    const IDENTIFIER: ExtensionType;
 
     fn to_extension(&self) -> Result<Extension, ExtensionError> {
         Ok(Extension {
-            extension_id: Self::IDENTIFIER,
-            data: self.tls_serialize_detached()?,
+            extension_type: Self::IDENTIFIER,
+            extension_data: self.tls_serialize_detached()?,
         })
     }
 
     fn from_extension(extension: Extension) -> Result<Self, ExtensionError> {
-        if extension.extension_id != Self::IDENTIFIER {
+        if extension.extension_type != Self::IDENTIFIER {
             Err(ExtensionError::UnexpectedExtensionType(
-                extension.extension_id,
+                extension.extension_type,
                 Self::IDENTIFIER,
             ))
         } else {
-            Self::tls_deserialize(&mut &*extension.data).map_err(|e| e.into())
+            Self::tls_deserialize(&mut &*extension.extension_data).map_err(|e| e.into())
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct KeyIdExt {
+pub struct ExternalKeyIdExt {
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub identifier: Vec<u8>,
 }
 
-impl MlsExtension for KeyIdExt {
-    const IDENTIFIER: u16 = KEY_ID_EXT_ID;
+impl MlsExtension for ExternalKeyIdExt {
+    const IDENTIFIER: ExtensionType = KEY_ID_EXT_ID;
 }
 
 #[derive(Clone, PartialEq, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct CapabilitiesExt {
-    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
+    #[tls_codec(with = "crate::tls::DefVec::<u8>")]
     pub protocol_versions: Vec<ProtocolVersion>,
-    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
+    #[tls_codec(with = "crate::tls::DefVec::<u8>")]
     pub cipher_suites: Vec<CipherSuite>,
-    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
-    pub extensions: Vec<u16>,
+    #[tls_codec(with = "crate::tls::DefVec::<u8>")]
+    pub extensions: Vec<ExtensionType>,
+    #[tls_codec(with = "crate::tls::DefVec::<u8>")]
+    pub proposals: Vec<ProposalType>,
 }
 
 impl Default for CapabilitiesExt {
     fn default() -> Self {
         Self {
             protocol_versions: vec![ProtocolVersion::Mls10],
-            cipher_suites: vec![
-                CipherSuite::P256Aes128V1,
-                CipherSuite::Curve25519Aes128V1,
-                CipherSuite::Curve25519ChaCha20V1,
-                CipherSuite::P521Aes256V1,
-            ],
+            cipher_suites: CipherSuite::all().collect(),
             extensions: vec![
                 CapabilitiesExt::IDENTIFIER,
-                KeyIdExt::IDENTIFIER,
                 LifetimeExt::IDENTIFIER,
+                ExternalKeyIdExt::IDENTIFIER,
+                ParentHashExt::IDENTIFIER,
+                RatchetTreeExt::IDENTIFIER,
+                RequiredCapabilitiesExt::IDENTIFIER,
             ],
+            proposals: Default::default(), // TODO Support custom proposals
         }
     }
 }
 
 impl MlsExtension for CapabilitiesExt {
-    const IDENTIFIER: u16 = CAPABILITIES_EXT_ID;
+    const IDENTIFIER: ExtensionType = CAPABILITIES_EXT_ID;
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -119,7 +124,7 @@ impl LifetimeExt {
 }
 
 impl MlsExtension for LifetimeExt {
-    const IDENTIFIER: u16 = LIFETIME_EXT_ID;
+    const IDENTIFIER: ExtensionType = LIFETIME_EXT_ID;
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -134,7 +139,7 @@ impl From<ParentHash> for ParentHashExt {
 }
 
 impl MlsExtension for ParentHashExt {
-    const IDENTIFIER: u16 = PARENT_HASH_EXT_ID;
+    const IDENTIFIER: ExtensionType = PARENT_HASH_EXT_ID;
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -143,14 +148,41 @@ pub struct RatchetTreeExt {
 }
 
 impl MlsExtension for RatchetTreeExt {
-    const IDENTIFIER: u16 = RATCHET_TREE_EXT_ID;
+    const IDENTIFIER: ExtensionType = RATCHET_TREE_EXT_ID;
+}
+
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct RequiredCapabilitiesExt {
+    #[tls_codec(with = "crate::tls::DefVec::<u8>")]
+    pub extensions: Vec<ExtensionType>,
+    #[tls_codec(with = "crate::tls::DefVec::<u8>")]
+    pub proposals: Vec<ProposalType>,
+}
+
+impl Default for RequiredCapabilitiesExt {
+    fn default() -> Self {
+        Self {
+            extensions: vec![
+                CapabilitiesExt::IDENTIFIER,
+                LifetimeExt::IDENTIFIER,
+                ExternalKeyIdExt::IDENTIFIER,
+                ParentHashExt::IDENTIFIER,
+                RatchetTreeExt::IDENTIFIER,
+            ],
+            proposals: Default::default(),
+        }
+    }
+}
+
+impl MlsExtension for RequiredCapabilitiesExt {
+    const IDENTIFIER: ExtensionType = REQUIRED_CAPABILITIES_EXT_ID;
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Extension {
-    pub extension_id: u16,
+    pub extension_type: ExtensionType,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub data: Vec<u8>,
+    pub extension_data: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Default)]
@@ -182,17 +214,17 @@ impl ExtensionList {
     }
 
     pub(crate) fn get_extension<T: MlsExtension>(&self) -> Result<Option<T>, ExtensionError> {
-        let ext = self.iter().find(|v| v.extension_id == T::IDENTIFIER);
+        let ext = self.iter().find(|v| v.extension_type == T::IDENTIFIER);
 
         if let Some(ext) = ext {
-            Ok(Some(T::tls_deserialize(&mut &*ext.data)?))
+            Ok(Some(T::tls_deserialize(&mut &*ext.extension_data)?))
         } else {
             Ok(None)
         }
     }
 
     pub(crate) fn set_extension<T: MlsExtension>(&mut self, ext: T) -> Result<(), ExtensionError> {
-        match self.iter_mut().find(|v| v.extension_id == T::IDENTIFIER) {
+        match self.iter_mut().find(|v| v.extension_type == T::IDENTIFIER) {
             None => {
                 self.push(ext.to_extension()?);
                 Ok(())
@@ -216,14 +248,14 @@ mod tests {
     #[test]
     fn test_key_id_extension() {
         let test_id = vec![0u8; 32];
-        let test_extension = KeyIdExt {
+        let test_extension = ExternalKeyIdExt {
             identifier: test_id.clone(),
         };
 
         let as_extension = test_extension.to_extension().unwrap();
-        assert_eq!(as_extension.extension_id, KeyIdExt::IDENTIFIER);
+        assert_eq!(as_extension.extension_type, ExternalKeyIdExt::IDENTIFIER);
 
-        let restored = KeyIdExt::from_extension(as_extension).unwrap();
+        let restored = ExternalKeyIdExt::from_extension(as_extension).unwrap();
         assert_eq!(restored.identifier, test_id);
     }
 
@@ -235,17 +267,18 @@ mod tests {
         let test_extensions = vec![
             ParentHashExt::IDENTIFIER,
             LifetimeExt::IDENTIFIER,
-            KeyIdExt::IDENTIFIER,
+            ExternalKeyIdExt::IDENTIFIER,
         ];
 
         let test_extension = CapabilitiesExt {
             protocol_versions: test_protocol_versions.clone(),
             cipher_suites: test_ciphersuites.clone(),
             extensions: test_extensions.clone(),
+            proposals: vec![],
         };
 
         let as_extension = test_extension.to_extension().expect("serialization error");
-        assert_eq!(as_extension.extension_id, CapabilitiesExt::IDENTIFIER);
+        assert_eq!(as_extension.extension_type, CapabilitiesExt::IDENTIFIER);
 
         let restored =
             CapabilitiesExt::from_extension(as_extension).expect("deserialization error");
@@ -263,7 +296,7 @@ mod tests {
         assert_eq!(lifetime.not_after, 2);
 
         let as_extension = lifetime.to_extension().expect("to extension error");
-        assert_eq!(as_extension.extension_id, LifetimeExt::IDENTIFIER);
+        assert_eq!(as_extension.extension_type, LifetimeExt::IDENTIFIER);
 
         let restored = LifetimeExt::from_extension(as_extension).expect("from extension error");
         assert_eq!(lifetime.not_after, restored.not_after);
@@ -277,9 +310,26 @@ mod tests {
         };
 
         let as_extension = ext.to_extension().unwrap();
-        assert_eq!(as_extension.extension_id, RatchetTreeExt::IDENTIFIER);
+        assert_eq!(as_extension.extension_type, RatchetTreeExt::IDENTIFIER);
 
         let restored = RatchetTreeExt::from_extension(as_extension).unwrap();
+        assert_eq!(ext, restored)
+    }
+
+    #[test]
+    fn test_required_capabilities() {
+        let ext = RequiredCapabilitiesExt {
+            extensions: vec![0u16, 1u16],
+            proposals: vec![42u16, 43u16],
+        };
+
+        let as_extension = ext.to_extension().unwrap();
+        assert_eq!(
+            as_extension.extension_type,
+            RequiredCapabilitiesExt::IDENTIFIER
+        );
+
+        let restored = RequiredCapabilitiesExt::from_extension(as_extension).unwrap();
         assert_eq!(ext, restored)
     }
 
@@ -287,8 +337,8 @@ mod tests {
     fn test_bad_deserialize_data() {
         let bad_data = vec![255u8; 32];
         let test_extension = Extension {
-            extension_id: CAPABILITIES_EXT_ID,
-            data: bad_data,
+            extension_type: CAPABILITIES_EXT_ID,
+            extension_data: bad_data,
         };
         let capabilities: Result<CapabilitiesExt, ExtensionError> =
             CapabilitiesExt::from_extension(test_extension);
@@ -298,8 +348,8 @@ mod tests {
     #[test]
     fn test_bad_deserialize_type() {
         let test_extension = Extension {
-            extension_id: KEY_ID_EXT_ID,
-            data: vec![0u8; 32],
+            extension_type: KEY_ID_EXT_ID,
+            extension_data: vec![0u8; 32],
         };
         assert!(CapabilitiesExt::from_extension(test_extension).is_err());
     }
@@ -309,7 +359,7 @@ mod tests {
         let mut list = ExtensionList::new();
 
         let lifetime = LifetimeExt::seconds(42, SystemTime::now()).unwrap();
-        let key_id = KeyIdExt {
+        let key_id = ExternalKeyIdExt {
             identifier: SecureRng::gen(32).unwrap(),
         };
 
@@ -320,7 +370,7 @@ mod tests {
         assert_eq!(list.len(), 2);
         assert_eq!(list.get_extension::<LifetimeExt>().unwrap(), Some(lifetime));
         assert_eq!(
-            list.get_extension::<KeyIdExt>().unwrap(),
+            list.get_extension::<ExternalKeyIdExt>().unwrap(),
             Some(key_id.clone())
         );
         assert_eq!(list.get_extension::<CapabilitiesExt>().unwrap(), None);
@@ -331,7 +381,10 @@ mod tests {
         list.set_extension(lifetime.clone()).unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list.get_extension::<LifetimeExt>().unwrap(), Some(lifetime));
-        assert_eq!(list.get_extension::<KeyIdExt>().unwrap(), Some(key_id));
+        assert_eq!(
+            list.get_extension::<ExternalKeyIdExt>().unwrap(),
+            Some(key_id)
+        );
         assert_eq!(list.get_extension::<CapabilitiesExt>().unwrap(), None);
     }
 }

@@ -36,6 +36,8 @@ impl Deref for ProposalRef {
     }
 }
 
+pub type ProposalType = u16;
+
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u16)]
 pub enum Proposal {
@@ -124,35 +126,31 @@ pub struct PendingProposal {
 
 #[cfg(test)]
 mod test {
+    use std::time::SystemTime;
+
     use super::*;
-    use crate::{hash_reference::HashReference, tree_kem::test::get_test_key_package};
-    use ferriscrypt::{
-        asym::ec_key::{generate_keypair, Curve},
-        rand::SecureRng,
+    use crate::{
+        client::Client, client_config::DefaultClientConfig, extension::LifetimeExt,
+        hash_reference::HashReference, tree_kem::test::get_test_key_package,
     };
+    use ferriscrypt::rand::SecureRng;
     use tls_codec::Deserialize;
 
-    use crate::{
-        cipher_suite::CipherSuite,
-        credential::{BasicCredential, CredentialConvertible},
-        extension::ExtensionList,
-        key_package::{KeyPackage, KeyPackageGenerator},
-    };
+    use crate::{cipher_suite::CipherSuite, key_package::KeyPackage};
 
     fn test_key_package(cipher_suite: CipherSuite) -> KeyPackage {
-        let (public, secret) =
-            generate_keypair(Curve::from(cipher_suite.signature_scheme())).unwrap();
-
-        let key_package_generator = KeyPackageGenerator {
+        let client = Client::generate_basic(
             cipher_suite,
-            credential: &BasicCredential::new(b"foo".to_vec(), public)
-                .unwrap()
-                .into_credential(),
-            extensions: ExtensionList::new(),
-            signing_key: &secret,
-        };
+            b"foo".to_vec(),
+            DefaultClientConfig::default(),
+        )
+        .unwrap();
 
-        key_package_generator.generate().unwrap().key_package
+        client
+            .gen_key_package(LifetimeExt::days(1, SystemTime::now()).unwrap())
+            .unwrap()
+            .key_package
+            .into()
     }
 
     #[test]
@@ -219,12 +217,14 @@ mod test {
         for cipher_suite in CipherSuite::all() {
             let add = Proposal::from(AddProposal {
                 key_package: get_test_key_package(cipher_suite, SecureRng::gen(16).unwrap())
-                    .key_package,
+                    .key_package
+                    .into(),
             });
 
             let update = Proposal::Update(UpdateProposal {
                 key_package: get_test_key_package(cipher_suite, SecureRng::gen(16).unwrap())
-                    .key_package,
+                    .key_package
+                    .into(),
             });
 
             let mut key_package_ref = [0u8; 16];

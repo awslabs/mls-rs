@@ -16,6 +16,7 @@ pub enum LeafSecretError {
     KemError(#[from] HpkeError),
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct LeafSecret {
     cipher_suite: CipherSuite,
     pub data: Vec<u8>,

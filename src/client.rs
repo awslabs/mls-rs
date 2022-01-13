@@ -5,7 +5,9 @@ use crate::extension::{CapabilitiesExt, ExtensionError, ExtensionList, LifetimeE
 use crate::group::framing::{Content, MLSMessage, MLSPlaintext, Sender, WireFormat};
 use crate::group::message_signature::{MessageSignature, MessageSignatureError};
 use crate::group::proposal::{AddProposal, Proposal, RemoveProposal};
-use crate::key_package::{KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerator};
+use crate::key_package::{
+    KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator,
+};
 use crate::session::{Session, SessionError};
 use ferriscrypt::asym::ec_key::{Curve, EcKeyError, SecretKey};
 use thiserror::Error;
@@ -18,7 +20,7 @@ pub enum ClientError {
     #[error(transparent)]
     EcKeyError(#[from] EcKeyError),
     #[error(transparent)]
-    KeyPackageError(#[from] KeyPackageError),
+    KeyPackageGenerationError(#[from] KeyPackageGenerationError),
     #[error(transparent)]
     SessionError(#[from] SessionError),
     #[error(transparent)]
@@ -84,35 +86,51 @@ impl<C: ClientConfig + Clone> Client<C> {
 
     pub fn gen_key_package(
         &self,
-        lifetime: &LifetimeExt,
+        lifetime: LifetimeExt,
     ) -> Result<KeyPackageGeneration, ClientError> {
         let key_package_generator = KeyPackageGenerator {
             cipher_suite: self.cipher_suite,
-            credential: &self.credential,
-            extensions: ExtensionList::from(vec![
-                self.capabilities.to_extension()?,
-                lifetime.to_extension()?,
-            ]),
             signing_key: &self.signature_key,
+            credential: &self.credential,
+            extensions: &self.get_extensions(lifetime)?,
         };
 
-        key_package_generator.generate().map_err(Into::into)
+        key_package_generator.generate(None).map_err(Into::into)
+    }
+
+    fn get_extensions(&self, lifetime: LifetimeExt) -> Result<ExtensionList, ClientError> {
+        // TODO: There should be a way to configure additional extensions in the client that get
+        // added to each generated key package
+        let extensions = ExtensionList::from(vec![
+            self.capabilities.to_extension()?,
+            lifetime.to_extension()?,
+        ]);
+
+        Ok(extensions)
     }
 
     pub fn create_session(
         &self,
-        key_package: KeyPackageGeneration,
+        lifetime: LifetimeExt,
         group_id: Vec<u8>,
+        group_context_extensions: ExtensionList,
     ) -> Result<Session<C>, ClientError> {
+        let key_package_generator = KeyPackageGenerator {
+            cipher_suite: self.cipher_suite,
+            credential: &self.credential,
+            extensions: &self.get_extensions(lifetime)?,
+            signing_key: &self.signature_key,
+        };
+
         Session::create(
             group_id,
             self.signature_key.clone(),
-            key_package,
+            key_package_generator,
+            group_context_extensions,
             self.config.clone(),
         )
         .map_err(Into::into)
     }
-
     pub fn join_session(
         &self,
         key_package: KeyPackageGeneration,
@@ -275,7 +293,7 @@ mod test {
         fn build_with_key_pkg(self) -> (Client<C>, KeyPackageGeneration) {
             let client = self.build();
             let gen = client
-                .gen_key_package(&LifetimeExt::years(1, SystemTime::now()).unwrap())
+                .gen_key_package(LifetimeExt::years(1, SystemTime::now()).unwrap())
                 .unwrap();
             (client, gen)
         }
@@ -360,7 +378,7 @@ mod test {
             let cred_identity = SecureRng::gen(42).unwrap();
             let client = get_test_client(cred_identity, cipher_suite);
             let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
-            let package_gen = client.gen_key_package(&key_lifetime).unwrap();
+            let package_gen = client.gen_key_package(key_lifetime.clone()).unwrap();
 
             assert_eq!(package_gen.key_package.cipher_suite, cipher_suite);
 
@@ -396,25 +414,30 @@ mod test {
 
     #[test]
     fn new_member_add_proposal_adds_to_group() {
-        let (alice, alice_key_gen) = TestClientBuilder::named("alice").build_with_key_pkg();
+        let (alice, _) = TestClientBuilder::named("alice").build_with_key_pkg();
+
         let mut session = alice
-            .create_session(alice_key_gen, TEST_GROUP.to_vec())
+            .create_session(
+                LifetimeExt::years(1, SystemTime::now()).unwrap(),
+                TEST_GROUP.to_vec(),
+                ExtensionList::new(),
+            )
             .unwrap();
         let (bob, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
         let proposal = bob
             .propose_add_from_new_member(
                 TEST_GROUP.to_vec(),
-                bob_key_gen.key_package.clone(),
+                bob_key_gen.key_package.clone().into(),
                 session.group_stats().unwrap().epoch,
             )
             .unwrap();
         let message = session.process_incoming_bytes(&proposal).unwrap();
         assert!(matches!(
             message,
-            ProcessedMessage::Proposal(Proposal::Add(AddProposal { key_package })) if key_package == bob_key_gen.key_package
+            ProcessedMessage::Proposal(Proposal::Add(AddProposal { key_package })) if key_package == bob_key_gen.key_package.clone().into()
         ));
         let expected_proposal = AddProposal {
-            key_package: bob_key_gen.key_package.clone(),
+            key_package: bob_key_gen.key_package.clone().into(),
         };
         let proposal = match session.process_incoming_bytes(&proposal).unwrap() {
             ProcessedMessage::Proposal(Proposal::Add(p)) if p == expected_proposal => {
@@ -446,14 +469,18 @@ mod test {
                         .with_external_key_id(TED_EXTERNAL_KEY_ID.to_vec()),
                 )
                 .build();
-            let (alice, alice_key_gen) = TestClientBuilder::named("alice")
+            let (alice, _) = TestClientBuilder::named("alice")
                 .with_config(DefaultClientConfig::default().with_external_signing_key(
                     TED_EXTERNAL_KEY_ID.to_vec(),
                     ted_signing_key.to_public().unwrap(),
                 ))
                 .build_with_key_pkg();
             let session = alice
-                .create_session(alice_key_gen, TEST_GROUP.to_vec())
+                .create_session(
+                    LifetimeExt::years(1, SystemTime::now()).unwrap(),
+                    TEST_GROUP.to_vec(),
+                    ExtensionList::new(),
+                )
                 .unwrap();
             let (_, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
             PreconfiguredEnv {
@@ -468,7 +495,7 @@ mod test {
     fn preconfigured_add_proposal_adds_to_group() {
         let mut env = PreconfiguredEnv::new();
         let proposal = AddProposal {
-            key_package: env.bob_key_gen.key_package.clone(),
+            key_package: env.bob_key_gen.key_package.clone().into(),
         };
         let msg = env
             .ted
@@ -495,7 +522,7 @@ mod test {
         let _ = env
             .session
             .commit(vec![Proposal::Add(AddProposal {
-                key_package: env.bob_key_gen.key_package.clone(),
+                key_package: env.bob_key_gen.key_package.clone().into(),
             })])
             .unwrap();
         let _ = env.session.apply_pending_commit().unwrap();
@@ -503,7 +530,7 @@ mod test {
             .session
             .roster()
             .iter()
-            .any(|&p| *p == env.bob_key_gen.key_package));
+            .any(|&p| *p == env.bob_key_gen.key_package.clone().into()));
         let bob_key_pkg_ref = env.bob_key_gen.key_package.to_reference().unwrap();
         let proposal = RemoveProposal {
             to_remove: bob_key_pkg_ref,
@@ -526,21 +553,25 @@ mod test {
         assert!(state_update
             .removed
             .iter()
-            .any(|p| *p == env.bob_key_gen.key_package));
+            .any(|p| *p == env.bob_key_gen.key_package.clone().into()));
     }
 
     #[test]
     fn proposal_from_unknown_external_is_rejected_by_members() {
         let ted = TestClientBuilder::named("ted").build();
-        let (alice, alice_key_gen) = TestClientBuilder::named("alice").build_with_key_pkg();
+        let (alice, _) = TestClientBuilder::named("alice").build_with_key_pkg();
         let mut session = alice
-            .create_session(alice_key_gen, TEST_GROUP.to_vec())
+            .create_session(
+                LifetimeExt::years(1, SystemTime::now()).unwrap(),
+                TEST_GROUP.to_vec(),
+                ExtensionList::new(),
+            )
             .unwrap();
         let (_, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
         let msg = ted
             .propose_add_from_new_member(
                 TEST_GROUP.to_vec(),
-                bob_key_gen.key_package,
+                bob_key_gen.key_package.into(),
                 session.group_stats().unwrap().epoch,
             )
             .unwrap();
