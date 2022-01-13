@@ -85,15 +85,15 @@ impl<'a> KeyPackageValidator<'a> {
         }
     }
 
-    pub fn validate(
+    pub fn validate_properties(
         &self,
-        package: KeyPackage,
-    ) -> Result<ValidatedKeyPackage, KeyPackageValidationError> {
+        package: &KeyPackage,
+    ) -> Result<(), KeyPackageValidationError> {
         if !self
             .options
             .contains(&KeyPackageValidationOptions::SkipSignatureCheck)
         {
-            self.check_signature(&package)?;
+            self.check_signature(package)?;
         }
 
         if !self
@@ -152,6 +152,14 @@ impl<'a> KeyPackageValidator<'a> {
             }
         }
 
+        Ok(())
+    }
+
+    pub fn validate(
+        &self,
+        package: KeyPackage,
+    ) -> Result<ValidatedKeyPackage, KeyPackageValidationError> {
+        self.validate_properties(&package)?;
         Ok(ValidatedKeyPackage(package))
     }
 }

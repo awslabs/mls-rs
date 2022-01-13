@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::option::Option::Some;
 
@@ -517,7 +517,7 @@ impl Group {
         let key_package_validator = KeyPackageValidator {
             cipher_suite: welcome.cipher_suite,
             required_capabilities: extensions.as_ref(),
-            options: Default::default(),
+            options: HashSet::from([KeyPackageValidationOptions::SkipLifetimeCheck]),
         };
 
         // Verify the integrity of the ratchet tree
@@ -640,11 +640,14 @@ impl Group {
         // requirements from that proposal
         let required_capabilities = self.context.extensions.get_extension()?;
 
+        // This check does not validate lifetime since lifetime is only validated by the sender at
+        // the time the proposal is created. See https://github.com/mlswg/mls-protocol/issues/538
         let key_package_validator = KeyPackageValidator {
             cipher_suite: self.cipher_suite,
             required_capabilities: required_capabilities.as_ref(),
-            options: Default::default(),
+            options: HashSet::from([KeyPackageValidationOptions::SkipLifetimeCheck]),
         };
+
         //TODO: This has to loop through the proposal array 3 times, maybe this should be optimized
 
         // Apply updates
@@ -1029,6 +1032,17 @@ impl Group {
     }
 
     pub fn add_member_proposal(&self, key_package: KeyPackage) -> Result<Proposal, GroupError> {
+        let required_capabilities = self.context.extensions.get_extension()?;
+
+        // Check that this proposal has a valid lifetime, signature, and meets the requirements
+        // of the current group required capabilities extension.
+        let key_package_validator = KeyPackageValidator {
+            cipher_suite: self.cipher_suite,
+            required_capabilities: required_capabilities.as_ref(),
+            options: Default::default(),
+        };
+
+        key_package_validator.validate_properties(&key_package)?;
         Ok(Proposal::from(AddProposal { key_package }))
     }
 
@@ -1281,10 +1295,10 @@ impl Group {
             Some(update_path) => {
                 let required_capabilities = self.context.extensions.get_extension()?;
 
-                let options = if local_pending.is_some() {
-                    [KeyPackageValidationOptions::SkipSignatureCheck].into()
-                } else {
-                    Default::default()
+                let mut options = HashSet::from([KeyPackageValidationOptions::SkipLifetimeCheck]);
+
+                if local_pending.is_some() {
+                    options.insert(KeyPackageValidationOptions::SkipSignatureCheck);
                 };
 
                 let key_package_validator = KeyPackageValidator {
@@ -1612,16 +1626,31 @@ mod test {
     }
 
     #[test]
+    fn test_invalid_add_proposal_bad_key_package() {
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+
+        let (test_group, _) = test_group(cipher_suite);
+        let (mut bob_keys, _) = test_member(cipher_suite, b"bob");
+        bob_keys.key_package.signature = SecureRng::gen(32).unwrap();
+
+        let proposal = test_group.add_member_proposal(bob_keys.key_package.into());
+        assert_matches!(proposal, Err(GroupError::KeyPackageValidationError(_)));
+    }
+
+    #[test]
     fn test_invalid_add_bad_key_package() {
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let (mut test_group, signing_key) = test_group(cipher_suite);
-        let (mut bob_keys, _) = test_member(cipher_suite, b"bob");
-        bob_keys.key_package.signature = SecureRng::gen(32).unwrap();
+        let (bob_keys, _) = test_member(cipher_suite, b"bob");
 
-        let proposal = test_group
+        let mut proposal = test_group
             .add_member_proposal(bob_keys.key_package.into())
             .unwrap();
+
+        if let Proposal::Add(ref mut kp) = proposal {
+            kp.key_package.signature = SecureRng::gen(32).unwrap()
+        }
 
         let generator = KeyPackageGenerator {
             cipher_suite,
