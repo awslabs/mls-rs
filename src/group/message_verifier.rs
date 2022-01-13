@@ -169,6 +169,7 @@ mod tests {
         },
         key_package::KeyPackageGenerator,
     };
+    use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
@@ -321,7 +322,7 @@ mod tests {
         let message = MLSMessage::Cipher(message);
         let mut verifier = make_verifier(&mut env.bob.group, |_| None);
         let res = verifier.verify(message);
-        assert!(matches!(res, Err(GroupError::InvalidSignature)));
+        assert_matches!(res, Err(GroupError::InvalidSignature));
     }
 
     #[test]
@@ -332,7 +333,7 @@ mod tests {
         let message = MLSMessage::Plain(message);
         let mut verifier = make_verifier(&mut env.bob.group, |_| None);
         let res = verifier.verify(message);
-        assert!(matches!(res, Err(GroupError::InvalidMembershipTag)));
+        assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
 
     #[test]
@@ -366,7 +367,7 @@ mod tests {
         let message = MLSMessage::Plain(message);
         let mut verifier = make_verifier(&mut group, |_| None);
         let res = verifier.verify(message);
-        assert!(matches!(res, Err(GroupError::InvalidMembershipTag)));
+        assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
 
     #[test]
@@ -412,7 +413,7 @@ mod tests {
             (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
         });
         let res = verifier.verify(message);
-        assert!(matches!(res, Err(GroupError::InvalidMembershipTag)));
+        assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
 
     #[test]
@@ -424,6 +425,6 @@ mod tests {
         let message = MLSMessage::Cipher(message);
         let mut verifier = make_verifier(&mut env.alice.group, |_| None);
         let res = verifier.verify(message);
-        assert!(matches!(res, Err(GroupError::CantProcessMessageFromSelf)));
+        assert_matches!(res, Err(GroupError::CantProcessMessageFromSelf));
     }
 }

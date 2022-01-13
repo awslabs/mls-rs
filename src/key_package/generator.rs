@@ -80,6 +80,7 @@ impl<'a> KeyPackageGenerator<'a> {
 
 #[cfg(test)]
 mod test {
+    use assert_matches::assert_matches;
     use std::time::SystemTime;
 
     use ferriscrypt::asym::ec_key::{Curve, SecretKey};
@@ -178,10 +179,10 @@ mod test {
         };
 
         let generated = test_generator.generate(None);
-        assert!(matches!(
+        assert_matches!(
             generated,
             Err(KeyPackageGenerationError::KeyPackageValidationError(_))
-        ));
+        );
     }
 
     #[test]
@@ -217,10 +218,10 @@ mod test {
         };
 
         let generated = test_generator.generate(Some(&required_capabilities));
-        assert!(matches!(
+        assert_matches!(
             generated,
             Err(KeyPackageGenerationError::KeyPackageValidationError(_))
-        ));
+        );
     }
 
     #[test]
@@ -243,10 +244,10 @@ mod test {
         };
 
         let generated = test_generator.generate(None);
-        assert!(matches!(
+        assert_matches!(
             generated,
             Err(KeyPackageGenerationError::CredentialSigningKeyMismatch)
-        ));
+        );
     }
 
     #[test]

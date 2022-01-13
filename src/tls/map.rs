@@ -107,6 +107,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::tls::test_util::ser_deser;
+    use assert_matches::assert_matches;
     use std::collections::HashMap;
     use tls_codec::{Deserialize, Serialize};
     use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -140,9 +141,9 @@ mod tests {
 
     #[test]
     fn missing_value_gives_an_error() {
-        assert!(matches!(
+        assert_matches!(
             Data::tls_deserialize(&mut &[0, 0, 0, 6, 1, 0, 10, 2][..]),
             Err(tls_codec::Error::EndOfStream)
-        ));
+        );
     }
 }

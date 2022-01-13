@@ -224,6 +224,7 @@ impl<C: ClientConfig + Clone> Client<C> {
 mod test {
     use super::*;
     use crate::{credential::BasicCredential, group::ProcessedMessage};
+    use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::Curve;
     use ferriscrypt::rand::SecureRng;
     use std::time::SystemTime;
@@ -382,10 +383,7 @@ mod test {
 
             assert_eq!(package_gen.key_package.cipher_suite, cipher_suite);
 
-            assert!(matches!(
-                package_gen.key_package.credential,
-                Credential::Basic(_)
-            ));
+            assert_matches!(package_gen.key_package.credential, Credential::Basic(_));
 
             assert_eq!(
                 package_gen
@@ -432,10 +430,10 @@ mod test {
             )
             .unwrap();
         let message = session.process_incoming_bytes(&proposal).unwrap();
-        assert!(matches!(
+        assert_matches!(
             message,
             ProcessedMessage::Proposal(Proposal::Add(AddProposal { key_package })) if key_package == bob_key_gen.key_package.clone().into()
-        ));
+        );
         let expected_proposal = AddProposal {
             key_package: bob_key_gen.key_package.clone().into(),
         };

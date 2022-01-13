@@ -72,6 +72,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::tls::test_util::ser_deser;
+    use assert_matches::assert_matches;
     use tls_codec::{Deserialize, Serialize};
     use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -105,9 +106,9 @@ mod tests {
 
     #[test]
     fn deserializing_invalid_discriminant_fails() {
-        assert!(matches!(
+        assert_matches!(
             Data::tls_deserialize(&mut &[2u8][..]),
             Err(tls_codec::Error::DecodingError(_))
-        ));
+        );
     }
 }

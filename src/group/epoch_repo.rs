@@ -69,6 +69,7 @@ impl EpochRepository {
 #[cfg(test)]
 mod test {
     use crate::group::epoch::test_utils::get_test_epoch;
+    use assert_matches::assert_matches;
 
     use super::*;
 
@@ -98,10 +99,10 @@ mod test {
             internal_queue: VecDeque::new(),
         };
 
-        assert!(matches!(
+        assert_matches!(
             test_repo.current(),
             Err(EpochRepositoryError::EmptyRepository)
-        ));
+        );
     }
 
     #[test]
@@ -161,14 +162,14 @@ mod test {
         let original_epoch = test_epoch(42);
         let mut test_repo = EpochRepository::new(original_epoch, 1);
 
-        assert!(matches!(
+        assert_matches!(
             test_repo.get(1),
             Err(EpochRepositoryError::EpochNotFound(1))
-        ));
+        );
 
-        assert!(matches!(
+        assert_matches!(
             test_repo.get_mut(1),
             Err(EpochRepositoryError::EpochNotFound(1))
-        ));
+        );
     }
 }

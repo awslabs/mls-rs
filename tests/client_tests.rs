@@ -1,3 +1,4 @@
+use assert_matches::assert_matches;
 use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client::Client;
 use aws_mls::client_config::{ClientConfig, DefaultClientConfig};
@@ -399,9 +400,7 @@ fn test_application_messages<C: ClientConfig + Clone>(
                     let decrypted = receiver_sessions[j]
                         .process_incoming_bytes(&ciphertext)
                         .unwrap();
-                    assert!(
-                        matches!(decrypted, ProcessedMessage::Application(m) if m == test_message)
-                    );
+                    assert_matches!(decrypted, ProcessedMessage::Application(m) if m == test_message);
                 }
             });
         }
@@ -436,14 +435,9 @@ where
     let error = creator_session
         .process_incoming_bytes(&commit.commit_packet)
         .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            SessionError::ProtocolError(GroupError::CantProcessMessageFromSelf)
-        ),
-        "Expected {:?} but got {:?}",
-        SessionError::ProtocolError(GroupError::CantProcessMessageFromSelf),
-        error
+    assert_matches!(
+        error,
+        SessionError::ProtocolError(GroupError::CantProcessMessageFromSelf)
     );
 }
 

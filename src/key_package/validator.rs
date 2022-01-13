@@ -158,6 +158,7 @@ impl<'a> KeyPackageValidator<'a> {
 
 #[cfg(test)]
 mod test {
+    use assert_matches::assert_matches;
     use ferriscrypt::rand::SecureRng;
 
     use crate::{
@@ -217,10 +218,7 @@ mod test {
             };
 
             let res = validator.validate(test_package);
-            assert!(matches!(
-                res,
-                Err(KeyPackageValidationError::InvalidSignature)
-            ));
+            assert_matches!(res, Err(KeyPackageValidationError::InvalidSignature));
         }
     }
 
@@ -266,10 +264,7 @@ mod test {
 
         let res = validator.validate(test_package);
 
-        assert!(matches!(
-            res,
-            Err(KeyPackageValidationError::InvalidKeyLifetime(..))
-        ));
+        assert_matches!(res, Err(KeyPackageValidationError::InvalidKeyLifetime(..)));
     }
 
     #[test]
@@ -329,10 +324,10 @@ mod test {
         };
 
         let res = validator.validate(key_package);
-        assert!(matches!(
+        assert_matches!(
             res,
             Err(KeyPackageValidationError::RequiredExtensionNotFound(_))
-        ));
+        );
     }
 
     #[test]
@@ -352,10 +347,10 @@ mod test {
         };
 
         let res = validator.validate(key_package);
-        assert!(matches!(
+        assert_matches!(
             res,
             Err(KeyPackageValidationError::RequiredProposalNotFound(_))
-        ));
+        );
     }
 
     fn test_missing_extension(id: u16) -> Result<ValidatedKeyPackage, KeyPackageValidationError> {
@@ -376,19 +371,16 @@ mod test {
     #[test]
     fn test_missing_lifetime() {
         let res = test_missing_extension(LifetimeExt::IDENTIFIER);
-        assert!(matches!(
-            res,
-            Err(KeyPackageValidationError::MissingKeyLifetime)
-        ));
+        assert_matches!(res, Err(KeyPackageValidationError::MissingKeyLifetime));
     }
 
     #[test]
     fn test_missing_capabilities() {
         let res = test_missing_extension(CapabilitiesExt::IDENTIFIER);
 
-        assert!(matches!(
+        assert_matches!(
             res,
             Err(KeyPackageValidationError::MissingCapabilitiesExtension)
-        ));
+        );
     }
 }

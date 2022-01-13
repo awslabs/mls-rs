@@ -51,6 +51,7 @@ impl<'a> UpdatePathValidator<'a> {
 
 #[cfg(test)]
 mod test {
+    use assert_matches::assert_matches;
     use std::time::SystemTime;
 
     use ferriscrypt::{
@@ -134,9 +135,9 @@ mod test {
 
         let validated = validator.validate(update_path);
 
-        assert!(matches!(
+        assert_matches!(
             validated,
             Err(UpdatePathValidationError::KeyPackageValidationError(_))
-        ));
+        );
     }
 }

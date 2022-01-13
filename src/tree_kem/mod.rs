@@ -761,6 +761,7 @@ impl TreeKemPublic {
 
 #[cfg(test)]
 pub(crate) mod test {
+    use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::{Curve, SecretKey};
     use std::time::SystemTime;
 
@@ -959,10 +960,7 @@ pub(crate) mod test {
 
         let add_res = tree.add_leaves(key_packages);
 
-        assert!(matches!(
-            add_res,
-            Err(RatchetTreeError::DuplicateKeyPackages(_))
-        ));
+        assert_matches!(add_res, Err(RatchetTreeError::DuplicateKeyPackages(_)));
     }
 
     #[test]
@@ -1057,14 +1055,14 @@ pub(crate) mod test {
         );
 
         // There should be an error when looking for the original key package ref
-        assert!(matches!(
+        assert_matches!(
             tree.get_key_package(&original_package_ref),
             Err(RatchetTreeError::KeyPackageNotFound(_))
-        ));
-        assert!(matches!(
+        );
+        assert_matches!(
             tree.package_leaf_index(&original_package_ref),
             Err(RatchetTreeError::KeyPackageNotFound(_))
-        ));
+        );
 
         // Verify that the direct path has been cleared
         tree.nodes
@@ -1087,10 +1085,10 @@ pub(crate) mod test {
 
         let new_key_package = get_test_key_package(cipher_suite, b"new".to_vec()).key_package;
 
-        assert!(matches!(
+        assert_matches!(
             tree.update_leaf(&KeyPackageRef::from([0u8; 16]), new_key_package),
             Err(RatchetTreeError::KeyPackageNotFound(_))
-        ));
+        );
     }
 
     #[test]
@@ -1105,10 +1103,10 @@ pub(crate) mod test {
         let duplicate_key_package = key_packages[1].clone();
         let key_package_ref = key_packages[0].to_reference().unwrap();
 
-        assert!(matches!(
+        assert_matches!(
             tree.update_leaf(&key_package_ref, duplicate_key_package),
             Err(RatchetTreeError::DuplicateKeyPackages(_))
-        ));
+        );
     }
 
     #[test]
@@ -1146,15 +1144,15 @@ pub(crate) mod test {
 
         // We should no longer be able to find the removed leaves
         for key_package_ref in to_remove {
-            assert!(matches!(
+            assert_matches!(
                 tree.get_key_package(&key_package_ref),
                 Err(RatchetTreeError::KeyPackageNotFound(_))
-            ));
+            );
 
-            assert!(matches!(
+            assert_matches!(
                 tree.package_leaf_index(&key_package_ref),
                 Err(RatchetTreeError::KeyPackageNotFound(_))
-            ));
+            );
         }
     }
 
@@ -1165,10 +1163,10 @@ pub(crate) mod test {
         // Create a tree
         let (mut tree, _, _) = get_test_tree(cipher_suite);
 
-        assert!(matches!(
+        assert_matches!(
             tree.remove_leaves(&tree.clone(), vec![KeyPackageRef::from([0u8; 16])]),
             Err(RatchetTreeError::KeyPackageNotFound(_))
-        ));
+        );
     }
 
     // Verify that the tree is in the correct state after generating an update path

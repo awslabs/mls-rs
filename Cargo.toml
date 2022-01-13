@@ -16,6 +16,7 @@ hex = { version = "^0.4.3", features = ["serde"] }
 enum-iterator = "0.7.0"
 
 [dev-dependencies]
+assert_matches = "1.5.0"
 criterion = { version = "0.3.5", features = ["html_reports"] }
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "^1.0"

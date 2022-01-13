@@ -103,6 +103,7 @@ impl TreeKemPrivate {
 
 #[cfg(test)]
 mod test {
+    use assert_matches::assert_matches;
     use std::collections::HashSet;
 
     use ferriscrypt::{
@@ -267,7 +268,7 @@ mod test {
         let res =
             charlie_private.update_secrets(cipher_suite, LeafIndex(0), path_secret, &public_tree);
 
-        assert!(matches!(res, Err(RatchetTreeError::PubKeyMismatch)));
+        assert_matches!(res, Err(RatchetTreeError::PubKeyMismatch));
     }
 
     fn setup_direct_path(self_index: LeafIndex, leaf_count: u32) -> TreeKemPrivate {

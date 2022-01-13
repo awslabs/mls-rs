@@ -1486,6 +1486,7 @@ mod test {
         test_utils::{credential, extensions, group_extensions, test_group, test_member},
         *,
     };
+    use assert_matches::assert_matches;
 
     #[test]
     fn test_create_group() {
@@ -1538,7 +1539,7 @@ mod test {
 
         // We should not be able to send application messages until a commit happens
         let res = test_group.encrypt_application_message(b"test", &signing_key);
-        assert!(matches!(res, Err(GroupError::CommitRequired)));
+        assert_matches!(res, Err(GroupError::CommitRequired));
 
         let generator = KeyPackageGenerator {
             cipher_suite,
@@ -1580,7 +1581,7 @@ mod test {
         let res =
             test_group.commit_proposals(&[proposal], &generator, true, WireFormat::Plain, false);
 
-        assert!(matches!(res, Err(GroupError::InvalidCommitSelfUpdate)));
+        assert_matches!(res, Err(GroupError::InvalidCommitSelfUpdate));
     }
 
     #[test]
@@ -1607,7 +1608,7 @@ mod test {
         // update proposal for the commiter
         let res = test_group.commit_proposals(&[], &generator, true, WireFormat::Plain, false);
 
-        assert!(matches!(res, Err(GroupError::InvalidCommitSelfUpdate)));
+        assert_matches!(res, Err(GroupError::InvalidCommitSelfUpdate));
     }
 
     #[test]
@@ -1632,7 +1633,7 @@ mod test {
         let res =
             test_group.commit_proposals(&[proposal], &generator, false, WireFormat::Plain, false);
 
-        assert!(matches!(res, Err(GroupError::KeyPackageValidationError(_))));
+        assert_matches!(res, Err(GroupError::KeyPackageValidationError(_)));
     }
 
     #[test]
@@ -1661,7 +1662,7 @@ mod test {
         let res =
             test_group.commit_proposals(&[proposal], &generator, false, WireFormat::Plain, false);
 
-        assert!(matches!(res, Err(GroupError::KeyPackageValidationError(_))));
+        assert_matches!(res, Err(GroupError::KeyPackageValidationError(_)));
     }
 
     fn test_welcome_processing(tree_ext: bool) {
@@ -1751,7 +1752,7 @@ mod test {
         // Group from Bob's perspective
         let bob_group = Group::from_welcome_message(welcome.unwrap(), None, bob_key_package);
 
-        assert!(matches!(bob_group, Err(GroupError::RatchetTreeNotFound)));
+        assert_matches!(bob_group, Err(GroupError::RatchetTreeNotFound));
     }
 }
 //TODO: More Group unit tests
