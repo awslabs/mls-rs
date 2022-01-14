@@ -5,7 +5,7 @@ use crate::group::framing::{MLSMessage, WireFormat};
 use crate::group::{proposal::Proposal, CommitGeneration, Group, StateUpdate};
 use crate::group::{OutboundPlaintext, Welcome};
 use crate::key_package::{
-    KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
+    KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
 };
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use ferriscrypt::asym::ec_key::SecretKey;
@@ -32,6 +32,8 @@ pub enum SessionError {
     PendingCommitNotFound,
     #[error("pending commit mismatch")]
     PendingCommitMismatch,
+    #[error("key package not found")]
+    KeyPackageNotFound,
 }
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -90,12 +92,21 @@ impl<C: ClientConfig> Session<C> {
 
     pub(crate) fn join(
         signing_key: SecretKey,
-        key_package_generation: KeyPackageGeneration,
+        key_package: Option<&KeyPackageRef>,
         ratchet_tree_data: Option<&[u8]>,
         welcome_message_data: &[u8],
         config: C,
     ) -> Result<Self, SessionError> {
         let welcome_message = Welcome::tls_deserialize(&mut &*welcome_message_data)?;
+
+        let key_package_generation = match key_package {
+            Some(r) => config.find_key_package(r),
+            None => welcome_message
+                .secrets
+                .iter()
+                .find_map(|secrets| config.find_key_package(&secrets.new_member)),
+        }
+        .ok_or(SessionError::KeyPackageNotFound)?;
 
         let ratchet_tree = ratchet_tree_data
             .map(|rt| Self::import_ratchet_tree(&welcome_message, rt))

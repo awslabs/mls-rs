@@ -1,7 +1,7 @@
 use assert_matches::assert_matches;
 use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client::Client;
-use aws_mls::client_config::{ClientConfig, DefaultClientConfig};
+use aws_mls::client_config::{ClientConfig, DefaultClientConfig, KeyPackageGenerationMap};
 use aws_mls::extension::{ExtensionList, LifetimeExt};
 use aws_mls::key_package::{KeyPackageGeneration, KeyPackageRef};
 use aws_mls::session::{GroupError, ProcessedMessage, Session, SessionError};
@@ -35,10 +35,7 @@ where
     Client::generate_basic(cipher_suite, id, config).unwrap()
 }
 
-fn test_create<C>(cipher_suite: CipherSuite, config: C)
-where
-    C: ClientConfig + Clone,
-{
+fn test_create(cipher_suite: CipherSuite, config: DefaultClientConfig) {
     println!(
         "Testing session creation for cipher suite: {:?}, participants: {}, {}",
         cipher_suite,
@@ -47,10 +44,14 @@ where
     );
 
     let alice = Client::generate_basic(cipher_suite, b"alice".to_vec(), config.clone()).unwrap();
+
+    let bob_key_pkg_gen_repo = KeyPackageGenerationMap::default();
+    let config = config.with_key_packages(bob_key_pkg_gen_repo.clone());
     let bob = Client::generate_basic(cipher_suite, b"bob".to_vec(), config).unwrap();
 
     let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
     let bob_key = bob.gen_key_package(key_lifetime.clone()).unwrap();
+    bob_key_pkg_gen_repo.insert(bob_key.clone()).unwrap();
 
     // Alice creates a session and adds bob
     let mut alice_session = alice
@@ -70,7 +71,7 @@ where
 
     // Bob receives the welcome message and joins the group
     let bob_session = bob
-        .join_session(bob_key, Some(&tree), &packets.welcome_packet.unwrap())
+        .join_session(None, Some(&tree), &packets.welcome_packet.unwrap())
         .unwrap();
 
     assert!(alice_session.has_equal_state(&bob_session));
@@ -88,11 +89,11 @@ fn test_create_session() {
     });
 }
 
-fn get_test_sessions<C: ClientConfig + Clone>(
+fn get_test_sessions(
     cipher_suite: CipherSuite,
     num_participants: usize,
-    config: C,
-) -> (Session<C>, Vec<Session<C>>) {
+    config: DefaultClientConfig,
+) -> (Session, Vec<Session>) {
     // Create the group with Alice as the group initiator
     let creator = generate_client(cipher_suite, b"alice".to_vec(), config.clone());
     let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
@@ -101,16 +102,32 @@ fn get_test_sessions<C: ClientConfig + Clone>(
         .create_session(key_lifetime.clone(), b"group".to_vec(), Default::default())
         .unwrap();
 
+    let receiver_key_pkg_gen_repos = std::iter::repeat_with(|| KeyPackageGenerationMap::default())
+        .take(num_participants)
+        .collect::<Vec<_>>();
+
     // Generate random clients that will be members of the group
-    let receiver_clients = (0..num_participants)
-        .into_iter()
-        .map(|_| generate_client(cipher_suite, b"test".to_vec(), config.clone()))
+    let receiver_clients = receiver_key_pkg_gen_repos
+        .iter()
+        .cloned()
+        .map(|repo| {
+            let config = config.clone().with_key_packages(repo);
+            generate_client(cipher_suite, b"test".to_vec(), config)
+        })
         .collect::<Vec<_>>();
 
     let receiver_keys = receiver_clients
         .iter()
         .map(|client| client.gen_key_package(key_lifetime.clone()).unwrap())
         .collect::<Vec<KeyPackageGeneration>>();
+
+    receiver_keys
+        .iter()
+        .cloned()
+        .zip(&receiver_key_pkg_gen_repos)
+        .for_each(|(key_pkg_gen, repo)| {
+            repo.insert(key_pkg_gen).unwrap();
+        });
 
     // Add the generated clients to the group the creator made
     let add_members_proposals = receiver_keys
@@ -142,11 +159,10 @@ fn get_test_sessions<C: ClientConfig + Clone>(
     // All the receivers will be able to join the session
     let receiver_sessions = receiver_clients
         .iter()
-        .zip(receiver_keys.iter())
-        .map(|(client, key)| {
+        .map(|client| {
             client
                 .join_session(
-                    key.clone(),
+                    None,
                     Some(&tree_data),
                     commit.welcome_packet.as_ref().unwrap(),
                 )
@@ -161,10 +177,7 @@ fn get_test_sessions<C: ClientConfig + Clone>(
     (creator_session, receiver_sessions)
 }
 
-fn test_empty_commits<C>(cipher_suite: CipherSuite, participants: usize, config: C)
-where
-    C: ClientConfig + Clone,
-{
+fn test_empty_commits(cipher_suite: CipherSuite, participants: usize, config: DefaultClientConfig) {
     println!(
         "Testing empty commits for cipher suite: {:?}, participants: {}, {}",
         cipher_suite,
@@ -214,10 +227,11 @@ fn test_group_path_updates() {
     });
 }
 
-fn test_update_proposals<C>(cipher_suite: CipherSuite, participants: usize, config: C)
-where
-    C: ClientConfig + Clone,
-{
+fn test_update_proposals(
+    cipher_suite: CipherSuite,
+    participants: usize,
+    config: DefaultClientConfig,
+) {
     println!(
         "Testing update proposals for cipher suite: {:?}, participants: {}, {}",
         cipher_suite,
@@ -290,10 +304,11 @@ fn test_group_update_proposals() {
     });
 }
 
-fn test_remove_proposals<C>(cipher_suite: CipherSuite, participants: usize, config: C)
-where
-    C: ClientConfig + Clone,
-{
+fn test_remove_proposals(
+    cipher_suite: CipherSuite,
+    participants: usize,
+    config: DefaultClientConfig,
+) {
     println!(
         "Testing remove proposals for cipher suite: {:?}, participants: {}, {}",
         cipher_suite,
@@ -367,11 +382,11 @@ fn test_group_remove_proposals() {
     });
 }
 
-fn test_application_messages<C: ClientConfig + Clone>(
+fn test_application_messages(
     cipher_suite: CipherSuite,
     participants: usize,
     message_count: usize,
-    config: C,
+    config: DefaultClientConfig,
 ) {
     println!(
         "Testing application messages for cipher suite: {:?}, participants: {}, message count: {}, {}",
@@ -421,10 +436,10 @@ fn test_group_application_messages() {
     });
 }
 
-fn processing_message_from_self_returns_error<C>(cipher_suite: CipherSuite, config: C)
-where
-    C: ClientConfig + Clone,
-{
+fn processing_message_from_self_returns_error(
+    cipher_suite: CipherSuite,
+    config: DefaultClientConfig,
+) {
     println!(
         "Verifying that processing one's own message returns an error for cipher suite: {:?}, {}",
         cipher_suite,

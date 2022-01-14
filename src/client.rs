@@ -6,7 +6,7 @@ use crate::group::framing::{Content, MLSMessage, MLSPlaintext, Sender, WireForma
 use crate::group::message_signature::{MessageSignature, MessageSignatureError};
 use crate::group::proposal::{AddProposal, Proposal, RemoveProposal};
 use crate::key_package::{
-    KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator,
+    KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
 };
 use crate::session::{Session, SessionError};
 use ferriscrypt::asym::ec_key::{Curve, EcKeyError, SecretKey};
@@ -131,9 +131,12 @@ impl<C: ClientConfig + Clone> Client<C> {
         )
         .map_err(Into::into)
     }
+
+    /// If `key_package` is specified, key package references listed in the welcome message will not
+    /// be used to identify the key package to use.
     pub fn join_session(
         &self,
-        key_package: KeyPackageGeneration,
+        key_package: Option<&KeyPackageRef>,
         tree_data: Option<&[u8]>,
         welcome_message: &[u8],
     ) -> Result<Session<C>, ClientError> {
@@ -412,7 +415,7 @@ mod test {
 
     #[test]
     fn new_member_add_proposal_adds_to_group() {
-        let (alice, _) = TestClientBuilder::named("alice").build_with_key_pkg();
+        let alice = TestClientBuilder::named("alice").build();
 
         let mut session = alice
             .create_session(
@@ -467,12 +470,12 @@ mod test {
                         .with_external_key_id(TED_EXTERNAL_KEY_ID.to_vec()),
                 )
                 .build();
-            let (alice, _) = TestClientBuilder::named("alice")
+            let alice = TestClientBuilder::named("alice")
                 .with_config(DefaultClientConfig::default().with_external_signing_key(
                     TED_EXTERNAL_KEY_ID.to_vec(),
                     ted_signing_key.to_public().unwrap(),
                 ))
-                .build_with_key_pkg();
+                .build();
             let session = alice
                 .create_session(
                     LifetimeExt::years(1, SystemTime::now()).unwrap(),
@@ -557,7 +560,7 @@ mod test {
     #[test]
     fn proposal_from_unknown_external_is_rejected_by_members() {
         let ted = TestClientBuilder::named("ted").build();
-        let (alice, _) = TestClientBuilder::named("alice").build_with_key_pkg();
+        let alice = TestClientBuilder::named("alice").build();
         let mut session = alice
             .create_session(
                 LifetimeExt::years(1, SystemTime::now()).unwrap(),
