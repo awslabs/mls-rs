@@ -262,7 +262,7 @@ mod tests {
             let (key_pkg_gen, signing_key) = test_member(TEST_CIPHER_SUITE, b"bob");
             let proposal = alice
                 .group
-                .add_member_proposal(key_pkg_gen.key_package.clone().into())
+                .add_proposal(key_pkg_gen.key_package.clone().into())
                 .unwrap();
 
             let (commit_generation, welcome) = alice

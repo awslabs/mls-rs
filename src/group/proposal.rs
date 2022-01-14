@@ -1,6 +1,7 @@
 use std::ops::Deref;
 
 use crate::cipher_suite::CipherSuite;
+use crate::extension::ExtensionList;
 use crate::key_package::KeyPackageRef;
 use crate::{hash_reference::HashReference, key_package::KeyPackage};
 use tls_codec::Serialize;
@@ -48,6 +49,9 @@ pub enum Proposal {
     //TODO: Psk,
     //TODO: ReInit,
     //TODO: ExternalInit,
+    //TODO: AppAck,
+    #[tls_codec(discriminant = 8)]
+    GroupContextExtensions(ExtensionList),
 }
 
 impl Proposal {
@@ -56,10 +60,6 @@ impl Proposal {
             &self.tls_serialize_detached()?,
             cipher_suite,
         )?))
-    }
-
-    pub fn is_add(&self) -> bool {
-        matches!(self, Self::Add(_))
     }
 
     pub fn as_add(&self) -> Option<&AddProposal> {
@@ -87,6 +87,13 @@ impl Proposal {
     pub fn as_remove(&self) -> Option<&RemoveProposal> {
         match self {
             Proposal::Remove(removal) => Some(removal),
+            _ => None,
+        }
+    }
+
+    pub fn as_group_context_extensions(&self) -> Option<&ExtensionList> {
+        match self {
+            Proposal::GroupContextExtensions(context_ext) => Some(context_ext),
             _ => None,
         }
     }
@@ -130,8 +137,11 @@ mod test {
 
     use super::*;
     use crate::{
-        client::Client, client_config::DefaultClientConfig, extension::LifetimeExt,
-        hash_reference::HashReference, tree_kem::test::get_test_key_package,
+        client::Client,
+        client_config::DefaultClientConfig,
+        extension::{LifetimeExt, RequiredCapabilitiesExt},
+        hash_reference::HashReference,
+        tree_kem::test::get_test_key_package,
     };
     use ferriscrypt::rand::SecureRng;
     use tls_codec::Deserialize;
@@ -161,12 +171,9 @@ mod test {
 
         let proposal = Proposal::Add(add_proposal.clone());
 
-        assert!(proposal.is_add());
         assert!(!proposal.is_update());
         assert!(!proposal.is_remove());
         assert_eq!(proposal.as_add(), Some(&add_proposal));
-        assert_eq!(proposal.as_update(), None);
-        assert_eq!(proposal.as_remove(), None);
     }
 
     #[test]
@@ -178,11 +185,8 @@ mod test {
         let proposal = Proposal::Update(update_proposal.clone());
 
         assert!(proposal.is_update());
-        assert!(!proposal.is_add());
         assert!(!proposal.is_remove());
         assert_eq!(proposal.as_update(), Some(&update_proposal));
-        assert_eq!(proposal.as_add(), None);
-        assert_eq!(proposal.as_remove(), None);
     }
 
     #[test]
@@ -194,11 +198,34 @@ mod test {
         let proposal = Proposal::Remove(remove_proposal.clone());
 
         assert!(proposal.is_remove());
-        assert!(!proposal.is_add());
         assert!(!proposal.is_update());
         assert_eq!(proposal.as_remove(), Some(&remove_proposal));
-        assert_eq!(proposal.as_add(), None);
-        assert_eq!(proposal.as_update(), None);
+    }
+
+    fn get_test_extension_list() -> ExtensionList {
+        let test_extension = RequiredCapabilitiesExt {
+            extensions: vec![42],
+            proposals: Default::default(),
+        };
+
+        let mut extension_list = ExtensionList::new();
+        extension_list.set_extension(test_extension).unwrap();
+
+        extension_list
+    }
+
+    #[test]
+    fn test_group_context_extension() {
+        let extension_list = get_test_extension_list();
+        let proposal = Proposal::GroupContextExtensions(extension_list.clone());
+
+        assert!(!proposal.is_update());
+        assert!(!proposal.is_remove());
+
+        assert_eq!(
+            proposal.as_group_context_extensions(),
+            Some(&extension_list)
+        )
     }
 
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -234,6 +261,8 @@ mod test {
                 to_remove: key_package_ref.into(),
             });
 
+            let group_context_ext = Proposal::GroupContextExtensions(get_test_extension_list());
+
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 input: add.tls_serialize_detached().unwrap(),
@@ -250,6 +279,15 @@ mod test {
                 cipher_suite: cipher_suite as u16,
                 input: remove.tls_serialize_detached().unwrap(),
                 output: remove.to_reference(cipher_suite).unwrap().to_vec(),
+            });
+
+            test_cases.push(TestCase {
+                cipher_suite: cipher_suite as u16,
+                input: group_context_ext.tls_serialize_detached().unwrap(),
+                output: group_context_ext
+                    .to_reference(cipher_suite)
+                    .unwrap()
+                    .to_vec(),
             });
         }
 

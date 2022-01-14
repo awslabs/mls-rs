@@ -17,7 +17,9 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext, ProtocolVersion};
 use crate::credential::CredentialError;
-use crate::extension::{Extension, ExtensionError, ExtensionList, RatchetTreeExt};
+use crate::extension::{
+    Extension, ExtensionError, ExtensionList, RatchetTreeExt, RequiredCapabilitiesExt,
+};
 use crate::key_package::{
     KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerationError,
     KeyPackageGenerator, KeyPackageRef, KeyPackageValidationError, KeyPackageValidationOptions,
@@ -60,6 +62,7 @@ struct ProvisionalState {
     private_tree: TreeKemPrivate,
     added_leaves: Vec<KeyPackageRef>,
     removed_leaves: HashMap<KeyPackageRef, KeyPackage>,
+    group_context: GroupContext,
     epoch: u64,
     path_update_required: bool,
 }
@@ -191,6 +194,8 @@ pub enum GroupError {
     OnlyMembersCanCommit,
     #[error("Only members can update")]
     OnlyMembersCanUpdate,
+    #[error("commiter must not propose unsupported required capabilities")]
+    UnsupportedRequiredCapabilities,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -626,6 +631,38 @@ impl Group {
             .collect::<Result<Vec<PendingProposal>, GroupError>>()
     }
 
+    fn check_required_capabilities(
+        &self,
+        tree: &TreeKemPublic,
+        group_context_extensions: &ExtensionList,
+    ) -> Result<(), GroupError> {
+        let existing_required_capabilities = self
+            .context
+            .extensions
+            .get_extension::<RequiredCapabilitiesExt>()?;
+
+        let new_required_capabilities =
+            group_context_extensions.get_extension::<RequiredCapabilitiesExt>()?;
+
+        if existing_required_capabilities != new_required_capabilities {
+            let key_package_validator = KeyPackageValidator {
+                cipher_suite: self.cipher_suite,
+                required_capabilities: new_required_capabilities.as_ref(),
+                options: HashSet::from([
+                    KeyPackageValidationOptions::SkipLifetimeCheck,
+                    KeyPackageValidationOptions::SkipSignatureCheck,
+                ]),
+            };
+
+            tree.get_key_packages()
+                .iter()
+                .try_for_each(|kp| key_package_validator.validate_properties(kp))
+                .map_err(|_| GroupError::UnsupportedRequiredCapabilities)
+        } else {
+            Ok(())
+        }
+    }
+
     fn apply_proposals(
         &self,
         sender: &KeyPackageRef,
@@ -635,10 +672,18 @@ impl Group {
 
         let mut provisional_tree = self.current_epoch_tree()?.clone();
         let mut provisional_private_tree = self.private_tree.clone();
+        let mut provisional_group_context = self.context.clone();
 
-        // TODO: When we implement group context proposal this will need to take potential new
-        // requirements from that proposal
-        let required_capabilities = self.context.extensions.get_extension()?;
+        // Locate a group context extension
+        if let Some(group_context_extensions) = proposals
+            .iter()
+            .find_map(|p| p.proposal.as_group_context_extensions())
+        {
+            // Group context extensions are a full replacement and not a merge
+            provisional_group_context.extensions = group_context_extensions.clone();
+        }
+
+        let required_capabilities = provisional_group_context.extensions.get_extension()?;
 
         // This check does not validate lifetime since lifetime is only validated by the sender at
         // the time the proposal is created. See https://github.com/mlswg/mls-protocol/issues/538
@@ -720,6 +765,9 @@ impl Group {
 
         let added_leaves = provisional_tree.add_leaves(adds)?;
 
+        // Now that the tree is updated we can check required capabilities if needed
+        self.check_required_capabilities(&provisional_tree, &provisional_group_context.extensions)?;
+
         // Determine if a path update is required
         let has_update_or_remove = proposals
             .iter()
@@ -734,6 +782,7 @@ impl Group {
             removed_leaves,
             epoch: self.context.epoch + 1,
             path_update_required,
+            group_context: provisional_group_context,
         })
     }
 
@@ -828,7 +877,7 @@ impl Group {
         let mut provisional_state =
             self.apply_proposals(&self.private_tree.key_package_ref, &proposals)?;
 
-        let mut provisional_group_context = self.context.clone();
+        let mut provisional_group_context = provisional_state.group_context;
         provisional_group_context.epoch += 1;
 
         //Decide whether to populate the path field: If the path field is required based on the
@@ -1031,7 +1080,7 @@ impl Group {
         })
     }
 
-    pub fn add_member_proposal(&self, key_package: KeyPackage) -> Result<Proposal, GroupError> {
+    pub fn add_proposal(&self, key_package: KeyPackage) -> Result<Proposal, GroupError> {
         let required_capabilities = self.context.extensions.get_extension()?;
 
         // Check that this proposal has a valid lifetime, signature, and meets the requirements
@@ -1075,6 +1124,10 @@ impl Group {
         Ok(Proposal::Remove(RemoveProposal {
             to_remove: key_package_ref.clone(),
         }))
+    }
+
+    pub fn group_context_extensions_proposal(&self, extensions: ExtensionList) -> Proposal {
+        Proposal::GroupContextExtensions(extensions)
     }
 
     pub fn format_for_wire(
@@ -1290,10 +1343,12 @@ impl Group {
             return Ok(state_update);
         }
 
+        // Apply the update path if needed
         let updated_secrets = match &commit_content.commit.path {
             None => None,
             Some(update_path) => {
-                let required_capabilities = self.context.extensions.get_extension()?;
+                let required_capabilities =
+                    provisional_state.group_context.extensions.get_extension()?;
 
                 let mut options = HashSet::from([KeyPackageValidationOptions::SkipLifetimeCheck]);
 
@@ -1333,7 +1388,8 @@ impl Group {
         let commit_secret =
             CommitSecret::from_tree_secrets(self.cipher_suite, updated_secrets.as_ref())?;
 
-        let mut provisional_group_context = self.context.clone();
+        let mut provisional_group_context = provisional_state.group_context;
+
         // Bump up the epoch in the provisional group context
         provisional_group_context.epoch = provisional_state.epoch;
 
@@ -1496,6 +1552,8 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod test {
+    use crate::extension::{LifetimeExt, MlsExtension, RequiredCapabilitiesExt};
+
     use super::{
         test_utils::{credential, extensions, group_extensions, test_group, test_member},
         *,
@@ -1544,7 +1602,7 @@ mod test {
         let (bob_key_package, _) = test_member(cipher_suite, b"bob");
 
         let proposal = test_group
-            .add_member_proposal(bob_key_package.key_package.into())
+            .add_proposal(bob_key_package.key_package.into())
             .unwrap();
 
         test_group
@@ -1633,7 +1691,7 @@ mod test {
         let (mut bob_keys, _) = test_member(cipher_suite, b"bob");
         bob_keys.key_package.signature = SecureRng::gen(32).unwrap();
 
-        let proposal = test_group.add_member_proposal(bob_keys.key_package.into());
+        let proposal = test_group.add_proposal(bob_keys.key_package.into());
         assert_matches!(proposal, Err(GroupError::KeyPackageValidationError(_)));
     }
 
@@ -1645,7 +1703,7 @@ mod test {
         let (bob_keys, _) = test_member(cipher_suite, b"bob");
 
         let mut proposal = test_group
-            .add_member_proposal(bob_keys.key_package.into())
+            .add_proposal(bob_keys.key_package.into())
             .unwrap();
 
         if let Proposal::Add(ref mut kp) = proposal {
@@ -1709,7 +1767,7 @@ mod test {
 
         // Add bob to the group
         let add_bob_proposal = test_group
-            .add_member_proposal(bob_key_package.key_package.clone().into())
+            .add_proposal(bob_key_package.key_package.clone().into())
             .unwrap();
 
         let (commit_generation, welcome) = test_group
@@ -1765,7 +1823,7 @@ mod test {
 
         // Add bob to the group
         let add_bob_proposal = test_group
-            .add_member_proposal(bob_key_package.key_package.clone().into())
+            .add_proposal(bob_key_package.key_package.clone().into())
             .unwrap();
 
         let (_, welcome) = test_group
@@ -1782,6 +1840,79 @@ mod test {
         let bob_group = Group::from_welcome_message(welcome.unwrap(), None, bob_key_package);
 
         assert_matches!(bob_group, Err(GroupError::RatchetTreeNotFound));
+    }
+
+    #[test]
+    fn test_group_context_ext_proposal_create() {
+        let (test_group, _) = test_group(CipherSuite::P256Aes128V1);
+
+        let mut extension_list = ExtensionList::new();
+        extension_list
+            .set_extension(RequiredCapabilitiesExt {
+                extensions: vec![LifetimeExt::IDENTIFIER],
+                proposals: vec![],
+            })
+            .unwrap();
+
+        let proposal = test_group.group_context_extensions_proposal(extension_list.clone());
+
+        assert_matches!(proposal, Proposal::GroupContextExtensions(ext) if ext == extension_list);
+    }
+
+    fn group_context_extension_proposal_test(
+        ext_list: ExtensionList,
+    ) -> (Group, Result<CommitGeneration, GroupError>) {
+        let cipher_suite = CipherSuite::P256Aes128V1;
+        let (mut test_group, signing_key) = test_group(cipher_suite);
+
+        let generator = KeyPackageGenerator {
+            cipher_suite,
+            credential: &credential(&signing_key, b"alice"),
+            extensions: &extensions(),
+            signing_key: &signing_key,
+        };
+
+        let proposals = vec![test_group.group_context_extensions_proposal(ext_list)];
+
+        let commit = test_group
+            .commit_proposals(&proposals, &generator, true, WireFormat::Plain, false)
+            .map(|(commit, _)| commit);
+
+        (test_group, commit)
+    }
+
+    #[test]
+    fn test_group_context_ext_proposal_commit() {
+        let mut extension_list = ExtensionList::new();
+        extension_list
+            .set_extension(RequiredCapabilitiesExt {
+                extensions: vec![LifetimeExt::IDENTIFIER],
+                proposals: vec![],
+            })
+            .unwrap();
+
+        let (mut test_group, commit) =
+            group_context_extension_proposal_test(extension_list.clone());
+
+        let state_update = test_group.process_pending_commit(commit.unwrap()).unwrap();
+        assert!(state_update.active);
+
+        assert_eq!(test_group.context.extensions, extension_list)
+    }
+
+    #[test]
+    fn test_group_context_ext_proposal_invalid() {
+        let mut extension_list = ExtensionList::new();
+        extension_list
+            .set_extension(RequiredCapabilitiesExt {
+                extensions: vec![42],
+                proposals: vec![],
+            })
+            .unwrap();
+
+        let (_, commit) = group_context_extension_proposal_test(extension_list.clone());
+
+        assert_matches!(commit, Err(GroupError::UnsupportedRequiredCapabilities));
     }
 }
 //TODO: More Group unit tests

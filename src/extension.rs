@@ -213,7 +213,7 @@ impl ExtensionList {
         Default::default()
     }
 
-    pub(crate) fn get_extension<T: MlsExtension>(&self) -> Result<Option<T>, ExtensionError> {
+    pub fn get_extension<T: MlsExtension>(&self) -> Result<Option<T>, ExtensionError> {
         let ext = self.iter().find(|v| v.extension_type == T::IDENTIFIER);
 
         if let Some(ext) = ext {
@@ -223,7 +223,11 @@ impl ExtensionList {
         }
     }
 
-    pub(crate) fn set_extension<T: MlsExtension>(&mut self, ext: T) -> Result<(), ExtensionError> {
+    pub fn has_extension(&self, ext_id: ExtensionType) -> bool {
+        self.iter().any(|v| v.extension_type == ext_id)
+    }
+
+    pub fn set_extension<T: MlsExtension>(&mut self, ext: T) -> Result<(), ExtensionError> {
         match self.iter_mut().find(|v| v.extension_type == T::IDENTIFIER) {
             None => {
                 self.push(ext.to_extension()?);
@@ -386,5 +390,16 @@ mod tests {
             Some(key_id)
         );
         assert_eq!(list.get_extension::<CapabilitiesExt>().unwrap(), None);
+    }
+
+    #[test]
+    fn test_extension_list_has_ext() {
+        let mut list = ExtensionList::new();
+
+        let lifetime = LifetimeExt::seconds(42, SystemTime::now()).unwrap();
+        list.set_extension(lifetime).unwrap();
+
+        assert!(list.has_extension(LifetimeExt::IDENTIFIER));
+        assert!(!list.has_extension(42));
     }
 }

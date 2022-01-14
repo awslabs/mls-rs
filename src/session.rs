@@ -140,9 +140,7 @@ impl<C: ClientConfig> Session<C> {
     #[inline]
     pub fn add_proposal(&mut self, key_package_data: &[u8]) -> Result<Proposal, SessionError> {
         let key_package = Deserialize::tls_deserialize(&mut &*key_package_data)?;
-        self.protocol
-            .add_member_proposal(key_package)
-            .map_err(Into::into)
+        self.protocol.add_proposal(key_package).map_err(Into::into)
     }
 
     #[inline(always)]
@@ -172,7 +170,7 @@ impl<C: ClientConfig> Session<C> {
     #[inline(always)]
     pub fn propose_add(&mut self, key_package_data: &[u8]) -> Result<Vec<u8>, SessionError> {
         let key_package = KeyPackage::tls_deserialize(&mut &*key_package_data)?;
-        self.send_proposal(self.protocol.add_member_proposal(key_package)?)
+        self.send_proposal(self.protocol.add_proposal(key_package)?)
     }
 
     #[inline(always)]
@@ -188,6 +186,21 @@ impl<C: ClientConfig> Session<C> {
     ) -> Result<Vec<u8>, SessionError> {
         let remove = self.remove_proposal(key_package_ref)?;
         self.send_proposal(remove)
+    }
+
+    #[inline(always)]
+    pub fn group_context_extension_proposal(&self, extension_list: ExtensionList) -> Proposal {
+        self.protocol
+            .group_context_extensions_proposal(extension_list)
+    }
+
+    #[inline(always)]
+    pub fn propose_group_context_extension_update(
+        &mut self,
+        extension_list: ExtensionList,
+    ) -> Result<Vec<u8>, SessionError> {
+        let extension_update = self.group_context_extension_proposal(extension_list);
+        self.send_proposal(extension_update)
     }
 
     #[inline(always)]
