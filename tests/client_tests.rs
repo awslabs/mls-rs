@@ -1,7 +1,7 @@
 use assert_matches::assert_matches;
 use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client::Client;
-use aws_mls::client_config::{ClientConfig, DefaultClientConfig, KeyPackageGenerationMap};
+use aws_mls::client_config::{ClientConfig, DefaultClientConfig};
 use aws_mls::extension::{ExtensionList, LifetimeExt};
 use aws_mls::key_package::{KeyPackageGeneration, KeyPackageRef};
 use aws_mls::session::{GroupError, ProcessedMessage, Session, SessionError};
@@ -44,14 +44,10 @@ fn test_create(cipher_suite: CipherSuite, config: DefaultClientConfig) {
     );
 
     let alice = Client::generate_basic(cipher_suite, b"alice".to_vec(), config.clone()).unwrap();
-
-    let bob_key_pkg_gen_repo = KeyPackageGenerationMap::default();
-    let config = config.with_key_packages(bob_key_pkg_gen_repo.clone());
     let bob = Client::generate_basic(cipher_suite, b"bob".to_vec(), config).unwrap();
 
     let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
     let bob_key = bob.gen_key_package(key_lifetime.clone()).unwrap();
-    bob_key_pkg_gen_repo.insert(bob_key.clone()).unwrap();
 
     // Alice creates a session and adds bob
     let mut alice_session = alice
@@ -102,32 +98,18 @@ fn get_test_sessions(
         .create_session(key_lifetime.clone(), b"group".to_vec(), Default::default())
         .unwrap();
 
-    let receiver_key_pkg_gen_repos = std::iter::repeat_with(|| KeyPackageGenerationMap::default())
-        .take(num_participants)
-        .collect::<Vec<_>>();
-
     // Generate random clients that will be members of the group
-    let receiver_clients = receiver_key_pkg_gen_repos
-        .iter()
-        .cloned()
-        .map(|repo| {
-            let config = config.clone().with_key_packages(repo);
-            generate_client(cipher_suite, b"test".to_vec(), config)
-        })
-        .collect::<Vec<_>>();
+    let receiver_clients = std::iter::repeat_with(|| {
+        let config = config.clone().with_key_packages(Default::default());
+        generate_client(cipher_suite, b"test".to_vec(), config)
+    })
+    .take(num_participants)
+    .collect::<Vec<_>>();
 
     let receiver_keys = receiver_clients
         .iter()
         .map(|client| client.gen_key_package(key_lifetime.clone()).unwrap())
         .collect::<Vec<KeyPackageGeneration>>();
-
-    receiver_keys
-        .iter()
-        .cloned()
-        .zip(&receiver_key_pkg_gen_repos)
-        .for_each(|(key_pkg_gen, repo)| {
-            repo.insert(key_pkg_gen).unwrap();
-        });
 
     // Add the generated clients to the group the creator made
     let add_members_proposals = receiver_keys

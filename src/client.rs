@@ -1,5 +1,5 @@
 use crate::cipher_suite::CipherSuite;
-use crate::client_config::{ClientConfig, DefaultClientConfig};
+use crate::client_config::{ClientConfig, DefaultClientConfig, KeyPackageRepository};
 use crate::credential::{BasicCredential, Credential, CredentialError};
 use crate::extension::{CapabilitiesExt, ExtensionError, ExtensionList, LifetimeExt, MlsExtension};
 use crate::group::framing::{Content, MLSMessage, MLSPlaintext, Sender, WireFormat};
@@ -35,6 +35,8 @@ pub enum ClientError {
     MessageSignatureError(#[from] MessageSignatureError),
     #[error("proposing as external without external key ID")]
     ProposingAsExternalWithoutExternalKeyId,
+    #[error(transparent)]
+    KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[non_exhaustive]
@@ -95,7 +97,13 @@ impl<C: ClientConfig + Clone> Client<C> {
             extensions: &self.get_extensions(lifetime)?,
         };
 
-        key_package_generator.generate(None).map_err(Into::into)
+        let key_pkg_gen = key_package_generator.generate(None)?;
+        self.config
+            .key_package_repo()
+            .insert(key_pkg_gen.clone())
+            .map_err(|e| ClientError::KeyPackageRepoError(e.into()))?;
+
+        Ok(key_pkg_gen)
     }
 
     fn get_extensions(&self, lifetime: LifetimeExt) -> Result<ExtensionList, ClientError> {

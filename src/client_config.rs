@@ -5,7 +5,16 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+pub trait KeyPackageRepository {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn insert(&mut self, key_pkg_gen: KeyPackageGeneration) -> Result<(), Self::Error>;
+    fn get(&self, key_pkg: &KeyPackageRef) -> Result<Option<KeyPackageGeneration>, Self::Error>;
+}
+
 pub trait ClientConfig {
+    type KeyPackageRepository: KeyPackageRepository;
+
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
         DefaultClientConfig::default().external_signing_key(external_key_id)
     }
@@ -22,17 +31,15 @@ pub trait ClientConfig {
         DefaultClientConfig::default().external_key_id()
     }
 
-    fn find_key_package(&self, key_pkg: &KeyPackageRef) -> Option<KeyPackageGeneration> {
-        DefaultClientConfig::default().find_key_package(key_pkg)
-    }
+    fn key_package_repo(&self) -> Self::KeyPackageRepository;
 }
 
 #[derive(Clone, Default, Debug)]
-pub struct KeyPackageGenerationMap {
+pub struct InMemoryRepository {
     inner: Arc<Mutex<HashMap<KeyPackageRef, KeyPackageGeneration>>>,
 }
 
-impl KeyPackageGenerationMap {
+impl InMemoryRepository {
     pub fn insert(&self, key_pkg_gen: KeyPackageGeneration) -> Result<(), KeyPackageError> {
         self.inner
             .lock()
@@ -46,6 +53,18 @@ impl KeyPackageGenerationMap {
     }
 }
 
+impl KeyPackageRepository for InMemoryRepository {
+    type Error = KeyPackageError;
+
+    fn insert(&mut self, key_pkg_gen: KeyPackageGeneration) -> Result<(), Self::Error> {
+        (&*self).insert(key_pkg_gen)
+    }
+
+    fn get(&self, key_pkg: &KeyPackageRef) -> Result<Option<KeyPackageGeneration>, Self::Error> {
+        Ok(self.get(key_pkg))
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct DefaultClientConfig {
@@ -53,7 +72,7 @@ pub struct DefaultClientConfig {
     ratchet_tree_extension: bool,
     external_signing_keys: HashMap<Vec<u8>, PublicKey>,
     external_key_id: Option<Vec<u8>>,
-    key_packages: KeyPackageGenerationMap,
+    key_packages: InMemoryRepository,
 }
 
 impl DefaultClientConfig {
@@ -88,7 +107,7 @@ impl DefaultClientConfig {
     }
 
     #[must_use]
-    pub fn with_key_packages(self, key_packages: KeyPackageGenerationMap) -> Self {
+    pub fn with_key_packages(self, key_packages: InMemoryRepository) -> Self {
         Self {
             key_packages,
             ..self
@@ -97,6 +116,8 @@ impl DefaultClientConfig {
 }
 
 impl ClientConfig for DefaultClientConfig {
+    type KeyPackageRepository = InMemoryRepository;
+
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
         self.external_signing_keys.get(external_key_id).cloned()
     }
@@ -113,7 +134,7 @@ impl ClientConfig for DefaultClientConfig {
         self.external_key_id.clone()
     }
 
-    fn find_key_package(&self, key_pkg: &KeyPackageRef) -> Option<KeyPackageGeneration> {
-        self.key_packages.get(key_pkg)
+    fn key_package_repo(&self) -> InMemoryRepository {
+        self.key_packages.clone()
     }
 }

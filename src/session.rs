@@ -1,4 +1,4 @@
-use crate::client_config::{ClientConfig, DefaultClientConfig};
+use crate::client_config::{ClientConfig, DefaultClientConfig, KeyPackageRepository};
 use crate::credential::Credential;
 use crate::extension::ExtensionList;
 use crate::group::framing::{MLSMessage, WireFormat};
@@ -34,6 +34,8 @@ pub enum SessionError {
     PendingCommitMismatch,
     #[error("key package not found")]
     KeyPackageNotFound,
+    #[error(transparent)]
+    KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -100,12 +102,19 @@ impl<C: ClientConfig> Session<C> {
         let welcome_message = Welcome::tls_deserialize(&mut &*welcome_message_data)?;
 
         let key_package_generation = match key_package {
-            Some(r) => config.find_key_package(r),
+            Some(r) => config.key_package_repo().get(r),
             None => welcome_message
                 .secrets
                 .iter()
-                .find_map(|secrets| config.find_key_package(&secrets.new_member)),
+                .find_map(|secrets| {
+                    config
+                        .key_package_repo()
+                        .get(&secrets.new_member)
+                        .transpose()
+                })
+                .transpose(),
         }
+        .map_err(|e| SessionError::KeyPackageRepoError(e.into()))?
         .ok_or(SessionError::KeyPackageNotFound)?;
 
         let ratchet_tree = ratchet_tree_data
