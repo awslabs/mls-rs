@@ -1249,11 +1249,11 @@ impl Group {
         self.encrypt_plaintext(plaintext)
     }
 
-    pub fn process_incoming_message<F>(
+    pub fn verify_incoming_message<F>(
         &mut self,
         message: MLSMessage,
         external_key_id_to_signing_key: F,
-    ) -> Result<ProcessedMessage, GroupError>
+    ) -> Result<VerifiedPlaintext, GroupError>
     where
         F: FnMut(&[u8]) -> Option<PublicKey>,
     {
@@ -1270,31 +1270,36 @@ impl Group {
             }
             _ => Ok(()),
         }?;
+        match &plaintext.plaintext.content {
+            Content::Application(_) => Ok(()),
+            Content::Commit(_) | Content::Proposal(_) => (plaintext.epoch == self.context.epoch)
+                .then(|| ())
+                .ok_or(GroupError::InvalidPlaintextEpoch),
+        }?;
+        Ok(plaintext)
+    }
+
+    pub fn process_incoming_message(
+        &mut self,
+        plaintext: VerifiedPlaintext,
+    ) -> Result<ProcessedMessage, GroupError> {
         match plaintext.plaintext.content {
             Content::Application(data) => Ok(ProcessedMessage::Application(data)),
             Content::Commit(_) => {
-                if plaintext.epoch == self.context.epoch {
-                    self.process_commit(plaintext, None)
-                        .map(ProcessedMessage::Commit)
-                } else {
-                    Err(GroupError::InvalidPlaintextEpoch)
-                }
+                self.process_commit(plaintext, None)
+                    .map(ProcessedMessage::Commit)
                 //TODO: If the Commit included a ReInit proposal, the client MUST NOT use the group to send
                 // messages anymore. Instead, it MUST wait for a Welcome message from the committer
                 // and check that
             }
             Content::Proposal(p) => {
-                if plaintext.plaintext.epoch == self.context.epoch {
-                    let pending_proposal = PendingProposal {
-                        proposal: p.clone(),
-                        sender: plaintext.plaintext.sender,
-                    };
-                    self.proposals
-                        .insert(p.to_reference(self.cipher_suite)?, pending_proposal);
-                    Ok(ProcessedMessage::Proposal(p))
-                } else {
-                    Err(GroupError::InvalidPlaintextEpoch)
-                }
+                let pending_proposal = PendingProposal {
+                    proposal: p.clone(),
+                    sender: plaintext.plaintext.sender,
+                };
+                self.proposals
+                    .insert(p.to_reference(self.cipher_suite)?, pending_proposal);
+                Ok(ProcessedMessage::Proposal(p))
             }
         }
     }

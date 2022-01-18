@@ -1,9 +1,14 @@
-use crate::key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageRef};
+use crate::{
+    group::proposal::Proposal,
+    key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageRef},
+};
 use ferriscrypt::asym::ec_key::PublicKey;
 use std::{
     collections::HashMap,
+    fmt::{self, Debug},
     sync::{Arc, Mutex},
 };
+use thiserror::Error;
 
 pub trait KeyPackageRepository {
     type Error: std::error::Error + Send + Sync + 'static;
@@ -14,6 +19,7 @@ pub trait KeyPackageRepository {
 
 pub trait ClientConfig {
     type KeyPackageRepository: KeyPackageRepository;
+    type ProposalFilterError: std::error::Error + Send + Sync + 'static;
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
         DefaultClientConfig::default().external_signing_key(external_key_id)
@@ -32,6 +38,7 @@ pub trait ClientConfig {
     }
 
     fn key_package_repo(&self) -> Self::KeyPackageRepository;
+    fn filter_proposal(&self, proposal: &Proposal) -> Result<(), Self::ProposalFilterError>;
 }
 
 #[derive(Clone, Default, Debug)]
@@ -65,7 +72,7 @@ impl KeyPackageRepository for InMemoryRepository {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct DefaultClientConfig {
     encrypt_controls: bool,
@@ -73,7 +80,10 @@ pub struct DefaultClientConfig {
     external_signing_keys: HashMap<Vec<u8>, PublicKey>,
     external_key_id: Option<Vec<u8>>,
     key_packages: InMemoryRepository,
+    proposal_filter: Option<ProposalFilter>,
 }
+
+type ProposalFilter = Arc<dyn Fn(&Proposal) -> Result<(), String> + Send + Sync>;
 
 impl DefaultClientConfig {
     #[must_use]
@@ -113,10 +123,42 @@ impl DefaultClientConfig {
             ..self
         }
     }
+
+    #[must_use]
+    pub fn with_proposal_filter<F, E>(self, f: F) -> Self
+    where
+        F: Fn(&Proposal) -> Result<(), E> + Send + Sync + 'static,
+        E: ToString,
+    {
+        Self {
+            proposal_filter: Some(Arc::new(move |p| f(p).map_err(|e| e.to_string()))),
+            ..self
+        }
+    }
+}
+
+impl Debug for DefaultClientConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DefaultClientConfig")
+            .field("encrypt_controls", &self.encrypt_controls)
+            .field("ratchet_tree_extension", &self.ratchet_tree_extension)
+            .field("external_signing_keys", &self.external_signing_keys)
+            .field("external_key_id", &self.external_key_id)
+            .field("key_packages", &self.key_packages)
+            .field(
+                "proposal_filter",
+                &self
+                    .proposal_filter
+                    .as_ref()
+                    .map_or("None", |_| "Some(...)"),
+            )
+            .finish()
+    }
 }
 
 impl ClientConfig for DefaultClientConfig {
     type KeyPackageRepository = InMemoryRepository;
+    type ProposalFilterError = SimpleError;
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
         self.external_signing_keys.get(external_key_id).cloned()
@@ -134,7 +176,18 @@ impl ClientConfig for DefaultClientConfig {
         self.external_key_id.clone()
     }
 
+    fn filter_proposal(&self, proposal: &Proposal) -> Result<(), SimpleError> {
+        self.proposal_filter
+            .as_ref()
+            .map_or(Ok(()), |f| f(proposal))
+            .map_err(SimpleError)
+    }
+
     fn key_package_repo(&self) -> InMemoryRepository {
         self.key_packages.clone()
     }
 }
+
+#[derive(Debug, Error)]
+#[error("{0}")]
+pub struct SimpleError(String);

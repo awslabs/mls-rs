@@ -587,4 +587,28 @@ mod test {
         let msg = session.process_incoming_bytes(&msg);
         assert!(msg.is_err());
     }
+
+    #[test]
+    fn proposal_can_be_rejected() {
+        let alice = TestClientBuilder::named("alice")
+            .with_config(DefaultClientConfig::default().with_proposal_filter(|_| Err("no")))
+            .build();
+        let mut session = alice
+            .create_session(
+                LifetimeExt::years(1, SystemTime::now()).unwrap(),
+                TEST_GROUP.to_vec(),
+                ExtensionList::new(),
+            )
+            .unwrap();
+        let (bob, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
+        let proposal = bob
+            .propose_add_from_new_member(
+                TEST_GROUP.to_vec(),
+                bob_key_gen.key_package.into(),
+                session.group_stats().unwrap().epoch,
+            )
+            .unwrap();
+        let res = session.process_incoming_bytes(&proposal);
+        assert_matches!(res, Err(SessionError::ProposalRejected(e)) if e.to_string() == "no");
+    }
 }

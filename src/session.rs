@@ -1,9 +1,10 @@
 use crate::client_config::{ClientConfig, DefaultClientConfig, KeyPackageRepository};
 use crate::credential::Credential;
 use crate::extension::ExtensionList;
-use crate::group::framing::{MLSMessage, WireFormat};
-use crate::group::{proposal::Proposal, CommitGeneration, Group, StateUpdate};
-use crate::group::{OutboundPlaintext, Welcome};
+use crate::group::framing::{Content, MLSMessage, WireFormat};
+use crate::group::{
+    proposal::Proposal, CommitGeneration, Group, OutboundPlaintext, StateUpdate, Welcome,
+};
 use crate::key_package::{
     KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
 };
@@ -36,6 +37,8 @@ pub enum SessionError {
     KeyPackageNotFound,
     #[error(transparent)]
     KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
+    #[error(transparent)]
+    ProposalRejected(Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -282,9 +285,17 @@ impl<C: ClientConfig> Session<C> {
         &mut self,
         message: MLSMessage,
     ) -> Result<ProcessedMessage, SessionError> {
-        let res = self
+        let message = self
             .protocol
-            .process_incoming_message(message, |id| self.config.external_signing_key(id))?;
+            .verify_incoming_message(message, |id| self.config.external_signing_key(id))?;
+        match &message.content {
+            Content::Proposal(p) => self
+                .config
+                .filter_proposal(p)
+                .map_err(|e| SessionError::ProposalRejected(e.into())),
+            Content::Application(_) | Content::Commit(_) => Ok(()),
+        }?;
+        let res = self.protocol.process_incoming_message(message)?;
         // This commit beat our current pending commit to the server, our commit is no longer
         // relevant
         if let ProcessedMessage::Commit(_) = res {
