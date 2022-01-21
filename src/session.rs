@@ -254,7 +254,7 @@ impl<C: ClientConfig> Session<C> {
         };
 
         let (commit_data, welcome) = self.protocol.commit_proposals(
-            &proposals,
+            proposals,
             &key_package_generator,
             true,
             wire_format(&self.config),

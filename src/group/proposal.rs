@@ -7,7 +7,7 @@ use crate::{hash_reference::HashReference, key_package::KeyPackage};
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-use super::{GroupError, Sender};
+use super::proposal_cache::ProposalCacheError;
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct AddProposal {
@@ -55,7 +55,10 @@ pub enum Proposal {
 }
 
 impl Proposal {
-    pub fn to_reference(&self, cipher_suite: CipherSuite) -> Result<ProposalRef, GroupError> {
+    pub fn to_reference(
+        &self,
+        cipher_suite: CipherSuite,
+    ) -> Result<ProposalRef, ProposalCacheError> {
         Ok(ProposalRef(HashReference::from_value(
             &self.tls_serialize_detached()?,
             cipher_suite,
@@ -125,43 +128,17 @@ impl From<ProposalRef> for ProposalOrRef {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct PendingProposal {
-    pub proposal: Proposal,
-    pub sender: Sender,
-}
-
 #[cfg(test)]
 mod test {
-    use std::time::SystemTime;
-
     use super::*;
-    use crate::{
-        client::Client,
-        client_config::DefaultClientConfig,
-        extension::{LifetimeExt, RequiredCapabilitiesExt},
-        hash_reference::HashReference,
-        tree_kem::test::get_test_key_package,
-    };
+    use crate::extension::RequiredCapabilitiesExt;
+    use crate::key_package::test_util::test_key_package;
+
+    use crate::{hash_reference::HashReference, tree_kem::test::get_test_key_package};
     use ferriscrypt::rand::SecureRng;
     use tls_codec::Deserialize;
 
-    use crate::{cipher_suite::CipherSuite, key_package::KeyPackage};
-
-    fn test_key_package(cipher_suite: CipherSuite) -> KeyPackage {
-        let client = Client::generate_basic(
-            cipher_suite,
-            b"foo".to_vec(),
-            DefaultClientConfig::default(),
-        )
-        .unwrap();
-
-        client
-            .gen_key_package(LifetimeExt::days(1, SystemTime::now()).unwrap())
-            .unwrap()
-            .key_package
-            .into()
-    }
+    use crate::cipher_suite::CipherSuite;
 
     #[test]
     fn test_add() {

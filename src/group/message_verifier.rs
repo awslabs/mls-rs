@@ -268,7 +268,7 @@ mod tests {
             let (commit_generation, welcome) = alice
                 .group
                 .commit_proposals(
-                    &[proposal],
+                    vec![proposal],
                     &alice_key_package_generator,
                     false,
                     WireFormat::Plain,
@@ -339,33 +339,37 @@ mod tests {
     #[test]
     fn valid_proposal_from_new_member_is_verified() {
         let (key_pkg_gen, signer) = test_member(TEST_CIPHER_SUITE, b"bob");
-        let (mut group, _) = test_group(TEST_CIPHER_SUITE);
+        let mut test_group = test_group(TEST_CIPHER_SUITE);
+
         let mut message = MLSPlaintext {
             content: Content::Proposal(Proposal::Add(AddProposal {
                 key_package: key_pkg_gen.key_package.into(),
             })),
-            ..make_plaintext(Sender::NewMember, group.current_epoch())
+            ..make_plaintext(Sender::NewMember, test_group.group.current_epoch())
         };
+
         message.sign(&signer, None, WireFormat::Plain).unwrap();
         let message = MLSMessage::Plain(message);
-        let mut verifier = make_verifier(&mut group, |_| None);
+        let mut verifier = make_verifier(&mut test_group.group, |_| None);
         let _ = verifier.verify(message).unwrap();
     }
 
     #[test]
     fn proposal_from_new_member_must_not_have_membership_tag() {
         let (key_pkg_gen, signer) = test_member(TEST_CIPHER_SUITE, b"bob");
-        let (mut group, _) = test_group(TEST_CIPHER_SUITE);
+        let mut test_group = test_group(TEST_CIPHER_SUITE);
+
         let mut message = MLSPlaintext {
             content: Content::Proposal(Proposal::Add(AddProposal {
                 key_package: key_pkg_gen.key_package.into(),
             })),
-            ..make_plaintext(Sender::NewMember, group.current_epoch())
+            ..make_plaintext(Sender::NewMember, test_group.group.current_epoch())
         };
+
         message.sign(&signer, None, WireFormat::Plain).unwrap();
-        add_membership_tag(&mut message, &group);
+        add_membership_tag(&mut message, &test_group.group);
         let message = MLSMessage::Plain(message);
-        let mut verifier = make_verifier(&mut group, |_| None);
+        let mut verifier = make_verifier(&mut test_group.group, |_| None);
         let res = verifier.verify(message);
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
@@ -374,19 +378,21 @@ mod tests {
     fn valid_proposal_from_preconfigured_external_is_verified() {
         let (bob_key_pkg_gen, _) = test_member(TEST_CIPHER_SUITE, b"bob");
         let (_, ted_signer) = test_member(TEST_CIPHER_SUITE, b"ted");
-        let (mut group, _) = test_group(TEST_CIPHER_SUITE);
+        let mut test_group = test_group(TEST_CIPHER_SUITE);
+
         let mut message = MLSPlaintext {
             content: Content::Proposal(Proposal::Add(AddProposal {
                 key_package: bob_key_pkg_gen.key_package.into(),
             })),
             ..make_plaintext(
                 Sender::Preconfigured(TED_EXTERNAL_KEY_ID.to_vec()),
-                group.current_epoch(),
+                test_group.group.current_epoch(),
             )
         };
+
         message.sign(&ted_signer, None, WireFormat::Plain).unwrap();
         let message = MLSMessage::Plain(message);
-        let mut verifier = make_verifier(&mut group, |external_id| {
+        let mut verifier = make_verifier(&mut test_group.group, |external_id| {
             (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
         });
         let _ = verifier.verify(message).unwrap();
@@ -396,22 +402,26 @@ mod tests {
     fn proposal_from_preconfigured_external_must_not_have_membership_tag() {
         let (bob_key_pkg_gen, _) = test_member(TEST_CIPHER_SUITE, b"bob");
         let (_, ted_signer) = test_member(TEST_CIPHER_SUITE, b"ted");
-        let (mut group, _) = test_group(TEST_CIPHER_SUITE);
+        let mut test_group = test_group(TEST_CIPHER_SUITE);
+
         let mut message = MLSPlaintext {
             content: Content::Proposal(Proposal::Add(AddProposal {
                 key_package: bob_key_pkg_gen.key_package.into(),
             })),
             ..make_plaintext(
                 Sender::Preconfigured(TED_EXTERNAL_KEY_ID.to_vec()),
-                group.current_epoch(),
+                test_group.group.current_epoch(),
             )
         };
+
         message.sign(&ted_signer, None, WireFormat::Plain).unwrap();
-        add_membership_tag(&mut message, &group);
+        add_membership_tag(&mut message, &test_group.group);
         let message = MLSMessage::Plain(message);
-        let mut verifier = make_verifier(&mut group, |external_id| {
+
+        let mut verifier = make_verifier(&mut test_group.group, |external_id| {
             (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
         });
+
         let res = verifier.verify(message);
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }

@@ -114,6 +114,28 @@ impl KeyPackage {
 }
 
 #[cfg(test)]
+pub(crate) mod test_util {
+    use super::*;
+    use crate::{client::Client, client_config::DefaultClientConfig, extension::LifetimeExt};
+    use std::time::SystemTime;
+
+    pub(crate) fn test_key_package(cipher_suite: CipherSuite) -> KeyPackage {
+        let client = Client::generate_basic(
+            cipher_suite,
+            b"foo".to_vec(),
+            DefaultClientConfig::default(),
+        )
+        .unwrap();
+
+        client
+            .gen_key_package(LifetimeExt::days(1, SystemTime::now()).unwrap())
+            .unwrap()
+            .key_package
+            .into()
+    }
+}
+
+#[cfg(test)]
 mod test {
     use super::*;
     use tls_codec::Deserialize;
