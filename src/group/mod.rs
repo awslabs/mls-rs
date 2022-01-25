@@ -41,6 +41,7 @@ use message_signature::*;
 use message_verifier::*;
 use proposal::*;
 use proposal_cache::*;
+use proposal_ref::*;
 use secret_tree::*;
 use transcript_hash::*;
 
@@ -56,6 +57,7 @@ pub mod message_signature;
 mod message_verifier;
 pub mod proposal;
 mod proposal_cache;
+mod proposal_ref;
 mod secret_tree;
 mod transcript_hash;
 
@@ -354,6 +356,12 @@ impl PartialEq for Group {
 pub struct VerifiedPlaintext {
     wire_format: WireFormat,
     plaintext: MLSPlaintext,
+}
+
+impl From<VerifiedPlaintext> for MLSPlaintext {
+    fn from(verified: VerifiedPlaintext) -> Self {
+        verified.plaintext
+    }
 }
 
 impl Deref for VerifiedPlaintext {
@@ -741,7 +749,8 @@ impl Group {
         wire_format: WireFormat,
     ) -> Result<OutboundPlaintext, GroupError> {
         let plaintext =
-            self.construct_mls_plaintext(Content::Proposal(proposal.clone()), signer, wire_format)?;
+            self.construct_mls_plaintext(Content::Proposal(proposal), signer, wire_format)?;
+
         let membership_tag = match wire_format {
             // If we are going to encrypt then the tag will be dropped so it shouldn't be included
             // in the hash
@@ -757,12 +766,7 @@ impl Group {
             ..plaintext
         };
 
-        self.proposals.insert(
-            self.cipher_suite,
-            proposal,
-            Sender::Member(self.private_tree.key_package_ref.clone()),
-        )?;
-
+        self.proposals.insert(self.cipher_suite, &plaintext)?;
         self.format_for_wire(plaintext, wire_format)
     }
 
@@ -1029,7 +1033,7 @@ impl Group {
         };
 
         key_package_validator.validate_properties(&key_package)?;
-        Ok(Proposal::from(AddProposal { key_package }))
+        Ok(Proposal::Add(AddProposal { key_package }))
     }
 
     pub fn update_proposal(
@@ -1220,8 +1224,6 @@ impl Group {
         &mut self,
         plaintext: VerifiedPlaintext,
     ) -> Result<ProcessedMessage, GroupError> {
-        let sender = plaintext.sender.clone();
-
         match plaintext.plaintext.content {
             Content::Application(data) => Ok(ProcessedMessage::Application(data)),
             Content::Commit(_) => {
@@ -1231,10 +1233,9 @@ impl Group {
                 // messages anymore. Instead, it MUST wait for a Welcome message from the committer
                 // and check that
             }
-            Content::Proposal(p) => {
-                self.proposals
-                    .insert(self.cipher_suite, p.clone(), sender)?;
-                Ok(ProcessedMessage::Proposal(p))
+            Content::Proposal(ref p) => {
+                self.proposals.insert(self.cipher_suite, &plaintext)?;
+                Ok(ProcessedMessage::Proposal(p.clone()))
             }
         }
     }
@@ -1725,15 +1726,16 @@ mod test {
             panic!("Invalid update proposal")
         }
 
+        let proposal = alice_group
+            .group
+            .create_proposal(proposal, &alice_group.signing_key, WireFormat::Plain)
+            .unwrap();
+
         // Hack bob's receipt of the proposal
         bob_group
             .group
             .proposals
-            .insert(
-                cipher_suite,
-                proposal,
-                Sender::Member(alice_group.group.private_tree.key_package_ref.clone()),
-            )
+            .insert(cipher_suite, &proposal)
             .unwrap();
 
         let bob_generator = KeyPackageGenerator {

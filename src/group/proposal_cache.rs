@@ -12,6 +12,8 @@ pub enum ProposalCacheError {
     ProposalNotFound(ProposalRef),
     #[error("Commits only allowed from members")]
     NonMemberCommit,
+    #[error("Plaintext must be a proposal")]
+    PlaintextNotProposal,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -210,13 +212,20 @@ impl ProposalCache {
     pub fn insert(
         &mut self,
         cipher_suite: CipherSuite,
-        proposal: Proposal,
-        sender: Sender,
+        proposal_plaintext: &MLSPlaintext,
     ) -> Result<Option<CachedProposal>, ProposalCacheError> {
-        let proposal_ref = proposal.to_reference(cipher_suite)?;
-        let cached_proposal = CachedProposal { proposal, sender };
+        if let Content::Proposal(proposal) = &proposal_plaintext.content {
+            let proposal_ref = ProposalRef::from_plaintext(cipher_suite, proposal_plaintext)?;
 
-        Ok(self.0.insert(proposal_ref, cached_proposal))
+            let cached_proposal = CachedProposal {
+                proposal: proposal.clone(),
+                sender: proposal_plaintext.sender.clone(),
+            };
+
+            Ok(self.0.insert(proposal_ref, cached_proposal))
+        } else {
+            Err(ProposalCacheError::PlaintextNotProposal)
+        }
     }
 
     pub fn prepare_commit(
@@ -295,6 +304,7 @@ impl ProposalCache {
 
 #[cfg(test)]
 mod test {
+    use super::proposal_ref::test_util::plaintext_from_proposal;
     use super::*;
     use crate::key_package::test_util::test_key_package;
 
@@ -307,7 +317,7 @@ mod test {
     fn test_proposals(
         sender: KeyPackageRef,
         cipher_suite: CipherSuite,
-    ) -> (Vec<Proposal>, ProposalSetEffects) {
+    ) -> (Vec<MLSPlaintext>, ProposalSetEffects) {
         let add_package = test_key_package(cipher_suite);
         let update_package = test_key_package(cipher_suite);
         let remove_package = test_ref();
@@ -329,31 +339,29 @@ mod test {
         let proposals = vec![add, update, remove, extensions];
         let effects = ProposalSetEffects {
             adds: vec![add_package],
-            updates: vec![(sender, update_package)],
+            updates: vec![(sender.clone(), update_package)],
             removes: vec![remove_package],
             group_context_ext: Some(ExtensionList::new()),
         };
 
-        (proposals, effects)
+        let plaintext = proposals
+            .into_iter()
+            .map(|p| plaintext_from_proposal(p, sender.clone()))
+            .collect();
+
+        (plaintext, effects)
     }
 
     fn test_proposal_cache_setup(
         cipher_suite: CipherSuite,
-        test_proposals: Vec<Proposal>,
-        proposal_sender: KeyPackageRef,
+        test_proposals: Vec<MLSPlaintext>,
     ) -> ProposalCache {
         let mut cache = ProposalCache::new();
 
-        for proposal in test_proposals {
-            let res = cache
-                .insert(
-                    cipher_suite,
-                    proposal,
-                    Sender::Member(proposal_sender.clone()),
-                )
-                .unwrap();
+        test_proposals.into_iter().for_each(|p| {
+            let res = cache.insert(cipher_suite, &p).unwrap();
             assert_eq!(res, None);
-        }
+        });
 
         cache
     }
@@ -384,15 +392,17 @@ mod test {
     fn test_proposal_cache_commit_all_cached() {
         let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
-        let (test_proposals, expected_effects) = test_proposals(test_sender.clone(), cipher_suite);
+        let (test_proposals, expected_effects) = test_proposals(test_sender, cipher_suite);
 
-        let cache = test_proposal_cache_setup(cipher_suite, test_proposals.clone(), test_sender);
+        let cache = test_proposal_cache_setup(cipher_suite, test_proposals.clone());
 
         let (proposals, effects) = cache.prepare_commit(&test_ref(), vec![]).unwrap();
 
         let expected_proposals = test_proposals
             .into_iter()
-            .map(|p| ProposalOrRef::Reference(p.to_reference(cipher_suite).unwrap()))
+            .map(|p| {
+                ProposalOrRef::Reference(ProposalRef::from_plaintext(cipher_suite, &p).unwrap())
+            })
             .collect();
 
         assert_matches(expected_proposals, expected_effects, proposals, effects)
@@ -403,8 +413,7 @@ mod test {
         let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
 
-        let (test_proposals, mut expected_effects) =
-            test_proposals(test_sender.clone(), cipher_suite);
+        let (test_proposals, mut expected_effects) = test_proposals(test_sender, cipher_suite);
 
         let additional_key_package = test_key_package(cipher_suite);
 
@@ -412,7 +421,7 @@ mod test {
             key_package: additional_key_package.clone(),
         })];
 
-        let cache = test_proposal_cache_setup(cipher_suite, test_proposals.clone(), test_sender);
+        let cache = test_proposal_cache_setup(cipher_suite, test_proposals.clone());
 
         let (proposals, effects) = cache
             .prepare_commit(&test_ref(), additional.clone())
@@ -420,7 +429,9 @@ mod test {
 
         let mut expected_proposals = test_proposals
             .into_iter()
-            .map(|p| ProposalOrRef::Reference(p.to_reference(cipher_suite).unwrap()))
+            .map(|p| {
+                ProposalOrRef::Reference(ProposalRef::from_plaintext(cipher_suite, &p).unwrap())
+            })
             .collect::<Vec<ProposalOrRef>>();
 
         expected_proposals.push(ProposalOrRef::Proposal(additional[0].clone()));
@@ -434,14 +445,14 @@ mod test {
         let cipher_suite = CipherSuite::P256Aes128V1;
         let additional_key_package = test_key_package(cipher_suite);
         let test_sender = test_ref();
-        let (test_proposals, _) = test_proposals(test_sender.clone(), cipher_suite);
+        let (test_proposals, _) = test_proposals(test_sender, cipher_suite);
 
         let additional = vec![Proposal::Update(UpdateProposal {
             key_package: additional_key_package.clone(),
         })];
 
         let commiter_ref = test_ref();
-        let cache = test_proposal_cache_setup(cipher_suite, test_proposals, test_sender);
+        let cache = test_proposal_cache_setup(cipher_suite, test_proposals);
 
         let (proposals, effects) = cache
             .prepare_commit(&commiter_ref, additional.clone())
@@ -464,15 +475,14 @@ mod test {
             to_remove: test_sender.clone(),
         });
 
-        let cache =
-            test_proposal_cache_setup(cipher_suite, test_proposals.clone(), test_sender.clone());
+        let cache = test_proposal_cache_setup(cipher_suite, test_proposals.clone());
 
         let (proposals, effects) = cache.prepare_commit(&test_ref(), vec![removal]).unwrap();
 
         assert!(effects.removes.contains(&test_sender));
 
         assert!(!proposals.contains(&ProposalOrRef::Reference(
-            test_proposals[1].to_reference(cipher_suite).unwrap()
+            ProposalRef::from_plaintext(cipher_suite, &test_proposals[1]).unwrap()
         )))
     }
 
@@ -480,22 +490,22 @@ mod test {
     fn test_proposal_cache_filter_duplicates_insert() {
         let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
-        let (test_proposals, expected_effects) = test_proposals(test_sender.clone(), cipher_suite);
+        let (test_proposals, expected_effects) = test_proposals(test_sender, cipher_suite);
 
         let mut cache: ProposalCache =
-            test_proposal_cache_setup(cipher_suite, test_proposals.clone(), test_sender.clone());
+            test_proposal_cache_setup(cipher_suite, test_proposals.clone());
 
         test_proposals.clone().into_iter().for_each(|p| {
-            cache
-                .insert(cipher_suite, p, Sender::Member(test_sender.clone()))
-                .unwrap();
+            cache.insert(cipher_suite, &p).unwrap();
         });
 
         let (proposals, effects) = cache.prepare_commit(&test_ref(), vec![]).unwrap();
 
         let expected_proposals = test_proposals
             .into_iter()
-            .map(|p| ProposalOrRef::Reference(p.to_reference(cipher_suite).unwrap()))
+            .map(|p| {
+                ProposalOrRef::Reference(ProposalRef::from_plaintext(cipher_suite, &p).unwrap())
+            })
             .collect::<Vec<ProposalOrRef>>();
 
         assert_matches(expected_proposals, expected_effects, proposals, effects)
@@ -505,16 +515,25 @@ mod test {
     fn test_proposal_cache_filter_duplicates_additional() {
         let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
-        let (test_proposals, expected_effects) = test_proposals(test_sender.clone(), cipher_suite);
+        let (test_proposals, expected_effects) = test_proposals(test_sender, cipher_suite);
 
-        let cache: ProposalCache =
-            test_proposal_cache_setup(cipher_suite, test_proposals.clone(), test_sender);
+        let cache: ProposalCache = test_proposal_cache_setup(cipher_suite, test_proposals.clone());
 
         // Updates from different senders will be allowed so we test duplicates for add / remove
         let additional = test_proposals
             .clone()
             .into_iter()
-            .filter(|p| !matches!(p, Proposal::Update(_)))
+            .filter_map(|plaintext| {
+                if let Content::Proposal(proposal) = plaintext.content {
+                    if !matches!(proposal, Proposal::Update(_)) {
+                        Some(proposal)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
             .collect::<Vec<Proposal>>();
 
         let (proposals, effects) = cache
@@ -522,7 +541,7 @@ mod test {
             .unwrap();
 
         let mut expected_proposals = vec![ProposalOrRef::Reference(
-            test_proposals[1].to_reference(cipher_suite).unwrap(),
+            ProposalRef::from_plaintext(cipher_suite, &test_proposals[1]).unwrap(),
         )];
 
         additional
@@ -537,13 +556,14 @@ mod test {
         let mut cache = ProposalCache::new();
         assert!(cache.is_empty());
 
+        let test_proposal = Proposal::Remove(RemoveProposal {
+            to_remove: test_ref(),
+        });
+
         cache
             .insert(
                 CipherSuite::P256Aes128V1,
-                Proposal::Remove(RemoveProposal {
-                    to_remove: test_ref(),
-                }),
-                Sender::Member(test_ref()),
+                &plaintext_from_proposal(test_proposal, test_ref()),
             )
             .unwrap();
 
@@ -556,7 +576,7 @@ mod test {
         let test_sender = test_ref();
         let (test_proposals, _) = test_proposals(test_sender.clone(), cipher_suite);
 
-        let cache = test_proposal_cache_setup(cipher_suite, test_proposals, test_sender.clone());
+        let cache = test_proposal_cache_setup(cipher_suite, test_proposals);
 
         let additional = vec![Proposal::Add(AddProposal {
             key_package: test_key_package(cipher_suite),
