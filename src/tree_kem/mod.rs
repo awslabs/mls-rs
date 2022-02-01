@@ -36,6 +36,9 @@ pub mod update_path;
 pub use private::*;
 pub use update_path::*;
 
+use tree_index::*;
+mod tree_index;
+
 #[derive(Error, Debug)]
 pub enum RatchetTreeError {
     #[error(transparent)]
@@ -64,6 +67,8 @@ pub enum RatchetTreeError {
     NodeSecretGeneratorError(#[from] NodeSecretGeneratorError),
     #[error(transparent)]
     KeyPackageValidationError(#[from] KeyPackageValidationError),
+    #[error(transparent)]
+    TreeIndexError(#[from] TreeIndexError),
     #[error("invalid update path signature")]
     InvalidUpdatePathSignature,
     // TODO: This should probably tell you the expected key vs actual key
@@ -85,17 +90,14 @@ pub enum RatchetTreeError {
     ParentHashMismatch,
     #[error("invalid parent hash: {0}")]
     InvalidParentHash(String),
-    #[error("duplicate key packages found: {0:?}")]
-    DuplicateKeyPackages(Vec<String>),
     #[error("key package not found: {0}")]
     KeyPackageNotFound(String),
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TreeKemPublic {
     pub cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::DefMap")]
-    key_package_index: HashMap<KeyPackageRef, LeafIndex>,
+    index: TreeIndex,
     nodes: NodeVec,
 }
 
@@ -168,7 +170,7 @@ impl TreeKemPublic {
     pub fn new(cipher_suite: CipherSuite) -> TreeKemPublic {
         TreeKemPublic {
             cipher_suite,
-            key_package_index: Default::default(),
+            index: Default::default(),
             nodes: Default::default(),
         }
     }
@@ -177,14 +179,22 @@ impl TreeKemPublic {
         cipher_suite: CipherSuite,
         nodes: NodeVec,
     ) -> Result<TreeKemPublic, RatchetTreeError> {
-        let key_package_index = nodes
-            .non_empty_leaves()
-            .map(|(index, leaf)| Ok((leaf.key_package.to_reference()?, index)))
-            .collect::<Result<HashMap<KeyPackageRef, LeafIndex>, RatchetTreeError>>()?;
+        let index = nodes.non_empty_leaves().try_fold(
+            TreeIndex::new(),
+            |mut tree_index, (leaf_index, leaf)| {
+                tree_index.insert(
+                    leaf.key_package.to_reference()?,
+                    leaf_index,
+                    &leaf.key_package,
+                )?;
+
+                Ok::<_, RatchetTreeError>(tree_index)
+            },
+        )?;
 
         Ok(TreeKemPublic {
             cipher_suite,
-            key_package_index,
+            index,
             nodes,
         })
     }
@@ -219,9 +229,8 @@ impl TreeKemPublic {
         &self,
         key_package_ref: &KeyPackageRef,
     ) -> Result<LeafIndex, RatchetTreeError> {
-        self.key_package_index
-            .get(key_package_ref)
-            .cloned()
+        self.index
+            .get_key_package_index(key_package_ref)
             .ok_or_else(|| RatchetTreeError::KeyPackageNotFound(key_package_ref.to_string()))
     }
 
@@ -276,27 +285,30 @@ impl TreeKemPublic {
     fn fill_empty_leaves(
         &mut self,
         key_packages: &[(KeyPackageRef, ValidatedKeyPackage)],
-    ) -> Vec<KeyPackageRef> {
+    ) -> Result<Vec<KeyPackageRef>, RatchetTreeError> {
         // Fill a set of empty leaves given a particular array, return the leaf indexes that were
         // overwritten
-        self.nodes.empty_leaves().zip(key_packages.iter()).fold(
+        self.nodes.empty_leaves().zip(key_packages.iter()).try_fold(
             Vec::new(),
             |mut indexs, ((index, empty_node), (package_ref, package))| {
                 // See TODO in add_nodes, we have to clone here because we can't iterate the list
                 // of packages to insert a single time
                 *empty_node = Some(Node::from(Leaf::from(package.clone())));
-                self.key_package_index.insert(package_ref.clone(), index);
+                self.index.insert(package_ref.clone(), index, package)?;
                 indexs.push(package_ref.clone());
-                indexs
+
+                Ok::<_, RatchetTreeError>(indexs)
             },
         )
     }
 
+    // Note that a partial failure of this function will leave the tree in a bad state. Modifying a
+    // tree should always be done on a clone of the tree, which is how commits are processed
     pub fn add_leaves(
         &mut self,
         key_packages: Vec<ValidatedKeyPackage>,
     ) -> Result<Vec<KeyPackageRef>, RatchetTreeError> {
-        // Convert all the key packages into nodes
+        // Get key package references for all packages we are going to insert
         let packages_to_insert = key_packages
             .into_iter()
             .map(|kp| {
@@ -305,43 +317,27 @@ impl TreeKemPublic {
             })
             .collect::<Result<Vec<(KeyPackageRef, ValidatedKeyPackage)>, RatchetTreeError>>()?;
 
-        // Determine if there are any duplicate entries in the existing tree
-        let duplicate_kpr: Vec<KeyPackageRef> = packages_to_insert
-            .iter()
-            .filter(|(kp_ref, _)| self.key_package_index.contains_key(kp_ref))
-            .map(|(kp_ref, _)| kp_ref.clone())
-            .collect();
-
-        if !duplicate_kpr.is_empty() {
-            return Err(RatchetTreeError::DuplicateKeyPackages(
-                duplicate_kpr
-                    .into_iter()
-                    .map(|kpr| kpr.to_string())
-                    .collect(),
-            ));
-        }
-
         // Fill empty leaves first, then add the remaining nodes by extending
         // the tree to the right
 
         // TODO: Find a way to predetermine a single list of nodes to fill by pre-populating new
         // empty nodes and iterating through a chain of empty leaves + new leaves
-        let mut added_leaf_indexs = self.fill_empty_leaves(&packages_to_insert);
+        let mut added_leaf_indexs = self.fill_empty_leaves(&packages_to_insert)?;
 
         packages_to_insert
             .into_iter()
             .skip(added_leaf_indexs.len())
-            .for_each(|(package_ref, package)| {
+            .try_for_each(|(package_ref, package)| {
                 if !self.nodes.is_empty() {
                     self.nodes.push(None);
                 }
 
-                self.nodes.push(Some(Node::from(Leaf::from(package))));
-
                 let index = LeafIndex(self.nodes.len() as u32 / 2);
-                self.key_package_index.insert(package_ref.clone(), index);
+                self.index.insert(package_ref.clone(), index, &package)?;
+                self.nodes.push(Option::from(package));
                 added_leaf_indexs.push(package_ref);
-            });
+                Ok::<_, RatchetTreeError>(())
+            })?;
 
         added_leaf_indexs
             .iter()
@@ -371,7 +367,7 @@ impl TreeKemPublic {
             |mut vec, (index, package_ref)| {
                 // Replace the leaf node at position removed with a blank node
                 if let Some(removed) = self.nodes.blank_leaf_node(*index)? {
-                    self.key_package_index.remove(&package_ref);
+                    self.index.remove(&package_ref, &removed.key_package)?;
                     vec.push((package_ref.clone(), removed.key_package.into()));
                 }
 
@@ -396,20 +392,17 @@ impl TreeKemPublic {
         // Determine if this key package is unique
         let new_key_package_ref = key_package.to_reference()?;
 
-        if self.package_leaf_index(&new_key_package_ref).is_ok() {
-            return Err(RatchetTreeError::DuplicateKeyPackages(vec![
-                new_key_package_ref.to_string(),
-            ]));
-        }
-
         // Update the leaf node
         let leaf_index = self.package_leaf_index(package_ref)?;
-        self.nodes.borrow_as_leaf_mut(leaf_index)?.key_package = key_package;
+        let existing_leaf = self.nodes.borrow_as_leaf_mut(leaf_index)?;
 
         // Update the cache
-        self.key_package_index.remove(package_ref);
-        self.key_package_index
-            .insert(new_key_package_ref, leaf_index);
+        self.index.remove(package_ref, &existing_leaf.key_package)?;
+
+        self.index
+            .insert(new_key_package_ref, leaf_index, &key_package)?;
+
+        existing_leaf.key_package = key_package;
 
         // Blank the intermediate nodes along the path from the sender's leaf to the root
         self.nodes
@@ -476,6 +469,8 @@ impl TreeKemPublic {
 
         // Swap in the new key package
         let mut own_leaf = self.nodes.borrow_as_leaf_mut(private_key.self_index)?;
+        let old_key_package = own_leaf.key_package.clone();
+
         own_leaf.key_package = key_package_generation.key_package.clone();
 
         let excluding: Vec<LeafIndex> = excluding
@@ -547,9 +542,14 @@ impl TreeKemPublic {
         let key_package_ref = own_leaf.key_package.to_reference()?;
 
         // Update the key package index with the new reference value
-        self.key_package_index.remove(&private_key.key_package_ref);
-        self.key_package_index
-            .insert(key_package_ref.clone(), private_key.self_index);
+        self.index
+            .remove(&private_key.key_package_ref, &old_key_package)?;
+
+        self.index.insert(
+            key_package_ref.clone(),
+            private_key.self_index,
+            &own_leaf.key_package,
+        )?;
 
         // Update the private key with the new reference value
         private_key.key_package_ref = key_package_ref;
@@ -607,15 +607,17 @@ impl TreeKemPublic {
             })
     }
 
+    // Swap in a new key package at index `sender` and return the old key package
     fn apply_update_path(
         &mut self,
         sender: LeafIndex,
         update_path: &ValidatedUpdatePath,
-    ) -> Result<(), RatchetTreeError> {
+    ) -> Result<ValidatedKeyPackage, RatchetTreeError> {
         // Install the new leaf node
-        self.nodes.borrow_as_leaf_mut(sender).map(|l| {
-            l.key_package = update_path.leaf_key_package.clone();
-        })?;
+        let mut existing_leaf = self.nodes.borrow_as_leaf_mut(sender)?;
+        let existing_key_package = existing_leaf.key_package.clone();
+
+        existing_leaf.key_package = update_path.leaf_key_package.clone();
 
         // Update the rest of the nodes on the direct path
         update_path
@@ -626,7 +628,7 @@ impl TreeKemPublic {
                 self.update_node(one_node.public_key.clone(), node_index)
             })?;
 
-        Ok(())
+        Ok(existing_key_package)
     }
 
     pub fn apply_self_update(
@@ -635,13 +637,16 @@ impl TreeKemPublic {
         original_key_package_ref: &KeyPackageRef,
     ) -> Result<(), RatchetTreeError> {
         let sender = self.package_leaf_index(original_key_package_ref)?;
+        let existing_key_package = self.apply_update_path(sender, update_path)?;
 
-        self.apply_update_path(sender, update_path)?;
+        self.index
+            .remove(original_key_package_ref, &existing_key_package)?;
 
-        self.key_package_index.remove(original_key_package_ref);
-
-        self.key_package_index
-            .insert(update_path.leaf_key_package.to_reference()?, sender);
+        self.index.insert(
+            update_path.leaf_key_package.to_reference()?,
+            sender,
+            &update_path.leaf_key_package,
+        )?;
 
         // Verify the parent hash of the new sender leaf node and update the parent hash values
         // in the local tree
@@ -729,11 +734,14 @@ impl TreeKemPublic {
                 },
             )?;
 
-        self.apply_update_path(sender_index, update_path)?;
+        let removed_key_package = self.apply_update_path(sender_index, update_path)?;
+        self.index.remove(sender, &removed_key_package)?;
 
-        self.key_package_index.remove(sender);
-        self.key_package_index
-            .insert(update_path.leaf_key_package.to_reference()?, sender_index);
+        self.index.insert(
+            update_path.leaf_key_package.to_reference()?,
+            sender_index,
+            &update_path.leaf_key_package,
+        )?;
 
         // Verify the parent hash of the new sender leaf node and update the parent hash values
         // in the local tree
@@ -889,8 +897,7 @@ pub(crate) mod test {
             });
 
         // Verify the underlying state
-
-        assert_eq!(tree.key_package_index.len(), tree.leaf_count() as usize);
+        assert_eq!(tree.index.len(), tree.leaf_count() as usize);
 
         assert_eq!(tree.nodes.len(), 5);
         assert_eq!(
@@ -960,7 +967,12 @@ pub(crate) mod test {
 
         let add_res = tree.add_leaves(key_packages);
 
-        assert_matches!(add_res, Err(RatchetTreeError::DuplicateKeyPackages(_)));
+        assert_matches!(
+            add_res,
+            Err(RatchetTreeError::TreeIndexError(
+                TreeIndexError::DuplicateKeyPackage(_, _)
+            ))
+        );
     }
 
     #[test]
@@ -1046,7 +1058,7 @@ pub(crate) mod test {
         );
 
         // The cache of tree package indexs should not have grown
-        assert_eq!(tree.key_package_index.len() as u32, tree.leaf_count());
+        assert_eq!(tree.index.len() as u32, tree.leaf_count());
 
         // The key package should be updated in the tree
         assert_eq!(
@@ -1105,7 +1117,9 @@ pub(crate) mod test {
 
         assert_matches!(
             tree.update_leaf(&key_package_ref, duplicate_key_package),
-            Err(RatchetTreeError::DuplicateKeyPackages(_))
+            Err(RatchetTreeError::TreeIndexError(
+                TreeIndexError::DuplicateKeyPackage(_, _)
+            ))
         );
     }
 

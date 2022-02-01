@@ -59,7 +59,7 @@ pub struct BasicCredential {
     pub identity: Vec<u8>,
     pub signature_scheme: SignatureScheme,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    signature_key: Vec<u8>,
+    pub(crate) signature_key: Vec<u8>,
 }
 
 impl CredentialConvertible for BasicCredential {

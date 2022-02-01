@@ -13,7 +13,6 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum EpochError {
@@ -33,32 +32,22 @@ pub enum EpochError {
     KeyDerivationFailure,
 }
 
-#[derive(Debug, Clone, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Debug, Clone)]
 pub(crate) struct Epoch {
     pub identifier: u64,
     pub cipher_suite: CipherSuite,
     pub public_tree: TreeKemPublic,
     pub secret_tree: SecretTree,
     pub self_index: LeafIndex,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub sender_data_secret: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub exporter_secret: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub authentication_secret: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub external_secret: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub confirmation_key: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub membership_key: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub resumption_secret: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub init_secret: Vec<u8>,
-    #[tls_codec(with = "crate::tls::DefMap")]
     pub handshake_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
-    #[tls_codec(with = "crate::tls::DefMap")]
     pub application_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
 }
 

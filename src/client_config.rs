@@ -64,7 +64,7 @@ impl KeyPackageRepository for InMemoryRepository {
     type Error = KeyPackageError;
 
     fn insert(&mut self, key_pkg_gen: KeyPackageGeneration) -> Result<(), Self::Error> {
-        (&*self).insert(key_pkg_gen)
+        (*self).insert(key_pkg_gen)
     }
 
     fn get(&self, key_pkg: &KeyPackageRef) -> Result<Option<KeyPackageGeneration>, Self::Error> {

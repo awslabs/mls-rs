@@ -330,7 +330,7 @@ pub struct Welcome {
     pub encrypted_group_info: Vec<u8>,
 }
 
-#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug)]
 pub struct Group {
     pub cipher_suite: CipherSuite,
     context: GroupContext,
@@ -338,7 +338,6 @@ pub struct Group {
     epoch_repo: EpochRepository,
     interim_transcript_hash: InterimTranscriptHash,
     proposals: ProposalCache,
-    #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::ByteVec>")]
     pub pending_updates: HashMap<KeyPackageRef, HpkeSecretKey>, // Hash of key package to key generation
 }
 

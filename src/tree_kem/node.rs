@@ -139,6 +139,12 @@ impl From<Leaf> for Node {
     }
 }
 
+impl From<ValidatedKeyPackage> for Option<Node> {
+    fn from(kp: ValidatedKeyPackage) -> Self {
+        Option::from(Leaf::from(kp))
+    }
+}
+
 impl From<ValidatedKeyPackage> for Leaf {
     fn from(key_package: ValidatedKeyPackage) -> Self {
         Leaf { key_package }

@@ -10,10 +10,9 @@ pub enum EpochRepositoryError {
     EpochNotFound(u64),
 }
 
-#[derive(Clone, Debug, PartialEq, TlsSerialize, TlsDeserialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EpochRepository {
     retention_limit: u32,
-    #[tls_codec(with = "crate::tls::DefVecDeque::<u32>")]
     internal_queue: VecDeque<Epoch>,
 }
 
