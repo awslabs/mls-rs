@@ -1,6 +1,7 @@
 use crate::{
     group::proposal::Proposal,
     key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageRef},
+    psk::{ExternalPskId, Psk},
 };
 use ferriscrypt::asym::ec_key::PublicKey;
 use std::{
@@ -17,9 +18,16 @@ pub trait KeyPackageRepository {
     fn get(&self, key_pkg: &KeyPackageRef) -> Result<Option<KeyPackageGeneration>, Self::Error>;
 }
 
+pub trait SecretStore {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn psk(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error>;
+}
+
 pub trait ClientConfig {
     type KeyPackageRepository: KeyPackageRepository;
     type ProposalFilterError: std::error::Error + Send + Sync + 'static;
+    type SecretStore: SecretStore;
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
         DefaultClientConfig::default().external_signing_key(external_key_id)
@@ -39,6 +47,7 @@ pub trait ClientConfig {
 
     fn key_package_repo(&self) -> Self::KeyPackageRepository;
     fn filter_proposal(&self, proposal: &Proposal) -> Result<(), Self::ProposalFilterError>;
+    fn secret_store(&self) -> Self::SecretStore;
 }
 
 #[derive(Clone, Default, Debug)]
@@ -72,6 +81,25 @@ impl KeyPackageRepository for InMemoryRepository {
     }
 }
 
+#[derive(Clone, Default, Debug)]
+pub struct InMemorySecretStore {
+    inner: Arc<Mutex<HashMap<ExternalPskId, Psk>>>,
+}
+
+impl InMemorySecretStore {
+    pub fn insert(&self, id: ExternalPskId, psk: Psk) {
+        self.inner.lock().unwrap().insert(id, psk);
+    }
+}
+
+impl SecretStore for InMemorySecretStore {
+    type Error = std::convert::Infallible;
+
+    fn psk(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error> {
+        Ok(self.inner.lock().unwrap().get(id).cloned())
+    }
+}
+
 #[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct DefaultClientConfig {
@@ -81,6 +109,7 @@ pub struct DefaultClientConfig {
     external_key_id: Option<Vec<u8>>,
     key_packages: InMemoryRepository,
     proposal_filter: Option<ProposalFilter>,
+    secret_store: InMemorySecretStore,
 }
 
 type ProposalFilter = Arc<dyn Fn(&Proposal) -> Result<(), String> + Send + Sync>;
@@ -135,6 +164,14 @@ impl DefaultClientConfig {
             ..self
         }
     }
+
+    #[must_use]
+    pub fn with_secret_store(self, secret_store: InMemorySecretStore) -> Self {
+        Self {
+            secret_store,
+            ..self
+        }
+    }
 }
 
 impl Debug for DefaultClientConfig {
@@ -159,6 +196,7 @@ impl Debug for DefaultClientConfig {
 impl ClientConfig for DefaultClientConfig {
     type KeyPackageRepository = InMemoryRepository;
     type ProposalFilterError = SimpleError;
+    type SecretStore = InMemorySecretStore;
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
         self.external_signing_keys.get(external_key_id).cloned()
@@ -185,6 +223,10 @@ impl ClientConfig for DefaultClientConfig {
 
     fn key_package_repo(&self) -> InMemoryRepository {
         self.key_packages.clone()
+    }
+
+    fn secret_store(&self) -> Self::SecretStore {
+        self.secret_store.clone()
     }
 }
 

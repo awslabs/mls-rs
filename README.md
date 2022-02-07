@@ -40,7 +40,7 @@ based on Draft 12 of the RFC. Cryptographic operations are supported by [Ferrisc
 * `add`
 * `update`
 * `remove`
-* *TODO*: `psk`
+* `psk`
 * *TODO*: `reinit`
 * *TODO*: `external_init`
 * *TODO*: `app_ack`

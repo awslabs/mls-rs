@@ -234,10 +234,14 @@ impl<C: ClientConfig + Clone> Client<C> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{credential::BasicCredential, group::ProcessedMessage};
+    use crate::{
+        client_config::InMemorySecretStore,
+        credential::BasicCredential,
+        group::{GroupError, ProcessedMessage},
+        psk::{ExternalPskId, PskSecretError},
+    };
     use assert_matches::assert_matches;
-    use ferriscrypt::asym::ec_key::Curve;
-    use ferriscrypt::rand::SecureRng;
+    use ferriscrypt::{asym::ec_key::Curve, kdf::hkdf::Hkdf, rand::SecureRng};
     use std::time::SystemTime;
     use tls_codec::Serialize;
 
@@ -425,13 +429,7 @@ mod test {
     fn new_member_add_proposal_adds_to_group() {
         let alice = TestClientBuilder::named("alice").build();
 
-        let mut session = alice
-            .create_session(
-                LifetimeExt::years(1, SystemTime::now()).unwrap(),
-                TEST_GROUP.to_vec(),
-                ExtensionList::new(),
-            )
-            .unwrap();
+        let mut session = create_session(&alice);
         let (bob, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
         let proposal = bob
             .propose_add_from_new_member(
@@ -463,7 +461,7 @@ mod test {
     struct PreconfiguredEnv {
         ted: Client,
         bob_key_gen: KeyPackageGeneration,
-        session: Session,
+        alice_session: Session,
     }
 
     impl PreconfiguredEnv {
@@ -484,20 +482,24 @@ mod test {
                     ted_signing_key.to_public().unwrap(),
                 ))
                 .build();
-            let session = alice
-                .create_session(
-                    LifetimeExt::years(1, SystemTime::now()).unwrap(),
-                    TEST_GROUP.to_vec(),
-                    ExtensionList::new(),
-                )
-                .unwrap();
+            let alice_session = create_session(&alice);
             let (_, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
             PreconfiguredEnv {
                 ted,
                 bob_key_gen,
-                session,
+                alice_session,
             }
         }
+    }
+
+    fn create_session(client: &Client) -> Session {
+        client
+            .create_session(
+                LifetimeExt::years(1, SystemTime::now()).unwrap(),
+                TEST_GROUP.to_vec(),
+                ExtensionList::new(),
+            )
+            .unwrap()
     }
 
     #[test]
@@ -511,16 +513,16 @@ mod test {
             .propose_add_from_preconfigured(
                 TEST_GROUP.to_vec(),
                 proposal.clone(),
-                env.session.group_stats().unwrap().epoch,
+                env.alice_session.group_stats().unwrap().epoch,
             )
             .unwrap();
-        let msg = env.session.process_incoming_bytes(&msg).unwrap();
+        let msg = env.alice_session.process_incoming_bytes(&msg).unwrap();
         let received_proposal = match msg {
             ProcessedMessage::Proposal(Proposal::Add(p)) if p == proposal => Proposal::Add(p),
             m => panic!("Expected {:?} but got {:?}", proposal, m),
         };
-        let _ = env.session.commit(vec![received_proposal]).unwrap();
-        let state_update = env.session.apply_pending_commit().unwrap();
+        let _ = env.alice_session.commit(vec![received_proposal]).unwrap();
+        let state_update = env.alice_session.apply_pending_commit().unwrap();
         let expected_ref = env.bob_key_gen.key_package.to_reference().unwrap();
         assert!(state_update.added.iter().any(|r| *r == expected_ref));
     }
@@ -529,14 +531,14 @@ mod test {
     fn preconfigured_remove_proposal_removes_from_group() {
         let mut env = PreconfiguredEnv::new();
         let _ = env
-            .session
+            .alice_session
             .commit(vec![Proposal::Add(AddProposal {
                 key_package: env.bob_key_gen.key_package.clone().into(),
             })])
             .unwrap();
-        let _ = env.session.apply_pending_commit().unwrap();
+        let _ = env.alice_session.apply_pending_commit().unwrap();
         assert!(env
-            .session
+            .alice_session
             .roster()
             .iter()
             .any(|&p| *p == env.bob_key_gen.key_package.clone().into()));
@@ -549,16 +551,16 @@ mod test {
             .propose_remove_from_preconfigured(
                 TEST_GROUP.to_vec(),
                 proposal.clone(),
-                env.session.group_stats().unwrap().epoch,
+                env.alice_session.group_stats().unwrap().epoch,
             )
             .unwrap();
-        let msg = env.session.process_incoming_bytes(&msg).unwrap();
+        let msg = env.alice_session.process_incoming_bytes(&msg).unwrap();
         let _ = match msg {
             ProcessedMessage::Proposal(Proposal::Remove(p)) if p == proposal => Proposal::Remove(p),
             m => panic!("Expected {:?} but got {:?}", proposal, m),
         };
-        let _ = env.session.commit(Vec::new()).unwrap();
-        let state_update = env.session.apply_pending_commit().unwrap();
+        let _ = env.alice_session.commit(Vec::new()).unwrap();
+        let state_update = env.alice_session.apply_pending_commit().unwrap();
         assert!(state_update
             .removed
             .iter()
@@ -569,13 +571,7 @@ mod test {
     fn proposal_from_unknown_external_is_rejected_by_members() {
         let ted = TestClientBuilder::named("ted").build();
         let alice = TestClientBuilder::named("alice").build();
-        let mut session = alice
-            .create_session(
-                LifetimeExt::years(1, SystemTime::now()).unwrap(),
-                TEST_GROUP.to_vec(),
-                ExtensionList::new(),
-            )
-            .unwrap();
+        let mut session = create_session(&alice);
         let (_, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
         let msg = ted
             .propose_add_from_new_member(
@@ -593,13 +589,7 @@ mod test {
         let alice = TestClientBuilder::named("alice")
             .with_config(DefaultClientConfig::default().with_proposal_filter(|_| Err("no")))
             .build();
-        let mut session = alice
-            .create_session(
-                LifetimeExt::years(1, SystemTime::now()).unwrap(),
-                TEST_GROUP.to_vec(),
-                ExtensionList::new(),
-            )
-            .unwrap();
+        let mut session = create_session(&alice);
         let (bob, bob_key_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
         let proposal = bob
             .propose_add_from_new_member(
@@ -610,5 +600,35 @@ mod test {
             .unwrap();
         let res = session.process_incoming_bytes(&proposal);
         assert_matches!(res, Err(SessionError::ProposalRejected(e)) if e.to_string() == "no");
+    }
+
+    #[test]
+    fn psk_proposal_can_be_committed() {
+        let expected_id = ExternalPskId(vec![1]);
+        let secret_store = InMemorySecretStore::default();
+        secret_store.insert(
+            expected_id.clone(),
+            vec![1; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()].into(),
+        );
+        let alice = TestClientBuilder::named("alice")
+            .with_config(DefaultClientConfig::default().with_secret_store(secret_store))
+            .build();
+        let mut session = create_session(&alice);
+        let proposal = session.psk_proposal(expected_id.clone()).unwrap();
+        let res = session.commit(vec![proposal]);
+        assert_matches!(res, Ok(_));
+    }
+
+    #[test]
+    fn psk_id_in_psk_proposal_must_be_known() {
+        let alice = TestClientBuilder::named("alice").build();
+        let mut session = create_session(&alice);
+        let expected_id = ExternalPskId(vec![1]);
+        let proposal = session.psk_proposal(expected_id.clone()).unwrap();
+        let res = session.commit(vec![proposal]);
+        assert_matches!(
+            res,
+            Err(SessionError::ProtocolError(GroupError::PskSecretError(PskSecretError::NoPskForId(actual_id)))) if actual_id == expected_id
+        );
     }
 }

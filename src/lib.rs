@@ -17,6 +17,7 @@ pub mod extension;
 mod group;
 mod hash_reference;
 pub mod key_package;
+mod psk;
 pub mod session;
 mod tree_kem;
 

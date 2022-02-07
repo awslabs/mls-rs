@@ -159,6 +159,7 @@ where
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
+        client_config::InMemorySecretStore,
         extension::ExtensionList,
         group::{
             membership_tag::MembershipTag,
@@ -265,6 +266,8 @@ mod tests {
                 .add_proposal(key_pkg_gen.key_package.clone().into())
                 .unwrap();
 
+            let secret_store = InMemorySecretStore::default();
+
             let (commit_generation, welcome) = alice
                 .group
                 .commit_proposals(
@@ -273,17 +276,19 @@ mod tests {
                     false,
                     WireFormat::Plain,
                     false,
+                    &secret_store,
                 )
                 .unwrap();
 
             alice
                 .group
-                .process_pending_commit(commit_generation)
+                .process_pending_commit(commit_generation, &secret_store)
                 .unwrap();
             let group = Group::from_welcome_message(
                 welcome.unwrap(),
                 Some(alice.group.current_epoch_tree().unwrap().clone()),
                 key_pkg_gen,
+                &secret_store,
             )
             .unwrap();
             let bob = TestMember { signing_key, group };

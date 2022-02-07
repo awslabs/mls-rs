@@ -8,6 +8,7 @@ use crate::group::{
 use crate::key_package::{
     KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
 };
+use crate::psk::ExternalPskId;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use ferriscrypt::asym::ec_key::SecretKey;
 use ferriscrypt::hpke::kem::HpkePublicKey;
@@ -127,8 +128,12 @@ impl<C: ClientConfig> Session<C> {
         let credential = key_package_generation.key_package.credential.clone();
         let extensions = key_package_generation.key_package.extensions.clone();
 
-        let group =
-            Group::from_welcome_message(welcome_message, ratchet_tree, key_package_generation)?;
+        let group = Group::from_welcome_message(
+            welcome_message,
+            ratchet_tree,
+            key_package_generation,
+            &config.secret_store(),
+        )?;
 
         Ok(Session {
             signing_key,
@@ -191,6 +196,11 @@ impl<C: ClientConfig> Session<C> {
     }
 
     #[inline(always)]
+    pub fn psk_proposal(&mut self, psk: ExternalPskId) -> Result<Proposal, SessionError> {
+        Ok(self.protocol.psk_proposal(psk)?)
+    }
+
+    #[inline(always)]
     pub fn propose_add(&mut self, key_package_data: &[u8]) -> Result<Vec<u8>, SessionError> {
         let key_package = KeyPackage::tls_deserialize(&mut &*key_package_data)?;
         self.send_proposal(self.protocol.add_proposal(key_package)?)
@@ -227,6 +237,12 @@ impl<C: ClientConfig> Session<C> {
     }
 
     #[inline(always)]
+    pub fn propose_psk(&mut self, psk: ExternalPskId) -> Result<Vec<u8>, SessionError> {
+        let proposal = self.protocol.psk_proposal(psk)?;
+        self.send_proposal(proposal)
+    }
+
+    #[inline(always)]
     fn serialize_control(&mut self, plaintext: OutboundPlaintext) -> Result<Vec<u8>, SessionError> {
         Ok(plaintext.message().tls_serialize_detached()?)
     }
@@ -259,6 +275,7 @@ impl<C: ClientConfig> Session<C> {
             true,
             wire_format(&self.config),
             self.config.ratchet_tree_extension(),
+            &self.config.secret_store(),
         )?;
 
         let serialized_commit = self.serialize_control(commit_data.plaintext.clone())?;
@@ -295,7 +312,9 @@ impl<C: ClientConfig> Session<C> {
                 .map_err(|e| SessionError::ProposalRejected(e.into())),
             Content::Application(_) | Content::Commit(_) => Ok(()),
         }?;
-        let res = self.protocol.process_incoming_message(message)?;
+        let res = self
+            .protocol
+            .process_incoming_message(message, &self.config.secret_store())?;
         // This commit beat our current pending commit to the server, our commit is no longer
         // relevant
         if let ProcessedMessage::Commit(_) = res {
@@ -311,7 +330,7 @@ impl<C: ClientConfig> Session<C> {
             .take()
             .ok_or(SessionError::PendingCommitNotFound)?;
         self.protocol
-            .process_pending_commit(pending.commit)
+            .process_pending_commit(pending.commit, &self.config.secret_store())
             .map_err(Into::into)
     }
 

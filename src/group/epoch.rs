@@ -77,6 +77,7 @@ impl Epoch {
         public_tree: TreeKemPublic,
         context: &GroupContext,
         self_index: LeafIndex,
+        psk_secret: &[u8],
     ) -> Result<(Epoch, Vec<u8>), EpochError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
@@ -95,6 +96,7 @@ impl Epoch {
             public_tree,
             context,
             self_index,
+            psk_secret,
         )?;
 
         Ok((epoch, joiner_secret))
@@ -105,6 +107,7 @@ impl Epoch {
         commit_secret: &CommitSecret,
         public_tree: TreeKemPublic,
         context: &GroupContext,
+        psk_secret: &[u8],
     ) -> Result<(Epoch, Vec<u8>), EpochError> {
         Self::derive(
             epoch.cipher_suite,
@@ -113,6 +116,7 @@ impl Epoch {
             public_tree,
             context,
             epoch.self_index,
+            psk_secret,
         )
     }
 
@@ -122,11 +126,11 @@ impl Epoch {
         public_tree: TreeKemPublic,
         context: &GroupContext,
         self_index: LeafIndex,
+        psk_secret: &[u8],
     ) -> Result<Self, EpochError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
-        //TODO: PSK is not supported
-        let epoch_seed = kdf.extract(&vec![0u8; kdf.extract_size()], joiner_secret)?;
+        let epoch_seed = kdf.extract(psk_secret, joiner_secret)?;
 
         let epoch_secret = kdf.expand_with_label(
             &epoch_seed,
@@ -324,10 +328,10 @@ impl WelcomeSecret {
     pub fn from_joiner_secret(
         cipher_suite: CipherSuite,
         joiner_secret: &[u8],
+        psk_secret: &[u8],
     ) -> Result<WelcomeSecret, EpochError> {
-        //TODO: PSK is not supported
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
-        let epoch_seed = kdf.extract(&vec![0u8; kdf.extract_size()], joiner_secret)?;
+        let epoch_seed = kdf.extract(psk_secret, joiner_secret)?;
         let data = kdf.derive_secret(&epoch_seed, "welcome")?;
 
         let aead = cipher_suite.aead_type();

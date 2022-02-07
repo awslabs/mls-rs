@@ -16,6 +16,7 @@ use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext, ProtocolVersion};
+use crate::client_config::SecretStore;
 use crate::credential::CredentialError;
 use crate::extension::{
     Extension, ExtensionError, ExtensionList, RatchetTreeExt, RequiredCapabilitiesExt,
@@ -25,6 +26,7 @@ use crate::key_package::{
     KeyPackageGenerator, KeyPackageRef, KeyPackageValidationError, KeyPackageValidationOptions,
     KeyPackageValidator,
 };
+use crate::psk::{ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskNonce, PskSecretError};
 use crate::tree_kem::leaf_secret::LeafSecretError;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{
@@ -48,8 +50,8 @@ use transcript_hash::*;
 use self::epoch_repo::{EpochRepository, EpochRepositoryError};
 
 mod confirmation_tag;
-mod epoch;
-mod epoch_repo;
+pub(crate) mod epoch;
+pub(crate) mod epoch_repo;
 pub mod framing;
 pub mod key_schedule;
 mod membership_tag;
@@ -69,6 +71,7 @@ struct ProvisionalState {
     group_context: GroupContext,
     epoch: u64,
     path_update_required: bool,
+    psks: Vec<PreSharedKeyID>,
 }
 
 #[derive(Clone, Debug)]
@@ -200,6 +203,10 @@ pub enum GroupError {
     OnlyMembersCanUpdate,
     #[error("commiter must not propose unsupported required capabilities")]
     UnsupportedRequiredCapabilities,
+    #[error("PSK proposal must contain an external PSK")]
+    PskProposalMustContainExternalPsk,
+    #[error(transparent)]
+    PskSecretError(#[from] PskSecretError),
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -311,7 +318,8 @@ pub struct GroupSecrets {
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub joiner_secret: Vec<u8>,
     pub path_secret: Option<PathSecret>,
-    //TODO: PSK not currently supported
+    #[tls_codec(with = "crate::tls::DefVec::<u16>")]
+    pub psks: Vec<PreSharedKeyID>,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -441,6 +449,7 @@ impl Group {
             public_tree,
             &context,
             LeafIndex(0),
+            &vec![0; kdf.extract_size()],
         )?;
 
         // TODO: Make the repository bounds configurable somehow
@@ -457,10 +466,11 @@ impl Group {
         })
     }
 
-    pub fn from_welcome_message(
+    pub fn from_welcome_message<S: SecretStore>(
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package: KeyPackageGeneration,
+        secret_store: &S,
     ) -> Result<Self, GroupError> {
         //Identify an entry in the secrets array where the key_package_hash value corresponds to
         // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
@@ -478,7 +488,6 @@ impl Group {
         // cipher suite and the HPKE private key corresponding to the GroupSecrets. If a
         // PreSharedKeyID is part of the GroupSecrets and the client is not in possession of
         // the corresponding PSK, return an error
-        //TODO: PSK Support
         let decrypted_group_secrets = welcome.cipher_suite.hpke().open_base(
             &encrypted_group_secrets
                 .encrypted_group_secrets
@@ -490,12 +499,21 @@ impl Group {
         )?;
 
         let group_secrets = GroupSecrets::tls_deserialize(&mut &*decrypted_group_secrets)?;
+        let psk_secret = crate::psk::psk_secret(
+            welcome.cipher_suite,
+            secret_store,
+            None,
+            &group_secrets.psks,
+        )?;
 
         //From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
         // the GroupSecrets, derive the welcome_secret and using that the welcome_key and
         // welcome_nonce.
-        let welcome_secret =
-            WelcomeSecret::from_joiner_secret(welcome.cipher_suite, &group_secrets.joiner_secret)?;
+        let welcome_secret = WelcomeSecret::from_joiner_secret(
+            welcome.cipher_suite,
+            &group_secrets.joiner_secret,
+            &psk_secret,
+        )?;
 
         //Use the key and nonce to decrypt the encrypted_group_info field.
         let decrypted_group_info = welcome_secret.decrypt(&welcome.encrypted_group_info)?;
@@ -572,6 +590,7 @@ impl Group {
             public_tree,
             &context,
             self_index,
+            &psk_secret,
         )?;
 
         // Verify the confirmation tag in the GroupInfo using the derived confirmation key and the
@@ -738,6 +757,7 @@ impl Group {
             epoch: self.context.epoch + 1,
             path_update_required,
             group_context: provisional_group_context,
+            psks: proposals.psks,
         })
     }
 
@@ -793,13 +813,14 @@ impl Group {
         Ok(plaintext)
     }
 
-    pub fn commit_proposals(
+    pub fn commit_proposals<S: SecretStore>(
         &mut self,
         proposals: Vec<Proposal>,
         key_package_generator: &KeyPackageGenerator,
         update_path: bool,
         wire_format: WireFormat,
         ratchet_tree_extension: bool,
+        secret_store: &S,
     ) -> Result<(CommitGeneration, Option<Welcome>), GroupError> {
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
@@ -863,10 +884,13 @@ impl Group {
         let commit_secret =
             CommitSecret::from_update_path(self.cipher_suite, update_path.as_ref())?;
 
-        //TODO: If one or more PreSharedKey proposals are part of the commit, derive the psk_secret
-        // as specified in Section 8.2, where the order of PSKs in the derivation corresponds to the
-        // order of PreSharedKey proposals in the proposals vector. Otherwise, set psk_secret to a
-        // zero-length octet string
+        let psk_secret = crate::psk::psk_secret(
+            self.cipher_suite,
+            secret_store,
+            Some(&self.epoch_repo),
+            &provisional_state.psks,
+        )?;
+
         let commit = Commit {
             proposals: commit_proposals,
             path: update_path.clone().map(|up| up.update_path),
@@ -906,6 +930,7 @@ impl Group {
             &commit_secret,
             provisional_state.public_tree,
             &provisional_group_context,
+            &psk_secret,
         )?;
 
         let confirmation_tag = ConfirmationTag::create(
@@ -945,7 +970,8 @@ impl Group {
 
         // Encrypt the GroupInfo using the key and nonce derived from the joiner_secret for
         // the new epoch
-        let welcome_secret = WelcomeSecret::from_joiner_secret(self.cipher_suite, &joiner_secret)?;
+        let welcome_secret =
+            WelcomeSecret::from_joiner_secret(self.cipher_suite, &joiner_secret, &psk_secret)?;
 
         let group_info_data = group_info.tls_serialize_detached()?;
         let encrypted_group_info = welcome_secret.encrypt(&group_info_data)?;
@@ -960,6 +986,7 @@ impl Group {
                     i,
                     &joiner_secret,
                     update_path.as_ref(),
+                    provisional_state.psks.clone(),
                 )
             })
             .collect::<Result<Vec<EncryptedGroupSecrets>, GroupError>>()?;
@@ -987,6 +1014,7 @@ impl Group {
         new_member: KeyPackageRef,
         joiner_secret: &[u8],
         update_path: Option<&UpdatePathGeneration>,
+        psks: Vec<PreSharedKeyID>,
     ) -> Result<EncryptedGroupSecrets, GroupError> {
         let leaf_index = provisional_tree.package_leaf_index(&new_member)?;
 
@@ -1002,6 +1030,7 @@ impl Group {
         let group_secrets = GroupSecrets {
             joiner_secret: joiner_secret.to_vec(),
             path_secret,
+            psks,
         };
 
         let group_secrets_bytes = group_secrets.tls_serialize_detached()?;
@@ -1063,6 +1092,15 @@ impl Group {
 
         Ok(Proposal::Remove(RemoveProposal {
             to_remove: key_package_ref.clone(),
+        }))
+    }
+
+    pub fn psk_proposal(&mut self, psk: ExternalPskId) -> Result<Proposal, GroupError> {
+        Ok(Proposal::Psk(PreSharedKey {
+            psk: PreSharedKeyID {
+                key_id: JustPreSharedKeyID::External(psk),
+                psk_nonce: PskNonce::random(self.cipher_suite)?,
+            },
         }))
     }
 
@@ -1212,21 +1250,35 @@ impl Group {
         }?;
         match &plaintext.plaintext.content {
             Content::Application(_) => Ok(()),
-            Content::Commit(_) | Content::Proposal(_) => (plaintext.epoch == self.context.epoch)
+            Content::Commit(_) => (plaintext.epoch == self.context.epoch)
                 .then(|| ())
                 .ok_or(GroupError::InvalidPlaintextEpoch),
+            Content::Proposal(p) => {
+                (plaintext.epoch == self.context.epoch)
+                    .then(|| ())
+                    .ok_or(GroupError::InvalidPlaintextEpoch)?;
+                match p {
+                    Proposal::Psk(PreSharedKey {
+                        psk: PreSharedKeyID { key_id, .. },
+                    }) => matches!(key_id, JustPreSharedKeyID::External(_))
+                        .then(|| ())
+                        .ok_or(GroupError::PskProposalMustContainExternalPsk),
+                    _ => Ok(()),
+                }
+            }
         }?;
         Ok(plaintext)
     }
 
-    pub fn process_incoming_message(
+    pub fn process_incoming_message<S: SecretStore>(
         &mut self,
         plaintext: VerifiedPlaintext,
+        secret_store: &S,
     ) -> Result<ProcessedMessage, GroupError> {
         match plaintext.plaintext.content {
             Content::Application(data) => Ok(ProcessedMessage::Application(data)),
             Content::Commit(_) => {
-                self.process_commit(plaintext, None)
+                self.process_commit(plaintext, None, secret_store)
                     .map(ProcessedMessage::Commit)
                 //TODO: If the Commit included a ReInit proposal, the client MUST NOT use the group to send
                 // messages anymore. Instead, it MUST wait for a Welcome message from the committer
@@ -1239,18 +1291,20 @@ impl Group {
         }
     }
 
-    pub fn process_pending_commit(
+    pub fn process_pending_commit<S: SecretStore>(
         &mut self,
         commit: CommitGeneration,
+        secret_store: &S,
     ) -> Result<StateUpdate, GroupError> {
-        self.process_commit(commit.plaintext.into(), commit.secrets)
+        self.process_commit(commit.plaintext.into(), commit.secrets, secret_store)
     }
 
     // This function takes a provisional copy of the tree and returns an updated tree and epoch key schedule
-    fn process_commit(
+    fn process_commit<S: SecretStore>(
         &mut self,
         plaintext: VerifiedPlaintext,
         local_pending: Option<UpdatePathGeneration>,
+        secret_store: &S,
     ) -> Result<StateUpdate, GroupError> {
         //TODO: PSK Verify that all PSKs specified in any PreSharedKey proposals in the proposals
         // vector are available.
@@ -1354,9 +1408,12 @@ impl Group {
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
         provisional_group_context.tree_hash = provisional_state.public_tree.tree_hash()?;
 
-        // TODO: If the proposals vector contains any PreSharedKey proposals, derive the psk_secret
-        // as specified in Section 8.2, where the order of PSKs in the derivation corresponds to the
-        // order of PreSharedKey proposals in the proposals vector. Otherwise, set psk_secret to 0
+        let psk_secret = crate::psk::psk_secret(
+            self.cipher_suite,
+            secret_store,
+            Some(&self.epoch_repo),
+            &provisional_state.psks,
+        )?;
 
         // Use the commit_secret, the psk_secret, the provisional GroupContext, and the init secret
         // from the previous epoch to compute the epoch secret and derived secrets for the new epoch
@@ -1366,6 +1423,7 @@ impl Group {
             &commit_secret,
             provisional_state.public_tree,
             &provisional_group_context,
+            &psk_secret,
         )?;
 
         // Use the confirmation_key for the new epoch to compute the confirmation tag for
@@ -1510,7 +1568,10 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod test {
-    use crate::extension::{LifetimeExt, MlsExtension, RequiredCapabilitiesExt};
+    use crate::{
+        client_config::InMemorySecretStore,
+        extension::{LifetimeExt, MlsExtension, RequiredCapabilitiesExt},
+    };
 
     use super::{
         test_utils::{extensions, group_extensions, test_group, test_member, TestGroup},
@@ -1584,13 +1645,25 @@ mod test {
             signing_key: &test_group.signing_key,
         };
 
+        let secret_store = InMemorySecretStore::default();
+
         // We should be able to send application messages after a commit
         let (commit, _) = test_group
             .group
-            .commit_proposals(vec![], &generator, true, WireFormat::Plain, false)
+            .commit_proposals(
+                vec![],
+                &generator,
+                true,
+                WireFormat::Plain,
+                false,
+                &secret_store,
+            )
             .unwrap();
 
-        test_group.group.process_pending_commit(commit).unwrap();
+        test_group
+            .group
+            .process_pending_commit(commit, &secret_store)
+            .unwrap();
 
         assert!(test_group
             .group
@@ -1622,6 +1695,7 @@ mod test {
             true,
             WireFormat::Plain,
             false,
+            &InMemorySecretStore::default(),
         );
 
         assert_matches!(res, Err(GroupError::InvalidCommitSelfUpdate));
@@ -1650,10 +1724,14 @@ mod test {
 
         // There should be an error because path_update is set to `true` while there is a pending
         // update proposal for the commiter
-        let res =
-            test_group
-                .group
-                .commit_proposals(vec![], &generator, true, WireFormat::Plain, false);
+        let res = test_group.group.commit_proposals(
+            vec![],
+            &generator,
+            true,
+            WireFormat::Plain,
+            false,
+            &InMemorySecretStore::default(),
+        );
 
         assert_matches!(res, Err(GroupError::InvalidCommitSelfUpdate));
     }
@@ -1699,6 +1777,7 @@ mod test {
             false,
             WireFormat::Plain,
             false,
+            &InMemorySecretStore::default(),
         );
 
         assert_matches!(res, Err(GroupError::KeyPackageValidationError(_)));
@@ -1750,6 +1829,7 @@ mod test {
             true,
             WireFormat::Plain,
             false,
+            &InMemorySecretStore::default(),
         );
 
         assert_matches!(res, Err(GroupError::KeyPackageValidationError(_)));
@@ -1773,6 +1853,8 @@ mod test {
             .add_proposal(bob_key_package.key_package.clone().into())
             .unwrap();
 
+        let secret_store = InMemorySecretStore::default();
+
         let (commit_generation, welcome) = test_group
             .group
             .commit_proposals(
@@ -1781,13 +1863,14 @@ mod test {
                 false,
                 WireFormat::Plain,
                 tree_ext,
+                &secret_store,
             )
             .unwrap();
 
         // Apply the commit to the original group
         test_group
             .group
-            .process_pending_commit(commit_generation)
+            .process_pending_commit(commit_generation, &secret_store)
             .unwrap();
 
         let tree = if tree_ext {
@@ -1797,8 +1880,13 @@ mod test {
         };
 
         // Group from Bob's perspective
-        let bob_group =
-            Group::from_welcome_message(welcome.unwrap(), tree, bob_key_package.clone()).unwrap();
+        let bob_group = Group::from_welcome_message(
+            welcome.unwrap(),
+            tree,
+            bob_key_package.clone(),
+            &secret_store,
+        )
+        .unwrap();
 
         assert_eq!(test_group.group, bob_group);
 
@@ -1841,6 +1929,8 @@ mod test {
             .add_proposal(bob_key_package.key_package.clone().into())
             .unwrap();
 
+        let secret_store = InMemorySecretStore::default();
+
         let (_, welcome) = test_group
             .group
             .commit_proposals(
@@ -1849,11 +1939,13 @@ mod test {
                 false,
                 WireFormat::Plain,
                 false,
+                &secret_store,
             )
             .unwrap();
 
         // Group from Bob's perspective
-        let bob_group = Group::from_welcome_message(welcome.unwrap(), None, bob_key_package);
+        let bob_group =
+            Group::from_welcome_message(welcome.unwrap(), None, bob_key_package, &secret_store);
 
         assert_matches!(bob_group, Err(GroupError::RatchetTreeNotFound));
     }
@@ -1894,7 +1986,14 @@ mod test {
 
         let commit = test_group
             .group
-            .commit_proposals(proposals, &generator, true, WireFormat::Plain, false)
+            .commit_proposals(
+                proposals,
+                &generator,
+                true,
+                WireFormat::Plain,
+                false,
+                &InMemorySecretStore::default(),
+            )
             .map(|(commit, _)| commit);
 
         (test_group, commit)
@@ -1915,7 +2014,7 @@ mod test {
 
         let state_update = test_group
             .group
-            .process_pending_commit(commit.unwrap())
+            .process_pending_commit(commit.unwrap(), &InMemorySecretStore::default())
             .unwrap();
 
         assert!(state_update.active);

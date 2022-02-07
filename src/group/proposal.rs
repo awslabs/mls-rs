@@ -1,4 +1,5 @@
 use super::*;
+use crate::psk::PreSharedKeyID;
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct AddProposal {
@@ -15,6 +16,11 @@ pub struct RemoveProposal {
     pub to_remove: KeyPackageRef,
 }
 
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct PreSharedKey {
+    pub psk: PreSharedKeyID,
+}
+
 pub type ProposalType = u16;
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -24,7 +30,7 @@ pub enum Proposal {
     Add(AddProposal),
     Update(UpdateProposal),
     Remove(RemoveProposal),
-    //TODO: Psk,
+    Psk(PreSharedKey),
     //TODO: ReInit,
     //TODO: ExternalInit,
     //TODO: AppAck,

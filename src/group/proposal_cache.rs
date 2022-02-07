@@ -1,4 +1,6 @@
 use super::*;
+use crate::psk::PreSharedKeyID;
+use std::collections::HashSet;
 
 #[derive(Error, Debug)]
 pub enum ProposalCacheError {
@@ -22,6 +24,7 @@ pub struct ProposalSetEffects {
     pub updates: Vec<(KeyPackageRef, KeyPackage)>,
     pub removes: Vec<KeyPackageRef>,
     pub group_context_ext: Option<ExtensionList>,
+    pub psks: Vec<PreSharedKeyID>,
 }
 
 impl ProposalSetEffects {
@@ -30,6 +33,7 @@ impl ProposalSetEffects {
             && self.updates.is_empty()
             && self.removes.is_empty()
             && self.group_context_ext.is_none()
+            && self.psks.is_empty()
     }
 }
 
@@ -70,6 +74,7 @@ struct ProposalSet {
     removes: HashMap<KeyPackageRef, usize>,
     items: Vec<Option<ProposalSetItem>>,
     group_context_ext: Option<usize>,
+    seen_psk_ids: HashSet<PreSharedKeyID>,
 }
 
 impl ProposalSet {
@@ -132,6 +137,10 @@ impl ProposalSet {
         true
     }
 
+    fn push_psk(&mut self, psk_id: &PreSharedKeyID) -> bool {
+        self.seen_psk_ids.insert(psk_id.clone())
+    }
+
     fn push_item(
         &mut self,
         local_key_package: &KeyPackageRef,
@@ -144,6 +153,7 @@ impl ProposalSet {
             }
             Proposal::Remove(remove) => self.push_remove(remove),
             Proposal::GroupContextExtensions(_) => self.push_group_context_ext(),
+            Proposal::Psk(PreSharedKey { psk }) => self.push_psk(psk),
         };
 
         if should_push {
@@ -180,6 +190,9 @@ impl ProposalSet {
                     Proposal::Remove(remove) => effects.removes.push(remove.to_remove),
                     Proposal::GroupContextExtensions(list) => {
                         effects.group_context_ext = Some(list)
+                    }
+                    Proposal::Psk(PreSharedKey { psk }) => {
+                        effects.psks.push(psk);
                     }
                 };
                 effects
@@ -307,6 +320,7 @@ mod test {
     use super::proposal_ref::test_util::plaintext_from_proposal;
     use super::*;
     use crate::key_package::test_util::test_key_package;
+    use ferriscrypt::kdf::hkdf::Hkdf;
 
     fn test_ref() -> KeyPackageRef {
         let mut buffer = [0u8; 16];
@@ -342,6 +356,7 @@ mod test {
             updates: vec![(sender.clone(), update_package)],
             removes: vec![remove_package],
             group_context_ext: Some(ExtensionList::new()),
+            ..ProposalSetEffects::default()
         };
 
         let plaintext = proposals
@@ -589,5 +604,27 @@ mod test {
             .unwrap();
 
         assert_eq!(effects, resolution);
+    }
+
+    #[test]
+    fn proposal_cache_filters_duplicate_psk_ids() {
+        let cipher_suite = CipherSuite::P256Aes128V1;
+        let cache = ProposalCache::new();
+        let len = Hkdf::from(cipher_suite.kdf_type()).extract_size();
+        let psk_id = PreSharedKeyID {
+            key_id: JustPreSharedKeyID::External(ExternalPskId(vec![1; len])),
+            psk_nonce: PskNonce::random(cipher_suite).unwrap(),
+        };
+        let proposal = Proposal::Psk(PreSharedKey {
+            psk: psk_id.clone(),
+        });
+        let (proposals, effects) = cache
+            .prepare_commit(
+                &test_key_package(cipher_suite).to_reference().unwrap(),
+                vec![proposal.clone(), proposal],
+            )
+            .unwrap();
+        assert_eq!(proposals.len(), 1);
+        assert_eq!(effects.psks, [psk_id]);
     }
 }
