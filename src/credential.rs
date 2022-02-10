@@ -1,6 +1,6 @@
 use crate::cipher_suite::SignatureScheme;
+use crate::x509::{CertificateChain, X509Error};
 use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey};
-use ferriscrypt::x509::{CertificateChain, CertificateError};
 use ferriscrypt::Verifier;
 use std::convert::TryInto;
 use thiserror::Error;
@@ -11,7 +11,7 @@ pub enum CredentialError {
     #[error(transparent)]
     EcKeyError(#[from] EcKeyError),
     #[error(transparent)]
-    CertificateError(#[from] CertificateError),
+    CertificateError(#[from] X509Error),
 }
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -20,7 +20,7 @@ pub enum Credential {
     #[tls_codec(discriminant = 1)]
     Basic(BasicCredential),
     #[tls_codec(discriminant = 2)]
-    Certificate(#[tls_codec(with = "crate::tls::CertificateChainSer")] CertificateChain),
+    Certificate(CertificateChain),
 }
 
 impl Credential {
@@ -92,18 +92,17 @@ impl CredentialConvertible for CertificateChain {
     }
 
     fn public_key(&self) -> Result<PublicKey, CredentialError> {
-        PublicKey::try_from(self.leaf()?.pub_key()?).map_err(Into::into)
+        self.leaf()?.public_key().map_err(Into::into)
     }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::x509::test_util::{test_cert, test_key};
+
     use super::*;
     use ferriscrypt::asym::ec_key::{generate_keypair, Curve, SecretKey};
     use ferriscrypt::rand::SecureRng;
-    use ferriscrypt::x509::{
-        CertificateBuilder, CertificatePublicKey, CertificateSigningKey, Name, X509Properties,
-    };
     use ferriscrypt::Signer;
 
     struct TestCredentialData {
@@ -124,31 +123,15 @@ mod test {
     }
 
     fn get_test_certificate_credential() -> TestCredentialData {
-        let (public, secret) = generate_keypair(Curve::Ed25519).unwrap();
+        let test_key = test_key(Curve::P256);
 
-        let subject_name = Name {
-            common_name: Some("foo.bar".to_string()),
-            ..Name::default()
-        };
-
-        let properties = X509Properties {
-            not_after: 0,
-            not_before: 0,
-            serial_number: b"0".to_vec(),
-            subject_name,
-            public_key: CertificatePublicKey::from(public.clone()),
-        };
-
-        let certificate_builder = CertificateBuilder::new(properties, None).unwrap();
-
-        let certificate = certificate_builder
-            .build(CertificateSigningKey::from(secret.clone()), None)
-            .unwrap();
+        let test_credential =
+            CertificateChain::from(vec![test_cert(Curve::P256)]).into_credential();
 
         TestCredentialData {
-            public,
-            secret,
-            credential: CertificateChain::from(vec![certificate]).into_credential(),
+            public: test_key.to_public().unwrap(),
+            secret: test_key,
+            credential: test_credential,
         }
     }
 

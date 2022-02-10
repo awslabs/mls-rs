@@ -20,6 +20,7 @@ pub mod key_package;
 mod psk;
 pub mod session;
 mod tree_kem;
+pub mod x509;
 
 #[cfg(feature = "benchmark")]
 pub mod tls;

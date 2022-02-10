@@ -13,7 +13,6 @@ use std::io::{Read, Write};
 
 mod boolean;
 mod byte_vec;
-mod certificate_chain;
 mod default;
 mod map;
 mod optional;
@@ -25,7 +24,6 @@ mod vector;
 
 pub use boolean::Boolean;
 pub use byte_vec::ByteVec;
-pub use certificate_chain::CertificateChainSer;
 pub use default::DefaultSer;
 pub use map::{DefMap, Map};
 pub use optional::Optional;
