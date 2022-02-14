@@ -27,3 +27,5 @@ pub mod tls;
 
 #[cfg(not(feature = "benchmark"))]
 mod tls;
+
+pub mod time;

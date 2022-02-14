@@ -19,7 +19,7 @@ pub enum KeyPackageValidationError {
     #[error("capabilities extension not found")]
     MissingCapabilitiesExtension,
     #[error("{0:?} is not within lifetime {1:?}")]
-    InvalidKeyLifetime(SystemTime, LifetimeExt),
+    InvalidKeyLifetime(MlsTime, LifetimeExt),
     #[error("required extension not found")]
     RequiredExtensionNotFound(ExtensionType),
     #[error("required proposal not found")]
@@ -100,7 +100,7 @@ impl<'a> KeyPackageValidator<'a> {
             .options
             .contains(&KeyPackageValidationOptions::SkipLifetimeCheck)
         {
-            let time = SystemTime::now();
+            let time = MlsTime::now();
 
             // Ensure that the lifetime extension exists and that the key package is currently valid
             let lifetime_ext = package
@@ -177,6 +177,12 @@ mod test {
 
     use super::*;
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
+
     fn test_key_package(cipher_suite: CipherSuite) -> KeyPackage {
         let client = Client::generate_basic(
             cipher_suite,
@@ -185,7 +191,7 @@ mod test {
         )
         .unwrap();
         client
-            .gen_key_package(LifetimeExt::days(1, SystemTime::now()).unwrap())
+            .gen_key_package(LifetimeExt::days(1).unwrap())
             .unwrap()
             .key_package
             .into()

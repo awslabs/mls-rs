@@ -48,6 +48,12 @@ mod test {
     use serde::Deserialize;
     use thiserror::Error;
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
+
     #[derive(Debug, Deserialize)]
     struct TestCase {
         cipher_suite: u16,
@@ -71,10 +77,15 @@ mod test {
             serde_json::from_slice(include_bytes!("../test_data/hash_reference.json")).unwrap();
 
         for test_case in test_cases {
-            let cipher_suite = CipherSuite::from_raw(test_case.cipher_suite).unwrap();
-            let output = HashReference::from_value(&test_case.input, cipher_suite).unwrap();
+            let cipher_suite = CipherSuite::from_raw(test_case.cipher_suite);
 
-            assert_eq!(output.as_ref(), &test_case.output);
+            if let Some(cipher_suite) = cipher_suite {
+                let output = HashReference::from_value(&test_case.input, cipher_suite).unwrap();
+
+                assert_eq!(output.as_ref(), &test_case.output);
+            } else {
+                println!("Skipping test case for unsupported cipher suite");
+            }
         }
     }
 }

@@ -322,6 +322,12 @@ mod test {
     use crate::key_package::test_util::test_key_package;
     use ferriscrypt::kdf::hkdf::Hkdf;
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
+
     fn test_ref() -> KeyPackageRef {
         let mut buffer = [0u8; 16];
         SecureRng::fill(&mut buffer).unwrap();

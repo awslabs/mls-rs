@@ -7,12 +7,11 @@ use crate::extension::RequiredCapabilitiesExt;
 use crate::extension::{Extension, ExtensionError, ExtensionList, ExtensionType};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::HashReference;
+use crate::time::MlsTime;
 use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::kdf::KdfError;
-use ferriscrypt::Verifier;
 use std::ops::Deref;
-use std::time::SystemTime;
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -117,7 +116,6 @@ impl KeyPackage {
 pub(crate) mod test_util {
     use super::*;
     use crate::{client::Client, client_config::DefaultClientConfig, extension::LifetimeExt};
-    use std::time::SystemTime;
 
     pub(crate) fn test_key_package(cipher_suite: CipherSuite) -> KeyPackage {
         let client = Client::generate_basic(
@@ -128,7 +126,7 @@ pub(crate) mod test_util {
         .unwrap();
 
         client
-            .gen_key_package(LifetimeExt::days(1, SystemTime::now()).unwrap())
+            .gen_key_package(LifetimeExt::days(1).unwrap())
             .unwrap()
             .key_package
             .into()
@@ -140,10 +138,17 @@ mod test {
     use super::*;
     use tls_codec::Deserialize;
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
+
     #[test]
     fn test_key_package_ref() {
         #[derive(serde::Deserialize)]
         struct TestCase {
+            cipher_suite: u16,
             #[serde(deserialize_with = "hex::serde::deserialize")]
             input: Vec<u8>,
             #[serde(deserialize_with = "hex::serde::deserialize")]
@@ -154,6 +159,11 @@ mod test {
             serde_json::from_slice(include_bytes!("../../test_data/key_package_ref.json")).unwrap();
 
         for one_case in cases {
+            if CipherSuite::from_raw(one_case.cipher_suite).is_none() {
+                println!("Skipping test for unsupported cipher suite");
+                continue;
+            }
+
             let key_package = KeyPackage::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
             let key_package_ref = key_package.to_reference().unwrap();
 

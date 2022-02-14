@@ -19,7 +19,11 @@ jobs:
       run: |
         ssh-agent -a $SSH_AUTH_SOCK > /dev/null
         ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+    - name: Run tests (openssl engine)
+      run: cargo test --verbose -- --ignored
+    - name: Run tests (rust crypto engine)
+      run: cargo test --verbose --no-default-features --features="rustcrypto_engine"
+    - uses: nanasess/setup-chromedriver@v1
+    - uses: jetli/wasm-pack-action@v0.3.0
+    - name: Run tests (web)
+      run: wasm-pack test --headless --chrome -- --no-default-features --features="browser"

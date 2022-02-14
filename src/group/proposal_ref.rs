@@ -50,6 +50,12 @@ mod test {
     use super::*;
     use crate::tree_kem::test::get_test_key_package;
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
+
     fn get_test_extension_list() -> ExtensionList {
         let test_extension = RequiredCapabilitiesExt {
             extensions: vec![42],
@@ -162,13 +168,17 @@ mod test {
             serde_json::from_slice(include_bytes!("../../test_data/proposal_ref.json")).unwrap();
 
         for one_case in test_cases {
+            let cipher_suite = CipherSuite::from_raw(one_case.cipher_suite);
+
+            if cipher_suite.is_none() {
+                println!("Skipping test case due to unsupported cipher suite");
+                continue;
+            }
+
             let proposal = MLSPlaintext::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
 
-            let proposal_ref = ProposalRef::from_plaintext(
-                CipherSuite::from_raw(one_case.cipher_suite).unwrap(),
-                &proposal,
-            )
-            .unwrap();
+            let proposal_ref =
+                ProposalRef::from_plaintext(cipher_suite.unwrap(), &proposal).unwrap();
 
             let expected_out = ProposalRef(HashReference::from(
                 <[u8; 16]>::try_from(one_case.output).unwrap(),

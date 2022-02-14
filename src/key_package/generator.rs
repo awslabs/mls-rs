@@ -1,7 +1,5 @@
-use crate::tree_kem::leaf_secret::{LeafSecret, LeafSecretError};
-
 use super::*;
-use ferriscrypt::Signer;
+use crate::tree_kem::leaf_secret::{LeafSecret, LeafSecretError};
 
 #[derive(Debug, Error)]
 pub enum KeyPackageGenerationError {
@@ -81,8 +79,6 @@ impl<'a> KeyPackageGenerator<'a> {
 #[cfg(test)]
 mod test {
     use assert_matches::assert_matches;
-    use std::time::SystemTime;
-
     use ferriscrypt::asym::ec_key::{Curve, SecretKey};
 
     use crate::{
@@ -96,10 +92,16 @@ mod test {
 
     use super::KeyPackageGenerator;
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
+
     fn test_extensions() -> ExtensionList {
         let mut extensions = ExtensionList::new();
         extensions
-            .set_extension(LifetimeExt::days(1, SystemTime::now()).unwrap())
+            .set_extension(LifetimeExt::days(1).unwrap())
             .unwrap();
 
         extensions

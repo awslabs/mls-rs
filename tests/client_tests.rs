@@ -6,10 +6,13 @@ use aws_mls::extension::{ExtensionList, LifetimeExt};
 use aws_mls::key_package::{KeyPackageGeneration, KeyPackageRef};
 use aws_mls::session::{GroupError, ProcessedMessage, Session, SessionError};
 use ferriscrypt::rand::SecureRng;
-use std::{
-    fmt::{self, Display},
-    time::SystemTime,
-};
+use std::fmt::{self, Display};
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+#[cfg(target_arch = "wasm32")]
+wasm_bindgen_test_configure!(run_in_browser);
 
 struct ConfigDescription<'a, C>(&'a C);
 
@@ -46,7 +49,7 @@ fn test_create(cipher_suite: CipherSuite, config: DefaultClientConfig) {
     let alice = Client::generate_basic(cipher_suite, b"alice".to_vec(), config.clone()).unwrap();
     let bob = Client::generate_basic(cipher_suite, b"bob".to_vec(), config).unwrap();
 
-    let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
+    let key_lifetime = LifetimeExt::years(1).unwrap();
     let bob_key = bob.gen_key_package(key_lifetime.clone()).unwrap();
 
     // Alice creates a session and adds bob
@@ -92,7 +95,7 @@ fn get_test_sessions(
 ) -> (Session, Vec<Session>) {
     // Create the group with Alice as the group initiator
     let creator = generate_client(cipher_suite, b"alice".to_vec(), config.clone());
-    let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
+    let key_lifetime = LifetimeExt::years(1).unwrap();
 
     let mut creator_session = creator
         .create_session(key_lifetime.clone(), b"group".to_vec(), Default::default())

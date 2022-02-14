@@ -453,13 +453,17 @@ impl NodeVec {
 
 #[cfg(test)]
 pub mod test {
-    use std::time::SystemTime;
-
     use super::*;
     use crate::cipher_suite::CipherSuite;
     use crate::client::Client;
     use crate::client_config::DefaultClientConfig;
     use crate::extension::LifetimeExt;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
 
     fn get_test_key_package(id: Vec<u8>) -> ValidatedKeyPackage {
         let client = Client::generate_basic(
@@ -470,7 +474,7 @@ pub mod test {
         .unwrap();
 
         client
-            .gen_key_package(LifetimeExt::years(1, SystemTime::now()).unwrap())
+            .gen_key_package(LifetimeExt::years(1).unwrap())
             .unwrap()
             .key_package
     }

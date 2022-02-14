@@ -52,7 +52,6 @@ impl<'a> UpdatePathValidator<'a> {
 #[cfg(test)]
 mod test {
     use assert_matches::assert_matches;
-    use std::time::SystemTime;
 
     use ferriscrypt::{
         hpke::{kem::HpkePublicKey, HPKECiphertext},
@@ -70,6 +69,12 @@ mod test {
 
     use super::{UpdatePath, UpdatePathNode, UpdatePathValidator};
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
+
     fn test_key_package(cipher_suite: CipherSuite) -> KeyPackage {
         let client = Client::generate_basic(
             cipher_suite,
@@ -78,7 +83,7 @@ mod test {
         )
         .unwrap();
         client
-            .gen_key_package(LifetimeExt::years(1, SystemTime::now()).unwrap())
+            .gen_key_package(LifetimeExt::years(1).unwrap())
             .unwrap()
             .key_package
             .into()

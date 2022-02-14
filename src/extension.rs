@@ -1,9 +1,9 @@
 use crate::cipher_suite::{CipherSuite, ProtocolVersion};
 use crate::group::proposal::ProposalType;
+use crate::time::{MlsTime, SystemTimeError};
 use crate::tree_kem::node::NodeVec;
 use crate::tree_kem::parent_hash::ParentHash;
 use std::ops::{Deref, DerefMut};
-use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -16,6 +16,8 @@ pub enum ExtensionError {
     TlsCodecError(#[from] tls_codec::Error),
     #[error(transparent)]
     SystemTimeError(#[from] SystemTimeError),
+    #[error("invalid lifetime, above max u64")]
+    TimeOverflow,
 }
 
 pub type ExtensionType = u16;
@@ -100,25 +102,29 @@ pub struct LifetimeExt {
 }
 
 impl LifetimeExt {
-    pub fn seconds(s: u64, from: SystemTime) -> Result<Self, ExtensionError> {
-        let start_time = from.duration_since(SystemTime::UNIX_EPOCH)?.as_secs();
+    pub fn seconds(s: u64) -> Result<Self, ExtensionError> {
+        let not_before = MlsTime::now().seconds_since_epoch()?;
+
+        let not_after = not_before
+            .checked_add(s)
+            .ok_or(ExtensionError::TimeOverflow)?;
 
         Ok(LifetimeExt {
-            not_before: start_time,
-            not_after: start_time + s,
+            not_before,
+            not_after,
         })
     }
 
-    pub fn days(d: u32, from: SystemTime) -> Result<Self, ExtensionError> {
-        Self::seconds((d * 86400) as u64, from)
+    pub fn days(d: u32) -> Result<Self, ExtensionError> {
+        Self::seconds((d * 86400) as u64)
     }
 
-    pub fn years(y: u8, from: SystemTime) -> Result<Self, ExtensionError> {
-        Self::days(365 * y as u32, from)
+    pub fn years(y: u8) -> Result<Self, ExtensionError> {
+        Self::days(365 * y as u32)
     }
 
-    pub fn within_lifetime(&self, system_time: SystemTime) -> Result<bool, ExtensionError> {
-        let since_epoch = system_time.duration_since(UNIX_EPOCH)?.as_secs();
+    pub fn within_lifetime(&self, time: MlsTime) -> Result<bool, ExtensionError> {
+        let since_epoch = time.seconds_since_epoch()?;
         Ok(since_epoch >= self.not_before && since_epoch <= self.not_after)
     }
 }
@@ -243,11 +249,15 @@ impl ExtensionList {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
     use ferriscrypt::rand::SecureRng;
 
-    use super::*;
-    use std::ops::Add;
-    use std::time::{Duration, SystemTime};
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
 
     #[test]
     fn test_key_id_extension() {
@@ -293,11 +303,8 @@ mod tests {
 
     #[test]
     fn test_lifetime() {
-        let lifetime = LifetimeExt::seconds(1, SystemTime::UNIX_EPOCH.add(Duration::from_secs(1)))
-            .expect("lifetime failure");
-
-        assert_eq!(lifetime.not_before, 1);
-        assert_eq!(lifetime.not_after, 2);
+        let lifetime = LifetimeExt::seconds(1).unwrap();
+        assert_eq!(lifetime.not_after - 1, lifetime.not_before);
 
         let as_extension = lifetime.to_extension().expect("to extension error");
         assert_eq!(as_extension.extension_type, LifetimeExt::IDENTIFIER);
@@ -305,6 +312,12 @@ mod tests {
         let restored = LifetimeExt::from_extension(as_extension).expect("from extension error");
         assert_eq!(lifetime.not_after, restored.not_after);
         assert_eq!(lifetime.not_before, restored.not_before);
+    }
+
+    #[test]
+    fn test_lifetime_overflow() {
+        let res = LifetimeExt::seconds(u64::MAX);
+        assert_matches!(res, Err(ExtensionError::TimeOverflow))
     }
 
     #[test]
@@ -362,7 +375,7 @@ mod tests {
     fn test_extension_list_get_set() {
         let mut list = ExtensionList::new();
 
-        let lifetime = LifetimeExt::seconds(42, SystemTime::now()).unwrap();
+        let lifetime = LifetimeExt::seconds(42).unwrap();
         let key_id = ExternalKeyIdExt {
             identifier: SecureRng::gen(32).unwrap(),
         };
@@ -380,7 +393,7 @@ mod tests {
         assert_eq!(list.get_extension::<CapabilitiesExt>().unwrap(), None);
 
         // Overwrite the extension in the list
-        let lifetime = LifetimeExt::seconds(1, SystemTime::now()).unwrap();
+        let lifetime = LifetimeExt::seconds(1).unwrap();
 
         list.set_extension(lifetime.clone()).unwrap();
         assert_eq!(list.len(), 2);
@@ -396,7 +409,7 @@ mod tests {
     fn test_extension_list_has_ext() {
         let mut list = ExtensionList::new();
 
-        let lifetime = LifetimeExt::seconds(42, SystemTime::now()).unwrap();
+        let lifetime = LifetimeExt::seconds(42).unwrap();
         list.set_extension(lifetime).unwrap();
 
         assert!(list.has_extension(LifetimeExt::IDENTIFIER));

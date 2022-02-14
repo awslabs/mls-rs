@@ -150,8 +150,12 @@ pub fn common_ancestor_direct(x: u32, y: u32) -> u32 {
 mod test {
     use super::*;
     use serde::Deserialize;
-    use std::fs::File;
-    use std::io::BufReader;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
 
     #[derive(Deserialize)]
     struct TestCase {
@@ -178,11 +182,8 @@ mod test {
 
     #[test]
     fn test_tree_math() {
-        let file = File::open("test_data/kat_treemath_openmls.json").expect("failed to open file");
-
-        let test_vectors: Vec<TestCase> =
-            serde_json::from_reader(BufReader::new(file)).expect("failed to parse vector file");
-
+        let data = include_str!("../../test_data/kat_treemath_openmls.json");
+        let test_vectors: Vec<TestCase> = serde_json::from_str(data).unwrap();
         test_vectors.iter().for_each(run_test_case);
     }
 

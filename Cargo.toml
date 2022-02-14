@@ -6,22 +6,30 @@ edition = "2021"
 
 [features]
 benchmark = []
+rustcrypto_engine = ["ferriscrypt/rustcrypto_engine"]
+openssl_engine = ["ferriscrypt/openssl_engine"]
+browser = ["ferriscrypt/browser", "wasm-bindgen"]
+default = ["openssl_engine"]
 
 [dependencies]
 thiserror = "^1"
-ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", tag = "0.15.1" }
-tls_codec = "0.2.0-pre.3"
-tls_codec_derive = "0.2.0-pre.3"
+ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", default-features = false, features = ["hpke"], tag = "0.16.0" }
+tls_codec = "0.2.0"
+tls_codec_derive = "0.2.0"
 hex = { version = "^0.4.3", features = ["serde"] }
 enum-iterator = "0.7.0"
 der = { version = "^0.5.1", features = ["alloc"]}
 spki = "^0.5.4"
+wasm-bindgen = { version = "^0.2.79", optional = true }
 
 [dev-dependencies]
 assert_matches = "1.5.0"
 criterion = { version = "0.3.5", features = ["html_reports"] }
 serde = { version = "^1.0", features = ["derive"] }
 serde_json = "^1.0"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { version = "0.3.26", default-features = false }
 
 [[bench]]
 name = "tls"

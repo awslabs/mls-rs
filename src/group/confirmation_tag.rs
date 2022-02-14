@@ -1,7 +1,6 @@
 use crate::group::epoch::Epoch;
 use crate::group::transcript_hash::ConfirmedTranscriptHash;
 use ferriscrypt::hmac::{HMacError, Key, Tag};
-use ferriscrypt::Signer;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -28,7 +27,7 @@ impl ConfirmationTag {
         confirmed_transcript_hash: &ConfirmedTranscriptHash,
     ) -> Result<Self, ConfirmationTagError> {
         let hmac_key = Key::new(&epoch.confirmation_key, epoch.cipher_suite.hash_function())?;
-        let mac = hmac_key.sign(confirmed_transcript_hash)?;
+        let mac = hmac_key.generate_tag(confirmed_transcript_hash)?;
         Ok(ConfirmationTag(mac))
     }
 
@@ -47,6 +46,12 @@ mod test {
     use super::*;
     use crate::cipher_suite::CipherSuite;
     use crate::group::epoch::test_utils::get_test_epoch;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
 
     #[test]
     fn test_confirmation_tag_matching() {

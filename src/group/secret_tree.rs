@@ -343,6 +343,12 @@ impl Iterator for SecretKeyRatchet {
 pub(crate) mod test {
     use super::*;
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
+
     pub(crate) fn get_test_tree(
         cipher_suite: CipherSuite,
         secret: Vec<u8>,
@@ -358,7 +364,7 @@ pub(crate) mod test {
         for one_cipher_suite in CipherSuite::all() {
             println!("Running secret tree derivation for {:?}", one_cipher_suite);
 
-            let test_secret = b"foo".to_vec();
+            let test_secret = [0u8; 32].to_vec();
             let mut test_tree = get_test_tree(one_cipher_suite, test_secret.clone(), 4);
 
             let mut secrets: Vec<SecretRatchets> = (0..4)
@@ -389,7 +395,7 @@ pub(crate) mod test {
             let app_ratchet = SecretKeyRatchet::new(
                 one_cipher_suite,
                 LeafIndex(42),
-                &b"foo".to_vec(),
+                &[0u8; 32],
                 KeyType::Application,
             )
             .unwrap();
@@ -397,7 +403,7 @@ pub(crate) mod test {
             let handshake_ratchet = SecretKeyRatchet::new(
                 one_cipher_suite,
                 LeafIndex(42),
-                &b"foo".to_vec(),
+                &[0u8; 32],
                 KeyType::Handshake,
             )
             .unwrap();
@@ -422,7 +428,7 @@ pub(crate) mod test {
             let mut ratchet = SecretKeyRatchet::new(
                 one_cipher_suite,
                 LeafIndex(42),
-                &b"foo".to_vec(),
+                &[0u8; 32],
                 KeyType::Application,
             )
             .unwrap();
@@ -449,7 +455,7 @@ pub(crate) mod test {
             let mut ratchet = SecretKeyRatchet::new(
                 one_cipher_suite,
                 LeafIndex(42),
-                &b"foo".to_vec(),
+                &[0u8; 32],
                 KeyType::Application,
             )
             .unwrap();

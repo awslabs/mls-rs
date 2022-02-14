@@ -262,6 +262,12 @@ mod test {
     use crate::tree_kem::node::test::get_test_node_vec;
     use crate::tree_kem::test::{get_test_key_package, get_test_key_packages, get_test_tree};
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
+
     fn get_phash_test_tree(cipher_suite: CipherSuite) -> TreeKemPublic {
         let (mut tree, _, _) = get_test_tree(cipher_suite);
         let key_packages = get_test_key_packages(cipher_suite);

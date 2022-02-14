@@ -173,6 +173,12 @@ mod tests {
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
+
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
     const TEST_GROUP: &[u8] = b"group";
     const TED_EXTERNAL_KEY_ID: &[u8] = b"ted";

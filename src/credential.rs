@@ -1,7 +1,6 @@
 use crate::cipher_suite::SignatureScheme;
 use crate::x509::{CertificateChain, X509Error};
 use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey};
-use ferriscrypt::Verifier;
 use std::convert::TryInto;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -31,17 +30,8 @@ impl Credential {
             Credential::Certificate(c) => c.public_key(),
         }
     }
-}
 
-impl Verifier for Credential {
-    type ErrorType = CredentialError;
-    type SignatureType = Vec<u8>;
-
-    fn verify(
-        &self,
-        signature: &Self::SignatureType,
-        data: &[u8],
-    ) -> Result<bool, Self::ErrorType> {
+    pub fn verify(&self, signature: &[u8], data: &[u8]) -> Result<bool, CredentialError> {
         self.public_key()?
             .verify(signature, data)
             .map_err(Into::into)
@@ -80,7 +70,7 @@ impl BasicCredential {
     ) -> Result<BasicCredential, CredentialError> {
         Ok(BasicCredential {
             identity,
-            signature_scheme: signature_key.curve.try_into()?,
+            signature_scheme: signature_key.curve().try_into()?,
             signature_key: signature_key.to_uncompressed_bytes()?,
         })
     }
@@ -103,7 +93,12 @@ mod test {
     use super::*;
     use ferriscrypt::asym::ec_key::{generate_keypair, Curve, SecretKey};
     use ferriscrypt::rand::SecureRng;
-    use ferriscrypt::Signer;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
 
     struct TestCredentialData {
         public: PublicKey,
@@ -182,7 +177,7 @@ mod test {
         let valid_signature = test_data.secret.sign(test_signature_input).unwrap();
         let invalid_signature_data = test_data.secret.sign(b"foo" as &[u8]).unwrap();
 
-        let invalid_signature_key = SecretKey::generate(test_data.secret.curve)
+        let invalid_signature_key = SecretKey::generate(test_data.secret.curve())
             .unwrap()
             .sign(test_signature_input)
             .unwrap();

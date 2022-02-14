@@ -10,7 +10,6 @@ use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::kdf::KdfError;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
-use ferriscrypt::{Signer, Verifier};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -1474,7 +1473,6 @@ pub(crate) mod test_utils {
         extension::{CapabilitiesExt, LifetimeExt, MlsExtension, RequiredCapabilitiesExt},
         key_package::KeyPackageGenerator,
     };
-    use std::time::SystemTime;
 
     pub(crate) struct TestGroup {
         pub group: Group,
@@ -1500,7 +1498,7 @@ pub(crate) mod test_utils {
     }
 
     pub(crate) fn extensions() -> ExtensionList {
-        let lifetime_ext = LifetimeExt::years(1, SystemTime::now()).unwrap();
+        let lifetime_ext = LifetimeExt::years(1).unwrap();
 
         let capabilities_ext = CapabilitiesExt::default();
 
@@ -1578,6 +1576,12 @@ mod test {
         *,
     };
     use assert_matches::assert_matches;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
 
     #[test]
     fn test_create_group() {

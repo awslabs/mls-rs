@@ -3,7 +3,6 @@ use crate::group::framing::{Content, MLSPlaintext, Sender, WireFormat};
 use crate::group::{AddProposal, GroupContext, Proposal};
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey, SecretKey};
-use ferriscrypt::{Signer, Verifier};
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;

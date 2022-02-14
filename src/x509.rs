@@ -118,9 +118,12 @@ pub(crate) mod test_util {
     pub fn test_cert(curve: Curve) -> CertificateData {
         let data = match curve {
             Curve::P256 => include_bytes!("../test_data/p256_cert.der").to_vec(),
+            #[cfg(feature = "openssl_engine")]
             Curve::P384 => include_bytes!("../test_data/p384_cert.der").to_vec(),
+            #[cfg(feature = "openssl_engine")]
             Curve::P521 => include_bytes!("../test_data/p521_cert.der").to_vec(),
             Curve::Ed25519 => include_bytes!("../test_data/ed25519_cert.der").to_vec(),
+            #[cfg(feature = "openssl_engine")]
             Curve::Ed448 => include_bytes!("../test_data/ed448_cert.der").to_vec(),
             _ => panic!("invalid test curve"),
         };
@@ -131,9 +134,12 @@ pub(crate) mod test_util {
     pub fn test_key(curve: Curve) -> SecretKey {
         let data = match curve {
             Curve::P256 => include_bytes!("../test_data/p256_key.der").to_vec(),
+            #[cfg(feature = "openssl_engine")]
             Curve::P384 => include_bytes!("../test_data/p384_key.der").to_vec(),
+            #[cfg(feature = "openssl_engine")]
             Curve::P521 => include_bytes!("../test_data/p521_key.der").to_vec(),
             Curve::Ed25519 => include_bytes!("../test_data/ed25519_key.der").to_vec(),
+            #[cfg(feature = "openssl_engine")]
             Curve::Ed448 => include_bytes!("../test_data/ed448_key.der").to_vec(),
             _ => panic!("invalid test curve"),
         };
@@ -149,13 +155,22 @@ mod test {
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::Curve;
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
+
     #[test]
     fn test_certificate_public_key() {
         let signing_curves = [
             Curve::P256,
+            #[cfg(feature = "openssl_engine")]
             Curve::P384,
+            #[cfg(feature = "openssl_engine")]
             Curve::P521,
             Curve::Ed25519,
+            #[cfg(feature = "openssl_engine")]
             Curve::Ed448,
         ];
 
@@ -179,7 +194,7 @@ mod test {
     #[test]
     fn test_leaf_certificate() {
         let test_chain =
-            CertificateChain::from(vec![test_cert(Curve::P256), test_cert(Curve::P384)]);
+            CertificateChain::from(vec![test_cert(Curve::P256), test_cert(Curve::Ed25519)]);
 
         assert_eq!(test_chain.leaf().unwrap(), &test_cert(Curve::P256));
     }

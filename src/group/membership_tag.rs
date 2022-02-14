@@ -4,7 +4,6 @@ use crate::group::framing::{MLSPlaintext, WireFormat};
 use crate::group::message_signature::{MLSPlaintextTBS, MessageSignature};
 use crate::group::GroupContext;
 use ferriscrypt::hmac::{HMacError, Key, Tag};
-use ferriscrypt::Signer;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;
@@ -67,8 +66,7 @@ impl MembershipTag {
         let serialized_tbm = plaintext_tbm.tls_serialize_detached()?;
 
         let hmac_key = Key::new(&epoch.membership_key, epoch.cipher_suite.hash_function())?;
-
-        let tag = hmac_key.sign(&serialized_tbm)?;
+        let tag = hmac_key.generate_tag(&serialized_tbm)?;
 
         Ok(MembershipTag(tag))
     }
@@ -91,6 +89,12 @@ mod tests {
     use crate::group::epoch::test_utils::get_test_epoch;
     use crate::group::framing::test_utils::get_test_plaintext;
     use crate::group::test_utils::get_test_group_context;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
 
     #[test]
     fn test_membership_tag_matching() {

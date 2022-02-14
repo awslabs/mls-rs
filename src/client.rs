@@ -56,7 +56,7 @@ impl<C: ClientConfig + Clone> Client<C> {
         credential: Credential,
         config: C,
     ) -> Result<Self, ClientError> {
-        if signature_key.curve != Curve::from(cipher_suite.signature_scheme()) {
+        if signature_key.curve() != Curve::from(cipher_suite.signature_scheme()) {
             return Err(ClientError::SignatureCipherSuiteMismatch);
         }
 
@@ -242,8 +242,13 @@ mod test {
     };
     use assert_matches::assert_matches;
     use ferriscrypt::{asym::ec_key::Curve, kdf::hkdf::Hkdf, rand::SecureRng};
-    use std::time::SystemTime;
     use tls_codec::Serialize;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
 
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
     const TEST_GROUP: &[u8] = b"group";
@@ -309,7 +314,7 @@ mod test {
         fn build_with_key_pkg(self) -> (Client<C>, KeyPackageGeneration) {
             let client = self.build();
             let gen = client
-                .gen_key_package(LifetimeExt::years(1, SystemTime::now()).unwrap())
+                .gen_key_package(LifetimeExt::years(1).unwrap())
                 .unwrap();
             (client, gen)
         }
@@ -393,7 +398,7 @@ mod test {
 
             let cred_identity = SecureRng::gen(42).unwrap();
             let client = get_test_client(cred_identity, cipher_suite);
-            let key_lifetime = LifetimeExt::years(1, SystemTime::now()).unwrap();
+            let key_lifetime = LifetimeExt::years(1).unwrap();
             let package_gen = client.gen_key_package(key_lifetime.clone()).unwrap();
 
             assert_eq!(package_gen.key_package.cipher_suite, cipher_suite);
@@ -495,7 +500,7 @@ mod test {
     fn create_session(client: &Client) -> Session {
         client
             .create_session(
-                LifetimeExt::years(1, SystemTime::now()).unwrap(),
+                LifetimeExt::years(1).unwrap(),
                 TEST_GROUP.to_vec(),
                 ExtensionList::new(),
             )
@@ -614,7 +619,7 @@ mod test {
             .with_config(DefaultClientConfig::default().with_secret_store(secret_store))
             .build();
         let mut session = create_session(&alice);
-        let proposal = session.psk_proposal(expected_id.clone()).unwrap();
+        let proposal = session.psk_proposal(expected_id).unwrap();
         let res = session.commit(vec![proposal]);
         assert_matches!(res, Ok(_));
     }

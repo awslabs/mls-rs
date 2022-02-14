@@ -169,6 +169,12 @@ mod tests {
         path::{Path, PathBuf},
     };
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
+
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
 
     fn digest_size(cipher_suite: CipherSuite) -> usize {
@@ -234,6 +240,7 @@ mod tests {
     }
 
     impl TestScenario {
+        #[allow(dead_code)]
         fn generate() {
             let make_psk_list = |cs, n| {
                 iter::repeat_with(|| PskInfo {
@@ -264,16 +271,14 @@ mod tests {
             .unwrap();
         }
 
+        #[allow(dead_code)]
         fn data_path() -> PathBuf {
             Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/psk_secret.json")
         }
 
         fn load() -> Vec<TestScenario> {
-            let path = Self::data_path();
-            if !path.exists() {
-                Self::generate();
-            }
-            serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+            let data = include_str!("../test_data/psk_secret.json");
+            serde_json::from_str(data).unwrap()
         }
 
         fn compute_psk_secret(cipher_suite: CipherSuite, psks: &[PskInfo]) -> Vec<u8> {
@@ -300,11 +305,12 @@ mod tests {
                 .enumerate()
                 .map(|(i, scenario)| (format!("Scenario #{i}"), scenario))
                 .find(|(_, scenario)| {
-                    scenario.psk_secret
-                        != TestScenario::compute_psk_secret(
-                            CipherSuite::from_raw(scenario.cipher_suite).unwrap(),
-                            &scenario.psks,
-                        )
+                    if let Some(cipher_suite) = CipherSuite::from_raw(scenario.cipher_suite) {
+                        scenario.psk_secret
+                            != TestScenario::compute_psk_secret(cipher_suite, &scenario.psks)
+                    } else {
+                        false
+                    }
                 }),
             None
         );

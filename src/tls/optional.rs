@@ -76,6 +76,12 @@ mod tests {
     use tls_codec::{Deserialize, Serialize};
     use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
+
     #[derive(Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
     struct Data(#[tls_codec(with = "crate::tls::Optional::<crate::tls::DefaultSer>")] Option<u8>);
 

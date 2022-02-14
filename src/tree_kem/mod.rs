@@ -771,7 +771,6 @@ impl TreeKemPublic {
 pub(crate) mod test {
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::{Curve, SecretKey};
-    use std::time::SystemTime;
 
     use crate::credential::{BasicCredential, Credential};
     use crate::extension::{CapabilitiesExt, ExtensionList, LifetimeExt, MlsExtension};
@@ -780,6 +779,12 @@ pub(crate) mod test {
     use crate::tree_kem::parent_hash::ParentHash;
 
     use super::*;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
+
+    #[cfg(target_arch = "wasm32")]
+    wasm_bindgen_test_configure!(run_in_browser);
 
     pub fn get_test_key_package_sig_key(
         cipher_suite: CipherSuite,
@@ -791,10 +796,7 @@ pub(crate) mod test {
 
         let extensions = vec![
             CapabilitiesExt::default().to_extension().unwrap(),
-            LifetimeExt::years(1, SystemTime::now())
-                .unwrap()
-                .to_extension()
-                .unwrap(),
+            LifetimeExt::years(1).unwrap().to_extension().unwrap(),
         ];
 
         let key_package_gen = KeyPackageGenerator {
@@ -940,7 +942,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_find_leaf() {
-        let cipher_suite = CipherSuite::P521Aes256V1;
+        let cipher_suite = CipherSuite::P256Aes128V1;
 
         let mut tree = TreeKemPublic::new(cipher_suite);
 
@@ -958,7 +960,7 @@ pub(crate) mod test {
 
     #[test]
     fn test_add_leaf_duplicate() {
-        let cipher_suite = CipherSuite::P521Aes256V1;
+        let cipher_suite = CipherSuite::P256Aes128V1;
 
         let mut tree = TreeKemPublic::new(cipher_suite);
 
