@@ -28,4 +28,6 @@ pub mod tls;
 #[cfg(not(feature = "benchmark"))]
 mod tls;
 
+pub use ferriscrypt;
+
 pub mod time;
