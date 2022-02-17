@@ -38,6 +38,16 @@ pub enum Content {
     Commit(Commit),
 }
 
+impl Content {
+    pub fn content_type(&self) -> ContentType {
+        match self {
+            Content::Application(_) => ContentType::Application,
+            Content::Proposal(_) => ContentType::Proposal,
+            Content::Commit(_) => ContentType::Commit,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSPlaintext {
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
@@ -121,6 +131,13 @@ impl MLSMessage {
         match self {
             MLSMessage::Plain(m) => m.epoch,
             MLSMessage::Cipher(m) => m.epoch,
+        }
+    }
+
+    pub fn content_type(&self) -> ContentType {
+        match self {
+            MLSMessage::Plain(m) => m.content.content_type(),
+            MLSMessage::Cipher(m) => m.content_type,
         }
     }
 }

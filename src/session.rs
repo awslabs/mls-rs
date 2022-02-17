@@ -2,7 +2,10 @@ use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, DefaultClientConfig, KeyPackageRepository};
 use crate::credential::Credential;
 use crate::extension::ExtensionList;
-use crate::group::framing::{Content, MLSMessage, WireFormat};
+
+pub use crate::group::framing::{ContentType, MLSMessage};
+
+use crate::group::framing::{Content, WireFormat};
 use crate::group::{
     proposal::Proposal, CommitGeneration, Group, OutboundPlaintext, StateUpdate, Welcome,
 };
