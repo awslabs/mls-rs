@@ -30,5 +30,6 @@ mod tls;
 
 pub use ferriscrypt;
 pub use group::proposal::{AddProposal, Proposal, RemoveProposal, UpdateProposal};
+pub use tls_codec;
 
 pub mod time;
