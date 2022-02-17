@@ -25,9 +25,12 @@ use crate::key_package::{
     KeyPackageGenerator, KeyPackageRef, KeyPackageValidationError, KeyPackageValidationOptions,
     KeyPackageValidator,
 };
-use crate::psk::{ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskNonce, PskSecretError};
+use crate::psk::{
+    ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, PskSecretError,
+    ResumptionPSKUsage, ResumptionPsk,
+};
 use crate::tree_kem::leaf_secret::LeafSecretError;
-use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::node::{LeafIndex, NodeIndex};
 use crate::tree_kem::{
     RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathGeneration,
     UpdatePathValidationError, UpdatePathValidator,
@@ -71,6 +74,7 @@ struct ProvisionalState {
     epoch: u64,
     path_update_required: bool,
     psks: Vec<PreSharedKeyID>,
+    reinit: Option<ReInit>,
 }
 
 #[derive(Clone, Debug)]
@@ -471,19 +475,35 @@ impl Group {
         key_package: KeyPackageGeneration,
         secret_store: &S,
     ) -> Result<Self, GroupError> {
-        //Identify an entry in the secrets array where the key_package_hash value corresponds to
+        Self::join_with_welcome(
+            welcome,
+            public_tree,
+            key_package.key_package.to_reference()?,
+            key_package.secret_key,
+            secret_store,
+            None,
+        )
+    }
+
+    fn join_with_welcome<S: SecretStore>(
+        welcome: Welcome,
+        public_tree: Option<TreeKemPublic>,
+        key_package_ref: KeyPackageRef,
+        leaf_secret: HpkeSecretKey,
+        secret_store: &S,
+        epoch_repo: Option<&EpochRepository>,
+    ) -> Result<Self, GroupError> {
+        // Identify an entry in the secrets array where the key_package_hash value corresponds to
         // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
         // If no such field exists, or if the ciphersuite indicated in the KeyPackage does not
         // match the one in the Welcome message, return an error.
-        let package_ref = key_package.key_package.to_reference()?;
-
         let encrypted_group_secrets = welcome
             .secrets
             .iter()
-            .find(|s| s.new_member == package_ref)
+            .find(|s| s.new_member == key_package_ref)
             .ok_or(GroupError::WelcomeKeyPackageNotFound)?;
 
-        //Decrypt the encrypted_group_secrets using HPKE with the algorithms indicated by the
+        // Decrypt the encrypted_group_secrets using HPKE with the algorithms indicated by the
         // cipher suite and the HPKE private key corresponding to the GroupSecrets. If a
         // PreSharedKeyID is part of the GroupSecrets and the client is not in possession of
         // the corresponding PSK, return an error
@@ -492,7 +512,7 @@ impl Group {
                 .encrypted_group_secrets
                 .clone()
                 .into(),
-            &key_package.secret_key,
+            &leaf_secret,
             &[],
             None,
         )?;
@@ -501,11 +521,11 @@ impl Group {
         let psk_secret = crate::psk::psk_secret(
             welcome.cipher_suite,
             secret_store,
-            None,
+            epoch_repo,
             &group_secrets.psks,
         )?;
 
-        //From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
+        // From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
         // the GroupSecrets, derive the welcome_secret and using that the welcome_key and
         // welcome_nonce.
         let welcome_secret = WelcomeSecret::from_joiner_secret(
@@ -514,11 +534,11 @@ impl Group {
             &psk_secret,
         )?;
 
-        //Use the key and nonce to decrypt the encrypted_group_info field.
+        // Use the key and nonce to decrypt the encrypted_group_info field.
         let decrypted_group_info = welcome_secret.decrypt(&welcome.encrypted_group_info)?;
         let group_info = GroupInfo::tls_deserialize(&mut &*decrypted_group_info)?;
 
-        //Verify the signature on the GroupInfo object. The signature input comprises all of the
+        // Verify the signature on the GroupInfo object. The signature input comprises all of the
         // fields in the GroupInfo object except the signature field. The public key and algorithm
         // are taken from the credential in the leaf node at position signer_index.
         // If this verification fails, return an error.
@@ -557,9 +577,6 @@ impl Group {
         // identical to the the KeyPackage. If no such field exists, return an error. Let index
         // represent the index of this node among the leaves in the tree, namely the index of the
         // node in the tree array divided by two.
-
-        let key_package_ref = key_package.key_package.to_reference()?;
-
         let self_index = public_tree.package_leaf_index(&key_package_ref)?;
 
         // Construct a new group state using the information in the GroupInfo object. The new
@@ -569,7 +586,7 @@ impl Group {
         let context = GroupContext::from(&group_info);
 
         let mut private_tree =
-            TreeKemPrivate::new_self_leaf(self_index, key_package_ref, key_package.secret_key);
+            TreeKemPrivate::new_self_leaf(self_index, key_package_ref, leaf_secret);
 
         // If the path_secret value is set in the GroupSecrets object
         if let Some(path_secret) = group_secrets.path_secret {
@@ -748,6 +765,18 @@ impl Group {
         // Now that the tree is updated we can check required capabilities if needed
         self.check_required_capabilities(&provisional_tree, &provisional_group_context.extensions)?;
 
+        let psks = match &proposals.reinit {
+            Some(reinit) => vec![PreSharedKeyID {
+                key_id: JustPreSharedKeyID::Resumption(ResumptionPsk {
+                    usage: ResumptionPSKUsage::Reinit,
+                    psk_group_id: PskGroupId(reinit.group_id.clone()),
+                    psk_epoch: self.current_epoch() + 1,
+                }),
+                psk_nonce: PskNonce::random(self.cipher_suite)?,
+            }],
+            None => proposals.psks,
+        };
+
         Ok(ProvisionalState {
             public_tree: provisional_tree,
             private_tree: provisional_private_tree,
@@ -756,7 +785,8 @@ impl Group {
             epoch: self.context.epoch + 1,
             path_update_required,
             group_context: provisional_group_context,
-            psks: proposals.psks,
+            psks,
+            reinit: proposals.reinit,
         })
     }
 
@@ -967,30 +997,64 @@ impl Group {
             .signing_key
             .sign(&group_info.to_signable_vec()?)?;
 
+        // Get key package references to build welcome messages for
+        let key_pkg_refs = match provisional_state.reinit {
+            Some(_) => {
+                // Welcome messages will be built for each existing member
+                self.current_epoch_tree()?
+                    .get_key_package_refs()
+                    .cloned()
+                    .collect::<Vec<_>>()
+            }
+            None => {
+                // Welcome messages will be built for each added member
+                provisional_state.added_leaves
+            }
+        };
+
+        let welcome = self.make_welcome_message(
+            key_pkg_refs,
+            &next_epoch.public_tree,
+            &joiner_secret,
+            &psk_secret,
+            update_path.as_ref(),
+            provisional_state.psks,
+            &group_info,
+        )?;
+
+        let pending_commit = CommitGeneration {
+            plaintext: self.format_for_wire(plaintext, wire_format)?,
+            secrets: update_path,
+        };
+
+        Ok((pending_commit, welcome))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn make_welcome_message(
+        &self,
+        members: Vec<KeyPackageRef>,
+        tree: &TreeKemPublic,
+        joiner_secret: &[u8],
+        psk_secret: &[u8],
+        update_path: Option<&UpdatePathGeneration>,
+        psks: Vec<PreSharedKeyID>,
+        group_info: &GroupInfo,
+    ) -> Result<Option<Welcome>, GroupError> {
         // Encrypt the GroupInfo using the key and nonce derived from the joiner_secret for
         // the new epoch
         let welcome_secret =
-            WelcomeSecret::from_joiner_secret(self.cipher_suite, &joiner_secret, &psk_secret)?;
+            WelcomeSecret::from_joiner_secret(self.cipher_suite, joiner_secret, psk_secret)?;
 
         let group_info_data = group_info.tls_serialize_detached()?;
         let encrypted_group_info = welcome_secret.encrypt(&group_info_data)?;
 
-        // Build welcome messages for each added member
-        let secrets = provisional_state
-            .added_leaves
+        let secrets = members
             .into_iter()
-            .map(|i| {
-                self.encrypt_group_secrets(
-                    &next_epoch.public_tree,
-                    i,
-                    &joiner_secret,
-                    update_path.as_ref(),
-                    provisional_state.psks.clone(),
-                )
-            })
+            .map(|i| self.encrypt_group_secrets(tree, i, joiner_secret, update_path, psks.clone()))
             .collect::<Result<Vec<EncryptedGroupSecrets>, GroupError>>()?;
 
-        let welcome = match secrets.len() {
+        Ok(match secrets.len() {
             0 => None,
             _ => Some(Welcome {
                 protocol_version: self.cipher_suite.protocol_version(),
@@ -998,13 +1062,154 @@ impl Group {
                 secrets,
                 encrypted_group_info,
             }),
-        };
-        let pending_commit = CommitGeneration {
-            plaintext: self.format_for_wire(plaintext, wire_format)?,
-            secrets: update_path,
+        })
+    }
+
+    pub fn branch<S, F>(
+        &self,
+        sub_group_id: Vec<u8>,
+        resumption_psk_epoch: Option<u64>,
+        secret_store: &S,
+        signing_key: &SecretKey,
+        mut key_pkg_filter: F,
+    ) -> Result<(Self, Option<Welcome>), GroupError>
+    where
+        S: SecretStore,
+        F: FnMut(&KeyPackageRef) -> bool,
+    {
+        let current_tree = self.current_epoch_tree()?;
+        let (new_member_refs, new_members) = current_tree
+            .get_key_package_refs()
+            .filter_map(|r| {
+                key_pkg_filter(r).then(|| {
+                    current_tree
+                        .get_validated_key_package(r)
+                        .map(|p| (r.clone(), p.clone()))
+                })
+            })
+            .try_fold((Vec::new(), Vec::new()), |(mut refs, mut pkgs), pair| {
+                pair.map(|(r, p)| {
+                    refs.push(r);
+                    pkgs.push(p);
+                    (refs, pkgs)
+                })
+            })?;
+
+        let mut new_pub_tree = TreeKemPublic::new(self.cipher_suite);
+        // Add existing members to new tree
+        new_pub_tree.add_leaves(new_members)?;
+        let new_pub_tree_hash = new_pub_tree.tree_hash()?;
+
+        let new_priv_tree = TreeKemPrivate::new_self_leaf(
+            new_pub_tree.package_leaf_index(&self.private_tree.key_package_ref)?,
+            self.private_tree.key_package_ref.clone(),
+            self.private_tree
+                .secret_keys
+                .get(&NodeIndex::from(self.private_tree.self_index))
+                .cloned()
+                .unwrap(),
+        );
+
+        let new_context = GroupContext {
+            epoch: 1,
+            ..GroupContext::new_group(
+                sub_group_id.clone(),
+                new_pub_tree_hash.clone(),
+                self.context.extensions.clone(),
+            )
         };
 
-        Ok((pending_commit, welcome))
+        let kdf = Hkdf::from(self.cipher_suite.kdf_type());
+        let init_secret = SecureRng::gen(kdf.extract_size())?;
+
+        let psk = PreSharedKeyID {
+            key_id: JustPreSharedKeyID::Resumption(ResumptionPsk {
+                usage: ResumptionPSKUsage::Branch,
+                psk_group_id: PskGroupId(sub_group_id.clone()),
+                psk_epoch: resumption_psk_epoch.unwrap_or_else(|| self.current_epoch()),
+            }),
+            psk_nonce: PskNonce::random(self.cipher_suite)?,
+        };
+        let psks = vec![psk];
+        let psk_secret = crate::psk::psk_secret(
+            self.cipher_suite,
+            secret_store,
+            Some(&self.epoch_repo),
+            &psks,
+        )?;
+
+        let (epoch, joiner_secret) = Epoch::derive(
+            self.cipher_suite,
+            &init_secret,
+            &CommitSecret::empty(self.cipher_suite),
+            new_pub_tree.clone(),
+            &new_context,
+            LeafIndex(0),
+            &psk_secret,
+        )?;
+        // TODO: Make the repository bounds configurable somehow
+        let epoch_repo = EpochRepository::new(epoch.clone(), 3);
+
+        let mut group_info = GroupInfo {
+            group_id: sub_group_id,
+            epoch: 1,
+            tree_hash: new_pub_tree_hash,
+            confirmed_transcript_hash: new_context.confirmed_transcript_hash.clone(),
+            group_context_extensions: new_context.extensions.clone(),
+            other_extensions: ExtensionList::new(),
+            confirmation_tag: ConfirmationTag::create(
+                &epoch,
+                &new_context.confirmed_transcript_hash,
+            )?,
+            signer: self.private_tree.key_package_ref.clone(),
+            signature: Vec::new(),
+        };
+        group_info.signature = signing_key.sign(&group_info.to_signable_vec()?)?;
+
+        let new_group = Group {
+            cipher_suite: self.cipher_suite,
+            context: new_context,
+            private_tree: new_priv_tree,
+            epoch_repo,
+            interim_transcript_hash: Vec::new().into(),
+            proposals: ProposalCache::new(),
+            pending_updates: Default::default(),
+        };
+
+        let welcome = self.make_welcome_message(
+            new_member_refs,
+            &new_pub_tree,
+            &joiner_secret,
+            &psk_secret,
+            None,
+            psks,
+            &group_info,
+        )?;
+
+        Ok((new_group, welcome))
+    }
+
+    pub fn join_subgroup<S>(
+        &self,
+        welcome: Welcome,
+        public_tree: Option<TreeKemPublic>,
+        secret_store: &S,
+    ) -> Result<Self, GroupError>
+    where
+        S: SecretStore,
+    {
+        Self::join_with_welcome(
+            welcome,
+            public_tree,
+            self.private_tree.key_package_ref.clone(),
+            self.private_tree
+                .secret_keys
+                .get(&NodeIndex::from(self.private_tree.self_index))
+                .cloned()
+                .unwrap(),
+            secret_store,
+            Some(&self.epoch_repo),
+        )
     }
 
     fn encrypt_group_secrets(
@@ -1100,6 +1305,20 @@ impl Group {
                 key_id: JustPreSharedKeyID::External(psk),
                 psk_nonce: PskNonce::random(self.cipher_suite)?,
             },
+        }))
+    }
+
+    pub fn reinit_proposal(
+        &mut self,
+        group_id: Vec<u8>,
+        cipher_suite: CipherSuite,
+        extensions: ExtensionList,
+    ) -> Result<Proposal, GroupError> {
+        Ok(Proposal::ReInit(ReInit {
+            group_id,
+            version: cipher_suite.protocol_version(),
+            cipher_suite,
+            extensions,
         }))
     }
 

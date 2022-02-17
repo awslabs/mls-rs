@@ -1,3 +1,4 @@
+use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, DefaultClientConfig, KeyPackageRepository};
 use crate::credential::Credential;
 use crate::extension::ExtensionList;
@@ -73,7 +74,7 @@ pub struct GroupStats {
     pub epoch: u64,
 }
 
-impl<C: ClientConfig> Session<C> {
+impl<C: ClientConfig + Clone> Session<C> {
     pub(crate) fn create(
         group_id: Vec<u8>,
         signing_key: SecretKey,
@@ -145,6 +146,28 @@ impl<C: ClientConfig> Session<C> {
         })
     }
 
+    pub fn join_subgroup(
+        &self,
+        welcome: Welcome,
+        ratchet_tree_data: Option<&[u8]>,
+    ) -> Result<Self, SessionError> {
+        let public_tree = ratchet_tree_data
+            .map(|rt| Self::import_ratchet_tree(&welcome, rt))
+            .transpose()?;
+        Ok(Session {
+            signing_key: self.signing_key.clone(),
+            credential: self.credential.clone(),
+            extensions: self.extensions.clone(),
+            protocol: self.protocol.join_subgroup(
+                welcome,
+                public_tree,
+                &self.config.secret_store(),
+            )?,
+            pending_commit: None,
+            config: self.config.clone(),
+        })
+    }
+
     fn import_ratchet_tree(
         welcome_message: &Welcome,
         tree_data: &[u8],
@@ -198,6 +221,18 @@ impl<C: ClientConfig> Session<C> {
     #[inline(always)]
     pub fn psk_proposal(&mut self, psk: ExternalPskId) -> Result<Proposal, SessionError> {
         Ok(self.protocol.psk_proposal(psk)?)
+    }
+
+    #[inline(always)]
+    pub fn reinit_proposal(
+        &mut self,
+        group_id: Vec<u8>,
+        cipher_suite: CipherSuite,
+        extensions: ExtensionList,
+    ) -> Result<Proposal, SessionError> {
+        Ok(self
+            .protocol
+            .reinit_proposal(group_id, cipher_suite, extensions)?)
     }
 
     #[inline(always)]
@@ -371,6 +406,33 @@ impl<C: ClientConfig> Session<C> {
             direct_path,
             epoch: self.protocol.current_epoch(),
         })
+    }
+
+    pub fn branch<F>(
+        &self,
+        sub_group_id: Vec<u8>,
+        resumption_psk_epoch: Option<u64>,
+        key_pkg_filter: F,
+    ) -> Result<(Self, Option<Welcome>), SessionError>
+    where
+        F: FnMut(&KeyPackageRef) -> bool,
+    {
+        let (new_group, welcome) = self.protocol.branch(
+            sub_group_id,
+            resumption_psk_epoch,
+            &self.config.secret_store(),
+            &self.signing_key,
+            key_pkg_filter,
+        )?;
+        let new_session = Session {
+            signing_key: self.signing_key.clone(),
+            credential: self.credential.clone(),
+            extensions: self.extensions.clone(),
+            protocol: new_group,
+            pending_commit: None,
+            config: self.config.clone(),
+        };
+        Ok((new_session, welcome))
     }
 }
 

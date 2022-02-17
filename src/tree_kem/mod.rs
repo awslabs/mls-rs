@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ops::Deref;
 
 use ferriscrypt::asym::ec_key::EcKeyError;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
@@ -238,11 +237,19 @@ impl TreeKemPublic {
         &self,
         key_package_ref: &KeyPackageRef,
     ) -> Result<&KeyPackage, RatchetTreeError> {
+        self.get_validated_key_package(key_package_ref)
+            .map(|p| &**p)
+    }
+
+    pub fn get_validated_key_package(
+        &self,
+        key_package_ref: &KeyPackageRef,
+    ) -> Result<&ValidatedKeyPackage, RatchetTreeError> {
         let index = self.package_leaf_index(key_package_ref)?;
 
         self.nodes
             .borrow_as_leaf(index)
-            .map(|l| l.key_package.deref())
+            .map(|l| &l.key_package)
             .map_err(|e| e.into())
     }
 
@@ -416,6 +423,10 @@ impl TreeKemPublic {
             .non_empty_leaves()
             .map(|(_, l)| &*l.key_package)
             .collect()
+    }
+
+    pub(crate) fn get_key_package_refs(&self) -> impl Iterator<Item = &'_ KeyPackageRef> {
+        self.index.key_package_refs()
     }
 
     fn encrypt_copath_node_resolution(
@@ -1065,7 +1076,7 @@ pub(crate) mod test {
         // The key package should be updated in the tree
         assert_eq!(
             tree.get_key_package(&updated_key_ref).unwrap(),
-            updated_leaf.deref()
+            &*updated_leaf
         );
 
         // There should be an error when looking for the original key package ref

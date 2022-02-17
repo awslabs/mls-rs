@@ -507,6 +507,38 @@ mod test {
             .unwrap()
     }
 
+    fn join_session<'a, S>(
+        committer_session: &mut Session,
+        other_sessions: S,
+        key_package: KeyPackage,
+        client: &Client,
+    ) -> Session
+    where
+        S: IntoIterator<Item = &'a mut Session>,
+    {
+        let key_package_ref = key_package.to_reference().unwrap();
+
+        let commit_result = committer_session
+            .commit(vec![Proposal::Add(AddProposal { key_package })])
+            .unwrap();
+
+        committer_session.apply_pending_commit().unwrap();
+
+        for session in other_sessions {
+            session
+                .process_incoming_bytes(&commit_result.commit_packet)
+                .unwrap();
+        }
+
+        client
+            .join_session(
+                Some(&key_package_ref),
+                Some(&committer_session.export_tree().unwrap()),
+                &commit_result.welcome_packet.unwrap(),
+            )
+            .unwrap()
+    }
+
     #[test]
     fn preconfigured_add_proposal_adds_to_group() {
         let mut env = PreconfiguredEnv::new();
@@ -634,6 +666,52 @@ mod test {
         assert_matches!(
             res,
             Err(SessionError::ProtocolError(GroupError::PskSecretError(PskSecretError::NoPskForId(actual_id)))) if actual_id == expected_id
+        );
+    }
+
+    #[test]
+    fn only_selected_members_of_the_original_group_can_join_subgroup() {
+        let alice = TestClientBuilder::named("alice").build();
+        let mut alice_session = create_session(&alice);
+        let (bob, bob_key_pkg_gen) = TestClientBuilder::named("bob").build_with_key_pkg();
+
+        let mut bob_session = join_session(
+            &mut alice_session,
+            [],
+            bob_key_pkg_gen.key_package.into(),
+            &bob,
+        );
+
+        let (carol, carol_key_pkg_gen) = TestClientBuilder::named("carol").build_with_key_pkg();
+        let carol_key_pkg_ref = carol_key_pkg_gen.key_package.to_reference().unwrap();
+
+        let carol_session = join_session(
+            &mut alice_session,
+            [&mut bob_session],
+            carol_key_pkg_gen.key_package.into(),
+            &carol,
+        );
+
+        let (alice_sub_session, welcome) = alice_session
+            .branch(b"subgroup".to_vec(), None, |r| *r != carol_key_pkg_ref)
+            .unwrap();
+
+        let welcome = welcome.unwrap();
+
+        assert_matches!(
+            bob_session.join_subgroup(
+                welcome.clone(),
+                Some(&alice_sub_session.export_tree().unwrap()),
+            ),
+            Ok(_)
+        );
+
+        assert_matches!(
+            carol_session.join_subgroup(
+                welcome.clone(),
+                Some(&alice_sub_session.export_tree().unwrap()),
+            ),
+            Err(_)
         );
     }
 }

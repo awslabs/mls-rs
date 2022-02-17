@@ -21,6 +21,15 @@ pub struct PreSharedKey {
     pub psk: PreSharedKeyID,
 }
 
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct ReInit {
+    #[tls_codec(with = "crate::tls::ByteVec::<u8>")]
+    pub group_id: Vec<u8>,
+    pub version: ProtocolVersion,
+    pub cipher_suite: CipherSuite,
+    pub extensions: ExtensionList,
+}
+
 pub type ProposalType = u16;
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -31,7 +40,7 @@ pub enum Proposal {
     Update(UpdateProposal),
     Remove(RemoveProposal),
     Psk(PreSharedKey),
-    //TODO: ReInit,
+    ReInit(ReInit),
     //TODO: ExternalInit,
     //TODO: AppAck,
     #[tls_codec(discriminant = 8)]

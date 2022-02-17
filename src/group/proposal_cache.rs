@@ -25,6 +25,7 @@ pub struct ProposalSetEffects {
     pub removes: Vec<KeyPackageRef>,
     pub group_context_ext: Option<ExtensionList>,
     pub psks: Vec<PreSharedKeyID>,
+    pub reinit: Option<ReInit>,
 }
 
 impl ProposalSetEffects {
@@ -34,6 +35,7 @@ impl ProposalSetEffects {
             && self.removes.is_empty()
             && self.group_context_ext.is_none()
             && self.psks.is_empty()
+            && self.reinit.is_none()
     }
 }
 
@@ -75,6 +77,7 @@ struct ProposalSet {
     items: Vec<Option<ProposalSetItem>>,
     group_context_ext: Option<usize>,
     seen_psk_ids: HashSet<PreSharedKeyID>,
+    reinit_index: Option<usize>,
 }
 
 impl ProposalSet {
@@ -141,11 +144,29 @@ impl ProposalSet {
         self.seen_psk_ids.insert(psk_id.clone())
     }
 
+    fn push_reinit(&mut self, _: &ReInit) -> bool {
+        if !(self.leaf_ops.is_empty()
+            && self.removes.is_empty()
+            && self.group_context_ext.is_none()
+            && self.seen_psk_ids.is_empty())
+        {
+            return false;
+        }
+        if let Some(i) = self.reinit_index {
+            // todo: Log if a ReInit proposal is discarded because of another ReInit proposal.
+            self.items[i] = None;
+        }
+        self.reinit_index = Some(self.items.len());
+        true
+    }
+
     fn push_item(
         &mut self,
         local_key_package: &KeyPackageRef,
         item: ProposalSetItem,
     ) -> Result<(), ProposalCacheError> {
+        // todo: Log if a ReInit proposal is discarded because of another proposal.
+        self.reinit_index = None;
         let should_push = match &item.proposal.proposal {
             Proposal::Add(add) => self.push_add(add)?,
             Proposal::Update(_) => {
@@ -154,6 +175,7 @@ impl ProposalSet {
             Proposal::Remove(remove) => self.push_remove(remove),
             Proposal::GroupContextExtensions(_) => self.push_group_context_ext(),
             Proposal::Psk(PreSharedKey { psk }) => self.push_psk(psk),
+            Proposal::ReInit(reinit) => self.push_reinit(reinit),
         };
 
         if should_push {
@@ -193,6 +215,9 @@ impl ProposalSet {
                     }
                     Proposal::Psk(PreSharedKey { psk }) => {
                         effects.psks.push(psk);
+                    }
+                    Proposal::ReInit(reinit) => {
+                        effects.reinit = Some(reinit);
                     }
                 };
                 effects

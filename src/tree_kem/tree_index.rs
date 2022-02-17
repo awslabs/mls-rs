@@ -103,6 +103,10 @@ impl TreeIndex {
     pub fn len(&self) -> usize {
         self.packages.len()
     }
+
+    pub fn key_package_refs(&self) -> impl Iterator<Item = &'_ KeyPackageRef> {
+        self.packages.keys()
+    }
 }
 
 #[cfg(test)]
@@ -211,7 +215,7 @@ mod test {
         );
 
         assert_matches!(res, Err(TreeIndexError::DuplicateKeyPackage(kpr, index))
-                        if kpr == test_data[1].key_package_ref.to_string() 
+                        if kpr == test_data[1].key_package_ref.to_string()
                         && index == test_data[1].index);
 
         assert_eq!(before_error, test_index);
