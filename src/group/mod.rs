@@ -653,6 +653,18 @@ impl Group {
         self.private_tree.self_index.0 as u32
     }
 
+    pub fn current_user_ref(&self) -> &KeyPackageRef {
+        &self.private_tree.key_package_ref
+    }
+
+    pub fn current_user_key_package(&self) -> Result<&KeyPackage, GroupError> {
+        self.epoch_repo
+            .current()?
+            .public_tree
+            .get_key_package(self.current_user_ref())
+            .map_err(Into::into)
+    }
+
     fn check_required_capabilities(
         &self,
         tree: &TreeKemPublic,
@@ -724,7 +736,7 @@ impl Group {
             // Update the leaf in the private tree if this is our update
             if let Some(new_leaf_sk) = self.pending_updates.get(&key_package_ref).cloned() {
                 provisional_private_tree.update_leaf(
-                    provisional_tree.leaf_count(),
+                    provisional_tree.total_leaf_count(),
                     key_package_ref,
                     new_leaf_sk,
                 )?;
@@ -733,7 +745,7 @@ impl Group {
 
         // Apply removes
         // If there is only one user in the tree, they can't be removed
-        if !proposals.removes.is_empty() && provisional_tree.leaf_count() == 1 {
+        if !proposals.removes.is_empty() && provisional_tree.occupied_leaf_count() == 1 {
             return Err(GroupError::RemoveNotAllowed);
         }
 
@@ -742,7 +754,7 @@ impl Group {
         // Remove elements from the private tree
         proposals.removes.iter().try_for_each(|key_package_ref| {
             let leaf = old_tree.package_leaf_index(key_package_ref)?;
-            provisional_private_tree.remove_leaf(provisional_tree.leaf_count(), leaf)?;
+            provisional_private_tree.remove_leaf(provisional_tree.total_leaf_count(), leaf)?;
 
             Ok::<_, GroupError>(())
         })?;

@@ -150,8 +150,11 @@ impl Epoch {
         let resumption_secret = kdf.derive_secret(&epoch_secret, "resumption")?;
         let init_secret = kdf.derive_secret(&epoch_secret, "init")?;
 
-        let secret_tree =
-            SecretTree::new(cipher_suite, public_tree.leaf_count(), encryption_secret);
+        let secret_tree = SecretTree::new(
+            cipher_suite,
+            public_tree.total_leaf_count(),
+            encryption_secret,
+        );
 
         Ok(Self {
             identifier: context.epoch,

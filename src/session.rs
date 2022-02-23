@@ -182,13 +182,21 @@ impl<C: ClientConfig + Clone> Session<C> {
     pub fn participant_count(&self) -> u32 {
         self.protocol
             .current_epoch_tree()
-            .map_or(0, |t| t.leaf_count())
+            .map_or(0, |t| t.occupied_leaf_count())
     }
 
     pub fn roster(&self) -> Vec<&KeyPackage> {
         self.protocol
             .current_epoch_tree()
             .map_or(vec![], |t| t.get_key_packages())
+    }
+
+    pub fn current_key_package(&self) -> Result<&KeyPackage, GroupError> {
+        self.protocol.current_user_key_package().map_err(Into::into)
+    }
+
+    pub fn current_user_ref(&self) -> &KeyPackageRef {
+        self.protocol.current_user_ref()
     }
 
     #[inline]

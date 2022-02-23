@@ -40,7 +40,7 @@ impl TreeKemPrivate {
         let path_gen = NodeSecretGenerator::new_from_path_secret(cipher_suite, path_secret);
 
         self.self_index
-            .direct_path(public_tree.leaf_count())?
+            .direct_path(public_tree.total_leaf_count())?
             .iter()
             .skip_while(|&&i| i != lca)
             .zip(path_gen)
@@ -266,7 +266,7 @@ mod test {
         // Sabotage the public tree
         public_tree
             .nodes
-            .borrow_as_parent_mut(tree_math::root(public_tree.leaf_count()))
+            .borrow_as_parent_mut(tree_math::root(public_tree.total_leaf_count()))
             .unwrap()
             .public_key = HpkePublicKey::from(SecureRng::gen(32).unwrap());
 

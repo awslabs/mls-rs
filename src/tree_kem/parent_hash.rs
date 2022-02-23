@@ -132,7 +132,7 @@ impl TreeKemPublic {
     where
         T: FnMut(NodeIndex, &ParentHash),
     {
-        if self.leaf_count() <= 1 {
+        if self.total_leaf_count() <= 1 {
             return Ok(ParentHash::empty());
         }
 
@@ -201,7 +201,7 @@ impl TreeKemPublic {
         node: &Parent,
     ) -> Result<(), RatchetTreeError> {
         //Let L and R be the left and right children of P, respectively
-        let mut r = tree_math::right(node_index, self.nodes.leaf_count())?;
+        let mut r = tree_math::right(node_index, self.nodes.total_leaf_count())?;
         let l = tree_math::left(node_index)?;
 
         //If L.parent_hash is equal to the Parent Hash of P with Co-Path Child R, the check passes
@@ -274,7 +274,7 @@ mod test {
         tree.add_leaves(key_packages).unwrap();
 
         // Fill in parent nodes
-        for i in 0..tree.leaf_count() - 1 {
+        for i in 0..tree.total_leaf_count() - 1 {
             tree.nodes
                 .borrow_node_mut(i * 2 + 1)
                 .map(|node| {

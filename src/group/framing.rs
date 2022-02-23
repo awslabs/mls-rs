@@ -140,6 +140,18 @@ impl MLSMessage {
             MLSMessage::Cipher(m) => m.content_type,
         }
     }
+
+    // TODO: This function should be replaced with a special client for servers parsing
+    // plaintext control messages
+    pub fn commit_sender_update(&self) -> Option<&KeyPackage> {
+        match self {
+            MLSMessage::Plain(m) => match &m.content {
+                Content::Commit(commit) => commit.path.as_ref().map(|cp| &cp.leaf_key_package),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
 }
 
 impl From<MLSPlaintext> for MLSMessage {

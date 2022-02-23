@@ -231,8 +231,12 @@ impl DerefMut for NodeVec {
 }
 
 impl NodeVec {
-    pub fn leaf_count(&self) -> u32 {
+    pub fn occupied_leaf_count(&self) -> u32 {
         self.non_empty_leaves().count() as u32
+    }
+
+    pub fn total_leaf_count(&self) -> u32 {
+        self.len() as u32 / 2 + 1
     }
 
     #[inline]
@@ -701,10 +705,17 @@ pub mod test {
     fn test_leaf_count() {
         let test_vec = get_test_node_vec();
         assert_eq!(test_vec.len(), 7);
-        assert_eq!(test_vec.leaf_count(), 3);
+        assert_eq!(test_vec.occupied_leaf_count(), 3);
         assert_eq!(
             test_vec.non_empty_leaves().count(),
-            test_vec.leaf_count() as usize
+            test_vec.occupied_leaf_count() as usize
         );
+    }
+
+    #[test]
+    fn test_total_leaf_count() {
+        let test_vec = get_test_node_vec();
+        assert_eq!(test_vec.occupied_leaf_count(), 3);
+        assert_eq!(test_vec.total_leaf_count(), 4);
     }
 }

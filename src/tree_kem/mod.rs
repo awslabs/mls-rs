@@ -220,8 +220,12 @@ impl TreeKemPublic {
         Ok((public_tree, private_tree))
     }
 
-    pub fn leaf_count(&self) -> u32 {
-        self.nodes.leaf_count()
+    pub fn total_leaf_count(&self) -> u32 {
+        self.nodes.total_leaf_count()
+    }
+
+    pub fn occupied_leaf_count(&self) -> u32 {
+        self.nodes.occupied_leaf_count()
     }
 
     pub fn package_leaf_index(
@@ -898,7 +902,7 @@ pub(crate) mod test {
         );
 
         // The leaf count should be equal to the number of packages we added
-        assert_eq!(tree.leaf_count(), key_packages.len() as u32);
+        assert_eq!(tree.occupied_leaf_count(), key_packages.len() as u32);
 
         // Each added package should be at the proper index and searchable in the tree
         res.iter()
@@ -910,7 +914,7 @@ pub(crate) mod test {
             });
 
         // Verify the underlying state
-        assert_eq!(tree.index.len(), tree.leaf_count() as usize);
+        assert_eq!(tree.index.len(), tree.occupied_leaf_count() as usize);
 
         assert_eq!(tree.nodes.len(), 5);
         assert_eq!(
@@ -1051,7 +1055,7 @@ pub(crate) mod test {
                     .unwrap();
             });
 
-        let original_size = tree.leaf_count();
+        let original_size = tree.occupied_leaf_count();
         let original_package_ref = key_packages[0].to_reference().unwrap();
         let original_leaf_index = tree.package_leaf_index(&original_package_ref).unwrap();
 
@@ -1062,7 +1066,7 @@ pub(crate) mod test {
             .unwrap();
 
         // The tree should not have grown due to an update
-        assert_eq!(tree.leaf_count(), original_size);
+        assert_eq!(tree.occupied_leaf_count(), original_size);
 
         // The leaf should not have moved due to an update
         assert_eq!(
@@ -1071,7 +1075,7 @@ pub(crate) mod test {
         );
 
         // The cache of tree package indexs should not have grown
-        assert_eq!(tree.index.len() as u32, tree.leaf_count());
+        assert_eq!(tree.index.len() as u32, tree.occupied_leaf_count());
 
         // The key package should be updated in the tree
         assert_eq!(
@@ -1145,7 +1149,7 @@ pub(crate) mod test {
         let key_packages = get_test_key_packages(cipher_suite);
         tree.add_leaves(key_packages.clone()).unwrap();
 
-        let original_leaf_count = tree.leaf_count();
+        let original_leaf_count = tree.occupied_leaf_count();
 
         let to_remove = vec![
             key_packages[1].to_reference().unwrap(),
@@ -1167,7 +1171,7 @@ pub(crate) mod test {
         assert_eq!(res, expected_result);
 
         // The leaf count should have been reduced by 2
-        assert_eq!(tree.leaf_count(), original_leaf_count - 2);
+        assert_eq!(tree.occupied_leaf_count(), original_leaf_count - 2);
 
         // We should no longer be able to find the removed leaves
         for key_package_ref in to_remove {
@@ -1181,6 +1185,36 @@ pub(crate) mod test {
                 Err(RatchetTreeError::KeyPackageNotFound(_))
             );
         }
+    }
+
+    #[test]
+    fn test_create_blanks() {
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+
+        // Create a tree
+        let (mut tree, _, _) = get_test_tree(cipher_suite);
+        let key_packages = get_test_key_packages(cipher_suite);
+        tree.add_leaves(key_packages.clone()).unwrap();
+
+        let original_leaf_count = tree.occupied_leaf_count();
+
+        let remove_ref = key_packages[1].to_reference().unwrap();
+        let remove_location = tree.package_leaf_index(&remove_ref).unwrap();
+
+        let to_remove = vec![remove_ref];
+
+        // Remove the leaf from the tree
+        tree.remove_leaves(&tree.clone(), to_remove).unwrap();
+
+        // The occupied leaf count should have been reduced by 1
+        assert_eq!(tree.occupied_leaf_count(), original_leaf_count - 1);
+
+        // The total leaf count should remain unchanged
+        assert_eq!(tree.total_leaf_count(), original_leaf_count);
+
+        // The location of key_packages[1] should now be blank
+        let removed_location = tree.nodes.borrow_node(remove_location.into()).unwrap();
+        assert_eq!(removed_location, &None);
     }
 
     #[test]
@@ -1215,7 +1249,7 @@ pub(crate) mod test {
         );
 
         // Verify that we have a public keys up to the root
-        assert!(tree.nodes[tree_math::root(tree.leaf_count()) as usize].is_some());
+        assert!(tree.nodes[tree_math::root(tree.total_leaf_count()) as usize].is_some());
     }
 
     fn verify_tree_private_path(

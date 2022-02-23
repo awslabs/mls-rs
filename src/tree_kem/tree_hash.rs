@@ -63,7 +63,7 @@ impl TreeHashable for (NodeIndex, Option<&Leaf>) {
 impl TreeHashable for (NodeIndex, Option<&Parent>) {
     fn get_hash(&self, tree: &TreeKemPublic) -> Result<Vec<u8>, RatchetTreeError> {
         let left = tree_math::left(self.0)?;
-        let right = tree_math::right(self.0, tree.leaf_count())?;
+        let right = tree_math::right(self.0, tree.total_leaf_count())?;
         let left_hash = (left, &tree.nodes[left as usize]).get_hash(tree)?;
         let right_hash = (right, &tree.nodes[right as usize]).get_hash(tree)?;
 
@@ -83,7 +83,7 @@ impl TreeHashable for (NodeIndex, Option<&Parent>) {
 
 impl TreeKemPublic {
     pub fn tree_hash(&self) -> Result<Vec<u8>, RatchetTreeError> {
-        let root = tree_math::root(self.leaf_count());
+        let root = tree_math::root(self.total_leaf_count());
         (root, &self.nodes[root as usize]).get_hash(self)
     }
 }

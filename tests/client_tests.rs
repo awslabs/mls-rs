@@ -6,6 +6,7 @@ use aws_mls::extension::{ExtensionList, LifetimeExt};
 use aws_mls::key_package::{KeyPackageGeneration, KeyPackageRef};
 use aws_mls::session::{GroupError, ProcessedMessage, Session, SessionError};
 use ferriscrypt::rand::SecureRng;
+use rand::prelude::SliceRandom;
 use std::fmt::{self, Display};
 
 #[cfg(target_arch = "wasm32")]
@@ -308,11 +309,11 @@ fn test_remove_proposals(
 
     // Remove people from the group one at a time
     while receiver_sessions.len() > 1 {
-        let to_remove = creator_session.roster().last().cloned().cloned().unwrap();
+        let session_to_remove = receiver_sessions.choose(&mut rand::thread_rng()).unwrap();
+        let to_remove = session_to_remove.current_key_package().unwrap().clone();
+        let to_remove_ref = to_remove.to_reference().unwrap();
 
-        let removal = creator_session
-            .remove_proposal(&to_remove.to_reference().unwrap())
-            .unwrap();
+        let removal = creator_session.remove_proposal(&to_remove_ref).unwrap();
 
         let commit = creator_session.commit(vec![removal]).unwrap();
         assert!(commit.welcome_packet.is_none());
@@ -323,8 +324,8 @@ fn test_remove_proposals(
         epoch_count += 1;
 
         // Process the removal in the other receiver groups
-        for (index, one_session) in receiver_sessions.iter_mut().enumerate() {
-            let expect_inactive = one_session.roster().len() - 2;
+        for one_session in receiver_sessions.iter_mut() {
+            let expect_inactive = one_session.current_user_ref() == &to_remove_ref;
 
             let state_update = one_session
                 .process_incoming_bytes(&commit.commit_packet)
@@ -334,19 +335,19 @@ fn test_remove_proposals(
                 ProcessedMessage::Commit(update) => update,
                 _ => panic!("Expected commit result"),
             };
+
             assert_eq!(update.epoch, epoch_count as u64);
             assert_eq!(update.removed, vec![to_remove.clone()]);
             assert!(update.added.is_empty());
 
-            if index != expect_inactive {
-                assert!(update.active)
-            } else {
+            if expect_inactive {
                 assert!(!update.active)
+            } else {
+                assert!(update.active)
             }
         }
 
-        // Remove the last group off the list
-        receiver_sessions.pop();
+        receiver_sessions.retain(|session| session.current_user_ref() != &to_remove_ref);
 
         for one_session in receiver_sessions.iter() {
             assert!(one_session.has_equal_state(&creator_session));
