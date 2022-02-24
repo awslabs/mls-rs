@@ -14,7 +14,7 @@ pub enum TranscriptHashError {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsSerialize, TlsSize)]
-pub(crate) struct MLSPlaintextCommitContent<'a> {
+pub(crate) struct MLSMessageCommitContent<'a> {
     pub wire_format: WireFormat,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub group_id: &'a [u8],
@@ -32,21 +32,22 @@ pub(crate) struct MLSPlaintextCommitAuthData<'a> {
     pub confirmation_tag: Option<&'a ConfirmationTag>,
 }
 
-impl<'a> MLSPlaintextCommitContent<'a> {
-    pub fn new(
-        value: &'a MLSPlaintext,
-        wire_format: WireFormat,
-    ) -> Result<Self, TranscriptHashError> {
-        match &value.content {
-            Content::Commit(c) => Ok(MLSPlaintextCommitContent {
-                wire_format,
-                group_id: &value.group_id,
-                epoch: value.epoch,
-                sender: &value.sender,
-                authenticated_data: &value.authenticated_data,
+impl<'a> MLSMessageCommitContent<'a> {
+    pub fn new(value: &'a MLSPlaintext, encrypted: bool) -> Result<Self, TranscriptHashError> {
+        match &value.content.content {
+            Content::Commit(c) => Ok(MLSMessageCommitContent {
+                wire_format: if encrypted {
+                    WireFormat::Cipher
+                } else {
+                    WireFormat::Plain
+                },
+                group_id: &value.content.group_id,
+                epoch: value.content.epoch,
+                sender: &value.content.sender,
+                authenticated_data: &value.content.authenticated_data,
                 content_type: ContentType::Commit,
                 commit: c,
-                signature: &value.signature,
+                signature: &value.auth.signature,
             }),
             Content::Proposal(_) => {
                 Err(TranscriptHashError::NotCommitContent(ContentType::Proposal))
@@ -60,7 +61,7 @@ impl<'a> MLSPlaintextCommitContent<'a> {
 
 impl<'a> From<&'a MLSPlaintext> for MLSPlaintextCommitAuthData<'a> {
     fn from(plaintext: &'a MLSPlaintext) -> Self {
-        let confirmation_tag = plaintext.confirmation_tag.as_ref();
+        let confirmation_tag = plaintext.auth.confirmation_tag.as_ref();
         MLSPlaintextCommitAuthData { confirmation_tag }
     }
 }
@@ -82,9 +83,7 @@ impl<'a> From<Option<&'a ConfirmationTag>> for MLSPlaintextCommitAuthData<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub(crate) struct ConfirmedTranscriptHash(
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>,
-);
+pub struct ConfirmedTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>);
 
 impl Deref for ConfirmedTranscriptHash {
     type Target = Vec<u8>;
@@ -101,10 +100,10 @@ impl From<Vec<u8>> for ConfirmedTranscriptHash {
 }
 
 impl ConfirmedTranscriptHash {
-    pub fn create(
+    pub(crate) fn create(
         cipher_suite: CipherSuite,
         interim_transcript_hash: &InterimTranscriptHash,
-        commit_content: MLSPlaintextCommitContent,
+        commit_content: MLSMessageCommitContent,
     ) -> Result<Self, TranscriptHashError> {
         let confirmed_input = [
             interim_transcript_hash.0.deref(),

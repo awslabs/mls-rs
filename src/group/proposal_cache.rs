@@ -251,13 +251,15 @@ impl ProposalCache {
         &mut self,
         cipher_suite: CipherSuite,
         proposal_plaintext: &MLSPlaintext,
+        encrypted: bool,
     ) -> Result<Option<CachedProposal>, ProposalCacheError> {
-        if let Content::Proposal(proposal) = &proposal_plaintext.content {
-            let proposal_ref = ProposalRef::from_plaintext(cipher_suite, proposal_plaintext)?;
+        if let Content::Proposal(proposal) = &proposal_plaintext.content.content {
+            let proposal_ref =
+                ProposalRef::from_plaintext(cipher_suite, proposal_plaintext, encrypted)?;
 
             let cached_proposal = CachedProposal {
                 proposal: proposal.clone(),
-                sender: proposal_plaintext.sender.clone(),
+                sender: proposal_plaintext.content.sender.clone(),
             };
 
             Ok(self.0.insert(proposal_ref, cached_proposal))
@@ -405,7 +407,7 @@ mod test {
         let mut cache = ProposalCache::new();
 
         test_proposals.into_iter().for_each(|p| {
-            let res = cache.insert(cipher_suite, &p).unwrap();
+            let res = cache.insert(cipher_suite, &p, false).unwrap();
             assert_eq!(res, None);
         });
 
@@ -447,7 +449,9 @@ mod test {
         let expected_proposals = test_proposals
             .into_iter()
             .map(|p| {
-                ProposalOrRef::Reference(ProposalRef::from_plaintext(cipher_suite, &p).unwrap())
+                ProposalOrRef::Reference(
+                    ProposalRef::from_plaintext(cipher_suite, &p, false).unwrap(),
+                )
             })
             .collect();
 
@@ -476,7 +480,9 @@ mod test {
         let mut expected_proposals = test_proposals
             .into_iter()
             .map(|p| {
-                ProposalOrRef::Reference(ProposalRef::from_plaintext(cipher_suite, &p).unwrap())
+                ProposalOrRef::Reference(
+                    ProposalRef::from_plaintext(cipher_suite, &p, false).unwrap(),
+                )
             })
             .collect::<Vec<ProposalOrRef>>();
 
@@ -528,7 +534,7 @@ mod test {
         assert!(effects.removes.contains(&test_sender));
 
         assert!(!proposals.contains(&ProposalOrRef::Reference(
-            ProposalRef::from_plaintext(cipher_suite, &test_proposals[1]).unwrap()
+            ProposalRef::from_plaintext(cipher_suite, &test_proposals[1], false).unwrap()
         )))
     }
 
@@ -542,7 +548,7 @@ mod test {
             test_proposal_cache_setup(cipher_suite, test_proposals.clone());
 
         test_proposals.clone().into_iter().for_each(|p| {
-            cache.insert(cipher_suite, &p).unwrap();
+            cache.insert(cipher_suite, &p, false).unwrap();
         });
 
         let (proposals, effects) = cache.prepare_commit(&test_ref(), vec![]).unwrap();
@@ -550,7 +556,9 @@ mod test {
         let expected_proposals = test_proposals
             .into_iter()
             .map(|p| {
-                ProposalOrRef::Reference(ProposalRef::from_plaintext(cipher_suite, &p).unwrap())
+                ProposalOrRef::Reference(
+                    ProposalRef::from_plaintext(cipher_suite, &p, false).unwrap(),
+                )
             })
             .collect::<Vec<ProposalOrRef>>();
 
@@ -570,7 +578,7 @@ mod test {
             .clone()
             .into_iter()
             .filter_map(|plaintext| {
-                if let Content::Proposal(proposal) = plaintext.content {
+                if let Content::Proposal(proposal) = plaintext.content.content {
                     if !matches!(proposal, Proposal::Update(_)) {
                         Some(proposal)
                     } else {
@@ -587,7 +595,7 @@ mod test {
             .unwrap();
 
         let mut expected_proposals = vec![ProposalOrRef::Reference(
-            ProposalRef::from_plaintext(cipher_suite, &test_proposals[1]).unwrap(),
+            ProposalRef::from_plaintext(cipher_suite, &test_proposals[1], false).unwrap(),
         )];
 
         additional
@@ -610,6 +618,7 @@ mod test {
             .insert(
                 CipherSuite::P256Aes128V1,
                 &plaintext_from_proposal(test_proposal, test_ref()),
+                false,
             )
             .unwrap();
 

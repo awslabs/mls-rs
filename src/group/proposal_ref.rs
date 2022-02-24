@@ -18,9 +18,19 @@ impl ProposalRef {
     pub fn from_plaintext(
         cipher_suite: CipherSuite,
         plaintext: &MLSPlaintext,
+        encrypted: bool,
     ) -> Result<Self, ProposalCacheError> {
+        let message_content_auth = MLSMessageContentAuth {
+            wire_format: if encrypted {
+                WireFormat::Cipher
+            } else {
+                WireFormat::Plain
+            },
+            content: &plaintext.content,
+            auth: &plaintext.auth,
+        };
         Ok(ProposalRef(HashReference::from_value(
-            &plaintext.tls_serialize_detached()?,
+            &message_content_auth.tls_serialize_detached()?,
             cipher_suite,
         )?))
     }
@@ -32,14 +42,17 @@ pub(crate) mod test_util {
 
     pub fn plaintext_from_proposal(proposal: Proposal, sender: KeyPackageRef) -> MLSPlaintext {
         MLSPlaintext {
-            group_id: b"test_group".to_vec(),
-            epoch: 0,
-            sender: Sender::Member(sender),
-            authenticated_data: vec![],
-            content: Content::Proposal(proposal),
-            signature: MessageSignature::from(SecureRng::gen(128).unwrap()),
-            confirmation_tag: None,
-            membership_tag: None,
+            auth: MLSMessageAuth {
+                signature: MessageSignature::from(SecureRng::gen(128).unwrap()),
+                confirmation_tag: None,
+            },
+            membership_tag: Some(Tag::from(Vec::new()).into()),
+            ..MLSPlaintext::new(
+                b"test_group".to_vec(),
+                0,
+                Sender::Member(sender),
+                Content::Proposal(proposal),
+            )
         }
     }
 }
@@ -121,7 +134,7 @@ mod test {
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 input: add.tls_serialize_detached().unwrap(),
-                output: ProposalRef::from_plaintext(cipher_suite, &add)
+                output: ProposalRef::from_plaintext(cipher_suite, &add, false)
                     .unwrap()
                     .to_vec(),
             });
@@ -129,7 +142,7 @@ mod test {
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 input: update.tls_serialize_detached().unwrap(),
-                output: ProposalRef::from_plaintext(cipher_suite, &update)
+                output: ProposalRef::from_plaintext(cipher_suite, &update, false)
                     .unwrap()
                     .to_vec(),
             });
@@ -137,7 +150,7 @@ mod test {
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 input: remove.tls_serialize_detached().unwrap(),
-                output: ProposalRef::from_plaintext(cipher_suite, &remove)
+                output: ProposalRef::from_plaintext(cipher_suite, &remove, false)
                     .unwrap()
                     .to_vec(),
             });
@@ -145,19 +158,17 @@ mod test {
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 input: group_context_ext.tls_serialize_detached().unwrap(),
-                output: ProposalRef::from_plaintext(cipher_suite, &group_context_ext)
+                output: ProposalRef::from_plaintext(cipher_suite, &group_context_ext, false)
                     .unwrap()
                     .to_vec(),
             });
         }
 
-        /*
         std::fs::write(
-            "path/to/test_data/proposal_ref.json",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/proposal_ref.json"),
             serde_json::to_vec_pretty(&test_cases).unwrap(),
         )
         .unwrap();
-        */
 
         test_cases
     }
@@ -178,7 +189,7 @@ mod test {
             let proposal = MLSPlaintext::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
 
             let proposal_ref =
-                ProposalRef::from_plaintext(cipher_suite.unwrap(), &proposal).unwrap();
+                ProposalRef::from_plaintext(cipher_suite.unwrap(), &proposal, false).unwrap();
 
             let expected_out = ProposalRef(HashReference::from(
                 <[u8; 16]>::try_from(one_case.output).unwrap(),

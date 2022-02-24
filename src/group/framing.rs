@@ -1,11 +1,12 @@
 use super::proposal::Proposal;
 use super::*;
+use std::io::{Read, Write};
+use tls_codec::{Deserialize, Serialize, Size, TlsByteSliceU16, TlsByteVecU16};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Copy, Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u16)]
 pub enum ContentType {
-    Reserved = 0,
     Application,
     Proposal,
     Commit,
@@ -40,40 +41,113 @@ pub enum Content {
 
 impl Content {
     pub fn content_type(&self) -> ContentType {
-        match self {
-            Content::Application(_) => ContentType::Application,
-            Content::Proposal(_) => ContentType::Proposal,
-            Content::Commit(_) => ContentType::Commit,
+        self.into()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MLSPlaintext {
+    pub content: MLSMessageContent,
+    pub auth: MLSMessageAuth,
+    pub membership_tag: Option<MembershipTag>,
+}
+
+impl MLSPlaintext {
+    pub fn new(group_id: Vec<u8>, epoch: u64, sender: Sender, content: Content) -> Self {
+        Self {
+            content: MLSMessageContent {
+                group_id,
+                epoch,
+                sender,
+                authenticated_data: Vec::new(),
+                content,
+            },
+            auth: MLSMessageAuth {
+                signature: MessageSignature::empty(),
+                confirmation_tag: None,
+            },
+            membership_tag: None,
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct MLSPlaintext {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub group_id: Vec<u8>,
-    pub epoch: u64,
-    pub sender: Sender,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub authenticated_data: Vec<u8>,
-    pub content: Content,
-    pub signature: MessageSignature,
-    pub confirmation_tag: Option<ConfirmationTag>,
-    pub membership_tag: Option<MembershipTag>,
+impl Size for MLSPlaintext {
+    fn tls_serialized_len(&self) -> usize {
+        self.content.tls_serialized_len()
+            + self.auth.tls_serialized_len()
+            + self
+                .membership_tag
+                .as_ref()
+                .map_or(0, |tag| tag.tls_serialized_len())
+    }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+impl Serialize for MLSPlaintext {
+    fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
+        Ok(self.content.tls_serialize(writer)?
+            + self.auth.tls_serialize(writer)?
+            + self
+                .membership_tag
+                .as_ref()
+                .map_or(Ok(0), |tag| tag.tls_serialize(writer))?)
+    }
+}
+
+impl Deserialize for MLSPlaintext {
+    fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
+        let content = MLSMessageContent::tls_deserialize(bytes)?;
+        let auth = MLSMessageAuth::tls_deserialize(bytes, content.content_type())?;
+        let membership_tag = match content.sender {
+            Sender::Member(_) => Some(MembershipTag::tls_deserialize(bytes)?),
+            Sender::NewMember | Sender::Preconfigured(_) => None,
+        };
+        Ok(Self {
+            content,
+            auth,
+            membership_tag,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct MLSCiphertextContent {
     pub content: Content,
-    pub signature: MessageSignature,
-    pub confirmation_tag: Option<ConfirmationTag>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    pub auth: MLSMessageAuth,
     pub padding: Vec<u8>,
+}
+
+impl Size for MLSCiphertextContent {
+    fn tls_serialized_len(&self) -> usize {
+        self.content.tls_serialized_len()
+            + self.auth.tls_serialized_len()
+            + TlsByteSliceU16(&self.padding).tls_serialized_len()
+    }
+}
+
+impl Serialize for MLSCiphertextContent {
+    fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
+        Ok(self.content.tls_serialize(writer)?
+            + self.auth.tls_serialize(writer)?
+            + TlsByteSliceU16(&self.padding).tls_serialize(writer)?)
+    }
+}
+
+impl Deserialize for MLSCiphertextContent {
+    fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
+        let content = Content::tls_deserialize(bytes)?;
+        let auth = MLSMessageAuth::tls_deserialize(bytes, content.content_type())?;
+        let padding = TlsByteVecU16::tls_deserialize(bytes)?.into();
+        Ok(Self {
+            content,
+            auth,
+            padding,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSCiphertextContentAAD {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u8>")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub content_type: ContentType,
@@ -83,13 +157,13 @@ pub struct MLSCiphertextContentAAD {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSCiphertext {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u8>")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub content_type: ContentType,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub authenticated_data: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec::<u8>")]
     pub encrypted_sender_data: Vec<u8>,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub ciphertext: Vec<u8>,
@@ -117,6 +191,9 @@ pub enum MLSMessage {
     #[tls_codec(discriminant = 1)]
     Plain(MLSPlaintext),
     Cipher(MLSCiphertext),
+    Welcome(Welcome),
+    GroupInfo(GroupInfo),
+    KeyPackage(KeyPackage),
 }
 
 impl MLSMessage {
@@ -124,20 +201,9 @@ impl MLSMessage {
         match self {
             MLSMessage::Plain(_) => WireFormat::Plain,
             MLSMessage::Cipher(_) => WireFormat::Cipher,
-        }
-    }
-
-    pub fn epoch(&self) -> u64 {
-        match self {
-            MLSMessage::Plain(m) => m.epoch,
-            MLSMessage::Cipher(m) => m.epoch,
-        }
-    }
-
-    pub fn content_type(&self) -> ContentType {
-        match self {
-            MLSMessage::Plain(m) => m.content.content_type(),
-            MLSMessage::Cipher(m) => m.content_type,
+            MLSMessage::Welcome(_) => WireFormat::Welcome,
+            MLSMessage::GroupInfo(_) => WireFormat::PublicGroupState,
+            MLSMessage::KeyPackage(_) => WireFormat::KeyPackage,
         }
     }
 
@@ -145,7 +211,7 @@ impl MLSMessage {
     // plaintext control messages
     pub fn commit_sender_update(&self) -> Option<&KeyPackage> {
         match self {
-            MLSMessage::Plain(m) => match &m.content {
+            MLSMessage::Plain(m) => match &m.content.content {
                 Content::Commit(commit) => commit.path.as_ref().map(|cp| &cp.leaf_key_package),
                 _ => None,
             },
@@ -173,6 +239,26 @@ impl From<MLSCiphertext> for MLSMessage {
 pub enum WireFormat {
     Plain = 1,
     Cipher,
+    Welcome,
+    PublicGroupState,
+    KeyPackage,
+}
+
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct MLSMessageContent {
+    #[tls_codec(with = "crate::tls::ByteVec::<u8>")]
+    pub group_id: Vec<u8>,
+    pub epoch: u64,
+    pub sender: Sender,
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    pub authenticated_data: Vec<u8>,
+    pub content: Content,
+}
+
+impl MLSMessageContent {
+    pub fn content_type(&self) -> ContentType {
+        self.content.content_type()
+    }
 }
 
 #[cfg(test)]
@@ -182,13 +268,17 @@ pub mod test_utils {
 
     pub fn get_test_plaintext(test_content: Vec<u8>) -> MLSPlaintext {
         MLSPlaintext {
-            group_id: vec![],
-            epoch: 0,
-            sender: Sender::Member(KeyPackageRef::from([0u8; 16])),
-            authenticated_data: vec![],
-            content: Content::Application(test_content),
-            signature: MessageSignature::empty(),
-            confirmation_tag: None,
+            content: MLSMessageContent {
+                group_id: Vec::new(),
+                epoch: 0,
+                sender: Sender::Member([0u8; 16].into()),
+                authenticated_data: Vec::new(),
+                content: Content::Application(test_content),
+            },
+            auth: MLSMessageAuth {
+                signature: MessageSignature::empty(),
+                confirmation_tag: None,
+            },
             membership_tag: None,
         }
     }

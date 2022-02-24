@@ -5,9 +5,10 @@ use crate::extension::ExtensionList;
 
 pub use crate::group::framing::{ContentType, MLSMessage};
 
-use crate::group::framing::{Content, WireFormat};
+use crate::group::framing::Content;
 use crate::group::{
-    proposal::Proposal, CommitGeneration, Group, OutboundPlaintext, StateUpdate, Welcome,
+    proposal::Proposal, CommitGeneration, Group, OutboundPlaintext, StateUpdate, VerifiedPlaintext,
+    Welcome,
 };
 use crate::key_package::{
     KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
@@ -290,14 +291,14 @@ impl<C: ClientConfig + Clone> Session<C> {
 
     #[inline(always)]
     fn serialize_control(&mut self, plaintext: OutboundPlaintext) -> Result<Vec<u8>, SessionError> {
-        Ok(plaintext.message().tls_serialize_detached()?)
+        Ok(plaintext.into_message().tls_serialize_detached()?)
     }
 
     fn send_proposal(&mut self, proposal: Proposal) -> Result<Vec<u8>, SessionError> {
         let packet = self.protocol.create_proposal(
             proposal,
             &self.signing_key,
-            wire_format(&self.config),
+            self.config.encrypt_controls(),
         )?;
         self.serialize_control(packet)
     }
@@ -319,7 +320,7 @@ impl<C: ClientConfig + Clone> Session<C> {
             proposals,
             &key_package_generator,
             true,
-            wire_format(&self.config),
+            self.config.encrypt_controls(),
             self.config.ratchet_tree_extension(),
             &self.config.secret_store(),
         )?;
@@ -348,10 +349,30 @@ impl<C: ClientConfig + Clone> Session<C> {
         &mut self,
         message: MLSMessage,
     ) -> Result<ProcessedMessage, SessionError> {
-        let message = self
-            .protocol
-            .verify_incoming_message(message, |id| self.config.external_signing_key(id))?;
-        match &message.content {
+        match message {
+            MLSMessage::Plain(message) => {
+                let message = self.protocol.verify_incoming_plaintext(message, |id| {
+                    self.config.external_signing_key(id)
+                })?;
+                self.process_incoming_plaintext(message)
+            }
+            MLSMessage::Cipher(message) => {
+                let message = self.protocol.verify_incoming_ciphertext(message, |id| {
+                    self.config.external_signing_key(id)
+                })?;
+                self.process_incoming_plaintext(message)
+            }
+            MLSMessage::Welcome(message) => Ok(ProcessedMessage::Welcome(message)),
+            MLSMessage::GroupInfo(message) => Ok(ProcessedMessage::GroupInfo(message)),
+            MLSMessage::KeyPackage(message) => Ok(ProcessedMessage::KeyPackage(message)),
+        }
+    }
+
+    fn process_incoming_plaintext(
+        &mut self,
+        message: VerifiedPlaintext,
+    ) -> Result<ProcessedMessage, SessionError> {
+        match &message.content.content {
             Content::Proposal(p) => self
                 .config
                 .filter_proposal(p)
@@ -444,13 +465,5 @@ impl<C: ClientConfig + Clone> Session<C> {
             config: self.config.clone(),
         };
         Ok((new_session, welcome))
-    }
-}
-
-fn wire_format<C: ClientConfig>(config: &C) -> WireFormat {
-    if config.encrypt_controls() {
-        WireFormat::Cipher
-    } else {
-        WireFormat::Plain
     }
 }

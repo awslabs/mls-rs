@@ -2,8 +2,8 @@ use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, DefaultClientConfig, KeyPackageRepository};
 use crate::credential::{BasicCredential, Credential, CredentialError};
 use crate::extension::{CapabilitiesExt, ExtensionError, ExtensionList, LifetimeExt, MlsExtension};
-use crate::group::framing::{Content, MLSMessage, MLSPlaintext, Sender, WireFormat};
-use crate::group::message_signature::{MessageSignature, MessageSignatureError};
+use crate::group::framing::{Content, MLSMessage, MLSPlaintext, Sender};
+use crate::group::message_signature::MessageSignatureError;
 use crate::group::proposal::{AddProposal, Proposal, RemoveProposal};
 use crate::key_package::{
     KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
@@ -215,17 +215,8 @@ impl<C: ClientConfig + Clone> Client<C> {
         proposal: Proposal,
         epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
-        let mut message = MLSPlaintext {
-            group_id,
-            epoch,
-            sender,
-            authenticated_data: Vec::new(),
-            content: Content::Proposal(proposal),
-            signature: MessageSignature::empty(),
-            confirmation_tag: None,
-            membership_tag: None,
-        };
-        message.sign(&self.signature_key, None, WireFormat::Plain)?;
+        let mut message = MLSPlaintext::new(group_id, epoch, sender, Content::Proposal(proposal));
+        message.sign(&self.signature_key, None, false)?;
         let message = MLSMessage::Plain(message);
         Ok(message.tls_serialize_detached()?)
     }

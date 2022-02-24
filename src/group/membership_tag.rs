@@ -1,12 +1,14 @@
-use crate::group::confirmation_tag::ConfirmationTag;
 use crate::group::epoch::Epoch;
 use crate::group::framing::{MLSPlaintext, WireFormat};
-use crate::group::message_signature::{MLSPlaintextTBS, MessageSignature};
+use crate::group::message_signature::{MLSMessageAuth, MLSMessageContentTBS};
 use crate::group::GroupContext;
 use ferriscrypt::hmac::{HMacError, Key, Tag};
-use std::ops::Deref;
+use std::{
+    io::{Read, Write},
+    ops::Deref,
+};
 use thiserror::Error;
-use tls_codec::Serialize;
+use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
@@ -17,11 +19,30 @@ pub enum MembershipTagError {
     SerializationError(#[from] tls_codec::Error),
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq)]
 struct MLSPlaintextTBM {
-    tbs: MLSPlaintextTBS,
-    signature: MessageSignature,
-    confirmation_tag: Option<ConfirmationTag>,
+    content_tbs: MLSMessageContentTBS,
+    auth: MLSMessageAuth,
+}
+
+impl Size for MLSPlaintextTBM {
+    fn tls_serialized_len(&self) -> usize {
+        self.content_tbs.tls_serialized_len() + self.auth.tls_serialized_len()
+    }
+}
+
+impl Serialize for MLSPlaintextTBM {
+    fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
+        Ok(self.content_tbs.tls_serialize(writer)? + self.auth.tls_serialize(writer)?)
+    }
+}
+
+impl Deserialize for MLSPlaintextTBM {
+    fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
+        let content_tbs = MLSMessageContentTBS::tls_deserialize(bytes)?;
+        let auth = MLSMessageAuth::tls_deserialize(bytes, content_tbs.content.content_type())?;
+        Ok(Self { content_tbs, auth })
+    }
 }
 
 impl MLSPlaintextTBM {
@@ -31,9 +52,12 @@ impl MLSPlaintextTBM {
         wire_format: WireFormat,
     ) -> MLSPlaintextTBM {
         MLSPlaintextTBM {
-            tbs: MLSPlaintextTBS::from_plaintext(plaintext, Some(group_context), wire_format),
-            signature: plaintext.signature.clone(),
-            confirmation_tag: plaintext.confirmation_tag.clone(),
+            content_tbs: MLSMessageContentTBS {
+                wire_format,
+                content: plaintext.content.clone(),
+                context: Some(group_context.clone()),
+            },
+            auth: plaintext.auth.clone(),
         }
     }
 }
