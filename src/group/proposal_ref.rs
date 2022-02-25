@@ -31,6 +31,7 @@ impl ProposalRef {
         };
         Ok(ProposalRef(HashReference::from_value(
             &message_content_auth.tls_serialize_detached()?,
+            b"MLS 1.0 Proposal Reference",
             cipher_suite,
         )?))
     }

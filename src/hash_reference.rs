@@ -30,13 +30,17 @@ impl From<[u8; 16]> for HashReference {
 }
 
 impl HashReference {
-    pub fn from_value(value: &[u8], cipher_suite: CipherSuite) -> Result<HashReference, KdfError> {
+    pub fn from_value(
+        value: &[u8],
+        label: &[u8],
+        cipher_suite: CipherSuite,
+    ) -> Result<HashReference, KdfError> {
         let kdf = Hkdf::new(cipher_suite.hash_function());
 
         let extracted = kdf.extract(value, &[])?;
 
         let mut res = [0u8; 16];
-        kdf.expand(&extracted, b"MLS 1.0 ref", &mut res)?;
+        kdf.expand(&extracted, label, &mut res)?;
 
         Ok(HashReference(res))
     }
@@ -80,7 +84,9 @@ mod test {
             let cipher_suite = CipherSuite::from_raw(test_case.cipher_suite);
 
             if let Some(cipher_suite) = cipher_suite {
-                let output = HashReference::from_value(&test_case.input, cipher_suite).unwrap();
+                let output =
+                    HashReference::from_value(&test_case.input, b"MLS 1.0 ref", cipher_suite)
+                        .unwrap();
 
                 assert_eq!(output.as_ref(), &test_case.output);
             } else {

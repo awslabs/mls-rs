@@ -107,6 +107,7 @@ impl KeyPackage {
     pub fn to_reference(&self) -> Result<KeyPackageRef, KeyPackageError> {
         Ok(KeyPackageRef(HashReference::from_value(
             &self.tls_serialize_detached()?,
+            b"MLS 1.0 KeyPackage Reference",
             self.cipher_suite,
         )?))
     }
@@ -144,17 +145,44 @@ mod test {
     #[cfg(target_arch = "wasm32")]
     wasm_bindgen_test_configure!(run_in_browser);
 
+    #[derive(serde::Deserialize, serde::Serialize)]
+    struct TestCase {
+        cipher_suite: u16,
+        #[serde(with = "hex::serde")]
+        input: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        output: Vec<u8>,
+    }
+
+    impl TestCase {
+        #[allow(unused)]
+        fn generate() {
+            use tls_codec::Serialize;
+
+            let test_cases = CipherSuite::all()
+                .map(|cipher_suite| {
+                    let pkg = test_util::test_key_package(cipher_suite);
+                    let pkg_ref = pkg.to_reference().unwrap();
+                    TestCase {
+                        cipher_suite: cipher_suite as u16,
+                        input: pkg.tls_serialize_detached().unwrap(),
+                        output: pkg_ref.to_vec(),
+                    }
+                })
+                .collect::<Vec<_>>();
+            std::fs::write(
+                concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/test_data/key_package_ref.json"
+                ),
+                serde_json::to_string_pretty(&test_cases).unwrap(),
+            )
+            .unwrap();
+        }
+    }
+
     #[test]
     fn test_key_package_ref() {
-        #[derive(serde::Deserialize)]
-        struct TestCase {
-            cipher_suite: u16,
-            #[serde(deserialize_with = "hex::serde::deserialize")]
-            input: Vec<u8>,
-            #[serde(deserialize_with = "hex::serde::deserialize")]
-            output: Vec<u8>,
-        }
-
         let cases: Vec<TestCase> =
             serde_json::from_slice(include_bytes!("../../test_data/key_package_ref.json")).unwrap();
 

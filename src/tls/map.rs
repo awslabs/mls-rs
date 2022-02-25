@@ -125,7 +125,7 @@ mod tests {
     fn serialization_works() {
         assert_eq!(
             vec![0, 0, 0, 6, 1, 0, 10, 2, 0, 20],
-            Data(std::array::IntoIter::new([(1, 10), (2, 20)]).collect())
+            Data([(1, 10), (2, 20)].into_iter().collect())
                 .tls_serialize_detached()
                 .unwrap()
         );
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn data_round_trips() {
-        let x = Data(std::array::IntoIter::new([(1, 10), (2, 20)]).collect());
+        let x = Data([(1, 10), (2, 20)].into_iter().collect());
         assert_eq!(x, ser_deser(&x).unwrap());
     }
 
