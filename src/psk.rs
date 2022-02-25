@@ -1,6 +1,6 @@
 use crate::{
     cipher_suite::CipherSuite,
-    client_config::SecretStore,
+    client_config::PskStore,
     group::{
         epoch_repo::{EpochRepository, EpochRepositoryError},
         key_schedule::{KeyScheduleKdf, KeyScheduleKdfError},
@@ -89,7 +89,7 @@ pub(crate) fn psk_secret<S>(
     psk_ids: &[PreSharedKeyID],
 ) -> Result<Vec<u8>, PskSecretError>
 where
-    S: SecretStore,
+    S: PskStore,
 {
     let len = psk_ids.len();
     let len = u16::try_from(len).map_err(|_| PskSecretError::TooManyPskIds(len))?;
@@ -155,7 +155,7 @@ impl From<KdfError> for PskSecretError {
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
-        client_config::InMemorySecretStore,
+        client_config::InMemoryPskStore,
         psk::{
             psk_secret, ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, Psk, PskNonce,
             PskSecretError,
@@ -205,7 +205,7 @@ mod tests {
         let expected_id = make_external_psk_id(TEST_CIPHER_SUITE);
         let res = psk_secret(
             TEST_CIPHER_SUITE,
-            &InMemorySecretStore::default(),
+            &InMemoryPskStore::default(),
             None,
             &[wrap_external_psk_id(TEST_CIPHER_SUITE, expected_id.clone())],
         );
@@ -284,7 +284,7 @@ mod tests {
         fn compute_psk_secret(cipher_suite: CipherSuite, psks: &[PskInfo]) -> Vec<u8> {
             let secret_store = psks
                 .iter()
-                .fold(InMemorySecretStore::default(), |store, psk| {
+                .fold(InMemoryPskStore::default(), |mut store, psk| {
                     store.insert(ExternalPskId(psk.id.clone()), psk.psk.clone().into());
                     store
                 });

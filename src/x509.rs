@@ -18,7 +18,7 @@ pub enum X509Error {
     EcKeyError(#[from] EcKeyError),
 }
 
-#[derive(Clone, Debug, PartialEq, TlsSize, TlsSerialize, TlsDeserialize)]
+#[derive(Clone, Debug, PartialEq, TlsSize, TlsSerialize, TlsDeserialize, Eq, Hash)]
 pub struct CertificateData(#[tls_codec(with = "crate::tls::ByteVec::<u16>")] Vec<u8>);
 
 impl From<Vec<u8>> for CertificateData {
@@ -83,7 +83,7 @@ impl CertificateData {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsSize, TlsSerialize, TlsDeserialize)]
+#[derive(Clone, Debug, PartialEq, TlsSize, TlsSerialize, TlsDeserialize, Eq, Hash)]
 pub struct CertificateChain(#[tls_codec(with = "crate::tls::DefVec::<u32>")] Vec<CertificateData>);
 
 impl From<Vec<CertificateData>> for CertificateChain {

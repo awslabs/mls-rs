@@ -1,10 +1,11 @@
+use crate::client_config::Signer;
 use crate::credential::CredentialError;
 use crate::group::framing::{
     Content, ContentType, MLSMessageContent, MLSPlaintext, Sender, WireFormat,
 };
 use crate::group::{AddProposal, ConfirmationTag, GroupContext, Proposal};
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
-use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey, SecretKey};
+use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey};
 use std::{
     io::{Read, Write},
     ops::Deref,
@@ -16,7 +17,9 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 #[derive(Error, Debug)]
 pub enum MessageSignatureError {
     #[error(transparent)]
-    SignatureError(#[from] EcKeyError),
+    SignerError(Box<dyn std::error::Error>),
+    #[error(transparent)]
+    VerifierError(#[from] EcKeyError),
     #[error(transparent)]
     RatchetTreeError(#[from] RatchetTreeError),
     #[error(transparent)]
@@ -160,9 +163,9 @@ impl MLSMessageContentTBS {
 }
 
 impl MLSPlaintext {
-    pub(crate) fn sign(
+    pub(crate) fn sign<S: Signer>(
         &mut self,
-        signer: &SecretKey,
+        signer: &S,
         group_context: Option<&GroupContext>,
         encrypted: bool,
     ) -> Result<(), MessageSignatureError> {
@@ -198,15 +201,18 @@ impl MessageSignature {
         MessageSignature(vec![])
     }
 
-    fn create(
-        signer: &SecretKey,
+    fn create<S: Signer>(
+        signer: &S,
         plaintext: &MLSPlaintext,
         group_context: Option<&GroupContext>,
         encrypted: bool,
     ) -> Result<Self, MessageSignatureError> {
         let to_be_signed =
             MLSMessageContentTBS::from_plaintext(plaintext, group_context, encrypted);
-        let signature_data = signer.sign(&to_be_signed.tls_serialize_detached()?)?;
+
+        let signature_data = signer
+            .sign(&to_be_signed.tls_serialize_detached()?)
+            .map_err(|e| MessageSignatureError::SignerError(Box::new(e)))?;
 
         Ok(MessageSignature(signature_data))
     }

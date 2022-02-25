@@ -14,7 +14,7 @@ pub enum ProtocolVersion {
 }
 
 #[derive(
-    Clone, Copy, Debug, IntoEnumIterator, PartialEq, TlsDeserialize, TlsSerialize, TlsSize,
+    Clone, Copy, Debug, IntoEnumIterator, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Eq, Hash,
 )]
 #[repr(u16)]
 pub enum SignatureScheme {

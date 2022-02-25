@@ -58,11 +58,10 @@ mod test {
         rand::SecureRng,
     };
 
+    use crate::key_package::test_util::test_key_package;
+
     use crate::{
         cipher_suite::CipherSuite,
-        client::Client,
-        client_config::DefaultClientConfig,
-        extension::LifetimeExt,
         key_package::{KeyPackage, KeyPackageValidator},
         tree_kem::UpdatePathValidationError,
     };
@@ -74,20 +73,6 @@ mod test {
 
     #[cfg(target_arch = "wasm32")]
     wasm_bindgen_test_configure!(run_in_browser);
-
-    fn test_key_package(cipher_suite: CipherSuite) -> KeyPackage {
-        let client = Client::generate_basic(
-            cipher_suite,
-            b"test".to_vec(),
-            DefaultClientConfig::default(),
-        )
-        .unwrap();
-        client
-            .gen_key_package(LifetimeExt::years(1).unwrap())
-            .unwrap()
-            .key_package
-            .into()
-    }
 
     fn test_update_path(cipher_suite: CipherSuite) -> UpdatePath {
         let key_package = test_key_package(cipher_suite);

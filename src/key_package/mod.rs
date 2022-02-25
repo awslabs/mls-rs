@@ -8,7 +8,6 @@ use crate::extension::{Extension, ExtensionError, ExtensionList, ExtensionType};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::HashReference;
 use crate::time::MlsTime;
-use ferriscrypt::asym::ec_key::{EcKeyError, SecretKey};
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::kdf::KdfError;
 use std::ops::Deref;
@@ -116,21 +115,15 @@ impl KeyPackage {
 #[cfg(test)]
 pub(crate) mod test_util {
     use super::*;
-    use crate::{client::Client, client_config::DefaultClientConfig, extension::LifetimeExt};
+    use crate::client::test_util::test_client_with_key_pkg;
 
     pub(crate) fn test_key_package(cipher_suite: CipherSuite) -> KeyPackage {
-        let client = Client::generate_basic(
-            cipher_suite,
-            b"foo".to_vec(),
-            DefaultClientConfig::default(),
-        )
-        .unwrap();
+        test_key_package_with_id(cipher_suite, "foo")
+    }
 
-        client
-            .gen_key_package(LifetimeExt::days(1).unwrap())
-            .unwrap()
-            .key_package
-            .into()
+    pub(crate) fn test_key_package_with_id(cipher_suite: CipherSuite, id: &str) -> KeyPackage {
+        let (_, key_package_gen) = test_client_with_key_pkg(cipher_suite, id);
+        key_package_gen.key_package.into()
     }
 }
 

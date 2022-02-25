@@ -153,7 +153,7 @@ where
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
-        client_config::InMemorySecretStore,
+        client_config::InMemoryPskStore,
         extension::ExtensionList,
         group::{
             membership_tag::MembershipTag,
@@ -261,7 +261,7 @@ mod tests {
                 .add_proposal(key_pkg_gen.key_package.clone().into())
                 .unwrap();
 
-            let secret_store = InMemorySecretStore::default();
+            let secret_store = InMemoryPskStore::default();
 
             let (commit_generation, welcome) = alice
                 .group

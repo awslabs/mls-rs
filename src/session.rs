@@ -1,6 +1,5 @@
 use crate::cipher_suite::CipherSuite;
-use crate::client_config::{ClientConfig, DefaultClientConfig, KeyPackageRepository};
-use crate::credential::Credential;
+use crate::client_config::{ClientConfig, KeyPackageRepository, Keychain, Signer};
 use crate::extension::ExtensionList;
 
 pub use crate::group::framing::{ContentType, MLSMessage};
@@ -15,7 +14,6 @@ use crate::key_package::{
 };
 use crate::psk::ExternalPskId;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
-use ferriscrypt::asym::ec_key::SecretKey;
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
@@ -41,6 +39,8 @@ pub enum SessionError {
     PendingCommitMismatch,
     #[error("key package not found")]
     KeyPackageNotFound,
+    #[error("signer not found")]
+    SignerNotFound,
     #[error(transparent)]
     KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
@@ -61,10 +61,7 @@ pub struct CommitResult {
 }
 
 #[derive(Clone, Debug)]
-pub struct Session<C = DefaultClientConfig> {
-    signing_key: SecretKey,
-    credential: Credential,
-    extensions: ExtensionList,
+pub struct Session<C: ClientConfig> {
     protocol: Group,
     pending_commit: Option<PendingCommit>,
     config: C,
@@ -79,30 +76,22 @@ pub struct GroupStats {
 }
 
 impl<C: ClientConfig + Clone> Session<C> {
-    pub(crate) fn create(
+    pub(crate) fn create<S: Signer>(
         group_id: Vec<u8>,
-        signing_key: SecretKey,
-        key_package_generator: KeyPackageGenerator,
+        key_package_generator: KeyPackageGenerator<S>,
         group_context_extensions: ExtensionList,
         config: C,
     ) -> Result<Self, SessionError> {
-        let credential = key_package_generator.credential.clone();
-        let extensions = key_package_generator.extensions.clone();
-
         let group = Group::new(group_id, key_package_generator, group_context_extensions)?;
 
         Ok(Session {
-            signing_key,
             protocol: group,
             pending_commit: None,
             config,
-            credential,
-            extensions,
         })
     }
 
     pub(crate) fn join(
-        signing_key: SecretKey,
         key_package: Option<&KeyPackageRef>,
         ratchet_tree_data: Option<&[u8]>,
         welcome_message_data: &[u8],
@@ -130,9 +119,6 @@ impl<C: ClientConfig + Clone> Session<C> {
             .map(|rt| Self::import_ratchet_tree(&welcome_message, rt))
             .transpose()?;
 
-        let credential = key_package_generation.key_package.credential.clone();
-        let extensions = key_package_generation.key_package.extensions.clone();
-
         let group = Group::from_welcome_message(
             welcome_message,
             ratchet_tree,
@@ -141,12 +127,9 @@ impl<C: ClientConfig + Clone> Session<C> {
         )?;
 
         Ok(Session {
-            signing_key,
             protocol: group,
             pending_commit: None,
             config,
-            credential,
-            extensions,
         })
     }
 
@@ -159,9 +142,6 @@ impl<C: ClientConfig + Clone> Session<C> {
             .map(|rt| Self::import_ratchet_tree(&welcome, rt))
             .transpose()?;
         Ok(Session {
-            signing_key: self.signing_key.clone(),
-            credential: self.credential.clone(),
-            extensions: self.extensions.clone(),
             protocol: self.protocol.join_subgroup(
                 welcome,
                 public_tree,
@@ -208,11 +188,17 @@ impl<C: ClientConfig + Clone> Session<C> {
 
     #[inline(always)]
     pub fn update_proposal(&mut self) -> Result<Proposal, SessionError> {
+        let key_package = self.protocol.current_user_key_package()?;
+
         let generator = KeyPackageGenerator {
             cipher_suite: self.protocol.cipher_suite,
-            signing_key: &self.signing_key,
-            credential: &self.credential,
-            extensions: &self.extensions,
+            signing_key: &self
+                .config
+                .keychain()
+                .signer(&key_package.credential)
+                .ok_or(SessionError::SignerNotFound)?,
+            credential: &key_package.credential.clone(),
+            extensions: &key_package.extensions.clone(),
         };
 
         self.protocol
@@ -295,11 +281,20 @@ impl<C: ClientConfig + Clone> Session<C> {
     }
 
     fn send_proposal(&mut self, proposal: Proposal) -> Result<Vec<u8>, SessionError> {
+        let key_package = self.protocol.current_user_key_package()?;
+
+        let signer = self
+            .config
+            .keychain()
+            .signer(&key_package.credential)
+            .ok_or(SessionError::SignerNotFound)?;
+
         let packet = self.protocol.create_proposal(
             proposal,
-            &self.signing_key,
-            self.config.encrypt_controls(),
+            &signer,
+            self.config.preferences().encrypt_controls,
         )?;
+
         self.serialize_control(packet)
     }
 
@@ -309,19 +304,29 @@ impl<C: ClientConfig + Clone> Session<C> {
             return Err(SessionError::ExistingPendingCommit);
         }
 
+        let key_package = self.protocol.current_user_key_package()?;
+
+        let signer = self
+            .config
+            .keychain()
+            .signer(&key_package.credential)
+            .ok_or(SessionError::SignerNotFound)?;
+
         let key_package_generator = KeyPackageGenerator {
             cipher_suite: self.protocol.cipher_suite,
-            credential: &self.credential,
-            extensions: &self.extensions,
-            signing_key: &self.signing_key,
+            credential: &key_package.credential.clone(),
+            extensions: &key_package.extensions.clone(),
+            signing_key: &signer,
         };
+
+        let preferences = self.config.preferences();
 
         let (commit_data, welcome) = self.protocol.commit_proposals(
             proposals,
             &key_package_generator,
             true,
-            self.config.encrypt_controls(),
-            self.config.ratchet_tree_extension(),
+            preferences.encrypt_controls,
+            preferences.ratchet_tree_extension,
             &self.config.secret_store(),
         )?;
 
@@ -405,10 +410,20 @@ impl<C: ClientConfig + Clone> Session<C> {
         self.pending_commit = None
     }
 
+    fn signer(&self) -> Result<<<C as ClientConfig>::Keychain as Keychain>::Signer, SessionError> {
+        let key_package = self.protocol.current_user_key_package()?;
+
+        self.config
+            .keychain()
+            .signer(&key_package.credential)
+            .ok_or(SessionError::SignerNotFound)
+    }
+
     pub fn encrypt_application_data(&mut self, data: &[u8]) -> Result<Vec<u8>, SessionError> {
         let ciphertext = self
             .protocol
-            .encrypt_application_message(data, &self.signing_key)?;
+            .encrypt_application_message(data, &self.signer()?)?;
+
         Ok(MLSMessage::Cipher(ciphertext).tls_serialize_detached()?)
     }
 
@@ -453,17 +468,16 @@ impl<C: ClientConfig + Clone> Session<C> {
             sub_group_id,
             resumption_psk_epoch,
             &self.config.secret_store(),
-            &self.signing_key,
+            &self.signer()?,
             key_pkg_filter,
         )?;
+
         let new_session = Session {
-            signing_key: self.signing_key.clone(),
-            credential: self.credential.clone(),
-            extensions: self.extensions.clone(),
             protocol: new_group,
             pending_commit: None,
             config: self.config.clone(),
         };
+
         Ok((new_session, welcome))
     }
 }

@@ -459,9 +459,6 @@ impl NodeVec {
 pub mod test {
     use super::*;
     use crate::cipher_suite::CipherSuite;
-    use crate::client::Client;
-    use crate::client_config::DefaultClientConfig;
-    use crate::extension::LifetimeExt;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
@@ -469,31 +466,24 @@ pub mod test {
     #[cfg(target_arch = "wasm32")]
     wasm_bindgen_test_configure!(run_in_browser);
 
-    fn get_test_key_package(id: Vec<u8>) -> ValidatedKeyPackage {
-        let client = Client::generate_basic(
+    fn get_test_key_package(id: &str) -> ValidatedKeyPackage {
+        ValidatedKeyPackage::from(crate::key_package::test_util::test_key_package_with_id(
             CipherSuite::Curve25519Aes128V1,
             id,
-            DefaultClientConfig::default(),
-        )
-        .unwrap();
-
-        client
-            .gen_key_package(LifetimeExt::years(1).unwrap())
-            .unwrap()
-            .key_package
+        ))
     }
 
     pub(crate) fn get_test_node_vec() -> NodeVec {
         let nodes = [
             Leaf {
-                key_package: get_test_key_package(b"A".to_vec()),
+                key_package: get_test_key_package("A"),
             }
             .into(),
             None,
             None,
             None,
             Leaf {
-                key_package: get_test_key_package(b"C".to_vec()),
+                key_package: get_test_key_package("C"),
             }
             .into(),
             Parent {
@@ -503,7 +493,7 @@ pub mod test {
             }
             .into(),
             Leaf {
-                key_package: get_test_key_package(b"D".to_vec()),
+                key_package: get_test_key_package("D"),
             }
             .into(),
         ];
@@ -520,7 +510,7 @@ pub mod test {
         }
         .into();
 
-        let mut test_key_package = get_test_key_package(b"B".to_vec());
+        let mut test_key_package = get_test_key_package("B");
         test_key_package.hpke_init_key = b"pub_leaf".to_vec().into();
 
         let test_node_leaf: Node = Leaf {

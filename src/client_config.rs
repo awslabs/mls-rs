@@ -1,11 +1,16 @@
 use crate::{
+    cipher_suite::{CipherSuite, ProtocolVersion},
+    client::Client,
+    credential::Credential,
+    extension::{CapabilitiesExt, ExtensionType},
     group::proposal::Proposal,
     key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageRef},
     psk::{ExternalPskId, Psk},
 };
-use ferriscrypt::asym::ec_key::PublicKey;
+use ferriscrypt::asym::ec_key::{Curve, PublicKey, SecretKey};
 use std::{
     collections::HashMap,
+    convert::Infallible,
     fmt::{self, Debug},
     sync::{Arc, Mutex},
 };
@@ -18,7 +23,33 @@ pub trait KeyPackageRepository {
     fn get(&self, key_pkg: &KeyPackageRef) -> Result<Option<KeyPackageGeneration>, Self::Error>;
 }
 
-pub trait SecretStore {
+pub trait Signer {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn sign(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error>;
+    fn public_key(&self) -> Result<PublicKey, Self::Error>;
+}
+
+impl Signer for SecretKey {
+    type Error = ferriscrypt::asym::ec_key::EcKeyError;
+
+    fn sign(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        self.sign(data)
+    }
+
+    fn public_key(&self) -> Result<PublicKey, Self::Error> {
+        self.to_public()
+    }
+}
+
+pub trait Keychain {
+    type Signer: Signer;
+
+    fn default_credential(&self, cipher_suite: CipherSuite) -> Option<(Credential, Self::Signer)>;
+    fn signer(&self, credential: &Credential) -> Option<Self::Signer>;
+}
+
+pub trait PskStore {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn psk(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error>;
@@ -27,27 +58,27 @@ pub trait SecretStore {
 pub trait ClientConfig {
     type KeyPackageRepository: KeyPackageRepository;
     type ProposalFilterError: std::error::Error + Send + Sync + 'static;
-    type SecretStore: SecretStore;
+    type Keychain: Keychain;
+    type PskStore: PskStore;
 
-    fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
-        DefaultClientConfig::default().external_signing_key(external_key_id)
-    }
-
-    fn encrypt_controls(&self) -> bool {
-        DefaultClientConfig::default().encrypt_controls()
-    }
-
-    fn ratchet_tree_extension(&self) -> bool {
-        DefaultClientConfig::default().ratchet_tree_extension()
-    }
-
-    fn external_key_id(&self) -> Option<Vec<u8>> {
-        DefaultClientConfig::default().external_key_id()
-    }
-
+    fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
+    fn supported_extensions(&self) -> Vec<ExtensionType>;
+    fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
+    fn preferences(&self) -> Preferences;
+    fn external_key_id(&self) -> Option<Vec<u8>>;
     fn key_package_repo(&self) -> Self::KeyPackageRepository;
     fn filter_proposal(&self, proposal: &Proposal) -> Result<(), Self::ProposalFilterError>;
-    fn secret_store(&self) -> Self::SecretStore;
+    fn keychain(&self) -> Self::Keychain;
+    fn secret_store(&self) -> Self::PskStore;
+
+    fn capabilities(&self) -> CapabilitiesExt {
+        CapabilitiesExt {
+            protocol_versions: vec![ProtocolVersion::Mls10],
+            cipher_suites: self.supported_cipher_suites(),
+            extensions: self.supported_extensions(),
+            proposals: vec![], // TODO: Support registering custom proposals here
+        }
+    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -81,40 +112,70 @@ impl KeyPackageRepository for InMemoryRepository {
     }
 }
 
-#[derive(Clone, Default, Debug)]
-pub struct InMemorySecretStore {
-    inner: Arc<Mutex<HashMap<ExternalPskId, Psk>>>,
+#[derive(Clone, Debug, Default)]
+pub struct InMemoryKeychain {
+    secret_keys: Arc<Mutex<HashMap<Credential, SecretKey>>>,
 }
 
-impl InMemorySecretStore {
-    pub fn insert(&self, id: ExternalPskId, psk: Psk) {
-        self.inner.lock().unwrap().insert(id, psk);
+impl InMemoryKeychain {
+    pub fn insert(&mut self, credential: Credential, secret_key: SecretKey) -> Option<SecretKey> {
+        self.secret_keys
+            .lock()
+            .unwrap()
+            .insert(credential, secret_key)
     }
 }
 
-impl SecretStore for InMemorySecretStore {
-    type Error = std::convert::Infallible;
+impl Keychain for InMemoryKeychain {
+    fn default_credential(&self, cipher_suite: CipherSuite) -> Option<(Credential, SecretKey)> {
+        let cipher_suite_curve = Curve::from(cipher_suite.signature_scheme());
+
+        self.secret_keys
+            .lock()
+            .unwrap()
+            .iter()
+            .find_map(|(credential, sk)| {
+                credential
+                    .public_key()
+                    .ok()
+                    .filter(|pk| pk.curve() == cipher_suite_curve)
+                    .map(|_| (credential.clone(), sk.clone()))
+            })
+    }
+
+    type Signer = SecretKey;
+
+    fn signer(&self, credential: &Credential) -> Option<Self::Signer> {
+        self.secret_keys.lock().unwrap().get(credential).cloned()
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct InMemoryPskStore {
+    inner: Arc<Mutex<HashMap<ExternalPskId, Psk>>>,
+}
+
+impl InMemoryPskStore {
+    pub fn insert(&mut self, id: ExternalPskId, psk: Psk) -> Option<Psk> {
+        self.inner.lock().unwrap().insert(id, psk)
+    }
+}
+
+impl PskStore for InMemoryPskStore {
+    type Error = Infallible;
 
     fn psk(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error> {
         Ok(self.inner.lock().unwrap().get(id).cloned())
     }
 }
 
-#[derive(Clone, Default)]
-#[non_exhaustive]
-pub struct DefaultClientConfig {
-    encrypt_controls: bool,
-    ratchet_tree_extension: bool,
-    external_signing_keys: HashMap<Vec<u8>, PublicKey>,
-    external_key_id: Option<Vec<u8>>,
-    key_packages: InMemoryRepository,
-    proposal_filter: Option<ProposalFilter>,
-    secret_store: InMemorySecretStore,
+#[derive(Clone, Debug, Default)]
+pub struct Preferences {
+    pub encrypt_controls: bool,
+    pub ratchet_tree_extension: bool,
 }
 
-type ProposalFilter = Arc<dyn Fn(&Proposal) -> Result<(), String> + Send + Sync>;
-
-impl DefaultClientConfig {
+impl Preferences {
     #[must_use]
     pub fn with_control_encryption(self, yes: bool) -> Self {
         Self {
@@ -129,6 +190,41 @@ impl DefaultClientConfig {
             ratchet_tree_extension: yes,
             ..self
         }
+    }
+}
+
+#[derive(Clone, Default)]
+#[non_exhaustive]
+pub struct InMemoryClientConfig {
+    preferences: Preferences,
+    external_signing_keys: HashMap<Vec<u8>, PublicKey>,
+    external_key_id: Option<Vec<u8>>,
+    supported_extensions: Vec<ExtensionType>,
+    key_packages: InMemoryRepository,
+    proposal_filter: Option<ProposalFilter>,
+    keychain: InMemoryKeychain,
+    psk_store: InMemoryPskStore,
+}
+
+type ProposalFilter = Arc<dyn Fn(&Proposal) -> Result<(), String> + Send + Sync>;
+
+impl InMemoryClientConfig {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    #[must_use]
+    pub fn with_preferences(self, preferences: Preferences) -> Self {
+        Self {
+            preferences,
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn with_supported_extension(mut self, extension: ExtensionType) -> Self {
+        self.supported_extensions.push(extension);
+        self
     }
 
     #[must_use]
@@ -146,14 +242,6 @@ impl DefaultClientConfig {
     }
 
     #[must_use]
-    pub fn with_key_packages(self, key_packages: InMemoryRepository) -> Self {
-        Self {
-            key_packages,
-            ..self
-        }
-    }
-
-    #[must_use]
     pub fn with_proposal_filter<F, E>(self, f: F) -> Self
     where
         F: Fn(&Proposal) -> Result<(), E> + Send + Sync + 'static,
@@ -166,22 +254,32 @@ impl DefaultClientConfig {
     }
 
     #[must_use]
-    pub fn with_secret_store(self, secret_store: InMemorySecretStore) -> Self {
-        Self {
-            secret_store,
-            ..self
-        }
+    pub fn with_psk(mut self, psk_id: ExternalPskId, psk: Psk) -> Self {
+        self.psk_store.insert(psk_id, psk);
+        self
+    }
+
+    #[must_use]
+    pub fn with_credential(mut self, credential: Credential, secret_key: SecretKey) -> Self {
+        self.keychain.insert(credential, secret_key);
+        self
+    }
+
+    pub fn build_client(self) -> Client<Self> {
+        Client::new(self)
     }
 }
 
-impl Debug for DefaultClientConfig {
+impl Debug for InMemoryClientConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DefaultClientConfig")
-            .field("encrypt_controls", &self.encrypt_controls)
-            .field("ratchet_tree_extension", &self.ratchet_tree_extension)
+        f.debug_struct("InMemoryClientConfig")
+            .field("preferences", &self.preferences)
             .field("external_signing_keys", &self.external_signing_keys)
             .field("external_key_id", &self.external_key_id)
             .field("key_packages", &self.key_packages)
+            .field("psk_store", &self.psk_store)
+            .field("supported_extensions", &self.supported_extensions)
+            .field("keychain", &self.keychain)
             .field(
                 "proposal_filter",
                 &self
@@ -193,25 +291,26 @@ impl Debug for DefaultClientConfig {
     }
 }
 
-impl ClientConfig for DefaultClientConfig {
+impl ClientConfig for InMemoryClientConfig {
     type KeyPackageRepository = InMemoryRepository;
     type ProposalFilterError = SimpleError;
-    type SecretStore = InMemorySecretStore;
+    type Keychain = InMemoryKeychain;
+    type PskStore = InMemoryPskStore;
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
         self.external_signing_keys.get(external_key_id).cloned()
     }
 
-    fn encrypt_controls(&self) -> bool {
-        self.encrypt_controls
-    }
-
-    fn ratchet_tree_extension(&self) -> bool {
-        self.ratchet_tree_extension
+    fn preferences(&self) -> Preferences {
+        self.preferences.clone()
     }
 
     fn external_key_id(&self) -> Option<Vec<u8>> {
         self.external_key_id.clone()
+    }
+
+    fn key_package_repo(&self) -> InMemoryRepository {
+        self.key_packages.clone()
     }
 
     fn filter_proposal(&self, proposal: &Proposal) -> Result<(), SimpleError> {
@@ -221,12 +320,20 @@ impl ClientConfig for DefaultClientConfig {
             .map_err(SimpleError)
     }
 
-    fn key_package_repo(&self) -> InMemoryRepository {
-        self.key_packages.clone()
+    fn secret_store(&self) -> Self::PskStore {
+        self.psk_store.clone()
     }
 
-    fn secret_store(&self) -> Self::SecretStore {
-        self.secret_store.clone()
+    fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
+        CipherSuite::all().collect()
+    }
+
+    fn keychain(&self) -> Self::Keychain {
+        self.keychain.clone()
+    }
+
+    fn supported_extensions(&self) -> Vec<ExtensionType> {
+        self.supported_extensions.clone()
     }
 }
 

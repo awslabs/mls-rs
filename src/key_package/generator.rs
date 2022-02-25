@@ -1,10 +1,13 @@
 use super::*;
-use crate::tree_kem::leaf_secret::{LeafSecret, LeafSecretError};
+use crate::{
+    client_config::Signer,
+    tree_kem::leaf_secret::{LeafSecret, LeafSecretError},
+};
 
 #[derive(Debug, Error)]
 pub enum KeyPackageGenerationError {
     #[error(transparent)]
-    EcKeyError(#[from] EcKeyError),
+    SignerError(Box<dyn std::error::Error>),
     #[error(transparent)]
     LeafSecretError(#[from] LeafSecretError),
     #[error(transparent)]
@@ -18,11 +21,11 @@ pub enum KeyPackageGenerationError {
 }
 
 #[derive(Clone, Debug)]
-pub struct KeyPackageGenerator<'a> {
+pub struct KeyPackageGenerator<'a, S: Signer> {
     pub cipher_suite: CipherSuite,
     pub credential: &'a Credential,
     pub extensions: &'a ExtensionList,
-    pub signing_key: &'a SecretKey,
+    pub signing_key: &'a S,
 }
 
 #[derive(Clone, Debug)]
@@ -32,9 +35,13 @@ pub struct KeyPackageGeneration {
     pub secret_key: HpkeSecretKey,
 }
 
-impl<'a> KeyPackageGenerator<'a> {
+impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
     pub fn sign(&self, package: &mut KeyPackage) -> Result<(), KeyPackageGenerationError> {
-        package.signature = self.signing_key.sign(&package.to_signable_bytes()?)?;
+        package.signature = self
+            .signing_key
+            .sign(&package.to_signable_bytes()?)
+            .map_err(|e| KeyPackageGenerationError::SignerError(e.into()))?;
+
         Ok(())
     }
 
@@ -42,7 +49,12 @@ impl<'a> KeyPackageGenerator<'a> {
         &self,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
     ) -> Result<KeyPackageGeneration, KeyPackageGenerationError> {
-        if self.credential.public_key()? != self.signing_key.to_public()? {
+        if self.credential.public_key()?
+            != self
+                .signing_key
+                .public_key()
+                .map_err(|e| KeyPackageGenerationError::SignerError(e.into()))?
+        {
             return Err(KeyPackageGenerationError::CredentialSigningKeyMismatch);
         }
 

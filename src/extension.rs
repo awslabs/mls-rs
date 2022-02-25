@@ -78,15 +78,8 @@ impl Default for CapabilitiesExt {
         Self {
             protocol_versions: vec![ProtocolVersion::Mls10],
             cipher_suites: CipherSuite::all().collect(),
-            extensions: vec![
-                CapabilitiesExt::IDENTIFIER,
-                LifetimeExt::IDENTIFIER,
-                ExternalKeyIdExt::IDENTIFIER,
-                ParentHashExt::IDENTIFIER,
-                RatchetTreeExt::IDENTIFIER,
-                RequiredCapabilitiesExt::IDENTIFIER,
-            ],
-            proposals: Default::default(), // TODO Support custom proposals
+            extensions: Default::default(),
+            proposals: Default::default(),
         }
     }
 }
@@ -157,27 +150,12 @@ impl MlsExtension for RatchetTreeExt {
     const IDENTIFIER: ExtensionType = RATCHET_TREE_EXT_ID;
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Default)]
 pub struct RequiredCapabilitiesExt {
     #[tls_codec(with = "crate::tls::DefVec::<u8>")]
     pub extensions: Vec<ExtensionType>,
     #[tls_codec(with = "crate::tls::DefVec::<u8>")]
     pub proposals: Vec<ProposalType>,
-}
-
-impl Default for RequiredCapabilitiesExt {
-    fn default() -> Self {
-        Self {
-            extensions: vec![
-                CapabilitiesExt::IDENTIFIER,
-                LifetimeExt::IDENTIFIER,
-                ExternalKeyIdExt::IDENTIFIER,
-                ParentHashExt::IDENTIFIER,
-                RatchetTreeExt::IDENTIFIER,
-            ],
-            proposals: Default::default(),
-        }
-    }
 }
 
 impl MlsExtension for RequiredCapabilitiesExt {

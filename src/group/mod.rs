@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::option::Option::Some;
 
-use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey, SecretKey};
+use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey};
 use ferriscrypt::cipher::aead::AeadError;
 use ferriscrypt::hmac::Tag;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
@@ -15,7 +15,7 @@ use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext, ProtocolVersion};
-use crate::client_config::SecretStore;
+use crate::client_config::{PskStore, Signer};
 use crate::credential::CredentialError;
 use crate::extension::{
     Extension, ExtensionError, ExtensionList, RatchetTreeExt, RequiredCapabilitiesExt,
@@ -124,6 +124,8 @@ pub enum GroupError {
     RatchetTreeError(#[from] RatchetTreeError),
     #[error(transparent)]
     EpochError(#[from] EpochError),
+    #[error(transparent)]
+    SignerError(Box<dyn std::error::Error>),
     #[error(transparent)]
     EcKeyError(#[from] EcKeyError),
     #[error(transparent)]
@@ -444,9 +446,9 @@ pub enum ProcessedMessage {
 }
 
 impl Group {
-    pub fn new(
+    pub fn new<S: Signer>(
         group_id: Vec<u8>,
-        key_package_generator: KeyPackageGenerator,
+        key_package_generator: KeyPackageGenerator<S>,
         group_context_extensions: ExtensionList,
     ) -> Result<Self, GroupError> {
         let required_capabilities = group_context_extensions.get_extension()?;
@@ -486,7 +488,7 @@ impl Group {
         })
     }
 
-    pub fn from_welcome_message<S: SecretStore>(
+    pub fn from_welcome_message<S: PskStore>(
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package: KeyPackageGeneration,
@@ -502,12 +504,12 @@ impl Group {
         )
     }
 
-    fn join_with_welcome<S: SecretStore>(
+    fn join_with_welcome<P: PskStore>(
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package_ref: KeyPackageRef,
         leaf_secret: HpkeSecretKey,
-        secret_store: &S,
+        psk_store: &P,
         epoch_repo: Option<&EpochRepository>,
     ) -> Result<Self, GroupError> {
         // Identify an entry in the secrets array where the key_package_hash value corresponds to
@@ -537,7 +539,7 @@ impl Group {
         let group_secrets = GroupSecrets::tls_deserialize(&mut &*decrypted_group_secrets)?;
         let psk_secret = crate::psk::psk_secret(
             welcome.cipher_suite,
-            secret_store,
+            psk_store,
             epoch_repo,
             &group_secrets.psks,
         )?;
@@ -662,22 +664,23 @@ impl Group {
         Ok(&self.epoch_repo.current()?.public_tree)
     }
 
+    #[inline(always)]
     pub fn current_epoch(&self) -> u64 {
         self.context.epoch
     }
 
+    #[inline(always)]
     pub fn current_user_index(&self) -> u32 {
         self.private_tree.self_index.0 as u32
     }
 
+    #[inline(always)]
     pub fn current_user_ref(&self) -> &KeyPackageRef {
         &self.private_tree.key_package_ref
     }
 
     pub fn current_user_key_package(&self) -> Result<&KeyPackage, GroupError> {
-        self.epoch_repo
-            .current()?
-            .public_tree
+        self.current_epoch_tree()?
             .get_key_package(self.current_user_ref())
             .map_err(Into::into)
     }
@@ -819,10 +822,10 @@ impl Group {
         })
     }
 
-    pub fn create_proposal(
+    pub fn create_proposal<S: Signer>(
         &mut self,
         proposal: Proposal,
-        signer: &SecretKey,
+        signer: &S,
         encrypted: bool,
     ) -> Result<OutboundPlaintext, GroupError> {
         let plaintext =
@@ -849,10 +852,10 @@ impl Group {
         self.format_for_wire(plaintext, encrypted)
     }
 
-    fn construct_mls_plaintext(
+    fn construct_mls_plaintext<S: Signer>(
         &self,
         content: Content,
-        signer: &SecretKey,
+        signer: &S,
         encrypted: bool,
     ) -> Result<MLSPlaintext, GroupError> {
         // Construct an MLSPlaintext object containing the content
@@ -869,14 +872,14 @@ impl Group {
         Ok(plaintext)
     }
 
-    pub fn commit_proposals<S: SecretStore>(
+    pub fn commit_proposals<P: PskStore, S: Signer>(
         &mut self,
         proposals: Vec<Proposal>,
-        key_package_generator: &KeyPackageGenerator,
+        key_package_generator: &KeyPackageGenerator<S>,
         update_path: bool,
         encrypted: bool,
         ratchet_tree_extension: bool,
-        secret_store: &S,
+        secret_store: &P,
     ) -> Result<(CommitGeneration, Option<Welcome>), GroupError> {
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
@@ -1022,7 +1025,8 @@ impl Group {
         // Sign the GroupInfo using the member's private signing key
         group_info.signature = key_package_generator
             .signing_key
-            .sign(&group_info.to_signable_vec()?)?;
+            .sign(&group_info.to_signable_vec()?)
+            .map_err(|e| GroupError::SignerError(Box::new(e)))?;
 
         // Get key package references to build welcome messages for
         let key_pkg_refs = match provisional_state.reinit {
@@ -1092,16 +1096,17 @@ impl Group {
         })
     }
 
-    pub fn branch<S, F>(
+    pub fn branch<S, P, F>(
         &self,
         sub_group_id: Vec<u8>,
         resumption_psk_epoch: Option<u64>,
-        secret_store: &S,
-        signing_key: &SecretKey,
+        psk_store: &P,
+        signer: &S,
         mut key_pkg_filter: F,
     ) -> Result<(Self, Option<Welcome>), GroupError>
     where
-        S: SecretStore,
+        P: PskStore,
+        S: Signer,
         F: FnMut(&KeyPackageRef) -> bool,
     {
         let current_tree = self.current_epoch_tree()?;
@@ -1157,13 +1162,11 @@ impl Group {
             }),
             psk_nonce: PskNonce::random(self.cipher_suite)?,
         };
+
         let psks = vec![psk];
-        let psk_secret = crate::psk::psk_secret(
-            self.cipher_suite,
-            secret_store,
-            Some(&self.epoch_repo),
-            &psks,
-        )?;
+
+        let psk_secret =
+            crate::psk::psk_secret(self.cipher_suite, psk_store, Some(&self.epoch_repo), &psks)?;
 
         let (epoch, joiner_secret) = Epoch::derive(
             self.cipher_suite,
@@ -1191,7 +1194,10 @@ impl Group {
             signer: self.private_tree.key_package_ref.clone(),
             signature: Vec::new(),
         };
-        group_info.signature = signing_key.sign(&group_info.to_signable_vec()?)?;
+
+        group_info.signature = signer
+            .sign(&group_info.to_signable_vec()?)
+            .map_err(|e| GroupError::SignerError(Box::new(e)))?;
 
         let new_group = Group {
             cipher_suite: self.cipher_suite,
@@ -1216,14 +1222,14 @@ impl Group {
         Ok((new_group, welcome))
     }
 
-    pub fn join_subgroup<S>(
+    pub fn join_subgroup<P>(
         &self,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
-        secret_store: &S,
+        psk_store: &P,
     ) -> Result<Self, GroupError>
     where
-        S: SecretStore,
+        P: PskStore,
     {
         Self::join_with_welcome(
             welcome,
@@ -1234,7 +1240,7 @@ impl Group {
                 .get(&NodeIndex::from(self.private_tree.self_index))
                 .cloned()
                 .unwrap(),
-            secret_store,
+            psk_store,
             Some(&self.epoch_repo),
         )
     }
@@ -1295,9 +1301,9 @@ impl Group {
         Ok(Proposal::Add(AddProposal { key_package }))
     }
 
-    pub fn update_proposal(
+    pub fn update_proposal<S: Signer>(
         &mut self,
-        key_package_generator: &KeyPackageGenerator,
+        key_package_generator: &KeyPackageGenerator<S>,
     ) -> Result<Proposal, GroupError> {
         // Update the public key in the key package
         let key_package_generation =
@@ -1448,10 +1454,10 @@ impl Group {
         })
     }
 
-    pub fn encrypt_application_message(
+    pub fn encrypt_application_message<S: Signer>(
         &mut self,
         message: &[u8],
-        signer: &SecretKey,
+        signer: &S,
     ) -> Result<MLSCiphertext, GroupError> {
         // A group member that has observed one or more proposals within an epoch MUST send a Commit message
         // before sending application data
@@ -1547,7 +1553,7 @@ impl Group {
         Ok(plaintext)
     }
 
-    pub fn process_incoming_message<S: SecretStore>(
+    pub fn process_incoming_message<S: PskStore>(
         &mut self,
         plaintext: VerifiedPlaintext,
         secret_store: &S,
@@ -1569,7 +1575,7 @@ impl Group {
         }
     }
 
-    pub fn process_pending_commit<S: SecretStore>(
+    pub fn process_pending_commit<S: PskStore>(
         &mut self,
         commit: CommitGeneration,
         secret_store: &S,
@@ -1578,7 +1584,7 @@ impl Group {
     }
 
     // This function takes a provisional copy of the tree and returns an updated tree and epoch key schedule
-    fn process_commit<S: SecretStore>(
+    fn process_commit<S: PskStore>(
         &mut self,
         plaintext: VerifiedPlaintext,
         local_pending: Option<UpdatePathGeneration>,
@@ -1745,10 +1751,12 @@ impl Group {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use ferriscrypt::asym::ec_key::SecretKey;
+
     use super::*;
     use crate::{
         credential::{BasicCredential, Credential, CredentialConvertible},
-        extension::{CapabilitiesExt, LifetimeExt, MlsExtension, RequiredCapabilitiesExt},
+        extension::{CapabilitiesExt, LifetimeExt, RequiredCapabilitiesExt},
         key_package::KeyPackageGenerator,
     };
 
@@ -1778,7 +1786,8 @@ pub(crate) mod test_utils {
     pub(crate) fn extensions() -> ExtensionList {
         let lifetime_ext = LifetimeExt::years(1).unwrap();
 
-        let capabilities_ext = CapabilitiesExt::default();
+        let mut capabilities_ext = CapabilitiesExt::default();
+        capabilities_ext.extensions.push(42);
 
         let mut extensions = ExtensionList::new();
         extensions.set_extension(lifetime_ext).unwrap();
@@ -1788,10 +1797,7 @@ pub(crate) mod test_utils {
     }
 
     pub(crate) fn group_extensions() -> ExtensionList {
-        let required_capabilities = RequiredCapabilitiesExt {
-            extensions: vec![RatchetTreeExt::IDENTIFIER],
-            proposals: vec![],
-        };
+        let required_capabilities = RequiredCapabilitiesExt::default();
 
         let mut extensions = ExtensionList::new();
         extensions.set_extension(required_capabilities).unwrap();
@@ -1845,7 +1851,7 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod test {
     use crate::{
-        client_config::InMemorySecretStore,
+        client_config::InMemoryPskStore,
         extension::{LifetimeExt, MlsExtension, RequiredCapabilitiesExt},
     };
 
@@ -1927,7 +1933,7 @@ mod test {
             signing_key: &test_group.signing_key,
         };
 
-        let secret_store = InMemorySecretStore::default();
+        let secret_store = InMemoryPskStore::default();
 
         // We should be able to send application messages after a commit
         let (commit, _) = test_group
@@ -1970,7 +1976,7 @@ mod test {
             true,
             false,
             false,
-            &InMemorySecretStore::default(),
+            &InMemoryPskStore::default(),
         );
 
         assert_matches!(res, Err(GroupError::InvalidCommitSelfUpdate));
@@ -2005,7 +2011,7 @@ mod test {
             true,
             false,
             false,
-            &InMemorySecretStore::default(),
+            &InMemoryPskStore::default(),
         );
 
         assert_matches!(res, Err(GroupError::InvalidCommitSelfUpdate));
@@ -2052,7 +2058,7 @@ mod test {
             false,
             false,
             false,
-            &InMemorySecretStore::default(),
+            &InMemoryPskStore::default(),
         );
 
         assert_matches!(res, Err(GroupError::KeyPackageValidationError(_)));
@@ -2104,7 +2110,7 @@ mod test {
             true,
             false,
             false,
-            &InMemorySecretStore::default(),
+            &InMemoryPskStore::default(),
         );
 
         assert_matches!(res, Err(GroupError::KeyPackageValidationError(_)));
@@ -2128,7 +2134,7 @@ mod test {
             .add_proposal(bob_key_package.key_package.clone().into())
             .unwrap();
 
-        let secret_store = InMemorySecretStore::default();
+        let secret_store = InMemoryPskStore::default();
 
         let (commit_generation, welcome) = test_group
             .group
@@ -2204,7 +2210,7 @@ mod test {
             .add_proposal(bob_key_package.key_package.clone().into())
             .unwrap();
 
-        let secret_store = InMemorySecretStore::default();
+        let secret_store = InMemoryPskStore::default();
 
         let (_, welcome) = test_group
             .group
@@ -2267,7 +2273,7 @@ mod test {
                 true,
                 false,
                 false,
-                &InMemorySecretStore::default(),
+                &InMemoryPskStore::default(),
             )
             .map(|(commit, _)| commit);
 
@@ -2279,7 +2285,7 @@ mod test {
         let mut extension_list = ExtensionList::new();
         extension_list
             .set_extension(RequiredCapabilitiesExt {
-                extensions: vec![LifetimeExt::IDENTIFIER],
+                extensions: vec![42],
                 proposals: vec![],
             })
             .unwrap();
@@ -2289,7 +2295,7 @@ mod test {
 
         let state_update = test_group
             .group
-            .process_pending_commit(commit.unwrap(), &InMemorySecretStore::default())
+            .process_pending_commit(commit.unwrap(), &InMemoryPskStore::default())
             .unwrap();
 
         assert!(state_update.active);
@@ -2301,7 +2307,7 @@ mod test {
         let mut extension_list = ExtensionList::new();
         extension_list
             .set_extension(RequiredCapabilitiesExt {
-                extensions: vec![42],
+                extensions: vec![999],
                 proposals: vec![],
             })
             .unwrap();

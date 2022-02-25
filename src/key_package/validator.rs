@@ -166,14 +166,11 @@ impl<'a> KeyPackageValidator<'a> {
 
 #[cfg(test)]
 mod test {
+    use crate::client::test_util::get_basic_config;
+    use crate::extension::MlsExtension;
+    use crate::key_package::test_util::test_key_package;
     use assert_matches::assert_matches;
     use ferriscrypt::rand::SecureRng;
-
-    use crate::{
-        client::Client,
-        client_config::DefaultClientConfig,
-        extension::{MlsExtension, RatchetTreeExt},
-    };
 
     use super::*;
 
@@ -182,20 +179,6 @@ mod test {
 
     #[cfg(target_arch = "wasm32")]
     wasm_bindgen_test_configure!(run_in_browser);
-
-    fn test_key_package(cipher_suite: CipherSuite) -> KeyPackage {
-        let client = Client::generate_basic(
-            cipher_suite,
-            b"test".to_vec(),
-            DefaultClientConfig::default(),
-        )
-        .unwrap();
-        client
-            .gen_key_package(LifetimeExt::days(1).unwrap())
-            .unwrap()
-            .key_package
-            .into()
-    }
 
     #[test]
     fn test_standard_validation() {
@@ -304,10 +287,19 @@ mod test {
     #[test]
     fn test_required_capabilities_check() {
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
-        let key_package = test_key_package(cipher_suite);
+
+        let test_client = get_basic_config(cipher_suite, "foo")
+            .with_supported_extension(42)
+            .build_client();
+
+        let key_package: KeyPackage = test_client
+            .gen_key_package(cipher_suite, LifetimeExt::years(1).unwrap())
+            .unwrap()
+            .key_package
+            .into();
 
         let required_capabilities = RequiredCapabilitiesExt {
-            extensions: vec![RatchetTreeExt::IDENTIFIER],
+            extensions: vec![42],
             proposals: vec![],
         };
 
