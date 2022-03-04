@@ -29,8 +29,8 @@ use crate::psk::{
     ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, PskSecretError,
     ResumptionPSKUsage, ResumptionPsk,
 };
-use crate::tree_kem::leaf_secret::LeafSecretError;
 use crate::tree_kem::node::{LeafIndex, NodeIndex};
+use crate::tree_kem::path_secret::{PathSecret, PathSecretError};
 use crate::tree_kem::{
     RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathGeneration,
     UpdatePathValidationError, UpdatePathValidator,
@@ -152,7 +152,7 @@ pub enum GroupError {
     #[error(transparent)]
     AeadError(#[from] AeadError),
     #[error(transparent)]
-    LeafSecretError(#[from] LeafSecretError),
+    LeafSecretError(#[from] PathSecretError),
     #[error(transparent)]
     EpochRepositoryError(#[from] EpochRepositoryError),
     #[error(transparent)]
@@ -315,18 +315,6 @@ impl GroupInfo {
 pub struct CommitGeneration {
     pub plaintext: OutboundPlaintext,
     pub secrets: Option<UpdatePathGeneration>,
-}
-
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct PathSecret {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub path_secret: Vec<u8>,
-}
-
-impl From<Vec<u8>> for PathSecret {
-    fn from(path_secret: Vec<u8>) -> Self {
-        Self { path_secret }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -644,7 +632,7 @@ impl Group {
             private_tree.update_secrets(
                 welcome.cipher_suite,
                 public_tree.package_leaf_index(&group_info.signer)?,
-                path_secret.path_secret,
+                path_secret,
                 &public_tree,
             )?;
         }
@@ -1313,9 +1301,7 @@ impl Group {
     ) -> Result<EncryptedGroupSecrets, GroupError> {
         let leaf_index = provisional_tree.package_leaf_index(&new_member)?;
 
-        let path_secret = update_path
-            .and_then(|up| up.get_common_path_secret(leaf_index))
-            .map(PathSecret::from);
+        let path_secret = update_path.and_then(|up| up.get_common_path_secret(leaf_index));
 
         // Ensure that we have a path secret if one is required
         if path_secret.is_none() && update_path.is_some() {

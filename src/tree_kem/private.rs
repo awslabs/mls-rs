@@ -25,7 +25,7 @@ impl TreeKemPrivate {
         &mut self,
         cipher_suite: CipherSuite,
         signer_index: LeafIndex,
-        path_secret: Vec<u8>,
+        path_secret: PathSecret,
         public_tree: &TreeKemPublic,
     ) -> Result<(), RatchetTreeError> {
         // Identify the lowest common
@@ -37,28 +37,29 @@ impl TreeKemPrivate {
         // path secret and set the private key for the node to the private key derived from the
         // path secret. The private key MUST be the private key that corresponds to the public
         // key in the node.
-        let path_gen = NodeSecretGenerator::new_from_path_secret(cipher_suite, path_secret);
+
+        let path_secret_gen = PathSecretGenerator::starting_with(cipher_suite, path_secret);
 
         self.self_index
             .direct_path(public_tree.total_leaf_count())?
             .iter()
             .skip_while(|&&i| i != lca)
-            .zip(path_gen)
-            .try_for_each(|(&index, secrets)| {
-                let public_key = public_tree
+            .zip(path_secret_gen)
+            .try_for_each(|(&index, secret_generation)| {
+                let expected_pub_key = public_tree
                     .nodes
                     .borrow_node(index)?
                     .as_ref()
                     .map(|n| n.public_key())
                     .ok_or(RatchetTreeError::PubKeyMismatch)?;
 
-                let secrets = secrets?;
+                let (secret_key, public_key) = secret_generation?.to_hpke_key_pair()?;
 
-                if public_key != &secrets.public_key {
+                if expected_pub_key != &public_key {
                     return Err(RatchetTreeError::PubKeyMismatch);
                 }
 
-                self.secret_keys.insert(index, secrets.secret_key);
+                self.secret_keys.insert(index, secret_key);
                 Ok::<_, RatchetTreeError>(())
             })?;
 
@@ -156,7 +157,12 @@ mod test {
     fn update_secrets_setup(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
-    ) -> (TreeKemPublic, TreeKemPrivate, UpdatePathGeneration, Vec<u8>) {
+    ) -> (
+        TreeKemPublic,
+        TreeKemPrivate,
+        UpdatePathGeneration,
+        PathSecret,
+    ) {
         let alice_signing =
             SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
 

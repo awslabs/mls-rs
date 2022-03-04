@@ -5,6 +5,7 @@ use crate::group::secret_tree::{
 };
 use crate::group::GroupContext;
 use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
 use crate::tree_kem::{TreeKemPublic, TreeSecrets, UpdatePathGeneration};
 use ferriscrypt::cipher::aead::{AeadError, AeadNonce, Key};
 use ferriscrypt::cipher::NonceError;
@@ -271,7 +272,7 @@ impl Epoch {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CommitSecret(Vec<u8>);
+pub struct CommitSecret(PathSecret);
 
 impl Deref for CommitSecret {
     type Target = Vec<u8>;
@@ -287,30 +288,30 @@ impl CommitSecret {
     pub fn from_update_path(
         cipher_suite: CipherSuite,
         update_path: Option<&UpdatePathGeneration>,
-    ) -> Result<Self, KeyScheduleKdfError> {
+    ) -> Result<Self, PathSecretError> {
         Self::from_tree_secrets(cipher_suite, update_path.map(|up| &up.secrets))
     }
 
     pub fn from_tree_secrets(
         cipher_suite: CipherSuite,
         secrets: Option<&TreeSecrets>,
-    ) -> Result<Self, KeyScheduleKdfError> {
-        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
-
+    ) -> Result<Self, PathSecretError> {
         match secrets {
             Some(secrets) => {
-                let secret = kdf.derive_secret(&secrets.secret_path.root_secret, "path")?;
-                Ok(CommitSecret(secret))
+                let mut generator = PathSecretGenerator::starting_from(
+                    cipher_suite,
+                    secrets.secret_path.root_secret.clone(),
+                );
+
+                let secret = generator.next_secret()?;
+                Ok(CommitSecret(secret.path_secret))
             }
             None => Ok(Self::empty(cipher_suite)),
         }
     }
 
-    pub fn empty(cipher_suite: CipherSuite) -> Self {
-        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
-        // Define commit_secret as the all-zero vector of the same length as a path_secret
-        // value would be
-        CommitSecret(vec![0u8; kdf.extract_size()])
+    pub fn empty(cipher_suite: CipherSuite) -> CommitSecret {
+        CommitSecret(PathSecret::empty(cipher_suite))
     }
 }
 pub struct WelcomeSecret {

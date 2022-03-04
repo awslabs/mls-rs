@@ -1,15 +1,14 @@
+use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError};
+
 use super::*;
-use crate::{
-    client_config::Signer,
-    tree_kem::leaf_secret::{LeafSecret, LeafSecretError},
-};
+use crate::client_config::Signer;
 
 #[derive(Debug, Error)]
 pub enum KeyPackageGenerationError {
     #[error(transparent)]
     SignerError(Box<dyn std::error::Error>),
     #[error(transparent)]
-    LeafSecretError(#[from] LeafSecretError),
+    EcKeyError(#[from] EcKeyError),
     #[error(transparent)]
     KeyPackageValidationError(#[from] KeyPackageValidationError),
     #[error(transparent)]
@@ -32,7 +31,6 @@ pub struct KeyPackageGenerator<'a, S: Signer> {
 #[derive(Clone, Debug)]
 pub struct KeyPackageGeneration {
     pub key_package: ValidatedKeyPackage,
-    pub leaf_secret: LeafSecret,
     pub secret_key: HpkeSecretKey,
 }
 
@@ -59,13 +57,12 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
             return Err(KeyPackageGenerationError::CredentialSigningKeyMismatch);
         }
 
-        let leaf_secret = LeafSecret::generate(self.cipher_suite)?;
-        let (hpke_sec, hpke_pub) = leaf_secret.as_leaf_key_pair()?;
+        let (public, secret) = generate_keypair(self.cipher_suite.kem_type().curve())?;
 
         let package = KeyPackage {
             version: self.protocol_version,
             cipher_suite: self.cipher_suite,
-            hpke_init_key: hpke_pub,
+            hpke_init_key: public.try_into()?,
             credential: self.credential.clone(),
             extensions: self.extensions.clone(),
             signature: vec![],
@@ -84,8 +81,7 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
 
         Ok(KeyPackageGeneration {
             key_package: package,
-            leaf_secret,
-            secret_key: hpke_sec,
+            secret_key: secret.try_into()?,
         })
     }
 }
@@ -93,7 +89,7 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
 #[cfg(test)]
 mod test {
     use assert_matches::assert_matches;
-    use ferriscrypt::asym::ec_key::{Curve, SecretKey};
+    use ferriscrypt::asym::ec_key::{Curve, PublicKey, SecretKey};
 
     use crate::{
         cipher_suite::CipherSuite,
@@ -161,14 +157,18 @@ mod test {
             assert_eq!(generated.key_package.cipher_suite, cipher_suite);
             assert_eq!(generated.key_package.version, protocol_version);
 
-            assert_eq!(
-                generated.leaf_secret.len(),
-                cipher_suite.kem_type().sk_len()
-            );
+            let curve = test_generator.cipher_suite.kem_type().curve();
 
-            let (secret_key, public_key) = generated.leaf_secret.as_leaf_key_pair().unwrap();
-            assert_eq!(generated.secret_key, secret_key);
-            assert_eq!(generated.key_package.hpke_init_key, public_key);
+            let public = PublicKey::from_uncompressed_bytes(
+                generated.key_package.hpke_init_key.as_ref(),
+                curve,
+            )
+            .unwrap();
+
+            let secret = SecretKey::from_bytes(generated.secret_key.as_ref(), curve).unwrap();
+
+            assert_eq!(secret.curve(), curve);
+            assert_eq!(public, secret.to_public().unwrap());
 
             let validator = KeyPackageValidator {
                 protocol_version,
@@ -300,7 +300,13 @@ mod test {
 
             (0..100).for_each(|_| {
                 let next_key_package = test_generator.generate(None).unwrap();
-                assert_ne!(first_key_package.leaf_secret, next_key_package.leaf_secret)
+
+                assert_ne!(
+                    first_key_package.key_package.hpke_init_key,
+                    next_key_package.key_package.hpke_init_key
+                );
+
+                assert_ne!(first_key_package.secret_key, next_key_package.secret_key);
             })
         }
     }
