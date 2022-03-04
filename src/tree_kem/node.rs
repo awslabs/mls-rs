@@ -458,7 +458,7 @@ impl NodeVec {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::cipher_suite::CipherSuite;
+    use crate::{cipher_suite::CipherSuite, ProtocolVersion};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
@@ -468,6 +468,7 @@ pub mod test {
 
     fn get_test_key_package(id: &str) -> ValidatedKeyPackage {
         ValidatedKeyPackage::from(crate::key_package::test_util::test_key_package_with_id(
+            ProtocolVersion::Mls10,
             CipherSuite::Curve25519Aes128V1,
             id,
         ))

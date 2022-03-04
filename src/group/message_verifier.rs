@@ -162,6 +162,7 @@ mod tests {
             Content, Group, GroupError, MLSPlaintext, MessageVerifier, Sender,
         },
         key_package::KeyPackageGenerator,
+        ProtocolVersion,
     };
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
@@ -172,6 +173,7 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     wasm_bindgen_test_configure!(run_in_browser);
 
+    const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
     const TEST_GROUP: &[u8] = b"group";
     const TED_EXTERNAL_KEY_ID: &[u8] = b"ted";
@@ -237,9 +239,11 @@ mod tests {
 
     impl TestEnv {
         fn new() -> Self {
-            let (key_pkg_gen, signing_key) = test_member(TEST_CIPHER_SUITE, b"alice");
+            let (key_pkg_gen, signing_key) =
+                test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"alice");
 
             let alice_key_package_generator = KeyPackageGenerator {
+                protocol_version: key_pkg_gen.key_package.version,
                 cipher_suite: key_pkg_gen.key_package.cipher_suite,
                 credential: &key_pkg_gen.key_package.credential.clone(),
                 extensions: &key_pkg_gen.key_package.extensions.clone(),
@@ -255,7 +259,8 @@ mod tests {
 
             let mut alice = TestMember { signing_key, group };
 
-            let (key_pkg_gen, signing_key) = test_member(TEST_CIPHER_SUITE, b"bob");
+            let (key_pkg_gen, signing_key) =
+                test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
             let proposal = alice
                 .group
                 .add_proposal(key_pkg_gen.key_package.clone().into())
@@ -284,6 +289,7 @@ mod tests {
                 Some(alice.group.current_epoch_tree().unwrap().clone()),
                 key_pkg_gen,
                 &secret_store,
+                |_, _| true,
             )
             .unwrap();
             let bob = TestMember { signing_key, group };
@@ -334,8 +340,8 @@ mod tests {
 
     #[test]
     fn valid_proposal_from_new_member_is_verified() {
-        let (key_pkg_gen, signer) = test_member(TEST_CIPHER_SUITE, b"bob");
-        let mut test_group = test_group(TEST_CIPHER_SUITE);
+        let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let mut message = make_plaintext(Sender::NewMember, test_group.group.current_epoch());
         message.content.content = Content::Proposal(Proposal::Add(AddProposal {
@@ -349,8 +355,8 @@ mod tests {
 
     #[test]
     fn proposal_from_new_member_must_not_have_membership_tag() {
-        let (key_pkg_gen, signer) = test_member(TEST_CIPHER_SUITE, b"bob");
-        let mut test_group = test_group(TEST_CIPHER_SUITE);
+        let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let mut message = make_plaintext(Sender::NewMember, test_group.group.current_epoch());
         message.content.content = Content::Proposal(Proposal::Add(AddProposal {
@@ -366,9 +372,9 @@ mod tests {
 
     #[test]
     fn valid_proposal_from_preconfigured_external_is_verified() {
-        let (bob_key_pkg_gen, _) = test_member(TEST_CIPHER_SUITE, b"bob");
-        let (_, ted_signer) = test_member(TEST_CIPHER_SUITE, b"ted");
-        let mut test_group = test_group(TEST_CIPHER_SUITE);
+        let (bob_key_pkg_gen, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+        let (_, ted_signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"ted");
+        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let mut message = make_plaintext(
             Sender::Preconfigured(TED_EXTERNAL_KEY_ID.to_vec()),
@@ -387,9 +393,9 @@ mod tests {
 
     #[test]
     fn proposal_from_preconfigured_external_must_not_have_membership_tag() {
-        let (bob_key_pkg_gen, _) = test_member(TEST_CIPHER_SUITE, b"bob");
-        let (_, ted_signer) = test_member(TEST_CIPHER_SUITE, b"ted");
-        let mut test_group = test_group(TEST_CIPHER_SUITE);
+        let (bob_key_pkg_gen, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+        let (_, ted_signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"ted");
+        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let mut message = make_plaintext(
             Sender::Preconfigured(TED_EXTERNAL_KEY_ID.to_vec()),

@@ -1,5 +1,4 @@
 use crate::cipher_suite::CipherSuite;
-use crate::cipher_suite::ProtocolVersion;
 use crate::credential::{Credential, CredentialError};
 use crate::extension::CapabilitiesExt;
 use crate::extension::LifetimeExt;
@@ -8,6 +7,7 @@ use crate::extension::{Extension, ExtensionError, ExtensionList, ExtensionType};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::HashReference;
 use crate::time::MlsTime;
+use crate::ProtocolVersion;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::kdf::KdfError;
 use std::ops::Deref;
@@ -117,12 +117,19 @@ pub(crate) mod test_util {
     use super::*;
     use crate::client::test_util::test_client_with_key_pkg;
 
-    pub(crate) fn test_key_package(cipher_suite: CipherSuite) -> KeyPackage {
-        test_key_package_with_id(cipher_suite, "foo")
+    pub(crate) fn test_key_package(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+    ) -> KeyPackage {
+        test_key_package_with_id(protocol_version, cipher_suite, "foo")
     }
 
-    pub(crate) fn test_key_package_with_id(cipher_suite: CipherSuite, id: &str) -> KeyPackage {
-        let (_, key_package_gen) = test_client_with_key_pkg(cipher_suite, id);
+    pub(crate) fn test_key_package_with_id(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        id: &str,
+    ) -> KeyPackage {
+        let (_, key_package_gen) = test_client_with_key_pkg(protocol_version, cipher_suite, id);
         key_package_gen.key_package.into()
     }
 }
@@ -152,9 +159,10 @@ mod test {
         fn generate() {
             use tls_codec::Serialize;
 
-            let test_cases = CipherSuite::all()
-                .map(|cipher_suite| {
-                    let pkg = test_util::test_key_package(cipher_suite);
+            let test_cases = ProtocolVersion::all()
+                .flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
+                .map(|(protocol_version, cipher_suite)| {
+                    let pkg = test_util::test_key_package(protocol_version, cipher_suite);
                     let pkg_ref = pkg.to_reference().unwrap();
                     TestCase {
                         cipher_suite: cipher_suite as u16,

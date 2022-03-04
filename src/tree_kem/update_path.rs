@@ -64,6 +64,7 @@ mod test {
         cipher_suite::CipherSuite,
         key_package::{KeyPackage, KeyPackageValidator},
         tree_kem::UpdatePathValidationError,
+        ProtocolVersion,
     };
 
     use super::{UpdatePath, UpdatePathNode, UpdatePathValidator};
@@ -74,8 +75,11 @@ mod test {
     #[cfg(target_arch = "wasm32")]
     wasm_bindgen_test_configure!(run_in_browser);
 
-    fn test_update_path(cipher_suite: CipherSuite) -> UpdatePath {
-        let key_package = test_key_package(cipher_suite);
+    fn test_update_path(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+    ) -> UpdatePath {
+        let key_package = test_key_package(protocol_version, cipher_suite);
 
         let ciphertext = HPKECiphertext {
             enc: SecureRng::gen(32).unwrap(),
@@ -94,10 +98,12 @@ mod test {
 
     #[test]
     fn test_valid_key_package() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
-        let update_path = test_update_path(cipher_suite);
+        let update_path = test_update_path(protocol_version, cipher_suite);
 
         let validator = UpdatePathValidator(KeyPackageValidator {
+            protocol_version,
             cipher_suite,
             required_capabilities: None,
             options: Default::default(),
@@ -113,11 +119,13 @@ mod test {
 
     #[test]
     fn test_invalid_key_package() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
-        let mut update_path = test_update_path(cipher_suite);
+        let mut update_path = test_update_path(protocol_version, cipher_suite);
         update_path.leaf_key_package.signature = SecureRng::gen(32).unwrap();
 
         let validator = UpdatePathValidator(KeyPackageValidator {
+            protocol_version,
             cipher_suite,
             required_capabilities: None,
             options: Default::default(),

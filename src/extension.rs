@@ -1,8 +1,9 @@
-use crate::cipher_suite::{CipherSuite, ProtocolVersion};
+use crate::cipher_suite::CipherSuite;
 use crate::group::proposal::ProposalType;
 use crate::time::{MlsTime, SystemTimeError};
 use crate::tree_kem::node::NodeVec;
 use crate::tree_kem::parent_hash::ParentHash;
+use crate::ProtocolVersion;
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};

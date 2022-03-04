@@ -7,12 +7,6 @@ use ferriscrypt::hpke::{AeadId, HPKECiphertext, Hpke, KdfId, KemId};
 use std::convert::TryInto;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-#[derive(Debug, Clone, Copy, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-#[repr(u8)]
-pub enum ProtocolVersion {
-    Mls10 = 0x01,
-}
-
 #[derive(
     Clone, Copy, Debug, IntoEnumIterator, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Eq, Hash,
 )]
@@ -82,7 +76,7 @@ impl From<HpkeCiphertext> for HPKECiphertext {
 }
 
 #[derive(
-    Debug, Copy, Clone, IntoEnumIterator, PartialEq, TlsDeserialize, TlsSerialize, TlsSize,
+    Debug, Copy, Clone, Eq, IntoEnumIterator, PartialEq, TlsDeserialize, TlsSerialize, TlsSize,
 )]
 #[repr(u16)]
 pub enum CipherSuite {
@@ -141,11 +135,6 @@ impl CipherSuite {
 
     pub fn all() -> impl Iterator<Item = CipherSuite> {
         Self::into_enum_iter()
-    }
-
-    #[inline(always)]
-    pub fn protocol_version(&self) -> ProtocolVersion {
-        ProtocolVersion::Mls10
     }
 
     #[inline(always)]

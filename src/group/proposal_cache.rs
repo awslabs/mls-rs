@@ -363,10 +363,11 @@ mod test {
 
     fn test_proposals(
         sender: KeyPackageRef,
+        protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> (Vec<MLSPlaintext>, ProposalSetEffects) {
-        let add_package = test_key_package(cipher_suite);
-        let update_package = test_key_package(cipher_suite);
+        let add_package = test_key_package(protocol_version, cipher_suite);
+        let update_package = test_key_package(protocol_version, cipher_suite);
         let remove_package = test_ref();
 
         let add = Proposal::Add(AddProposal {
@@ -438,9 +439,11 @@ mod test {
 
     #[test]
     fn test_proposal_cache_commit_all_cached() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
-        let (test_proposals, expected_effects) = test_proposals(test_sender, cipher_suite);
+        let (test_proposals, expected_effects) =
+            test_proposals(test_sender, protocol_version, cipher_suite);
 
         let cache = test_proposal_cache_setup(cipher_suite, test_proposals.clone());
 
@@ -460,12 +463,14 @@ mod test {
 
     #[test]
     fn test_proposal_cache_commit_additional() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
 
-        let (test_proposals, mut expected_effects) = test_proposals(test_sender, cipher_suite);
+        let (test_proposals, mut expected_effects) =
+            test_proposals(test_sender, protocol_version, cipher_suite);
 
-        let additional_key_package = test_key_package(cipher_suite);
+        let additional_key_package = test_key_package(protocol_version, cipher_suite);
 
         let additional = vec![Proposal::Add(AddProposal {
             key_package: additional_key_package.clone(),
@@ -494,10 +499,11 @@ mod test {
 
     #[test]
     fn test_proposal_cache_update_filter() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
-        let additional_key_package = test_key_package(cipher_suite);
+        let additional_key_package = test_key_package(protocol_version, cipher_suite);
         let test_sender = test_ref();
-        let (test_proposals, _) = test_proposals(test_sender, cipher_suite);
+        let (test_proposals, _) = test_proposals(test_sender, protocol_version, cipher_suite);
 
         let additional = vec![Proposal::Update(UpdateProposal {
             key_package: additional_key_package.clone(),
@@ -519,9 +525,11 @@ mod test {
 
     #[test]
     fn test_proposal_cache_removal_override_update() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
-        let (test_proposals, _) = test_proposals(test_sender.clone(), cipher_suite);
+        let (test_proposals, _) =
+            test_proposals(test_sender.clone(), protocol_version, cipher_suite);
 
         let removal = Proposal::Remove(RemoveProposal {
             to_remove: test_sender.clone(),
@@ -540,9 +548,11 @@ mod test {
 
     #[test]
     fn test_proposal_cache_filter_duplicates_insert() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
-        let (test_proposals, expected_effects) = test_proposals(test_sender, cipher_suite);
+        let (test_proposals, expected_effects) =
+            test_proposals(test_sender, protocol_version, cipher_suite);
 
         let mut cache: ProposalCache =
             test_proposal_cache_setup(cipher_suite, test_proposals.clone());
@@ -567,9 +577,11 @@ mod test {
 
     #[test]
     fn test_proposal_cache_filter_duplicates_additional() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
-        let (test_proposals, expected_effects) = test_proposals(test_sender, cipher_suite);
+        let (test_proposals, expected_effects) =
+            test_proposals(test_sender, protocol_version, cipher_suite);
 
         let cache: ProposalCache = test_proposal_cache_setup(cipher_suite, test_proposals.clone());
 
@@ -627,14 +639,16 @@ mod test {
 
     #[test]
     fn test_proposal_cache_resolve() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
-        let (test_proposals, _) = test_proposals(test_sender.clone(), cipher_suite);
+        let (test_proposals, _) =
+            test_proposals(test_sender.clone(), protocol_version, cipher_suite);
 
         let cache = test_proposal_cache_setup(cipher_suite, test_proposals);
 
         let additional = vec![Proposal::Add(AddProposal {
-            key_package: test_key_package(cipher_suite),
+            key_package: test_key_package(protocol_version, cipher_suite),
         })];
 
         let (proposals, effects) = cache.prepare_commit(&test_sender, additional).unwrap();
@@ -648,6 +662,7 @@ mod test {
 
     #[test]
     fn proposal_cache_filters_duplicate_psk_ids() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
         let cache = ProposalCache::new();
         let len = Hkdf::from(cipher_suite.kdf_type()).extract_size();
@@ -660,7 +675,9 @@ mod test {
         });
         let (proposals, effects) = cache
             .prepare_commit(
-                &test_key_package(cipher_suite).to_reference().unwrap(),
+                &test_key_package(protocol_version, cipher_suite)
+                    .to_reference()
+                    .unwrap(),
                 vec![proposal.clone(), proposal],
             )
             .unwrap();

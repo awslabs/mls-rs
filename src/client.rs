@@ -9,6 +9,7 @@ use crate::key_package::{
     KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
 };
 use crate::session::{Session, SessionError};
+use crate::ProtocolVersion;
 use thiserror::Error;
 use tls_codec::Serialize;
 
@@ -49,6 +50,7 @@ impl<C: ClientConfig + Clone> Client<C> {
 
     pub fn gen_key_package(
         &self,
+        protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         lifetime: LifetimeExt,
     ) -> Result<KeyPackageGeneration, ClientError> {
@@ -59,6 +61,7 @@ impl<C: ClientConfig + Clone> Client<C> {
             .ok_or(ClientError::NoCredentialFound)?;
 
         let key_package_generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             signing_key: &signer,
             credential: &credential,
@@ -87,6 +90,7 @@ impl<C: ClientConfig + Clone> Client<C> {
 
     pub fn create_session(
         &self,
+        protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         lifetime: LifetimeExt,
         group_id: Vec<u8>,
@@ -99,6 +103,7 @@ impl<C: ClientConfig + Clone> Client<C> {
             .ok_or(ClientError::NoCredentialFound)?;
 
         let key_package_generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &credential,
             extensions: &self.get_extensions(lifetime)?,
@@ -215,6 +220,7 @@ pub(crate) mod test_util {
     };
     use ferriscrypt::asym::ec_key::SecretKey;
 
+    pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
     pub const TEST_GROUP: &[u8] = b"group";
 
@@ -238,13 +244,18 @@ pub(crate) mod test_util {
     }
 
     pub fn test_client_with_key_pkg(
+        protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         identity: &str,
     ) -> (Client<InMemoryClientConfig>, KeyPackageGeneration) {
         let client = get_basic_config(cipher_suite, identity).build_client();
 
         let gen = client
-            .gen_key_package(cipher_suite, LifetimeExt::years(1).unwrap())
+            .gen_key_package(
+                protocol_version,
+                cipher_suite,
+                LifetimeExt::years(1).unwrap(),
+            )
             .unwrap();
 
         (client, gen)
@@ -277,16 +288,19 @@ mod test {
     fn test_keygen() {
         // This is meant to test the inputs to the internal key package generator
         // See KeyPackageGenerator tests for key generation specific tests
-        for cipher_suite in CipherSuite::all() {
+        for (protocol_version, cipher_suite) in
+            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
+        {
             println!("Running client keygen for {:?}", cipher_suite);
 
             let client = get_basic_config(cipher_suite, "foo").build_client();
             let key_lifetime = LifetimeExt::years(1).unwrap();
 
             let package_gen = client
-                .gen_key_package(cipher_suite, key_lifetime.clone())
+                .gen_key_package(protocol_version, cipher_suite, key_lifetime.clone())
                 .unwrap();
 
+            assert_eq!(package_gen.key_package.version, protocol_version);
             assert_eq!(package_gen.key_package.cipher_suite, cipher_suite);
             assert_matches!(&package_gen.key_package.credential, Credential::Basic(basic) if basic.identity == "foo".as_bytes().to_vec());
 
@@ -332,7 +346,8 @@ mod test {
 
         let mut session = create_session(&alice);
 
-        let (bob, bob_key_gen) = test_client_with_key_pkg(TEST_CIPHER_SUITE, "bob");
+        let (bob, bob_key_gen) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
         let proposal = bob
             .propose_add_from_new_member(
@@ -395,7 +410,8 @@ mod test {
 
             let alice_session = create_session(&alice_config.build_client());
 
-            let (_, bob_key_gen) = test_client_with_key_pkg(TEST_CIPHER_SUITE, "bob");
+            let (_, bob_key_gen) =
+                test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
             PreconfiguredEnv {
                 ted,
@@ -408,6 +424,7 @@ mod test {
     fn create_session(client: &Client<InMemoryClientConfig>) -> Session<InMemoryClientConfig> {
         client
             .create_session(
+                TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 LifetimeExt::years(1).unwrap(),
                 TEST_GROUP.to_vec(),
@@ -421,31 +438,26 @@ mod test {
         other_sessions: S,
         key_package: KeyPackage,
         client: &Client<InMemoryClientConfig>,
-    ) -> Session<InMemoryClientConfig>
+    ) -> Result<Session<InMemoryClientConfig>, ClientError>
     where
         S: IntoIterator<Item = &'a mut Session<InMemoryClientConfig>>,
     {
         let key_package_ref = key_package.to_reference().unwrap();
 
-        let commit_result = committer_session
-            .commit(vec![Proposal::Add(AddProposal { key_package })])
-            .unwrap();
+        let commit_result =
+            committer_session.commit(vec![Proposal::Add(AddProposal { key_package })])?;
 
-        committer_session.apply_pending_commit().unwrap();
+        committer_session.apply_pending_commit()?;
 
         for session in other_sessions {
-            session
-                .process_incoming_bytes(&commit_result.commit_packet)
-                .unwrap();
+            session.process_incoming_bytes(&commit_result.commit_packet)?;
         }
 
-        client
-            .join_session(
-                Some(&key_package_ref),
-                Some(&committer_session.export_tree().unwrap()),
-                &commit_result.welcome_packet.unwrap(),
-            )
-            .unwrap()
+        client.join_session(
+            Some(&key_package_ref),
+            Some(&committer_session.export_tree().unwrap()),
+            &commit_result.welcome_packet.unwrap(),
+        )
     }
 
     #[test]
@@ -522,7 +534,8 @@ mod test {
 
         let mut session = create_session(&alice);
 
-        let (_, bob_key_gen) = test_client_with_key_pkg(TEST_CIPHER_SUITE, "bob");
+        let (_, bob_key_gen) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
         let msg = ted
             .propose_add_from_new_member(
@@ -545,7 +558,8 @@ mod test {
 
         let mut session = create_session(&alice);
 
-        let (bob, bob_key_gen) = test_client_with_key_pkg(TEST_CIPHER_SUITE, "bob");
+        let (bob, bob_key_gen) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
         let proposal = bob
             .propose_add_from_new_member(
@@ -595,16 +609,19 @@ mod test {
     fn only_selected_members_of_the_original_group_can_join_subgroup() {
         let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
         let mut alice_session = create_session(&alice);
-        let (bob, bob_key_pkg_gen) = test_client_with_key_pkg(TEST_CIPHER_SUITE, "bob");
+        let (bob, bob_key_pkg_gen) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
         let mut bob_session = join_session(
             &mut alice_session,
             [],
             bob_key_pkg_gen.key_package.into(),
             &bob,
-        );
+        )
+        .unwrap();
 
-        let (carol, carol_key_pkg_gen) = test_client_with_key_pkg(TEST_CIPHER_SUITE, "carol");
+        let (carol, carol_key_pkg_gen) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "carol");
         let carol_key_pkg_ref = carol_key_pkg_gen.key_package.to_reference().unwrap();
 
         let carol_session = join_session(
@@ -612,7 +629,8 @@ mod test {
             [&mut bob_session],
             carol_key_pkg_gen.key_package.into(),
             &carol,
-        );
+        )
+        .unwrap();
 
         let (alice_sub_session, welcome) = alice_session
             .branch(b"subgroup".to_vec(), None, |r| *r != carol_key_pkg_ref)
@@ -629,8 +647,46 @@ mod test {
         );
 
         assert_matches!(
-            carol_session.join_subgroup(welcome, Some(&alice_sub_session.export_tree().unwrap()),),
+            carol_session.join_subgroup(welcome, Some(&alice_sub_session.export_tree().unwrap())),
             Err(_)
         );
+    }
+
+    fn joining_group_fails_if_unsupported<F>(f: F)
+    where
+        F: FnOnce(InMemoryClientConfig) -> InMemoryClientConfig,
+    {
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+        let mut alice_session = create_session(&alice);
+        let bob = f(get_basic_config(TEST_CIPHER_SUITE, "bob")).build_client();
+        let bob_key_pkg = bob
+            .gen_key_package(
+                TEST_PROTOCOL_VERSION,
+                TEST_CIPHER_SUITE,
+                LifetimeExt::years(1).unwrap(),
+            )
+            .unwrap()
+            .key_package
+            .into();
+        let res = join_session(&mut alice_session, [], bob_key_pkg, &bob);
+        assert_matches!(
+            res,
+            Err(ClientError::SessionError(SessionError::ProtocolError(
+                GroupError::UnsupportedProtocolVersionOrCipherSuite(
+                    TEST_PROTOCOL_VERSION,
+                    TEST_CIPHER_SUITE
+                )
+            )))
+        );
+    }
+
+    #[test]
+    fn joining_group_fails_if_protocol_version_is_not_supported() {
+        joining_group_fails_if_unsupported(|config| config.clear_protocol_versions());
+    }
+
+    #[test]
+    fn joining_group_fails_if_cipher_suite_is_not_supported() {
+        joining_group_fails_if_unsupported(|config| config.clear_cipher_suites());
     }
 }

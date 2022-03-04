@@ -95,24 +95,34 @@ mod test {
     fn generate_proposal_test_cases() -> Vec<TestCase> {
         let mut test_cases = Vec::new();
 
-        for cipher_suite in CipherSuite::all() {
+        for (protocol_version, cipher_suite) in
+            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
+        {
             let mut sender = [0u8; 16];
             SecureRng::fill(&mut sender).unwrap();
 
             let add = plaintext_from_proposal(
                 Proposal::Add(AddProposal {
-                    key_package: get_test_key_package(cipher_suite, SecureRng::gen(16).unwrap())
-                        .key_package
-                        .into(),
+                    key_package: get_test_key_package(
+                        protocol_version,
+                        cipher_suite,
+                        SecureRng::gen(16).unwrap(),
+                    )
+                    .key_package
+                    .into(),
                 }),
                 sender.into(),
             );
 
             let update = plaintext_from_proposal(
                 Proposal::Update(UpdateProposal {
-                    key_package: get_test_key_package(cipher_suite, SecureRng::gen(16).unwrap())
-                        .key_package
-                        .into(),
+                    key_package: get_test_key_package(
+                        protocol_version,
+                        cipher_suite,
+                        SecureRng::gen(16).unwrap(),
+                    )
+                    .key_package
+                    .into(),
                 }),
                 sender.into(),
             );

@@ -261,6 +261,7 @@ mod test {
     use crate::extension::ParentHashExt;
     use crate::tree_kem::node::test::get_test_node_vec;
     use crate::tree_kem::test::{get_test_key_package, get_test_key_packages, get_test_tree};
+    use crate::ProtocolVersion;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
@@ -268,9 +269,12 @@ mod test {
     #[cfg(target_arch = "wasm32")]
     wasm_bindgen_test_configure!(run_in_browser);
 
-    fn get_phash_test_tree(cipher_suite: CipherSuite) -> TreeKemPublic {
-        let (mut tree, _, _) = get_test_tree(cipher_suite);
-        let key_packages = get_test_key_packages(cipher_suite);
+    fn get_phash_test_tree(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+    ) -> TreeKemPublic {
+        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
+        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
         tree.add_leaves(key_packages).unwrap();
 
         // Fill in parent nodes
@@ -301,10 +305,12 @@ mod test {
 
     #[test]
     fn test_missing_parent_hash() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let mut test_tree = get_phash_test_tree(cipher_suite);
-        let test_key_package = get_test_key_package(cipher_suite, b"foo".to_vec());
+        let mut test_tree = get_phash_test_tree(protocol_version, cipher_suite);
+        let test_key_package =
+            get_test_key_package(protocol_version, cipher_suite, b"foo".to_vec());
 
         let test_update_path = ValidatedUpdatePath {
             leaf_key_package: test_key_package.key_package,
@@ -319,10 +325,12 @@ mod test {
 
     #[test]
     fn test_invalid_parent_hash() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let mut test_tree = get_phash_test_tree(cipher_suite);
-        let test_key_package = get_test_key_package(cipher_suite, b"foo".to_vec());
+        let mut test_tree = get_phash_test_tree(protocol_version, cipher_suite);
+        let test_key_package =
+            get_test_key_package(protocol_version, cipher_suite, b"foo".to_vec());
 
         let mut test_update_path = ValidatedUpdatePath {
             leaf_key_package: test_key_package.key_package,

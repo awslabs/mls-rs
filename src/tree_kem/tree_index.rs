@@ -112,7 +112,9 @@ impl TreeIndex {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::key_package::test_util::test_key_package;
+    use crate::{
+        cipher_suite::CipherSuite, key_package::test_util::test_key_package, ProtocolVersion,
+    };
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]
@@ -129,7 +131,7 @@ mod test {
     }
 
     fn get_test_data(index: LeafIndex) -> TestData {
-        let key_package = test_key_package(crate::cipher_suite::CipherSuite::P256Aes128V1);
+        let key_package = test_key_package(ProtocolVersion::Mls10, CipherSuite::P256Aes128V1);
         let key_package_ref = key_package.to_reference().unwrap();
 
         TestData {
@@ -227,7 +229,8 @@ mod test {
 
         let before_error = test_index.clone();
 
-        let mut new_key_package = test_key_package(CipherSuite::P256Aes128V1);
+        let mut new_key_package =
+            test_key_package(ProtocolVersion::Mls10, CipherSuite::P256Aes128V1);
         new_key_package.credential = test_data[1].key_package.credential.clone();
 
         let res = test_index.insert(
@@ -249,7 +252,8 @@ mod test {
 
         let before_error = test_index.clone();
 
-        let mut new_key_package = test_key_package(CipherSuite::P256Aes128V1);
+        let mut new_key_package =
+            test_key_package(ProtocolVersion::Mls10, CipherSuite::P256Aes128V1);
         new_key_package.hpke_init_key = test_data[1].key_package.hpke_init_key.clone();
 
         let res = test_index.insert(

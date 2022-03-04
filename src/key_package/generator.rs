@@ -22,6 +22,7 @@ pub enum KeyPackageGenerationError {
 
 #[derive(Clone, Debug)]
 pub struct KeyPackageGenerator<'a, S: Signer> {
+    pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     pub credential: &'a Credential,
     pub extensions: &'a ExtensionList,
@@ -62,7 +63,7 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
         let (hpke_sec, hpke_pub) = leaf_secret.as_leaf_key_pair()?;
 
         let package = KeyPackage {
-            version: self.cipher_suite.protocol_version(),
+            version: self.protocol_version,
             cipher_suite: self.cipher_suite,
             hpke_init_key: hpke_pub,
             credential: self.credential.clone(),
@@ -71,6 +72,7 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
         };
 
         let validator = KeyPackageValidator {
+            protocol_version: self.protocol_version,
             cipher_suite: self.cipher_suite,
             required_capabilities,
             options: [KeyPackageValidationOptions::SkipSignatureCheck].into(),
@@ -94,12 +96,13 @@ mod test {
     use ferriscrypt::asym::ec_key::{Curve, SecretKey};
 
     use crate::{
-        cipher_suite::{CipherSuite, ProtocolVersion},
+        cipher_suite::CipherSuite,
         credential::{BasicCredential, Credential},
         extension::{
             CapabilitiesExt, ExtensionList, LifetimeExt, MlsExtension, RequiredCapabilitiesExt,
         },
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
+        ProtocolVersion,
     };
 
     use super::KeyPackageGenerator;
@@ -131,7 +134,9 @@ mod test {
 
     #[test]
     fn test_key_generation() {
-        for cipher_suite in CipherSuite::all() {
+        for (protocol_version, cipher_suite) in
+            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
+        {
             let signing_key =
                 SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
 
@@ -139,6 +144,7 @@ mod test {
             let credential = test_credential(&signing_key);
 
             let test_generator = KeyPackageGenerator {
+                protocol_version,
                 cipher_suite,
                 credential: &credential,
                 extensions: &extensions,
@@ -153,7 +159,7 @@ mod test {
             );
             assert_eq!(generated.key_package.extensions, extensions);
             assert_eq!(generated.key_package.cipher_suite, cipher_suite);
-            assert_eq!(generated.key_package.version, ProtocolVersion::Mls10);
+            assert_eq!(generated.key_package.version, protocol_version);
 
             assert_eq!(
                 generated.leaf_secret.len(),
@@ -165,6 +171,7 @@ mod test {
             assert_eq!(generated.key_package.hpke_init_key, public_key);
 
             let validator = KeyPackageValidator {
+                protocol_version,
                 cipher_suite,
                 required_capabilities: None,
                 options: Default::default(),
@@ -175,6 +182,7 @@ mod test {
     }
 
     fn test_key_generation_missing_ext(ext: u16) {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let signing_key =
@@ -186,6 +194,7 @@ mod test {
         let credential = test_credential(&signing_key);
 
         let test_generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &credential,
             extensions: &extensions,
@@ -211,6 +220,7 @@ mod test {
 
     #[test]
     fn test_required_capabilities_requirements() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let signing_key =
@@ -220,6 +230,7 @@ mod test {
         let credential = test_credential(&signing_key);
 
         let test_generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &credential,
             extensions: &extensions,
@@ -240,6 +251,7 @@ mod test {
 
     #[test]
     fn test_credential_signature_mismatch() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let signing_key =
@@ -251,6 +263,7 @@ mod test {
         );
 
         let test_generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &credential,
             extensions: &extensions,
@@ -266,7 +279,9 @@ mod test {
 
     #[test]
     fn test_randomness() {
-        for cipher_suite in CipherSuite::all() {
+        for (protocol_version, cipher_suite) in
+            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
+        {
             let signing_key =
                 SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
 
@@ -274,6 +289,7 @@ mod test {
             let credential = test_credential(&signing_key);
 
             let test_generator = KeyPackageGenerator {
+                protocol_version,
                 cipher_suite,
                 credential: &credential,
                 extensions: &extensions,

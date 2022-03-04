@@ -14,7 +14,7 @@ use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-use crate::cipher_suite::{CipherSuite, HpkeCiphertext, ProtocolVersion};
+use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
 use crate::client_config::{PskStore, Signer};
 use crate::credential::CredentialError;
 use crate::extension::{
@@ -35,6 +35,7 @@ use crate::tree_kem::{
     RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathGeneration,
     UpdatePathValidationError, UpdatePathValidator,
 };
+use crate::ProtocolVersion;
 
 use confirmation_tag::*;
 use epoch::*;
@@ -212,6 +213,12 @@ pub enum GroupError {
     PskProposalMustContainExternalPsk,
     #[error(transparent)]
     PskSecretError(#[from] PskSecretError),
+    #[error("Subgroup uses a different protocol version: {0:?}")]
+    SubgroupWithDifferentProtocolVersion(ProtocolVersion),
+    #[error("Subgroup uses a different cipher suite: {0:?}")]
+    SubgroupWithDifferentCipherSuite(CipherSuite),
+    #[error("Unsupported protocol version {0:?} or cipher suite {1:?}")]
+    UnsupportedProtocolVersionOrCipherSuite(ProtocolVersion, CipherSuite),
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -251,6 +258,8 @@ impl From<&GroupInfo> for GroupContext {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct GroupInfo {
+    version: ProtocolVersion,
+    cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
@@ -269,23 +278,25 @@ impl GroupInfo {
     fn to_signable_vec(&self) -> Result<Vec<u8>, GroupError> {
         #[derive(TlsSerialize, TlsSize)]
         struct SignableGroupInfo<'a> {
+            cipher_suite: CipherSuite,
             #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-            pub group_id: &'a Vec<u8>,
-            pub epoch: u64,
+            group_id: &'a Vec<u8>,
+            epoch: u64,
             #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-            pub tree_hash: &'a Vec<u8>,
+            tree_hash: &'a Vec<u8>,
             #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-            pub confirmed_transcript_hash: &'a Vec<u8>,
+            confirmed_transcript_hash: &'a Vec<u8>,
             #[tls_codec(with = "crate::tls::DefVec::<u32>")]
-            pub group_context_extensions: &'a Vec<Extension>,
+            group_context_extensions: &'a Vec<Extension>,
             #[tls_codec(with = "crate::tls::DefVec::<u32>")]
-            pub other_extensions: &'a Vec<Extension>,
+            other_extensions: &'a Vec<Extension>,
             #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-            pub confirmation_tag: &'a Tag,
-            pub signer: &'a KeyPackageRef,
+            confirmation_tag: &'a Tag,
+            signer: &'a KeyPackageRef,
         }
 
         SignableGroupInfo {
+            cipher_suite: self.cipher_suite,
             group_id: &self.group_id,
             epoch: self.epoch,
             tree_hash: &self.tree_hash,
@@ -335,7 +346,6 @@ pub struct EncryptedGroupSecrets {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Welcome {
-    pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::DefVec::<u32>")]
     pub secrets: Vec<EncryptedGroupSecrets>,
@@ -345,6 +355,7 @@ pub struct Welcome {
 
 #[derive(Clone, Debug)]
 pub struct Group {
+    pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     context: GroupContext,
     private_tree: TreeKemPrivate,
@@ -454,6 +465,7 @@ impl Group {
         let required_capabilities = group_context_extensions.get_extension()?;
         let creator_key_package = key_package_generator.generate(required_capabilities.as_ref())?;
 
+        let protocol_version = creator_key_package.key_package.version;
         let cipher_suite = creator_key_package.key_package.cipher_suite;
         let kdf = Hkdf::from(cipher_suite.kdf_type());
 
@@ -478,6 +490,7 @@ impl Group {
         let epoch_repo = EpochRepository::new(epoch, 3);
 
         Ok(Self {
+            protocol_version,
             cipher_suite,
             private_tree,
             context,
@@ -488,12 +501,17 @@ impl Group {
         })
     }
 
-    pub fn from_welcome_message<S: PskStore>(
+    pub fn from_welcome_message<S, F>(
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package: KeyPackageGeneration,
         secret_store: &S,
-    ) -> Result<Self, GroupError> {
+        support_version_and_cipher: F,
+    ) -> Result<Self, GroupError>
+    where
+        S: PskStore,
+        F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
+    {
         Self::join_with_welcome(
             welcome,
             public_tree,
@@ -501,17 +519,23 @@ impl Group {
             key_package.secret_key,
             secret_store,
             None,
+            support_version_and_cipher,
         )
     }
 
-    fn join_with_welcome<P: PskStore>(
+    fn join_with_welcome<P: PskStore, F>(
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package_ref: KeyPackageRef,
         leaf_secret: HpkeSecretKey,
         psk_store: &P,
         epoch_repo: Option<&EpochRepository>,
-    ) -> Result<Self, GroupError> {
+        support_version_and_cipher: F,
+    ) -> Result<Self, GroupError>
+    where
+        P: PskStore,
+        F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
+    {
         // Identify an entry in the secrets array where the key_package_hash value corresponds to
         // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
         // If no such field exists, or if the ciphersuite indicated in the KeyPackage does not
@@ -557,6 +581,13 @@ impl Group {
         let decrypted_group_info = welcome_secret.decrypt(&welcome.encrypted_group_info)?;
         let group_info = GroupInfo::tls_deserialize(&mut &*decrypted_group_info)?;
 
+        if !support_version_and_cipher(group_info.version, group_info.cipher_suite) {
+            return Err(GroupError::UnsupportedProtocolVersionOrCipherSuite(
+                group_info.version,
+                group_info.cipher_suite,
+            ));
+        }
+
         // Verify the signature on the GroupInfo object. The signature input comprises all of the
         // fields in the GroupInfo object except the signature field. The public key and algorithm
         // are taken from the credential in the leaf node at position signer_index.
@@ -584,7 +615,8 @@ impl Group {
         let extensions = group_info.group_context_extensions.get_extension()?;
 
         let key_package_validator = KeyPackageValidator {
-            cipher_suite: welcome.cipher_suite,
+            protocol_version: group_info.version,
+            cipher_suite: group_info.cipher_suite,
             required_capabilities: extensions.as_ref(),
             options: HashSet::from([KeyPackageValidationOptions::SkipLifetimeCheck]),
         };
@@ -649,7 +681,8 @@ impl Group {
         let epoch_repo = EpochRepository::new(epoch, 3);
 
         Ok(Group {
-            cipher_suite: welcome.cipher_suite,
+            protocol_version: group_info.version,
+            cipher_suite: group_info.cipher_suite,
             context,
             private_tree,
             epoch_repo,
@@ -700,6 +733,7 @@ impl Group {
 
         if existing_required_capabilities != new_required_capabilities {
             let key_package_validator = KeyPackageValidator {
+                protocol_version: self.protocol_version,
                 cipher_suite: self.cipher_suite,
                 required_capabilities: new_required_capabilities.as_ref(),
                 options: HashSet::from([
@@ -740,6 +774,7 @@ impl Group {
         // This check does not validate lifetime since lifetime is only validated by the sender at
         // the time the proposal is created. See https://github.com/mlswg/mls-protocol/issues/538
         let key_package_validator = KeyPackageValidator {
+            protocol_version: self.protocol_version,
             cipher_suite: self.cipher_suite,
             required_capabilities: required_capabilities.as_ref(),
             options: HashSet::from([KeyPackageValidationOptions::SkipLifetimeCheck]),
@@ -1005,9 +1040,31 @@ impl Group {
             plaintext.membership_tag = Some(membership_tag);
         }
 
+        let (protocol_version, cipher_suite, key_pkg_refs) = match provisional_state.reinit {
+            Some(reinit) => {
+                // Welcome messages will be built for each existing member
+                let pkg_refs = self
+                    .current_epoch_tree()?
+                    .get_key_package_refs()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                (reinit.version, reinit.cipher_suite, pkg_refs)
+            }
+            None => {
+                // Welcome messages will be built for each added member
+                (
+                    self.protocol_version,
+                    self.cipher_suite,
+                    provisional_state.added_leaves,
+                )
+            }
+        };
+
         // Construct a GroupInfo reflecting the new state
         // Group ID, epoch, tree, and confirmed transcript hash from the new state
         let mut group_info = GroupInfo {
+            version: protocol_version,
+            cipher_suite,
             group_id: self.context.group_id.clone(),
             epoch: provisional_group_context.epoch,
             tree_hash: provisional_group_context.tree_hash,
@@ -1027,21 +1084,6 @@ impl Group {
             .signing_key
             .sign(&group_info.to_signable_vec()?)
             .map_err(|e| GroupError::SignerError(Box::new(e)))?;
-
-        // Get key package references to build welcome messages for
-        let key_pkg_refs = match provisional_state.reinit {
-            Some(_) => {
-                // Welcome messages will be built for each existing member
-                self.current_epoch_tree()?
-                    .get_key_package_refs()
-                    .cloned()
-                    .collect::<Vec<_>>()
-            }
-            None => {
-                // Welcome messages will be built for each added member
-                provisional_state.added_leaves
-            }
-        };
 
         let welcome = self.make_welcome_message(
             key_pkg_refs,
@@ -1088,8 +1130,7 @@ impl Group {
         Ok(match secrets.len() {
             0 => None,
             _ => Some(Welcome {
-                protocol_version: self.cipher_suite.protocol_version(),
-                cipher_suite: self.cipher_suite,
+                cipher_suite: group_info.cipher_suite,
                 secrets,
                 encrypted_group_info,
             }),
@@ -1181,6 +1222,8 @@ impl Group {
         let epoch_repo = EpochRepository::new(epoch.clone(), 3);
 
         let mut group_info = GroupInfo {
+            version: self.protocol_version,
+            cipher_suite: self.cipher_suite,
             group_id: sub_group_id,
             epoch: 1,
             tree_hash: new_pub_tree_hash,
@@ -1200,6 +1243,7 @@ impl Group {
             .map_err(|e| GroupError::SignerError(Box::new(e)))?;
 
         let new_group = Group {
+            protocol_version: self.protocol_version,
             cipher_suite: self.cipher_suite,
             context: new_context,
             private_tree: new_priv_tree,
@@ -1222,16 +1266,18 @@ impl Group {
         Ok((new_group, welcome))
     }
 
-    pub fn join_subgroup<P>(
+    pub fn join_subgroup<P, F>(
         &self,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         psk_store: &P,
+        support_version_and_cipher: F,
     ) -> Result<Self, GroupError>
     where
         P: PskStore,
+        F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
     {
-        Self::join_with_welcome(
+        let subgroup = Self::join_with_welcome(
             welcome,
             public_tree,
             self.private_tree.key_package_ref.clone(),
@@ -1242,7 +1288,19 @@ impl Group {
                 .unwrap(),
             psk_store,
             Some(&self.epoch_repo),
-        )
+            support_version_and_cipher,
+        )?;
+        if subgroup.protocol_version != self.protocol_version {
+            Err(GroupError::SubgroupWithDifferentProtocolVersion(
+                subgroup.protocol_version,
+            ))
+        } else if subgroup.cipher_suite != self.cipher_suite {
+            Err(GroupError::SubgroupWithDifferentCipherSuite(
+                subgroup.cipher_suite,
+            ))
+        } else {
+            Ok(subgroup)
+        }
     }
 
     fn encrypt_group_secrets(
@@ -1292,6 +1350,7 @@ impl Group {
         // Check that this proposal has a valid lifetime, signature, and meets the requirements
         // of the current group required capabilities extension.
         let key_package_validator = KeyPackageValidator {
+            protocol_version: self.protocol_version,
             cipher_suite: self.cipher_suite,
             required_capabilities: required_capabilities.as_ref(),
             options: Default::default(),
@@ -1344,12 +1403,13 @@ impl Group {
     pub fn reinit_proposal(
         &mut self,
         group_id: Vec<u8>,
+        version: ProtocolVersion,
         cipher_suite: CipherSuite,
         extensions: ExtensionList,
     ) -> Result<Proposal, GroupError> {
         Ok(Proposal::ReInit(ReInit {
             group_id,
-            version: cipher_suite.protocol_version(),
+            version,
             cipher_suite,
             extensions,
         }))
@@ -1637,6 +1697,7 @@ impl Group {
                 };
 
                 let key_package_validator = KeyPackageValidator {
+                    protocol_version: self.protocol_version,
                     cipher_suite: self.cipher_suite,
                     required_capabilities: required_capabilities.as_ref(),
                     options,
@@ -1805,12 +1866,14 @@ pub(crate) mod test_utils {
     }
 
     pub(crate) fn test_member(
+        protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         identifier: &[u8],
     ) -> (KeyPackageGeneration, SecretKey) {
         let signing_key = cipher_suite.generate_secret_key().unwrap();
 
         let key_package_generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &credential(&signing_key, identifier),
             extensions: &extensions(),
@@ -1821,11 +1884,15 @@ pub(crate) mod test_utils {
         (key_package, signing_key)
     }
 
-    pub(crate) fn test_group(cipher_suite: CipherSuite) -> TestGroup {
+    pub(crate) fn test_group(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+    ) -> TestGroup {
         let signing_key = cipher_suite.generate_secret_key().unwrap();
         let credential = credential(&signing_key, b"alice");
 
         let key_package_generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &credential,
             extensions: &extensions(),
@@ -1869,8 +1936,10 @@ mod test {
 
     #[test]
     fn test_create_group() {
-        for cipher_suite in CipherSuite::all() {
-            let test_group = test_group(cipher_suite);
+        for (protocol_version, cipher_suite) in
+            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
+        {
+            let test_group = test_group(protocol_version, cipher_suite);
             let group = test_group.group;
 
             assert_eq!(group.cipher_suite, cipher_suite);
@@ -1903,12 +1972,13 @@ mod test {
 
     #[test]
     fn test_pending_proposals_application_data() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let mut test_group = test_group(cipher_suite);
+        let mut test_group = test_group(protocol_version, cipher_suite);
 
         // Create a proposal
-        let (bob_key_package, _) = test_member(cipher_suite, b"bob");
+        let (bob_key_package, _) = test_member(protocol_version, cipher_suite, b"bob");
 
         let proposal = test_group
             .group
@@ -1927,6 +1997,7 @@ mod test {
         assert_matches!(res, Err(GroupError::CommitRequired));
 
         let generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &test_group.credential,
             extensions: &test_group.extensions,
@@ -1954,11 +2025,13 @@ mod test {
 
     #[test]
     fn test_invalid_commit_self_update() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let mut test_group = test_group(cipher_suite);
+        let mut test_group = test_group(protocol_version, cipher_suite);
 
         let generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &test_group.credential,
             extensions: &test_group.extensions,
@@ -1984,11 +2057,13 @@ mod test {
 
     #[test]
     fn test_invalid_commit_self_update_cached() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let mut test_group = test_group(cipher_suite);
+        let mut test_group = test_group(protocol_version, cipher_suite);
 
         let generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &test_group.credential,
             extensions: &test_group.extensions,
@@ -2019,10 +2094,11 @@ mod test {
 
     #[test]
     fn test_invalid_add_proposal_bad_key_package() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let test_group = test_group(cipher_suite);
-        let (mut bob_keys, _) = test_member(cipher_suite, b"bob");
+        let test_group = test_group(protocol_version, cipher_suite);
+        let (mut bob_keys, _) = test_member(protocol_version, cipher_suite, b"bob");
         bob_keys.key_package.signature = SecureRng::gen(32).unwrap();
 
         let proposal = test_group.group.add_proposal(bob_keys.key_package.into());
@@ -2031,10 +2107,11 @@ mod test {
 
     #[test]
     fn test_invalid_add_bad_key_package() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let mut test_group = test_group(cipher_suite);
-        let (bob_keys, _) = test_member(cipher_suite, b"bob");
+        let mut test_group = test_group(protocol_version, cipher_suite);
+        let (bob_keys, _) = test_member(protocol_version, cipher_suite, b"bob");
 
         let mut proposal = test_group
             .group
@@ -2046,6 +2123,7 @@ mod test {
         }
 
         let generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &test_group.credential,
             extensions: &test_group.extensions,
@@ -2066,11 +2144,14 @@ mod test {
 
     #[test]
     fn test_invalid_update_bad_key_package() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let (mut alice_group, mut bob_group) = test_two_member_group(cipher_suite, true);
+        let (mut alice_group, mut bob_group) =
+            test_two_member_group(protocol_version, cipher_suite, true);
 
         let generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &alice_group.credential,
             extensions: &alice_group.extensions,
@@ -2098,6 +2179,7 @@ mod test {
             .unwrap();
 
         let bob_generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &bob_group.credential,
             extensions: &bob_group.extensions,
@@ -2116,17 +2198,26 @@ mod test {
         assert_matches!(res, Err(GroupError::KeyPackageValidationError(_)));
     }
 
-    fn test_two_member_group(cipher_suite: CipherSuite, tree_ext: bool) -> (TestGroup, TestGroup) {
-        let mut test_group = test_group(cipher_suite);
+    fn test_two_member_group(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        tree_ext: bool,
+    ) -> (TestGroup, TestGroup) {
+        let mut test_group = test_group(protocol_version, cipher_suite);
 
         let generator = KeyPackageGenerator {
+            protocol_version: test_group.group.protocol_version,
             cipher_suite: test_group.group.cipher_suite,
             credential: &test_group.credential,
             extensions: &test_group.extensions,
             signing_key: &test_group.signing_key,
         };
 
-        let (bob_key_package, bob_key) = test_member(test_group.group.cipher_suite, b"bob");
+        let (bob_key_package, bob_key) = test_member(
+            test_group.group.protocol_version,
+            test_group.group.cipher_suite,
+            b"bob",
+        );
 
         // Add bob to the group
         let add_bob_proposal = test_group
@@ -2166,6 +2257,7 @@ mod test {
             tree,
             bob_key_package.clone(),
             &secret_store,
+            |_, _| true,
         )
         .unwrap();
 
@@ -2183,21 +2275,23 @@ mod test {
 
     #[test]
     fn test_welcome_processing_exported_tree() {
-        test_two_member_group(CipherSuite::P256Aes128V1, false);
+        test_two_member_group(ProtocolVersion::Mls10, CipherSuite::P256Aes128V1, false);
     }
 
     #[test]
     fn test_welcome_processing_tree_extension() {
-        test_two_member_group(CipherSuite::P256Aes128V1, true);
+        test_two_member_group(ProtocolVersion::Mls10, CipherSuite::P256Aes128V1, true);
     }
 
     #[test]
     fn test_welcome_processing_missing_tree() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
-        let mut test_group = test_group(cipher_suite);
-        let (bob_key_package, _) = test_member(cipher_suite, b"bob");
+        let mut test_group = test_group(protocol_version, cipher_suite);
+        let (bob_key_package, _) = test_member(protocol_version, cipher_suite, b"bob");
 
         let generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &test_group.credential,
             extensions: &test_group.extensions,
@@ -2225,15 +2319,20 @@ mod test {
             .unwrap();
 
         // Group from Bob's perspective
-        let bob_group =
-            Group::from_welcome_message(welcome.unwrap(), None, bob_key_package, &secret_store);
+        let bob_group = Group::from_welcome_message(
+            welcome.unwrap(),
+            None,
+            bob_key_package,
+            &secret_store,
+            |_, _| true,
+        );
 
         assert_matches!(bob_group, Err(GroupError::RatchetTreeNotFound));
     }
 
     #[test]
     fn test_group_context_ext_proposal_create() {
-        let test_group = test_group(CipherSuite::P256Aes128V1);
+        let test_group = test_group(ProtocolVersion::Mls10, CipherSuite::P256Aes128V1);
 
         let mut extension_list = ExtensionList::new();
         extension_list
@@ -2253,10 +2352,12 @@ mod test {
     fn group_context_extension_proposal_test(
         ext_list: ExtensionList,
     ) -> (TestGroup, Result<CommitGeneration, GroupError>) {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
-        let mut test_group = test_group(cipher_suite);
+        let mut test_group = test_group(protocol_version, cipher_suite);
 
         let generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             credential: &test_group.credential,
             extensions: &test_group.extensions,

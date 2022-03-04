@@ -14,6 +14,7 @@ use crate::key_package::{
 };
 use crate::psk::ExternalPskId;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
+use crate::ProtocolVersion;
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
@@ -124,6 +125,10 @@ impl<C: ClientConfig + Clone> Session<C> {
             ratchet_tree,
             key_package_generation,
             &config.secret_store(),
+            |version, cs| {
+                config.supported_protocol_versions().contains(&version)
+                    && config.supported_cipher_suites().contains(&cs)
+            },
         )?;
 
         Ok(Session {
@@ -146,6 +151,10 @@ impl<C: ClientConfig + Clone> Session<C> {
                 welcome,
                 public_tree,
                 &self.config.secret_store(),
+                |version, cs| {
+                    self.config.supported_protocol_versions().contains(&version)
+                        && self.config.supported_cipher_suites().contains(&cs)
+                },
             )?,
             pending_commit: None,
             config: self.config.clone(),
@@ -191,6 +200,7 @@ impl<C: ClientConfig + Clone> Session<C> {
         let key_package = self.protocol.current_user_key_package()?;
 
         let generator = KeyPackageGenerator {
+            protocol_version: self.protocol.protocol_version,
             cipher_suite: self.protocol.cipher_suite,
             signing_key: &self
                 .config
@@ -225,12 +235,13 @@ impl<C: ClientConfig + Clone> Session<C> {
     pub fn reinit_proposal(
         &mut self,
         group_id: Vec<u8>,
+        protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         extensions: ExtensionList,
     ) -> Result<Proposal, SessionError> {
         Ok(self
             .protocol
-            .reinit_proposal(group_id, cipher_suite, extensions)?)
+            .reinit_proposal(group_id, protocol_version, cipher_suite, extensions)?)
     }
 
     #[inline(always)]
@@ -313,6 +324,7 @@ impl<C: ClientConfig + Clone> Session<C> {
             .ok_or(SessionError::SignerNotFound)?;
 
         let key_package_generator = KeyPackageGenerator {
+            protocol_version: self.protocol.protocol_version,
             cipher_suite: self.protocol.cipher_suite,
             credential: &key_package.credential.clone(),
             extensions: &key_package.extensions.clone(),

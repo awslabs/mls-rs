@@ -17,6 +17,7 @@ pub mod extension;
 mod group;
 mod hash_reference;
 pub mod key_package;
+mod protocol_version;
 mod psk;
 pub mod session;
 mod tree_kem;
@@ -30,6 +31,7 @@ mod tls;
 
 pub use ferriscrypt;
 pub use group::proposal::{AddProposal, Proposal, RemoveProposal, UpdateProposal};
+pub use protocol_version::ProtocolVersion;
 pub use tls_codec;
 
 pub mod time;

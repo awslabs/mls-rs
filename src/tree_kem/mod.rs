@@ -792,6 +792,7 @@ pub(crate) mod test {
     use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
     use crate::tree_kem::node::{NodeTypeResolver, Parent};
     use crate::tree_kem::parent_hash::ParentHash;
+    use crate::ProtocolVersion;
 
     use super::*;
 
@@ -802,6 +803,7 @@ pub(crate) mod test {
     wasm_bindgen_test_configure!(run_in_browser);
 
     pub fn get_test_key_package_sig_key(
+        protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         id: Vec<u8>,
         sig_key: &SecretKey,
@@ -815,6 +817,7 @@ pub(crate) mod test {
         ];
 
         let key_package_gen = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             signing_key: sig_key,
             credential: &credential,
@@ -824,24 +827,33 @@ pub(crate) mod test {
         key_package_gen.generate(None).unwrap()
     }
 
-    pub fn get_test_key_package(cipher_suite: CipherSuite, id: Vec<u8>) -> KeyPackageGeneration {
+    pub fn get_test_key_package(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        id: Vec<u8>,
+    ) -> KeyPackageGeneration {
         let signing_key =
             SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
-        get_test_key_package_sig_key(cipher_suite, id, &signing_key)
+        get_test_key_package_sig_key(protocol_version, cipher_suite, id, &signing_key)
     }
 
     pub fn get_test_tree(
+        protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> (TreeKemPublic, TreeKemPrivate, KeyPackageGeneration) {
-        let test_key_package = get_test_key_package(cipher_suite, b"foo".to_vec());
+        let test_key_package =
+            get_test_key_package(protocol_version, cipher_suite, b"foo".to_vec());
         let (test_public, test_private) = TreeKemPublic::derive(test_key_package.clone()).unwrap();
         (test_public, test_private, test_key_package)
     }
 
     #[test]
     pub fn test_derive() {
-        for cipher_suite in CipherSuite::all() {
-            let (test_public, test_private, test_key_package) = get_test_tree(cipher_suite);
+        for (protocol_version, cipher_suite) in
+            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
+        {
+            let (test_public, test_private, test_key_package) =
+                get_test_tree(protocol_version, cipher_suite);
 
             assert_eq!(
                 test_public.nodes[0],
@@ -859,21 +871,25 @@ pub(crate) mod test {
         }
     }
 
-    pub fn get_test_key_packages(cipher_suite: CipherSuite) -> Vec<ValidatedKeyPackage> {
+    pub fn get_test_key_packages(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+    ) -> Vec<ValidatedKeyPackage> {
         [
-            get_test_key_package(cipher_suite, b"A".to_vec()).key_package,
-            get_test_key_package(cipher_suite, b"B".to_vec()).key_package,
-            get_test_key_package(cipher_suite, b"C".to_vec()).key_package,
+            get_test_key_package(protocol_version, cipher_suite, b"A".to_vec()).key_package,
+            get_test_key_package(protocol_version, cipher_suite, b"B".to_vec()).key_package,
+            get_test_key_package(protocol_version, cipher_suite, b"C".to_vec()).key_package,
         ]
         .to_vec()
     }
 
     #[test]
     fn test_import_export() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
-        let (mut test_tree, _, _) = get_test_tree(cipher_suite);
+        let (mut test_tree, _, _) = get_test_tree(protocol_version, cipher_suite);
 
-        let additional_key_packages = get_test_key_packages(cipher_suite);
+        let additional_key_packages = get_test_key_packages(protocol_version, cipher_suite);
 
         test_tree.add_leaves(additional_key_packages).unwrap();
 
@@ -885,11 +901,12 @@ pub(crate) mod test {
 
     #[test]
     fn test_add_leaf() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let mut tree = TreeKemPublic::new(cipher_suite);
 
-        let key_packages = get_test_key_packages(cipher_suite);
+        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
         let res = tree.add_leaves(key_packages.clone()).unwrap();
 
         // The result of adding a node should be all the references that were added
@@ -944,11 +961,12 @@ pub(crate) mod test {
 
     #[test]
     fn test_get_key_packages() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let mut tree = TreeKemPublic::new(cipher_suite);
 
-        let key_packages = get_test_key_packages(cipher_suite);
+        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
         tree.add_leaves(key_packages).unwrap();
 
         let key_packages = tree.get_key_packages();
@@ -957,11 +975,12 @@ pub(crate) mod test {
 
     #[test]
     fn test_find_leaf() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
 
         let mut tree = TreeKemPublic::new(cipher_suite);
 
-        let key_packages = get_test_key_packages(cipher_suite);
+        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
 
         tree.add_leaves(key_packages.clone()).unwrap();
 
@@ -975,11 +994,12 @@ pub(crate) mod test {
 
     #[test]
     fn test_add_leaf_duplicate() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
 
         let mut tree = TreeKemPublic::new(cipher_suite);
 
-        let key_packages = get_test_key_packages(cipher_suite);
+        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
         tree.add_leaves(key_packages.clone()).unwrap();
 
         let add_res = tree.add_leaves(key_packages);
@@ -994,10 +1014,11 @@ pub(crate) mod test {
 
     #[test]
     fn test_add_leaf_empty_leaf() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let (mut tree, _, _) = get_test_tree(cipher_suite);
-        let key_packages = get_test_key_packages(cipher_suite);
+        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
+        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
 
         tree.add_leaves([key_packages[0].clone()].to_vec()).unwrap();
         tree.nodes[0] = None; // Set the original first node to none
@@ -1011,11 +1032,12 @@ pub(crate) mod test {
 
     #[test]
     fn test_add_leaf_unmerged() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let (mut tree, _, _) = get_test_tree(cipher_suite);
+        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
 
-        let key_packages = get_test_key_packages(cipher_suite);
+        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
 
         tree.add_leaves([key_packages[0].clone(), key_packages[1].clone()].to_vec())
             .unwrap();
@@ -1037,11 +1059,12 @@ pub(crate) mod test {
 
     #[test]
     fn test_update_leaf() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
-        let (mut tree, _, _) = get_test_tree(cipher_suite);
-        let key_packages = get_test_key_packages(cipher_suite);
+        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
+        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
         tree.add_leaves(key_packages.clone()).unwrap();
 
         // Add in parent nodes so we can detect them clearing after update
@@ -1059,7 +1082,8 @@ pub(crate) mod test {
         let original_package_ref = key_packages[0].to_reference().unwrap();
         let original_leaf_index = tree.package_leaf_index(&original_package_ref).unwrap();
 
-        let updated_leaf = get_test_key_package(cipher_suite, b"newpk".to_vec()).key_package;
+        let updated_leaf =
+            get_test_key_package(protocol_version, cipher_suite, b"newpk".to_vec()).key_package;
         let updated_key_ref = updated_leaf.to_reference().unwrap();
 
         tree.update_leaf(&original_package_ref, updated_leaf.clone())
@@ -1105,14 +1129,16 @@ pub(crate) mod test {
 
     #[test]
     fn test_update_leaf_not_found() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
-        let (mut tree, _, _) = get_test_tree(cipher_suite);
-        let key_packages = get_test_key_packages(cipher_suite);
+        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
+        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
         tree.add_leaves(key_packages).unwrap();
 
-        let new_key_package = get_test_key_package(cipher_suite, b"new".to_vec()).key_package;
+        let new_key_package =
+            get_test_key_package(protocol_version, cipher_suite, b"new".to_vec()).key_package;
 
         assert_matches!(
             tree.update_leaf(&KeyPackageRef::from([0u8; 16]), new_key_package),
@@ -1122,11 +1148,12 @@ pub(crate) mod test {
 
     #[test]
     fn test_update_leaf_duplicate() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
-        let (mut tree, _, _) = get_test_tree(cipher_suite);
-        let key_packages = get_test_key_packages(cipher_suite);
+        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
+        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
         tree.add_leaves(key_packages.clone()).unwrap();
 
         let duplicate_key_package = key_packages[1].clone();
@@ -1142,11 +1169,12 @@ pub(crate) mod test {
 
     #[test]
     fn test_remove_leaf() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
-        let (mut tree, _, _) = get_test_tree(cipher_suite);
-        let key_packages = get_test_key_packages(cipher_suite);
+        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
+        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
         tree.add_leaves(key_packages.clone()).unwrap();
 
         let original_leaf_count = tree.occupied_leaf_count();
@@ -1189,11 +1217,12 @@ pub(crate) mod test {
 
     #[test]
     fn test_create_blanks() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
-        let (mut tree, _, _) = get_test_tree(cipher_suite);
-        let key_packages = get_test_key_packages(cipher_suite);
+        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
+        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
         tree.add_leaves(key_packages.clone()).unwrap();
 
         let original_leaf_count = tree.occupied_leaf_count();
@@ -1219,10 +1248,11 @@ pub(crate) mod test {
 
     #[test]
     fn test_remove_leaf_failure() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
-        let (mut tree, _, _) = get_test_tree(cipher_suite);
+        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
 
         assert_matches!(
             tree.remove_leaves(&tree.clone(), vec![KeyPackageRef::from([0u8; 16])]),
@@ -1282,7 +1312,7 @@ pub(crate) mod test {
         }
     }
 
-    fn encap_decap(cipher_suite: CipherSuite, size: usize) {
+    fn encap_decap(protocol_version: ProtocolVersion, cipher_suite: CipherSuite, size: usize) {
         // Generate signing keys and key package generations, and private keys for multiple
         // participants in order to set up state
         let signing_keys: Vec<SecretKey> = (0..size)
@@ -1292,7 +1322,12 @@ pub(crate) mod test {
         let key_package_generations: Vec<KeyPackageGeneration> = (0..size)
             .zip(signing_keys.iter())
             .map(|(index, sk)| {
-                get_test_key_package_sig_key(cipher_suite, index.to_be_bytes().into(), sk)
+                get_test_key_package_sig_key(
+                    protocol_version,
+                    cipher_suite,
+                    index.to_be_bytes().into(),
+                    sk,
+                )
             })
             .collect();
 
@@ -1321,6 +1356,7 @@ pub(crate) mod test {
         let mut encap_tree = test_tree.clone();
 
         let key_package_generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             signing_key: &signing_keys[0],
             credential: &key_packages[0].credential,
@@ -1384,9 +1420,13 @@ pub(crate) mod test {
 
     #[test]
     fn test_encap_decap() {
-        for one_cipher_suite in CipherSuite::all() {
-            println!("Testing Tree KEM encap / decap for: {:?}", one_cipher_suite);
-            encap_decap(one_cipher_suite, 10);
+        for (protocol_version, one_cipher_suite) in
+            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
+        {
+            println!(
+                "Testing Tree KEM encap / decap for: {protocol_version:?} {one_cipher_suite:?}"
+            );
+            encap_decap(protocol_version, one_cipher_suite, 10);
         }
     }
 }

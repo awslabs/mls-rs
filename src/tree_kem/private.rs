@@ -118,6 +118,7 @@ mod test {
             node::LeafIndex,
             test::{get_test_key_package, get_test_key_package_sig_key},
         },
+        ProtocolVersion,
     };
 
     use super::*;
@@ -153,15 +154,21 @@ mod test {
     // Charlie. Return (Public Tree, Charlie's private key, update path, path secret)
     // The ratchet tree returned has leaf indexes as [alice, bob, charlie]
     fn update_secrets_setup(
+        protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> (TreeKemPublic, TreeKemPrivate, UpdatePathGeneration, Vec<u8>) {
         let alice_signing =
             SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
 
-        let alice_key_package =
-            get_test_key_package_sig_key(cipher_suite, b"alice".to_vec(), &alice_signing);
-        let bob_key_package = get_test_key_package(cipher_suite, b"bob".to_vec());
-        let charlie_key_package = get_test_key_package(cipher_suite, b"charlie".to_vec());
+        let alice_key_package = get_test_key_package_sig_key(
+            protocol_version,
+            cipher_suite,
+            b"alice".to_vec(),
+            &alice_signing,
+        );
+        let bob_key_package = get_test_key_package(protocol_version, cipher_suite, b"bob".to_vec());
+        let charlie_key_package =
+            get_test_key_package(protocol_version, cipher_suite, b"charlie".to_vec());
 
         // Create a new public tree with Alice
         let (mut public_tree, alice_private) =
@@ -176,6 +183,7 @@ mod test {
             .unwrap();
 
         let key_package_generator = KeyPackageGenerator {
+            protocol_version,
             cipher_suite,
             signing_key: &alice_signing,
             credential: &alice_key_package.key_package.credential,
@@ -212,10 +220,11 @@ mod test {
 
     #[test]
     fn test_update_secrets() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = crate::cipher_suite::CipherSuite::Curve25519Aes128V1;
 
         let (public_tree, mut charlie_private, update_path_gen, path_secret) =
-            update_secrets_setup(cipher_suite);
+            update_secrets_setup(protocol_version, cipher_suite);
 
         let existing_private = charlie_private
             .secret_keys
@@ -258,10 +267,11 @@ mod test {
 
     #[test]
     fn test_update_secrets_key_mismatch() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = crate::cipher_suite::CipherSuite::Curve25519Aes128V1;
 
         let (mut public_tree, mut charlie_private, _, path_secret) =
-            update_secrets_setup(cipher_suite);
+            update_secrets_setup(protocol_version, cipher_suite);
 
         // Sabotage the public tree
         public_tree

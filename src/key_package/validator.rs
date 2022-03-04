@@ -26,6 +26,8 @@ pub enum KeyPackageValidationError {
     RequiredProposalNotFound(ProposalType),
     #[error("found cipher suite {0:?} expected {1:?}")]
     InvalidCipherSuite(CipherSuite, CipherSuite),
+    #[error("found protocol version {0:?} expected {1:?}")]
+    InvalidProtocolVersion(ProtocolVersion, ProtocolVersion),
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -65,6 +67,7 @@ pub enum KeyPackageValidationOptions {
 }
 
 pub struct KeyPackageValidator<'a> {
+    pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     pub required_capabilities: Option<&'a RequiredCapabilitiesExt>,
     pub options: HashSet<KeyPackageValidationOptions>,
@@ -116,6 +119,14 @@ impl<'a> KeyPackageValidator<'a> {
                     lifetime_ext,
                 ));
             }
+        }
+
+        // Verify that the protocol version matches
+        if package.version != self.protocol_version {
+            return Err(KeyPackageValidationError::InvalidProtocolVersion(
+                package.version,
+                self.protocol_version,
+            ));
         }
 
         // Verify that the cipher suite matches
@@ -182,10 +193,13 @@ mod test {
 
     #[test]
     fn test_standard_validation() {
-        for cipher_suite in CipherSuite::all() {
-            let test_package = test_key_package(cipher_suite);
+        for (protocol_version, cipher_suite) in
+            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
+        {
+            let test_package = test_key_package(protocol_version, cipher_suite);
 
             let validator = KeyPackageValidator {
+                protocol_version,
                 cipher_suite,
                 required_capabilities: None,
                 options: Default::default(),
@@ -196,8 +210,11 @@ mod test {
         }
     }
 
-    fn invalid_signature_key_package(cipher_suite: CipherSuite) -> KeyPackage {
-        let mut test_package = test_key_package(cipher_suite);
+    fn invalid_signature_key_package(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+    ) -> KeyPackage {
+        let mut test_package = test_key_package(protocol_version, cipher_suite);
         test_package.signature = SecureRng::gen(32).unwrap();
 
         test_package
@@ -205,10 +222,13 @@ mod test {
 
     #[test]
     fn test_invalid_signature() {
-        for cipher_suite in CipherSuite::all() {
-            let test_package = invalid_signature_key_package(cipher_suite);
+        for (protocol_version, cipher_suite) in
+            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
+        {
+            let test_package = invalid_signature_key_package(protocol_version, cipher_suite);
 
             let validator = KeyPackageValidator {
+                protocol_version,
                 cipher_suite,
                 required_capabilities: None,
                 options: Default::default(),
@@ -221,11 +241,13 @@ mod test {
 
     #[test]
     fn test_skip_signature_check() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
-        let test_package = invalid_signature_key_package(cipher_suite);
+        let test_package = invalid_signature_key_package(protocol_version, cipher_suite);
 
         let validator = KeyPackageValidator {
-            cipher_suite: CipherSuite::Curve25519Aes128V1,
+            protocol_version,
+            cipher_suite,
             required_capabilities: None,
             options: [KeyPackageValidationOptions::SkipSignatureCheck].into(),
         };
@@ -234,8 +256,11 @@ mod test {
         assert_eq!(res.0, test_package);
     }
 
-    fn invalid_expiration_key_package(cipher_suite: CipherSuite) -> KeyPackage {
-        let mut test_package = test_key_package(cipher_suite);
+    fn invalid_expiration_key_package(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+    ) -> KeyPackage {
+        let mut test_package = test_key_package(protocol_version, cipher_suite);
         test_package
             .extensions
             .set_extension(LifetimeExt {
@@ -249,11 +274,13 @@ mod test {
 
     #[test]
     fn test_expired() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let test_package = invalid_expiration_key_package(cipher_suite);
+        let test_package = invalid_expiration_key_package(protocol_version, cipher_suite);
 
         let validator = KeyPackageValidator {
+            protocol_version,
             cipher_suite,
             required_capabilities: None,
             options: [KeyPackageValidationOptions::SkipSignatureCheck].into(),
@@ -266,11 +293,13 @@ mod test {
 
     #[test]
     fn test_skip_expiration_check() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let test_package = invalid_expiration_key_package(cipher_suite);
+        let test_package = invalid_expiration_key_package(protocol_version, cipher_suite);
 
         let validator = KeyPackageValidator {
+            protocol_version,
             cipher_suite,
             required_capabilities: None,
             options: [
@@ -286,6 +315,7 @@ mod test {
 
     #[test]
     fn test_required_capabilities_check() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let test_client = get_basic_config(cipher_suite, "foo")
@@ -293,7 +323,11 @@ mod test {
             .build_client();
 
         let key_package: KeyPackage = test_client
-            .gen_key_package(cipher_suite, LifetimeExt::years(1).unwrap())
+            .gen_key_package(
+                protocol_version,
+                cipher_suite,
+                LifetimeExt::years(1).unwrap(),
+            )
             .unwrap()
             .key_package
             .into();
@@ -304,6 +338,7 @@ mod test {
         };
 
         let validator = KeyPackageValidator {
+            protocol_version,
             cipher_suite,
             required_capabilities: Some(&required_capabilities),
             options: Default::default(),
@@ -315,8 +350,9 @@ mod test {
 
     #[test]
     fn test_required_extension_failure() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
-        let key_package = test_key_package(cipher_suite);
+        let key_package = test_key_package(protocol_version, cipher_suite);
 
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![255],
@@ -324,6 +360,7 @@ mod test {
         };
 
         let validator = KeyPackageValidator {
+            protocol_version,
             cipher_suite,
             required_capabilities: Some(&required_capabilities),
             options: Default::default(),
@@ -338,8 +375,9 @@ mod test {
 
     #[test]
     fn test_required_proposal_failure() {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
-        let key_package = test_key_package(cipher_suite);
+        let key_package = test_key_package(protocol_version, cipher_suite);
 
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![],
@@ -347,6 +385,7 @@ mod test {
         };
 
         let validator = KeyPackageValidator {
+            protocol_version,
             cipher_suite,
             required_capabilities: Some(&required_capabilities),
             options: Default::default(),
@@ -360,12 +399,14 @@ mod test {
     }
 
     fn test_missing_extension(id: u16) -> Result<ValidatedKeyPackage, KeyPackageValidationError> {
+        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
-        let mut test_package = test_key_package(cipher_suite);
+        let mut test_package = test_key_package(protocol_version, cipher_suite);
 
         test_package.extensions.retain(|e| e.extension_type != id);
 
         let validator = KeyPackageValidator {
+            protocol_version,
             cipher_suite,
             required_capabilities: None,
             options: [KeyPackageValidationOptions::SkipSignatureCheck].into(),

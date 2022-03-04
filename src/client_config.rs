@@ -1,11 +1,12 @@
 use crate::{
-    cipher_suite::{CipherSuite, ProtocolVersion},
+    cipher_suite::CipherSuite,
     client::Client,
     credential::Credential,
     extension::{CapabilitiesExt, ExtensionType},
     group::proposal::Proposal,
     key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageRef},
     psk::{ExternalPskId, Psk},
+    ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::{Curve, PublicKey, SecretKey};
 use std::{
@@ -63,6 +64,8 @@ pub trait ClientConfig {
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
+    fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
+
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
     fn preferences(&self) -> Preferences;
     fn external_key_id(&self) -> Option<Vec<u8>>;
@@ -73,7 +76,7 @@ pub trait ClientConfig {
 
     fn capabilities(&self) -> CapabilitiesExt {
         CapabilitiesExt {
-            protocol_versions: vec![ProtocolVersion::Mls10],
+            protocol_versions: self.supported_protocol_versions(),
             cipher_suites: self.supported_cipher_suites(),
             extensions: self.supported_extensions(),
             proposals: vec![], // TODO: Support registering custom proposals here
@@ -193,7 +196,7 @@ impl Preferences {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct InMemoryClientConfig {
     preferences: Preferences,
@@ -204,13 +207,26 @@ pub struct InMemoryClientConfig {
     proposal_filter: Option<ProposalFilter>,
     keychain: InMemoryKeychain,
     psk_store: InMemoryPskStore,
+    protocol_versions: Vec<ProtocolVersion>,
+    cipher_suites: Vec<CipherSuite>,
 }
 
 type ProposalFilter = Arc<dyn Fn(&Proposal) -> Result<(), String> + Send + Sync>;
 
 impl InMemoryClientConfig {
     pub fn new() -> Self {
-        Default::default()
+        Self {
+            preferences: Default::default(),
+            external_signing_keys: Default::default(),
+            external_key_id: Default::default(),
+            supported_extensions: Default::default(),
+            key_packages: Default::default(),
+            proposal_filter: Default::default(),
+            keychain: Default::default(),
+            psk_store: Default::default(),
+            protocol_versions: ProtocolVersion::all().collect(),
+            cipher_suites: CipherSuite::all().collect(),
+        }
     }
 
     #[must_use]
@@ -265,8 +281,38 @@ impl InMemoryClientConfig {
         self
     }
 
+    #[must_use]
+    pub fn with_protocol_version(mut self, version: ProtocolVersion) -> Self {
+        self.protocol_versions.push(version);
+        self
+    }
+
+    #[must_use]
+    pub fn clear_protocol_versions(mut self) -> Self {
+        self.protocol_versions.clear();
+        self
+    }
+
+    #[must_use]
+    pub fn with_cipher_suite(mut self, cipher_suite: CipherSuite) -> Self {
+        self.cipher_suites.push(cipher_suite);
+        self
+    }
+
+    #[must_use]
+    pub fn clear_cipher_suites(mut self) -> Self {
+        self.cipher_suites.clear();
+        self
+    }
+
     pub fn build_client(self) -> Client<Self> {
         Client::new(self)
+    }
+}
+
+impl Default for InMemoryClientConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -325,7 +371,7 @@ impl ClientConfig for InMemoryClientConfig {
     }
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
-        CipherSuite::all().collect()
+        self.cipher_suites.clone()
     }
 
     fn keychain(&self) -> Self::Keychain {
@@ -334,6 +380,10 @@ impl ClientConfig for InMemoryClientConfig {
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
         self.supported_extensions.clone()
+    }
+
+    fn supported_protocol_versions(&self) -> Vec<ProtocolVersion> {
+        self.protocol_versions.clone()
     }
 }
 
