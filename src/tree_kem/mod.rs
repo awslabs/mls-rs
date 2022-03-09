@@ -27,6 +27,7 @@ pub mod parent_hash;
 pub mod path_secret;
 mod private;
 mod tree_hash;
+pub mod tree_validator;
 pub mod update_path;
 
 pub use private::*;
@@ -231,29 +232,6 @@ impl TreeKemPublic {
             .borrow_as_leaf(index)
             .map(|l| &l.key_package)
             .map_err(|e| e.into())
-    }
-
-    // TODO: Extract this into a TreeValidator struct and write tests against it
-    pub fn validate(
-        &self,
-        expected_tree_hash: &[u8],
-        validator: &KeyPackageValidator,
-    ) -> Result<(), RatchetTreeError> {
-        //Verify that the tree hash of the ratchet tree matches the tree_hash field in the GroupInfo.
-        if self.tree_hash()? != expected_tree_hash {
-            return Err(RatchetTreeError::TreeHashMismatch);
-        }
-
-        // Validate the parent hashes in the tree
-        self.validate_parent_hashes()?;
-
-        // For each non-empty leaf node, verify the signature on the KeyPackage.
-        self.nodes
-            .non_empty_leaves()
-            .map(|l| &l.1.key_package)
-            .try_for_each(|kp| validator.check_signature(kp))?;
-
-        Ok(())
     }
 
     fn update_unmerged(&mut self, key_package_ref: &KeyPackageRef) -> Result<(), RatchetTreeError> {
@@ -837,8 +815,24 @@ pub(crate) mod test {
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> (TreeKemPublic, TreeKemPrivate, KeyPackageGeneration) {
-        let test_key_package =
-            get_test_key_package(protocol_version, cipher_suite, b"foo".to_vec());
+        let signing_key =
+            SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
+
+        get_test_tree_with_signer(protocol_version, cipher_suite, &signing_key)
+    }
+
+    pub fn get_test_tree_with_signer(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        signing_key: &SecretKey,
+    ) -> (TreeKemPublic, TreeKemPrivate, KeyPackageGeneration) {
+        let test_key_package = get_test_key_package_sig_key(
+            protocol_version,
+            cipher_suite,
+            b"foo".to_vec(),
+            signing_key,
+        );
+
         let (test_public, test_private) = TreeKemPublic::derive(test_key_package.clone()).unwrap();
         (test_public, test_private, test_key_package)
     }

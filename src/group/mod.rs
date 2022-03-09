@@ -31,6 +31,7 @@ use crate::psk::{
 };
 use crate::tree_kem::node::{LeafIndex, NodeIndex};
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError};
+use crate::tree_kem::tree_validator::{TreeValidationError, TreeValidator};
 use crate::tree_kem::{
     RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathGeneration,
     UpdatePathValidationError, UpdatePathValidator,
@@ -167,6 +168,8 @@ pub enum GroupError {
     UpdatePathValidationError(#[from] UpdatePathValidationError),
     #[error(transparent)]
     ProposalCacheError(#[from] ProposalCacheError),
+    #[error(transparent)]
+    TreeValidationError(#[from] TreeValidationError),
     #[error("Cipher suite does not match")]
     CipherSuiteMismatch,
     #[error("Invalid key package signature")]
@@ -600,17 +603,17 @@ impl Group {
             return Err(GroupError::InvalidSignature);
         }
 
-        let extensions = group_info.group_context_extensions.get_extension()?;
-
-        let key_package_validator = KeyPackageValidator {
-            protocol_version: group_info.version,
-            cipher_suite: group_info.cipher_suite,
-            required_capabilities: extensions.as_ref(),
-            options: HashSet::from([KeyPackageValidationOptions::SkipLifetimeCheck]),
-        };
+        let required_capabilities = group_info.group_context_extensions.get_extension()?;
 
         // Verify the integrity of the ratchet tree
-        public_tree.validate(&group_info.tree_hash, &key_package_validator)?;
+        let tree_validator = TreeValidator::new(
+            group_info.version,
+            group_info.cipher_suite,
+            &group_info.tree_hash,
+            required_capabilities.as_ref(),
+        );
+
+        tree_validator.validate(&public_tree)?;
 
         // Identify a leaf in the tree array (any even-numbered node) whose key_package field is
         // identical to the the KeyPackage. If no such field exists, return an error. Let index

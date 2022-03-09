@@ -10,7 +10,7 @@ use ferriscrypt::{
 };
 use thiserror::Error;
 use tls_codec::{Serialize, Size, TlsByteSliceU32};
-use tls_codec_derive::{TlsSerialize, TlsSize};
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Debug, Error)]
 pub enum LeafNodeError {
@@ -26,7 +26,7 @@ pub enum LeafNodeError {
     ParentHashError(Box<dyn std::error::Error>),
 }
 
-#[derive(Debug, Clone, TlsSize, TlsSerialize, PartialEq)]
+#[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize, PartialEq)]
 #[repr(u8)]
 pub enum LeafNodeSource {
     #[tls_codec(discriminant = 1)]
@@ -35,7 +35,7 @@ pub enum LeafNodeSource {
     Commit(ParentHash),
 }
 
-#[derive(Debug, Clone, TlsSize, TlsSerialize, PartialEq)]
+#[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize, PartialEq)]
 #[non_exhaustive]
 pub struct LeafNode {
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]

@@ -195,7 +195,7 @@ impl TreeKemPublic {
         Ok(leaf_hash)
     }
 
-    fn validate_parent_hash(
+    pub(super) fn validate_parent_hash(
         &self,
         node_index: NodeIndex,
         node: &Parent,
@@ -238,20 +238,6 @@ impl TreeKemPublic {
         Err(RatchetTreeError::InvalidParentHash(
             "no match found".to_string(),
         ))
-    }
-
-    pub fn validate_parent_hashes(&self) -> Result<(), RatchetTreeError> {
-        //For each non-empty parent node, verify that exactly one of the node's children are
-        // non-empty and have the hash of this node set as their parent_hash value (if the child
-        // is another parent) or has a parent_hash extension in the KeyPackage containing the same
-        // value (if the child is a leaf). If either of the node's children is empty, and in
-        // particular does not have a parent hash, then its respective children's
-        // values have to be considered instead.
-        for (node_index, node) in self.nodes.non_empty_parents() {
-            self.validate_parent_hash(node_index, node)?;
-        }
-
-        Ok(())
     }
 }
 

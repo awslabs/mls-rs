@@ -13,8 +13,9 @@ use crate::{
 };
 use ferriscrypt::asym::ec_key::Curve;
 use thiserror::Error;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, TlsSize, TlsSerialize, TlsDeserialize)]
 pub struct ValidatedLeafNode(LeafNode);
 
 impl From<ValidatedLeafNode> for LeafNode {
