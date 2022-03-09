@@ -2,7 +2,7 @@ use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, KeyPackageRepository, Keychain};
 use crate::credential::CredentialError;
 use crate::extension::{ExtensionError, ExtensionList, LifetimeExt, MlsExtension};
-use crate::group::framing::{Content, MLSMessage, MLSPlaintext, Sender};
+use crate::group::framing::{Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender};
 use crate::group::message_signature::MessageSignatureError;
 use crate::group::proposal::{AddProposal, Proposal, RemoveProposal};
 use crate::key_package::{
@@ -133,12 +133,14 @@ impl<C: ClientConfig + Clone> Client<C> {
 
     pub fn propose_add_from_new_member(
         &self,
+        version: ProtocolVersion,
         group_cipher_suite: CipherSuite,
         group_id: Vec<u8>,
         key_package: KeyPackage,
         epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
         self.propose_from_external(
+            version,
             group_cipher_suite,
             group_id,
             Sender::NewMember,
@@ -149,12 +151,14 @@ impl<C: ClientConfig + Clone> Client<C> {
 
     pub fn propose_add_from_preconfigured(
         &self,
+        version: ProtocolVersion,
         group_cipher_suite: CipherSuite,
         group_id: Vec<u8>,
         proposal: AddProposal,
         epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
         self.propose_from_external(
+            version,
             group_cipher_suite,
             group_id,
             Sender::Preconfigured(
@@ -169,12 +173,14 @@ impl<C: ClientConfig + Clone> Client<C> {
 
     pub fn propose_remove_from_preconfigured(
         &self,
+        version: ProtocolVersion,
         group_cipher_suite: CipherSuite,
         group_id: Vec<u8>,
         proposal: RemoveProposal,
         epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
         self.propose_from_external(
+            version,
             group_cipher_suite,
             group_id,
             Sender::Preconfigured(
@@ -189,6 +195,7 @@ impl<C: ClientConfig + Clone> Client<C> {
 
     fn propose_from_external(
         &self,
+        version: ProtocolVersion,
         group_cipher_suite: CipherSuite,
         group_id: Vec<u8>,
         sender: Sender,
@@ -205,7 +212,10 @@ impl<C: ClientConfig + Clone> Client<C> {
 
         message.sign(&signer, None, false)?;
 
-        let message = MLSMessage::Plain(message);
+        let message = MLSMessage {
+            version,
+            payload: MLSMessagePayload::Plain(message),
+        };
         Ok(message.tls_serialize_detached()?)
     }
 }
@@ -351,6 +361,7 @@ mod test {
 
         let proposal = bob
             .propose_add_from_new_member(
+                TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 TEST_GROUP.to_vec(),
                 bob_key_gen.key_package.clone().into(),
@@ -469,6 +480,7 @@ mod test {
         let msg = env
             .ted
             .propose_add_from_preconfigured(
+                TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 TEST_GROUP.to_vec(),
                 proposal.clone(),
@@ -508,6 +520,7 @@ mod test {
         let msg = env
             .ted
             .propose_remove_from_preconfigured(
+                TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 TEST_GROUP.to_vec(),
                 proposal.clone(),
@@ -539,6 +552,7 @@ mod test {
 
         let msg = ted
             .propose_add_from_new_member(
+                TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 TEST_GROUP.to_vec(),
                 bob_key_gen.key_package.into(),
@@ -563,6 +577,7 @@ mod test {
 
         let proposal = bob
             .propose_add_from_new_member(
+                TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 TEST_GROUP.to_vec(),
                 bob_key_gen.key_package.into(),

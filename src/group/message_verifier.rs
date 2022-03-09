@@ -159,7 +159,7 @@ mod tests {
             membership_tag::MembershipTag,
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_member},
-            Content, Group, GroupError, MLSPlaintext, MessageVerifier, Sender,
+            Content, Group, GroupError, MLSMessagePayload, MLSPlaintext, MessageVerifier, Sender,
         },
         key_package::KeyPackageGenerator,
         ProtocolVersion,
@@ -280,12 +280,18 @@ mod tests {
                 )
                 .unwrap();
 
+            let welcome = match welcome.unwrap().payload {
+                MLSMessagePayload::Welcome(w) => w,
+                _ => panic!("Expected Welcome message"),
+            };
+
             alice
                 .group
                 .process_pending_commit(commit_generation, &secret_store)
                 .unwrap();
             let group = Group::from_welcome_message(
-                welcome.unwrap(),
+                TEST_PROTOCOL_VERSION,
+                welcome,
                 Some(alice.group.current_epoch_tree().unwrap().clone()),
                 key_pkg_gen,
                 &secret_store,

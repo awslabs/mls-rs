@@ -261,7 +261,6 @@ impl From<&GroupInfo> for GroupContext {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct GroupInfo {
-    version: ProtocolVersion,
     cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub group_id: Vec<u8>,
@@ -397,11 +396,12 @@ pub enum OutboundPlaintext {
 }
 
 impl OutboundPlaintext {
-    pub fn into_message(self) -> MLSMessage {
-        match self {
-            OutboundPlaintext::Plaintext(m) => MLSMessage::Plain(m),
-            OutboundPlaintext::Ciphertext { encrypted, .. } => MLSMessage::Cipher(encrypted),
-        }
+    pub fn into_message(self, version: ProtocolVersion) -> MLSMessage {
+        let payload = match self {
+            OutboundPlaintext::Plaintext(m) => MLSMessagePayload::Plain(m),
+            OutboundPlaintext::Ciphertext { encrypted, .. } => MLSMessagePayload::Cipher(encrypted),
+        };
+        MLSMessage { version, payload }
     }
 }
 
@@ -493,6 +493,7 @@ impl Group {
     }
 
     pub fn from_welcome_message<S, F>(
+        protocol_version: ProtocolVersion,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package: KeyPackageGeneration,
@@ -504,6 +505,7 @@ impl Group {
         F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
     {
         Self::join_with_welcome(
+            protocol_version,
             welcome,
             public_tree,
             key_package.key_package.to_reference()?,
@@ -514,7 +516,9 @@ impl Group {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn join_with_welcome<P: PskStore, F>(
+        protocol_version: ProtocolVersion,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package_ref: KeyPackageRef,
@@ -572,9 +576,9 @@ impl Group {
         let decrypted_group_info = welcome_secret.decrypt(&welcome.encrypted_group_info)?;
         let group_info = GroupInfo::tls_deserialize(&mut &*decrypted_group_info)?;
 
-        if !support_version_and_cipher(group_info.version, group_info.cipher_suite) {
+        if !support_version_and_cipher(protocol_version, group_info.cipher_suite) {
             return Err(GroupError::UnsupportedProtocolVersionOrCipherSuite(
-                group_info.version,
+                protocol_version,
                 group_info.cipher_suite,
             ));
         }
@@ -607,7 +611,7 @@ impl Group {
 
         // Verify the integrity of the ratchet tree
         let tree_validator = TreeValidator::new(
-            group_info.version,
+            protocol_version,
             group_info.cipher_suite,
             &group_info.tree_hash,
             required_capabilities.as_ref(),
@@ -672,7 +676,7 @@ impl Group {
         let epoch_repo = EpochRepository::new(epoch, 3);
 
         Ok(Group {
-            protocol_version: group_info.version,
+            protocol_version,
             cipher_suite: group_info.cipher_suite,
             context,
             private_tree,
@@ -898,6 +902,7 @@ impl Group {
         Ok(plaintext)
     }
 
+    /// Returns commit and optional `MLSMessage` containing a `Welcome`
     pub fn commit_proposals<P: PskStore, S: Signer>(
         &mut self,
         proposals: Vec<Proposal>,
@@ -906,7 +911,7 @@ impl Group {
         encrypted: bool,
         ratchet_tree_extension: bool,
         secret_store: &P,
-    ) -> Result<(CommitGeneration, Option<Welcome>), GroupError> {
+    ) -> Result<(CommitGeneration, Option<MLSMessage>), GroupError> {
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
         // by value
@@ -1054,7 +1059,6 @@ impl Group {
         // Construct a GroupInfo reflecting the new state
         // Group ID, epoch, tree, and confirmed transcript hash from the new state
         let mut group_info = GroupInfo {
-            version: protocol_version,
             cipher_suite,
             group_id: self.context.group_id.clone(),
             epoch: provisional_group_context.epoch,
@@ -1076,15 +1080,20 @@ impl Group {
             .sign(&group_info.to_signable_vec()?)
             .map_err(|e| GroupError::SignerError(Box::new(e)))?;
 
-        let welcome = self.make_welcome_message(
-            key_pkg_refs,
-            &next_epoch.public_tree,
-            &joiner_secret,
-            &psk_secret,
-            update_path.as_ref(),
-            provisional_state.psks,
-            &group_info,
-        )?;
+        let welcome = self
+            .make_welcome_message(
+                key_pkg_refs,
+                &next_epoch.public_tree,
+                &joiner_secret,
+                &psk_secret,
+                update_path.as_ref(),
+                provisional_state.psks,
+                &group_info,
+            )?
+            .map(|welcome| MLSMessage {
+                version: protocol_version,
+                payload: MLSMessagePayload::Welcome(welcome),
+            });
 
         let pending_commit = CommitGeneration {
             plaintext: self.format_for_wire(plaintext, encrypted)?,
@@ -1213,7 +1222,6 @@ impl Group {
         let epoch_repo = EpochRepository::new(epoch.clone(), 3);
 
         let mut group_info = GroupInfo {
-            version: self.protocol_version,
             cipher_suite: self.cipher_suite,
             group_id: sub_group_id,
             epoch: 1,
@@ -1269,6 +1277,7 @@ impl Group {
         F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
     {
         let subgroup = Self::join_with_welcome(
+            self.protocol_version,
             welcome,
             public_tree,
             self.private_tree.key_package_ref.clone(),
@@ -2240,9 +2249,15 @@ mod test {
             Some(test_group.group.current_epoch_tree().unwrap().clone())
         };
 
+        let welcome = match welcome.unwrap().payload {
+            MLSMessagePayload::Welcome(w) => w,
+            _ => panic!("Expected Welcome message"),
+        };
+
         // Group from Bob's perspective
         let bob_group = Group::from_welcome_message(
-            welcome.unwrap(),
+            protocol_version,
+            welcome,
             tree,
             bob_key_package.clone(),
             &secret_store,
@@ -2307,9 +2322,15 @@ mod test {
             )
             .unwrap();
 
+        let welcome = match welcome.unwrap().payload {
+            MLSMessagePayload::Welcome(w) => w,
+            _ => panic!("Expected Welcome message"),
+        };
+
         // Group from Bob's perspective
         let bob_group = Group::from_welcome_message(
-            welcome.unwrap(),
+            protocol_version,
+            welcome,
             None,
             bob_key_package,
             &secret_store,

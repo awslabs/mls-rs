@@ -2,7 +2,7 @@ use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, KeyPackageRepository, Keychain, Signer};
 use crate::extension::ExtensionList;
 
-pub use crate::group::framing::{ContentType, MLSMessage};
+pub use crate::group::framing::{ContentType, MLSMessage, MLSMessagePayload};
 
 use crate::group::framing::Content;
 use crate::group::{
@@ -46,6 +46,10 @@ pub enum SessionError {
     KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     ProposalRejected(Box<dyn std::error::Error + Send + Sync>),
+    #[error("expected MLSMessage containing a Welcome")]
+    ExpectedWelcomeMessage,
+    #[error("expected protocol version {0:?}, found version {1:?}")]
+    InvalidProtocol(ProtocolVersion, ProtocolVersion),
 }
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -95,10 +99,15 @@ impl<C: ClientConfig + Clone> Session<C> {
     pub(crate) fn join(
         key_package: Option<&KeyPackageRef>,
         ratchet_tree_data: Option<&[u8]>,
-        welcome_message_data: &[u8],
+        welcome_message: &[u8],
         config: C,
     ) -> Result<Self, SessionError> {
-        let welcome_message = Welcome::tls_deserialize(&mut &*welcome_message_data)?;
+        let welcome_message = MLSMessage::tls_deserialize(&mut &*welcome_message)?;
+        let protocol_version = welcome_message.version;
+        let welcome_message = match welcome_message.payload {
+            MLSMessagePayload::Welcome(w) => Ok(w),
+            _ => Err(SessionError::ExpectedWelcomeMessage),
+        }?;
 
         let key_package_generation = match key_package {
             Some(r) => config.key_package_repo().get(r),
@@ -121,6 +130,7 @@ impl<C: ClientConfig + Clone> Session<C> {
             .transpose()?;
 
         let group = Group::from_welcome_message(
+            protocol_version,
             welcome_message,
             ratchet_tree,
             key_package_generation,
@@ -288,7 +298,9 @@ impl<C: ClientConfig + Clone> Session<C> {
 
     #[inline(always)]
     fn serialize_control(&mut self, plaintext: OutboundPlaintext) -> Result<Vec<u8>, SessionError> {
-        Ok(plaintext.into_message().tls_serialize_detached()?)
+        Ok(plaintext
+            .into_message(self.protocol.protocol_version)
+            .tls_serialize_detached()?)
     }
 
     fn send_proposal(&mut self, proposal: Proposal) -> Result<Vec<u8>, SessionError> {
@@ -366,22 +378,28 @@ impl<C: ClientConfig + Clone> Session<C> {
         &mut self,
         message: MLSMessage,
     ) -> Result<ProcessedMessage, SessionError> {
-        match message {
-            MLSMessage::Plain(message) => {
+        if message.version != self.protocol.protocol_version {
+            return Err(SessionError::InvalidProtocol(
+                self.protocol.protocol_version,
+                message.version,
+            ));
+        }
+        match message.payload {
+            MLSMessagePayload::Plain(message) => {
                 let message = self.protocol.verify_incoming_plaintext(message, |id| {
                     self.config.external_signing_key(id)
                 })?;
                 self.process_incoming_plaintext(message)
             }
-            MLSMessage::Cipher(message) => {
+            MLSMessagePayload::Cipher(message) => {
                 let message = self.protocol.verify_incoming_ciphertext(message, |id| {
                     self.config.external_signing_key(id)
                 })?;
                 self.process_incoming_plaintext(message)
             }
-            MLSMessage::Welcome(message) => Ok(ProcessedMessage::Welcome(message)),
-            MLSMessage::GroupInfo(message) => Ok(ProcessedMessage::GroupInfo(message)),
-            MLSMessage::KeyPackage(message) => Ok(ProcessedMessage::KeyPackage(message)),
+            MLSMessagePayload::Welcome(message) => Ok(ProcessedMessage::Welcome(message)),
+            MLSMessagePayload::GroupInfo(message) => Ok(ProcessedMessage::GroupInfo(message)),
+            MLSMessagePayload::KeyPackage(message) => Ok(ProcessedMessage::KeyPackage(message)),
         }
     }
 
@@ -436,7 +454,11 @@ impl<C: ClientConfig + Clone> Session<C> {
             .protocol
             .encrypt_application_message(data, &self.signer()?)?;
 
-        Ok(MLSMessage::Cipher(ciphertext).tls_serialize_detached()?)
+        let msg = MLSMessage {
+            version: self.protocol.protocol_version,
+            payload: MLSMessagePayload::Cipher(ciphertext),
+        };
+        Ok(msg.tls_serialize_detached()?)
     }
 
     pub fn export_tree(&self) -> Result<Vec<u8>, GroupError> {

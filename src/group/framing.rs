@@ -184,10 +184,16 @@ pub struct MLSSenderDataAAD {
     pub content_type: ContentType,
 }
 
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct MLSMessage {
+    pub version: ProtocolVersion,
+    pub payload: MLSMessagePayload,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u8)]
-pub enum MLSMessage {
+pub enum MLSMessagePayload {
     #[tls_codec(discriminant = 1)]
     Plain(MLSPlaintext),
     Cipher(MLSCiphertext),
@@ -198,37 +204,25 @@ pub enum MLSMessage {
 
 impl MLSMessage {
     pub fn wire_format(&self) -> WireFormat {
-        match self {
-            MLSMessage::Plain(_) => WireFormat::Plain,
-            MLSMessage::Cipher(_) => WireFormat::Cipher,
-            MLSMessage::Welcome(_) => WireFormat::Welcome,
-            MLSMessage::GroupInfo(_) => WireFormat::PublicGroupState,
-            MLSMessage::KeyPackage(_) => WireFormat::KeyPackage,
+        match self.payload {
+            MLSMessagePayload::Plain(_) => WireFormat::Plain,
+            MLSMessagePayload::Cipher(_) => WireFormat::Cipher,
+            MLSMessagePayload::Welcome(_) => WireFormat::Welcome,
+            MLSMessagePayload::GroupInfo(_) => WireFormat::PublicGroupState,
+            MLSMessagePayload::KeyPackage(_) => WireFormat::KeyPackage,
         }
     }
 
     // TODO: This function should be replaced with a special client for servers parsing
     // plaintext control messages
     pub fn commit_sender_update(&self) -> Option<&KeyPackage> {
-        match self {
-            MLSMessage::Plain(m) => match &m.content.content {
+        match &self.payload {
+            MLSMessagePayload::Plain(m) => match &m.content.content {
                 Content::Commit(commit) => commit.path.as_ref().map(|cp| &cp.leaf_key_package),
                 _ => None,
             },
             _ => None,
         }
-    }
-}
-
-impl From<MLSPlaintext> for MLSMessage {
-    fn from(m: MLSPlaintext) -> Self {
-        Self::Plain(m)
-    }
-}
-
-impl From<MLSCiphertext> for MLSMessage {
-    fn from(m: MLSCiphertext) -> Self {
-        Self::Cipher(m)
     }
 }
 
