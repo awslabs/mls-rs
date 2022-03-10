@@ -28,7 +28,7 @@ impl<'a> Label<'a> {
     fn new(length: u16, label: &'a str, context: &'a [u8]) -> Self {
         Self {
             length,
-            label: [b"mls10 ", label.as_bytes()].concat(),
+            label: [b"MLS 1.0 ", label.as_bytes()].concat(),
             context,
         }
     }
