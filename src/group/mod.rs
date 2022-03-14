@@ -15,7 +15,7 @@ use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
-use crate::client_config::{PskStore, Signer};
+use crate::client_config::PskStore;
 use crate::credential::CredentialError;
 use crate::extension::{
     Extension, ExtensionError, ExtensionList, RatchetTreeExt, RequiredCapabilitiesExt,
@@ -29,6 +29,7 @@ use crate::psk::{
     ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, PskSecretError,
     ResumptionPSKUsage, ResumptionPsk,
 };
+use crate::signer::{Signable, SignatureError, Signer};
 use crate::tree_kem::node::{LeafIndex, NodeIndex};
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError};
 use crate::tree_kem::tree_validator::{TreeValidationError, TreeValidator};
@@ -131,7 +132,7 @@ pub enum GroupError {
     #[error(transparent)]
     EcKeyError(#[from] EcKeyError),
     #[error(transparent)]
-    MessageSignatureError(#[from] MessageSignatureError),
+    SignatureError(#[from] SignatureError),
     #[error(transparent)]
     TlsCodecError(#[from] tls_codec::Error),
     #[error(transparent)]
@@ -222,6 +223,10 @@ pub enum GroupError {
     SubgroupWithDifferentCipherSuite(CipherSuite),
     #[error("Unsupported protocol version {0:?} or cipher suite {1:?}")]
     UnsupportedProtocolVersionOrCipherSuite(ProtocolVersion, CipherSuite),
+    #[error("Signing key of preconfigured external sender is unknown")]
+    UnknownSigningKeyForExternalSender,
+    #[error("New members can only propose adding themselves")]
+    NewMembersCanOnlyProposeAddingThemselves,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -896,8 +901,13 @@ impl Group {
             content,
         );
 
+        let signing_context = MessageSigningContext {
+            group_context: Some(&self.context),
+            encrypted,
+        };
+
         // Sign the MLSPlaintext using the current epoch's GroupContext as context.
-        plaintext.sign(signer, Some(&self.context), encrypted)?;
+        plaintext.sign(signer, &signing_context)?;
 
         Ok(plaintext)
     }
@@ -1538,7 +1548,12 @@ impl Group {
             membership_tag: None,
         };
 
-        plaintext.sign(signer, Some(&self.context), true)?;
+        let signing_context = MessageSigningContext {
+            group_context: Some(&self.context),
+            encrypted: true,
+        };
+
+        plaintext.sign(signer, &signing_context)?;
 
         self.encrypt_plaintext(plaintext)
     }
@@ -1549,7 +1564,7 @@ impl Group {
         external_key_id_to_signing_key: F,
     ) -> Result<VerifiedPlaintext, GroupError>
     where
-        F: FnMut(&[u8]) -> Option<PublicKey>,
+        F: Fn(&[u8]) -> Option<PublicKey>,
     {
         let mut verifier = MessageVerifier {
             msg_epoch: self.epoch_repo.get_mut(message.content.epoch)?,
@@ -1567,7 +1582,7 @@ impl Group {
         external_key_id_to_signing_key: F,
     ) -> Result<VerifiedPlaintext, GroupError>
     where
-        F: FnMut(&[u8]) -> Option<PublicKey>,
+        F: Fn(&[u8]) -> Option<PublicKey>,
     {
         let mut verifier = MessageVerifier {
             msg_epoch: self.epoch_repo.get_mut(message.epoch)?,

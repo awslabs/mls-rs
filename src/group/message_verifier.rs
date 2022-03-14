@@ -4,10 +4,15 @@ use crate::{
         MLSCiphertextContentAAD, MLSMessageContent, MLSPlaintext, MLSSenderData, MLSSenderDataAAD,
         Sender, VerifiedPlaintext,
     },
+    key_package::KeyPackageRef,
+    signer::Signable,
     tree_kem::TreeKemPrivate,
+    AddProposal, Proposal,
 };
 use ferriscrypt::asym::ec_key::PublicKey;
 use tls_codec::{Deserialize, Serialize};
+
+use super::{framing::Content, message_signature::MessageSigningContext};
 
 pub(crate) struct MessageVerifier<'a, F> {
     pub(crate) msg_epoch: &'a mut Epoch,
@@ -18,12 +23,52 @@ pub(crate) struct MessageVerifier<'a, F> {
 
 impl<F> MessageVerifier<'_, F>
 where
-    F: FnMut(&[u8]) -> Option<PublicKey>,
+    F: Fn(&[u8]) -> Option<PublicKey>,
 {
+    fn public_key_for_sender(
+        &self,
+        sender: &Sender,
+        content: &Content,
+    ) -> Result<PublicKey, GroupError> {
+        match sender {
+            Sender::Member(leaf_ref) => self.public_key_for_member(leaf_ref),
+            Sender::Preconfigured(external_key_id) => {
+                self.public_key_for_preconfigured(external_key_id)
+            }
+            Sender::NewMember => self.public_key_for_new_member(content),
+        }
+    }
+
+    fn public_key_for_member(&self, leaf_ref: &KeyPackageRef) -> Result<PublicKey, GroupError> {
+        self.msg_epoch
+            .public_tree
+            .get_key_package(leaf_ref)?
+            .credential
+            .public_key()
+            .map_err(Into::into)
+    }
+
+    fn public_key_for_preconfigured(
+        &self,
+        external_key_id: &[u8],
+    ) -> Result<PublicKey, GroupError> {
+        (self.external_key_id_to_signing_key)(external_key_id)
+            .ok_or(GroupError::UnknownSigningKeyForExternalSender)
+    }
+
+    fn public_key_for_new_member(&self, content: &Content) -> Result<PublicKey, GroupError> {
+        if let Content::Proposal(Proposal::Add(AddProposal { key_package })) = content {
+            key_package.credential.public_key().map_err(Into::into)
+        } else {
+            Err(GroupError::NewMembersCanOnlyProposeAddingThemselves)
+        }
+    }
+
     pub(crate) fn verify_plaintext(
         &mut self,
         plaintext: MLSPlaintext,
     ) -> Result<VerifiedPlaintext, GroupError> {
+        // Verify the membership tag if needed
         match plaintext.content.sender {
             Sender::Member(_) => {
                 plaintext
@@ -45,17 +90,26 @@ where
 
         // Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
-        if !plaintext.verify_signature(
-            &self.msg_epoch.public_tree,
-            self.context,
-            false,
-            &mut self.external_key_id_to_signing_key,
-        )? {
-            return Err(GroupError::InvalidSignature);
-        }
+        self.verify_plaintext_signature(plaintext, false)
+    }
+
+    fn verify_plaintext_signature(
+        &self,
+        plaintext: MLSPlaintext,
+        from_ciphertext: bool,
+    ) -> Result<VerifiedPlaintext, GroupError> {
+        let sender_public_key =
+            self.public_key_for_sender(&plaintext.content.sender, &plaintext.content.content)?;
+
+        let context = MessageSigningContext {
+            group_context: Some(self.context),
+            encrypted: from_ciphertext,
+        };
+
+        plaintext.verify(&sender_public_key, &context)?;
 
         Ok(VerifiedPlaintext {
-            encrypted: false,
+            encrypted: context.encrypted,
             plaintext,
         })
     }
@@ -133,19 +187,7 @@ where
 
         //Verify that the signature on the MLSPlaintext message verifies using the public key
         // from the credential stored at the leaf in the tree indicated by the sender field.
-        if !plaintext.verify_signature(
-            &self.msg_epoch.public_tree,
-            self.context,
-            true,
-            &mut self.external_key_id_to_signing_key,
-        )? {
-            return Err(GroupError::InvalidSignature);
-        }
-
-        Ok(VerifiedPlaintext {
-            encrypted: true,
-            plaintext,
-        })
+        self.verify_plaintext_signature(plaintext, true)
     }
 }
 
@@ -157,11 +199,13 @@ mod tests {
         extension::ExtensionList,
         group::{
             membership_tag::MembershipTag,
+            message_signature::MessageSigningContext,
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_member},
             Content, Group, GroupError, MLSMessagePayload, MLSPlaintext, MessageVerifier, Sender,
         },
         key_package::KeyPackageGenerator,
+        signer::{Signable, SignatureError},
         ProtocolVersion,
     };
     use assert_matches::assert_matches;
@@ -180,7 +224,7 @@ mod tests {
 
     fn make_verifier<F>(group: &mut Group, f: F) -> MessageVerifier<'_, F>
     where
-        F: FnMut(&[u8]) -> Option<PublicKey>,
+        F: Fn(&[u8]) -> Option<PublicKey>,
     {
         let epoch = group.current_epoch();
         MessageVerifier {
@@ -226,9 +270,12 @@ mod tests {
         }
 
         fn sign(&self, message: &mut MLSPlaintext, encrypted: bool) {
-            message
-                .sign(&self.signing_key, Some(&self.group.context), encrypted)
-                .unwrap();
+            let signing_context = MessageSigningContext {
+                group_context: Some(&self.group.context),
+                encrypted,
+            };
+
+            message.sign(&self.signing_key, &signing_context).unwrap();
         }
     }
 
@@ -331,7 +378,12 @@ mod tests {
         let message = env.alice.group.encrypt_plaintext(message).unwrap();
         let mut verifier = make_verifier(&mut env.bob.group, |_| None);
         let res = verifier.decrypt_ciphertext(message);
-        assert_matches!(res, Err(GroupError::InvalidSignature));
+        assert_matches!(
+            res,
+            Err(GroupError::SignatureError(
+                SignatureError::SignatureValidationFailed(_)
+            ))
+        );
     }
 
     #[test]
@@ -354,7 +406,12 @@ mod tests {
             key_package: key_pkg_gen.key_package.into(),
         }));
 
-        message.sign(&signer, None, false).unwrap();
+        let signing_context = MessageSigningContext {
+            group_context: None,
+            encrypted: false,
+        };
+
+        message.sign(&signer, &signing_context).unwrap();
         let mut verifier = make_verifier(&mut test_group.group, |_| None);
         let _ = verifier.verify_plaintext(message).unwrap();
     }
@@ -369,7 +426,12 @@ mod tests {
             key_package: key_pkg_gen.key_package.into(),
         }));
 
-        message.sign(&signer, None, false).unwrap();
+        let signing_context = MessageSigningContext {
+            group_context: None,
+            encrypted: false,
+        };
+
+        message.sign(&signer, &signing_context).unwrap();
         add_membership_tag(&mut message, &test_group.group);
         let mut verifier = make_verifier(&mut test_group.group, |_| None);
         let res = verifier.verify_plaintext(message);
@@ -390,7 +452,12 @@ mod tests {
             key_package: bob_key_pkg_gen.key_package.into(),
         }));
 
-        message.sign(&ted_signer, None, false).unwrap();
+        let signing_context = MessageSigningContext {
+            group_context: None,
+            encrypted: false,
+        };
+
+        message.sign(&ted_signer, &signing_context).unwrap();
         let mut verifier = make_verifier(&mut test_group.group, |external_id| {
             (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
         });
@@ -411,7 +478,12 @@ mod tests {
             key_package: bob_key_pkg_gen.key_package.into(),
         }));
 
-        message.sign(&ted_signer, None, false).unwrap();
+        let signing_context = MessageSigningContext {
+            group_context: None,
+            encrypted: false,
+        };
+
+        message.sign(&ted_signer, &signing_context).unwrap();
         add_membership_tag(&mut message, &test_group.group);
 
         let mut verifier = make_verifier(&mut test_group.group, |external_id| {

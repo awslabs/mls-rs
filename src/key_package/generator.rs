@@ -1,7 +1,7 @@
-use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError};
+use crate::signer::Signer;
 
 use super::*;
-use crate::client_config::Signer;
+use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError};
 
 #[derive(Debug, Error)]
 pub enum KeyPackageGenerationError {

@@ -1,36 +1,12 @@
-use crate::client_config::Signer;
-use crate::credential::CredentialError;
-use crate::group::framing::{
-    Content, ContentType, MLSMessageContent, MLSPlaintext, Sender, WireFormat,
-};
-use crate::group::{AddProposal, ConfirmationTag, GroupContext, Proposal};
-use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
-use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey};
+use crate::group::framing::{ContentType, MLSMessageContent, MLSPlaintext, Sender, WireFormat};
+use crate::group::{ConfirmationTag, GroupContext};
+use crate::signer::Signable;
 use std::{
     io::{Read, Write},
     ops::Deref,
 };
-use thiserror::Error;
 use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
-
-#[derive(Error, Debug)]
-pub enum MessageSignatureError {
-    #[error(transparent)]
-    SignerError(Box<dyn std::error::Error>),
-    #[error(transparent)]
-    VerifierError(#[from] EcKeyError),
-    #[error(transparent)]
-    RatchetTreeError(#[from] RatchetTreeError),
-    #[error(transparent)]
-    SerializationError(#[from] tls_codec::Error),
-    #[error(transparent)]
-    CredentialError(#[from] CredentialError),
-    #[error("New members can only propose adding themselves")]
-    NewMembersCanOnlyProposeAddingThemselves,
-    #[error("Signing key of preconfigured external sender is unknown")]
-    UnknownSigningKeyForExternalSender,
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MLSMessageAuth {
@@ -162,34 +138,27 @@ impl MLSMessageContentTBS {
     }
 }
 
-impl MLSPlaintext {
-    pub(crate) fn sign<S: Signer>(
-        &mut self,
-        signer: &S,
-        group_context: Option<&GroupContext>,
-        encrypted: bool,
-    ) -> Result<(), MessageSignatureError> {
-        self.auth.signature = MessageSignature::create(signer, self, group_context, encrypted)?;
-        Ok(())
+pub(crate) struct MessageSigningContext<'a> {
+    pub group_context: Option<&'a GroupContext>,
+    pub encrypted: bool,
+}
+
+impl<'a> Signable<'a> for MLSPlaintext {
+    const SIGN_LABEL: &'static str = "MLSMessageContentTBS";
+
+    type SignableContent = MLSMessageContentTBS;
+    type SigningContext = MessageSigningContext<'a>;
+
+    fn signature(&self) -> &[u8] {
+        &self.auth.signature
     }
 
-    pub(crate) fn verify_signature<F>(
-        &self,
-        tree: &TreeKemPublic,
-        group_context: &GroupContext,
-        encrypted: bool,
-        external_key_id_to_signing_key: F,
-    ) -> Result<bool, MessageSignatureError>
-    where
-        F: FnMut(&[u8]) -> Option<PublicKey>,
-    {
-        self.auth.signature.is_valid(
-            self,
-            tree,
-            group_context,
-            encrypted,
-            external_key_id_to_signing_key,
-        )
+    fn signable_content(&self, context: &MessageSigningContext) -> Self::SignableContent {
+        MLSMessageContentTBS::from_plaintext(self, context.group_context, context.encrypted)
+    }
+
+    fn write_signature(&mut self, signature: Vec<u8>) {
+        self.auth.signature = MessageSignature::from(signature)
     }
 }
 
@@ -199,60 +168,6 @@ pub struct MessageSignature(#[tls_codec(with = "crate::tls::ByteVec::<u16>")] Ve
 impl MessageSignature {
     pub(crate) fn empty() -> Self {
         MessageSignature(vec![])
-    }
-
-    fn create<S: Signer>(
-        signer: &S,
-        plaintext: &MLSPlaintext,
-        group_context: Option<&GroupContext>,
-        encrypted: bool,
-    ) -> Result<Self, MessageSignatureError> {
-        let to_be_signed =
-            MLSMessageContentTBS::from_plaintext(plaintext, group_context, encrypted);
-
-        let signature_data = signer
-            .sign(&to_be_signed.tls_serialize_detached()?)
-            .map_err(|e| MessageSignatureError::SignerError(Box::new(e)))?;
-
-        Ok(MessageSignature(signature_data))
-    }
-
-    fn is_valid<F>(
-        &self,
-        plaintext: &MLSPlaintext,
-        tree: &TreeKemPublic,
-        group_context: &GroupContext,
-        encrypted: bool,
-        mut external_key_id_to_signing_key: F,
-    ) -> Result<bool, MessageSignatureError>
-    where
-        F: FnMut(&[u8]) -> Option<PublicKey>,
-    {
-        let to_be_verified =
-            MLSMessageContentTBS::from_plaintext(plaintext, Some(group_context), encrypted)
-                .tls_serialize_detached()?;
-        // Verify that the signature on the MLSPlaintext message verifies using the public key
-        // from the credential stored at the leaf in the tree indicated by the sender field.
-        match &plaintext.content.sender {
-            Sender::Member(sender) => Ok(tree
-                .get_key_package(sender)?
-                .credential
-                .verify(&plaintext.auth.signature, &to_be_verified)?),
-            Sender::Preconfigured(external_key_id) => {
-                match external_key_id_to_signing_key(external_key_id) {
-                    Some(signing_key) => {
-                        Ok(signing_key.verify(&plaintext.auth.signature, &to_be_verified)?)
-                    }
-                    None => Err(MessageSignatureError::UnknownSigningKeyForExternalSender),
-                }
-            }
-            Sender::NewMember => match &plaintext.content.content {
-                Content::Proposal(Proposal::Add(AddProposal { key_package })) => Ok(key_package
-                    .credential
-                    .verify(&plaintext.auth.signature, &to_be_verified)?),
-                _ => Err(MessageSignatureError::NewMembersCanOnlyProposeAddingThemselves),
-            },
-        }
     }
 }
 

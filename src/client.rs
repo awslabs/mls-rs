@@ -3,12 +3,13 @@ use crate::client_config::{ClientConfig, KeyPackageRepository, Keychain};
 use crate::credential::CredentialError;
 use crate::extension::{ExtensionError, ExtensionList, LifetimeExt, MlsExtension};
 use crate::group::framing::{Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender};
-use crate::group::message_signature::MessageSignatureError;
+use crate::group::message_signature::MessageSigningContext;
 use crate::group::proposal::{AddProposal, Proposal, RemoveProposal};
 use crate::key_package::{
     KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
 };
 use crate::session::{Session, SessionError};
+use crate::signer::{Signable, SignatureError};
 use crate::ProtocolVersion;
 use thiserror::Error;
 use tls_codec::Serialize;
@@ -30,7 +31,7 @@ pub enum ClientError {
     #[error(transparent)]
     SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
-    MessageSignatureError(#[from] MessageSignatureError),
+    SignatureError(#[from] SignatureError),
     #[error("proposing as external without external key ID")]
     ProposingAsExternalWithoutExternalKeyId,
     #[error(transparent)]
@@ -210,7 +211,12 @@ impl<C: ClientConfig + Clone> Client<C> {
             .default_credential(group_cipher_suite)
             .ok_or(ClientError::NoCredentialFound)?;
 
-        message.sign(&signer, None, false)?;
+        let signing_context = MessageSigningContext {
+            group_context: None,
+            encrypted: false,
+        };
+
+        message.sign(&signer, &signing_context)?;
 
         let message = MLSMessage {
             version,

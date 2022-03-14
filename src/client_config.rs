@@ -6,6 +6,7 @@ use crate::{
     group::proposal::Proposal,
     key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageRef},
     psk::{ExternalPskId, Psk},
+    signer::Signer,
     ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::{Curve, PublicKey, SecretKey};
@@ -22,25 +23,6 @@ pub trait KeyPackageRepository {
 
     fn insert(&mut self, key_pkg_gen: KeyPackageGeneration) -> Result<(), Self::Error>;
     fn get(&self, key_pkg: &KeyPackageRef) -> Result<Option<KeyPackageGeneration>, Self::Error>;
-}
-
-pub trait Signer {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    fn sign(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error>;
-    fn public_key(&self) -> Result<PublicKey, Self::Error>;
-}
-
-impl Signer for SecretKey {
-    type Error = ferriscrypt::asym::ec_key::EcKeyError;
-
-    fn sign(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        self.sign(data)
-    }
-
-    fn public_key(&self) -> Result<PublicKey, Self::Error> {
-        self.to_public()
-    }
 }
 
 pub trait Keychain {

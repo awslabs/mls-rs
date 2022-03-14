@@ -1,8 +1,8 @@
 use super::parent_hash::ParentHash;
 use crate::{
-    client_config::Signer,
     credential::{Credential, CredentialError},
     extension::{CapabilitiesExt, ExtensionList, LifetimeExt},
+    signer::Signer,
 };
 use ferriscrypt::{
     asym::ec_key::{generate_keypair, EcKeyError, PublicKey, SecretKey},

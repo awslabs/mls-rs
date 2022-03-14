@@ -1,5 +1,5 @@
 use crate::cipher_suite::CipherSuite;
-use crate::client_config::{ClientConfig, KeyPackageRepository, Keychain, Signer};
+use crate::client_config::{ClientConfig, KeyPackageRepository, Keychain};
 use crate::extension::ExtensionList;
 
 pub use crate::group::framing::{ContentType, MLSMessage, MLSMessagePayload};
@@ -13,6 +13,7 @@ use crate::key_package::{
     KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
 };
 use crate::psk::ExternalPskId;
+use crate::signer::Signer;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use crate::ProtocolVersion;
 use ferriscrypt::hpke::kem::HpkePublicKey;

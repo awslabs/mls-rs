@@ -20,6 +20,7 @@ pub mod key_package;
 mod protocol_version;
 mod psk;
 pub mod session;
+pub mod signer;
 mod tree_kem;
 pub mod x509;
 
