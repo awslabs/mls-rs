@@ -238,6 +238,15 @@ pub enum WireFormat {
     KeyPackage,
 }
 
+impl From<ControlEncryptionMode> for WireFormat {
+    fn from(mode: ControlEncryptionMode) -> Self {
+        match mode {
+            ControlEncryptionMode::Plaintext => WireFormat::Plain,
+            ControlEncryptionMode::Encrypted(_) => WireFormat::Cipher,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSMessageContent {
     #[tls_codec(with = "crate::tls::ByteVec::<u8>")]

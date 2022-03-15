@@ -316,7 +316,7 @@ impl<C: ClientConfig + Clone> Session<C> {
         let packet = self.protocol.create_proposal(
             proposal,
             &signer,
-            self.config.preferences().encrypt_controls,
+            self.config.preferences().encryption_mode(),
         )?;
 
         self.serialize_control(packet)
@@ -350,7 +350,7 @@ impl<C: ClientConfig + Clone> Session<C> {
             proposals,
             &key_package_generator,
             true,
-            preferences.encrypt_controls,
+            preferences.encryption_mode(),
             preferences.ratchet_tree_extension,
             &self.config.secret_store(),
         )?;
@@ -451,9 +451,11 @@ impl<C: ClientConfig + Clone> Session<C> {
     }
 
     pub fn encrypt_application_data(&mut self, data: &[u8]) -> Result<Vec<u8>, SessionError> {
-        let ciphertext = self
-            .protocol
-            .encrypt_application_message(data, &self.signer()?)?;
+        let ciphertext = self.protocol.encrypt_application_message(
+            data,
+            &self.signer()?,
+            self.config.preferences().padding_mode,
+        )?;
 
         let msg = MLSMessage {
             version: self.protocol.protocol_version,

@@ -200,9 +200,11 @@ mod tests {
         group::{
             membership_tag::MembershipTag,
             message_signature::MessageSigningContext,
+            padding::PaddingMode,
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_member},
-            Content, Group, GroupError, MLSMessagePayload, MLSPlaintext, MessageVerifier, Sender,
+            Content, ControlEncryptionMode, Group, GroupError, MLSMessagePayload, MLSPlaintext,
+            MessageVerifier, Sender,
         },
         key_package::KeyPackageGenerator,
         signer::{Signable, SignatureError},
@@ -321,7 +323,7 @@ mod tests {
                     vec![proposal],
                     &alice_key_package_generator,
                     false,
-                    false,
+                    ControlEncryptionMode::Plaintext,
                     false,
                     &secret_store,
                 )
@@ -365,7 +367,11 @@ mod tests {
         let mut env = TestEnv::new();
         let mut message = env.alice.make_member_plaintext();
         env.alice.sign(&mut message, true);
-        let message = env.alice.group.encrypt_plaintext(message).unwrap();
+        let message = env
+            .alice
+            .group
+            .encrypt_plaintext(message, PaddingMode::None)
+            .unwrap();
         let mut verifier = make_verifier(&mut env.bob.group, |_| None);
         let _ = verifier.decrypt_ciphertext(message).unwrap();
     }
@@ -375,7 +381,11 @@ mod tests {
         let mut env = TestEnv::new();
         let mut message = env.alice.make_member_plaintext();
         env.alice.sign(&mut message, false);
-        let message = env.alice.group.encrypt_plaintext(message).unwrap();
+        let message = env
+            .alice
+            .group
+            .encrypt_plaintext(message, PaddingMode::None)
+            .unwrap();
         let mut verifier = make_verifier(&mut env.bob.group, |_| None);
         let res = verifier.decrypt_ciphertext(message);
         assert_matches!(
@@ -499,7 +509,11 @@ mod tests {
         let mut env = TestEnv::new();
         let mut message = env.alice.make_member_plaintext();
         env.alice.sign(&mut message, true);
-        let message = env.alice.group.encrypt_plaintext(message).unwrap();
+        let message = env
+            .alice
+            .group
+            .encrypt_plaintext(message, PaddingMode::None)
+            .unwrap();
         let mut verifier = make_verifier(&mut env.alice.group, |_| None);
         let res = verifier.decrypt_ciphertext(message);
         assert_matches!(res, Err(GroupError::CantProcessMessageFromSelf));

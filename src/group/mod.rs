@@ -52,6 +52,7 @@ use secret_tree::*;
 use transcript_hash::*;
 
 use self::epoch_repo::{EpochRepository, EpochRepositoryError};
+use self::padding::PaddingMode;
 
 mod confirmation_tag;
 pub(crate) mod epoch;
@@ -62,6 +63,7 @@ pub mod key_schedule;
 mod membership_tag;
 pub mod message_signature;
 mod message_verifier;
+pub mod padding;
 pub mod proposal;
 mod proposal_cache;
 mod proposal_ref;
@@ -280,6 +282,12 @@ pub struct Welcome {
     pub secrets: Vec<EncryptedGroupSecrets>,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub encrypted_group_info: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ControlEncryptionMode {
+    Plaintext,
+    Encrypted(PaddingMode),
 }
 
 #[derive(Clone, Debug)]
@@ -789,14 +797,14 @@ impl Group {
         &mut self,
         proposal: Proposal,
         signer: &S,
-        encrypted: bool,
+        encryption_mode: ControlEncryptionMode,
     ) -> Result<OutboundPlaintext, GroupError> {
         let plaintext =
-            self.construct_mls_plaintext(Content::Proposal(proposal), signer, encrypted)?;
+            self.construct_mls_plaintext(Content::Proposal(proposal), signer, encryption_mode)?;
 
         // If we are going to encrypt then the tag will be dropped so it shouldn't be included
         // in the hash
-        let membership_tag = if encrypted {
+        let membership_tag = if matches!(encryption_mode, ControlEncryptionMode::Encrypted(_)) {
             None
         } else {
             Some(MembershipTag::create(
@@ -810,16 +818,20 @@ impl Group {
             ..plaintext
         };
 
-        self.proposals
-            .insert(self.cipher_suite, &plaintext, encrypted)?;
-        self.format_for_wire(plaintext, encrypted)
+        self.proposals.insert(
+            self.cipher_suite,
+            &plaintext,
+            matches!(encryption_mode, ControlEncryptionMode::Encrypted(_)),
+        )?;
+
+        self.format_for_wire(plaintext, encryption_mode)
     }
 
     fn construct_mls_plaintext<S: Signer>(
         &self,
         content: Content,
         signer: &S,
-        encrypted: bool,
+        encryption_mode: ControlEncryptionMode,
     ) -> Result<MLSPlaintext, GroupError> {
         // Construct an MLSPlaintext object containing the content
         let mut plaintext = MLSPlaintext::new(
@@ -831,7 +843,7 @@ impl Group {
 
         let signing_context = MessageSigningContext {
             group_context: Some(&self.context),
-            encrypted,
+            encrypted: matches!(encryption_mode, ControlEncryptionMode::Encrypted(_)),
         };
 
         // Sign the MLSPlaintext using the current epoch's GroupContext as context.
@@ -846,7 +858,7 @@ impl Group {
         proposals: Vec<Proposal>,
         key_package_generator: &KeyPackageGenerator<S>,
         update_path: bool,
-        encrypted: bool,
+        encryption_mode: ControlEncryptionMode,
         ratchet_tree_extension: bool,
         secret_store: &P,
     ) -> Result<(CommitGeneration, Option<MLSMessage>), GroupError> {
@@ -928,7 +940,7 @@ impl Group {
         let mut plaintext = self.construct_mls_plaintext(
             Content::Commit(commit),
             key_package_generator.signing_key,
-            encrypted,
+            encryption_mode,
         )?;
 
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
@@ -936,7 +948,10 @@ impl Group {
         let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
             self.cipher_suite,
             &self.interim_transcript_hash,
-            MLSMessageCommitContent::new(&plaintext, encrypted)?,
+            MLSMessageCommitContent::new(
+                &plaintext,
+                matches!(encryption_mode, ControlEncryptionMode::Encrypted(_)),
+            )?,
         )?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
@@ -968,7 +983,7 @@ impl Group {
 
         plaintext.auth.confirmation_tag = Some(confirmation_tag.clone());
 
-        if !encrypted {
+        if matches!(encryption_mode, ControlEncryptionMode::Plaintext) {
             // Create the membership tag using the current group context and key schedule
             let membership_tag = MembershipTag::create(&plaintext, &self.context, current_epoch)?;
             plaintext.membership_tag = Some(membership_tag);
@@ -1031,7 +1046,7 @@ impl Group {
             });
 
         let pending_commit = CommitGeneration {
-            plaintext: self.format_for_wire(plaintext, encrypted)?,
+            plaintext: self.format_for_wire(plaintext, encryption_mode)?,
             secrets: update_path,
         };
 
@@ -1354,28 +1369,37 @@ impl Group {
     pub fn format_for_wire(
         &mut self,
         plaintext: MLSPlaintext,
-        encrypted: bool,
+        encryption_mode: ControlEncryptionMode,
     ) -> Result<OutboundPlaintext, GroupError> {
-        Ok(if encrypted {
-            let ciphertext = self.encrypt_plaintext(plaintext.clone())?;
-            OutboundPlaintext::Ciphertext {
-                original: plaintext,
-                encrypted: ciphertext,
-            }
-        } else {
-            OutboundPlaintext::Plaintext(plaintext)
-        })
+        Ok(
+            if let ControlEncryptionMode::Encrypted(padding_mode) = encryption_mode {
+                let ciphertext = self.encrypt_plaintext(plaintext.clone(), padding_mode)?;
+
+                OutboundPlaintext::Ciphertext {
+                    original: plaintext,
+                    encrypted: ciphertext,
+                }
+            } else {
+                OutboundPlaintext::Plaintext(plaintext)
+            },
+        )
     }
 
-    fn encrypt_plaintext(&mut self, plaintext: MLSPlaintext) -> Result<MLSCiphertext, GroupError> {
+    fn encrypt_plaintext(
+        &mut self,
+        plaintext: MLSPlaintext,
+        padding: PaddingMode,
+    ) -> Result<MLSCiphertext, GroupError> {
         let content_type = ContentType::from(&plaintext.content.content);
 
         // Build a ciphertext content using the plaintext content and signature
-        let ciphertext_content = MLSCiphertextContent {
+        let mut ciphertext_content = MLSCiphertextContent {
             content: plaintext.content.content,
             auth: plaintext.auth,
-            padding: Vec::new(), // TODO: Implement a padding mechanism
+            padding: Vec::new(),
         };
+
+        padding.apply_padding(&mut ciphertext_content);
 
         // Build ciphertext aad using the plaintext message
         let aad = MLSCiphertextContentAAD {
@@ -1450,6 +1474,7 @@ impl Group {
         &mut self,
         message: &[u8],
         signer: &S,
+        padding: PaddingMode,
     ) -> Result<MLSCiphertext, GroupError> {
         // A group member that has observed one or more proposals within an epoch MUST send a Commit message
         // before sending application data
@@ -1479,7 +1504,7 @@ impl Group {
 
         plaintext.sign(signer, &signing_context)?;
 
-        self.encrypt_plaintext(plaintext)
+        self.encrypt_plaintext(plaintext, padding)
     }
 
     pub fn verify_incoming_plaintext<F>(
@@ -1865,6 +1890,7 @@ mod test {
     };
     use assert_matches::assert_matches;
 
+    use tls_codec::Size;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 
@@ -1924,13 +1950,20 @@ mod test {
 
         test_group
             .group
-            .create_proposal(proposal, &test_group.signing_key, false)
+            .create_proposal(
+                proposal,
+                &test_group.signing_key,
+                ControlEncryptionMode::Plaintext,
+            )
             .unwrap();
 
         // We should not be able to send application messages until a commit happens
-        let res = test_group
-            .group
-            .encrypt_application_message(b"test", &test_group.signing_key);
+        let res = test_group.group.encrypt_application_message(
+            b"test",
+            &test_group.signing_key,
+            PaddingMode::None,
+        );
+
         assert_matches!(res, Err(GroupError::CommitRequired));
 
         let generator = KeyPackageGenerator {
@@ -1946,7 +1979,14 @@ mod test {
         // We should be able to send application messages after a commit
         let (commit, _) = test_group
             .group
-            .commit_proposals(vec![], &generator, true, false, false, &secret_store)
+            .commit_proposals(
+                vec![],
+                &generator,
+                true,
+                ControlEncryptionMode::Plaintext,
+                false,
+                &secret_store,
+            )
             .unwrap();
 
         test_group
@@ -1956,7 +1996,7 @@ mod test {
 
         assert!(test_group
             .group
-            .encrypt_application_message(b"test", &test_group.signing_key)
+            .encrypt_application_message(b"test", &test_group.signing_key, PaddingMode::None)
             .is_ok());
     }
 
@@ -1984,7 +2024,7 @@ mod test {
             vec![proposal],
             &generator,
             true,
-            false,
+            ControlEncryptionMode::Plaintext,
             false,
             &InMemoryPskStore::default(),
         );
@@ -2012,7 +2052,11 @@ mod test {
 
         test_group
             .group
-            .create_proposal(proposal, &test_group.signing_key, false)
+            .create_proposal(
+                proposal,
+                &test_group.signing_key,
+                ControlEncryptionMode::Plaintext,
+            )
             .unwrap();
 
         // There should be an error because path_update is set to `true` while there is a pending
@@ -2021,7 +2065,7 @@ mod test {
             vec![],
             &generator,
             true,
-            false,
+            ControlEncryptionMode::Plaintext,
             false,
             &InMemoryPskStore::default(),
         );
@@ -2071,7 +2115,7 @@ mod test {
             vec![proposal],
             &generator,
             false,
-            false,
+            ControlEncryptionMode::Plaintext,
             false,
             &InMemoryPskStore::default(),
         );
@@ -2105,7 +2149,11 @@ mod test {
 
         let proposal = alice_group
             .group
-            .create_proposal(proposal, &alice_group.signing_key, false)
+            .create_proposal(
+                proposal,
+                &alice_group.signing_key,
+                ControlEncryptionMode::Plaintext,
+            )
             .unwrap();
 
         // Hack bob's receipt of the proposal
@@ -2127,7 +2175,7 @@ mod test {
             vec![],
             &bob_generator,
             true,
-            false,
+            ControlEncryptionMode::Plaintext,
             false,
             &InMemoryPskStore::default(),
         );
@@ -2170,7 +2218,7 @@ mod test {
                 vec![add_bob_proposal],
                 &generator,
                 false,
-                false,
+                ControlEncryptionMode::Plaintext,
                 tree_ext,
                 &secret_store,
             )
@@ -2255,7 +2303,7 @@ mod test {
                 vec![add_bob_proposal],
                 &generator,
                 false,
-                false,
+                ControlEncryptionMode::Plaintext,
                 false,
                 &secret_store,
             )
@@ -2321,7 +2369,7 @@ mod test {
                 proposals,
                 &generator,
                 true,
-                false,
+                ControlEncryptionMode::Plaintext,
                 false,
                 &InMemoryPskStore::default(),
             )
@@ -2365,6 +2413,53 @@ mod test {
         let (_, commit) = group_context_extension_proposal_test(extension_list.clone());
 
         assert_matches!(commit, Err(GroupError::UnsupportedRequiredCapabilities));
+    }
+
+    #[test]
+    fn test_group_encrypt_plaintext_padding() {
+        let protocol_version = ProtocolVersion::Mls10;
+        let cipher_suite = CipherSuite::P256Aes128V1;
+        let mut test_group = test_group(protocol_version, cipher_suite);
+
+        let proposal = test_group
+            .group
+            .group_context_extensions_proposal(ExtensionList::new());
+
+        let without_padding = test_group
+            .group
+            .create_proposal(
+                proposal.clone(),
+                &test_group.signing_key,
+                ControlEncryptionMode::Encrypted(PaddingMode::None),
+            )
+            .unwrap();
+
+        let with_padding = test_group
+            .group
+            .create_proposal(
+                proposal,
+                &test_group.signing_key,
+                ControlEncryptionMode::Encrypted(PaddingMode::StepFunction(1024)),
+            )
+            .unwrap();
+
+        let without_padding_length = match without_padding {
+            OutboundPlaintext::Plaintext(_) => panic!("unexpected plaintext"),
+            OutboundPlaintext::Ciphertext {
+                original: _,
+                encrypted,
+            } => encrypted.tls_serialized_len(),
+        };
+
+        let with_padding_length = match with_padding {
+            OutboundPlaintext::Plaintext(_) => panic!("unexpected plaintext"),
+            OutboundPlaintext::Ciphertext {
+                original: _,
+                encrypted,
+            } => encrypted.tls_serialized_len(),
+        };
+
+        assert!(with_padding_length > without_padding_length);
     }
 }
 //TODO: More Group unit tests

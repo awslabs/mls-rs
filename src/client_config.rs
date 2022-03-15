@@ -3,7 +3,7 @@ use crate::{
     client::Client,
     credential::Credential,
     extension::{CapabilitiesExt, ExtensionType},
-    group::proposal::Proposal,
+    group::{proposal::Proposal, ControlEncryptionMode},
     key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageRef},
     psk::{ExternalPskId, Psk},
     signer::Signer,
@@ -17,6 +17,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 use thiserror::Error;
+
+pub use crate::group::padding::PaddingMode;
 
 pub trait KeyPackageRepository {
     type Error: std::error::Error + Send + Sync + 'static;
@@ -158,6 +160,7 @@ impl PskStore for InMemoryPskStore {
 pub struct Preferences {
     pub encrypt_controls: bool,
     pub ratchet_tree_extension: bool,
+    pub padding_mode: PaddingMode,
 }
 
 impl Preferences {
@@ -174,6 +177,22 @@ impl Preferences {
         Self {
             ratchet_tree_extension: yes,
             ..self
+        }
+    }
+
+    #[must_use]
+    pub fn with_padding_mode(self, padding_mode: PaddingMode) -> Self {
+        Self {
+            padding_mode,
+            ..self
+        }
+    }
+
+    pub(crate) fn encryption_mode(&self) -> ControlEncryptionMode {
+        if self.encrypt_controls {
+            ControlEncryptionMode::Encrypted(self.padding_mode)
+        } else {
+            ControlEncryptionMode::Plaintext
         }
     }
 }
