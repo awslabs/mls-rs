@@ -146,15 +146,18 @@ pub(crate) struct MessageSigningContext<'a> {
 impl<'a> Signable<'a> for MLSPlaintext {
     const SIGN_LABEL: &'static str = "MLSMessageContentTBS";
 
-    type SignableContent = MLSMessageContentTBS;
     type SigningContext = MessageSigningContext<'a>;
 
     fn signature(&self) -> &[u8] {
         &self.auth.signature
     }
 
-    fn signable_content(&self, context: &MessageSigningContext) -> Self::SignableContent {
+    fn signable_content(
+        &self,
+        context: &MessageSigningContext,
+    ) -> Result<Vec<u8>, tls_codec::Error> {
         MLSMessageContentTBS::from_plaintext(self, context.group_context, context.encrypted)
+            .tls_serialize_detached()
     }
 
     fn write_signature(&mut self, signature: Vec<u8>) {

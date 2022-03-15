@@ -2,7 +2,7 @@ use super::parent_hash::ParentHash;
 use crate::{
     credential::{Credential, CredentialError},
     extension::{CapabilitiesExt, ExtensionList, LifetimeExt},
-    signer::Signer,
+    signer::{Signable, SignatureError, Signer},
 };
 use ferriscrypt::{
     asym::ec_key::{generate_keypair, EcKeyError, PublicKey, SecretKey},
@@ -20,10 +20,10 @@ pub enum LeafNodeError {
     TlsCodecError(#[from] tls_codec::Error),
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
-    #[error("signer error: {0}")]
-    SignerError(Box<dyn std::error::Error>),
+    #[error(transparent)]
+    SignatureError(#[from] SignatureError),
     #[error("parent hash error: {0}")]
-    ParentHashError(Box<dyn std::error::Error>),
+    ParentHashError(#[source] Box<dyn std::error::Error>),
 }
 
 #[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize, PartialEq)]
@@ -67,13 +67,7 @@ impl LeafNode {
             signature: Default::default(),
         };
 
-        let signable_bytes = leaf_node.to_signable_bytes(None)?;
-
-        let signature = signer
-            .sign(&signable_bytes)
-            .map_err(|e| LeafNodeError::SignerError(e.into()))?;
-
-        leaf_node.signature = signature;
+        leaf_node.sign(signer, &None)?;
 
         Ok((leaf_node, secret.try_into()?))
     }
@@ -100,12 +94,7 @@ impl LeafNode {
         }
 
         self.leaf_node_source = leaf_node_source;
-
-        let signable_bytes = self.to_signable_bytes(Some(group_id))?;
-
-        self.signature = signer
-            .sign(&signable_bytes)
-            .map_err(|e| LeafNodeError::SignerError(e.into()))?;
+        self.sign(signer, &Some(group_id))?;
 
         Ok(secret.try_into()?)
     }
@@ -151,21 +140,6 @@ impl LeafNode {
             signer,
         )
     }
-
-    pub(crate) fn to_signable_bytes(
-        &self,
-        group_id: Option<&[u8]>,
-    ) -> Result<Vec<u8>, tls_codec::Error> {
-        LeafNodeTBS {
-            public_key: &self.public_key,
-            credential: &self.credential,
-            capabilities: &self.capabilities,
-            leaf_node_source: &self.leaf_node_source,
-            extensions: &self.extensions,
-            group_id,
-        }
-        .tls_serialize_detached()
-    }
 }
 
 #[derive(Debug)]
@@ -203,6 +177,35 @@ impl<'a> Serialize for LeafNodeTBS<'a> {
             })?;
 
         Ok(res)
+    }
+}
+
+impl<'a> Signable<'a> for LeafNode {
+    const SIGN_LABEL: &'static str = "LeafNodeTBS";
+
+    type SigningContext = Option<&'a [u8]>;
+
+    fn signature(&self) -> &[u8] {
+        &self.signature
+    }
+
+    fn signable_content(
+        &self,
+        context: &Self::SigningContext,
+    ) -> Result<Vec<u8>, tls_codec::Error> {
+        LeafNodeTBS {
+            public_key: &self.public_key,
+            credential: &self.credential,
+            capabilities: &self.capabilities,
+            leaf_node_source: &self.leaf_node_source,
+            extensions: &self.extensions,
+            group_id: *context,
+        }
+        .tls_serialize_detached()
+    }
+
+    fn write_signature(&mut self, signature: Vec<u8>) {
+        self.signature = signature
     }
 }
 
@@ -279,12 +282,9 @@ mod test {
             assert_eq!(leaf_node.credential, credential);
             assert_matches!(&leaf_node.leaf_node_source, LeafNodeSource::Add(lt) if lt == &lifetime);
 
-            assert!(credential
-                .verify(
-                    &leaf_node.signature,
-                    &leaf_node.to_signable_bytes(None).unwrap()
-                )
-                .unwrap());
+            leaf_node
+                .verify(&credential.public_key().unwrap(), &None)
+                .unwrap();
 
             let expected_public = SecretKey::from_bytes(
                 secret_key.as_ref(),
@@ -331,12 +331,8 @@ mod test {
             assert_eq!(leaf.credential, original_leaf.credential);
             assert_matches!(&leaf.leaf_node_source, LeafNodeSource::Update);
 
-            assert!(credential
-                .verify(
-                    &leaf.signature,
-                    &leaf.to_signable_bytes(Some(b"group")).unwrap()
-                )
-                .unwrap());
+            leaf.verify(&credential.public_key().unwrap(), &Some(b"group"))
+                .unwrap();
         }
     }
 
@@ -385,12 +381,8 @@ mod test {
             assert_eq!(leaf.credential, original_leaf.credential);
             assert_matches!(&leaf.leaf_node_source, LeafNodeSource::Commit(parent_hash) if parent_hash == &test_parent_hash);
 
-            assert!(credential
-                .verify(
-                    &leaf.signature,
-                    &leaf.to_signable_bytes(Some(b"group")).unwrap()
-                )
-                .unwrap());
+            leaf.verify(&credential.public_key().unwrap(), &Some(b"group"))
+                .unwrap();
         }
     }
 

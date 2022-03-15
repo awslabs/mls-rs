@@ -6,6 +6,7 @@ use crate::extension::RequiredCapabilitiesExt;
 use crate::extension::{Extension, ExtensionError, ExtensionList, ExtensionType};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::HashReference;
+use crate::signer::Signable;
 use crate::time::MlsTime;
 use crate::ProtocolVersion;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
@@ -73,32 +74,18 @@ impl PartialEq for KeyPackage {
     }
 }
 
-impl KeyPackage {
-    fn to_signable_bytes(&self) -> Result<Vec<u8>, KeyPackageError> {
-        #[derive(TlsSerialize, TlsSize)]
-        pub struct KeyPackageData<'a> {
-            pub version: &'a ProtocolVersion,
-            pub cipher_suite: &'a CipherSuite,
-            #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-            pub hpke_init_key: &'a HpkePublicKey,
-            pub credential: &'a Credential,
-            #[tls_codec(with = "crate::tls::DefVec::<u32>")]
-            pub extensions: &'a Vec<Extension>,
-        }
+#[derive(TlsSerialize, TlsSize)]
+pub struct KeyPackageData<'a> {
+    pub version: &'a ProtocolVersion,
+    pub cipher_suite: &'a CipherSuite,
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    pub hpke_init_key: &'a HpkePublicKey,
+    pub credential: &'a Credential,
+    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
+    pub extensions: &'a Vec<Extension>,
+}
 
-        let key_package_data = KeyPackageData {
-            version: &self.version,
-            cipher_suite: &self.cipher_suite,
-            hpke_init_key: &self.hpke_init_key,
-            credential: &self.credential,
-            extensions: &self.extensions,
-        };
-
-        key_package_data
-            .tls_serialize_detached()
-            .map_err(Into::into)
-    }
-
+impl<'a> KeyPackage {
     pub fn to_vec(&self) -> Result<Vec<u8>, KeyPackageError> {
         Ok(self.tls_serialize_detached()?)
     }
@@ -109,6 +96,34 @@ impl KeyPackage {
             b"MLS 1.0 KeyPackage Reference",
             self.cipher_suite,
         )?))
+    }
+}
+
+impl<'a> Signable<'a> for KeyPackage {
+    const SIGN_LABEL: &'static str = "KeyPackageTBS";
+
+    type SigningContext = ();
+
+    fn signature(&self) -> &[u8] {
+        &self.signature
+    }
+
+    fn signable_content(
+        &self,
+        _context: &Self::SigningContext,
+    ) -> Result<Vec<u8>, tls_codec::Error> {
+        KeyPackageData {
+            version: &self.version,
+            cipher_suite: &self.cipher_suite,
+            hpke_init_key: &self.hpke_init_key,
+            credential: &self.credential,
+            extensions: &self.extensions,
+        }
+        .tls_serialize_detached()
+    }
+
+    fn write_signature(&mut self, signature: Vec<u8>) {
+        self.signature = signature
     }
 }
 

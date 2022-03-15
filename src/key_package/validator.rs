@@ -1,6 +1,6 @@
-use std::{collections::HashSet, ops::DerefMut};
-
 use super::*;
+use crate::signer::SignatureError;
+use std::{collections::HashSet, ops::DerefMut};
 
 #[derive(Debug, Error)]
 pub enum KeyPackageValidationError {
@@ -12,8 +12,8 @@ pub enum KeyPackageValidationError {
     ExtensionError(#[from] ExtensionError),
     #[error(transparent)]
     KeyPackageError(#[from] KeyPackageError),
-    #[error("invalid signature")]
-    InvalidSignature,
+    #[error(transparent)]
+    SignatureError(#[from] SignatureError),
     #[error("key lifetime not found")]
     MissingKeyLifetime,
     #[error("capabilities extension not found")]
@@ -76,16 +76,9 @@ pub struct KeyPackageValidator<'a> {
 impl<'a> KeyPackageValidator<'a> {
     pub fn check_signature(&self, package: &KeyPackage) -> Result<(), KeyPackageValidationError> {
         // Verify that the signature on the KeyPackage is valid using the public key in the KeyPackage's credential
-        let valid_signature = package
-            .credential
-            .verify(&package.signature, &package.to_signable_bytes()?)
-            .map_err(|_| KeyPackageValidationError::InvalidSignature)?;
-
-        if !valid_signature {
-            Err(KeyPackageValidationError::InvalidSignature)
-        } else {
-            Ok(())
-        }
+        package
+            .verify(&package.credential.public_key()?, &())
+            .map_err(Into::into)
     }
 
     pub fn validate_properties(
@@ -235,7 +228,7 @@ mod test {
             };
 
             let res = validator.validate(test_package);
-            assert_matches!(res, Err(KeyPackageValidationError::InvalidSignature));
+            assert_matches!(res, Err(KeyPackageValidationError::SignatureError(_)));
         }
     }
 

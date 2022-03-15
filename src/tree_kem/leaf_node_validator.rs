@@ -9,6 +9,7 @@ use crate::{
     credential::CredentialError,
     extension::{ExtensionError, ExtensionType, LifetimeExt, RequiredCapabilitiesExt},
     group::proposal::ProposalType,
+    signer::{Signable, SignatureError},
     time::MlsTime,
 };
 use ferriscrypt::asym::ec_key::Curve;
@@ -66,8 +67,8 @@ pub enum LeafNodeValidationError {
     InvalidCredentialForCipherSuite,
     #[error("invalid leaf_node_source")]
     InvalidLeafNodeSource,
-    #[error("invalid signature")]
-    InvalidSignature,
+    #[error(transparent)]
+    SignatureError(#[from] SignatureError),
     #[error("{0:?} is not within lifetime {1:?}")]
     InvalidLifetime(MlsTime, LifetimeExt),
     #[error("required extension not found")]
@@ -154,16 +155,7 @@ impl<'a> LeafNodeValidator<'a> {
         }
 
         // Verify that the credential signed the leaf node
-        if !leaf_node
-            .credential
-            .verify(
-                &leaf_node.signature,
-                &leaf_node.to_signable_bytes(context.group_id())?,
-            )
-            .map_err(|_| LeafNodeValidationError::InvalidSignature)?
-        {
-            return Err(LeafNodeValidationError::InvalidSignature);
-        }
+        leaf_node.verify(&leaf_node.credential.public_key()?, &context.group_id())?;
 
         // If required capabilities are specified, leaf node meets the requirements
         if let Some(required_capabilities) = self.required_capabilities {
@@ -326,7 +318,9 @@ mod test {
 
             assert_matches!(
                 test_validator.validate(leaf_node, ValidationContext::Add(None)),
-                Err(LeafNodeValidationError::InvalidSignature)
+                Err(LeafNodeValidationError::SignatureError(
+                    SignatureError::SignatureValidationFailed(_)
+                ))
             );
         }
     }

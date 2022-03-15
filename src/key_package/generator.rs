@@ -1,12 +1,14 @@
-use crate::signer::Signer;
+use crate::signer::{SignatureError, Signer};
 
 use super::*;
 use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError};
 
 #[derive(Debug, Error)]
 pub enum KeyPackageGenerationError {
-    #[error(transparent)]
+    #[error("internal signer error: {0:?}")]
     SignerError(Box<dyn std::error::Error>),
+    #[error(transparent)]
+    SignatureError(#[from] SignatureError),
     #[error(transparent)]
     EcKeyError(#[from] EcKeyError),
     #[error(transparent)]
@@ -36,12 +38,7 @@ pub struct KeyPackageGeneration {
 
 impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
     pub fn sign(&self, package: &mut KeyPackage) -> Result<(), KeyPackageGenerationError> {
-        package.signature = self
-            .signing_key
-            .sign(&package.to_signable_bytes()?)
-            .map_err(|e| KeyPackageGenerationError::SignerError(e.into()))?;
-
-        Ok(())
+        package.sign(self.signing_key, &()).map_err(Into::into)
     }
 
     pub fn generate(

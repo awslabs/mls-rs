@@ -30,12 +30,6 @@ impl Credential {
             Credential::Certificate(c) => c.public_key(),
         }
     }
-
-    pub fn verify(&self, signature: &[u8], data: &[u8]) -> Result<bool, CredentialError> {
-        self.public_key()?
-            .verify(signature, data)
-            .map_err(Into::into)
-    }
 }
 
 pub(crate) trait CredentialConvertible {
@@ -158,10 +152,16 @@ mod test {
 
             // Signature key
             let cred_sig_key = test_data.credential.public_key().unwrap();
+
             assert_eq!(
                 cred_sig_key.to_uncompressed_bytes().unwrap(),
                 test_data.public.to_uncompressed_bytes().unwrap()
-            )
+            );
+
+            assert_eq!(
+                test_data.secret.to_public().unwrap(),
+                test_data.credential.public_key().unwrap()
+            );
         }
     }
 
@@ -170,48 +170,10 @@ mod test {
         let test_data = get_test_certificate_credential();
 
         assert_eq!(test_data.public, test_data.credential.public_key().unwrap());
-    }
 
-    fn test_credential_signature(test_data: TestCredentialData) {
-        let test_signature_input = b"Don't Panic" as &[u8];
-        let valid_signature = test_data.secret.sign(test_signature_input).unwrap();
-        let invalid_signature_data = test_data.secret.sign(b"foo" as &[u8]).unwrap();
-
-        let invalid_signature_key = SecretKey::generate(test_data.secret.curve())
-            .unwrap()
-            .sign(test_signature_input)
-            .unwrap();
-
-        assert!(test_data
-            .credential
-            .verify(&valid_signature, test_signature_input)
-            .unwrap());
-        assert!(!test_data
-            .credential
-            .verify(&invalid_signature_data, test_signature_input)
-            .unwrap());
-        assert!(!test_data
-            .credential
-            .verify(&invalid_signature_key, test_signature_input)
-            .unwrap());
-    }
-
-    #[test]
-    fn test_basic_credential_verify() {
-        for one_scheme in SignatureScheme::all() {
-            println!(
-                "Testing basic credential verify with signature scheme: {:?}",
-                one_scheme
-            );
-
-            let test_data = get_test_basic_credential(vec![], one_scheme);
-            test_credential_signature(test_data);
-        }
-    }
-
-    #[test]
-    fn test_certificate_credential_verify() {
-        let test_data = get_test_certificate_credential();
-        test_credential_signature(test_data);
+        assert_eq!(
+            test_data.secret.to_public().unwrap(),
+            test_data.credential.public_key().unwrap()
+        );
     }
 }

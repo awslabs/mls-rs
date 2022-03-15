@@ -42,6 +42,7 @@ use crate::ProtocolVersion;
 use confirmation_tag::*;
 use epoch::*;
 use framing::*;
+use group_info::*;
 use key_schedule::*;
 use membership_tag::*;
 use message_signature::*;
@@ -58,6 +59,7 @@ mod confirmation_tag;
 pub(crate) mod epoch;
 pub(crate) mod epoch_repo;
 pub mod framing;
+mod group_info;
 pub mod key_schedule;
 mod membership_tag;
 pub mod message_signature;
@@ -249,72 +251,6 @@ impl GroupContext {
             confirmed_transcript_hash: ConfirmedTranscriptHash::from(vec![]),
             extensions,
         }
-    }
-}
-
-impl From<&GroupInfo> for GroupContext {
-    fn from(group_info: &GroupInfo) -> Self {
-        GroupContext {
-            group_id: group_info.group_id.clone(),
-            epoch: group_info.epoch,
-            tree_hash: group_info.tree_hash.clone(),
-            confirmed_transcript_hash: group_info.confirmed_transcript_hash.clone(),
-            extensions: group_info.group_context_extensions.clone(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct GroupInfo {
-    cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub group_id: Vec<u8>,
-    pub epoch: u64,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub tree_hash: Vec<u8>,
-    pub confirmed_transcript_hash: ConfirmedTranscriptHash,
-    pub group_context_extensions: ExtensionList,
-    pub other_extensions: ExtensionList,
-    pub confirmation_tag: ConfirmationTag,
-    pub signer: KeyPackageRef,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-    pub signature: Vec<u8>,
-}
-
-impl GroupInfo {
-    fn to_signable_vec(&self) -> Result<Vec<u8>, GroupError> {
-        #[derive(TlsSerialize, TlsSize)]
-        struct SignableGroupInfo<'a> {
-            cipher_suite: CipherSuite,
-            #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-            group_id: &'a Vec<u8>,
-            epoch: u64,
-            #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-            tree_hash: &'a Vec<u8>,
-            #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-            confirmed_transcript_hash: &'a Vec<u8>,
-            #[tls_codec(with = "crate::tls::DefVec::<u32>")]
-            group_context_extensions: &'a Vec<Extension>,
-            #[tls_codec(with = "crate::tls::DefVec::<u32>")]
-            other_extensions: &'a Vec<Extension>,
-            #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
-            confirmation_tag: &'a Tag,
-            signer: &'a KeyPackageRef,
-        }
-
-        SignableGroupInfo {
-            cipher_suite: self.cipher_suite,
-            group_id: &self.group_id,
-            epoch: self.epoch,
-            tree_hash: &self.tree_hash,
-            confirmed_transcript_hash: &self.confirmed_transcript_hash,
-            group_context_extensions: &self.group_context_extensions,
-            other_extensions: &self.other_extensions,
-            confirmation_tag: &self.confirmation_tag,
-            signer: &self.signer,
-        }
-        .tls_serialize_detached()
-        .map_err(Into::into)
     }
 }
 
@@ -604,13 +540,7 @@ impl Group {
         }?;
 
         let sender_key_package = public_tree.get_key_package(&group_info.signer)?;
-
-        if !sender_key_package
-            .credential
-            .verify(&group_info.signature, &group_info.to_signable_vec()?)?
-        {
-            return Err(GroupError::InvalidSignature);
-        }
+        group_info.verify(&sender_key_package.credential.public_key()?, &())?;
 
         let required_capabilities = group_info.group_context_extensions.get_extension()?;
 
@@ -817,7 +747,7 @@ impl Group {
         // Remove elements from the public tree
         let removed_leaves = provisional_tree
             .remove_leaves(old_tree, proposals.removes)?
-            .drain(..)
+            .into_iter()
             .collect::<HashMap<_, _>>();
 
         // Apply adds
@@ -1085,10 +1015,7 @@ impl Group {
         };
 
         // Sign the GroupInfo using the member's private signing key
-        group_info.signature = key_package_generator
-            .signing_key
-            .sign(&group_info.to_signable_vec()?)
-            .map_err(|e| GroupError::SignerError(Box::new(e)))?;
+        group_info.sign(key_package_generator.signing_key, &())?;
 
         let welcome = self
             .make_welcome_message(
@@ -1228,6 +1155,7 @@ impl Group {
             LeafIndex(0),
             &psk_secret,
         )?;
+
         // TODO: Make the repository bounds configurable somehow
         let epoch_repo = EpochRepository::new(epoch.clone(), 3);
 
@@ -1247,9 +1175,7 @@ impl Group {
             signature: Vec::new(),
         };
 
-        group_info.signature = signer
-            .sign(&group_info.to_signable_vec()?)
-            .map_err(|e| GroupError::SignerError(Box::new(e)))?;
+        group_info.sign(signer, &())?;
 
         let new_group = Group {
             protocol_version: self.protocol_version,

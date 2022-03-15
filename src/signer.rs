@@ -33,11 +33,13 @@ pub enum SignatureError {
 pub(crate) trait Signable<'a> {
     const SIGN_LABEL: &'static str;
 
-    type SignableContent: tls_codec::Serialize;
     type SigningContext;
 
     fn signature(&self) -> &[u8];
-    fn signable_content(&self, context: &Self::SigningContext) -> Self::SignableContent;
+
+    fn signable_content(&self, context: &Self::SigningContext)
+        -> Result<Vec<u8>, tls_codec::Error>;
+
     fn write_signature(&mut self, signature: Vec<u8>);
 
     fn sign<S: Signer>(
@@ -45,10 +47,7 @@ pub(crate) trait Signable<'a> {
         signer: &S,
         context: &Self::SigningContext,
     ) -> Result<(), SignatureError> {
-        let sign_content = SignContent::new(
-            Self::SIGN_LABEL,
-            self.signable_content(context).tls_serialize_detached()?,
-        );
+        let sign_content = SignContent::new(Self::SIGN_LABEL, self.signable_content(context)?);
 
         let signature = signer
             .sign(&sign_content.tls_serialize_detached()?)
@@ -64,10 +63,7 @@ pub(crate) trait Signable<'a> {
         pub_key: &PublicKey,
         context: &Self::SigningContext,
     ) -> Result<(), SignatureError> {
-        let sign_content = SignContent::new(
-            Self::SIGN_LABEL,
-            self.signable_content(context).tls_serialize_detached()?,
-        );
+        let sign_content = SignContent::new(Self::SIGN_LABEL, self.signable_content(context)?);
 
         let valid_signature = pub_key
             .verify(self.signature(), &sign_content.tls_serialize_detached()?)
@@ -99,5 +95,167 @@ impl Signer for SecretKey {
 
     fn public_key(&self) -> Result<PublicKey, Self::Error> {
         self.to_public()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::ops::Deref;
+
+    use super::*;
+    use crate::cipher_suite::CipherSuite;
+    use assert_matches::assert_matches;
+    use ferriscrypt::{asym::ec_key::SecretKey, rand::SecureRng};
+    use tls_codec::{Serialize, TlsByteVecU32};
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    struct TestCase {
+        cipher_suite: u16,
+        #[serde(with = "hex::serde")]
+        content: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        context: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        signature: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        signer: Vec<u8>,
+    }
+
+    struct TestSignable {
+        content: Vec<u8>,
+        signature: Vec<u8>,
+    }
+
+    impl<'a> Signable<'a> for TestSignable {
+        const SIGN_LABEL: &'static str = "TestLabel";
+
+        type SigningContext = Vec<u8>;
+
+        fn signature(&self) -> &[u8] {
+            &self.signature
+        }
+
+        fn signable_content(
+            &self,
+            context: &Self::SigningContext,
+        ) -> Result<Vec<u8>, tls_codec::Error> {
+            let data = [context.as_slice(), self.content.as_slice()].concat();
+            TlsByteVecU32::new(data).tls_serialize_detached()
+        }
+
+        fn write_signature(&mut self, signature: Vec<u8>) {
+            self.signature = signature
+        }
+    }
+
+    #[allow(dead_code)]
+    fn generate_test_cases() {
+        let mut test_cases = Vec::new();
+
+        for cipher_suite in CipherSuite::all() {
+            let signing_key = cipher_suite.generate_secret_key().unwrap();
+            let content = SecureRng::gen(32).unwrap();
+            let context = SecureRng::gen(32).unwrap();
+
+            let mut test_signable = TestSignable {
+                content: content.clone(),
+                signature: Vec::new(),
+            };
+
+            test_signable.sign(&signing_key, &context).unwrap();
+
+            test_cases.push(TestCase {
+                cipher_suite: cipher_suite as u16,
+                content,
+                context,
+                signature: test_signable.signature,
+                signer: signing_key.to_der().unwrap().deref().clone(),
+            });
+        }
+
+        std::fs::write(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/signatures.json"),
+            serde_json::to_vec_pretty(&test_cases).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_signatures() {
+        let cases: Vec<TestCase> =
+            serde_json::from_slice(include_bytes!("../test_data/signatures.json")).unwrap();
+
+        for one_case in cases {
+            if CipherSuite::from_raw(one_case.cipher_suite).is_none() {
+                println!("Skipping test for unsupported cipher suite");
+                continue;
+            }
+
+            let signature_key = SecretKey::from_der(&one_case.signer).unwrap();
+
+            // Test signature generation
+            let mut test_signable = TestSignable {
+                content: one_case.content.clone(),
+                signature: Vec::new(),
+            };
+
+            test_signable
+                .sign(&signature_key, &one_case.context)
+                .unwrap();
+
+            test_signable
+                .verify(&signature_key.to_public().unwrap(), &one_case.context)
+                .unwrap();
+
+            // Test verifying an existing signature
+            test_signable = TestSignable {
+                content: one_case.content,
+                signature: one_case.signature,
+            };
+
+            test_signable
+                .verify(&signature_key.to_public().unwrap(), &one_case.context)
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn test_invalid_signature() {
+        let correct_key = CipherSuite::Curve25519Aes128V1
+            .generate_secret_key()
+            .unwrap();
+        let incorrect_key = CipherSuite::Curve25519Aes128V1
+            .generate_secret_key()
+            .unwrap();
+
+        let mut test_signable = TestSignable {
+            content: SecureRng::gen(32).unwrap(),
+            signature: vec![],
+        };
+
+        test_signable.sign(&correct_key, &vec![]).unwrap();
+
+        let res = test_signable.verify(&incorrect_key.to_public().unwrap(), &vec![]);
+        assert_matches!(res, Err(SignatureError::SignatureValidationFailed(_)));
+    }
+
+    #[test]
+    fn test_invalid_context() {
+        let signing_key = CipherSuite::Curve25519Aes128V1
+            .generate_secret_key()
+            .unwrap();
+
+        let correct_context = SecureRng::gen(32).unwrap();
+        let incorrect_context = SecureRng::gen(32).unwrap();
+
+        let mut test_signable = TestSignable {
+            content: SecureRng::gen(32).unwrap(),
+            signature: vec![],
+        };
+
+        test_signable.sign(&signing_key, &correct_context).unwrap();
+
+        let res = test_signable.verify(&signing_key.to_public().unwrap(), &incorrect_context);
+        assert_matches!(res, Err(SignatureError::SignatureValidationFailed(_)));
     }
 }
