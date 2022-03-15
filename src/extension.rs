@@ -1,12 +1,14 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::proposal::ProposalType;
 use crate::time::{MlsTime, SystemTimeError};
+use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
 use crate::tree_kem::parent_hash::ParentHash;
 use crate::ProtocolVersion;
-use std::ops::{Deref, DerefMut};
+use indexmap::IndexMap;
+use std::io::{Read, Write};
 use thiserror::Error;
-use tls_codec::{Deserialize, Serialize};
+use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
@@ -170,26 +172,72 @@ pub struct Extension {
     pub extension_data: Vec<u8>,
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Default)]
-pub struct ExtensionList(#[tls_codec(with = "crate::tls::DefVec::<u32>")] Vec<Extension>);
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct ExtensionList(IndexMap<ExtensionType, Extension>);
+
+impl Size for ExtensionList {
+    fn tls_serialized_len(&self) -> usize {
+        (self.len() as u32).tls_serialized_len()
+            + self
+                .iter()
+                .map(|ext| ext.tls_serialized_len())
+                .sum::<usize>()
+    }
+}
+
+impl Serialize for ExtensionList {
+    fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
+        let len = self
+            .iter()
+            .map(|ext| ext.tls_serialized_len())
+            .sum::<usize>() as u32;
+        self.iter()
+            .try_fold(len.tls_serialize(writer)?, |acc, ext| {
+                Ok(acc + ext.tls_serialize(writer)?)
+            })
+    }
+}
+
+impl Deserialize for ExtensionList {
+    fn tls_deserialize<R: Read>(reader: &mut R) -> Result<Self, tls_codec::Error> {
+        let len = u32::tls_deserialize(reader)? as usize;
+        let reader = &mut ReadWithCount::new(reader);
+        let mut items = IndexMap::new();
+        while reader.bytes_read() < len {
+            let ext = Extension::tls_deserialize(reader)?;
+            let ext_type = ext.extension_type;
+            if items.insert(ext_type, ext).is_some() {
+                return Err(tls_codec::Error::DecodingError(format!(
+                    "Extension list has duplicate extension of type {ext_type}"
+                )));
+            }
+        }
+        Ok(ExtensionList(items))
+    }
+}
 
 impl From<Vec<Extension>> for ExtensionList {
     fn from(v: Vec<Extension>) -> Self {
-        Self(v)
+        Self(v.into_iter().map(|ext| (ext.extension_type, ext)).collect())
     }
 }
 
-impl Deref for ExtensionList {
-    type Target = Vec<Extension>;
+impl<'a> IntoIterator for &'a ExtensionList {
+    type Item = &'a Extension;
+    type IntoIter = ExtensionListIter<'a>;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
+    fn into_iter(self) -> Self::IntoIter {
+        ExtensionListIter(self.0.values())
     }
 }
 
-impl DerefMut for ExtensionList {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+pub struct ExtensionListIter<'a>(indexmap::map::Values<'a, ExtensionType, Extension>);
+
+impl<'a> Iterator for ExtensionListIter<'a> {
+    type Item = &'a Extension;
+
+    fn next(&mut self) -> Option<&'a Extension> {
+        self.0.next()
     }
 }
 
@@ -199,30 +247,37 @@ impl ExtensionList {
     }
 
     pub fn get_extension<T: MlsExtension>(&self) -> Result<Option<T>, ExtensionError> {
-        let ext = self.iter().find(|v| v.extension_type == T::IDENTIFIER);
-
-        if let Some(ext) = ext {
-            Ok(Some(T::tls_deserialize(&mut &*ext.extension_data)?))
-        } else {
-            Ok(None)
-        }
+        Ok(self
+            .0
+            .get(&T::IDENTIFIER)
+            .map(|ext| T::tls_deserialize(&mut &*ext.extension_data))
+            .transpose()?)
     }
 
     pub fn has_extension(&self, ext_id: ExtensionType) -> bool {
-        self.iter().any(|v| v.extension_type == ext_id)
+        self.0.contains_key(&ext_id)
     }
 
     pub fn set_extension<T: MlsExtension>(&mut self, ext: T) -> Result<(), ExtensionError> {
-        match self.iter_mut().find(|v| v.extension_type == T::IDENTIFIER) {
-            None => {
-                self.push(ext.to_extension()?);
-                Ok(())
-            }
-            Some(existing) => {
-                *existing = ext.to_extension()?;
-                Ok(())
-            }
-        }
+        let ext = ext.to_extension()?;
+        self.0.insert(ext.extension_type, ext);
+        Ok(())
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn iter(&self) -> ExtensionListIter<'_> {
+        self.into_iter()
+    }
+
+    pub fn remove(&mut self, ext_type: ExtensionType) {
+        self.0.shift_remove(&ext_type);
     }
 }
 
@@ -393,5 +448,56 @@ mod tests {
 
         assert!(list.has_extension(LifetimeExt::IDENTIFIER));
         assert!(!list.has_extension(42));
+    }
+
+    #[test]
+    fn extension_list_serialization_roundtrips() {
+        let mut extensions = ExtensionList::default();
+        extensions
+            .set_extension(LifetimeExt::seconds(42).unwrap())
+            .unwrap();
+        extensions
+            .set_extension(ExternalKeyIdExt {
+                identifier: SecureRng::gen(32).unwrap(),
+            })
+            .unwrap();
+        assert_eq!(
+            crate::tls::test_util::ser_deser(&extensions).unwrap(),
+            extensions
+        );
+    }
+
+    #[test]
+    fn extension_list_is_serialized_like_a_sequence_of_extensions() {
+        let extension_vec = vec![
+            LifetimeExt::seconds(42).unwrap().to_extension().unwrap(),
+            ExternalKeyIdExt {
+                identifier: SecureRng::gen(32).unwrap(),
+            }
+            .to_extension()
+            .unwrap(),
+        ];
+        let extension_list = ExtensionList::from(extension_vec.clone());
+        assert_eq!(
+            tls_codec::TlsSliceU32(&extension_vec)
+                .tls_serialize_detached()
+                .unwrap(),
+            extension_list.tls_serialize_detached().unwrap(),
+        );
+    }
+
+    #[test]
+    fn deserializing_extension_list_fails_on_duplicate_extension() {
+        let extensions = vec![
+            LifetimeExt::seconds(42).unwrap().to_extension().unwrap(),
+            LifetimeExt::seconds(43).unwrap().to_extension().unwrap(),
+        ];
+        let serialized_extensions = tls_codec::TlsSliceU32(&extensions)
+            .tls_serialize_detached()
+            .unwrap();
+        assert_matches!(
+            ExtensionList::tls_deserialize(&mut &*serialized_extensions),
+            Err(tls_codec::Error::DecodingError(_))
+        );
     }
 }

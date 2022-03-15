@@ -39,10 +39,10 @@ struct SignableGroupInfo<'a> {
     tree_hash: &'a Vec<u8>,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     confirmed_transcript_hash: &'a Vec<u8>,
-    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
-    group_context_extensions: &'a Vec<Extension>,
-    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
-    other_extensions: &'a Vec<Extension>,
+    #[tls_codec(with = "crate::tls::DefRef")]
+    group_context_extensions: &'a ExtensionList,
+    #[tls_codec(with = "crate::tls::DefRef")]
+    other_extensions: &'a ExtensionList,
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     confirmation_tag: &'a Tag,
     signer: &'a KeyPackageRef,

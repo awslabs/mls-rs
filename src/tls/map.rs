@@ -60,7 +60,7 @@ impl<KeySer, ValueSer> Map<KeySer, ValueSer> {
         let len = u32::tls_deserialize(reader)?;
         let len = usize::try_from(len).map_err(|_| tls_codec::Error::InvalidVectorLength)?;
         let mut read_len = 0;
-        let mut m = HashMap::with_capacity(len);
+        let mut m = HashMap::new();
         while read_len < len {
             let k = KeySer::deserialize(reader)?;
             read_len += KeySer::serialized_len(&k);

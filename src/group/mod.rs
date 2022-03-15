@@ -17,9 +17,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
 use crate::client_config::PskStore;
 use crate::credential::CredentialError;
-use crate::extension::{
-    Extension, ExtensionError, ExtensionList, RatchetTreeExt, RequiredCapabilitiesExt,
-};
+use crate::extension::{ExtensionError, ExtensionList, RatchetTreeExt, RequiredCapabilitiesExt};
 use crate::key_package::{
     KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerationError,
     KeyPackageGenerator, KeyPackageRef, KeyPackageValidationError, KeyPackageValidationOptions,

@@ -396,7 +396,7 @@ mod test {
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
         let mut test_package = test_key_package(protocol_version, cipher_suite);
 
-        test_package.extensions.retain(|e| e.extension_type != id);
+        test_package.extensions.remove(id);
 
         let validator = KeyPackageValidator {
             protocol_version,

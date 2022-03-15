@@ -186,7 +186,7 @@ mod test {
             SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
 
         let mut extensions = test_extensions();
-        extensions.retain(|e| e.extension_type != ext);
+        extensions.remove(ext);
 
         let credential = test_credential(&signing_key);
 

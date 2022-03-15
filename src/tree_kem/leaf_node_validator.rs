@@ -175,7 +175,7 @@ impl<'a> LeafNodeValidator<'a> {
         }
 
         // If there are extensions, make sure they are referenced in the capabilities field
-        for one_ext in leaf_node.extensions.deref() {
+        for one_ext in &leaf_node.extensions {
             if !leaf_node
                 .capabilities
                 .extensions

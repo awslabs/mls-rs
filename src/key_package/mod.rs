@@ -3,7 +3,7 @@ use crate::credential::{Credential, CredentialError};
 use crate::extension::CapabilitiesExt;
 use crate::extension::LifetimeExt;
 use crate::extension::RequiredCapabilitiesExt;
-use crate::extension::{Extension, ExtensionError, ExtensionList, ExtensionType};
+use crate::extension::{ExtensionError, ExtensionList, ExtensionType};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::HashReference;
 use crate::signer::Signable;
@@ -81,8 +81,8 @@ pub struct KeyPackageData<'a> {
     #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
     pub hpke_init_key: &'a HpkePublicKey,
     pub credential: &'a Credential,
-    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
-    pub extensions: &'a Vec<Extension>,
+    #[tls_codec(with = "crate::tls::DefRef")]
+    pub extensions: &'a ExtensionList,
 }
 
 impl<'a> KeyPackage {

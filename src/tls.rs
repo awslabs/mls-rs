@@ -17,8 +17,9 @@ mod default;
 mod map;
 mod optional;
 mod read_with_count;
+mod reference;
 #[cfg(test)]
-mod test_util;
+pub mod test_util;
 mod vector;
 
 pub use boolean::Boolean;
@@ -26,7 +27,8 @@ pub use byte_vec::ByteVec;
 pub use default::DefaultSer;
 pub use map::{DefMap, Map};
 pub use optional::Optional;
-use read_with_count::ReadWithCount;
+pub use read_with_count::ReadWithCount;
+pub use reference::{DefRef, Ref};
 pub use vector::{DefVec, Vector};
 
 /// Helper trait to derive [`tls_codec::Size`] when foreign types not implementing `Size` are

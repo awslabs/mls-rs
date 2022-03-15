@@ -18,6 +18,7 @@ tls_codec = "0.2.0"
 tls_codec_derive = "0.2.0"
 hex = { version = "^0.4.3", features = ["serde"] }
 enum-iterator = "0.7.0"
+indexmap = "1.8.0"
 der = { version = "^0.5.1", features = ["alloc"]}
 spki = "^0.5.4"
 wasm-bindgen = { version = "^0.2.79", optional = true }
