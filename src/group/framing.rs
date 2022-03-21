@@ -5,7 +5,7 @@ use tls_codec::{Deserialize, Serialize, Size, TlsByteSliceU16, TlsByteVecU16};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Copy, Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-#[repr(u16)]
+#[repr(u8)]
 pub enum ContentType {
     Application,
     Proposal,
