@@ -256,7 +256,7 @@ impl GroupContext {
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct CommitGeneration {
-    pub plaintext: OutboundPlaintext,
+    pub plaintext: OutboundMessage,
     pub secrets: Option<UpdatePathGeneration>,
 }
 
@@ -334,7 +334,7 @@ impl Deref for VerifiedPlaintext {
 
 #[derive(Debug, Clone, PartialEq, TlsSerialize, TlsDeserialize, TlsSize)]
 #[repr(u8)]
-pub enum OutboundPlaintext {
+pub enum OutboundMessage {
     Plaintext(MLSPlaintext),
     Ciphertext {
         original: MLSPlaintext,
@@ -342,42 +342,42 @@ pub enum OutboundPlaintext {
     },
 }
 
-impl OutboundPlaintext {
+impl OutboundMessage {
     pub fn into_message(self, version: ProtocolVersion) -> MLSMessage {
         let payload = match self {
-            OutboundPlaintext::Plaintext(m) => MLSMessagePayload::Plain(m),
-            OutboundPlaintext::Ciphertext { encrypted, .. } => MLSMessagePayload::Cipher(encrypted),
+            OutboundMessage::Plaintext(m) => MLSMessagePayload::Plain(m),
+            OutboundMessage::Ciphertext { encrypted, .. } => MLSMessagePayload::Cipher(encrypted),
         };
         MLSMessage { version, payload }
     }
 }
 
-impl Deref for OutboundPlaintext {
+impl Deref for OutboundMessage {
     type Target = MLSPlaintext;
 
     fn deref(&self) -> &Self::Target {
         match self {
-            OutboundPlaintext::Plaintext(m) => m,
-            OutboundPlaintext::Ciphertext { original, .. } => original,
+            OutboundMessage::Plaintext(m) => m,
+            OutboundMessage::Ciphertext { original, .. } => original,
         }
     }
 }
 
-impl From<OutboundPlaintext> for MLSPlaintext {
-    fn from(outbound: OutboundPlaintext) -> Self {
+impl From<OutboundMessage> for MLSPlaintext {
+    fn from(outbound: OutboundMessage) -> Self {
         match outbound {
-            OutboundPlaintext::Plaintext(m) => m,
-            OutboundPlaintext::Ciphertext { original, .. } => original,
+            OutboundMessage::Plaintext(m) => m,
+            OutboundMessage::Ciphertext { original, .. } => original,
         }
     }
 }
 
-impl From<OutboundPlaintext> for VerifiedPlaintext {
-    fn from(outbound: OutboundPlaintext) -> Self {
+impl From<OutboundMessage> for VerifiedPlaintext {
+    fn from(outbound: OutboundMessage) -> Self {
         VerifiedPlaintext {
             encrypted: match outbound {
-                OutboundPlaintext::Plaintext(_) => false,
-                OutboundPlaintext::Ciphertext { .. } => true,
+                OutboundMessage::Plaintext(_) => false,
+                OutboundMessage::Ciphertext { .. } => true,
             },
             plaintext: outbound.into(),
         }
@@ -798,7 +798,7 @@ impl Group {
         proposal: Proposal,
         signer: &S,
         encryption_mode: ControlEncryptionMode,
-    ) -> Result<OutboundPlaintext, GroupError> {
+    ) -> Result<OutboundMessage, GroupError> {
         let plaintext =
             self.construct_mls_plaintext(Content::Proposal(proposal), signer, encryption_mode)?;
 
@@ -1370,17 +1370,17 @@ impl Group {
         &mut self,
         plaintext: MLSPlaintext,
         encryption_mode: ControlEncryptionMode,
-    ) -> Result<OutboundPlaintext, GroupError> {
+    ) -> Result<OutboundMessage, GroupError> {
         Ok(
             if let ControlEncryptionMode::Encrypted(padding_mode) = encryption_mode {
                 let ciphertext = self.encrypt_plaintext(plaintext.clone(), padding_mode)?;
 
-                OutboundPlaintext::Ciphertext {
+                OutboundMessage::Ciphertext {
                     original: plaintext,
                     encrypted: ciphertext,
                 }
             } else {
-                OutboundPlaintext::Plaintext(plaintext)
+                OutboundMessage::Plaintext(plaintext)
             },
         )
     }
@@ -2444,16 +2444,16 @@ mod test {
             .unwrap();
 
         let without_padding_length = match without_padding {
-            OutboundPlaintext::Plaintext(_) => panic!("unexpected plaintext"),
-            OutboundPlaintext::Ciphertext {
+            OutboundMessage::Plaintext(_) => panic!("unexpected plaintext"),
+            OutboundMessage::Ciphertext {
                 original: _,
                 encrypted,
             } => encrypted.tls_serialized_len(),
         };
 
         let with_padding_length = match with_padding {
-            OutboundPlaintext::Plaintext(_) => panic!("unexpected plaintext"),
-            OutboundPlaintext::Ciphertext {
+            OutboundMessage::Plaintext(_) => panic!("unexpected plaintext"),
+            OutboundMessage::Ciphertext {
                 original: _,
                 encrypted,
             } => encrypted.tls_serialized_len(),

@@ -6,7 +6,7 @@ pub use crate::group::framing::{ContentType, MLSMessage, MLSMessagePayload};
 
 use crate::group::framing::Content;
 use crate::group::{
-    proposal::Proposal, CommitGeneration, Group, OutboundPlaintext, StateUpdate, VerifiedPlaintext,
+    proposal::Proposal, CommitGeneration, Group, OutboundMessage, StateUpdate, VerifiedPlaintext,
     Welcome,
 };
 use crate::key_package::{
@@ -298,7 +298,7 @@ impl<C: ClientConfig + Clone> Session<C> {
     }
 
     #[inline(always)]
-    fn serialize_control(&mut self, plaintext: OutboundPlaintext) -> Result<Vec<u8>, SessionError> {
+    fn serialize_control(&mut self, plaintext: OutboundMessage) -> Result<Vec<u8>, SessionError> {
         Ok(plaintext
             .into_message(self.protocol.protocol_version)
             .tls_serialize_detached()?)
