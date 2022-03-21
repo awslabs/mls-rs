@@ -238,7 +238,7 @@ impl TreeKemPublic {
         let index = self.package_leaf_index(key_package_ref)?;
 
         // For a given leaf index, find parent nodes and add the leaf to the unmerged leaf
-        self.nodes.direct_path(index)?.iter().for_each(|&i| {
+        self.nodes.direct_path(index)?.into_iter().for_each(|i| {
             if let Ok(p) = self.nodes.borrow_as_parent_mut(i) {
                 p.unmerged_leaves.push(index)
             }
@@ -327,17 +327,17 @@ impl TreeKemPublic {
             .map(|reference| lookup_tree.package_leaf_index(reference))
             .collect::<Result<Vec<LeafIndex>, RatchetTreeError>>()?;
 
-        let removed_leaves = indexes.iter().zip(key_package_refs).try_fold(
+        let removed_leaves = indexes.into_iter().zip(key_package_refs).try_fold(
             Vec::new(),
             |mut vec, (index, package_ref)| {
                 // Replace the leaf node at position removed with a blank node
-                if let Some(removed) = self.nodes.blank_leaf_node(*index)? {
+                if let Some(removed) = self.nodes.blank_leaf_node(index)? {
                     self.index.remove(&package_ref, &removed.key_package)?;
                     vec.push((package_ref.clone(), removed.key_package.into()));
                 }
 
                 // Blank the intermediate nodes along the path from the removed leaf to the root
-                self.nodes.blank_direct_path(*index)?;
+                self.nodes.blank_direct_path(index)?;
 
                 Ok::<_, RatchetTreeError>(vec)
             },
@@ -601,7 +601,7 @@ impl TreeKemPublic {
         update_path
             .nodes
             .iter()
-            .zip(self.nodes.direct_path(sender)?)
+            .zip(self.nodes.filtered_direct_path(sender)?)
             .try_for_each(|(one_node, node_index)| {
                 self.update_node(one_node.public_key.clone(), node_index)
             })?;
@@ -653,13 +653,12 @@ impl TreeKemPublic {
         let lca =
             tree_math::common_ancestor_direct(private_key.self_index.into(), sender_index.into());
 
-        let sender_direct = self.nodes.direct_path(sender_index)?;
-        let sender_co = self.nodes.copath(sender_index)?;
-
-        let lca_path_secret = sender_direct
-            .iter()
-            .zip(sender_co.iter().zip(&update_path.nodes))
-            .find_map(|(&direct_path_index, (&co_path_index, update_path_node))| {
+        let lca_path_secret = self
+            .nodes
+            .filtered_direct_path_co_path(sender_index)?
+            .into_iter()
+            .zip(&update_path.nodes)
+            .find_map(|((direct_path_index, co_path_index), update_path_node)| {
                 if direct_path_index == lca {
                     self.decrypt_parent_path_secret(
                         &private_key,
@@ -685,7 +684,7 @@ impl TreeKemPublic {
                 // Get a pairing of direct path index + associated update
                 // This will help us verify that the calculated public key is the expected one
                 self.nodes
-                    .direct_path(sender_index)?
+                    .filtered_direct_path(sender_index)?
                     .iter()
                     .zip(update_path.nodes.iter())
                     .skip_while(|(dp, _)| **dp != lca),

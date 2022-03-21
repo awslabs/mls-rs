@@ -280,13 +280,46 @@ impl NodeVec {
     #[inline]
     pub fn direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
         // Direct path from leaf to root
-        index.direct_path((self.len() / 2 + 1) as u32)
+        index.direct_path(self.total_leaf_count())
+    }
+
+    pub fn filtered_direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
+        Ok(self
+            .filtered_direct_path_co_path(index)?
+            .into_iter()
+            .map(|(dp, _)| dp)
+            .collect())
+    }
+
+    // Section 8.4
+    // The filtered direct path of a node is obtained from the node's direct path by removing
+    // all nodes whose child on the nodes's copath has an empty resolution
+    pub fn filtered_direct_path_co_path(
+        &self,
+        index: LeafIndex,
+    ) -> Result<Vec<(NodeIndex, NodeIndex)>, TreeMathError> {
+        index
+            .direct_path(self.total_leaf_count())?
+            .into_iter()
+            .zip(self.copath(index)?)
+            .filter_map(|(dp, cp)| {
+                if self
+                    .get_resolution(cp, &[])
+                    .unwrap_or_else(|_| vec![])
+                    .is_empty()
+                {
+                    None
+                } else {
+                    Some(Ok((dp, cp)))
+                }
+            })
+            .collect()
     }
 
     #[inline]
     pub fn copath(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
         // Co path from leaf to root
-        index.copath((self.len() / 2 + 1) as u32)
+        index.copath(self.total_leaf_count())
     }
 
     #[inline]
@@ -447,10 +480,11 @@ impl NodeVec {
             .map(NodeIndex::from)
             .collect::<Vec<NodeIndex>>();
 
-        self.direct_path(index)?
-            .iter()
-            .zip(self.copath(index)?)
-            .map(|(&dp, cp)| self.get_resolution(cp, &excluding).map(|r| (dp, r)))
+        // This uses direct_path with a filter instead of filtered_direct_path to avoid computing
+        // the resolution of each node twice
+        self.filtered_direct_path_co_path(index)?
+            .into_iter()
+            .map(|(dp, cp)| self.get_resolution(cp, &excluding).map(|r| (dp, r)))
             .collect()
     }
 }
@@ -544,11 +578,27 @@ pub mod test {
     }
 
     #[test]
+    fn test_filtered_direct_path() {
+        let test_vec = get_test_node_vec();
+        let expected = [3];
+        let actual = test_vec.filtered_direct_path(LeafIndex(0)).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn test_copath() {
         let test_vec = get_test_node_vec();
         // Tree math is already tested in that module, just ensure equality
         let expected = tree_math::copath(0, 4).unwrap();
         let actual = test_vec.copath(LeafIndex(0)).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_filtered_direct_path_co_path() {
+        let test_vec = get_test_node_vec();
+        let expected = [(3, 5)];
+        let actual = test_vec.filtered_direct_path_co_path(LeafIndex(0)).unwrap();
         assert_eq!(actual, expected);
     }
 
@@ -615,17 +665,14 @@ pub mod test {
     fn test_copath_resolution() {
         let test_vec = get_test_node_vec();
 
-        let expected: Vec<(NodeIndex, Vec<Node>)> = [
-            (1, [].to_vec()),
-            (
-                3,
-                [
-                    test_vec[5].as_ref().unwrap().clone(),
-                    test_vec[4].as_ref().unwrap().clone(),
-                ]
-                .to_vec(),
-            ),
-        ]
+        let expected: Vec<(NodeIndex, Vec<Node>)> = [(
+            3,
+            [
+                test_vec[5].as_ref().unwrap().clone(),
+                test_vec[4].as_ref().unwrap().clone(),
+            ]
+            .to_vec(),
+        )]
         .to_vec();
 
         let copath_resolution = test_vec
@@ -644,11 +691,8 @@ pub mod test {
     fn test_copath_resolution_filter() {
         let test_vec = get_test_node_vec();
 
-        let expected: Vec<(NodeIndex, Vec<Node>)> = [
-            (1, [].to_vec()),
-            (3, [test_vec[5].as_ref().unwrap().clone()].to_vec()),
-        ]
-        .to_vec();
+        let expected: Vec<(NodeIndex, Vec<Node>)> =
+            [(3, [test_vec[5].as_ref().unwrap().clone()].to_vec())].to_vec();
 
         let copath_resolution = test_vec
             .direct_path_copath_resolution(LeafIndex(0), &[LeafIndex(2)])

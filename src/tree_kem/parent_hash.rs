@@ -136,13 +136,16 @@ impl TreeKemPublic {
             return Ok(ParentHash::empty());
         }
 
-        let direct_path = self.nodes.direct_path(index)?;
-        let copath = self.nodes.copath(index)?;
+        let mut filtered_direct_co_path = self
+            .nodes
+            .filtered_direct_path_co_path(index)?
+            .into_iter()
+            .rev();
 
         // Calculate all the parent hash values along the direct path from root to leaf
-        direct_path.iter().zip(copath.iter()).rev().try_fold(
+        filtered_direct_co_path.try_fold(
             ParentHash::empty(),
-            |last_hash, (&index, &sibling_index)| {
+            |last_hash, (index, sibling_index)| {
                 if !self.nodes.is_leaf(index) {
                     on_node_calculation(index, &last_hash);
                 }
