@@ -1,5 +1,5 @@
 use crate::{
-    cipher_suite::CipherSuite,
+    cipher_suite::{CipherSuite, MaybeCipherSuite},
     client::Client,
     credential::Credential,
     extension::{CapabilitiesExt, ExtensionType},
@@ -61,7 +61,11 @@ pub trait ClientConfig {
     fn capabilities(&self) -> CapabilitiesExt {
         CapabilitiesExt {
             protocol_versions: self.supported_protocol_versions(),
-            cipher_suites: self.supported_cipher_suites(),
+            cipher_suites: self
+                .supported_cipher_suites()
+                .into_iter()
+                .map(MaybeCipherSuite::from)
+                .collect(),
             extensions: self.supported_extensions(),
             proposals: vec![], // TODO: Support registering custom proposals here
         }

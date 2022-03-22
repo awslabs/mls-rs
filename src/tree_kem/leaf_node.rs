@@ -7,6 +7,7 @@ use crate::{
 use ferriscrypt::{
     asym::ec_key::{generate_keypair, EcKeyError, PublicKey, SecretKey},
     hpke::kem::{HpkePublicKey, HpkeSecretKey},
+    kdf::KdfError,
 };
 use thiserror::Error;
 use tls_codec::{Serialize, Size, TlsByteSliceU32};
@@ -22,6 +23,8 @@ pub enum LeafNodeError {
     CredentialError(#[from] CredentialError),
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
+    #[error(transparent)]
+    KdfError(#[from] KdfError),
     #[error("parent hash error: {0}")]
     ParentHashError(#[source] Box<dyn std::error::Error>),
 }
@@ -211,6 +214,8 @@ impl<'a> Signable<'a> for LeafNode {
 
 #[cfg(test)]
 pub mod test_util {
+    use crate::extension::{ExternalKeyIdExt, MlsExtension};
+
     use super::*;
 
     pub fn get_test_node(
@@ -228,22 +233,8 @@ pub mod test_util {
         )
         .unwrap()
     }
-}
 
-#[cfg(test)]
-mod test {
-    use super::test_util::*;
-    use super::*;
-
-    use crate::{
-        cipher_suite::CipherSuite,
-        client::test_util::get_test_credential,
-        extension::{ExternalKeyIdExt, MlsExtension},
-    };
-    use assert_matches::assert_matches;
-    use ferriscrypt::asym::ec_key::Curve;
-
-    fn get_test_extensions() -> ExtensionList {
+    pub fn get_test_extensions() -> ExtensionList {
         let mut extension_list = ExtensionList::new();
 
         extension_list
@@ -255,11 +246,21 @@ mod test {
         extension_list
     }
 
-    fn get_test_capabilities() -> CapabilitiesExt {
+    pub fn get_test_capabilities() -> CapabilitiesExt {
         let mut capabilities = CapabilitiesExt::default();
         capabilities.extensions.push(ExternalKeyIdExt::IDENTIFIER);
         capabilities
     }
+}
+
+#[cfg(test)]
+mod test {
+    use super::test_util::*;
+    use super::*;
+
+    use crate::{cipher_suite::CipherSuite, client::test_util::get_test_credential};
+    use assert_matches::assert_matches;
+    use ferriscrypt::asym::ec_key::Curve;
 
     #[test]
     fn test_node_generation() {

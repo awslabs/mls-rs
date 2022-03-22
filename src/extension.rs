@@ -1,4 +1,4 @@
-use crate::cipher_suite::CipherSuite;
+use crate::cipher_suite::{CipherSuite, MaybeCipherSuite};
 use crate::group::proposal::ProposalType;
 use crate::time::{MlsTime, SystemTimeError};
 use crate::tls::ReadWithCount;
@@ -69,7 +69,7 @@ pub struct CapabilitiesExt {
     #[tls_codec(with = "crate::tls::DefVec::<u8>")]
     pub protocol_versions: Vec<ProtocolVersion>,
     #[tls_codec(with = "crate::tls::DefVec::<u8>")]
-    pub cipher_suites: Vec<CipherSuite>,
+    pub cipher_suites: Vec<MaybeCipherSuite>,
     #[tls_codec(with = "crate::tls::DefVec::<u8>")]
     pub extensions: Vec<ExtensionType>,
     #[tls_codec(with = "crate::tls::DefVec::<u8>")]
@@ -80,7 +80,7 @@ impl Default for CapabilitiesExt {
     fn default() -> Self {
         Self {
             protocol_versions: vec![ProtocolVersion::Mls10],
-            cipher_suites: CipherSuite::all().collect(),
+            cipher_suites: CipherSuite::all().map(MaybeCipherSuite::from).collect(),
             extensions: Default::default(),
             proposals: Default::default(),
         }
@@ -310,7 +310,11 @@ mod tests {
     #[test]
     fn test_capabilities() {
         let test_protocol_versions = vec![ProtocolVersion::Mls10];
-        let test_ciphersuites = vec![CipherSuite::P256Aes128V1, CipherSuite::Curve25519Aes128V1];
+
+        let test_ciphersuites = vec![CipherSuite::P256Aes128V1, CipherSuite::Curve25519Aes128V1]
+            .into_iter()
+            .map(MaybeCipherSuite::from)
+            .collect::<Vec<MaybeCipherSuite>>();
 
         let test_extensions = vec![
             ParentHashExt::IDENTIFIER,

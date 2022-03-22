@@ -37,6 +37,7 @@ use tree_index::*;
 
 use self::path_secret::{PathSecret, PathSecretGeneration, PathSecretGenerator};
 pub mod leaf_node;
+pub mod leaf_node_ref;
 pub mod leaf_node_validator;
 mod tree_index;
 

@@ -5,6 +5,7 @@ use ferriscrypt::digest::HashFunction;
 use ferriscrypt::hpke::kem::Kem;
 use ferriscrypt::hpke::{AeadId, HPKECiphertext, Hpke, KdfId, KemId};
 use std::convert::TryInto;
+use std::io::{Read, Write};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(
@@ -240,5 +241,109 @@ impl From<SignatureScheme> for Curve {
             #[cfg(feature = "openssl_engine")]
             SignatureScheme::EcdsaSecp384r1Sha384 => Curve::P384,
         }
+    }
+}
+
+#[derive(Clone, Debug, Copy, PartialEq)]
+pub enum MaybeCipherSuite {
+    CipherSuite(CipherSuite),
+    Unsupported(u16),
+}
+
+impl From<CipherSuite> for MaybeCipherSuite {
+    fn from(cs: CipherSuite) -> Self {
+        MaybeCipherSuite::CipherSuite(cs)
+    }
+}
+
+impl From<u16> for MaybeCipherSuite {
+    fn from(val: u16) -> Self {
+        Self::from_raw_value(val)
+    }
+}
+
+impl MaybeCipherSuite {
+    pub fn raw_value(&self) -> u16 {
+        match self {
+            MaybeCipherSuite::CipherSuite(cipher_suite) => *cipher_suite as u16,
+            MaybeCipherSuite::Unsupported(value) => *value,
+        }
+    }
+
+    pub fn from_raw_value(value: u16) -> Self {
+        CipherSuite::from_raw(value)
+            .map(MaybeCipherSuite::CipherSuite)
+            .unwrap_or_else(|| MaybeCipherSuite::Unsupported(value))
+    }
+}
+
+impl tls_codec::Size for MaybeCipherSuite {
+    fn tls_serialized_len(&self) -> usize {
+        self.raw_value().tls_serialized_len()
+    }
+}
+
+impl tls_codec::Serialize for MaybeCipherSuite {
+    fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
+        self.raw_value().tls_serialize(writer)
+    }
+}
+
+impl tls_codec::Deserialize for MaybeCipherSuite {
+    fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error>
+    where
+        Self: Sized,
+    {
+        let raw_value = u16::tls_deserialize(bytes)?;
+        Ok(MaybeCipherSuite::from_raw_value(raw_value))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use assert_matches::assert_matches;
+    use tls_codec::Serialize;
+
+    #[test]
+    fn test_maybe_cipher_suite() {
+        for cipher_suite in CipherSuite::all() {
+            let maybe = MaybeCipherSuite::from_raw_value(cipher_suite as u16);
+            assert_matches!(maybe, MaybeCipherSuite::CipherSuite(cs) if cs == cipher_suite);
+        }
+
+        let test_val = CipherSuite::all().map(|cs| cs as u16).max().unwrap() + 1;
+        let other = MaybeCipherSuite::from_raw_value(test_val);
+        assert_eq!(other, MaybeCipherSuite::Unsupported(test_val));
+    }
+
+    #[test]
+    fn test_maybe_cipher_suite_serialize() {
+        let supported = MaybeCipherSuite::CipherSuite(CipherSuite::Curve25519Aes128V1);
+        assert_eq!(
+            CipherSuite::Curve25519Aes128V1
+                .tls_serialize_detached()
+                .unwrap(),
+            supported.tls_serialize_detached().unwrap()
+        );
+
+        let not_supported = MaybeCipherSuite::Unsupported(32);
+        assert_eq!(
+            32u16.tls_serialize_detached().unwrap(),
+            not_supported.tls_serialize_detached().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_maybe_cipher_suite_from() {
+        let supported = MaybeCipherSuite::CipherSuite(CipherSuite::Curve25519Aes128V1);
+
+        assert_eq!(
+            MaybeCipherSuite::from(CipherSuite::Curve25519Aes128V1),
+            supported
+        );
+
+        let unsupported = MaybeCipherSuite::Unsupported(32);
+        assert_eq!(MaybeCipherSuite::from(32u16), unsupported);
     }
 }
