@@ -6,8 +6,8 @@ pub use crate::group::framing::{ContentType, MLSMessage, MLSMessagePayload};
 
 use crate::group::framing::Content;
 use crate::group::{
-    proposal::Proposal, CommitGeneration, Group, OutboundMessage, StateUpdate, VerifiedPlaintext,
-    Welcome,
+    proposal::Proposal, CommitGeneration, Group, GroupInfo, OutboundMessage, StateUpdate,
+    VerifiedPlaintext, Welcome,
 };
 use crate::key_package::{
     KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
@@ -127,7 +127,7 @@ impl<C: ClientConfig + Clone> Session<C> {
         .ok_or(SessionError::KeyPackageNotFound)?;
 
         let ratchet_tree = ratchet_tree_data
-            .map(|rt| Self::import_ratchet_tree(&welcome_message, rt))
+            .map(|rt| Self::import_ratchet_tree(welcome_message.cipher_suite, rt))
             .transpose()?;
 
         let group = Group::from_welcome_message(
@@ -136,10 +136,7 @@ impl<C: ClientConfig + Clone> Session<C> {
             ratchet_tree,
             key_package_generation,
             &config.secret_store(),
-            |version, cs| {
-                config.supported_protocol_versions().contains(&version)
-                    && config.supported_cipher_suites().contains(&cs)
-            },
+            version_and_cipher_filter(&config),
         )?;
 
         Ok(Session {
@@ -155,29 +152,64 @@ impl<C: ClientConfig + Clone> Session<C> {
         ratchet_tree_data: Option<&[u8]>,
     ) -> Result<Self, SessionError> {
         let public_tree = ratchet_tree_data
-            .map(|rt| Self::import_ratchet_tree(&welcome, rt))
+            .map(|rt| Self::import_ratchet_tree(welcome.cipher_suite, rt))
             .transpose()?;
         Ok(Session {
             protocol: self.protocol.join_subgroup(
                 welcome,
                 public_tree,
                 &self.config.secret_store(),
-                |version, cs| {
-                    self.config.supported_protocol_versions().contains(&version)
-                        && self.config.supported_cipher_suites().contains(&cs)
-                },
+                version_and_cipher_filter(&self.config),
             )?,
             pending_commit: None,
             config: self.config.clone(),
         })
     }
 
+    pub(crate) fn new_external<S: Signer>(
+        config: C,
+        protocol_version: ProtocolVersion,
+        group_info: GroupInfo,
+        key_package_generator: KeyPackageGenerator<'_, S>,
+        tree_data: Option<&[u8]>,
+    ) -> Result<(Self, Vec<u8>), SessionError> {
+        let tree = tree_data
+            .map(|t| Self::import_ratchet_tree(group_info.cipher_suite, t))
+            .transpose()?;
+
+        let (protocol, commit_message) = Group::new_external(
+            protocol_version,
+            group_info,
+            tree,
+            key_package_generator,
+            version_and_cipher_filter(&config),
+        )?;
+
+        let session = Session {
+            protocol,
+            pending_commit: None,
+            config,
+        };
+
+        let commit_message = session.serialize_control(commit_message)?;
+        Ok((session, commit_message))
+    }
+
+    pub fn group_info_message(&self) -> Result<MLSMessage, SessionError> {
+        Ok(MLSMessage {
+            version: self.protocol.protocol_version,
+            payload: MLSMessagePayload::GroupInfo(
+                self.protocol.external_commit_info(&self.signer()?)?,
+            ),
+        })
+    }
+
     fn import_ratchet_tree(
-        welcome_message: &Welcome,
+        cipher_suite: CipherSuite,
         tree_data: &[u8],
     ) -> Result<TreeKemPublic, SessionError> {
         let nodes = Deserialize::tls_deserialize(&mut &*tree_data)?;
-        TreeKemPublic::import_node_data(welcome_message.cipher_suite, nodes).map_err(Into::into)
+        TreeKemPublic::import_node_data(cipher_suite, nodes).map_err(Into::into)
     }
 
     pub fn participant_count(&self) -> u32 {
@@ -298,7 +330,7 @@ impl<C: ClientConfig + Clone> Session<C> {
     }
 
     #[inline(always)]
-    fn serialize_control(&mut self, plaintext: OutboundMessage) -> Result<Vec<u8>, SessionError> {
+    fn serialize_control(&self, plaintext: OutboundMessage) -> Result<Vec<u8>, SessionError> {
         Ok(plaintext
             .into_message(self.protocol.protocol_version)
             .tls_serialize_detached()?)
@@ -516,5 +548,14 @@ impl<C: ClientConfig + Clone> Session<C> {
         };
 
         Ok((new_session, welcome))
+    }
+}
+
+fn version_and_cipher_filter<C: ClientConfig>(
+    config: &C,
+) -> impl Fn(ProtocolVersion, CipherSuite) -> bool + '_ {
+    move |version, cipher_suite| {
+        config.supported_protocol_versions().contains(&version)
+            && config.supported_cipher_suites().contains(&cipher_suite)
     }
 }

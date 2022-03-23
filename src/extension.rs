@@ -5,6 +5,7 @@ use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
 use crate::tree_kem::parent_hash::ParentHash;
 use crate::ProtocolVersion;
+use ferriscrypt::hpke::kem::HpkePublicKey;
 use indexmap::IndexMap;
 use std::io::{Read, Write};
 use thiserror::Error;
@@ -25,12 +26,13 @@ pub enum ExtensionError {
 
 pub type ExtensionType = u16;
 
-const CAPABILITIES_EXT_ID: ExtensionType = 1u16;
-const LIFETIME_EXT_ID: ExtensionType = 2u16;
-const KEY_ID_EXT_ID: ExtensionType = 3u16;
-const PARENT_HASH_EXT_ID: ExtensionType = 4u16;
-const RATCHET_TREE_EXT_ID: ExtensionType = 5u16;
-const REQUIRED_CAPABILITIES_EXT_ID: ExtensionType = 6u16;
+const CAPABILITIES_EXT_ID: ExtensionType = 1;
+const LIFETIME_EXT_ID: ExtensionType = 2;
+const KEY_ID_EXT_ID: ExtensionType = 3;
+const PARENT_HASH_EXT_ID: ExtensionType = 4;
+const RATCHET_TREE_EXT_ID: ExtensionType = 5;
+const REQUIRED_CAPABILITIES_EXT_ID: ExtensionType = 6;
+const EXTERNAL_PUB_EXT_ID: ExtensionType = 7;
 
 pub trait MlsExtension: Sized + Serialize + Deserialize {
     const IDENTIFIER: ExtensionType;
@@ -163,6 +165,16 @@ pub struct RequiredCapabilitiesExt {
 
 impl MlsExtension for RequiredCapabilitiesExt {
     const IDENTIFIER: ExtensionType = REQUIRED_CAPABILITIES_EXT_ID;
+}
+
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct ExternalPubExt {
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    pub external_pub: HpkePublicKey,
+}
+
+impl MlsExtension for ExternalPubExt {
+    const IDENTIFIER: ExtensionType = EXTERNAL_PUB_EXT_ID;
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]

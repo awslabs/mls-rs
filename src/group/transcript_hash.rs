@@ -1,6 +1,9 @@
 use super::*;
 use crate::cipher_suite::CipherSuite;
-use std::ops::Deref;
+use std::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -82,7 +85,7 @@ impl<'a> From<Option<&'a ConfirmationTag>> for MLSPlaintextCommitAuthData<'a> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct ConfirmedTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>);
 
 impl Deref for ConfirmedTranscriptHash {
@@ -96,6 +99,12 @@ impl Deref for ConfirmedTranscriptHash {
 impl From<Vec<u8>> for ConfirmedTranscriptHash {
     fn from(value: Vec<u8>) -> Self {
         Self(value)
+    }
+}
+
+impl Debug for ConfirmedTranscriptHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&hex::encode(&self.0))
     }
 }
 
@@ -117,7 +126,7 @@ impl ConfirmedTranscriptHash {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct InterimTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>);
 
 impl Deref for InterimTranscriptHash {
@@ -131,6 +140,12 @@ impl Deref for InterimTranscriptHash {
 impl From<Vec<u8>> for InterimTranscriptHash {
     fn from(value: Vec<u8>) -> Self {
         Self(value)
+    }
+}
+
+impl Debug for InterimTranscriptHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&hex::encode(&self.0))
     }
 }
 

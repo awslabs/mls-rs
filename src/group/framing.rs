@@ -69,6 +69,28 @@ impl MLSPlaintext {
             membership_tag: None,
         }
     }
+
+    pub fn new_signed<S: Signer>(
+        context: &GroupContext,
+        sender: Sender,
+        content: Content,
+        signer: &S,
+        encryption_mode: ControlEncryptionMode,
+    ) -> Result<MLSPlaintext, SignatureError> {
+        // Construct an MLSPlaintext object containing the content
+        let mut plaintext =
+            MLSPlaintext::new(context.group_id.clone(), context.epoch, sender, content);
+
+        let signing_context = MessageSigningContext {
+            group_context: Some(context),
+            encrypted: matches!(encryption_mode, ControlEncryptionMode::Encrypted(_)),
+        };
+
+        // Sign the MLSPlaintext using the current epoch's GroupContext as context.
+        plaintext.sign(signer, &signing_context)?;
+
+        Ok(plaintext)
+    }
 }
 
 impl Size for MLSPlaintext {

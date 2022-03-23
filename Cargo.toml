@@ -13,7 +13,7 @@ default = ["openssl_engine"]
 
 [dependencies]
 thiserror = "^1"
-ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", default-features = false, features = ["hpke"], tag = "0.16.0" }
+ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", default-features = false, features = ["hpke"], tag = "0.17.0" }
 tls_codec = "0.2.0"
 tls_codec_derive = "0.2.0"
 hex = { version = "^0.4.3", features = ["serde"] }

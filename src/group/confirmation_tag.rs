@@ -1,7 +1,10 @@
 use crate::group::epoch::Epoch;
 use crate::group::transcript_hash::ConfirmedTranscriptHash;
 use ferriscrypt::hmac::{HMacError, Key, Tag};
-use std::ops::Deref;
+use std::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -11,13 +14,19 @@ pub enum ConfirmationTagError {
     HMacError(#[from] HMacError),
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct ConfirmationTag(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Tag);
 
 impl Deref for ConfirmationTag {
     type Target = Tag;
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl Debug for ConfirmationTag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&hex::encode(self.0.as_ref()))
     }
 }
 

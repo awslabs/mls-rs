@@ -3,7 +3,7 @@ use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
 use crate::group::secret_tree::{
     EncryptionKey, KeyType, SecretKeyRatchet, SecretTree, SecretTreeError,
 };
-use crate::group::GroupContext;
+use crate::group::{GroupContext, InitSecret};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
 use crate::tree_kem::{TreeKemPublic, TreeSecrets, UpdatePathGeneration};
@@ -47,7 +47,7 @@ pub(crate) struct Epoch {
     pub confirmation_key: Vec<u8>,
     pub membership_key: Vec<u8>,
     pub resumption_secret: Vec<u8>,
-    pub init_secret: Vec<u8>,
+    pub init_secret: InitSecret,
     pub handshake_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
     pub application_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
 }
@@ -69,11 +69,11 @@ impl PartialEq for Epoch {
 }
 
 impl Epoch {
-    // Returns the derived epoch as well as the joiner secret required for building welcome
-    // messages
+    /// Returns the derived epoch as well as the joiner secret required for building welcome
+    /// messages
     pub fn derive(
         cipher_suite: CipherSuite,
-        last_init_secret: &[u8],
+        last_init_secret: &InitSecret,
         commit_secret: &CommitSecret,
         public_tree: TreeKemPublic,
         context: &GroupContext,
@@ -82,7 +82,7 @@ impl Epoch {
     ) -> Result<(Epoch, Vec<u8>), EpochError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
-        let joiner_seed = kdf.extract(commit_secret, last_init_secret)?;
+        let joiner_seed = kdf.extract(commit_secret, last_init_secret.as_ref())?;
 
         let joiner_secret = kdf.expand_with_label(
             &joiner_seed,
@@ -149,7 +149,7 @@ impl Epoch {
         let confirmation_key = kdf.derive_secret(&epoch_secret, "confirm")?;
         let membership_key = kdf.derive_secret(&epoch_secret, "membership")?;
         let resumption_secret = kdf.derive_secret(&epoch_secret, "resumption")?;
-        let init_secret = kdf.derive_secret(&epoch_secret, "init")?;
+        let init_secret = InitSecret::from_epoch_secret(&kdf, &epoch_secret)?;
 
         let secret_tree = SecretTree::new(
             cipher_suite,
@@ -376,6 +376,8 @@ pub mod test_utils {
         membership_key: Vec<u8>,
         confirmation_key: Vec<u8>,
     ) -> Epoch {
+        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
+
         Epoch {
             identifier: 1,
             cipher_suite,
@@ -389,7 +391,7 @@ pub mod test_utils {
             confirmation_key,
             membership_key,
             resumption_secret: vec![],
-            init_secret: vec![],
+            init_secret: InitSecret::random(&kdf).unwrap(),
             handshake_ratchets: Default::default(),
             application_ratchets: Default::default(),
         }

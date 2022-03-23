@@ -12,10 +12,20 @@ pub enum ProposalCacheError {
     KdfError(#[from] KdfError),
     #[error("Proposal {0:?} not found")]
     ProposalNotFound(ProposalRef),
-    #[error("Commits only allowed from members")]
-    NonMemberCommit,
+    #[error("Commits only allowed from members and new members")]
+    SenderCannotCommit,
     #[error("Plaintext must be a proposal")]
     PlaintextNotProposal,
+    #[error("New member cannot commit proposals by reference")]
+    NewMemberCannotCommitProposalsByRef,
+    #[error("Multiple ExternalInit proposals in commit")]
+    MultipleExternalInitInCommit,
+    #[error("New member cannot commit this type of proposal")]
+    NewMemberCannotCommitThisProposal,
+    #[error("New member commit must contain an ExternalInit proposal")]
+    NewMemberCommitMustContainExternalInit,
+    #[error("Missing update path in external commit")]
+    MissingUpdatePathInExternalCommit,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -26,6 +36,7 @@ pub struct ProposalSetEffects {
     pub group_context_ext: Option<ExtensionList>,
     pub psks: Vec<PreSharedKeyID>,
     pub reinit: Option<ReInit>,
+    pub external_init: Option<ExternalInit>,
 }
 
 impl ProposalSetEffects {
@@ -78,6 +89,7 @@ struct ProposalSet {
     group_context_ext: Option<usize>,
     seen_psk_ids: HashSet<PreSharedKeyID>,
     reinit_index: Option<usize>,
+    external_init_index: Option<usize>,
 }
 
 impl ProposalSet {
@@ -102,10 +114,10 @@ impl ProposalSet {
         Ok(self.leaf_ops_insert(reference))
     }
 
-    fn push_update(&mut self, local_key_package: &KeyPackageRef, sender: Sender) -> bool {
+    fn push_update(&mut self, local_key_package: Option<&KeyPackageRef>, sender: Sender) -> bool {
         if let Sender::Member(sender) = sender {
             // Do not allow someone to commit to an update for themselves
-            if &sender == local_key_package {
+            if Some(&sender) == local_key_package {
                 false
             } else {
                 self.leaf_ops_insert(sender)
@@ -152,21 +164,43 @@ impl ProposalSet {
         {
             return false;
         }
-        if let Some(i) = self.reinit_index {
-            // todo: Log if a ReInit proposal is discarded because of another ReInit proposal.
-            self.items[i] = None;
-        }
         self.reinit_index = Some(self.items.len());
+        true
+    }
+
+    fn push_external_init(&mut self, _: &ExternalInit) -> bool {
+        if !self.leaf_ops.is_empty() || self.group_context_ext.is_some() || !self.removes.is_empty()
+        {
+            return false;
+        }
+        self.external_init_index = Some(self.items.len());
         true
     }
 
     fn push_item(
         &mut self,
-        local_key_package: &KeyPackageRef,
+        local_key_package: Option<&KeyPackageRef>,
         item: ProposalSetItem,
     ) -> Result<(), ProposalCacheError> {
-        // todo: Log if a ReInit proposal is discarded because of another proposal.
-        self.reinit_index = None;
+        if self.reinit_index.is_some() {
+            // todo: Log if a proposal is discarded because there is already a ReInit proposal.
+            return Ok(());
+        }
+        if self.external_init_index.is_some() {
+            // todo: Log if a proposal is discarded because there is already an ExternalInit proposal.
+            let should_discard = match item.proposal.proposal {
+                Proposal::Add(_)
+                | Proposal::Update(_)
+                | Proposal::Remove(_)
+                | Proposal::GroupContextExtensions(_)
+                | Proposal::ReInit(_)
+                | Proposal::ExternalInit(_) => true,
+                Proposal::Psk(_) => false,
+            };
+            if should_discard {
+                return Ok(());
+            }
+        }
         let should_push = match &item.proposal.proposal {
             Proposal::Add(add) => self.push_add(add)?,
             Proposal::Update(_) => {
@@ -176,6 +210,7 @@ impl ProposalSet {
             Proposal::GroupContextExtensions(_) => self.push_group_context_ext(),
             Proposal::Psk(PreSharedKey { psk }) => self.push_psk(psk),
             Proposal::ReInit(reinit) => self.push_reinit(reinit),
+            Proposal::ExternalInit(external_init) => self.push_external_init(external_init),
         };
 
         if should_push {
@@ -187,7 +222,7 @@ impl ProposalSet {
 
     pub fn push_items(
         &mut self,
-        local_key_package: &KeyPackageRef,
+        local_key_package: Option<&KeyPackageRef>,
         items: Vec<ProposalSetItem>,
     ) -> Result<(), ProposalCacheError> {
         items
@@ -218,6 +253,9 @@ impl ProposalSet {
                     }
                     Proposal::ReInit(reinit) => {
                         effects.reinit = Some(reinit);
+                    }
+                    Proposal::ExternalInit(external_init) => {
+                        effects.external_init = Some(external_init);
                     }
                 };
                 effects
@@ -293,8 +331,8 @@ impl ProposalCache {
             });
 
         let mut proposal_set = ProposalSet::new();
-        proposal_set.push_items(local_key_package, received_proposals.collect())?;
-        proposal_set.push_items(local_key_package, new_proposals.collect())?;
+        proposal_set.push_items(Some(local_key_package), received_proposals.collect())?;
+        proposal_set.push_items(Some(local_key_package), new_proposals.collect())?;
 
         // We have to clone the set because we are potentially returning the same data in both sets
         let effects = proposal_set.clone().into_effects();
@@ -322,23 +360,85 @@ impl ProposalCache {
         &self,
         sender: Sender,
         proposal_list: Vec<ProposalOrRef>,
+        update_path: Option<&UpdatePath>,
     ) -> Result<ProposalSetEffects, ProposalCacheError> {
-        if let Sender::Member(local_key_package) = &sender {
-            let items = proposal_list
-                .into_iter()
-                .map(|proposal_or_ref| {
-                    self.resolve_item(sender.clone(), proposal_or_ref)
-                        .map(ProposalSetItem::from)
-                })
-                .collect::<Result<_, ProposalCacheError>>()?;
+        let (items, local_key_package) = match &sender {
+            Sender::Member(local_key_package) => {
+                let items = proposal_list
+                    .into_iter()
+                    .map(|proposal_or_ref| {
+                        self.resolve_item(sender.clone(), proposal_or_ref)
+                            .map(ProposalSetItem::from)
+                    })
+                    .collect::<Result<_, ProposalCacheError>>()?;
 
-            let mut proposal_set = ProposalSet::new();
-            proposal_set.push_items(local_key_package, items)?;
+                Ok((items, Some(local_key_package)))
+            }
+            Sender::NewMember => {
+                let items = validate_new_member_commit_proposals(proposal_list, sender)?;
+                Ok((items, None))
+            }
+            _ => Err(ProposalCacheError::SenderCannotCommit),
+        }?;
 
-            Ok(proposal_set.into_effects())
-        } else {
-            Err(ProposalCacheError::NonMemberCommit)
+        let mut proposal_set = ProposalSet::new();
+        proposal_set.push_items(local_key_package, items)?;
+        let mut proposal_effects = proposal_set.into_effects();
+
+        if proposal_effects.external_init.is_some() {
+            let new_member_pkg_ref = update_path
+                .ok_or(ProposalCacheError::MissingUpdatePathInExternalCommit)?
+                .leaf_key_package
+                .clone();
+            proposal_effects.adds.push(new_member_pkg_ref);
         }
+
+        Ok(proposal_effects)
+    }
+}
+
+fn validate_new_member_commit_proposals(
+    proposals: Vec<ProposalOrRef>,
+    sender: Sender,
+) -> Result<Vec<ProposalSetItem>, ProposalCacheError> {
+    let wrap_proposal = |proposal| {
+        ProposalSetItem::from(CachedProposal {
+            proposal,
+            sender: sender.clone(),
+        })
+    };
+    let (proposals, external_init_found) = proposals.into_iter().try_fold(
+        (Vec::new(), false),
+        |(mut proposals, external_init_found), p| {
+            let proposal = match p {
+                ProposalOrRef::Proposal(p) => Ok(p),
+                ProposalOrRef::Reference(_) => {
+                    Err(ProposalCacheError::NewMemberCannotCommitProposalsByRef)
+                }
+            }?;
+            let (proposal, external_init_found) = match (proposal, external_init_found) {
+                (p @ Proposal::ExternalInit(_), false) => Ok((wrap_proposal(p), true)),
+                (Proposal::ExternalInit(_), true) => {
+                    Err(ProposalCacheError::MultipleExternalInitInCommit)
+                }
+                (p @ Proposal::Psk(_), found) => Ok((wrap_proposal(p), found)),
+                (
+                    Proposal::Add(_)
+                    | Proposal::Remove(_)
+                    | Proposal::Update(_)
+                    | Proposal::GroupContextExtensions(_)
+                    | Proposal::ReInit(_),
+                    _,
+                ) => Err(ProposalCacheError::NewMemberCannotCommitThisProposal),
+            }?;
+            proposals.push(proposal);
+            Ok::<_, ProposalCacheError>((proposals, external_init_found))
+        },
+    )?;
+    if external_init_found {
+        Ok(proposals)
+    } else {
+        Err(ProposalCacheError::NewMemberCommitMustContainExternalInit)
     }
 }
 
@@ -347,7 +447,11 @@ mod test {
     use super::proposal_ref::test_util::plaintext_from_proposal;
     use super::*;
     use crate::key_package::test_util::test_key_package;
+    use assert_matches::assert_matches;
     use ferriscrypt::kdf::hkdf::Hkdf;
+
+    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::P256Aes128V1;
+    const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
@@ -439,13 +543,11 @@ mod test {
 
     #[test]
     fn test_proposal_cache_commit_all_cached() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
         let (test_proposals, expected_effects) =
-            test_proposals(test_sender, protocol_version, cipher_suite);
+            test_proposals(test_sender, TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        let cache = test_proposal_cache_setup(cipher_suite, test_proposals.clone());
+        let cache = test_proposal_cache_setup(TEST_CIPHER_SUITE, test_proposals.clone());
 
         let (proposals, effects) = cache.prepare_commit(&test_ref(), vec![]).unwrap();
 
@@ -453,7 +555,7 @@ mod test {
             .into_iter()
             .map(|p| {
                 ProposalOrRef::Reference(
-                    ProposalRef::from_plaintext(cipher_suite, &p, false).unwrap(),
+                    ProposalRef::from_plaintext(TEST_CIPHER_SUITE, &p, false).unwrap(),
                 )
             })
             .collect();
@@ -463,20 +565,18 @@ mod test {
 
     #[test]
     fn test_proposal_cache_commit_additional() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
 
         let (test_proposals, mut expected_effects) =
-            test_proposals(test_sender, protocol_version, cipher_suite);
+            test_proposals(test_sender, TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        let additional_key_package = test_key_package(protocol_version, cipher_suite);
+        let additional_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let additional = vec![Proposal::Add(AddProposal {
             key_package: additional_key_package.clone(),
         })];
 
-        let cache = test_proposal_cache_setup(cipher_suite, test_proposals.clone());
+        let cache = test_proposal_cache_setup(TEST_CIPHER_SUITE, test_proposals.clone());
 
         let (proposals, effects) = cache
             .prepare_commit(&test_ref(), additional.clone())
@@ -486,7 +586,7 @@ mod test {
             .into_iter()
             .map(|p| {
                 ProposalOrRef::Reference(
-                    ProposalRef::from_plaintext(cipher_suite, &p, false).unwrap(),
+                    ProposalRef::from_plaintext(TEST_CIPHER_SUITE, &p, false).unwrap(),
                 )
             })
             .collect::<Vec<ProposalOrRef>>();
@@ -499,18 +599,17 @@ mod test {
 
     #[test]
     fn test_proposal_cache_update_filter() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128V1;
-        let additional_key_package = test_key_package(protocol_version, cipher_suite);
+        let additional_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let test_sender = test_ref();
-        let (test_proposals, _) = test_proposals(test_sender, protocol_version, cipher_suite);
+        let (test_proposals, _) =
+            test_proposals(test_sender, TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let additional = vec![Proposal::Update(UpdateProposal {
             key_package: additional_key_package.clone(),
         })];
 
         let commiter_ref = test_ref();
-        let cache = test_proposal_cache_setup(cipher_suite, test_proposals);
+        let cache = test_proposal_cache_setup(TEST_CIPHER_SUITE, test_proposals);
 
         let (proposals, effects) = cache
             .prepare_commit(&commiter_ref, additional.clone())
@@ -525,40 +624,39 @@ mod test {
 
     #[test]
     fn test_proposal_cache_removal_override_update() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
-        let (test_proposals, _) =
-            test_proposals(test_sender.clone(), protocol_version, cipher_suite);
+        let (test_proposals, _) = test_proposals(
+            test_sender.clone(),
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+        );
 
         let removal = Proposal::Remove(RemoveProposal {
             to_remove: test_sender.clone(),
         });
 
-        let cache = test_proposal_cache_setup(cipher_suite, test_proposals.clone());
+        let cache = test_proposal_cache_setup(TEST_CIPHER_SUITE, test_proposals.clone());
 
         let (proposals, effects) = cache.prepare_commit(&test_ref(), vec![removal]).unwrap();
 
         assert!(effects.removes.contains(&test_sender));
 
         assert!(!proposals.contains(&ProposalOrRef::Reference(
-            ProposalRef::from_plaintext(cipher_suite, &test_proposals[1], false).unwrap()
+            ProposalRef::from_plaintext(TEST_CIPHER_SUITE, &test_proposals[1], false).unwrap()
         )))
     }
 
     #[test]
     fn test_proposal_cache_filter_duplicates_insert() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
         let (test_proposals, expected_effects) =
-            test_proposals(test_sender, protocol_version, cipher_suite);
+            test_proposals(test_sender, TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let mut cache: ProposalCache =
-            test_proposal_cache_setup(cipher_suite, test_proposals.clone());
+            test_proposal_cache_setup(TEST_CIPHER_SUITE, test_proposals.clone());
 
         test_proposals.clone().into_iter().for_each(|p| {
-            cache.insert(cipher_suite, &p, false).unwrap();
+            cache.insert(TEST_CIPHER_SUITE, &p, false).unwrap();
         });
 
         let (proposals, effects) = cache.prepare_commit(&test_ref(), vec![]).unwrap();
@@ -567,7 +665,7 @@ mod test {
             .into_iter()
             .map(|p| {
                 ProposalOrRef::Reference(
-                    ProposalRef::from_plaintext(cipher_suite, &p, false).unwrap(),
+                    ProposalRef::from_plaintext(TEST_CIPHER_SUITE, &p, false).unwrap(),
                 )
             })
             .collect::<Vec<ProposalOrRef>>();
@@ -577,13 +675,12 @@ mod test {
 
     #[test]
     fn test_proposal_cache_filter_duplicates_additional() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
         let (test_proposals, expected_effects) =
-            test_proposals(test_sender, protocol_version, cipher_suite);
+            test_proposals(test_sender, TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        let cache: ProposalCache = test_proposal_cache_setup(cipher_suite, test_proposals.clone());
+        let cache: ProposalCache =
+            test_proposal_cache_setup(TEST_CIPHER_SUITE, test_proposals.clone());
 
         // Updates from different senders will be allowed so we test duplicates for add / remove
         let additional = test_proposals
@@ -607,7 +704,7 @@ mod test {
             .unwrap();
 
         let mut expected_proposals = vec![ProposalOrRef::Reference(
-            ProposalRef::from_plaintext(cipher_suite, &test_proposals[1], false).unwrap(),
+            ProposalRef::from_plaintext(TEST_CIPHER_SUITE, &test_proposals[1], false).unwrap(),
         )];
 
         additional
@@ -628,7 +725,7 @@ mod test {
 
         cache
             .insert(
-                CipherSuite::P256Aes128V1,
+                TEST_CIPHER_SUITE,
                 &plaintext_from_proposal(test_proposal, test_ref()),
                 false,
             )
@@ -639,22 +736,23 @@ mod test {
 
     #[test]
     fn test_proposal_cache_resolve() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128V1;
         let test_sender = test_ref();
-        let (test_proposals, _) =
-            test_proposals(test_sender.clone(), protocol_version, cipher_suite);
+        let (test_proposals, _) = test_proposals(
+            test_sender.clone(),
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+        );
 
-        let cache = test_proposal_cache_setup(cipher_suite, test_proposals);
+        let cache = test_proposal_cache_setup(TEST_CIPHER_SUITE, test_proposals);
 
         let additional = vec![Proposal::Add(AddProposal {
-            key_package: test_key_package(protocol_version, cipher_suite),
+            key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE),
         })];
 
         let (proposals, effects) = cache.prepare_commit(&test_sender, additional).unwrap();
 
         let resolution = cache
-            .resolve_for_commit(Sender::Member(test_sender), proposals)
+            .resolve_for_commit(Sender::Member(test_sender), proposals, None)
             .unwrap();
 
         assert_eq!(effects, resolution);
@@ -662,20 +760,18 @@ mod test {
 
     #[test]
     fn proposal_cache_filters_duplicate_psk_ids() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128V1;
         let cache = ProposalCache::new();
-        let len = Hkdf::from(cipher_suite.kdf_type()).extract_size();
+        let len = Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size();
         let psk_id = PreSharedKeyID {
             key_id: JustPreSharedKeyID::External(ExternalPskId(vec![1; len])),
-            psk_nonce: PskNonce::random(cipher_suite).unwrap(),
+            psk_nonce: PskNonce::random(TEST_CIPHER_SUITE).unwrap(),
         };
         let proposal = Proposal::Psk(PreSharedKey {
             psk: psk_id.clone(),
         });
         let (proposals, effects) = cache
             .prepare_commit(
-                &test_key_package(protocol_version, cipher_suite)
+                &test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
                     .to_reference()
                     .unwrap(),
                 vec![proposal.clone(), proposal],
@@ -683,5 +779,148 @@ mod test {
             .unwrap();
         assert_eq!(proposals.len(), 1);
         assert_eq!(effects.psks, [psk_id]);
+    }
+
+    fn test_update_path() -> UpdatePath {
+        UpdatePath {
+            leaf_key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE),
+            nodes: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn external_commit_must_have_update_path() {
+        let cache = ProposalCache::new();
+        let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let res = cache.resolve_for_commit(
+            Sender::NewMember,
+            vec![ProposalOrRef::Proposal(Proposal::ExternalInit(
+                ExternalInit {
+                    kem_output: kem_output.clone(),
+                },
+            ))],
+            None,
+        );
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::MissingUpdatePathInExternalCommit)
+        );
+    }
+
+    #[test]
+    fn proposal_cache_rejects_proposals_by_ref_for_new_member() {
+        let cache = ProposalCache::new();
+        let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let proposal = ProposalRef::from_plaintext(
+            TEST_CIPHER_SUITE,
+            &plaintext_from_proposal(
+                Proposal::ExternalInit(ExternalInit { kem_output }),
+                test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+                    .to_reference()
+                    .unwrap(),
+            ),
+            false,
+        )
+        .unwrap();
+        let res = cache.resolve_for_commit(
+            Sender::NewMember,
+            vec![ProposalOrRef::Reference(proposal)],
+            Some(&test_update_path()),
+        );
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::NewMemberCannotCommitProposalsByRef)
+        );
+    }
+
+    #[test]
+    fn proposal_cache_rejects_multiple_external_init_proposals_in_commit() {
+        let cache = ProposalCache::new();
+        let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let res = cache.resolve_for_commit(
+            Sender::NewMember,
+            [
+                Proposal::ExternalInit(ExternalInit {
+                    kem_output: kem_output.clone(),
+                }),
+                Proposal::ExternalInit(ExternalInit { kem_output }),
+            ]
+            .into_iter()
+            .map(ProposalOrRef::Proposal)
+            .collect(),
+            Some(&test_update_path()),
+        );
+        assert_matches!(res, Err(ProposalCacheError::MultipleExternalInitInCommit));
+    }
+
+    fn new_member_cannot_commit_proposal(proposal: Proposal) {
+        let cache = ProposalCache::new();
+        let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let res = cache.resolve_for_commit(
+            Sender::NewMember,
+            [
+                Proposal::ExternalInit(ExternalInit {
+                    kem_output: kem_output.clone(),
+                }),
+                proposal,
+            ]
+            .into_iter()
+            .map(ProposalOrRef::Proposal)
+            .collect(),
+            Some(&test_update_path()),
+        );
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::NewMemberCannotCommitThisProposal)
+        );
+    }
+
+    #[test]
+    fn new_member_cannot_commit_add_proposal() {
+        new_member_cannot_commit_proposal(Proposal::Add(AddProposal {
+            key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE),
+        }));
+    }
+
+    #[test]
+    fn new_member_cannot_commit_remove_proposal() {
+        new_member_cannot_commit_proposal(Proposal::Remove(RemoveProposal {
+            to_remove: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+                .to_reference()
+                .unwrap(),
+        }));
+    }
+
+    #[test]
+    fn new_member_cannot_commit_update_proposal() {
+        new_member_cannot_commit_proposal(Proposal::Update(UpdateProposal {
+            key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE),
+        }));
+    }
+
+    #[test]
+    fn new_member_cannot_commit_group_extensions_proposal() {
+        new_member_cannot_commit_proposal(Proposal::GroupContextExtensions(ExtensionList::new()));
+    }
+
+    #[test]
+    fn new_member_cannot_commit_reinit_proposal() {
+        new_member_cannot_commit_proposal(Proposal::ReInit(ReInit {
+            group_id: b"foo".to_vec(),
+            version: TEST_PROTOCOL_VERSION,
+            cipher_suite: TEST_CIPHER_SUITE,
+            extensions: ExtensionList::new(),
+        }));
+    }
+
+    #[test]
+    fn new_member_commit_must_contain_an_external_init_proposal() {
+        let cache = ProposalCache::new();
+        let res =
+            cache.resolve_for_commit(Sender::NewMember, Vec::new(), Some(&test_update_path()));
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::NewMemberCommitMustContainExternalInit)
+        );
     }
 }

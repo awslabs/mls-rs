@@ -30,6 +30,12 @@ pub struct ReInit {
     pub extensions: ExtensionList,
 }
 
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct ExternalInit {
+    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    pub kem_output: Vec<u8>,
+}
+
 pub type ProposalType = u16;
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -41,7 +47,7 @@ pub enum Proposal {
     Remove(RemoveProposal),
     Psk(PreSharedKey),
     ReInit(ReInit),
-    //TODO: ExternalInit,
+    ExternalInit(ExternalInit),
     //TODO: AppAck,
     #[tls_codec(discriminant = 8)]
     GroupContextExtensions(ExtensionList),

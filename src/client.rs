@@ -36,6 +36,8 @@ pub enum ClientError {
     ProposingAsExternalWithoutExternalKeyId,
     #[error(transparent)]
     KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
+    #[error("Expected group info message")]
+    ExpectedGroupInfoMessage,
 }
 
 #[non_exhaustive]
@@ -223,6 +225,41 @@ impl<C: ClientConfig + Clone> Client<C> {
             payload: MLSMessagePayload::Plain(message),
         };
         Ok(message.tls_serialize_detached()?)
+    }
+
+    /// Returns session and commit MLSMessage
+    pub fn commit_external(
+        &self,
+        lifetime: LifetimeExt,
+        group_info_msg: MLSMessage,
+        tree_data: Option<&[u8]>,
+    ) -> Result<(Session<C>, Vec<u8>), ClientError> {
+        let group_info = match group_info_msg.payload {
+            MLSMessagePayload::GroupInfo(g) => Ok(g),
+            _ => Err(ClientError::ExpectedGroupInfoMessage),
+        }?;
+
+        let keychain = self.config.keychain();
+
+        let (credential, signer) = keychain
+            .default_credential(group_info.cipher_suite)
+            .ok_or(ClientError::NoCredentialFound)?;
+
+        let key_package_generator = KeyPackageGenerator {
+            protocol_version: group_info_msg.version,
+            cipher_suite: group_info.cipher_suite,
+            credential: &credential,
+            extensions: &self.get_extensions(lifetime)?,
+            signing_key: &signer,
+        };
+
+        Ok(Session::new_external(
+            self.config.clone(),
+            group_info_msg.version,
+            group_info,
+            key_package_generator,
+            tree_data,
+        )?)
     }
 }
 
@@ -709,5 +746,108 @@ mod test {
     #[test]
     fn joining_group_fails_if_cipher_suite_is_not_supported() {
         joining_group_fails_if_unsupported(|config| config.clear_cipher_suites());
+    }
+
+    #[test]
+    fn new_member_can_join_via_external_commit() {
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+        let mut alice_session = create_session(&alice);
+
+        // An external commit cannot be the first commit in a session as it requires
+        // interim_transcript_hash to be computed from the confirmed_transcript_hash and
+        // confirmation_tag, which is not the case for the initial interim_transcript_hash.
+        let _ = alice_session.commit(Vec::new()).unwrap();
+        alice_session.apply_pending_commit().unwrap();
+
+        let group_info_msg = alice_session.group_info_message().unwrap();
+        let bob = get_basic_config(TEST_CIPHER_SUITE, "bob").build_client();
+
+        let (mut bob_session, external_commit) = bob
+            .commit_external(
+                LifetimeExt::years(1).unwrap(),
+                group_info_msg,
+                Some(&alice_session.export_tree().unwrap()),
+            )
+            .unwrap();
+
+        assert!(bob_session.participant_count() == 2);
+
+        let _ = alice_session
+            .process_incoming_bytes(&external_commit)
+            .unwrap();
+
+        assert!(alice_session.participant_count() == 2);
+
+        let alice_msg = b"I'm Alice";
+        let msg = alice_session.encrypt_application_data(alice_msg).unwrap();
+
+        let received = bob_session.process_incoming_bytes(&msg).unwrap();
+        assert_matches!(received, ProcessedMessage::Application(bytes) if bytes == alice_msg);
+
+        let bob_msg = b"I'm Bob";
+        let msg = bob_session.encrypt_application_data(bob_msg).unwrap();
+
+        let received = alice_session.process_incoming_bytes(&msg).unwrap();
+        assert_matches!(received, ProcessedMessage::Application(bytes) if bytes == bob_msg);
+    }
+
+    #[test]
+    fn creating_an_external_commit_requires_a_group_info_message() {
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+
+        let msg = MLSMessage {
+            version: TEST_PROTOCOL_VERSION,
+            payload: MLSMessagePayload::KeyPackage(
+                alice
+                    .gen_key_package(
+                        TEST_PROTOCOL_VERSION,
+                        TEST_CIPHER_SUITE,
+                        LifetimeExt::years(1).unwrap(),
+                    )
+                    .unwrap()
+                    .key_package
+                    .into(),
+            ),
+        };
+
+        let res = alice.commit_external(LifetimeExt::years(1).unwrap(), msg, None);
+        assert_matches!(res, Err(ClientError::ExpectedGroupInfoMessage));
+    }
+
+    #[test]
+    fn external_commit_with_invalid_group_info_fails() {
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+        let mut alice_session = create_session(&alice);
+
+        // An external commit cannot be the first commit in a session as it requires
+        // interim_transcript_hash to be computed from the confirmed_transcript_hash and
+        // confirmation_tag, which is not the case for the initial interim_transcript_hash.
+        let _ = alice_session.commit(Vec::new()).unwrap();
+        alice_session.apply_pending_commit().unwrap();
+
+        let bob = get_basic_config(TEST_CIPHER_SUITE, "bob").build_client();
+        let mut bob_session = create_session(&bob);
+
+        // An external commit cannot be the first commit in a session as it requires
+        // interim_transcript_hash to be computed from the confirmed_transcript_hash and
+        // confirmation_tag, which is not the case for the initial interim_transcript_hash.
+        let _ = bob_session.commit(Vec::new()).unwrap();
+        bob_session.apply_pending_commit().unwrap();
+
+        let group_info_msg = bob_session.group_info_message().unwrap();
+
+        let carol = get_basic_config(TEST_CIPHER_SUITE, "carol").build_client();
+
+        let (_, external_commit) = carol
+            .commit_external(
+                LifetimeExt::years(1).unwrap(),
+                group_info_msg,
+                Some(&bob_session.export_tree().unwrap()),
+            )
+            .unwrap();
+
+        // If Carol tries to join Alice's group using the group info from Bob's session, that fails.
+        let res = alice_session.process_incoming_bytes(&external_commit);
+        assert_matches!(res, Err(_));
     }
 }

@@ -8,7 +8,7 @@ use aws_mls::key_package::{KeyPackageGeneration, KeyPackageRef};
 use aws_mls::session::{GroupError, ProcessedMessage, Session, SessionError};
 use aws_mls::ProtocolVersion;
 use ferriscrypt::rand::SecureRng;
-use rand::prelude::SliceRandom;
+use rand::{prelude::SliceRandom, Rng};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
@@ -486,4 +486,89 @@ fn test_processing_message_from_self_returns_error() {
                 .with_ratchet_tree_extension(false),
         );
     });
+}
+
+fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: CipherSuite) {
+    let creator = generate_client(cipher_suite, b"alice-0".to_vec(), Default::default());
+
+    let mut creator_session = creator
+        .create_session(
+            protocol_version,
+            cipher_suite,
+            LifetimeExt::years(1).unwrap(),
+            b"group".to_vec(),
+            Default::default(),
+        )
+        .unwrap();
+
+    // An external commit cannot be the first commit in a session as it requires
+    // interim_transcript_hash to be computed from the confirmed_transcript_hash and
+    // confirmation_tag, which is not the case for the initial interim_transcript_hash.
+    creator_session.commit(Vec::new()).unwrap();
+    creator_session.apply_pending_commit().unwrap();
+
+    const PARTICIPANT_COUNT: usize = 10;
+
+    let others = (1..PARTICIPANT_COUNT)
+        .map(|i| {
+            generate_client(
+                cipher_suite,
+                format!("alice-{i}").into_bytes(),
+                Default::default(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let mut rng = rand::thread_rng();
+
+    let mut sessions = others
+        .iter()
+        .fold(vec![creator_session], |mut sessions, client| {
+            let existing_session = sessions.choose_mut(&mut rng).unwrap();
+            let group_info = existing_session.group_info_message().unwrap();
+
+            let (new_session, commit) = client
+                .commit_external(
+                    LifetimeExt::years(1).unwrap(),
+                    group_info,
+                    Some(&existing_session.export_tree().unwrap()),
+                )
+                .unwrap();
+
+            sessions.iter_mut().for_each(|session| {
+                session.process_incoming_bytes(&commit).unwrap();
+            });
+
+            sessions.push(new_session);
+            sessions
+        });
+
+    assert!(sessions
+        .iter()
+        .all(|session| session.participant_count() as usize == PARTICIPANT_COUNT));
+
+    for i in 0..sessions.len() {
+        let payload = (&mut rng)
+            .sample_iter(rand::distributions::Standard)
+            .take(256)
+            .collect::<Vec<_>>();
+        let message = sessions[i].encrypt_application_data(&payload).unwrap();
+        sessions
+            .iter_mut()
+            .enumerate()
+            .filter(|&(j, _)| i != j)
+            .all(|(_, session)| {
+                let processed = session.process_incoming_bytes(&message).unwrap();
+                matches!(processed, ProcessedMessage::Application(bytes) if bytes == payload)
+            });
+    }
+}
+
+#[test]
+fn test_external_commits() {
+    test_params()
+        .filter(|&(_, _, encrypted)| !encrypted)
+        .for_each(|(protocol_version, cipher_suite, _)| {
+            external_commits_work(protocol_version, cipher_suite);
+        });
 }

@@ -1,8 +1,8 @@
 use crate::{
     group::{
-        ContentType, Epoch, GroupContext, GroupError, KeyType, MLSCiphertext, MLSCiphertextContent,
-        MLSCiphertextContentAAD, MLSMessageContent, MLSPlaintext, MLSSenderData, MLSSenderDataAAD,
-        Sender, VerifiedPlaintext,
+        Commit, ContentType, Epoch, GroupContext, GroupError, KeyType, MLSCiphertext,
+        MLSCiphertextContent, MLSCiphertextContentAAD, MLSMessageContent, MLSPlaintext,
+        MLSSenderData, MLSSenderDataAAD, Sender, VerifiedPlaintext,
     },
     key_package::KeyPackageRef,
     signer::Signable,
@@ -57,10 +57,14 @@ where
     }
 
     fn public_key_for_new_member(&self, content: &Content) -> Result<PublicKey, GroupError> {
-        if let Content::Proposal(Proposal::Add(AddProposal { key_package })) = content {
-            key_package.credential.public_key().map_err(Into::into)
-        } else {
-            Err(GroupError::NewMembersCanOnlyProposeAddingThemselves)
+        match content {
+            Content::Commit(Commit {
+                path: Some(path), ..
+            }) => Ok(path.leaf_key_package.credential.public_key()?),
+            Content::Proposal(Proposal::Add(AddProposal { key_package })) => {
+                Ok(key_package.credential.public_key()?)
+            }
+            _ => Err(GroupError::NewMembersCanOnlyProposeAddingThemselves),
         }
     }
 
