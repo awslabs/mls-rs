@@ -435,12 +435,6 @@ impl TreeKemPublic {
     ) -> Result<UpdatePathGeneration, RatchetTreeError> {
         let secret_generator = PathSecretGenerator::new(self.cipher_suite);
 
-        // Swap in the new key package
-        let mut own_leaf = self.nodes.borrow_as_leaf_mut(private_key.self_index)?;
-        let old_key_package = own_leaf.key_package.clone();
-
-        own_leaf.key_package = key_package_generation.key_package.clone();
-
         let excluding: Vec<LeafIndex> = excluding
             .iter()
             .flat_map(|kpr| self.package_leaf_index(kpr))
@@ -502,7 +496,7 @@ impl TreeKemPublic {
         };
 
         // Apply the new update path to the tree
-        self.apply_update_path(private_key.self_index, &update_path)?;
+        let old_key_package = self.apply_update_path(private_key.self_index, &update_path)?;
 
         // Apply the parent hash updates to the tree
         let leaf_parent_hash = self.update_parent_hashes(private_key.self_index, None)?;
