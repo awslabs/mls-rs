@@ -31,7 +31,10 @@ pub mod tls;
 mod tls;
 
 pub use ferriscrypt;
-pub use group::proposal::{AddProposal, Proposal, RemoveProposal, UpdateProposal};
+pub use group::{
+    proposal::{AddProposal, Proposal, RemoveProposal, UpdateProposal},
+    GroupContext,
+};
 pub use protocol_version::ProtocolVersion;
 pub use tls_codec;
 

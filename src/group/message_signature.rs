@@ -117,7 +117,7 @@ impl Deserialize for MLSMessageContentTBS {
 }
 
 impl MLSMessageContentTBS {
-    /// The group context should not be `None` when the sender is a member.
+    /// The group context must not be `None` when the sender is `Member` or `NewMember`.
     pub(crate) fn from_plaintext(
         plaintext: &MLSPlaintext,
         group_context: Option<&GroupContext>,
@@ -131,8 +131,8 @@ impl MLSMessageContentTBS {
             },
             content: plaintext.content.clone(),
             context: match plaintext.content.sender {
-                Sender::Member(_) => group_context.cloned(),
-                Sender::NewMember | Sender::Preconfigured(_) => None,
+                Sender::Member(_) | Sender::NewMember => group_context.cloned(),
+                Sender::Preconfigured(_) => None,
             },
         }
     }

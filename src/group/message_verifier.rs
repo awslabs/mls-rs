@@ -421,7 +421,7 @@ mod tests {
         }));
 
         let signing_context = MessageSigningContext {
-            group_context: None,
+            group_context: Some(test_group.group.context()),
             encrypted: false,
         };
 
@@ -441,7 +441,7 @@ mod tests {
         }));
 
         let signing_context = MessageSigningContext {
-            group_context: None,
+            group_context: Some(test_group.group.context()),
             encrypted: false,
         };
 

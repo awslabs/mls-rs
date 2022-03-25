@@ -5,6 +5,7 @@ use crate::extension::{ExtensionError, ExtensionList, LifetimeExt, MlsExtension}
 use crate::group::framing::{Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender};
 use crate::group::message_signature::MessageSigningContext;
 use crate::group::proposal::{AddProposal, Proposal, RemoveProposal};
+use crate::group::GroupContext;
 use crate::key_package::{
     KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
 };
@@ -138,17 +139,15 @@ impl<C: ClientConfig + Clone> Client<C> {
         &self,
         version: ProtocolVersion,
         group_cipher_suite: CipherSuite,
-        group_id: Vec<u8>,
+        group_context: GroupContext,
         key_package: KeyPackage,
-        epoch: u64,
     ) -> Result<Vec<u8>, ClientError> {
         self.propose_from_external(
             version,
             group_cipher_suite,
-            group_id,
             Sender::NewMember,
             Proposal::Add(AddProposal { key_package }),
-            epoch,
+            ExternalProposalContext::GroupContext(group_context),
         )
     }
 
@@ -163,14 +162,13 @@ impl<C: ClientConfig + Clone> Client<C> {
         self.propose_from_external(
             version,
             group_cipher_suite,
-            group_id,
             Sender::Preconfigured(
                 self.config
                     .external_key_id()
                     .ok_or(ClientError::ProposingAsExternalWithoutExternalKeyId)?,
             ),
             Proposal::Add(proposal),
-            epoch,
+            ExternalProposalContext::GroupIdAndEpoch(group_id, epoch),
         )
     }
 
@@ -185,14 +183,13 @@ impl<C: ClientConfig + Clone> Client<C> {
         self.propose_from_external(
             version,
             group_cipher_suite,
-            group_id,
             Sender::Preconfigured(
                 self.config
                     .external_key_id()
                     .ok_or(ClientError::ProposingAsExternalWithoutExternalKeyId)?,
             ),
             Proposal::Remove(proposal),
-            epoch,
+            ExternalProposalContext::GroupIdAndEpoch(group_id, epoch),
         )
     }
 
@@ -200,11 +197,16 @@ impl<C: ClientConfig + Clone> Client<C> {
         &self,
         version: ProtocolVersion,
         group_cipher_suite: CipherSuite,
-        group_id: Vec<u8>,
         sender: Sender,
         proposal: Proposal,
-        epoch: u64,
+        ext_context: ExternalProposalContext,
     ) -> Result<Vec<u8>, ClientError> {
+        let (group_id, epoch, group_context) = match ext_context {
+            ExternalProposalContext::GroupContext(ctx) => {
+                (ctx.group_id.clone(), ctx.epoch, Some(ctx))
+            }
+            ExternalProposalContext::GroupIdAndEpoch(id, epoch) => (id, epoch, None),
+        };
         let mut message = MLSPlaintext::new(group_id, epoch, sender, Content::Proposal(proposal));
 
         let (_, signer) = self
@@ -214,7 +216,7 @@ impl<C: ClientConfig + Clone> Client<C> {
             .ok_or(ClientError::NoCredentialFound)?;
 
         let signing_context = MessageSigningContext {
-            group_context: None,
+            group_context: group_context.as_ref(),
             encrypted: false,
         };
 
@@ -261,6 +263,12 @@ impl<C: ClientConfig + Clone> Client<C> {
             tree_data,
         )?)
     }
+}
+
+#[derive(Debug)]
+enum ExternalProposalContext {
+    GroupContext(GroupContext),
+    GroupIdAndEpoch(Vec<u8>, u64),
 }
 
 #[cfg(test)]
@@ -406,9 +414,8 @@ mod test {
             .propose_add_from_new_member(
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
-                TEST_GROUP.to_vec(),
+                session.group_context(),
                 bob_key_gen.key_package.clone().into(),
-                session.group_stats().unwrap().epoch,
             )
             .unwrap();
 
@@ -597,9 +604,8 @@ mod test {
             .propose_add_from_new_member(
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
-                TEST_GROUP.to_vec(),
+                session.group_context(),
                 bob_key_gen.key_package.into(),
-                session.group_stats().unwrap().epoch,
             )
             .unwrap();
 
@@ -622,9 +628,8 @@ mod test {
             .propose_add_from_new_member(
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
-                TEST_GROUP.to_vec(),
+                session.group_context(),
                 bob_key_gen.key_package.into(),
-                session.group_stats().unwrap().epoch,
             )
             .unwrap();
 

@@ -1963,6 +1963,10 @@ impl Group {
 
         Ok(info)
     }
+
+    pub fn context(&self) -> &GroupContext {
+        &self.context
+    }
 }
 
 fn find_tree(

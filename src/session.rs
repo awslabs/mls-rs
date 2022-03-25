@@ -6,8 +6,8 @@ pub use crate::group::framing::{ContentType, MLSMessage, MLSMessagePayload};
 
 use crate::group::framing::Content;
 use crate::group::{
-    proposal::Proposal, CommitGeneration, Group, GroupInfo, OutboundMessage, StateUpdate,
-    VerifiedPlaintext, Welcome,
+    proposal::Proposal, CommitGeneration, Group, GroupContext, GroupInfo, OutboundMessage,
+    StateUpdate, VerifiedPlaintext, Welcome,
 };
 use crate::key_package::{
     KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
@@ -193,6 +193,10 @@ impl<C: ClientConfig + Clone> Session<C> {
 
         let commit_message = session.serialize_control(commit_message)?;
         Ok((session, commit_message))
+    }
+
+    pub fn group_context(&self) -> GroupContext {
+        self.protocol.context().clone()
     }
 
     pub fn group_info_message(&self) -> Result<MLSMessage, SessionError> {
