@@ -1967,6 +1967,10 @@ impl Group {
     pub fn context(&self) -> &GroupContext {
         &self.context
     }
+
+    pub fn authentication_secret(&self) -> Result<Vec<u8>, GroupError> {
+        Ok(self.epoch_repo.current()?.authentication_secret.clone())
+    }
 }
 
 fn find_tree(

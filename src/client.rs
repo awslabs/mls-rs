@@ -855,4 +855,20 @@ mod test {
         let res = alice_session.process_incoming_bytes(&external_commit);
         assert_matches!(res, Err(_));
     }
+
+    #[test]
+    fn members_of_a_group_have_identical_authentication_secrets() {
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+        let mut alice_session = create_session(&alice);
+
+        let (bob, bob_key_pkg) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+        let bob_session =
+            join_session(&mut alice_session, [], bob_key_pkg.key_package.into(), &bob).unwrap();
+
+        assert_eq!(
+            alice_session.authentication_secret().unwrap(),
+            bob_session.authentication_secret().unwrap()
+        );
+    }
 }

@@ -553,6 +553,10 @@ impl<C: ClientConfig + Clone> Session<C> {
 
         Ok((new_session, welcome))
     }
+
+    pub fn authentication_secret(&self) -> Result<Vec<u8>, SessionError> {
+        Ok(self.protocol.authentication_secret()?)
+    }
 }
 
 fn version_and_cipher_filter<C: ClientConfig>(
