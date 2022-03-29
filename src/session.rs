@@ -10,7 +10,7 @@ use crate::group::{
     StateUpdate, VerifiedPlaintext, Welcome,
 };
 use crate::key_package::{
-    KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
+    KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
 };
 use crate::psk::ExternalPskId;
 use crate::signer::Signer;
@@ -110,21 +110,8 @@ impl<C: ClientConfig + Clone> Session<C> {
             _ => Err(SessionError::ExpectedWelcomeMessage),
         }?;
 
-        let key_package_generation = match key_package {
-            Some(r) => config.key_package_repo().get(r),
-            None => welcome_message
-                .secrets
-                .iter()
-                .find_map(|secrets| {
-                    config
-                        .key_package_repo()
-                        .get(&secrets.new_member)
-                        .transpose()
-                })
-                .transpose(),
-        }
-        .map_err(|e| SessionError::KeyPackageRepoError(e.into()))?
-        .ok_or(SessionError::KeyPackageNotFound)?;
+        let key_package_generation =
+            find_key_package_generation(&config, key_package, &welcome_message)?;
 
         let ratchet_tree = ratchet_tree_data
             .map(|rt| Self::import_ratchet_tree(welcome_message.cipher_suite, rt))
@@ -148,16 +135,22 @@ impl<C: ClientConfig + Clone> Session<C> {
 
     pub fn join_subgroup(
         &self,
+        key_package: Option<&KeyPackageRef>,
         welcome: Welcome,
         ratchet_tree_data: Option<&[u8]>,
     ) -> Result<Self, SessionError> {
         let public_tree = ratchet_tree_data
             .map(|rt| Self::import_ratchet_tree(welcome.cipher_suite, rt))
             .transpose()?;
+
+        let key_package_generation =
+            find_key_package_generation(&self.config, key_package, &welcome)?;
+
         Ok(Session {
             protocol: self.protocol.join_subgroup(
                 welcome,
                 public_tree,
+                key_package_generation,
                 &self.config.secret_store(),
                 version_and_cipher_filter(&self.config),
             )?,
@@ -532,17 +525,27 @@ impl<C: ClientConfig + Clone> Session<C> {
         &self,
         sub_group_id: Vec<u8>,
         resumption_psk_epoch: Option<u64>,
-        key_pkg_filter: F,
+        get_new_key_package: F,
     ) -> Result<(Self, Option<Welcome>), SessionError>
     where
-        F: FnMut(&KeyPackageRef) -> bool,
+        F: FnMut(&KeyPackage) -> Option<KeyPackage>,
     {
+        let key_package = self.protocol.current_user_key_package()?;
+
+        let key_package_generator = KeyPackageGenerator {
+            protocol_version: self.protocol.protocol_version,
+            cipher_suite: self.protocol.cipher_suite,
+            signing_key: &self.signer()?,
+            credential: &key_package.credential.clone(),
+            extensions: &key_package.extensions.clone(),
+        };
+
         let (new_group, welcome) = self.protocol.branch(
             sub_group_id,
             resumption_psk_epoch,
             &self.config.secret_store(),
-            &self.signer()?,
-            key_pkg_filter,
+            key_package_generator,
+            get_new_key_package,
         )?;
 
         let new_session = Session {
@@ -566,4 +569,29 @@ fn version_and_cipher_filter<C: ClientConfig>(
         config.supported_protocol_versions().contains(&version)
             && config.supported_cipher_suites().contains(&cipher_suite)
     }
+}
+
+fn find_key_package_generation<C>(
+    config: &C,
+    key_package_ref: Option<&KeyPackageRef>,
+    welcome_message: &Welcome,
+) -> Result<KeyPackageGeneration, SessionError>
+where
+    C: ClientConfig,
+{
+    match key_package_ref {
+        Some(r) => config.key_package_repo().get(r),
+        None => welcome_message
+            .secrets
+            .iter()
+            .find_map(|secrets| {
+                config
+                    .key_package_repo()
+                    .get(&secrets.new_member)
+                    .transpose()
+            })
+            .transpose(),
+    }
+    .map_err(|e| SessionError::KeyPackageRepoError(e.into()))?
+    .ok_or(SessionError::KeyPackageNotFound)
 }

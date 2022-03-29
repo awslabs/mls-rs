@@ -672,8 +672,10 @@ mod test {
     fn only_selected_members_of_the_original_group_can_join_subgroup() {
         let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
         let mut alice_session = create_session(&alice);
+
         let (bob, bob_key_pkg_gen) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+        let bob_key_pkg_ref = bob_key_pkg_gen.key_package.to_reference().unwrap();
 
         let mut bob_session = join_session(
             &mut alice_session,
@@ -685,7 +687,6 @@ mod test {
 
         let (carol, carol_key_pkg_gen) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "carol");
-        let carol_key_pkg_ref = carol_key_pkg_gen.key_package.to_reference().unwrap();
 
         let carol_session = join_session(
             &mut alice_session,
@@ -695,14 +696,30 @@ mod test {
         )
         .unwrap();
 
+        let bob_sub_key_pkg = bob
+            .gen_key_package(
+                TEST_PROTOCOL_VERSION,
+                TEST_CIPHER_SUITE,
+                LifetimeExt::years(1).unwrap(),
+            )
+            .unwrap();
+
         let (alice_sub_session, welcome) = alice_session
-            .branch(b"subgroup".to_vec(), None, |r| *r != carol_key_pkg_ref)
+            .branch(b"subgroup".to_vec(), None, |p| {
+                let r = p.to_reference().unwrap();
+                if r == bob_key_pkg_ref {
+                    Some(bob_sub_key_pkg.key_package.clone().into())
+                } else {
+                    None
+                }
+            })
             .unwrap();
 
         let welcome = welcome.unwrap();
 
         assert_matches!(
             bob_session.join_subgroup(
+                None,
                 welcome.clone(),
                 Some(&alice_sub_session.export_tree().unwrap()),
             ),
@@ -710,7 +727,11 @@ mod test {
         );
 
         assert_matches!(
-            carol_session.join_subgroup(welcome, Some(&alice_sub_session.export_tree().unwrap())),
+            carol_session.join_subgroup(
+                None,
+                welcome,
+                Some(&alice_sub_session.export_tree().unwrap())
+            ),
             Err(_)
         );
     }

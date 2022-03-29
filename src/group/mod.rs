@@ -30,7 +30,7 @@ use crate::psk::{
     ResumptionPSKUsage, ResumptionPsk,
 };
 use crate::signer::{Signable, SignatureError, Signer};
-use crate::tree_kem::node::{LeafIndex, NodeIndex};
+use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError};
 use crate::tree_kem::tree_validator::{TreeValidationError, TreeValidator};
 use crate::tree_kem::{
@@ -467,21 +467,18 @@ impl Group {
             protocol_version,
             welcome,
             public_tree,
-            key_package.key_package.to_reference()?,
-            key_package.secret_key,
+            key_package,
             secret_store,
             None,
             support_version_and_cipher,
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn join_with_welcome<P: PskStore, F>(
         protocol_version: ProtocolVersion,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
-        key_package_ref: KeyPackageRef,
-        leaf_secret: HpkeSecretKey,
+        key_package_generation: KeyPackageGeneration,
         psk_store: &P,
         epoch_repo: Option<&EpochRepository>,
         support_version_and_cipher: F,
@@ -490,6 +487,8 @@ impl Group {
         P: PskStore,
         F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
     {
+        let key_package_ref = key_package_generation.key_package.to_reference()?;
+
         // Identify an entry in the secrets array where the key_package_hash value corresponds to
         // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
         // If no such field exists, or if the ciphersuite indicated in the KeyPackage does not
@@ -509,7 +508,7 @@ impl Group {
                 .encrypted_group_secrets
                 .clone()
                 .into(),
-            &leaf_secret,
+            &key_package_generation.secret_key,
             &[],
             None,
         )?;
@@ -559,8 +558,11 @@ impl Group {
         // object.
         let context = GroupContext::from(&group_info);
 
-        let mut private_tree =
-            TreeKemPrivate::new_self_leaf(self_index, key_package_ref, leaf_secret);
+        let mut private_tree = TreeKemPrivate::new_self_leaf(
+            self_index,
+            key_package_ref,
+            key_package_generation.secret_key,
+        );
 
         // If the path_secret value is set in the GroupSecrets object
         if let Some(path_secret) = group_secrets.path_secret {
@@ -1219,46 +1221,57 @@ impl Group {
         sub_group_id: Vec<u8>,
         resumption_psk_epoch: Option<u64>,
         psk_store: &P,
-        signer: &S,
-        mut key_pkg_filter: F,
+        key_package_generator: KeyPackageGenerator<S>,
+        mut get_new_key_package: F,
     ) -> Result<(Self, Option<Welcome>), GroupError>
     where
-        P: PskStore,
         S: Signer,
-        F: FnMut(&KeyPackageRef) -> bool,
+        P: PskStore,
+        F: FnMut(&KeyPackage) -> Option<KeyPackage>,
     {
-        let current_tree = self.current_epoch_tree()?;
-        let (new_member_refs, new_members) = current_tree
-            .get_key_package_refs()
-            .filter_map(|r| {
-                key_pkg_filter(r).then(|| {
-                    current_tree
-                        .get_validated_key_package(r)
-                        .map(|p| (r.clone(), p.clone()))
-                })
-            })
-            .try_fold((Vec::new(), Vec::new()), |(mut refs, mut pkgs), pair| {
-                pair.map(|(r, p)| {
-                    refs.push(r);
-                    pkgs.push(p);
-                    (refs, pkgs)
-                })
-            })?;
+        let required_capabilities = self.context.extensions.get_extension()?;
+        let new_self_key_pkg = key_package_generator.generate(required_capabilities.as_ref())?;
 
-        let mut new_pub_tree = TreeKemPublic::new(self.cipher_suite);
+        let key_package_validator = KeyPackageValidator {
+            protocol_version: self.protocol_version,
+            cipher_suite: self.cipher_suite,
+            required_capabilities: required_capabilities.as_ref(),
+            options: Default::default(),
+        };
+
+        let (new_member_refs, new_members) = {
+            let current_tree = self.current_epoch_tree()?;
+            let self_key_pkg_ref = &self.private_tree.key_package_ref;
+
+            current_tree
+                .get_key_package_refs()
+                .filter_map(|key_pkg_ref| {
+                    if self_key_pkg_ref == key_pkg_ref {
+                        None
+                    } else {
+                        current_tree
+                            .get_key_package(key_pkg_ref)
+                            .map(&mut get_new_key_package)
+                            .transpose()
+                    }
+                })
+                .try_fold(
+                    (Vec::new(), Vec::new()),
+                    |(mut refs, mut pkgs), new_key_pkg| {
+                        let new_key_pkg = new_key_pkg?;
+                        let new_key_pkg_ref = new_key_pkg.to_reference()?;
+                        let new_key_pkg = key_package_validator.validate(new_key_pkg)?;
+                        refs.push(new_key_pkg_ref);
+                        pkgs.push(new_key_pkg);
+                        Ok::<_, GroupError>((refs, pkgs))
+                    },
+                )?
+        };
+
+        let (mut new_pub_tree, new_priv_tree) = TreeKemPublic::derive(new_self_key_pkg)?;
         // Add existing members to new tree
         new_pub_tree.add_leaves(new_members)?;
         let new_pub_tree_hash = new_pub_tree.tree_hash()?;
-
-        let new_priv_tree = TreeKemPrivate::new_self_leaf(
-            new_pub_tree.package_leaf_index(&self.private_tree.key_package_ref)?,
-            self.private_tree.key_package_ref.clone(),
-            self.private_tree
-                .secret_keys
-                .get(&NodeIndex::from(self.private_tree.self_index))
-                .cloned()
-                .unwrap(),
-        );
 
         let new_context = GroupContext {
             epoch: 1,
@@ -1310,11 +1323,11 @@ impl Group {
                 &epoch,
                 &new_context.confirmed_transcript_hash,
             )?,
-            signer: self.private_tree.key_package_ref.clone(),
+            signer: new_priv_tree.key_package_ref.clone(),
             signature: Vec::new(),
         };
 
-        group_info.sign(signer, &())?;
+        group_info.sign(key_package_generator.signing_key, &())?;
 
         let new_group = Group {
             protocol_version: self.protocol_version,
@@ -1344,6 +1357,7 @@ impl Group {
         &self,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
+        key_package_generation: KeyPackageGeneration,
         psk_store: &P,
         support_version_and_cipher: F,
     ) -> Result<Self, GroupError>
@@ -1355,12 +1369,7 @@ impl Group {
             self.protocol_version,
             welcome,
             public_tree,
-            self.private_tree.key_package_ref.clone(),
-            self.private_tree
-                .secret_keys
-                .get(&NodeIndex::from(self.private_tree.self_index))
-                .cloned()
-                .unwrap(),
+            key_package_generation,
             psk_store,
             Some(&self.epoch_repo),
             support_version_and_cipher,
