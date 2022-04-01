@@ -560,6 +560,15 @@ impl<C: ClientConfig + Clone> Session<C> {
     pub fn authentication_secret(&self) -> Result<Vec<u8>, SessionError> {
         Ok(self.protocol.authentication_secret()?)
     }
+
+    pub fn export_secret(
+        &self,
+        label: &str,
+        context: &[u8],
+        len: usize,
+    ) -> Result<Vec<u8>, SessionError> {
+        Ok(self.protocol.export_secret(label, context, len)?)
+    }
 }
 
 fn version_and_cipher_filter<C: ClientConfig>(

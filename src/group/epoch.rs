@@ -269,6 +269,19 @@ impl Epoch {
             AeadNonce::new(&sender_data_nonce)?,
         ))
     }
+
+    pub fn export_secret(
+        &self,
+        label: &str,
+        context: &[u8],
+        len: usize,
+    ) -> Result<Vec<u8>, KeyScheduleKdfError> {
+        let kdf = KeyScheduleKdf::new(self.cipher_suite.kdf_type());
+        let derived_secret = kdf.derive_secret(&self.exporter_secret, label)?;
+        let context_hash = self.cipher_suite.hash_function().digest(context);
+
+        kdf.expand_with_label(&derived_secret, "exporter", &context_hash, len)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -364,10 +377,9 @@ impl WelcomeSecret {
     }
 }
 
-//TODO: Unit tests
-
 #[cfg(test)]
 pub mod test_utils {
+
     use super::*;
     use crate::group::secret_tree::test::get_test_tree;
 
@@ -385,7 +397,7 @@ pub mod test_utils {
             secret_tree: get_test_tree(cipher_suite, vec![], 1),
             self_index: LeafIndex(0),
             sender_data_secret: vec![],
-            exporter_secret: vec![],
+            exporter_secret: vec![0u8; kdf.extract_size()],
             authentication_secret: vec![],
             external_secret: vec![],
             confirmation_key,
@@ -394,6 +406,92 @@ pub mod test_utils {
             init_secret: InitSecret::random(&kdf).unwrap(),
             handshake_ratchets: Default::default(),
             application_ratchets: Default::default(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ferriscrypt::{kdf::hkdf::Hkdf, rand::SecureRng};
+
+    use crate::{cipher_suite::CipherSuite, group::epoch::test_utils::get_test_epoch};
+
+    #[derive(serde::Deserialize, serde::Serialize)]
+    struct TestCase {
+        cipher_suite: u16,
+        #[serde(with = "hex::serde")]
+        input: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        output: Vec<u8>,
+    }
+
+    #[allow(dead_code)]
+    fn generate_epoch_secret_exporter_test_vector() -> Vec<TestCase> {
+        let mut test_cases = Vec::new();
+        for cipher_suite in CipherSuite::all() {
+            let key_size = Hkdf::from(cipher_suite.kdf_type()).extract_size();
+            let mut membership_key = vec![0u8; key_size];
+            SecureRng::fill(&mut membership_key).unwrap();
+            let mut confirmation_key = vec![0u8; key_size];
+            SecureRng::fill(&mut confirmation_key).unwrap();
+            let mut context = vec![0u8; key_size];
+            SecureRng::fill(&mut context).unwrap();
+
+            let mut test_case_input = vec![];
+            test_case_input.extend(&membership_key);
+            test_case_input.extend(&confirmation_key);
+            test_case_input.extend(&context);
+
+            let epoch = get_test_epoch(cipher_suite, membership_key, confirmation_key);
+            let exported_secret = epoch.export_secret("test", &context, key_size).unwrap();
+
+            test_cases.push(TestCase {
+                cipher_suite: cipher_suite as u16,
+                input: test_case_input,
+                output: exported_secret,
+            });
+        }
+
+        std::fs::write(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/test_data/epoch_secret_exporter_test_vector.json"
+            ),
+            serde_json::to_vec_pretty(&test_cases).unwrap(),
+        )
+        .unwrap();
+
+        test_cases
+    }
+
+    #[test]
+    fn test_export_secret() {
+        let test_cases: Vec<TestCase> = serde_json::from_slice(include_bytes!(
+            "../../test_data/epoch_secret_exporter_test_vector.json"
+        ))
+        .unwrap();
+
+        for test_case in test_cases {
+            let cipher_suite = match CipherSuite::from_raw(test_case.cipher_suite) {
+                Some(cs) => cs,
+                None => continue,
+            };
+
+            let key_size = Hkdf::from(cipher_suite.kdf_type()).extract_size();
+
+            let membership_key = &test_case.input[0..key_size];
+            let confirmation_key = &test_case.input[key_size..2 * key_size];
+            let context = &test_case.input[2 * key_size..];
+
+            let epoch = get_test_epoch(
+                cipher_suite,
+                membership_key.to_vec(),
+                confirmation_key.to_vec(),
+            );
+
+            let exported_secret = epoch.export_secret("test", &context, key_size).unwrap();
+
+            assert_eq!(exported_secret, test_case.output);
         }
     }
 }

@@ -1980,6 +1980,18 @@ impl Group {
     pub fn authentication_secret(&self) -> Result<Vec<u8>, GroupError> {
         Ok(self.epoch_repo.current()?.authentication_secret.clone())
     }
+
+    pub fn export_secret(
+        &self,
+        label: &str,
+        context: &[u8],
+        len: usize,
+    ) -> Result<Vec<u8>, GroupError> {
+        Ok(self
+            .epoch_repo
+            .current()?
+            .export_secret(label, context, len)?)
+    }
 }
 
 fn find_tree(
