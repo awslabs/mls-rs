@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;
+use zeroize::Zeroize;
 
 #[derive(Error, Debug)]
 pub enum EpochError {
@@ -33,13 +34,9 @@ pub enum EpochError {
     KeyDerivationFailure,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct Epoch {
-    pub identifier: u64,
-    pub cipher_suite: CipherSuite,
-    pub public_tree: TreeKemPublic,
-    pub secret_tree: SecretTree,
-    pub self_index: LeafIndex,
+#[derive(Debug, Clone, Zeroize, PartialEq)]
+#[zeroize(drop)]
+pub struct KeySchedule {
     pub sender_data_secret: Vec<u8>,
     pub exporter_secret: Vec<u8>,
     pub authentication_secret: Vec<u8>,
@@ -47,23 +44,43 @@ pub(crate) struct Epoch {
     pub confirmation_key: Vec<u8>,
     pub membership_key: Vec<u8>,
     pub resumption_secret: Vec<u8>,
+}
+
+impl KeySchedule {
+    pub fn export_secret(
+        &self,
+        label: &str,
+        context: &[u8],
+        len: usize,
+        cipher_suite: CipherSuite,
+    ) -> Result<Vec<u8>, KeyScheduleKdfError> {
+        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
+        let derived_secret = kdf.derive_secret(&self.exporter_secret, label)?;
+        let context_hash = cipher_suite.hash_function().digest(context);
+
+        kdf.expand_with_label(&derived_secret, "exporter", &context_hash, len)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Epoch {
+    pub identifier: u64,
+    pub cipher_suite: CipherSuite,
+    pub public_tree: TreeKemPublic,
+    pub secret_tree: SecretTree,
+    pub self_index: LeafIndex,
     pub init_secret: InitSecret,
     pub handshake_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
     pub application_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
+    pub key_schedule: KeySchedule,
 }
 
 impl PartialEq for Epoch {
     fn eq(&self, other: &Self) -> bool {
         self.cipher_suite == other.cipher_suite
             && self.identifier == other.identifier
-            && self.sender_data_secret == other.sender_data_secret
             && self.public_tree == other.public_tree
-            && self.exporter_secret == other.exporter_secret
-            && self.authentication_secret == other.authentication_secret
-            && self.external_secret == other.external_secret
-            && self.confirmation_key == other.confirmation_key
-            && self.membership_key == other.membership_key
-            && self.resumption_secret == other.resumption_secret
+            && self.key_schedule == other.key_schedule
             && self.init_secret == other.init_secret
     }
 }
@@ -162,13 +179,15 @@ impl Epoch {
             cipher_suite,
             public_tree,
             secret_tree,
-            sender_data_secret,
-            exporter_secret,
-            authentication_secret,
-            external_secret,
-            confirmation_key,
-            membership_key,
-            resumption_secret,
+            key_schedule: KeySchedule {
+                sender_data_secret,
+                exporter_secret,
+                authentication_secret,
+                external_secret,
+                confirmation_key,
+                membership_key,
+                resumption_secret,
+            },
             init_secret,
             self_index,
             application_ratchets: Default::default(),
@@ -251,14 +270,14 @@ impl Epoch {
         // Generate a sender data key and nonce using the sender_data_secret from the current
         // epoch's key schedule
         let sender_data_key = kdf.expand_with_label(
-            &self.sender_data_secret,
+            &self.key_schedule.sender_data_secret,
             "key",
             ciphertext_sample,
             self.cipher_suite.aead_type().key_size(),
         )?;
 
         let sender_data_nonce = kdf.expand_with_label(
-            &self.sender_data_secret,
+            &self.key_schedule.sender_data_secret,
             "nonce",
             ciphertext_sample,
             self.cipher_suite.aead_type().nonce_size(),
@@ -268,19 +287,6 @@ impl Epoch {
             Key::new(self.cipher_suite.aead_type(), sender_data_key)?,
             AeadNonce::new(&sender_data_nonce)?,
         ))
-    }
-
-    pub fn export_secret(
-        &self,
-        label: &str,
-        context: &[u8],
-        len: usize,
-    ) -> Result<Vec<u8>, KeyScheduleKdfError> {
-        let kdf = KeyScheduleKdf::new(self.cipher_suite.kdf_type());
-        let derived_secret = kdf.derive_secret(&self.exporter_secret, label)?;
-        let context_hash = self.cipher_suite.hash_function().digest(context);
-
-        kdf.expand_with_label(&derived_secret, "exporter", &context_hash, len)
     }
 }
 
@@ -395,13 +401,15 @@ pub mod test_utils {
             public_tree: TreeKemPublic::new(cipher_suite),
             secret_tree: get_test_tree(cipher_suite, vec![], 1),
             self_index: LeafIndex(0),
-            sender_data_secret: vec![],
-            exporter_secret: vec![0u8; kdf.extract_size()],
-            authentication_secret: vec![],
-            external_secret: vec![],
-            confirmation_key,
-            membership_key,
-            resumption_secret: vec![],
+            key_schedule: KeySchedule {
+                sender_data_secret: vec![],
+                exporter_secret: vec![0u8; kdf.extract_size()],
+                authentication_secret: vec![],
+                external_secret: vec![],
+                confirmation_key,
+                membership_key,
+                resumption_secret: vec![],
+            },
             init_secret: InitSecret::random(&kdf).unwrap(),
             handshake_ratchets: Default::default(),
             application_ratchets: Default::default(),
@@ -444,7 +452,10 @@ mod tests {
             test_case_input.extend(&context);
 
             let epoch = get_test_epoch(cipher_suite, membership_key, confirmation_key);
-            let exported_secret = epoch.export_secret("test", &context, key_size).unwrap();
+            let exported_secret = epoch
+                .key_schedule
+                .export_secret("test", &context, key_size, cipher_suite)
+                .unwrap();
 
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
@@ -485,7 +496,10 @@ mod tests {
                 confirmation_key.to_vec(),
             );
 
-            let exported_secret = epoch.export_secret("test", &context, key_size).unwrap();
+            let exported_secret = epoch
+                .key_schedule
+                .export_secret("test", &context, key_size, cipher_suite)
+                .unwrap();
 
             assert_eq!(exported_secret, test_case.output);
         }

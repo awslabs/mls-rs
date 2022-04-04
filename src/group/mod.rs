@@ -1876,7 +1876,7 @@ impl Group {
                     let init_secret = InitSecret::decode_for_external(
                         self.cipher_suite,
                         &kem_output,
-                        &current_epoch.external_secret,
+                        &current_epoch.key_schedule.external_secret,
                     )?;
 
                     Epoch::derive(
@@ -1948,7 +1948,7 @@ impl Group {
             external_pub: self
                 .cipher_suite
                 .kem()
-                .derive(&current_epoch.external_secret)?
+                .derive(&current_epoch.key_schedule.external_secret)?
                 .1,
         })?;
 
@@ -1978,7 +1978,12 @@ impl Group {
     }
 
     pub fn authentication_secret(&self) -> Result<Vec<u8>, GroupError> {
-        Ok(self.epoch_repo.current()?.authentication_secret.clone())
+        Ok(self
+            .epoch_repo
+            .current()?
+            .key_schedule
+            .authentication_secret
+            .clone())
     }
 
     pub fn export_secret(
@@ -1987,10 +1992,12 @@ impl Group {
         context: &[u8],
         len: usize,
     ) -> Result<Vec<u8>, GroupError> {
-        Ok(self
-            .epoch_repo
-            .current()?
-            .export_secret(label, context, len)?)
+        Ok(self.epoch_repo.current()?.key_schedule.export_secret(
+            label,
+            context,
+            len,
+            self.cipher_suite,
+        )?)
     }
 }
 

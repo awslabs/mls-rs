@@ -35,7 +35,10 @@ impl ConfirmationTag {
         epoch: &Epoch,
         confirmed_transcript_hash: &ConfirmedTranscriptHash,
     ) -> Result<Self, ConfirmationTagError> {
-        let hmac_key = Key::new(&epoch.confirmation_key, epoch.cipher_suite.hash_function())?;
+        let hmac_key = Key::new(
+            &epoch.key_schedule.confirmation_key,
+            epoch.cipher_suite.hash_function(),
+        )?;
         let mac = hmac_key.generate_tag(confirmed_transcript_hash)?;
         Ok(ConfirmationTag(mac))
     }

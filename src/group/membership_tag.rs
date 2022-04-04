@@ -89,7 +89,10 @@ impl MembershipTag {
             MLSPlaintextTBM::from_plaintext(plaintext, group_context, WireFormat::Plain);
         let serialized_tbm = plaintext_tbm.tls_serialize_detached()?;
 
-        let hmac_key = Key::new(&epoch.membership_key, epoch.cipher_suite.hash_function())?;
+        let hmac_key = Key::new(
+            &epoch.key_schedule.membership_key,
+            epoch.cipher_suite.hash_function(),
+        )?;
         let tag = hmac_key.generate_tag(&serialized_tbm)?;
 
         Ok(MembershipTag(tag))

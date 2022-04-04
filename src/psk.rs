@@ -107,6 +107,7 @@ where
                 JustPreSharedKeyID::Resumption(ResumptionPsk { psk_epoch, .. }) => epochs
                     .ok_or(EpochRepositoryError::EpochNotFound(*psk_epoch))?
                     .get(*psk_epoch)?
+                    .key_schedule
                     .resumption_secret
                     .clone()
                     .into(),
