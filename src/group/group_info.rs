@@ -15,35 +15,35 @@ impl From<&GroupInfo> for GroupContext {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct GroupInfo {
     pub cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,
     pub group_context_extensions: ExtensionList,
     pub other_extensions: ExtensionList,
     pub confirmation_tag: ConfirmationTag,
     pub signer: KeyPackageRef,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub signature: Vec<u8>,
 }
 
 #[derive(TlsSerialize, TlsSize)]
 struct SignableGroupInfo<'a> {
     cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     group_id: &'a Vec<u8>,
     epoch: u64,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     tree_hash: &'a Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     confirmed_transcript_hash: &'a Vec<u8>,
     #[tls_codec(with = "crate::tls::DefRef")]
     group_context_extensions: &'a ExtensionList,
     #[tls_codec(with = "crate::tls::DefRef")]
     other_extensions: &'a ExtensionList,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     confirmation_tag: &'a Tag,
     signer: &'a KeyPackageRef,
 }

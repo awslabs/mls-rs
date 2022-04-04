@@ -15,9 +15,9 @@ struct LeafNodeHashInput<'a> {
 struct ParentNodeTreeHashInput {
     node_index: u32,
     parent_node: Option<Parent>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     left_hash: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     right_hash: Vec<u8>,
 }
 
@@ -89,11 +89,14 @@ impl TreeKemPublic {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     // use super::*;
     // use crate::tree_kem::node::LeafIndex;
     // use crate::tree_kem::parent_hash::ParentHash;
     // use crate::tree_kem::test::{get_test_key_packages, get_test_tree};
+
+    // #[cfg(target_arch = "wasm32")]
+    // use wasm_bindgen_test::wasm_bindgen_test as test;
 
     // Sanity check test to verify the input to the hash function isn't changing between releases
     // This is done with a mock hash that returns its input as output

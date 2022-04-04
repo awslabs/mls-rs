@@ -192,7 +192,7 @@ impl<'a> LeafNodeValidator<'a> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::time::Duration;
 
     use assert_matches::assert_matches;
@@ -200,10 +200,13 @@ mod test {
     use ferriscrypt::rand::SecureRng;
 
     use super::*;
-    use crate::client::test_util::get_test_credential;
+    use crate::client::test_utils::get_test_credential;
     use crate::extension::{CapabilitiesExt, ExtensionList, ExternalKeyIdExt, MlsExtension};
-    use crate::tree_kem::leaf_node::test_util::*;
+    use crate::tree_kem::leaf_node::test_utils::*;
     use crate::tree_kem::parent_hash::ParentHash;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
 

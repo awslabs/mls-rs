@@ -58,7 +58,7 @@ pub trait MlsExtension: Sized + Serialize + Deserialize {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct ExternalKeyIdExt {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub identifier: Vec<u8>,
 }
 
@@ -68,13 +68,13 @@ impl MlsExtension for ExternalKeyIdExt {
 
 #[derive(Clone, PartialEq, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct CapabilitiesExt {
-    #[tls_codec(with = "crate::tls::DefVec::<u8>")]
+    #[tls_codec(with = "crate::tls::DefVec")]
     pub protocol_versions: Vec<ProtocolVersion>,
-    #[tls_codec(with = "crate::tls::DefVec::<u8>")]
+    #[tls_codec(with = "crate::tls::DefVec")]
     pub cipher_suites: Vec<MaybeCipherSuite>,
-    #[tls_codec(with = "crate::tls::DefVec::<u8>")]
+    #[tls_codec(with = "crate::tls::DefVec")]
     pub extensions: Vec<ExtensionType>,
-    #[tls_codec(with = "crate::tls::DefVec::<u8>")]
+    #[tls_codec(with = "crate::tls::DefVec")]
     pub proposals: Vec<ProposalType>,
 }
 
@@ -157,9 +157,9 @@ impl MlsExtension for RatchetTreeExt {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Default)]
 pub struct RequiredCapabilitiesExt {
-    #[tls_codec(with = "crate::tls::DefVec::<u8>")]
+    #[tls_codec(with = "crate::tls::DefVec")]
     pub extensions: Vec<ExtensionType>,
-    #[tls_codec(with = "crate::tls::DefVec::<u8>")]
+    #[tls_codec(with = "crate::tls::DefVec")]
     pub proposals: Vec<ProposalType>,
 }
 
@@ -169,7 +169,7 @@ impl MlsExtension for RequiredCapabilitiesExt {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct ExternalPubExt {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub external_pub: HpkePublicKey,
 }
 
@@ -180,7 +180,7 @@ impl MlsExtension for ExternalPubExt {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Extension {
     pub extension_type: ExtensionType,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub extension_data: Vec<u8>,
 }
 
@@ -300,10 +300,7 @@ mod tests {
     use ferriscrypt::rand::SecureRng;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_key_id_extension() {
@@ -478,7 +475,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(
-            crate::tls::test_util::ser_deser(&extensions).unwrap(),
+            crate::tls::test_utils::ser_deser(&extensions).unwrap(),
             extensions
         );
     }

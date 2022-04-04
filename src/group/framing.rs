@@ -27,14 +27,14 @@ impl From<&Content> for ContentType {
 pub enum Sender {
     #[tls_codec(discriminant = 1)]
     Member(KeyPackageRef),
-    Preconfigured(#[tls_codec(with = "crate::tls::ByteVec::<u8>")] Vec<u8>),
+    Preconfigured(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>),
     NewMember,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u8)]
 pub enum Content {
-    Application(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>),
+    Application(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>),
     Proposal(Proposal),
     Commit(Commit),
 }
@@ -169,25 +169,25 @@ impl Deserialize for MLSCiphertextContent {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSCiphertextContentAAD {
-    #[tls_codec(with = "crate::tls::ByteVec::<u8>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub content_type: ContentType,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub authenticated_data: Vec<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSCiphertext {
-    #[tls_codec(with = "crate::tls::ByteVec::<u8>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub content_type: ContentType,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub authenticated_data: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u8>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub encrypted_sender_data: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub ciphertext: Vec<u8>,
 }
 
@@ -200,7 +200,7 @@ pub struct MLSSenderData {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSSenderDataAAD {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub content_type: ContentType,
@@ -271,11 +271,11 @@ impl From<ControlEncryptionMode> for WireFormat {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSMessageContent {
-    #[tls_codec(with = "crate::tls::ByteVec::<u8>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub sender: Sender,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub authenticated_data: Vec<u8>,
     pub content: Content,
 }

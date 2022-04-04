@@ -29,13 +29,13 @@ pub enum JustPreSharedKeyID {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct ExternalPskId(#[tls_codec(with = "crate::tls::ByteVec::<u8>")] pub Vec<u8>);
+pub struct ExternalPskId(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct PskGroupId(#[tls_codec(with = "crate::tls::ByteVec::<u8>")] pub Vec<u8>);
+pub struct PskGroupId(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct PskNonce(#[tls_codec(with = "crate::tls::ByteVec::<u8>")] pub Vec<u8>);
+pub struct PskNonce(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
 
 impl PskNonce {
     pub fn random(cipher_suite: CipherSuite) -> Result<Self, SecureRngError> {
@@ -164,16 +164,10 @@ mod tests {
     use assert_matches::assert_matches;
     use ferriscrypt::{kdf::hkdf::Hkdf, rand::SecureRng};
     use serde::{Deserialize, Serialize};
-    use std::{
-        fs, iter,
-        path::{Path, PathBuf},
-    };
+    use std::iter;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
 
@@ -187,10 +181,6 @@ mod tests {
 
     fn make_nonce(cipher_suite: CipherSuite) -> PskNonce {
         PskNonce::random(cipher_suite).unwrap()
-    }
-
-    fn make_psk(cipher_suite: CipherSuite) -> Psk {
-        Psk(SecureRng::gen(digest_size(cipher_suite)).unwrap())
     }
 
     fn wrap_external_psk_id(cipher_suite: CipherSuite, id: ExternalPskId) -> PreSharedKeyID {
@@ -240,12 +230,11 @@ mod tests {
     }
 
     impl TestScenario {
-        #[allow(dead_code)]
-        fn generate() {
+        fn generate(path: &str) {
             let make_psk_list = |cs, n| {
                 iter::repeat_with(|| PskInfo {
                     id: make_external_psk_id(cs).0,
-                    psk: make_psk(cs).0,
+                    psk: Psk(SecureRng::gen(digest_size(cs)).unwrap()).0,
                     nonce: make_nonce(cs).0,
                 })
                 .take(n)
@@ -264,21 +253,11 @@ mod tests {
                     }
                 })
                 .collect::<Vec<_>>();
-            fs::write(
-                Self::data_path(),
-                serde_json::to_vec_pretty(&scenarios).unwrap(),
-            )
-            .unwrap();
-        }
-
-        #[allow(dead_code)]
-        fn data_path() -> PathBuf {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data/psk_secret.json")
+            std::fs::write(path, serde_json::to_vec_pretty(&scenarios).unwrap()).unwrap();
         }
 
         fn load() -> Vec<TestScenario> {
-            let data = include_str!("../test_data/psk_secret.json");
-            serde_json::from_str(data).unwrap()
+            load_test_cases!(psk_secret, TestScenario::generate)
         }
 
         fn compute_psk_secret(cipher_suite: CipherSuite, psks: &[PskInfo]) -> Vec<u8> {

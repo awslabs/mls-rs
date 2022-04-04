@@ -19,11 +19,11 @@ pub enum TranscriptHashError {
 #[derive(Clone, Debug, PartialEq, TlsSerialize, TlsSize)]
 pub(crate) struct MLSMessageCommitContent<'a> {
     pub wire_format: WireFormat,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: &'a [u8],
     pub epoch: u64,
     pub sender: &'a Sender,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub authenticated_data: &'a [u8],
     pub content_type: ContentType,
     pub commit: &'a Commit,
@@ -86,7 +86,7 @@ impl<'a> From<Option<&'a ConfirmationTag>> for MLSPlaintextCommitAuthData<'a> {
 }
 
 #[derive(Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct ConfirmedTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>);
+pub struct ConfirmedTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl Deref for ConfirmedTranscriptHash {
     type Target = Vec<u8>;
@@ -127,7 +127,7 @@ impl ConfirmedTranscriptHash {
 }
 
 #[derive(Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub(crate) struct InterimTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>);
+pub(crate) struct InterimTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl Deref for InterimTranscriptHash {
     type Target = Vec<u8>;

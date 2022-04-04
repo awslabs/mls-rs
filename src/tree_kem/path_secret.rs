@@ -20,7 +20,7 @@ pub enum PathSecretError {
 
 #[derive(Debug, Clone, Zeroize, PartialEq, TlsSerialize, TlsDeserialize, TlsSize)]
 #[zeroize(drop)]
-pub struct PathSecret(#[tls_codec(with = "crate::tls::ByteVec::<u8>")] Vec<u8>);
+pub struct PathSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl Deref for PathSecret {
     type Target = Vec<u8>;
@@ -144,14 +144,11 @@ impl Iterator for PathSecretGenerator {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[derive(serde::Deserialize, serde::Serialize)]
     struct TestCase {
@@ -160,10 +157,7 @@ mod test {
     }
 
     impl TestCase {
-        #[allow(unused)]
-        fn generate() {
-            use tls_codec::Serialize;
-
+        fn generate(path: &str) {
             let test_cases = CipherSuite::all()
                 .map(|cipher_suite| {
                     let generator = PathSecretGenerator::new(cipher_suite);
@@ -179,18 +173,17 @@ mod test {
                     }
                 })
                 .collect::<Vec<_>>();
-            std::fs::write(
-                concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/path_secret.json"),
-                serde_json::to_string_pretty(&test_cases).unwrap(),
-            )
-            .unwrap();
+            std::fs::write(path, serde_json::to_string_pretty(&test_cases).unwrap()).unwrap();
         }
+    }
+
+    fn load_test_cases() -> Vec<TestCase> {
+        load_test_cases!(path_secret, TestCase::generate)
     }
 
     #[test]
     fn test_path_secret_generation() {
-        let cases: Vec<TestCase> =
-            serde_json::from_slice(include_bytes!("../../test_data/path_secret.json")).unwrap();
+        let cases = load_test_cases();
 
         for one_case in cases {
             let cipher_suite = CipherSuite::from_raw(one_case.cipher_suite);

@@ -23,7 +23,7 @@ pub struct PreSharedKey {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct ReInit {
-    #[tls_codec(with = "crate::tls::ByteVec::<u8>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
@@ -32,7 +32,7 @@ pub struct ReInit {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct ExternalInit {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub kem_output: Vec<u8>,
 }
 

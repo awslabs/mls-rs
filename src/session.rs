@@ -55,7 +55,7 @@ pub enum SessionError {
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 struct PendingCommit {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     packet_data: Vec<u8>,
     commit: CommitGeneration,
 }

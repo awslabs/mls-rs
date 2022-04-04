@@ -19,7 +19,8 @@ mod optional;
 mod read_with_count;
 mod reference;
 #[cfg(test)]
-pub mod test_util;
+pub mod test_utils;
+mod varint;
 mod vector;
 
 pub use boolean::Boolean;
@@ -29,6 +30,7 @@ pub use map::{DefMap, Map};
 pub use optional::Optional;
 pub use read_with_count::ReadWithCount;
 pub use reference::{DefRef, Ref};
+pub use varint::{VarInt, VarIntOutOfRange};
 pub use vector::{DefVec, Vector};
 
 /// Helper trait to derive [`tls_codec::Size`] when foreign types not implementing `Size` are

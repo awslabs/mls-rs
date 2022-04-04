@@ -18,9 +18,9 @@ pub enum KeyScheduleKdfError {
 #[derive(TlsSerialize, TlsSize)]
 pub(crate) struct Label<'a> {
     length: u16,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     label: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     context: &'a [u8],
 }
 

@@ -1,25 +1,21 @@
-use crate::tls::{Deserializer, Serializer, Sizer};
+use crate::tls::{Deserializer, Serializer, Sizer, VarInt};
 use std::convert::{TryFrom, TryInto};
-use std::{
-    io::{Read, Write},
-    mem::size_of,
-};
-use tls_codec::{Deserialize, Serialize};
+use std::io::{Read, Write};
+use tls_codec::{Deserialize, Serialize, Size};
 
 /// Adapter for TLS serialization of arrays of bytes
-///
-/// `I` is the index type specifying how many bytes to use for the length in bytes of the vector.
-pub struct ByteVec<I = u32>(I);
+pub struct ByteVec;
 
-impl<I> ByteVec<I>
-where
-    I: TryFrom<usize> + TryInto<usize> + Serialize + Deserialize,
-{
+impl ByteVec {
     pub fn tls_serialized_len<T>(v: &T) -> usize
     where
         T: AsRef<[u8]> + ?Sized,
     {
-        size_of::<I>() + v.as_ref().len()
+        let len = v.as_ref().len();
+        let header_length = VarInt::try_from(len)
+            .expect("Slice has too many bytes to be serialized")
+            .tls_serialized_len();
+        header_length + len
     }
 
     pub fn tls_serialize<T, W>(v: &T, writer: &mut W) -> Result<usize, tls_codec::Error>
@@ -28,7 +24,7 @@ where
         W: Write,
     {
         let v = v.as_ref();
-        let len = I::try_from(v.len()).map_err(|_| tls_codec::Error::InvalidVectorLength)?;
+        let len = VarInt::try_from(v.len()).map_err(|_| tls_codec::Error::InvalidVectorLength)?;
         let written = len.tls_serialize(writer)?;
         writer.write_all(v)?;
         Ok(written + v.len())
@@ -39,7 +35,7 @@ where
         T: From<Vec<u8>>,
         R: Read,
     {
-        let len = I::tls_deserialize(reader)?;
+        let len = VarInt::tls_deserialize(reader)?;
         let len: usize = len
             .try_into()
             .map_err(|_| tls_codec::Error::InvalidVectorLength)?;
@@ -49,9 +45,8 @@ where
     }
 }
 
-impl<I, T> Sizer<T> for ByteVec<I>
+impl<T> Sizer<T> for ByteVec
 where
-    I: TryFrom<usize> + TryInto<usize> + Serialize + Deserialize,
     T: AsRef<[u8]> + ?Sized,
 {
     fn serialized_len(x: &T) -> usize {
@@ -59,9 +54,8 @@ where
     }
 }
 
-impl<I, T> Serializer<T> for ByteVec<I>
+impl<T> Serializer<T> for ByteVec
 where
-    I: TryFrom<usize> + TryInto<usize> + Serialize + Deserialize,
     T: AsRef<[u8]> + ?Sized,
 {
     fn serialize<W: Write>(x: &T, writer: &mut W) -> Result<usize, tls_codec::Error> {
@@ -69,9 +63,8 @@ where
     }
 }
 
-impl<I, T> Deserializer<T> for ByteVec<I>
+impl<T> Deserializer<T> for ByteVec
 where
-    I: TryFrom<usize> + TryInto<usize> + Serialize + Deserialize,
     T: From<Vec<u8>>,
 {
     fn deserialize<R: Read>(reader: &mut R) -> Result<T, tls_codec::Error> {
@@ -81,26 +74,44 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::tls::test_util::ser_deser;
+    use crate::tls::test_utils::ser_deser;
     use assert_matches::assert_matches;
+    use std::iter::repeat;
     use tls_codec::{Deserialize, Serialize};
     use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[derive(Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-    struct Data(#[tls_codec(with = "crate::tls::ByteVec::<u16>")] Vec<u8>);
+    struct Data(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
     #[test]
     fn serialization_works() {
         assert_eq!(
-            vec![0, 3, 1, 2, 3],
+            vec![3, 1, 2, 3],
             Data(vec![1, 2, 3]).tls_serialize_detached().unwrap()
         );
+    }
+
+    #[test]
+    fn serialization_of_more_than_63_bytes_works() {
+        let input = Data(repeat(5u8).take(257).collect());
+        let expected = [0x41, 0x01]
+            .into_iter()
+            .chain(input.0.iter().copied())
+            .collect::<Vec<_>>();
+        assert_eq!(expected, input.tls_serialize_detached().unwrap());
+    }
+
+    #[test]
+    fn serialization_of_more_than_16383_bytes_works() {
+        let input = Data(repeat(5u8).take(65538).collect());
+        let expected = [0x80, 0x01, 0x00, 0x02]
+            .into_iter()
+            .chain(input.0.iter().copied())
+            .collect::<Vec<_>>();
+        assert_eq!(expected, input.tls_serialize_detached().unwrap());
     }
 
     #[test]
@@ -113,23 +124,15 @@ mod tests {
     fn empty_vec_can_be_deserialized() {
         assert_eq!(
             Data(Vec::new()),
-            Data::tls_deserialize(&mut &[0u8, 0][..]).unwrap()
+            Data::tls_deserialize(&mut &[0u8][..]).unwrap()
         );
     }
 
     #[test]
     fn too_few_items_to_deserialize_gives_an_error() {
         assert_matches!(
-            Data::tls_deserialize(&mut &[0u8, 2, 3][..]),
+            Data::tls_deserialize(&mut &[2u8, 3][..]),
             Err(tls_codec::Error::EndOfStream)
-        );
-    }
-
-    #[test]
-    fn serializing_oversized_vec_fails() {
-        assert_matches!(
-            Data(vec![1; usize::from(u16::MAX) + 1]).tls_serialize_detached(),
-            Err(tls_codec::Error::InvalidVectorLength)
         );
     }
 }

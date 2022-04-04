@@ -19,7 +19,7 @@ pub enum X509Error {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsSize, TlsSerialize, TlsDeserialize, Eq, Hash)]
-pub struct CertificateData(#[tls_codec(with = "crate::tls::ByteVec::<u16>")] Vec<u8>);
+pub struct CertificateData(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl From<Vec<u8>> for CertificateData {
     fn from(data: Vec<u8>) -> Self {
@@ -84,7 +84,7 @@ impl CertificateData {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsSize, TlsSerialize, TlsDeserialize, Eq, Hash)]
-pub struct CertificateChain(#[tls_codec(with = "crate::tls::DefVec::<u32>")] Vec<CertificateData>);
+pub struct CertificateChain(#[tls_codec(with = "crate::tls::DefVec")] Vec<CertificateData>);
 
 impl From<Vec<CertificateData>> for CertificateChain {
     fn from(cert_data: Vec<CertificateData>) -> Self {
@@ -111,7 +111,7 @@ impl CertificateChain {
 }
 
 #[cfg(test)]
-pub(crate) mod test_util {
+pub(crate) mod test_utils {
     use super::CertificateData;
     use ferriscrypt::asym::ec_key::{Curve, SecretKey};
 
@@ -149,17 +149,14 @@ pub(crate) mod test_util {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
-    use crate::x509::test_util::{test_cert, test_key};
+    use crate::x509::test_utils::{test_cert, test_key};
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::Curve;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_certificate_public_key() {

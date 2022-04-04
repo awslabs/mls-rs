@@ -166,7 +166,7 @@ impl<'a> Signable<'a> for MLSPlaintext {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct MessageSignature(#[tls_codec(with = "crate::tls::ByteVec::<u16>")] Vec<u8>);
+pub struct MessageSignature(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl MessageSignature {
     pub(crate) fn empty() -> Self {

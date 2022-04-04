@@ -5,9 +5,9 @@ use tls_codec_derive::{TlsSerialize, TlsSize};
 
 #[derive(Debug, Clone, TlsSize, TlsSerialize)]
 struct SignContent {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     label: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     content: Vec<u8>,
 }
 
@@ -99,14 +99,15 @@ impl Signer for SecretKey {
 }
 
 #[cfg(test)]
-mod test {
-    use std::ops::Deref;
-
+mod tests {
     use super::*;
     use crate::cipher_suite::CipherSuite;
     use assert_matches::assert_matches;
     use ferriscrypt::{asym::ec_key::SecretKey, rand::SecureRng};
     use tls_codec::{Serialize, TlsByteVecU32};
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     struct TestCase {
@@ -148,8 +149,7 @@ mod test {
         }
     }
 
-    #[allow(dead_code)]
-    fn generate_test_cases() {
+    fn generate_test_cases(path: &str) {
         let mut test_cases = Vec::new();
 
         for cipher_suite in CipherSuite::all() {
@@ -169,21 +169,20 @@ mod test {
                 content,
                 context,
                 signature: test_signable.signature,
-                signer: signing_key.to_der().unwrap().deref().clone(),
+                signer: (*signing_key.to_der().unwrap()).clone(),
             });
         }
 
-        std::fs::write(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/signatures.json"),
-            serde_json::to_vec_pretty(&test_cases).unwrap(),
-        )
-        .unwrap();
+        std::fs::write(path, serde_json::to_vec_pretty(&test_cases).unwrap()).unwrap();
+    }
+
+    fn load_test_cases() -> Vec<TestCase> {
+        load_test_cases!(signatures, generate_test_cases)
     }
 
     #[test]
     fn test_signatures() {
-        let cases: Vec<TestCase> =
-            serde_json::from_slice(include_bytes!("../test_data/signatures.json")).unwrap();
+        let cases = load_test_cases();
 
         for one_case in cases {
             if CipherSuite::from_raw(one_case.cipher_suite).is_none() {

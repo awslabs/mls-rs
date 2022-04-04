@@ -38,7 +38,7 @@ impl ProposalRef {
 }
 
 #[cfg(test)]
-pub(crate) mod test_util {
+pub(crate) mod test_utils {
     use super::*;
 
     pub fn plaintext_from_proposal(proposal: Proposal, sender: KeyPackageRef) -> MLSPlaintext {
@@ -59,16 +59,12 @@ pub(crate) mod test_util {
 }
 
 #[cfg(test)]
-mod test {
-    use super::test_util::plaintext_from_proposal;
-    use super::*;
-    use crate::tree_kem::test::get_test_key_package;
+mod tests {
+    use super::{test_utils::plaintext_from_proposal, *};
+    use crate::tree_kem::test_utils::get_test_key_package;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     fn get_test_extension_list() -> ExtensionList {
         let test_extension = RequiredCapabilitiesExt {
@@ -91,8 +87,7 @@ mod test {
         output: Vec<u8>,
     }
 
-    #[allow(dead_code)]
-    fn generate_proposal_test_cases() -> Vec<TestCase> {
+    fn generate_proposal_test_cases(path: &str) {
         let mut test_cases = Vec::new();
 
         for (protocol_version, cipher_suite) in
@@ -175,19 +170,16 @@ mod test {
             });
         }
 
-        std::fs::write(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/proposal_ref.json"),
-            serde_json::to_vec_pretty(&test_cases).unwrap(),
-        )
-        .unwrap();
+        std::fs::write(path, serde_json::to_vec_pretty(&test_cases).unwrap()).unwrap();
+    }
 
-        test_cases
+    fn load_test_cases() -> Vec<TestCase> {
+        load_test_cases!(proposal_ref, generate_proposal_test_cases)
     }
 
     #[test]
     fn test_proposal_ref() {
-        let test_cases: Vec<TestCase> =
-            serde_json::from_slice(include_bytes!("../../test_data/proposal_ref.json")).unwrap();
+        let test_cases = load_test_cases();
 
         for one_case in test_cases {
             let cipher_suite = CipherSuite::from_raw(one_case.cipher_suite);

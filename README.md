@@ -53,6 +53,34 @@ based on Draft 12 of the RFC. Cryptographic operations are supported by [Ferrisc
 
 <!-- cargo-sync-readme end -->
 
+## Writing tests
+
+Test helper definitions shared across multiple modules should be defined in a `test_utils` module.
+
+Test modules should contain the following to ensure the tests run in WASM:
+
+```rust
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::wasm_bindgen_test as test;
+```
+
+If test data files are needed, they should be placed in the `test_data` directory and the following
+functions should be defined to generate and load them:
+
+```rust
+fn generate_test_cases(path: &str) {
+    // ...
+}
+
+fn load_test_cases() -> TypeToDeserializeJsonTo {
+    load_test_cases!(test_file_name, generate_test_cases)
+}
+```
+
+The above macro call generates code that behaves as follows:
+- When targeting WASM, the data files are baked into the test executables.
+- When targeting non-WASM, the data files are generated if they do not exist and loaded at runtime.
+
 ## License
 
 This software is distributed under the [Apache License, version 2.0](https://www.apache.org/licenses/LICENSE-2.0.html)

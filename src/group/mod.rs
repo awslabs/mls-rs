@@ -127,7 +127,7 @@ impl ProvisionalState {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Commit {
-    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
+    #[tls_codec(with = "crate::tls::DefVec")]
     pub proposals: Vec<ProposalOrRef>,
     pub path: Option<UpdatePath>,
 }
@@ -246,10 +246,10 @@ pub enum GroupError {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct GroupContext {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,
     pub extensions: ExtensionList,
@@ -275,10 +275,10 @@ pub struct CommitGeneration {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct GroupSecrets {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub joiner_secret: Vec<u8>,
     pub path_secret: Option<PathSecret>,
-    #[tls_codec(with = "crate::tls::DefVec::<u16>")]
+    #[tls_codec(with = "crate::tls::DefVec")]
     pub psks: Vec<PreSharedKeyID>,
 }
 
@@ -291,9 +291,9 @@ pub struct EncryptedGroupSecrets {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct Welcome {
     pub cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
+    #[tls_codec(with = "crate::tls::DefVec")]
     pub secrets: Vec<EncryptedGroupSecrets>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub encrypted_group_info: Vec<u8>,
 }
 
@@ -2142,7 +2142,7 @@ pub(crate) mod test_utils {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::{
         client_config::InMemoryPskStore,
         extension::{LifetimeExt, MlsExtension, RequiredCapabilitiesExt},
@@ -2155,11 +2155,9 @@ mod test {
     use assert_matches::assert_matches;
 
     use tls_codec::Size;
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 
     #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_create_group() {

@@ -47,16 +47,13 @@ impl HashReference {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use serde::Deserialize;
     use thiserror::Error;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[derive(Debug, Deserialize)]
     struct TestCase {

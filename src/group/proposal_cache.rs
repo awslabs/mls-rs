@@ -443,10 +443,10 @@ fn validate_new_member_commit_proposals(
 }
 
 #[cfg(test)]
-mod test {
-    use super::proposal_ref::test_util::plaintext_from_proposal;
+mod tests {
+    use super::proposal_ref::test_utils::plaintext_from_proposal;
     use super::*;
-    use crate::key_package::test_util::test_key_package;
+    use crate::key_package::test_utils::test_key_package;
     use assert_matches::assert_matches;
     use ferriscrypt::kdf::hkdf::Hkdf;
 
@@ -454,10 +454,7 @@ mod test {
     const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     fn test_ref() -> KeyPackageRef {
         let mut buffer = [0u8; 16];

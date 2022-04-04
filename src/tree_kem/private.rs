@@ -4,7 +4,7 @@ use super::*;
 pub struct TreeKemPrivate {
     pub self_index: LeafIndex,
     pub key_package_ref: KeyPackageRef,
-    #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::ByteVec::<u32>>")]
+    #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::ByteVec>")]
     pub secret_keys: HashMap<NodeIndex, HpkeSecretKey>,
 }
 
@@ -103,7 +103,7 @@ impl TreeKemPrivate {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use assert_matches::assert_matches;
     use std::collections::HashSet;
 
@@ -117,7 +117,7 @@ mod test {
         key_package::KeyPackageGenerator,
         tree_kem::{
             node::LeafIndex,
-            test::{get_test_key_package, get_test_key_package_sig_key},
+            test_utils::{get_test_key_package, get_test_key_package_sig_key},
         },
         ProtocolVersion,
     };
@@ -125,10 +125,7 @@ mod test {
     use super::*;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_create_self_leaf() {

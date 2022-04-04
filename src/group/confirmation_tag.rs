@@ -15,7 +15,7 @@ pub enum ConfirmationTagError {
 }
 
 #[derive(Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct ConfirmationTag(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Tag);
+pub struct ConfirmationTag(#[tls_codec(with = "crate::tls::ByteVec")] Tag);
 
 impl Deref for ConfirmationTag {
     type Target = Tag;
@@ -51,16 +51,13 @@ impl ConfirmationTag {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use crate::cipher_suite::CipherSuite;
     use crate::group::epoch::test_utils::get_test_epoch;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_confirmation_tag_matching() {

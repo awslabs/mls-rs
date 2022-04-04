@@ -2,16 +2,16 @@ use super::*;
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct UpdatePathNode {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub public_key: HpkePublicKey,
-    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
+    #[tls_codec(with = "crate::tls::DefVec")]
     pub encrypted_path_secret: Vec<HpkeCiphertext>,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct UpdatePath {
     pub leaf_key_package: KeyPackage,
-    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
+    #[tls_codec(with = "crate::tls::DefVec")]
     pub nodes: Vec<UpdatePathNode>,
 }
 
@@ -50,7 +50,7 @@ impl<'a> UpdatePathValidator<'a> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use assert_matches::assert_matches;
 
     use ferriscrypt::{
@@ -58,7 +58,7 @@ mod test {
         rand::SecureRng,
     };
 
-    use crate::key_package::test_util::test_key_package;
+    use crate::key_package::test_utils::test_key_package;
 
     use crate::{
         cipher_suite::CipherSuite,
@@ -70,10 +70,7 @@ mod test {
     use super::{UpdatePath, UpdatePathNode, UpdatePathValidator};
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     fn test_update_path(
         protocol_version: ProtocolVersion,

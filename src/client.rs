@@ -272,7 +272,7 @@ enum ExternalProposalContext {
 }
 
 #[cfg(test)]
-pub(crate) mod test_util {
+pub(crate) mod test_utils {
 
     use super::*;
     use crate::{
@@ -324,8 +324,8 @@ pub(crate) mod test_util {
 }
 
 #[cfg(test)]
-mod test {
-    use super::test_util::*;
+mod tests {
+    use super::test_utils::*;
 
     use super::*;
     use crate::{
@@ -340,10 +340,7 @@ mod test {
     use tls_codec::Serialize;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_keygen() {

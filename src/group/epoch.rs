@@ -379,9 +379,8 @@ impl WelcomeSecret {
 
 #[cfg(test)]
 pub mod test_utils {
-
     use super::*;
-    use crate::group::secret_tree::test::get_test_tree;
+    use crate::group::secret_tree::test_utils::get_test_tree;
 
     pub(crate) fn get_test_epoch(
         cipher_suite: CipherSuite,
@@ -416,6 +415,9 @@ mod tests {
 
     use crate::{cipher_suite::CipherSuite, group::epoch::test_utils::get_test_epoch};
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+
     #[derive(serde::Deserialize, serde::Serialize)]
     struct TestCase {
         cipher_suite: u16,
@@ -425,8 +427,7 @@ mod tests {
         output: Vec<u8>,
     }
 
-    #[allow(dead_code)]
-    fn generate_epoch_secret_exporter_test_vector() -> Vec<TestCase> {
+    fn generate_epoch_secret_exporter_test_vector(path: &str) {
         let mut test_cases = Vec::new();
         for cipher_suite in CipherSuite::all() {
             let key_size = Hkdf::from(cipher_suite.kdf_type()).extract_size();
@@ -452,24 +453,19 @@ mod tests {
             });
         }
 
-        std::fs::write(
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/test_data/epoch_secret_exporter_test_vector.json"
-            ),
-            serde_json::to_vec_pretty(&test_cases).unwrap(),
-        )
-        .unwrap();
+        std::fs::write(path, serde_json::to_vec_pretty(&test_cases).unwrap()).unwrap();
+    }
 
-        test_cases
+    fn load_test_cases() -> Vec<TestCase> {
+        load_test_cases!(
+            epoch_secret_exporter_test_vector,
+            generate_epoch_secret_exporter_test_vector
+        )
     }
 
     #[test]
     fn test_export_secret() {
-        let test_cases: Vec<TestCase> = serde_json::from_slice(include_bytes!(
-            "../../test_data/epoch_secret_exporter_test_vector.json"
-        ))
-        .unwrap();
+        let test_cases = load_test_cases();
 
         for test_case in test_cases {
             let cipher_suite = match CipherSuite::from_raw(test_case.cipher_suite) {

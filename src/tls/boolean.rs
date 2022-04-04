@@ -41,15 +41,12 @@ impl Deserializer<bool> for Boolean {
 
 #[cfg(test)]
 mod tests {
-    use crate::tls::test_util::ser_deser;
+    use crate::tls::test_utils::ser_deser;
     use tls_codec::Serialize;
     use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[derive(Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
     struct Data(#[tls_codec(with = "crate::tls::Boolean")] bool);

@@ -1,12 +1,11 @@
-use crate::tls::{DefaultSer, Deserializer, Serializer, Sizer};
+use crate::tls::{DefaultSer, Deserializer, Serializer, Sizer, VarInt};
 use std::{
     collections::HashMap,
     convert::TryFrom,
     hash::Hash,
     io::{Read, Write},
-    mem::size_of,
 };
-use tls_codec::{Deserialize, Serialize};
+use tls_codec::{Deserialize, Serialize, Size};
 
 /// Adapter for TLS serialization of maps
 ///
@@ -16,15 +15,26 @@ pub struct Map<KeySer = DefaultSer, ValueSer = DefaultSer>(KeySer, ValueSer);
 pub type DefMap = Map;
 
 impl<KeySer, ValueSer> Map<KeySer, ValueSer> {
+    fn serialized_len_without_header<K, V>(m: &HashMap<K, V>) -> usize
+    where
+        KeySer: Sizer<K>,
+        ValueSer: Sizer<V>,
+    {
+        m.iter()
+            .map(|(k, v)| KeySer::serialized_len(k) + ValueSer::serialized_len(v))
+            .sum::<usize>()
+    }
+
     pub fn tls_serialized_len<K, V>(m: &HashMap<K, V>) -> usize
     where
         KeySer: Sizer<K>,
         ValueSer: Sizer<V>,
     {
-        size_of::<u32>()
-            + m.iter()
-                .map(|(k, v)| KeySer::serialized_len(k) + ValueSer::serialized_len(v))
-                .sum::<usize>()
+        let len = Self::serialized_len_without_header(m);
+        let header_length = VarInt::try_from(len)
+            .expect("The size of the map in bytes is too large to serialize it")
+            .tls_serialized_len();
+        header_length + len
     }
 
     pub fn tls_serialize<K, V, W>(
@@ -37,8 +47,8 @@ impl<KeySer, ValueSer> Map<KeySer, ValueSer> {
         W: Write,
         K: Ord,
     {
-        let len = Self::tls_serialized_len(m) - size_of::<u32>();
-        let len = u32::try_from(len).map_err(|_| tls_codec::Error::InvalidVectorLength)?;
+        let len = Self::serialized_len_without_header(m);
+        let len = VarInt::try_from(len).map_err(|_| tls_codec::Error::InvalidVectorLength)?;
         // HashMap item order is not deterministic so sort by key to regain determinism when
         // serializing.
         let mut items = m.iter().collect::<Vec<_>>();
@@ -57,7 +67,7 @@ impl<KeySer, ValueSer> Map<KeySer, ValueSer> {
         ValueSer: Sizer<V> + Deserializer<V>,
         R: Read,
     {
-        let len = u32::tls_deserialize(reader)?;
+        let len = VarInt::tls_deserialize(reader)?;
         let len = usize::try_from(len).map_err(|_| tls_codec::Error::InvalidVectorLength)?;
         let mut read_len = 0;
         let mut m = HashMap::new();
@@ -106,17 +116,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::tls::test_util::ser_deser;
+    use crate::tls::test_utils::ser_deser;
     use assert_matches::assert_matches;
     use std::collections::HashMap;
     use tls_codec::{Deserialize, Serialize};
     use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[derive(Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
     struct Data(#[tls_codec(with = "crate::tls::DefMap")] HashMap<u8, u16>);
@@ -124,7 +131,7 @@ mod tests {
     #[test]
     fn serialization_works() {
         assert_eq!(
-            vec![0, 0, 0, 6, 1, 0, 10, 2, 0, 20],
+            vec![6, 1, 0, 10, 2, 0, 20],
             Data([(1, 10), (2, 20)].into_iter().collect())
                 .tls_serialize_detached()
                 .unwrap()
@@ -141,14 +148,14 @@ mod tests {
     fn empty_map_can_be_deserialized() {
         assert_eq!(
             Data(Default::default()),
-            Data::tls_deserialize(&mut &[0, 0, 0, 0][..]).unwrap()
+            Data::tls_deserialize(&mut &[0][..]).unwrap()
         );
     }
 
     #[test]
     fn missing_value_gives_an_error() {
         assert_matches!(
-            Data::tls_deserialize(&mut &[0, 0, 0, 6, 1, 0, 10, 2][..]),
+            Data::tls_deserialize(&mut &[6, 1, 0, 10, 2][..]),
             Err(tls_codec::Error::EndOfStream)
         );
     }

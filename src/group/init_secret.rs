@@ -17,7 +17,7 @@ const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 #[derive(
     Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, TlsDeserialize, TlsSerialize, TlsSize,
 )]
-pub struct InitSecret(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Vec<u8>);
+pub struct InitSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl AsRef<[u8]> for InitSecret {
     fn as_ref(&self) -> &[u8] {

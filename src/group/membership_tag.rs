@@ -63,7 +63,7 @@ impl MLSPlaintextTBM {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct MembershipTag(#[tls_codec(with = "crate::tls::ByteVec::<u32>")] Tag);
+pub struct MembershipTag(#[tls_codec(with = "crate::tls::ByteVec")] Tag);
 
 impl Deref for MembershipTag {
     type Target = Tag;
@@ -115,10 +115,7 @@ mod tests {
     use crate::group::test_utils::get_test_group_context;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_membership_tag_matching() {

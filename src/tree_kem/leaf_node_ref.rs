@@ -40,17 +40,19 @@ impl LeafNode {
 }
 
 #[cfg(test)]
-mod test {
-    use tls_codec::Deserialize;
-
+mod tests {
     use super::*;
     use crate::{
-        client::test_util::get_test_credential,
+        client::test_utils::get_test_credential,
         tree_kem::{
-            leaf_node::test_util::{get_test_capabilities, get_test_extensions, get_test_node},
+            leaf_node::test_utils::{get_test_capabilities, get_test_extensions, get_test_node},
             parent_hash::ParentHash,
         },
     };
+    use tls_codec::Deserialize;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[derive(serde::Deserialize, serde::Serialize)]
     struct TestCase {
@@ -62,10 +64,7 @@ mod test {
     }
 
     impl TestCase {
-        #[allow(unused)]
-        fn generate() {
-            use tls_codec::Serialize;
-
+        fn generate(path: &str) {
             let capabilities = get_test_capabilities();
             let extensions = get_test_extensions();
 
@@ -74,7 +73,7 @@ mod test {
             for cipher_suite in CipherSuite::all() {
                 let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
 
-                let (mut leaf_node, secret_key) = get_test_node(
+                let (mut leaf_node, _) = get_test_node(
                     credential.clone(),
                     &secret,
                     Some(capabilities.clone()),
@@ -112,18 +111,17 @@ mod test {
                 test_cases.push(commit_test_case);
             }
 
-            std::fs::write(
-                concat!(env!("CARGO_MANIFEST_DIR"), "/test_data/leaf_node_ref.json"),
-                serde_json::to_string_pretty(&test_cases).unwrap(),
-            )
-            .unwrap();
+            std::fs::write(path, serde_json::to_string_pretty(&test_cases).unwrap()).unwrap();
         }
+    }
+
+    fn load_test_cases() -> Vec<TestCase> {
+        load_test_cases!(leaf_node_ref, TestCase::generate)
     }
 
     #[test]
     fn test_leaf_node_ref() {
-        let cases: Vec<TestCase> =
-            serde_json::from_slice(include_bytes!("../../test_data/leaf_node_ref.json")).unwrap();
+        let cases = load_test_cases();
 
         for one_case in cases {
             let cipher_suite = CipherSuite::from_raw(one_case.cipher_suite);

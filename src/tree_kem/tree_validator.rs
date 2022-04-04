@@ -88,7 +88,7 @@ impl<'a> TreeValidator<'a> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use assert_matches::assert_matches;
     use ferriscrypt::{hpke::kem::HpkePublicKey, rand::SecureRng};
 
@@ -99,9 +99,12 @@ mod test {
         tree_kem::{
             node::{LeafIndex, Node, Parent},
             parent_hash::ParentHash,
-            test::{get_test_key_package_sig_key, get_test_tree_with_signer},
+            test_utils::{get_test_key_package_sig_key, get_test_tree_with_signer},
         },
     };
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     fn test_parent_node(cipher_suite: CipherSuite) -> Parent {
         let public_key = cipher_suite

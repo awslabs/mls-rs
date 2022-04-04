@@ -35,11 +35,11 @@ pub enum KeyPackageError {
 pub struct KeyPackage {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub hpke_init_key: HpkePublicKey,
     pub credential: Credential,
     pub extensions: ExtensionList,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub signature: Vec<u8>,
 }
 
@@ -78,7 +78,7 @@ impl PartialEq for KeyPackage {
 pub struct KeyPackageData<'a> {
     pub version: &'a ProtocolVersion,
     pub cipher_suite: &'a CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub hpke_init_key: &'a HpkePublicKey,
     pub credential: &'a Credential,
     #[tls_codec(with = "crate::tls::DefRef")]
@@ -128,9 +128,9 @@ impl<'a> Signable<'a> for KeyPackage {
 }
 
 #[cfg(test)]
-pub(crate) mod test_util {
+pub(crate) mod test_utils {
     use super::*;
-    use crate::client::test_util::test_client_with_key_pkg;
+    use crate::client::test_utils::test_client_with_key_pkg;
 
     pub(crate) fn test_key_package(
         protocol_version: ProtocolVersion,
@@ -150,15 +150,12 @@ pub(crate) mod test_util {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use tls_codec::Deserialize;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[derive(serde::Deserialize, serde::Serialize)]
     struct TestCase {
@@ -170,14 +167,11 @@ mod test {
     }
 
     impl TestCase {
-        #[allow(unused)]
-        fn generate() {
-            use tls_codec::Serialize;
-
+        fn generate(path: &str) {
             let test_cases = ProtocolVersion::all()
                 .flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
                 .map(|(protocol_version, cipher_suite)| {
-                    let pkg = test_util::test_key_package(protocol_version, cipher_suite);
+                    let pkg = test_utils::test_key_package(protocol_version, cipher_suite);
                     let pkg_ref = pkg.to_reference().unwrap();
                     TestCase {
                         cipher_suite: cipher_suite as u16,
@@ -186,21 +180,17 @@ mod test {
                     }
                 })
                 .collect::<Vec<_>>();
-            std::fs::write(
-                concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/test_data/key_package_ref.json"
-                ),
-                serde_json::to_string_pretty(&test_cases).unwrap(),
-            )
-            .unwrap();
+            std::fs::write(path, serde_json::to_string_pretty(&test_cases).unwrap()).unwrap();
         }
+    }
+
+    fn load_test_cases() -> Vec<TestCase> {
+        load_test_cases!(key_package_ref, TestCase::generate)
     }
 
     #[test]
     fn test_key_package_ref() {
-        let cases: Vec<TestCase> =
-            serde_json::from_slice(include_bytes!("../../test_data/key_package_ref.json")).unwrap();
+        let cases = load_test_cases();
 
         for one_case in cases {
             if CipherSuite::from_raw(one_case.cipher_suite).is_none() {

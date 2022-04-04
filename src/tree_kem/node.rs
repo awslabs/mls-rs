@@ -16,10 +16,10 @@ pub(crate) struct Leaf {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct Parent {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub public_key: HpkePublicKey,
     pub parent_hash: ParentHash,
-    #[tls_codec(with = "crate::tls::DefVec::<u32>")]
+    #[tls_codec(with = "crate::tls::DefVec")]
     pub unmerged_leaves: Vec<LeafIndex>,
 }
 
@@ -208,7 +208,7 @@ impl NodeTypeResolver for Option<Node> {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Default)]
-pub(crate) struct NodeVec(#[tls_codec(with = "crate::tls::DefVec::<u32>")] Vec<Option<Node>>);
+pub(crate) struct NodeVec(#[tls_codec(with = "crate::tls::DefVec")] Vec<Option<Node>>);
 
 impl From<Vec<Option<Node>>> for NodeVec {
     fn from(x: Vec<Option<Node>>) -> Self {
@@ -490,18 +490,16 @@ impl NodeVec {
 }
 
 #[cfg(test)]
-pub mod test {
-    use super::*;
-    use crate::{cipher_suite::CipherSuite, ProtocolVersion};
+pub(crate) mod test_utils {
+    use crate::{
+        cipher_suite::CipherSuite,
+        key_package::ValidatedKeyPackage,
+        tree_kem::{node::Parent, parent_hash::ParentHash, Leaf, LeafIndex, NodeVec},
+        ProtocolVersion,
+    };
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
-
-    fn get_test_key_package(id: &str) -> ValidatedKeyPackage {
-        ValidatedKeyPackage::from(crate::key_package::test_util::test_key_package_with_id(
+    pub(crate) fn get_test_key_package(id: &str) -> ValidatedKeyPackage {
+        ValidatedKeyPackage::from(crate::key_package::test_utils::test_key_package_with_id(
             ProtocolVersion::Mls10,
             CipherSuite::Curve25519Aes128V1,
             id,
@@ -535,6 +533,17 @@ pub mod test {
 
         NodeVec::from(nodes.to_vec())
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        test_utils::{get_test_key_package, get_test_node_vec},
+        *,
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn node_key_getters() {

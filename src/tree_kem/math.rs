@@ -147,15 +147,12 @@ pub fn common_ancestor_direct(x: u32, y: u32) -> u32 {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use serde::Deserialize;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[derive(Deserialize)]
     struct TestCase {

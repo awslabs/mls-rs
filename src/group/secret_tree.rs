@@ -31,7 +31,7 @@ pub enum SecretTreeError {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 struct TreeSecretsVec(
-    #[tls_codec(with = "crate::tls::Vector::<u32, crate::tls::Optional<crate::tls::ByteVec>>")]
+    #[tls_codec(with = "crate::tls::Vector::<crate::tls::Optional<crate::tls::ByteVec>>")]
     Vec<Option<Vec<u8>>>,
 );
 
@@ -225,7 +225,7 @@ impl ToString for KeyType {
 #[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct SecretKeyRatchet {
     cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     secret: Vec<u8>,
     node_index: NodeIndex,
     generation: u32,
@@ -340,14 +340,9 @@ impl Iterator for SecretKeyRatchet {
 }
 
 #[cfg(test)]
-pub(crate) mod test {
-    use super::*;
-
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+pub(crate) mod test_utils {
+    use super::SecretTree;
+    use crate::cipher_suite::CipherSuite;
 
     pub(crate) fn get_test_tree(
         cipher_suite: CipherSuite,
@@ -356,6 +351,14 @@ pub(crate) mod test {
     ) -> SecretTree {
         SecretTree::new(cipher_suite, leaf_count, secret)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{test_utils::get_test_tree, *};
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     // Note: This test is designed to test basic functionality not algorithm correctness
     // There are additional tests to validate correctness elsewhere

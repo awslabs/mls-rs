@@ -41,13 +41,13 @@ pub enum LeafNodeSource {
 #[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize, PartialEq)]
 #[non_exhaustive]
 pub struct LeafNode {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub public_key: HpkePublicKey,
     pub credential: Credential,
     pub capabilities: CapabilitiesExt,
     pub leaf_node_source: LeafNodeSource,
     pub extensions: ExtensionList,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub signature: Vec<u8>,
 }
 
@@ -213,7 +213,7 @@ impl<'a> Signable<'a> for LeafNode {
 }
 
 #[cfg(test)]
-pub mod test_util {
+pub mod test_utils {
     use crate::extension::{ExternalKeyIdExt, MlsExtension};
 
     use super::*;
@@ -254,13 +254,16 @@ pub mod test_util {
 }
 
 #[cfg(test)]
-mod test {
-    use super::test_util::*;
+mod tests {
+    use super::test_utils::*;
     use super::*;
 
-    use crate::{cipher_suite::CipherSuite, client::test_util::get_test_credential};
+    use crate::{cipher_suite::CipherSuite, client::test_utils::get_test_credential};
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::Curve;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_node_generation() {

@@ -51,9 +51,9 @@ impl SignatureScheme {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct HpkeCiphertext {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     kem_output: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     ciphertext: Vec<u8>,
 }
 
@@ -300,10 +300,13 @@ impl tls_codec::Deserialize for MaybeCipherSuite {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use assert_matches::assert_matches;
     use tls_codec::Serialize;
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_maybe_cipher_suite() {

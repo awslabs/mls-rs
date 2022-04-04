@@ -751,26 +751,18 @@ impl TreeKemPublic {
 }
 
 #[cfg(test)]
-pub(crate) mod test {
-    use assert_matches::assert_matches;
+pub(crate) mod test_utils {
+    use crate::{
+        cipher_suite::CipherSuite,
+        credential::{BasicCredential, Credential},
+        extension::{CapabilitiesExt, ExtensionList, LifetimeExt, MlsExtension},
+        key_package::{KeyPackageGeneration, KeyPackageGenerator, ValidatedKeyPackage},
+        tree_kem::{TreeKemPrivate, TreeKemPublic},
+        ProtocolVersion,
+    };
     use ferriscrypt::asym::ec_key::{Curve, SecretKey};
 
-    use crate::credential::{BasicCredential, Credential};
-    use crate::extension::{CapabilitiesExt, ExtensionList, LifetimeExt, MlsExtension};
-    use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
-    use crate::tree_kem::node::{NodeTypeResolver, Parent};
-    use crate::tree_kem::parent_hash::ParentHash;
-    use crate::ProtocolVersion;
-
-    use super::*;
-
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
-
-    pub fn get_test_key_package_sig_key(
+    pub(crate) fn get_test_key_package_sig_key(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         id: Vec<u8>,
@@ -795,7 +787,7 @@ pub(crate) mod test {
         key_package_gen.generate(None).unwrap()
     }
 
-    pub fn get_test_key_package(
+    pub(crate) fn get_test_key_package(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         id: Vec<u8>,
@@ -805,7 +797,7 @@ pub(crate) mod test {
         get_test_key_package_sig_key(protocol_version, cipher_suite, id, &signing_key)
     }
 
-    pub fn get_test_tree(
+    pub(crate) fn get_test_tree(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> (TreeKemPublic, TreeKemPrivate, KeyPackageGeneration) {
@@ -815,7 +807,7 @@ pub(crate) mod test {
         get_test_tree_with_signer(protocol_version, cipher_suite, &signing_key)
     }
 
-    pub fn get_test_tree_with_signer(
+    pub(crate) fn get_test_tree_with_signer(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         signing_key: &SecretKey,
@@ -830,6 +822,40 @@ pub(crate) mod test {
         let (test_public, test_private) = TreeKemPublic::derive(test_key_package.clone()).unwrap();
         (test_public, test_private, test_key_package)
     }
+
+    pub(crate) fn get_test_key_packages(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+    ) -> Vec<ValidatedKeyPackage> {
+        [
+            get_test_key_package(protocol_version, cipher_suite, b"A".to_vec()).key_package,
+            get_test_key_package(protocol_version, cipher_suite, b"B".to_vec()).key_package,
+            get_test_key_package(protocol_version, cipher_suite, b"C".to_vec()).key_package,
+        ]
+        .to_vec()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert_matches::assert_matches;
+    use ferriscrypt::asym::ec_key::{Curve, SecretKey};
+
+    use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
+    use crate::tree_kem::node::{NodeTypeResolver, Parent};
+    use crate::tree_kem::parent_hash::ParentHash;
+    use crate::ProtocolVersion;
+
+    use super::{
+        test_utils::{
+            get_test_key_package, get_test_key_package_sig_key, get_test_key_packages,
+            get_test_tree,
+        },
+        *,
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     pub fn test_derive() {
@@ -853,18 +879,6 @@ pub(crate) mod test {
             );
             assert_eq!(test_private.secret_keys[&0], test_key_package.secret_key);
         }
-    }
-
-    pub fn get_test_key_packages(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-    ) -> Vec<ValidatedKeyPackage> {
-        [
-            get_test_key_package(protocol_version, cipher_suite, b"A".to_vec()).key_package,
-            get_test_key_package(protocol_version, cipher_suite, b"B".to_vec()).key_package,
-            get_test_key_package(protocol_version, cipher_suite, b"C".to_vec()).key_package,
-        ]
-        .to_vec()
     }
 
     #[test]

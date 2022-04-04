@@ -39,10 +39,10 @@ pub(crate) trait CredentialConvertible {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Eq, Hash)]
 pub struct BasicCredential {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub identity: Vec<u8>,
     pub signature_scheme: SignatureScheme,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     pub(crate) signature_key: Vec<u8>,
 }
 
@@ -81,18 +81,15 @@ impl CredentialConvertible for CertificateChain {
 }
 
 #[cfg(test)]
-mod test {
-    use crate::x509::test_util::{test_cert, test_key};
+mod tests {
+    use crate::x509::test_utils::{test_cert, test_key};
 
     use super::*;
     use ferriscrypt::asym::ec_key::{generate_keypair, Curve, SecretKey};
     use ferriscrypt::rand::SecureRng;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     struct TestCredentialData {
         public: PublicKey,

@@ -26,16 +26,16 @@ pub enum ParentHashError {
 
 #[derive(Clone, Debug, TlsSerialize, TlsSize)]
 struct ParentHashInput<'a> {
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     public_key: &'a HpkePublicKey,
-    #[tls_codec(with = "crate::tls::ByteVec::<u32>")]
+    #[tls_codec(with = "crate::tls::ByteVec")]
     parent_hash: &'a [u8],
-    #[tls_codec(with = "crate::tls::Vector::<u32, crate::tls::ByteVec>")]
+    #[tls_codec(with = "crate::tls::Vector::<crate::tls::ByteVec>")]
     original_child_resolution: Vec<&'a HpkePublicKey>,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct ParentHash(#[tls_codec(with = "crate::tls::ByteVec::<u8>")] Vec<u8>);
+pub struct ParentHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl From<Vec<u8>> for ParentHash {
     fn from(v: Vec<u8>) -> Self {
@@ -245,18 +245,15 @@ impl TreeKemPublic {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use crate::extension::ParentHashExt;
-    use crate::tree_kem::node::test::get_test_node_vec;
-    use crate::tree_kem::test::{get_test_key_package, get_test_key_packages, get_test_tree};
+    use crate::tree_kem::node::test_utils::get_test_node_vec;
+    use crate::tree_kem::test_utils::{get_test_key_package, get_test_key_packages, get_test_tree};
     use crate::ProtocolVersion;
 
     #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
-
-    #[cfg(target_arch = "wasm32")]
-    wasm_bindgen_test_configure!(run_in_browser);
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     fn get_phash_test_tree(
         protocol_version: ProtocolVersion,
