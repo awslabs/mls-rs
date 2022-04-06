@@ -1,3 +1,5 @@
+use crate::tree_kem::{leaf_node::LeafNode, leaf_node_ref::LeafNodeRef};
+
 use super::proposal::Proposal;
 use super::*;
 use std::io::{Read, Write};
@@ -26,7 +28,7 @@ impl From<&Content> for ContentType {
 #[repr(u8)]
 pub enum Sender {
     #[tls_codec(discriminant = 1)]
-    Member(KeyPackageRef),
+    Member(LeafNodeRef),
     Preconfigured(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>),
     NewMember,
 }
@@ -193,7 +195,7 @@ pub struct MLSCiphertext {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSSenderData {
-    pub sender: KeyPackageRef,
+    pub sender: LeafNodeRef,
     pub generation: u32,
     pub reuse_guard: [u8; 4],
 }
@@ -237,10 +239,10 @@ impl MLSMessage {
 
     // TODO: This function should be replaced with a special client for servers parsing
     // plaintext control messages
-    pub fn commit_sender_update(&self) -> Option<&KeyPackage> {
+    pub fn commit_sender_update(&self) -> Option<&LeafNode> {
         match &self.payload {
             MLSMessagePayload::Plain(m) => match &m.content.content {
-                Content::Commit(commit) => commit.path.as_ref().map(|cp| &cp.leaf_key_package),
+                Content::Commit(commit) => commit.path.as_ref().map(|cp| &cp.leaf_node),
                 _ => None,
             },
             _ => None,

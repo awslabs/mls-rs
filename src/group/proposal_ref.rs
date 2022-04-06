@@ -39,9 +39,11 @@ impl ProposalRef {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use crate::tree_kem::leaf_node_ref::LeafNodeRef;
+
     use super::*;
 
-    pub fn plaintext_from_proposal(proposal: Proposal, sender: KeyPackageRef) -> MLSPlaintext {
+    pub fn plaintext_from_proposal(proposal: Proposal, sender: LeafNodeRef) -> MLSPlaintext {
         MLSPlaintext {
             auth: MLSMessageAuth {
                 signature: MessageSignature::from(SecureRng::gen(128).unwrap()),
@@ -59,9 +61,13 @@ pub(crate) mod test_utils {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{test_utils::plaintext_from_proposal, *};
-    use crate::tree_kem::test_utils::get_test_key_package;
+mod test {
+    use super::test_utils::plaintext_from_proposal;
+    use super::*;
+    use crate::{
+        key_package::test_utils::test_key_package,
+        tree_kem::leaf_node::test_utils::get_basic_test_node,
+    };
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -98,26 +104,14 @@ mod tests {
 
             let add = plaintext_from_proposal(
                 Proposal::Add(AddProposal {
-                    key_package: get_test_key_package(
-                        protocol_version,
-                        cipher_suite,
-                        SecureRng::gen(16).unwrap(),
-                    )
-                    .key_package
-                    .into(),
+                    key_package: test_key_package(protocol_version, cipher_suite),
                 }),
                 sender.into(),
             );
 
             let update = plaintext_from_proposal(
                 Proposal::Update(UpdateProposal {
-                    key_package: get_test_key_package(
-                        protocol_version,
-                        cipher_suite,
-                        SecureRng::gen(16).unwrap(),
-                    )
-                    .key_package
-                    .into(),
+                    leaf_node: get_basic_test_node(cipher_suite, "foo"),
                 }),
                 sender.into(),
             );

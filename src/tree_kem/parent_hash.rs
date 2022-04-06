@@ -1,5 +1,4 @@
 use crate::cipher_suite::CipherSuite;
-use crate::extension::{ExtensionError, ParentHashExt};
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVec, NodeVecError, Parent};
@@ -12,6 +11,7 @@ use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
+use super::leaf_node::LeafNodeSource;
 use super::ValidatedUpdatePath;
 
 #[derive(Error, Debug)]
@@ -73,21 +73,20 @@ impl ParentHash {
         ParentHash(Vec::new())
     }
 
-    pub fn matches(&self, hash: ParentHash) -> bool {
+    pub fn matches(&self, hash: &ParentHash) -> bool {
         //TODO: Constant time equals
-        &hash == self
+        hash == self
     }
 }
 
 impl Node {
-    fn get_parent_hash(&self) -> Result<Option<ParentHash>, ExtensionError> {
+    fn get_parent_hash(&self) -> Option<ParentHash> {
         match self {
-            Node::Parent(p) => Ok(Some(p.parent_hash.clone())),
-            Node::Leaf(l) => Ok(l
-                .key_package
-                .extensions
-                .get_extension::<ParentHashExt>()?
-                .map(|ext| ext.parent_hash)),
+            Node::Parent(p) => Some(p.parent_hash.clone()),
+            Node::Leaf(l) => match &l.leaf_node_source {
+                LeafNodeSource::Commit(parent_hash) => Some(parent_hash.clone()),
+                _ => None,
+            },
         }
     }
 }
@@ -184,14 +183,12 @@ impl TreeKemPublic {
         if let Some(update_path) = update_path {
             // Verify the parent hash of the new sender leaf node and update the parent hash values
             // in the local tree
-            let received_parent_hash = update_path
-                .leaf_key_package
-                .extensions
-                .get_extension::<ParentHashExt>()?
-                .ok_or(RatchetTreeError::ParentHashNotFound)?;
-
-            if !leaf_hash.matches(received_parent_hash.parent_hash) {
-                return Err(RatchetTreeError::ParentHashMismatch);
+            if let LeafNodeSource::Commit(parent_hash) = &update_path.leaf_node.leaf_node_source {
+                if !leaf_hash.matches(parent_hash) {
+                    return Err(RatchetTreeError::ParentHashMismatch);
+                }
+            } else {
+                return Err(RatchetTreeError::ParentHashNotFound);
             }
         }
 
@@ -211,7 +208,7 @@ impl TreeKemPublic {
         let parent_hash_right = self.parent_hash(&node.parent_hash, node_index, r)?;
 
         if let Some(l_node) = self.nodes.borrow_node(l)? {
-            if l_node.get_parent_hash()? == Some(parent_hash_right) {
+            if l_node.get_parent_hash() == Some(parent_hash_right) {
                 return Ok(());
             }
         }
@@ -232,7 +229,7 @@ impl TreeKemPublic {
         let parent_hash_left = self.parent_hash(&node.parent_hash, node_index, l)?;
 
         if let Some(r_node) = self.nodes.borrow_node(r)? {
-            if r_node.get_parent_hash()? == Some(parent_hash_left) {
+            if r_node.get_parent_hash() == Some(parent_hash_left) {
                 return Ok(());
             }
         }
@@ -247,25 +244,23 @@ impl TreeKemPublic {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::extension::ParentHashExt;
+    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
+    use crate::tree_kem::leaf_node::LeafNodeSource;
     use crate::tree_kem::node::test_utils::get_test_node_vec;
-    use crate::tree_kem::test_utils::{get_test_key_package, get_test_key_packages, get_test_tree};
-    use crate::ProtocolVersion;
+    use crate::tree_kem::test_utils::{get_test_leaf_nodes, get_test_tree};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    fn get_phash_test_tree(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-    ) -> TreeKemPublic {
-        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
-        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
-        tree.add_leaves(key_packages).unwrap();
+    fn get_phash_test_tree(cipher_suite: CipherSuite) -> TreeKemPublic {
+        let mut tree = get_test_tree(cipher_suite);
+        let key_packages = get_test_leaf_nodes(cipher_suite);
+        tree.public.add_leaves(key_packages).unwrap();
 
         // Fill in parent nodes
-        for i in 0..tree.total_leaf_count() - 1 {
-            tree.nodes
+        for i in 0..tree.public.total_leaf_count() - 1 {
+            tree.public
+                .nodes
                 .borrow_node_mut(i * 2 + 1)
                 .map(|node| {
                     *node = Some(Node::Parent(Parent {
@@ -277,7 +272,7 @@ mod tests {
                 .unwrap()
         }
 
-        tree
+        tree.public
     }
 
     #[test]
@@ -291,15 +286,13 @@ mod tests {
 
     #[test]
     fn test_missing_parent_hash() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let mut test_tree = get_phash_test_tree(protocol_version, cipher_suite);
-        let test_key_package =
-            get_test_key_package(protocol_version, cipher_suite, b"foo".to_vec());
+        let mut test_tree = get_phash_test_tree(cipher_suite);
+        let test_key_package = get_basic_test_node(cipher_suite, "foo");
 
         let test_update_path = ValidatedUpdatePath {
-            leaf_key_package: test_key_package.key_package,
+            leaf_node: test_key_package.into(),
             nodes: vec![],
         };
 
@@ -311,25 +304,21 @@ mod tests {
 
     #[test]
     fn test_invalid_parent_hash() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let mut test_tree = get_phash_test_tree(protocol_version, cipher_suite);
-        let test_key_package =
-            get_test_key_package(protocol_version, cipher_suite, b"foo".to_vec());
+        let mut test_tree = get_phash_test_tree(cipher_suite);
+
+        let test_key_package = get_basic_test_node(cipher_suite, "foo");
 
         let mut test_update_path = ValidatedUpdatePath {
-            leaf_key_package: test_key_package.key_package,
+            leaf_node: test_key_package.into(),
             nodes: vec![],
         };
 
-        let unexpected_parent_hash = ParentHashExt::from(ParentHash::from(hex!("f00d")));
+        let unexpected_parent_hash = ParentHash::from(hex!("f00d"));
 
-        test_update_path
-            .leaf_key_package
-            .extensions
-            .set_extension(unexpected_parent_hash)
-            .unwrap();
+        test_update_path.leaf_node.leaf_node_source =
+            LeafNodeSource::Commit(unexpected_parent_hash);
 
         let invalid_parent_hash_res =
             test_tree.update_parent_hashes(LeafIndex(0), Some(&test_update_path));

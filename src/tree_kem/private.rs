@@ -1,9 +1,10 @@
 use super::*;
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
+#[non_exhaustive]
 pub struct TreeKemPrivate {
     pub self_index: LeafIndex,
-    pub key_package_ref: KeyPackageRef,
+    pub leaf_node_ref: LeafNodeRef,
     #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::ByteVec>")]
     pub secret_keys: HashMap<NodeIndex, HpkeSecretKey>,
 }
@@ -11,13 +12,13 @@ pub struct TreeKemPrivate {
 impl TreeKemPrivate {
     pub fn new_self_leaf(
         self_index: LeafIndex,
-        key_package_ref: KeyPackageRef,
+        leaf_node_ref: LeafNodeRef,
         leaf_secret: HpkeSecretKey,
     ) -> Self {
         TreeKemPrivate {
             self_index,
             secret_keys: HashMap::from([(NodeIndex::from(self_index), leaf_secret)]),
-            key_package_ref,
+            leaf_node_ref,
         }
     }
 
@@ -69,7 +70,7 @@ impl TreeKemPrivate {
     pub fn update_leaf(
         &mut self,
         num_leaves: u32,
-        key_package_ref: KeyPackageRef,
+        leaf_node_ref: LeafNodeRef,
         new_leaf: HpkeSecretKey,
     ) -> Result<(), RatchetTreeError> {
         self.secret_keys
@@ -82,7 +83,7 @@ impl TreeKemPrivate {
                 self.secret_keys.remove(i);
             });
 
-        self.key_package_ref = key_package_ref;
+        self.leaf_node_ref = leaf_node_ref;
 
         Ok(())
     }
@@ -113,13 +114,9 @@ mod tests {
         rand::SecureRng,
     };
 
-    use crate::{
-        key_package::KeyPackageGenerator,
-        tree_kem::{
-            node::LeafIndex,
-            test_utils::{get_test_key_package, get_test_key_package_sig_key},
-        },
-        ProtocolVersion,
+    use crate::tree_kem::{
+        leaf_node::test_utils::{get_basic_test_node, get_basic_test_node_sig_key},
+        node::LeafIndex,
     };
 
     use super::*;
@@ -131,16 +128,16 @@ mod tests {
     fn test_create_self_leaf() {
         let secret = HpkeSecretKey::try_from(SecretKey::generate(Curve::Ed25519).unwrap()).unwrap();
         let self_index = LeafIndex(42);
-        let mut key_package_ref_data = [0u8; 16];
-        SecureRng::fill(&mut key_package_ref_data).unwrap();
+        let mut leaf_node_ref_data = [0u8; 16];
+        SecureRng::fill(&mut leaf_node_ref_data).unwrap();
 
-        let key_package_ref = KeyPackageRef::from(key_package_ref_data);
+        let leaf_node_ref = LeafNodeRef::from(leaf_node_ref_data);
 
         let private_key =
-            TreeKemPrivate::new_self_leaf(self_index, key_package_ref.clone(), secret.clone());
+            TreeKemPrivate::new_self_leaf(self_index, leaf_node_ref.clone(), secret.clone());
 
         assert_eq!(private_key.self_index, self_index);
-        assert_eq!(private_key.key_package_ref, key_package_ref);
+        assert_eq!(private_key.leaf_node_ref, leaf_node_ref);
         assert_eq!(private_key.secret_keys.len(), 1);
         assert_eq!(
             private_key.secret_keys.get(&self_index.into()).unwrap(),
@@ -152,7 +149,6 @@ mod tests {
     // Charlie. Return (Public Tree, Charlie's private key, update path, path secret)
     // The ratchet tree returned has leaf indexes as [alice, bob, charlie]
     fn update_secrets_setup(
-        protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> (
         TreeKemPublic,
@@ -160,49 +156,31 @@ mod tests {
         UpdatePathGeneration,
         PathSecret,
     ) {
-        let alice_signing =
-            SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
+        let (alice_leaf, alice_hpke_secret, alice_signing) =
+            get_basic_test_node_sig_key(cipher_suite, "alice");
 
-        let alice_key_package = get_test_key_package_sig_key(
-            protocol_version,
-            cipher_suite,
-            b"alice".to_vec(),
-            &alice_signing,
-        );
-        let bob_key_package = get_test_key_package(protocol_version, cipher_suite, b"bob".to_vec());
-        let charlie_key_package =
-            get_test_key_package(protocol_version, cipher_suite, b"charlie".to_vec());
+        let bob_leaf = get_basic_test_node(cipher_suite, "bob");
+
+        let (charlie_leaf, charlie_hpke_secret, _charlie_signing) =
+            get_basic_test_node_sig_key(cipher_suite, "charlie");
 
         // Create a new public tree with Alice
         let (mut public_tree, alice_private) =
-            TreeKemPublic::derive(alice_key_package.clone()).unwrap();
+            TreeKemPublic::derive(cipher_suite, alice_leaf.into(), alice_hpke_secret).unwrap();
 
         // Add bob and charlie to the tree
         public_tree
-            .add_leaves(vec![
-                bob_key_package.key_package,
-                charlie_key_package.key_package.clone(),
-            ])
+            .add_leaves(vec![bob_leaf.into(), charlie_leaf.clone().into()])
             .unwrap();
-
-        let key_package_generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite,
-            signing_key: &alice_signing,
-            credential: &alice_key_package.key_package.credential,
-            extensions: &alice_key_package.key_package.extensions,
-        };
-
-        let key_package_update = key_package_generator.generate(None).unwrap();
 
         // Generate an update path for Alice
         let update_path_gen = public_tree
             .encap(
                 &alice_private,
-                key_package_update,
-                &b"test_ctx".to_vec(),
+                b"test_group",
+                b"test_ctx",
                 &[],
-                |_| Ok::<_, RatchetTreeError>(()),
+                &alice_signing,
             )
             .unwrap();
 
@@ -214,8 +192,8 @@ mod tests {
         // Private key for Charlie
         let charlie_private = TreeKemPrivate::new_self_leaf(
             LeafIndex(2),
-            charlie_key_package.key_package.to_reference().unwrap(),
-            charlie_key_package.secret_key,
+            charlie_leaf.to_reference(cipher_suite).unwrap(),
+            charlie_hpke_secret,
         );
 
         (public_tree, charlie_private, update_path_gen, path_secret)
@@ -223,11 +201,10 @@ mod tests {
 
     #[test]
     fn test_update_secrets() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = crate::cipher_suite::CipherSuite::Curve25519Aes128V1;
 
         let (public_tree, mut charlie_private, update_path_gen, path_secret) =
-            update_secrets_setup(protocol_version, cipher_suite);
+            update_secrets_setup(cipher_suite);
 
         let existing_private = charlie_private
             .secret_keys
@@ -270,11 +247,10 @@ mod tests {
 
     #[test]
     fn test_update_secrets_key_mismatch() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = crate::cipher_suite::CipherSuite::Curve25519Aes128V1;
 
         let (mut public_tree, mut charlie_private, _, path_secret) =
-            update_secrets_setup(protocol_version, cipher_suite);
+            update_secrets_setup(cipher_suite);
 
         // Sabotage the public tree
         public_tree
@@ -294,7 +270,7 @@ mod tests {
         let secret = HpkeSecretKey::try_from(SecretKey::generate(Curve::Ed25519).unwrap()).unwrap();
 
         let mut private_key =
-            TreeKemPrivate::new_self_leaf(self_index, KeyPackageRef::from([0u8; 16]), secret);
+            TreeKemPrivate::new_self_leaf(self_index, LeafNodeRef::from([0u8; 16]), secret);
 
         self_index
             .direct_path(leaf_count)
@@ -317,7 +293,7 @@ mod tests {
         let new_secret =
             HpkeSecretKey::try_from(SecretKey::generate(Curve::Ed25519).unwrap()).unwrap();
 
-        let new_key_package_ref = KeyPackageRef::from([0u8; 16]);
+        let new_key_package_ref = LeafNodeRef::from([0u8; 16]);
 
         private_key
             .update_leaf(128, new_key_package_ref.clone(), new_secret.clone())
@@ -333,7 +309,7 @@ mod tests {
             &new_secret
         );
 
-        assert_eq!(private_key.key_package_ref, new_key_package_ref);
+        assert_eq!(private_key.leaf_node_ref, new_key_package_ref);
     }
 
     #[test]

@@ -1,5 +1,8 @@
 use super::*;
-use crate::psk::PreSharedKeyID;
+use crate::{
+    psk::PreSharedKeyID,
+    tree_kem::{leaf_node::LeafNode, leaf_node_ref::LeafNodeRef},
+};
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct AddProposal {
@@ -8,12 +11,12 @@ pub struct AddProposal {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct UpdateProposal {
-    pub key_package: KeyPackage,
+    pub leaf_node: LeafNode,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct RemoveProposal {
-    pub to_remove: KeyPackageRef,
+    pub to_remove: LeafNodeRef,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -55,6 +58,7 @@ pub enum Proposal {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u8)]
+#[allow(clippy::large_enum_variant)]
 pub enum ProposalOrRef {
     #[tls_codec(discriminant = 1)]
     Proposal(Proposal),

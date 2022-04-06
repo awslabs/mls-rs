@@ -4,7 +4,6 @@ use ferriscrypt::cipher::aead::Aead;
 use ferriscrypt::digest::HashFunction;
 use ferriscrypt::hpke::kem::Kem;
 use ferriscrypt::hpke::{AeadId, HPKECiphertext, Hpke, KdfId, KemId};
-use std::convert::TryInto;
 use std::io::{Read, Write};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -23,20 +22,20 @@ pub enum SignatureScheme {
     Ed448 = 0x0808,
 }
 
-impl TryInto<SignatureScheme> for Curve {
+impl TryFrom<Curve> for SignatureScheme {
     type Error = EcKeyError;
 
-    fn try_into(self) -> Result<SignatureScheme, Self::Error> {
-        match self {
+    fn try_from(curve: Curve) -> Result<SignatureScheme, Self::Error> {
+        match curve {
             Curve::P256 => Ok(SignatureScheme::EcdsaSecp256r1Sha256),
             #[cfg(feature = "openssl_engine")]
             Curve::P384 => Ok(SignatureScheme::EcdsaSecp384r1Sha384),
             #[cfg(feature = "openssl_engine")]
             Curve::P521 => Ok(SignatureScheme::EcdsaSecp521r1Sha512),
-            Curve::X25519 => Err(EcKeyError::NotSigningKey(self)),
+            Curve::X25519 => Err(EcKeyError::NotSigningKey(curve)),
             Curve::Ed25519 => Ok(SignatureScheme::Ed25519),
             #[cfg(feature = "openssl_engine")]
-            Curve::X448 => Err(EcKeyError::NotSigningKey(self)),
+            Curve::X448 => Err(EcKeyError::NotSigningKey(curve)),
             #[cfg(feature = "openssl_engine")]
             Curve::Ed448 => Ok(SignatureScheme::Ed448),
         }

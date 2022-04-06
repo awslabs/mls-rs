@@ -15,13 +15,13 @@ pub enum TreeIndexError {
     DuplicateSignatureKeys(String, LeafIndex),
     #[error("can't insert {0}, hpke keys must be unique, duplicate key found at index: {1:?}")]
     DuplicateHpkeKey(String, LeafIndex),
-    #[error("can't insert {0}, this package is already inserted at index: {1:?}")]
-    DuplicateKeyPackage(String, LeafIndex),
+    #[error("can't insert {0}, this leaf node is already inserted at index: {1:?}")]
+    DuplicateLeafNode(String, LeafIndex),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TreeIndex {
-    packages: HashMap<KeyPackageRef, LeafIndex>,
+    leaves: HashMap<LeafNodeRef, LeafIndex>,
     credential_signature_key: HashMap<Vec<u8>, LeafIndex>,
     hpke_key: HashMap<Vec<u8>, LeafIndex>,
 }
@@ -33,39 +33,35 @@ impl TreeIndex {
 
     pub fn insert(
         &mut self,
-        key_package_ref: KeyPackageRef,
+        leaf_node_ref: LeafNodeRef,
         index: LeafIndex,
-        key_package: &KeyPackage,
+        leaf_node: &LeafNode,
     ) -> Result<(), TreeIndexError> {
-        let packages_entry = self.packages.entry(key_package_ref.clone());
+        let packages_entry = self.leaves.entry(leaf_node_ref.clone());
 
         if let Entry::Occupied(entry) = packages_entry {
-            return Err(TreeIndexError::DuplicateKeyPackage(
+            return Err(TreeIndexError::DuplicateLeafNode(
                 entry.key().to_string(),
                 *entry.get(),
             ));
         }
 
-        let pub_key = key_package
-            .credential
-            .public_key()?
-            .to_uncompressed_bytes()?;
-
+        let pub_key = leaf_node.credential.public_key()?.to_uncompressed_bytes()?;
         let credential_entry = self.credential_signature_key.entry(pub_key);
 
         if let Entry::Occupied(entry) = credential_entry {
             return Err(TreeIndexError::DuplicateSignatureKeys(
-                key_package_ref.to_string(),
+                leaf_node_ref.to_string(),
                 *entry.get(),
             ));
         }
 
-        let hpke_key = key_package.hpke_init_key.as_ref().to_vec();
+        let hpke_key = leaf_node.public_key.as_ref().to_vec();
         let hpke_entry = self.hpke_key.entry(hpke_key);
 
         if let Entry::Occupied(entry) = hpke_entry {
             return Err(TreeIndexError::DuplicateHpkeKey(
-                key_package_ref.to_string(),
+                leaf_node_ref.to_string(),
                 *entry.get(),
             ));
         }
@@ -79,42 +75,37 @@ impl TreeIndex {
 
     pub fn remove(
         &mut self,
-        key_package_ref: &KeyPackageRef,
-        key_package: &KeyPackage,
+        leaf_node_ref: &LeafNodeRef,
+        leaf_node: &LeafNode,
     ) -> Result<(), TreeIndexError> {
-        self.packages.remove(key_package_ref);
+        self.leaves.remove(leaf_node_ref);
 
-        let pub_key = key_package
-            .credential
-            .public_key()?
-            .to_uncompressed_bytes()?;
+        let pub_key = leaf_node.credential.public_key()?.to_uncompressed_bytes()?;
 
         self.credential_signature_key.remove(&pub_key);
-        self.hpke_key.remove(key_package.hpke_init_key.as_ref());
+        self.hpke_key.remove(leaf_node.public_key.as_ref());
 
         Ok(())
     }
 
-    pub fn get_key_package_index(&self, key_package_ref: &KeyPackageRef) -> Option<LeafIndex> {
-        self.packages.get(key_package_ref).cloned()
+    pub fn get_leaf_node_index(&self, leaf_node_ref: &LeafNodeRef) -> Option<LeafIndex> {
+        self.leaves.get(leaf_node_ref).cloned()
     }
 
     #[cfg(test)]
     pub fn len(&self) -> usize {
-        self.packages.len()
+        self.leaves.len()
     }
 
-    pub fn key_package_refs(&self) -> impl Iterator<Item = &'_ KeyPackageRef> {
-        self.packages.keys()
+    pub fn leaf_node_refs(&self) -> impl Iterator<Item = &'_ LeafNodeRef> {
+        self.leaves.keys()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        cipher_suite::CipherSuite, key_package::test_utils::test_key_package, ProtocolVersion,
-    };
+    use crate::{cipher_suite::CipherSuite, tree_kem::leaf_node::test_utils::get_basic_test_node};
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]
@@ -122,18 +113,20 @@ mod tests {
 
     #[derive(Clone, Debug)]
     struct TestData {
-        pub key_package: KeyPackage,
-        pub key_package_ref: KeyPackageRef,
+        pub leaf_node: LeafNode,
+        pub leaf_node_ref: LeafNodeRef,
         pub index: LeafIndex,
     }
 
     fn get_test_data(index: LeafIndex) -> TestData {
-        let key_package = test_key_package(ProtocolVersion::Mls10, CipherSuite::P256Aes128V1);
-        let key_package_ref = key_package.to_reference().unwrap();
+        let cipher_suite = CipherSuite::P256Aes128V1;
+
+        let leaf_node = get_basic_test_node(cipher_suite, "foo");
+        let leaf_node_ref = leaf_node.to_reference(cipher_suite).unwrap();
 
         TestData {
-            key_package,
-            key_package_ref,
+            leaf_node,
+            leaf_node_ref,
             index,
         }
     }
@@ -147,7 +140,7 @@ mod tests {
 
         test_data.clone().into_iter().for_each(|d| {
             test_index
-                .insert(d.key_package_ref, d.index, &d.key_package)
+                .insert(d.leaf_node_ref, d.index, &d.leaf_node)
                 .unwrap()
         });
 
@@ -158,18 +151,18 @@ mod tests {
     fn test_insert() {
         let (test_data, test_index) = test_setup();
 
-        assert_eq!(test_index.packages.len(), test_data.len());
+        assert_eq!(test_index.leaves.len(), test_data.len());
         assert_eq!(test_index.credential_signature_key.len(), test_data.len());
         assert_eq!(test_index.hpke_key.len(), test_data.len());
 
         test_data.into_iter().enumerate().for_each(|(i, d)| {
             assert_eq!(
-                test_index.packages.get(&d.key_package_ref),
+                test_index.leaves.get(&d.leaf_node_ref),
                 Some(&LeafIndex(i as u32))
             );
 
             let pub_key = d
-                .key_package
+                .leaf_node
                 .credential
                 .public_key()
                 .unwrap()
@@ -182,9 +175,7 @@ mod tests {
             );
 
             assert_eq!(
-                test_index
-                    .hpke_key
-                    .get(d.key_package.hpke_init_key.as_ref()),
+                test_index.hpke_key.get(d.leaf_node.public_key.as_ref()),
                 Some(&LeafIndex(i as u32))
             );
         })
@@ -194,11 +185,11 @@ mod tests {
     fn test_get_key_package_index() {
         let (test_data, test_index) = test_setup();
 
-        let fetched_package_index = test_index.get_key_package_index(&test_data[0].key_package_ref);
+        let fetched_package_index = test_index.get_leaf_node_index(&test_data[0].leaf_node_ref);
         assert_eq!(fetched_package_index, Some(test_data[0].index));
 
-        let not_found_ref = KeyPackageRef::from([0u8; 16]);
-        assert_eq!(test_index.get_key_package_index(&not_found_ref), None)
+        let not_found_ref = LeafNodeRef::from([0u8; 16]);
+        assert_eq!(test_index.get_leaf_node_index(&not_found_ref), None)
     }
 
     #[test]
@@ -208,13 +199,13 @@ mod tests {
         let before_error = test_index.clone();
 
         let res = test_index.insert(
-            test_data[1].key_package_ref.clone(),
+            test_data[1].leaf_node_ref.clone(),
             test_data[1].index,
-            &test_data[1].key_package,
+            &test_data[1].leaf_node,
         );
 
-        assert_matches!(res, Err(TreeIndexError::DuplicateKeyPackage(kpr, index))
-                        if kpr == test_data[1].key_package_ref.to_string()
+        assert_matches!(res, Err(TreeIndexError::DuplicateLeafNode(kpr, index))
+                        if kpr == test_data[1].leaf_node_ref.to_string()
                         && index == test_data[1].index);
 
         assert_eq!(before_error, test_index);
@@ -226,18 +217,19 @@ mod tests {
 
         let before_error = test_index.clone();
 
-        let mut new_key_package =
-            test_key_package(ProtocolVersion::Mls10, CipherSuite::P256Aes128V1);
-        new_key_package.credential = test_data[1].key_package.credential.clone();
+        let mut new_key_package = get_basic_test_node(CipherSuite::P256Aes128V1, "foo");
+        new_key_package.credential = test_data[1].leaf_node.credential.clone();
 
         let res = test_index.insert(
-            new_key_package.to_reference().unwrap(),
+            new_key_package
+                .to_reference(CipherSuite::P256Aes128V1)
+                .unwrap(),
             test_data[1].index,
             &new_key_package,
         );
 
         assert_matches!(res, Err(TreeIndexError::DuplicateSignatureKeys(kpr, index))
-                        if kpr == new_key_package.to_reference().unwrap().to_string()
+                        if kpr == new_key_package.to_reference(CipherSuite::P256Aes128V1).unwrap().to_string()
                         && index == test_data[1].index);
 
         assert_eq!(before_error, test_index);
@@ -245,22 +237,21 @@ mod tests {
 
     #[test]
     fn test_insert_duplicate_hpke_key() {
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
         let (test_data, mut test_index) = test_setup();
-
         let before_error = test_index.clone();
 
-        let mut new_key_package =
-            test_key_package(ProtocolVersion::Mls10, CipherSuite::P256Aes128V1);
-        new_key_package.hpke_init_key = test_data[1].key_package.hpke_init_key.clone();
+        let mut new_leaf_node = get_basic_test_node(cipher_suite, "foo");
+        new_leaf_node.public_key = test_data[1].leaf_node.public_key.clone();
 
         let res = test_index.insert(
-            new_key_package.to_reference().unwrap(),
+            new_leaf_node.to_reference(cipher_suite).unwrap(),
             test_data[1].index,
-            &new_key_package,
+            &new_leaf_node,
         );
 
         assert_matches!(res, Err(TreeIndexError::DuplicateHpkeKey(kpr, index))
-                        if kpr == new_key_package.to_reference().unwrap().to_string()
+                        if kpr == new_leaf_node.to_reference(cipher_suite).unwrap().to_string()
                         && index == test_data[1].index);
 
         assert_eq!(before_error, test_index);
@@ -271,19 +262,19 @@ mod tests {
         let (test_data, mut test_index) = test_setup();
 
         test_index
-            .remove(&test_data[1].key_package_ref, &test_data[1].key_package)
+            .remove(&test_data[1].leaf_node_ref, &test_data[1].leaf_node)
             .unwrap();
 
-        assert_eq!(test_index.packages.len(), test_data.len() - 1);
+        assert_eq!(test_index.leaves.len(), test_data.len() - 1);
         assert_eq!(
             test_index.credential_signature_key.len(),
             test_data.len() - 1
         );
         assert_eq!(test_index.hpke_key.len(), test_data.len() - 1);
-        assert_eq!(test_index.packages.get(&test_data[1].key_package_ref), None);
+        assert_eq!(test_index.leaves.get(&test_data[1].leaf_node_ref), None);
 
         let pub_key = test_data[1]
-            .key_package
+            .leaf_node
             .credential
             .public_key()
             .unwrap()
@@ -295,7 +286,7 @@ mod tests {
         assert_eq!(
             test_index
                 .hpke_key
-                .get(test_data[1].key_package.hpke_init_key.as_ref()),
+                .get(test_data[1].leaf_node.public_key.as_ref()),
             None
         );
     }

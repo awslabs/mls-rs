@@ -4,9 +4,9 @@ use aws_mls::client::Client;
 use aws_mls::client_config::{InMemoryClientConfig, Preferences};
 use aws_mls::credential::{BasicCredential, Credential};
 use aws_mls::extension::{ExtensionList, LifetimeExt};
-use aws_mls::key_package::{KeyPackageGeneration, KeyPackageRef};
+use aws_mls::key_package::KeyPackageGeneration;
 use aws_mls::session::{GroupError, ProcessedMessage, Session, SessionError};
-use aws_mls::ProtocolVersion;
+use aws_mls::{LeafNodeRef, ProtocolVersion};
 use ferriscrypt::rand::SecureRng;
 use rand::{prelude::SliceRandom, Rng};
 
@@ -55,7 +55,13 @@ fn test_create(
     let key_lifetime = LifetimeExt::years(1).unwrap();
 
     let bob_key = bob
-        .gen_key_package(protocol_version, cipher_suite, key_lifetime.clone())
+        .gen_key_package(
+            protocol_version,
+            cipher_suite,
+            key_lifetime.clone(),
+            ExtensionList::default(),
+            ExtensionList::default(),
+        )
         .unwrap();
 
     // Alice creates a session and adds bob
@@ -65,7 +71,8 @@ fn test_create(
             cipher_suite,
             key_lifetime,
             b"group".to_vec(),
-            ExtensionList::new(),
+            ExtensionList::default(),
+            ExtensionList::default(),
         )
         .unwrap();
 
@@ -118,7 +125,8 @@ fn get_test_sessions(
             cipher_suite,
             key_lifetime.clone(),
             b"group".to_vec(),
-            Default::default(),
+            ExtensionList::default(),
+            ExtensionList::default(),
         )
         .unwrap();
 
@@ -133,7 +141,13 @@ fn get_test_sessions(
         .iter()
         .map(|client| {
             client
-                .gen_key_package(protocol_version, cipher_suite, key_lifetime.clone())
+                .gen_key_package(
+                    protocol_version,
+                    cipher_suite,
+                    key_lifetime.clone(),
+                    ExtensionList::default(),
+                    ExtensionList::default(),
+                )
                 .unwrap()
         })
         .collect::<Vec<KeyPackageGeneration>>();
@@ -156,8 +170,12 @@ fn get_test_sessions(
         update.added,
         receiver_keys
             .iter()
-            .map(|kpg| kpg.key_package.to_reference().unwrap())
-            .collect::<Vec<KeyPackageRef>>()
+            .map(|kpg| kpg
+                .key_package
+                .leaf_node
+                .to_reference(cipher_suite)
+                .unwrap())
+            .collect::<Vec<LeafNodeRef>>()
     );
 
     assert!(update.removed.is_empty());
@@ -337,7 +355,7 @@ fn test_remove_proposals(
     while receiver_sessions.len() > 1 {
         let session_to_remove = receiver_sessions.choose(&mut rand::thread_rng()).unwrap();
         let to_remove = session_to_remove.current_key_package().unwrap().clone();
-        let to_remove_ref = to_remove.to_reference().unwrap();
+        let to_remove_ref = to_remove.to_reference(cipher_suite).unwrap();
 
         let removal = creator_session.remove_proposal(&to_remove_ref).unwrap();
 
@@ -497,7 +515,8 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
             cipher_suite,
             LifetimeExt::years(1).unwrap(),
             b"group".to_vec(),
-            Default::default(),
+            ExtensionList::default(),
+            ExtensionList::default(),
         )
         .unwrap();
 
@@ -532,6 +551,7 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
                     LifetimeExt::years(1).unwrap(),
                     group_info,
                     Some(&existing_session.export_tree().unwrap()),
+                    ExtensionList::default(),
                 )
                 .unwrap();
 

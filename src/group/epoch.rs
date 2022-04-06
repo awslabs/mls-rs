@@ -498,7 +498,7 @@ mod tests {
 
             let exported_secret = epoch
                 .key_schedule
-                .export_secret("test", &context, key_size, cipher_suite)
+                .export_secret("test", context, key_size, cipher_suite)
                 .unwrap();
 
             assert_eq!(exported_secret, test_case.output);

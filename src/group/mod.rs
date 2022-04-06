@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::option::Option::Some;
 
@@ -18,18 +18,23 @@ use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
 use crate::client_config::PskStore;
 use crate::credential::CredentialError;
 use crate::extension::{
-    ExtensionError, ExtensionList, ExternalPubExt, RatchetTreeExt, RequiredCapabilitiesExt,
+    ExtensionError, ExtensionList, ExternalPubExt, LifetimeExt, RatchetTreeExt,
+    RequiredCapabilitiesExt,
 };
 use crate::key_package::{
-    KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerationError,
-    KeyPackageGenerator, KeyPackageRef, KeyPackageValidationError, KeyPackageValidationOptions,
-    KeyPackageValidator,
+    KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
+    KeyPackageValidationError, KeyPackageValidationOptions, KeyPackageValidator,
 };
 use crate::psk::{
     ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, PskSecretError,
     ResumptionPSKUsage, ResumptionPsk,
 };
 use crate::signer::{Signable, SignatureError, Signer};
+use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
+use crate::tree_kem::leaf_node_ref::LeafNodeRef;
+use crate::tree_kem::leaf_node_validator::{
+    LeafNodeValidationError, LeafNodeValidator, ValidationContext,
+};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError};
 use crate::tree_kem::tree_validator::{TreeValidationError, TreeValidator};
@@ -81,20 +86,20 @@ const EPOCH_REPO_RETENTION_LIMIT: u32 = 3;
 struct ProvisionalState {
     public_tree: TreeKemPublic,
     private_tree: TreeKemPrivate,
-    added_leaves: Vec<KeyPackageRef>,
-    removed_leaves: HashMap<KeyPackageRef, KeyPackage>,
+    added_leaves: Vec<(KeyPackage, LeafNodeRef)>,
+    removed_leaves: HashMap<LeafNodeRef, LeafNode>,
     group_context: GroupContext,
     epoch: u64,
     path_update_required: bool,
     psks: Vec<PreSharedKeyID>,
     reinit: Option<ReInit>,
-    external_init: Option<ExternalInit>,
+    external_init: Option<(LeafNodeRef, ExternalInit)>,
 }
 
 #[derive(Clone, Debug)]
 pub struct StateUpdate {
-    pub added: Vec<KeyPackageRef>,
-    pub removed: Vec<KeyPackage>,
+    pub added: Vec<LeafNodeRef>,
+    pub removed: Vec<LeafNode>,
     pub active: bool,
     pub epoch: u64,
 }
@@ -103,14 +108,18 @@ impl From<&ProvisionalState> for StateUpdate {
     fn from(provisional: &ProvisionalState) -> Self {
         let self_removed = provisional.self_removed();
 
-        let removed: Vec<KeyPackage> = provisional
+        let removed: Vec<LeafNode> = provisional
             .removed_leaves
             .iter()
             .map(|(_, kp)| kp.clone())
             .collect();
 
         StateUpdate {
-            added: provisional.added_leaves.clone(),
+            added: provisional
+                .added_leaves
+                .iter()
+                .map(|(_, leaf_ref)| leaf_ref.clone())
+                .collect(),
             removed,
             active: !self_removed,
             epoch: provisional.epoch,
@@ -121,7 +130,7 @@ impl From<&ProvisionalState> for StateUpdate {
 impl ProvisionalState {
     fn self_removed(&self) -> bool {
         self.removed_leaves
-            .contains_key(&self.private_tree.key_package_ref)
+            .contains_key(&self.private_tree.leaf_node_ref)
     }
 }
 
@@ -150,6 +159,10 @@ pub enum GroupError {
     TranscriptHashError(#[from] TranscriptHashError),
     #[error(transparent)]
     KeyPackageError(#[from] KeyPackageError),
+    #[error(transparent)]
+    LeafNodeError(#[from] LeafNodeError),
+    #[error(transparent)]
+    LeafNodeValidationError(#[from] LeafNodeValidationError),
     #[error(transparent)]
     MembershipTagError(#[from] MembershipTagError),
     #[error(transparent)]
@@ -312,7 +325,7 @@ pub struct Group {
     epoch_repo: EpochRepository,
     interim_transcript_hash: InterimTranscriptHash,
     proposals: ProposalCache,
-    pub pending_updates: HashMap<KeyPackageRef, HpkeSecretKey>, // Hash of key package to key generation
+    pub pending_updates: HashMap<LeafNodeRef, HpkeSecretKey>, // Hash of key package to key generation
 }
 
 impl PartialEq for Group {
@@ -408,19 +421,23 @@ pub enum ProcessedMessage {
 }
 
 impl Group {
-    pub fn new<S: Signer>(
+    pub fn new(
         group_id: Vec<u8>,
-        key_package_generator: KeyPackageGenerator<S>,
+        cipher_suite: CipherSuite,
+        protocol_version: ProtocolVersion,
+        leaf_node: LeafNode,
+        leaf_node_secret: HpkeSecretKey,
         group_context_extensions: ExtensionList,
     ) -> Result<Self, GroupError> {
         let required_capabilities = group_context_extensions.get_extension()?;
-        let creator_key_package = key_package_generator.generate(required_capabilities.as_ref())?;
 
-        let protocol_version = creator_key_package.key_package.version;
-        let cipher_suite = creator_key_package.key_package.cipher_suite;
+        let validated_leaf = LeafNodeValidator::new(cipher_suite, required_capabilities.as_ref())
+            .validate(leaf_node, ValidationContext::Add(None))?;
+
         let kdf = Hkdf::from(cipher_suite.kdf_type());
 
-        let (public_tree, private_tree) = TreeKemPublic::derive(creator_key_package)?;
+        let (public_tree, private_tree) =
+            TreeKemPublic::derive(cipher_suite, validated_leaf, leaf_node_secret)?;
 
         let init_secret = InitSecret::random(&kdf)?;
         let tree_hash = public_tree.tree_hash()?;
@@ -487,16 +504,16 @@ impl Group {
         P: PskStore,
         F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
     {
-        let key_package_ref = key_package_generation.key_package.to_reference()?;
-
-        // Identify an entry in the secrets array where the key_package_hash value corresponds to
+        // Identify an entry in the secrets array where the KeyPackageRef value corresponds to
         // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
         // If no such field exists, or if the ciphersuite indicated in the KeyPackage does not
         // match the one in the Welcome message, return an error.
+        let key_package_reference = key_package_generation.key_package.to_reference()?;
+
         let encrypted_group_secrets = welcome
             .secrets
             .iter()
-            .find(|s| s.new_member == key_package_ref)
+            .find(|s| s.new_member == key_package_reference)
             .ok_or(GroupError::WelcomeKeyPackageNotFound)?;
 
         // Decrypt the encrypted_group_secrets using HPKE with the algorithms indicated by the
@@ -508,7 +525,7 @@ impl Group {
                 .encrypted_group_secrets
                 .clone()
                 .into(),
-            &key_package_generation.secret_key,
+            &key_package_generation.init_secret_key,
             &[],
             None,
         )?;
@@ -544,13 +561,18 @@ impl Group {
         }
 
         let public_tree = find_tree(public_tree, &group_info)?;
-        validate_tree(&public_tree, &group_info, protocol_version)?;
+        validate_tree(&public_tree, &group_info)?;
 
-        // Identify a leaf in the tree array (any even-numbered node) whose key_package field is
-        // identical to the the KeyPackage. If no such field exists, return an error. Let index
-        // represent the index of this node among the leaves in the tree, namely the index of the
-        // node in the tree array divided by two.
-        let self_index = public_tree.package_leaf_index(&key_package_ref)?;
+        // Identify a leaf in the tree array (any even-numbered node) whose leaf_node is identical
+        // to the leaf_node field of the KeyPackage. If no such field exists, return an error. Let
+        // index represent the index of this node among the leaves in the tree, namely the index of
+        // the node in the tree array divided by two.
+        let leaf_node_ref = key_package_generation
+            .key_package
+            .leaf_node
+            .to_reference(welcome.cipher_suite)?;
+
+        let self_index = public_tree.leaf_node_index(&leaf_node_ref)?;
 
         // Construct a new group state using the information in the GroupInfo object. The new
         // member's position in the tree is index, as defined above. In particular, the confirmed
@@ -560,15 +582,15 @@ impl Group {
 
         let mut private_tree = TreeKemPrivate::new_self_leaf(
             self_index,
-            key_package_ref,
-            key_package_generation.secret_key,
+            leaf_node_ref,
+            key_package_generation.leaf_node_secret_key,
         );
 
         // If the path_secret value is set in the GroupSecrets object
         if let Some(path_secret) = group_secrets.path_secret {
             private_tree.update_secrets(
                 group_info.cipher_suite,
-                public_tree.package_leaf_index(&group_info.signer)?,
+                public_tree.leaf_node_index(&group_info.signer)?,
                 path_secret,
                 &public_tree,
             )?;
@@ -639,8 +661,10 @@ impl Group {
         protocol_version: ProtocolVersion,
         group_info: GroupInfo,
         public_tree: Option<TreeKemPublic>,
-        key_package_generator: KeyPackageGenerator<'_, S>,
+        leaf_node: LeafNode,
+        leaf_node_secret: HpkeSecretKey,
         support_version_and_cipher: F,
+        signer: &S,
     ) -> Result<(Self, OutboundMessage), GroupError>
     where
         S: Signer,
@@ -663,32 +687,34 @@ impl Group {
             &external_pub_ext.external_pub,
         )?;
 
-        let key_package = key_package_generator.generate(
-            group_info
-                .group_context_extensions
-                .get_extension()?
-                .as_ref(),
-        )?;
+        let required_capabilities = group_info.group_context_extensions.get_extension()?;
 
-        let key_package_ref = key_package.key_package.to_reference()?;
-        let leaf_secret = key_package.secret_key.clone();
+        let leaf_node =
+            LeafNodeValidator::new(group_info.cipher_suite, required_capabilities.as_ref())
+                .validate(leaf_node, ValidationContext::Add(None))?;
+
+        let leaf_node_ref = leaf_node.to_reference(group_info.cipher_suite)?;
+
         let psk_secret = vec![0; Hkdf::from(group_info.cipher_suite.kdf_type()).extract_size()];
 
         let mut public_tree = find_tree(public_tree, &group_info)?;
-        validate_tree(&public_tree, &group_info, protocol_version)?;
-        public_tree.add_leaves(vec![key_package.key_package.clone()])?;
+        validate_tree(&public_tree, &group_info)?;
 
-        let self_index = public_tree.package_leaf_index(&key_package_ref)?;
-        let private_tree = TreeKemPrivate::new_self_leaf(self_index, key_package_ref, leaf_secret);
+        public_tree.add_leaves(vec![leaf_node])?;
+
+        let self_index = public_tree.leaf_node_index(&leaf_node_ref)?;
+
+        let private_tree =
+            TreeKemPrivate::new_self_leaf(self_index, leaf_node_ref, leaf_node_secret);
 
         let old_context = GroupContext::from(&group_info);
 
         let update_path = public_tree.encap(
             &private_tree,
-            key_package,
+            &group_info.group_id,
             &old_context.tls_serialize_detached()?,
             &[],
-            |package| key_package_generator.sign(package),
+            signer,
         )?;
 
         let commit_secret =
@@ -707,7 +733,7 @@ impl Group {
             &old_context,
             Sender::NewMember,
             Content::Commit(commit),
-            key_package_generator.signing_key,
+            signer,
             ControlEncryptionMode::Plaintext,
         )?;
 
@@ -754,6 +780,7 @@ impl Group {
         )?;
 
         commit_message.auth.confirmation_tag = Some(confirmation_tag);
+
         let commit_message =
             group.format_for_wire(commit_message, ControlEncryptionMode::Plaintext)?;
 
@@ -776,13 +803,13 @@ impl Group {
     }
 
     #[inline(always)]
-    pub fn current_user_ref(&self) -> &KeyPackageRef {
-        &self.private_tree.key_package_ref
+    pub fn current_user_ref(&self) -> &LeafNodeRef {
+        &self.private_tree.leaf_node_ref
     }
 
-    pub fn current_user_key_package(&self) -> Result<&KeyPackage, GroupError> {
+    pub fn current_user_leaf_node(&self) -> Result<&LeafNode, GroupError> {
         self.current_epoch_tree()?
-            .get_key_package(self.current_user_ref())
+            .get_leaf_node(self.current_user_ref())
             .map_err(Into::into)
     }
 
@@ -800,19 +827,12 @@ impl Group {
             group_context_extensions.get_extension::<RequiredCapabilitiesExt>()?;
 
         if existing_required_capabilities != new_required_capabilities {
-            let key_package_validator = KeyPackageValidator {
-                protocol_version: self.protocol_version,
-                cipher_suite: self.cipher_suite,
-                required_capabilities: new_required_capabilities.as_ref(),
-                options: HashSet::from([
-                    KeyPackageValidationOptions::SkipLifetimeCheck,
-                    KeyPackageValidationOptions::SkipSignatureCheck,
-                ]),
-            };
+            let leaf_node_validator =
+                LeafNodeValidator::new(self.cipher_suite, new_required_capabilities.as_ref());
 
-            tree.get_key_packages()
+            tree.get_leaf_nodes()
                 .iter()
-                .try_for_each(|kp| key_package_validator.validate_properties(kp))
+                .try_for_each(|ln| leaf_node_validator.validate_required_capabilities(ln))
                 .map_err(|_| GroupError::UnsupportedRequiredCapabilities)
         } else {
             Ok(())
@@ -839,28 +859,25 @@ impl Group {
 
         let required_capabilities = provisional_group_context.extensions.get_extension()?;
 
-        // This check does not validate lifetime since lifetime is only validated by the sender at
-        // the time the proposal is created. See https://github.com/mlswg/mls-protocol/issues/538
-        let key_package_validator = KeyPackageValidator {
-            protocol_version: self.protocol_version,
-            cipher_suite: self.cipher_suite,
-            required_capabilities: required_capabilities.as_ref(),
-            options: HashSet::from([KeyPackageValidationOptions::SkipLifetimeCheck]),
-        };
+        let leaf_node_validator =
+            LeafNodeValidator::new(self.cipher_suite, required_capabilities.as_ref());
 
         // Apply updates
-        for (update_sender, key_package) in proposals.updates {
-            let validated = key_package_validator.validate(key_package.clone())?;
+        for (update_sender, leaf_node) in proposals.updates {
+            let validated = leaf_node_validator.validate(
+                leaf_node.clone(),
+                ValidationContext::Update(&self.context.group_id),
+            )?;
 
             // Update the leaf in the provisional tree
             provisional_tree.update_leaf(&update_sender, validated)?;
-            let key_package_ref = key_package.to_reference()?;
+            let leaf_node_ref = leaf_node.to_reference(self.cipher_suite)?;
 
             // Update the leaf in the private tree if this is our update
-            if let Some(new_leaf_sk) = self.pending_updates.get(&key_package_ref).cloned() {
+            if let Some(new_leaf_sk) = self.pending_updates.get(&leaf_node_ref).cloned() {
                 provisional_private_tree.update_leaf(
                     provisional_tree.total_leaf_count(),
-                    key_package_ref,
+                    leaf_node_ref,
                     new_leaf_sk,
                 )?;
             }
@@ -876,7 +893,7 @@ impl Group {
 
         // Remove elements from the private tree
         proposals.removes.iter().try_for_each(|key_package_ref| {
-            let leaf = old_tree.package_leaf_index(key_package_ref)?;
+            let leaf = old_tree.leaf_node_index(key_package_ref)?;
             provisional_private_tree.remove_leaf(provisional_tree.total_leaf_count(), leaf)?;
 
             Ok::<_, GroupError>(())
@@ -888,14 +905,47 @@ impl Group {
             .into_iter()
             .collect::<HashMap<_, _>>();
 
+        let key_package_validator = KeyPackageValidator::new(
+            self.protocol_version,
+            self.cipher_suite,
+            required_capabilities.as_ref(),
+        );
+
         // Apply adds
         let adds = proposals
             .adds
-            .into_iter()
-            .map(|p| key_package_validator.validate(p))
+            .iter()
+            .cloned()
+            .map(|p| {
+                // This check does not validate lifetime since lifetime is only validated by the sender at
+                // the time the proposal is created. See https://github.com/mlswg/mls-protocol/issues/538
+                //
+                // TODO: If we are supplied a timestamp for the commit message, we can validate the
+                // lifetime was valid at the moment the commit was generated
+                key_package_validator
+                    .validate(p, [KeyPackageValidationOptions::SkipLifetimeCheck].into())
+            })
             .collect::<Result<_, _>>()?;
 
         let added_leaves = provisional_tree.add_leaves(adds)?;
+
+        // Apply add by external init
+        if let Some((external_add_leaf, _)) = &proposals.external_init {
+            let validated = leaf_node_validator.validate(
+                external_add_leaf.clone(),
+                ValidationContext::Commit(&self.context.group_id),
+            )?;
+
+            provisional_tree.add_leaves(vec![validated])?;
+        }
+
+        let external_init = proposals
+            .external_init
+            .map(|(leaf, extern_init)| {
+                leaf.to_reference(self.cipher_suite)
+                    .map(|leaf_ref| (leaf_ref, extern_init))
+            })
+            .transpose()?;
 
         // Now that the tree is updated we can check required capabilities if needed
         self.check_required_capabilities(&provisional_tree, &provisional_group_context.extensions)?;
@@ -915,14 +965,14 @@ impl Group {
         Ok(ProvisionalState {
             public_tree: provisional_tree,
             private_tree: provisional_private_tree,
-            added_leaves,
+            added_leaves: proposals.adds.into_iter().zip(added_leaves).collect(),
             removed_leaves,
             epoch: self.context.epoch + 1,
             path_update_required,
             group_context: provisional_group_context,
             psks,
             reinit: proposals.reinit,
-            external_init: proposals.external_init,
+            external_init,
         })
     }
 
@@ -933,7 +983,7 @@ impl Group {
         encryption_mode: ControlEncryptionMode,
     ) -> Result<OutboundMessage, GroupError> {
         let plaintext = self.construct_mls_plaintext(
-            Sender::Member(self.private_tree.key_package_ref.clone()),
+            Sender::Member(self.private_tree.leaf_node_ref.clone()),
             Content::Proposal(proposal),
             signer,
             encryption_mode,
@@ -984,18 +1034,18 @@ impl Group {
     pub fn commit_proposals<P: PskStore, S: Signer>(
         &mut self,
         proposals: Vec<Proposal>,
-        key_package_generator: &KeyPackageGenerator<S>,
         update_path: bool,
         encryption_mode: ControlEncryptionMode,
         ratchet_tree_extension: bool,
-        secret_store: &P,
+        psk_store: &P,
+        signer: &S,
     ) -> Result<(CommitGeneration, Option<MLSMessage>), GroupError> {
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
         // by value
         let (commit_proposals, proposal_effects) = self
             .proposals
-            .prepare_commit(&self.private_tree.key_package_ref, proposals)?;
+            .prepare_commit(&self.private_tree.leaf_node_ref, proposals)?;
 
         // Generate a provisional GroupContext object by applying the proposals referenced in the
         // initial Commit object, as described in Section 11.1. Update proposals are applied first,
@@ -1030,15 +1080,17 @@ impl Group {
             // parent_hash extension.
             let context_bytes = self.context.tls_serialize_detached()?;
 
-            let new_key_package = key_package_generator
-                .generate(self.context.extensions.get_extension()?.as_ref())?;
-
             let update_path = provisional_state.public_tree.encap(
                 &self.private_tree,
-                new_key_package,
+                &self.context.group_id,
                 &context_bytes,
-                &provisional_state.added_leaves,
-                |package| key_package_generator.sign(package),
+                &provisional_state
+                    .added_leaves
+                    .iter()
+                    // TODO: Modify encap so that clone isn't needed here
+                    .map(|(_, leaf_node_ref)| leaf_node_ref.clone())
+                    .collect::<Vec<LeafNodeRef>>(),
+                signer,
             )?;
 
             Some(update_path)
@@ -1054,7 +1106,7 @@ impl Group {
 
         let psk_secret = crate::psk::psk_secret(
             self.cipher_suite,
-            secret_store,
+            psk_store,
             Some(&self.epoch_repo),
             &provisional_state.psks,
         )?;
@@ -1066,9 +1118,9 @@ impl Group {
 
         //Construct an MLSPlaintext object containing the Commit object
         let mut plaintext = self.construct_mls_plaintext(
-            Sender::Member(self.private_tree.key_package_ref.clone()),
+            Sender::Member(self.private_tree.leaf_node_ref.clone()),
             Content::Commit(commit),
-            key_package_generator.signing_key,
+            signer,
             encryption_mode,
         )?;
 
@@ -1118,15 +1170,14 @@ impl Group {
             plaintext.membership_tag = Some(membership_tag);
         }
 
-        let (protocol_version, cipher_suite, key_pkg_refs) = match provisional_state.reinit {
+        let (protocol_version, cipher_suite, added_members) = match provisional_state.reinit {
             Some(reinit) => {
-                // Welcome messages will be built for each existing member
-                let pkg_refs = self
-                    .current_epoch_tree()?
-                    .get_key_package_refs()
-                    .cloned()
-                    .collect::<Vec<_>>();
-                (reinit.version, reinit.cipher_suite, pkg_refs)
+                // TODO: This logic needs to be verified when we complete work on reinit
+                (
+                    reinit.version,
+                    reinit.cipher_suite,
+                    provisional_state.added_leaves,
+                )
             }
             None => {
                 // Welcome messages will be built for each added member
@@ -1151,17 +1202,17 @@ impl Group {
             confirmation_tag, // The confirmation_tag from the MLSPlaintext object
             signer: update_path
                 .as_ref()
-                .map(|up| up.secrets.private_key.key_package_ref.clone())
-                .unwrap_or_else(|| self.private_tree.key_package_ref.clone()),
+                .map(|up| up.secrets.private_key.leaf_node_ref.clone())
+                .unwrap_or_else(|| self.private_tree.leaf_node_ref.clone()),
             signature: vec![],
         };
 
         // Sign the GroupInfo using the member's private signing key
-        group_info.sign(key_package_generator.signing_key, &())?;
+        group_info.sign(signer, &())?;
 
         let welcome = self
             .make_welcome_message(
-                key_pkg_refs,
+                added_members,
                 &next_epoch.public_tree,
                 &joiner_secret,
                 &psk_secret,
@@ -1185,7 +1236,7 @@ impl Group {
     #[allow(clippy::too_many_arguments)]
     fn make_welcome_message(
         &self,
-        members: Vec<KeyPackageRef>,
+        new_members: Vec<(KeyPackage, LeafNodeRef)>,
         tree: &TreeKemPublic,
         joiner_secret: &[u8],
         psk_secret: &[u8],
@@ -1201,9 +1252,18 @@ impl Group {
         let group_info_data = group_info.tls_serialize_detached()?;
         let encrypted_group_info = welcome_secret.encrypt(&group_info_data)?;
 
-        let secrets = members
+        let secrets = new_members
             .into_iter()
-            .map(|i| self.encrypt_group_secrets(tree, i, joiner_secret, update_path, psks.clone()))
+            .map(|(key_package, leaf_node_ref)| {
+                self.encrypt_group_secrets(
+                    tree,
+                    &key_package,
+                    &leaf_node_ref,
+                    joiner_secret,
+                    update_path,
+                    psks.clone(),
+                )
+            })
             .collect::<Result<Vec<EncryptedGroupSecrets>, GroupError>>()?;
 
         Ok(match secrets.len() {
@@ -1216,59 +1276,80 @@ impl Group {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn branch<S, P, F>(
         &self,
         sub_group_id: Vec<u8>,
         resumption_psk_epoch: Option<u64>,
+        lifetime: LifetimeExt,
         psk_store: &P,
-        key_package_generator: KeyPackageGenerator<S>,
+        signer: &S,
         mut get_new_key_package: F,
     ) -> Result<(Self, Option<Welcome>), GroupError>
     where
         S: Signer,
         P: PskStore,
-        F: FnMut(&KeyPackage) -> Option<KeyPackage>,
+        F: FnMut(&LeafNode) -> Option<KeyPackage>,
     {
+        let current_leaf_node = self.current_user_leaf_node()?;
+
+        let (leaf_node, leaf_node_secret) = LeafNode::generate(
+            self.cipher_suite,
+            current_leaf_node.credential.clone(),
+            current_leaf_node.capabilities.clone(),
+            current_leaf_node.extensions.clone(),
+            signer,
+            lifetime,
+        )?;
+
         let required_capabilities = self.context.extensions.get_extension()?;
-        let new_self_key_pkg = key_package_generator.generate(required_capabilities.as_ref())?;
 
-        let key_package_validator = KeyPackageValidator {
-            protocol_version: self.protocol_version,
-            cipher_suite: self.cipher_suite,
-            required_capabilities: required_capabilities.as_ref(),
-            options: Default::default(),
-        };
+        let leaf_node_validator =
+            LeafNodeValidator::new(self.cipher_suite, required_capabilities.as_ref());
 
-        let (new_member_refs, new_members) = {
+        let key_package_validator = KeyPackageValidator::new(
+            self.protocol_version,
+            self.cipher_suite,
+            required_capabilities.as_ref(),
+        );
+
+        let new_self_leaf_node =
+            leaf_node_validator.validate(leaf_node, ValidationContext::Add(None))?;
+
+        let (new_member_refs, new_members, new_key_pkgs) = {
             let current_tree = self.current_epoch_tree()?;
-            let self_key_pkg_ref = &self.private_tree.key_package_ref;
+            let self_leaf_node_ref = &self.private_tree.leaf_node_ref;
 
             current_tree
-                .get_key_package_refs()
-                .filter_map(|key_pkg_ref| {
-                    if self_key_pkg_ref == key_pkg_ref {
+                .get_leaf_node_refs()
+                .filter_map(|leaf_node_ref| {
+                    if self_leaf_node_ref == leaf_node_ref {
                         None
                     } else {
                         current_tree
-                            .get_key_package(key_pkg_ref)
+                            .get_leaf_node(leaf_node_ref)
                             .map(&mut get_new_key_package)
                             .transpose()
                     }
                 })
                 .try_fold(
-                    (Vec::new(), Vec::new()),
-                    |(mut refs, mut pkgs), new_key_pkg| {
+                    (Vec::new(), Vec::new(), Vec::new()),
+                    |(mut refs, mut leaves, mut new_key_pkgs), new_key_pkg| {
                         let new_key_pkg = new_key_pkg?;
-                        let new_key_pkg_ref = new_key_pkg.to_reference()?;
-                        let new_key_pkg = key_package_validator.validate(new_key_pkg)?;
-                        refs.push(new_key_pkg_ref);
-                        pkgs.push(new_key_pkg);
-                        Ok::<_, GroupError>((refs, pkgs))
+                        let new_leaf_ref = new_key_pkg.leaf_node.to_reference(self.cipher_suite)?;
+                        let new_leaf = key_package_validator
+                            .validate(new_key_pkg.clone(), Default::default())?;
+                        refs.push(new_leaf_ref);
+                        leaves.push(new_leaf);
+                        new_key_pkgs.push(new_key_pkg);
+                        Ok::<_, GroupError>((refs, leaves, new_key_pkgs))
                     },
                 )?
         };
 
-        let (mut new_pub_tree, new_priv_tree) = TreeKemPublic::derive(new_self_key_pkg)?;
+        let (mut new_pub_tree, new_priv_tree) =
+            TreeKemPublic::derive(self.cipher_suite, new_self_leaf_node, leaf_node_secret)?;
+
         // Add existing members to new tree
         new_pub_tree.add_leaves(new_members)?;
         let new_pub_tree_hash = new_pub_tree.tree_hash()?;
@@ -1323,11 +1404,11 @@ impl Group {
                 &epoch,
                 &new_context.confirmed_transcript_hash,
             )?,
-            signer: new_priv_tree.key_package_ref.clone(),
+            signer: new_priv_tree.leaf_node_ref.clone(),
             signature: Vec::new(),
         };
 
-        group_info.sign(key_package_generator.signing_key, &())?;
+        group_info.sign(signer, &())?;
 
         let new_group = Group {
             protocol_version: self.protocol_version,
@@ -1341,7 +1422,7 @@ impl Group {
         };
 
         let welcome = self.make_welcome_message(
-            new_member_refs,
+            new_key_pkgs.into_iter().zip(new_member_refs).collect(),
             &new_pub_tree,
             &joiner_secret,
             &psk_secret,
@@ -1374,6 +1455,7 @@ impl Group {
             Some(&self.epoch_repo),
             support_version_and_cipher,
         )?;
+
         if subgroup.protocol_version != self.protocol_version {
             Err(GroupError::SubgroupWithDifferentProtocolVersion(
                 subgroup.protocol_version,
@@ -1390,12 +1472,13 @@ impl Group {
     fn encrypt_group_secrets(
         &self,
         provisional_tree: &TreeKemPublic,
-        new_member: KeyPackageRef,
+        key_package: &KeyPackage,
+        leaf_node_ref: &LeafNodeRef,
         joiner_secret: &[u8],
         update_path: Option<&UpdatePathGeneration>,
         psks: Vec<PreSharedKeyID>,
     ) -> Result<EncryptedGroupSecrets, GroupError> {
-        let leaf_index = provisional_tree.package_leaf_index(&new_member)?;
+        let leaf_index = provisional_tree.leaf_node_index(leaf_node_ref)?;
 
         let path_secret = update_path.and_then(|up| up.get_common_path_secret(leaf_index));
 
@@ -1411,7 +1494,6 @@ impl Group {
         };
 
         let group_secrets_bytes = group_secrets.tls_serialize_detached()?;
-        let key_package = provisional_tree.get_key_package(&new_member)?;
 
         let encrypted_group_secrets = self.cipher_suite.hpke().seal_base(
             &key_package.hpke_init_key,
@@ -1421,7 +1503,7 @@ impl Group {
         )?;
 
         Ok(EncryptedGroupSecrets {
-            new_member,
+            new_member: key_package.to_reference()?,
             encrypted_group_secrets: encrypted_group_secrets.into(),
         })
     }
@@ -1431,45 +1513,48 @@ impl Group {
 
         // Check that this proposal has a valid lifetime, signature, and meets the requirements
         // of the current group required capabilities extension.
-        let key_package_validator = KeyPackageValidator {
-            protocol_version: self.protocol_version,
-            cipher_suite: self.cipher_suite,
-            required_capabilities: required_capabilities.as_ref(),
-            options: Default::default(),
-        };
+        let key_package_validator = KeyPackageValidator::new(
+            self.protocol_version,
+            self.cipher_suite,
+            required_capabilities.as_ref(),
+        );
 
-        key_package_validator.validate_properties(&key_package)?;
+        //TODO: This clone can be removed if the api for the validator allows by-reference
+        //validation
+        key_package_validator.validate(key_package.clone(), Default::default())?;
+
         Ok(Proposal::Add(AddProposal { key_package }))
     }
 
-    pub fn update_proposal<S: Signer>(
-        &mut self,
-        key_package_generator: &KeyPackageGenerator<S>,
-    ) -> Result<Proposal, GroupError> {
-        // Update the public key in the key package
-        let key_package_generation =
-            key_package_generator.generate(self.context.extensions.get_extension()?.as_ref())?;
+    pub fn update_proposal<S: Signer>(&mut self, signer: &S) -> Result<Proposal, GroupError> {
+        // Grab a copy of the current node and update it to have new key material
+        // TODO: Support modifying extensions / capabilities
+        let mut existing_leaf_node = self.current_user_leaf_node()?.clone();
+
+        let secret_key = existing_leaf_node.update(
+            self.cipher_suite,
+            &self.context.group_id,
+            None,
+            None,
+            signer,
+        )?;
 
         // Store the secret key in the pending updates storage for later
         self.pending_updates.insert(
-            key_package_generation.key_package.to_reference()?,
-            key_package_generation.secret_key,
+            existing_leaf_node.to_reference(self.cipher_suite)?,
+            secret_key,
         );
 
         Ok(Proposal::Update(UpdateProposal {
-            key_package: key_package_generation.key_package.into(),
+            leaf_node: existing_leaf_node,
         }))
     }
 
-    pub fn remove_proposal(
-        &mut self,
-        key_package_ref: &KeyPackageRef,
-    ) -> Result<Proposal, GroupError> {
-        self.current_epoch_tree()?
-            .package_leaf_index(key_package_ref)?;
+    pub fn remove_proposal(&mut self, leaf_node_ref: &LeafNodeRef) -> Result<Proposal, GroupError> {
+        self.current_epoch_tree()?.leaf_node_index(leaf_node_ref)?;
 
         Ok(Proposal::Remove(RemoveProposal {
-            to_remove: key_package_ref.clone(),
+            to_remove: leaf_node_ref.clone(),
         }))
     }
 
@@ -1621,7 +1706,7 @@ impl Group {
             content: MLSMessageContent {
                 group_id: self.context.group_id.clone(),
                 epoch: self.context.epoch,
-                sender: Sender::Member(self.private_tree.key_package_ref.clone()),
+                sender: Sender::Member(self.private_tree.leaf_node_ref.clone()),
                 authenticated_data: Vec::new(),
                 content: Content::Application(message.to_vec()),
             },
@@ -1656,6 +1741,7 @@ impl Group {
             private_tree: &self.private_tree,
             external_key_id_to_signing_key,
         };
+
         let plaintext = verifier.verify_plaintext(message)?;
         self.verify_incoming_message(plaintext)
     }
@@ -1683,7 +1769,7 @@ impl Group {
         plaintext: VerifiedPlaintext,
     ) -> Result<VerifiedPlaintext, GroupError> {
         match &plaintext.content.sender {
-            Sender::Member(sender) if *sender == self.private_tree.key_package_ref => {
+            Sender::Member(sender) if *sender == self.private_tree.leaf_node_ref => {
                 Err(GroupError::CantProcessMessageFromSelf)
             }
             _ => Ok(()),
@@ -1757,7 +1843,7 @@ impl Group {
                 .commit
                 .path
                 .as_ref()
-                .map(|p| p.leaf_key_package.to_reference())
+                .map(|p| p.leaf_node.to_reference(self.cipher_suite))
                 .transpose()?
                 .ok_or(GroupError::MissingUpdatePathInExternalCommit),
             Sender::Preconfigured(_) => Err(GroupError::PreconfiguredSenderCannotCommit),
@@ -1795,27 +1881,19 @@ impl Group {
                 let required_capabilities =
                     provisional_state.group_context.extensions.get_extension()?;
 
-                let mut options = HashSet::from([KeyPackageValidationOptions::SkipLifetimeCheck]);
+                let leaf_validator =
+                    LeafNodeValidator::new(self.cipher_suite, required_capabilities.as_ref());
 
-                if local_pending.is_some() {
-                    options.insert(KeyPackageValidationOptions::SkipSignatureCheck);
-                };
+                let update_path_validator = UpdatePathValidator::new(leaf_validator);
 
-                let key_package_validator = KeyPackageValidator {
-                    protocol_version: self.protocol_version,
-                    cipher_suite: self.cipher_suite,
-                    required_capabilities: required_capabilities.as_ref(),
-                    options,
-                };
-
-                let update_path_validator = UpdatePathValidator::new(key_package_validator);
-                let validated_update_path = update_path_validator.validate(update_path.clone())?;
+                let validated_update_path =
+                    update_path_validator.validate(update_path.clone(), &self.context.group_id)?;
 
                 let secrets = if let Some(pending) = local_pending {
                     // Receiving from yourself is a special case, we already have the new private keys
                     provisional_state.public_tree.apply_self_update(
                         &validated_update_path,
-                        &self.private_tree.key_package_ref,
+                        &self.private_tree.leaf_node_ref,
                     )?;
 
                     Ok(pending.secrets)
@@ -1824,7 +1902,11 @@ impl Group {
                         provisional_state.private_tree,
                         &sender,
                         &validated_update_path,
-                        &provisional_state.added_leaves,
+                        &provisional_state
+                            .added_leaves
+                            .into_iter()
+                            .map(|(_, leaf_node_ref)| leaf_node_ref)
+                            .collect::<Vec<LeafNodeRef>>(),
                         &self.context.tls_serialize_detached()?,
                     )
                 }?;
@@ -1872,7 +1954,7 @@ impl Group {
             let current_epoch = self.epoch_repo.current()?;
 
             match provisional_state.external_init {
-                Some(ExternalInit { kem_output }) => {
+                Some((_, ExternalInit { kem_output })) => {
                     let init_secret = InitSecret::decode_for_external(
                         self.cipher_suite,
                         &kem_output,
@@ -1964,7 +2046,7 @@ impl Group {
                 current_epoch,
                 &self.context.confirmed_transcript_hash,
             )?,
-            signer: self.private_tree.key_package_ref.clone(),
+            signer: self.private_tree.leaf_node_ref.clone(),
             signature: Vec::new(),
         };
 
@@ -2020,20 +2102,16 @@ fn find_tree(
     }
 }
 
-fn validate_tree(
-    public_tree: &TreeKemPublic,
-    group_info: &GroupInfo,
-    protocol_version: ProtocolVersion,
-) -> Result<(), GroupError> {
-    let sender_key_package = public_tree.get_key_package(&group_info.signer)?;
+fn validate_tree(public_tree: &TreeKemPublic, group_info: &GroupInfo) -> Result<(), GroupError> {
+    let sender_key_package = public_tree.get_leaf_node(&group_info.signer)?;
     group_info.verify(&sender_key_package.credential.public_key()?, &())?;
 
     let required_capabilities = group_info.group_context_extensions.get_extension()?;
 
     // Verify the integrity of the ratchet tree
     let tree_validator = TreeValidator::new(
-        protocol_version,
         group_info.cipher_suite,
+        &group_info.group_id,
         &group_info.tree_hash,
         required_capabilities.as_ref(),
     );
@@ -2054,10 +2132,11 @@ pub(crate) mod test_utils {
         key_package::KeyPackageGenerator,
     };
 
+    pub const TEST_GROUP: &[u8] = b"group";
+
     pub(crate) struct TestGroup {
         pub group: Group,
         pub credential: Credential,
-        pub extensions: ExtensionList,
         pub signing_key: SecretKey,
     }
 
@@ -2077,25 +2156,16 @@ pub(crate) mod test_utils {
             .into_credential()
     }
 
-    pub(crate) fn extensions() -> ExtensionList {
-        let lifetime_ext = LifetimeExt::years(1).unwrap();
-
-        let mut capabilities_ext = CapabilitiesExt::default();
-        capabilities_ext.extensions.push(42);
-
-        let mut extensions = ExtensionList::new();
-        extensions.set_extension(lifetime_ext).unwrap();
-        extensions.set_extension(capabilities_ext).unwrap();
-
-        extensions
-    }
-
     pub(crate) fn group_extensions() -> ExtensionList {
         let required_capabilities = RequiredCapabilitiesExt::default();
 
         let mut extensions = ExtensionList::new();
         extensions.set_extension(required_capabilities).unwrap();
         extensions
+    }
+
+    pub(crate) fn lifetime() -> LifetimeExt {
+        LifetimeExt::years(1).unwrap()
     }
 
     pub(crate) fn test_member(
@@ -2109,32 +2179,46 @@ pub(crate) mod test_utils {
             protocol_version,
             cipher_suite,
             credential: &credential(&signing_key, identifier),
-            extensions: &extensions(),
             signing_key: &signing_key,
         };
 
-        let key_package = key_package_generator.generate(None).unwrap();
+        let key_package = key_package_generator
+            .generate(
+                lifetime(),
+                CapabilitiesExt::default(),
+                ExtensionList::default(),
+                ExtensionList::default(),
+            )
+            .unwrap();
+
         (key_package, signing_key)
     }
 
-    pub(crate) fn test_group(
+    pub(crate) fn test_group_custom(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
+        capabilities: CapabilitiesExt,
+        leaf_extensions: ExtensionList,
     ) -> TestGroup {
         let signing_key = cipher_suite.generate_secret_key().unwrap();
         let credential = credential(&signing_key, b"alice");
 
-        let key_package_generator = KeyPackageGenerator {
-            protocol_version,
+        let (leaf_node, leaf_secret_key) = LeafNode::generate(
             cipher_suite,
-            credential: &credential,
-            extensions: &extensions(),
-            signing_key: &signing_key,
-        };
+            credential.clone(),
+            capabilities,
+            leaf_extensions,
+            &signing_key,
+            lifetime(),
+        )
+        .unwrap();
 
         let group = Group::new(
-            b"test group".to_vec(),
-            key_package_generator,
+            TEST_GROUP.to_vec(),
+            cipher_suite,
+            protocol_version,
+            leaf_node,
+            leaf_secret_key,
             group_extensions(),
         )
         .unwrap();
@@ -2143,8 +2227,19 @@ pub(crate) mod test_utils {
             group,
             credential,
             signing_key,
-            extensions: extensions(),
         }
+    }
+
+    pub(crate) fn test_group(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+    ) -> TestGroup {
+        test_group_custom(
+            protocol_version,
+            cipher_suite,
+            CapabilitiesExt::default(),
+            ExtensionList::default(),
+        )
     }
 }
 
@@ -2152,15 +2247,17 @@ pub(crate) mod test_utils {
 mod tests {
     use crate::{
         client_config::InMemoryPskStore,
-        extension::{LifetimeExt, MlsExtension, RequiredCapabilitiesExt},
+        extension::{CapabilitiesExt, LifetimeExt, MlsExtension, RequiredCapabilitiesExt},
+        group::test_utils::lifetime,
     };
 
     use super::{
-        test_utils::{extensions, group_extensions, test_group, test_member, TestGroup},
+        test_utils::{group_extensions, test_group, test_group_custom, test_member, TestGroup},
         *,
     };
     use assert_matches::assert_matches;
 
+    use crate::group::test_utils::TEST_GROUP;
     use tls_codec::Size;
 
     #[cfg(target_arch = "wasm32")]
@@ -2176,7 +2273,7 @@ mod tests {
 
             assert_eq!(group.cipher_suite, cipher_suite);
             assert_eq!(group.context.epoch, 0);
-            assert_eq!(group.context.group_id, b"test group".to_vec());
+            assert_eq!(group.context.group_id, TEST_GROUP.to_vec());
             assert_eq!(group.context.extensions, group_extensions());
             assert_eq!(
                 group.context.confirmed_transcript_hash,
@@ -2193,7 +2290,7 @@ mod tests {
                     .current()
                     .unwrap()
                     .public_tree
-                    .get_key_packages()[0]
+                    .get_leaf_nodes()[0]
                     .credential
                     .public_key()
                     .unwrap(),
@@ -2214,7 +2311,7 @@ mod tests {
 
         let proposal = test_group
             .group
-            .add_proposal(bob_key_package.key_package.into())
+            .add_proposal(bob_key_package.key_package)
             .unwrap();
 
         test_group
@@ -2235,14 +2332,6 @@ mod tests {
 
         assert_matches!(res, Err(GroupError::CommitRequired));
 
-        let generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite,
-            credential: &test_group.credential,
-            extensions: &test_group.extensions,
-            signing_key: &test_group.signing_key,
-        };
-
         let secret_store = InMemoryPskStore::default();
 
         // We should be able to send application messages after a commit
@@ -2250,11 +2339,11 @@ mod tests {
             .group
             .commit_proposals(
                 vec![],
-                &generator,
                 true,
                 ControlEncryptionMode::Plaintext,
                 false,
                 &secret_store,
+                &test_group.signing_key,
             )
             .unwrap();
 
@@ -2276,26 +2365,21 @@ mod tests {
 
         let mut test_group = test_group(protocol_version, cipher_suite);
 
-        let generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite,
-            credential: &test_group.credential,
-            extensions: &test_group.extensions,
-            signing_key: &test_group.signing_key,
-        };
-
         // Create an update proposal
-        let proposal = test_group.group.update_proposal(&generator).unwrap();
+        let proposal = test_group
+            .group
+            .update_proposal(&test_group.signing_key)
+            .unwrap();
 
         // There should be an error because path_update is set to `true` while there is a pending
         // update proposal for the commiter
         let res = test_group.group.commit_proposals(
             vec![proposal],
-            &generator,
             true,
             ControlEncryptionMode::Plaintext,
             false,
             &InMemoryPskStore::default(),
+            &test_group.signing_key,
         );
 
         assert_matches!(res, Err(GroupError::InvalidCommitSelfUpdate));
@@ -2308,16 +2392,11 @@ mod tests {
 
         let mut test_group = test_group(protocol_version, cipher_suite);
 
-        let generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite,
-            credential: &test_group.credential,
-            extensions: &test_group.extensions,
-            signing_key: &test_group.signing_key,
-        };
-
         // Create an update proposal
-        let proposal = test_group.group.update_proposal(&generator).unwrap();
+        let proposal = test_group
+            .group
+            .update_proposal(&test_group.signing_key)
+            .unwrap();
 
         test_group
             .group
@@ -2332,11 +2411,11 @@ mod tests {
         // update proposal for the commiter
         let res = test_group.group.commit_proposals(
             vec![],
-            &generator,
             true,
             ControlEncryptionMode::Plaintext,
             false,
             &InMemoryPskStore::default(),
+            &test_group.signing_key,
         );
 
         assert_matches!(res, Err(GroupError::InvalidCommitSelfUpdate));
@@ -2351,7 +2430,7 @@ mod tests {
         let (mut bob_keys, _) = test_member(protocol_version, cipher_suite, b"bob");
         bob_keys.key_package.signature = SecureRng::gen(32).unwrap();
 
-        let proposal = test_group.group.add_proposal(bob_keys.key_package.into());
+        let proposal = test_group.group.add_proposal(bob_keys.key_package);
         assert_matches!(proposal, Err(GroupError::KeyPackageValidationError(_)));
     }
 
@@ -2363,30 +2442,19 @@ mod tests {
         let mut test_group = test_group(protocol_version, cipher_suite);
         let (bob_keys, _) = test_member(protocol_version, cipher_suite, b"bob");
 
-        let mut proposal = test_group
-            .group
-            .add_proposal(bob_keys.key_package.into())
-            .unwrap();
+        let mut proposal = test_group.group.add_proposal(bob_keys.key_package).unwrap();
 
         if let Proposal::Add(ref mut kp) = proposal {
             kp.key_package.signature = SecureRng::gen(32).unwrap()
         }
 
-        let generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite,
-            credential: &test_group.credential,
-            extensions: &test_group.extensions,
-            signing_key: &test_group.signing_key,
-        };
-
         let res = test_group.group.commit_proposals(
             vec![proposal],
-            &generator,
             false,
             ControlEncryptionMode::Plaintext,
             false,
             &InMemoryPskStore::default(),
+            &test_group.signing_key,
         );
 
         assert_matches!(res, Err(GroupError::KeyPackageValidationError(_)));
@@ -2400,18 +2468,13 @@ mod tests {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(protocol_version, cipher_suite, true);
 
-        let generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite,
-            credential: &alice_group.credential,
-            extensions: &alice_group.extensions,
-            signing_key: &alice_group.signing_key,
-        };
-
-        let mut proposal = alice_group.group.update_proposal(&generator).unwrap();
+        let mut proposal = alice_group
+            .group
+            .update_proposal(&alice_group.signing_key)
+            .unwrap();
 
         if let Proposal::Update(ref mut update) = proposal {
-            update.key_package.extensions = ExtensionList::new()
+            update.leaf_node.signature = SecureRng::gen(32).unwrap();
         } else {
             panic!("Invalid update proposal")
         }
@@ -2432,24 +2495,23 @@ mod tests {
             .insert(cipher_suite, &proposal, false)
             .unwrap();
 
-        let bob_generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite,
-            credential: &bob_group.credential,
-            extensions: &bob_group.extensions,
-            signing_key: &bob_group.signing_key,
-        };
-
         let res = bob_group.group.commit_proposals(
             vec![],
-            &bob_generator,
             true,
             ControlEncryptionMode::Plaintext,
             false,
             &InMemoryPskStore::default(),
+            &bob_group.signing_key,
         );
 
-        assert_matches!(res, Err(GroupError::KeyPackageValidationError(_)));
+        assert_matches!(
+            res,
+            Err(GroupError::LeafNodeValidationError(
+                LeafNodeValidationError::SignatureError(SignatureError::SignatureValidationFailed(
+                    _
+                ))
+            ))
+        );
     }
 
     fn test_two_member_group(
@@ -2458,14 +2520,6 @@ mod tests {
         tree_ext: bool,
     ) -> (TestGroup, TestGroup) {
         let mut test_group = test_group(protocol_version, cipher_suite);
-
-        let generator = KeyPackageGenerator {
-            protocol_version: test_group.group.protocol_version,
-            cipher_suite: test_group.group.cipher_suite,
-            credential: &test_group.credential,
-            extensions: &test_group.extensions,
-            signing_key: &test_group.signing_key,
-        };
 
         let (bob_key_package, bob_key) = test_member(
             test_group.group.protocol_version,
@@ -2476,7 +2530,7 @@ mod tests {
         // Add bob to the group
         let add_bob_proposal = test_group
             .group
-            .add_proposal(bob_key_package.key_package.clone().into())
+            .add_proposal(bob_key_package.key_package.clone())
             .unwrap();
 
         let secret_store = InMemoryPskStore::default();
@@ -2485,11 +2539,11 @@ mod tests {
             .group
             .commit_proposals(
                 vec![add_bob_proposal],
-                &generator,
                 false,
                 ControlEncryptionMode::Plaintext,
                 tree_ext,
                 &secret_store,
+                &test_group.signing_key,
             )
             .unwrap();
 
@@ -2524,9 +2578,8 @@ mod tests {
         assert_eq!(test_group.group, bob_group);
 
         let bob_test_group = TestGroup {
-            extensions: extensions(),
             group: bob_group,
-            credential: bob_key_package.key_package.credential.clone(),
+            credential: bob_key_package.key_package.leaf_node.credential,
             signing_key: bob_key,
         };
 
@@ -2550,18 +2603,10 @@ mod tests {
         let mut test_group = test_group(protocol_version, cipher_suite);
         let (bob_key_package, _) = test_member(protocol_version, cipher_suite, b"bob");
 
-        let generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite,
-            credential: &test_group.credential,
-            extensions: &test_group.extensions,
-            signing_key: &test_group.signing_key,
-        };
-
         // Add bob to the group
         let add_bob_proposal = test_group
             .group
-            .add_proposal(bob_key_package.key_package.clone().into())
+            .add_proposal(bob_key_package.key_package.clone())
             .unwrap();
 
         let secret_store = InMemoryPskStore::default();
@@ -2570,11 +2615,11 @@ mod tests {
             .group
             .commit_proposals(
                 vec![add_bob_proposal],
-                &generator,
                 false,
                 ControlEncryptionMode::Plaintext,
                 false,
                 &secret_store,
+                &test_group.signing_key,
             )
             .unwrap();
 
@@ -2620,15 +2665,16 @@ mod tests {
     ) -> (TestGroup, Result<CommitGeneration, GroupError>) {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
-        let mut test_group = test_group(protocol_version, cipher_suite);
 
-        let generator = KeyPackageGenerator {
+        let mut capabilities = CapabilitiesExt::default();
+        capabilities.extensions.push(42);
+
+        let mut test_group = test_group_custom(
             protocol_version,
             cipher_suite,
-            credential: &test_group.credential,
-            extensions: &test_group.extensions,
-            signing_key: &test_group.signing_key,
-        };
+            capabilities,
+            ExtensionList::default(),
+        );
 
         let proposals = vec![test_group.group.group_context_extensions_proposal(ext_list)];
 
@@ -2636,11 +2682,11 @@ mod tests {
             .group
             .commit_proposals(
                 proposals,
-                &generator,
                 true,
                 ControlEncryptionMode::Plaintext,
                 false,
                 &InMemoryPskStore::default(),
+                &test_group.signing_key,
             )
             .map(|(commit, _)| commit);
 
@@ -2744,20 +2790,24 @@ mod tests {
         info.other_extensions = ExtensionList::new();
         info.sign(&group.signing_key, &()).unwrap();
 
-        let key_package_generator = KeyPackageGenerator {
-            protocol_version,
+        let (leaf_node, leaf_secret) = LeafNode::generate(
             cipher_suite,
-            credential: &group.credential,
-            extensions: &extensions(),
-            signing_key: &group.signing_key,
-        };
+            group.credential,
+            CapabilitiesExt::default(),
+            ExtensionList::default(),
+            &group.signing_key,
+            lifetime(),
+        )
+        .unwrap();
 
         let res = Group::new_external(
             protocol_version,
             info,
             None,
-            key_package_generator,
+            leaf_node,
+            leaf_secret,
             |_, _| true,
+            &group.signing_key,
         );
 
         assert_matches!(res, Err(GroupError::MissingExternalPubExtension));

@@ -1,4 +1,7 @@
-use crate::signer::{SignatureError, Signer};
+use crate::{
+    signer::{SignatureError, Signer},
+    tree_kem::leaf_node::LeafNodeError,
+};
 
 use super::*;
 use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError};
@@ -12,11 +15,11 @@ pub enum KeyPackageGenerationError {
     #[error(transparent)]
     EcKeyError(#[from] EcKeyError),
     #[error(transparent)]
-    KeyPackageValidationError(#[from] KeyPackageValidationError),
-    #[error(transparent)]
     CredentialError(#[from] CredentialError),
     #[error(transparent)]
     KeyPackageError(#[from] KeyPackageError),
+    #[error(transparent)]
+    LeafNodeError(#[from] LeafNodeError),
     #[error("the provided signing key does not correspond to the provided credential")]
     CredentialSigningKeyMismatch,
 }
@@ -26,14 +29,14 @@ pub struct KeyPackageGenerator<'a, S: Signer> {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     pub credential: &'a Credential,
-    pub extensions: &'a ExtensionList,
     pub signing_key: &'a S,
 }
 
 #[derive(Clone, Debug)]
 pub struct KeyPackageGeneration {
-    pub key_package: ValidatedKeyPackage,
-    pub secret_key: HpkeSecretKey,
+    pub key_package: KeyPackage,
+    pub init_secret_key: HpkeSecretKey,
+    pub leaf_node_secret_key: HpkeSecretKey,
 }
 
 impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
@@ -43,7 +46,10 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
 
     pub fn generate(
         &self,
-        required_capabilities: Option<&RequiredCapabilitiesExt>,
+        lifetime: LifetimeExt,
+        capabilities: CapabilitiesExt,
+        key_package_extensions: ExtensionList,
+        leaf_node_extensions: ExtensionList,
     ) -> Result<KeyPackageGeneration, KeyPackageGenerationError> {
         if self.credential.public_key()?
             != self
@@ -56,29 +62,30 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
 
         let (public, secret) = generate_keypair(self.cipher_suite.kem_type().curve())?;
 
-        let package = KeyPackage {
+        let (leaf_node, leaf_node_secret) = LeafNode::generate(
+            self.cipher_suite,
+            self.credential.clone(),
+            capabilities,
+            leaf_node_extensions,
+            self.signing_key,
+            lifetime,
+        )?;
+
+        let mut package = KeyPackage {
             version: self.protocol_version,
             cipher_suite: self.cipher_suite,
             hpke_init_key: public.try_into()?,
-            credential: self.credential.clone(),
-            extensions: self.extensions.clone(),
+            leaf_node,
+            extensions: key_package_extensions,
             signature: vec![],
         };
-
-        let validator = KeyPackageValidator {
-            protocol_version: self.protocol_version,
-            cipher_suite: self.cipher_suite,
-            required_capabilities,
-            options: [KeyPackageValidationOptions::SkipSignatureCheck].into(),
-        };
-
-        let mut package = validator.validate(package)?;
 
         self.sign(&mut package)?;
 
         Ok(KeyPackageGeneration {
             key_package: package,
-            secret_key: secret.try_into()?,
+            init_secret_key: secret.try_into()?,
+            leaf_node_secret_key: leaf_node_secret,
         })
     }
 }
@@ -87,14 +94,14 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
 mod tests {
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::{Curve, PublicKey, SecretKey};
+    use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
     use crate::{
         cipher_suite::CipherSuite,
         credential::{BasicCredential, Credential},
-        extension::{
-            CapabilitiesExt, ExtensionList, LifetimeExt, MlsExtension, RequiredCapabilitiesExt,
-        },
+        extension::{CapabilitiesExt, ExtensionList, LifetimeExt, MlsExtension},
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
+        tree_kem::leaf_node::LeafNodeSource,
         ProtocolVersion,
     };
 
@@ -103,23 +110,27 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    fn test_extensions() -> ExtensionList {
-        let mut extensions = ExtensionList::new();
-        extensions
-            .set_extension(LifetimeExt::days(1).unwrap())
-            .unwrap();
+    #[derive(Debug, PartialEq, TlsSize, TlsSerialize, TlsDeserialize)]
+    struct TestExt(u32);
 
-        extensions
-            .set_extension(CapabilitiesExt::default())
-            .unwrap();
-
-        extensions
+    impl MlsExtension for TestExt {
+        const IDENTIFIER: crate::extension::ExtensionType = 42;
     }
 
     fn test_credential(signing_key: &SecretKey) -> Credential {
         Credential::Basic(
             BasicCredential::new(b"test".to_vec(), signing_key.to_public().unwrap()).unwrap(),
         )
+    }
+
+    fn test_ext(val: u32) -> ExtensionList {
+        let mut ext_list = ExtensionList::new();
+        ext_list.set_extension(TestExt(val)).unwrap();
+        ext_list
+    }
+
+    fn test_lifetime() -> LifetimeExt {
+        LifetimeExt::years(1).unwrap()
     }
 
     #[test]
@@ -130,117 +141,89 @@ mod tests {
             let signing_key =
                 SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
 
-            let extensions = test_extensions();
             let credential = test_credential(&signing_key);
+            let key_package_ext = test_ext(32);
+            let leaf_node_ext = test_ext(42);
+            let lifetime = test_lifetime();
 
             let test_generator = KeyPackageGenerator {
                 protocol_version,
                 cipher_suite,
                 credential: &credential,
-                extensions: &extensions,
                 signing_key: &signing_key,
             };
 
-            let generated = test_generator.generate(None).unwrap();
+            let mut capabilities = CapabilitiesExt::default();
+            capabilities.extensions.push(42);
+            capabilities.extensions.push(32);
+
+            let generated = test_generator
+                .generate(
+                    lifetime.clone(),
+                    capabilities.clone(),
+                    key_package_ext.clone(),
+                    leaf_node_ext.clone(),
+                )
+                .unwrap();
+
+            assert_matches!(generated.key_package.leaf_node.leaf_node_source,
+                            LeafNodeSource::Add(ref lt) if lt == &lifetime);
+
+            assert_eq!(generated.key_package.leaf_node.capabilities, capabilities);
+            assert_eq!(generated.key_package.leaf_node.extensions, leaf_node_ext);
+            assert_eq!(generated.key_package.extensions, key_package_ext);
 
             assert_eq!(
-                generated.key_package.credential.public_key().unwrap(),
+                generated
+                    .key_package
+                    .leaf_node
+                    .credential
+                    .public_key()
+                    .unwrap(),
                 credential.public_key().unwrap()
             );
-            assert_eq!(generated.key_package.extensions, extensions);
+
+            assert_ne!(
+                generated.key_package.hpke_init_key,
+                generated.key_package.leaf_node.public_key
+            );
+
+            assert_eq!(generated.key_package.extensions, key_package_ext);
             assert_eq!(generated.key_package.cipher_suite, cipher_suite);
             assert_eq!(generated.key_package.version, protocol_version);
 
             let curve = test_generator.cipher_suite.kem_type().curve();
 
-            let public = PublicKey::from_uncompressed_bytes(
+            let init_key_public = PublicKey::from_uncompressed_bytes(
                 generated.key_package.hpke_init_key.as_ref(),
                 curve,
             )
             .unwrap();
 
-            let secret = SecretKey::from_bytes(generated.secret_key.as_ref(), curve).unwrap();
+            let init_key_secret =
+                SecretKey::from_bytes(generated.init_secret_key.as_ref(), curve).unwrap();
 
-            assert_eq!(secret.curve(), curve);
-            assert_eq!(public, secret.to_public().unwrap());
+            assert_eq!(init_key_secret.curve(), curve);
+            assert_eq!(init_key_public, init_key_secret.to_public().unwrap());
 
-            let validator = KeyPackageValidator {
-                protocol_version,
-                cipher_suite,
-                required_capabilities: None,
-                options: Default::default(),
-            };
+            let leaf_public = PublicKey::from_uncompressed_bytes(
+                generated.key_package.leaf_node.public_key.as_ref(),
+                curve,
+            )
+            .unwrap();
 
-            validator.validate(generated.key_package.into()).unwrap();
+            let leaf_secret =
+                SecretKey::from_bytes(generated.leaf_node_secret_key.as_ref(), curve).unwrap();
+
+            assert_eq!(leaf_secret.curve(), curve);
+            assert_eq!(leaf_public, leaf_secret.to_public().unwrap());
+
+            let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
+
+            validator
+                .validate(generated.key_package, Default::default())
+                .unwrap();
         }
-    }
-
-    fn test_key_generation_missing_ext(ext: u16) {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
-
-        let signing_key =
-            SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
-
-        let mut extensions = test_extensions();
-        extensions.remove(ext);
-
-        let credential = test_credential(&signing_key);
-
-        let test_generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite,
-            credential: &credential,
-            extensions: &extensions,
-            signing_key: &signing_key,
-        };
-
-        let generated = test_generator.generate(None);
-        assert_matches!(
-            generated,
-            Err(KeyPackageGenerationError::KeyPackageValidationError(_))
-        );
-    }
-
-    #[test]
-    fn test_key_generation_missing_capabilities() {
-        test_key_generation_missing_ext(CapabilitiesExt::IDENTIFIER);
-    }
-
-    #[test]
-    fn test_key_generation_missing_lifetime() {
-        test_key_generation_missing_ext(LifetimeExt::IDENTIFIER);
-    }
-
-    #[test]
-    fn test_required_capabilities_requirements() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
-
-        let signing_key =
-            SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
-
-        let extensions = test_extensions();
-        let credential = test_credential(&signing_key);
-
-        let test_generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite,
-            credential: &credential,
-            extensions: &extensions,
-            signing_key: &signing_key,
-        };
-
-        let required_capabilities = RequiredCapabilitiesExt {
-            extensions: vec![255],
-            proposals: vec![],
-        };
-
-        let generated = test_generator.generate(Some(&required_capabilities));
-        assert_matches!(
-            generated,
-            Err(KeyPackageGenerationError::KeyPackageValidationError(_))
-        );
     }
 
     #[test]
@@ -251,7 +234,6 @@ mod tests {
         let signing_key =
             SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
 
-        let extensions = test_extensions();
         let credential = test_credential(
             &SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap(),
         );
@@ -260,11 +242,16 @@ mod tests {
             protocol_version,
             cipher_suite,
             credential: &credential,
-            extensions: &extensions,
             signing_key: &signing_key,
         };
 
-        let generated = test_generator.generate(None);
+        let generated = test_generator.generate(
+            test_lifetime(),
+            CapabilitiesExt::default(),
+            ExtensionList::default(),
+            ExtensionList::default(),
+        );
+
         assert_matches!(
             generated,
             Err(KeyPackageGenerationError::CredentialSigningKeyMismatch)
@@ -279,28 +266,43 @@ mod tests {
             let signing_key =
                 SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
 
-            let extensions = test_extensions();
             let credential = test_credential(&signing_key);
 
             let test_generator = KeyPackageGenerator {
                 protocol_version,
                 cipher_suite,
                 credential: &credential,
-                extensions: &extensions,
                 signing_key: &signing_key,
             };
 
-            let first_key_package = test_generator.generate(None).unwrap();
+            let first_key_package = test_generator
+                .generate(
+                    test_lifetime(),
+                    CapabilitiesExt::default(),
+                    ExtensionList::default(),
+                    ExtensionList::default(),
+                )
+                .unwrap();
 
             (0..100).for_each(|_| {
-                let next_key_package = test_generator.generate(None).unwrap();
+                let next_key_package = test_generator
+                    .generate(
+                        test_lifetime(),
+                        CapabilitiesExt::default(),
+                        ExtensionList::default(),
+                        ExtensionList::default(),
+                    )
+                    .unwrap();
 
                 assert_ne!(
                     first_key_package.key_package.hpke_init_key,
                     next_key_package.key_package.hpke_init_key
                 );
 
-                assert_ne!(first_key_package.secret_key, next_key_package.secret_key);
+                assert_ne!(
+                    first_key_package.key_package.leaf_node.public_key,
+                    next_key_package.key_package.leaf_node.public_key
+                );
             })
         }
     }

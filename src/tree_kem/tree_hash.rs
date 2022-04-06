@@ -1,14 +1,18 @@
-use crate::key_package::ValidatedKeyPackage;
+use std::ops::Deref;
+
 use crate::tree_kem::math as tree_math;
-use crate::tree_kem::node::{Leaf, Node, NodeIndex, NodeTypeResolver, Parent};
+use crate::tree_kem::node::{Node, NodeIndex, Parent};
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
+use super::leaf_node::LeafNode;
+use super::node::NodeTypeResolver;
+
 #[derive(TlsSerialize, TlsSize)]
 struct LeafNodeHashInput<'a> {
     node_index: u32,
-    key_package: Option<&'a ValidatedKeyPackage>,
+    leaf_node: Option<&'a LeafNode>,
 }
 
 #[derive(TlsDeserialize, TlsSerialize, TlsSize)]
@@ -30,14 +34,14 @@ impl TreeHashable for (NodeIndex, &Option<Node>) {
         match self.1 {
             None => {
                 if self.0 % 2 == 0 {
-                    (self.0, None::<&Leaf>).get_hash(tree)
+                    (self.0, None::<&LeafNode>).get_hash(tree)
                 } else {
                     (self.0, None::<&Parent>).get_hash(tree)
                 }
             }
             Some(_) => {
                 if self.0 % 2 == 0 {
-                    (self.0, Some(self.1.as_leaf()?)).get_hash(tree)
+                    (self.0, Some(self.1.as_leaf()?.deref())).get_hash(tree)
                 } else {
                     (self.0, Some(self.1.as_parent()?)).get_hash(tree)
                 }
@@ -46,11 +50,11 @@ impl TreeHashable for (NodeIndex, &Option<Node>) {
     }
 }
 
-impl TreeHashable for (NodeIndex, Option<&Leaf>) {
+impl TreeHashable for (NodeIndex, Option<&LeafNode>) {
     fn get_hash(&self, tree: &TreeKemPublic) -> Result<Vec<u8>, RatchetTreeError> {
         let input = LeafNodeHashInput {
             node_index: self.0 as u32,
-            key_package: self.1.map(|l| &l.key_package),
+            leaf_node: self.1,
         };
 
         Ok(tree

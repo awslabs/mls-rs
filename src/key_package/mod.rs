@@ -8,6 +8,7 @@ use crate::group::proposal::ProposalType;
 use crate::hash_reference::HashReference;
 use crate::signer::Signable;
 use crate::time::MlsTime;
+use crate::tree_kem::leaf_node::LeafNode;
 use crate::ProtocolVersion;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::kdf::KdfError;
@@ -37,7 +38,7 @@ pub struct KeyPackage {
     pub cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub hpke_init_key: HpkePublicKey,
-    pub credential: Credential,
+    pub leaf_node: LeafNode,
     pub extensions: ExtensionList,
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub signature: Vec<u8>,
@@ -80,7 +81,7 @@ pub struct KeyPackageData<'a> {
     pub cipher_suite: &'a CipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub hpke_init_key: &'a HpkePublicKey,
-    pub credential: &'a Credential,
+    pub leaf_node: &'a LeafNode,
     #[tls_codec(with = "crate::tls::DefRef")]
     pub extensions: &'a ExtensionList,
 }
@@ -116,7 +117,7 @@ impl<'a> Signable<'a> for KeyPackage {
             version: &self.version,
             cipher_suite: &self.cipher_suite,
             hpke_init_key: &self.hpke_init_key,
-            credential: &self.credential,
+            leaf_node: &self.leaf_node,
             extensions: &self.extensions,
         }
         .tls_serialize_detached()
@@ -129,8 +130,10 @@ impl<'a> Signable<'a> for KeyPackage {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use ferriscrypt::asym::ec_key::SecretKey;
+
     use super::*;
-    use crate::client::test_utils::test_client_with_key_pkg;
+    use crate::credential::test_utils::get_test_basic_credential;
 
     pub(crate) fn test_key_package(
         protocol_version: ProtocolVersion,
@@ -139,13 +142,43 @@ pub(crate) mod test_utils {
         test_key_package_with_id(protocol_version, cipher_suite, "foo")
     }
 
+    pub(crate) fn test_key_package_custom<F>(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        id: &str,
+        custom: F,
+    ) -> KeyPackage
+    where
+        F: Fn(&mut KeyPackageGenerator<SecretKey>) -> KeyPackageGeneration,
+    {
+        let test_credential =
+            get_test_basic_credential(id.as_bytes().to_vec(), cipher_suite.signature_scheme());
+
+        let mut generator = KeyPackageGenerator {
+            protocol_version,
+            cipher_suite,
+            credential: &test_credential.credential,
+            signing_key: &test_credential.secret,
+        };
+
+        custom(&mut generator).key_package
+    }
+
     pub(crate) fn test_key_package_with_id(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         id: &str,
     ) -> KeyPackage {
-        let (_, key_package_gen) = test_client_with_key_pkg(protocol_version, cipher_suite, id);
-        key_package_gen.key_package.into()
+        test_key_package_custom(protocol_version, cipher_suite, id, |generator| {
+            generator
+                .generate(
+                    LifetimeExt::years(1).unwrap(),
+                    CapabilitiesExt::default(),
+                    ExtensionList::default(),
+                    ExtensionList::default(),
+                )
+                .unwrap()
+        })
     }
 }
 

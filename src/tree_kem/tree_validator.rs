@@ -1,20 +1,16 @@
-use super::{RatchetTreeError, TreeKemPublic};
-use std::collections::HashSet;
-use thiserror::Error;
-
-use crate::{
-    cipher_suite::CipherSuite,
-    extension::RequiredCapabilitiesExt,
-    key_package::{KeyPackageValidationError, KeyPackageValidationOptions, KeyPackageValidator},
-    ProtocolVersion,
+use super::{
+    leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator},
+    RatchetTreeError, TreeKemPublic,
 };
+use crate::{cipher_suite::CipherSuite, extension::RequiredCapabilitiesExt};
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum TreeValidationError {
     #[error(transparent)]
     RatchetTreeError(#[from] RatchetTreeError),
     #[error(transparent)]
-    KeyPackageValidationError(#[from] KeyPackageValidationError),
+    LeafNodeValidationError(#[from] LeafNodeValidationError),
     #[error("tree hash mismatch, expected: {0} found: {1}")]
     TreeHashMismatch(String, String),
     #[error("invalid node parent hash found")]
@@ -23,24 +19,21 @@ pub enum TreeValidationError {
 
 pub struct TreeValidator<'a> {
     expected_tree_hash: &'a [u8],
-    key_package_validator: KeyPackageValidator<'a>,
+    leaf_node_validator: LeafNodeValidator<'a>,
+    group_id: &'a [u8],
 }
 
 impl<'a> TreeValidator<'a> {
     pub fn new(
-        protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
+        group_id: &'a [u8],
         tree_hash: &'a [u8],
         required_capabilities: Option<&'a RequiredCapabilitiesExt>,
     ) -> Self {
         TreeValidator {
             expected_tree_hash: tree_hash,
-            key_package_validator: KeyPackageValidator {
-                protocol_version,
-                cipher_suite,
-                required_capabilities,
-                options: HashSet::from([KeyPackageValidationOptions::SkipLifetimeCheck]),
-            },
+            leaf_node_validator: LeafNodeValidator::new(cipher_suite, required_capabilities),
+            group_id,
         }
     }
 
@@ -65,11 +58,10 @@ impl<'a> TreeValidator<'a> {
     }
 
     fn validate_leaves(&self, tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
-        // For each non-empty leaf node, verify the signature on the KeyPackage.
+        // For each non-empty leaf node, verify the signature on the LeafNode.
         tree.nodes
             .non_empty_leaves()
-            .map(|l| &l.1.key_package)
-            .try_for_each(|kp| self.key_package_validator.check_signature(kp))
+            .try_for_each(|(_, ln)| self.leaf_node_validator.revalidate(ln, self.group_id))
             .map_err(Into::into)
     }
 
@@ -90,101 +82,77 @@ impl<'a> TreeValidator<'a> {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use ferriscrypt::{hpke::kem::HpkePublicKey, rand::SecureRng};
+    use ferriscrypt::{asym::ec_key::SecretKey, hpke::kem::HpkePublicKey, rand::SecureRng};
 
     use super::*;
-    use crate::{
-        extension::ParentHashExt,
-        key_package::KeyPackageGenerator,
-        tree_kem::{
-            node::{LeafIndex, Node, Parent},
-            parent_hash::ParentHash,
-            test_utils::{get_test_key_package_sig_key, get_test_tree_with_signer},
-        },
+    use crate::tree_kem::{
+        leaf_node::test_utils::get_basic_test_node_sig_key,
+        node::{LeafIndex, Node, Parent},
+        parent_hash::ParentHash,
+        test_utils::get_test_tree,
+        TreeKemPrivate,
     };
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     fn test_parent_node(cipher_suite: CipherSuite) -> Parent {
-        let public_key = cipher_suite
-            .generate_secret_key()
+        let public_key = SecretKey::generate(cipher_suite.kem_type().curve())
             .unwrap()
             .to_public()
             .unwrap();
 
         Parent {
-            public_key: HpkePublicKey::try_from(public_key).unwrap(),
+            public_key: HpkePublicKey::from(public_key.to_uncompressed_bytes().unwrap()),
             parent_hash: ParentHash::empty(),
             unmerged_leaves: vec![],
         }
     }
 
-    fn get_valid_tree(
-        cipher_suite: CipherSuite,
-        protocol_version: ProtocolVersion,
-    ) -> TreeKemPublic {
-        let leaf0_signer = cipher_suite.generate_secret_key().unwrap();
+    fn get_valid_tree(cipher_suite: CipherSuite) -> TreeKemPublic {
+        let mut test_tree = get_test_tree(cipher_suite);
 
-        let (mut public_tree, _, _) =
-            get_test_tree_with_signer(protocol_version, cipher_suite, &leaf0_signer);
+        let (leaf1, leaf1_hpke, leaf1_signer) = get_basic_test_node_sig_key(cipher_suite, "leaf1");
 
-        let leaf1_signer = cipher_suite.generate_secret_key().unwrap();
-
-        let key_package = get_test_key_package_sig_key(
-            protocol_version,
-            cipher_suite,
-            b"user".to_vec(),
-            &leaf1_signer,
+        let leaf1_private = TreeKemPrivate::new_self_leaf(
+            LeafIndex(1),
+            leaf1.to_reference(cipher_suite).unwrap(),
+            leaf1_hpke,
         );
 
-        public_tree
-            .add_leaves(vec![key_package.key_package])
+        test_tree
+            .public
+            .add_leaves(vec![leaf1.clone().into()])
             .unwrap();
 
-        public_tree.nodes[1] = Some(Node::Parent(test_parent_node(cipher_suite)));
+        test_tree.public.nodes[1] = Some(Node::Parent(test_parent_node(cipher_suite)));
 
-        for (index, _) in public_tree.clone().nodes.non_empty_leaves() {
-            let parent_hash = public_tree.update_parent_hashes(index, None).unwrap();
+        let private_keys = [&test_tree.private, &leaf1_private];
+        let signers = [&test_tree.creator_signing_key, &leaf1_signer];
 
-            let package = public_tree.nodes.borrow_as_leaf_mut(index).unwrap();
+        test_tree
+            .public
+            .encap(
+                private_keys[0],
+                b"test_group",
+                &[],
+                &[leaf1.to_reference(cipher_suite).unwrap()],
+                signers[0],
+            )
+            .unwrap();
 
-            package
-                .key_package
-                .extensions
-                .set_extension(ParentHashExt::from(parent_hash))
-                .unwrap();
-
-            let signer = if index.0 == 0 {
-                &leaf0_signer
-            } else {
-                &leaf1_signer
-            };
-
-            let signer = KeyPackageGenerator {
-                protocol_version,
-                cipher_suite,
-                credential: &package.key_package.credential.clone(),
-                extensions: &package.key_package.extensions.clone(),
-                signing_key: signer,
-            };
-
-            signer.sign(&mut package.key_package).unwrap();
-        }
-
-        public_tree
+        test_tree.public
     }
 
     #[test]
     fn test_valid_tree() {
-        for (protocol_version, cipher_suite) in
-            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-        {
-            let test_tree = get_valid_tree(cipher_suite, protocol_version);
+        for cipher_suite in CipherSuite::all() {
+            println!("Checking cipher suite: {cipher_suite:?}");
+            let test_tree = get_valid_tree(cipher_suite);
             let expected_tree_hash = test_tree.tree_hash().unwrap();
 
             let validator =
-                TreeValidator::new(protocol_version, cipher_suite, &expected_tree_hash, None);
+                TreeValidator::new(cipher_suite, b"test_group", &expected_tree_hash, None);
 
             validator.validate(&test_tree).unwrap();
         }
@@ -192,14 +160,12 @@ mod tests {
 
     #[test]
     fn test_tree_hash_mismatch() {
-        for (protocol_version, cipher_suite) in
-            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-        {
-            let test_tree = get_valid_tree(cipher_suite, protocol_version);
+        for cipher_suite in CipherSuite::all() {
+            let test_tree = get_valid_tree(cipher_suite);
             let expected_tree_hash = SecureRng::gen(32).unwrap();
 
             let validator =
-                TreeValidator::new(protocol_version, cipher_suite, &expected_tree_hash, None);
+                TreeValidator::new(cipher_suite, b"test_group", &expected_tree_hash, None);
 
             assert_matches!(
                 validator.validate(&test_tree),
@@ -210,10 +176,8 @@ mod tests {
 
     #[test]
     fn test_parent_hash_mismatch() {
-        for (protocol_version, cipher_suite) in
-            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-        {
-            let mut test_tree = get_valid_tree(cipher_suite, protocol_version);
+        for cipher_suite in CipherSuite::all() {
+            let mut test_tree = get_valid_tree(cipher_suite);
 
             let parent_node = test_tree.nodes.borrow_as_parent_mut(1).unwrap();
             parent_node.parent_hash = ParentHash::from(SecureRng::gen(32).unwrap());
@@ -221,7 +185,7 @@ mod tests {
             let expected_tree_hash = test_tree.tree_hash().unwrap();
 
             let validator =
-                TreeValidator::new(protocol_version, cipher_suite, &expected_tree_hash, None);
+                TreeValidator::new(cipher_suite, b"test_troup", &expected_tree_hash, None);
 
             assert_matches!(
                 validator.validate(&test_tree),
@@ -232,26 +196,23 @@ mod tests {
 
     #[test]
     fn test_key_package_validation_failure() {
-        for (protocol_version, cipher_suite) in
-            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-        {
-            let mut test_tree = get_valid_tree(cipher_suite, protocol_version);
+        for cipher_suite in CipherSuite::all() {
+            let mut test_tree = get_valid_tree(cipher_suite);
 
             test_tree
                 .nodes
                 .borrow_as_leaf_mut(LeafIndex(0))
                 .unwrap()
-                .key_package
                 .signature = SecureRng::gen(32).unwrap();
 
             let expected_tree_hash = test_tree.tree_hash().unwrap();
 
             let validator =
-                TreeValidator::new(protocol_version, cipher_suite, &expected_tree_hash, None);
+                TreeValidator::new(cipher_suite, b"test_group", &expected_tree_hash, None);
 
             assert_matches!(
                 validator.validate(&test_tree),
-                Err(TreeValidationError::KeyPackageValidationError(_))
+                Err(TreeValidationError::LeafNodeValidationError(_))
             );
         }
     }

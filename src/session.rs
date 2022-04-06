@@ -1,6 +1,6 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, KeyPackageRepository, Keychain};
-use crate::extension::ExtensionList;
+use crate::extension::{ExtensionList, LifetimeExt};
 
 pub use crate::group::framing::{ContentType, MLSMessage, MLSMessagePayload};
 
@@ -10,13 +10,15 @@ use crate::group::{
     StateUpdate, VerifiedPlaintext, Welcome,
 };
 use crate::key_package::{
-    KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
+    KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
 };
 use crate::psk::ExternalPskId;
 use crate::signer::Signer;
+use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
+use crate::tree_kem::leaf_node_ref::LeafNodeRef;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use crate::ProtocolVersion;
-use ferriscrypt::hpke::kem::HpkePublicKey;
+use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -33,6 +35,8 @@ pub enum SessionError {
     RatchetTreeError(#[from] RatchetTreeError),
     #[error(transparent)]
     KeyPackageGenerationError(#[from] KeyPackageGenerationError),
+    #[error(transparent)]
+    LeafNodeError(#[from] LeafNodeError),
     #[error("commit already pending, please wait")]
     ExistingPendingCommit,
     #[error("pending commit not found")]
@@ -82,13 +86,23 @@ pub struct GroupStats {
 }
 
 impl<C: ClientConfig + Clone> Session<C> {
-    pub(crate) fn create<S: Signer>(
+    pub(crate) fn create(
         group_id: Vec<u8>,
-        key_package_generator: KeyPackageGenerator<S>,
+        cipher_suite: CipherSuite,
+        protocol_version: ProtocolVersion,
+        leaf_node: LeafNode,
+        leaf_node_secret: HpkeSecretKey,
         group_context_extensions: ExtensionList,
         config: C,
     ) -> Result<Self, SessionError> {
-        let group = Group::new(group_id, key_package_generator, group_context_extensions)?;
+        let group = Group::new(
+            group_id,
+            cipher_suite,
+            protocol_version,
+            leaf_node,
+            leaf_node_secret,
+            group_context_extensions,
+        )?;
 
         Ok(Session {
             protocol: group,
@@ -163,8 +177,10 @@ impl<C: ClientConfig + Clone> Session<C> {
         config: C,
         protocol_version: ProtocolVersion,
         group_info: GroupInfo,
-        key_package_generator: KeyPackageGenerator<'_, S>,
         tree_data: Option<&[u8]>,
+        leaf_node: LeafNode,
+        leaf_node_secret: HpkeSecretKey,
+        signer: &S,
     ) -> Result<(Self, Vec<u8>), SessionError> {
         let tree = tree_data
             .map(|t| Self::import_ratchet_tree(group_info.cipher_suite, t))
@@ -174,8 +190,10 @@ impl<C: ClientConfig + Clone> Session<C> {
             protocol_version,
             group_info,
             tree,
-            key_package_generator,
+            leaf_node,
+            leaf_node_secret,
             version_and_cipher_filter(&config),
+            signer,
         )?;
 
         let session = Session {
@@ -215,17 +233,17 @@ impl<C: ClientConfig + Clone> Session<C> {
             .map_or(0, |t| t.occupied_leaf_count())
     }
 
-    pub fn roster(&self) -> Vec<&KeyPackage> {
+    pub fn roster(&self) -> Vec<&LeafNode> {
         self.protocol
             .current_epoch_tree()
-            .map_or(vec![], |t| t.get_key_packages())
+            .map_or(vec![], |t| t.get_leaf_nodes())
     }
 
-    pub fn current_key_package(&self) -> Result<&KeyPackage, GroupError> {
-        self.protocol.current_user_key_package().map_err(Into::into)
+    pub fn current_key_package(&self) -> Result<&LeafNode, GroupError> {
+        self.protocol.current_user_leaf_node().map_err(Into::into)
     }
 
-    pub fn current_user_ref(&self) -> &KeyPackageRef {
+    pub fn current_user_ref(&self) -> &LeafNodeRef {
         self.protocol.current_user_ref()
     }
 
@@ -237,32 +255,26 @@ impl<C: ClientConfig + Clone> Session<C> {
 
     #[inline(always)]
     pub fn update_proposal(&mut self) -> Result<Proposal, SessionError> {
-        let key_package = self.protocol.current_user_key_package()?;
+        let leaf_node = self.protocol.current_user_leaf_node()?;
 
-        let generator = KeyPackageGenerator {
-            protocol_version: self.protocol.protocol_version,
-            cipher_suite: self.protocol.cipher_suite,
-            signing_key: &self
-                .config
-                .keychain()
-                .signer(&key_package.credential)
-                .ok_or(SessionError::SignerNotFound)?,
-            credential: &key_package.credential.clone(),
-            extensions: &key_package.extensions.clone(),
-        };
+        let signing_key = self
+            .config
+            .keychain()
+            .signer(&leaf_node.credential)
+            .ok_or(SessionError::SignerNotFound)?;
 
         self.protocol
-            .update_proposal(&generator)
+            .update_proposal(&signing_key)
             .map_err(Into::into)
     }
 
     #[inline(always)]
     pub fn remove_proposal(
         &mut self,
-        key_package_ref: &KeyPackageRef,
+        leaf_node_ref: &LeafNodeRef,
     ) -> Result<Proposal, SessionError> {
         self.protocol
-            .remove_proposal(key_package_ref)
+            .remove_proposal(leaf_node_ref)
             .map_err(Into::into)
     }
 
@@ -297,11 +309,8 @@ impl<C: ClientConfig + Clone> Session<C> {
     }
 
     #[inline(always)]
-    pub fn propose_remove(
-        &mut self,
-        key_package_ref: &KeyPackageRef,
-    ) -> Result<Vec<u8>, SessionError> {
-        let remove = self.remove_proposal(key_package_ref)?;
+    pub fn propose_remove(&mut self, leaf_node_ref: &LeafNodeRef) -> Result<Vec<u8>, SessionError> {
+        let remove = self.remove_proposal(leaf_node_ref)?;
         self.send_proposal(remove)
     }
 
@@ -334,12 +343,12 @@ impl<C: ClientConfig + Clone> Session<C> {
     }
 
     fn send_proposal(&mut self, proposal: Proposal) -> Result<Vec<u8>, SessionError> {
-        let key_package = self.protocol.current_user_key_package()?;
+        let leaf_node = self.protocol.current_user_leaf_node()?;
 
         let signer = self
             .config
             .keychain()
-            .signer(&key_package.credential)
+            .signer(&leaf_node.credential)
             .ok_or(SessionError::SignerNotFound)?;
 
         let packet = self.protocol.create_proposal(
@@ -357,31 +366,23 @@ impl<C: ClientConfig + Clone> Session<C> {
             return Err(SessionError::ExistingPendingCommit);
         }
 
-        let key_package = self.protocol.current_user_key_package()?;
+        let leaf_node = self.protocol.current_user_leaf_node()?;
 
         let signer = self
             .config
             .keychain()
-            .signer(&key_package.credential)
+            .signer(&leaf_node.credential)
             .ok_or(SessionError::SignerNotFound)?;
-
-        let key_package_generator = KeyPackageGenerator {
-            protocol_version: self.protocol.protocol_version,
-            cipher_suite: self.protocol.cipher_suite,
-            credential: &key_package.credential.clone(),
-            extensions: &key_package.extensions.clone(),
-            signing_key: &signer,
-        };
 
         let preferences = self.config.preferences();
 
         let (commit_data, welcome) = self.protocol.commit_proposals(
             proposals,
-            &key_package_generator,
             true,
             preferences.encryption_mode(),
             preferences.ratchet_tree_extension,
             &self.config.secret_store(),
+            &signer,
         )?;
 
         let serialized_commit = self.serialize_control(commit_data.plaintext.clone())?;
@@ -461,6 +462,7 @@ impl<C: ClientConfig + Clone> Session<C> {
             .pending_commit
             .take()
             .ok_or(SessionError::PendingCommitNotFound)?;
+
         self.protocol
             .process_pending_commit(pending.commit, &self.config.secret_store())
             .map_err(Into::into)
@@ -471,7 +473,7 @@ impl<C: ClientConfig + Clone> Session<C> {
     }
 
     fn signer(&self) -> Result<<<C as ClientConfig>::Keychain as Keychain>::Signer, SessionError> {
-        let key_package = self.protocol.current_user_key_package()?;
+        let key_package = self.protocol.current_user_leaf_node()?;
 
         self.config
             .keychain()
@@ -525,26 +527,20 @@ impl<C: ClientConfig + Clone> Session<C> {
         &self,
         sub_group_id: Vec<u8>,
         resumption_psk_epoch: Option<u64>,
+        lifetime: LifetimeExt,
         get_new_key_package: F,
     ) -> Result<(Self, Option<Welcome>), SessionError>
     where
-        F: FnMut(&KeyPackage) -> Option<KeyPackage>,
+        F: FnMut(&LeafNode) -> Option<KeyPackage>,
     {
-        let key_package = self.protocol.current_user_key_package()?;
-
-        let key_package_generator = KeyPackageGenerator {
-            protocol_version: self.protocol.protocol_version,
-            cipher_suite: self.protocol.cipher_suite,
-            signing_key: &self.signer()?,
-            credential: &key_package.credential.clone(),
-            extensions: &key_package.extensions.clone(),
-        };
+        let signer = self.signer()?;
 
         let (new_group, welcome) = self.protocol.branch(
             sub_group_id,
             resumption_psk_epoch,
+            lifetime,
             &self.config.secret_store(),
-            key_package_generator,
+            &signer,
             get_new_key_package,
         )?;
 

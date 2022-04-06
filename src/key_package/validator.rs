@@ -1,6 +1,14 @@
+use std::collections::HashSet;
+
+use ferriscrypt::asym::ec_key::PublicKey;
+
 use super::*;
-use crate::signer::SignatureError;
-use std::{collections::HashSet, ops::DerefMut};
+use crate::{
+    signer::SignatureError,
+    tree_kem::leaf_node_validator::{
+        LeafNodeValidationError, LeafNodeValidator, ValidatedLeafNode, ValidationContext,
+    },
+};
 
 #[derive(Debug, Error)]
 pub enum KeyPackageValidationError {
@@ -14,6 +22,8 @@ pub enum KeyPackageValidationError {
     KeyPackageError(#[from] KeyPackageError),
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
+    #[error(transparent)]
+    LeafNodeValidationError(#[from] LeafNodeValidationError),
     #[error("key lifetime not found")]
     MissingKeyLifetime,
     #[error("capabilities extension not found")]
@@ -28,91 +38,50 @@ pub enum KeyPackageValidationError {
     InvalidCipherSuite(CipherSuite, CipherSuite),
     #[error("found protocol version {0:?} expected {1:?}")]
     InvalidProtocolVersion(ProtocolVersion, ProtocolVersion),
-}
-
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct ValidatedKeyPackage(KeyPackage);
-
-#[cfg(test)]
-impl From<KeyPackage> for ValidatedKeyPackage {
-    fn from(kp: KeyPackage) -> Self {
-        ValidatedKeyPackage(kp)
-    }
-}
-
-impl From<ValidatedKeyPackage> for KeyPackage {
-    fn from(kp: ValidatedKeyPackage) -> Self {
-        kp.0
-    }
-}
-
-impl Deref for ValidatedKeyPackage {
-    type Target = KeyPackage;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for ValidatedKeyPackage {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
+    #[error("init key is not valid for cipher suite")]
+    InvalidInitKey,
+    #[error("init key can not be equal to leaf node public key")]
+    InitLeafKeyEquality,
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
 pub enum KeyPackageValidationOptions {
-    SkipSignatureCheck,
     SkipLifetimeCheck,
 }
 
+#[derive(Debug)]
 pub struct KeyPackageValidator<'a> {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
-    pub required_capabilities: Option<&'a RequiredCapabilitiesExt>,
-    pub options: HashSet<KeyPackageValidationOptions>,
+    leaf_node_validator: LeafNodeValidator<'a>,
 }
 
 impl<'a> KeyPackageValidator<'a> {
-    pub fn check_signature(&self, package: &KeyPackage) -> Result<(), KeyPackageValidationError> {
-        // Verify that the signature on the KeyPackage is valid using the public key in the KeyPackage's credential
+    pub fn new(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        required_capabilities: Option<&RequiredCapabilitiesExt>,
+    ) -> KeyPackageValidator {
+        KeyPackageValidator {
+            protocol_version,
+            cipher_suite,
+            leaf_node_validator: LeafNodeValidator::new(cipher_suite, required_capabilities),
+        }
+    }
+
+    fn check_signature(&self, package: &KeyPackage) -> Result<(), KeyPackageValidationError> {
+        // Verify that the signature on the KeyPackage is valid using the public key in the contained LeafNode's credential
         package
-            .verify(&package.credential.public_key()?, &())
+            .verify(&package.leaf_node.credential.public_key()?, &())
             .map_err(Into::into)
     }
 
-    pub fn validate_properties(
+    pub fn validate(
         &self,
-        package: &KeyPackage,
-    ) -> Result<(), KeyPackageValidationError> {
-        if !self
-            .options
-            .contains(&KeyPackageValidationOptions::SkipSignatureCheck)
-        {
-            self.check_signature(package)?;
-        }
-
-        if !self
-            .options
-            .contains(&KeyPackageValidationOptions::SkipLifetimeCheck)
-        {
-            let time = MlsTime::now();
-
-            // Ensure that the lifetime extension exists and that the key package is currently valid
-            let lifetime_ext = package
-                .extensions
-                .get_extension::<LifetimeExt>()?
-                .ok_or(KeyPackageValidationError::MissingKeyLifetime)?;
-
-            let valid_lifetime = lifetime_ext.within_lifetime(time)?;
-
-            if !valid_lifetime {
-                return Err(KeyPackageValidationError::InvalidKeyLifetime(
-                    time,
-                    lifetime_ext,
-                ));
-            }
-        }
+        package: KeyPackage,
+        options: HashSet<KeyPackageValidationOptions>,
+    ) -> Result<ValidatedLeafNode, KeyPackageValidationError> {
+        self.check_signature(&package)?;
 
         // Verify that the protocol version matches
         if package.version != self.protocol_version {
@@ -130,49 +99,35 @@ impl<'a> KeyPackageValidator<'a> {
             ));
         }
 
-        // This happens outside the if statement because regardless of additional checks the
-        // capabilities extension is a required extension
-        let capabilities_ext = package
-            .extensions
-            .get_extension::<CapabilitiesExt>()?
-            .ok_or(KeyPackageValidationError::MissingCapabilitiesExtension)?;
+        // Verify that the public init key is valid
+        PublicKey::from_uncompressed_bytes(
+            package.hpke_init_key.as_ref(),
+            self.cipher_suite.kem_type().curve(),
+        )
+        .map_err(|_| KeyPackageValidationError::InvalidInitKey)?;
 
-        // If required capabilities are specified, verify this key package meets the requirements
-        if let Some(required_capabilities) = self.required_capabilities {
-            for extension in &required_capabilities.extensions {
-                if !capabilities_ext.extensions.contains(extension) {
-                    return Err(KeyPackageValidationError::RequiredExtensionNotFound(
-                        *extension,
-                    ));
-                }
-            }
-
-            for proposal in &required_capabilities.proposals {
-                if !capabilities_ext.proposals.contains(proposal) {
-                    return Err(KeyPackageValidationError::RequiredProposalNotFound(
-                        *proposal,
-                    ));
-                }
-            }
+        // Verify that the init key and the leaf node public key are different
+        if package.hpke_init_key == package.leaf_node.public_key {
+            return Err(KeyPackageValidationError::InitLeafKeyEquality);
         }
 
-        Ok(())
-    }
+        let time_validation = if options.contains(&KeyPackageValidationOptions::SkipLifetimeCheck) {
+            None
+        } else {
+            Some(MlsTime::now())
+        };
 
-    pub fn validate(
-        &self,
-        package: KeyPackage,
-    ) -> Result<ValidatedKeyPackage, KeyPackageValidationError> {
-        self.validate_properties(&package)?;
-        Ok(ValidatedKeyPackage(package))
+        self.leaf_node_validator
+            .validate(package.leaf_node, ValidationContext::Add(time_validation))
+            .map_err(Into::into)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::client::test_utils::get_basic_config;
-    use crate::extension::MlsExtension;
+    use crate::credential::test_utils::get_test_basic_credential;
     use crate::key_package::test_utils::test_key_package;
+    use crate::key_package::test_utils::test_key_package_custom;
     use assert_matches::assert_matches;
     use ferriscrypt::rand::SecureRng;
 
@@ -187,16 +142,13 @@ mod tests {
             ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
         {
             let test_package = test_key_package(protocol_version, cipher_suite);
+            let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
 
-            let validator = KeyPackageValidator {
-                protocol_version,
-                cipher_suite,
-                required_capabilities: None,
-                options: Default::default(),
-            };
+            let validated = validator
+                .validate(test_package.clone(), Default::default())
+                .unwrap();
 
-            let validated = validator.validate(test_package.clone()).unwrap();
-            assert_eq!(validated.0, test_package);
+            assert_eq!(validated, test_package.leaf_node.into());
         }
     }
 
@@ -206,7 +158,6 @@ mod tests {
     ) -> KeyPackage {
         let mut test_package = test_key_package(protocol_version, cipher_suite);
         test_package.signature = SecureRng::gen(32).unwrap();
-
         test_package
     }
 
@@ -216,50 +167,110 @@ mod tests {
             ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
         {
             let test_package = invalid_signature_key_package(protocol_version, cipher_suite);
+            let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
 
-            let validator = KeyPackageValidator {
-                protocol_version,
-                cipher_suite,
-                required_capabilities: None,
-                options: Default::default(),
-            };
-
-            let res = validator.validate(test_package);
+            let res = validator.validate(test_package, Default::default());
             assert_matches!(res, Err(KeyPackageValidationError::SignatureError(_)));
         }
     }
 
     #[test]
-    fn test_skip_signature_check() {
-        let protocol_version = ProtocolVersion::Mls10;
+    fn test_invalid_cipher_suite() {
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
-        let test_package = invalid_signature_key_package(protocol_version, cipher_suite);
+        let version = ProtocolVersion::Mls10;
+        let test_package = test_key_package(version, cipher_suite);
 
-        let validator = KeyPackageValidator {
-            protocol_version,
-            cipher_suite,
-            required_capabilities: None,
-            options: [KeyPackageValidationOptions::SkipSignatureCheck].into(),
-        };
+        let validator = KeyPackageValidator::new(version, CipherSuite::Curve25519ChaCha20V1, None);
+        let res = validator.validate(test_package, Default::default());
 
-        let res = validator.validate(test_package.clone()).unwrap();
-        assert_eq!(res.0, test_package);
+        assert_matches!(res, Err(KeyPackageValidationError::InvalidCipherSuite(found, exp))
+                        if exp == CipherSuite::Curve25519ChaCha20V1 && found == cipher_suite);
     }
 
-    fn invalid_expiration_key_package(
+    fn test_init_key_manipulation<F>(
+        cipher_suite: CipherSuite,
+        protocol_version: ProtocolVersion,
+        mut edit: F,
+    ) -> KeyPackage
+    where
+        F: FnMut(&mut KeyPackage),
+    {
+        let alternate_id =
+            get_test_basic_credential(b"test".to_vec(), cipher_suite.signature_scheme());
+
+        let mut test_package =
+            test_key_package_custom(protocol_version, cipher_suite, "test", |_| {
+                let new_generator = KeyPackageGenerator {
+                    protocol_version,
+                    cipher_suite,
+                    credential: &alternate_id.credential,
+                    signing_key: &alternate_id.secret,
+                };
+
+                new_generator
+                    .generate(
+                        LifetimeExt::years(1).unwrap(),
+                        CapabilitiesExt::default(),
+                        ExtensionList::default(),
+                        ExtensionList::default(),
+                    )
+                    .unwrap()
+            });
+
+        edit(&mut test_package);
+        test_package.sign(&alternate_id.secret, &()).unwrap();
+        test_package
+    }
+
+    #[test]
+    fn test_invalid_init_key() {
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let protocol_version = ProtocolVersion::Mls10;
+
+        let key_package =
+            test_init_key_manipulation(cipher_suite, protocol_version, |key_package| {
+                key_package.hpke_init_key = HpkePublicKey::from(vec![42; 128]);
+            });
+
+        let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
+        let res = validator.validate(key_package, Default::default());
+
+        assert_matches!(res, Err(KeyPackageValidationError::InvalidInitKey));
+    }
+
+    #[test]
+    fn test_matching_init_key() {
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let protocol_version = ProtocolVersion::Mls10;
+
+        let key_package =
+            test_init_key_manipulation(cipher_suite, protocol_version, |key_package| {
+                key_package.hpke_init_key = key_package.leaf_node.public_key.clone();
+            });
+
+        let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
+        let res = validator.validate(key_package, Default::default());
+
+        assert_matches!(res, Err(KeyPackageValidationError::InitLeafKeyEquality));
+    }
+
+    fn invalid_expiration_leaf_node(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> KeyPackage {
-        let mut test_package = test_key_package(protocol_version, cipher_suite);
-        test_package
-            .extensions
-            .set_extension(LifetimeExt {
-                not_before: 0,
-                not_after: 0,
-            })
-            .unwrap();
-
-        test_package
+        test_key_package_custom(protocol_version, cipher_suite, "foo", |generator| {
+            generator
+                .generate(
+                    LifetimeExt {
+                        not_before: 0,
+                        not_after: 0,
+                    },
+                    CapabilitiesExt::default(),
+                    ExtensionList::default(),
+                    ExtensionList::default(),
+                )
+                .unwrap()
+        })
     }
 
     #[test]
@@ -267,18 +278,17 @@ mod tests {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let test_package = invalid_expiration_key_package(protocol_version, cipher_suite);
+        let test_package = invalid_expiration_leaf_node(protocol_version, cipher_suite);
+        let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
 
-        let validator = KeyPackageValidator {
-            protocol_version,
-            cipher_suite,
-            required_capabilities: None,
-            options: [KeyPackageValidationOptions::SkipSignatureCheck].into(),
-        };
+        let res = validator.validate(test_package, Default::default());
 
-        let res = validator.validate(test_package);
-
-        assert_matches!(res, Err(KeyPackageValidationError::InvalidKeyLifetime(..)));
+        assert_matches!(
+            res,
+            Err(KeyPackageValidationError::LeafNodeValidationError(
+                LeafNodeValidationError::InvalidLifetime(_, _)
+            ))
+        );
     }
 
     #[test]
@@ -286,21 +296,17 @@ mod tests {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let test_package = invalid_expiration_key_package(protocol_version, cipher_suite);
+        let test_package = invalid_expiration_leaf_node(protocol_version, cipher_suite);
+        let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
 
-        let validator = KeyPackageValidator {
-            protocol_version,
-            cipher_suite,
-            required_capabilities: None,
-            options: [
-                KeyPackageValidationOptions::SkipSignatureCheck,
-                KeyPackageValidationOptions::SkipLifetimeCheck,
-            ]
-            .into(),
-        };
+        let res = validator
+            .validate(
+                test_package.clone(),
+                [KeyPackageValidationOptions::SkipLifetimeCheck].into(),
+            )
+            .unwrap();
 
-        let res = validator.validate(test_package.clone()).unwrap();
-        assert_eq!(res.0, test_package);
+        assert_eq!(res, test_package.leaf_node.into());
     }
 
     #[test]
@@ -308,38 +314,38 @@ mod tests {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let test_client = get_basic_config(cipher_suite, "foo")
-            .with_supported_extension(42)
-            .build_client();
+        let key_package =
+            test_key_package_custom(protocol_version, cipher_suite, "test", |generator| {
+                let mut capabilities = CapabilitiesExt::default();
+                capabilities.extensions.push(42);
 
-        let key_package: KeyPackage = test_client
-            .gen_key_package(
-                protocol_version,
-                cipher_suite,
-                LifetimeExt::years(1).unwrap(),
-            )
-            .unwrap()
-            .key_package
-            .into();
+                generator
+                    .generate(
+                        LifetimeExt::years(1).unwrap(),
+                        capabilities,
+                        ExtensionList::default(),
+                        ExtensionList::default(),
+                    )
+                    .unwrap()
+            });
 
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![42],
             proposals: vec![],
         };
 
-        let validator = KeyPackageValidator {
-            protocol_version,
-            cipher_suite,
-            required_capabilities: Some(&required_capabilities),
-            options: Default::default(),
-        };
+        let validator =
+            KeyPackageValidator::new(protocol_version, cipher_suite, Some(&required_capabilities));
 
-        let res = validator.validate(key_package.clone()).unwrap();
-        assert_eq!(res.0, key_package);
+        let res = validator
+            .validate(key_package.clone(), Default::default())
+            .unwrap();
+
+        assert_eq!(res, key_package.leaf_node.into());
     }
 
     #[test]
-    fn test_required_extension_failure() {
+    fn test_required_capabilities_failure() {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
         let key_package = test_key_package(protocol_version, cipher_suite);
@@ -349,75 +355,44 @@ mod tests {
             proposals: vec![],
         };
 
-        let validator = KeyPackageValidator {
-            protocol_version,
-            cipher_suite,
-            required_capabilities: Some(&required_capabilities),
-            options: Default::default(),
-        };
+        let validator =
+            KeyPackageValidator::new(protocol_version, cipher_suite, Some(&required_capabilities));
 
-        let res = validator.validate(key_package);
+        let res = validator.validate(key_package, Default::default());
+
         assert_matches!(
             res,
-            Err(KeyPackageValidationError::RequiredExtensionNotFound(_))
+            Err(KeyPackageValidationError::LeafNodeValidationError(_))
         );
     }
 
     #[test]
-    fn test_required_proposal_failure() {
+    fn test_leaf_node_validation_failure() {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
-        let key_package = test_key_package(protocol_version, cipher_suite);
 
-        let required_capabilities = RequiredCapabilitiesExt {
-            extensions: vec![],
-            proposals: vec![255],
-        };
+        let key_package =
+            test_key_package_custom(protocol_version, cipher_suite, "foo", |generator| {
+                let mut package_gen = generator
+                    .generate(
+                        LifetimeExt::years(1).unwrap(),
+                        CapabilitiesExt::default(),
+                        ExtensionList::default(),
+                        ExtensionList::default(),
+                    )
+                    .unwrap();
 
-        let validator = KeyPackageValidator {
-            protocol_version,
-            cipher_suite,
-            required_capabilities: Some(&required_capabilities),
-            options: Default::default(),
-        };
+                package_gen.key_package.leaf_node.signature = SecureRng::gen(32).unwrap();
+                generator.sign(&mut package_gen.key_package).unwrap();
+                package_gen
+            });
 
-        let res = validator.validate(key_package);
-        assert_matches!(
-            res,
-            Err(KeyPackageValidationError::RequiredProposalNotFound(_))
-        );
-    }
-
-    fn test_missing_extension(id: u16) -> Result<ValidatedKeyPackage, KeyPackageValidationError> {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
-        let mut test_package = test_key_package(protocol_version, cipher_suite);
-
-        test_package.extensions.remove(id);
-
-        let validator = KeyPackageValidator {
-            protocol_version,
-            cipher_suite,
-            required_capabilities: None,
-            options: [KeyPackageValidationOptions::SkipSignatureCheck].into(),
-        };
-
-        validator.validate(test_package)
-    }
-
-    #[test]
-    fn test_missing_lifetime() {
-        let res = test_missing_extension(LifetimeExt::IDENTIFIER);
-        assert_matches!(res, Err(KeyPackageValidationError::MissingKeyLifetime));
-    }
-
-    #[test]
-    fn test_missing_capabilities() {
-        let res = test_missing_extension(CapabilitiesExt::IDENTIFIER);
+        let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
+        let res = validator.validate(key_package, Default::default());
 
         assert_matches!(
             res,
-            Err(KeyPackageValidationError::MissingCapabilitiesExtension)
+            Err(KeyPackageValidationError::LeafNodeValidationError(_))
         );
     }
 }

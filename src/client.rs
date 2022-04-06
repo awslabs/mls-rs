@@ -1,7 +1,7 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, KeyPackageRepository, Keychain};
 use crate::credential::CredentialError;
-use crate::extension::{ExtensionError, ExtensionList, LifetimeExt, MlsExtension};
+use crate::extension::{ExtensionError, ExtensionList, LifetimeExt};
 use crate::group::framing::{Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender};
 use crate::group::message_signature::MessageSigningContext;
 use crate::group::proposal::{AddProposal, Proposal, RemoveProposal};
@@ -11,6 +11,7 @@ use crate::key_package::{
 };
 use crate::session::{Session, SessionError};
 use crate::signer::{Signable, SignatureError};
+use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::ProtocolVersion;
 use thiserror::Error;
 use tls_codec::Serialize;
@@ -37,6 +38,8 @@ pub enum ClientError {
     ProposingAsExternalWithoutExternalKeyId,
     #[error(transparent)]
     KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
+    #[error(transparent)]
+    LeafNodeError(#[from] LeafNodeError),
     #[error("Expected group info message")]
     ExpectedGroupInfoMessage,
 }
@@ -57,6 +60,8 @@ impl<C: ClientConfig + Clone> Client<C> {
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         lifetime: LifetimeExt,
+        key_package_extensions: ExtensionList,
+        leaf_node_extensions: ExtensionList,
     ) -> Result<KeyPackageGeneration, ClientError> {
         let keychain = self.config.keychain();
 
@@ -69,10 +74,15 @@ impl<C: ClientConfig + Clone> Client<C> {
             cipher_suite,
             signing_key: &signer,
             credential: &credential,
-            extensions: &self.get_extensions(lifetime)?,
         };
 
-        let key_pkg_gen = key_package_generator.generate(None)?;
+        let key_pkg_gen = key_package_generator.generate(
+            lifetime,
+            self.config.capabilities(),
+            key_package_extensions,
+            leaf_node_extensions,
+        )?;
+
         self.config
             .key_package_repo()
             .insert(key_pkg_gen.clone())
@@ -81,23 +91,13 @@ impl<C: ClientConfig + Clone> Client<C> {
         Ok(key_pkg_gen)
     }
 
-    fn get_extensions(&self, lifetime: LifetimeExt) -> Result<ExtensionList, ClientError> {
-        // TODO: There should be a way to configure additional extensions in the client that get
-        // added to each generated key package
-        let extensions = ExtensionList::from(vec![
-            self.config.capabilities().to_extension()?,
-            lifetime.to_extension()?,
-        ]);
-
-        Ok(extensions)
-    }
-
     pub fn create_session(
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         lifetime: LifetimeExt,
         group_id: Vec<u8>,
+        leaf_node_extensions: ExtensionList,
         group_context_extensions: ExtensionList,
     ) -> Result<Session<C>, ClientError> {
         let keychain = self.config.keychain();
@@ -106,17 +106,21 @@ impl<C: ClientConfig + Clone> Client<C> {
             .default_credential(cipher_suite)
             .ok_or(ClientError::NoCredentialFound)?;
 
-        let key_package_generator = KeyPackageGenerator {
-            protocol_version,
+        let (leaf_node, leaf_node_secret) = LeafNode::generate(
             cipher_suite,
-            credential: &credential,
-            extensions: &self.get_extensions(lifetime)?,
-            signing_key: &signer,
-        };
+            credential,
+            self.config.capabilities(),
+            leaf_node_extensions,
+            &signer,
+            lifetime,
+        )?;
 
         Session::create(
             group_id,
-            key_package_generator,
+            cipher_suite,
+            protocol_version,
+            leaf_node,
+            leaf_node_secret,
             group_context_extensions,
             self.config.clone(),
         )
@@ -235,6 +239,7 @@ impl<C: ClientConfig + Clone> Client<C> {
         lifetime: LifetimeExt,
         group_info_msg: MLSMessage,
         tree_data: Option<&[u8]>,
+        leaf_node_extensions: ExtensionList,
     ) -> Result<(Session<C>, Vec<u8>), ClientError> {
         let group_info = match group_info_msg.payload {
             MLSMessagePayload::GroupInfo(g) => Ok(g),
@@ -247,20 +252,23 @@ impl<C: ClientConfig + Clone> Client<C> {
             .default_credential(group_info.cipher_suite)
             .ok_or(ClientError::NoCredentialFound)?;
 
-        let key_package_generator = KeyPackageGenerator {
-            protocol_version: group_info_msg.version,
-            cipher_suite: group_info.cipher_suite,
-            credential: &credential,
-            extensions: &self.get_extensions(lifetime)?,
-            signing_key: &signer,
-        };
+        let (leaf_node, leaf_node_secret) = LeafNode::generate(
+            group_info.cipher_suite,
+            credential,
+            self.config.capabilities(),
+            leaf_node_extensions,
+            &signer,
+            lifetime,
+        )?;
 
         Ok(Session::new_external(
             self.config.clone(),
             group_info_msg.version,
             group_info,
-            key_package_generator,
             tree_data,
+            leaf_node,
+            leaf_node_secret,
+            &signer,
         )?)
     }
 }
@@ -316,6 +324,8 @@ pub(crate) mod test_utils {
                 protocol_version,
                 cipher_suite,
                 LifetimeExt::years(1).unwrap(),
+                ExtensionList::default(),
+                ExtensionList::default(),
             )
             .unwrap();
 
@@ -331,9 +341,9 @@ mod tests {
     use crate::{
         client_config::InMemoryClientConfig,
         credential::Credential,
-        extension::CapabilitiesExt,
         group::{GroupError, ProcessedMessage},
         psk::{ExternalPskId, PskSecretError},
+        tree_kem::leaf_node::LeafNodeSource,
     };
     use assert_matches::assert_matches;
     use ferriscrypt::kdf::hkdf::Hkdf;
@@ -354,13 +364,20 @@ mod tests {
             let client = get_basic_config(cipher_suite, "foo").build_client();
             let key_lifetime = LifetimeExt::years(1).unwrap();
 
+            // TODO: Tests around extensions
             let package_gen = client
-                .gen_key_package(protocol_version, cipher_suite, key_lifetime.clone())
+                .gen_key_package(
+                    protocol_version,
+                    cipher_suite,
+                    key_lifetime.clone(),
+                    ExtensionList::default(),
+                    ExtensionList::default(),
+                )
                 .unwrap();
 
             assert_eq!(package_gen.key_package.version, protocol_version);
             assert_eq!(package_gen.key_package.cipher_suite, cipher_suite);
-            assert_matches!(&package_gen.key_package.credential, Credential::Basic(basic) if basic.identity == "foo".as_bytes().to_vec());
+            assert_matches!(&package_gen.key_package.leaf_node.credential, Credential::Basic(basic) if basic.identity == "foo".as_bytes().to_vec());
 
             let (expected_credential, _) = client
                 .config
@@ -371,29 +388,16 @@ mod tests {
             assert_eq!(
                 package_gen
                     .key_package
+                    .leaf_node
                     .credential
                     .tls_serialize_detached()
                     .unwrap(),
                 expected_credential.tls_serialize_detached().unwrap()
             );
 
-            assert_eq!(
-                package_gen
-                    .key_package
-                    .extensions
-                    .get_extension::<LifetimeExt>()
-                    .unwrap()
-                    .unwrap(),
-                key_lifetime
-            );
+            assert_matches!(package_gen.key_package.leaf_node.leaf_node_source, LeafNodeSource::Add(lifetime) if lifetime == key_lifetime);
 
-            let capabilities: CapabilitiesExt = package_gen
-                .key_package
-                .extensions
-                .get_extension()
-                .unwrap()
-                .unwrap();
-
+            let capabilities = package_gen.key_package.leaf_node.capabilities;
             assert_eq!(capabilities, client.config.capabilities());
         }
     }
@@ -412,7 +416,7 @@ mod tests {
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 session.group_context(),
-                bob_key_gen.key_package.clone().into(),
+                bob_key_gen.key_package.clone(),
             )
             .unwrap();
 
@@ -420,11 +424,11 @@ mod tests {
 
         assert_matches!(
             message,
-            ProcessedMessage::Proposal(Proposal::Add(AddProposal { key_package })) if key_package == bob_key_gen.key_package.clone().into()
+            ProcessedMessage::Proposal(Proposal::Add(AddProposal { key_package })) if key_package == bob_key_gen.key_package
         );
 
         let expected_proposal = AddProposal {
-            key_package: bob_key_gen.key_package.clone().into(),
+            key_package: bob_key_gen.key_package.clone(),
         };
 
         let proposal = match session.process_incoming_bytes(&proposal).unwrap() {
@@ -436,7 +440,13 @@ mod tests {
 
         let _ = session.commit(vec![proposal]).unwrap();
         let state_update = session.apply_pending_commit().unwrap();
-        let expected_ref = bob_key_gen.key_package.to_reference().unwrap();
+
+        let expected_ref = bob_key_gen
+            .key_package
+            .leaf_node
+            .to_reference(TEST_CIPHER_SUITE)
+            .unwrap();
+
         assert!(state_update.added.iter().any(|r| *r == expected_ref));
     }
 
@@ -487,6 +497,7 @@ mod tests {
                 LifetimeExt::years(1).unwrap(),
                 TEST_GROUP.to_vec(),
                 ExtensionList::new(),
+                ExtensionList::new(),
             )
             .unwrap()
     }
@@ -522,7 +533,7 @@ mod tests {
     fn preconfigured_add_proposal_adds_to_group() {
         let mut env = PreconfiguredEnv::new();
         let proposal = AddProposal {
-            key_package: env.bob_key_gen.key_package.clone().into(),
+            key_package: env.bob_key_gen.key_package.clone(),
         };
         let msg = env
             .ted
@@ -541,29 +552,47 @@ mod tests {
         };
         let _ = env.alice_session.commit(vec![received_proposal]).unwrap();
         let state_update = env.alice_session.apply_pending_commit().unwrap();
-        let expected_ref = env.bob_key_gen.key_package.to_reference().unwrap();
+
+        let expected_ref = env
+            .bob_key_gen
+            .key_package
+            .leaf_node
+            .to_reference(TEST_CIPHER_SUITE)
+            .unwrap();
+
         assert!(state_update.added.iter().any(|r| *r == expected_ref));
     }
 
     #[test]
     fn preconfigured_remove_proposal_removes_from_group() {
         let mut env = PreconfiguredEnv::new();
+
         let _ = env
             .alice_session
             .commit(vec![Proposal::Add(AddProposal {
-                key_package: env.bob_key_gen.key_package.clone().into(),
+                key_package: env.bob_key_gen.key_package.clone(),
             })])
             .unwrap();
+
         let _ = env.alice_session.apply_pending_commit().unwrap();
+
         assert!(env
             .alice_session
             .roster()
             .iter()
-            .any(|&p| *p == env.bob_key_gen.key_package.clone().into()));
-        let bob_key_pkg_ref = env.bob_key_gen.key_package.to_reference().unwrap();
+            .any(|&p| *p == env.bob_key_gen.key_package.leaf_node));
+
+        let bob_leaf_ref = env
+            .bob_key_gen
+            .key_package
+            .leaf_node
+            .to_reference(TEST_CIPHER_SUITE)
+            .unwrap();
+
         let proposal = RemoveProposal {
-            to_remove: bob_key_pkg_ref,
+            to_remove: bob_leaf_ref,
         };
+
         let msg = env
             .ted
             .propose_remove_from_preconfigured(
@@ -574,17 +603,22 @@ mod tests {
                 env.alice_session.group_stats().unwrap().epoch,
             )
             .unwrap();
+
         let msg = env.alice_session.process_incoming_bytes(&msg).unwrap();
+
         let _ = match msg {
             ProcessedMessage::Proposal(Proposal::Remove(p)) if p == proposal => Proposal::Remove(p),
             m => panic!("Expected {:?} but got {:?}", proposal, m),
         };
+
         let _ = env.alice_session.commit(Vec::new()).unwrap();
+
         let state_update = env.alice_session.apply_pending_commit().unwrap();
+
         assert!(state_update
             .removed
             .iter()
-            .any(|p| *p == env.bob_key_gen.key_package.clone().into()));
+            .any(|p| *p == env.bob_key_gen.key_package.leaf_node));
     }
 
     #[test]
@@ -602,7 +636,7 @@ mod tests {
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 session.group_context(),
-                bob_key_gen.key_package.into(),
+                bob_key_gen.key_package,
             )
             .unwrap();
 
@@ -626,7 +660,7 @@ mod tests {
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 session.group_context(),
-                bob_key_gen.key_package.into(),
+                bob_key_gen.key_package,
             )
             .unwrap();
 
@@ -672,15 +706,15 @@ mod tests {
 
         let (bob, bob_key_pkg_gen) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-        let bob_key_pkg_ref = bob_key_pkg_gen.key_package.to_reference().unwrap();
 
-        let mut bob_session = join_session(
-            &mut alice_session,
-            [],
-            bob_key_pkg_gen.key_package.into(),
-            &bob,
-        )
-        .unwrap();
+        let bob_key_pkg_ref = bob_key_pkg_gen
+            .key_package
+            .leaf_node
+            .to_reference(TEST_CIPHER_SUITE)
+            .unwrap();
+
+        let mut bob_session =
+            join_session(&mut alice_session, [], bob_key_pkg_gen.key_package, &bob).unwrap();
 
         let (carol, carol_key_pkg_gen) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "carol");
@@ -688,7 +722,7 @@ mod tests {
         let carol_session = join_session(
             &mut alice_session,
             [&mut bob_session],
-            carol_key_pkg_gen.key_package.into(),
+            carol_key_pkg_gen.key_package,
             &carol,
         )
         .unwrap();
@@ -698,18 +732,25 @@ mod tests {
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 LifetimeExt::years(1).unwrap(),
+                ExtensionList::default(),
+                ExtensionList::default(),
             )
             .unwrap();
 
         let (alice_sub_session, welcome) = alice_session
-            .branch(b"subgroup".to_vec(), None, |p| {
-                let r = p.to_reference().unwrap();
-                if r == bob_key_pkg_ref {
-                    Some(bob_sub_key_pkg.key_package.clone().into())
-                } else {
-                    None
-                }
-            })
+            .branch(
+                b"subgroup".to_vec(),
+                None,
+                LifetimeExt::years(1).unwrap(),
+                |p| {
+                    let r = p.to_reference(TEST_CIPHER_SUITE).unwrap();
+                    if r == bob_key_pkg_ref {
+                        Some(bob_sub_key_pkg.key_package.clone())
+                    } else {
+                        None
+                    }
+                },
+            )
             .unwrap();
 
         let welcome = welcome.unwrap();
@@ -740,16 +781,20 @@ mod tests {
         let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
         let mut alice_session = create_session(&alice);
         let bob = f(get_basic_config(TEST_CIPHER_SUITE, "bob")).build_client();
+
         let bob_key_pkg = bob
             .gen_key_package(
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 LifetimeExt::years(1).unwrap(),
+                ExtensionList::default(),
+                ExtensionList::default(),
             )
             .unwrap()
-            .key_package
-            .into();
+            .key_package;
+
         let res = join_session(&mut alice_session, [], bob_key_pkg, &bob);
+
         assert_matches!(
             res,
             Err(ClientError::SessionError(SessionError::ProtocolError(
@@ -790,6 +835,7 @@ mod tests {
                 LifetimeExt::years(1).unwrap(),
                 group_info_msg,
                 Some(&alice_session.export_tree().unwrap()),
+                ExtensionList::default(),
             )
             .unwrap();
 
@@ -826,14 +872,21 @@ mod tests {
                         TEST_PROTOCOL_VERSION,
                         TEST_CIPHER_SUITE,
                         LifetimeExt::years(1).unwrap(),
+                        ExtensionList::default(),
+                        ExtensionList::default(),
                     )
                     .unwrap()
-                    .key_package
-                    .into(),
+                    .key_package,
             ),
         };
 
-        let res = alice.commit_external(LifetimeExt::years(1).unwrap(), msg, None);
+        let res = alice.commit_external(
+            LifetimeExt::years(1).unwrap(),
+            msg,
+            None,
+            ExtensionList::default(),
+        );
+
         assert_matches!(res, Err(ClientError::ExpectedGroupInfoMessage));
     }
 
@@ -866,6 +919,7 @@ mod tests {
                 LifetimeExt::years(1).unwrap(),
                 group_info_msg,
                 Some(&bob_session.export_tree().unwrap()),
+                ExtensionList::default(),
             )
             .unwrap();
 
@@ -882,7 +936,7 @@ mod tests {
         let (bob, bob_key_pkg) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
         let bob_session =
-            join_session(&mut alice_session, [], bob_key_pkg.key_package.into(), &bob).unwrap();
+            join_session(&mut alice_session, [], bob_key_pkg.key_package, &bob).unwrap();
 
         assert_eq!(
             alice_session.authentication_secret().unwrap(),

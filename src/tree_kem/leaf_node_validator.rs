@@ -39,6 +39,13 @@ impl DerefMut for ValidatedLeafNode {
     }
 }
 
+#[cfg(test)]
+impl From<LeafNode> for ValidatedLeafNode {
+    fn from(ln: LeafNode) -> Self {
+        ValidatedLeafNode(ln)
+    }
+}
+
 pub enum ValidationContext<'a> {
     Add(Option<MlsTime>),
     Update(&'a [u8]),
@@ -137,27 +144,24 @@ impl<'a> LeafNodeValidator<'a> {
         Ok(())
     }
 
-    pub fn validate(
+    pub fn revalidate(
         &self,
-        leaf_node: LeafNode,
-        context: ValidationContext,
-    ) -> Result<ValidatedLeafNode, LeafNodeValidationError> {
-        // TODO: Verify the credential with the credential validation service
+        leaf_node: &ValidatedLeafNode,
+        group_id: &[u8],
+    ) -> Result<(), LeafNodeValidationError> {
+        let context = match leaf_node.leaf_node_source {
+            LeafNodeSource::Add(_) => ValidationContext::Add(None),
+            LeafNodeSource::Update => ValidationContext::Update(group_id),
+            LeafNodeSource::Commit(_) => ValidationContext::Commit(group_id),
+        };
 
-        // Check that we are validating within the proper context
-        self.check_context(&leaf_node, &context)?;
+        self.validate_impl(leaf_node, context)
+    }
 
-        // Verify that the credential provided matches the cipher suite that is in use
-        if leaf_node.credential.public_key()?.curve()
-            != Curve::from(self.cipher_suite.signature_scheme())
-        {
-            return Err(LeafNodeValidationError::InvalidCredentialForCipherSuite);
-        }
-
-        // Verify that the credential signed the leaf node
-        leaf_node.verify(&leaf_node.credential.public_key()?, &context.group_id())?;
-
-        // If required capabilities are specified, leaf node meets the requirements
+    pub fn validate_required_capabilities(
+        &self,
+        leaf_node: &LeafNode,
+    ) -> Result<(), LeafNodeValidationError> {
         if let Some(required_capabilities) = self.required_capabilities {
             for extension in &required_capabilities.extensions {
                 if !leaf_node.capabilities.extensions.contains(extension) {
@@ -174,6 +178,32 @@ impl<'a> LeafNodeValidator<'a> {
             }
         }
 
+        Ok(())
+    }
+
+    fn validate_impl(
+        &self,
+        leaf_node: &LeafNode,
+        context: ValidationContext,
+    ) -> Result<(), LeafNodeValidationError> {
+        // TODO: Verify the credential with the credential validation service
+
+        // Check that we are validating within the proper context
+        self.check_context(leaf_node, &context)?;
+
+        // Verify that the credential provided matches the cipher suite that is in use
+        if leaf_node.credential.public_key()?.curve()
+            != Curve::from(self.cipher_suite.signature_scheme())
+        {
+            return Err(LeafNodeValidationError::InvalidCredentialForCipherSuite);
+        }
+
+        // Verify that the credential signed the leaf node
+        leaf_node.verify(&leaf_node.credential.public_key()?, &context.group_id())?;
+
+        // If required capabilities are specified, verify the leaf node meets the requirements
+        self.validate_required_capabilities(leaf_node)?;
+
         // If there are extensions, make sure they are referenced in the capabilities field
         for one_ext in &leaf_node.extensions {
             if !leaf_node
@@ -187,6 +217,15 @@ impl<'a> LeafNodeValidator<'a> {
             }
         }
 
+        Ok(())
+    }
+
+    pub fn validate(
+        &self,
+        leaf_node: LeafNode,
+        context: ValidationContext,
+    ) -> Result<ValidatedLeafNode, LeafNodeValidationError> {
+        self.validate_impl(&leaf_node, context)?;
         Ok(ValidatedLeafNode(leaf_node))
     }
 }
@@ -212,7 +251,7 @@ mod tests {
 
     fn get_test_add_node() -> (LeafNode, SecretKey) {
         let (credential, secret) = get_test_credential(TEST_CIPHER_SUITE, b"foo".to_vec());
-        let (leaf_node, _) = get_test_node(credential, &secret, None, None);
+        let (leaf_node, _) = get_test_node(TEST_CIPHER_SUITE, credential, &secret, None, None);
 
         (leaf_node, secret)
     }
@@ -234,7 +273,10 @@ mod tests {
         let group_id = b"group_id";
 
         let (mut leaf_node, secret) = get_test_add_node();
-        leaf_node.update(group_id, None, None, &secret).unwrap();
+
+        leaf_node
+            .update(TEST_CIPHER_SUITE, group_id, None, None, &secret)
+            .unwrap();
 
         let test_validator = LeafNodeValidator::new(TEST_CIPHER_SUITE, None);
         let validated = test_validator
@@ -251,7 +293,7 @@ mod tests {
         let (mut leaf_node, secret) = get_test_add_node();
 
         leaf_node
-            .commit(group_id, None, None, &secret, |_| {
+            .commit(TEST_CIPHER_SUITE, group_id, None, None, &secret, |_| {
                 Ok(ParentHash::from(vec![0u8; 32]))
             })
             .unwrap();
@@ -280,7 +322,9 @@ mod tests {
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
 
-        leaf_node.update(b"foo", None, None, &secret).unwrap();
+        leaf_node
+            .update(TEST_CIPHER_SUITE, b"foo", None, None, &secret)
+            .unwrap();
 
         assert_matches!(
             test_validator.validate(leaf_node.clone(), ValidationContext::Add(None)),
@@ -293,7 +337,7 @@ mod tests {
         );
 
         leaf_node
-            .commit(b"foo", None, None, &secret, |_| {
+            .commit(TEST_CIPHER_SUITE, b"foo", None, None, &secret, |_| {
                 Ok(ParentHash::from(vec![0u8; 32]))
             })
             .unwrap();
@@ -313,7 +357,7 @@ mod tests {
     fn test_bad_signature() {
         for cipher_suite in CipherSuite::all() {
             let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
-            let (mut leaf_node, _) = get_test_node(credential, &secret, None, None);
+            let (mut leaf_node, _) = get_test_node(cipher_suite, credential, &secret, None, None);
 
             leaf_node.signature = SecureRng::gen(leaf_node.signature.len()).unwrap();
 
@@ -342,8 +386,13 @@ mod tests {
 
         let capabilities = CapabilitiesExt::default();
 
-        let (leaf_node, _) =
-            get_test_node(credential, &secret, Some(capabilities), Some(extensions));
+        let (leaf_node, _) = get_test_node(
+            TEST_CIPHER_SUITE,
+            credential,
+            &secret,
+            Some(capabilities),
+            Some(extensions),
+        );
 
         let test_validator = LeafNodeValidator::new(TEST_CIPHER_SUITE, None);
 

@@ -3,7 +3,6 @@ use crate::group::proposal::ProposalType;
 use crate::time::{MlsTime, SystemTimeError};
 use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
-use crate::tree_kem::parent_hash::ParentHash;
 use crate::ProtocolVersion;
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use indexmap::IndexMap;
@@ -29,7 +28,6 @@ pub type ExtensionType = u16;
 const CAPABILITIES_EXT_ID: ExtensionType = 1;
 const LIFETIME_EXT_ID: ExtensionType = 2;
 const KEY_ID_EXT_ID: ExtensionType = 3;
-const PARENT_HASH_EXT_ID: ExtensionType = 4;
 const RATCHET_TREE_EXT_ID: ExtensionType = 5;
 const REQUIRED_CAPABILITIES_EXT_ID: ExtensionType = 6;
 const EXTERNAL_PUB_EXT_ID: ExtensionType = 7;
@@ -129,21 +127,6 @@ impl LifetimeExt {
 
 impl MlsExtension for LifetimeExt {
     const IDENTIFIER: ExtensionType = LIFETIME_EXT_ID;
-}
-
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct ParentHashExt {
-    pub parent_hash: ParentHash,
-}
-
-impl From<ParentHash> for ParentHashExt {
-    fn from(parent_hash: ParentHash) -> Self {
-        Self { parent_hash }
-    }
-}
-
-impl MlsExtension for ParentHashExt {
-    const IDENTIFIER: ExtensionType = PARENT_HASH_EXT_ID;
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -325,11 +308,7 @@ mod tests {
             .map(MaybeCipherSuite::from)
             .collect::<Vec<MaybeCipherSuite>>();
 
-        let test_extensions = vec![
-            ParentHashExt::IDENTIFIER,
-            LifetimeExt::IDENTIFIER,
-            ExternalKeyIdExt::IDENTIFIER,
-        ];
+        let test_extensions = vec![LifetimeExt::IDENTIFIER, ExternalKeyIdExt::IDENTIFIER];
 
         let test_extension = CapabilitiesExt {
             protocol_versions: test_protocol_versions.clone(),

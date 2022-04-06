@@ -1,5 +1,6 @@
 use super::parent_hash::ParentHash;
 use crate::{
+    cipher_suite::{CipherSuite, SignatureScheme},
     credential::{Credential, CredentialError},
     extension::{CapabilitiesExt, ExtensionList, LifetimeExt},
     signer::{Signable, SignatureError, Signer},
@@ -27,6 +28,8 @@ pub enum LeafNodeError {
     KdfError(#[from] KdfError),
     #[error("parent hash error: {0}")]
     ParentHashError(#[source] Box<dyn std::error::Error>),
+    #[error("cipher suite {0:?} is invalid for credential with signature scheme: {1:?}")]
+    InvalidCredentialForCipherSuite(CipherSuite, SignatureScheme),
 }
 
 #[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize, PartialEq)]
@@ -52,14 +55,33 @@ pub struct LeafNode {
 }
 
 impl LeafNode {
+    fn check_signature_scheme(
+        cipher_suite: CipherSuite,
+        credential: &Credential,
+    ) -> Result<(), LeafNodeError> {
+        let signature_scheme = SignatureScheme::try_from(credential.public_key()?.curve())?;
+
+        if signature_scheme != cipher_suite.signature_scheme() {
+            return Err(LeafNodeError::InvalidCredentialForCipherSuite(
+                cipher_suite,
+                signature_scheme,
+            ));
+        }
+
+        Ok(())
+    }
+
     pub fn generate<S: Signer>(
+        cipher_suite: CipherSuite,
         credential: Credential,
         capabilities: CapabilitiesExt,
         extensions: ExtensionList,
         signer: &S,
         lifetime: LifetimeExt,
     ) -> Result<(Self, HpkeSecretKey), LeafNodeError> {
-        let (public, secret) = generate_keypair(credential.public_key()?.curve())?;
+        LeafNode::check_signature_scheme(cipher_suite, &credential)?;
+
+        let (public, secret) = generate_keypair(cipher_suite.kem_type().curve())?;
 
         let mut leaf_node = LeafNode {
             public_key: public.try_into()?,
@@ -104,12 +126,15 @@ impl LeafNode {
 
     pub fn update<S: Signer>(
         &mut self,
+        cipher_suite: CipherSuite,
         group_id: &[u8],
         capabilities: Option<CapabilitiesExt>,
         extensions: Option<ExtensionList>,
         signer: &S,
     ) -> Result<HpkeSecretKey, LeafNodeError> {
-        let keypair = generate_keypair(self.credential.public_key()?.curve())?;
+        LeafNode::check_signature_scheme(cipher_suite, &self.credential)?;
+
+        let keypair = generate_keypair(cipher_suite.kem_type().curve())?;
 
         self.update_keypair(
             keypair,
@@ -123,13 +148,16 @@ impl LeafNode {
 
     pub fn commit<S: Signer>(
         &mut self,
+        cipher_suite: CipherSuite,
         group_id: &[u8],
         capabilities: Option<CapabilitiesExt>,
         extensions: Option<ExtensionList>,
         signer: &S,
-        parent_hash: impl Fn(HpkePublicKey) -> Result<ParentHash, Box<dyn std::error::Error>>,
+        mut parent_hash: impl FnMut(HpkePublicKey) -> Result<ParentHash, Box<dyn std::error::Error>>,
     ) -> Result<HpkeSecretKey, LeafNodeError> {
-        let key_pair = generate_keypair(self.credential.public_key()?.curve())?;
+        LeafNode::check_signature_scheme(cipher_suite, &self.credential)?;
+
+        let key_pair = generate_keypair(cipher_suite.kem_type().curve())?;
         let hpke_public = key_pair.0.clone().try_into()?;
 
         let parent_hash = parent_hash(hpke_public).map_err(LeafNodeError::ParentHashError)?;
@@ -214,23 +242,56 @@ impl<'a> Signable<'a> for LeafNode {
 
 #[cfg(test)]
 pub mod test_utils {
-    use crate::extension::{ExternalKeyIdExt, MlsExtension};
+    use crate::{
+        cipher_suite::CipherSuite,
+        credential::{BasicCredential, CredentialConvertible},
+        extension::{ExternalKeyIdExt, MlsExtension},
+    };
 
     use super::*;
 
     pub fn get_test_node(
+        cipher_suite: CipherSuite,
         credential: Credential,
         secret: &SecretKey,
         capabilities: Option<CapabilitiesExt>,
         extensions: Option<ExtensionList>,
     ) -> (LeafNode, HpkeSecretKey) {
         LeafNode::generate(
+            cipher_suite,
             credential,
             capabilities.unwrap_or_default(),
             extensions.unwrap_or_default(),
             secret,
             LifetimeExt::years(1).unwrap(),
         )
+        .unwrap()
+    }
+
+    pub fn get_basic_test_node(cipher_suite: CipherSuite, id: &str) -> LeafNode {
+        get_basic_test_node_sig_key(cipher_suite, id).0
+    }
+
+    pub fn get_basic_test_node_sig_key(
+        cipher_suite: CipherSuite,
+        id: &str,
+    ) -> (LeafNode, HpkeSecretKey, SecretKey) {
+        let signature_key = cipher_suite.generate_secret_key().unwrap();
+
+        let credential =
+            BasicCredential::new(id.as_bytes().to_vec(), signature_key.to_public().unwrap())
+                .unwrap()
+                .into_credential();
+
+        LeafNode::generate(
+            cipher_suite,
+            credential,
+            CapabilitiesExt::default(),
+            ExtensionList::default(),
+            &signature_key,
+            LifetimeExt::years(1).unwrap(),
+        )
+        .map(|(leaf, hpke_secret_key)| (leaf, hpke_secret_key, signature_key))
         .unwrap()
     }
 
@@ -260,7 +321,6 @@ mod tests {
 
     use crate::{cipher_suite::CipherSuite, client::test_utils::get_test_credential};
     use assert_matches::assert_matches;
-    use ferriscrypt::asym::ec_key::Curve;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -275,6 +335,7 @@ mod tests {
             let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
 
             let (leaf_node, secret_key) = get_test_node(
+                cipher_suite,
                 credential.clone(),
                 &secret,
                 Some(capabilities.clone()),
@@ -286,17 +347,16 @@ mod tests {
             assert_eq!(leaf_node.credential, credential);
             assert_matches!(&leaf_node.leaf_node_source, LeafNodeSource::Add(lt) if lt == &lifetime);
 
+            let curve = cipher_suite.kem_type().curve();
+
             leaf_node
                 .verify(&credential.public_key().unwrap(), &None)
                 .unwrap();
 
-            let expected_public = SecretKey::from_bytes(
-                secret_key.as_ref(),
-                Curve::from(cipher_suite.signature_scheme()),
-            )
-            .unwrap()
-            .to_public()
-            .unwrap();
+            let expected_public = SecretKey::from_bytes(secret_key.as_ref(), curve)
+                .unwrap()
+                .to_public()
+                .unwrap();
 
             assert_eq!(
                 HpkePublicKey::try_from(expected_public).unwrap(),
@@ -307,13 +367,17 @@ mod tests {
 
     #[test]
     fn test_node_generation_randomness() {
-        let (credential, secret) =
-            get_test_credential(CipherSuite::Curve25519ChaCha20V1, b"foo".to_vec());
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let (first_leaf, first_secret) = get_test_node(credential.clone(), &secret, None, None);
+        let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
+
+        let (first_leaf, first_secret) =
+            get_test_node(cipher_suite, credential.clone(), &secret, None, None);
 
         for _ in 0..100 {
-            let (next_leaf, next_secret) = get_test_node(credential.clone(), &secret, None, None);
+            let (next_leaf, next_secret) =
+                get_test_node(cipher_suite, credential.clone(), &secret, None, None);
+
             assert_ne!(first_secret, next_secret);
             assert_ne!(first_leaf.public_key, next_leaf.public_key);
         }
@@ -324,12 +388,30 @@ mod tests {
         for cipher_suite in CipherSuite::all() {
             let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
 
-            let (mut leaf, leaf_secret) = get_test_node(credential.clone(), &secret, None, None);
+            let (mut leaf, leaf_secret) =
+                get_test_node(cipher_suite, credential.clone(), &secret, None, None);
+
             let original_leaf = leaf.clone();
-            let new_secret = leaf.update(b"group", None, None, &secret).unwrap();
+
+            let new_secret = leaf
+                .update(cipher_suite, b"group", None, None, &secret)
+                .unwrap();
 
             assert_ne!(new_secret, leaf_secret);
             assert_ne!(original_leaf.public_key, leaf.public_key);
+
+            let curve = cipher_suite.kem_type().curve();
+
+            let expected_public = SecretKey::from_bytes(new_secret.as_ref(), curve)
+                .unwrap()
+                .to_public()
+                .unwrap();
+
+            assert_eq!(
+                HpkePublicKey::try_from(expected_public).unwrap(),
+                leaf.public_key
+            );
+
             assert_eq!(leaf.capabilities, original_leaf.capabilities);
             assert_eq!(leaf.extensions, original_leaf.extensions);
             assert_eq!(leaf.credential, original_leaf.credential);
@@ -342,14 +424,16 @@ mod tests {
 
     #[test]
     fn test_node_update_meta_changes() {
-        let (credential, secret) =
-            get_test_credential(CipherSuite::Curve25519Aes128V1, b"foo".to_vec());
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let (mut leaf, _) = get_test_node(credential, &secret, None, None);
+        let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
+
+        let (mut leaf, _) = get_test_node(cipher_suite, credential, &secret, None, None);
         let new_capabilities = get_test_capabilities();
         let new_extensions = get_test_extensions();
 
         leaf.update(
+            cipher_suite,
             b"group",
             Some(new_capabilities.clone()),
             Some(new_extensions.clone()),
@@ -366,13 +450,15 @@ mod tests {
         for cipher_suite in CipherSuite::all() {
             let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
 
-            let (mut leaf, leaf_secret) = get_test_node(credential.clone(), &secret, None, None);
+            let (mut leaf, leaf_secret) =
+                get_test_node(cipher_suite, credential.clone(), &secret, None, None);
+
             let original_leaf = leaf.clone();
 
             let test_parent_hash = ParentHash::from(vec![42u8; 32]);
 
             let new_secret = leaf
-                .commit(b"group", None, None, &secret, |key| {
+                .commit(cipher_suite, b"group", None, None, &secret, |key| {
                     assert_ne!(original_leaf.public_key, key);
                     Ok(test_parent_hash.clone())
                 })
@@ -380,6 +466,19 @@ mod tests {
 
             assert_ne!(new_secret, leaf_secret);
             assert_ne!(original_leaf.public_key, leaf.public_key);
+
+            let curve = cipher_suite.kem_type().curve();
+
+            let expected_public = SecretKey::from_bytes(new_secret.as_ref(), curve)
+                .unwrap()
+                .to_public()
+                .unwrap();
+
+            assert_eq!(
+                HpkePublicKey::try_from(expected_public).unwrap(),
+                leaf.public_key
+            );
+
             assert_eq!(leaf.capabilities, original_leaf.capabilities);
             assert_eq!(leaf.extensions, original_leaf.extensions);
             assert_eq!(leaf.credential, original_leaf.credential);
@@ -392,12 +491,13 @@ mod tests {
 
     #[test]
     fn test_node_commit_parent_hash_error() {
-        let (credential, secret) =
-            get_test_credential(CipherSuite::Curve25519Aes128V1, b"foo".to_vec());
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let (mut leaf, _) = get_test_node(credential, &secret, None, None);
+        let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
 
-        let res = leaf.commit(b"group", None, None, &secret, |_| {
+        let (mut leaf, _) = get_test_node(cipher_suite, credential, &secret, None, None);
+
+        let res = leaf.commit(cipher_suite, b"group", None, None, &secret, |_| {
             Err(String::from("test").into())
         });
 
@@ -406,15 +506,17 @@ mod tests {
 
     #[test]
     fn test_node_commit_meta_changes() {
-        let (credential, secret) =
-            get_test_credential(CipherSuite::Curve25519Aes128V1, b"foo".to_vec());
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let (mut leaf, _) = get_test_node(credential, &secret, None, None);
+        let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
+
+        let (mut leaf, _) = get_test_node(cipher_suite, credential, &secret, None, None);
         let new_capabilities = get_test_capabilities();
         let new_extensions = get_test_extensions();
         let test_parent_hash = ParentHash::from(vec![42u8; 32]);
 
         leaf.commit(
+            cipher_suite,
             b"group",
             Some(new_capabilities.clone()),
             Some(new_extensions.clone()),

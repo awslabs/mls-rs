@@ -81,23 +81,20 @@ impl CredentialConvertible for CertificateChain {
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::x509::test_utils::{test_cert, test_key};
-
+pub mod test_utils {
     use super::*;
     use ferriscrypt::asym::ec_key::{generate_keypair, Curve, SecretKey};
-    use ferriscrypt::rand::SecureRng;
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
-    struct TestCredentialData {
-        public: PublicKey,
-        secret: SecretKey,
-        credential: Credential,
+    pub struct TestCredentialData {
+        pub public: PublicKey,
+        pub secret: SecretKey,
+        pub credential: Credential,
     }
 
-    fn get_test_basic_credential(identity: Vec<u8>, scheme: SignatureScheme) -> TestCredentialData {
+    pub fn get_test_basic_credential(
+        identity: Vec<u8>,
+        scheme: SignatureScheme,
+    ) -> TestCredentialData {
         let (public, secret) = generate_keypair(Curve::from(scheme)).unwrap();
         let credential = Credential::Basic(BasicCredential::new(identity, public.clone()).unwrap());
 
@@ -107,6 +104,22 @@ mod tests {
             credential,
         }
     }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{test_utils::TestCredentialData, *};
+    use crate::{
+        credential::test_utils::get_test_basic_credential,
+        x509::test_utils::{test_cert, test_key},
+    };
+    use ferriscrypt::{
+        asym::ec_key::{Curve, SecretKey},
+        rand::SecureRng,
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     fn get_test_certificate_credential() -> TestCredentialData {
         let test_key = test_key(Curve::P256);

@@ -4,9 +4,8 @@ use crate::{
         MLSCiphertextContent, MLSCiphertextContentAAD, MLSMessageContent, MLSPlaintext,
         MLSSenderData, MLSSenderDataAAD, Sender, VerifiedPlaintext,
     },
-    key_package::KeyPackageRef,
     signer::Signable,
-    tree_kem::TreeKemPrivate,
+    tree_kem::{leaf_node_ref::LeafNodeRef, TreeKemPrivate},
     AddProposal, Proposal,
 };
 use ferriscrypt::asym::ec_key::PublicKey;
@@ -39,10 +38,10 @@ where
         }
     }
 
-    fn public_key_for_member(&self, leaf_ref: &KeyPackageRef) -> Result<PublicKey, GroupError> {
+    fn public_key_for_member(&self, leaf_ref: &LeafNodeRef) -> Result<PublicKey, GroupError> {
         self.msg_epoch
             .public_tree
-            .get_key_package(leaf_ref)?
+            .get_leaf_node(leaf_ref)?
             .credential
             .public_key()
             .map_err(Into::into)
@@ -60,9 +59,9 @@ where
         match content {
             Content::Commit(Commit {
                 path: Some(path), ..
-            }) => Ok(path.leaf_key_package.credential.public_key()?),
+            }) => Ok(path.leaf_node.credential.public_key()?),
             Content::Proposal(Proposal::Add(AddProposal { key_package })) => {
-                Ok(key_package.credential.public_key()?)
+                Ok(key_package.leaf_node.credential.public_key()?)
             }
             _ => Err(GroupError::NewMembersCanOnlyProposeAddingThemselves),
         }
@@ -141,7 +140,7 @@ where
         )?;
 
         let sender_data = MLSSenderData::tls_deserialize(&mut &*decrypted_sender)?;
-        if self.private_tree.key_package_ref == sender_data.sender {
+        if self.private_tree.leaf_node_ref == sender_data.sender {
             return Err(GroupError::CantProcessMessageFromSelf);
         }
 
@@ -154,7 +153,7 @@ where
         let decryption_key = self.msg_epoch.get_decryption_key(
             self.msg_epoch
                 .public_tree
-                .package_leaf_index(&sender_data.sender)?,
+                .leaf_node_index(&sender_data.sender)?,
             sender_data.generation,
             key_type,
         )?;
@@ -197,10 +196,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::group::test_utils::TEST_GROUP;
     use crate::{
         cipher_suite::CipherSuite,
         client_config::InMemoryPskStore,
-        extension::ExtensionList,
         group::{
             membership_tag::MembershipTag,
             message_signature::MessageSigningContext,
@@ -210,7 +209,6 @@ mod tests {
             Content, ControlEncryptionMode, Group, GroupError, MLSMessagePayload, MLSPlaintext,
             MessageVerifier, Sender,
         },
-        key_package::KeyPackageGenerator,
         signer::{Signable, SignatureError},
         ProtocolVersion,
     };
@@ -222,7 +220,6 @@ mod tests {
 
     const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
-    const TEST_GROUP: &[u8] = b"group";
     const TED_EXTERNAL_KEY_ID: &[u8] = b"ted";
 
     fn make_verifier<F>(group: &mut Group, f: F) -> MessageVerifier<'_, F>
@@ -267,7 +264,7 @@ mod tests {
     impl TestMember {
         fn make_member_plaintext(&self) -> MLSPlaintext {
             make_plaintext(
-                Sender::Member(self.group.private_tree.key_package_ref.clone()),
+                Sender::Member(self.group.private_tree.leaf_node_ref.clone()),
                 self.group.current_epoch(),
             )
         }
@@ -289,31 +286,19 @@ mod tests {
 
     impl TestEnv {
         fn new() -> Self {
-            let (key_pkg_gen, signing_key) =
-                test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"alice");
+            let alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-            let alice_key_package_generator = KeyPackageGenerator {
-                protocol_version: key_pkg_gen.key_package.version,
-                cipher_suite: key_pkg_gen.key_package.cipher_suite,
-                credential: &key_pkg_gen.key_package.credential.clone(),
-                extensions: &key_pkg_gen.key_package.extensions.clone(),
-                signing_key: &signing_key.clone(),
+            let mut alice = TestMember {
+                signing_key: alice_group.signing_key,
+                group: alice_group.group,
             };
 
-            let group = Group::new(
-                TEST_GROUP.to_vec(),
-                alice_key_package_generator.clone(),
-                ExtensionList::new(),
-            )
-            .unwrap();
-
-            let mut alice = TestMember { signing_key, group };
-
-            let (key_pkg_gen, signing_key) =
+            let (bob_key_pkg_gen, bob_signing_key) =
                 test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+
             let proposal = alice
                 .group
-                .add_proposal(key_pkg_gen.key_package.clone().into())
+                .add_proposal(bob_key_pkg_gen.key_package.clone())
                 .unwrap();
 
             let secret_store = InMemoryPskStore::default();
@@ -322,11 +307,11 @@ mod tests {
                 .group
                 .commit_proposals(
                     vec![proposal],
-                    &alice_key_package_generator,
                     false,
                     ControlEncryptionMode::Plaintext,
-                    false,
+                    true,
                     &secret_store,
+                    &alice.signing_key,
                 )
                 .unwrap();
 
@@ -339,16 +324,22 @@ mod tests {
                 .group
                 .process_pending_commit(commit_generation, &secret_store)
                 .unwrap();
-            let group = Group::from_welcome_message(
+
+            let bob_group = Group::from_welcome_message(
                 TEST_PROTOCOL_VERSION,
                 welcome,
-                Some(alice.group.current_epoch_tree().unwrap().clone()),
-                key_pkg_gen,
+                None,
+                bob_key_pkg_gen,
                 &secret_store,
                 |_, _| true,
             )
             .unwrap();
-            let bob = TestMember { signing_key, group };
+
+            let bob = TestMember {
+                signing_key: bob_signing_key,
+                group: bob_group,
+            };
+
             Self { alice, bob }
         }
     }
@@ -368,11 +359,13 @@ mod tests {
         let mut env = TestEnv::new();
         let mut message = env.alice.make_member_plaintext();
         env.alice.sign(&mut message, true);
+
         let message = env
             .alice
             .group
             .encrypt_plaintext(message, PaddingMode::None)
             .unwrap();
+
         let mut verifier = make_verifier(&mut env.bob.group, |_| None);
         let _ = verifier.decrypt_ciphertext(message).unwrap();
     }
@@ -414,7 +407,7 @@ mod tests {
 
         let mut message = make_plaintext(Sender::NewMember, test_group.group.current_epoch());
         message.content.content = Content::Proposal(Proposal::Add(AddProposal {
-            key_package: key_pkg_gen.key_package.into(),
+            key_package: key_pkg_gen.key_package,
         }));
 
         let signing_context = MessageSigningContext {
@@ -434,7 +427,7 @@ mod tests {
 
         let mut message = make_plaintext(Sender::NewMember, test_group.group.current_epoch());
         message.content.content = Content::Proposal(Proposal::Add(AddProposal {
-            key_package: key_pkg_gen.key_package.into(),
+            key_package: key_pkg_gen.key_package,
         }));
 
         let signing_context = MessageSigningContext {
@@ -460,7 +453,7 @@ mod tests {
             test_group.group.current_epoch(),
         );
         message.content.content = Content::Proposal(Proposal::Add(AddProposal {
-            key_package: bob_key_pkg_gen.key_package.into(),
+            key_package: bob_key_pkg_gen.key_package,
         }));
 
         let signing_context = MessageSigningContext {
@@ -486,7 +479,7 @@ mod tests {
             test_group.group.current_epoch(),
         );
         message.content.content = Content::Proposal(Proposal::Add(AddProposal {
-            key_package: bob_key_pkg_gen.key_package.into(),
+            key_package: bob_key_pkg_gen.key_package,
         }));
 
         let signing_context = MessageSigningContext {

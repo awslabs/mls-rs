@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 
 use ferriscrypt::asym::ec_key::EcKeyError;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
@@ -9,15 +10,17 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use math as tree_math;
 use math::TreeMathError;
-use node::{Leaf, LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
+use node::{LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
+
+use self::leaf_node::{LeafNode, LeafNodeError};
+use self::leaf_node_ref::LeafNodeRef;
+use self::leaf_node_validator::ValidatedLeafNode;
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
-use crate::extension::{ExtensionError, ParentHashExt};
+use crate::extension::ExtensionError;
 use crate::group::key_schedule::KeyScheduleKdfError;
-use crate::key_package::{
-    KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
-    KeyPackageValidationError, KeyPackageValidator, ValidatedKeyPackage,
-};
+use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError};
+use crate::signer::Signer;
 use crate::tree_kem::parent_hash::ParentHashError;
 use crate::tree_kem::path_secret::PathSecretError;
 
@@ -68,6 +71,8 @@ pub enum RatchetTreeError {
     #[error(transparent)]
     KeyPackageValidationError(#[from] KeyPackageValidationError),
     #[error(transparent)]
+    LeafNodeError(#[from] LeafNodeError),
+    #[error(transparent)]
     TreeIndexError(#[from] TreeIndexError),
     #[error("invalid update path signature")]
     InvalidUpdatePathSignature,
@@ -90,8 +95,8 @@ pub enum RatchetTreeError {
     ParentHashMismatch,
     #[error("invalid parent hash: {0}")]
     InvalidParentHash(String),
-    #[error("key package not found: {0}")]
-    KeyPackageNotFound(String),
+    #[error("leaf node not found: {0}")]
+    LeafNodeNotFound(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -159,12 +164,7 @@ impl TreeKemPublic {
         let index = nodes.non_empty_leaves().try_fold(
             TreeIndex::new(),
             |mut tree_index, (leaf_index, leaf)| {
-                tree_index.insert(
-                    leaf.key_package.to_reference()?,
-                    leaf_index,
-                    &leaf.key_package,
-                )?;
-
+                tree_index.insert(leaf.to_reference(cipher_suite)?, leaf_index, leaf)?;
                 Ok::<_, RatchetTreeError>(tree_index)
             },
         )?;
@@ -181,19 +181,16 @@ impl TreeKemPublic {
     }
 
     pub fn derive(
-        key_package_generation: KeyPackageGeneration,
+        cipher_suite: CipherSuite,
+        leaf_node: ValidatedLeafNode,
+        secret_key: HpkeSecretKey,
     ) -> Result<(TreeKemPublic, TreeKemPrivate), RatchetTreeError> {
-        let mut public_tree = TreeKemPublic::new(key_package_generation.key_package.cipher_suite);
+        let mut public_tree = TreeKemPublic::new(cipher_suite);
 
-        let key_package_ref = key_package_generation.key_package.to_reference()?;
+        let leaf_node_ref = leaf_node.to_reference(cipher_suite)?;
+        public_tree.add_leaves(vec![leaf_node])?;
 
-        public_tree.add_leaves(vec![key_package_generation.key_package])?;
-
-        let private_tree = TreeKemPrivate::new_self_leaf(
-            LeafIndex(0),
-            key_package_ref,
-            key_package_generation.secret_key,
-        );
+        let private_tree = TreeKemPrivate::new_self_leaf(LeafIndex(0), leaf_node_ref, secret_key);
 
         Ok((public_tree, private_tree))
     }
@@ -206,37 +203,32 @@ impl TreeKemPublic {
         self.nodes.occupied_leaf_count()
     }
 
-    pub fn package_leaf_index(
+    pub fn leaf_node_index(
         &self,
-        key_package_ref: &KeyPackageRef,
+        leaf_node_ref: &LeafNodeRef,
     ) -> Result<LeafIndex, RatchetTreeError> {
         self.index
-            .get_key_package_index(key_package_ref)
-            .ok_or_else(|| RatchetTreeError::KeyPackageNotFound(key_package_ref.to_string()))
+            .get_leaf_node_index(leaf_node_ref)
+            .ok_or_else(|| RatchetTreeError::LeafNodeNotFound(leaf_node_ref.to_string()))
     }
 
-    pub fn get_key_package(
+    pub fn get_leaf_node(
         &self,
-        key_package_ref: &KeyPackageRef,
-    ) -> Result<&KeyPackage, RatchetTreeError> {
-        self.get_validated_key_package(key_package_ref)
-            .map(|p| &**p)
+        leaf_node_ref: &LeafNodeRef,
+    ) -> Result<&LeafNode, RatchetTreeError> {
+        self.get_validated_leaf_node(leaf_node_ref).map(|p| &**p)
     }
 
-    pub fn get_validated_key_package(
+    pub fn get_validated_leaf_node(
         &self,
-        key_package_ref: &KeyPackageRef,
-    ) -> Result<&ValidatedKeyPackage, RatchetTreeError> {
-        let index = self.package_leaf_index(key_package_ref)?;
-
-        self.nodes
-            .borrow_as_leaf(index)
-            .map(|l| &l.key_package)
-            .map_err(|e| e.into())
+        leaf_node_ref: &LeafNodeRef,
+    ) -> Result<&ValidatedLeafNode, RatchetTreeError> {
+        let index = self.leaf_node_index(leaf_node_ref)?;
+        self.nodes.borrow_as_leaf(index).map_err(|e| e.into())
     }
 
-    fn update_unmerged(&mut self, key_package_ref: &KeyPackageRef) -> Result<(), RatchetTreeError> {
-        let index = self.package_leaf_index(key_package_ref)?;
+    fn update_unmerged(&mut self, leaf_node_ref: &LeafNodeRef) -> Result<(), RatchetTreeError> {
+        let index = self.leaf_node_index(leaf_node_ref)?;
 
         // For a given leaf index, find parent nodes and add the leaf to the unmerged leaf
         self.nodes.direct_path(index)?.into_iter().for_each(|i| {
@@ -250,16 +242,16 @@ impl TreeKemPublic {
 
     fn fill_empty_leaves(
         &mut self,
-        key_packages: &[(KeyPackageRef, ValidatedKeyPackage)],
-    ) -> Result<Vec<KeyPackageRef>, RatchetTreeError> {
+        leaf_nodes: &[(LeafNodeRef, ValidatedLeafNode)],
+    ) -> Result<Vec<LeafNodeRef>, RatchetTreeError> {
         // Fill a set of empty leaves given a particular array, return the leaf indexes that were
         // overwritten
-        self.nodes.empty_leaves().zip(key_packages.iter()).try_fold(
+        self.nodes.empty_leaves().zip(leaf_nodes.iter()).try_fold(
             Vec::new(),
             |mut indexs, ((index, empty_node), (package_ref, package))| {
                 // See TODO in add_nodes, we have to clone here because we can't iterate the list
                 // of packages to insert a single time
-                *empty_node = Some(Node::from(Leaf::from(package.clone())));
+                *empty_node = Some(Node::from(package.clone()));
                 self.index.insert(package_ref.clone(), index, package)?;
                 indexs.push(package_ref.clone());
 
@@ -272,25 +264,25 @@ impl TreeKemPublic {
     // tree should always be done on a clone of the tree, which is how commits are processed
     pub fn add_leaves(
         &mut self,
-        key_packages: Vec<ValidatedKeyPackage>,
-    ) -> Result<Vec<KeyPackageRef>, RatchetTreeError> {
+        leaf_nodes: Vec<ValidatedLeafNode>,
+    ) -> Result<Vec<LeafNodeRef>, RatchetTreeError> {
         // Get key package references for all packages we are going to insert
-        let packages_to_insert = key_packages
+        let leaves_to_insert = leaf_nodes
             .into_iter()
-            .map(|kp| {
-                let reference = kp.to_reference()?;
-                Ok((reference, kp))
+            .map(|ln| {
+                let reference = ln.to_reference(self.cipher_suite)?;
+                Ok((reference, ln))
             })
-            .collect::<Result<Vec<(KeyPackageRef, ValidatedKeyPackage)>, RatchetTreeError>>()?;
+            .collect::<Result<Vec<(LeafNodeRef, ValidatedLeafNode)>, RatchetTreeError>>()?;
 
         // Fill empty leaves first, then add the remaining nodes by extending
         // the tree to the right
 
         // TODO: Find a way to predetermine a single list of nodes to fill by pre-populating new
         // empty nodes and iterating through a chain of empty leaves + new leaves
-        let mut added_leaf_indexs = self.fill_empty_leaves(&packages_to_insert)?;
+        let mut added_leaf_indexs = self.fill_empty_leaves(&leaves_to_insert)?;
 
-        packages_to_insert
+        leaves_to_insert
             .into_iter()
             .skip(added_leaf_indexs.len())
             .try_for_each(|(package_ref, package)| {
@@ -307,7 +299,7 @@ impl TreeKemPublic {
 
         added_leaf_indexs
             .iter()
-            .try_for_each(|kpr| self.update_unmerged(kpr))?;
+            .try_for_each(|index| self.update_unmerged(index))?;
 
         Ok(added_leaf_indexs)
     }
@@ -318,28 +310,27 @@ impl TreeKemPublic {
     pub fn remove_leaves(
         &mut self,
         lookup_tree: &TreeKemPublic,
-        key_package_refs: Vec<KeyPackageRef>,
-    ) -> Result<Vec<(KeyPackageRef, KeyPackage)>, RatchetTreeError> {
+        leaf_node_refs: Vec<LeafNodeRef>,
+    ) -> Result<Vec<(LeafNodeRef, LeafNode)>, RatchetTreeError> {
         // Identify a leaf node containing a key package matching removed.
         // This lookup MUST be done on the tree before any non-Remove proposals have been applied
 
-        let indexes = key_package_refs
+        let indexes = leaf_node_refs
             .iter()
-            .map(|reference| lookup_tree.package_leaf_index(reference))
+            .map(|reference| lookup_tree.leaf_node_index(reference))
             .collect::<Result<Vec<LeafIndex>, RatchetTreeError>>()?;
 
-        let removed_leaves = indexes.into_iter().zip(key_package_refs).try_fold(
+        let removed_leaves = indexes.into_iter().zip(leaf_node_refs).try_fold(
             Vec::new(),
-            |mut vec, (index, package_ref)| {
+            |mut vec, (index, node_ref)| {
                 // Replace the leaf node at position removed with a blank node
                 if let Some(removed) = self.nodes.blank_leaf_node(index)? {
-                    self.index.remove(&package_ref, &removed.key_package)?;
-                    vec.push((package_ref.clone(), removed.key_package.into()));
+                    self.index.remove(&node_ref, &removed)?;
+                    vec.push((node_ref.clone(), removed.into()));
                 }
 
                 // Blank the intermediate nodes along the path from the removed leaf to the root
                 self.nodes.blank_direct_path(index)?;
-
                 Ok::<_, RatchetTreeError>(vec)
             },
         )?;
@@ -352,23 +343,23 @@ impl TreeKemPublic {
 
     pub fn update_leaf(
         &mut self,
-        package_ref: &KeyPackageRef,
-        key_package: ValidatedKeyPackage,
+        leaf_ref: &LeafNodeRef,
+        leaf_node: ValidatedLeafNode,
     ) -> Result<(), RatchetTreeError> {
         // Determine if this key package is unique
-        let new_key_package_ref = key_package.to_reference()?;
+        let new_key_package_ref = leaf_node.to_reference(self.cipher_suite)?;
 
         // Update the leaf node
-        let leaf_index = self.package_leaf_index(package_ref)?;
+        let leaf_index = self.leaf_node_index(leaf_ref)?;
         let existing_leaf = self.nodes.borrow_as_leaf_mut(leaf_index)?;
 
         // Update the cache
-        self.index.remove(package_ref, &existing_leaf.key_package)?;
+        self.index.remove(leaf_ref, existing_leaf)?;
 
         self.index
-            .insert(new_key_package_ref, leaf_index, &key_package)?;
+            .insert(new_key_package_ref, leaf_index, &leaf_node)?;
 
-        existing_leaf.key_package = key_package;
+        *existing_leaf = leaf_node;
 
         // Blank the intermediate nodes along the path from the sender's leaf to the root
         self.nodes
@@ -377,15 +368,15 @@ impl TreeKemPublic {
             .map_err(RatchetTreeError::from)
     }
 
-    pub fn get_key_packages(&self) -> Vec<&KeyPackage> {
+    pub fn get_leaf_nodes(&self) -> Vec<&LeafNode> {
         self.nodes
             .non_empty_leaves()
-            .map(|(_, l)| &*l.key_package)
+            .map(|(_, l)| l.deref())
             .collect()
     }
 
-    pub(crate) fn get_key_package_refs(&self) -> impl Iterator<Item = &'_ KeyPackageRef> {
-        self.index.key_package_refs()
+    pub(crate) fn get_leaf_node_refs(&self) -> impl Iterator<Item = &'_ LeafNodeRef> {
+        self.index.leaf_node_refs()
     }
 
     fn encrypt_copath_node_resolution(
@@ -425,19 +416,19 @@ impl TreeKemPublic {
     }
 
     // TODO: Make UpdatePathGeneration not return a private key to simplify this function
-    pub fn encap<E: Into<RatchetTreeError>>(
+    pub fn encap<S: Signer>(
         &mut self,
         private_key: &TreeKemPrivate,
-        key_package_generation: KeyPackageGeneration,
+        group_id: &[u8],
         context: &[u8],
-        excluding: &[KeyPackageRef],
-        mut package_resign: impl FnMut(&mut ValidatedKeyPackage) -> Result<(), E>,
+        excluding: &[LeafNodeRef],
+        signer: &S,
     ) -> Result<UpdatePathGeneration, RatchetTreeError> {
         let secret_generator = PathSecretGenerator::new(self.cipher_suite);
 
         let excluding: Vec<LeafIndex> = excluding
             .iter()
-            .flat_map(|kpr| self.package_leaf_index(kpr))
+            .flat_map(|reference| self.leaf_node_index(reference))
             .collect();
 
         // Generate all the new path secrets and encrypt them to their copath node resolutions
@@ -462,25 +453,21 @@ impl TreeKemPublic {
                 },
             )?;
 
-        let mut private_key = private_key.clone();
-
-        private_key.secret_keys.insert(
-            NodeIndex::from(private_key.self_index),
-            key_package_generation.secret_key,
-        );
-
-        for (index, path_secret) in &node_secrets {
-            private_key
-                .secret_keys
-                .insert(*index, path_secret.to_hpke_key_pair()?.0);
-        }
-
         let root_secret = node_secrets
             .get(&tree_math::root(self.nodes.total_leaf_count()))
             .cloned()
             .map(Ok)
             .unwrap_or_else(|| PathSecretGeneration::random(self.cipher_suite))?
             .path_secret;
+
+        // Update the private key with the new keys
+        let mut private_key = private_key.clone();
+
+        for (index, path_secret) in &node_secrets {
+            private_key
+                .secret_keys
+                .insert(*index, path_secret.to_hpke_key_pair()?.0);
+        }
 
         let secret_path = SecretPath {
             path_secrets: node_secrets
@@ -490,46 +477,40 @@ impl TreeKemPublic {
             root_secret,
         };
 
-        let update_path = ValidatedUpdatePath {
-            leaf_key_package: key_package_generation.key_package,
-            nodes: node_updates,
-        };
+        let mut own_leaf_copy = self.nodes.borrow_as_leaf(private_key.self_index)?.clone();
 
-        // Apply the new update path to the tree
-        let old_key_package = self.apply_update_path(private_key.self_index, &update_path)?;
-
-        // Apply the parent hash updates to the tree
-        let leaf_parent_hash = self.update_parent_hashes(private_key.self_index, None)?;
-
-        // Update the leaf in the tree by applying the parent hash and signing the package
-        let own_leaf = self.nodes.borrow_as_leaf_mut(private_key.self_index)?;
-
-        own_leaf
-            .key_package
-            .extensions
-            .set_extension(ParentHashExt::from(leaf_parent_hash))?;
-
-        package_resign(&mut own_leaf.key_package).map_err(Into::into)?;
-
-        let key_package_ref = own_leaf.key_package.to_reference()?;
-
-        // Update the key package index with the new reference value
+        // Remove the original leaf from the index
         self.index
-            .remove(&private_key.key_package_ref, &old_key_package)?;
+            .remove(&private_key.leaf_node_ref, &own_leaf_copy)?;
 
-        self.index.insert(
-            key_package_ref.clone(),
-            private_key.self_index,
-            &own_leaf.key_package,
-        )?;
+        // Apply parent node updates to the tree to aid with the parent hash calculation
+        self.apply_parent_node_updates(private_key.self_index, &node_updates)?;
 
-        // Update the private key with the new reference value
-        private_key.key_package_ref = key_package_ref;
+        // Evolve your leaf forward
+        // TODO: Support updating extensions and capabilities at this point
+        let secret_key =
+            own_leaf_copy.commit(self.cipher_suite, group_id, None, None, signer, |_| {
+                self.update_parent_hashes(private_key.self_index, None)
+                    .map_err(Into::into)
+            })?;
 
-        // Overwrite the key package in the update path with the signed version
+        let own_leaf = self.nodes.borrow_as_leaf_mut(private_key.self_index)?;
+        let new_leaf_ref = own_leaf_copy.to_reference(self.cipher_suite)?;
+        *own_leaf = own_leaf_copy;
+
+        self.index
+            .insert(new_leaf_ref.clone(), private_key.self_index, own_leaf)?;
+
+        private_key
+            .secret_keys
+            .insert(NodeIndex::from(private_key.self_index), secret_key);
+
+        private_key.leaf_node_ref = new_leaf_ref;
+
+        // Create an update path with the new node and parent node updates
         let update_path = UpdatePath {
-            leaf_key_package: own_leaf.key_package.clone().into(),
-            nodes: update_path.nodes,
+            leaf_node: own_leaf.clone().into(),
+            nodes: node_updates,
         };
 
         Ok(UpdatePathGeneration {
@@ -585,40 +566,47 @@ impl TreeKemPublic {
         &mut self,
         sender: LeafIndex,
         update_path: &ValidatedUpdatePath,
-    ) -> Result<ValidatedKeyPackage, RatchetTreeError> {
+    ) -> Result<ValidatedLeafNode, RatchetTreeError> {
         // Install the new leaf node
-        let mut existing_leaf = self.nodes.borrow_as_leaf_mut(sender)?;
-        let existing_key_package = existing_leaf.key_package.clone();
+        let existing_leaf = self.nodes.borrow_as_leaf_mut(sender)?;
+        let original_leaf_node = existing_leaf.clone();
 
-        existing_leaf.key_package = update_path.leaf_key_package.clone();
+        *existing_leaf = update_path.leaf_node.clone();
 
         // Update the rest of the nodes on the direct path
-        update_path
-            .nodes
+        self.apply_parent_node_updates(sender, &update_path.nodes)?;
+
+        Ok(original_leaf_node)
+    }
+
+    fn apply_parent_node_updates(
+        &mut self,
+        sender: LeafIndex,
+        node_updates: &[UpdatePathNode],
+    ) -> Result<(), RatchetTreeError> {
+        node_updates
             .iter()
             .zip(self.nodes.filtered_direct_path(sender)?)
             .try_for_each(|(one_node, node_index)| {
                 self.update_node(one_node.public_key.clone(), node_index)
-            })?;
-
-        Ok(existing_key_package)
+            })
     }
 
     pub fn apply_self_update(
         &mut self,
         update_path: &ValidatedUpdatePath,
-        original_key_package_ref: &KeyPackageRef,
+        original_leaf_node_ref: &LeafNodeRef,
     ) -> Result<(), RatchetTreeError> {
-        let sender = self.package_leaf_index(original_key_package_ref)?;
+        let sender = self.leaf_node_index(original_leaf_node_ref)?;
         let existing_key_package = self.apply_update_path(sender, update_path)?;
 
         self.index
-            .remove(original_key_package_ref, &existing_key_package)?;
+            .remove(original_leaf_node_ref, &existing_key_package)?;
 
         self.index.insert(
-            update_path.leaf_key_package.to_reference()?,
+            update_path.leaf_node.to_reference(self.cipher_suite)?,
             sender,
-            &update_path.leaf_key_package,
+            &update_path.leaf_node,
         )?;
 
         // Verify the parent hash of the new sender leaf node and update the parent hash values
@@ -631,17 +619,17 @@ impl TreeKemPublic {
     pub fn decap(
         &mut self,
         private_key: TreeKemPrivate,
-        sender: &KeyPackageRef,
+        sender: &LeafNodeRef,
         update_path: &ValidatedUpdatePath,
-        added_leaves: &[KeyPackageRef],
+        added_leaves: &[LeafNodeRef],
         context: &[u8],
     ) -> Result<TreeSecrets, RatchetTreeError> {
-        let sender_index = self.package_leaf_index(sender)?;
+        let sender_index = self.leaf_node_index(sender)?;
 
         // Exclude newly added leaf indexes
         let excluding = added_leaves
             .iter()
-            .flat_map(|kpr| self.package_leaf_index(kpr).map(Into::into))
+            .flat_map(|index| self.leaf_node_index(index).map(Into::into))
             .collect::<Vec<NodeIndex>>();
 
         // Find the least common ancestor shared by us and the sender
@@ -721,9 +709,9 @@ impl TreeKemPublic {
         self.index.remove(sender, &removed_key_package)?;
 
         self.index.insert(
-            update_path.leaf_key_package.to_reference()?,
+            update_path.leaf_node.to_reference(self.cipher_suite)?,
             sender_index,
-            &update_path.leaf_key_package,
+            &update_path.leaf_node,
         )?;
 
         // Verify the parent hash of the new sender leaf node and update the parent hash values
@@ -752,85 +740,51 @@ impl TreeKemPublic {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use crate::{
-        cipher_suite::CipherSuite,
-        credential::{BasicCredential, Credential},
-        extension::{CapabilitiesExt, ExtensionList, LifetimeExt, MlsExtension},
-        key_package::{KeyPackageGeneration, KeyPackageGenerator, ValidatedKeyPackage},
-        tree_kem::{TreeKemPrivate, TreeKemPublic},
-        ProtocolVersion,
+    use ferriscrypt::{asym::ec_key::SecretKey, hpke::kem::HpkeSecretKey};
+
+    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
+
+    use super::{
+        leaf_node::{test_utils::get_basic_test_node, LeafNode},
+        leaf_node_validator::ValidatedLeafNode,
+        TreeKemPrivate, TreeKemPublic,
     };
-    use ferriscrypt::asym::ec_key::{Curve, SecretKey};
+    use crate::cipher_suite::CipherSuite;
 
-    pub(crate) fn get_test_key_package_sig_key(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        id: Vec<u8>,
-        sig_key: &SecretKey,
-    ) -> KeyPackageGeneration {
-        let credential =
-            Credential::Basic(BasicCredential::new(id, sig_key.to_public().unwrap()).unwrap());
+    #[derive(Debug)]
+    pub struct TestTree {
+        pub public: TreeKemPublic,
+        pub private: TreeKemPrivate,
+        pub creator_leaf: LeafNode,
+        pub creator_signing_key: SecretKey,
+        pub creator_hpke_secret: HpkeSecretKey,
+    }
 
-        let extensions = vec![
-            CapabilitiesExt::default().to_extension().unwrap(),
-            LifetimeExt::years(1).unwrap().to_extension().unwrap(),
-        ];
+    pub fn get_test_tree(cipher_suite: CipherSuite) -> TestTree {
+        let (creator_leaf, creator_hpke_secret, creator_signing_key) =
+            get_basic_test_node_sig_key(cipher_suite, "creator");
 
-        let key_package_gen = KeyPackageGenerator {
-            protocol_version,
+        let (test_public, test_private) = TreeKemPublic::derive(
             cipher_suite,
-            signing_key: sig_key,
-            credential: &credential,
-            extensions: &ExtensionList::from(extensions),
-        };
+            creator_leaf.clone().into(),
+            creator_hpke_secret.clone(),
+        )
+        .unwrap();
 
-        key_package_gen.generate(None).unwrap()
+        TestTree {
+            public: test_public,
+            private: test_private,
+            creator_leaf,
+            creator_signing_key,
+            creator_hpke_secret,
+        }
     }
 
-    pub(crate) fn get_test_key_package(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        id: Vec<u8>,
-    ) -> KeyPackageGeneration {
-        let signing_key =
-            SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
-        get_test_key_package_sig_key(protocol_version, cipher_suite, id, &signing_key)
-    }
-
-    pub(crate) fn get_test_tree(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-    ) -> (TreeKemPublic, TreeKemPrivate, KeyPackageGeneration) {
-        let signing_key =
-            SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
-
-        get_test_tree_with_signer(protocol_version, cipher_suite, &signing_key)
-    }
-
-    pub(crate) fn get_test_tree_with_signer(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        signing_key: &SecretKey,
-    ) -> (TreeKemPublic, TreeKemPrivate, KeyPackageGeneration) {
-        let test_key_package = get_test_key_package_sig_key(
-            protocol_version,
-            cipher_suite,
-            b"foo".to_vec(),
-            signing_key,
-        );
-
-        let (test_public, test_private) = TreeKemPublic::derive(test_key_package.clone()).unwrap();
-        (test_public, test_private, test_key_package)
-    }
-
-    pub(crate) fn get_test_key_packages(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-    ) -> Vec<ValidatedKeyPackage> {
+    pub fn get_test_leaf_nodes(cipher_suite: CipherSuite) -> Vec<ValidatedLeafNode> {
         [
-            get_test_key_package(protocol_version, cipher_suite, b"A".to_vec()).key_package,
-            get_test_key_package(protocol_version, cipher_suite, b"B".to_vec()).key_package,
-            get_test_key_package(protocol_version, cipher_suite, b"C".to_vec()).key_package,
+            get_basic_test_node(cipher_suite, "A").into(),
+            get_basic_test_node(cipher_suite, "B").into(),
+            get_basic_test_node(cipher_suite, "C").into(),
         ]
         .to_vec()
     }
@@ -838,166 +792,142 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
-    use ferriscrypt::asym::ec_key::{Curve, SecretKey};
-
-    use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
-    use crate::tree_kem::node::{NodeTypeResolver, Parent};
+    use super::leaf_node::test_utils::get_basic_test_node_sig_key;
+    use super::leaf_node_validator::ValidatedLeafNode;
+    use super::tree_math;
+    use super::{TreeKemPrivate, UpdatePath, ValidatedUpdatePath};
+    use crate::cipher_suite::CipherSuite;
+    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
+    use crate::tree_kem::leaf_node::LeafNode;
+    use crate::tree_kem::node::{LeafIndex, Node, NodeTypeResolver, Parent};
     use crate::tree_kem::parent_hash::ParentHash;
-    use crate::ProtocolVersion;
-
-    use super::{
-        test_utils::{
-            get_test_key_package, get_test_key_package_sig_key, get_test_key_packages,
-            get_test_tree,
-        },
-        *,
-    };
+    use crate::tree_kem::test_utils::{get_test_leaf_nodes, get_test_tree};
+    use crate::tree_kem::tree_index::TreeIndexError;
+    use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
+    use crate::LeafNodeRef;
+    use assert_matches::assert_matches;
+    use ferriscrypt::asym::ec_key::SecretKey;
+    use ferriscrypt::hpke::kem::HpkePublicKey;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     pub fn test_derive() {
-        for (protocol_version, cipher_suite) in
-            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-        {
-            let (test_public, test_private, test_key_package) =
-                get_test_tree(protocol_version, cipher_suite);
+        for cipher_suite in CipherSuite::all() {
+            let test_tree = get_test_tree(cipher_suite);
 
             assert_eq!(
-                test_public.nodes[0],
-                Some(Node::Leaf(Leaf {
-                    key_package: test_key_package.key_package.clone()
-                }))
+                test_tree.public.nodes[0],
+                Some(Node::Leaf(test_tree.creator_leaf.clone().into()))
             );
 
-            assert_eq!(test_private.self_index, LeafIndex(0));
+            assert_eq!(test_tree.private.self_index, LeafIndex(0));
+
             assert_eq!(
-                test_private.key_package_ref,
-                test_key_package.key_package.to_reference().unwrap()
+                test_tree.private.leaf_node_ref,
+                test_tree.creator_leaf.to_reference(cipher_suite).unwrap()
             );
-            assert_eq!(test_private.secret_keys[&0], test_key_package.secret_key);
+
+            assert_eq!(
+                test_tree.private.secret_keys[&0],
+                test_tree.creator_hpke_secret
+            );
         }
     }
 
     #[test]
     fn test_import_export() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
-        let (mut test_tree, _, _) = get_test_tree(protocol_version, cipher_suite);
+        let mut test_tree = get_test_tree(cipher_suite);
 
-        let additional_key_packages = get_test_key_packages(protocol_version, cipher_suite);
+        let additional_key_packages = get_test_leaf_nodes(cipher_suite);
 
-        test_tree.add_leaves(additional_key_packages).unwrap();
+        test_tree
+            .public
+            .add_leaves(additional_key_packages)
+            .unwrap();
 
-        let exported = test_tree.export_node_data();
+        let exported = test_tree.public.export_node_data();
         let imported = TreeKemPublic::import_node_data(cipher_suite, exported).unwrap();
 
-        assert_eq!(test_tree, imported);
+        assert_eq!(test_tree.public, imported);
     }
 
     #[test]
     fn test_add_leaf() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
-
         let mut tree = TreeKemPublic::new(cipher_suite);
 
-        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
-        let res = tree.add_leaves(key_packages.clone()).unwrap();
+        let leaf_nodes = get_test_leaf_nodes(cipher_suite);
+        let res = tree.add_leaves(leaf_nodes.clone()).unwrap();
 
         // The result of adding a node should be all the references that were added
         assert_eq!(
             res,
-            key_packages
+            leaf_nodes
                 .iter()
-                .map(|kp| kp.to_reference().unwrap())
-                .collect::<Vec<KeyPackageRef>>()
+                .map(|kp| kp.to_reference(cipher_suite).unwrap())
+                .collect::<Vec<LeafNodeRef>>()
         );
 
         // The leaf count should be equal to the number of packages we added
-        assert_eq!(tree.occupied_leaf_count(), key_packages.len() as u32);
+        assert_eq!(tree.occupied_leaf_count(), leaf_nodes.len() as u32);
 
         // Each added package should be at the proper index and searchable in the tree
         res.iter()
-            .zip(key_packages.clone())
+            .zip(leaf_nodes.clone())
             .enumerate()
             .for_each(|(index, (r, kp))| {
-                assert_eq!(tree.get_key_package(r).unwrap(), &*kp);
-                assert_eq!(tree.package_leaf_index(r).unwrap(), LeafIndex(index as u32));
+                assert_eq!(tree.get_leaf_node(r).unwrap(), &*kp);
+                assert_eq!(tree.leaf_node_index(r).unwrap(), LeafIndex(index as u32));
             });
 
         // Verify the underlying state
         assert_eq!(tree.index.len(), tree.occupied_leaf_count() as usize);
-
         assert_eq!(tree.nodes.len(), 5);
-        assert_eq!(
-            tree.nodes[0],
-            Leaf {
-                key_package: key_packages[0].clone(),
-            }
-            .into()
-        );
+        assert_eq!(tree.nodes[0], leaf_nodes[0].clone().into());
         assert_eq!(tree.nodes[1], None);
-        assert_eq!(
-            tree.nodes[2],
-            Leaf {
-                key_package: key_packages[1].clone(),
-            }
-            .into()
-        );
+        assert_eq!(tree.nodes[2], leaf_nodes[1].clone().into());
         assert_eq!(tree.nodes[3], None);
-        assert_eq!(
-            tree.nodes[4],
-            Leaf {
-                key_package: key_packages[2].clone(),
-            }
-            .into()
-        );
+        assert_eq!(tree.nodes[4], leaf_nodes[2].clone().into());
     }
 
     #[test]
     fn test_get_key_packages() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
-
         let mut tree = TreeKemPublic::new(cipher_suite);
 
-        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
+        let key_packages = get_test_leaf_nodes(cipher_suite);
         tree.add_leaves(key_packages).unwrap();
 
-        let key_packages = tree.get_key_packages();
+        let key_packages = tree.get_leaf_nodes();
         assert_eq!(key_packages, key_packages.to_owned());
     }
 
     #[test]
     fn test_find_leaf() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
-
         let mut tree = TreeKemPublic::new(cipher_suite);
 
-        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
-
+        let key_packages = get_test_leaf_nodes(cipher_suite);
         tree.add_leaves(key_packages.clone()).unwrap();
 
         for (index, key_package_generation) in key_packages.iter().enumerate() {
             let key_package_index = tree
-                .package_leaf_index(&key_package_generation.to_reference().unwrap())
+                .leaf_node_index(&key_package_generation.to_reference(cipher_suite).unwrap())
                 .unwrap();
+
             assert_eq!(key_package_index, LeafIndex(index as u32));
         }
     }
 
     #[test]
     fn test_add_leaf_duplicate() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128V1;
-
         let mut tree = TreeKemPublic::new(cipher_suite);
 
-        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
+        let key_packages = get_test_leaf_nodes(cipher_suite);
         tree.add_leaves(key_packages.clone()).unwrap();
 
         let add_res = tree.add_leaves(key_packages);
@@ -1005,37 +935,32 @@ mod tests {
         assert_matches!(
             add_res,
             Err(RatchetTreeError::TreeIndexError(
-                TreeIndexError::DuplicateKeyPackage(_, _)
+                TreeIndexError::DuplicateLeafNode(_, _)
             ))
         );
     }
 
     #[test]
     fn test_add_leaf_empty_leaf() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
-
-        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
-        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
+        let mut tree = get_test_tree(cipher_suite).public;
+        let key_packages = get_test_leaf_nodes(cipher_suite);
 
         tree.add_leaves([key_packages[0].clone()].to_vec()).unwrap();
         tree.nodes[0] = None; // Set the original first node to none
         tree.add_leaves([key_packages[1].clone()].to_vec()).unwrap();
 
-        assert_eq!(tree.nodes[0], Leaf::from(key_packages[1].clone()).into());
+        assert_eq!(tree.nodes[0], key_packages[1].clone().into());
         assert_eq!(tree.nodes[1], None);
-        assert_eq!(tree.nodes[2], Leaf::from(key_packages[0].clone()).into());
+        assert_eq!(tree.nodes[2], key_packages[0].clone().into());
         assert_eq!(tree.nodes.len(), 3)
     }
 
     #[test]
     fn test_add_leaf_unmerged() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
-
-        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
-
-        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
+        let mut tree = get_test_tree(cipher_suite).public;
+        let key_packages = get_test_leaf_nodes(cipher_suite);
 
         tree.add_leaves([key_packages[0].clone(), key_packages[1].clone()].to_vec())
             .unwrap();
@@ -1057,12 +982,12 @@ mod tests {
 
     #[test]
     fn test_update_leaf() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
-        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
-        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
+        let mut tree = get_test_tree(cipher_suite).public;
+
+        let key_packages = get_test_leaf_nodes(cipher_suite);
         tree.add_leaves(key_packages.clone()).unwrap();
 
         // Add in parent nodes so we can detect them clearing after update
@@ -1077,14 +1002,13 @@ mod tests {
             });
 
         let original_size = tree.occupied_leaf_count();
-        let original_package_ref = key_packages[0].to_reference().unwrap();
-        let original_leaf_index = tree.package_leaf_index(&original_package_ref).unwrap();
+        let original_package_ref = key_packages[0].to_reference(cipher_suite).unwrap();
+        let original_leaf_index = tree.leaf_node_index(&original_package_ref).unwrap();
 
-        let updated_leaf =
-            get_test_key_package(protocol_version, cipher_suite, b"newpk".to_vec()).key_package;
-        let updated_key_ref = updated_leaf.to_reference().unwrap();
+        let updated_leaf = get_basic_test_node(cipher_suite, "newpk");
+        let updated_key_ref = updated_leaf.to_reference(cipher_suite).unwrap();
 
-        tree.update_leaf(&original_package_ref, updated_leaf.clone())
+        tree.update_leaf(&original_package_ref, updated_leaf.clone().into())
             .unwrap();
 
         // The tree should not have grown due to an update
@@ -1092,7 +1016,7 @@ mod tests {
 
         // The leaf should not have moved due to an update
         assert_eq!(
-            tree.package_leaf_index(&updated_key_ref).unwrap(),
+            tree.leaf_node_index(&updated_key_ref).unwrap(),
             original_leaf_index
         );
 
@@ -1100,19 +1024,16 @@ mod tests {
         assert_eq!(tree.index.len() as u32, tree.occupied_leaf_count());
 
         // The key package should be updated in the tree
-        assert_eq!(
-            tree.get_key_package(&updated_key_ref).unwrap(),
-            &*updated_leaf
-        );
+        assert_eq!(tree.get_leaf_node(&updated_key_ref).unwrap(), &updated_leaf);
 
         // There should be an error when looking for the original key package ref
         assert_matches!(
-            tree.get_key_package(&original_package_ref),
-            Err(RatchetTreeError::KeyPackageNotFound(_))
+            tree.get_leaf_node(&original_package_ref),
+            Err(RatchetTreeError::LeafNodeNotFound(_))
         );
         assert_matches!(
-            tree.package_leaf_index(&original_package_ref),
-            Err(RatchetTreeError::KeyPackageNotFound(_))
+            tree.leaf_node_index(&original_package_ref),
+            Err(RatchetTreeError::LeafNodeNotFound(_))
         );
 
         // Verify that the direct path has been cleared
@@ -1127,59 +1048,55 @@ mod tests {
 
     #[test]
     fn test_update_leaf_not_found() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
-        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
-        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
+        let mut tree = get_test_tree(cipher_suite).public;
+        let key_packages = get_test_leaf_nodes(cipher_suite);
         tree.add_leaves(key_packages).unwrap();
 
-        let new_key_package =
-            get_test_key_package(protocol_version, cipher_suite, b"new".to_vec()).key_package;
+        let new_key_package = get_basic_test_node(cipher_suite, "new");
 
         assert_matches!(
-            tree.update_leaf(&KeyPackageRef::from([0u8; 16]), new_key_package),
-            Err(RatchetTreeError::KeyPackageNotFound(_))
+            tree.update_leaf(&LeafNodeRef::from([0u8; 16]), new_key_package.into()),
+            Err(RatchetTreeError::LeafNodeNotFound(_))
         );
     }
 
     #[test]
     fn test_update_leaf_duplicate() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
-        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
-        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
+        let mut tree = get_test_tree(cipher_suite).public;
+        let key_packages = get_test_leaf_nodes(cipher_suite);
         tree.add_leaves(key_packages.clone()).unwrap();
 
         let duplicate_key_package = key_packages[1].clone();
-        let key_package_ref = key_packages[0].to_reference().unwrap();
+        let key_package_ref = key_packages[0].to_reference(cipher_suite).unwrap();
 
         assert_matches!(
             tree.update_leaf(&key_package_ref, duplicate_key_package),
             Err(RatchetTreeError::TreeIndexError(
-                TreeIndexError::DuplicateKeyPackage(_, _)
+                TreeIndexError::DuplicateLeafNode(_, _)
             ))
         );
     }
 
     #[test]
     fn test_remove_leaf() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
-        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
-        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
+        let mut tree = get_test_tree(cipher_suite).public;
+        let key_packages = get_test_leaf_nodes(cipher_suite);
         tree.add_leaves(key_packages.clone()).unwrap();
 
         let original_leaf_count = tree.occupied_leaf_count();
 
         let to_remove = vec![
-            key_packages[1].to_reference().unwrap(),
-            key_packages[2].to_reference().unwrap(),
+            key_packages[1].to_reference(cipher_suite).unwrap(),
+            key_packages[2].to_reference(cipher_suite).unwrap(),
         ];
 
         // Remove two leaves from the tree
@@ -1187,11 +1104,11 @@ mod tests {
             .remove_leaves(&tree.clone(), to_remove.clone())
             .unwrap();
 
-        let expected_result: Vec<(KeyPackageRef, KeyPackage)> = to_remove
+        let expected_result: Vec<(LeafNodeRef, LeafNode)> = to_remove
             .clone()
             .into_iter()
             .zip(key_packages[1..].to_owned())
-            .map(|(kpr, kp)| (kpr, kp.into()))
+            .map(|(index, ln)| (index, ln.into()))
             .collect();
 
         assert_eq!(res, expected_result);
@@ -1202,31 +1119,30 @@ mod tests {
         // We should no longer be able to find the removed leaves
         for key_package_ref in to_remove {
             assert_matches!(
-                tree.get_key_package(&key_package_ref),
-                Err(RatchetTreeError::KeyPackageNotFound(_))
+                tree.get_leaf_node(&key_package_ref),
+                Err(RatchetTreeError::LeafNodeNotFound(_))
             );
 
             assert_matches!(
-                tree.package_leaf_index(&key_package_ref),
-                Err(RatchetTreeError::KeyPackageNotFound(_))
+                tree.leaf_node_index(&key_package_ref),
+                Err(RatchetTreeError::LeafNodeNotFound(_))
             );
         }
     }
 
     #[test]
     fn test_create_blanks() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
-        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
-        let key_packages = get_test_key_packages(protocol_version, cipher_suite);
+        let mut tree = get_test_tree(cipher_suite).public;
+        let key_packages = get_test_leaf_nodes(cipher_suite);
         tree.add_leaves(key_packages.clone()).unwrap();
 
         let original_leaf_count = tree.occupied_leaf_count();
 
-        let remove_ref = key_packages[1].to_reference().unwrap();
-        let remove_location = tree.package_leaf_index(&remove_ref).unwrap();
+        let remove_ref = key_packages[1].to_reference(cipher_suite).unwrap();
+        let remove_location = tree.leaf_node_index(&remove_ref).unwrap();
 
         let to_remove = vec![remove_ref];
 
@@ -1246,15 +1162,14 @@ mod tests {
 
     #[test]
     fn test_remove_leaf_failure() {
-        let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         // Create a tree
-        let (mut tree, _, _) = get_test_tree(protocol_version, cipher_suite);
+        let mut tree = get_test_tree(cipher_suite).public;
 
         assert_matches!(
-            tree.remove_leaves(&tree.clone(), vec![KeyPackageRef::from([0u8; 16])]),
-            Err(RatchetTreeError::KeyPackageNotFound(_))
+            tree.remove_leaves(&tree.clone(), vec![LeafNodeRef::from([0u8; 16])]),
+            Err(RatchetTreeError::LeafNodeNotFound(_))
         );
     }
 
@@ -1271,8 +1186,13 @@ mod tests {
 
         // Verify that the leaf from the update path has been installed
         assert_eq!(
-            tree.package_leaf_index(&update_path.leaf_key_package.to_reference().unwrap())
-                .unwrap(),
+            tree.leaf_node_index(
+                &update_path
+                    .leaf_node
+                    .to_reference(tree.cipher_suite)
+                    .unwrap()
+            )
+            .unwrap(),
             index
         );
 
@@ -1310,67 +1230,45 @@ mod tests {
         }
     }
 
-    fn encap_decap(protocol_version: ProtocolVersion, cipher_suite: CipherSuite, size: usize) {
+    fn encap_decap(cipher_suite: CipherSuite, size: usize) {
         // Generate signing keys and key package generations, and private keys for multiple
         // participants in order to set up state
-        let signing_keys: Vec<SecretKey> = (0..size)
-            .map(|_| SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap())
-            .collect();
+        let (leaf_nodes, private_keys): (_, Vec<TreeKemPrivate>) = (1..size)
+            .map(|index| {
+                let (leaf_node, hpke_secret, _) =
+                    get_basic_test_node_sig_key(cipher_suite, &format!("{}", index));
 
-        let key_package_generations: Vec<KeyPackageGeneration> = (0..size)
-            .zip(signing_keys.iter())
-            .map(|(index, sk)| {
-                get_test_key_package_sig_key(
-                    protocol_version,
-                    cipher_suite,
-                    index.to_be_bytes().into(),
-                    sk,
-                )
-            })
-            .collect();
-
-        let key_packages: Vec<ValidatedKeyPackage> = key_package_generations
-            .iter()
-            .map(|kp| kp.key_package.clone())
-            .collect();
-
-        let private_keys: Vec<TreeKemPrivate> = key_package_generations
-            .iter()
-            .enumerate()
-            .map(|(index, p)| {
-                TreeKemPrivate::new_self_leaf(
+                let private_key = TreeKemPrivate::new_self_leaf(
                     LeafIndex(index as u32),
-                    p.key_package.to_reference().unwrap(),
-                    p.secret_key.clone(),
-                )
+                    leaf_node.to_reference(cipher_suite).unwrap(),
+                    hpke_secret,
+                );
+
+                (ValidatedLeafNode::from(leaf_node), private_key)
             })
-            .collect();
+            .unzip();
+
+        let (encap_node, encap_hpke_secret, encap_signer) =
+            get_basic_test_node_sig_key(cipher_suite, "encap");
 
         // Build a test tree we can clone for all leaf nodes
-        let mut test_tree = TreeKemPublic::new(cipher_suite);
-        test_tree.add_leaves(key_packages.clone()).unwrap();
+        let (mut test_tree, encap_private_key) =
+            TreeKemPublic::derive(cipher_suite, encap_node.clone().into(), encap_hpke_secret)
+                .unwrap();
+
+        test_tree.add_leaves(leaf_nodes).unwrap();
 
         // Clone the tree for the first leaf, generate a new key package for that leaf
         let mut encap_tree = test_tree.clone();
 
-        let key_package_generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite,
-            signing_key: &signing_keys[0],
-            credential: &key_packages[0].credential,
-            extensions: &key_packages[0].extensions,
-        };
-
-        let key_package_update = key_package_generator.generate(None).unwrap();
-
         // Perform the encap function
         let update_path_gen = encap_tree
             .encap(
-                &private_keys[0],
-                key_package_update,
-                &b"test_ctx".to_vec(),
+                &encap_private_key,
+                b"test_group",
+                b"test_ctx",
                 &[],
-                |_| Ok::<_, RatchetTreeError>(()),
+                &encap_signer,
             )
             .unwrap();
 
@@ -1387,28 +1285,26 @@ mod tests {
 
         // Apply the update path to the rest of the leaf nodes using the decap function
         let validated_update_path = ValidatedUpdatePath {
-            leaf_key_package: ValidatedKeyPackage::from(
-                update_path_gen.update_path.leaf_key_package,
-            ),
+            leaf_node: ValidatedLeafNode::from(update_path_gen.update_path.leaf_node),
             nodes: update_path_gen.update_path.nodes,
         };
 
         let mut receiver_trees: Vec<TreeKemPublic> = (1..size).map(|_| test_tree.clone()).collect();
 
         for (i, tree) in receiver_trees.iter_mut().enumerate() {
+            println!("Decap for {:?}, user: {:?}", i, private_keys[i].self_index);
             let secrets = tree
                 .decap(
-                    private_keys[i + 1].clone(),
-                    &key_package_generations[0]
-                        .key_package
-                        .to_reference()
-                        .unwrap(),
+                    private_keys[i].clone(),
+                    &encap_node.to_reference(cipher_suite).unwrap(),
                     &validated_update_path,
                     &[],
-                    &b"test_ctx".to_vec(),
+                    b"test_ctx".as_ref(),
                 )
                 .unwrap();
+
             assert_eq!(tree, &encap_tree);
+
             assert_eq!(
                 secrets.secret_path.root_secret,
                 update_path_gen.secrets.secret_path.root_secret
@@ -1418,13 +1314,9 @@ mod tests {
 
     #[test]
     fn test_encap_decap() {
-        for (protocol_version, one_cipher_suite) in
-            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-        {
-            println!(
-                "Testing Tree KEM encap / decap for: {protocol_version:?} {one_cipher_suite:?}"
-            );
-            encap_decap(protocol_version, one_cipher_suite, 10);
+        for cipher_suite in CipherSuite::all() {
+            println!("Testing Tree KEM encap / decap for: {cipher_suite:?}");
+            encap_decap(cipher_suite, 10);
         }
     }
 }

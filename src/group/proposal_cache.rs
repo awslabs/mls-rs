@@ -1,11 +1,17 @@
 use super::*;
-use crate::psk::PreSharedKeyID;
+use crate::{
+    psk::PreSharedKeyID,
+    tree_kem::{
+        leaf_node::{LeafNode, LeafNodeError},
+        leaf_node_ref::LeafNodeRef,
+    },
+};
 use std::collections::HashSet;
 
 #[derive(Error, Debug)]
 pub enum ProposalCacheError {
     #[error(transparent)]
-    KeyPackageError(#[from] KeyPackageError),
+    LeafNodeError(#[from] LeafNodeError),
     #[error(transparent)]
     TlsSerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
@@ -31,12 +37,12 @@ pub enum ProposalCacheError {
 #[derive(Debug, Default, PartialEq)]
 pub struct ProposalSetEffects {
     pub adds: Vec<KeyPackage>,
-    pub updates: Vec<(KeyPackageRef, KeyPackage)>,
-    pub removes: Vec<KeyPackageRef>,
+    pub updates: Vec<(LeafNodeRef, LeafNode)>,
+    pub removes: Vec<LeafNodeRef>,
     pub group_context_ext: Option<ExtensionList>,
     pub psks: Vec<PreSharedKeyID>,
     pub reinit: Option<ReInit>,
-    pub external_init: Option<ExternalInit>,
+    pub external_init: Option<(LeafNode, ExternalInit)>,
 }
 
 impl ProposalSetEffects {
@@ -83,8 +89,8 @@ impl From<ProposalSetItem> for ProposalOrRef {
 
 #[derive(Clone, Default)]
 struct ProposalSet {
-    leaf_ops: HashMap<KeyPackageRef, usize>,
-    removes: HashMap<KeyPackageRef, usize>,
+    leaf_ops: HashMap<LeafNodeRef, usize>,
+    removes: HashMap<LeafNodeRef, usize>,
     items: Vec<Option<ProposalSetItem>>,
     group_context_ext: Option<usize>,
     seen_psk_ids: HashSet<PreSharedKeyID>,
@@ -97,7 +103,7 @@ impl ProposalSet {
         Default::default()
     }
 
-    fn leaf_ops_insert(&mut self, reference: KeyPackageRef) -> bool {
+    fn leaf_ops_insert(&mut self, reference: LeafNodeRef) -> bool {
         if self.removes.contains_key(&reference) {
             return false;
         }
@@ -110,14 +116,18 @@ impl ProposalSet {
     }
 
     fn push_add(&mut self, add: &AddProposal) -> Result<bool, ProposalCacheError> {
-        let reference = add.key_package.to_reference()?;
+        let reference = add
+            .key_package
+            .leaf_node
+            .to_reference(add.key_package.cipher_suite)?;
+
         Ok(self.leaf_ops_insert(reference))
     }
 
-    fn push_update(&mut self, local_key_package: Option<&KeyPackageRef>, sender: Sender) -> bool {
+    fn push_update(&mut self, local_leaf_node: Option<&LeafNodeRef>, sender: Sender) -> bool {
         if let Sender::Member(sender) = sender {
             // Do not allow someone to commit to an update for themselves
-            if Some(&sender) == local_key_package {
+            if Some(&sender) == local_leaf_node {
                 false
             } else {
                 self.leaf_ops_insert(sender)
@@ -179,7 +189,7 @@ impl ProposalSet {
 
     fn push_item(
         &mut self,
-        local_key_package: Option<&KeyPackageRef>,
+        local_leaf_node: Option<&LeafNodeRef>,
         item: ProposalSetItem,
     ) -> Result<(), ProposalCacheError> {
         if self.reinit_index.is_some() {
@@ -203,9 +213,7 @@ impl ProposalSet {
         }
         let should_push = match &item.proposal.proposal {
             Proposal::Add(add) => self.push_add(add)?,
-            Proposal::Update(_) => {
-                self.push_update(local_key_package, item.proposal.sender.clone())
-            }
+            Proposal::Update(_) => self.push_update(local_leaf_node, item.proposal.sender.clone()),
             Proposal::Remove(remove) => self.push_remove(remove),
             Proposal::GroupContextExtensions(_) => self.push_group_context_ext(),
             Proposal::Psk(PreSharedKey { psk }) => self.push_psk(psk),
@@ -222,26 +230,26 @@ impl ProposalSet {
 
     pub fn push_items(
         &mut self,
-        local_key_package: Option<&KeyPackageRef>,
+        local_leaf_node: Option<&LeafNodeRef>,
         items: Vec<ProposalSetItem>,
     ) -> Result<(), ProposalCacheError> {
         items
             .into_iter()
-            .try_for_each(|item| self.push_item(local_key_package, item))
+            .try_for_each(|item| self.push_item(local_leaf_node, item))
     }
 
-    pub fn into_effects(mut self) -> ProposalSetEffects {
-        self.items
-            .drain(..)
-            .flatten()
-            .fold(ProposalSetEffects::default(), |mut effects, item| {
+    pub fn into_effects(
+        mut self,
+        update_path: Option<&UpdatePath>,
+    ) -> Result<ProposalSetEffects, ProposalCacheError> {
+        self.items.drain(..).flatten().try_fold(
+            ProposalSetEffects::default(),
+            |mut effects, item| {
                 match item.proposal.proposal {
                     Proposal::Add(add) => effects.adds.push(add.key_package),
                     Proposal::Update(update) => {
                         if let Sender::Member(package_to_replace) = item.proposal.sender {
-                            effects
-                                .updates
-                                .push((package_to_replace, update.key_package))
+                            effects.updates.push((package_to_replace, update.leaf_node))
                         }
                     }
                     Proposal::Remove(remove) => effects.removes.push(remove.to_remove),
@@ -255,11 +263,18 @@ impl ProposalSet {
                         effects.reinit = Some(reinit);
                     }
                     Proposal::ExternalInit(external_init) => {
-                        effects.external_init = Some(external_init);
+                        let new_member_leaf = update_path
+                            .ok_or(ProposalCacheError::MissingUpdatePathInExternalCommit)?
+                            .leaf_node
+                            .clone();
+
+                        effects.external_init = Some((new_member_leaf, external_init));
                     }
                 };
-                effects
-            })
+
+                Ok(effects)
+            },
+        )
     }
 
     pub fn into_proposals(mut self) -> Vec<ProposalOrRef> {
@@ -308,7 +323,7 @@ impl ProposalCache {
 
     pub fn prepare_commit(
         &self,
-        local_key_package: &KeyPackageRef,
+        local_leaf_node: &LeafNodeRef,
         additional_proposals: Vec<Proposal>,
     ) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), ProposalCacheError> {
         let received_proposals =
@@ -324,18 +339,18 @@ impl ProposalCache {
             .into_iter()
             .map(|proposal| ProposalSetItem {
                 proposal: CachedProposal {
-                    sender: Sender::Member(local_key_package.clone()),
+                    sender: Sender::Member(local_leaf_node.clone()),
                     proposal,
                 },
                 proposal_ref: None,
             });
 
         let mut proposal_set = ProposalSet::new();
-        proposal_set.push_items(Some(local_key_package), received_proposals.collect())?;
-        proposal_set.push_items(Some(local_key_package), new_proposals.collect())?;
+        proposal_set.push_items(Some(local_leaf_node), received_proposals.collect())?;
+        proposal_set.push_items(Some(local_leaf_node), new_proposals.collect())?;
 
         // We have to clone the set because we are potentially returning the same data in both sets
-        let effects = proposal_set.clone().into_effects();
+        let effects = proposal_set.clone().into_effects(None)?;
         let proposals = proposal_set.into_proposals();
 
         Ok((proposals, effects))
@@ -383,16 +398,8 @@ impl ProposalCache {
 
         let mut proposal_set = ProposalSet::new();
         proposal_set.push_items(local_key_package, items)?;
-        let mut proposal_effects = proposal_set.into_effects();
 
-        if proposal_effects.external_init.is_some() {
-            let new_member_pkg_ref = update_path
-                .ok_or(ProposalCacheError::MissingUpdatePathInExternalCommit)?
-                .leaf_key_package
-                .clone();
-            proposal_effects.adds.push(new_member_pkg_ref);
-        }
-
+        let proposal_effects = proposal_set.into_effects(update_path)?;
         Ok(proposal_effects)
     }
 }
@@ -446,7 +453,10 @@ fn validate_new_member_commit_proposals(
 mod tests {
     use super::proposal_ref::test_utils::plaintext_from_proposal;
     use super::*;
-    use crate::key_package::test_utils::test_key_package;
+    use crate::{
+        key_package::test_utils::test_key_package,
+        tree_kem::{leaf_node::test_utils::get_basic_test_node, leaf_node_ref::LeafNodeRef},
+    };
     use assert_matches::assert_matches;
     use ferriscrypt::kdf::hkdf::Hkdf;
 
@@ -456,19 +466,19 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    fn test_ref() -> KeyPackageRef {
+    fn test_ref() -> LeafNodeRef {
         let mut buffer = [0u8; 16];
         SecureRng::fill(&mut buffer).unwrap();
-        KeyPackageRef::from(buffer)
+        LeafNodeRef::from(buffer)
     }
 
     fn test_proposals(
-        sender: KeyPackageRef,
+        sender: LeafNodeRef,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> (Vec<MLSPlaintext>, ProposalSetEffects) {
         let add_package = test_key_package(protocol_version, cipher_suite);
-        let update_package = test_key_package(protocol_version, cipher_suite);
+        let update_package = get_basic_test_node(cipher_suite, "foo");
         let remove_package = test_ref();
 
         let add = Proposal::Add(AddProposal {
@@ -476,7 +486,7 @@ mod tests {
         });
 
         let update = Proposal::Update(UpdateProposal {
-            key_package: update_package.clone(),
+            leaf_node: update_package.clone(),
         });
 
         let remove = Proposal::Remove(RemoveProposal {
@@ -596,13 +606,14 @@ mod tests {
 
     #[test]
     fn test_proposal_cache_update_filter() {
-        let additional_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let additional_key_package = get_basic_test_node(TEST_CIPHER_SUITE, "foo");
         let test_sender = test_ref();
+
         let (test_proposals, _) =
             test_proposals(test_sender, TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let additional = vec![Proposal::Update(UpdateProposal {
-            key_package: additional_key_package.clone(),
+            leaf_node: additional_key_package.clone(),
         })];
 
         let commiter_ref = test_ref();
@@ -768,8 +779,8 @@ mod tests {
         });
         let (proposals, effects) = cache
             .prepare_commit(
-                &test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-                    .to_reference()
+                &get_basic_test_node(TEST_CIPHER_SUITE, "foo")
+                    .to_reference(TEST_CIPHER_SUITE)
                     .unwrap(),
                 vec![proposal.clone(), proposal],
             )
@@ -780,7 +791,7 @@ mod tests {
 
     fn test_update_path() -> UpdatePath {
         UpdatePath {
-            leaf_key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE),
+            leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "foo"),
             nodes: Vec::new(),
         }
     }
@@ -792,9 +803,7 @@ mod tests {
         let res = cache.resolve_for_commit(
             Sender::NewMember,
             vec![ProposalOrRef::Proposal(Proposal::ExternalInit(
-                ExternalInit {
-                    kem_output: kem_output.clone(),
-                },
+                ExternalInit { kem_output },
             ))],
             None,
         );
@@ -812,8 +821,8 @@ mod tests {
             TEST_CIPHER_SUITE,
             &plaintext_from_proposal(
                 Proposal::ExternalInit(ExternalInit { kem_output }),
-                test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-                    .to_reference()
+                get_basic_test_node(TEST_CIPHER_SUITE, "foo")
+                    .to_reference(TEST_CIPHER_SUITE)
                     .unwrap(),
             ),
             false,
@@ -856,9 +865,7 @@ mod tests {
         let res = cache.resolve_for_commit(
             Sender::NewMember,
             [
-                Proposal::ExternalInit(ExternalInit {
-                    kem_output: kem_output.clone(),
-                }),
+                Proposal::ExternalInit(ExternalInit { kem_output }),
                 proposal,
             ]
             .into_iter()
@@ -882,8 +889,8 @@ mod tests {
     #[test]
     fn new_member_cannot_commit_remove_proposal() {
         new_member_cannot_commit_proposal(Proposal::Remove(RemoveProposal {
-            to_remove: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-                .to_reference()
+            to_remove: get_basic_test_node(TEST_CIPHER_SUITE, "foo")
+                .to_reference(TEST_CIPHER_SUITE)
                 .unwrap(),
         }));
     }
@@ -891,7 +898,7 @@ mod tests {
     #[test]
     fn new_member_cannot_commit_update_proposal() {
         new_member_cannot_commit_proposal(Proposal::Update(UpdateProposal {
-            key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE),
+            leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "foo"),
         }));
     }
 

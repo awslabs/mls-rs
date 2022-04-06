@@ -73,7 +73,8 @@ mod tests {
             for cipher_suite in CipherSuite::all() {
                 let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
 
-                let (mut leaf_node, _) = get_test_node(
+                let (mut leaf_node, _secret_key) = get_test_node(
+                    cipher_suite,
                     credential.clone(),
                     &secret,
                     Some(capabilities.clone()),
@@ -88,7 +89,9 @@ mod tests {
 
                 test_cases.push(initial_test_case);
 
-                leaf_node.update(b"test", None, None, &secret).unwrap();
+                leaf_node
+                    .update(cipher_suite, b"test", None, None, &secret)
+                    .unwrap();
 
                 let update_test_case = TestCase {
                     cipher_suite: cipher_suite as u16,
@@ -99,7 +102,9 @@ mod tests {
                 test_cases.push(update_test_case);
 
                 leaf_node
-                    .commit(b"test", None, None, &secret, |_| Ok(ParentHash::empty()))
+                    .commit(cipher_suite, b"test", None, None, &secret, |_| {
+                        Ok(ParentHash::empty())
+                    })
                     .unwrap();
 
                 let commit_test_case = TestCase {
