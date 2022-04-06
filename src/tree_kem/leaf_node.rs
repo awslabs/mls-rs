@@ -257,13 +257,31 @@ pub mod test_utils {
         capabilities: Option<CapabilitiesExt>,
         extensions: Option<ExtensionList>,
     ) -> (LeafNode, HpkeSecretKey) {
+        get_test_node_with_lifetime(
+            cipher_suite,
+            credential,
+            secret,
+            capabilities,
+            extensions,
+            LifetimeExt::years(1).unwrap(),
+        )
+    }
+
+    pub fn get_test_node_with_lifetime(
+        cipher_suite: CipherSuite,
+        credential: Credential,
+        secret: &SecretKey,
+        capabilities: Option<CapabilitiesExt>,
+        extensions: Option<ExtensionList>,
+        lifetime: LifetimeExt,
+    ) -> (LeafNode, HpkeSecretKey) {
         LeafNode::generate(
             cipher_suite,
             credential,
             capabilities.unwrap_or_default(),
             extensions.unwrap_or_default(),
             secret,
-            LifetimeExt::years(1).unwrap(),
+            lifetime,
         )
         .unwrap()
     }
@@ -334,18 +352,24 @@ mod tests {
         for cipher_suite in CipherSuite::all() {
             let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
 
-            let (leaf_node, secret_key) = get_test_node(
+            let (leaf_node, secret_key) = get_test_node_with_lifetime(
                 cipher_suite,
                 credential.clone(),
                 &secret,
                 Some(capabilities.clone()),
                 Some(extensions.clone()),
+                lifetime.clone(),
             );
 
             assert_eq!(leaf_node.capabilities, capabilities);
             assert_eq!(leaf_node.extensions, extensions);
             assert_eq!(leaf_node.credential, credential);
-            assert_matches!(&leaf_node.leaf_node_source, LeafNodeSource::Add(lt) if lt == &lifetime);
+            assert_matches!(
+                &leaf_node.leaf_node_source,
+                LeafNodeSource::Add(lt) if lt == &lifetime,
+                "Expected {:?}, got {:?}", LeafNodeSource::Add(lifetime.clone()),
+                leaf_node.leaf_node_source
+            );
 
             let curve = cipher_suite.kem_type().curve();
 
