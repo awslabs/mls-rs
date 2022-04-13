@@ -64,7 +64,7 @@ mod tests {
     }
 
     impl TestCase {
-        fn generate(path: &str) {
+        fn generate() -> Vec<TestCase> {
             let capabilities = get_test_capabilities();
             let extensions = get_test_extensions();
 
@@ -116,7 +116,7 @@ mod tests {
                 test_cases.push(commit_test_case);
             }
 
-            std::fs::write(path, serde_json::to_string_pretty(&test_cases).unwrap()).unwrap();
+            test_cases
         }
     }
 

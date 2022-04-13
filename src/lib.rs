@@ -35,7 +35,7 @@ macro_rules! load_test_cases {
                 ".json"
             );
             if !std::path::Path::new(path).exists() {
-                $generate(path);
+                std::fs::write(path, serde_json::to_vec_pretty(&$generate()).unwrap()).unwrap();
             }
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
         }

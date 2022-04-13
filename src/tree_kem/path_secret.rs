@@ -157,8 +157,8 @@ mod tests {
     }
 
     impl TestCase {
-        fn generate(path: &str) {
-            let test_cases = CipherSuite::all()
+        fn generate() -> Vec<TestCase> {
+            CipherSuite::all()
                 .map(|cipher_suite| {
                     let generator = PathSecretGenerator::new(cipher_suite);
                     let generations = generator
@@ -172,8 +172,7 @@ mod tests {
                         generations,
                     }
                 })
-                .collect::<Vec<_>>();
-            std::fs::write(path, serde_json::to_string_pretty(&test_cases).unwrap()).unwrap();
+                .collect()
         }
     }
 

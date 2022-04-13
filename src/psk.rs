@@ -231,7 +231,7 @@ mod tests {
     }
 
     impl TestScenario {
-        fn generate(path: &str) {
+        fn generate() -> Vec<TestScenario> {
             let make_psk_list = |cs, n| {
                 iter::repeat_with(|| PskInfo {
                     id: make_external_psk_id(cs).0,
@@ -242,7 +242,7 @@ mod tests {
                 .collect::<Vec<_>>()
             };
 
-            let scenarios = CipherSuite::all()
+            CipherSuite::all()
                 .flat_map(|cs| (1..=10).map(move |n| (cs, n)))
                 .map(|(cs, n)| {
                     let psks = make_psk_list(cs, n);
@@ -253,8 +253,7 @@ mod tests {
                         psk_secret,
                     }
                 })
-                .collect::<Vec<_>>();
-            std::fs::write(path, serde_json::to_vec_pretty(&scenarios).unwrap()).unwrap();
+                .collect()
         }
 
         fn load() -> Vec<TestScenario> {

@@ -149,7 +149,7 @@ mod tests {
         }
     }
 
-    fn generate_test_cases(path: &str) {
+    fn generate_test_cases() -> Vec<TestCase> {
         let mut test_cases = Vec::new();
 
         for cipher_suite in CipherSuite::all() {
@@ -173,7 +173,7 @@ mod tests {
             });
         }
 
-        std::fs::write(path, serde_json::to_vec_pretty(&test_cases).unwrap()).unwrap();
+        test_cases
     }
 
     fn load_test_cases() -> Vec<TestCase> {

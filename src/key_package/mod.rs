@@ -200,8 +200,8 @@ mod tests {
     }
 
     impl TestCase {
-        fn generate(path: &str) {
-            let test_cases = ProtocolVersion::all()
+        fn generate() -> Vec<TestCase> {
+            ProtocolVersion::all()
                 .flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
                 .map(|(protocol_version, cipher_suite)| {
                     let pkg = test_utils::test_key_package(protocol_version, cipher_suite);
@@ -212,8 +212,7 @@ mod tests {
                         output: pkg_ref.to_vec(),
                     }
                 })
-                .collect::<Vec<_>>();
-            std::fs::write(path, serde_json::to_string_pretty(&test_cases).unwrap()).unwrap();
+                .collect()
         }
     }
 

@@ -68,11 +68,11 @@ If test data files are needed, they should be placed in the `test_data` director
 functions should be defined to generate and load them:
 
 ```rust
-fn generate_test_cases(path: &str) {
+fn generate_test_cases() -> SerializableTestData {
     // ...
 }
 
-fn load_test_cases() -> TypeToDeserializeJsonTo {
+fn load_test_cases() -> SerializableTestData {
     load_test_cases!(test_file_name, generate_test_cases)
 }
 ```

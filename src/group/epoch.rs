@@ -435,7 +435,7 @@ mod tests {
         output: Vec<u8>,
     }
 
-    fn generate_epoch_secret_exporter_test_vector(path: &str) {
+    fn generate_epoch_secret_exporter_test_vector() -> Vec<TestCase> {
         let mut test_cases = Vec::new();
         for cipher_suite in CipherSuite::all() {
             let key_size = Hkdf::from(cipher_suite.kdf_type()).extract_size();
@@ -464,7 +464,7 @@ mod tests {
             });
         }
 
-        std::fs::write(path, serde_json::to_vec_pretty(&test_cases).unwrap()).unwrap();
+        test_cases
     }
 
     fn load_test_cases() -> Vec<TestCase> {
