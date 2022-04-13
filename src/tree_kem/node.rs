@@ -3,7 +3,6 @@ use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::parent_hash::ParentHash;
 use ferriscrypt::hpke::kem::HpkePublicKey;
-use std::convert::TryFrom;
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
@@ -18,32 +17,10 @@ pub(crate) struct Parent {
     pub unmerged_leaves: Vec<LeafIndex>,
 }
 
-impl From<Vec<u8>> for Parent {
-    fn from(pk: Vec<u8>) -> Self {
-        Self {
-            public_key: pk.into(),
-            parent_hash: ParentHash::empty(),
-            unmerged_leaves: vec![],
-        }
-    }
-}
-
 #[derive(
     Clone, Copy, Debug, Ord, PartialEq, PartialOrd, Hash, Eq, TlsDeserialize, TlsSerialize, TlsSize,
 )]
 pub struct LeafIndex(pub(crate) u32);
-
-impl TryFrom<NodeIndex> for LeafIndex {
-    type Error = TreeMathError;
-
-    fn try_from(value: NodeIndex) -> Result<Self, Self::Error> {
-        if value % 2 == 0 {
-            Ok(Self(value / 2))
-        } else {
-            Err(TreeMathError::InvalidIndex)
-        }
-    }
-}
 
 impl Deref for LeafIndex {
     type Target = u32;
@@ -407,7 +384,7 @@ impl NodeVec {
             match node {
                 None => {
                     // This node is blank
-                    if LeafIndex::try_from(index).is_ok() {
+                    if tree_math::level(index) == 0 {
                         // Node is a leaf {
                         Ok(Vec::new()) // Resolution of a blank leaf node is empty list
                     } else {

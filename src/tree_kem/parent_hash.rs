@@ -1,7 +1,7 @@
 use crate::cipher_suite::CipherSuite;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
-use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVec, NodeVecError, Parent};
+use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVecError, Parent};
 use crate::tree_kem::RatchetTreeError;
 use crate::tree_kem::TreeKemPublic;
 use ferriscrypt::hpke::kem::HpkePublicKey;
@@ -30,8 +30,8 @@ struct ParentHashInput<'a> {
     public_key: &'a HpkePublicKey,
     #[tls_codec(with = "crate::tls::ByteVec")]
     parent_hash: &'a [u8],
-    #[tls_codec(with = "crate::tls::Vector::<crate::tls::ByteVec>")]
-    original_child_resolution: Vec<&'a HpkePublicKey>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    original_sibling_tree_hash: &'a [u8],
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -56,12 +56,12 @@ impl ParentHash {
         cipher_suite: CipherSuite,
         public_key: &HpkePublicKey,
         parent_hash: &ParentHash,
-        original_child_resolution: Vec<&HpkePublicKey>,
+        original_sibling_tree_hash: &[u8],
     ) -> Result<Self, ParentHashError> {
         let input = ParentHashInput {
             public_key,
             parent_hash,
-            original_child_resolution,
+            original_sibling_tree_hash,
         };
 
         let input_bytes = input.tls_serialize_detached()?;
@@ -91,23 +91,6 @@ impl Node {
     }
 }
 
-impl NodeVec {
-    fn original_child_resolution(
-        &self,
-        parent: &Parent,
-        index: NodeIndex,
-    ) -> Result<Vec<&HpkePublicKey>, NodeVecError> {
-        let unmerged_leaves: Vec<NodeIndex> =
-            parent.unmerged_leaves.iter().map(NodeIndex::from).collect();
-
-        Ok(self
-            .get_resolution(index, &unmerged_leaves)?
-            .iter()
-            .map(|n| n.public_key())
-            .collect())
-    }
-}
-
 impl TreeKemPublic {
     fn parent_hash(
         &self,
@@ -116,11 +99,21 @@ impl TreeKemPublic {
         co_path_child_index: NodeIndex,
     ) -> Result<ParentHash, RatchetTreeError> {
         let node = self.nodes.borrow_as_parent(node_index)?;
-        let ocr = self
-            .nodes
-            .original_child_resolution(node, co_path_child_index)?;
-        ParentHash::new(self.cipher_suite, &node.public_key, parent_parent_hash, ocr)
-            .map_err(RatchetTreeError::from)
+        let original_tree_size = self.original_tree_size(node)?;
+
+        let original_sibling_tree_hash = self.original_sub_tree_hash(
+            co_path_child_index,
+            original_tree_size,
+            &node.unmerged_leaves,
+        )?;
+
+        ParentHash::new(
+            self.cipher_suite,
+            &node.public_key,
+            parent_parent_hash,
+            &original_sibling_tree_hash,
+        )
+        .map_err(RatchetTreeError::from)
     }
 
     fn parent_hash_for_leaf<T>(
@@ -242,53 +235,90 @@ impl TreeKemPublic {
 }
 
 #[cfg(test)]
+pub(crate) mod test_utils {
+    use ferriscrypt::asym::ec_key::SecretKey;
+
+    use crate::tree_kem::{
+        leaf_node::test_utils::get_basic_test_node, leaf_node_validator::ValidatedLeafNode,
+    };
+
+    use super::*;
+
+    pub(crate) fn test_parent(
+        cipher_suite: CipherSuite,
+        unmerged_leaves: Vec<LeafIndex>,
+    ) -> Parent {
+        let public_key = SecretKey::generate(cipher_suite.kem_type().curve())
+            .unwrap()
+            .to_public()
+            .unwrap()
+            .try_into()
+            .unwrap();
+
+        Parent {
+            public_key,
+            parent_hash: ParentHash::empty(),
+            unmerged_leaves,
+        }
+    }
+
+    pub(crate) fn test_parent_node(
+        cipher_suite: CipherSuite,
+        unmerged_leaves: Vec<LeafIndex>,
+    ) -> Node {
+        Node::Parent(test_parent(cipher_suite, unmerged_leaves))
+    }
+
+    // Create figure 12 from MLS RFC
+    pub(crate) fn get_test_tree_fig_12(cipher_suite: CipherSuite) -> TreeKemPublic {
+        let mut tree = TreeKemPublic::new(cipher_suite);
+
+        let leaves = ["A", "B", "C", "D", "E", "F", "G"]
+            .map(|l| ValidatedLeafNode::from(get_basic_test_node(cipher_suite, l)))
+            .to_vec();
+
+        tree.add_leaves(leaves).unwrap();
+
+        tree.nodes[1] = Some(test_parent_node(cipher_suite, vec![]));
+        tree.nodes[3] = Some(test_parent_node(cipher_suite, vec![LeafIndex(3)]));
+
+        tree.nodes[7] = Some(test_parent_node(
+            cipher_suite,
+            vec![LeafIndex(3), LeafIndex(7)],
+        ));
+
+        tree.nodes[9] = Some(test_parent_node(cipher_suite, vec![LeafIndex(5)]));
+
+        tree.nodes[11] = Some(test_parent_node(
+            cipher_suite,
+            vec![LeafIndex(5), LeafIndex(7)],
+        ));
+
+        tree.update_parent_hashes(LeafIndex(0), None).unwrap();
+        tree.update_parent_hashes(LeafIndex(4), None).unwrap();
+
+        tree
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNodeSource;
-    use crate::tree_kem::node::test_utils::get_test_node_vec;
-    use crate::tree_kem::test_utils::{get_test_leaf_nodes, get_test_tree};
+    use crate::tree_kem::node::{NodeTypeResolver, NodeVec};
+    use crate::tree_kem::parent_hash::test_utils::{get_test_tree_fig_12, test_parent};
+    use assert_matches::assert_matches;
+    use tls_codec::Deserialize;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
-
-    fn get_phash_test_tree(cipher_suite: CipherSuite) -> TreeKemPublic {
-        let mut tree = get_test_tree(cipher_suite);
-        let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.public.add_leaves(key_packages).unwrap();
-
-        // Fill in parent nodes
-        for i in 0..tree.public.total_leaf_count() - 1 {
-            tree.public
-                .nodes
-                .borrow_node_mut(i * 2 + 1)
-                .map(|node| {
-                    *node = Some(Node::Parent(Parent {
-                        public_key: vec![i as u8].into(),
-                        parent_hash: ParentHash::empty(),
-                        unmerged_leaves: vec![],
-                    }))
-                })
-                .unwrap()
-        }
-
-        tree.public
-    }
-
-    #[test]
-    fn test_original_child_resolution() {
-        let node_vec = get_test_node_vec();
-        let expected = HpkePublicKey::from(vec![67u8, 68u8]);
-        let parent = node_vec.borrow_as_parent(5).unwrap();
-        let child_resolution = node_vec.original_child_resolution(parent, 5).unwrap();
-        assert_eq!(vec![&expected], child_resolution);
-    }
 
     #[test]
     fn test_missing_parent_hash() {
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let mut test_tree = get_phash_test_tree(cipher_suite);
+        let mut test_tree = get_test_tree_fig_12(cipher_suite);
         let test_key_package = get_basic_test_node(cipher_suite, "foo");
 
         let test_update_path = ValidatedUpdatePath {
@@ -299,14 +329,17 @@ mod tests {
         let missing_parent_hash_res =
             test_tree.update_parent_hashes(LeafIndex(0), Some(&test_update_path));
 
-        assert!(missing_parent_hash_res.is_err());
+        assert_matches!(
+            missing_parent_hash_res,
+            Err(RatchetTreeError::ParentHashNotFound)
+        );
     }
 
     #[test]
-    fn test_invalid_parent_hash() {
+    fn test_parent_hash_mismatch() {
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
-        let mut test_tree = get_phash_test_tree(cipher_suite);
+        let mut test_tree = get_test_tree_fig_12(cipher_suite);
 
         let test_key_package = get_basic_test_node(cipher_suite, "foo");
 
@@ -323,8 +356,88 @@ mod tests {
         let invalid_parent_hash_res =
             test_tree.update_parent_hashes(LeafIndex(0), Some(&test_update_path));
 
-        assert!(invalid_parent_hash_res.is_err());
+        assert_matches!(
+            invalid_parent_hash_res,
+            Err(RatchetTreeError::ParentHashMismatch)
+        );
     }
 
-    //TODO: Tests based on test vectors once TLS encoding is implemented
+    #[test]
+    fn test_parent_hash_invalid() {
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+
+        let mut test_tree = get_test_tree_fig_12(cipher_suite);
+        test_tree.nodes[2] = None;
+
+        let res = test_tree.validate_parent_hash(1, &test_parent(cipher_suite, vec![]));
+        assert_matches!(res, Err(RatchetTreeError::InvalidParentHash(_)));
+    }
+
+    #[derive(serde::Deserialize, serde::Serialize)]
+    struct TestCase {
+        cipher_suite: u16,
+        #[serde(with = "hex::serde")]
+        tree_data: Vec<u8>,
+    }
+
+    impl TestCase {
+        fn generate() -> Vec<TestCase> {
+            CipherSuite::all()
+                .map(|cipher_suite| {
+                    let tree = get_test_tree_fig_12(cipher_suite);
+
+                    TestCase {
+                        cipher_suite: cipher_suite as u16,
+                        tree_data: tree.export_node_data().tls_serialize_detached().unwrap(),
+                    }
+                })
+                .collect()
+        }
+    }
+
+    fn load_test_cases() -> Vec<TestCase> {
+        load_test_cases!(parent_hash, TestCase::generate)
+    }
+
+    #[test]
+    fn test_parent_hash_test_vectors() {
+        let cases = load_test_cases();
+
+        for one_case in cases {
+            let cipher_suite = CipherSuite::from_raw(one_case.cipher_suite);
+
+            if cipher_suite.is_none() {
+                println!("Skipping test for unsupported cipher suite");
+                continue;
+            }
+
+            let tree = TreeKemPublic::import_node_data(
+                cipher_suite.unwrap(),
+                NodeVec::tls_deserialize(&mut &*one_case.tree_data).unwrap(),
+            )
+            .unwrap();
+
+            for index in 0..tree.total_leaf_count() {
+                if let LeafNodeSource::Commit(parent_hash) = &tree.nodes
+                    [NodeIndex::from(LeafIndex(index)) as usize]
+                    .as_leaf()
+                    .unwrap()
+                    .leaf_node_source
+                {
+                    let calculated_parent_hash = tree
+                        .parent_hash_for_leaf(LeafIndex(index), |node_index, parent_hash| {
+                            let expected_parent = &tree.nodes[node_index as usize]
+                                .as_parent()
+                                .unwrap()
+                                .parent_hash;
+
+                            assert_eq!(parent_hash, expected_parent);
+                        })
+                        .unwrap();
+
+                    assert_eq!(&calculated_parent_hash, parent_hash);
+                }
+            }
+        }
+    }
 }
