@@ -51,6 +51,7 @@ pub mod extension;
 mod group;
 mod hash_reference;
 pub mod key_package;
+pub mod message;
 mod protocol_version;
 mod psk;
 pub mod session;

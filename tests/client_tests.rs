@@ -5,7 +5,8 @@ use aws_mls::client_config::{InMemoryClientConfig, Preferences};
 use aws_mls::credential::{BasicCredential, Credential};
 use aws_mls::extension::{ExtensionList, LifetimeExt};
 use aws_mls::key_package::KeyPackageGeneration;
-use aws_mls::session::{GroupError, ProcessedMessage, Session, SessionError};
+use aws_mls::message::ProcessedMessagePayload;
+use aws_mls::session::{GroupError, Session, SessionError};
 use aws_mls::{LeafNodeRef, ProtocolVersion};
 use ferriscrypt::rand::SecureRng;
 use rand::{prelude::SliceRandom, Rng};
@@ -302,11 +303,13 @@ fn test_update_proposals(
             let update = if j == committer_index {
                 receiver.apply_pending_commit()
             } else {
-                let state_update = receiver
+                let state_update_message = receiver
                     .process_incoming_bytes(&commit.commit_packet)
-                    .unwrap();
-                match state_update {
-                    ProcessedMessage::Commit(update) => Ok(update),
+                    .unwrap()
+                    .message;
+
+                match state_update_message {
+                    ProcessedMessagePayload::Commit(update) => Ok(update),
                     _ => panic!("Expected commit result"),
                 }
             }
@@ -375,8 +378,8 @@ fn test_remove_proposals(
                 .process_incoming_bytes(&commit.commit_packet)
                 .unwrap();
 
-            let update = match state_update {
-                ProcessedMessage::Commit(update) => update,
+            let update = match state_update.message {
+                ProcessedMessagePayload::Commit(update) => update,
                 _ => panic!("Expected commit result"),
             };
 
@@ -447,7 +450,7 @@ fn test_application_messages(
                     let decrypted = receiver_sessions[j]
                         .process_incoming_bytes(&ciphertext)
                         .unwrap();
-                    assert_matches!(decrypted, ProcessedMessage::Application(m) if m == test_message);
+                    assert_matches!(decrypted.message, ProcessedMessagePayload::Application(m) if m == test_message);
                 }
             });
         }
@@ -579,7 +582,7 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
             .filter(|&(j, _)| i != j)
             .all(|(_, session)| {
                 let processed = session.process_incoming_bytes(&message).unwrap();
-                matches!(processed, ProcessedMessage::Application(bytes) if bytes == payload)
+                matches!(processed.message, ProcessedMessagePayload::Application(bytes) if bytes == payload)
             });
     }
 }

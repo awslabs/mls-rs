@@ -1,10 +1,11 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, KeyPackageRepository, Keychain};
+use crate::credential::Credential;
 use crate::extension::{ExtensionList, LifetimeExt};
 
 pub use crate::group::framing::{ContentType, MLSMessage, MLSMessagePayload};
 
-use crate::group::framing::Content;
+use crate::group::framing::{Content, Sender};
 use crate::group::{
     proposal::Proposal, CommitGeneration, Group, GroupContext, GroupInfo, OutboundMessage,
     StateUpdate, VerifiedPlaintext, Welcome,
@@ -12,6 +13,7 @@ use crate::group::{
 use crate::key_package::{
     KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
 };
+use crate::message::{ProcessedMessage, ProcessedMessagePayload};
 use crate::psk::ExternalPskId;
 use crate::signer::Signer;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
@@ -23,7 +25,7 @@ use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-pub use crate::group::{GroupError, ProcessedMessage};
+pub use crate::group::GroupError;
 
 #[derive(Error, Debug)]
 pub enum SessionError {
@@ -405,6 +407,30 @@ impl<C: ClientConfig + Clone> Session<C> {
         self.process_incoming_message(MLSMessage::tls_deserialize(&mut &*data)?)
     }
 
+    fn leaf_node_to_credential(
+        &self,
+        leaf_node_ref: &LeafNodeRef,
+    ) -> Result<Credential, SessionError> {
+        Ok(self
+            .protocol
+            .current_epoch_tree()?
+            .get_leaf_node(leaf_node_ref)?
+            .credential
+            .clone())
+    }
+
+    fn get_credential_from_add_proposal(
+        &self,
+        processed_message: &ProcessedMessagePayload,
+    ) -> Option<Credential> {
+        match processed_message {
+            ProcessedMessagePayload::Proposal(Proposal::Add(add)) => {
+                Some(add.key_package.leaf_node.credential.clone())
+            }
+            _ => None,
+        }
+    }
+
     pub fn process_incoming_message(
         &mut self,
         message: MLSMessage,
@@ -415,29 +441,61 @@ impl<C: ClientConfig + Clone> Session<C> {
                 message.version,
             ));
         }
-        match message.payload {
+
+        let (message_payload, mut sender_credential) = match message.payload {
             MLSMessagePayload::Plain(message) => {
                 let message = self.protocol.verify_incoming_plaintext(message, |id| {
                     self.config.external_signing_key(id)
                 })?;
-                self.process_incoming_plaintext(message)
+                let credential: Option<Credential> = match &message.plaintext.content.sender {
+                    Sender::Member(leaf_node_ref) => {
+                        Some(self.leaf_node_to_credential(leaf_node_ref)?)
+                    }
+                    _ => None,
+                };
+                (self.process_incoming_plaintext(message)?, credential)
             }
             MLSMessagePayload::Cipher(message) => {
                 let message = self.protocol.verify_incoming_ciphertext(message, |id| {
                     self.config.external_signing_key(id)
                 })?;
-                self.process_incoming_plaintext(message)
+                let credential: Option<Credential> = match &message.plaintext.content.sender {
+                    Sender::Member(leaf_node_ref) => {
+                        Some(self.leaf_node_to_credential(leaf_node_ref)?)
+                    }
+                    _ => None,
+                };
+                (self.process_incoming_plaintext(message)?, credential)
             }
-            MLSMessagePayload::Welcome(message) => Ok(ProcessedMessage::Welcome(message)),
-            MLSMessagePayload::GroupInfo(message) => Ok(ProcessedMessage::GroupInfo(message)),
-            MLSMessagePayload::KeyPackage(message) => Ok(ProcessedMessage::KeyPackage(message)),
+            MLSMessagePayload::Welcome(message) => {
+                (ProcessedMessagePayload::Welcome(message), None)
+            }
+            MLSMessagePayload::GroupInfo(message) => {
+                (ProcessedMessagePayload::GroupInfo(message), None)
+            }
+            MLSMessagePayload::KeyPackage(message) => {
+                let credential = message.leaf_node.credential.clone();
+                (
+                    ProcessedMessagePayload::KeyPackage(message),
+                    Some(credential),
+                )
+            }
+        };
+
+        if sender_credential.is_none() {
+            sender_credential = self.get_credential_from_add_proposal(&message_payload);
         }
+
+        Ok(ProcessedMessage {
+            message: message_payload,
+            sender_credential,
+        })
     }
 
     fn process_incoming_plaintext(
         &mut self,
         message: VerifiedPlaintext,
-    ) -> Result<ProcessedMessage, SessionError> {
+    ) -> Result<ProcessedMessagePayload, SessionError> {
         match &message.content.content {
             Content::Proposal(p) => self
                 .config
@@ -448,9 +506,10 @@ impl<C: ClientConfig + Clone> Session<C> {
         let res = self
             .protocol
             .process_incoming_message(message, &self.config.secret_store())?;
+
         // This commit beat our current pending commit to the server, our commit is no longer
         // relevant
-        if let ProcessedMessage::Commit(_) = res {
+        if let ProcessedMessagePayload::Commit(_) = res {
             self.pending_commit = None;
         }
         Ok(res)

@@ -25,6 +25,7 @@ use crate::key_package::{
     KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
     KeyPackageValidationError, KeyPackageValidationOptions, KeyPackageValidator,
 };
+use crate::message::ProcessedMessagePayload;
 use crate::psk::{
     ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, PskSecretError,
     ResumptionPSKUsage, ResumptionPsk,
@@ -340,8 +341,8 @@ impl PartialEq for Group {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct VerifiedPlaintext {
-    encrypted: bool,
-    plaintext: MLSPlaintext,
+    pub encrypted: bool,
+    pub plaintext: MLSPlaintext,
 }
 
 impl From<VerifiedPlaintext> for MLSPlaintext {
@@ -408,16 +409,6 @@ impl From<OutboundMessage> for VerifiedPlaintext {
             plaintext: outbound.into(),
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub enum ProcessedMessage {
-    Application(Vec<u8>),
-    Commit(StateUpdate),
-    Proposal(Proposal),
-    Welcome(Welcome),
-    GroupInfo(GroupInfo),
-    KeyPackage(KeyPackage),
 }
 
 impl Group {
@@ -1800,12 +1791,12 @@ impl Group {
         &mut self,
         plaintext: VerifiedPlaintext,
         secret_store: &S,
-    ) -> Result<ProcessedMessage, GroupError> {
+    ) -> Result<ProcessedMessagePayload, GroupError> {
         match plaintext.plaintext.content.content {
-            Content::Application(data) => Ok(ProcessedMessage::Application(data)),
+            Content::Application(data) => Ok(ProcessedMessagePayload::Application(data)),
             Content::Commit(_) => {
                 self.process_commit(plaintext, None, secret_store)
-                    .map(ProcessedMessage::Commit)
+                    .map(ProcessedMessagePayload::Commit)
                 //TODO: If the Commit included a ReInit proposal, the client MUST NOT use the group to send
                 // messages anymore. Instead, it MUST wait for a Welcome message from the committer
                 // and check that
@@ -1813,7 +1804,7 @@ impl Group {
             Content::Proposal(ref p) => {
                 self.proposals
                     .insert(self.cipher_suite, &plaintext, plaintext.encrypted)?;
-                Ok(ProcessedMessage::Proposal(p.clone()))
+                Ok(ProcessedMessagePayload::Proposal(p.clone()))
             }
         }
     }

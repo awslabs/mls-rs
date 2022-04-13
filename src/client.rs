@@ -341,7 +341,8 @@ mod tests {
     use crate::{
         client_config::InMemoryClientConfig,
         credential::Credential,
-        group::{GroupError, ProcessedMessage},
+        group::GroupError,
+        message::ProcessedMessagePayload,
         psk::{ExternalPskId, PskSecretError},
         tree_kem::leaf_node::LeafNodeSource,
     };
@@ -423,16 +424,16 @@ mod tests {
         let message = session.process_incoming_bytes(&proposal).unwrap();
 
         assert_matches!(
-            message,
-            ProcessedMessage::Proposal(Proposal::Add(AddProposal { key_package })) if key_package == bob_key_gen.key_package
+            message.message,
+            ProcessedMessagePayload::Proposal(Proposal::Add(AddProposal { key_package })) if key_package == bob_key_gen.key_package
         );
 
         let expected_proposal = AddProposal {
             key_package: bob_key_gen.key_package.clone(),
         };
 
-        let proposal = match session.process_incoming_bytes(&proposal).unwrap() {
-            ProcessedMessage::Proposal(Proposal::Add(p)) if p == expected_proposal => {
+        let proposal = match session.process_incoming_bytes(&proposal).unwrap().message {
+            ProcessedMessagePayload::Proposal(Proposal::Add(p)) if p == expected_proposal => {
                 Proposal::Add(p)
             }
             m => panic!("Expected {:?} but got {:?}", expected_proposal, m),
@@ -546,8 +547,10 @@ mod tests {
             )
             .unwrap();
         let msg = env.alice_session.process_incoming_bytes(&msg).unwrap();
-        let received_proposal = match msg {
-            ProcessedMessage::Proposal(Proposal::Add(p)) if p == proposal => Proposal::Add(p),
+        let received_proposal = match msg.message {
+            ProcessedMessagePayload::Proposal(Proposal::Add(p)) if p == proposal => {
+                Proposal::Add(p)
+            }
             m => panic!("Expected {:?} but got {:?}", proposal, m),
         };
         let _ = env.alice_session.commit(vec![received_proposal]).unwrap();
@@ -606,8 +609,10 @@ mod tests {
 
         let msg = env.alice_session.process_incoming_bytes(&msg).unwrap();
 
-        let _ = match msg {
-            ProcessedMessage::Proposal(Proposal::Remove(p)) if p == proposal => Proposal::Remove(p),
+        let _ = match msg.message {
+            ProcessedMessagePayload::Proposal(Proposal::Remove(p)) if p == proposal => {
+                Proposal::Remove(p)
+            }
             m => panic!("Expected {:?} but got {:?}", proposal, m),
         };
 
@@ -851,13 +856,37 @@ mod tests {
         let msg = alice_session.encrypt_application_data(alice_msg).unwrap();
 
         let received = bob_session.process_incoming_bytes(&msg).unwrap();
-        assert_matches!(received, ProcessedMessage::Application(bytes) if bytes == alice_msg);
+        assert_matches!(received.message, ProcessedMessagePayload::Application(bytes) if bytes == alice_msg);
 
         let bob_msg = b"I'm Bob";
-        let msg = bob_session.encrypt_application_data(bob_msg).unwrap();
 
+        let msg = bob_session.encrypt_application_data(bob_msg).unwrap();
         let received = alice_session.process_incoming_bytes(&msg).unwrap();
-        assert_matches!(received, ProcessedMessage::Application(bytes) if bytes == bob_msg);
+
+        assert_matches!(received.message, ProcessedMessagePayload::Application(bytes) if bytes == bob_msg);
+    }
+
+    #[test]
+    fn member_can_see_sender_creds() {
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+        let mut alice_session = create_session(&alice);
+
+        let (bob, bob_key_pkg) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+        let mut bob_session =
+            join_session(&mut alice_session, [], bob_key_pkg.key_package, &bob).unwrap();
+
+        let bob_msg = b"I'm Bob";
+        let bob_cred = bob_session
+            .current_key_package()
+            .unwrap()
+            .credential
+            .clone();
+
+        let msg = bob_session.encrypt_application_data(bob_msg).unwrap();
+        let received_by_alice = alice_session.process_incoming_bytes(&msg).unwrap();
+
+        assert_eq!(Some(bob_cred), received_by_alice.sender_credential);
     }
 
     #[test]

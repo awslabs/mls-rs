@@ -452,6 +452,7 @@ mod tests {
             Sender::Preconfigured(TED_EXTERNAL_KEY_ID.to_vec()),
             test_group.group.current_epoch(),
         );
+
         message.content.content = Content::Proposal(Proposal::Add(AddProposal {
             key_package: bob_key_pkg_gen.key_package,
         }));
