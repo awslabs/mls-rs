@@ -1,7 +1,7 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
 use crate::group::secret_tree::{
-    EncryptionKey, KeyType, SecretKeyRatchet, SecretTree, SecretTreeError,
+    KeyType, MessageKey, SecretKeyRatchet, SecretTree, SecretTreeError,
 };
 use crate::group::{GroupContext, InitSecret};
 use crate::tree_kem::node::LeafIndex;
@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 #[derive(Error, Debug)]
 pub enum EpochError {
@@ -55,7 +55,7 @@ impl KeySchedule {
         cipher_suite: CipherSuite,
     ) -> Result<Vec<u8>, KeyScheduleKdfError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
-        let derived_secret = kdf.derive_secret(&self.exporter_secret, label)?;
+        let derived_secret = Zeroizing::new(kdf.derive_secret(&self.exporter_secret, label)?);
         let context_hash = cipher_suite.hash_function().digest(context);
 
         kdf.expand_with_label(&derived_secret, "exporter", &context_hash, len)
@@ -99,7 +99,7 @@ impl Epoch {
     ) -> Result<(Epoch, Vec<u8>), EpochError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
-        let joiner_seed = kdf.extract(commit_secret, last_init_secret.as_ref())?;
+        let joiner_seed = Zeroizing::new(kdf.extract(commit_secret, last_init_secret.as_ref())?);
 
         let joiner_secret = kdf.expand_with_label(
             &joiner_seed,
@@ -148,14 +148,14 @@ impl Epoch {
     ) -> Result<Self, EpochError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
-        let epoch_seed = kdf.extract(psk_secret, joiner_secret)?;
+        let epoch_seed = Zeroizing::new(kdf.extract(psk_secret, joiner_secret)?);
 
-        let epoch_secret = kdf.expand_with_label(
+        let epoch_secret = Zeroizing::new(kdf.expand_with_label(
             &epoch_seed,
             "epoch",
             &context.tls_serialize_detached()?,
             kdf.extract_size(),
-        )?;
+        )?);
 
         // Derive secrets from epoch secret
         let sender_data_secret = kdf.derive_secret(&epoch_secret, "sender data")?;
@@ -228,20 +228,20 @@ impl Epoch {
         leaf_index: LeafIndex,
         generation: Option<u32>,
         key_type: &KeyType,
-    ) -> Result<EncryptionKey, EpochError> {
+    ) -> Result<MessageKey, EpochError> {
         if let Some(ratchet) = self.get_ratchet(leaf_index, key_type) {
             match generation {
-                None => ratchet.next_key(),
-                Some(gen) => ratchet.get_key(gen),
+                None => ratchet.next_message_key(),
+                Some(gen) => ratchet.get_message_key(gen),
             }
             .map_err(|e| e.into())
         } else {
             self.derive_ratchets(leaf_index, key_type)
-                .and_then(|r| r.next_key().map_err(|e| e.into()))
+                .and_then(|r| r.next_message_key().map_err(|e| e.into()))
         }
     }
 
-    pub fn get_encryption_key(&mut self, key_type: KeyType) -> Result<EncryptionKey, EpochError> {
+    pub fn get_encryption_key(&mut self, key_type: KeyType) -> Result<MessageKey, EpochError> {
         self.get_key(self.self_index, None, &key_type)
     }
 
@@ -250,7 +250,7 @@ impl Epoch {
         sender: LeafIndex,
         generation: u32,
         key_type: KeyType,
-    ) -> Result<EncryptionKey, EpochError> {
+    ) -> Result<MessageKey, EpochError> {
         self.get_key(sender, Some(generation), &key_type)
     }
 
@@ -290,7 +290,8 @@ impl Epoch {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Zeroize)]
+#[zeroize(drop)]
 pub struct CommitSecret(PathSecret);
 
 impl Deref for CommitSecret {
