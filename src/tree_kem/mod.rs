@@ -3,7 +3,7 @@ use std::ops::Deref;
 
 use ferriscrypt::asym::ec_key::EcKeyError;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
-use ferriscrypt::hpke::{HPKECiphertext, HpkeError};
+use ferriscrypt::hpke::HpkeError;
 
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -391,9 +391,10 @@ impl TreeKemPublic {
             .map(|&copath_node| {
                 self.cipher_suite
                     .hpke()
-                    .seal_base(
+                    .seal(
                         copath_node.public_key(),
                         context,
+                        None,
                         None,
                         &path_secret.path_secret,
                     )
@@ -541,7 +542,7 @@ impl TreeKemPublic {
                 // Decrypt the path secret
                 self.cipher_suite
                     .hpke()
-                    .open_base(&HPKECiphertext::from(ct.clone()), sk, context, None)
+                    .open(&ct.clone().into(), sk, context, None, None)
                     .map_err(Into::into)
             })
             .map(PathSecret::from)

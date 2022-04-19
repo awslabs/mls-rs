@@ -511,13 +511,14 @@ impl Group {
         // cipher suite and the HPKE private key corresponding to the GroupSecrets. If a
         // PreSharedKeyID is part of the GroupSecrets and the client is not in possession of
         // the corresponding PSK, return an error
-        let decrypted_group_secrets = welcome.cipher_suite.hpke().open_base(
+        let decrypted_group_secrets = welcome.cipher_suite.hpke().open(
             &encrypted_group_secrets
                 .encrypted_group_secrets
                 .clone()
                 .into(),
             &key_package_generation.init_secret_key,
             &[],
+            None,
             None,
         )?;
 
@@ -1486,9 +1487,10 @@ impl Group {
 
         let group_secrets_bytes = group_secrets.tls_serialize_detached()?;
 
-        let encrypted_group_secrets = self.cipher_suite.hpke().seal_base(
+        let encrypted_group_secrets = self.cipher_suite.hpke().seal(
             &key_package.hpke_init_key,
             &[],
+            None,
             None,
             &group_secrets_bytes,
         )?;

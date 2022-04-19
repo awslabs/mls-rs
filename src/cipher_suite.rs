@@ -3,7 +3,7 @@ use ferriscrypt::asym::ec_key::{Curve, EcKeyError, SecretKey};
 use ferriscrypt::cipher::aead::Aead;
 use ferriscrypt::digest::HashFunction;
 use ferriscrypt::hpke::kem::Kem;
-use ferriscrypt::hpke::{AeadId, HPKECiphertext, Hpke, KdfId, KemId};
+use ferriscrypt::hpke::{AeadId, Hpke, KdfId, KemId};
 use std::io::{Read, Write};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -56,9 +56,8 @@ pub struct HpkeCiphertext {
     ciphertext: Vec<u8>,
 }
 
-//TODO: Naming is crazy here, needs to be fixed in ferriscrypt too
-impl From<HPKECiphertext> for HpkeCiphertext {
-    fn from(ciphertext: HPKECiphertext) -> Self {
+impl From<ferriscrypt::hpke::HpkeCiphertext> for HpkeCiphertext {
+    fn from(ciphertext: ferriscrypt::hpke::HpkeCiphertext) -> Self {
         Self {
             kem_output: ciphertext.enc,
             ciphertext: ciphertext.ciphertext,
@@ -66,7 +65,7 @@ impl From<HPKECiphertext> for HpkeCiphertext {
     }
 }
 
-impl From<HpkeCiphertext> for HPKECiphertext {
+impl From<HpkeCiphertext> for ferriscrypt::hpke::HpkeCiphertext {
     fn from(ciphertext: HpkeCiphertext) -> Self {
         Self {
             enc: ciphertext.kem_output,

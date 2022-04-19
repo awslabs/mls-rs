@@ -67,10 +67,7 @@ impl<'a> UpdatePathValidator<'a> {
 mod tests {
     use assert_matches::assert_matches;
 
-    use ferriscrypt::{
-        hpke::{kem::HpkePublicKey, HPKECiphertext},
-        rand::SecureRng,
-    };
+    use ferriscrypt::{hpke::kem::HpkePublicKey, rand::SecureRng};
 
     use crate::tree_kem::{
         leaf_node::{test_utils::get_basic_test_node_sig_key, LeafNode},
@@ -95,7 +92,7 @@ mod tests {
             })
             .unwrap();
 
-        let ciphertext = HPKECiphertext {
+        let ciphertext = ferriscrypt::hpke::HpkeCiphertext {
             enc: SecureRng::gen(32).unwrap(),
             ciphertext: SecureRng::gen(32).unwrap(),
         }

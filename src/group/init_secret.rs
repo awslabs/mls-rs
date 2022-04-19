@@ -42,7 +42,7 @@ impl InitSecret {
         cipher_suite: CipherSuite,
         external_pub: &HpkePublicKey,
     ) -> Result<(Self, Vec<u8>), HpkeError> {
-        let (kem_output, context) = cipher_suite.hpke().setup_base_sender(external_pub, &[])?;
+        let (kem_output, context) = cipher_suite.hpke().setup_sender(external_pub, &[], None)?;
 
         let kdf_extract_size = Hkdf::from(cipher_suite.kdf_type()).extract_size();
         let mut init_secret = vec![0; kdf_extract_size];
@@ -56,10 +56,11 @@ impl InitSecret {
         kem_output: &[u8],
         external_secret: &[u8],
     ) -> Result<Self, HpkeError> {
-        let context = cipher_suite.hpke().setup_base_receiver(
+        let context = cipher_suite.hpke().setup_receiver(
             kem_output,
             &cipher_suite.kem().derive(external_secret)?.0,
             &[],
+            None,
         )?;
 
         let kdf_extract_size = Hkdf::from(cipher_suite.kdf_type()).extract_size();
