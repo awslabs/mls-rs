@@ -34,7 +34,7 @@ struct ParentHashInput<'a> {
     original_sibling_tree_hash: &'a [u8],
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct ParentHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl From<Vec<u8>> for ParentHash {
@@ -48,6 +48,12 @@ impl Deref for ParentHash {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl PartialEq for ParentHash {
+    fn eq(&self, other: &Self) -> bool {
+        constant_time_eq::constant_time_eq(&self.0, &other.0)
     }
 }
 
