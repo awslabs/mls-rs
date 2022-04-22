@@ -39,7 +39,10 @@ impl<'a> TreeValidator<'a> {
 
     pub fn validate(&self, tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
         self.validate_tree_hash(tree)
-            .and(self.validate_parent_hashes(tree))
+            .and(
+                tree.validate_parent_hashes()
+                    .map_err(|_| TreeValidationError::ParentHashMismatch),
+            )
             .and(self.validate_leaves(tree))
     }
 
@@ -63,19 +66,6 @@ impl<'a> TreeValidator<'a> {
             .non_empty_leaves()
             .try_for_each(|(_, ln)| self.leaf_node_validator.revalidate(ln, self.group_id))
             .map_err(Into::into)
-    }
-
-    fn validate_parent_hashes(&self, tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
-        //For each non-empty parent node, verify that exactly one of the node's children are
-        // non-empty and have the hash of this node set as their parent_hash value (if the child
-        // is another parent) or has a parent_hash extension in the KeyPackage containing the same
-        // value (if the child is a leaf). If either of the node's children is empty, and in
-        // particular does not have a parent hash, then its respective children's
-        // values have to be considered instead.
-        tree.nodes
-            .non_empty_parents()
-            .try_for_each(|(node_index, node)| tree.validate_parent_hash(node_index, node))
-            .map_err(|_| TreeValidationError::ParentHashMismatch)
     }
 }
 

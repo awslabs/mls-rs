@@ -1,11 +1,11 @@
 use crate::cipher_suite::CipherSuite;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
-use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVecError, Parent};
+use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVecError};
 use crate::tree_kem::RatchetTreeError;
 use crate::tree_kem::TreeKemPublic;
 use ferriscrypt::hpke::kem::HpkePublicKey;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;
@@ -194,49 +194,69 @@ impl TreeKemPublic {
         Ok(leaf_hash)
     }
 
-    pub(super) fn validate_parent_hash(
-        &self,
-        node_index: NodeIndex,
-        node: &Parent,
-    ) -> Result<(), RatchetTreeError> {
-        //Let L and R be the left and right children of P, respectively
-        let mut r = tree_math::right(node_index, self.nodes.total_leaf_count())?;
-        let l = tree_math::left(node_index)?;
+    pub(super) fn validate_parent_hashes(&self) -> Result<(), RatchetTreeError> {
+        let mut nodes_to_validate: HashSet<u32> = self
+            .nodes
+            .non_empty_parents()
+            .map(|(node_index, _)| node_index)
+            .collect();
+        let num_leaves = self.total_leaf_count();
+        let root = tree_math::root(num_leaves);
 
-        //If L.parent_hash is equal to the Parent Hash of P with Co-Path Child R, the check passes
-        let parent_hash_right = self.parent_hash(&node.parent_hash, node_index, r)?;
+        // For each leaf l, validate all non-blank nodes on the chain from l up the tree.
+        self.nodes
+            .non_empty_leaves()
+            .try_for_each(|(leaf_index, _)| {
+                let mut n = NodeIndex::from(leaf_index);
+                while n != root {
+                    // Find the first non-blank ancestor p of n and p's co-path child s.
+                    let mut p = tree_math::parent(n, num_leaves)?;
+                    let mut s = tree_math::sibling(n, num_leaves)?;
+                    while self.nodes.is_blank(p)? {
+                        match tree_math::parent(p, num_leaves) {
+                            Ok(p_parent) => {
+                                s = tree_math::sibling(p, num_leaves)?;
+                                p = p_parent;
+                            }
+                            // If we reached the root, we're done with this chain.
+                            Err(_) => return Ok(()),
+                        }
+                    }
 
-        if let Some(l_node) = self.nodes.borrow_node(l)? {
-            if l_node.get_parent_hash() == Some(parent_hash_right) {
-                return Ok(());
-            }
+                    // Check is n's parent_hash field matches the parent hash of p with co-path child s.
+                    let p_parent_hash = self
+                        .nodes
+                        .borrow_node(p)?
+                        .as_ref()
+                        .and_then(|p_node| p_node.get_parent_hash());
+                    if let Some((p_parent_hash, n_node)) =
+                        p_parent_hash.zip(self.nodes.borrow_node(n)?.as_ref())
+                    {
+                        if n_node.get_parent_hash()
+                            == Some(self.parent_hash(&p_parent_hash, p, s)?)
+                        {
+                            if nodes_to_validate.remove(&p) {
+                                // If n's parent_hash field matches and p has not been validated yet, mark p as validated and continue.
+                                n = p;
+                            } else {
+                                // If p is validated for the second time, the check fails ("all non-blank parent nodes are covered by exactly one such chain").
+                                return Err(RatchetTreeError::ParentHashMismatch);
+                            }
+                        } else {
+                            // If n' parent_hash field doesn't match, we're done with this chain.
+                            return Ok(());
+                        }
+                    }
+                }
+                Ok(())
+            })?;
+
+        // The check passes iff all non-blank nodes are validated.
+        if nodes_to_validate.is_empty() {
+            Ok(())
+        } else {
+            Err(RatchetTreeError::ParentHashMismatch)
         }
-
-        //If R is blank, replace R with its left child until R is either non-blank or a leaf node
-        while self.nodes.is_blank(r)? && !self.nodes.is_leaf(r) {
-            r = tree_math::left(r)?;
-        }
-
-        //If R is a blank leaf node, the check fails
-        if self.nodes.is_leaf(r) && self.nodes.is_blank(r)? {
-            return Err(RatchetTreeError::InvalidParentHash(
-                "blank leaf".to_string(),
-            ));
-        }
-
-        //If R.parent_hash is equal to the Parent Hash of P with Co-Path Child L, the check passes
-        let parent_hash_left = self.parent_hash(&node.parent_hash, node_index, l)?;
-
-        if let Some(r_node) = self.nodes.borrow_node(r)? {
-            if r_node.get_parent_hash() == Some(parent_hash_left) {
-                return Ok(());
-            }
-        }
-
-        //Otherwise, the check fails
-        Err(RatchetTreeError::InvalidParentHash(
-            "no match found".to_string(),
-        ))
     }
 }
 
@@ -246,6 +266,7 @@ pub(crate) mod test_utils {
 
     use crate::tree_kem::{
         leaf_node::test_utils::get_basic_test_node, leaf_node_validator::ValidatedLeafNode,
+        node::Parent,
     };
 
     use super::*;
@@ -312,8 +333,10 @@ mod tests {
     use super::*;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNodeSource;
+    use crate::tree_kem::leaf_node_validator::ValidatedLeafNode;
     use crate::tree_kem::node::{NodeTypeResolver, NodeVec};
-    use crate::tree_kem::parent_hash::test_utils::{get_test_tree_fig_12, test_parent};
+    use crate::tree_kem::parent_hash::test_utils::{get_test_tree_fig_12, test_parent_node};
+    use crate::tree_kem::RatchetTreeError;
     use assert_matches::assert_matches;
     use tls_codec::Deserialize;
 
@@ -325,6 +348,7 @@ mod tests {
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let mut test_tree = get_test_tree_fig_12(cipher_suite);
+
         let test_key_package = get_basic_test_node(cipher_suite, "foo");
 
         let test_update_path = ValidatedUpdatePath {
@@ -375,8 +399,43 @@ mod tests {
         let mut test_tree = get_test_tree_fig_12(cipher_suite);
         test_tree.nodes[2] = None;
 
-        let res = test_tree.validate_parent_hash(1, &test_parent(cipher_suite, vec![]));
-        assert_matches!(res, Err(RatchetTreeError::InvalidParentHash(_)));
+        let res = test_tree.validate_parent_hashes();
+        assert_matches!(res, Err(RatchetTreeError::ParentHashMismatch));
+    }
+
+    #[test]
+    fn test_parent_hash_with_blanks() {
+        // Create a tree with 4 blanks: leaves C and D, and their 2 ancestors.
+        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+
+        let mut tree = TreeKemPublic::new(cipher_suite);
+
+        let leaves = ["A", "B", "C", "D", "E", "F"]
+            .map(|l| ValidatedLeafNode::from(get_basic_test_node(cipher_suite, l)))
+            .to_vec();
+
+        tree.add_leaves(leaves).unwrap();
+
+        tree.nodes[1] = Some(test_parent_node(cipher_suite, vec![]));
+        tree.nodes[7] = Some(test_parent_node(cipher_suite, vec![]));
+        tree.nodes[9] = Some(test_parent_node(cipher_suite, vec![]));
+        tree.nodes[4] = None;
+        tree.nodes[6] = None;
+
+        // Compute parent hashes after E commits and then A commits.
+        tree.nodes
+            .borrow_as_leaf_mut(LeafIndex(4))
+            .unwrap()
+            .leaf_node_source =
+            LeafNodeSource::Commit(tree.update_parent_hashes(LeafIndex(4), None).unwrap());
+
+        tree.nodes
+            .borrow_as_leaf_mut(LeafIndex(0))
+            .unwrap()
+            .leaf_node_source =
+            LeafNodeSource::Commit(tree.update_parent_hashes(LeafIndex(0), None).unwrap());
+
+        assert!(tree.validate_parent_hashes().is_ok());
     }
 
     #[derive(serde::Deserialize, serde::Serialize)]
