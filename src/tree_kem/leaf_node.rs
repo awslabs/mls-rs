@@ -32,7 +32,16 @@ pub enum LeafNodeError {
     InvalidCredentialForCipherSuite(CipherSuite, SignatureScheme),
 }
 
-#[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    TlsSize,
+    TlsSerialize,
+    TlsDeserialize,
+    PartialEq,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 #[repr(u8)]
 pub enum LeafNodeSource {
     #[tls_codec(discriminant = 1)]
@@ -41,7 +50,16 @@ pub enum LeafNodeSource {
     Commit(ParentHash),
 }
 
-#[derive(Debug, Clone, TlsSize, TlsSerialize, TlsDeserialize, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    TlsSize,
+    TlsSerialize,
+    TlsDeserialize,
+    PartialEq,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 #[non_exhaustive]
 pub struct LeafNode {
     #[tls_codec(with = "crate::tls::ByteVec")]

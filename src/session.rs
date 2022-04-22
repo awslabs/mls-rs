@@ -1,14 +1,12 @@
 use crate::cipher_suite::CipherSuite;
-use crate::client_config::{ClientConfig, KeyPackageRepository, Keychain};
+use crate::client_config::{ClientConfig, ClientGroupConfig, KeyPackageRepository, Keychain};
 use crate::credential::Credential;
 use crate::extension::{ExtensionList, LifetimeExt};
-
-pub use crate::group::framing::{ContentType, MLSMessage, MLSMessagePayload};
-
-use crate::group::framing::{Content, Sender};
 use crate::group::{
-    proposal::Proposal, CommitGeneration, Group, GroupContext, GroupInfo, OutboundMessage,
-    StateUpdate, VerifiedPlaintext, Welcome,
+    framing::{Content, Sender},
+    proposal::Proposal,
+    CommitGeneration, Group, GroupContext, GroupInfo, GroupState, OutboundMessage, StateUpdate,
+    VerifiedPlaintext, Welcome,
 };
 use crate::key_package::{
     KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
@@ -21,11 +19,15 @@ use crate::tree_kem::leaf_node_ref::LeafNodeRef;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use crate::ProtocolVersion;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
+use std::fmt::{self, Debug};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-pub use crate::group::GroupError;
+pub use crate::group::{
+    framing::{ContentType, MLSMessage, MLSMessagePayload},
+    GroupError,
+};
 
 #[derive(Error, Debug)]
 pub enum SessionError {
@@ -72,11 +74,28 @@ pub struct CommitResult {
     pub welcome_packet: Option<Vec<u8>>,
 }
 
-#[derive(Clone, Debug)]
-pub struct Session<C: ClientConfig> {
-    protocol: Group,
+pub struct Session<C>
+where
+    C: ClientConfig,
+    C::EpochRepository: Clone,
+{
+    protocol: Group<ClientGroupConfig<C>>,
     pending_commit: Option<PendingCommit>,
     config: C,
+}
+
+impl<C> Debug for Session<C>
+where
+    C: ClientConfig + Debug,
+    C::EpochRepository: Clone + Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Session")
+            .field("protocol", &self.protocol)
+            .field("pending_comming", &self.pending_commit)
+            .field("config", &self.config)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -87,7 +106,11 @@ pub struct GroupStats {
     pub epoch: u64,
 }
 
-impl<C: ClientConfig + Clone> Session<C> {
+impl<C> Session<C>
+where
+    C: ClientConfig + Clone,
+    C::EpochRepository: Clone,
+{
     pub(crate) fn create(
         group_id: Vec<u8>,
         cipher_suite: CipherSuite,
@@ -98,6 +121,7 @@ impl<C: ClientConfig + Clone> Session<C> {
         config: C,
     ) -> Result<Self, SessionError> {
         let group = Group::new(
+            ClientGroupConfig::new(&config, &group_id),
             group_id,
             cipher_suite,
             protocol_version,
@@ -139,6 +163,7 @@ impl<C: ClientConfig + Clone> Session<C> {
             ratchet_tree,
             key_package_generation,
             &config.secret_store(),
+            |group_id| ClientGroupConfig::new(&config, group_id),
             version_and_cipher_filter(&config),
         )?;
 
@@ -168,6 +193,7 @@ impl<C: ClientConfig + Clone> Session<C> {
                 public_tree,
                 key_package_generation,
                 &self.config.secret_store(),
+                |group_id| ClientGroupConfig::new(&self.config, group_id),
                 version_and_cipher_filter(&self.config),
             )?,
             pending_commit: None,
@@ -189,6 +215,7 @@ impl<C: ClientConfig + Clone> Session<C> {
             .transpose()?;
 
         let (protocol, commit_message) = Group::new_external(
+            ClientGroupConfig::new(&config, &group_info.group_id),
             protocol_version,
             group_info,
             tree,
@@ -600,6 +627,7 @@ impl<C: ClientConfig + Clone> Session<C> {
             lifetime,
             &self.config.secret_store(),
             &signer,
+            |group_id| ClientGroupConfig::new(&self.config, group_id),
             get_new_key_package,
         )?;
 
@@ -623,6 +651,21 @@ impl<C: ClientConfig + Clone> Session<C> {
         len: usize,
     ) -> Result<Vec<u8>, SessionError> {
         Ok(self.protocol.export_secret(label, context, len)?)
+    }
+
+    pub fn export(&self) -> GroupState {
+        self.protocol.export()
+    }
+
+    pub(crate) fn import(config: C, state: GroupState) -> Result<Self, SessionError> {
+        Ok(Self {
+            protocol: Group::import(
+                ClientGroupConfig::new(&config, &state.context.group_id),
+                state,
+            )?,
+            pending_commit: None,
+            config,
+        })
     }
 }
 

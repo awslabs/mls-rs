@@ -5,7 +5,7 @@ use crate::extension::{ExtensionError, ExtensionList, LifetimeExt};
 use crate::group::framing::{Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender};
 use crate::group::message_signature::MessageSigningContext;
 use crate::group::proposal::{AddProposal, Proposal, RemoveProposal};
-use crate::group::GroupContext;
+use crate::group::{GroupContext, GroupState};
 use crate::key_package::{
     KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
 };
@@ -50,7 +50,11 @@ pub struct Client<C: ClientConfig> {
     pub config: C,
 }
 
-impl<C: ClientConfig + Clone> Client<C> {
+impl<C> Client<C>
+where
+    C: ClientConfig + Clone,
+    C::EpochRepository: Clone,
+{
     pub fn new(config: C) -> Self {
         Client { config }
     }
@@ -270,6 +274,10 @@ impl<C: ClientConfig + Clone> Client<C> {
             leaf_node_secret,
             &signer,
         )?)
+    }
+
+    pub fn import_session(&self, state: GroupState) -> Result<Session<C>, ClientError> {
+        Ok(Session::import(self.config.clone(), state)?)
     }
 }
 
@@ -970,6 +978,49 @@ mod tests {
         assert_eq!(
             alice_session.authentication_secret().unwrap(),
             bob_session.authentication_secret().unwrap()
+        );
+    }
+
+    #[test]
+    fn saved_session_can_be_resumed() {
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+        let mut alice_session = create_session(&alice);
+
+        let (bob, bob_key_pkg) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+        let mut bob_session =
+            join_session(&mut alice_session, [], bob_key_pkg.key_package, &bob).unwrap();
+
+        // Commit so that Bob's session records a new epoch.
+        let commit = bob_session.commit(Vec::new()).unwrap();
+        bob_session.apply_pending_commit().unwrap();
+        alice_session
+            .process_incoming_bytes(&commit.commit_packet)
+            .unwrap();
+
+        let bob_session_bytes = serde_json::to_vec(&bob_session.export()).unwrap();
+
+        let mut bob_session = bob
+            .import_session(serde_json::from_slice(&bob_session_bytes).unwrap())
+            .unwrap();
+
+        let message = alice_session.encrypt_application_data(b"hello").unwrap();
+        let received_message = bob_session.process_incoming_bytes(&message).unwrap();
+
+        assert_matches!(
+            received_message.message,
+            ProcessedMessagePayload::Application(bytes) if bytes == b"hello"
+        );
+
+        let commit = alice_session.commit(Vec::new()).unwrap();
+        alice_session.apply_pending_commit().unwrap();
+        bob_session
+            .process_incoming_bytes(&commit.commit_packet)
+            .unwrap();
+
+        assert_eq!(
+            alice_session.group_stats().unwrap().epoch,
+            bob_session.group_stats().unwrap().epoch
         );
     }
 }

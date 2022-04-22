@@ -34,7 +34,7 @@ pub enum EpochError {
     KeyDerivationFailure,
 }
 
-#[derive(Debug, Clone, Zeroize, PartialEq)]
+#[derive(Debug, Clone, Zeroize, PartialEq, serde::Deserialize, serde::Serialize)]
 #[zeroize(drop)]
 pub struct KeySchedule {
     pub sender_data_secret: Vec<u8>,
@@ -62,7 +62,7 @@ impl KeySchedule {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(crate) struct Epoch {
     pub identifier: u64,
     pub cipher_suite: CipherSuite,
@@ -70,7 +70,9 @@ pub(crate) struct Epoch {
     pub secret_tree: SecretTree,
     pub self_index: LeafIndex,
     pub init_secret: InitSecret,
+    #[serde(with = "crate::serde_utils::map_as_seq")]
     pub handshake_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
+    #[serde(with = "crate::serde_utils::map_as_seq")]
     pub application_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
     pub key_schedule: KeySchedule,
 }

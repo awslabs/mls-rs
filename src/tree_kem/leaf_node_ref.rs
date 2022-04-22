@@ -5,7 +5,18 @@ use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, TlsSerialize, TlsDeserialize, TlsSize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    TlsSerialize,
+    TlsDeserialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
 )]
 pub struct LeafNodeRef(HashReference);
 

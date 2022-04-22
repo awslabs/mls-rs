@@ -13,7 +13,18 @@ pub enum CredentialError {
     CertificateError(#[from] X509Error),
 }
 
-#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize, PartialEq, Eq, Hash)]
+#[derive(
+    Clone,
+    Debug,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    PartialEq,
+    Eq,
+    Hash,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 #[repr(u16)]
 pub enum Credential {
     #[tls_codec(discriminant = 1)]
@@ -37,7 +48,18 @@ pub(crate) trait CredentialConvertible {
     fn public_key(&self) -> Result<PublicKey, CredentialError>;
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Eq, Hash)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    Eq,
+    Hash,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct BasicCredential {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub identity: Vec<u8>,

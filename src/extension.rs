@@ -64,7 +64,16 @@ impl MlsExtension for ExternalKeyIdExt {
     const IDENTIFIER: ExtensionType = KEY_ID_EXT_ID;
 }
 
-#[derive(Clone, PartialEq, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    PartialEq,
+    Debug,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct CapabilitiesExt {
     #[tls_codec(with = "crate::tls::DefVec")]
     pub protocol_versions: Vec<ProtocolVersion>,
@@ -91,7 +100,16 @@ impl MlsExtension for CapabilitiesExt {
     const IDENTIFIER: ExtensionType = CAPABILITIES_EXT_ID;
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct LifetimeExt {
     pub not_before: u64,
     pub not_after: u64,
@@ -160,15 +178,24 @@ impl MlsExtension for ExternalPubExt {
     const IDENTIFIER: ExtensionType = EXTERNAL_PUB_EXT_ID;
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct Extension {
     pub extension_type: ExtensionType,
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub extension_data: Vec<u8>,
 }
 
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct ExtensionList(IndexMap<ExtensionType, Extension>);
+#[derive(Clone, Debug, PartialEq, Default, serde::Deserialize, serde::Serialize)]
+pub struct ExtensionList(#[serde(with = "indexmap::serde_seq")] IndexMap<ExtensionType, Extension>);
 
 impl Size for ExtensionList {
     fn tls_serialized_len(&self) -> usize {

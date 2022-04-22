@@ -19,10 +19,13 @@ pub enum TreeIndexError {
     DuplicateLeafNode(String, LeafIndex),
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct TreeIndex {
+    #[serde(with = "crate::serde_utils::map_as_seq")]
     leaves: HashMap<LeafNodeRef, LeafIndex>,
+    #[serde(with = "crate::serde_utils::map_as_seq")]
     credential_signature_key: HashMap<Vec<u8>, LeafIndex>,
+    #[serde(with = "crate::serde_utils::map_as_seq")]
     hpke_key: HashMap<Vec<u8>, LeafIndex>,
 }
 

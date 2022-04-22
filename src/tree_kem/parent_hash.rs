@@ -34,7 +34,9 @@ struct ParentHashInput<'a> {
     original_sibling_tree_hash: &'a [u8],
 }
 
-#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
+)]
 pub struct ParentHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl From<Vec<u8>> for ParentHash {

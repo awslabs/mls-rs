@@ -1,11 +1,14 @@
 use super::*;
 
-#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
+)]
 #[non_exhaustive]
 pub struct TreeKemPrivate {
     pub self_index: LeafIndex,
     pub leaf_node_ref: LeafNodeRef,
     #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::ByteVec>")]
+    #[serde(with = "crate::serde_utils::map_as_seq")]
     pub secret_keys: HashMap<NodeIndex, HpkeSecretKey>,
 }
 

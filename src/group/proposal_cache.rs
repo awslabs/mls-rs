@@ -56,7 +56,16 @@ impl ProposalSetEffects {
     }
 }
 
-#[derive(Debug, Clone, TlsSerialize, TlsSize, TlsDeserialize, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    TlsSerialize,
+    TlsSize,
+    TlsDeserialize,
+    PartialEq,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct CachedProposal {
     proposal: Proposal,
     sender: Sender,
@@ -286,9 +295,20 @@ impl ProposalSet {
     }
 }
 
-#[derive(Clone, Debug, TlsSize, TlsSerialize, TlsDeserialize, PartialEq)]
+#[derive(
+    Clone,
+    Debug,
+    TlsSize,
+    TlsSerialize,
+    TlsDeserialize,
+    PartialEq,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub(crate) struct ProposalCache(
-    #[tls_codec(with = "crate::tls::DefMap")] HashMap<ProposalRef, CachedProposal>,
+    #[tls_codec(with = "crate::tls::DefMap")]
+    #[serde(with = "crate::serde_utils::map_as_seq")]
+    HashMap<ProposalRef, CachedProposal>,
 );
 
 impl ProposalCache {

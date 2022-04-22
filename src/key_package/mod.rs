@@ -32,7 +32,9 @@ pub enum KeyPackageError {
 }
 
 #[non_exhaustive]
-#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
+)]
 pub struct KeyPackage {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,

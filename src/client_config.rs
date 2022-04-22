@@ -3,11 +3,11 @@ use crate::{
     client::Client,
     credential::Credential,
     extension::{CapabilitiesExt, ExtensionType},
-    group::{proposal::Proposal, ControlEncryptionMode},
+    group::{proposal::Proposal, ControlEncryptionMode, GroupConfig},
     key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageRef},
     psk::{ExternalPskId, Psk},
     signer::Signer,
-    ProtocolVersion,
+    EpochRepository, InMemoryEpochRepository, ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::{Curve, PublicKey, SecretKey};
 use std::{
@@ -45,6 +45,7 @@ pub trait ClientConfig {
     type ProposalFilterError: std::error::Error + Send + Sync + 'static;
     type Keychain: Keychain;
     type PskStore: PskStore;
+    type EpochRepository: EpochRepository;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
@@ -57,6 +58,7 @@ pub trait ClientConfig {
     fn filter_proposal(&self, proposal: &Proposal) -> Result<(), Self::ProposalFilterError>;
     fn keychain(&self) -> Self::Keychain;
     fn secret_store(&self) -> Self::PskStore;
+    fn epoch_repo(&self, group_id: &[u8]) -> Self::EpochRepository;
 
     fn capabilities(&self) -> CapabilitiesExt {
         CapabilitiesExt {
@@ -73,11 +75,11 @@ pub trait ClientConfig {
 }
 
 #[derive(Clone, Default, Debug)]
-pub struct InMemoryRepository {
+pub struct InMemoryKeyPackageRepository {
     inner: Arc<Mutex<HashMap<KeyPackageRef, KeyPackageGeneration>>>,
 }
 
-impl InMemoryRepository {
+impl InMemoryKeyPackageRepository {
     pub fn insert(&self, key_pkg_gen: KeyPackageGeneration) -> Result<(), KeyPackageError> {
         self.inner
             .lock()
@@ -91,7 +93,7 @@ impl InMemoryRepository {
     }
 }
 
-impl KeyPackageRepository for InMemoryRepository {
+impl KeyPackageRepository for InMemoryKeyPackageRepository {
     type Error = KeyPackageError;
 
     fn insert(&mut self, key_pkg_gen: KeyPackageGeneration) -> Result<(), Self::Error> {
@@ -208,12 +210,13 @@ pub struct InMemoryClientConfig {
     external_signing_keys: HashMap<Vec<u8>, PublicKey>,
     external_key_id: Option<Vec<u8>>,
     supported_extensions: Vec<ExtensionType>,
-    key_packages: InMemoryRepository,
+    key_packages: InMemoryKeyPackageRepository,
     proposal_filter: Option<ProposalFilter>,
     keychain: InMemoryKeychain,
     psk_store: InMemoryPskStore,
     protocol_versions: Vec<ProtocolVersion>,
     cipher_suites: Vec<CipherSuite>,
+    epochs: Arc<Mutex<HashMap<Vec<u8>, InMemoryEpochRepository>>>,
 }
 
 type ProposalFilter = Arc<dyn Fn(&Proposal) -> Result<(), String> + Send + Sync>;
@@ -231,6 +234,7 @@ impl InMemoryClientConfig {
             psk_store: Default::default(),
             protocol_versions: ProtocolVersion::all().collect(),
             cipher_suites: CipherSuite::all().collect(),
+            epochs: Default::default(),
         }
     }
 
@@ -338,15 +342,17 @@ impl Debug for InMemoryClientConfig {
                     .as_ref()
                     .map_or("None", |_| "Some(...)"),
             )
+            .field("epochs", &self.epochs)
             .finish()
     }
 }
 
 impl ClientConfig for InMemoryClientConfig {
-    type KeyPackageRepository = InMemoryRepository;
+    type KeyPackageRepository = InMemoryKeyPackageRepository;
     type ProposalFilterError = SimpleError;
     type Keychain = InMemoryKeychain;
     type PskStore = InMemoryPskStore;
+    type EpochRepository = InMemoryEpochRepository;
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
         self.external_signing_keys.get(external_key_id).cloned()
@@ -360,7 +366,7 @@ impl ClientConfig for InMemoryClientConfig {
         self.external_key_id.clone()
     }
 
-    fn key_package_repo(&self) -> InMemoryRepository {
+    fn key_package_repo(&self) -> InMemoryKeyPackageRepository {
         self.key_packages.clone()
     }
 
@@ -390,8 +396,42 @@ impl ClientConfig for InMemoryClientConfig {
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion> {
         self.protocol_versions.clone()
     }
+
+    fn epoch_repo(&self, group_id: &[u8]) -> Self::EpochRepository {
+        self.epochs
+            .lock()
+            .unwrap()
+            .entry(group_id.to_vec())
+            .or_default()
+            .clone()
+    }
 }
 
 #[derive(Debug, Error)]
 #[error("{0}")]
 pub struct SimpleError(String);
+
+#[derive(Clone, Debug)]
+pub struct ClientGroupConfig<C: ClientConfig> {
+    pub epoch_repo: C::EpochRepository,
+}
+
+impl<C: ClientConfig> ClientGroupConfig<C> {
+    pub fn new(client_config: &C, group_id: &[u8]) -> Self {
+        Self {
+            epoch_repo: client_config.epoch_repo(group_id),
+        }
+    }
+}
+
+impl<C> GroupConfig for ClientGroupConfig<C>
+where
+    C: ClientConfig,
+    C::EpochRepository: Clone,
+{
+    type EpochRepository = C::EpochRepository;
+
+    fn epoch_repo(&self) -> Self::EpochRepository {
+        self.epoch_repo.clone()
+    }
+}

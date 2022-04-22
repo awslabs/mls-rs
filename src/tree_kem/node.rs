@@ -8,7 +8,16 @@ use std::ops::{Deref, DerefMut};
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub(crate) struct Parent {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub public_key: HpkePublicKey,
@@ -18,7 +27,19 @@ pub(crate) struct Parent {
 }
 
 #[derive(
-    Clone, Copy, Debug, Ord, PartialEq, PartialOrd, Hash, Eq, TlsDeserialize, TlsSerialize, TlsSize,
+    Clone,
+    Copy,
+    Debug,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    Hash,
+    Eq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
 )]
 pub struct LeafIndex(pub(crate) u32);
 
@@ -68,7 +89,16 @@ pub enum NodeVecError {
     UnexpectedEmptyNode,
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 #[allow(clippy::large_enum_variant)]
 #[repr(u8)]
 //TODO: Research if this should actually be a Box<Leaf> for memory / performance reasons
@@ -161,7 +191,17 @@ impl NodeTypeResolver for Option<Node> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Default)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    Default,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub(crate) struct NodeVec(#[tls_codec(with = "crate::tls::DefVec")] Vec<Option<Node>>);
 
 impl From<Vec<Option<Node>>> for NodeVec {

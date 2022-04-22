@@ -24,7 +24,16 @@ impl From<&Content> for ContentType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 #[repr(u8)]
 pub enum Sender {
     #[tls_codec(discriminant = 1)]

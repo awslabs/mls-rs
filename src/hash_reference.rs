@@ -5,7 +5,18 @@ use ferriscrypt::kdf::{hkdf::Hkdf, KdfError};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(
-    Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, TlsDeserialize, TlsSerialize, TlsSize,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Clone,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
 )]
 pub struct HashReference([u8; 16]);
 

@@ -4,27 +4,72 @@ use crate::{
     tree_kem::{leaf_node::LeafNode, leaf_node_ref::LeafNodeRef},
 };
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct AddProposal {
     pub key_package: KeyPackage,
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct UpdateProposal {
     pub leaf_node: LeafNode,
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct RemoveProposal {
     pub to_remove: LeafNodeRef,
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct PreSharedKey {
     pub psk: PreSharedKeyID,
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct ReInit {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
@@ -33,7 +78,16 @@ pub struct ReInit {
     pub extensions: ExtensionList,
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct ExternalInit {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub kem_output: Vec<u8>,
@@ -41,7 +95,16 @@ pub struct ExternalInit {
 
 pub type ProposalType = u16;
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 #[repr(u16)]
 pub enum Proposal {
     #[tls_codec(discriminant = 1)]

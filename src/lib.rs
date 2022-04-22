@@ -47,6 +47,7 @@ pub mod cipher_suite;
 pub mod client;
 pub mod client_config;
 pub mod credential;
+mod epoch;
 pub mod extension;
 mod group;
 mod hash_reference;
@@ -54,6 +55,7 @@ pub mod key_package;
 pub mod message;
 mod protocol_version;
 mod psk;
+mod serde_utils;
 pub mod session;
 pub mod signer;
 mod tree_kem;
@@ -65,6 +67,7 @@ pub mod tls;
 #[cfg(not(feature = "benchmark"))]
 mod tls;
 
+pub use epoch::{Epoch, EpochRepository, InMemoryEpochRepository};
 pub use ferriscrypt;
 pub use group::{
     proposal::{AddProposal, Proposal, RemoveProposal, UpdateProposal},

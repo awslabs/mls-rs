@@ -99,7 +99,7 @@ pub enum RatchetTreeError {
     LeafNodeNotFound(String),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct TreeKemPublic {
     pub cipher_suite: CipherSuite,
     index: TreeIndex,

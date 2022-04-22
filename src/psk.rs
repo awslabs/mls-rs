@@ -2,7 +2,7 @@ use crate::{
     cipher_suite::CipherSuite,
     client_config::PskStore,
     group::{
-        epoch_repo::{EpochRepository, EpochRepositoryError},
+        epoch::Epoch,
         key_schedule::{KeyScheduleKdf, KeyScheduleKdfError},
     },
 };
@@ -10,17 +10,40 @@ use ferriscrypt::{
     kdf::KdfError,
     rand::{SecureRng, SecureRngError},
 };
+use std::borrow::Cow;
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct PreSharedKeyID {
     pub key_id: JustPreSharedKeyID,
     pub psk_nonce: PskNonce,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 #[repr(u8)]
 pub enum JustPreSharedKeyID {
     #[tls_codec(discriminant = 1)]
@@ -28,13 +51,46 @@ pub enum JustPreSharedKeyID {
     Resumption(ResumptionPsk),
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct ExternalPskId(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct PskGroupId(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct PskNonce(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
 
 impl PskNonce {
@@ -45,14 +101,36 @@ impl PskNonce {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct ResumptionPsk {
     pub usage: ResumptionPSKUsage,
     pub psk_group_id: PskGroupId,
     pub psk_epoch: u64,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 #[repr(u8)]
 pub enum ResumptionPSKUsage {
     Application = 1,
@@ -82,14 +160,16 @@ struct PSKLabel<'a> {
     count: u16,
 }
 
-pub(crate) fn psk_secret<S>(
+pub(crate) fn psk_secret<'a, S, F, E>(
     cipher_suite: CipherSuite,
     secret_store: &S,
-    epochs: Option<&EpochRepository>,
+    mut get_epoch: F,
     psk_ids: &[PreSharedKeyID],
 ) -> Result<Vec<u8>, PskSecretError>
 where
     S: PskStore,
+    F: FnMut(u64) -> Result<Option<Cow<'a, Epoch>>, E>,
+    E: std::error::Error + Send + Sync + 'static,
 {
     let len = psk_ids.len();
     let len = u16::try_from(len).map_err(|_| PskSecretError::TooManyPskIds(len))?;
@@ -104,13 +184,15 @@ where
                     .psk(id)
                     .map_err(|e| PskSecretError::SecretStoreError(Box::new(e)))?
                     .ok_or_else(|| PskSecretError::NoPskForId(id.clone()))?,
-                JustPreSharedKeyID::Resumption(ResumptionPsk { psk_epoch, .. }) => epochs
-                    .ok_or(EpochRepositoryError::EpochNotFound(*psk_epoch))?
-                    .get(*psk_epoch)?
-                    .key_schedule
-                    .resumption_secret
-                    .clone()
-                    .into(),
+                JustPreSharedKeyID::Resumption(ResumptionPsk { psk_epoch, .. }) => {
+                    get_epoch(*psk_epoch)
+                        .map_err(|e| PskSecretError::EpochRepositoryError(e.into()))?
+                        .ok_or(PskSecretError::EpochNotFound(*psk_epoch))?
+                        .key_schedule
+                        .resumption_secret
+                        .clone()
+                        .into()
+                }
             };
             let label = PSKLabel {
                 id,
@@ -143,7 +225,9 @@ pub enum PskSecretError {
     #[error(transparent)]
     SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
-    EpochRepositoryError(#[from] EpochRepositoryError),
+    EpochRepositoryError(Box<dyn std::error::Error + Send + Sync>),
+    #[error("Epoch {0} not found")]
+    EpochNotFound(u64),
 }
 
 impl From<KdfError> for PskSecretError {
@@ -165,7 +249,7 @@ mod tests {
     use assert_matches::assert_matches;
     use ferriscrypt::{kdf::hkdf::Hkdf, rand::SecureRng};
     use serde::{Deserialize, Serialize};
-    use std::iter;
+    use std::{convert::Infallible, iter};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -197,7 +281,7 @@ mod tests {
         let res = psk_secret(
             TEST_CIPHER_SUITE,
             &InMemoryPskStore::default(),
-            None,
+            |_| Ok::<_, Infallible>(None),
             &[wrap_external_psk_id(TEST_CIPHER_SUITE, expected_id.clone())],
         );
         assert_matches!(res, Err(PskSecretError::NoPskForId(actual_id)) if actual_id == expected_id);
@@ -272,7 +356,13 @@ mod tests {
                 .cloned()
                 .map(PreSharedKeyID::from)
                 .collect::<Vec<_>>();
-            psk_secret(cipher_suite, &secret_store, None, &ids).unwrap()
+            psk_secret(
+                cipher_suite,
+                &secret_store,
+                |_| Ok::<_, Infallible>(None),
+                &ids,
+            )
+            .unwrap()
         }
     }
 

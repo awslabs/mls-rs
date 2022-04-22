@@ -8,7 +8,18 @@ use std::io::{Read, Write};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(
-    Clone, Copy, Debug, IntoEnumIterator, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Eq, Hash,
+    Clone,
+    Copy,
+    Debug,
+    IntoEnumIterator,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    Eq,
+    Hash,
+    serde::Deserialize,
+    serde::Serialize,
 )]
 #[repr(u16)]
 pub enum SignatureScheme {
@@ -75,7 +86,17 @@ impl From<HpkeCiphertext> for ferriscrypt::hpke::HpkeCiphertext {
 }
 
 #[derive(
-    Debug, Copy, Clone, Eq, IntoEnumIterator, PartialEq, TlsDeserialize, TlsSerialize, TlsSize,
+    Debug,
+    Copy,
+    Clone,
+    Eq,
+    IntoEnumIterator,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
 )]
 #[repr(u16)]
 pub enum CipherSuite {
@@ -242,7 +263,7 @@ impl From<SignatureScheme> for Curve {
     }
 }
 
-#[derive(Clone, Debug, Copy, PartialEq)]
+#[derive(Clone, Debug, Copy, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum MaybeCipherSuite {
     CipherSuite(CipherSuite),
     Unsupported(u16),

@@ -37,7 +37,16 @@ pub enum SecretTreeError {
 
 #[derive(Zeroize)]
 #[zeroize(drop)]
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 struct TreeSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl Deref for TreeSecret {
@@ -66,7 +75,16 @@ impl From<Vec<u8>> for TreeSecret {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 struct TreeSecretsVec(
     #[tls_codec(with = "crate::tls::Vector::<crate::tls::Optional<crate::tls::ByteVec>>")]
     Vec<Option<TreeSecret>>,
@@ -106,7 +124,16 @@ impl TreeSecretsVec {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub(crate) struct SecretTree {
     cipher_suite: CipherSuite,
     known_secrets: TreeSecretsVec,
@@ -285,7 +312,17 @@ impl ToString for KeyType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, TlsSize, TlsSerialize, TlsDeserialize, Zeroize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    TlsSize,
+    TlsSerialize,
+    TlsDeserialize,
+    Zeroize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 #[zeroize(drop)]
 struct DerivedKey {
     #[tls_codec(with = "crate::tls::ByteVec")]
@@ -294,12 +331,22 @@ struct DerivedKey {
     key: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct SecretKeyRatchet {
     cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
     secret: TreeSecret,
     #[tls_codec(with = "crate::tls::DefMap")]
+    #[serde(with = "crate::serde_utils::map_as_seq")]
     history: HashMap<u32, DerivedKey>,
     node_index: NodeIndex,
     generation: u32,

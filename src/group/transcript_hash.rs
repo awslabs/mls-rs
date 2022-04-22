@@ -85,7 +85,9 @@ impl<'a> From<Option<&'a ConfirmationTag>> for MLSPlaintextCommitAuthData<'a> {
     }
 }
 
-#[derive(Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
+)]
 pub struct ConfirmedTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl Deref for ConfirmedTranscriptHash {
@@ -126,7 +128,9 @@ impl ConfirmedTranscriptHash {
     }
 }
 
-#[derive(Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
+)]
 pub(crate) struct InterimTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl Deref for InterimTranscriptHash {

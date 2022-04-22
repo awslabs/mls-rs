@@ -14,6 +14,8 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     TlsDeserialize,
     TlsSerialize,
     TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
 )]
 #[repr(u8)]
 pub enum ProtocolVersion {

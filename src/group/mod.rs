@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::option::Option::Some;
@@ -43,7 +44,7 @@ use crate::tree_kem::{
     RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathGeneration,
     UpdatePathValidationError, UpdatePathValidator,
 };
-use crate::ProtocolVersion;
+use crate::{EpochRepository, ProtocolVersion};
 
 use confirmation_tag::*;
 use epoch::*;
@@ -59,16 +60,18 @@ use proposal_ref::*;
 use secret_tree::*;
 use transcript_hash::*;
 
-use self::epoch_repo::{EpochRepository, EpochRepositoryError};
 use self::padding::PaddingMode;
 
+pub use group_config::{GroupConfig, InMemoryGroupConfig};
 pub use group_info::GroupInfo;
+pub use group_state::GroupState;
 
 mod confirmation_tag;
 pub(crate) mod epoch;
-pub(crate) mod epoch_repo;
 pub mod framing;
+mod group_config;
 mod group_info;
+mod group_state;
 mod init_secret;
 pub mod key_schedule;
 mod membership_tag;
@@ -80,9 +83,6 @@ mod proposal_cache;
 mod proposal_ref;
 mod secret_tree;
 mod transcript_hash;
-
-// TODO: Make the repository bounds configurable somehow
-const EPOCH_REPO_RETENTION_LIMIT: u32 = 3;
 
 struct ProvisionalState {
     public_tree: TreeKemPublic,
@@ -181,7 +181,7 @@ pub enum GroupError {
     #[error(transparent)]
     LeafSecretError(#[from] PathSecretError),
     #[error(transparent)]
-    EpochRepositoryError(#[from] EpochRepositoryError),
+    EpochRepositoryError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     ExtensionError(#[from] ExtensionError),
     #[error(transparent)]
@@ -256,9 +256,20 @@ pub enum GroupError {
     MissingExternalPubExtension,
     #[error("Missing update path in external commit")]
     MissingUpdatePathInExternalCommit,
+    #[error("Epoch {0} not found")]
+    EpochNotFound(u64),
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct GroupContext {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
@@ -318,22 +329,23 @@ pub enum ControlEncryptionMode {
 }
 
 #[derive(Clone, Debug)]
-pub struct Group {
+pub struct Group<C: GroupConfig> {
+    config: C,
     pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     context: GroupContext,
     private_tree: TreeKemPrivate,
-    epoch_repo: EpochRepository,
+    current_epoch: Epoch,
     interim_transcript_hash: InterimTranscriptHash,
     proposals: ProposalCache,
     pub pending_updates: HashMap<LeafNodeRef, HpkeSecretKey>, // Hash of key package to key generation
 }
 
-impl PartialEq for Group {
+impl<C: GroupConfig> PartialEq for Group<C> {
     fn eq(&self, other: &Self) -> bool {
         self.cipher_suite == other.cipher_suite
             && self.context == other.context
-            && self.epoch_repo.current().ok() == other.epoch_repo.current().ok()
+            && self.current_epoch == other.current_epoch
             && self.interim_transcript_hash == other.interim_transcript_hash
             && self.proposals == other.proposals
     }
@@ -411,8 +423,9 @@ impl From<OutboundMessage> for VerifiedPlaintext {
     }
 }
 
-impl Group {
+impl<C: GroupConfig> Group<C> {
     pub fn new(
+        config: C,
         group_id: Vec<u8>,
         cipher_suite: CipherSuite,
         protocol_version: ProtocolVersion,
@@ -435,7 +448,7 @@ impl Group {
 
         let context = GroupContext::new_group(group_id, tree_hash, group_context_extensions);
 
-        let (epoch, _) = Epoch::derive(
+        let (current_epoch, _) = Epoch::derive(
             cipher_suite,
             &init_secret,
             &CommitSecret::empty(cipher_suite),
@@ -445,31 +458,32 @@ impl Group {
             &vec![0; kdf.extract_size()],
         )?;
 
-        let epoch_repo = EpochRepository::new(epoch, EPOCH_REPO_RETENTION_LIMIT);
-
         Ok(Self {
+            config,
             protocol_version,
             cipher_suite,
             private_tree,
             context,
-            epoch_repo,
+            current_epoch,
             interim_transcript_hash: InterimTranscriptHash::from(vec![]),
             proposals: ProposalCache::new(),
             pending_updates: Default::default(),
         })
     }
 
-    pub fn from_welcome_message<S, F>(
+    pub fn from_welcome_message<S, F, G>(
         protocol_version: ProtocolVersion,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package: KeyPackageGeneration,
         secret_store: &S,
+        make_config: G,
         support_version_and_cipher: F,
     ) -> Result<Self, GroupError>
     where
         S: PskStore,
         F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
+        G: FnOnce(&[u8]) -> C,
     {
         Self::join_with_welcome(
             protocol_version,
@@ -477,23 +491,31 @@ impl Group {
             public_tree,
             key_package,
             secret_store,
-            None,
+            |_| Ok(None),
+            make_config,
             support_version_and_cipher,
         )
     }
 
-    fn join_with_welcome<P: PskStore, F>(
+    #[allow(clippy::too_many_arguments)]
+    fn join_with_welcome<'a, P, F, G, E>(
         protocol_version: ProtocolVersion,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package_generation: KeyPackageGeneration,
         psk_store: &P,
-        epoch_repo: Option<&EpochRepository>,
+        get_epoch: E,
+        make_config: G,
         support_version_and_cipher: F,
     ) -> Result<Self, GroupError>
     where
         P: PskStore,
         F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
+        G: FnOnce(&[u8]) -> C,
+        E: FnMut(
+            u64,
+        )
+            -> Result<Option<Cow<'a, Epoch>>, <C::EpochRepository as EpochRepository>::Error>,
     {
         // Identify an entry in the secrets array where the KeyPackageRef value corresponds to
         // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
@@ -527,7 +549,7 @@ impl Group {
         let psk_secret = crate::psk::psk_secret(
             welcome.cipher_suite,
             psk_store,
-            epoch_repo,
+            get_epoch,
             &group_secrets.psks,
         )?;
 
@@ -609,6 +631,7 @@ impl Group {
         }
 
         Self::join_with(
+            make_config(&group_info.group_id),
             protocol_version,
             group_info.cipher_suite,
             &group_info.confirmation_tag,
@@ -619,6 +642,7 @@ impl Group {
     }
 
     fn join_with(
+        config: C,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         confirmation_tag: &ConfirmationTag,
@@ -634,14 +658,13 @@ impl Group {
             MLSPlaintextCommitAuthData::from(confirmation_tag),
         )?;
 
-        let epoch_repo = EpochRepository::new(epoch, EPOCH_REPO_RETENTION_LIMIT);
-
         Ok(Group {
+            config,
             protocol_version,
             cipher_suite,
             context,
             private_tree,
-            epoch_repo,
+            current_epoch: epoch,
             interim_transcript_hash,
             proposals: ProposalCache::new(),
             pending_updates: Default::default(),
@@ -649,7 +672,9 @@ impl Group {
     }
 
     /// Returns group and external commit message
+    #[allow(clippy::too_many_arguments)]
     pub fn new_external<S, F>(
+        config: C,
         protocol_version: ProtocolVersion,
         group_info: GroupInfo,
         public_tree: Option<TreeKemPublic>,
@@ -763,6 +788,7 @@ impl Group {
             ConfirmationTag::create(&epoch, &new_context.confirmed_transcript_hash)?;
 
         let mut group = Self::join_with(
+            config,
             protocol_version,
             group_info.cipher_suite,
             &confirmation_tag,
@@ -781,7 +807,7 @@ impl Group {
 
     #[inline(always)]
     pub fn current_epoch_tree(&self) -> Result<&TreeKemPublic, GroupError> {
-        Ok(&self.epoch_repo.current()?.public_tree)
+        Ok(&self.current_epoch.public_tree)
     }
 
     #[inline(always)]
@@ -989,7 +1015,7 @@ impl Group {
             Some(MembershipTag::create(
                 &plaintext,
                 &self.context,
-                self.epoch_repo.current()?,
+                &self.current_epoch,
             )?)
         };
         let plaintext = MLSPlaintext {
@@ -1099,7 +1125,7 @@ impl Group {
         let psk_secret = crate::psk::psk_secret(
             self.cipher_suite,
             psk_store,
-            Some(&self.epoch_repo),
+            self.epoch_finder(),
             &provisional_state.psks,
         )?;
 
@@ -1139,10 +1165,8 @@ impl Group {
             extensions.set_extension(ratchet_tree_ext)?;
         }
 
-        let current_epoch = self.epoch_repo.current()?;
-
         let (next_epoch, joiner_secret) = Epoch::evolved_from(
-            current_epoch,
+            &self.current_epoch,
             &commit_secret,
             provisional_state.public_tree,
             &provisional_group_context,
@@ -1158,7 +1182,8 @@ impl Group {
 
         if matches!(encryption_mode, ControlEncryptionMode::Plaintext) {
             // Create the membership tag using the current group context and key schedule
-            let membership_tag = MembershipTag::create(&plaintext, &self.context, current_epoch)?;
+            let membership_tag =
+                MembershipTag::create(&plaintext, &self.context, &self.current_epoch)?;
             plaintext.membership_tag = Some(membership_tag);
         }
 
@@ -1269,19 +1294,21 @@ impl Group {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn branch<S, P, F>(
+    pub fn branch<S, P, F, G>(
         &self,
         sub_group_id: Vec<u8>,
         resumption_psk_epoch: Option<u64>,
         lifetime: LifetimeExt,
         psk_store: &P,
         signer: &S,
+        make_config: G,
         mut get_new_key_package: F,
     ) -> Result<(Self, Option<Welcome>), GroupError>
     where
         S: Signer,
         P: PskStore,
         F: FnMut(&LeafNode) -> Option<KeyPackage>,
+        G: FnOnce(&[u8]) -> C,
     {
         let current_leaf_node = self.current_user_leaf_node()?;
 
@@ -1370,7 +1397,7 @@ impl Group {
         let psks = vec![psk];
 
         let psk_secret =
-            crate::psk::psk_secret(self.cipher_suite, psk_store, Some(&self.epoch_repo), &psks)?;
+            crate::psk::psk_secret(self.cipher_suite, psk_store, self.epoch_finder(), &psks)?;
 
         let (epoch, joiner_secret) = Epoch::derive(
             self.cipher_suite,
@@ -1382,7 +1409,7 @@ impl Group {
             &psk_secret,
         )?;
 
-        let epoch_repo = EpochRepository::new(epoch.clone(), EPOCH_REPO_RETENTION_LIMIT);
+        let sub_config = make_config(&sub_group_id);
 
         let mut group_info = GroupInfo {
             cipher_suite: self.cipher_suite,
@@ -1403,11 +1430,12 @@ impl Group {
         group_info.sign(signer, &())?;
 
         let new_group = Group {
+            config: sub_config,
             protocol_version: self.protocol_version,
             cipher_suite: self.cipher_suite,
             context: new_context,
             private_tree: new_priv_tree,
-            epoch_repo,
+            current_epoch: epoch,
             interim_transcript_hash: Vec::new().into(),
             proposals: ProposalCache::new(),
             pending_updates: Default::default(),
@@ -1426,17 +1454,19 @@ impl Group {
         Ok((new_group, welcome))
     }
 
-    pub fn join_subgroup<P, F>(
+    pub fn join_subgroup<P, F, G>(
         &self,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package_generation: KeyPackageGeneration,
         psk_store: &P,
+        make_config: G,
         support_version_and_cipher: F,
     ) -> Result<Self, GroupError>
     where
         P: PskStore,
         F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
+        G: FnOnce(&[u8]) -> C,
     {
         let subgroup = Self::join_with_welcome(
             self.protocol_version,
@@ -1444,7 +1474,8 @@ impl Group {
             public_tree,
             key_package_generation,
             psk_store,
-            Some(&self.epoch_repo),
+            self.epoch_finder(),
+            make_config,
             support_version_and_cipher,
         )?;
 
@@ -1632,9 +1663,7 @@ impl Group {
             _ => KeyType::Handshake,
         };
 
-        let current_epoch = self.epoch_repo.current_mut()?;
-
-        let encryption_key = current_epoch.get_encryption_key(key_type)?;
+        let encryption_key = self.current_epoch.get_encryption_key(key_type)?;
 
         // Encrypt the ciphertext content using the encryption key and a nonce that is
         // reuse safe by xor the reuse guard with the first 4 bytes
@@ -1665,7 +1694,7 @@ impl Group {
 
         // Encrypt the sender data with the derived sender_key and sender_nonce from the current
         // epoch's key schedule
-        let (sender_key, sender_nonce) = current_epoch.get_sender_data_params(&ciphertext)?;
+        let (sender_key, sender_nonce) = self.current_epoch.get_sender_data_params(&ciphertext)?;
 
         let encrypted_sender_data = sender_key.encrypt_to_vec(
             &sender_data.tls_serialize_detached()?,
@@ -1728,15 +1757,11 @@ impl Group {
     where
         F: Fn(&[u8]) -> Option<PublicKey>,
     {
-        let mut verifier = MessageVerifier {
-            msg_epoch: self.epoch_repo.get_mut(message.content.epoch)?,
-            context: &self.context,
-            private_tree: &self.private_tree,
+        self.verify_incoming_message(
+            message.content.epoch,
             external_key_id_to_signing_key,
-        };
-
-        let plaintext = verifier.verify_plaintext(message)?;
-        self.verify_incoming_message(plaintext)
+            |verifier| verifier.verify_plaintext(message),
+        )
     }
 
     pub fn verify_incoming_ciphertext<F>(
@@ -1747,17 +1772,34 @@ impl Group {
     where
         F: Fn(&[u8]) -> Option<PublicKey>,
     {
-        let mut verifier = MessageVerifier {
-            msg_epoch: self.epoch_repo.get_mut(message.epoch)?,
-            context: &self.context,
-            private_tree: &self.private_tree,
-            external_key_id_to_signing_key,
-        };
-        let plaintext = verifier.decrypt_ciphertext(message)?;
-        self.verify_incoming_message(plaintext)
+        self.verify_incoming_message(message.epoch, external_key_id_to_signing_key, |verifier| {
+            verifier.decrypt_ciphertext(message)
+        })
     }
 
-    fn verify_incoming_message(
+    fn verify_incoming_message<K, F>(
+        &mut self,
+        epoch_id: u64,
+        external_key_id_to_signing_key: K,
+        f: F,
+    ) -> Result<VerifiedPlaintext, GroupError>
+    where
+        K: Fn(&[u8]) -> Option<PublicKey>,
+        F: FnOnce(&mut MessageVerifier<'_, K>) -> Result<VerifiedPlaintext, GroupError>,
+    {
+        let plaintext = with_epoch_mut(&self.config, &mut self.current_epoch, epoch_id, |epoch| {
+            let mut verifier = MessageVerifier {
+                msg_epoch: epoch,
+                context: &self.context,
+                private_tree: &self.private_tree,
+                external_key_id_to_signing_key,
+            };
+            f(&mut verifier)
+        })?;
+        self.validate_incoming_message(plaintext)
+    }
+
+    fn validate_incoming_message(
         &mut self,
         plaintext: VerifiedPlaintext,
     ) -> Result<VerifiedPlaintext, GroupError> {
@@ -1935,7 +1977,7 @@ impl Group {
         let psk_secret = crate::psk::psk_secret(
             self.cipher_suite,
             secret_store,
-            Some(&self.epoch_repo),
+            self.epoch_finder(),
             &provisional_state.psks,
         )?;
 
@@ -1944,7 +1986,7 @@ impl Group {
         // derived secrets for the new epoch
 
         let (next_epoch, _) = {
-            let current_epoch = self.epoch_repo.current()?;
+            let current_epoch = &self.current_epoch;
 
             match provisional_state.external_init {
                 Some((_, ExternalInit { kem_output })) => {
@@ -1993,7 +2035,11 @@ impl Group {
         }
 
         self.context = provisional_group_context;
-        self.epoch_repo.add(next_epoch);
+
+        self.config
+            .epoch_repo()
+            .insert(std::mem::replace(&mut self.current_epoch, next_epoch).into())
+            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         self.interim_transcript_hash = interim_transcript_hash;
 
@@ -2006,8 +2052,7 @@ impl Group {
     }
 
     pub fn current_direct_path(&self) -> Result<Vec<Option<HpkePublicKey>>, GroupError> {
-        self.epoch_repo
-            .current()?
+        self.current_epoch
             .public_tree
             .direct_path_keys(self.private_tree.self_index)
             .map_err(Into::into)
@@ -2015,15 +2060,13 @@ impl Group {
 
     /// The returned `GroupInfo` is suitable for one external commit for the current epoch.
     pub fn external_commit_info<S: Signer>(&self, signer: &S) -> Result<GroupInfo, GroupError> {
-        let current_epoch = self.epoch_repo.current()?;
-
         let mut other_extensions = ExtensionList::new();
 
         other_extensions.set_extension(ExternalPubExt {
             external_pub: self
                 .cipher_suite
                 .kem()
-                .derive(&current_epoch.key_schedule.external_secret)?
+                .derive(&self.current_epoch.key_schedule.external_secret)?
                 .1,
         })?;
 
@@ -2036,7 +2079,7 @@ impl Group {
             group_context_extensions: self.context.extensions.clone(),
             other_extensions,
             confirmation_tag: ConfirmationTag::create(
-                current_epoch,
+                &self.current_epoch,
                 &self.context.confirmed_transcript_hash,
             )?,
             signer: self.private_tree.leaf_node_ref.clone(),
@@ -2054,8 +2097,7 @@ impl Group {
 
     pub fn authentication_secret(&self) -> Result<Vec<u8>, GroupError> {
         Ok(self
-            .epoch_repo
-            .current()?
+            .current_epoch
             .key_schedule
             .authentication_secret
             .clone())
@@ -2067,12 +2109,54 @@ impl Group {
         context: &[u8],
         len: usize,
     ) -> Result<Vec<u8>, GroupError> {
-        Ok(self.epoch_repo.current()?.key_schedule.export_secret(
-            label,
-            context,
-            len,
-            self.cipher_suite,
-        )?)
+        Ok(self
+            .current_epoch
+            .key_schedule
+            .export_secret(label, context, len, self.cipher_suite)?)
+    }
+
+    pub fn export(&self) -> GroupState {
+        GroupState {
+            protocol_version: self.protocol_version,
+            cipher_suite: self.cipher_suite,
+            context: self.context.clone(),
+            private_tree: self.private_tree.clone(),
+            current_epoch: self.current_epoch.clone(),
+            interim_transcript_hash: self.interim_transcript_hash.clone(),
+            proposals: self.proposals.clone(),
+            pending_updates: self.pending_updates.clone(),
+        }
+    }
+
+    pub fn import(config: C, state: GroupState) -> Result<Self, GroupError> {
+        Ok(Self {
+            config,
+            protocol_version: state.protocol_version,
+            cipher_suite: state.cipher_suite,
+            context: state.context,
+            private_tree: state.private_tree,
+            current_epoch: state.current_epoch,
+            interim_transcript_hash: state.interim_transcript_hash,
+            proposals: state.proposals,
+            pending_updates: state.pending_updates,
+        })
+    }
+
+    fn epoch_finder<'a>(
+        &'a self,
+    ) -> impl Fn(u64) -> Result<Option<Cow<'a, Epoch>>, <C::EpochRepository as EpochRepository>::Error>
+    {
+        move |epoch_id| {
+            if self.current_epoch.identifier == epoch_id {
+                Ok(Some(Cow::Borrowed(&self.current_epoch)))
+            } else {
+                Ok(self
+                    .config
+                    .epoch_repo()
+                    .get(epoch_id)?
+                    .map(|epoch| Cow::Owned(epoch.into_inner())))
+            }
+        }
     }
 }
 
@@ -2114,6 +2198,36 @@ fn validate_tree(public_tree: &TreeKemPublic, group_info: &GroupInfo) -> Result<
     Ok(())
 }
 
+fn with_epoch_mut<C, F, T>(
+    config: &C,
+    current_epoch: &mut Epoch,
+    epoch_id: u64,
+    f: F,
+) -> Result<T, GroupError>
+where
+    C: GroupConfig,
+    F: FnOnce(&mut Epoch) -> Result<T, GroupError>,
+{
+    if current_epoch.identifier == epoch_id {
+        f(current_epoch)
+    } else {
+        let mut epoch_repo = config.epoch_repo();
+
+        let mut epoch = epoch_repo
+            .get(epoch_id)
+            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?
+            .ok_or(GroupError::EpochNotFound(epoch_id))?;
+
+        let res = f(epoch.inner_mut());
+
+        epoch_repo
+            .insert(epoch)
+            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
+
+        res
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_utils {
     use ferriscrypt::asym::ec_key::SecretKey;
@@ -2128,7 +2242,7 @@ pub(crate) mod test_utils {
     pub const TEST_GROUP: &[u8] = b"group";
 
     pub(crate) struct TestGroup {
-        pub group: Group,
+        pub group: Group<InMemoryGroupConfig>,
         pub credential: Credential,
         pub signing_key: SecretKey,
     }
@@ -2207,6 +2321,7 @@ pub(crate) mod test_utils {
         .unwrap();
 
         let group = Group::new(
+            InMemoryGroupConfig::default(),
             TEST_GROUP.to_vec(),
             cipher_suite,
             protocol_version,
@@ -2274,16 +2389,10 @@ mod tests {
             );
             assert!(group.proposals.is_empty());
             assert!(group.pending_updates.is_empty());
-            assert!(group.epoch_repo.current().is_ok());
             assert_eq!(group.private_tree.self_index.0, group.current_user_index());
 
             assert_eq!(
-                group
-                    .epoch_repo
-                    .current()
-                    .unwrap()
-                    .public_tree
-                    .get_leaf_nodes()[0]
+                group.current_epoch.public_tree.get_leaf_nodes()[0]
                     .credential
                     .public_key()
                     .unwrap(),
@@ -2564,6 +2673,7 @@ mod tests {
             tree,
             bob_key_package.clone(),
             &secret_store,
+            |_| InMemoryGroupConfig::default(),
             |_, _| true,
         )
         .unwrap();
@@ -2628,6 +2738,7 @@ mod tests {
             None,
             bob_key_package,
             &secret_store,
+            |_| InMemoryGroupConfig::default(),
             |_, _| true,
         );
 
@@ -2794,6 +2905,7 @@ mod tests {
         .unwrap();
 
         let res = Group::new_external(
+            InMemoryGroupConfig::default(),
             protocol_version,
             info,
             None,

@@ -196,7 +196,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::group::test_utils::TEST_GROUP;
     use crate::{
         cipher_suite::CipherSuite,
         client_config::InMemoryPskStore,
@@ -205,9 +204,9 @@ mod tests {
             message_signature::MessageSigningContext,
             padding::PaddingMode,
             proposal::{AddProposal, Proposal},
-            test_utils::{test_group, test_member},
-            Content, ControlEncryptionMode, Group, GroupError, MLSMessagePayload, MLSPlaintext,
-            MessageVerifier, Sender,
+            test_utils::{test_group, test_member, TEST_GROUP},
+            Content, ControlEncryptionMode, Group, GroupError, InMemoryGroupConfig,
+            MLSMessagePayload, MLSPlaintext, MessageVerifier, Sender,
         },
         signer::{Signable, SignatureError},
         ProtocolVersion,
@@ -222,16 +221,18 @@ mod tests {
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
     const TED_EXTERNAL_KEY_ID: &[u8] = b"ted";
 
-    fn make_verifier<F>(group: &mut Group, f: F) -> MessageVerifier<'_, F>
+    fn make_verifier<K>(
+        group: &mut Group<InMemoryGroupConfig>,
+        external_key_id_to_signing_key: K,
+    ) -> MessageVerifier<'_, K>
     where
-        F: Fn(&[u8]) -> Option<PublicKey>,
+        K: Fn(&[u8]) -> Option<PublicKey>,
     {
-        let epoch = group.current_epoch();
         MessageVerifier {
-            msg_epoch: group.epoch_repo.get_mut(epoch).unwrap(),
+            msg_epoch: &mut group.current_epoch,
             context: &group.context,
             private_tree: &group.private_tree,
-            external_key_id_to_signing_key: f,
+            external_key_id_to_signing_key,
         }
     }
 
@@ -244,21 +245,14 @@ mod tests {
         )
     }
 
-    fn add_membership_tag(message: &mut MLSPlaintext, group: &Group) {
-        let epoch = group.current_epoch();
-        message.membership_tag = Some(
-            MembershipTag::create(
-                message,
-                &group.context,
-                group.epoch_repo.get(epoch).unwrap(),
-            )
-            .unwrap(),
-        );
+    fn add_membership_tag(message: &mut MLSPlaintext, group: &Group<InMemoryGroupConfig>) {
+        message.membership_tag =
+            Some(MembershipTag::create(message, &group.context, &group.current_epoch).unwrap());
     }
 
     struct TestMember {
         signing_key: SecretKey,
-        group: Group,
+        group: Group<InMemoryGroupConfig>,
     }
 
     impl TestMember {
@@ -331,6 +325,7 @@ mod tests {
                 None,
                 bob_key_pkg_gen,
                 &secret_store,
+                |_| InMemoryGroupConfig::default(),
                 |_, _| true,
             )
             .unwrap();
@@ -350,8 +345,9 @@ mod tests {
         let mut message = env.alice.make_member_plaintext();
         env.alice.sign(&mut message, false);
         add_membership_tag(&mut message, &env.alice.group);
-        let mut verifier = make_verifier(&mut env.bob.group, |_| None);
-        let _ = verifier.verify_plaintext(message).unwrap();
+        make_verifier(&mut env.bob.group, |_| None)
+            .verify_plaintext(message)
+            .unwrap();
     }
 
     #[test]
@@ -366,8 +362,9 @@ mod tests {
             .encrypt_plaintext(message, PaddingMode::None)
             .unwrap();
 
-        let mut verifier = make_verifier(&mut env.bob.group, |_| None);
-        let _ = verifier.decrypt_ciphertext(message).unwrap();
+        make_verifier(&mut env.bob.group, |_| None)
+            .decrypt_ciphertext(message)
+            .unwrap();
     }
 
     #[test]
@@ -380,8 +377,7 @@ mod tests {
             .group
             .encrypt_plaintext(message, PaddingMode::None)
             .unwrap();
-        let mut verifier = make_verifier(&mut env.bob.group, |_| None);
-        let res = verifier.decrypt_ciphertext(message);
+        let res = make_verifier(&mut env.bob.group, |_| None).decrypt_ciphertext(message);
         assert_matches!(
             res,
             Err(GroupError::SignatureError(
@@ -395,8 +391,7 @@ mod tests {
         let mut env = TestEnv::new();
         let mut message = env.alice.make_member_plaintext();
         env.alice.sign(&mut message, false);
-        let mut verifier = make_verifier(&mut env.bob.group, |_| None);
-        let res = verifier.verify_plaintext(message);
+        let res = make_verifier(&mut env.bob.group, |_| None).verify_plaintext(message);
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
 
@@ -416,8 +411,9 @@ mod tests {
         };
 
         message.sign(&signer, &signing_context).unwrap();
-        let mut verifier = make_verifier(&mut test_group.group, |_| None);
-        let _ = verifier.verify_plaintext(message).unwrap();
+        make_verifier(&mut test_group.group, |_| None)
+            .verify_plaintext(message)
+            .unwrap();
     }
 
     #[test]
@@ -437,8 +433,7 @@ mod tests {
 
         message.sign(&signer, &signing_context).unwrap();
         add_membership_tag(&mut message, &test_group.group);
-        let mut verifier = make_verifier(&mut test_group.group, |_| None);
-        let res = verifier.verify_plaintext(message);
+        let res = make_verifier(&mut test_group.group, |_| None).verify_plaintext(message);
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
 
@@ -463,10 +458,11 @@ mod tests {
         };
 
         message.sign(&ted_signer, &signing_context).unwrap();
-        let mut verifier = make_verifier(&mut test_group.group, |external_id| {
+        make_verifier(&mut test_group.group, |external_id| {
             (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
-        });
-        let _ = verifier.verify_plaintext(message).unwrap();
+        })
+        .verify_plaintext(message)
+        .unwrap();
     }
 
     #[test]
@@ -491,11 +487,11 @@ mod tests {
         message.sign(&ted_signer, &signing_context).unwrap();
         add_membership_tag(&mut message, &test_group.group);
 
-        let mut verifier = make_verifier(&mut test_group.group, |external_id| {
+        let res = make_verifier(&mut test_group.group, |external_id| {
             (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
-        });
+        })
+        .verify_plaintext(message);
 
-        let res = verifier.verify_plaintext(message);
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
 
@@ -509,8 +505,7 @@ mod tests {
             .group
             .encrypt_plaintext(message, PaddingMode::None)
             .unwrap();
-        let mut verifier = make_verifier(&mut env.alice.group, |_| None);
-        let res = verifier.decrypt_ciphertext(message);
+        let res = make_verifier(&mut env.alice.group, |_| None).decrypt_ciphertext(message);
         assert_matches!(res, Err(GroupError::CantProcessMessageFromSelf));
     }
 }

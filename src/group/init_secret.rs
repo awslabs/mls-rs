@@ -15,7 +15,18 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 
 #[derive(
-    Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, TlsDeserialize, TlsSerialize, TlsSize,
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
 )]
 pub struct InitSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
