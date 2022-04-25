@@ -44,8 +44,9 @@ impl TreeKemPrivate {
 
         let path_secret_gen = PathSecretGenerator::starting_with(cipher_suite, path_secret);
 
-        self.self_index
-            .direct_path(public_tree.total_leaf_count())?
+        public_tree
+            .nodes
+            .filtered_direct_path(self.self_index)?
             .iter()
             .skip_while(|&&i| i != lca)
             .zip(path_secret_gen)
