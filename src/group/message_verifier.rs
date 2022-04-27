@@ -214,6 +214,7 @@ mod tests {
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 
+    use crate::client_config::PassthroughCredentialValidator;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -327,6 +328,7 @@ mod tests {
                 &secret_store,
                 |_| InMemoryGroupConfig::default(),
                 |_, _| true,
+                PassthroughCredentialValidator::new(),
             )
             .unwrap();
 

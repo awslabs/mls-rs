@@ -54,6 +54,7 @@ impl<C> Client<C>
 where
     C: ClientConfig + Clone,
     C::EpochRepository: Clone,
+    C::CredentialValidator: Clone,
 {
     pub fn new(config: C) -> Self {
         Client { config }

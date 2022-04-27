@@ -107,6 +107,7 @@ mod tests {
 
     use super::KeyPackageGenerator;
 
+    use crate::client_config::PassthroughCredentialValidator;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -218,7 +219,12 @@ mod tests {
             assert_eq!(leaf_secret.curve(), curve);
             assert_eq!(leaf_public, leaf_secret.to_public().unwrap());
 
-            let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
+            let validator = KeyPackageValidator::new(
+                protocol_version,
+                cipher_suite,
+                None,
+                PassthroughCredentialValidator::new(),
+            );
 
             validator
                 .validate(generated.key_package, Default::default())

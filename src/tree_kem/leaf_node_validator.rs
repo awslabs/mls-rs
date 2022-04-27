@@ -4,6 +4,7 @@
 use std::ops::{Deref, DerefMut};
 
 use super::leaf_node::{LeafNode, LeafNodeSource};
+use crate::client_config::CredentialValidator;
 use crate::{
     cipher_suite::CipherSuite,
     credential::CredentialError,
@@ -93,23 +94,30 @@ pub enum LeafNodeValidationError {
     RequiredProposalNotFound(ProposalType),
     #[error("capabilities must describe extensions used")]
     ExtensionNotInCapabilities(ExtensionType),
+    #[error(transparent)]
+    InvalidCertificateError(Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[derive(Clone, Debug)]
-pub struct LeafNodeValidator<'a> {
+pub struct LeafNodeValidator<'a, C>
+where
+    C: CredentialValidator,
+{
     cipher_suite: CipherSuite,
-    // TODO: Credential Authentication service
+    credential_validator: C,
     required_capabilities: Option<&'a RequiredCapabilitiesExt>,
 }
 
-impl<'a> LeafNodeValidator<'a> {
+impl<'a, C: CredentialValidator> LeafNodeValidator<'a, C> {
     pub fn new(
         cipher_suite: CipherSuite,
         required_capabilities: Option<&'a RequiredCapabilitiesExt>,
+        credential_validator: C,
     ) -> Self {
         Self {
             cipher_suite,
             required_capabilities,
+            credential_validator,
         }
     }
 
@@ -195,7 +203,10 @@ impl<'a> LeafNodeValidator<'a> {
         leaf_node: &LeafNode,
         context: ValidationContext,
     ) -> Result<(), LeafNodeValidationError> {
-        // TODO: Verify the credential with the credential validation service
+        // Validate Credential
+        self.credential_validator
+            .validate(&leaf_node.credential)
+            .map_err(|e| LeafNodeValidationError::InvalidCertificateError(e.into()))?;
 
         // Check that we are validating within the proper context
         self.check_context(leaf_node, &context)?;
@@ -249,10 +260,13 @@ mod tests {
 
     use super::*;
     use crate::client::test_utils::get_test_credential;
+    use crate::credential::Credential;
     use crate::extension::{CapabilitiesExt, ExtensionList, ExternalKeyIdExt, MlsExtension};
     use crate::tree_kem::leaf_node::test_utils::*;
     use crate::tree_kem::parent_hash::ParentHash;
 
+    use crate::client_config::PassthroughCredentialValidator;
+    use crate::x509::X509Error;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -265,16 +279,50 @@ mod tests {
         (leaf_node, secret)
     }
 
+    #[derive(Clone, Debug, Default)]
+    pub struct FailureCredentialValidator;
+
+    impl FailureCredentialValidator {
+        pub fn new() -> Self {
+            Self
+        }
+    }
+
+    impl CredentialValidator for FailureCredentialValidator {
+        type Error = CredentialError;
+        fn validate(&self, _credential: &Credential) -> Result<(), Self::Error> {
+            Err(CredentialError::CertificateError(
+                X509Error::EmptyCertificateChain,
+            ))
+        }
+    }
+
     #[test]
     fn test_basic_add_validation() {
         let (leaf_node, _) = get_test_add_node();
-        let test_validator = LeafNodeValidator::new(TEST_CIPHER_SUITE, None);
+        let test_validator = LeafNodeValidator::new(
+            TEST_CIPHER_SUITE,
+            None,
+            PassthroughCredentialValidator::new(),
+        );
 
         let validated = test_validator
             .validate(leaf_node.clone(), ValidationContext::Add(None))
             .unwrap();
 
         assert_eq!(validated.0, leaf_node);
+    }
+
+    #[test]
+    fn test_failed_validation() {
+        let (leaf_node, _) = get_test_add_node();
+        let fail_test_validator =
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, FailureCredentialValidator::new());
+
+        assert_matches!(
+            fail_test_validator.validate(leaf_node.clone(), ValidationContext::Commit(b"foo")),
+            Err(LeafNodeValidationError::InvalidCertificateError(_))
+        );
     }
 
     #[test]
@@ -287,7 +335,11 @@ mod tests {
             .update(TEST_CIPHER_SUITE, group_id, None, None, &secret)
             .unwrap();
 
-        let test_validator = LeafNodeValidator::new(TEST_CIPHER_SUITE, None);
+        let test_validator = LeafNodeValidator::new(
+            TEST_CIPHER_SUITE,
+            None,
+            PassthroughCredentialValidator::new(),
+        );
         let validated = test_validator
             .validate(leaf_node.clone(), ValidationContext::Update(group_id))
             .unwrap();
@@ -307,7 +359,11 @@ mod tests {
             })
             .unwrap();
 
-        let test_validator = LeafNodeValidator::new(TEST_CIPHER_SUITE, None);
+        let test_validator = LeafNodeValidator::new(
+            TEST_CIPHER_SUITE,
+            None,
+            PassthroughCredentialValidator::new(),
+        );
 
         let validated = test_validator
             .validate(leaf_node.clone(), ValidationContext::Commit(group_id))
@@ -318,7 +374,11 @@ mod tests {
 
     #[test]
     fn test_incorrect_context() {
-        let test_validator = LeafNodeValidator::new(TEST_CIPHER_SUITE, None);
+        let test_validator = LeafNodeValidator::new(
+            TEST_CIPHER_SUITE,
+            None,
+            PassthroughCredentialValidator::new(),
+        );
         let (mut leaf_node, secret) = get_test_add_node();
 
         assert_matches!(
@@ -370,7 +430,8 @@ mod tests {
 
             leaf_node.signature = SecureRng::gen(leaf_node.signature.len()).unwrap();
 
-            let test_validator = LeafNodeValidator::new(cipher_suite, None);
+            let test_validator =
+                LeafNodeValidator::new(cipher_suite, None, PassthroughCredentialValidator::new());
 
             assert_matches!(
                 test_validator.validate(leaf_node, ValidationContext::Add(None)),
@@ -403,7 +464,11 @@ mod tests {
             Some(extensions),
         );
 
-        let test_validator = LeafNodeValidator::new(TEST_CIPHER_SUITE, None);
+        let test_validator = LeafNodeValidator::new(
+            TEST_CIPHER_SUITE,
+            None,
+            PassthroughCredentialValidator::new(),
+        );
 
         assert_matches!(test_validator.validate(leaf_node, ValidationContext::Add(None)),
             Err(LeafNodeValidationError::ExtensionNotInCapabilities(ext)) if ext == ExternalKeyIdExt::IDENTIFIER);
@@ -413,7 +478,11 @@ mod tests {
     fn test_cipher_suite_mismatch() {
         let (leaf_node, _) = get_test_add_node();
 
-        let test_validator = LeafNodeValidator::new(CipherSuite::P256Aes128V1, None);
+        let test_validator = LeafNodeValidator::new(
+            CipherSuite::P256Aes128V1,
+            None,
+            PassthroughCredentialValidator::new(),
+        );
 
         assert_matches!(
             test_validator.validate(leaf_node, ValidationContext::Add(None)),
@@ -430,8 +499,11 @@ mod tests {
 
         let (leaf_node, _) = get_test_add_node();
 
-        let test_validator =
-            LeafNodeValidator::new(TEST_CIPHER_SUITE, Some(&required_capabilities));
+        let test_validator = LeafNodeValidator::new(
+            TEST_CIPHER_SUITE,
+            Some(&required_capabilities),
+            PassthroughCredentialValidator::new(),
+        );
 
         assert_matches!(test_validator.validate(leaf_node, ValidationContext::Add(None)),
             Err(LeafNodeValidationError::RequiredExtensionNotFound(ext)) if ext == 42u16
@@ -447,8 +519,11 @@ mod tests {
 
         let (leaf_node, _) = get_test_add_node();
 
-        let test_validator =
-            LeafNodeValidator::new(TEST_CIPHER_SUITE, Some(&required_capabilities));
+        let test_validator = LeafNodeValidator::new(
+            TEST_CIPHER_SUITE,
+            Some(&required_capabilities),
+            PassthroughCredentialValidator::new(),
+        );
 
         assert_matches!(test_validator.validate(leaf_node, ValidationContext::Add(None)),
             Err(LeafNodeValidationError::RequiredProposalNotFound(ext)) if ext == 42u16
@@ -458,7 +533,11 @@ mod tests {
     #[test]
     fn test_add_lifetime() {
         let (leaf_node, _) = get_test_add_node();
-        let test_validator = LeafNodeValidator::new(TEST_CIPHER_SUITE, None);
+        let test_validator = LeafNodeValidator::new(
+            TEST_CIPHER_SUITE,
+            None,
+            PassthroughCredentialValidator::new(),
+        );
 
         let good_lifetime = MlsTime::now();
 

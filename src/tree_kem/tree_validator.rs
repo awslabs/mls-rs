@@ -2,6 +2,7 @@ use super::{
     leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator},
     RatchetTreeError, TreeKemPublic,
 };
+use crate::client_config::CredentialValidator;
 use crate::{cipher_suite::CipherSuite, extension::RequiredCapabilitiesExt};
 use thiserror::Error;
 
@@ -17,22 +18,30 @@ pub enum TreeValidationError {
     ParentHashMismatch,
 }
 
-pub struct TreeValidator<'a> {
+pub struct TreeValidator<'a, C>
+where
+    C: CredentialValidator,
+{
     expected_tree_hash: &'a [u8],
-    leaf_node_validator: LeafNodeValidator<'a>,
+    leaf_node_validator: LeafNodeValidator<'a, C>,
     group_id: &'a [u8],
 }
 
-impl<'a> TreeValidator<'a> {
+impl<'a, C: CredentialValidator> TreeValidator<'a, C> {
     pub fn new(
         cipher_suite: CipherSuite,
         group_id: &'a [u8],
         tree_hash: &'a [u8],
         required_capabilities: Option<&'a RequiredCapabilitiesExt>,
+        credential_validator: C,
     ) -> Self {
         TreeValidator {
             expected_tree_hash: tree_hash,
-            leaf_node_validator: LeafNodeValidator::new(cipher_suite, required_capabilities),
+            leaf_node_validator: LeafNodeValidator::new(
+                cipher_suite,
+                required_capabilities,
+                credential_validator,
+            ),
             group_id,
         }
     }
@@ -83,6 +92,7 @@ mod tests {
         TreeKemPrivate,
     };
 
+    use crate::client_config::PassthroughCredentialValidator;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -141,8 +151,13 @@ mod tests {
             let test_tree = get_valid_tree(cipher_suite);
             let expected_tree_hash = test_tree.tree_hash().unwrap();
 
-            let validator =
-                TreeValidator::new(cipher_suite, b"test_group", &expected_tree_hash, None);
+            let validator = TreeValidator::new(
+                cipher_suite,
+                b"test_group",
+                &expected_tree_hash,
+                None,
+                PassthroughCredentialValidator::new(),
+            );
 
             validator.validate(&test_tree).unwrap();
         }
@@ -154,8 +169,13 @@ mod tests {
             let test_tree = get_valid_tree(cipher_suite);
             let expected_tree_hash = SecureRng::gen(32).unwrap();
 
-            let validator =
-                TreeValidator::new(cipher_suite, b"test_group", &expected_tree_hash, None);
+            let validator = TreeValidator::new(
+                cipher_suite,
+                b"test_group",
+                &expected_tree_hash,
+                None,
+                PassthroughCredentialValidator::new(),
+            );
 
             assert_matches!(
                 validator.validate(&test_tree),
@@ -174,8 +194,13 @@ mod tests {
 
             let expected_tree_hash = test_tree.tree_hash().unwrap();
 
-            let validator =
-                TreeValidator::new(cipher_suite, b"test_troup", &expected_tree_hash, None);
+            let validator = TreeValidator::new(
+                cipher_suite,
+                b"test_troup",
+                &expected_tree_hash,
+                None,
+                PassthroughCredentialValidator::new(),
+            );
 
             assert_matches!(
                 validator.validate(&test_tree),
@@ -197,8 +222,13 @@ mod tests {
 
             let expected_tree_hash = test_tree.tree_hash().unwrap();
 
-            let validator =
-                TreeValidator::new(cipher_suite, b"test_group", &expected_tree_hash, None);
+            let validator = TreeValidator::new(
+                cipher_suite,
+                b"test_group",
+                &expected_tree_hash,
+                None,
+                PassthroughCredentialValidator::new(),
+            );
 
             assert_matches!(
                 validator.validate(&test_tree),

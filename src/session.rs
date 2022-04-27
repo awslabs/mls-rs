@@ -78,6 +78,7 @@ pub struct Session<C>
 where
     C: ClientConfig,
     C::EpochRepository: Clone,
+    C::CredentialValidator: Clone,
 {
     protocol: Group<ClientGroupConfig<C>>,
     pending_commit: Option<PendingCommit>,
@@ -88,6 +89,7 @@ impl<C> Debug for Session<C>
 where
     C: ClientConfig + Debug,
     C::EpochRepository: Clone + Debug,
+    C::CredentialValidator: Clone + Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Session")
@@ -110,6 +112,7 @@ impl<C> Session<C>
 where
     C: ClientConfig + Clone,
     C::EpochRepository: Clone,
+    C::CredentialValidator: Clone,
 {
     pub(crate) fn create(
         group_id: Vec<u8>,
@@ -165,6 +168,7 @@ where
             &config.secret_store(),
             |group_id| ClientGroupConfig::new(&config, group_id),
             version_and_cipher_filter(&config),
+            config.credential_validator(),
         )?;
 
         Ok(Session {

@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use ferriscrypt::asym::ec_key::PublicKey;
 
 use super::*;
+use crate::client_config::CredentialValidator;
 use crate::{
     signer::SignatureError,
     tree_kem::leaf_node_validator::{
@@ -50,22 +51,27 @@ pub enum KeyPackageValidationOptions {
 }
 
 #[derive(Debug)]
-pub struct KeyPackageValidator<'a> {
+pub struct KeyPackageValidator<'a, C: CredentialValidator> {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
-    leaf_node_validator: LeafNodeValidator<'a>,
+    leaf_node_validator: LeafNodeValidator<'a, C>,
 }
 
-impl<'a> KeyPackageValidator<'a> {
+impl<'a, C: CredentialValidator> KeyPackageValidator<'a, C> {
     pub fn new(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
-    ) -> KeyPackageValidator {
+        credential_validator: C,
+    ) -> KeyPackageValidator<C> {
         KeyPackageValidator {
             protocol_version,
             cipher_suite,
-            leaf_node_validator: LeafNodeValidator::new(cipher_suite, required_capabilities),
+            leaf_node_validator: LeafNodeValidator::new(
+                cipher_suite,
+                required_capabilities,
+                credential_validator,
+            ),
         }
     }
 
@@ -133,6 +139,7 @@ mod tests {
 
     use super::*;
 
+    use crate::client_config::PassthroughCredentialValidator;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -142,7 +149,12 @@ mod tests {
             ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
         {
             let test_package = test_key_package(protocol_version, cipher_suite);
-            let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
+            let validator = KeyPackageValidator::new(
+                protocol_version,
+                cipher_suite,
+                None,
+                PassthroughCredentialValidator::new(),
+            );
 
             let validated = validator
                 .validate(test_package.clone(), Default::default())
@@ -167,7 +179,12 @@ mod tests {
             ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
         {
             let test_package = invalid_signature_key_package(protocol_version, cipher_suite);
-            let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
+            let validator = KeyPackageValidator::new(
+                protocol_version,
+                cipher_suite,
+                None,
+                PassthroughCredentialValidator::new(),
+            );
 
             let res = validator.validate(test_package, Default::default());
             assert_matches!(res, Err(KeyPackageValidationError::SignatureError(_)));
@@ -180,7 +197,12 @@ mod tests {
         let version = ProtocolVersion::Mls10;
         let test_package = test_key_package(version, cipher_suite);
 
-        let validator = KeyPackageValidator::new(version, CipherSuite::Curve25519ChaCha20V1, None);
+        let validator = KeyPackageValidator::new(
+            version,
+            CipherSuite::Curve25519ChaCha20V1,
+            None,
+            PassthroughCredentialValidator::new(),
+        );
         let res = validator.validate(test_package, Default::default());
 
         assert_matches!(res, Err(KeyPackageValidationError::InvalidCipherSuite(found, exp))
@@ -232,7 +254,12 @@ mod tests {
                 key_package.hpke_init_key = HpkePublicKey::from(vec![42; 128]);
             });
 
-        let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
+        let validator = KeyPackageValidator::new(
+            protocol_version,
+            cipher_suite,
+            None,
+            PassthroughCredentialValidator::new(),
+        );
         let res = validator.validate(key_package, Default::default());
 
         assert_matches!(res, Err(KeyPackageValidationError::InvalidInitKey));
@@ -248,7 +275,12 @@ mod tests {
                 key_package.hpke_init_key = key_package.leaf_node.public_key.clone();
             });
 
-        let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
+        let validator = KeyPackageValidator::new(
+            protocol_version,
+            cipher_suite,
+            None,
+            PassthroughCredentialValidator::new(),
+        );
         let res = validator.validate(key_package, Default::default());
 
         assert_matches!(res, Err(KeyPackageValidationError::InitLeafKeyEquality));
@@ -279,7 +311,12 @@ mod tests {
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let test_package = invalid_expiration_leaf_node(protocol_version, cipher_suite);
-        let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
+        let validator = KeyPackageValidator::new(
+            protocol_version,
+            cipher_suite,
+            None,
+            PassthroughCredentialValidator::new(),
+        );
 
         let res = validator.validate(test_package, Default::default());
 
@@ -297,7 +334,12 @@ mod tests {
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
 
         let test_package = invalid_expiration_leaf_node(protocol_version, cipher_suite);
-        let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
+        let validator = KeyPackageValidator::new(
+            protocol_version,
+            cipher_suite,
+            None,
+            PassthroughCredentialValidator::new(),
+        );
 
         let res = validator
             .validate(
@@ -334,8 +376,12 @@ mod tests {
             proposals: vec![],
         };
 
-        let validator =
-            KeyPackageValidator::new(protocol_version, cipher_suite, Some(&required_capabilities));
+        let validator = KeyPackageValidator::new(
+            protocol_version,
+            cipher_suite,
+            Some(&required_capabilities),
+            PassthroughCredentialValidator::new(),
+        );
 
         let res = validator
             .validate(key_package.clone(), Default::default())
@@ -355,8 +401,12 @@ mod tests {
             proposals: vec![],
         };
 
-        let validator =
-            KeyPackageValidator::new(protocol_version, cipher_suite, Some(&required_capabilities));
+        let validator = KeyPackageValidator::new(
+            protocol_version,
+            cipher_suite,
+            Some(&required_capabilities),
+            PassthroughCredentialValidator::new(),
+        );
 
         let res = validator.validate(key_package, Default::default());
 
@@ -387,7 +437,12 @@ mod tests {
                 package_gen
             });
 
-        let validator = KeyPackageValidator::new(protocol_version, cipher_suite, None);
+        let validator = KeyPackageValidator::new(
+            protocol_version,
+            cipher_suite,
+            None,
+            PassthroughCredentialValidator::new(),
+        );
         let res = validator.validate(key_package, Default::default());
 
         assert_matches!(

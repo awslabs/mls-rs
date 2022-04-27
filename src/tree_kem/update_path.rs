@@ -3,6 +3,7 @@ use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::cipher_suite::HpkeCiphertext;
+use crate::client_config::CredentialValidator;
 
 use super::{
     leaf_node::LeafNode,
@@ -38,15 +39,15 @@ pub struct ValidatedUpdatePath {
     pub nodes: Vec<UpdatePathNode>,
 }
 
-pub struct UpdatePathValidator<'a>(LeafNodeValidator<'a>);
+pub struct UpdatePathValidator<'a, C: CredentialValidator>(LeafNodeValidator<'a, C>);
 
-impl<'a> UpdatePathValidator<'a> {
-    pub fn new(validator: LeafNodeValidator<'a>) -> Self {
+impl<'a, C: CredentialValidator> UpdatePathValidator<'a, C> {
+    pub fn new(validator: LeafNodeValidator<'a, C>) -> Self {
         Self(validator)
     }
 }
 
-impl<'a> UpdatePathValidator<'a> {
+impl<'a, C: CredentialValidator> UpdatePathValidator<'a, C> {
     pub fn validate(
         &self,
         path: UpdatePath,
@@ -78,6 +79,8 @@ mod tests {
     use super::{UpdatePath, UpdatePathNode, UpdatePathValidator};
     use crate::{cipher_suite::CipherSuite, tree_kem::UpdatePathValidationError};
 
+    use crate::client_config::{CredentialValidator, PassthroughCredentialValidator};
+
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -107,8 +110,15 @@ mod tests {
         }
     }
 
-    fn test_validator<'a>(cipher_suite: CipherSuite) -> UpdatePathValidator<'a> {
-        UpdatePathValidator(LeafNodeValidator::new(cipher_suite, None))
+    fn test_validator<'a, C: CredentialValidator>(
+        cipher_suite: CipherSuite,
+        credential_validator: C,
+    ) -> UpdatePathValidator<'a, C> {
+        UpdatePathValidator(LeafNodeValidator::new(
+            cipher_suite,
+            None,
+            credential_validator,
+        ))
     }
 
     #[test]
@@ -116,7 +126,7 @@ mod tests {
         let cipher_suite = CipherSuite::Curve25519Aes128V1;
         let update_path = test_update_path(cipher_suite);
 
-        let validator = test_validator(cipher_suite);
+        let validator = test_validator(cipher_suite, PassthroughCredentialValidator::new());
 
         let validated = validator
             .validate(update_path.clone(), TEST_GROUP_ID)
@@ -132,7 +142,7 @@ mod tests {
         let mut update_path = test_update_path(cipher_suite);
         update_path.leaf_node.signature = SecureRng::gen(32).unwrap();
 
-        let validator = test_validator(cipher_suite);
+        let validator = test_validator(cipher_suite, PassthroughCredentialValidator::new());
         let validated = validator.validate(update_path, TEST_GROUP_ID);
 
         assert_matches!(

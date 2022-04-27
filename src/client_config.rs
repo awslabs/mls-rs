@@ -1,7 +1,7 @@
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     client::Client,
-    credential::Credential,
+    credential::{Credential, CredentialError},
     extension::{CapabilitiesExt, ExtensionType},
     group::{proposal::Proposal, ControlEncryptionMode, GroupConfig},
     key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageRef},
@@ -40,12 +40,18 @@ pub trait PskStore {
     fn psk(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error>;
 }
 
+pub trait CredentialValidator {
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn validate(&self, credential: &Credential) -> Result<(), Self::Error>;
+}
+
 pub trait ClientConfig {
     type KeyPackageRepository: KeyPackageRepository;
     type ProposalFilterError: std::error::Error + Send + Sync + 'static;
     type Keychain: Keychain;
     type PskStore: PskStore;
     type EpochRepository: EpochRepository;
+    type CredentialValidator: CredentialValidator;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
@@ -59,6 +65,7 @@ pub trait ClientConfig {
     fn keychain(&self) -> Self::Keychain;
     fn secret_store(&self) -> Self::PskStore;
     fn epoch_repo(&self, group_id: &[u8]) -> Self::EpochRepository;
+    fn credential_validator(&self) -> Self::CredentialValidator;
 
     fn capabilities(&self) -> CapabilitiesExt {
         CapabilitiesExt {
@@ -347,12 +354,29 @@ impl Debug for InMemoryClientConfig {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct PassthroughCredentialValidator;
+
+impl PassthroughCredentialValidator {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl CredentialValidator for PassthroughCredentialValidator {
+    type Error = CredentialError;
+    fn validate(&self, _credential: &Credential) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
 impl ClientConfig for InMemoryClientConfig {
     type KeyPackageRepository = InMemoryKeyPackageRepository;
     type ProposalFilterError = SimpleError;
     type Keychain = InMemoryKeychain;
     type PskStore = InMemoryPskStore;
     type EpochRepository = InMemoryEpochRepository;
+    type CredentialValidator = PassthroughCredentialValidator;
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
         self.external_signing_keys.get(external_key_id).cloned()
@@ -405,6 +429,10 @@ impl ClientConfig for InMemoryClientConfig {
             .or_default()
             .clone()
     }
+
+    fn credential_validator(&self) -> Self::CredentialValidator {
+        PassthroughCredentialValidator::new()
+    }
 }
 
 #[derive(Debug, Error)]
@@ -414,12 +442,14 @@ pub struct SimpleError(String);
 #[derive(Clone, Debug)]
 pub struct ClientGroupConfig<C: ClientConfig> {
     pub epoch_repo: C::EpochRepository,
+    pub credential_validator: C::CredentialValidator,
 }
 
 impl<C: ClientConfig> ClientGroupConfig<C> {
     pub fn new(client_config: &C, group_id: &[u8]) -> Self {
         Self {
             epoch_repo: client_config.epoch_repo(group_id),
+            credential_validator: client_config.credential_validator(),
         }
     }
 }
@@ -428,10 +458,16 @@ impl<C> GroupConfig for ClientGroupConfig<C>
 where
     C: ClientConfig,
     C::EpochRepository: Clone,
+    C::CredentialValidator: Clone,
 {
     type EpochRepository = C::EpochRepository;
+    type CredentialValidator = C::CredentialValidator;
 
     fn epoch_repo(&self) -> Self::EpochRepository {
         self.epoch_repo.clone()
+    }
+
+    fn credential_validator(&self) -> Self::CredentialValidator {
+        self.credential_validator.clone()
     }
 }

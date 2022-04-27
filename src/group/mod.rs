@@ -16,7 +16,7 @@ use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
-use crate::client_config::PskStore;
+use crate::client_config::{CredentialValidator, PskStore};
 use crate::credential::CredentialError;
 use crate::extension::{
     ExtensionError, ExtensionList, ExternalPubExt, LifetimeExt, RatchetTreeExt,
@@ -435,8 +435,12 @@ impl<C: GroupConfig> Group<C> {
     ) -> Result<Self, GroupError> {
         let required_capabilities = group_context_extensions.get_extension()?;
 
-        let validated_leaf = LeafNodeValidator::new(cipher_suite, required_capabilities.as_ref())
-            .validate(leaf_node, ValidationContext::Add(None))?;
+        let validated_leaf = LeafNodeValidator::new(
+            cipher_suite,
+            required_capabilities.as_ref(),
+            config.credential_validator(),
+        )
+        .validate(leaf_node, ValidationContext::Add(None))?;
 
         let kdf = Hkdf::from(cipher_suite.kdf_type());
 
@@ -471,7 +475,8 @@ impl<C: GroupConfig> Group<C> {
         })
     }
 
-    pub fn from_welcome_message<S, F, G>(
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_welcome_message<S, F, G, V>(
         protocol_version: ProtocolVersion,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
@@ -479,11 +484,13 @@ impl<C: GroupConfig> Group<C> {
         secret_store: &S,
         make_config: G,
         support_version_and_cipher: F,
+        credential_validator: V,
     ) -> Result<Self, GroupError>
     where
         S: PskStore,
         F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
         G: FnOnce(&[u8]) -> C,
+        V: CredentialValidator,
     {
         Self::join_with_welcome(
             protocol_version,
@@ -494,11 +501,12 @@ impl<C: GroupConfig> Group<C> {
             |_| Ok(None),
             make_config,
             support_version_and_cipher,
+            credential_validator,
         )
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn join_with_welcome<'a, P, F, G, E>(
+    fn join_with_welcome<'a, P, F, G, E, V>(
         protocol_version: ProtocolVersion,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
@@ -507,11 +515,13 @@ impl<C: GroupConfig> Group<C> {
         get_epoch: E,
         make_config: G,
         support_version_and_cipher: F,
+        credential_validator: V,
     ) -> Result<Self, GroupError>
     where
         P: PskStore,
         F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
         G: FnOnce(&[u8]) -> C,
+        V: CredentialValidator,
         E: FnMut(
             u64,
         )
@@ -575,7 +585,7 @@ impl<C: GroupConfig> Group<C> {
         }
 
         let public_tree = find_tree(public_tree, &group_info)?;
-        validate_tree(&public_tree, &group_info)?;
+        validate_tree(&public_tree, &group_info, credential_validator)?;
 
         // Identify a leaf in the tree array (any even-numbered node) whose leaf_node is identical
         // to the leaf_node field of the KeyPackage. If no such field exists, return an error. Let
@@ -706,16 +716,19 @@ impl<C: GroupConfig> Group<C> {
 
         let required_capabilities = group_info.group_context_extensions.get_extension()?;
 
-        let leaf_node =
-            LeafNodeValidator::new(group_info.cipher_suite, required_capabilities.as_ref())
-                .validate(leaf_node, ValidationContext::Add(None))?;
+        let leaf_node = LeafNodeValidator::new(
+            group_info.cipher_suite,
+            required_capabilities.as_ref(),
+            config.credential_validator(),
+        )
+        .validate(leaf_node, ValidationContext::Add(None))?;
 
         let leaf_node_ref = leaf_node.to_reference(group_info.cipher_suite)?;
 
         let psk_secret = vec![0; Hkdf::from(group_info.cipher_suite.kdf_type()).extract_size()];
 
         let mut public_tree = find_tree(public_tree, &group_info)?;
-        validate_tree(&public_tree, &group_info)?;
+        validate_tree(&public_tree, &group_info, config.credential_validator())?;
 
         public_tree.add_leaves(vec![leaf_node])?;
 
@@ -845,8 +858,11 @@ impl<C: GroupConfig> Group<C> {
             group_context_extensions.get_extension::<RequiredCapabilitiesExt>()?;
 
         if existing_required_capabilities != new_required_capabilities {
-            let leaf_node_validator =
-                LeafNodeValidator::new(self.cipher_suite, new_required_capabilities.as_ref());
+            let leaf_node_validator = LeafNodeValidator::new(
+                self.cipher_suite,
+                new_required_capabilities.as_ref(),
+                self.config.credential_validator(),
+            );
 
             tree.get_leaf_nodes()
                 .iter()
@@ -877,8 +893,11 @@ impl<C: GroupConfig> Group<C> {
 
         let required_capabilities = provisional_group_context.extensions.get_extension()?;
 
-        let leaf_node_validator =
-            LeafNodeValidator::new(self.cipher_suite, required_capabilities.as_ref());
+        let leaf_node_validator = LeafNodeValidator::new(
+            self.cipher_suite,
+            required_capabilities.as_ref(),
+            self.config.credential_validator(),
+        );
 
         // Apply updates
         for (update_sender, leaf_node) in proposals.updates {
@@ -927,6 +946,7 @@ impl<C: GroupConfig> Group<C> {
             self.protocol_version,
             self.cipher_suite,
             required_capabilities.as_ref(),
+            self.config.credential_validator(),
         );
 
         // Apply adds
@@ -1323,13 +1343,17 @@ impl<C: GroupConfig> Group<C> {
 
         let required_capabilities = self.context.extensions.get_extension()?;
 
-        let leaf_node_validator =
-            LeafNodeValidator::new(self.cipher_suite, required_capabilities.as_ref());
+        let leaf_node_validator = LeafNodeValidator::new(
+            self.cipher_suite,
+            required_capabilities.as_ref(),
+            self.config.credential_validator(),
+        );
 
         let key_package_validator = KeyPackageValidator::new(
             self.protocol_version,
             self.cipher_suite,
             required_capabilities.as_ref(),
+            self.config.credential_validator(),
         );
 
         let new_self_leaf_node =
@@ -1477,6 +1501,7 @@ impl<C: GroupConfig> Group<C> {
             self.epoch_finder(),
             make_config,
             support_version_and_cipher,
+            self.config.credential_validator(),
         )?;
 
         if subgroup.protocol_version != self.protocol_version {
@@ -1541,6 +1566,7 @@ impl<C: GroupConfig> Group<C> {
             self.protocol_version,
             self.cipher_suite,
             required_capabilities.as_ref(),
+            self.config.credential_validator(),
         );
 
         //TODO: This clone can be removed if the api for the validator allows by-reference
@@ -1916,8 +1942,11 @@ impl<C: GroupConfig> Group<C> {
                 let required_capabilities =
                     provisional_state.group_context.extensions.get_extension()?;
 
-                let leaf_validator =
-                    LeafNodeValidator::new(self.cipher_suite, required_capabilities.as_ref());
+                let leaf_validator = LeafNodeValidator::new(
+                    self.cipher_suite,
+                    required_capabilities.as_ref(),
+                    self.config.credential_validator(),
+                );
 
                 let update_path_validator = UpdatePathValidator::new(leaf_validator);
 
@@ -2179,7 +2208,11 @@ fn find_tree(
     }
 }
 
-fn validate_tree(public_tree: &TreeKemPublic, group_info: &GroupInfo) -> Result<(), GroupError> {
+fn validate_tree<C: CredentialValidator>(
+    public_tree: &TreeKemPublic,
+    group_info: &GroupInfo,
+    credential_validator: C,
+) -> Result<(), GroupError> {
     let sender_key_package = public_tree.get_leaf_node(&group_info.signer)?;
     group_info.verify(&sender_key_package.credential.public_key()?, &())?;
 
@@ -2191,6 +2224,7 @@ fn validate_tree(public_tree: &TreeKemPublic, group_info: &GroupInfo) -> Result<
         &group_info.group_id,
         &group_info.tree_hash,
         required_capabilities.as_ref(),
+        credential_validator,
     );
 
     tree_validator.validate(public_tree)?;
@@ -2368,6 +2402,7 @@ mod tests {
     use crate::group::test_utils::TEST_GROUP;
     use tls_codec::Size;
 
+    use crate::client_config::PassthroughCredentialValidator;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -2675,6 +2710,7 @@ mod tests {
             &secret_store,
             |_| InMemoryGroupConfig::default(),
             |_, _| true,
+            PassthroughCredentialValidator::new(),
         )
         .unwrap();
 
@@ -2740,6 +2776,7 @@ mod tests {
             &secret_store,
             |_| InMemoryGroupConfig::default(),
             |_, _| true,
+            PassthroughCredentialValidator::new(),
         );
 
         assert_matches!(bob_group, Err(GroupError::RatchetTreeNotFound));
