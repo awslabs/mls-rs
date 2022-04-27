@@ -97,6 +97,8 @@ pub enum RatchetTreeError {
     InvalidParentHash(String),
     #[error("leaf node not found: {0}")]
     LeafNodeNotFound(String),
+    #[error("HPKE decrypt called with incorrect secret key, ciphertext or context")]
+    HPKEDecryptionError,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -543,7 +545,7 @@ impl TreeKemPublic {
                 self.cipher_suite
                     .hpke()
                     .open(&ct.clone().into(), sk, context, None, None)
-                    .map_err(Into::into)
+                    .map_err(|_| RatchetTreeError::HPKEDecryptionError)
             })
             .map(PathSecret::from)
     }
