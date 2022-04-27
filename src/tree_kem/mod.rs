@@ -536,8 +536,8 @@ impl TreeKemPublic {
         self.nodes
             .get_resolution_index(lca_direct_path_child)? // Resolution of the lca child node
             .iter()
+            .filter(|i| !excluding.contains(i)) // Match up the nodes with their ciphertexts
             .zip(update_node.encrypted_path_secret.iter())
-            .filter(|(i, _)| !excluding.contains(i)) // Match up the nodes with their ciphertexts
             .find_map(|(i, ct)| private_key.secret_keys.get(i).map(|sk| (sk, ct)))
             .ok_or(RatchetTreeError::UpdateErrorNoSecretKey)
             .and_then(|(sk, ct)| {
