@@ -2895,7 +2895,7 @@ mod tests {
             .create_proposal(
                 proposal,
                 &test_group.signing_key,
-                ControlEncryptionMode::Encrypted(PaddingMode::StepFunction(1024)),
+                ControlEncryptionMode::Encrypted(PaddingMode::StepFunction),
             )
             .unwrap();
 
