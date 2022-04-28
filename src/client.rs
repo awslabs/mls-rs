@@ -1,18 +1,19 @@
 use crate::cipher_suite::CipherSuite;
-use crate::client_config::{ClientConfig, KeyPackageRepository, Keychain};
+use crate::client_config::ClientConfig;
 use crate::credential::CredentialError;
 use crate::extension::{ExtensionError, ExtensionList, LifetimeExt};
 use crate::group::framing::{Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender};
 use crate::group::message_signature::MessageSigningContext;
-use crate::group::proposal::{AddProposal, Proposal, RemoveProposal};
+use crate::group::proposal::{AddProposal, Proposal};
 use crate::group::{GroupContext, GroupState};
 use crate::key_package::{
-    KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef,
+    KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator,
+    KeyPackageRef, KeyPackageRepository,
 };
 use crate::session::{Session, SessionError};
 use crate::signer::{Signable, SignatureError};
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
-use crate::ProtocolVersion;
+use crate::{Keychain, ProtocolVersion};
 use thiserror::Error;
 use tls_codec::Serialize;
 
@@ -34,8 +35,6 @@ pub enum ClientError {
     SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
-    #[error("proposing as external without external key ID")]
-    ProposingAsExternalWithoutExternalKeyId,
     #[error(transparent)]
     KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
@@ -68,9 +67,9 @@ where
         key_package_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
     ) -> Result<KeyPackageGeneration, ClientError> {
-        let keychain = self.config.keychain();
-
-        let (credential, signer) = keychain
+        let (credential, signer) = self
+            .config
+            .keychain()
             .default_credential(cipher_suite)
             .ok_or(ClientError::NoCredentialFound)?;
 
@@ -144,100 +143,6 @@ where
             .map_err(Into::into)
     }
 
-    pub fn propose_add_from_new_member(
-        &self,
-        version: ProtocolVersion,
-        group_cipher_suite: CipherSuite,
-        group_context: GroupContext,
-        key_package: KeyPackage,
-    ) -> Result<Vec<u8>, ClientError> {
-        self.propose_from_external(
-            version,
-            group_cipher_suite,
-            Sender::NewMember,
-            Proposal::Add(AddProposal { key_package }),
-            ExternalProposalContext::GroupContext(group_context),
-        )
-    }
-
-    pub fn propose_add_from_preconfigured(
-        &self,
-        version: ProtocolVersion,
-        group_cipher_suite: CipherSuite,
-        group_id: Vec<u8>,
-        proposal: AddProposal,
-        epoch: u64,
-    ) -> Result<Vec<u8>, ClientError> {
-        self.propose_from_external(
-            version,
-            group_cipher_suite,
-            Sender::Preconfigured(
-                self.config
-                    .external_key_id()
-                    .ok_or(ClientError::ProposingAsExternalWithoutExternalKeyId)?,
-            ),
-            Proposal::Add(proposal),
-            ExternalProposalContext::GroupIdAndEpoch(group_id, epoch),
-        )
-    }
-
-    pub fn propose_remove_from_preconfigured(
-        &self,
-        version: ProtocolVersion,
-        group_cipher_suite: CipherSuite,
-        group_id: Vec<u8>,
-        proposal: RemoveProposal,
-        epoch: u64,
-    ) -> Result<Vec<u8>, ClientError> {
-        self.propose_from_external(
-            version,
-            group_cipher_suite,
-            Sender::Preconfigured(
-                self.config
-                    .external_key_id()
-                    .ok_or(ClientError::ProposingAsExternalWithoutExternalKeyId)?,
-            ),
-            Proposal::Remove(proposal),
-            ExternalProposalContext::GroupIdAndEpoch(group_id, epoch),
-        )
-    }
-
-    fn propose_from_external(
-        &self,
-        version: ProtocolVersion,
-        group_cipher_suite: CipherSuite,
-        sender: Sender,
-        proposal: Proposal,
-        ext_context: ExternalProposalContext,
-    ) -> Result<Vec<u8>, ClientError> {
-        let (group_id, epoch, group_context) = match ext_context {
-            ExternalProposalContext::GroupContext(ctx) => {
-                (ctx.group_id.clone(), ctx.epoch, Some(ctx))
-            }
-            ExternalProposalContext::GroupIdAndEpoch(id, epoch) => (id, epoch, None),
-        };
-        let mut message = MLSPlaintext::new(group_id, epoch, sender, Content::Proposal(proposal));
-
-        let (_, signer) = self
-            .config
-            .keychain()
-            .default_credential(group_cipher_suite)
-            .ok_or(ClientError::NoCredentialFound)?;
-
-        let signing_context = MessageSigningContext {
-            group_context: group_context.as_ref(),
-            encrypted: false,
-        };
-
-        message.sign(&signer, &signing_context)?;
-
-        let message = MLSMessage {
-            version,
-            payload: MLSMessagePayload::Plain(message),
-        };
-        Ok(message.tls_serialize_detached()?)
-    }
-
     /// Returns session and commit MLSMessage
     pub fn commit_external(
         &self,
@@ -280,12 +185,40 @@ where
     pub fn import_session(&self, state: GroupState) -> Result<Session<C>, ClientError> {
         Ok(Session::import(self.config.clone(), state)?)
     }
-}
 
-#[derive(Debug)]
-enum ExternalProposalContext {
-    GroupContext(GroupContext),
-    GroupIdAndEpoch(Vec<u8>, u64),
+    pub fn propose_add_from_new_member(
+        &self,
+        version: ProtocolVersion,
+        group_cipher_suite: CipherSuite,
+        group_context: GroupContext,
+        key_package: KeyPackage,
+    ) -> Result<Vec<u8>, ClientError> {
+        let mut message = MLSPlaintext::new(
+            group_context.group_id.clone(),
+            group_context.epoch,
+            Sender::NewMember,
+            Content::Proposal(Proposal::Add(AddProposal { key_package })),
+        );
+
+        let (_, signer) = self
+            .config
+            .keychain()
+            .default_credential(group_cipher_suite)
+            .ok_or(ClientError::NoCredentialFound)?;
+
+        let signing_context = MessageSigningContext {
+            group_context: Some(&group_context),
+            encrypted: false,
+        };
+
+        message.sign(&signer, &signing_context)?;
+
+        let message = MLSMessage {
+            version,
+            payload: MLSMessagePayload::Plain(message),
+        };
+        Ok(message.tls_serialize_detached()?)
+    }
 }
 
 #[cfg(test)]
@@ -340,6 +273,19 @@ pub(crate) mod test_utils {
 
         (client, gen)
     }
+
+    pub fn create_session(client: &Client<InMemoryClientConfig>) -> Session<InMemoryClientConfig> {
+        client
+            .create_session(
+                TEST_PROTOCOL_VERSION,
+                TEST_CIPHER_SUITE,
+                LifetimeExt::years(1).unwrap(),
+                TEST_GROUP.to_vec(),
+                ExtensionList::new(),
+                ExtensionList::new(),
+            )
+            .unwrap()
+    }
 }
 
 #[cfg(test)]
@@ -350,7 +296,11 @@ mod tests {
     use crate::{
         client_config::InMemoryClientConfig,
         credential::Credential,
-        group::GroupError,
+        group::{
+            proposal::{AddProposal, Proposal},
+            GroupError,
+        },
+        key_package::KeyPackage,
         message::ProcessedMessagePayload,
         psk::{ExternalPskId, PskSecretError},
         tree_kem::leaf_node::LeafNodeSource,
@@ -412,106 +362,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn new_member_add_proposal_adds_to_group() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-
-        let mut session = create_session(&alice);
-
-        let (bob, bob_key_gen) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-
-        let proposal = bob
-            .propose_add_from_new_member(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                session.group_context(),
-                bob_key_gen.key_package.clone(),
-            )
-            .unwrap();
-
-        let message = session.process_incoming_bytes(&proposal).unwrap();
-
-        assert_matches!(
-            message.message,
-            ProcessedMessagePayload::Proposal(Proposal::Add(AddProposal { key_package })) if key_package == bob_key_gen.key_package
-        );
-
-        let expected_proposal = AddProposal {
-            key_package: bob_key_gen.key_package.clone(),
-        };
-
-        let proposal = match session.process_incoming_bytes(&proposal).unwrap().message {
-            ProcessedMessagePayload::Proposal(Proposal::Add(p)) if p == expected_proposal => {
-                Proposal::Add(p)
-            }
-            m => panic!("Expected {:?} but got {:?}", expected_proposal, m),
-        };
-
-        let _ = session.commit(vec![proposal]).unwrap();
-        let state_update = session.apply_pending_commit().unwrap();
-
-        let expected_ref = bob_key_gen
-            .key_package
-            .leaf_node
-            .to_reference(TEST_CIPHER_SUITE)
-            .unwrap();
-
-        assert!(state_update.added.iter().any(|r| *r == expected_ref));
-    }
-
-    struct PreconfiguredEnv {
-        ted: Client<InMemoryClientConfig>,
-        bob_key_gen: KeyPackageGeneration,
-        alice_session: Session<InMemoryClientConfig>,
-    }
-
-    impl PreconfiguredEnv {
-        fn new() -> Self {
-            const TED_EXTERNAL_KEY_ID: &[u8] = b"ted";
-
-            let ted_config = get_basic_config(TEST_CIPHER_SUITE, "ted")
-                .with_external_key_id(TED_EXTERNAL_KEY_ID.to_vec());
-
-            let ted = ted_config.clone().build_client();
-
-            let (ted_credential, _) = ted_config
-                .keychain()
-                .default_credential(TEST_CIPHER_SUITE)
-                .unwrap();
-
-            let alice_config = get_basic_config(TEST_CIPHER_SUITE, "alice")
-                .with_external_signing_key(
-                    TED_EXTERNAL_KEY_ID.to_vec(),
-                    ted_credential.public_key().unwrap(),
-                );
-
-            let alice_session = create_session(&alice_config.build_client());
-
-            let (_, bob_key_gen) =
-                test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-
-            PreconfiguredEnv {
-                ted,
-                bob_key_gen,
-                alice_session,
-            }
-        }
-    }
-
-    fn create_session(client: &Client<InMemoryClientConfig>) -> Session<InMemoryClientConfig> {
-        client
-            .create_session(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                LifetimeExt::years(1).unwrap(),
-                TEST_GROUP.to_vec(),
-                ExtensionList::new(),
-                ExtensionList::new(),
-            )
-            .unwrap()
-    }
-
     fn join_session<'a, S>(
         committer_session: &mut Session<InMemoryClientConfig>,
         other_sessions: S,
@@ -540,99 +390,44 @@ mod tests {
     }
 
     #[test]
-    fn preconfigured_add_proposal_adds_to_group() {
-        let mut env = PreconfiguredEnv::new();
-        let proposal = AddProposal {
-            key_package: env.bob_key_gen.key_package.clone(),
-        };
-        let msg = env
-            .ted
-            .propose_add_from_preconfigured(
+    fn new_member_add_proposal_adds_to_group() {
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+
+        let mut session = create_session(&alice);
+
+        let (bob, bob_key_gen) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+
+        let proposal = bob
+            .propose_add_from_new_member(
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
-                TEST_GROUP.to_vec(),
-                proposal.clone(),
-                env.alice_session.group_stats().unwrap().epoch,
+                session.group_context(),
+                bob_key_gen.key_package.clone(),
             )
             .unwrap();
-        let msg = env.alice_session.process_incoming_bytes(&msg).unwrap();
-        let received_proposal = match msg.message {
-            ProcessedMessagePayload::Proposal(Proposal::Add(p)) if p == proposal => {
-                Proposal::Add(p)
-            }
-            m => panic!("Expected {:?} but got {:?}", proposal, m),
-        };
-        let _ = env.alice_session.commit(vec![received_proposal]).unwrap();
-        let state_update = env.alice_session.apply_pending_commit().unwrap();
 
-        let expected_ref = env
-            .bob_key_gen
+        let message = session.process_incoming_bytes(&proposal).unwrap();
+
+        assert_matches!(
+            message.message,
+            ProcessedMessagePayload::Proposal(Proposal::Add(AddProposal { key_package })) if key_package == bob_key_gen.key_package
+        );
+
+        let proposal = Proposal::Add(AddProposal {
+            key_package: bob_key_gen.key_package.clone(),
+        });
+
+        let _ = session.commit(vec![proposal]).unwrap();
+        let state_update = session.apply_pending_commit().unwrap();
+
+        let expected_ref = bob_key_gen
             .key_package
             .leaf_node
             .to_reference(TEST_CIPHER_SUITE)
             .unwrap();
 
         assert!(state_update.added.iter().any(|r| *r == expected_ref));
-    }
-
-    #[test]
-    fn preconfigured_remove_proposal_removes_from_group() {
-        let mut env = PreconfiguredEnv::new();
-
-        let _ = env
-            .alice_session
-            .commit(vec![Proposal::Add(AddProposal {
-                key_package: env.bob_key_gen.key_package.clone(),
-            })])
-            .unwrap();
-
-        let _ = env.alice_session.apply_pending_commit().unwrap();
-
-        assert!(env
-            .alice_session
-            .roster()
-            .iter()
-            .any(|&p| *p == env.bob_key_gen.key_package.leaf_node));
-
-        let bob_leaf_ref = env
-            .bob_key_gen
-            .key_package
-            .leaf_node
-            .to_reference(TEST_CIPHER_SUITE)
-            .unwrap();
-
-        let proposal = RemoveProposal {
-            to_remove: bob_leaf_ref,
-        };
-
-        let msg = env
-            .ted
-            .propose_remove_from_preconfigured(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                TEST_GROUP.to_vec(),
-                proposal.clone(),
-                env.alice_session.group_stats().unwrap().epoch,
-            )
-            .unwrap();
-
-        let msg = env.alice_session.process_incoming_bytes(&msg).unwrap();
-
-        let _ = match msg.message {
-            ProcessedMessagePayload::Proposal(Proposal::Remove(p)) if p == proposal => {
-                Proposal::Remove(p)
-            }
-            m => panic!("Expected {:?} but got {:?}", proposal, m),
-        };
-
-        let _ = env.alice_session.commit(Vec::new()).unwrap();
-
-        let state_update = env.alice_session.apply_pending_commit().unwrap();
-
-        assert!(state_update
-            .removed
-            .iter()
-            .any(|p| *p == env.bob_key_gen.key_package.leaf_node));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 use crate::cipher_suite::CipherSuite;
-use crate::client_config::{ClientConfig, ClientGroupConfig, KeyPackageRepository, Keychain};
+use crate::client_config::{ClientConfig, ClientGroupConfig};
 use crate::credential::Credential;
 use crate::extension::{ExtensionList, LifetimeExt};
 use crate::group::{
@@ -10,6 +10,7 @@ use crate::group::{
 };
 use crate::key_package::{
     KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
+    KeyPackageRepository,
 };
 use crate::message::{ProcessedMessage, ProcessedMessagePayload};
 use crate::psk::ExternalPskId;
@@ -17,7 +18,7 @@ use crate::signer::Signer;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::tree_kem::leaf_node_ref::LeafNodeRef;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
-use crate::ProtocolVersion;
+use crate::{Keychain, ProtocolVersion};
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use std::fmt::{self, Debug};
 use thiserror::Error;

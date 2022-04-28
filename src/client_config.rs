@@ -4,12 +4,11 @@ use crate::{
     credential::{Credential, CredentialError},
     extension::{CapabilitiesExt, ExtensionType},
     group::{proposal::Proposal, ControlEncryptionMode, GroupConfig},
-    key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageRef},
+    key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
     psk::{ExternalPskId, Psk},
-    signer::Signer,
-    EpochRepository, InMemoryEpochRepository, ProtocolVersion,
+    EpochRepository, InMemoryEpochRepository, InMemoryKeychain, Keychain, ProtocolVersion,
 };
-use ferriscrypt::asym::ec_key::{Curve, PublicKey, SecretKey};
+use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 use std::{
     collections::HashMap,
     convert::Infallible,
@@ -19,20 +18,6 @@ use std::{
 use thiserror::Error;
 
 pub use crate::group::padding::PaddingMode;
-
-pub trait KeyPackageRepository {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    fn insert(&mut self, key_pkg_gen: KeyPackageGeneration) -> Result<(), Self::Error>;
-    fn get(&self, key_pkg: &KeyPackageRef) -> Result<Option<KeyPackageGeneration>, Self::Error>;
-}
-
-pub trait Keychain {
-    type Signer: Signer;
-
-    fn default_credential(&self, cipher_suite: CipherSuite) -> Option<(Credential, Self::Signer)>;
-    fn signer(&self, credential: &Credential) -> Option<Self::Signer>;
-}
 
 pub trait PskStore {
     type Error: std::error::Error + Send + Sync + 'static;
@@ -78,75 +63,6 @@ pub trait ClientConfig {
             extensions: self.supported_extensions(),
             proposals: vec![], // TODO: Support registering custom proposals here
         }
-    }
-}
-
-#[derive(Clone, Default, Debug)]
-pub struct InMemoryKeyPackageRepository {
-    inner: Arc<Mutex<HashMap<KeyPackageRef, KeyPackageGeneration>>>,
-}
-
-impl InMemoryKeyPackageRepository {
-    pub fn insert(&self, key_pkg_gen: KeyPackageGeneration) -> Result<(), KeyPackageError> {
-        self.inner
-            .lock()
-            .unwrap()
-            .insert(key_pkg_gen.key_package.to_reference()?, key_pkg_gen);
-        Ok(())
-    }
-
-    pub fn get(&self, r: &KeyPackageRef) -> Option<KeyPackageGeneration> {
-        self.inner.lock().unwrap().get(r).cloned()
-    }
-}
-
-impl KeyPackageRepository for InMemoryKeyPackageRepository {
-    type Error = KeyPackageError;
-
-    fn insert(&mut self, key_pkg_gen: KeyPackageGeneration) -> Result<(), Self::Error> {
-        (*self).insert(key_pkg_gen)
-    }
-
-    fn get(&self, key_pkg: &KeyPackageRef) -> Result<Option<KeyPackageGeneration>, Self::Error> {
-        Ok(self.get(key_pkg))
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct InMemoryKeychain {
-    secret_keys: Arc<Mutex<HashMap<Credential, SecretKey>>>,
-}
-
-impl InMemoryKeychain {
-    pub fn insert(&mut self, credential: Credential, secret_key: SecretKey) -> Option<SecretKey> {
-        self.secret_keys
-            .lock()
-            .unwrap()
-            .insert(credential, secret_key)
-    }
-}
-
-impl Keychain for InMemoryKeychain {
-    fn default_credential(&self, cipher_suite: CipherSuite) -> Option<(Credential, SecretKey)> {
-        let cipher_suite_curve = Curve::from(cipher_suite.signature_scheme());
-
-        self.secret_keys
-            .lock()
-            .unwrap()
-            .iter()
-            .find_map(|(credential, sk)| {
-                credential
-                    .public_key()
-                    .ok()
-                    .filter(|pk| pk.curve() == cipher_suite_curve)
-                    .map(|_| (credential.clone(), sk.clone()))
-            })
-    }
-
-    type Signer = SecretKey;
-
-    fn signer(&self, credential: &Credential) -> Option<Self::Signer> {
-        self.secret_keys.lock().unwrap().get(credential).cloned()
     }
 }
 
@@ -210,7 +126,7 @@ impl Preferences {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct InMemoryClientConfig {
     preferences: Preferences,
@@ -226,7 +142,14 @@ pub struct InMemoryClientConfig {
     epochs: Arc<Mutex<HashMap<Vec<u8>, InMemoryEpochRepository>>>,
 }
 
-type ProposalFilter = Arc<dyn Fn(&Proposal) -> Result<(), String> + Send + Sync>;
+#[derive(Clone)]
+struct ProposalFilter(Arc<dyn Fn(&Proposal) -> Result<(), String> + Send + Sync>);
+
+impl Debug for ProposalFilter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ProposalFilter")
+    }
+}
 
 impl InMemoryClientConfig {
     pub fn new() -> Self {
@@ -280,7 +203,9 @@ impl InMemoryClientConfig {
         E: ToString,
     {
         Self {
-            proposal_filter: Some(Arc::new(move |p| f(p).map_err(|e| e.to_string()))),
+            proposal_filter: Some(ProposalFilter(Arc::new(move |p| {
+                f(p).map_err(|e| e.to_string())
+            }))),
             ..self
         }
     }
@@ -332,28 +257,6 @@ impl Default for InMemoryClientConfig {
     }
 }
 
-impl Debug for InMemoryClientConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("InMemoryClientConfig")
-            .field("preferences", &self.preferences)
-            .field("external_signing_keys", &self.external_signing_keys)
-            .field("external_key_id", &self.external_key_id)
-            .field("key_packages", &self.key_packages)
-            .field("psk_store", &self.psk_store)
-            .field("supported_extensions", &self.supported_extensions)
-            .field("keychain", &self.keychain)
-            .field(
-                "proposal_filter",
-                &self
-                    .proposal_filter
-                    .as_ref()
-                    .map_or("None", |_| "Some(...)"),
-            )
-            .field("epochs", &self.epochs)
-            .finish()
-    }
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct PassthroughCredentialValidator;
 
@@ -397,7 +300,7 @@ impl ClientConfig for InMemoryClientConfig {
     fn filter_proposal(&self, proposal: &Proposal) -> Result<(), SimpleError> {
         self.proposal_filter
             .as_ref()
-            .map_or(Ok(()), |f| f(proposal))
+            .map_or(Ok(()), |ProposalFilter(f)| f(proposal))
             .map_err(SimpleError)
     }
 

@@ -49,9 +49,12 @@ pub mod client_config;
 pub mod credential;
 mod epoch;
 pub mod extension;
+mod external_client;
+mod external_client_config;
 mod group;
 mod hash_reference;
 pub mod key_package;
+mod keychain;
 pub mod message;
 mod protocol_version;
 mod psk;
@@ -68,11 +71,14 @@ pub mod tls;
 mod tls;
 
 pub use epoch::{Epoch, EpochRepository, InMemoryEpochRepository};
+pub use external_client::ExternalClient;
+pub use external_client_config::{ExternalClientConfig, InMemoryExternalClientConfig};
 pub use ferriscrypt;
 pub use group::{
     proposal::{AddProposal, Proposal, RemoveProposal, UpdateProposal},
     GroupContext,
 };
+pub use keychain::{InMemoryKeychain, Keychain};
 pub use protocol_version::ProtocolVersion;
 pub use tls_codec;
 pub use tree_kem::leaf_node_ref::LeafNodeRef;
