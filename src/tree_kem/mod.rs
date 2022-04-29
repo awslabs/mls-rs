@@ -16,7 +16,7 @@ use self::leaf_node::{LeafNode, LeafNodeError};
 use self::leaf_node_ref::LeafNodeRef;
 use self::leaf_node_validator::ValidatedLeafNode;
 
-use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
+use crate::cipher_suite::CipherSuite;
 use crate::extension::ExtensionError;
 use crate::group::key_schedule::KeyScheduleKdfError;
 use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError};
@@ -35,7 +35,6 @@ pub mod update_path;
 pub use private::*;
 pub use update_path::*;
 
-use crate::signer::Signer;
 use tree_index::*;
 
 use self::path_secret::{PathSecret, PathSecretGeneration, PathSecretGenerator};
@@ -380,150 +379,6 @@ impl TreeKemPublic {
 
     pub(crate) fn get_leaf_node_refs(&self) -> impl Iterator<Item = &'_ LeafNodeRef> {
         self.index.leaf_node_refs()
-    }
-
-    fn encrypt_copath_node_resolution(
-        &self,
-        path_secret: PathSecretGeneration,
-        index: NodeIndex,
-        copath_node_resolution: Vec<&Node>,
-        context: &[u8],
-    ) -> Result<EncryptedResolution, RatchetTreeError> {
-        let ciphertext = copath_node_resolution
-            .iter()
-            .map(|&copath_node| {
-                self.cipher_suite
-                    .hpke()
-                    .seal(
-                        copath_node.public_key(),
-                        context,
-                        None,
-                        None,
-                        &path_secret.path_secret,
-                    )
-                    .map(HpkeCiphertext::from)
-            })
-            .collect::<Result<Vec<HpkeCiphertext>, HpkeError>>()?;
-
-        let (_, public_key) = path_secret.to_hpke_key_pair()?;
-
-        let update_path_node = UpdatePathNode {
-            public_key,
-            encrypted_path_secret: ciphertext,
-        };
-
-        Ok(EncryptedResolution {
-            path_secret,
-            index,
-            update_path_node,
-        })
-    }
-
-    // TODO: Make UpdatePathGeneration not return a private key to simplify this function
-    pub fn encap<S: Signer>(
-        &mut self,
-        private_key: &TreeKemPrivate,
-        group_id: &[u8],
-        context: &[u8],
-        excluding: &[LeafNodeRef],
-        signer: &S,
-    ) -> Result<UpdatePathGeneration, RatchetTreeError> {
-        let secret_generator = PathSecretGenerator::new(self.cipher_suite);
-
-        let excluding: Vec<LeafIndex> = excluding
-            .iter()
-            .flat_map(|reference| self.leaf_node_index(reference))
-            .collect();
-
-        // Generate all the new path secrets and encrypt them to their copath node resolutions
-        let (node_secrets, node_updates): (
-            HashMap<NodeIndex, PathSecretGeneration>,
-            Vec<UpdatePathNode>,
-        ) = secret_generator
-            .zip(
-                self.nodes
-                    .direct_path_copath_resolution(private_key.self_index, &excluding)?,
-            )
-            .map(|(path_secret, (index, copath_nodes))| {
-                self.encrypt_copath_node_resolution(path_secret?, index, copath_nodes, context)
-            })
-            .try_fold(
-                (HashMap::new(), Vec::new()),
-                |(mut secrets, mut updates), resolution| {
-                    let encrypted_resolution = resolution?;
-                    secrets.insert(encrypted_resolution.index, encrypted_resolution.path_secret);
-                    updates.push(encrypted_resolution.update_path_node);
-                    Ok::<_, RatchetTreeError>((secrets, updates))
-                },
-            )?;
-
-        let root_secret = node_secrets
-            .get(&tree_math::root(self.nodes.total_leaf_count()))
-            .cloned()
-            .map(Ok)
-            .unwrap_or_else(|| PathSecretGeneration::random(self.cipher_suite))?
-            .path_secret;
-
-        // Update the private key with the new keys
-        let mut private_key = private_key.clone();
-
-        for (index, path_secret) in &node_secrets {
-            private_key
-                .secret_keys
-                .insert(*index, path_secret.to_hpke_key_pair()?.0);
-        }
-
-        let secret_path = SecretPath {
-            path_secrets: node_secrets
-                .into_iter()
-                .map(|(index, ps)| (index, ps.path_secret))
-                .collect(),
-            root_secret,
-        };
-
-        let mut own_leaf_copy = self.nodes.borrow_as_leaf(private_key.self_index)?.clone();
-
-        // Remove the original leaf from the index
-        self.index
-            .remove(&private_key.leaf_node_ref, &own_leaf_copy)?;
-
-        // Apply parent node updates to the tree to aid with the parent hash calculation
-        self.apply_parent_node_updates(private_key.self_index, &node_updates)?;
-
-        // Evolve your leaf forward
-        // TODO: Support updating extensions and capabilities at this point
-        let secret_key =
-            own_leaf_copy.commit(self.cipher_suite, group_id, None, None, signer, |_| {
-                self.update_parent_hashes(private_key.self_index, None)
-                    .map_err(Into::into)
-            })?;
-
-        let own_leaf = self.nodes.borrow_as_leaf_mut(private_key.self_index)?;
-        let new_leaf_ref = own_leaf_copy.to_reference(self.cipher_suite)?;
-        *own_leaf = own_leaf_copy;
-
-        self.index
-            .insert(new_leaf_ref.clone(), private_key.self_index, own_leaf)?;
-
-        private_key
-            .secret_keys
-            .insert(NodeIndex::from(private_key.self_index), secret_key);
-
-        private_key.leaf_node_ref = new_leaf_ref;
-
-        // Create an update path with the new node and parent node updates
-        let update_path = UpdatePath {
-            leaf_node: own_leaf.clone().into(),
-            nodes: node_updates,
-        };
-
-        Ok(UpdatePathGeneration {
-            update_path,
-            secrets: TreeSecrets {
-                private_key,
-                secret_path,
-            },
-        })
     }
 
     fn update_node(
