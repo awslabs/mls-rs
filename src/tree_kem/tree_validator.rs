@@ -85,6 +85,7 @@ mod tests {
 
     use super::*;
     use crate::tree_kem::{
+        kem::TreeKem,
         leaf_node::test_utils::get_basic_test_node_sig_key,
         node::{LeafIndex, Node, Parent},
         parent_hash::ParentHash,
@@ -130,10 +131,8 @@ mod tests {
         let private_keys = [&test_tree.private, &leaf1_private];
         let signers = [&test_tree.creator_signing_key, &leaf1_signer];
 
-        test_tree
-            .public
+        TreeKem::new(&mut test_tree.public, private_keys[0].clone())
             .encap(
-                private_keys[0],
                 b"test_group",
                 &[],
                 &[leaf1.to_reference(cipher_suite).unwrap()],

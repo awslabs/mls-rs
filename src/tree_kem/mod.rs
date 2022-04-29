@@ -20,7 +20,6 @@ use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
 use crate::extension::ExtensionError;
 use crate::group::key_schedule::KeyScheduleKdfError;
 use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError};
-use crate::signer::Signer;
 use crate::tree_kem::parent_hash::ParentHashError;
 use crate::tree_kem::path_secret::PathSecretError;
 
@@ -36,9 +35,11 @@ pub mod update_path;
 pub use private::*;
 pub use update_path::*;
 
+use crate::signer::Signer;
 use tree_index::*;
 
 use self::path_secret::{PathSecret, PathSecretGeneration, PathSecretGenerator};
+pub mod kem;
 pub mod leaf_node;
 pub mod leaf_node_ref;
 pub mod leaf_node_validator;
@@ -525,31 +526,6 @@ impl TreeKemPublic {
         })
     }
 
-    fn decrypt_parent_path_secret(
-        &self,
-        private_key: &TreeKemPrivate,
-        update_node: &UpdatePathNode,
-        lca_direct_path_child: NodeIndex,
-        excluding: &[NodeIndex],
-        context: &[u8],
-    ) -> Result<PathSecret, RatchetTreeError> {
-        self.nodes
-            .get_resolution_index(lca_direct_path_child)? // Resolution of the lca child node
-            .iter()
-            .filter(|i| !excluding.contains(i)) // Match up the nodes with their ciphertexts
-            .zip(update_node.encrypted_path_secret.iter())
-            .find_map(|(i, ct)| private_key.secret_keys.get(i).map(|sk| (sk, ct)))
-            .ok_or(RatchetTreeError::UpdateErrorNoSecretKey)
-            .and_then(|(sk, ct)| {
-                // Decrypt the path secret
-                self.cipher_suite
-                    .hpke()
-                    .open(&ct.clone().into(), sk, context, None, None)
-                    .map_err(|_| RatchetTreeError::HPKEDecryptionError)
-            })
-            .map(PathSecret::from)
-    }
-
     fn update_node(
         &mut self,
         pub_key: HpkePublicKey,
@@ -617,111 +593,6 @@ impl TreeKemPublic {
         self.update_parent_hashes(sender, Some(update_path))?;
 
         Ok(())
-    }
-
-    pub fn decap(
-        &mut self,
-        private_key: TreeKemPrivate,
-        sender: &LeafNodeRef,
-        update_path: &ValidatedUpdatePath,
-        added_leaves: &[LeafNodeRef],
-        context: &[u8],
-    ) -> Result<TreeSecrets, RatchetTreeError> {
-        let sender_index = self.leaf_node_index(sender)?;
-
-        // Exclude newly added leaf indexes
-        let excluding = added_leaves
-            .iter()
-            .flat_map(|index| self.leaf_node_index(index).map(Into::into))
-            .collect::<Vec<NodeIndex>>();
-
-        // Find the least common ancestor shared by us and the sender
-        let lca =
-            tree_math::common_ancestor_direct(private_key.self_index.into(), sender_index.into());
-
-        let lca_path_secret = self
-            .nodes
-            .filtered_direct_path_co_path(sender_index)?
-            .into_iter()
-            .zip(&update_path.nodes)
-            .find_map(|((direct_path_index, co_path_index), update_path_node)| {
-                if direct_path_index == lca {
-                    self.decrypt_parent_path_secret(
-                        &private_key,
-                        update_path_node,
-                        co_path_index,
-                        &excluding,
-                        context,
-                    )
-                    .into()
-                } else {
-                    None
-                }
-            })
-            .ok_or(RatchetTreeError::LcaNotFoundInDirectPath)??;
-
-        // Derive the rest of the secrets for the tree and assign to the proper nodes
-        let node_secret_gen =
-            PathSecretGenerator::starting_with(self.cipher_suite, lca_path_secret);
-
-        // Update secrets based on the decrypted path secret in the update
-        let (path_secrets, private_key) = node_secret_gen
-            .zip(
-                // Get a pairing of direct path index + associated update
-                // This will help us verify that the calculated public key is the expected one
-                self.nodes
-                    .filtered_direct_path(sender_index)?
-                    .iter()
-                    .zip(update_path.nodes.iter())
-                    .skip_while(|(dp, _)| **dp != lca),
-            )
-            .try_fold(
-                (HashMap::new(), private_key),
-                |(mut path_secrets, mut private_key), (secret, (&index, update))| {
-                    let secret = secret?;
-                    // Verify the private key we calculated properly matches the public key we were
-                    // expecting
-                    let (hpke_private, hpke_public) = secret.to_hpke_key_pair()?;
-
-                    if hpke_public != update.public_key {
-                        return Err(RatchetTreeError::PubKeyMismatch);
-                    }
-
-                    private_key.secret_keys.insert(index, hpke_private);
-                    path_secrets.insert(index, secret.path_secret);
-
-                    Ok((path_secrets, private_key))
-                },
-            )?;
-
-        let root_secret = path_secrets
-            .get(&tree_math::root(self.total_leaf_count()))
-            .cloned()
-            .map(Ok)
-            .unwrap_or_else(|| PathSecret::random(self.cipher_suite))?;
-
-        let tree_secrets = TreeSecrets {
-            private_key,
-            secret_path: SecretPath {
-                path_secrets,
-                root_secret,
-            },
-        };
-
-        let removed_key_package = self.apply_update_path(sender_index, update_path)?;
-        self.index.remove(sender, &removed_key_package)?;
-
-        self.index.insert(
-            update_path.leaf_node.to_reference(self.cipher_suite)?,
-            sender_index,
-            &update_path.leaf_node,
-        )?;
-
-        // Verify the parent hash of the new sender leaf node and update the parent hash values
-        // in the local tree
-        self.update_parent_hashes(sender_index, Some(update_path))?;
-
-        Ok(tree_secrets)
     }
 
     pub fn direct_path_keys(
@@ -795,11 +666,8 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use super::leaf_node::test_utils::get_basic_test_node_sig_key;
-    use super::leaf_node_validator::ValidatedLeafNode;
-    use super::tree_math;
-    use super::{TreeKemPrivate, UpdatePath, ValidatedUpdatePath};
     use crate::cipher_suite::CipherSuite;
+
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNode;
     use crate::tree_kem::node::{LeafIndex, Node, NodeTypeResolver, Parent};
@@ -809,8 +677,6 @@ mod tests {
     use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
     use crate::LeafNodeRef;
     use assert_matches::assert_matches;
-    use ferriscrypt::asym::ec_key::SecretKey;
-    use ferriscrypt::hpke::kem::HpkePublicKey;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -1174,152 +1040,5 @@ mod tests {
             tree.remove_leaves(&tree.clone(), vec![LeafNodeRef::from([0u8; 16])]),
             Err(RatchetTreeError::LeafNodeNotFound(_))
         );
-    }
-
-    // Verify that the tree is in the correct state after generating an update path
-    fn verify_tree_update_path(tree: &TreeKemPublic, update_path: &UpdatePath, index: LeafIndex) {
-        // Make sure the update path is based on the direct path of the sender
-        let direct_path = tree.nodes.direct_path(index).unwrap();
-        for (i, &dpi) in direct_path.iter().enumerate() {
-            assert_eq!(
-                *tree.nodes[dpi as usize].as_ref().unwrap().public_key(),
-                update_path.nodes[i].public_key
-            );
-        }
-
-        // Verify that the leaf from the update path has been installed
-        assert_eq!(
-            tree.leaf_node_index(
-                &update_path
-                    .leaf_node
-                    .to_reference(tree.cipher_suite)
-                    .unwrap()
-            )
-            .unwrap(),
-            index
-        );
-
-        // Verify that we have a public keys up to the root
-        assert!(tree.nodes[tree_math::root(tree.total_leaf_count()) as usize].is_some());
-    }
-
-    fn verify_tree_private_path(
-        cipher_suite: &CipherSuite,
-        public_tree: &TreeKemPublic,
-        private_tree: &TreeKemPrivate,
-        index: LeafIndex,
-    ) {
-        assert_eq!(private_tree.self_index, index);
-        // Make sure we have private values along the direct path, and the public keys match
-        for one_index in public_tree.nodes.direct_path(index).unwrap() {
-            let secret_key = private_tree.secret_keys.get(&one_index).unwrap();
-            let public_key = public_tree.nodes[one_index as usize]
-                .as_ref()
-                .unwrap()
-                .public_key();
-            let secret_key =
-                SecretKey::from_bytes(secret_key.as_ref(), cipher_suite.kem_type().curve())
-                    .unwrap();
-            assert_eq!(
-                HpkePublicKey::from(
-                    secret_key
-                        .to_public()
-                        .unwrap()
-                        .to_uncompressed_bytes()
-                        .unwrap()
-                ),
-                *public_key
-            );
-        }
-    }
-
-    fn encap_decap(cipher_suite: CipherSuite, size: usize) {
-        // Generate signing keys and key package generations, and private keys for multiple
-        // participants in order to set up state
-        let (leaf_nodes, private_keys): (_, Vec<TreeKemPrivate>) = (1..size)
-            .map(|index| {
-                let (leaf_node, hpke_secret, _) =
-                    get_basic_test_node_sig_key(cipher_suite, &format!("{}", index));
-
-                let private_key = TreeKemPrivate::new_self_leaf(
-                    LeafIndex(index as u32),
-                    leaf_node.to_reference(cipher_suite).unwrap(),
-                    hpke_secret,
-                );
-
-                (ValidatedLeafNode::from(leaf_node), private_key)
-            })
-            .unzip();
-
-        let (encap_node, encap_hpke_secret, encap_signer) =
-            get_basic_test_node_sig_key(cipher_suite, "encap");
-
-        // Build a test tree we can clone for all leaf nodes
-        let (mut test_tree, encap_private_key) =
-            TreeKemPublic::derive(cipher_suite, encap_node.clone().into(), encap_hpke_secret)
-                .unwrap();
-
-        test_tree.add_leaves(leaf_nodes).unwrap();
-
-        // Clone the tree for the first leaf, generate a new key package for that leaf
-        let mut encap_tree = test_tree.clone();
-
-        // Perform the encap function
-        let update_path_gen = encap_tree
-            .encap(
-                &encap_private_key,
-                b"test_group",
-                b"test_ctx",
-                &[],
-                &encap_signer,
-            )
-            .unwrap();
-
-        // Verify that the state of the tree matches the produced update path
-        verify_tree_update_path(&encap_tree, &update_path_gen.update_path, LeafIndex(0));
-
-        // Verify that the private key matches the data in the public key
-        verify_tree_private_path(
-            &cipher_suite,
-            &encap_tree,
-            &update_path_gen.secrets.private_key,
-            LeafIndex(0),
-        );
-
-        // Apply the update path to the rest of the leaf nodes using the decap function
-        let validated_update_path = ValidatedUpdatePath {
-            leaf_node: ValidatedLeafNode::from(update_path_gen.update_path.leaf_node),
-            nodes: update_path_gen.update_path.nodes,
-        };
-
-        let mut receiver_trees: Vec<TreeKemPublic> = (1..size).map(|_| test_tree.clone()).collect();
-
-        for (i, tree) in receiver_trees.iter_mut().enumerate() {
-            println!("Decap for {:?}, user: {:?}", i, private_keys[i].self_index);
-            let secrets = tree
-                .decap(
-                    private_keys[i].clone(),
-                    &encap_node.to_reference(cipher_suite).unwrap(),
-                    &validated_update_path,
-                    &[],
-                    b"test_ctx".as_ref(),
-                )
-                .unwrap();
-
-            assert_eq!(tree, &encap_tree);
-
-            assert_eq!(
-                secrets.secret_path.root_secret,
-                update_path_gen.secrets.secret_path.root_secret
-            );
-        }
-    }
-
-    #[test]
-    fn test_encap_decap() {
-        for cipher_suite in CipherSuite::all() {
-            println!("Testing Tree KEM encap / decap for: {cipher_suite:?}");
-            encap_decap(cipher_suite, 10);
-        }
     }
 }

@@ -119,6 +119,7 @@ mod tests {
     };
 
     use crate::tree_kem::{
+        kem::TreeKem,
         leaf_node::test_utils::{get_basic_test_node, get_basic_test_node_sig_key},
         node::LeafIndex,
     };
@@ -178,14 +179,8 @@ mod tests {
             .unwrap();
 
         // Generate an update path for Alice
-        let update_path_gen = public_tree
-            .encap(
-                &alice_private,
-                b"test_group",
-                b"test_ctx",
-                &[],
-                &alice_signing,
-            )
+        let update_path_gen = TreeKem::new(&mut public_tree, alice_private)
+            .encap(b"test_group", b"test_ctx", &[], &alice_signing)
             .unwrap();
 
         // Get a path secret from Alice for Charlie

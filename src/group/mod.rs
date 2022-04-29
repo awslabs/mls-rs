@@ -32,6 +32,7 @@ use crate::psk::{
     ResumptionPSKUsage, ResumptionPsk,
 };
 use crate::signer::{Signable, SignatureError, Signer};
+use crate::tree_kem::kem::TreeKem;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::tree_kem::leaf_node_ref::LeafNodeRef;
 use crate::tree_kem::leaf_node_validator::{
@@ -739,8 +740,7 @@ impl<C: GroupConfig> Group<C> {
 
         let old_context = GroupContext::from(&group_info);
 
-        let update_path = public_tree.encap(
-            &private_tree,
+        let update_path = TreeKem::new(&mut public_tree, private_tree).encap(
             &group_info.group_id,
             &old_context.tls_serialize_detached()?,
             &[],
@@ -1117,9 +1117,11 @@ impl<C: GroupConfig> Group<C> {
             // GroupContext object. The leaf_key_package for this UpdatePath must have a
             // parent_hash extension.
             let context_bytes = self.context.tls_serialize_detached()?;
-
-            let update_path = provisional_state.public_tree.encap(
-                &self.private_tree,
+            let update_path = TreeKem::new(
+                &mut provisional_state.public_tree,
+                self.private_tree.clone(),
+            )
+            .encap(
                 &self.context.group_id,
                 &context_bytes,
                 &provisional_state
@@ -1962,8 +1964,11 @@ impl<C: GroupConfig> Group<C> {
 
                     Ok(pending.secrets)
                 } else {
-                    provisional_state.public_tree.decap(
+                    TreeKem::new(
+                        &mut provisional_state.public_tree,
                         provisional_state.private_tree,
+                    )
+                    .decap(
                         &sender,
                         &validated_update_path,
                         &provisional_state
