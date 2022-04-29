@@ -56,13 +56,7 @@ fn test_create(
     let key_lifetime = LifetimeExt::years(1).unwrap();
 
     let bob_key = bob
-        .gen_key_package(
-            protocol_version,
-            cipher_suite,
-            key_lifetime.clone(),
-            ExtensionList::default(),
-            ExtensionList::default(),
-        )
+        .gen_key_package(protocol_version, cipher_suite, key_lifetime.clone())
         .unwrap();
 
     // Alice creates a session and adds bob
@@ -72,7 +66,6 @@ fn test_create(
             cipher_suite,
             key_lifetime,
             b"group".to_vec(),
-            ExtensionList::default(),
             ExtensionList::default(),
         )
         .unwrap();
@@ -127,7 +120,6 @@ fn get_test_sessions(
             key_lifetime.clone(),
             b"group".to_vec(),
             ExtensionList::default(),
-            ExtensionList::default(),
         )
         .unwrap();
 
@@ -142,13 +134,7 @@ fn get_test_sessions(
         .iter()
         .map(|client| {
             client
-                .gen_key_package(
-                    protocol_version,
-                    cipher_suite,
-                    key_lifetime.clone(),
-                    ExtensionList::default(),
-                    ExtensionList::default(),
-                )
+                .gen_key_package(protocol_version, cipher_suite, key_lifetime.clone())
                 .unwrap()
         })
         .collect::<Vec<KeyPackageGeneration>>();
@@ -519,7 +505,6 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
             LifetimeExt::years(1).unwrap(),
             b"group".to_vec(),
             ExtensionList::default(),
-            ExtensionList::default(),
         )
         .unwrap();
 
@@ -554,7 +539,6 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
                     LifetimeExt::years(1).unwrap(),
                     group_info,
                     Some(&existing_session.export_tree().unwrap()),
-                    ExtensionList::default(),
                 )
                 .unwrap();
 

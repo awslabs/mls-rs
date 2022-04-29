@@ -64,8 +64,6 @@ where
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         lifetime: LifetimeExt,
-        key_package_extensions: ExtensionList,
-        leaf_node_extensions: ExtensionList,
     ) -> Result<KeyPackageGeneration, ClientError> {
         let (credential, signer) = self
             .config
@@ -83,8 +81,8 @@ where
         let key_pkg_gen = key_package_generator.generate(
             lifetime,
             self.config.capabilities(),
-            key_package_extensions,
-            leaf_node_extensions,
+            self.config.key_package_extensions(),
+            self.config.leaf_node_extensions(),
         )?;
 
         self.config
@@ -101,7 +99,6 @@ where
         cipher_suite: CipherSuite,
         lifetime: LifetimeExt,
         group_id: Vec<u8>,
-        leaf_node_extensions: ExtensionList,
         group_context_extensions: ExtensionList,
     ) -> Result<Session<C>, ClientError> {
         let keychain = self.config.keychain();
@@ -114,7 +111,7 @@ where
             cipher_suite,
             credential,
             self.config.capabilities(),
-            leaf_node_extensions,
+            self.config.leaf_node_extensions(),
             &signer,
             lifetime,
         )?;
@@ -149,7 +146,6 @@ where
         lifetime: LifetimeExt,
         group_info_msg: MLSMessage,
         tree_data: Option<&[u8]>,
-        leaf_node_extensions: ExtensionList,
     ) -> Result<(Session<C>, Vec<u8>), ClientError> {
         let group_info = match group_info_msg.payload {
             MLSMessagePayload::GroupInfo(g) => Ok(g),
@@ -166,7 +162,7 @@ where
             group_info.cipher_suite,
             credential,
             self.config.capabilities(),
-            leaf_node_extensions,
+            self.config.leaf_node_extensions(),
             &signer,
             lifetime,
         )?;
@@ -266,8 +262,6 @@ pub(crate) mod test_utils {
                 protocol_version,
                 cipher_suite,
                 LifetimeExt::years(1).unwrap(),
-                ExtensionList::default(),
-                ExtensionList::default(),
             )
             .unwrap();
 
@@ -281,7 +275,6 @@ pub(crate) mod test_utils {
                 TEST_CIPHER_SUITE,
                 LifetimeExt::years(1).unwrap(),
                 TEST_GROUP.to_vec(),
-                ExtensionList::new(),
                 ExtensionList::new(),
             )
             .unwrap()
@@ -326,13 +319,7 @@ mod tests {
 
             // TODO: Tests around extensions
             let package_gen = client
-                .gen_key_package(
-                    protocol_version,
-                    cipher_suite,
-                    key_lifetime.clone(),
-                    ExtensionList::default(),
-                    ExtensionList::default(),
-                )
+                .gen_key_package(protocol_version, cipher_suite, key_lifetime.clone())
                 .unwrap();
 
             assert_eq!(package_gen.key_package.version, protocol_version);
@@ -541,8 +528,6 @@ mod tests {
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 LifetimeExt::years(1).unwrap(),
-                ExtensionList::default(),
-                ExtensionList::default(),
             )
             .unwrap();
 
@@ -596,8 +581,6 @@ mod tests {
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 LifetimeExt::years(1).unwrap(),
-                ExtensionList::default(),
-                ExtensionList::default(),
             )
             .unwrap()
             .key_package;
@@ -644,7 +627,6 @@ mod tests {
                 LifetimeExt::years(1).unwrap(),
                 group_info_msg,
                 Some(&alice_session.export_tree().unwrap()),
-                ExtensionList::default(),
             )
             .unwrap();
 
@@ -705,20 +687,13 @@ mod tests {
                         TEST_PROTOCOL_VERSION,
                         TEST_CIPHER_SUITE,
                         LifetimeExt::years(1).unwrap(),
-                        ExtensionList::default(),
-                        ExtensionList::default(),
                     )
                     .unwrap()
                     .key_package,
             ),
         };
 
-        let res = alice.commit_external(
-            LifetimeExt::years(1).unwrap(),
-            msg,
-            None,
-            ExtensionList::default(),
-        );
+        let res = alice.commit_external(LifetimeExt::years(1).unwrap(), msg, None);
 
         assert_matches!(res, Err(ClientError::ExpectedGroupInfoMessage));
     }
@@ -752,7 +727,6 @@ mod tests {
                 LifetimeExt::years(1).unwrap(),
                 group_info_msg,
                 Some(&bob_session.export_tree().unwrap()),
-                ExtensionList::default(),
             )
             .unwrap();
 
