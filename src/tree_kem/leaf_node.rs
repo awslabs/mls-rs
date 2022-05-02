@@ -30,6 +30,10 @@ pub enum LeafNodeError {
     ParentHashError(#[source] Box<dyn std::error::Error>),
     #[error("cipher suite {0:?} is invalid for credential with signature scheme: {1:?}")]
     InvalidCredentialForCipherSuite(CipherSuite, SignatureScheme),
+    #[error("internal signer error: {0:?}")]
+    SignerError(Box<dyn std::error::Error>),
+    #[error("the provided signing key does not correspond to the provided credential")]
+    CredentialSigningKeyMismatch,
 }
 
 #[derive(
@@ -73,9 +77,10 @@ pub struct LeafNode {
 }
 
 impl LeafNode {
-    fn check_signature_scheme(
+    fn check_credential<S: Signer>(
         cipher_suite: CipherSuite,
         credential: &Credential,
+        signer: &S,
     ) -> Result<(), LeafNodeError> {
         let signature_scheme = SignatureScheme::try_from(credential.public_key()?.curve())?;
 
@@ -84,6 +89,14 @@ impl LeafNode {
                 cipher_suite,
                 signature_scheme,
             ));
+        }
+
+        if credential.public_key()?
+            != signer
+                .public_key()
+                .map_err(|e| LeafNodeError::SignerError(e.into()))?
+        {
+            return Err(LeafNodeError::CredentialSigningKeyMismatch);
         }
 
         Ok(())
@@ -97,7 +110,7 @@ impl LeafNode {
         signer: &S,
         lifetime: LifetimeExt,
     ) -> Result<(Self, HpkeSecretKey), LeafNodeError> {
-        LeafNode::check_signature_scheme(cipher_suite, &credential)?;
+        LeafNode::check_credential(cipher_suite, &credential, signer)?;
 
         let (public, secret) = generate_keypair(cipher_suite.kem_type().curve())?;
 
@@ -150,7 +163,7 @@ impl LeafNode {
         extensions: Option<ExtensionList>,
         signer: &S,
     ) -> Result<HpkeSecretKey, LeafNodeError> {
-        LeafNode::check_signature_scheme(cipher_suite, &self.credential)?;
+        LeafNode::check_credential(cipher_suite, &self.credential, signer)?;
 
         let keypair = generate_keypair(cipher_suite.kem_type().curve())?;
 
@@ -173,7 +186,7 @@ impl LeafNode {
         signer: &S,
         mut parent_hash: impl FnMut(HpkePublicKey) -> Result<ParentHash, Box<dyn std::error::Error>>,
     ) -> Result<HpkeSecretKey, LeafNodeError> {
-        LeafNode::check_signature_scheme(cipher_suite, &self.credential)?;
+        LeafNode::check_credential(cipher_suite, &self.credential, signer)?;
 
         let key_pair = generate_keypair(cipher_suite.kem_type().curve())?;
         let hpke_public = key_pair.0.clone().try_into()?;
@@ -385,7 +398,7 @@ mod tests {
             assert_matches!(
                 &leaf_node.leaf_node_source,
                 LeafNodeSource::Add(lt) if lt == &lifetime,
-                "Expected {:?}, got {:?}", LeafNodeSource::Add(lifetime.clone()),
+                "Expected {:?}, got {:?}", LeafNodeSource::Add(lifetime),
                 leaf_node.leaf_node_source
             );
 
@@ -405,6 +418,52 @@ mod tests {
                 leaf_node.public_key
             );
         }
+    }
+
+    #[test]
+    fn test_credential_signature_mismatch() {
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+
+        let (test_credential, _) = get_test_credential(cipher_suite, b"foo".to_vec());
+
+        let incorrect_secret =
+            SecretKey::generate(test_credential.public_key().unwrap().curve()).unwrap();
+
+        let res = LeafNode::generate(
+            cipher_suite,
+            test_credential,
+            CapabilitiesExt::default(),
+            ExtensionList::default(),
+            &incorrect_secret,
+            LifetimeExt::years(1).unwrap(),
+        );
+
+        assert_matches!(res, Err(LeafNodeError::CredentialSigningKeyMismatch));
+    }
+
+    #[test]
+    fn test_credential_invalid_for_ciphersuite() {
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+
+        let (test_credential, signer) =
+            get_test_credential(CipherSuite::P256Aes128, b"foo".to_vec());
+
+        let res = LeafNode::generate(
+            cipher_suite,
+            test_credential,
+            CapabilitiesExt::default(),
+            ExtensionList::default(),
+            &signer,
+            LifetimeExt::years(1).unwrap(),
+        );
+
+        assert_matches!(
+            res,
+            Err(LeafNodeError::InvalidCredentialForCipherSuite(
+                CipherSuite::Curve25519Aes128,
+                SignatureScheme::EcdsaSecp256r1Sha256
+            ))
+        );
     }
 
     #[test]

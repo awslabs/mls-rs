@@ -317,7 +317,7 @@ mod tests {
             LeafNodeValidator::new(TEST_CIPHER_SUITE, None, FailureCredentialValidator::new());
 
         assert_matches!(
-            fail_test_validator.validate(leaf_node.clone(), ValidationContext::Commit(b"foo")),
+            fail_test_validator.validate(leaf_node, ValidationContext::Commit(b"foo")),
             Err(LeafNodeValidationError::InvalidCertificateError(_))
         );
     }

@@ -20,8 +20,6 @@ pub enum KeyPackageGenerationError {
     KeyPackageError(#[from] KeyPackageError),
     #[error(transparent)]
     LeafNodeError(#[from] LeafNodeError),
-    #[error("the provided signing key does not correspond to the provided credential")]
-    CredentialSigningKeyMismatch,
 }
 
 #[derive(Clone, Debug)]
@@ -40,7 +38,7 @@ pub struct KeyPackageGeneration {
 }
 
 impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
-    pub fn sign(&self, package: &mut KeyPackage) -> Result<(), KeyPackageGenerationError> {
+    pub(super) fn sign(&self, package: &mut KeyPackage) -> Result<(), KeyPackageGenerationError> {
         package.sign(self.signing_key, &()).map_err(Into::into)
     }
 
@@ -51,16 +49,7 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
         key_package_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
     ) -> Result<KeyPackageGeneration, KeyPackageGenerationError> {
-        if self.credential.public_key()?
-            != self
-                .signing_key
-                .public_key()
-                .map_err(|e| KeyPackageGenerationError::SignerError(e.into()))?
-        {
-            return Err(KeyPackageGenerationError::CredentialSigningKeyMismatch);
-        }
-
-        let (public, secret) = generate_keypair(self.cipher_suite.kem_type().curve())?;
+        let (public_init, secret_init) = generate_keypair(self.cipher_suite.kem_type().curve())?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             self.cipher_suite,
@@ -74,7 +63,7 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
         let mut package = KeyPackage {
             version: self.protocol_version,
             cipher_suite: self.cipher_suite,
-            hpke_init_key: public.try_into()?,
+            hpke_init_key: public_init.try_into()?,
             leaf_node,
             extensions: key_package_extensions,
             signature: vec![],
@@ -84,7 +73,7 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
 
         Ok(KeyPackageGeneration {
             key_package: package,
-            init_secret_key: secret.try_into()?,
+            init_secret_key: secret_init.try_into()?,
             leaf_node_secret_key: leaf_node_secret,
         })
     }
@@ -101,7 +90,7 @@ mod tests {
         credential::{BasicCredential, Credential},
         extension::{CapabilitiesExt, ExtensionList, LifetimeExt, MlsExtension},
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
-        tree_kem::leaf_node::LeafNodeSource,
+        tree_kem::leaf_node::{LeafNodeError, LeafNodeSource},
         ProtocolVersion,
     };
 
@@ -260,7 +249,9 @@ mod tests {
 
         assert_matches!(
             generated,
-            Err(KeyPackageGenerationError::CredentialSigningKeyMismatch)
+            Err(KeyPackageGenerationError::LeafNodeError(
+                LeafNodeError::CredentialSigningKeyMismatch
+            ))
         );
     }
 
