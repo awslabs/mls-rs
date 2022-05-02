@@ -1,6 +1,3 @@
-//TODO: REMOVE
-#![allow(dead_code)]
-
 use std::ops::{Deref, DerefMut};
 
 use super::leaf_node::{LeafNode, LeafNodeSource};
@@ -172,7 +169,7 @@ impl<'a, C: CredentialValidator> LeafNodeValidator<'a, C> {
             LeafNodeSource::Commit(_) => ValidationContext::Commit(group_id),
         };
 
-        self.validate_impl(leaf_node, context)
+        self.check_if_valid(leaf_node, context)
     }
 
     pub fn validate_required_capabilities(
@@ -198,7 +195,7 @@ impl<'a, C: CredentialValidator> LeafNodeValidator<'a, C> {
         Ok(())
     }
 
-    fn validate_impl(
+    pub(crate) fn check_if_valid(
         &self,
         leaf_node: &LeafNode,
         context: ValidationContext,
@@ -245,7 +242,7 @@ impl<'a, C: CredentialValidator> LeafNodeValidator<'a, C> {
         leaf_node: LeafNode,
         context: ValidationContext,
     ) -> Result<ValidatedLeafNode, LeafNodeValidationError> {
-        self.validate_impl(&leaf_node, context)?;
+        self.check_if_valid(&leaf_node, context)?;
         Ok(ValidatedLeafNode(leaf_node))
     }
 }

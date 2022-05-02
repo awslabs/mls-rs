@@ -1571,9 +1571,7 @@ impl<C: GroupConfig> Group<C> {
             self.config.credential_validator(),
         );
 
-        //TODO: This clone can be removed if the api for the validator allows by-reference
-        //validation
-        key_package_validator.validate(key_package.clone(), Default::default())?;
+        key_package_validator.check_is_valid(&key_package, Default::default())?;
 
         Ok(Proposal::Add(AddProposal { key_package }))
     }

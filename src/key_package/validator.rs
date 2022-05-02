@@ -1,6 +1,5 @@
-use std::collections::HashSet;
-
 use ferriscrypt::asym::ec_key::PublicKey;
+use std::collections::HashSet;
 
 use super::*;
 use crate::client_config::CredentialValidator;
@@ -82,12 +81,20 @@ impl<'a, C: CredentialValidator> KeyPackageValidator<'a, C> {
             .map_err(Into::into)
     }
 
-    pub fn validate(
+    pub fn check_is_valid(
         &self,
-        package: KeyPackage,
+        package: &KeyPackage,
         options: HashSet<KeyPackageValidationOptions>,
-    ) -> Result<ValidatedLeafNode, KeyPackageValidationError> {
-        self.check_signature(&package)?;
+    ) -> Result<(), KeyPackageValidationError> {
+        self.validate_properties(package)?;
+
+        self.leaf_node_validator
+            .check_if_valid(&package.leaf_node, self.validation_context(options))
+            .map_err(Into::into)
+    }
+
+    fn validate_properties(&self, package: &KeyPackage) -> Result<(), KeyPackageValidationError> {
+        self.check_signature(package)?;
 
         // Verify that the protocol version matches
         if package.version != self.protocol_version {
@@ -117,14 +124,31 @@ impl<'a, C: CredentialValidator> KeyPackageValidator<'a, C> {
             return Err(KeyPackageValidationError::InitLeafKeyEquality);
         }
 
+        Ok(())
+    }
+
+    fn validation_context(
+        &self,
+        options: HashSet<KeyPackageValidationOptions>,
+    ) -> ValidationContext {
         let time_validation = if options.contains(&KeyPackageValidationOptions::SkipLifetimeCheck) {
             None
         } else {
             Some(MlsTime::now())
         };
 
+        ValidationContext::Add(time_validation)
+    }
+
+    pub fn validate(
+        &self,
+        package: KeyPackage,
+        options: HashSet<KeyPackageValidationOptions>,
+    ) -> Result<ValidatedLeafNode, KeyPackageValidationError> {
+        self.validate_properties(&package)?;
+
         self.leaf_node_validator
-            .validate(package.leaf_node, ValidationContext::Add(time_validation))
+            .validate(package.leaf_node, self.validation_context(options))
             .map_err(Into::into)
     }
 }
@@ -149,6 +173,7 @@ mod tests {
             ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
         {
             let test_package = test_key_package(protocol_version, cipher_suite);
+
             let validator = KeyPackageValidator::new(
                 protocol_version,
                 cipher_suite,
@@ -203,6 +228,7 @@ mod tests {
             None,
             PassthroughCredentialValidator::new(),
         );
+
         let res = validator.validate(test_package, Default::default());
 
         assert_matches!(res, Err(KeyPackageValidationError::InvalidCipherSuite(found, exp))
@@ -260,8 +286,8 @@ mod tests {
             None,
             PassthroughCredentialValidator::new(),
         );
-        let res = validator.validate(key_package, Default::default());
 
+        let res = validator.validate(key_package, Default::default());
         assert_matches!(res, Err(KeyPackageValidationError::InvalidInitKey));
     }
 
@@ -281,6 +307,7 @@ mod tests {
             None,
             PassthroughCredentialValidator::new(),
         );
+
         let res = validator.validate(key_package, Default::default());
 
         assert_matches!(res, Err(KeyPackageValidationError::InitLeafKeyEquality));
@@ -309,8 +336,8 @@ mod tests {
     fn test_expired() {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128;
-
         let test_package = invalid_expiration_leaf_node(protocol_version, cipher_suite);
+
         let validator = KeyPackageValidator::new(
             protocol_version,
             cipher_suite,
@@ -332,8 +359,8 @@ mod tests {
     fn test_skip_expiration_check() {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128;
-
         let test_package = invalid_expiration_leaf_node(protocol_version, cipher_suite);
+
         let validator = KeyPackageValidator::new(
             protocol_version,
             cipher_suite,
@@ -443,6 +470,7 @@ mod tests {
             None,
             PassthroughCredentialValidator::new(),
         );
+
         let res = validator.validate(key_package, Default::default());
 
         assert_matches!(
