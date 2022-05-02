@@ -225,7 +225,7 @@ pub(crate) mod test_utils {
     use ferriscrypt::asym::ec_key::SecretKey;
 
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
-    pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
+    pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
     pub const TEST_GROUP: &[u8] = b"group";
 
     pub fn get_test_credential(

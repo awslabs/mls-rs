@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn test_update_secrets() {
-        let cipher_suite = crate::cipher_suite::CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = crate::cipher_suite::CipherSuite::Curve25519Aes128;
 
         let (public_tree, mut charlie_private, update_path_gen, path_secret) =
             update_secrets_setup(cipher_suite);
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn test_update_secrets_key_mismatch() {
-        let cipher_suite = crate::cipher_suite::CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = crate::cipher_suite::CipherSuite::Curve25519Aes128;
 
         let (mut public_tree, mut charlie_private, _, path_secret) =
             update_secrets_setup(cipher_suite);

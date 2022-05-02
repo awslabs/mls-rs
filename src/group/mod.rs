@@ -2444,7 +2444,7 @@ mod tests {
     #[test]
     fn test_pending_proposals_application_data() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let mut test_group = test_group(protocol_version, cipher_suite);
 
@@ -2503,7 +2503,7 @@ mod tests {
     #[test]
     fn test_invalid_commit_self_update() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let mut test_group = test_group(protocol_version, cipher_suite);
 
@@ -2530,7 +2530,7 @@ mod tests {
     #[test]
     fn test_invalid_commit_self_update_cached() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let mut test_group = test_group(protocol_version, cipher_suite);
 
@@ -2566,7 +2566,7 @@ mod tests {
     #[test]
     fn test_invalid_add_proposal_bad_key_package() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let test_group = test_group(protocol_version, cipher_suite);
         let (mut bob_keys, _) = test_member(protocol_version, cipher_suite, b"bob");
@@ -2579,7 +2579,7 @@ mod tests {
     #[test]
     fn test_invalid_add_bad_key_package() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let mut test_group = test_group(protocol_version, cipher_suite);
         let (bob_keys, _) = test_member(protocol_version, cipher_suite, b"bob");
@@ -2605,7 +2605,7 @@ mod tests {
     #[test]
     fn test_invalid_update_bad_key_package() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let (mut alice_group, mut bob_group) =
             test_two_member_group(protocol_version, cipher_suite, true);
@@ -2732,18 +2732,18 @@ mod tests {
 
     #[test]
     fn test_welcome_processing_exported_tree() {
-        test_two_member_group(ProtocolVersion::Mls10, CipherSuite::P256Aes128V1, false);
+        test_two_member_group(ProtocolVersion::Mls10, CipherSuite::P256Aes128, false);
     }
 
     #[test]
     fn test_welcome_processing_tree_extension() {
-        test_two_member_group(ProtocolVersion::Mls10, CipherSuite::P256Aes128V1, true);
+        test_two_member_group(ProtocolVersion::Mls10, CipherSuite::P256Aes128, true);
     }
 
     #[test]
     fn test_welcome_processing_missing_tree() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128V1;
+        let cipher_suite = CipherSuite::P256Aes128;
         let mut test_group = test_group(protocol_version, cipher_suite);
         let (bob_key_package, _) = test_member(protocol_version, cipher_suite, b"bob");
 
@@ -2789,7 +2789,7 @@ mod tests {
 
     #[test]
     fn test_group_context_ext_proposal_create() {
-        let test_group = test_group(ProtocolVersion::Mls10, CipherSuite::P256Aes128V1);
+        let test_group = test_group(ProtocolVersion::Mls10, CipherSuite::P256Aes128);
 
         let mut extension_list = ExtensionList::new();
         extension_list
@@ -2810,7 +2810,7 @@ mod tests {
         ext_list: ExtensionList,
     ) -> (TestGroup, Result<CommitGeneration, GroupError>) {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128V1;
+        let cipher_suite = CipherSuite::P256Aes128;
 
         let mut capabilities = CapabilitiesExt::default();
         capabilities.extensions.push(42);
@@ -2879,7 +2879,7 @@ mod tests {
     #[test]
     fn test_group_encrypt_plaintext_padding() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128V1;
+        let cipher_suite = CipherSuite::P256Aes128;
         let mut test_group = test_group(protocol_version, cipher_suite);
 
         let proposal = test_group
@@ -2926,7 +2926,7 @@ mod tests {
     #[test]
     fn external_commit_requires_external_pub_extension() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128V1;
+        let cipher_suite = CipherSuite::P256Aes128;
         let group = test_group(protocol_version, cipher_suite);
 
         let mut info = group

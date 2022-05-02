@@ -254,7 +254,7 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
+    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
     fn digest_size(cipher_suite: CipherSuite) -> usize {
         Hkdf::from(cipher_suite.kdf_type()).extract_size()

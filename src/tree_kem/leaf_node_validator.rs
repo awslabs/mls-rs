@@ -270,7 +270,7 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
+    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
     fn get_test_add_node() -> (LeafNode, SecretKey) {
         let (credential, secret) = get_test_credential(TEST_CIPHER_SUITE, b"foo".to_vec());
@@ -479,7 +479,7 @@ mod tests {
         let (leaf_node, _) = get_test_add_node();
 
         let test_validator = LeafNodeValidator::new(
-            CipherSuite::P256Aes128V1,
+            CipherSuite::P256Aes128,
             None,
             PassthroughCredentialValidator::new(),
         );

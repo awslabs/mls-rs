@@ -219,7 +219,7 @@ mod tests {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
-    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
+    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
     const TED_EXTERNAL_KEY_ID: &[u8] = b"ted";
 
     fn make_verifier<K>(

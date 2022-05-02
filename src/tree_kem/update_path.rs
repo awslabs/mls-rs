@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn test_valid_leaf_node() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
         let update_path = test_update_path(cipher_suite);
 
         let validator = test_validator(cipher_suite, PassthroughCredentialValidator::new());
@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn test_invalid_key_package() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
         let mut update_path = test_update_path(cipher_suite);
         update_path.leaf_node.signature = SecureRng::gen(32).unwrap();
 

@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn test_credential_signature_mismatch() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let signing_key =
             SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();

@@ -480,7 +480,7 @@ mod tests {
     use assert_matches::assert_matches;
     use ferriscrypt::kdf::hkdf::Hkdf;
 
-    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::P256Aes128V1;
+    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::P256Aes128;
     const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
 
     #[cfg(target_arch = "wasm32")]

@@ -100,35 +100,35 @@ impl From<HpkeCiphertext> for ferriscrypt::hpke::HpkeCiphertext {
 )]
 #[repr(u16)]
 pub enum CipherSuite {
-    Curve25519Aes128V1 = 0x0001,
-    P256Aes128V1 = 0x0002,
-    Curve25519ChaCha20V1 = 0x0003,
+    Curve25519Aes128 = 0x0001,
+    P256Aes128 = 0x0002,
+    Curve25519ChaCha20 = 0x0003,
     #[cfg(feature = "openssl_engine")]
-    Curve448Aes256V1 = 0x0004,
+    Curve448Aes256 = 0x0004,
     #[cfg(feature = "openssl_engine")]
-    P521Aes256V1 = 0x0005,
+    P521Aes256 = 0x0005,
     #[cfg(feature = "openssl_engine")]
-    Curve448ChaCha20V1 = 0x0006,
+    Curve448ChaCha20 = 0x0006,
     #[cfg(feature = "openssl_engine")]
-    P384Aes256V1 = 0x0007,
+    P384Aes256 = 0x0007,
 }
 
 impl ToString for CipherSuite {
     fn to_string(&self) -> String {
         match self {
-            CipherSuite::Curve25519Aes128V1 => "MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
-            CipherSuite::P256Aes128V1 => "MLS10_128_DHKEMP256_AES128GCM_SHA256_P256",
-            CipherSuite::Curve25519ChaCha20V1 => {
+            CipherSuite::Curve25519Aes128 => "MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
+            CipherSuite::P256Aes128 => "MLS10_128_DHKEMP256_AES128GCM_SHA256_P256",
+            CipherSuite::Curve25519ChaCha20 => {
                 "MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519"
             }
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448Aes256V1 => "MLS10_256_DHKEMX448_AES256GCM_SHA512_Ed448",
+            CipherSuite::Curve448Aes256 => "MLS10_256_DHKEMX448_AES256GCM_SHA512_Ed448",
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::P521Aes256V1 => "MLS10_256_DHKEMP521_AES256GCM_SHA512_P521",
+            CipherSuite::P521Aes256 => "MLS10_256_DHKEMP521_AES256GCM_SHA512_P521",
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448ChaCha20V1 => "MLS10_256_DHKEMX448_CHACHA20POLY1305_SHA512_Ed448",
+            CipherSuite::Curve448ChaCha20 => "MLS10_256_DHKEMX448_CHACHA20POLY1305_SHA512_Ed448",
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::P384Aes256V1 => "MLS10_256_DHKEMP384_AES256GCM_SHA384_P384",
+            CipherSuite::P384Aes256 => "MLS10_256_DHKEMP384_AES256GCM_SHA384_P384",
         }
         .to_string()
     }
@@ -138,17 +138,17 @@ impl CipherSuite {
     #[inline(always)]
     pub fn from_raw(raw: u16) -> Option<Self> {
         match raw {
-            1 => Some(CipherSuite::Curve25519Aes128V1),
-            2 => Some(CipherSuite::P256Aes128V1),
-            3 => Some(CipherSuite::Curve25519ChaCha20V1),
+            1 => Some(CipherSuite::Curve25519Aes128),
+            2 => Some(CipherSuite::P256Aes128),
+            3 => Some(CipherSuite::Curve25519ChaCha20),
             #[cfg(feature = "openssl_engine")]
-            4 => Some(CipherSuite::Curve448Aes256V1),
+            4 => Some(CipherSuite::Curve448Aes256),
             #[cfg(feature = "openssl_engine")]
-            5 => Some(CipherSuite::P521Aes256V1),
+            5 => Some(CipherSuite::P521Aes256),
             #[cfg(feature = "openssl_engine")]
-            6 => Some(CipherSuite::Curve448ChaCha20V1),
+            6 => Some(CipherSuite::Curve448ChaCha20),
             #[cfg(feature = "openssl_engine")]
-            7 => Some(CipherSuite::P384Aes256V1),
+            7 => Some(CipherSuite::P384Aes256),
             _ => None,
         }
     }
@@ -160,68 +160,68 @@ impl CipherSuite {
     #[inline(always)]
     pub fn aead_type(&self) -> Aead {
         match self {
-            CipherSuite::Curve25519Aes128V1 => Aead::Aes128Gcm,
-            CipherSuite::P256Aes128V1 => Aead::Aes128Gcm,
-            CipherSuite::Curve25519ChaCha20V1 => Aead::Chacha20Poly1305,
+            CipherSuite::Curve25519Aes128 => Aead::Aes128Gcm,
+            CipherSuite::P256Aes128 => Aead::Aes128Gcm,
+            CipherSuite::Curve25519ChaCha20 => Aead::Chacha20Poly1305,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448Aes256V1 => Aead::Aes256Gcm,
+            CipherSuite::Curve448Aes256 => Aead::Aes256Gcm,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::P521Aes256V1 => Aead::Aes256Gcm,
+            CipherSuite::P521Aes256 => Aead::Aes256Gcm,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448ChaCha20V1 => Aead::Chacha20Poly1305,
+            CipherSuite::Curve448ChaCha20 => Aead::Chacha20Poly1305,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::P384Aes256V1 => Aead::Aes256Gcm,
+            CipherSuite::P384Aes256 => Aead::Aes256Gcm,
         }
     }
 
     #[inline(always)]
     pub(crate) fn kem_type(&self) -> KemId {
         match self {
-            CipherSuite::Curve25519Aes128V1 => KemId::X25519HkdfSha256,
-            CipherSuite::P256Aes128V1 => KemId::P256HkdfSha256,
-            CipherSuite::Curve25519ChaCha20V1 => KemId::X25519HkdfSha256,
+            CipherSuite::Curve25519Aes128 => KemId::X25519HkdfSha256,
+            CipherSuite::P256Aes128 => KemId::P256HkdfSha256,
+            CipherSuite::Curve25519ChaCha20 => KemId::X25519HkdfSha256,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448Aes256V1 => KemId::X448HkdfSha512,
+            CipherSuite::Curve448Aes256 => KemId::X448HkdfSha512,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::P521Aes256V1 => KemId::P521HkdfSha512,
+            CipherSuite::P521Aes256 => KemId::P521HkdfSha512,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448ChaCha20V1 => KemId::X448HkdfSha512,
+            CipherSuite::Curve448ChaCha20 => KemId::X448HkdfSha512,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::P384Aes256V1 => KemId::P384HkdfSha384,
+            CipherSuite::P384Aes256 => KemId::P384HkdfSha384,
         }
     }
 
     #[inline(always)]
     pub fn hash_function(&self) -> HashFunction {
         match self {
-            CipherSuite::Curve25519Aes128V1 => HashFunction::Sha256,
-            CipherSuite::P256Aes128V1 => HashFunction::Sha256,
-            CipherSuite::Curve25519ChaCha20V1 => HashFunction::Sha256,
+            CipherSuite::Curve25519Aes128 => HashFunction::Sha256,
+            CipherSuite::P256Aes128 => HashFunction::Sha256,
+            CipherSuite::Curve25519ChaCha20 => HashFunction::Sha256,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448Aes256V1 => HashFunction::Sha512,
+            CipherSuite::Curve448Aes256 => HashFunction::Sha512,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::P521Aes256V1 => HashFunction::Sha512,
+            CipherSuite::P521Aes256 => HashFunction::Sha512,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448ChaCha20V1 => HashFunction::Sha512,
+            CipherSuite::Curve448ChaCha20 => HashFunction::Sha512,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::P384Aes256V1 => HashFunction::Sha384,
+            CipherSuite::P384Aes256 => HashFunction::Sha384,
         }
     }
 
     #[inline(always)]
     pub fn signature_scheme(&self) -> SignatureScheme {
         match self {
-            CipherSuite::Curve25519Aes128V1 => SignatureScheme::Ed25519,
-            CipherSuite::P256Aes128V1 => SignatureScheme::EcdsaSecp256r1Sha256,
-            CipherSuite::Curve25519ChaCha20V1 => SignatureScheme::Ed25519,
+            CipherSuite::Curve25519Aes128 => SignatureScheme::Ed25519,
+            CipherSuite::P256Aes128 => SignatureScheme::EcdsaSecp256r1Sha256,
+            CipherSuite::Curve25519ChaCha20 => SignatureScheme::Ed25519,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448Aes256V1 => SignatureScheme::Ed448,
+            CipherSuite::Curve448Aes256 => SignatureScheme::Ed448,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::P521Aes256V1 => SignatureScheme::EcdsaSecp521r1Sha512,
+            CipherSuite::P521Aes256 => SignatureScheme::EcdsaSecp521r1Sha512,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448ChaCha20V1 => SignatureScheme::Ed448,
+            CipherSuite::Curve448ChaCha20 => SignatureScheme::Ed448,
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::P384Aes256V1 => SignatureScheme::EcdsaSecp384r1Sha384,
+            CipherSuite::P384Aes256 => SignatureScheme::EcdsaSecp384r1Sha384,
         }
     }
 
@@ -341,9 +341,9 @@ mod tests {
 
     #[test]
     fn test_maybe_cipher_suite_serialize() {
-        let supported = MaybeCipherSuite::CipherSuite(CipherSuite::Curve25519Aes128V1);
+        let supported = MaybeCipherSuite::CipherSuite(CipherSuite::Curve25519Aes128);
         assert_eq!(
-            CipherSuite::Curve25519Aes128V1
+            CipherSuite::Curve25519Aes128
                 .tls_serialize_detached()
                 .unwrap(),
             supported.tls_serialize_detached().unwrap()
@@ -358,10 +358,10 @@ mod tests {
 
     #[test]
     fn test_maybe_cipher_suite_from() {
-        let supported = MaybeCipherSuite::CipherSuite(CipherSuite::Curve25519Aes128V1);
+        let supported = MaybeCipherSuite::CipherSuite(CipherSuite::Curve25519Aes128);
 
         assert_eq!(
-            MaybeCipherSuite::from(CipherSuite::Curve25519Aes128V1),
+            MaybeCipherSuite::from(CipherSuite::Curve25519Aes128),
             supported
         );
 

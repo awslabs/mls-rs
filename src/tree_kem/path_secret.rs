@@ -206,11 +206,11 @@ mod tests {
 
     #[test]
     fn test_first_path_is_random() {
-        let mut generator = PathSecretGenerator::new(CipherSuite::P256Aes128V1);
+        let mut generator = PathSecretGenerator::new(CipherSuite::P256Aes128);
         let first_secret = generator.next_secret().unwrap();
 
         for _ in 0..100 {
-            let mut next_generator = PathSecretGenerator::new(CipherSuite::P256Aes128V1);
+            let mut next_generator = PathSecretGenerator::new(CipherSuite::P256Aes128);
             let next_secret = next_generator.next_secret().unwrap();
             assert_ne!(first_secret.path_secret, next_secret.path_secret);
         }
@@ -218,10 +218,10 @@ mod tests {
 
     #[test]
     fn test_iterator() {
-        let secret = PathSecret::random(CipherSuite::Curve25519Aes128V1).unwrap();
+        let secret = PathSecret::random(CipherSuite::Curve25519Aes128).unwrap();
 
         let mut generator =
-            PathSecretGenerator::starting_with(CipherSuite::Curve25519Aes128V1, secret);
+            PathSecretGenerator::starting_with(CipherSuite::Curve25519Aes128, secret);
 
         let mut cloned_generator = generator.clone();
         let expected = generator.next_secret().unwrap().path_secret;
@@ -232,28 +232,28 @@ mod tests {
 
     #[test]
     fn test_starting_with() {
-        let secret = PathSecret::random(CipherSuite::Curve25519Aes128V1).unwrap();
+        let secret = PathSecret::random(CipherSuite::Curve25519Aes128).unwrap();
 
         let mut generator =
-            PathSecretGenerator::starting_with(CipherSuite::Curve25519Aes128V1, secret.clone());
+            PathSecretGenerator::starting_with(CipherSuite::Curve25519Aes128, secret.clone());
 
         let first_secret = generator.next_secret().unwrap();
         let second_secret = generator.next_secret().unwrap();
 
-        assert_eq!(first_secret.cipher_suite, CipherSuite::Curve25519Aes128V1);
+        assert_eq!(first_secret.cipher_suite, CipherSuite::Curve25519Aes128);
         assert_eq!(secret, first_secret.path_secret);
         assert_ne!(first_secret.path_secret, second_secret.path_secret);
     }
 
     #[test]
     fn test_starting_from() {
-        let mut generator = PathSecretGenerator::new(CipherSuite::Curve25519Aes128V1);
+        let mut generator = PathSecretGenerator::new(CipherSuite::Curve25519Aes128);
 
         let first_secret = generator.next_secret().unwrap();
         let second_secret = generator.next_secret().unwrap();
 
         let mut from_first_generator = PathSecretGenerator::starting_from(
-            CipherSuite::Curve25519Aes128V1,
+            CipherSuite::Curve25519Aes128,
             first_secret.path_secret,
         );
 
@@ -274,20 +274,20 @@ mod tests {
 
     #[test]
     fn test_random_path_secret() {
-        let initial = PathSecret::random(CipherSuite::P256Aes128V1).unwrap();
+        let initial = PathSecret::random(CipherSuite::P256Aes128).unwrap();
 
         for _ in 0..100 {
-            let next = PathSecret::random(CipherSuite::P256Aes128V1).unwrap();
+            let next = PathSecret::random(CipherSuite::P256Aes128).unwrap();
             assert_ne!(next, initial);
         }
     }
 
     #[test]
     fn test_random_path_secret_generation() {
-        let initial = PathSecretGeneration::random(CipherSuite::P256Aes128V1).unwrap();
+        let initial = PathSecretGeneration::random(CipherSuite::P256Aes128).unwrap();
 
         for _ in 0..100 {
-            let next = PathSecretGeneration::random(CipherSuite::P256Aes128V1).unwrap();
+            let next = PathSecretGeneration::random(CipherSuite::P256Aes128).unwrap();
             assert_ne!(next.path_secret, initial.path_secret);
         }
     }

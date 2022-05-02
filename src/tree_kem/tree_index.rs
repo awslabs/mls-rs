@@ -122,7 +122,7 @@ mod tests {
     }
 
     fn get_test_data(index: LeafIndex) -> TestData {
-        let cipher_suite = CipherSuite::P256Aes128V1;
+        let cipher_suite = CipherSuite::P256Aes128;
 
         let leaf_node = get_basic_test_node(cipher_suite, "foo");
         let leaf_node_ref = leaf_node.to_reference(cipher_suite).unwrap();
@@ -220,19 +220,19 @@ mod tests {
 
         let before_error = test_index.clone();
 
-        let mut new_key_package = get_basic_test_node(CipherSuite::P256Aes128V1, "foo");
+        let mut new_key_package = get_basic_test_node(CipherSuite::P256Aes128, "foo");
         new_key_package.credential = test_data[1].leaf_node.credential.clone();
 
         let res = test_index.insert(
             new_key_package
-                .to_reference(CipherSuite::P256Aes128V1)
+                .to_reference(CipherSuite::P256Aes128)
                 .unwrap(),
             test_data[1].index,
             &new_key_package,
         );
 
         assert_matches!(res, Err(TreeIndexError::DuplicateSignatureKeys(kpr, index))
-                        if kpr == new_key_package.to_reference(CipherSuite::P256Aes128V1).unwrap().to_string()
+                        if kpr == new_key_package.to_reference(CipherSuite::P256Aes128).unwrap().to_string()
                         && index == test_data[1].index);
 
         assert_eq!(before_error, test_index);
@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_insert_duplicate_hpke_key() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
         let (test_data, mut test_index) = test_setup();
         let before_error = test_index.clone();
 

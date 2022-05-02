@@ -589,7 +589,7 @@ mod tests {
 
     #[test]
     fn test_out_of_order_keys() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let mut ratchet =
             SecretKeyRatchet::new(cipher_suite, LeafIndex(42), &[0u8; 32], KeyType::Handshake)
@@ -622,7 +622,7 @@ mod tests {
 
     #[test]
     fn test_too_out_of_order() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let mut ratchet =
             SecretKeyRatchet::new(cipher_suite, LeafIndex(42), &[0u8; 32], KeyType::Handshake)

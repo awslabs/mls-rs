@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_missing_parent_hash() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let mut test_tree = get_test_tree_fig_12(cipher_suite);
 
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn test_parent_hash_mismatch() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let mut test_tree = get_test_tree_fig_12(cipher_suite);
 
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn test_parent_hash_invalid() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let mut test_tree = get_test_tree_fig_12(cipher_suite);
         test_tree.nodes[2] = None;
@@ -408,7 +408,7 @@ mod tests {
     #[test]
     fn test_parent_hash_with_blanks() {
         // Create a tree with 4 blanks: leaves C and D, and their 2 ancestors.
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let mut tree = TreeKemPublic::new(cipher_suite);
 

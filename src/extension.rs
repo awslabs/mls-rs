@@ -331,7 +331,7 @@ mod tests {
     fn test_capabilities() {
         let test_protocol_versions = vec![ProtocolVersion::Mls10];
 
-        let test_ciphersuites = vec![CipherSuite::P256Aes128V1, CipherSuite::Curve25519Aes128V1]
+        let test_ciphersuites = vec![CipherSuite::P256Aes128, CipherSuite::Curve25519Aes128]
             .into_iter()
             .map(MaybeCipherSuite::from)
             .collect::<Vec<MaybeCipherSuite>>();

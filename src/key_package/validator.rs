@@ -193,20 +193,20 @@ mod tests {
 
     #[test]
     fn test_invalid_cipher_suite() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
         let version = ProtocolVersion::Mls10;
         let test_package = test_key_package(version, cipher_suite);
 
         let validator = KeyPackageValidator::new(
             version,
-            CipherSuite::Curve25519ChaCha20V1,
+            CipherSuite::Curve25519ChaCha20,
             None,
             PassthroughCredentialValidator::new(),
         );
         let res = validator.validate(test_package, Default::default());
 
         assert_matches!(res, Err(KeyPackageValidationError::InvalidCipherSuite(found, exp))
-                        if exp == CipherSuite::Curve25519ChaCha20V1 && found == cipher_suite);
+                        if exp == CipherSuite::Curve25519ChaCha20 && found == cipher_suite);
     }
 
     fn test_init_key_manipulation<F>(
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn test_invalid_init_key() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
         let protocol_version = ProtocolVersion::Mls10;
 
         let key_package =
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn test_matching_init_key() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
         let protocol_version = ProtocolVersion::Mls10;
 
         let key_package =
@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn test_expired() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let test_package = invalid_expiration_leaf_node(protocol_version, cipher_suite);
         let validator = KeyPackageValidator::new(
@@ -331,7 +331,7 @@ mod tests {
     #[test]
     fn test_skip_expiration_check() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let test_package = invalid_expiration_leaf_node(protocol_version, cipher_suite);
         let validator = KeyPackageValidator::new(
@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn test_required_capabilities_check() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let key_package =
             test_key_package_custom(protocol_version, cipher_suite, "test", |generator| {
@@ -393,7 +393,7 @@ mod tests {
     #[test]
     fn test_required_capabilities_failure() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
         let key_package = test_key_package(protocol_version, cipher_suite);
 
         let required_capabilities = RequiredCapabilitiesExt {
@@ -419,7 +419,7 @@ mod tests {
     #[test]
     fn test_leaf_node_validation_failure() {
         let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let key_package =
             test_key_package_custom(protocol_version, cipher_suite, "foo", |generator| {

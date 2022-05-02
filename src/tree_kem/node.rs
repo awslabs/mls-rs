@@ -506,7 +506,7 @@ pub mod test_utils {
         }
     }
 
-    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128V1;
+    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
     pub(crate) fn get_test_node_vec() -> NodeVec {
         let nodes: Vec<Option<Node>> = vec![

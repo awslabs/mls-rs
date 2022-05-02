@@ -409,7 +409,7 @@ mod tests {
 
     #[test]
     fn test_node_generation_randomness() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
 
@@ -466,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_node_update_meta_changes() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
 
@@ -533,7 +533,7 @@ mod tests {
 
     #[test]
     fn test_node_commit_parent_hash_error() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
 
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_node_commit_meta_changes() {
-        let cipher_suite = CipherSuite::Curve25519Aes128V1;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
 
