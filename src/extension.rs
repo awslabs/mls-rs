@@ -109,6 +109,7 @@ impl MlsExtension for CapabilitiesExt {
     TlsSize,
     serde::Deserialize,
     serde::Serialize,
+    Default,
 )]
 pub struct LifetimeExt {
     pub not_before: u64,

@@ -1,7 +1,7 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, ClientGroupConfig};
 use crate::credential::Credential;
-use crate::extension::{ExtensionList, LifetimeExt};
+use crate::extension::ExtensionList;
 use crate::group::{
     framing::{Content, Sender},
     proposal::Proposal,
@@ -618,7 +618,6 @@ where
         &self,
         sub_group_id: Vec<u8>,
         resumption_psk_epoch: Option<u64>,
-        lifetime: LifetimeExt,
         get_new_key_package: F,
     ) -> Result<(Self, Option<Welcome>), SessionError>
     where
@@ -629,7 +628,7 @@ where
         let (new_group, welcome) = self.protocol.branch(
             sub_group_id,
             resumption_psk_epoch,
-            lifetime,
+            self.config.lifetime(),
             &self.config.secret_store(),
             &signer,
             |group_id| ClientGroupConfig::new(&self.config, group_id),

@@ -1,9 +1,9 @@
 use assert_matches::assert_matches;
 use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client::Client;
-use aws_mls::client_config::{InMemoryClientConfig, Preferences};
+use aws_mls::client_config::{InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECONDS};
 use aws_mls::credential::{BasicCredential, Credential};
-use aws_mls::extension::{ExtensionList, LifetimeExt};
+use aws_mls::extension::ExtensionList;
 use aws_mls::key_package::KeyPackageGeneration;
 use aws_mls::message::ProcessedMessagePayload;
 use aws_mls::session::{GroupError, Session, SessionError};
@@ -31,6 +31,7 @@ fn generate_client(
     cipher_suite: CipherSuite,
     id: Vec<u8>,
     preferences: Preferences,
+    lifetime_duration: u64,
 ) -> Client<InMemoryClientConfig> {
     let key = cipher_suite.generate_secret_key().unwrap();
     let credential = BasicCredential::new(id, key.to_public().unwrap()).unwrap();
@@ -38,6 +39,7 @@ fn generate_client(
     InMemoryClientConfig::default()
         .with_credential(Credential::Basic(credential), key)
         .with_preferences(preferences)
+        .with_lifetime_duration(lifetime_duration)
         .build_client()
 }
 
@@ -50,21 +52,26 @@ fn test_create(
         "Testing session creation for cipher suite: {protocol_version:?} {cipher_suite:?}, participants: 1, {preferences:?}"
     );
 
-    let alice = generate_client(cipher_suite, b"alice".to_vec(), preferences.clone());
-    let bob = generate_client(cipher_suite, b"bob".to_vec(), preferences);
+    let alice = generate_client(
+        cipher_suite,
+        b"alice".to_vec(),
+        preferences.clone(),
+        ONE_YEAR_IN_SECONDS,
+    );
+    let bob = generate_client(
+        cipher_suite,
+        b"bob".to_vec(),
+        preferences,
+        ONE_YEAR_IN_SECONDS,
+    );
 
-    let key_lifetime = LifetimeExt::years(1).unwrap();
-
-    let bob_key = bob
-        .gen_key_package(protocol_version, cipher_suite, key_lifetime.clone())
-        .unwrap();
+    let bob_key = bob.gen_key_package(protocol_version, cipher_suite).unwrap();
 
     // Alice creates a session and adds bob
     let mut alice_session = alice
         .create_session(
             protocol_version,
             cipher_suite,
-            key_lifetime,
             b"group".to_vec(),
             ExtensionList::default(),
         )
@@ -110,14 +117,17 @@ fn get_test_sessions(
     Vec<Session<InMemoryClientConfig>>,
 ) {
     // Create the group with Alice as the group initiator
-    let creator = generate_client(cipher_suite, b"alice".to_vec(), preferences.clone());
-    let key_lifetime = LifetimeExt::years(1).unwrap();
+    let creator = generate_client(
+        cipher_suite,
+        b"alice".to_vec(),
+        preferences.clone(),
+        ONE_YEAR_IN_SECONDS,
+    );
 
     let mut creator_session = creator
         .create_session(
             protocol_version,
             cipher_suite,
-            key_lifetime.clone(),
             b"group".to_vec(),
             ExtensionList::default(),
         )
@@ -125,7 +135,12 @@ fn get_test_sessions(
 
     // Generate random clients that will be members of the group
     let receiver_clients = std::iter::repeat_with(|| {
-        generate_client(cipher_suite, b"test".to_vec(), preferences.clone())
+        generate_client(
+            cipher_suite,
+            b"test".to_vec(),
+            preferences.clone(),
+            ONE_YEAR_IN_SECONDS,
+        )
     })
     .take(num_participants)
     .collect::<Vec<_>>();
@@ -134,7 +149,7 @@ fn get_test_sessions(
         .iter()
         .map(|client| {
             client
-                .gen_key_package(protocol_version, cipher_suite, key_lifetime.clone())
+                .gen_key_package(protocol_version, cipher_suite)
                 .unwrap()
         })
         .collect::<Vec<KeyPackageGeneration>>();
@@ -496,13 +511,17 @@ fn test_processing_message_from_self_returns_error() {
 }
 
 fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: CipherSuite) {
-    let creator = generate_client(cipher_suite, b"alice-0".to_vec(), Default::default());
+    let creator = generate_client(
+        cipher_suite,
+        b"alice-0".to_vec(),
+        Default::default(),
+        ONE_YEAR_IN_SECONDS,
+    );
 
     let mut creator_session = creator
         .create_session(
             protocol_version,
             cipher_suite,
-            LifetimeExt::years(1).unwrap(),
             b"group".to_vec(),
             ExtensionList::default(),
         )
@@ -522,6 +541,7 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
                 cipher_suite,
                 format!("alice-{i}").into_bytes(),
                 Default::default(),
+                ONE_YEAR_IN_SECONDS,
             )
         })
         .collect::<Vec<_>>();
@@ -535,11 +555,7 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
             let group_info = existing_session.group_info_message().unwrap();
 
             let (new_session, commit) = client
-                .commit_external(
-                    LifetimeExt::years(1).unwrap(),
-                    group_info,
-                    Some(&existing_session.export_tree().unwrap()),
-                )
+                .commit_external(group_info, Some(&existing_session.export_tree().unwrap()))
                 .unwrap();
 
             sessions.iter_mut().for_each(|session| {

@@ -1,7 +1,7 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::ClientConfig;
 use crate::credential::CredentialError;
-use crate::extension::{ExtensionError, ExtensionList, LifetimeExt};
+use crate::extension::{ExtensionError, ExtensionList};
 use crate::group::framing::{Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender};
 use crate::group::message_signature::MessageSigningContext;
 use crate::group::proposal::{AddProposal, Proposal};
@@ -63,7 +63,6 @@ where
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
-        lifetime: LifetimeExt,
     ) -> Result<KeyPackageGeneration, ClientError> {
         let (credential, signer) = self
             .config
@@ -79,7 +78,7 @@ where
         };
 
         let key_pkg_gen = key_package_generator.generate(
-            lifetime,
+            self.config.lifetime(),
             self.config.capabilities(),
             self.config.key_package_extensions(),
             self.config.leaf_node_extensions(),
@@ -97,7 +96,6 @@ where
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
-        lifetime: LifetimeExt,
         group_id: Vec<u8>,
         group_context_extensions: ExtensionList,
     ) -> Result<Session<C>, ClientError> {
@@ -113,7 +111,7 @@ where
             self.config.capabilities(),
             self.config.leaf_node_extensions(),
             &signer,
-            lifetime,
+            self.config.lifetime(),
         )?;
 
         Session::create(
@@ -143,7 +141,6 @@ where
     /// Returns session and commit MLSMessage
     pub fn commit_external(
         &self,
-        lifetime: LifetimeExt,
         group_info_msg: MLSMessage,
         tree_data: Option<&[u8]>,
     ) -> Result<(Session<C>, Vec<u8>), ClientError> {
@@ -164,7 +161,7 @@ where
             self.config.capabilities(),
             self.config.leaf_node_extensions(),
             &signer,
-            lifetime,
+            self.config.lifetime(),
         )?;
 
         Ok(Session::new_external(
@@ -222,7 +219,7 @@ pub(crate) mod test_utils {
 
     use super::*;
     use crate::{
-        client_config::InMemoryClientConfig,
+        client_config::{InMemoryClientConfig, ONE_YEAR_IN_SECONDS},
         credential::{BasicCredential, Credential},
     };
     use ferriscrypt::asym::ec_key::SecretKey;
@@ -247,7 +244,9 @@ pub(crate) mod test_utils {
         let (credential, secret_key) =
             get_test_credential(cipher_suite, identity.as_bytes().to_vec());
 
-        InMemoryClientConfig::default().with_credential(credential, secret_key)
+        InMemoryClientConfig::default()
+            .with_credential(credential, secret_key)
+            .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
     }
 
     pub fn test_client_with_key_pkg(
@@ -258,11 +257,7 @@ pub(crate) mod test_utils {
         let client = get_basic_config(cipher_suite, identity).build_client();
 
         let gen = client
-            .gen_key_package(
-                protocol_version,
-                cipher_suite,
-                LifetimeExt::years(1).unwrap(),
-            )
+            .gen_key_package(protocol_version, cipher_suite)
             .unwrap();
 
         (client, gen)
@@ -273,7 +268,6 @@ pub(crate) mod test_utils {
             .create_session(
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
-                LifetimeExt::years(1).unwrap(),
                 TEST_GROUP.to_vec(),
                 ExtensionList::new(),
             )
@@ -315,11 +309,10 @@ mod tests {
             println!("Running client keygen for {:?}", cipher_suite);
 
             let client = get_basic_config(cipher_suite, "foo").build_client();
-            let key_lifetime = LifetimeExt::years(1).unwrap();
 
             // TODO: Tests around extensions
             let package_gen = client
-                .gen_key_package(protocol_version, cipher_suite, key_lifetime.clone())
+                .gen_key_package(protocol_version, cipher_suite)
                 .unwrap();
 
             assert_eq!(package_gen.key_package.version, protocol_version);
@@ -342,7 +335,8 @@ mod tests {
                 expected_credential.tls_serialize_detached().unwrap()
             );
 
-            assert_matches!(package_gen.key_package.leaf_node.leaf_node_source, LeafNodeSource::Add(lifetime) if lifetime == key_lifetime);
+            let client_lifetime = client.config.lifetime();
+            assert_matches!(package_gen.key_package.leaf_node.leaf_node_source, LeafNodeSource::Add(lifetime) if (lifetime.not_after - lifetime.not_before) == (client_lifetime.not_after - client_lifetime.not_before));
 
             let capabilities = package_gen.key_package.leaf_node.capabilities;
             assert_eq!(capabilities, client.config.capabilities());
@@ -524,27 +518,18 @@ mod tests {
         .unwrap();
 
         let bob_sub_key_pkg = bob
-            .gen_key_package(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                LifetimeExt::years(1).unwrap(),
-            )
+            .gen_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .unwrap();
 
         let (alice_sub_session, welcome) = alice_session
-            .branch(
-                b"subgroup".to_vec(),
-                None,
-                LifetimeExt::years(1).unwrap(),
-                |p| {
-                    let r = p.to_reference(TEST_CIPHER_SUITE).unwrap();
-                    if r == bob_key_pkg_ref {
-                        Some(bob_sub_key_pkg.key_package.clone())
-                    } else {
-                        None
-                    }
-                },
-            )
+            .branch(b"subgroup".to_vec(), None, |p| {
+                let r = p.to_reference(TEST_CIPHER_SUITE).unwrap();
+                if r == bob_key_pkg_ref {
+                    Some(bob_sub_key_pkg.key_package.clone())
+                } else {
+                    None
+                }
+            })
             .unwrap();
 
         let welcome = welcome.unwrap();
@@ -577,11 +562,7 @@ mod tests {
         let bob = f(get_basic_config(TEST_CIPHER_SUITE, "bob")).build_client();
 
         let bob_key_pkg = bob
-            .gen_key_package(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                LifetimeExt::years(1).unwrap(),
-            )
+            .gen_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .unwrap()
             .key_package;
 
@@ -623,11 +604,7 @@ mod tests {
         let bob = get_basic_config(TEST_CIPHER_SUITE, "bob").build_client();
 
         let (mut bob_session, external_commit) = bob
-            .commit_external(
-                LifetimeExt::years(1).unwrap(),
-                group_info_msg,
-                Some(&alice_session.export_tree().unwrap()),
-            )
+            .commit_external(group_info_msg, Some(&alice_session.export_tree().unwrap()))
             .unwrap();
 
         assert!(bob_session.participant_count() == 2);
@@ -683,17 +660,13 @@ mod tests {
             version: TEST_PROTOCOL_VERSION,
             payload: MLSMessagePayload::KeyPackage(
                 alice
-                    .gen_key_package(
-                        TEST_PROTOCOL_VERSION,
-                        TEST_CIPHER_SUITE,
-                        LifetimeExt::years(1).unwrap(),
-                    )
+                    .gen_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
                     .unwrap()
                     .key_package,
             ),
         };
 
-        let res = alice.commit_external(LifetimeExt::years(1).unwrap(), msg, None);
+        let res = alice.commit_external(msg, None);
 
         assert_matches!(res, Err(ClientError::ExpectedGroupInfoMessage));
     }
@@ -723,11 +696,7 @@ mod tests {
         let carol = get_basic_config(TEST_CIPHER_SUITE, "carol").build_client();
 
         let (_, external_commit) = carol
-            .commit_external(
-                LifetimeExt::years(1).unwrap(),
-                group_info_msg,
-                Some(&bob_session.export_tree().unwrap()),
-            )
+            .commit_external(group_info_msg, Some(&bob_session.export_tree().unwrap()))
             .unwrap();
 
         // If Carol tries to join Alice's group using the group info from Bob's session, that fails.

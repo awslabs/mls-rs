@@ -2,10 +2,11 @@ use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     client::Client,
     credential::{Credential, CredentialError},
-    extension::{CapabilitiesExt, ExtensionList, ExtensionType},
+    extension::{CapabilitiesExt, ExtensionList, ExtensionType, LifetimeExt},
     group::{proposal::Proposal, ControlEncryptionMode, GroupConfig},
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
     psk::{ExternalPskId, Psk},
+    time::MlsTime,
     EpochRepository, InMemoryEpochRepository, InMemoryKeychain, Keychain, ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
@@ -18,6 +19,8 @@ use std::{
 use thiserror::Error;
 
 pub use crate::group::padding::PaddingMode;
+
+pub const ONE_YEAR_IN_SECONDS: u64 = 365 * 24 * 60 * 60;
 
 pub trait PskStore {
     type Error: std::error::Error + Send + Sync + 'static;
@@ -53,6 +56,7 @@ pub trait ClientConfig {
     fn credential_validator(&self) -> Self::CredentialValidator;
     fn key_package_extensions(&self) -> ExtensionList;
     fn leaf_node_extensions(&self) -> ExtensionList;
+    fn lifetime(&self) -> LifetimeExt;
 
     fn capabilities(&self) -> CapabilitiesExt {
         CapabilitiesExt {
@@ -144,6 +148,7 @@ pub struct InMemoryClientConfig {
     epochs: Arc<Mutex<HashMap<Vec<u8>, InMemoryEpochRepository>>>,
     leaf_node_extensions: ExtensionList,
     key_package_extensions: ExtensionList,
+    lifetime_duration: u64,
 }
 
 #[derive(Clone)]
@@ -171,6 +176,7 @@ impl InMemoryClientConfig {
             epochs: Default::default(),
             leaf_node_extensions: Default::default(),
             key_package_extensions: Default::default(),
+            lifetime_duration: ONE_YEAR_IN_SECONDS,
         }
     }
 
@@ -259,6 +265,12 @@ impl InMemoryClientConfig {
 
     pub fn with_leaf_node_extensions(mut self, extensions: ExtensionList) -> Self {
         self.leaf_node_extensions = extensions;
+        self
+    }
+
+    #[must_use]
+    pub fn with_lifetime_duration(mut self, duration: u64) -> Self {
+        self.lifetime_duration = duration;
         self
     }
 
@@ -371,6 +383,14 @@ impl ClientConfig for InMemoryClientConfig {
                 .collect(),
             extensions: self.supported_extensions(),
             proposals: vec![], // TODO: Support registering custom proposals here
+        }
+    }
+
+    fn lifetime(&self) -> LifetimeExt {
+        let now_timestamp = MlsTime::now().seconds_since_epoch().unwrap();
+        LifetimeExt {
+            not_before: now_timestamp,
+            not_after: now_timestamp + self.lifetime_duration,
         }
     }
 }
