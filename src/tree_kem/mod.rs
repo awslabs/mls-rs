@@ -99,6 +99,8 @@ pub enum RatchetTreeError {
     LeafNodeNotFound(String),
     #[error("HPKE decrypt called with incorrect secret key, ciphertext or context")]
     HPKEDecryptionError,
+    #[error("decrypting commit from self")]
+    DecryptFromSelf,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]

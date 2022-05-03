@@ -45,6 +45,8 @@ impl<'a> TreeKem<'a> {
             .collect();
 
         // Generate all the new path secrets and encrypt them to their copath node resolutions
+        let mut root_secret = None;
+
         let (node_secrets, node_updates): (
             HashMap<NodeIndex, PathSecretGeneration>,
             Vec<UpdatePathNode>,
@@ -67,20 +69,18 @@ impl<'a> TreeKem<'a> {
                 (HashMap::new(), Vec::new()),
                 |(mut secrets, mut updates), resolution| {
                     let encrypted_resolution = resolution?;
+                    root_secret = Some(encrypted_resolution.path_secret.path_secret.clone());
                     secrets.insert(encrypted_resolution.index, encrypted_resolution.path_secret);
                     updates.push(encrypted_resolution.update_path_node);
                     Ok::<_, RatchetTreeError>((secrets, updates))
                 },
             )?;
 
-        let root_secret = node_secrets
-            .get(&tree_math::root(
-                self.tree_kem_public.nodes.total_leaf_count(),
-            ))
-            .cloned()
-            .map(Ok)
-            .unwrap_or_else(|| PathSecretGeneration::random(self.tree_kem_public.cipher_suite))?
-            .path_secret;
+        // If the committer is the only group member and doesn't add anyone, there may be no path secrets.
+        // In such case, we choose a random root secret.
+        let root_secret = root_secret.unwrap_or(
+            PathSecretGeneration::random(self.tree_kem_public.cipher_suite)?.path_secret,
+        );
 
         // Update the private key with the new keys
         let mut private_key = self.private_key.clone();
@@ -212,6 +212,8 @@ impl<'a> TreeKem<'a> {
             PathSecretGenerator::starting_with(self.tree_kem_public.cipher_suite, lca_path_secret);
 
         // Update secrets based on the decrypted path secret in the update
+        let mut root_secret = None;
+
         let (path_secrets, private_key) = node_secret_gen
             .zip(
                 // Get a pairing of direct path index + associated update
@@ -235,6 +237,7 @@ impl<'a> TreeKem<'a> {
                         return Err(RatchetTreeError::PubKeyMismatch);
                     }
 
+                    root_secret = Some(secret.path_secret.clone());
                     private_key.secret_keys.insert(index, hpke_private);
                     path_secrets.insert(index, secret.path_secret);
 
@@ -242,11 +245,10 @@ impl<'a> TreeKem<'a> {
                 },
             )?;
 
-        let root_secret = path_secrets
-            .get(&tree_math::root(self.tree_kem_public.total_leaf_count()))
-            .cloned()
-            .map(Ok)
-            .unwrap_or_else(|| PathSecret::random(self.tree_kem_public.cipher_suite))?;
+        // The only situation in which there are no path secrets is when the committer is alone in the
+        // group and doesn't add anyone. In such case, he should process pending commit instead of
+        // decrypting.
+        let root_secret = root_secret.ok_or(RatchetTreeError::DecryptFromSelf)?;
 
         let tree_secrets = TreeSecrets {
             private_key,
