@@ -83,10 +83,10 @@ pub fn parent(x: u32, n: u32) -> Result<u32, TreeMathError> {
     Ok(p)
 }
 
-pub fn sibling(x: u32, n: u32) -> Result<u32, TreeMathError> {
-    let p = parent(x, n)?;
+pub fn sibling(x: u32, n_parent: u32, n_sibling: u32) -> Result<u32, TreeMathError> {
+    let p = parent(x, n_parent)?;
     if x < p {
-        right(p, n)
+        right(p, n_sibling)
     } else {
         left(p)
     }
@@ -110,17 +110,20 @@ pub fn direct_path(x: u32, n: u32) -> Result<Vec<u32>, TreeMathError> {
     Ok(d)
 }
 
-pub fn copath(x: u32, n: u32) -> Result<Vec<u32>, TreeMathError> {
+pub fn copath(x: u32, n_parent: u32, n_sibling: u32) -> Result<Vec<u32>, TreeMathError> {
     let mut d = Vec::new();
 
-    if x == root(n) {
+    if x == root(n_parent) {
         return Ok(d);
     }
 
-    d = direct_path(x, n)?;
+    d = direct_path(x, n_parent)?;
     d.insert(0, x);
     d.pop();
-    d.into_iter().map(|y| sibling(y, n)).collect()
+
+    d.into_iter()
+        .map(|y| sibling(y, n_parent, n_sibling))
+        .collect()
 }
 
 pub fn common_ancestor_direct(x: u32, y: u32) -> u32 {
@@ -173,7 +176,10 @@ mod tests {
             assert_eq!(left(i).ok(), case.left[i as usize]);
             assert_eq!(right(i, case.n_leaves).ok(), case.right[i as usize]);
             assert_eq!(parent(i, case.n_leaves).ok(), case.parent[i as usize]);
-            assert_eq!(sibling(i, case.n_leaves).ok(), case.sibling[i as usize]);
+            assert_eq!(
+                sibling(i, case.n_leaves, case.n_leaves).ok(),
+                case.sibling[i as usize]
+            );
         }
     }
 
@@ -244,7 +250,7 @@ mod tests {
         .to_vec();
 
         for (i, item) in expected.iter().enumerate() {
-            assert_eq!(item, &copath(i as u32, 11).unwrap())
+            assert_eq!(item, &copath(i as u32, 11, 11).unwrap())
         }
     }
 }

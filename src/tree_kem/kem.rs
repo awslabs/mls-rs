@@ -187,7 +187,7 @@ impl<'a> TreeKem<'a> {
         let lca_path_secret = self
             .tree_kem_public
             .nodes
-            .filtered_direct_path_co_path(sender_index)?
+            .filtered_direct_path_co_path(sender_index, self.tree_kem_public.total_leaf_count())?
             .into_iter()
             .zip(&update_path.nodes)
             .find_map(|((direct_path_index, co_path_index), update_path_node)| {
@@ -330,7 +330,7 @@ fn decrypt_parent_path_secret(
 ) -> Result<PathSecret, RatchetTreeError> {
     tree_kem_public
         .nodes
-        .get_resolution_index(lca_direct_path_child)? // Resolution of the lca child node
+        .get_resolution_index(lca_direct_path_child, tree_kem_public.total_leaf_count())? // Resolution of the lca child node
         .iter()
         .filter(|i| !excluding.contains(i)) // Match up the nodes with their ciphertexts
         .zip(update_node.encrypted_path_secret.iter())

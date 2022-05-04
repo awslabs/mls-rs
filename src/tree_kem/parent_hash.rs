@@ -107,13 +107,9 @@ impl TreeKemPublic {
         co_path_child_index: NodeIndex,
     ) -> Result<ParentHash, RatchetTreeError> {
         let node = self.nodes.borrow_as_parent(node_index)?;
-        let original_tree_size = self.original_tree_size(node)?;
 
-        let original_sibling_tree_hash = self.original_sub_tree_hash(
-            co_path_child_index,
-            original_tree_size,
-            &node.unmerged_leaves,
-        )?;
+        let original_sibling_tree_hash =
+            self.original_full_tree_hash(co_path_child_index, &node.unmerged_leaves)?;
 
         ParentHash::new(
             self.cipher_suite,
@@ -138,7 +134,7 @@ impl TreeKemPublic {
 
         let mut filtered_direct_co_path = self
             .nodes
-            .filtered_direct_path_co_path(index)?
+            .filtered_direct_path_co_path(index, self.total_leaf_count().next_power_of_two())?
             .into_iter()
             .rev();
 
@@ -203,6 +199,7 @@ impl TreeKemPublic {
             .map(|(node_index, _)| node_index)
             .collect();
         let num_leaves = self.total_leaf_count();
+        let num_leaves_full = num_leaves.next_power_of_two();
         let root = tree_math::root(num_leaves);
 
         // For each leaf l, validate all non-blank nodes on the chain from l up the tree.
@@ -213,11 +210,11 @@ impl TreeKemPublic {
                 while n != root {
                     // Find the first non-blank ancestor p of n and p's co-path child s.
                     let mut p = tree_math::parent(n, num_leaves)?;
-                    let mut s = tree_math::sibling(n, num_leaves)?;
+                    let mut s = tree_math::sibling(n, num_leaves, num_leaves_full)?;
                     while self.nodes.is_blank(p)? {
                         match tree_math::parent(p, num_leaves) {
                             Ok(p_parent) => {
-                                s = tree_math::sibling(p, num_leaves)?;
+                                s = tree_math::sibling(p, num_leaves, num_leaves_full)?;
                                 p = p_parent;
                             }
                             // If we reached the root, we're done with this chain.
@@ -436,6 +433,47 @@ mod tests {
             .unwrap()
             .leaf_node_source =
             LeafNodeSource::Commit(tree.update_parent_hashes(LeafIndex(0), None).unwrap());
+
+        assert!(tree.validate_parent_hashes().is_ok());
+    }
+
+    #[test]
+    fn test_parent_hash_edge() {
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+
+        let mut tree = TreeKemPublic::new(cipher_suite);
+
+        let leaves = [
+            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13",
+        ]
+        .map(|l| ValidatedLeafNode::from(get_basic_test_node(cipher_suite, l)))
+        .to_vec();
+
+        tree.add_leaves(leaves).unwrap();
+
+        for i in [19, 23, 1, 3, 5, 9, 11, 13, 7, 15] {
+            tree.nodes[i] = Some(test_parent_node(cipher_suite, vec![]));
+        }
+
+        for i in [16, 24] {
+            tree.nodes[i] = None;
+        }
+
+        for i in [0, 2, 4, 6, 9] {
+            tree.nodes
+                .borrow_as_leaf_mut(LeafIndex(i))
+                .unwrap()
+                .leaf_node_source =
+                LeafNodeSource::Commit(tree.update_parent_hashes(LeafIndex(i), None).unwrap());
+        }
+
+        for leaf_name in ["A", "B", "C"] {
+            tree.add_leaves(vec![ValidatedLeafNode::from(get_basic_test_node(
+                cipher_suite,
+                leaf_name,
+            ))])
+            .unwrap();
+        }
 
         assert!(tree.validate_parent_hashes().is_ok());
     }

@@ -68,8 +68,12 @@ impl LeafIndex {
         tree_math::direct_path(NodeIndex::from(self), leaf_count)
     }
 
-    fn copath(&self, leaf_count: u32) -> Result<Vec<NodeIndex>, TreeMathError> {
-        tree_math::copath(NodeIndex::from(self), leaf_count)
+    fn copath(
+        &self,
+        leaf_count_parent: u32,
+        leaf_count_sibling: u32,
+    ) -> Result<Vec<NodeIndex>, TreeMathError> {
+        tree_math::copath(NodeIndex::from(self), leaf_count_parent, leaf_count_sibling)
     }
 }
 
@@ -279,7 +283,7 @@ impl NodeVec {
 
     pub fn filtered_direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
         Ok(self
-            .filtered_direct_path_co_path(index)?
+            .filtered_direct_path_co_path(index, self.total_leaf_count())?
             .into_iter()
             .map(|(dp, _)| dp)
             .collect())
@@ -291,14 +295,15 @@ impl NodeVec {
     pub fn filtered_direct_path_co_path(
         &self,
         index: LeafIndex,
+        tree_size_sibling: u32,
     ) -> Result<Vec<(NodeIndex, NodeIndex)>, TreeMathError> {
         index
             .direct_path(self.total_leaf_count())?
             .into_iter()
-            .zip(self.copath(index)?)
+            .zip(index.copath(self.total_leaf_count(), tree_size_sibling)?)
             .filter_map(|(dp, cp)| {
                 if self
-                    .get_resolution(cp, &[])
+                    .get_resolution(cp, &[], tree_size_sibling)
                     .unwrap_or_else(|_| vec![])
                     .is_empty()
                 {
@@ -308,12 +313,6 @@ impl NodeVec {
                 }
             })
             .collect()
-    }
-
-    #[inline]
-    pub fn copath(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
-        // Co path from leaf to root
-        index.copath(self.total_leaf_count())
     }
 
     #[inline]
@@ -419,42 +418,39 @@ impl NodeVec {
         })
     }
 
-    pub fn get_resolution_index(&self, index: NodeIndex) -> Result<Vec<NodeIndex>, NodeVecError> {
-        if let Some(node) = self.get(index as usize) {
-            match node {
-                None => {
-                    // This node is blank
-                    if tree_math::level(index) == 0 {
-                        // Node is a leaf {
-                        Ok(Vec::new()) // Resolution of a blank leaf node is empty list
-                    } else {
-                        // Resolution of a blank intermediate is is the result of concatenating the
-                        // resolution of its left and right children
-                        Ok([
-                            self.get_resolution_index(tree_math::left(index)?)?,
-                            self.get_resolution_index(tree_math::right(
-                                index,
-                                (self.len() / 2 + 1) as u32,
-                            )?)?,
-                        ]
-                        .concat())
-                    }
-                }
-                Some(node) => {
-                    // Resolution of a non blank node comprises the node itself + unmerged leaves
-                    match node {
-                        Node::Parent(parent) => {
-                            let mut ret = vec![index];
-                            let unmerged = parent.unmerged_leaves.iter().map(NodeIndex::from);
-                            ret.extend(unmerged);
-                            Ok(ret)
-                        }
-                        Node::Leaf(_) => Ok(vec![index]),
-                    }
+    pub fn get_resolution_index(
+        &self,
+        index: NodeIndex,
+        tree_size: u32,
+    ) -> Result<Vec<NodeIndex>, NodeVecError> {
+        match self.get(index as usize) {
+            None | Some(None) => {
+                // This node is blank
+                if tree_math::level(index) == 0 {
+                    // Node is a leaf {
+                    Ok(Vec::new()) // Resolution of a blank leaf node is empty list
+                } else {
+                    // Resolution of a blank intermediate is is the result of concatenating the
+                    // resolution of its left and right children
+                    Ok([
+                        self.get_resolution_index(tree_math::left(index)?, tree_size)?,
+                        self.get_resolution_index(tree_math::right(index, tree_size)?, tree_size)?,
+                    ]
+                    .concat())
                 }
             }
-        } else {
-            Err(TreeMathError::InvalidIndex.into())
+            Some(Some(node)) => {
+                // Resolution of a non blank node comprises the node itself + unmerged leaves
+                match node {
+                    Node::Parent(parent) => {
+                        let mut ret = vec![index];
+                        let unmerged = parent.unmerged_leaves.iter().map(NodeIndex::from);
+                        ret.extend(unmerged);
+                        Ok(ret)
+                    }
+                    Node::Leaf(_) => Ok(vec![index]),
+                }
+            }
         }
     }
 
@@ -462,8 +458,9 @@ impl NodeVec {
         &self,
         node_index: NodeIndex,
         excluding: &[NodeIndex],
+        tree_size: u32,
     ) -> Result<Vec<&Node>, NodeVecError> {
-        self.get_resolution_index(node_index)?
+        self.get_resolution_index(node_index, tree_size)?
             .iter()
             .filter(|i| !excluding.contains(i))
             .map(|&i| self.borrow_node(i).and_then(|n| n.as_non_empty()))
@@ -482,9 +479,12 @@ impl NodeVec {
 
         // This uses direct_path with a filter instead of filtered_direct_path to avoid computing
         // the resolution of each node twice
-        self.filtered_direct_path_co_path(index)?
+        self.filtered_direct_path_co_path(index, self.total_leaf_count())?
             .into_iter()
-            .map(|(dp, cp)| self.get_resolution(cp, &excluding).map(|r| (dp, r)))
+            .map(|(dp, cp)| {
+                self.get_resolution(cp, &excluding, self.total_leaf_count())
+                    .map(|r| (dp, r))
+            })
             .collect()
     }
 }
@@ -586,19 +586,14 @@ mod tests {
     }
 
     #[test]
-    fn test_copath() {
-        let test_vec = get_test_node_vec();
-        // Tree math is already tested in that module, just ensure equality
-        let expected = tree_math::copath(0, 4).unwrap();
-        let actual = test_vec.copath(LeafIndex(0)).unwrap();
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
     fn test_filtered_direct_path_co_path() {
         let test_vec = get_test_node_vec();
         let expected = [(3, 5)];
-        let actual = test_vec.filtered_direct_path_co_path(LeafIndex(0)).unwrap();
+
+        let actual = test_vec
+            .filtered_direct_path_co_path(LeafIndex(0), test_vec.total_leaf_count())
+            .unwrap();
+
         assert_eq!(actual, expected);
     }
 
@@ -628,9 +623,10 @@ mod tests {
     fn test_get_resolution() {
         let test_vec = get_test_node_vec();
 
-        let resolution_node_5 = test_vec.get_resolution(5, &[]).unwrap();
-        let resolution_node_2 = test_vec.get_resolution(2, &[]).unwrap();
-        let resolution_node_3 = test_vec.get_resolution(3, &[]).unwrap();
+        let tree_size = test_vec.total_leaf_count();
+        let resolution_node_5 = test_vec.get_resolution(5, &[], tree_size).unwrap();
+        let resolution_node_2 = test_vec.get_resolution(2, &[], tree_size).unwrap();
+        let resolution_node_3 = test_vec.get_resolution(3, &[], tree_size).unwrap();
 
         let expected_5: Vec<Node> = [
             test_vec[5].as_ref().unwrap().clone(),
@@ -655,7 +651,11 @@ mod tests {
     #[test]
     fn test_resolution_filter() {
         let test_vec = get_test_node_vec();
-        let resolution_node_5 = test_vec.get_resolution(5, &[4]).unwrap();
+
+        let resolution_node_5 = test_vec
+            .get_resolution(5, &[4], test_vec.total_leaf_count())
+            .unwrap();
+
         let expected_5: Vec<Node> = [test_vec[5].as_ref().unwrap().clone()].to_vec();
 
         assert_eq!(resolution_node_5, expected_5.iter().collect::<Vec<&Node>>());
