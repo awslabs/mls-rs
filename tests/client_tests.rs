@@ -9,7 +9,7 @@ use aws_mls::message::ProcessedMessagePayload;
 use aws_mls::session::{GroupError, Session, SessionError};
 use aws_mls::{LeafNodeRef, ProtocolVersion};
 use ferriscrypt::rand::SecureRng;
-use rand::{prelude::SliceRandom, Rng};
+use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
@@ -204,6 +204,128 @@ fn get_test_sessions(
     }
 
     (creator_session, receiver_sessions)
+}
+
+fn add_random_members(
+    num_added: usize,
+    sender: usize,
+    committer: usize,
+    sessions: &mut Vec<Session<InMemoryClientConfig>>,
+    cipher_suite: CipherSuite,
+    preferences: Preferences,
+) {
+    let (adds, new_clients): (Vec<_>, Vec<_>) = (0..num_added)
+        .map(|_| {
+            let new_client = generate_client(
+                cipher_suite,
+                b"test".to_vec(),
+                preferences.clone(),
+                ONE_YEAR_IN_SECONDS,
+            );
+
+            let key_package = new_client
+                .gen_key_package(ProtocolVersion::Mls10, cipher_suite)
+                .unwrap();
+
+            let key_package_data = key_package.key_package.to_vec().unwrap();
+            let add = sessions[sender].add_proposal(&key_package_data).unwrap();
+            (add, new_client)
+        })
+        .unzip();
+
+    let commit = sessions[committer].commit(adds).unwrap();
+
+    for (i, session) in sessions.iter_mut().enumerate() {
+        if i == committer {
+            session.apply_pending_commit().unwrap();
+        } else {
+            session
+                .process_incoming_bytes(&commit.commit_packet)
+                .unwrap();
+        }
+    }
+
+    let tree_data = sessions[committer].export_tree().unwrap();
+
+    sessions.extend(new_clients.iter().map(|client| {
+        client
+            .join_session(
+                None,
+                Some(&tree_data),
+                commit.welcome_packet.as_ref().unwrap(),
+            )
+            .unwrap()
+    }));
+}
+
+fn remove_members(
+    removed_members: Vec<usize>,
+    sender: usize,
+    committer: usize,
+    sessions: &mut Vec<Session<InMemoryClientConfig>>,
+    cipher_suite: CipherSuite,
+) {
+    let removals = removed_members
+        .iter()
+        .map(|removed| {
+            let to_remove = sessions[*removed].current_key_package().unwrap().clone();
+            let to_remove_ref = to_remove.to_reference(cipher_suite).unwrap();
+            sessions[sender].remove_proposal(&to_remove_ref).unwrap()
+        })
+        .collect();
+
+    let commit = sessions[committer].commit(removals).unwrap();
+
+    for (i, session) in sessions.iter_mut().enumerate() {
+        if i == committer {
+            session.apply_pending_commit().unwrap();
+        } else {
+            session
+                .process_incoming_bytes(&commit.commit_packet)
+                .unwrap();
+        }
+    }
+
+    let mut index = 0;
+    sessions.retain(|_| {
+        index += 1;
+        !(removed_members.contains(&(index - 1)))
+    });
+}
+
+#[test]
+fn test_many_commits() {
+    let cipher_suite = CipherSuite::Curve25519Aes128;
+    let preferences = Preferences::default();
+
+    let (creator_session, mut sessions) = get_test_sessions(
+        ProtocolVersion::Mls10,
+        cipher_suite,
+        10,
+        preferences.clone(),
+    );
+
+    sessions.push(creator_session);
+    let mut rng = rand::rngs::StdRng::from_seed([42; 32]);
+
+    for _ in 0..100 {
+        let num_removed = rng.gen_range(0..sessions.len());
+        let mut members = (0..sessions.len()).choose_multiple(&mut rng, num_removed + 1);
+        let sender = members.pop().unwrap();
+        remove_members(members, sender, sender, &mut sessions, cipher_suite);
+
+        let num_added = rng.gen_range(2..10);
+        let sender = rng.gen_range(0..sessions.len());
+
+        add_random_members(
+            num_added,
+            sender,
+            sender,
+            &mut sessions,
+            cipher_suite,
+            preferences.clone(),
+        );
+    }
 }
 
 fn test_empty_commits(
