@@ -172,7 +172,7 @@ mod tests {
         let start = bytes
             .iter()
             .position(|&b| b != 0)
-            .unwrap_or_else(|| bytes.len() - 1);
+            .unwrap_or(bytes.len() - 1);
         let mut bytes = &bytes[start..];
         assert_eq!(
             VarInt::tls_deserialize(&mut bytes).unwrap(),

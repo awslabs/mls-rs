@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use ferriscrypt::hpke::HpkeError;
 
+use crate::extension::{CapabilitiesExt, ExtensionList};
 use crate::tree_kem::math as tree_math;
 use crate::{signer::Signer, LeafNodeRef};
 
@@ -36,6 +37,8 @@ impl<'a> TreeKem<'a> {
         context: &[u8],
         excluding: &[LeafNodeRef],
         signer: &S,
+        update_capabilities: Option<CapabilitiesExt>,
+        update_extensions: Option<ExtensionList>,
     ) -> Result<UpdatePathGeneration, RatchetTreeError> {
         let secret_generator = PathSecretGenerator::new(self.tree_kem_public.cipher_suite);
 
@@ -115,12 +118,11 @@ impl<'a> TreeKem<'a> {
             .apply_parent_node_updates(private_key.self_index, &node_updates)?;
 
         // Evolve your leaf forward
-        // TODO: Support updating extensions and capabilities at this point
         let secret_key = own_leaf_copy.commit(
             self.tree_kem_public.cipher_suite,
             group_id,
-            None,
-            None,
+            update_capabilities,
+            update_extensions,
             signer,
             |_| {
                 self.tree_kem_public
@@ -350,9 +352,11 @@ fn decrypt_parent_path_secret(
 #[cfg(test)]
 mod tests {
     use ferriscrypt::hpke::kem::HpkePublicKey;
+    use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
     use crate::{
         cipher_suite::CipherSuite,
+        extension::{CapabilitiesExt, ExtensionList, MlsExtension},
         tree_kem::{
             leaf_node::test_utils::get_basic_test_node_sig_key,
             leaf_node_validator::ValidatedLeafNode, node::LeafIndex, TreeKemPrivate, TreeKemPublic,
@@ -365,7 +369,13 @@ mod tests {
     use ferriscrypt::asym::ec_key::SecretKey;
 
     // Verify that the tree is in the correct state after generating an update path
-    fn verify_tree_update_path(tree: &TreeKemPublic, update_path: &UpdatePath, index: LeafIndex) {
+    fn verify_tree_update_path(
+        tree: &TreeKemPublic,
+        update_path: &UpdatePath,
+        index: LeafIndex,
+        capabilities: Option<CapabilitiesExt>,
+        extensions: Option<ExtensionList>,
+    ) {
         // Make sure the update path is based on the direct path of the sender
         let direct_path = tree.nodes.direct_path(index).unwrap();
         for (i, &dpi) in direct_path.iter().enumerate() {
@@ -386,6 +396,16 @@ mod tests {
             .unwrap(),
             index
         );
+
+        // Verify that updated capabilities were installed
+        if let Some(capabilities) = capabilities {
+            assert_eq!(update_path.leaf_node.capabilities, capabilities);
+        }
+
+        // Verify that update extensions were installed
+        if let Some(extensions) = extensions {
+            assert_eq!(update_path.leaf_node.extensions, extensions);
+        }
 
         // Verify that we have a public keys up to the root
         assert!(tree.nodes[tree_math::root(tree.total_leaf_count()) as usize].is_some());
@@ -421,7 +441,12 @@ mod tests {
         }
     }
 
-    fn encap_decap(cipher_suite: CipherSuite, size: usize) {
+    fn encap_decap(
+        cipher_suite: CipherSuite,
+        size: usize,
+        capabilities: Option<CapabilitiesExt>,
+        extensions: Option<ExtensionList>,
+    ) {
         // Generate signing keys and key package generations, and private keys for multiple
         // participants in order to set up state
         let (leaf_nodes, private_keys): (_, Vec<TreeKemPrivate>) = (1..size)
@@ -454,11 +479,24 @@ mod tests {
 
         // Perform the encap function
         let update_path_gen = TreeKem::new(&mut encap_tree, encap_private_key)
-            .encap(b"test_group", b"test_ctx", &[], &encap_signer)
+            .encap(
+                b"test_group",
+                b"test_ctx",
+                &[],
+                &encap_signer,
+                capabilities.clone(),
+                extensions.clone(),
+            )
             .unwrap();
 
         // Verify that the state of the tree matches the produced update path
-        verify_tree_update_path(&encap_tree, &update_path_gen.update_path, LeafIndex(0));
+        verify_tree_update_path(
+            &encap_tree,
+            &update_path_gen.update_path,
+            LeafIndex(0),
+            capabilities,
+            extensions,
+        );
 
         // Verify that the private key matches the data in the public key
         verify_tree_private_path(
@@ -500,7 +538,46 @@ mod tests {
     fn test_encap_decap() {
         for cipher_suite in CipherSuite::all() {
             println!("Testing Tree KEM encap / decap for: {cipher_suite:?}");
-            encap_decap(cipher_suite, 10);
+            encap_decap(cipher_suite, 10, None, None);
         }
+    }
+
+    #[test]
+    fn test_encap_capabilities() {
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let mut capabilities = CapabilitiesExt::default();
+        capabilities.extensions.push(42);
+
+        encap_decap(cipher_suite, 10, Some(capabilities.clone()), None);
+    }
+
+    #[derive(TlsSize, TlsSerialize, TlsDeserialize, Clone, Debug, PartialEq)]
+    struct TestExtension {
+        foo: u8,
+    }
+
+    impl MlsExtension for TestExtension {
+        const IDENTIFIER: crate::extension::ExtensionType = 42;
+    }
+
+    #[test]
+    fn test_encap_extensions() {
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let mut extensions = ExtensionList::default();
+        extensions.set_extension(TestExtension { foo: 10 }).unwrap();
+
+        encap_decap(cipher_suite, 10, None, Some(extensions));
+    }
+
+    #[test]
+    fn test_encap_capabilities_extensions() {
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let mut capabilities = CapabilitiesExt::default();
+        capabilities.extensions.push(42);
+
+        let mut extensions = ExtensionList::default();
+        extensions.set_extension(TestExtension { foo: 10 }).unwrap();
+
+        encap_decap(cipher_suite, 10, Some(capabilities), Some(extensions));
     }
 }

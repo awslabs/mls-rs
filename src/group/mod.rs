@@ -745,6 +745,8 @@ impl<C: GroupConfig> Group<C> {
             &old_context.tls_serialize_detached()?,
             &[],
             signer,
+            None,
+            None,
         )?;
 
         let commit_secret =
@@ -1131,6 +1133,8 @@ impl<C: GroupConfig> Group<C> {
                     .map(|(_, leaf_node_ref)| leaf_node_ref.clone())
                     .collect::<Vec<LeafNodeRef>>(),
                 signer,
+                None,
+                None,
             )?;
 
             Some(update_path)

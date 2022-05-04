@@ -137,6 +137,8 @@ mod tests {
                 &[],
                 &[leaf1.to_reference(cipher_suite).unwrap()],
                 signers[0],
+                None,
+                None,
             )
             .unwrap();
 

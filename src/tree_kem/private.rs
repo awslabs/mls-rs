@@ -180,7 +180,7 @@ mod tests {
 
         // Generate an update path for Alice
         let update_path_gen = TreeKem::new(&mut public_tree, alice_private)
-            .encap(b"test_group", b"test_ctx", &[], &alice_signing)
+            .encap(b"test_group", b"test_ctx", &[], &alice_signing, None, None)
             .unwrap();
 
         // Get a path secret from Alice for Charlie
