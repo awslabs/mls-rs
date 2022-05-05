@@ -298,7 +298,11 @@ where
             .ok_or(SessionError::SignerNotFound)?;
 
         self.protocol
-            .update_proposal(&signing_key)
+            .update_proposal(
+                &signing_key,
+                Some(self.config.leaf_node_extensions()),
+                Some(self.config.capabilities()),
+            )
             .map_err(Into::into)
     }
 
@@ -394,7 +398,6 @@ where
         self.serialize_control(packet)
     }
 
-    // TODO: You should be able to skip sending a path update if this is an add only commit
     pub fn commit(&mut self, proposals: Vec<Proposal>) -> Result<CommitResult, SessionError> {
         if self.pending_commit.is_some() {
             return Err(SessionError::ExistingPendingCommit);
@@ -408,13 +411,9 @@ where
             .signer(&leaf_node.credential)
             .ok_or(SessionError::SignerNotFound)?;
 
-        let preferences = self.config.preferences();
-
         let (commit_data, welcome) = self.protocol.commit_proposals(
             proposals,
-            true,
-            preferences.encryption_mode(),
-            preferences.ratchet_tree_extension,
+            self.config.commit_options(),
             &self.config.secret_store(),
             &signer,
         )?;

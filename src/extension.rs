@@ -305,6 +305,20 @@ impl ExtensionList {
 }
 
 #[cfg(test)]
+pub(crate) mod test_utils {
+    use super::*;
+
+    #[derive(TlsSize, TlsSerialize, TlsDeserialize, Clone, Debug, PartialEq)]
+    pub(crate) struct TestExtension {
+        pub(crate) foo: u8,
+    }
+
+    impl MlsExtension for TestExtension {
+        const IDENTIFIER: crate::extension::ExtensionType = 42;
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use assert_matches::assert_matches;

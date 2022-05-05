@@ -3,7 +3,7 @@ use crate::{
     client::Client,
     credential::{Credential, CredentialError},
     extension::{CapabilitiesExt, ExtensionList, ExtensionType, LifetimeExt},
-    group::{proposal::Proposal, ControlEncryptionMode, GroupConfig},
+    group::{proposal::Proposal, CommitOptions, ControlEncryptionMode, GroupConfig},
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
     psk::{ExternalPskId, Psk},
     time::MlsTime,
@@ -70,6 +70,18 @@ pub trait ClientConfig {
             proposals: vec![], // TODO: Support registering custom proposals here
         }
     }
+
+    fn commit_options(&self) -> CommitOptions {
+        let preferences = self.preferences();
+
+        CommitOptions {
+            prefer_path_update: true,
+            extension_update: Some(self.leaf_node_extensions()),
+            capabilities_update: Some(self.capabilities()),
+            encryption_mode: preferences.encryption_mode(),
+            ratchet_tree_extension: preferences.ratchet_tree_extension,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -91,26 +103,38 @@ impl PskStore for InMemoryPskStore {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Preferences {
     pub encrypt_controls: bool,
     pub ratchet_tree_extension: bool,
     pub padding_mode: PaddingMode,
+    pub force_commit_path_update: bool,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            encrypt_controls: Default::default(),
+            ratchet_tree_extension: Default::default(),
+            padding_mode: Default::default(),
+            force_commit_path_update: true,
+        }
+    }
 }
 
 impl Preferences {
     #[must_use]
-    pub fn with_control_encryption(self, yes: bool) -> Self {
+    pub fn with_control_encryption(self, enabled: bool) -> Self {
         Self {
-            encrypt_controls: yes,
+            encrypt_controls: enabled,
             ..self
         }
     }
 
     #[must_use]
-    pub fn with_ratchet_tree_extension(self, yes: bool) -> Self {
+    pub fn with_ratchet_tree_extension(self, enabled: bool) -> Self {
         Self {
-            ratchet_tree_extension: yes,
+            ratchet_tree_extension: enabled,
             ..self
         }
     }
@@ -119,6 +143,14 @@ impl Preferences {
     pub fn with_padding_mode(self, padding_mode: PaddingMode) -> Self {
         Self {
             padding_mode,
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn force_commit_path_update(self, enabled: bool) -> Self {
+        Self {
+            force_commit_path_update: enabled,
             ..self
         }
     }

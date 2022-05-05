@@ -205,7 +205,7 @@ mod tests {
             padding::PaddingMode,
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_member, TEST_GROUP},
-            Content, ControlEncryptionMode, Group, GroupError, InMemoryGroupConfig,
+            CommitOptions, Content, ControlEncryptionMode, Group, GroupError, InMemoryGroupConfig,
             MLSMessagePayload, MLSPlaintext, MessageVerifier, Sender,
         },
         signer::{Signable, SignatureError},
@@ -298,13 +298,19 @@ mod tests {
 
             let secret_store = InMemoryPskStore::default();
 
+            let commit_options = CommitOptions {
+                prefer_path_update: false,
+                extension_update: None,
+                capabilities_update: None,
+                encryption_mode: ControlEncryptionMode::Plaintext,
+                ratchet_tree_extension: true,
+            };
+
             let (commit_generation, welcome) = alice
                 .group
                 .commit_proposals(
                     vec![proposal],
-                    false,
-                    ControlEncryptionMode::Plaintext,
-                    true,
+                    commit_options,
                     &secret_store,
                     &alice.signing_key,
                 )

@@ -352,11 +352,10 @@ fn decrypt_parent_path_secret(
 #[cfg(test)]
 mod tests {
     use ferriscrypt::hpke::kem::HpkePublicKey;
-    use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
     use crate::{
         cipher_suite::CipherSuite,
-        extension::{CapabilitiesExt, ExtensionList, MlsExtension},
+        extension::{test_utils::TestExtension, CapabilitiesExt, ExtensionList},
         tree_kem::{
             leaf_node::test_utils::get_basic_test_node_sig_key,
             leaf_node_validator::ValidatedLeafNode, node::LeafIndex, TreeKemPrivate, TreeKemPublic,
@@ -549,15 +548,6 @@ mod tests {
         capabilities.extensions.push(42);
 
         encap_decap(cipher_suite, 10, Some(capabilities.clone()), None);
-    }
-
-    #[derive(TlsSize, TlsSerialize, TlsDeserialize, Clone, Debug, PartialEq)]
-    struct TestExtension {
-        foo: u8,
-    }
-
-    impl MlsExtension for TestExtension {
-        const IDENTIFIER: crate::extension::ExtensionType = 42;
     }
 
     #[test]

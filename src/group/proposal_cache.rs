@@ -54,6 +54,24 @@ impl ProposalSetEffects {
             && self.psks.is_empty()
             && self.reinit.is_none()
     }
+
+    //By default, the path field of a Commit MUST be populated. The path field MAY be omitted if
+    //(a) it covers at least one proposal and (b) none of the proposals covered by the Commit are
+    //of "path required" types. A proposal type requires a path if it cannot change the group
+    //membership in a way that requires the forward secrecy and post-compromise security guarantees
+    //that an UpdatePath provides. The only proposal types defined in this document that do not
+    //require a path are:
+
+    // add
+    // psk
+    // app_ack
+    // reinit
+    pub fn path_update_required(&self) -> bool {
+        self.is_empty()
+            || self.group_context_ext.is_some()
+            || !self.updates.is_empty()
+            || !self.removes.is_empty()
+    }
 }
 
 #[derive(
@@ -940,11 +958,98 @@ mod tests {
     #[test]
     fn new_member_commit_must_contain_an_external_init_proposal() {
         let cache = ProposalCache::new();
+
         let res =
             cache.resolve_for_commit(Sender::NewMember, Vec::new(), Some(&test_update_path()));
+
         assert_matches!(
             res,
             Err(ProposalCacheError::NewMemberCommitMustContainExternalInit)
         );
+    }
+
+    #[test]
+    fn test_path_update_required_empty() {
+        let cache = ProposalCache::new();
+        let test_node = get_basic_test_node(TEST_CIPHER_SUITE, "foo");
+
+        let (_, effects) = cache
+            .prepare_commit(&test_node.to_reference(TEST_CIPHER_SUITE).unwrap(), vec![])
+            .unwrap();
+
+        assert!(effects.path_update_required())
+    }
+
+    #[test]
+    fn test_path_update_required_updates() {
+        let cache = ProposalCache::new();
+        let test_node = get_basic_test_node(TEST_CIPHER_SUITE, "foo");
+
+        let update = Proposal::Update(UpdateProposal {
+            leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "bar"),
+        });
+
+        let (_, effects) = cache
+            .prepare_commit(
+                &test_node.to_reference(TEST_CIPHER_SUITE).unwrap(),
+                vec![update],
+            )
+            .unwrap();
+
+        assert!(effects.path_update_required())
+    }
+
+    #[test]
+    fn test_path_update_required_removes() {
+        let cache = ProposalCache::new();
+        let test_node = get_basic_test_node(TEST_CIPHER_SUITE, "foo");
+
+        let remove = Proposal::Remove(RemoveProposal {
+            to_remove: get_basic_test_node(TEST_CIPHER_SUITE, "bar")
+                .to_reference(TEST_CIPHER_SUITE)
+                .unwrap(),
+        });
+
+        let (_, effects) = cache
+            .prepare_commit(
+                &test_node.to_reference(TEST_CIPHER_SUITE).unwrap(),
+                vec![remove],
+            )
+            .unwrap();
+
+        assert!(effects.path_update_required())
+    }
+
+    #[test]
+    fn test_path_update_not_required() {
+        let cache = ProposalCache::new();
+        let test_node = get_basic_test_node(TEST_CIPHER_SUITE, "foo");
+
+        let psk = Proposal::Psk(PreSharedKey {
+            psk: PreSharedKeyID {
+                key_id: JustPreSharedKeyID::External(ExternalPskId(vec![])),
+                psk_nonce: PskNonce(vec![]),
+            },
+        });
+
+        let add = Proposal::Add(AddProposal {
+            key_package: test_key_package(ProtocolVersion::Mls10, TEST_CIPHER_SUITE),
+        });
+
+        let reinit = Proposal::ReInit(ReInit {
+            group_id: vec![],
+            version: ProtocolVersion::Mls10,
+            cipher_suite: TEST_CIPHER_SUITE,
+            extensions: Default::default(),
+        });
+
+        let (_, effects) = cache
+            .prepare_commit(
+                &test_node.to_reference(TEST_CIPHER_SUITE).unwrap(),
+                vec![psk, add, reinit],
+            )
+            .unwrap();
+
+        assert!(!effects.path_update_required())
     }
 }
