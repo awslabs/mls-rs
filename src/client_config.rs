@@ -31,6 +31,7 @@ pub trait PskStore {
 pub trait CredentialValidator {
     type Error: std::error::Error + Send + Sync + 'static;
     fn validate(&self, credential: &Credential) -> Result<(), Self::Error>;
+    fn is_equal_identity(&self, left: &Credential, right: &Credential) -> bool;
 }
 
 pub trait ClientConfig {
@@ -330,6 +331,10 @@ impl CredentialValidator for PassthroughCredentialValidator {
     type Error = CredentialError;
     fn validate(&self, _credential: &Credential) -> Result<(), Self::Error> {
         Ok(())
+    }
+
+    fn is_equal_identity(&self, _left: &Credential, _right: &Credential) -> bool {
+        true
     }
 }
 

@@ -91,7 +91,7 @@ pub struct KeyPackageData<'a> {
     pub extensions: &'a ExtensionList,
 }
 
-impl<'a> KeyPackage {
+impl KeyPackage {
     pub fn to_vec(&self) -> Result<Vec<u8>, KeyPackageError> {
         Ok(self.tls_serialize_detached()?)
     }

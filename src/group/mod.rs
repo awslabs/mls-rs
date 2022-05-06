@@ -1932,6 +1932,8 @@ impl<C: GroupConfig> Group<C> {
             plaintext.content.sender.clone(),
             commit_content.commit.proposals.clone(),
             commit_content.commit.path.as_ref(),
+            self.config.credential_validator(),
+            &self.current_epoch.public_tree,
         )?;
 
         let mut provisional_state = self.apply_proposals(proposal_effects)?;

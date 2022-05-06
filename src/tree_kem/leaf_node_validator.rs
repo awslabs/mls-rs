@@ -257,13 +257,12 @@ mod tests {
 
     use super::*;
     use crate::client::test_utils::get_test_credential;
-    use crate::credential::Credential;
     use crate::extension::{CapabilitiesExt, ExtensionList, ExternalKeyIdExt, MlsExtension};
     use crate::tree_kem::leaf_node::test_utils::*;
+    use crate::tree_kem::leaf_node_validator::test_utils::FailureCredentialValidator;
     use crate::tree_kem::parent_hash::ParentHash;
 
     use crate::client_config::PassthroughCredentialValidator;
-    use crate::x509::X509Error;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -274,24 +273,6 @@ mod tests {
         let (leaf_node, _) = get_test_node(TEST_CIPHER_SUITE, credential, &secret, None, None);
 
         (leaf_node, secret)
-    }
-
-    #[derive(Clone, Debug, Default)]
-    pub struct FailureCredentialValidator;
-
-    impl FailureCredentialValidator {
-        pub fn new() -> Self {
-            Self
-        }
-    }
-
-    impl CredentialValidator for FailureCredentialValidator {
-        type Error = CredentialError;
-        fn validate(&self, _credential: &Credential) -> Result<(), Self::Error> {
-            Err(CredentialError::CertificateError(
-                X509Error::EmptyCertificateChain,
-            ))
-        }
     }
 
     #[test]
@@ -554,5 +535,36 @@ mod tests {
             test_validator.validate(leaf_node, ValidationContext::Add(Some(bad_lifetime))),
             Err(LeafNodeValidationError::InvalidLifetime(_, _))
         );
+    }
+}
+
+pub mod test_utils {
+    use crate::{
+        client_config::CredentialValidator,
+        credential::{Credential, CredentialError},
+        x509::X509Error,
+    };
+
+    #[derive(Clone, Debug, Default)]
+    pub struct FailureCredentialValidator;
+
+    impl FailureCredentialValidator {
+        #[allow(dead_code)]
+        pub fn new() -> Self {
+            Self
+        }
+    }
+
+    impl CredentialValidator for FailureCredentialValidator {
+        type Error = CredentialError;
+        fn validate(&self, _credential: &Credential) -> Result<(), Self::Error> {
+            Err(CredentialError::CertificateError(
+                X509Error::EmptyCertificateChain,
+            ))
+        }
+
+        fn is_equal_identity(&self, _left: &Credential, _right: &Credential) -> bool {
+            false
+        }
     }
 }

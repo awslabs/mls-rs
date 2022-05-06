@@ -32,6 +32,12 @@ pub enum ProposalCacheError {
     NewMemberCommitMustContainExternalInit,
     #[error("Missing update path in external commit")]
     MissingUpdatePathInExternalCommit,
+    #[error("New member cannot commit more than one remove proposal")]
+    NewMemberCannotCommitMoreThanOneRemoveProposal,
+    #[error(transparent)]
+    RatchetTreeError(#[from] RatchetTreeError),
+    #[error("New member remove proposal credential does not match current")]
+    NewMemberRemoveProposalCredentialMismatch,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -409,12 +415,17 @@ impl ProposalCache {
         }
     }
 
-    pub fn resolve_for_commit(
+    pub fn resolve_for_commit<C>(
         &self,
         sender: Sender,
         proposal_list: Vec<ProposalOrRef>,
         update_path: Option<&UpdatePath>,
-    ) -> Result<ProposalSetEffects, ProposalCacheError> {
+        credential_validator: C,
+        public_tree: &TreeKemPublic,
+    ) -> Result<ProposalSetEffects, ProposalCacheError>
+    where
+        C: CredentialValidator,
+    {
         let (items, local_key_package) = match &sender {
             Sender::Member(local_key_package) => {
                 let items = proposal_list
@@ -428,7 +439,13 @@ impl ProposalCache {
                 Ok((items, Some(local_key_package)))
             }
             Sender::NewMember => {
-                let items = validate_new_member_commit_proposals(proposal_list, sender)?;
+                let items = validate_new_member_commit_proposals(
+                    proposal_list,
+                    sender,
+                    update_path,
+                    credential_validator,
+                    public_tree,
+                )?;
                 Ok((items, None))
             }
             _ => Err(ProposalCacheError::SenderCannotCommit),
@@ -442,42 +459,93 @@ impl ProposalCache {
     }
 }
 
-fn validate_new_member_commit_proposals(
+fn verify_remove_proposal_credential_invalid<C>(
+    proposal: &Proposal,
+    update_path: Option<&UpdatePath>,
+    credential_validator: &C,
+    public_tree: &TreeKemPublic,
+) -> Result<(), ProposalCacheError>
+where
+    C: CredentialValidator,
+{
+    if let Proposal::Remove(remove_proposal) = proposal {
+        let credential = &public_tree
+            .get_leaf_node(&remove_proposal.to_remove)?
+            .credential;
+        if credential_validator.is_equal_identity(
+            &update_path
+                .ok_or(ProposalCacheError::MissingUpdatePathInExternalCommit)?
+                .leaf_node
+                .credential,
+            credential,
+        ) {
+            return Ok(());
+        }
+    }
+    Err(ProposalCacheError::NewMemberRemoveProposalCredentialMismatch)
+}
+
+fn validate_new_member_commit_proposals<C>(
     proposals: Vec<ProposalOrRef>,
     sender: Sender,
-) -> Result<Vec<ProposalSetItem>, ProposalCacheError> {
+    update_path: Option<&UpdatePath>,
+    credential_validator: C,
+    public_tree: &TreeKemPublic,
+) -> Result<Vec<ProposalSetItem>, ProposalCacheError>
+where
+    C: CredentialValidator,
+{
     let wrap_proposal = |proposal| {
         ProposalSetItem::from(CachedProposal {
             proposal,
             sender: sender.clone(),
         })
     };
-    let (proposals, external_init_found) = proposals.into_iter().try_fold(
-        (Vec::new(), false),
-        |(mut proposals, external_init_found), p| {
+
+    let (proposals, external_init_found, _seen_remove_proposal) = proposals.into_iter().try_fold(
+        (Vec::new(), false, false),
+        |(mut proposals, external_init_found, seen_remove_proposal), p| {
             let proposal = match p {
                 ProposalOrRef::Proposal(p) => Ok(p),
                 ProposalOrRef::Reference(_) => {
                     Err(ProposalCacheError::NewMemberCannotCommitProposalsByRef)
                 }
             }?;
-            let (proposal, external_init_found) = match (proposal, external_init_found) {
-                (p @ Proposal::ExternalInit(_), false) => Ok((wrap_proposal(p), true)),
-                (Proposal::ExternalInit(_), true) => {
-                    Err(ProposalCacheError::MultipleExternalInitInCommit)
-                }
-                (p @ Proposal::Psk(_), found) => Ok((wrap_proposal(p), found)),
-                (
-                    Proposal::Add(_)
-                    | Proposal::Remove(_)
-                    | Proposal::Update(_)
-                    | Proposal::GroupContextExtensions(_)
-                    | Proposal::ReInit(_),
-                    _,
-                ) => Err(ProposalCacheError::NewMemberCannotCommitThisProposal),
-            }?;
+            let (proposal, external_init_found, seen_remove_proposal) =
+                match (proposal, external_init_found, seen_remove_proposal) {
+                    (p @ Proposal::ExternalInit(_), false, seen_remove_proposal) => {
+                        Ok((wrap_proposal(p), true, seen_remove_proposal))
+                    }
+                    (Proposal::ExternalInit(_), true, _) => {
+                        Err(ProposalCacheError::MultipleExternalInitInCommit)
+                    }
+                    (p @ Proposal::Psk(_), found, seen_remove_proposal) => {
+                        Ok((wrap_proposal(p), found, seen_remove_proposal))
+                    }
+                    (
+                        Proposal::Add(_)
+                        | Proposal::Update(_)
+                        | Proposal::GroupContextExtensions(_)
+                        | Proposal::ReInit(_),
+                        _,
+                        _,
+                    ) => Err(ProposalCacheError::NewMemberCannotCommitThisProposal),
+                    (p @ Proposal::Remove(_), found, false) => {
+                        verify_remove_proposal_credential_invalid(
+                            &p,
+                            update_path,
+                            &credential_validator,
+                            public_tree,
+                        )?;
+
+                        Ok((wrap_proposal(p), found, true))
+                    }
+                    (_p @ Proposal::Remove(_), _, true) => {
+                        Err(ProposalCacheError::NewMemberCannotCommitMoreThanOneRemoveProposal)
+                    }
+                }?;
             proposals.push(proposal);
-            Ok::<_, ProposalCacheError>((proposals, external_init_found))
+            Ok::<_, ProposalCacheError>((proposals, external_init_found, seen_remove_proposal))
         },
     )?;
     if external_init_found {
@@ -492,8 +560,13 @@ mod tests {
     use super::proposal_ref::test_utils::plaintext_from_proposal;
     use super::*;
     use crate::{
+        client_config::PassthroughCredentialValidator,
+        group::test_utils::test_group,
         key_package::test_utils::test_key_package,
-        tree_kem::{leaf_node::test_utils::get_basic_test_node, leaf_node_ref::LeafNodeRef},
+        tree_kem::{
+            leaf_node::test_utils::get_basic_test_node, leaf_node_ref::LeafNodeRef,
+            leaf_node_validator::test_utils::FailureCredentialValidator,
+        },
     };
     use assert_matches::assert_matches;
     use ferriscrypt::kdf::hkdf::Hkdf;
@@ -794,11 +867,22 @@ mod tests {
         let additional = vec![Proposal::Add(AddProposal {
             key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE),
         })];
+        let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .group
+            .current_epoch
+            .public_tree;
+        let credential_validator = PassthroughCredentialValidator::new();
 
         let (proposals, effects) = cache.prepare_commit(&test_sender, additional).unwrap();
 
         let resolution = cache
-            .resolve_for_commit(Sender::Member(test_sender), proposals, None)
+            .resolve_for_commit(
+                Sender::Member(test_sender),
+                proposals,
+                None,
+                credential_validator,
+                &public_tree,
+            )
             .unwrap();
 
         assert_eq!(effects, resolution);
@@ -838,13 +922,22 @@ mod tests {
     fn external_commit_must_have_update_path() {
         let cache = ProposalCache::new();
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .group
+            .current_epoch
+            .public_tree;
+        let credential_validator = PassthroughCredentialValidator::new();
+
         let res = cache.resolve_for_commit(
             Sender::NewMember,
             vec![ProposalOrRef::Proposal(Proposal::ExternalInit(
                 ExternalInit { kem_output },
             ))],
             None,
+            credential_validator,
+            &public_tree,
         );
+
         assert_matches!(
             res,
             Err(ProposalCacheError::MissingUpdatePathInExternalCommit)
@@ -866,10 +959,18 @@ mod tests {
             false,
         )
         .unwrap();
+        let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .group
+            .current_epoch
+            .public_tree;
+        let credential_validator = PassthroughCredentialValidator::new();
+
         let res = cache.resolve_for_commit(
             Sender::NewMember,
             vec![ProposalOrRef::Reference(proposal)],
             Some(&test_update_path()),
+            credential_validator,
+            &public_tree,
         );
         assert_matches!(
             res,
@@ -881,6 +982,12 @@ mod tests {
     fn proposal_cache_rejects_multiple_external_init_proposals_in_commit() {
         let cache = ProposalCache::new();
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .group
+            .current_epoch
+            .public_tree;
+        let credential_validator = PassthroughCredentialValidator::new();
+
         let res = cache.resolve_for_commit(
             Sender::NewMember,
             [
@@ -893,13 +1000,22 @@ mod tests {
             .map(ProposalOrRef::Proposal)
             .collect(),
             Some(&test_update_path()),
+            credential_validator,
+            &public_tree,
         );
+
         assert_matches!(res, Err(ProposalCacheError::MultipleExternalInitInCommit));
     }
 
     fn new_member_cannot_commit_proposal(proposal: Proposal) {
         let cache = ProposalCache::new();
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .group
+            .current_epoch
+            .public_tree;
+        let credential_validator = PassthroughCredentialValidator::new();
+
         let res = cache.resolve_for_commit(
             Sender::NewMember,
             [
@@ -910,7 +1026,10 @@ mod tests {
             .map(ProposalOrRef::Proposal)
             .collect(),
             Some(&test_update_path()),
+            credential_validator,
+            &public_tree,
         );
+
         assert_matches!(
             res,
             Err(ProposalCacheError::NewMemberCannotCommitThisProposal)
@@ -925,12 +1044,111 @@ mod tests {
     }
 
     #[test]
-    fn new_member_cannot_commit_remove_proposal() {
-        new_member_cannot_commit_proposal(Proposal::Remove(RemoveProposal {
-            to_remove: get_basic_test_node(TEST_CIPHER_SUITE, "foo")
-                .to_reference(TEST_CIPHER_SUITE)
-                .unwrap(),
-        }));
+    fn new_member_cannot_commit_more_than_one_remove_proposal() {
+        let cache = ProposalCache::new();
+        let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let mut public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .group
+            .current_epoch
+            .public_tree;
+        let credential_validator = PassthroughCredentialValidator::new();
+
+        let test_leaf_nodes = vec![
+            get_basic_test_node(TEST_CIPHER_SUITE, "foo").into(),
+            get_basic_test_node(TEST_CIPHER_SUITE, "bar").into(),
+        ];
+
+        public_tree.add_leaves(test_leaf_nodes.clone()).unwrap();
+
+        let proposals = vec![
+            Proposal::ExternalInit(ExternalInit { kem_output }),
+            Proposal::Remove(RemoveProposal {
+                to_remove: test_leaf_nodes[0].to_reference(TEST_CIPHER_SUITE).unwrap(),
+            }),
+            Proposal::Remove(RemoveProposal {
+                to_remove: test_leaf_nodes[1].to_reference(TEST_CIPHER_SUITE).unwrap(),
+            }),
+        ];
+
+        let res = cache.resolve_for_commit(
+            Sender::NewMember,
+            proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
+            Some(&test_update_path()),
+            credential_validator,
+            &public_tree,
+        );
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::NewMemberCannotCommitMoreThanOneRemoveProposal)
+        );
+    }
+
+    #[test]
+    fn new_member_remove_proposal_invalid_credential() {
+        let cache = ProposalCache::new();
+        let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let mut public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .group
+            .current_epoch
+            .public_tree;
+        let credential_validator = FailureCredentialValidator::new();
+
+        let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo").into()];
+
+        public_tree.add_leaves(test_leaf_nodes.clone()).unwrap();
+
+        let proposals = vec![
+            Proposal::ExternalInit(ExternalInit { kem_output }),
+            Proposal::Remove(RemoveProposal {
+                to_remove: test_leaf_nodes[0].to_reference(TEST_CIPHER_SUITE).unwrap(),
+            }),
+        ];
+
+        let res = cache.resolve_for_commit(
+            Sender::NewMember,
+            proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
+            Some(&test_update_path()),
+            credential_validator,
+            &public_tree,
+        );
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::NewMemberRemoveProposalCredentialMismatch)
+        );
+    }
+
+    #[test]
+    fn new_member_remove_proposal_valid_credential() {
+        let cache = ProposalCache::new();
+        let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let mut public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .group
+            .current_epoch
+            .public_tree;
+        let credential_validator = PassthroughCredentialValidator::new();
+
+        let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo").into()];
+
+        public_tree.add_leaves(test_leaf_nodes.clone()).unwrap();
+
+        let proposals = vec![
+            Proposal::ExternalInit(ExternalInit { kem_output }),
+            Proposal::Remove(RemoveProposal {
+                to_remove: test_leaf_nodes[0].to_reference(TEST_CIPHER_SUITE).unwrap(),
+            }),
+        ];
+
+        let res = cache.resolve_for_commit(
+            Sender::NewMember,
+            proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
+            Some(&test_update_path()),
+            credential_validator,
+            &public_tree,
+        );
+
+        assert_matches!(res, Ok(_));
     }
 
     #[test]
@@ -958,9 +1176,19 @@ mod tests {
     #[test]
     fn new_member_commit_must_contain_an_external_init_proposal() {
         let cache = ProposalCache::new();
+        let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .group
+            .current_epoch
+            .public_tree;
+        let credential_validator = PassthroughCredentialValidator::new();
 
-        let res =
-            cache.resolve_for_commit(Sender::NewMember, Vec::new(), Some(&test_update_path()));
+        let res = cache.resolve_for_commit(
+            Sender::NewMember,
+            Vec::new(),
+            Some(&test_update_path()),
+            credential_validator,
+            &public_tree,
+        );
 
         assert_matches!(
             res,
