@@ -39,6 +39,7 @@ impl<C: ExternalClientConfig> ExternalClient<C> {
         group_id: Vec<u8>,
         proposal: AddProposal,
         epoch: u64,
+        authenticated_data: Vec<u8>,
     ) -> Result<Vec<u8>, ExternalClientError> {
         self.propose_from_preconfigured(
             version,
@@ -46,6 +47,7 @@ impl<C: ExternalClientConfig> ExternalClient<C> {
             Proposal::Add(proposal),
             group_id,
             epoch,
+            authenticated_data,
         )
     }
 
@@ -56,6 +58,7 @@ impl<C: ExternalClientConfig> ExternalClient<C> {
         group_id: Vec<u8>,
         proposal: RemoveProposal,
         epoch: u64,
+        authenticated_data: Vec<u8>,
     ) -> Result<Vec<u8>, ExternalClientError> {
         self.propose_from_preconfigured(
             version,
@@ -63,6 +66,7 @@ impl<C: ExternalClientConfig> ExternalClient<C> {
             Proposal::Remove(proposal),
             group_id,
             epoch,
+            authenticated_data,
         )
     }
 
@@ -73,13 +77,20 @@ impl<C: ExternalClientConfig> ExternalClient<C> {
         proposal: Proposal,
         group_id: Vec<u8>,
         epoch: u64,
+        authenticated_data: Vec<u8>,
     ) -> Result<Vec<u8>, ExternalClientError> {
         let sender = Sender::Preconfigured(
             self.config
                 .external_key_id()
                 .ok_or(ExternalClientError::ProposingAsExternalWithoutExternalKeyId)?,
         );
-        let mut message = MLSPlaintext::new(group_id, epoch, sender, Content::Proposal(proposal));
+        let mut message = MLSPlaintext::new(
+            group_id,
+            epoch,
+            sender,
+            Content::Proposal(proposal),
+            authenticated_data,
+        );
 
         let (_, signer) = self
             .config
@@ -192,6 +203,7 @@ mod tests {
                 TEST_GROUP.to_vec(),
                 proposal.clone(),
                 env.alice_session.group_stats().unwrap().epoch,
+                vec![],
             )
             .unwrap();
         let msg = env.alice_session.process_incoming_bytes(&msg).unwrap();
@@ -201,7 +213,10 @@ mod tests {
             }
             m => panic!("Expected {:?} but got {:?}", proposal, m),
         };
-        let _ = env.alice_session.commit(vec![received_proposal]).unwrap();
+        let _ = env
+            .alice_session
+            .commit(vec![received_proposal], vec![])
+            .unwrap();
         let state_update = env.alice_session.apply_pending_commit().unwrap();
 
         let expected_ref = env
@@ -220,9 +235,12 @@ mod tests {
 
         let _ = env
             .alice_session
-            .commit(vec![Proposal::Add(AddProposal {
-                key_package: env.bob_key_gen.key_package.clone(),
-            })])
+            .commit(
+                vec![Proposal::Add(AddProposal {
+                    key_package: env.bob_key_gen.key_package.clone(),
+                })],
+                vec![],
+            )
             .unwrap();
 
         let _ = env.alice_session.apply_pending_commit().unwrap();
@@ -252,6 +270,7 @@ mod tests {
                 TEST_GROUP.to_vec(),
                 proposal.clone(),
                 env.alice_session.group_stats().unwrap().epoch,
+                vec![],
             )
             .unwrap();
 
@@ -264,7 +283,7 @@ mod tests {
             m => panic!("Expected {:?} but got {:?}", proposal, m),
         };
 
-        let _ = env.alice_session.commit(Vec::new()).unwrap();
+        let _ = env.alice_session.commit(Vec::new(), Vec::new()).unwrap();
 
         let state_update = env.alice_session.apply_pending_commit().unwrap();
 

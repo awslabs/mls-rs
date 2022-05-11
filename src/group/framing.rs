@@ -64,13 +64,19 @@ pub struct MLSPlaintext {
 }
 
 impl MLSPlaintext {
-    pub fn new(group_id: Vec<u8>, epoch: u64, sender: Sender, content: Content) -> Self {
+    pub fn new(
+        group_id: Vec<u8>,
+        epoch: u64,
+        sender: Sender,
+        content: Content,
+        authenticated_data: Vec<u8>,
+    ) -> Self {
         Self {
             content: MLSMessageContent {
                 group_id,
                 epoch,
                 sender,
-                authenticated_data: Vec::new(),
+                authenticated_data,
                 content,
             },
             auth: MLSMessageAuth {
@@ -87,10 +93,16 @@ impl MLSPlaintext {
         content: Content,
         signer: &S,
         encryption_mode: ControlEncryptionMode,
+        authenticated_data: Vec<u8>,
     ) -> Result<MLSPlaintext, SignatureError> {
         // Construct an MLSPlaintext object containing the content
-        let mut plaintext =
-            MLSPlaintext::new(context.group_id.clone(), context.epoch, sender, content);
+        let mut plaintext = MLSPlaintext::new(
+            context.group_id.clone(),
+            context.epoch,
+            sender,
+            content,
+            authenticated_data,
+        );
 
         let signing_context = MessageSigningContext {
             group_context: Some(context),

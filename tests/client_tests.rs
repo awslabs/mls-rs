@@ -81,7 +81,7 @@ fn test_create(
         .add_proposal(&bob_key.key_package.to_vec().unwrap())
         .unwrap();
 
-    let packets = alice_session.commit(vec![add_bob]).unwrap();
+    let packets = alice_session.commit(vec![add_bob], vec![]).unwrap();
 
     // Upon server confirmation, alice applies the commit to her own state
     alice_session.apply_pending_commit().unwrap();
@@ -160,7 +160,9 @@ fn get_test_sessions(
         .map(|kg| kg.key_package.to_vec().unwrap())
         .map(|key_bytes| creator_session.add_proposal(&key_bytes).unwrap())
         .collect();
-    let commit = creator_session.commit(add_members_proposals).unwrap();
+    let commit = creator_session
+        .commit(add_members_proposals, vec![])
+        .unwrap();
 
     // Creator can confirm the commit was processed by the server
     let update = creator_session.apply_pending_commit().unwrap();
@@ -233,7 +235,7 @@ fn add_random_members(
         })
         .unzip();
 
-    let commit = sessions[committer].commit(adds).unwrap();
+    let commit = sessions[committer].commit(adds, vec![]).unwrap();
 
     for (i, session) in sessions.iter_mut().enumerate() {
         if i == committer {
@@ -274,7 +276,7 @@ fn remove_members(
         })
         .collect();
 
-    let commit = sessions[committer].commit(removals).unwrap();
+    let commit = sessions[committer].commit(removals, vec![]).unwrap();
 
     for (i, session) in sessions.iter_mut().enumerate() {
         if i == committer {
@@ -346,7 +348,7 @@ fn test_empty_commits(
 
     for i in 0..receiver_sessions.len() {
         // Create the commit
-        let commit = receiver_sessions[i].commit(vec![]).unwrap();
+        let commit = receiver_sessions[i].commit(vec![], vec![]).unwrap();
         assert!(commit.welcome_packet.is_none());
 
         // Creator group processes the commit
@@ -398,7 +400,7 @@ fn test_update_proposals(
 
     // Create an update from the ith member, have the ith + 1 member commit it
     for i in 0..receiver_sessions.len() - 1 {
-        let update_proposal = receiver_sessions[i].propose_update().unwrap();
+        let update_proposal = receiver_sessions[i].propose_update(vec![]).unwrap();
 
         // Everyone should process the proposal
         creator_session
@@ -415,7 +417,9 @@ fn test_update_proposals(
 
         // Everyone receives the commit
         let committer_index = i + 1;
-        let commit = receiver_sessions[committer_index].commit(vec![]).unwrap();
+        let commit = receiver_sessions[committer_index]
+            .commit(vec![], vec![])
+            .unwrap();
         assert!(commit.welcome_packet.is_none());
 
         creator_session
@@ -485,7 +489,7 @@ fn test_remove_proposals(
 
         let removal = creator_session.remove_proposal(&to_remove_ref).unwrap();
 
-        let commit = creator_session.commit(vec![removal]).unwrap();
+        let commit = creator_session.commit(vec![removal], vec![]).unwrap();
         assert!(commit.welcome_packet.is_none());
 
         // Process the removal in the creator group
@@ -561,7 +565,7 @@ fn test_application_messages(
         for _ in 0..message_count {
             // Encrypt the application message
             let ciphertext = receiver_sessions[i]
-                .encrypt_application_data(&test_message)
+                .encrypt_application_data(&test_message, vec![])
                 .unwrap();
 
             // Creator receives the application message
@@ -607,7 +611,7 @@ fn processing_message_from_self_returns_error(
 
     let (mut creator_session, _) =
         get_test_sessions(protocol_version, cipher_suite, 1, preferences);
-    let commit = creator_session.commit(Vec::new()).unwrap();
+    let commit = creator_session.commit(Vec::new(), Vec::new()).unwrap();
 
     let error = creator_session
         .process_incoming_bytes(&commit.commit_packet)
@@ -652,7 +656,7 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
     // An external commit cannot be the first commit in a session as it requires
     // interim_transcript_hash to be computed from the confirmed_transcript_hash and
     // confirmation_tag, which is not the case for the initial interim_transcript_hash.
-    creator_session.commit(Vec::new()).unwrap();
+    creator_session.commit(Vec::new(), Vec::new()).unwrap();
     creator_session.apply_pending_commit().unwrap();
 
     const PARTICIPANT_COUNT: usize = 10;
@@ -677,7 +681,11 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
             let group_info = existing_session.group_info_message().unwrap();
 
             let (new_session, commit) = client
-                .commit_external(group_info, Some(&existing_session.export_tree().unwrap()))
+                .commit_external(
+                    group_info,
+                    Some(&existing_session.export_tree().unwrap()),
+                    vec![],
+                )
                 .unwrap();
 
             sessions.iter_mut().for_each(|session| {
@@ -697,7 +705,9 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
             .sample_iter(rand::distributions::Standard)
             .take(256)
             .collect::<Vec<_>>();
-        let message = sessions[i].encrypt_application_data(&payload).unwrap();
+        let message = sessions[i]
+            .encrypt_application_data(&payload, Vec::new())
+            .unwrap();
         sessions
             .iter_mut()
             .enumerate()

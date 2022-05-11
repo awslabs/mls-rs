@@ -143,6 +143,7 @@ where
         &self,
         group_info_msg: MLSMessage,
         tree_data: Option<&[u8]>,
+        authenticated_data: Vec<u8>,
     ) -> Result<(Session<C>, Vec<u8>), ClientError> {
         let group_info = match group_info_msg.payload {
             MLSMessagePayload::GroupInfo(g) => Ok(g),
@@ -172,6 +173,7 @@ where
             leaf_node,
             leaf_node_secret,
             &signer,
+            authenticated_data,
         )?)
     }
 
@@ -185,12 +187,14 @@ where
         group_cipher_suite: CipherSuite,
         group_context: GroupContext,
         key_package: KeyPackage,
+        authenticated_data: Vec<u8>,
     ) -> Result<Vec<u8>, ClientError> {
         let mut message = MLSPlaintext::new(
             group_context.group_id.clone(),
             group_context.epoch,
             Sender::NewMember,
             Content::Proposal(Proposal::Add(AddProposal { key_package })),
+            authenticated_data,
         );
 
         let (_, signer) = self
@@ -277,6 +281,8 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::test_utils::*;
 
     use super::*;
@@ -355,7 +361,7 @@ mod tests {
         let key_package_ref = key_package.to_reference().unwrap();
 
         let commit_result =
-            committer_session.commit(vec![Proposal::Add(AddProposal { key_package })])?;
+            committer_session.commit(vec![Proposal::Add(AddProposal { key_package })], vec![])?;
 
         committer_session.apply_pending_commit()?;
 
@@ -385,6 +391,7 @@ mod tests {
                 TEST_CIPHER_SUITE,
                 session.group_context(),
                 bob_key_gen.key_package.clone(),
+                vec![],
             )
             .unwrap();
 
@@ -399,7 +406,7 @@ mod tests {
             key_package: bob_key_gen.key_package.clone(),
         });
 
-        let _ = session.commit(vec![proposal]).unwrap();
+        let _ = session.commit(vec![proposal], vec![]).unwrap();
         let state_update = session.apply_pending_commit().unwrap();
 
         let expected_ref = bob_key_gen
@@ -427,6 +434,7 @@ mod tests {
                 TEST_CIPHER_SUITE,
                 session.group_context(),
                 bob_key_gen.key_package,
+                vec![],
             )
             .unwrap();
 
@@ -451,6 +459,7 @@ mod tests {
                 TEST_CIPHER_SUITE,
                 session.group_context(),
                 bob_key_gen.key_package,
+                vec![],
             )
             .unwrap();
 
@@ -471,7 +480,7 @@ mod tests {
 
         let mut session = create_session(&alice);
         let proposal = session.psk_proposal(expected_id).unwrap();
-        let res = session.commit(vec![proposal]);
+        let res = session.commit(vec![proposal], vec![]);
         assert_matches!(res, Ok(_));
     }
 
@@ -481,7 +490,7 @@ mod tests {
         let mut session = create_session(&alice);
         let expected_id = ExternalPskId(vec![1]);
         let proposal = session.psk_proposal(expected_id.clone()).unwrap();
-        let res = session.commit(vec![proposal]);
+        let res = session.commit(vec![proposal], vec![]);
 
         assert_matches!(
             res,
@@ -597,14 +606,18 @@ mod tests {
         // An external commit cannot be the first commit in a session as it requires
         // interim_transcript_hash to be computed from the confirmed_transcript_hash and
         // confirmation_tag, which is not the case for the initial interim_transcript_hash.
-        let _ = alice_session.commit(Vec::new()).unwrap();
+        let _ = alice_session.commit(Vec::new(), Vec::new()).unwrap();
         alice_session.apply_pending_commit().unwrap();
 
         let group_info_msg = alice_session.group_info_message().unwrap();
         let bob = get_basic_config(TEST_CIPHER_SUITE, "bob").build_client();
 
         let (mut bob_session, external_commit) = bob
-            .commit_external(group_info_msg, Some(&alice_session.export_tree().unwrap()))
+            .commit_external(
+                group_info_msg,
+                Some(&alice_session.export_tree().unwrap()),
+                vec![],
+            )
             .unwrap();
 
         assert!(bob_session.participant_count() == 2);
@@ -616,14 +629,18 @@ mod tests {
         assert!(alice_session.participant_count() == 2);
 
         let alice_msg = b"I'm Alice";
-        let msg = alice_session.encrypt_application_data(alice_msg).unwrap();
+        let msg = alice_session
+            .encrypt_application_data(alice_msg, vec![])
+            .unwrap();
 
         let received = bob_session.process_incoming_bytes(&msg).unwrap();
         assert_matches!(received.message, ProcessedMessagePayload::Application(bytes) if bytes == alice_msg);
 
         let bob_msg = b"I'm Bob";
 
-        let msg = bob_session.encrypt_application_data(bob_msg).unwrap();
+        let msg = bob_session
+            .encrypt_application_data(bob_msg, vec![])
+            .unwrap();
         let received = alice_session.process_incoming_bytes(&msg).unwrap();
 
         assert_matches!(received.message, ProcessedMessagePayload::Application(bytes) if bytes == bob_msg);
@@ -646,7 +663,9 @@ mod tests {
             .credential
             .clone();
 
-        let msg = bob_session.encrypt_application_data(bob_msg).unwrap();
+        let msg = bob_session
+            .encrypt_application_data(bob_msg, vec![])
+            .unwrap();
         let received_by_alice = alice_session.process_incoming_bytes(&msg).unwrap();
 
         assert_eq!(Some(bob_cred), received_by_alice.sender_credential);
@@ -666,7 +685,7 @@ mod tests {
             ),
         };
 
-        let res = alice.commit_external(msg, None);
+        let res = alice.commit_external(msg, None, vec![]);
 
         assert_matches!(res, Err(ClientError::ExpectedGroupInfoMessage));
     }
@@ -679,7 +698,7 @@ mod tests {
         // An external commit cannot be the first commit in a session as it requires
         // interim_transcript_hash to be computed from the confirmed_transcript_hash and
         // confirmation_tag, which is not the case for the initial interim_transcript_hash.
-        let _ = alice_session.commit(Vec::new()).unwrap();
+        let _ = alice_session.commit(Vec::new(), Vec::new()).unwrap();
         alice_session.apply_pending_commit().unwrap();
 
         let bob = get_basic_config(TEST_CIPHER_SUITE, "bob").build_client();
@@ -688,7 +707,7 @@ mod tests {
         // An external commit cannot be the first commit in a session as it requires
         // interim_transcript_hash to be computed from the confirmed_transcript_hash and
         // confirmation_tag, which is not the case for the initial interim_transcript_hash.
-        let _ = bob_session.commit(Vec::new()).unwrap();
+        let _ = bob_session.commit(Vec::new(), Vec::new()).unwrap();
         bob_session.apply_pending_commit().unwrap();
 
         let group_info_msg = bob_session.group_info_message().unwrap();
@@ -696,7 +715,11 @@ mod tests {
         let carol = get_basic_config(TEST_CIPHER_SUITE, "carol").build_client();
 
         let (_, external_commit) = carol
-            .commit_external(group_info_msg, Some(&bob_session.export_tree().unwrap()))
+            .commit_external(
+                group_info_msg,
+                Some(&bob_session.export_tree().unwrap()),
+                vec![],
+            )
             .unwrap();
 
         // If Carol tries to join Alice's group using the group info from Bob's session, that fails.
@@ -731,7 +754,7 @@ mod tests {
             join_session(&mut alice_session, [], bob_key_pkg.key_package, &bob).unwrap();
 
         // Commit so that Bob's session records a new epoch.
-        let commit = bob_session.commit(Vec::new()).unwrap();
+        let commit = bob_session.commit(Vec::new(), Vec::new()).unwrap();
         bob_session.apply_pending_commit().unwrap();
         alice_session
             .process_incoming_bytes(&commit.commit_packet)
@@ -743,7 +766,9 @@ mod tests {
             .import_session(serde_json::from_slice(&bob_session_bytes).unwrap())
             .unwrap();
 
-        let message = alice_session.encrypt_application_data(b"hello").unwrap();
+        let message = alice_session
+            .encrypt_application_data(b"hello", vec![])
+            .unwrap();
         let received_message = bob_session.process_incoming_bytes(&message).unwrap();
 
         assert_matches!(
@@ -751,7 +776,7 @@ mod tests {
             ProcessedMessagePayload::Application(bytes) if bytes == b"hello"
         );
 
-        let commit = alice_session.commit(Vec::new()).unwrap();
+        let commit = alice_session.commit(Vec::new(), Vec::new()).unwrap();
         alice_session.apply_pending_commit().unwrap();
         bob_session
             .process_incoming_bytes(&commit.commit_packet)

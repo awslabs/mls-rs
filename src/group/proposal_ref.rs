@@ -66,6 +66,7 @@ pub(crate) mod test_utils {
                 0,
                 Sender::Member(sender),
                 Content::Proposal(proposal),
+                vec![],
             )
         }
     }

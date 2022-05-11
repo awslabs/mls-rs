@@ -163,7 +163,7 @@ where
             group_id: ciphertext.group_id.clone(),
             epoch: ciphertext.epoch,
             content_type: ciphertext.content_type,
-            authenticated_data: vec![],
+            authenticated_data: ciphertext.authenticated_data.clone(),
         };
 
         // Decrypt the content of the message using the
@@ -181,7 +181,7 @@ where
                 group_id: ciphertext.group_id.clone(),
                 epoch: ciphertext.epoch,
                 sender: Sender::Member(sender_data.sender),
-                authenticated_data: Vec::new(),
+                authenticated_data: ciphertext.authenticated_data,
                 content: ciphertext_content.content,
             },
             auth: ciphertext_content.auth,
@@ -243,6 +243,7 @@ mod tests {
             epoch,
             sender,
             Content::Application(b"foo".to_vec()),
+            vec![],
         )
     }
 
@@ -313,6 +314,7 @@ mod tests {
                     commit_options,
                     &secret_store,
                     &alice.signing_key,
+                    vec![],
                 )
                 .unwrap();
 

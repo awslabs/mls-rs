@@ -702,6 +702,7 @@ impl<C: GroupConfig> Group<C> {
         leaf_node_secret: HpkeSecretKey,
         support_version_and_cipher: F,
         signer: &S,
+        authenticated_data: Vec<u8>,
     ) -> Result<(Self, OutboundMessage), GroupError>
     where
         S: Signer,
@@ -776,6 +777,7 @@ impl<C: GroupConfig> Group<C> {
             Content::Commit(commit),
             signer,
             ControlEncryptionMode::Plaintext,
+            authenticated_data,
         )?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
@@ -1029,12 +1031,14 @@ impl<C: GroupConfig> Group<C> {
         proposal: Proposal,
         signer: &S,
         encryption_mode: ControlEncryptionMode,
+        authenticated_data: Vec<u8>,
     ) -> Result<OutboundMessage, GroupError> {
         let plaintext = self.construct_mls_plaintext(
             Sender::Member(self.private_tree.leaf_node_ref.clone()),
             Content::Proposal(proposal),
             signer,
             encryption_mode,
+            authenticated_data,
         )?;
 
         // If we are going to encrypt then the tag will be dropped so it shouldn't be included
@@ -1068,6 +1072,7 @@ impl<C: GroupConfig> Group<C> {
         content: Content,
         signer: &S,
         encryption_mode: ControlEncryptionMode,
+        authenticated_data: Vec<u8>,
     ) -> Result<MLSPlaintext, GroupError> {
         Ok(MLSPlaintext::new_signed(
             &self.context,
@@ -1075,6 +1080,7 @@ impl<C: GroupConfig> Group<C> {
             content,
             signer,
             encryption_mode,
+            authenticated_data,
         )?)
     }
 
@@ -1085,6 +1091,7 @@ impl<C: GroupConfig> Group<C> {
         options: CommitOptions,
         psk_store: &P,
         signer: &S,
+        authenticated_data: Vec<u8>,
     ) -> Result<(CommitGeneration, Option<MLSMessage>), GroupError> {
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
@@ -1171,6 +1178,7 @@ impl<C: GroupConfig> Group<C> {
             Content::Commit(commit),
             signer,
             options.encryption_mode,
+            authenticated_data,
         )?;
 
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
@@ -1674,6 +1682,7 @@ impl<C: GroupConfig> Group<C> {
         padding: PaddingMode,
     ) -> Result<MLSCiphertext, GroupError> {
         let content_type = ContentType::from(&plaintext.content.content);
+        let authenticated_data = plaintext.content.authenticated_data;
 
         // Build a ciphertext content using the plaintext content and signature
         let mut ciphertext_content = MLSCiphertextContent {
@@ -1689,7 +1698,7 @@ impl<C: GroupConfig> Group<C> {
             group_id: plaintext.content.group_id,
             epoch: plaintext.content.epoch,
             content_type,
-            authenticated_data: vec![],
+            authenticated_data: authenticated_data.clone(),
         };
 
         // Generate a 4 byte reuse guard
@@ -1745,7 +1754,7 @@ impl<C: GroupConfig> Group<C> {
             group_id: self.context.group_id.clone(),
             epoch: self.context.epoch,
             content_type,
-            authenticated_data: vec![],
+            authenticated_data,
             encrypted_sender_data,
             ciphertext,
         })
@@ -1756,6 +1765,7 @@ impl<C: GroupConfig> Group<C> {
         message: &[u8],
         signer: &S,
         padding: PaddingMode,
+        authenticated_data: Vec<u8>,
     ) -> Result<MLSCiphertext, GroupError> {
         // A group member that has observed one or more proposals within an epoch MUST send a Commit message
         // before sending application data
@@ -1768,7 +1778,7 @@ impl<C: GroupConfig> Group<C> {
                 group_id: self.context.group_id.clone(),
                 epoch: self.context.epoch,
                 sender: Sender::Member(self.private_tree.leaf_node_ref.clone()),
-                authenticated_data: Vec::new(),
+                authenticated_data,
                 content: Content::Application(message.to_vec()),
             },
             auth: MLSMessageAuth {
@@ -2491,6 +2501,7 @@ mod tests {
                 proposal,
                 &test_group.signing_key,
                 ControlEncryptionMode::Plaintext,
+                vec![],
             )
             .unwrap();
 
@@ -2499,6 +2510,7 @@ mod tests {
             b"test",
             &test_group.signing_key,
             PaddingMode::None,
+            vec![],
         );
 
         assert_matches!(res, Err(GroupError::CommitRequired));
@@ -2513,6 +2525,7 @@ mod tests {
                 test_group.commit_options(),
                 &secret_store,
                 &test_group.signing_key,
+                vec![],
             )
             .unwrap();
 
@@ -2523,7 +2536,12 @@ mod tests {
 
         assert!(test_group
             .group
-            .encrypt_application_message(b"test", &test_group.signing_key, PaddingMode::None)
+            .encrypt_application_message(
+                b"test",
+                &test_group.signing_key,
+                PaddingMode::None,
+                vec![]
+            )
             .is_ok());
     }
 
@@ -2584,6 +2602,7 @@ mod tests {
             test_group.commit_options(),
             &InMemoryPskStore::default(),
             &test_group.signing_key,
+            vec![],
         );
 
         assert_matches!(res, Err(GroupError::InvalidCommitSelfUpdate));
@@ -2608,6 +2627,7 @@ mod tests {
                 proposal,
                 &test_group.signing_key,
                 ControlEncryptionMode::Plaintext,
+                vec![],
             )
             .unwrap();
 
@@ -2618,6 +2638,7 @@ mod tests {
             test_group.commit_options(),
             &InMemoryPskStore::default(),
             &test_group.signing_key,
+            vec![],
         );
 
         assert_matches!(res, Err(GroupError::InvalidCommitSelfUpdate));
@@ -2655,6 +2676,7 @@ mod tests {
             test_group.commit_options(),
             &InMemoryPskStore::default(),
             &test_group.signing_key,
+            vec![],
         );
 
         assert_matches!(res, Err(GroupError::KeyPackageValidationError(_)));
@@ -2685,6 +2707,7 @@ mod tests {
                 proposal,
                 &alice_group.signing_key,
                 ControlEncryptionMode::Plaintext,
+                vec![],
             )
             .unwrap();
 
@@ -2700,6 +2723,7 @@ mod tests {
             bob_group.commit_options(),
             &InMemoryPskStore::default(),
             &bob_group.signing_key,
+            vec![],
         );
 
         assert_matches!(
@@ -2743,6 +2767,7 @@ mod tests {
                 commit_options,
                 &secret_store,
                 &test_group.signing_key,
+                vec![],
             )
             .unwrap();
 
@@ -2822,6 +2847,7 @@ mod tests {
                 commit_options,
                 &secret_store,
                 &test_group.signing_key,
+                vec![],
             )
             .unwrap();
 
@@ -2889,6 +2915,7 @@ mod tests {
                 test_group.commit_options(),
                 &InMemoryPskStore::default(),
                 &test_group.signing_key,
+                vec![],
             )
             .map(|(commit, _)| commit);
 
@@ -2948,6 +2975,7 @@ mod tests {
                 proposal.clone(),
                 &test_group.signing_key,
                 ControlEncryptionMode::Encrypted(PaddingMode::None),
+                vec![],
             )
             .unwrap();
 
@@ -2957,6 +2985,7 @@ mod tests {
                 proposal,
                 &test_group.signing_key,
                 ControlEncryptionMode::Encrypted(PaddingMode::StepFunction),
+                vec![],
             )
             .unwrap();
 
@@ -3011,6 +3040,7 @@ mod tests {
             leaf_secret,
             |_, _| true,
             &group.signing_key,
+            vec![],
         );
 
         assert_matches!(res, Err(GroupError::MissingExternalPubExtension));
@@ -3036,6 +3066,7 @@ mod tests {
                 commit_options.clone(),
                 &InMemoryPskStore::default(),
                 &test_group.signing_key,
+                vec![],
             )
             .unwrap();
 
@@ -3050,6 +3081,7 @@ mod tests {
                 commit_options,
                 &InMemoryPskStore::default(),
                 &test_group.signing_key,
+                vec![],
             )
             .unwrap();
 
@@ -3072,6 +3104,7 @@ mod tests {
                 commit_options,
                 &InMemoryPskStore::default(),
                 &test_group.signing_key,
+                vec![],
             )
             .unwrap();
 

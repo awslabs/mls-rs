@@ -206,6 +206,7 @@ where
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new_external<S: Signer>(
         config: C,
         protocol_version: ProtocolVersion,
@@ -214,6 +215,7 @@ where
         leaf_node: LeafNode,
         leaf_node_secret: HpkeSecretKey,
         signer: &S,
+        authenticated_data: Vec<u8>,
     ) -> Result<(Self, Vec<u8>), SessionError> {
         let tree = tree_data
             .map(|t| Self::import_ratchet_tree(group_info.cipher_suite, t))
@@ -228,6 +230,7 @@ where
             leaf_node_secret,
             version_and_cipher_filter(&config),
             signer,
+            authenticated_data,
         )?;
 
         let session = Session {
@@ -335,21 +338,29 @@ where
     }
 
     #[inline(always)]
-    pub fn propose_add(&mut self, key_package_data: &[u8]) -> Result<Vec<u8>, SessionError> {
+    pub fn propose_add(
+        &mut self,
+        key_package_data: &[u8],
+        authenticated_data: Vec<u8>,
+    ) -> Result<Vec<u8>, SessionError> {
         let key_package = KeyPackage::tls_deserialize(&mut &*key_package_data)?;
-        self.send_proposal(self.protocol.add_proposal(key_package)?)
+        self.send_proposal(self.protocol.add_proposal(key_package)?, authenticated_data)
     }
 
     #[inline(always)]
-    pub fn propose_update(&mut self) -> Result<Vec<u8>, SessionError> {
+    pub fn propose_update(&mut self, authenticated_data: Vec<u8>) -> Result<Vec<u8>, SessionError> {
         let proposal = self.update_proposal()?;
-        self.send_proposal(proposal)
+        self.send_proposal(proposal, authenticated_data)
     }
 
     #[inline(always)]
-    pub fn propose_remove(&mut self, leaf_node_ref: &LeafNodeRef) -> Result<Vec<u8>, SessionError> {
+    pub fn propose_remove(
+        &mut self,
+        leaf_node_ref: &LeafNodeRef,
+        authenticated_data: Vec<u8>,
+    ) -> Result<Vec<u8>, SessionError> {
         let remove = self.remove_proposal(leaf_node_ref)?;
-        self.send_proposal(remove)
+        self.send_proposal(remove, authenticated_data)
     }
 
     #[inline(always)]
@@ -362,15 +373,20 @@ where
     pub fn propose_group_context_extension_update(
         &mut self,
         extension_list: ExtensionList,
+        authenticated_data: Vec<u8>,
     ) -> Result<Vec<u8>, SessionError> {
         let extension_update = self.group_context_extension_proposal(extension_list);
-        self.send_proposal(extension_update)
+        self.send_proposal(extension_update, authenticated_data)
     }
 
     #[inline(always)]
-    pub fn propose_psk(&mut self, psk: ExternalPskId) -> Result<Vec<u8>, SessionError> {
+    pub fn propose_psk(
+        &mut self,
+        psk: ExternalPskId,
+        authenticated_data: Vec<u8>,
+    ) -> Result<Vec<u8>, SessionError> {
         let proposal = self.protocol.psk_proposal(psk)?;
-        self.send_proposal(proposal)
+        self.send_proposal(proposal, authenticated_data)
     }
 
     #[inline(always)]
@@ -380,7 +396,11 @@ where
             .tls_serialize_detached()?)
     }
 
-    fn send_proposal(&mut self, proposal: Proposal) -> Result<Vec<u8>, SessionError> {
+    fn send_proposal(
+        &mut self,
+        proposal: Proposal,
+        authenticated_data: Vec<u8>,
+    ) -> Result<Vec<u8>, SessionError> {
         let leaf_node = self.protocol.current_user_leaf_node()?;
 
         let signer = self
@@ -393,12 +413,17 @@ where
             proposal,
             &signer,
             self.config.preferences().encryption_mode(),
+            authenticated_data,
         )?;
 
         self.serialize_control(packet)
     }
 
-    pub fn commit(&mut self, proposals: Vec<Proposal>) -> Result<CommitResult, SessionError> {
+    pub fn commit(
+        &mut self,
+        proposals: Vec<Proposal>,
+        authenticated_data: Vec<u8>,
+    ) -> Result<CommitResult, SessionError> {
         if self.pending_commit.is_some() {
             return Err(SessionError::ExistingPendingCommit);
         }
@@ -416,6 +441,7 @@ where
             self.config.commit_options(),
             &self.config.secret_store(),
             &signer,
+            authenticated_data,
         )?;
 
         let serialized_commit = self.serialize_control(commit_data.plaintext.clone())?;
@@ -473,7 +499,7 @@ where
             ));
         }
 
-        let (message_payload, mut sender_credential) = match message.payload {
+        let (message_payload, mut sender_credential, authenticated_data) = match message.payload {
             MLSMessagePayload::Plain(message) => {
                 let message = self.protocol.verify_incoming_plaintext(message, |id| {
                     self.config.external_signing_key(id)
@@ -484,7 +510,12 @@ where
                     }
                     _ => None,
                 };
-                (self.process_incoming_plaintext(message)?, credential)
+                let authenticated_data = message.content.authenticated_data.clone();
+                (
+                    self.process_incoming_plaintext(message)?,
+                    credential,
+                    authenticated_data,
+                )
             }
             MLSMessagePayload::Cipher(message) => {
                 let message = self.protocol.verify_incoming_ciphertext(message, |id| {
@@ -496,19 +527,25 @@ where
                     }
                     _ => None,
                 };
-                (self.process_incoming_plaintext(message)?, credential)
+                let authenticated_data = message.content.authenticated_data.clone();
+                (
+                    self.process_incoming_plaintext(message)?,
+                    credential,
+                    authenticated_data,
+                )
             }
             MLSMessagePayload::Welcome(message) => {
-                (ProcessedMessagePayload::Welcome(message), None)
+                (ProcessedMessagePayload::Welcome(message), None, vec![])
             }
             MLSMessagePayload::GroupInfo(message) => {
-                (ProcessedMessagePayload::GroupInfo(message), None)
+                (ProcessedMessagePayload::GroupInfo(message), None, vec![])
             }
             MLSMessagePayload::KeyPackage(message) => {
                 let credential = message.leaf_node.credential.clone();
                 (
                     ProcessedMessagePayload::KeyPackage(message),
                     Some(credential),
+                    vec![],
                 )
             }
         };
@@ -520,6 +557,7 @@ where
         Ok(ProcessedMessage {
             message: message_payload,
             sender_credential,
+            authenticated_data,
         })
     }
 
@@ -571,11 +609,16 @@ where
             .ok_or(SessionError::SignerNotFound)
     }
 
-    pub fn encrypt_application_data(&mut self, data: &[u8]) -> Result<Vec<u8>, SessionError> {
+    pub fn encrypt_application_data(
+        &mut self,
+        data: &[u8],
+        authenticated_data: Vec<u8>,
+    ) -> Result<Vec<u8>, SessionError> {
         let ciphertext = self.protocol.encrypt_application_message(
             data,
             &self.signer()?,
             self.config.preferences().padding_mode,
+            authenticated_data,
         )?;
 
         let msg = MLSMessage {

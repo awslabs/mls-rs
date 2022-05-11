@@ -19,4 +19,5 @@ pub enum ProcessedMessagePayload {
 pub struct ProcessedMessage {
     pub message: ProcessedMessagePayload,
     pub sender_credential: Option<Credential>,
+    pub authenticated_data: Vec<u8>,
 }
