@@ -77,7 +77,7 @@ mod test {
     use super::test_utils::plaintext_from_proposal;
     use super::*;
     use crate::{
-        key_package::test_utils::test_key_package,
+        extension::RequiredCapabilitiesExt, key_package::test_utils::test_key_package,
         tree_kem::leaf_node::test_utils::get_basic_test_node,
     };
 

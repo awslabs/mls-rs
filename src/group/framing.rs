@@ -1,4 +1,7 @@
-use crate::tree_kem::{leaf_node::LeafNode, leaf_node_ref::LeafNodeRef};
+use crate::{
+    credential::Credential,
+    tree_kem::{leaf_node::LeafNode, leaf_node_ref::LeafNodeRef},
+};
 
 use super::proposal::Proposal;
 use super::*;
@@ -113,6 +116,23 @@ impl MLSPlaintext {
         plaintext.sign(signer, &signing_context)?;
 
         Ok(plaintext)
+    }
+
+    pub fn credential(
+        &self,
+        public_tree: &TreeKemPublic,
+    ) -> Result<Option<Credential>, RatchetTreeError> {
+        Ok(match &self.content.sender {
+            Sender::Member(leaf_node_ref) => {
+                Some(public_tree.get_leaf_node(leaf_node_ref)?.credential.clone())
+            }
+            _ => match &self.content.content {
+                Content::Proposal(Proposal::Add(AddProposal { key_package })) => {
+                    Some(key_package.leaf_node.credential.clone())
+                }
+                _ => None,
+            },
+        })
     }
 }
 
@@ -268,6 +288,12 @@ impl MLSMessage {
             },
             _ => None,
         }
+    }
+}
+
+impl From<MLSPlaintext> for MLSMessagePayload {
+    fn from(m: MLSPlaintext) -> Self {
+        Self::Plain(m)
     }
 }
 

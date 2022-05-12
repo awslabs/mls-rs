@@ -62,11 +62,16 @@ impl KeySchedule {
     }
 }
 
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct PublicEpoch {
+    pub(crate) identifier: u64,
+    pub(crate) cipher_suite: CipherSuite,
+    pub(crate) public_tree: TreeKemPublic,
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(crate) struct Epoch {
-    pub identifier: u64,
-    pub cipher_suite: CipherSuite,
-    pub public_tree: TreeKemPublic,
+    pub public: PublicEpoch,
     pub secret_tree: SecretTree,
     pub self_index: LeafIndex,
     pub init_secret: InitSecret,
@@ -79,9 +84,9 @@ pub(crate) struct Epoch {
 
 impl PartialEq for Epoch {
     fn eq(&self, other: &Self) -> bool {
-        self.cipher_suite == other.cipher_suite
-            && self.identifier == other.identifier
-            && self.public_tree == other.public_tree
+        self.public.cipher_suite == other.public.cipher_suite
+            && self.public.identifier == other.public.identifier
+            && self.public.public_tree == other.public.public_tree
             && self.key_schedule == other.key_schedule
             && self.init_secret == other.init_secret
     }
@@ -130,7 +135,7 @@ impl Epoch {
         psk_secret: &[u8],
     ) -> Result<(Epoch, Vec<u8>), EpochError> {
         Self::derive(
-            epoch.cipher_suite,
+            epoch.public.cipher_suite,
             &epoch.init_secret,
             commit_secret,
             public_tree,
@@ -177,9 +182,11 @@ impl Epoch {
         );
 
         Ok(Self {
-            identifier: context.epoch,
-            cipher_suite,
-            public_tree,
+            public: PublicEpoch {
+                identifier: context.epoch,
+                cipher_suite,
+                public_tree,
+            },
             secret_tree,
             key_schedule: KeySchedule {
                 sender_data_secret,
@@ -260,7 +267,7 @@ impl Epoch {
         &self,
         ciphertext: &[u8],
     ) -> Result<(Key, AeadNonce), EpochError> {
-        let kdf = KeyScheduleKdf::new(self.cipher_suite.kdf_type());
+        let kdf = KeyScheduleKdf::new(self.public.cipher_suite.kdf_type());
         // Sample the first extract_size bytes of the ciphertext, and if it is shorter, just use
         // the ciphertext itself
         let ciphertext_sample = if ciphertext.len() <= kdf.extract_size() as usize {
@@ -275,18 +282,18 @@ impl Epoch {
             &self.key_schedule.sender_data_secret,
             "key",
             ciphertext_sample,
-            self.cipher_suite.aead_type().key_size(),
+            self.public.cipher_suite.aead_type().key_size(),
         )?;
 
         let sender_data_nonce = kdf.expand_with_label(
             &self.key_schedule.sender_data_secret,
             "nonce",
             ciphertext_sample,
-            self.cipher_suite.aead_type().nonce_size(),
+            self.public.cipher_suite.aead_type().nonce_size(),
         )?;
 
         Ok((
-            Key::new(self.cipher_suite.aead_type(), sender_data_key)?,
+            Key::new(self.public.cipher_suite.aead_type(), sender_data_key)?,
             AeadNonce::new(&sender_data_nonce)?,
         ))
     }
@@ -399,9 +406,11 @@ pub mod test_utils {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
         Epoch {
-            identifier: 1,
-            cipher_suite,
-            public_tree: TreeKemPublic::new(cipher_suite),
+            public: PublicEpoch {
+                identifier: 1,
+                cipher_suite,
+                public_tree: TreeKemPublic::new(cipher_suite),
+            },
             secret_tree: get_test_tree(cipher_suite, vec![], 1),
             self_index: LeafIndex(0),
             key_schedule: KeySchedule {

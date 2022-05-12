@@ -1,5 +1,7 @@
-use crate::client_config::{CredentialValidator, PassthroughCredentialValidator};
-use crate::{EpochRepository, InMemoryEpochRepository};
+use crate::{
+    client_config::{CredentialValidator, PassthroughCredentialValidator},
+    EpochRepository, InMemoryEpochRepository,
+};
 
 pub trait GroupConfig {
     type EpochRepository: EpochRepository;

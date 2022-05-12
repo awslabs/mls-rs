@@ -91,7 +91,7 @@ impl MembershipTag {
 
         let hmac_key = Key::new(
             &epoch.key_schedule.membership_key,
-            epoch.cipher_suite.hash_function(),
+            epoch.public.cipher_suite.hash_function(),
         )?;
         let tag = hmac_key.generate_tag(&serialized_tbm)?;
 

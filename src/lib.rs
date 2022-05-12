@@ -51,6 +51,7 @@ mod epoch;
 pub mod extension;
 mod external_client;
 mod external_client_config;
+mod external_session;
 mod group;
 mod hash_reference;
 pub mod key_package;
@@ -73,6 +74,7 @@ mod tls;
 pub use epoch::{Epoch, EpochRepository, InMemoryEpochRepository};
 pub use external_client::ExternalClient;
 pub use external_client_config::{ExternalClientConfig, InMemoryExternalClientConfig};
+pub use external_session::ExternalSession;
 pub use ferriscrypt;
 pub use group::{
     proposal::{AddProposal, Proposal, RemoveProposal, UpdateProposal},

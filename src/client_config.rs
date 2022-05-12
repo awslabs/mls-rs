@@ -34,6 +34,18 @@ pub trait CredentialValidator {
     fn is_equal_identity(&self, left: &Credential, right: &Credential) -> bool;
 }
 
+impl<T: CredentialValidator> CredentialValidator for &T {
+    type Error = T::Error;
+
+    fn validate(&self, credential: &Credential) -> Result<(), Self::Error> {
+        (*self).validate(credential)
+    }
+
+    fn is_equal_identity(&self, left: &Credential, right: &Credential) -> bool {
+        (*self).is_equal_identity(left, right)
+    }
+}
+
 pub trait ClientConfig {
     type KeyPackageRepository: KeyPackageRepository;
     type ProposalFilterError: std::error::Error + Send + Sync + 'static;

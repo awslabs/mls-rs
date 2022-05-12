@@ -5,7 +5,7 @@ use crate::{
         MLSSenderData, MLSSenderDataAAD, Sender, VerifiedPlaintext,
     },
     signer::Signable,
-    tree_kem::{leaf_node_ref::LeafNodeRef, TreeKemPrivate},
+    tree_kem::{leaf_node_ref::LeafNodeRef, TreeKemPrivate, TreeKemPublic},
     AddProposal, Proposal,
 };
 use ferriscrypt::asym::ec_key::PublicKey;
@@ -24,49 +24,6 @@ impl<F> MessageVerifier<'_, F>
 where
     F: Fn(&[u8]) -> Option<PublicKey>,
 {
-    fn public_key_for_sender(
-        &self,
-        sender: &Sender,
-        content: &Content,
-    ) -> Result<PublicKey, GroupError> {
-        match sender {
-            Sender::Member(leaf_ref) => self.public_key_for_member(leaf_ref),
-            Sender::Preconfigured(external_key_id) => {
-                self.public_key_for_preconfigured(external_key_id)
-            }
-            Sender::NewMember => self.public_key_for_new_member(content),
-        }
-    }
-
-    fn public_key_for_member(&self, leaf_ref: &LeafNodeRef) -> Result<PublicKey, GroupError> {
-        self.msg_epoch
-            .public_tree
-            .get_leaf_node(leaf_ref)?
-            .credential
-            .public_key()
-            .map_err(Into::into)
-    }
-
-    fn public_key_for_preconfigured(
-        &self,
-        external_key_id: &[u8],
-    ) -> Result<PublicKey, GroupError> {
-        (self.external_key_id_to_signing_key)(external_key_id)
-            .ok_or(GroupError::UnknownSigningKeyForExternalSender)
-    }
-
-    fn public_key_for_new_member(&self, content: &Content) -> Result<PublicKey, GroupError> {
-        match content {
-            Content::Commit(Commit {
-                path: Some(path), ..
-            }) => Ok(path.leaf_node.credential.public_key()?),
-            Content::Proposal(Proposal::Add(AddProposal { key_package })) => {
-                Ok(key_package.leaf_node.credential.public_key()?)
-            }
-            _ => Err(GroupError::NewMembersCanOnlyProposeAddingThemselves),
-        }
-    }
-
     pub(crate) fn verify_plaintext(
         &mut self,
         plaintext: MLSPlaintext,
@@ -101,20 +58,13 @@ where
         plaintext: MLSPlaintext,
         from_ciphertext: bool,
     ) -> Result<VerifiedPlaintext, GroupError> {
-        let sender_public_key =
-            self.public_key_for_sender(&plaintext.content.sender, &plaintext.content.content)?;
-
-        let context = MessageSigningContext {
-            group_context: Some(self.context),
-            encrypted: from_ciphertext,
-        };
-
-        plaintext.verify(&sender_public_key, &context)?;
-
-        Ok(VerifiedPlaintext {
-            encrypted: context.encrypted,
+        verify_plaintext_signature(
+            &self.msg_epoch.public.public_tree,
+            self.context,
             plaintext,
-        })
+            from_ciphertext,
+            &self.external_key_id_to_signing_key,
+        )
     }
 
     pub(crate) fn decrypt_ciphertext(
@@ -152,6 +102,7 @@ where
 
         let decryption_key = self.msg_epoch.get_decryption_key(
             self.msg_epoch
+                .public
                 .public_tree
                 .leaf_node_index(&sender_data.sender)?,
             sender_data.generation,
@@ -194,6 +145,87 @@ where
     }
 }
 
+pub(crate) fn verify_plaintext_signature<F>(
+    public_tree: &TreeKemPublic,
+    context: &GroupContext,
+    plaintext: MLSPlaintext,
+    from_ciphertext: bool,
+    external_key_id_to_signing_key: F,
+) -> Result<VerifiedPlaintext, GroupError>
+where
+    F: FnMut(&[u8]) -> Option<PublicKey>,
+{
+    let sender_public_key = public_key_for_sender(
+        public_tree,
+        &plaintext.content.sender,
+        &plaintext.content.content,
+        external_key_id_to_signing_key,
+    )?;
+
+    let context = MessageSigningContext {
+        group_context: Some(context),
+        encrypted: from_ciphertext,
+    };
+
+    plaintext.verify(&sender_public_key, &context)?;
+
+    Ok(VerifiedPlaintext {
+        encrypted: context.encrypted,
+        plaintext,
+    })
+}
+
+fn public_key_for_sender<F>(
+    public_tree: &TreeKemPublic,
+    sender: &Sender,
+    content: &Content,
+    external_key_id_to_signing_key: F,
+) -> Result<PublicKey, GroupError>
+where
+    F: FnMut(&[u8]) -> Option<PublicKey>,
+{
+    match sender {
+        Sender::Member(leaf_ref) => public_key_for_member(public_tree, leaf_ref),
+        Sender::Preconfigured(external_key_id) => {
+            public_key_for_preconfigured(external_key_id, external_key_id_to_signing_key)
+        }
+        Sender::NewMember => public_key_for_new_member(content),
+    }
+}
+
+fn public_key_for_member(
+    public_tree: &TreeKemPublic,
+    leaf_ref: &LeafNodeRef,
+) -> Result<PublicKey, GroupError> {
+    Ok(public_tree
+        .get_leaf_node(leaf_ref)?
+        .credential
+        .public_key()?)
+}
+
+fn public_key_for_preconfigured<F>(
+    external_key_id: &[u8],
+    mut external_key_id_to_signing_key: F,
+) -> Result<PublicKey, GroupError>
+where
+    F: FnMut(&[u8]) -> Option<PublicKey>,
+{
+    external_key_id_to_signing_key(external_key_id)
+        .ok_or(GroupError::UnknownSigningKeyForExternalSender)
+}
+
+fn public_key_for_new_member(content: &Content) -> Result<PublicKey, GroupError> {
+    match content {
+        Content::Commit(Commit {
+            path: Some(path), ..
+        }) => Ok(path.leaf_node.credential.public_key()?),
+        Content::Proposal(Proposal::Add(AddProposal { key_package })) => {
+            Ok(key_package.leaf_node.credential.public_key()?)
+        }
+        _ => Err(GroupError::NewMembersCanOnlyProposeAddingThemselves),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -231,7 +263,7 @@ mod tests {
     {
         MessageVerifier {
             msg_epoch: &mut group.current_epoch,
-            context: &group.context,
+            context: &group.core.context,
             private_tree: &group.private_tree,
             external_key_id_to_signing_key,
         }
@@ -248,8 +280,9 @@ mod tests {
     }
 
     fn add_membership_tag(message: &mut MLSPlaintext, group: &Group<InMemoryGroupConfig>) {
-        message.membership_tag =
-            Some(MembershipTag::create(message, &group.context, &group.current_epoch).unwrap());
+        message.membership_tag = Some(
+            MembershipTag::create(message, &group.core.context, &group.current_epoch).unwrap(),
+        );
     }
 
     struct TestMember {
@@ -267,7 +300,7 @@ mod tests {
 
         fn sign(&self, message: &mut MLSPlaintext, encrypted: bool) {
             let signing_context = MessageSigningContext {
-                group_context: Some(&self.group.context),
+                group_context: Some(&self.group.core.context),
                 encrypted,
             };
 

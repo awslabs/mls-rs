@@ -870,6 +870,7 @@ mod tests {
         let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
             .current_epoch
+            .public
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -925,6 +926,7 @@ mod tests {
         let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
             .current_epoch
+            .public
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -962,6 +964,7 @@ mod tests {
         let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
             .current_epoch
+            .public
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -985,6 +988,7 @@ mod tests {
         let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
             .current_epoch
+            .public
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -1013,6 +1017,7 @@ mod tests {
         let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
             .current_epoch
+            .public
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -1050,6 +1055,7 @@ mod tests {
         let mut public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
             .current_epoch
+            .public
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -1091,6 +1097,7 @@ mod tests {
         let mut public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
             .current_epoch
+            .public
             .public_tree;
         let credential_validator = FailureCredentialValidator::new();
 
@@ -1126,6 +1133,7 @@ mod tests {
         let mut public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
             .current_epoch
+            .public
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -1179,6 +1187,7 @@ mod tests {
         let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
             .current_epoch
+            .public
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 

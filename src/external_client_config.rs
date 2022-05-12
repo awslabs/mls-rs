@@ -1,22 +1,32 @@
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
+    client_config::{CredentialValidator, PassthroughCredentialValidator},
     credential::Credential,
+    epoch::{InMemoryPublicEpochRepository, PublicEpochRepository},
     extension::{CapabilitiesExt, ExtensionType},
-    key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
+    group::ExternalGroupConfig,
     ExternalClient, InMemoryKeychain, Keychain, ProtocolVersion,
 };
-use ferriscrypt::asym::ec_key::SecretKey;
+use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 pub trait ExternalClientConfig {
     type Keychain: Keychain;
-    type KeyPackageRepository: KeyPackageRepository;
+    type EpochRepository: PublicEpochRepository;
+    type CredentialValidator: CredentialValidator;
 
     fn external_key_id(&self) -> Option<Vec<u8>>;
     fn keychain(&self) -> Self::Keychain;
-    fn key_package_repo(&self) -> Self::KeyPackageRepository;
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
+    fn epoch_repo(&self, group_id: &[u8]) -> Self::EpochRepository;
+    fn credential_validator(&self) -> Self::CredentialValidator;
+    fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
+    fn signatures_are_checked(&self) -> bool;
 
     fn capabilities(&self) -> CapabilitiesExt {
         CapabilitiesExt {
@@ -36,10 +46,12 @@ pub trait ExternalClientConfig {
 pub struct InMemoryExternalClientConfig {
     external_key_id: Option<Vec<u8>>,
     supported_extensions: Vec<ExtensionType>,
-    key_packages: InMemoryKeyPackageRepository,
     keychain: InMemoryKeychain,
     protocol_versions: Vec<ProtocolVersion>,
     cipher_suites: Vec<CipherSuite>,
+    epochs: Arc<Mutex<HashMap<Vec<u8>, InMemoryPublicEpochRepository>>>,
+    external_signing_keys: HashMap<Vec<u8>, PublicKey>,
+    signatures_checked: bool,
 }
 
 impl InMemoryExternalClientConfig {
@@ -47,10 +59,12 @@ impl InMemoryExternalClientConfig {
         Self {
             external_key_id: None,
             supported_extensions: Default::default(),
-            key_packages: Default::default(),
             keychain: Default::default(),
             protocol_versions: ProtocolVersion::all().collect(),
             cipher_suites: CipherSuite::all().collect(),
+            epochs: Default::default(),
+            external_signing_keys: Default::default(),
+            signatures_checked: true,
         }
     }
 
@@ -98,6 +112,20 @@ impl InMemoryExternalClientConfig {
         self
     }
 
+    #[must_use]
+    pub fn with_external_signing_key(mut self, id: Vec<u8>, key: PublicKey) -> Self {
+        self.external_signing_keys.insert(id, key);
+        self
+    }
+
+    #[must_use]
+    pub fn check_signatures(self, checked: bool) -> Self {
+        Self {
+            signatures_checked: checked,
+            ..self
+        }
+    }
+
     pub fn build_client(self) -> ExternalClient<Self> {
         ExternalClient::new(self)
     }
@@ -110,15 +138,12 @@ impl Default for InMemoryExternalClientConfig {
 }
 
 impl ExternalClientConfig for InMemoryExternalClientConfig {
-    type KeyPackageRepository = InMemoryKeyPackageRepository;
     type Keychain = InMemoryKeychain;
+    type EpochRepository = InMemoryPublicEpochRepository;
+    type CredentialValidator = PassthroughCredentialValidator;
 
     fn external_key_id(&self) -> Option<Vec<u8>> {
         self.external_key_id.clone()
-    }
-
-    fn key_package_repo(&self) -> InMemoryKeyPackageRepository {
-        self.key_packages.clone()
     }
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
@@ -135,5 +160,65 @@ impl ExternalClientConfig for InMemoryExternalClientConfig {
 
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion> {
         self.protocol_versions.clone()
+    }
+
+    fn epoch_repo(&self, group_id: &[u8]) -> Self::EpochRepository {
+        self.epochs
+            .lock()
+            .unwrap()
+            .entry(group_id.to_vec())
+            .or_default()
+            .clone()
+    }
+
+    fn credential_validator(&self) -> Self::CredentialValidator {
+        Default::default()
+    }
+
+    fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
+        self.external_signing_keys.get(external_key_id).cloned()
+    }
+
+    fn signatures_are_checked(&self) -> bool {
+        self.signatures_checked
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ExternalClientGroupConfig<C: ExternalClientConfig> {
+    pub epoch_repo: C::EpochRepository,
+    pub credential_validator: C::CredentialValidator,
+    pub signatures_checked: bool,
+}
+
+impl<C: ExternalClientConfig> ExternalClientGroupConfig<C> {
+    pub fn new(client_config: &C, group_id: &[u8]) -> Self {
+        Self {
+            epoch_repo: client_config.epoch_repo(group_id),
+            credential_validator: client_config.credential_validator(),
+            signatures_checked: true,
+        }
+    }
+}
+
+impl<C> ExternalGroupConfig for ExternalClientGroupConfig<C>
+where
+    C: ExternalClientConfig,
+    C::EpochRepository: Clone,
+    C::CredentialValidator: Clone,
+{
+    type EpochRepository = C::EpochRepository;
+    type CredentialValidator = C::CredentialValidator;
+
+    fn epoch_repo(&self) -> Self::EpochRepository {
+        self.epoch_repo.clone()
+    }
+
+    fn credential_validator(&self) -> Self::CredentialValidator {
+        self.credential_validator.clone()
+    }
+
+    fn signatures_are_checked(&self) -> bool {
+        self.signatures_checked
     }
 }

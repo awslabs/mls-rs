@@ -1,12 +1,9 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, ClientGroupConfig};
-use crate::credential::Credential;
 use crate::extension::ExtensionList;
 use crate::group::{
-    framing::{Content, Sender},
-    proposal::Proposal,
-    CommitGeneration, Group, GroupContext, GroupInfo, GroupState, OutboundMessage, StateUpdate,
-    VerifiedPlaintext, Welcome,
+    framing::Content, proposal::Proposal, CommitGeneration, Group, GroupContext, GroupInfo,
+    GroupState, OutboundMessage, StateUpdate, VerifiedPlaintext, Welcome,
 };
 use crate::key_package::{
     KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
@@ -250,7 +247,7 @@ where
 
     pub fn group_info_message(&self) -> Result<MLSMessage, SessionError> {
         Ok(MLSMessage {
-            version: self.protocol.protocol_version,
+            version: self.protocol.protocol_version(),
             payload: MLSMessagePayload::GroupInfo(
                 self.protocol.external_commit_info(&self.signer()?)?,
             ),
@@ -390,7 +387,7 @@ where
     #[inline(always)]
     fn serialize_control(&self, plaintext: OutboundMessage) -> Result<Vec<u8>, SessionError> {
         Ok(plaintext
-            .into_message(self.protocol.protocol_version)
+            .into_message(self.protocol.protocol_version())
             .tls_serialize_detached()?)
     }
 
@@ -462,52 +459,25 @@ where
         self.process_incoming_message(MLSMessage::tls_deserialize(&mut &*data)?)
     }
 
-    fn leaf_node_to_credential(
-        &self,
-        leaf_node_ref: &LeafNodeRef,
-    ) -> Result<Credential, SessionError> {
-        Ok(self
-            .protocol
-            .current_epoch_tree()?
-            .get_leaf_node(leaf_node_ref)?
-            .credential
-            .clone())
-    }
-
-    fn get_credential_from_add_proposal(
-        &self,
-        processed_message: &ProcessedMessagePayload,
-    ) -> Option<Credential> {
-        match processed_message {
-            ProcessedMessagePayload::Proposal(Proposal::Add(add)) => {
-                Some(add.key_package.leaf_node.credential.clone())
-            }
-            _ => None,
-        }
-    }
-
     pub fn process_incoming_message(
         &mut self,
         message: MLSMessage,
     ) -> Result<ProcessedMessage, SessionError> {
-        if message.version != self.protocol.protocol_version {
+        if message.version != self.protocol.protocol_version() {
             return Err(SessionError::InvalidProtocol(
-                self.protocol.protocol_version,
+                self.protocol.protocol_version(),
                 message.version,
             ));
         }
 
-        let (message_payload, mut sender_credential, authenticated_data) = match message.payload {
+        let (message_payload, sender_credential, authenticated_data) = match message.payload {
             MLSMessagePayload::Plain(message) => {
                 let message = self.protocol.verify_incoming_plaintext(message, |id| {
                     self.config.external_signing_key(id)
                 })?;
-                let credential: Option<Credential> = match &message.plaintext.content.sender {
-                    Sender::Member(leaf_node_ref) => {
-                        Some(self.leaf_node_to_credential(leaf_node_ref)?)
-                    }
-                    _ => None,
-                };
+                let credential = message
+                    .plaintext
+                    .credential(self.protocol.current_epoch_tree()?)?;
                 let authenticated_data = message.content.authenticated_data.clone();
                 (
                     self.process_incoming_plaintext(message)?,
@@ -519,12 +489,9 @@ where
                 let message = self.protocol.verify_incoming_ciphertext(message, |id| {
                     self.config.external_signing_key(id)
                 })?;
-                let credential: Option<Credential> = match &message.plaintext.content.sender {
-                    Sender::Member(leaf_node_ref) => {
-                        Some(self.leaf_node_to_credential(leaf_node_ref)?)
-                    }
-                    _ => None,
-                };
+                let credential = message
+                    .plaintext
+                    .credential(self.protocol.current_epoch_tree()?)?;
                 let authenticated_data = message.content.authenticated_data.clone();
                 (
                     self.process_incoming_plaintext(message)?,
@@ -547,10 +514,6 @@ where
                 )
             }
         };
-
-        if sender_credential.is_none() {
-            sender_credential = self.get_credential_from_add_proposal(&message_payload);
-        }
 
         Ok(ProcessedMessage {
             message: message_payload,
@@ -620,7 +583,7 @@ where
         )?;
 
         let msg = MLSMessage {
-            version: self.protocol.protocol_version,
+            version: self.protocol.protocol_version(),
             payload: MLSMessagePayload::Cipher(ciphertext),
         };
         Ok(msg.tls_serialize_detached()?)
