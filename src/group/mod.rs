@@ -1621,11 +1621,14 @@ impl<C: GroupConfig> Group<C> {
         }))
     }
 
-    pub fn remove_proposal(&mut self, leaf_node_ref: &LeafNodeRef) -> Result<Proposal, GroupError> {
-        self.current_epoch_tree()?.leaf_node_index(leaf_node_ref)?;
+    pub fn remove_proposal(&mut self, leaf_index: LeafIndex) -> Result<Proposal, GroupError> {
+        let leaf_node_ref = self
+            .current_epoch_tree()?
+            .get_leaf_node_ref(leaf_index)
+            .map_err(GroupError::RatchetTreeError)?;
 
         Ok(Proposal::Remove(RemoveProposal {
-            to_remove: leaf_node_ref.clone(),
+            to_remove: leaf_node_ref,
         }))
     }
 

@@ -216,6 +216,17 @@ impl TreeKemPublic {
             .ok_or_else(|| RatchetTreeError::LeafNodeNotFound(leaf_node_ref.to_string()))
     }
 
+    pub fn get_leaf_node_ref(
+        &self,
+        leaf_index: LeafIndex,
+    ) -> Result<LeafNodeRef, RatchetTreeError> {
+        self.nodes
+            .borrow_as_leaf(leaf_index)
+            .map_err(RatchetTreeError::NodeVecError)?
+            .to_reference(self.cipher_suite)
+            .map_err(RatchetTreeError::LeafNodeError)
+    }
+
     pub fn get_leaf_node(
         &self,
         leaf_node_ref: &LeafNodeRef,

@@ -17,6 +17,7 @@ use crate::psk::ExternalPskId;
 use crate::signer::Signer;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::tree_kem::leaf_node_ref::LeafNodeRef;
+use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use crate::{Keychain, ProtocolVersion};
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
@@ -310,12 +311,9 @@ where
     }
 
     #[inline(always)]
-    pub fn remove_proposal(
-        &mut self,
-        leaf_node_ref: &LeafNodeRef,
-    ) -> Result<Proposal, SessionError> {
+    pub fn remove_proposal(&mut self, leaf_index: u32) -> Result<Proposal, SessionError> {
         self.protocol
-            .remove_proposal(leaf_node_ref)
+            .remove_proposal(LeafIndex(leaf_index))
             .map_err(Into::into)
     }
 
@@ -356,10 +354,10 @@ where
     #[inline(always)]
     pub fn propose_remove(
         &mut self,
-        leaf_node_ref: &LeafNodeRef,
+        leaf_index: u32,
         authenticated_data: Vec<u8>,
     ) -> Result<Vec<u8>, SessionError> {
-        let remove = self.remove_proposal(leaf_node_ref)?;
+        let remove = self.remove_proposal(leaf_index)?;
         self.send_proposal(remove, authenticated_data)
     }
 

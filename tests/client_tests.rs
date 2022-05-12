@@ -265,14 +265,12 @@ fn remove_members(
     sender: usize,
     committer: usize,
     sessions: &mut Vec<Session<InMemoryClientConfig>>,
-    cipher_suite: CipherSuite,
 ) {
     let removals = removed_members
         .iter()
         .map(|removed| {
-            let to_remove = sessions[*removed].current_key_package().unwrap().clone();
-            let to_remove_ref = to_remove.to_reference(cipher_suite).unwrap();
-            sessions[sender].remove_proposal(&to_remove_ref).unwrap()
+            let to_remove = sessions[*removed].group_stats().unwrap().current_index;
+            sessions[sender].remove_proposal(to_remove).unwrap()
         })
         .collect();
 
@@ -314,7 +312,7 @@ fn test_many_commits() {
         let num_removed = rng.gen_range(0..sessions.len());
         let mut members = (0..sessions.len()).choose_multiple(&mut rng, num_removed + 1);
         let sender = members.pop().unwrap();
-        remove_members(members, sender, sender, &mut sessions, cipher_suite);
+        remove_members(members, sender, sender, &mut sessions);
 
         let num_added = rng.gen_range(2..10);
         let sender = rng.gen_range(0..sessions.len());
@@ -486,8 +484,9 @@ fn test_remove_proposals(
         let session_to_remove = receiver_sessions.choose(&mut rand::thread_rng()).unwrap();
         let to_remove = session_to_remove.current_key_package().unwrap().clone();
         let to_remove_ref = to_remove.to_reference(cipher_suite).unwrap();
+        let to_remove_index = session_to_remove.group_stats().unwrap().current_index;
 
-        let removal = creator_session.remove_proposal(&to_remove_ref).unwrap();
+        let removal = creator_session.remove_proposal(to_remove_index).unwrap();
 
         let commit = creator_session.commit(vec![removal], vec![]).unwrap();
         assert!(commit.welcome_packet.is_none());
@@ -726,4 +725,24 @@ fn test_external_commits() {
         .for_each(|(protocol_version, cipher_suite, _)| {
             external_commits_work(protocol_version, cipher_suite);
         });
+}
+
+#[test]
+fn test_remove_nonexisting_leaf() {
+    let (_, mut sessions) = get_test_sessions(
+        ProtocolVersion::Mls10,
+        CipherSuite::Curve25519Aes128,
+        10,
+        Preferences::default(),
+    );
+
+    // Leaf index out of bounds
+    assert!(sessions[0].propose_remove(13, vec![]).is_err());
+
+    sessions[0].propose_remove(5, vec![]).unwrap();
+    sessions[0].commit(vec![], vec![]).unwrap();
+    sessions[0].apply_pending_commit().unwrap();
+
+    // Removing blank leaf causes error
+    assert!(sessions[0].propose_remove(5, vec![]).is_err());
 }
