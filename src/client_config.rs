@@ -5,9 +5,10 @@ use crate::{
     extension::{CapabilitiesExt, ExtensionList, ExtensionType, LifetimeExt},
     group::{proposal::Proposal, CommitOptions, ControlEncryptionMode, GroupConfig},
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
+    keychain::{InMemoryKeychain, Keychain, SigningIdentity},
     psk::{ExternalPskId, Psk},
     time::MlsTime,
-    EpochRepository, InMemoryEpochRepository, InMemoryKeychain, Keychain, ProtocolVersion,
+    EpochRepository, InMemoryEpochRepository, ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 use std::{
@@ -274,8 +275,12 @@ impl InMemoryClientConfig {
     }
 
     #[must_use]
-    pub fn with_credential(mut self, credential: Credential, secret_key: SecretKey) -> Self {
-        self.keychain.insert(credential, secret_key);
+    pub fn with_signing_identity(
+        mut self,
+        identity: SigningIdentity,
+        secret_key: SecretKey,
+    ) -> Self {
+        self.keychain.insert(identity, secret_key);
         self
     }
 

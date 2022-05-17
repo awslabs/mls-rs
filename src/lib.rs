@@ -55,7 +55,7 @@ mod external_session;
 mod group;
 mod hash_reference;
 pub mod key_package;
-mod keychain;
+pub mod keychain;
 pub mod message;
 mod protocol_version;
 mod psk;
@@ -80,7 +80,6 @@ pub use group::{
     proposal::{AddProposal, Proposal, RemoveProposal, UpdateProposal},
     GroupContext,
 };
-pub use keychain::{InMemoryKeychain, Keychain};
 pub use protocol_version::ProtocolVersion;
 pub use tls_codec;
 pub use tree_kem::leaf_node_ref::LeafNodeRef;

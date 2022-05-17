@@ -5,8 +5,9 @@ use crate::{
         message_signature::MessageSigningContext,
         proposal::{AddProposal, Proposal, RemoveProposal},
     },
+    keychain::Keychain,
     signer::{Signable, SignatureError},
-    ExternalClientConfig, Keychain, ProtocolVersion,
+    ExternalClientConfig, ProtocolVersion,
 };
 use thiserror::Error;
 use tls_codec::Serialize;
@@ -95,7 +96,7 @@ impl<C: ExternalClientConfig> ExternalClient<C> {
         let (_, signer) = self
             .config
             .keychain()
-            .default_credential(group_cipher_suite)
+            .default_identity(group_cipher_suite)
             .ok_or(ExternalClientError::NoCredentialFound)?;
 
         let signing_context = MessageSigningContext {
@@ -116,7 +117,7 @@ impl<C: ExternalClientConfig> ExternalClient<C> {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use crate::{
-        cipher_suite::CipherSuite, client::test_utils::get_test_credential,
+        cipher_suite::CipherSuite, keychain::test_utils::get_test_signing_identity,
         InMemoryExternalClientConfig,
     };
 
@@ -124,10 +125,10 @@ pub(crate) mod test_utils {
         cipher_suite: CipherSuite,
         identity: &str,
     ) -> InMemoryExternalClientConfig {
-        let (credential, secret_key) =
-            get_test_credential(cipher_suite, identity.as_bytes().to_vec());
+        let (signing_identity, secret_key) =
+            get_test_signing_identity(cipher_suite, identity.as_bytes().to_vec());
 
-        InMemoryExternalClientConfig::default().with_credential(credential, secret_key)
+        InMemoryExternalClientConfig::default().with_signing_identity(signing_identity, secret_key)
     }
 }
 
@@ -142,9 +143,10 @@ mod tests {
         external_client::test_utils::get_basic_external_config,
         group::proposal::{AddProposal, Proposal, RemoveProposal},
         key_package::KeyPackageGeneration,
+        keychain::Keychain,
         message::ProcessedMessagePayload,
         session::Session,
-        ExternalClient, ExternalClientConfig, InMemoryExternalClientConfig, Keychain,
+        ExternalClient, ExternalClientConfig, InMemoryExternalClientConfig,
     };
 
     #[cfg(target_arch = "wasm32")]
@@ -167,7 +169,7 @@ mod tests {
 
             let (ted_credential, _) = ted_config
                 .keychain()
-                .default_credential(TEST_CIPHER_SUITE)
+                .default_identity(TEST_CIPHER_SUITE)
                 .unwrap();
 
             let alice_config = get_basic_config(TEST_CIPHER_SUITE, "alice")

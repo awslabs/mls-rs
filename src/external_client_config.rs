@@ -1,11 +1,11 @@
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     client_config::{CredentialValidator, PassthroughCredentialValidator},
-    credential::Credential,
     epoch::{InMemoryPublicEpochRepository, PublicEpochRepository},
     extension::{CapabilitiesExt, ExtensionType},
     group::ExternalGroupConfig,
-    ExternalClient, InMemoryKeychain, Keychain, ProtocolVersion,
+    keychain::{InMemoryKeychain, Keychain, SigningIdentity},
+    ExternalClient, ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 use std::{
@@ -83,8 +83,12 @@ impl InMemoryExternalClientConfig {
     }
 
     #[must_use]
-    pub fn with_credential(mut self, credential: Credential, secret_key: SecretKey) -> Self {
-        self.keychain.insert(credential, secret_key);
+    pub fn with_signing_identity(
+        mut self,
+        signing_identity: SigningIdentity,
+        secret_key: SecretKey,
+    ) -> Self {
+        self.keychain.insert(signing_identity, secret_key);
         self
     }
 

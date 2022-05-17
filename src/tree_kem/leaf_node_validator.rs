@@ -202,21 +202,24 @@ impl<'a, C: CredentialValidator> LeafNodeValidator<'a, C> {
     ) -> Result<(), LeafNodeValidationError> {
         // Validate Credential
         self.credential_validator
-            .validate(&leaf_node.credential)
+            .validate(&leaf_node.signing_identity.credential)
             .map_err(|e| LeafNodeValidationError::InvalidCertificateError(e.into()))?;
 
         // Check that we are validating within the proper context
         self.check_context(leaf_node, &context)?;
 
         // Verify that the credential provided matches the cipher suite that is in use
-        if leaf_node.credential.public_key()?.curve()
+        if leaf_node.signing_identity.public_key()?.curve()
             != Curve::from(self.cipher_suite.signature_scheme())
         {
             return Err(LeafNodeValidationError::InvalidCredentialForCipherSuite);
         }
 
         // Verify that the credential signed the leaf node
-        leaf_node.verify(&leaf_node.credential.public_key()?, &context.group_id())?;
+        leaf_node.verify(
+            &leaf_node.signing_identity.public_key()?,
+            &context.group_id(),
+        )?;
 
         // If required capabilities are specified, verify the leaf node meets the requirements
         self.validate_required_capabilities(leaf_node)?;
@@ -256,8 +259,9 @@ mod tests {
     use ferriscrypt::rand::SecureRng;
 
     use super::*;
-    use crate::client::test_utils::get_test_credential;
+
     use crate::extension::{CapabilitiesExt, ExtensionList, ExternalKeyIdExt, MlsExtension};
+    use crate::keychain::test_utils::get_test_signing_identity;
     use crate::tree_kem::leaf_node::test_utils::*;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureCredentialValidator;
     use crate::tree_kem::parent_hash::ParentHash;
@@ -269,8 +273,11 @@ mod tests {
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
     fn get_test_add_node() -> (LeafNode, SecretKey) {
-        let (credential, secret) = get_test_credential(TEST_CIPHER_SUITE, b"foo".to_vec());
-        let (leaf_node, _) = get_test_node(TEST_CIPHER_SUITE, credential, &secret, None, None);
+        let (signing_identity, secret) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"foo".to_vec());
+
+        let (leaf_node, _) =
+            get_test_node(TEST_CIPHER_SUITE, signing_identity, &secret, None, None);
 
         (leaf_node, secret)
     }
@@ -403,8 +410,11 @@ mod tests {
     #[test]
     fn test_bad_signature() {
         for cipher_suite in CipherSuite::all() {
-            let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
-            let (mut leaf_node, _) = get_test_node(cipher_suite, credential, &secret, None, None);
+            let (signing_identity, secret) =
+                get_test_signing_identity(cipher_suite, b"foo".to_vec());
+
+            let (mut leaf_node, _) =
+                get_test_node(cipher_suite, signing_identity, &secret, None, None);
 
             leaf_node.signature = SecureRng::gen(leaf_node.signature.len()).unwrap();
 
@@ -422,7 +432,8 @@ mod tests {
 
     #[test]
     fn test_capabilities_extension_mismatch() {
-        let (credential, secret) = get_test_credential(TEST_CIPHER_SUITE, b"foo".to_vec());
+        let (signing_identity, secret) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"foo".to_vec());
 
         let mut extensions = ExtensionList::new();
 
@@ -436,7 +447,7 @@ mod tests {
 
         let (leaf_node, _) = get_test_node(
             TEST_CIPHER_SUITE,
-            credential,
+            signing_identity,
             &secret,
             Some(capabilities),
             Some(extensions),

@@ -5,6 +5,7 @@ use aws_mls::client_config::{InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECO
 use aws_mls::credential::{BasicCredential, Credential};
 use aws_mls::extension::ExtensionList;
 use aws_mls::key_package::KeyPackageGeneration;
+use aws_mls::keychain::SigningIdentity;
 use aws_mls::message::ProcessedMessagePayload;
 use aws_mls::session::{GroupError, Session, SessionError};
 use aws_mls::{LeafNodeRef, ProtocolVersion};
@@ -34,10 +35,11 @@ fn generate_client(
     lifetime_duration: u64,
 ) -> Client<InMemoryClientConfig> {
     let key = cipher_suite.generate_secret_key().unwrap();
-    let credential = BasicCredential::new(id, key.to_public().unwrap()).unwrap();
+    let credential = Credential::Basic(BasicCredential::new(id, key.to_public().unwrap()).unwrap());
+    let signing_identity = SigningIdentity::new(credential);
 
     InMemoryClientConfig::default()
-        .with_credential(Credential::Basic(credential), key)
+        .with_signing_identity(signing_identity, key)
         .with_preferences(preferences)
         .with_lifetime_duration(lifetime_duration)
         .build_client()

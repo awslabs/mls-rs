@@ -199,7 +199,7 @@ fn public_key_for_member(
 ) -> Result<PublicKey, GroupError> {
     Ok(public_tree
         .get_leaf_node(leaf_ref)?
-        .credential
+        .signing_identity
         .public_key()?)
 }
 
@@ -218,9 +218,9 @@ fn public_key_for_new_member(content: &Content) -> Result<PublicKey, GroupError>
     match content {
         Content::Commit(Commit {
             path: Some(path), ..
-        }) => Ok(path.leaf_node.credential.public_key()?),
+        }) => Ok(path.leaf_node.signing_identity.public_key()?),
         Content::Proposal(Proposal::Add(AddProposal { key_package })) => {
-            Ok(key_package.leaf_node.credential.public_key()?)
+            Ok(key_package.leaf_node.signing_identity.public_key()?)
         }
         _ => Err(GroupError::NewMembersCanOnlyProposeAddingThemselves),
     }

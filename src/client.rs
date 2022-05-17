@@ -13,7 +13,7 @@ use crate::key_package::{
 use crate::session::{Session, SessionError};
 use crate::signer::{Signable, SignatureError};
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
-use crate::{Keychain, ProtocolVersion};
+use crate::{keychain::Keychain, ProtocolVersion};
 use thiserror::Error;
 use tls_codec::Serialize;
 
@@ -64,17 +64,17 @@ where
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> Result<KeyPackageGeneration, ClientError> {
-        let (credential, signer) = self
+        let (identity, signer) = self
             .config
             .keychain()
-            .default_credential(cipher_suite)
+            .default_identity(cipher_suite)
             .ok_or(ClientError::NoCredentialFound)?;
 
         let key_package_generator = KeyPackageGenerator {
             protocol_version,
             cipher_suite,
             signing_key: &signer,
-            credential: &credential,
+            signing_identity: &identity,
         };
 
         let key_pkg_gen = key_package_generator.generate(
@@ -101,13 +101,13 @@ where
     ) -> Result<Session<C>, ClientError> {
         let keychain = self.config.keychain();
 
-        let (credential, signer) = keychain
-            .default_credential(cipher_suite)
+        let (identity, signer) = keychain
+            .default_identity(cipher_suite)
             .ok_or(ClientError::NoCredentialFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             cipher_suite,
-            credential,
+            identity,
             self.config.capabilities(),
             self.config.leaf_node_extensions(),
             &signer,
@@ -152,13 +152,13 @@ where
 
         let keychain = self.config.keychain();
 
-        let (credential, signer) = keychain
-            .default_credential(group_info.cipher_suite)
+        let (identity, signer) = keychain
+            .default_identity(group_info.cipher_suite)
             .ok_or(ClientError::NoCredentialFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             group_info.cipher_suite,
-            credential,
+            identity,
             self.config.capabilities(),
             self.config.leaf_node_extensions(),
             &signer,
@@ -200,7 +200,7 @@ where
         let (_, signer) = self
             .config
             .keychain()
-            .default_credential(group_cipher_suite)
+            .default_identity(group_cipher_suite)
             .ok_or(ClientError::NoCredentialFound)?;
 
         let signing_context = MessageSigningContext {
@@ -224,32 +224,19 @@ pub(crate) mod test_utils {
     use super::*;
     use crate::{
         client_config::{InMemoryClientConfig, ONE_YEAR_IN_SECONDS},
-        credential::{BasicCredential, Credential},
+        keychain::test_utils::get_test_signing_identity,
     };
-    use ferriscrypt::asym::ec_key::SecretKey;
 
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
     pub const TEST_GROUP: &[u8] = b"group";
 
-    pub fn get_test_credential(
-        cipher_suite: CipherSuite,
-        identity: Vec<u8>,
-    ) -> (Credential, SecretKey) {
-        let key = cipher_suite.generate_secret_key().unwrap();
-
-        let credential =
-            Credential::Basic(BasicCredential::new(identity, key.to_public().unwrap()).unwrap());
-
-        (credential, key)
-    }
-
     pub fn get_basic_config(cipher_suite: CipherSuite, identity: &str) -> InMemoryClientConfig {
-        let (credential, secret_key) =
-            get_test_credential(cipher_suite, identity.as_bytes().to_vec());
+        let (signing_identity, secret_key) =
+            get_test_signing_identity(cipher_suite, identity.as_bytes().to_vec());
 
         InMemoryClientConfig::default()
-            .with_credential(credential, secret_key)
+            .with_signing_identity(signing_identity, secret_key)
             .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
     }
 
@@ -323,19 +310,19 @@ mod tests {
 
             assert_eq!(package_gen.key_package.version, protocol_version);
             assert_eq!(package_gen.key_package.cipher_suite, cipher_suite);
-            assert_matches!(&package_gen.key_package.leaf_node.credential, Credential::Basic(basic) if basic.identity == "foo".as_bytes().to_vec());
+            assert_matches!(&package_gen.key_package.leaf_node.signing_identity.credential, Credential::Basic(basic) if basic.identity == "foo".as_bytes().to_vec());
 
             let (expected_credential, _) = client
                 .config
                 .keychain()
-                .default_credential(cipher_suite)
+                .default_identity(cipher_suite)
                 .unwrap();
 
             assert_eq!(
                 package_gen
                     .key_package
                     .leaf_node
-                    .credential
+                    .signing_identity
                     .tls_serialize_detached()
                     .unwrap(),
                 expected_credential.tls_serialize_detached().unwrap()
@@ -660,7 +647,7 @@ mod tests {
         let bob_cred = bob_session
             .current_key_package()
             .unwrap()
-            .credential
+            .signing_identity
             .clone();
 
         let msg = bob_session
@@ -668,7 +655,10 @@ mod tests {
             .unwrap();
         let received_by_alice = alice_session.process_incoming_bytes(&msg).unwrap();
 
-        assert_eq!(Some(bob_cred), received_by_alice.sender_credential);
+        assert_eq!(
+            Some(bob_cred.credential),
+            received_by_alice.sender_credential
+        );
     }
 
     #[test]

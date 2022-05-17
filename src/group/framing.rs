@@ -123,12 +123,16 @@ impl MLSPlaintext {
         public_tree: &TreeKemPublic,
     ) -> Result<Option<Credential>, RatchetTreeError> {
         Ok(match &self.content.sender {
-            Sender::Member(leaf_node_ref) => {
-                Some(public_tree.get_leaf_node(leaf_node_ref)?.credential.clone())
-            }
+            Sender::Member(leaf_node_ref) => Some(
+                public_tree
+                    .get_leaf_node(leaf_node_ref)?
+                    .signing_identity
+                    .credential
+                    .clone(),
+            ),
             _ => match &self.content.content {
                 Content::Proposal(Proposal::Add(AddProposal { key_package })) => {
-                    Some(key_package.leaf_node.credential.clone())
+                    Some(key_package.leaf_node.signing_identity.credential.clone())
                 }
                 _ => None,
             },

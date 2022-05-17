@@ -1,5 +1,5 @@
 use crate::cipher_suite::CipherSuite;
-use crate::credential::{Credential, CredentialError};
+use crate::credential::CredentialError;
 use crate::extension::CapabilitiesExt;
 use crate::extension::LifetimeExt;
 use crate::extension::RequiredCapabilitiesExt;
@@ -138,7 +138,7 @@ pub(crate) mod test_utils {
     use ferriscrypt::asym::ec_key::SecretKey;
 
     use super::*;
-    use crate::credential::test_utils::get_test_basic_credential;
+    use crate::{credential::test_utils::get_test_basic_credential, keychain::SigningIdentity};
 
     pub(crate) fn test_key_package(
         protocol_version: ProtocolVersion,
@@ -159,10 +159,12 @@ pub(crate) mod test_utils {
         let test_credential =
             get_test_basic_credential(id.as_bytes().to_vec(), cipher_suite.signature_scheme());
 
+        let signing_identity = SigningIdentity::new(test_credential.credential);
+
         let mut generator = KeyPackageGenerator {
             protocol_version,
             cipher_suite,
-            credential: &test_credential.credential,
+            signing_identity: &signing_identity,
             signing_key: &test_credential.secret,
         };
 

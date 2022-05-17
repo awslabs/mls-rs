@@ -77,7 +77,7 @@ impl<'a, C: CredentialValidator> KeyPackageValidator<'a, C> {
     fn check_signature(&self, package: &KeyPackage) -> Result<(), KeyPackageValidationError> {
         // Verify that the signature on the KeyPackage is valid using the public key in the contained LeafNode's credential
         package
-            .verify(&package.leaf_node.credential.public_key()?, &())
+            .verify(&package.leaf_node.signing_identity.public_key()?, &())
             .map_err(Into::into)
     }
 
@@ -158,6 +158,7 @@ mod tests {
     use crate::credential::test_utils::get_test_basic_credential;
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
+    use crate::keychain::SigningIdentity;
     use assert_matches::assert_matches;
     use ferriscrypt::rand::SecureRng;
 
@@ -246,12 +247,14 @@ mod tests {
         let alternate_id =
             get_test_basic_credential(b"test".to_vec(), cipher_suite.signature_scheme());
 
+        let signing_identity = SigningIdentity::new(alternate_id.credential);
+
         let mut test_package =
             test_key_package_custom(protocol_version, cipher_suite, "test", |_| {
                 let new_generator = KeyPackageGenerator {
                     protocol_version,
                     cipher_suite,
-                    credential: &alternate_id.credential,
+                    signing_identity: &signing_identity,
                     signing_key: &alternate_id.secret,
                 };
 

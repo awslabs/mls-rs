@@ -471,11 +471,14 @@ where
     if let Proposal::Remove(remove_proposal) = proposal {
         let credential = &public_tree
             .get_leaf_node(&remove_proposal.to_remove)?
+            .signing_identity
             .credential;
+
         if credential_validator.is_equal_identity(
             &update_path
                 .ok_or(ProposalCacheError::MissingUpdatePathInExternalCommit)?
                 .leaf_node
+                .signing_identity
                 .credential,
             credential,
         ) {

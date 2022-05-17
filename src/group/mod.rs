@@ -1272,7 +1272,7 @@ impl<C: GroupConfig> Group<C> {
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             self.core.cipher_suite,
-            current_leaf_node.credential.clone(),
+            current_leaf_node.signing_identity.clone(),
             current_leaf_node.capabilities.clone(),
             current_leaf_node.extensions.clone(),
             signer,
@@ -2159,7 +2159,7 @@ fn validate_tree<C: CredentialValidator>(
     credential_validator: C,
 ) -> Result<(), GroupError> {
     let sender_key_package = public_tree.get_leaf_node(&group_info.signer)?;
-    group_info.verify(&sender_key_package.credential.public_key()?, &())?;
+    group_info.verify(&sender_key_package.signing_identity.public_key()?, &())?;
 
     let required_capabilities = group_info.group_context_extensions.get_extension()?;
 
@@ -2267,16 +2267,17 @@ pub(crate) mod test_utils {
     use super::*;
     use crate::{
         client_config::{InMemoryPskStore, PassthroughCredentialValidator},
-        credential::{BasicCredential, Credential, CredentialConvertible},
+        credential::{BasicCredential, CredentialConvertible},
         extension::{CapabilitiesExt, LifetimeExt, RequiredCapabilitiesExt},
         key_package::KeyPackageGenerator,
+        keychain::SigningIdentity,
     };
 
     pub const TEST_GROUP: &[u8] = b"group";
 
     pub(crate) struct TestGroup {
         pub group: Group<InMemoryGroupConfig>,
-        pub credential: Credential,
+        pub signing_identity: SigningIdentity,
         pub signing_key: SecretKey,
         pub secret_store: InMemoryPskStore,
     }
@@ -2356,7 +2357,7 @@ pub(crate) mod test_utils {
 
             let new_test_group = TestGroup {
                 group: new_group,
-                credential: new_key_package.key_package.leaf_node.credential,
+                signing_identity: new_key_package.key_package.leaf_node.signing_identity,
                 signing_key: new_key,
                 secret_store,
             };
@@ -2423,10 +2424,13 @@ pub(crate) mod test_utils {
         }
     }
 
-    pub(crate) fn credential(signing_key: &SecretKey, identifier: &[u8]) -> Credential {
-        BasicCredential::new(identifier.to_vec(), signing_key.to_public().unwrap())
-            .unwrap()
-            .into_credential()
+    pub(crate) fn signing_identity(signing_key: &SecretKey, identifier: &[u8]) -> SigningIdentity {
+        let credential =
+            BasicCredential::new(identifier.to_vec(), signing_key.to_public().unwrap())
+                .unwrap()
+                .into_credential();
+
+        SigningIdentity::new(credential)
     }
 
     pub(crate) fn group_extensions() -> ExtensionList {
@@ -2451,7 +2455,7 @@ pub(crate) mod test_utils {
         let key_package_generator = KeyPackageGenerator {
             protocol_version,
             cipher_suite,
-            credential: &credential(&signing_key, identifier),
+            signing_identity: &signing_identity(&signing_key, identifier),
             signing_key: &signing_key,
         };
 
@@ -2474,7 +2478,7 @@ pub(crate) mod test_utils {
         leaf_extensions: ExtensionList,
     ) -> TestGroup {
         let signing_key = cipher_suite.generate_secret_key().unwrap();
-        let credential = credential(&signing_key, b"alice");
+        let credential = signing_identity(&signing_key, b"alice");
 
         let (leaf_node, leaf_secret_key) = LeafNode::generate(
             cipher_suite,
@@ -2499,7 +2503,7 @@ pub(crate) mod test_utils {
 
         TestGroup {
             group,
-            credential,
+            signing_identity: credential,
             signing_key,
             secret_store: InMemoryPskStore::default(),
         }
@@ -2565,7 +2569,7 @@ mod tests {
 
             assert_eq!(
                 group.current_epoch.public.public_tree.get_leaf_nodes()[0]
-                    .credential
+                    .signing_identity
                     .public_key()
                     .unwrap(),
                 test_group.signing_key.to_public().unwrap()
@@ -2668,7 +2672,10 @@ mod tests {
         };
 
         assert_ne!(update.leaf_node.public_key, existing_leaf.public_key);
-        assert_eq!(update.leaf_node.credential, existing_leaf.credential);
+        assert_eq!(
+            update.leaf_node.signing_identity,
+            existing_leaf.signing_identity
+        );
         assert_eq!(update.leaf_node.extensions, extension_list);
         assert_eq!(update.leaf_node.capabilities, new_capabilities);
     }
@@ -3056,7 +3063,7 @@ mod tests {
 
         let (leaf_node, leaf_secret) = LeafNode::generate(
             cipher_suite,
-            group.credential,
+            group.signing_identity,
             CapabilitiesExt::default(),
             ExtensionList::default(),
             &group.signing_key,

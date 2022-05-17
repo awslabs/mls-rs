@@ -54,7 +54,7 @@ impl LeafNode {
 mod tests {
     use super::*;
     use crate::{
-        client::test_utils::get_test_credential,
+        keychain::test_utils::get_test_signing_identity,
         tree_kem::{
             leaf_node::test_utils::{get_test_capabilities, get_test_extensions, get_test_node},
             parent_hash::ParentHash,
@@ -82,11 +82,12 @@ mod tests {
             let mut test_cases = Vec::new();
 
             for cipher_suite in CipherSuite::all() {
-                let (credential, secret) = get_test_credential(cipher_suite, b"foo".to_vec());
+                let (signing_identity, secret) =
+                    get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
                 let (mut leaf_node, _secret_key) = get_test_node(
                     cipher_suite,
-                    credential.clone(),
+                    signing_identity.clone(),
                     &secret,
                     Some(capabilities.clone()),
                     Some(extensions.clone()),

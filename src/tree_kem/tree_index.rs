@@ -49,7 +49,10 @@ impl TreeIndex {
             ));
         }
 
-        let pub_key = leaf_node.credential.public_key()?.to_uncompressed_bytes()?;
+        let pub_key = leaf_node
+            .signing_identity
+            .public_key()?
+            .to_uncompressed_bytes()?;
         let credential_entry = self.credential_signature_key.entry(pub_key);
 
         if let Entry::Occupied(entry) = credential_entry {
@@ -83,7 +86,10 @@ impl TreeIndex {
     ) -> Result<(), TreeIndexError> {
         self.leaves.remove(leaf_node_ref);
 
-        let pub_key = leaf_node.credential.public_key()?.to_uncompressed_bytes()?;
+        let pub_key = leaf_node
+            .signing_identity
+            .public_key()?
+            .to_uncompressed_bytes()?;
 
         self.credential_signature_key.remove(&pub_key);
         self.hpke_key.remove(leaf_node.public_key.as_ref());
@@ -166,7 +172,7 @@ mod tests {
 
             let pub_key = d
                 .leaf_node
-                .credential
+                .signing_identity
                 .public_key()
                 .unwrap()
                 .to_uncompressed_bytes()
@@ -221,7 +227,7 @@ mod tests {
         let before_error = test_index.clone();
 
         let mut new_key_package = get_basic_test_node(CipherSuite::P256Aes128, "foo");
-        new_key_package.credential = test_data[1].leaf_node.credential.clone();
+        new_key_package.signing_identity = test_data[1].leaf_node.signing_identity.clone();
 
         let res = test_index.insert(
             new_key_package
@@ -278,7 +284,7 @@ mod tests {
 
         let pub_key = test_data[1]
             .leaf_node
-            .credential
+            .signing_identity
             .public_key()
             .unwrap()
             .to_uncompressed_bytes()

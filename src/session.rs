@@ -16,7 +16,7 @@ use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::tree_kem::leaf_node_ref::LeafNodeRef;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
-use crate::{Keychain, ProtocolVersion};
+use crate::{keychain::Keychain, ProtocolVersion};
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use std::fmt::{self, Debug};
 use thiserror::Error;
@@ -295,7 +295,7 @@ where
         let signing_key = self
             .config
             .keychain()
-            .signer(&leaf_node.credential)
+            .signer(&leaf_node.signing_identity)
             .ok_or(SessionError::SignerNotFound)?;
 
         self.protocol
@@ -401,7 +401,7 @@ where
         let signer = self
             .config
             .keychain()
-            .signer(&leaf_node.credential)
+            .signer(&leaf_node.signing_identity)
             .ok_or(SessionError::SignerNotFound)?;
 
         let packet = self.protocol.create_proposal(
@@ -428,7 +428,7 @@ where
         let signer = self
             .config
             .keychain()
-            .signer(&leaf_node.credential)
+            .signer(&leaf_node.signing_identity)
             .ok_or(SessionError::SignerNotFound)?;
 
         let (commit_data, welcome) = self.protocol.commit_proposals(
@@ -506,7 +506,7 @@ where
                 (ProcessedMessagePayload::GroupInfo(message), None, vec![])
             }
             MLSMessagePayload::KeyPackage(message) => {
-                let credential = message.leaf_node.credential.clone();
+                let credential = message.leaf_node.signing_identity.credential.clone();
                 (
                     ProcessedMessagePayload::KeyPackage(message),
                     Some(credential),
@@ -566,7 +566,7 @@ where
 
         self.config
             .keychain()
-            .signer(&key_package.credential)
+            .signer(&key_package.signing_identity)
             .ok_or(SessionError::SignerNotFound)
     }
 

@@ -130,7 +130,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
                 Vec::new(),
             ),
             MLSMessagePayload::KeyPackage(key_package) => {
-                let sender = key_package.leaf_node.credential.clone();
+                let sender = key_package.leaf_node.signing_identity.credential.clone();
                 (
                     ExternalProcessedMessagePayload::KeyPackage(key_package),
                     Some(sender),

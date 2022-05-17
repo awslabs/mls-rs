@@ -1,4 +1,5 @@
 use crate::{
+    keychain::SigningIdentity,
     signer::{SignatureError, Signer},
     tree_kem::leaf_node::LeafNodeError,
 };
@@ -26,7 +27,7 @@ pub enum KeyPackageGenerationError {
 pub struct KeyPackageGenerator<'a, S: Signer> {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
-    pub credential: &'a Credential,
+    pub signing_identity: &'a SigningIdentity,
     pub signing_key: &'a S,
 }
 
@@ -53,7 +54,7 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             self.cipher_suite,
-            self.credential.clone(),
+            self.signing_identity.clone(),
             capabilities,
             leaf_node_extensions,
             self.signing_key,
@@ -90,6 +91,7 @@ mod tests {
         credential::{BasicCredential, Credential},
         extension::{CapabilitiesExt, ExtensionList, LifetimeExt, MlsExtension},
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
+        keychain::SigningIdentity,
         tree_kem::leaf_node::{LeafNodeError, LeafNodeSource},
         ProtocolVersion,
     };
@@ -107,10 +109,12 @@ mod tests {
         const IDENTIFIER: crate::extension::ExtensionType = 42;
     }
 
-    fn test_credential(signing_key: &SecretKey) -> Credential {
-        Credential::Basic(
+    fn test_signing_identity(signing_key: &SecretKey) -> SigningIdentity {
+        let credential = Credential::Basic(
             BasicCredential::new(b"test".to_vec(), signing_key.to_public().unwrap()).unwrap(),
-        )
+        );
+
+        SigningIdentity::new(credential)
     }
 
     fn test_ext(val: u32) -> ExtensionList {
@@ -131,7 +135,7 @@ mod tests {
             let signing_key =
                 SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
 
-            let credential = test_credential(&signing_key);
+            let signing_identity = test_signing_identity(&signing_key);
             let key_package_ext = test_ext(32);
             let leaf_node_ext = test_ext(42);
             let lifetime = test_lifetime();
@@ -139,7 +143,7 @@ mod tests {
             let test_generator = KeyPackageGenerator {
                 protocol_version,
                 cipher_suite,
-                credential: &credential,
+                signing_identity: &signing_identity,
                 signing_key: &signing_key,
             };
 
@@ -167,10 +171,10 @@ mod tests {
                 generated
                     .key_package
                     .leaf_node
-                    .credential
+                    .signing_identity
                     .public_key()
                     .unwrap(),
-                credential.public_key().unwrap()
+                signing_identity.public_key().unwrap()
             );
 
             assert_ne!(
@@ -229,14 +233,14 @@ mod tests {
         let signing_key =
             SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
 
-        let credential = test_credential(
+        let credential = test_signing_identity(
             &SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap(),
         );
 
         let test_generator = KeyPackageGenerator {
             protocol_version,
             cipher_suite,
-            credential: &credential,
+            signing_identity: &credential,
             signing_key: &signing_key,
         };
 
@@ -263,12 +267,12 @@ mod tests {
             let signing_key =
                 SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
 
-            let credential = test_credential(&signing_key);
+            let credential = test_signing_identity(&signing_key);
 
             let test_generator = KeyPackageGenerator {
                 protocol_version,
                 cipher_suite,
-                credential: &credential,
+                signing_identity: &credential,
                 signing_key: &signing_key,
             };
 
