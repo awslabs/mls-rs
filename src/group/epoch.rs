@@ -238,16 +238,16 @@ impl Epoch {
         generation: Option<u32>,
         key_type: &KeyType,
     ) -> Result<MessageKey, EpochError> {
-        if let Some(ratchet) = self.get_ratchet(leaf_index, key_type) {
-            match generation {
-                None => ratchet.next_message_key(),
-                Some(gen) => ratchet.get_message_key(gen),
-            }
-            .map_err(|e| e.into())
-        } else {
-            self.derive_ratchets(leaf_index, key_type)
-                .and_then(|r| r.next_message_key().map_err(|e| e.into()))
+        let ratchet = match self.get_ratchet(leaf_index, key_type) {
+            Some(ratchet) => ratchet,
+            None => self.derive_ratchets(leaf_index, key_type)?,
+        };
+
+        match generation {
+            None => ratchet.next_message_key(),
+            Some(gen) => ratchet.get_message_key(gen),
         }
+        .map_err(|e| e.into())
     }
 
     pub fn get_encryption_key(&mut self, key_type: KeyType) -> Result<MessageKey, EpochError> {
@@ -397,6 +397,7 @@ impl WelcomeSecret {
 pub mod test_utils {
     use super::*;
     use crate::group::secret_tree::test_utils::get_test_tree;
+    use ferriscrypt::kdf::hkdf::Hkdf;
 
     pub(crate) fn get_test_epoch(
         cipher_suite: CipherSuite,
@@ -411,7 +412,11 @@ pub mod test_utils {
                 cipher_suite,
                 public_tree: TreeKemPublic::new(cipher_suite),
             },
-            secret_tree: get_test_tree(cipher_suite, vec![], 1),
+            secret_tree: get_test_tree(
+                cipher_suite,
+                vec![0 as u8; Hkdf::from(cipher_suite.kdf_type()).extract_size()],
+                2,
+            ),
             self_index: LeafIndex(0),
             key_schedule: KeySchedule {
                 sender_data_secret: vec![],
@@ -433,7 +438,11 @@ pub mod test_utils {
 mod tests {
     use ferriscrypt::{kdf::hkdf::Hkdf, rand::SecureRng};
 
-    use crate::{cipher_suite::CipherSuite, group::epoch::test_utils::get_test_epoch};
+    use crate::{
+        cipher_suite::CipherSuite,
+        group::{epoch::test_utils::get_test_epoch, secret_tree::KeyType},
+        tree_kem::node::LeafIndex,
+    };
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -514,6 +523,40 @@ mod tests {
                 .unwrap();
 
             assert_eq!(exported_secret, test_case.output);
+        }
+    }
+
+    #[test]
+    fn test_get_key() {
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let key_size = Hkdf::from(cipher_suite.kdf_type()).extract_size();
+
+        let mut epoch_alice =
+            get_test_epoch(cipher_suite, vec![0u8; key_size], vec![0u8; key_size]);
+
+        let mut epoch_bob = epoch_alice.clone();
+        epoch_bob.self_index = LeafIndex(1);
+
+        for key_type in [KeyType::Application, KeyType::Handshake] {
+            let enc_keys =
+                std::iter::repeat_with(|| epoch_alice.get_encryption_key(key_type).unwrap())
+                    .take(10)
+                    .collect::<Vec<_>>();
+
+            let random_permutation: [u32; 10] = [2, 9, 6, 4, 0, 8, 1, 3, 5, 7];
+
+            for i in random_permutation {
+                assert_eq!(
+                    enc_keys[i as usize],
+                    epoch_bob
+                        .get_decryption_key(LeafIndex(0), i, key_type)
+                        .unwrap()
+                );
+
+                assert!(epoch_bob
+                    .get_decryption_key(LeafIndex(0), i, key_type)
+                    .is_err());
+            }
         }
     }
 }

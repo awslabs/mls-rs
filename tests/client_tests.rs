@@ -586,6 +586,35 @@ fn test_application_messages(
 }
 
 #[test]
+fn test_out_of_order_application_messages() {
+    let (mut alice_session, mut receiver_sessions) = get_test_sessions(
+        ProtocolVersion::Mls10,
+        CipherSuite::Curve25519Aes128,
+        1,
+        Preferences::default(),
+    );
+
+    let bob_session = &mut receiver_sessions[0];
+    let mut ciphertexts = vec![];
+
+    ciphertexts.push(
+        alice_session
+            .encrypt_application_data(&[0], vec![])
+            .unwrap(),
+    );
+
+    ciphertexts.push(
+        alice_session
+            .encrypt_application_data(&[1], vec![])
+            .unwrap(),
+    );
+
+    for i in [1, 0] {
+        assert_matches!(bob_session.process_incoming_bytes(&ciphertexts[i]).unwrap().message, ProcessedMessagePayload::Application(m) if m == [i as u8]);
+    }
+}
+
+#[test]
 fn test_group_application_messages() {
     test_params().for_each(|(protocol_version, cs, encrypt_controls)| {
         test_application_messages(
