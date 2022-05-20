@@ -13,7 +13,6 @@ use crate::{
     tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext},
     ProtocolVersion,
 };
-use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct GroupCore {
@@ -54,6 +53,12 @@ impl GroupCore {
         );
 
         // Apply updates
+        let updated_leaves = proposals
+            .updates
+            .iter()
+            .map(|(leaf_ref, _)| provisional_tree.leaf_node_index(leaf_ref))
+            .collect::<Result<Vec<_>, _>>()?;
+
         for (update_sender, leaf_node) in proposals.updates {
             let validated = leaf_node_validator.validate(
                 leaf_node.clone(),
@@ -71,10 +76,8 @@ impl GroupCore {
         }
 
         // Remove elements from the public tree
-        let removed_leaves = provisional_tree
-            .remove_leaves(current_public_tree, proposals.removes)?
-            .into_iter()
-            .collect::<HashMap<_, _>>();
+        let removed_leaves =
+            provisional_tree.remove_leaves(current_public_tree, proposals.removes)?;
 
         let key_package_validator = KeyPackageValidator::new(
             self.protocol_version,
@@ -99,7 +102,11 @@ impl GroupCore {
             })
             .collect::<Result<_, _>>()?;
 
-        let added_leaves = provisional_tree.add_leaves(adds)?;
+        let added_leaves = provisional_tree
+            .add_leaves(adds)?
+            .iter()
+            .map(|leaf_ref| provisional_tree.leaf_node_index(leaf_ref))
+            .collect::<Result<Vec<_>, _>>()?;
 
         // Apply add by external init
         if let Some((external_add_leaf, _)) = &proposals.external_init {
@@ -114,9 +121,13 @@ impl GroupCore {
         let external_init = proposals
             .external_init
             .map(|(leaf, extern_init)| {
-                leaf.to_reference(self.cipher_suite)
-                    .map(|leaf_ref| (leaf_ref, extern_init))
+                leaf.to_reference(self.cipher_suite).map(|leaf_ref| {
+                    provisional_tree
+                        .leaf_node_index(&leaf_ref)
+                        .map(|index| (index, extern_init))
+                })
             })
+            .transpose()?
             .transpose()?;
 
         // Now that the tree is updated we can check required capabilities if needed
@@ -142,6 +153,7 @@ impl GroupCore {
             public_tree: provisional_tree,
             added_leaves: proposals.adds.into_iter().zip(added_leaves).collect(),
             removed_leaves,
+            updated_leaves,
             epoch: self.context.epoch + 1,
             path_update_required,
             group_context: provisional_group_context,

@@ -394,15 +394,12 @@ mod tests {
         });
 
         let _ = session.commit(vec![proposal], vec![]).unwrap();
-        let state_update = session.apply_pending_commit().unwrap();
+        let _ = session.apply_pending_commit().unwrap();
 
-        let expected_ref = bob_key_gen
-            .key_package
-            .leaf_node
-            .to_reference(TEST_CIPHER_SUITE)
-            .unwrap();
-
-        assert!(state_update.added.iter().any(|r| *r == expected_ref));
+        // Check that the new member is in the group
+        assert!(session
+            .roster()
+            .contains(&&bob_key_gen.key_package.leaf_node));
     }
 
     #[test]

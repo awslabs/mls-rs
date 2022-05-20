@@ -8,7 +8,7 @@ use aws_mls::key_package::KeyPackageGeneration;
 use aws_mls::keychain::SigningIdentity;
 use aws_mls::message::ProcessedMessagePayload;
 use aws_mls::session::{GroupError, Session, SessionError};
-use aws_mls::{LeafNodeRef, ProtocolVersion};
+use aws_mls::ProtocolVersion;
 use ferriscrypt::rand::SecureRng;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 
@@ -172,17 +172,9 @@ fn get_test_sessions(
     assert!(update.active);
     assert_eq!(update.epoch, 1);
 
-    assert_eq!(
-        update.added,
-        receiver_keys
-            .iter()
-            .map(|kpg| kpg
-                .key_package
-                .leaf_node
-                .to_reference(cipher_suite)
-                .unwrap())
-            .collect::<Vec<LeafNodeRef>>()
-    );
+    assert!(receiver_keys.iter().all(|kpg| creator_session
+        .roster()
+        .contains(&&kpg.key_package.leaf_node)));
 
     assert!(update.removed.is_empty());
 
@@ -512,12 +504,16 @@ fn test_remove_proposals(
             };
 
             assert_eq!(update.epoch, epoch_count as u64);
-            assert_eq!(update.removed, vec![to_remove.clone()]);
             assert!(update.added.is_empty());
 
             if expect_inactive {
                 assert!(!update.active)
             } else {
+                assert!(one_session
+                    .roster()
+                    .iter()
+                    .all(|leaf| leaf.to_reference(cipher_suite).unwrap() != to_remove_ref));
+
                 assert!(update.active)
             }
         }

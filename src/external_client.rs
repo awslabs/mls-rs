@@ -219,7 +219,8 @@ mod tests {
             .alice_session
             .commit(vec![received_proposal], vec![])
             .unwrap();
-        let state_update = env.alice_session.apply_pending_commit().unwrap();
+
+        env.alice_session.apply_pending_commit().unwrap();
 
         let expected_ref = env
             .bob_key_gen
@@ -228,7 +229,12 @@ mod tests {
             .to_reference(TEST_CIPHER_SUITE)
             .unwrap();
 
-        assert!(state_update.added.iter().any(|r| *r == expected_ref));
+        // Check that the new member is in the group
+        assert!(env
+            .alice_session
+            .roster()
+            .iter()
+            .any(|leaf_node| leaf_node.to_reference(TEST_CIPHER_SUITE).unwrap() == expected_ref));
     }
 
     #[test]
@@ -286,12 +292,20 @@ mod tests {
         };
 
         let _ = env.alice_session.commit(Vec::new(), Vec::new()).unwrap();
+        let _ = env.alice_session.apply_pending_commit().unwrap();
 
-        let state_update = env.alice_session.apply_pending_commit().unwrap();
+        // Check that bob is no longer in alice's group
+        let bob_leaf_ref = env
+            .bob_key_gen
+            .key_package
+            .leaf_node
+            .to_reference(TEST_CIPHER_SUITE)
+            .unwrap();
 
-        assert!(state_update
-            .removed
+        assert!(!env
+            .alice_session
+            .roster()
             .iter()
-            .any(|p| *p == env.bob_key_gen.key_package.leaf_node));
+            .any(|leaf_node| leaf_node.to_reference(TEST_CIPHER_SUITE).unwrap() == bob_leaf_ref));
     }
 }

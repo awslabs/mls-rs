@@ -98,39 +98,61 @@ struct ProvisionalState {
 
 struct ProvisionalPublicState {
     public_tree: TreeKemPublic,
-    added_leaves: Vec<(KeyPackage, LeafNodeRef)>,
-    removed_leaves: HashMap<LeafNodeRef, LeafNode>,
+    added_leaves: Vec<(KeyPackage, LeafIndex)>,
+    removed_leaves: Vec<(LeafIndex, LeafNode)>,
+    updated_leaves: Vec<LeafIndex>,
     group_context: GroupContext,
     epoch: u64,
     path_update_required: bool,
     psks: Vec<PreSharedKeyID>,
     reinit: Option<ReInit>,
-    external_init: Option<(LeafNodeRef, ExternalInit)>,
+    external_init: Option<(LeafIndex, ExternalInit)>,
 }
 
 #[derive(Clone, Debug)]
 pub struct StateUpdate {
-    pub added: Vec<LeafNodeRef>,
-    pub removed: Vec<LeafNode>,
+    pub added: Vec<LeafIndex>,
+    pub removed: Vec<(LeafIndex, LeafNode)>,
+    pub updated: Vec<LeafIndex>,
+    pub psks: Vec<JustPreSharedKeyID>,
+    pub reinit: Option<ReInit>,
+    pub external_init: Option<LeafIndex>,
     pub active: bool,
     pub epoch: u64,
 }
 
 impl From<&ProvisionalPublicState> for StateUpdate {
     fn from(provisional: &ProvisionalPublicState) -> Self {
+        let added = provisional
+            .added_leaves
+            .iter()
+            .map(|(_, leaf_index)| *leaf_index)
+            .collect::<Vec<_>>();
+
         let removed = provisional
             .removed_leaves
             .iter()
-            .map(|(_, kp)| kp.clone())
-            .collect();
+            .map(|(index, kp)| (*index, kp.clone()))
+            .collect::<Vec<(_, _)>>();
+
+        let external_init_leaf = provisional
+            .external_init
+            .clone()
+            .map(|(leaf_index, _)| leaf_index);
+
+        let psks = provisional
+            .psks
+            .iter()
+            .map(|psk_id| psk_id.key_id.clone())
+            .collect::<Vec<_>>();
 
         StateUpdate {
-            added: provisional
-                .added_leaves
-                .iter()
-                .map(|(_, leaf_ref)| leaf_ref.clone())
-                .collect(),
+            added,
             removed,
+            updated: provisional.updated_leaves.clone(),
+            psks,
+            reinit: provisional.reinit.clone(),
+            external_init: external_init_leaf,
             active: false,
             epoch: provisional.epoch,
         }
@@ -150,7 +172,8 @@ impl ProvisionalState {
     fn self_removed(&self) -> bool {
         self.public_state
             .removed_leaves
-            .contains_key(&self.private_tree.leaf_node_ref)
+            .iter()
+            .any(|(index, _)| index == &self.private_tree.self_index)
     }
 }
 
@@ -1022,6 +1045,18 @@ impl<C: GroupConfig> Group<C> {
 
         let mut provisional_state = self.apply_proposals(proposal_effects)?;
 
+        let added_refs = provisional_state
+            .public_state
+            .added_leaves
+            .iter()
+            .map(|(key_package, _)| {
+                key_package
+                    .leaf_node
+                    .to_reference(key_package.cipher_suite)
+                    .map(|leaf_ref| (key_package.clone(), leaf_ref))
+            })
+            .collect::<Result<Vec<(KeyPackage, LeafNodeRef)>, _>>()?;
+
         let mut provisional_group_context = provisional_state.public_state.group_context;
         provisional_group_context.epoch += 1;
 
@@ -1051,9 +1086,7 @@ impl<C: GroupConfig> Group<C> {
             .encap(
                 &self.core.context.group_id,
                 &context_bytes,
-                &provisional_state
-                    .public_state
-                    .added_leaves
+                &added_refs
                     .iter()
                     // TODO: Modify encap so that clone isn't needed here
                     .map(|(_, leaf_node_ref)| leaf_node_ref.clone())
@@ -1144,25 +1177,16 @@ impl<C: GroupConfig> Group<C> {
             plaintext.membership_tag = Some(membership_tag);
         }
 
-        let (protocol_version, cipher_suite, added_members) =
-            match provisional_state.public_state.reinit {
-                Some(reinit) => {
-                    // TODO: This logic needs to be verified when we complete work on reinit
-                    (
-                        reinit.version,
-                        reinit.cipher_suite,
-                        provisional_state.public_state.added_leaves,
-                    )
-                }
-                None => {
-                    // Welcome messages will be built for each added member
-                    (
-                        self.core.protocol_version,
-                        self.core.cipher_suite,
-                        provisional_state.public_state.added_leaves,
-                    )
-                }
-            };
+        let (protocol_version, cipher_suite) = match provisional_state.public_state.reinit {
+            Some(reinit) => {
+                // TODO: This logic needs to be verified when we complete work on reinit
+                (reinit.version, reinit.cipher_suite)
+            }
+            None => {
+                // Welcome messages will be built for each added member
+                (self.core.protocol_version, self.core.cipher_suite)
+            }
+        };
 
         // Construct a GroupInfo reflecting the new state
         // Group ID, epoch, tree, and confirmed transcript hash from the new state
@@ -1187,7 +1211,7 @@ impl<C: GroupConfig> Group<C> {
 
         let welcome = self
             .make_welcome_message(
-                added_members,
+                added_refs,
                 &next_epoch.public.public_tree,
                 &joiner_secret,
                 &psk_secret,
@@ -1908,8 +1932,10 @@ impl<C: GroupConfig> Group<C> {
                             .public_state
                             .added_leaves
                             .into_iter()
-                            .map(|(_, leaf_node_ref)| leaf_node_ref)
-                            .collect::<Vec<LeafNodeRef>>(),
+                            .map(|(key_package, _)| {
+                                key_package.leaf_node.to_reference(key_package.cipher_suite)
+                            })
+                            .collect::<Result<Vec<LeafNodeRef>, _>>()?,
                         &self.core.context.tls_serialize_detached()?,
                     )
                 }?;
@@ -2386,6 +2412,19 @@ pub(crate) mod test_utils {
                 .process_pending_commit(commit, &self.secret_store)
         }
 
+        pub(crate) fn process_message(
+            &mut self,
+            plaintext: MLSPlaintext,
+        ) -> Result<ProcessedMessagePayload, GroupError> {
+            self.group.process_incoming_message(
+                VerifiedPlaintext {
+                    encrypted: false,
+                    plaintext,
+                },
+                &self.secret_store,
+            )
+        }
+
         pub(crate) fn make_plaintext(&mut self, content: Content) -> MLSPlaintext {
             let plaintext = self
                 .group
@@ -2532,6 +2571,7 @@ mod tests {
         },
         group::test_utils::lifetime,
         key_package::test_utils::test_key_package,
+        psk::Psk,
     };
 
     use super::{
@@ -3162,5 +3202,119 @@ mod tests {
             bob.group.verify_incoming_plaintext(plaintext, |_| None),
             Err(GroupError::UnencryptedApplicationMessage)
         );
+    }
+
+    fn canonicalize_state_update(update: &mut StateUpdate) {
+        update.added.sort();
+        update.updated.sort();
+
+        update.removed.sort_by_key(|a| a.0);
+    }
+
+    #[test]
+    fn test_state_update() {
+        let protocol_version = ProtocolVersion::Mls10;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+
+        // Create a group with 10 members
+        let mut alice = test_group(protocol_version, cipher_suite);
+        let (mut bob, _) = alice.join("bob");
+        let mut leaves = vec![];
+
+        for _ in 0..8 {
+            let (group, commit) = alice.join("charlie");
+            leaves.push(group.group.current_user_leaf_node().unwrap().clone());
+            if let OutboundMessage::Plaintext(ptxt) = commit {
+                bob.process_message(ptxt).unwrap();
+            }
+        }
+
+        // Create many proposals, make Alice commit them
+        let mut proposals = vec![];
+
+        for index in [2, 5, 6] {
+            proposals.push(alice.group.remove_proposal(LeafIndex(index)).unwrap());
+        }
+
+        for _ in 0..5 {
+            let (key_package, _) = test_member(protocol_version, cipher_suite, b"dave");
+            proposals.push(alice.group.add_proposal(key_package.key_package).unwrap());
+        }
+
+        for i in 0..5 {
+            alice
+                .secret_store
+                .insert(ExternalPskId(vec![i]), Psk(vec![i]));
+
+            bob.secret_store
+                .insert(ExternalPskId(vec![i]), Psk(vec![i]));
+
+            proposals.push(alice.group.psk_proposal(ExternalPskId(vec![i])).unwrap());
+        }
+
+        let update_proposal = bob
+            .group
+            .update_proposal(&bob.signing_key, None, None)
+            .unwrap();
+
+        let update_message = bob
+            .group
+            .create_proposal(
+                update_proposal,
+                &alice.signing_key,
+                ControlEncryptionMode::Plaintext,
+                vec![],
+            )
+            .unwrap();
+
+        if let OutboundMessage::Plaintext(ptxt) = update_message {
+            alice.process_message(ptxt).unwrap();
+        }
+
+        let (commit, _) = alice.commit(proposals).unwrap();
+
+        // Check that applying pending commit and processing commit yields correct update.
+        let mut state_update_alice = alice.process_pending_commit(commit.clone()).unwrap();
+        canonicalize_state_update(&mut state_update_alice);
+
+        assert_eq!(
+            state_update_alice.added,
+            vec![2, 5, 6, 10, 11]
+                .into_iter()
+                .map(LeafIndex)
+                .collect::<Vec<_>>()
+        );
+
+        assert_eq!(
+            state_update_alice.removed,
+            vec![2, 5, 6]
+                .into_iter()
+                .map(|i| (LeafIndex(i), leaves[i as usize - 2].clone()))
+                .collect::<Vec<_>>()
+        );
+
+        assert_eq!(state_update_alice.updated, vec![LeafIndex(1)]);
+
+        assert_eq!(
+            state_update_alice.psks,
+            (0..5)
+                .map(|i| JustPreSharedKeyID::External(ExternalPskId(vec![i])))
+                .collect::<Vec<_>>()
+        );
+
+        assert_matches!(commit.plaintext, OutboundMessage::Plaintext(_));
+
+        if let OutboundMessage::Plaintext(ptxt) = commit.plaintext {
+            let payload = bob.process_message(ptxt).unwrap();
+            assert_matches!(payload, ProcessedMessagePayload::Commit(_));
+
+            if let ProcessedMessagePayload::Commit(mut state_update_bob) = payload {
+                canonicalize_state_update(&mut state_update_bob);
+                assert_eq!(state_update_alice.added, state_update_bob.added);
+                assert_eq!(state_update_alice.removed, state_update_bob.removed);
+                assert_eq!(state_update_alice.updated, state_update_bob.updated);
+                assert_eq!(state_update_alice.psks, state_update_bob.psks);
+            }
+        }
     }
 }

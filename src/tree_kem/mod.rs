@@ -326,7 +326,7 @@ impl TreeKemPublic {
         &mut self,
         lookup_tree: &TreeKemPublic,
         leaf_node_refs: Vec<LeafNodeRef>,
-    ) -> Result<Vec<(LeafNodeRef, LeafNode)>, RatchetTreeError> {
+    ) -> Result<Vec<(LeafIndex, LeafNode)>, RatchetTreeError> {
         // Identify a leaf node containing a key package matching removed.
         // This lookup MUST be done on the tree before any non-Remove proposals have been applied
 
@@ -335,25 +335,31 @@ impl TreeKemPublic {
             .map(|reference| lookup_tree.leaf_node_index(reference))
             .collect::<Result<Vec<LeafIndex>, RatchetTreeError>>()?;
 
-        let removed_leaves = indexes.into_iter().zip(leaf_node_refs).try_fold(
-            Vec::new(),
-            |mut vec, (index, node_ref)| {
+        let removed_leaves: Vec<(LeafNodeRef, LeafNode)> = indexes
+            .iter()
+            .zip(leaf_node_refs)
+            .try_fold(Vec::new(), |mut vec, (index, node_ref)| {
                 // Replace the leaf node at position removed with a blank node
-                if let Some(removed) = self.nodes.blank_leaf_node(index)? {
+                if let Some(removed) = self.nodes.blank_leaf_node(*index)? {
                     self.index.remove(&node_ref, &removed)?;
                     vec.push((node_ref.clone(), removed.into()));
                 }
 
                 // Blank the intermediate nodes along the path from the removed leaf to the root
-                self.nodes.blank_direct_path(index)?;
+                self.nodes.blank_direct_path(*index)?;
                 Ok::<_, RatchetTreeError>(vec)
-            },
-        )?;
+            })?;
 
         // Truncate the tree by reducing the size of tree until the rightmost non-blank leaf node
         self.nodes.trim();
 
-        Ok(removed_leaves)
+        let removed_indices = indexes
+            .into_iter()
+            .zip(removed_leaves.into_iter())
+            .map(|(index, (_, leaf))| (index, leaf))
+            .collect::<Vec<(_, _)>>();
+
+        Ok(removed_indices)
     }
 
     pub fn update_leaf(
@@ -837,16 +843,16 @@ mod tests {
         ];
 
         // Remove two leaves from the tree
-        let res = tree
-            .remove_leaves(&tree.clone(), to_remove.clone())
-            .unwrap();
-
-        let expected_result: Vec<(LeafNodeRef, LeafNode)> = to_remove
+        let expected_result: Vec<(LeafIndex, LeafNode)> = to_remove
             .clone()
             .into_iter()
             .zip(key_packages[1..].to_owned())
-            .map(|(index, ln)| (index, ln.into()))
+            .map(|(leaf_ref, ln)| (tree.leaf_node_index(&leaf_ref).unwrap(), ln.into()))
             .collect();
+
+        let res = tree
+            .remove_leaves(&tree.clone(), to_remove.clone())
+            .unwrap();
 
         assert_eq!(res, expected_result);
 
