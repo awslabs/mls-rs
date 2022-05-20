@@ -1,6 +1,6 @@
 use crate::{
-    keychain::SigningIdentity,
     signer::{SignatureError, Signer},
+    signing_identity::SigningIdentity,
     tree_kem::leaf_node::LeafNodeError,
 };
 
@@ -83,15 +83,15 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use ferriscrypt::asym::ec_key::{Curve, PublicKey, SecretKey};
+    use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
     use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
     use crate::{
         cipher_suite::CipherSuite,
-        credential::{BasicCredential, Credential},
         extension::{CapabilitiesExt, ExtensionList, LifetimeExt, MlsExtension},
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
-        keychain::SigningIdentity,
+        signing_identity::test_utils::get_test_signing_identity,
+        signing_identity::SigningIdentityError,
         tree_kem::leaf_node::{LeafNodeError, LeafNodeSource},
         ProtocolVersion,
     };
@@ -109,14 +109,6 @@ mod tests {
         const IDENTIFIER: crate::extension::ExtensionType = 42;
     }
 
-    fn test_signing_identity(signing_key: &SecretKey) -> SigningIdentity {
-        let credential = Credential::Basic(
-            BasicCredential::new(b"test".to_vec(), signing_key.to_public().unwrap()).unwrap(),
-        );
-
-        SigningIdentity::new(credential)
-    }
-
     fn test_ext(val: u32) -> ExtensionList {
         let mut ext_list = ExtensionList::new();
         ext_list.set_extension(TestExt(val)).unwrap();
@@ -132,10 +124,9 @@ mod tests {
         for (protocol_version, cipher_suite) in
             ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
         {
-            let signing_key =
-                SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
+            let (signing_identity, signing_key) =
+                get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
-            let signing_identity = test_signing_identity(&signing_key);
             let key_package_ext = test_ext(32);
             let leaf_node_ext = test_ext(42);
             let lifetime = test_lifetime();
@@ -172,9 +163,9 @@ mod tests {
                     .key_package
                     .leaf_node
                     .signing_identity
-                    .public_key()
+                    .public_key(cipher_suite)
                     .unwrap(),
-                signing_identity.public_key().unwrap()
+                signing_identity.public_key(cipher_suite).unwrap()
             );
 
             assert_ne!(
@@ -230,17 +221,13 @@ mod tests {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128;
 
-        let signing_key =
-            SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
-
-        let credential = test_signing_identity(
-            &SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap(),
-        );
+        let signing_key = cipher_suite.generate_signing_key().unwrap();
+        let (signing_identity, _) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
         let test_generator = KeyPackageGenerator {
             protocol_version,
             cipher_suite,
-            signing_identity: &credential,
+            signing_identity: &signing_identity,
             signing_key: &signing_key,
         };
 
@@ -254,7 +241,7 @@ mod tests {
         assert_matches!(
             generated,
             Err(KeyPackageGenerationError::LeafNodeError(
-                LeafNodeError::CredentialSigningKeyMismatch
+                LeafNodeError::SigningIdentityError(SigningIdentityError::InvalidSignerPublicKey)
             ))
         );
     }
@@ -264,15 +251,13 @@ mod tests {
         for (protocol_version, cipher_suite) in
             ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
         {
-            let signing_key =
-                SecretKey::generate(Curve::from(cipher_suite.signature_scheme())).unwrap();
-
-            let credential = test_signing_identity(&signing_key);
+            let (signing_identity, signing_key) =
+                get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
             let test_generator = KeyPackageGenerator {
                 protocol_version,
                 cipher_suite,
-                signing_identity: &credential,
+                signing_identity: &signing_identity,
                 signing_key: &signing_key,
             };
 

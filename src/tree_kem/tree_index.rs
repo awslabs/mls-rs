@@ -49,10 +49,8 @@ impl TreeIndex {
             ));
         }
 
-        let pub_key = leaf_node
-            .signing_identity
-            .public_key()?
-            .to_uncompressed_bytes()?;
+        let pub_key = leaf_node.signing_identity.signature_key.deref().clone();
+
         let credential_entry = self.credential_signature_key.entry(pub_key);
 
         if let Entry::Occupied(entry) = credential_entry {
@@ -86,12 +84,9 @@ impl TreeIndex {
     ) -> Result<(), TreeIndexError> {
         self.leaves.remove(leaf_node_ref);
 
-        let pub_key = leaf_node
-            .signing_identity
-            .public_key()?
-            .to_uncompressed_bytes()?;
+        let pub_key = leaf_node.signing_identity.signature_key.deref();
 
-        self.credential_signature_key.remove(&pub_key);
+        self.credential_signature_key.remove(pub_key);
         self.hpke_key.remove(leaf_node.public_key.as_ref());
 
         Ok(())
@@ -170,16 +165,10 @@ mod tests {
                 Some(&LeafIndex(i as u32))
             );
 
-            let pub_key = d
-                .leaf_node
-                .signing_identity
-                .public_key()
-                .unwrap()
-                .to_uncompressed_bytes()
-                .unwrap();
+            let pub_key = d.leaf_node.signing_identity.signature_key;
 
             assert_eq!(
-                test_index.credential_signature_key.get(&pub_key),
+                test_index.credential_signature_key.get(pub_key.deref()),
                 Some(&LeafIndex(i as u32))
             );
 
@@ -285,12 +274,10 @@ mod tests {
         let pub_key = test_data[1]
             .leaf_node
             .signing_identity
-            .public_key()
-            .unwrap()
-            .to_uncompressed_bytes()
-            .unwrap();
+            .signature_key
+            .deref();
 
-        assert_eq!(test_index.credential_signature_key.get(&pub_key), None);
+        assert_eq!(test_index.credential_signature_key.get(pub_key), None);
 
         assert_eq!(
             test_index

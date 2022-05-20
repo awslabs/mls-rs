@@ -2,6 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use super::leaf_node::{LeafNode, LeafNodeSource};
 use crate::client_config::CredentialValidator;
+use crate::signing_identity::SigningIdentityError;
 use crate::{
     cipher_suite::CipherSuite,
     credential::CredentialError,
@@ -10,7 +11,7 @@ use crate::{
     signer::{Signable, SignatureError},
     time::MlsTime,
 };
-use ferriscrypt::asym::ec_key::Curve;
+use ferriscrypt::asym::ec_key::SecretKey;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -77,8 +78,8 @@ pub enum LeafNodeValidationError {
     SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
-    #[error("credential not supported for cipher suite")]
-    InvalidCredentialForCipherSuite,
+    #[error("invalid signing identity {0}")]
+    InvalidSigningIdentity(#[from] SigningIdentityError),
     #[error("invalid leaf_node_source")]
     InvalidLeafNodeSource,
     #[error(transparent)]
@@ -208,18 +209,14 @@ impl<'a, C: CredentialValidator> LeafNodeValidator<'a, C> {
         // Check that we are validating within the proper context
         self.check_context(leaf_node, &context)?;
 
-        // Verify that the credential provided matches the cipher suite that is in use
-        if leaf_node.signing_identity.public_key()?.curve()
-            != Curve::from(self.cipher_suite.signature_scheme())
-        {
-            return Err(LeafNodeValidationError::InvalidCredentialForCipherSuite);
-        }
+        leaf_node
+            .signing_identity
+            .check_validity::<SecretKey>(None, self.cipher_suite)?;
+
+        let public_key = leaf_node.signing_identity.public_key(self.cipher_suite)?;
 
         // Verify that the credential signed the leaf node
-        leaf_node.verify(
-            &leaf_node.signing_identity.public_key()?,
-            &context.group_id(),
-        )?;
+        leaf_node.verify(&public_key, &context.group_id())?;
 
         // If required capabilities are specified, verify the leaf node meets the requirements
         self.validate_required_capabilities(leaf_node)?;
@@ -261,7 +258,7 @@ mod tests {
     use super::*;
 
     use crate::extension::{CapabilitiesExt, ExtensionList, ExternalKeyIdExt, MlsExtension};
-    use crate::keychain::test_utils::get_test_signing_identity;
+    use crate::signing_identity::test_utils::get_test_signing_identity;
     use crate::tree_kem::leaf_node::test_utils::*;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureCredentialValidator;
     use crate::tree_kem::parent_hash::ParentHash;
@@ -475,7 +472,7 @@ mod tests {
 
         assert_matches!(
             test_validator.validate(leaf_node, ValidationContext::Add(None)),
-            Err(LeafNodeValidationError::InvalidCredentialForCipherSuite)
+            Err(LeafNodeValidationError::InvalidSigningIdentity(_))
         );
     }
 

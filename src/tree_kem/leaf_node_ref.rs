@@ -54,7 +54,7 @@ impl LeafNode {
 mod tests {
     use super::*;
     use crate::{
-        keychain::test_utils::get_test_signing_identity,
+        signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{
             leaf_node::test_utils::{get_test_capabilities, get_test_extensions, get_test_node},
             parent_hash::ParentHash,

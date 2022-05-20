@@ -62,6 +62,7 @@ mod psk;
 mod serde_utils;
 pub mod session;
 pub mod signer;
+pub mod signing_identity;
 mod tree_kem;
 pub mod x509;
 

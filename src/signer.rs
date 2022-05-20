@@ -153,7 +153,7 @@ mod tests {
         let mut test_cases = Vec::new();
 
         for cipher_suite in CipherSuite::all() {
-            let signing_key = cipher_suite.generate_secret_key().unwrap();
+            let signing_key = cipher_suite.generate_signing_key().unwrap();
             let content = SecureRng::gen(32).unwrap();
             let context = SecureRng::gen(32).unwrap();
 
@@ -220,8 +220,12 @@ mod tests {
 
     #[test]
     fn test_invalid_signature() {
-        let correct_key = CipherSuite::Curve25519Aes128.generate_secret_key().unwrap();
-        let incorrect_key = CipherSuite::Curve25519Aes128.generate_secret_key().unwrap();
+        let correct_key = CipherSuite::Curve25519Aes128
+            .generate_signing_key()
+            .unwrap();
+        let incorrect_key = CipherSuite::Curve25519Aes128
+            .generate_signing_key()
+            .unwrap();
 
         let mut test_signable = TestSignable {
             content: SecureRng::gen(32).unwrap(),
@@ -236,7 +240,9 @@ mod tests {
 
     #[test]
     fn test_invalid_context() {
-        let signing_key = CipherSuite::Curve25519Aes128.generate_secret_key().unwrap();
+        let signing_key = CipherSuite::Curve25519Aes128
+            .generate_signing_key()
+            .unwrap();
 
         let correct_context = SecureRng::gen(32).unwrap();
         let incorrect_context = SecureRng::gen(32).unwrap();

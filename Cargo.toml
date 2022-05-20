@@ -20,7 +20,7 @@ ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", default-f
 tls_codec = "0.2.0"
 tls_codec_derive = "0.2.0"
 hex = { version = "^0.4.3", features = ["serde"] }
-enum-iterator = "0.7.0"
+enum-iterator = "0.8.1"
 indexmap = { version = "1.8.0", features = ["serde"] }
 der = { version = "^0.5.1", features = ["alloc"]}
 serde = { version = "^1.0", features = ["derive"] }

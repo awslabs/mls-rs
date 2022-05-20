@@ -27,3 +27,6 @@ jobs:
     - uses: jetli/wasm-pack-action@v0.3.0
     - name: Run tests (web)
       run: wasm-pack test --headless --chrome -- --no-default-features --features="browser"
+    - name: Build test harness integration
+      working-directory: ./test_harness_integration
+      run: cargo build

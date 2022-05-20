@@ -1,13 +1,13 @@
 use assert_matches::assert_matches;
-use aws_mls::cipher_suite::CipherSuite;
+use aws_mls::cipher_suite::{CipherSuite, SignaturePublicKey};
 use aws_mls::client::Client;
 use aws_mls::client_config::{InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECONDS};
-use aws_mls::credential::{BasicCredential, Credential};
+use aws_mls::credential::Credential;
 use aws_mls::extension::ExtensionList;
 use aws_mls::key_package::KeyPackageGeneration;
-use aws_mls::keychain::SigningIdentity;
 use aws_mls::message::ProcessedMessagePayload;
 use aws_mls::session::{GroupError, Session, SessionError};
+use aws_mls::signing_identity::SigningIdentity;
 use aws_mls::ProtocolVersion;
 use ferriscrypt::rand::SecureRng;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
@@ -34,9 +34,11 @@ fn generate_client(
     preferences: Preferences,
     lifetime_duration: u64,
 ) -> Client<InMemoryClientConfig> {
-    let key = cipher_suite.generate_secret_key().unwrap();
-    let credential = Credential::Basic(BasicCredential::new(id, key.to_public().unwrap()).unwrap());
-    let signing_identity = SigningIdentity::new(credential);
+    let key = cipher_suite.generate_signing_key().unwrap();
+    let credential = Credential::Basic(id);
+
+    let signing_identity =
+        SigningIdentity::new(credential, SignaturePublicKey::try_from(&key).unwrap());
 
     InMemoryClientConfig::default()
         .with_signing_identity(signing_identity, key)

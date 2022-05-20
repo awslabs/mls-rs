@@ -224,7 +224,7 @@ pub(crate) mod test_utils {
     use super::*;
     use crate::{
         client_config::{InMemoryClientConfig, ONE_YEAR_IN_SECONDS},
-        keychain::test_utils::get_test_signing_identity,
+        signing_identity::test_utils::get_test_signing_identity,
     };
 
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
@@ -310,7 +310,7 @@ mod tests {
 
             assert_eq!(package_gen.key_package.version, protocol_version);
             assert_eq!(package_gen.key_package.cipher_suite, cipher_suite);
-            assert_matches!(&package_gen.key_package.leaf_node.signing_identity.credential, Credential::Basic(basic) if basic.identity == "foo".as_bytes().to_vec());
+            assert_matches!(&package_gen.key_package.leaf_node.signing_identity.credential, Credential::Basic(identity) if identity == "foo".as_bytes());
 
             let (expected_credential, _) = client
                 .config

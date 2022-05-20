@@ -414,7 +414,7 @@ pub mod test_utils {
             },
             secret_tree: get_test_tree(
                 cipher_suite,
-                vec![0 as u8; Hkdf::from(cipher_suite.kdf_type()).extract_size()],
+                vec![0_u8; Hkdf::from(cipher_suite.kdf_type()).extract_size()],
                 2,
             ),
             self_index: LeafIndex(0),

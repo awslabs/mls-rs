@@ -5,8 +5,9 @@ use crate::{
     extension::{CapabilitiesExt, ExtensionList, ExtensionType, LifetimeExt},
     group::{proposal::Proposal, CommitOptions, ControlEncryptionMode, GroupConfig},
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
-    keychain::{InMemoryKeychain, Keychain, SigningIdentity},
+    keychain::{InMemoryKeychain, Keychain},
     psk::{ExternalPskId, Psk},
+    signing_identity::SigningIdentity,
     time::MlsTime,
     EpochRepository, InMemoryEpochRepository, ProtocolVersion,
 };

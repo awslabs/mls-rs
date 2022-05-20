@@ -3,14 +3,14 @@
 //!
 //! It is based on the Mock client written by Richard Barnes.
 
-use aws_mls::cipher_suite::CipherSuite;
+use aws_mls::cipher_suite::{CipherSuite, SignaturePublicKey};
 use aws_mls::client::Client;
 use aws_mls::client_config::{InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECONDS};
-use aws_mls::credential::{BasicCredential, Credential};
+use aws_mls::credential::Credential;
 use aws_mls::extension::ExtensionList;
-use aws_mls::keychain::SigningIdentity;
 use aws_mls::message::ProcessedMessagePayload;
 use aws_mls::session::Session;
+use aws_mls::signing_identity::SigningIdentity;
 use aws_mls::ProtocolVersion;
 
 use clap::Parser;
@@ -160,17 +160,12 @@ impl MlsClient for MlsClientImpl {
         let cipher_suite = CipherSuite::from_raw(request_ref.cipher_suite as u16)
             .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
 
-        let secret_key = cipher_suite.generate_secret_key().map_err(abort)?;
-
-        let credential =
-            BasicCredential::new(b"creator".to_vec(), secret_key.to_public().map_err(abort)?)
-                .map_err(abort)?;
+        let secret_key = cipher_suite.generate_signing_key().map_err(abort)?;
+        let credential = Credential::Basic(b"creator".to_vec());
+        let signature_key = SignaturePublicKey::try_from(&secret_key).map_err(abort)?;
 
         let creator = InMemoryClientConfig::default()
-            .with_signing_identity(
-                SigningIdentity::new(Credential::Basic(credential)),
-                secret_key,
-            )
+            .with_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
             .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
             .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
             .build_client();
@@ -200,19 +195,12 @@ impl MlsClient for MlsClientImpl {
         let mut clients = self.clients.lock().unwrap();
         let cipher_suite = CipherSuite::from_raw(request_ref.cipher_suite as u16).unwrap();
 
-        let secret_key = cipher_suite.generate_secret_key().map_err(abort)?;
-
-        let credential = BasicCredential::new(
-            format!("alice{}", clients.len()).into_bytes(),
-            secret_key.to_public().map_err(abort)?,
-        )
-        .map_err(abort)?;
+        let secret_key = cipher_suite.generate_signing_key().map_err(abort)?;
+        let credential = Credential::Basic(format!("alice{}", clients.len()).into_bytes());
+        let signature_key = SignaturePublicKey::try_from(&secret_key).map_err(abort)?;
 
         let client = InMemoryClientConfig::default()
-            .with_signing_identity(
-                SigningIdentity::new(Credential::Basic(credential)),
-                secret_key,
-            )
+            .with_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
             .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
             .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
             .build_client();
@@ -516,7 +504,7 @@ impl MlsClient for MlsClientImpl {
         let added: Vec<Vec<u8>> = state_update
             .added
             .iter()
-            .map(|leaf_node_ref| (**leaf_node_ref).to_vec())
+            .map(|leaf_node_ref| (**leaf_node_ref).to_be_bytes().to_vec())
             .collect();
 
         let removed = vec![]; // TODO what to return here??
@@ -545,7 +533,7 @@ impl MlsClient for MlsClientImpl {
         let added: Vec<Vec<u8>> = state_update
             .added
             .iter()
-            .map(|leaf_node_ref| (**leaf_node_ref).to_vec())
+            .map(|leaf_node_ref| (**leaf_node_ref).to_be_bytes().to_vec())
             .collect();
 
         let removed = vec![]; // TODO what to return here??

@@ -4,7 +4,8 @@ use crate::{
     epoch::{InMemoryPublicEpochRepository, PublicEpochRepository},
     extension::{CapabilitiesExt, ExtensionType},
     group::ExternalGroupConfig,
-    keychain::{InMemoryKeychain, Keychain, SigningIdentity},
+    keychain::{InMemoryKeychain, Keychain},
+    signing_identity::SigningIdentity,
     ExternalClient, ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};

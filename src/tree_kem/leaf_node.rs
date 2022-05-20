@@ -1,10 +1,10 @@
 use super::parent_hash::ParentHash;
 use crate::{
-    cipher_suite::{CipherSuite, SignatureScheme},
+    cipher_suite::CipherSuite,
     credential::CredentialError,
     extension::{CapabilitiesExt, ExtensionList, LifetimeExt},
-    keychain::SigningIdentity,
     signer::{Signable, SignatureError, Signer},
+    signing_identity::{SigningIdentity, SigningIdentityError},
 };
 use ferriscrypt::{
     asym::ec_key::{generate_keypair, EcKeyError, PublicKey, SecretKey},
@@ -27,14 +27,12 @@ pub enum LeafNodeError {
     SignatureError(#[from] SignatureError),
     #[error(transparent)]
     KdfError(#[from] KdfError),
+    #[error(transparent)]
+    SigningIdentityError(#[from] SigningIdentityError),
     #[error("parent hash error: {0}")]
     ParentHashError(#[source] Box<dyn std::error::Error>),
-    #[error("cipher suite {0:?} is invalid for credential with signature scheme: {1:?}")]
-    InvalidCredentialForCipherSuite(CipherSuite, SignatureScheme),
     #[error("internal signer error: {0:?}")]
     SignerError(Box<dyn std::error::Error>),
-    #[error("the provided signing key does not correspond to the provided credential")]
-    CredentialSigningKeyMismatch,
 }
 
 #[derive(
@@ -83,24 +81,9 @@ impl LeafNode {
         signing_identity: &SigningIdentity,
         signer: &S,
     ) -> Result<(), LeafNodeError> {
-        let signature_scheme = SignatureScheme::try_from(signing_identity.public_key()?.curve())?;
-
-        if signature_scheme != cipher_suite.signature_scheme() {
-            return Err(LeafNodeError::InvalidCredentialForCipherSuite(
-                cipher_suite,
-                signature_scheme,
-            ));
-        }
-
-        if signing_identity.public_key()?
-            != signer
-                .public_key()
-                .map_err(|e| LeafNodeError::SignerError(e.into()))?
-        {
-            return Err(LeafNodeError::CredentialSigningKeyMismatch);
-        }
-
-        Ok(())
+        signing_identity
+            .check_validity(Some(signer), cipher_suite)
+            .map_err(Into::into)
     }
 
     pub fn generate<S: Signer>(
@@ -276,8 +259,8 @@ impl<'a> Signable<'a> for LeafNode {
 pub mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,
-        credential::{BasicCredential, CredentialConvertible},
         extension::{ExternalKeyIdExt, MlsExtension},
+        signing_identity::test_utils::get_test_signing_identity,
     };
 
     use super::*;
@@ -326,14 +309,8 @@ pub mod test_utils {
         cipher_suite: CipherSuite,
         id: &str,
     ) -> (LeafNode, HpkeSecretKey, SecretKey) {
-        let signature_key = cipher_suite.generate_secret_key().unwrap();
-
-        let credential =
-            BasicCredential::new(id.as_bytes().to_vec(), signature_key.to_public().unwrap())
-                .unwrap()
-                .into_credential();
-
-        let signing_identity = SigningIdentity::new(credential);
+        let (signing_identity, signature_key) =
+            get_test_signing_identity(cipher_suite, id.as_bytes().to_vec());
 
         LeafNode::generate(
             cipher_suite,
@@ -372,7 +349,7 @@ mod tests {
     use super::*;
 
     use crate::cipher_suite::CipherSuite;
-    use crate::keychain::test_utils::get_test_signing_identity;
+    use crate::signing_identity::test_utils::get_test_signing_identity;
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]
@@ -411,7 +388,7 @@ mod tests {
             let curve = cipher_suite.kem_type().curve();
 
             leaf_node
-                .verify(&signing_identity.public_key().unwrap(), &None)
+                .verify(&signing_identity.public_key(cipher_suite).unwrap(), &None)
                 .unwrap();
 
             let expected_public = SecretKey::from_bytes(secret_key.as_ref(), curve)
@@ -432,8 +409,13 @@ mod tests {
 
         let (test_signing_identity, _) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
-        let incorrect_secret =
-            SecretKey::generate(test_signing_identity.public_key().unwrap().curve()).unwrap();
+        let incorrect_secret = SecretKey::generate(
+            test_signing_identity
+                .public_key(cipher_suite)
+                .unwrap()
+                .curve(),
+        )
+        .unwrap();
 
         let res = LeafNode::generate(
             cipher_suite,
@@ -444,7 +426,12 @@ mod tests {
             LifetimeExt::years(1).unwrap(),
         );
 
-        assert_matches!(res, Err(LeafNodeError::CredentialSigningKeyMismatch));
+        assert_matches!(
+            res,
+            Err(LeafNodeError::SigningIdentityError(
+                SigningIdentityError::InvalidSignerPublicKey
+            ))
+        );
     }
 
     #[test]
@@ -463,13 +450,7 @@ mod tests {
             LifetimeExt::years(1).unwrap(),
         );
 
-        assert_matches!(
-            res,
-            Err(LeafNodeError::InvalidCredentialForCipherSuite(
-                CipherSuite::Curve25519Aes128,
-                SignatureScheme::EcdsaSecp256r1Sha256
-            ))
-        );
+        assert_matches!(res, Err(LeafNodeError::SigningIdentityError(_)));
     }
 
     #[test]
@@ -525,8 +506,11 @@ mod tests {
             assert_eq!(leaf.signing_identity, original_leaf.signing_identity);
             assert_matches!(&leaf.leaf_node_source, LeafNodeSource::Update);
 
-            leaf.verify(&signing_identity.public_key().unwrap(), &Some(b"group"))
-                .unwrap();
+            leaf.verify(
+                &signing_identity.public_key(cipher_suite).unwrap(),
+                &Some(b"group"),
+            )
+            .unwrap();
         }
     }
 
@@ -593,8 +577,11 @@ mod tests {
             assert_eq!(leaf.signing_identity, original_leaf.signing_identity);
             assert_matches!(&leaf.leaf_node_source, LeafNodeSource::Commit(parent_hash) if parent_hash == &test_parent_hash);
 
-            leaf.verify(&signing_identity.public_key().unwrap(), &Some(b"group"))
-                .unwrap();
+            leaf.verify(
+                &signing_identity.public_key(cipher_suite).unwrap(),
+                &Some(b"group"),
+            )
+            .unwrap();
         }
     }
 

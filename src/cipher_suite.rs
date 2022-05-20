@@ -1,61 +1,54 @@
 use enum_iterator::IntoEnumIterator;
-use ferriscrypt::asym::ec_key::{Curve, EcKeyError, SecretKey};
+use ferriscrypt::asym::ec_key::{Curve, EcKeyError, PublicKey, SecretKey};
 use ferriscrypt::cipher::aead::Aead;
 use ferriscrypt::digest::HashFunction;
 use ferriscrypt::hpke::kem::Kem;
 use ferriscrypt::hpke::{AeadId, Hpke, KdfId, KemId};
 use std::io::{Read, Write};
+use std::ops::Deref;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(
     Clone,
-    Copy,
     Debug,
-    IntoEnumIterator,
     PartialEq,
+    Eq,
+    Hash,
     TlsDeserialize,
     TlsSerialize,
     TlsSize,
-    Eq,
-    Hash,
     serde::Deserialize,
     serde::Serialize,
 )]
-#[repr(u16)]
-pub enum SignatureScheme {
-    EcdsaSecp256r1Sha256 = 0x0403,
-    #[cfg(feature = "openssl_engine")]
-    EcdsaSecp384r1Sha384 = 0x0503,
-    #[cfg(feature = "openssl_engine")]
-    EcdsaSecp521r1Sha512 = 0x0603,
-    Ed25519 = 0x0703,
-    #[cfg(feature = "openssl_engine")]
-    Ed448 = 0x0808,
-}
+pub struct SignaturePublicKey(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
-impl TryFrom<Curve> for SignatureScheme {
-    type Error = EcKeyError;
+impl Deref for SignaturePublicKey {
+    type Target = Vec<u8>;
 
-    fn try_from(curve: Curve) -> Result<SignatureScheme, Self::Error> {
-        match curve {
-            Curve::P256 => Ok(SignatureScheme::EcdsaSecp256r1Sha256),
-            #[cfg(feature = "openssl_engine")]
-            Curve::P384 => Ok(SignatureScheme::EcdsaSecp384r1Sha384),
-            #[cfg(feature = "openssl_engine")]
-            Curve::P521 => Ok(SignatureScheme::EcdsaSecp521r1Sha512),
-            Curve::X25519 => Err(EcKeyError::NotSigningKey(curve)),
-            Curve::Ed25519 => Ok(SignatureScheme::Ed25519),
-            #[cfg(feature = "openssl_engine")]
-            Curve::X448 => Err(EcKeyError::NotSigningKey(curve)),
-            #[cfg(feature = "openssl_engine")]
-            Curve::Ed448 => Ok(SignatureScheme::Ed448),
-        }
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
-impl SignatureScheme {
-    pub fn all() -> impl Iterator<Item = SignatureScheme> {
-        Self::into_enum_iter()
+impl From<Vec<u8>> for SignaturePublicKey {
+    fn from(data: Vec<u8>) -> Self {
+        SignaturePublicKey(data)
+    }
+}
+
+impl TryFrom<PublicKey> for SignaturePublicKey {
+    type Error = EcKeyError;
+
+    fn try_from(pk: PublicKey) -> Result<Self, Self::Error> {
+        Ok(SignaturePublicKey::from(pk.to_uncompressed_bytes()?))
+    }
+}
+
+impl TryFrom<&SecretKey> for SignaturePublicKey {
+    type Error = EcKeyError;
+
+    fn try_from(value: &SecretKey) -> Result<Self, Self::Error> {
+        SignaturePublicKey::try_from(value.to_public()?)
     }
 }
 
@@ -116,19 +109,19 @@ pub enum CipherSuite {
 impl ToString for CipherSuite {
     fn to_string(&self) -> String {
         match self {
-            CipherSuite::Curve25519Aes128 => "MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
-            CipherSuite::P256Aes128 => "MLS10_128_DHKEMP256_AES128GCM_SHA256_P256",
+            CipherSuite::Curve25519Aes128 => "MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
+            CipherSuite::P256Aes128 => "MLS_128_DHKEMP256_AES128GCM_SHA256_P256",
             CipherSuite::Curve25519ChaCha20 => {
-                "MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519"
+                "MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519"
             }
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448Aes256 => "MLS10_256_DHKEMX448_AES256GCM_SHA512_Ed448",
+            CipherSuite::Curve448Aes256 => "MLS_256_DHKEMX448_AES256GCM_SHA512_Ed448",
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::P521Aes256 => "MLS10_256_DHKEMP521_AES256GCM_SHA512_P521",
+            CipherSuite::P521Aes256 => "MLS_256_DHKEMP521_AES256GCM_SHA512_P521",
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448ChaCha20 => "MLS10_256_DHKEMX448_CHACHA20POLY1305_SHA512_Ed448",
+            CipherSuite::Curve448ChaCha20 => "MLS_256_DHKEMX448_CHACHA20POLY1305_SHA512_Ed448",
             #[cfg(feature = "openssl_engine")]
-            CipherSuite::P384Aes256 => "MLS10_256_DHKEMP384_AES256GCM_SHA384_P384",
+            CipherSuite::P384Aes256 => "MLS_256_DHKEMP384_AES256GCM_SHA384_P384",
         }
         .to_string()
     }
@@ -209,23 +202,6 @@ impl CipherSuite {
     }
 
     #[inline(always)]
-    pub fn signature_scheme(&self) -> SignatureScheme {
-        match self {
-            CipherSuite::Curve25519Aes128 => SignatureScheme::Ed25519,
-            CipherSuite::P256Aes128 => SignatureScheme::EcdsaSecp256r1Sha256,
-            CipherSuite::Curve25519ChaCha20 => SignatureScheme::Ed25519,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448Aes256 => SignatureScheme::Ed448,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::P521Aes256 => SignatureScheme::EcdsaSecp521r1Sha512,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448ChaCha20 => SignatureScheme::Ed448,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::P384Aes256 => SignatureScheme::EcdsaSecp384r1Sha384,
-        }
-    }
-
-    #[inline(always)]
     pub(crate) fn kdf_type(&self) -> KdfId {
         self.kem_type().kdf()
     }
@@ -243,23 +219,24 @@ impl CipherSuite {
         Kem::new(self.kem_type())
     }
 
-    pub fn generate_secret_key(&self) -> Result<SecretKey, EcKeyError> {
-        SecretKey::generate(Curve::from(self.signature_scheme()))
-    }
-}
-
-impl From<SignatureScheme> for Curve {
-    fn from(scheme: SignatureScheme) -> Self {
-        match scheme {
-            SignatureScheme::EcdsaSecp256r1Sha256 => Curve::P256,
+    pub(crate) fn signature_key_curve(&self) -> Curve {
+        match self {
+            CipherSuite::Curve25519Aes128 => Curve::Ed25519,
+            CipherSuite::P256Aes128 => Curve::P256,
+            CipherSuite::Curve25519ChaCha20 => Curve::Ed25519,
             #[cfg(feature = "openssl_engine")]
-            SignatureScheme::EcdsaSecp521r1Sha512 => Curve::P521,
-            SignatureScheme::Ed25519 => Curve::Ed25519,
+            CipherSuite::Curve448Aes256 => Curve::Ed448,
             #[cfg(feature = "openssl_engine")]
-            SignatureScheme::Ed448 => Curve::Ed448,
+            CipherSuite::P521Aes256 => Curve::P521,
             #[cfg(feature = "openssl_engine")]
-            SignatureScheme::EcdsaSecp384r1Sha384 => Curve::P384,
+            CipherSuite::Curve448ChaCha20 => Curve::Ed448,
+            #[cfg(feature = "openssl_engine")]
+            CipherSuite::P384Aes256 => Curve::P384,
         }
+    }
+
+    pub fn generate_signing_key(&self) -> Result<SecretKey, EcKeyError> {
+        SecretKey::generate(self.signature_key_curve())
     }
 }
 

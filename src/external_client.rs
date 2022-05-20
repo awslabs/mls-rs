@@ -117,7 +117,7 @@ impl<C: ExternalClientConfig> ExternalClient<C> {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use crate::{
-        cipher_suite::CipherSuite, keychain::test_utils::get_test_signing_identity,
+        cipher_suite::CipherSuite, signing_identity::test_utils::get_test_signing_identity,
         InMemoryExternalClientConfig,
     };
 
@@ -175,7 +175,7 @@ mod tests {
             let alice_config = get_basic_config(TEST_CIPHER_SUITE, "alice")
                 .with_external_signing_key(
                     TED_EXTERNAL_KEY_ID.to_vec(),
-                    ted_credential.public_key().unwrap(),
+                    ted_credential.public_key(TEST_CIPHER_SUITE).unwrap(),
                 );
 
             let alice_session = create_session(&alice_config.build_client());

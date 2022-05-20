@@ -31,6 +31,7 @@ use crate::psk::{
     ResumptionPSKUsage, ResumptionPsk,
 };
 use crate::signer::{Signable, SignatureError, Signer};
+use crate::signing_identity::SigningIdentityError;
 use crate::tree_kem::kem::TreeKem;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::tree_kem::leaf_node_ref::LeafNodeRef;
@@ -238,6 +239,8 @@ pub enum GroupError {
     ProposalCacheError(#[from] ProposalCacheError),
     #[error(transparent)]
     TreeValidationError(#[from] TreeValidationError),
+    #[error(transparent)]
+    SigningIdentityError(#[from] SigningIdentityError),
     #[error("Cipher suite does not match")]
     CipherSuiteMismatch,
     #[error("Invalid key package signature")]
@@ -2185,7 +2188,12 @@ fn validate_tree<C: CredentialValidator>(
     credential_validator: C,
 ) -> Result<(), GroupError> {
     let sender_key_package = public_tree.get_leaf_node(&group_info.signer)?;
-    group_info.verify(&sender_key_package.signing_identity.public_key()?, &())?;
+    group_info.verify(
+        &sender_key_package
+            .signing_identity
+            .public_key(public_tree.cipher_suite)?,
+        &(),
+    )?;
 
     let required_capabilities = group_info.group_context_extensions.get_extension()?;
 
@@ -2293,10 +2301,10 @@ pub(crate) mod test_utils {
     use super::*;
     use crate::{
         client_config::{InMemoryPskStore, PassthroughCredentialValidator},
-        credential::{BasicCredential, CredentialConvertible},
         extension::{CapabilitiesExt, LifetimeExt, RequiredCapabilitiesExt},
         key_package::KeyPackageGenerator,
-        keychain::SigningIdentity,
+        signing_identity::test_utils::get_test_signing_identity,
+        signing_identity::SigningIdentity,
     };
 
     pub const TEST_GROUP: &[u8] = b"group";
@@ -2463,15 +2471,6 @@ pub(crate) mod test_utils {
         }
     }
 
-    pub(crate) fn signing_identity(signing_key: &SecretKey, identifier: &[u8]) -> SigningIdentity {
-        let credential =
-            BasicCredential::new(identifier.to_vec(), signing_key.to_public().unwrap())
-                .unwrap()
-                .into_credential();
-
-        SigningIdentity::new(credential)
-    }
-
     pub(crate) fn group_extensions() -> ExtensionList {
         let required_capabilities = RequiredCapabilitiesExt::default();
 
@@ -2489,12 +2488,13 @@ pub(crate) mod test_utils {
         cipher_suite: CipherSuite,
         identifier: &[u8],
     ) -> (KeyPackageGeneration, SecretKey) {
-        let signing_key = cipher_suite.generate_secret_key().unwrap();
+        let (signing_identity, signing_key) =
+            get_test_signing_identity(cipher_suite, identifier.to_vec());
 
         let key_package_generator = KeyPackageGenerator {
             protocol_version,
             cipher_suite,
-            signing_identity: &signing_identity(&signing_key, identifier),
+            signing_identity: &signing_identity,
             signing_key: &signing_key,
         };
 
@@ -2516,12 +2516,12 @@ pub(crate) mod test_utils {
         capabilities: CapabilitiesExt,
         leaf_extensions: ExtensionList,
     ) -> TestGroup {
-        let signing_key = cipher_suite.generate_secret_key().unwrap();
-        let credential = signing_identity(&signing_key, b"alice");
+        let (signing_identity, signing_key) =
+            get_test_signing_identity(cipher_suite, b"alice".to_vec());
 
         let (leaf_node, leaf_secret_key) = LeafNode::generate(
             cipher_suite,
-            credential.clone(),
+            signing_identity.clone(),
             capabilities,
             leaf_extensions,
             &signing_key,
@@ -2542,7 +2542,7 @@ pub(crate) mod test_utils {
 
         TestGroup {
             group,
-            signing_identity: credential,
+            signing_identity,
             signing_key,
             secret_store: InMemoryPskStore::default(),
         }
@@ -2610,7 +2610,7 @@ mod tests {
             assert_eq!(
                 group.current_epoch.public.public_tree.get_leaf_nodes()[0]
                     .signing_identity
-                    .public_key()
+                    .public_key(cipher_suite)
                     .unwrap(),
                 test_group.signing_key.to_public().unwrap()
             );

@@ -1,4 +1,5 @@
 use crate::{
+    cipher_suite::CipherSuite,
     group::{
         Commit, ContentType, Epoch, GroupContext, GroupError, KeyType, MLSCiphertext,
         MLSCiphertextContent, MLSCiphertextContentAAD, MLSMessageContent, MLSPlaintext,
@@ -189,7 +190,7 @@ where
         Sender::Preconfigured(external_key_id) => {
             public_key_for_preconfigured(external_key_id, external_key_id_to_signing_key)
         }
-        Sender::NewMember => public_key_for_new_member(content),
+        Sender::NewMember => public_key_for_new_member(content, public_tree.cipher_suite),
     }
 }
 
@@ -200,7 +201,7 @@ fn public_key_for_member(
     Ok(public_tree
         .get_leaf_node(leaf_ref)?
         .signing_identity
-        .public_key()?)
+        .public_key(public_tree.cipher_suite)?)
 }
 
 fn public_key_for_preconfigured<F>(
@@ -214,14 +215,18 @@ where
         .ok_or(GroupError::UnknownSigningKeyForExternalSender)
 }
 
-fn public_key_for_new_member(content: &Content) -> Result<PublicKey, GroupError> {
+fn public_key_for_new_member(
+    content: &Content,
+    cipher_suite: CipherSuite,
+) -> Result<PublicKey, GroupError> {
     match content {
         Content::Commit(Commit {
             path: Some(path), ..
-        }) => Ok(path.leaf_node.signing_identity.public_key()?),
-        Content::Proposal(Proposal::Add(AddProposal { key_package })) => {
-            Ok(key_package.leaf_node.signing_identity.public_key()?)
-        }
+        }) => Ok(path.leaf_node.signing_identity.public_key(cipher_suite)?),
+        Content::Proposal(Proposal::Add(AddProposal { key_package })) => Ok(key_package
+            .leaf_node
+            .signing_identity
+            .public_key(cipher_suite)?),
         _ => Err(GroupError::NewMembersCanOnlyProposeAddingThemselves),
     }
 }

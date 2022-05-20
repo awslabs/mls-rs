@@ -3,6 +3,7 @@ use std::collections::HashSet;
 
 use super::*;
 use crate::client_config::CredentialValidator;
+use crate::signing_identity::SigningIdentityError;
 use crate::{
     signer::SignatureError,
     tree_kem::leaf_node_validator::{
@@ -24,6 +25,8 @@ pub enum KeyPackageValidationError {
     SignatureError(#[from] SignatureError),
     #[error(transparent)]
     LeafNodeValidationError(#[from] LeafNodeValidationError),
+    #[error(transparent)]
+    SigningIdentityError(#[from] SigningIdentityError),
     #[error("key lifetime not found")]
     MissingKeyLifetime,
     #[error("capabilities extension not found")]
@@ -77,7 +80,13 @@ impl<'a, C: CredentialValidator> KeyPackageValidator<'a, C> {
     fn check_signature(&self, package: &KeyPackage) -> Result<(), KeyPackageValidationError> {
         // Verify that the signature on the KeyPackage is valid using the public key in the contained LeafNode's credential
         package
-            .verify(&package.leaf_node.signing_identity.public_key()?, &())
+            .verify(
+                &package
+                    .leaf_node
+                    .signing_identity
+                    .public_key(self.cipher_suite)?,
+                &(),
+            )
             .map_err(Into::into)
     }
 
@@ -155,10 +164,9 @@ impl<'a, C: CredentialValidator> KeyPackageValidator<'a, C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::credential::test_utils::get_test_basic_credential;
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
-    use crate::keychain::SigningIdentity;
+    use crate::signing_identity::test_utils::get_test_signing_identity;
     use assert_matches::assert_matches;
     use ferriscrypt::rand::SecureRng;
 
@@ -244,18 +252,16 @@ mod tests {
     where
         F: FnMut(&mut KeyPackage),
     {
-        let alternate_id =
-            get_test_basic_credential(b"test".to_vec(), cipher_suite.signature_scheme());
-
-        let signing_identity = SigningIdentity::new(alternate_id.credential);
+        let (alternate_sining_id, secret) =
+            get_test_signing_identity(cipher_suite, b"test".to_vec());
 
         let mut test_package =
             test_key_package_custom(protocol_version, cipher_suite, "test", |_| {
                 let new_generator = KeyPackageGenerator {
                     protocol_version,
                     cipher_suite,
-                    signing_identity: &signing_identity,
-                    signing_key: &alternate_id.secret,
+                    signing_identity: &alternate_sining_id,
+                    signing_key: &secret,
                 };
 
                 new_generator
@@ -269,7 +275,7 @@ mod tests {
             });
 
         edit(&mut test_package);
-        test_package.sign(&alternate_id.secret, &()).unwrap();
+        test_package.sign(&secret, &()).unwrap();
         test_package
     }
 

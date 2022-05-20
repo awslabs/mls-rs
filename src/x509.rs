@@ -47,7 +47,7 @@ impl Deref for CertificateData {
 }
 
 impl CertificateData {
-    pub fn public_key(&self) -> Result<PublicKey, X509Error> {
+    pub fn public_key_data(&self) -> Result<Vec<u8>, X509Error> {
         // Current state of this function is as follows:
         // x509-parser crate has an unpatched sec vuln https://github.com/rusticata/x509-parser/issues/111
         // X509 crate in RustCrypto is experimental and does not expose certificate parsing yet
@@ -57,7 +57,7 @@ impl CertificateData {
         // choose whatever they like.
         let mut decoder = Decoder::new(&self.0).map_err(X509Error::CertificateParseError)?;
 
-        let pub_key_data = decoder
+        decoder
             .sequence(|x509_decoder| {
                 let pub_key_data = x509_decoder.sequence(|tbs_decoder| {
                     let _version = ::der::asn1::ContextSpecific::decode_explicit(
@@ -88,9 +88,11 @@ impl CertificateData {
 
                 Ok(pub_key_data)
             })
-            .map_err(X509Error::CertificateParseError)?;
+            .map_err(X509Error::CertificateParseError)
+    }
 
-        PublicKey::from_der(&pub_key_data).map_err(Into::into)
+    pub fn public_key(&self) -> Result<PublicKey, X509Error> {
+        PublicKey::from_der(&self.public_key_data()?).map_err(Into::into)
     }
 }
 
