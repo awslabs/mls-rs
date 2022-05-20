@@ -26,4 +26,4 @@ jobs:
           SSH_AUTH_SOCK: /tmp/ssh_agent.sock
         with:
           command: clippy
-          args: -- -D warnings
+          args: --workspace -- -D warnings

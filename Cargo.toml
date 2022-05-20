@@ -1,3 +1,6 @@
+[workspace]
+members = ["test_harness_integration"]
+
 [package]
 name = "aws-mls"
 version = "0.6.0"
