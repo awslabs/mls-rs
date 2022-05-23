@@ -152,7 +152,7 @@ mod tests {
                 .unwrap();
 
             assert_matches!(generated.key_package.leaf_node.leaf_node_source,
-                            LeafNodeSource::Add(ref lt) if lt == &lifetime);
+                            LeafNodeSource::KeyPackage(ref lt) if lt == &lifetime);
 
             assert_eq!(generated.key_package.leaf_node.capabilities, capabilities);
             assert_eq!(generated.key_package.leaf_node.extensions, leaf_node_ext);

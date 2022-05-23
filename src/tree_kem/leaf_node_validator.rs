@@ -128,7 +128,7 @@ impl<'a, C: CredentialValidator> LeafNodeValidator<'a, C> {
         match context {
             ValidationContext::Add(time) => {
                 // If the context is add, and we specified a time to check for lifetime, verify it
-                if let LeafNodeSource::Add(lifetime) = &leaf_node.leaf_node_source {
+                if let LeafNodeSource::KeyPackage(lifetime) = &leaf_node.leaf_node_source {
                     if let Some(current_time) = time {
                         if !lifetime.within_lifetime(*current_time)? {
                             return Err(LeafNodeValidationError::InvalidLifetime(
@@ -165,7 +165,7 @@ impl<'a, C: CredentialValidator> LeafNodeValidator<'a, C> {
         group_id: &[u8],
     ) -> Result<(), LeafNodeValidationError> {
         let context = match leaf_node.leaf_node_source {
-            LeafNodeSource::Add(_) => ValidationContext::Add(None),
+            LeafNodeSource::KeyPackage(_) => ValidationContext::Add(None),
             LeafNodeSource::Update => ValidationContext::Update(group_id),
             LeafNodeSource::Commit(_) => ValidationContext::Commit(group_id),
         };

@@ -329,7 +329,7 @@ mod tests {
             );
 
             let client_lifetime = client.config.lifetime();
-            assert_matches!(package_gen.key_package.leaf_node.leaf_node_source, LeafNodeSource::Add(lifetime) if (lifetime.not_after - lifetime.not_before) == (client_lifetime.not_after - client_lifetime.not_before));
+            assert_matches!(package_gen.key_package.leaf_node.leaf_node_source, LeafNodeSource::KeyPackage(lifetime) if (lifetime.not_after - lifetime.not_before) == (client_lifetime.not_after - client_lifetime.not_before));
 
             let capabilities = package_gen.key_package.leaf_node.capabilities;
             assert_eq!(capabilities, client.config.capabilities());

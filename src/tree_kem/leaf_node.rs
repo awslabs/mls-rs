@@ -48,7 +48,7 @@ pub enum LeafNodeError {
 #[repr(u8)]
 pub enum LeafNodeSource {
     #[tls_codec(discriminant = 1)]
-    Add(LifetimeExt),
+    KeyPackage(LifetimeExt),
     Update,
     Commit(ParentHash),
 }
@@ -102,7 +102,7 @@ impl LeafNode {
             public_key: public.try_into()?,
             signing_identity,
             capabilities,
-            leaf_node_source: LeafNodeSource::Add(lifetime),
+            leaf_node_source: LeafNodeSource::KeyPackage(lifetime),
             extensions,
             signature: Default::default(),
         };
@@ -380,8 +380,8 @@ mod tests {
 
             assert_matches!(
                 &leaf_node.leaf_node_source,
-                LeafNodeSource::Add(lt) if lt == &lifetime,
-                "Expected {:?}, got {:?}", LeafNodeSource::Add(lifetime),
+                LeafNodeSource::KeyPackage(lt) if lt == &lifetime,
+                "Expected {:?}, got {:?}", LeafNodeSource::KeyPackage(lifetime),
                 leaf_node.leaf_node_source
             );
 
