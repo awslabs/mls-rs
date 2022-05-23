@@ -1,32 +1,28 @@
-name: Rust
-
-on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
-
+name: Native
+on: [push, pull_request]
 env:
   CARGO_TERM_COLOR: always
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
-
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  BuildAndTest:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v2
     - name: Setup SSH Keys and known_hosts
       run: |
         ssh-agent -a $SSH_AUTH_SOCK > /dev/null
         ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
-    - name: Run tests (openssl engine)
+    - name: Rust Fmt
+      run: cargo fmt --all -- --check
+    - name: Clippy
+      run: cargo clippy --workspace -- -D warnings
+    - name: Test (OpenSSL Engine) 
       run: cargo test --verbose -- --ignored
-    - name: Run tests (rust crypto engine)
+    - name: Test (rust crypto engine)
       run: cargo test --verbose --no-default-features --features="rustcrypto_engine"
-    - uses: nanasess/setup-chromedriver@v1
-    - uses: jetli/wasm-pack-action@v0.3.0
-    - name: Run tests (web)
-      run: wasm-pack test --headless --chrome -- --no-default-features --features="browser"
-    - name: Build test harness integration
+    - name: Build (Test Harness Integration)
       working-directory: ./test_harness_integration
       run: cargo build
