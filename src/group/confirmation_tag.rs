@@ -1,6 +1,7 @@
-use crate::group::epoch::Epoch;
+use crate::cipher_suite::CipherSuite;
 use crate::group::transcript_hash::ConfirmedTranscriptHash;
 use ferriscrypt::hmac::{HMacError, Key, Tag};
+use ferriscrypt::kdf::hkdf::Hkdf;
 use std::{
     fmt::{self, Debug},
     ops::Deref,
@@ -14,7 +15,9 @@ pub enum ConfirmationTagError {
     HMacError(#[from] HMacError),
 }
 
-#[derive(Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
+)]
 pub struct ConfirmationTag(#[tls_codec(with = "crate::tls::ByteVec")] Tag);
 
 impl Deref for ConfirmationTag {
@@ -32,24 +35,32 @@ impl Debug for ConfirmationTag {
 
 impl ConfirmationTag {
     pub(crate) fn create(
-        epoch: &Epoch,
+        confirmation_key: &[u8],
         confirmed_transcript_hash: &ConfirmedTranscriptHash,
+        cipher_suite: &CipherSuite,
     ) -> Result<Self, ConfirmationTagError> {
-        let hmac_key = Key::new(
-            &epoch.key_schedule.confirmation_key,
-            epoch.public.cipher_suite.hash_function(),
-        )?;
+        let hmac_key = Key::new(confirmation_key, cipher_suite.hash_function())?;
         let mac = hmac_key.generate_tag(confirmed_transcript_hash)?;
         Ok(ConfirmationTag(mac))
     }
 
     pub(crate) fn matches(
         &self,
-        epoch: &Epoch,
+        confirmation_key: &[u8],
         confirmed_transcript_hash: &ConfirmedTranscriptHash,
+        cipher_suite: &CipherSuite,
     ) -> Result<bool, ConfirmationTagError> {
-        let tag = ConfirmationTag::create(epoch, confirmed_transcript_hash)?;
+        let tag =
+            ConfirmationTag::create(confirmation_key, confirmed_transcript_hash, cipher_suite)?;
+
         Ok(&tag == self)
+    }
+
+    pub(crate) fn empty(cipher_suite: &CipherSuite) -> Result<Self, ConfirmationTagError> {
+        let size = Hkdf::from(cipher_suite.kdf_type()).extract_size();
+        let key = Key::new(&vec![0u8; size], cipher_suite.hash_function())?;
+
+        Ok(ConfirmationTag(key.generate_tag(&[])?))
     }
 }
 
@@ -57,7 +68,6 @@ impl ConfirmationTag {
 mod tests {
     use super::*;
     use crate::cipher_suite::CipherSuite;
-    use crate::group::epoch::test_utils::get_test_epoch;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -69,25 +79,35 @@ mod tests {
 
             let confirmed_hash_a = ConfirmedTranscriptHash::from(b"foo_a".to_vec());
 
-            let epoch_a = get_test_epoch(cipher_suite, vec![], b"bar_a".to_vec());
+            let confirmation_key_a = b"bar_a".to_vec();
 
             let confirmed_hash_b = ConfirmedTranscriptHash::from(b"foo_b".to_vec());
 
-            let epoch_b = get_test_epoch(cipher_suite, vec![], b"bar_b".to_vec());
+            let confirmation_key_b = b"bar_b".to_vec();
 
-            let confirmation_tag = ConfirmationTag::create(&epoch_a, &confirmed_hash_a).unwrap();
+            let confirmation_tag =
+                ConfirmationTag::create(&confirmation_key_a, &confirmed_hash_a, &cipher_suite)
+                    .unwrap();
 
             assert!(confirmation_tag
-                .matches(&epoch_a, &confirmed_hash_a)
+                .matches(&confirmation_key_a, &confirmed_hash_a, &cipher_suite)
                 .unwrap());
 
             assert!(!confirmation_tag
-                .matches(&epoch_b, &confirmed_hash_a)
+                .matches(&confirmation_key_b, &confirmed_hash_a, &cipher_suite)
                 .unwrap());
 
             assert!(!confirmation_tag
-                .matches(&epoch_a, &confirmed_hash_b)
+                .matches(&confirmation_key_a, &confirmed_hash_b, &cipher_suite)
                 .unwrap());
+        }
+    }
+
+    #[test]
+    fn test_empty_tag() {
+        for cipher_suite in CipherSuite::all() {
+            println!("Running confirmation tag tests for {:?}", cipher_suite);
+            ConfirmationTag::empty(&cipher_suite).unwrap();
         }
     }
 }

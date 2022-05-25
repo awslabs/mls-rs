@@ -277,8 +277,9 @@ mod tests {
         client_config::InMemoryClientConfig,
         credential::Credential,
         group::{
+            epoch::EpochError,
             proposal::{AddProposal, Proposal},
-            GroupError,
+            GroupError, SecretTreeError,
         },
         key_package::KeyPackage,
         message::ProcessedMessagePayload,
@@ -772,6 +773,38 @@ mod tests {
         assert_eq!(
             alice_session.group_stats().unwrap().epoch,
             bob_session.group_stats().unwrap().epoch
+        );
+    }
+
+    #[test]
+    fn member_cannot_decrypt_same_message_twice() {
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+        let mut alice_session = create_session(&alice);
+
+        let (bob, bob_key_pkg) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+
+        let mut bob_session =
+            join_session(&mut alice_session, [], bob_key_pkg.key_package, &bob).unwrap();
+
+        let message = alice_session
+            .encrypt_application_data(b"foobar", Vec::new())
+            .unwrap();
+
+        let received_message = bob_session.process_incoming_bytes(&message).unwrap();
+
+        assert_matches!(
+            received_message.message,
+            ProcessedMessagePayload::Application(data) if data == b"foobar"
+        );
+
+        let res = bob_session.process_incoming_bytes(&message);
+
+        assert_matches!(
+            res,
+            Err(SessionError::ProtocolError(GroupError::EpochError(
+                EpochError::SecretTreeError(SecretTreeError::KeyMissing(_))
+            )))
         );
     }
 }

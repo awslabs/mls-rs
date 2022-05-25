@@ -872,8 +872,7 @@ mod tests {
         })];
         let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
-            .current_epoch
-            .public
+            .current_public_epoch
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -928,8 +927,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
-            .current_epoch
-            .public
+            .current_public_epoch
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -966,8 +964,7 @@ mod tests {
         .unwrap();
         let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
-            .current_epoch
-            .public
+            .current_public_epoch
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -990,8 +987,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
-            .current_epoch
-            .public
+            .current_public_epoch
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -1019,8 +1015,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
-            .current_epoch
-            .public
+            .current_public_epoch
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -1057,8 +1052,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let mut public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
-            .current_epoch
-            .public
+            .current_public_epoch
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -1099,8 +1093,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let mut public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
-            .current_epoch
-            .public
+            .current_public_epoch
             .public_tree;
         let credential_validator = FailureCredentialValidator::new();
 
@@ -1135,8 +1128,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let mut public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
-            .current_epoch
-            .public
+            .current_public_epoch
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -1189,8 +1181,7 @@ mod tests {
         let cache = ProposalCache::new();
         let public_tree = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .group
-            .current_epoch
-            .public
+            .current_public_epoch
             .public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 

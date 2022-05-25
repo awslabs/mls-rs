@@ -1,7 +1,7 @@
 use crate::{
     cipher_suite::CipherSuite,
     group::{
-        Commit, ContentType, Epoch, GroupContext, GroupError, KeyType, MLSCiphertext,
+        Commit, ContentType, GroupContext, GroupError, KeyType, MLSCiphertext,
         MLSCiphertextContent, MLSCiphertextContentAAD, MLSMessageContent, MLSPlaintext,
         MLSSenderData, MLSSenderDataAAD, Sender, VerifiedPlaintext,
     },
@@ -12,7 +12,7 @@ use crate::{
 use ferriscrypt::asym::ec_key::PublicKey;
 use tls_codec::{Deserialize, Serialize};
 
-use super::{framing::Content, message_signature::MessageSigningContext};
+use super::{epoch::Epoch, framing::Content, message_signature::MessageSigningContext};
 
 pub(crate) struct MessageVerifier<'a, F> {
     pub(crate) msg_epoch: &'a mut Epoch,
@@ -28,6 +28,7 @@ where
     pub(crate) fn verify_plaintext(
         &mut self,
         plaintext: MLSPlaintext,
+        membership_key: &[u8],
     ) -> Result<VerifiedPlaintext, GroupError> {
         // Verify the membership tag if needed
         match plaintext.content.sender {
@@ -35,7 +36,14 @@ where
                 plaintext
                     .membership_tag
                     .as_ref()
-                    .map(|tag| tag.matches(&plaintext, self.context, self.msg_epoch))
+                    .map(|tag| {
+                        tag.matches(
+                            &plaintext,
+                            self.context,
+                            membership_key,
+                            &self.msg_epoch.cipher_suite,
+                        )
+                    })
                     .transpose()?
                     .filter(|&matched| matched)
                     .ok_or(GroupError::InvalidMembershipTag)?;
@@ -60,7 +68,7 @@ where
         from_ciphertext: bool,
     ) -> Result<VerifiedPlaintext, GroupError> {
         verify_plaintext_signature(
-            &self.msg_epoch.public.public_tree,
+            &self.msg_epoch.public_tree,
             self.context,
             plaintext,
             from_ciphertext,
@@ -103,7 +111,6 @@ where
 
         let decryption_key = self.msg_epoch.get_decryption_key(
             self.msg_epoch
-                .public
                 .public_tree
                 .leaf_node_index(&sender_data.sender)?,
             sender_data.generation,
@@ -242,11 +249,12 @@ mod tests {
             padding::PaddingMode,
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_member, TEST_GROUP},
-            CommitOptions, Content, ControlEncryptionMode, Group, GroupError, InMemoryGroupConfig,
-            MLSMessagePayload, MLSPlaintext, MessageVerifier, Sender,
+            CommitOptions, Content, ControlEncryptionMode, Epoch, Group, GroupConfig, GroupError,
+            InMemoryGroupConfig, MLSMessagePayload, MLSPlaintext, MessageVerifier, Sender,
         },
         signer::{Signable, SignatureError},
-        ProtocolVersion,
+        tree_kem::TreeKemPrivate,
+        EpochRepository, GroupContext, ProtocolVersion,
     };
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
@@ -259,17 +267,19 @@ mod tests {
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
     const TED_EXTERNAL_KEY_ID: &[u8] = b"ted";
 
-    fn make_verifier<K>(
-        group: &mut Group<InMemoryGroupConfig>,
+    fn make_verifier<'a, K>(
+        msg_epoch: &'a mut Epoch,
+        context: &'a GroupContext,
+        private_tree: &'a TreeKemPrivate,
         external_key_id_to_signing_key: K,
-    ) -> MessageVerifier<'_, K>
+    ) -> MessageVerifier<'a, K>
     where
         K: Fn(&[u8]) -> Option<PublicKey>,
     {
         MessageVerifier {
-            msg_epoch: &mut group.current_epoch,
-            context: &group.core.context,
-            private_tree: &group.private_tree,
+            msg_epoch,
+            context: &context,
+            private_tree: &private_tree,
             external_key_id_to_signing_key,
         }
     }
@@ -286,8 +296,47 @@ mod tests {
 
     fn add_membership_tag(message: &mut MLSPlaintext, group: &Group<InMemoryGroupConfig>) {
         message.membership_tag = Some(
-            MembershipTag::create(message, &group.core.context, &group.current_epoch).unwrap(),
+            MembershipTag::create(
+                message,
+                &group.core.context,
+                &group.key_schedule.membership_key,
+                &group.core.cipher_suite,
+            )
+            .unwrap(),
         );
+    }
+
+    fn with_verifier<K, F, R>(
+        group: &mut Group<InMemoryGroupConfig>,
+        external_key_id_to_signing_key: K,
+        f: F,
+    ) -> R
+    where
+        K: Fn(&[u8]) -> Option<PublicKey>,
+        F: FnOnce(&mut MessageVerifier<'_, K>) -> R,
+    {
+        let mut epoch = group
+            .config
+            .epoch_repo()
+            .get(group.current_epoch())
+            .unwrap()
+            .unwrap();
+
+        let mut verifier = make_verifier(
+            epoch.inner_mut(),
+            &group.core.context,
+            &group.private_tree,
+            external_key_id_to_signing_key,
+        );
+
+        let res = f(&mut verifier);
+
+        group
+            .config
+            .epoch_repo()
+            .insert(group.current_epoch(), epoch)
+            .unwrap();
+        res
     }
 
     struct TestMember {
@@ -393,9 +442,40 @@ mod tests {
         let mut message = env.alice.make_member_plaintext();
         env.alice.sign(&mut message, false);
         add_membership_tag(&mut message, &env.alice.group);
-        make_verifier(&mut env.bob.group, |_| None)
-            .verify_plaintext(message)
+        let membership_key = env.bob.group.key_schedule.membership_key.clone();
+
+        with_verifier(
+            &mut env.bob.group,
+            |_| None,
+            |verifier| verifier.verify_plaintext(message, &membership_key),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn wire_format_is_signed() {
+        let mut env = TestEnv::new();
+        let mut message = env.alice.make_member_plaintext();
+        env.alice.sign(&mut message, false);
+
+        let message = env
+            .alice
+            .group
+            .encrypt_plaintext(message, PaddingMode::None)
             .unwrap();
+
+        let res = with_verifier(
+            &mut env.bob.group,
+            |_| None,
+            |verifier| verifier.decrypt_ciphertext(message),
+        );
+
+        assert_matches!(
+            res,
+            Err(GroupError::SignatureError(
+                SignatureError::SignatureValidationFailed(_)
+            ))
+        );
     }
 
     #[test]
@@ -410,28 +490,12 @@ mod tests {
             .encrypt_plaintext(message, PaddingMode::None)
             .unwrap();
 
-        make_verifier(&mut env.bob.group, |_| None)
-            .decrypt_ciphertext(message)
-            .unwrap();
-    }
-
-    #[test]
-    fn wire_format_is_signed() {
-        let mut env = TestEnv::new();
-        let mut message = env.alice.make_member_plaintext();
-        env.alice.sign(&mut message, false);
-        let message = env
-            .alice
-            .group
-            .encrypt_plaintext(message, PaddingMode::None)
-            .unwrap();
-        let res = make_verifier(&mut env.bob.group, |_| None).decrypt_ciphertext(message);
-        assert_matches!(
-            res,
-            Err(GroupError::SignatureError(
-                SignatureError::SignatureValidationFailed(_)
-            ))
-        );
+        with_verifier(
+            &mut env.bob.group,
+            |_| None,
+            |verifier| verifier.decrypt_ciphertext(message),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -439,7 +503,14 @@ mod tests {
         let mut env = TestEnv::new();
         let mut message = env.alice.make_member_plaintext();
         env.alice.sign(&mut message, false);
-        let res = make_verifier(&mut env.bob.group, |_| None).verify_plaintext(message);
+        let membership_key = env.bob.group.key_schedule.membership_key.clone();
+
+        let res = with_verifier(
+            &mut env.bob.group,
+            |_| None,
+            |verifier| verifier.verify_plaintext(message, &membership_key),
+        );
+
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
 
@@ -459,9 +530,14 @@ mod tests {
         };
 
         message.sign(&signer, &signing_context).unwrap();
-        make_verifier(&mut test_group.group, |_| None)
-            .verify_plaintext(message)
-            .unwrap();
+        let membership_key = test_group.group.key_schedule.membership_key.clone();
+
+        with_verifier(
+            &mut test_group.group,
+            |_| None,
+            |verifier| verifier.verify_plaintext(message, &membership_key),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -481,7 +557,14 @@ mod tests {
 
         message.sign(&signer, &signing_context).unwrap();
         add_membership_tag(&mut message, &test_group.group);
-        let res = make_verifier(&mut test_group.group, |_| None).verify_plaintext(message);
+        let membership_key = test_group.group.key_schedule.membership_key.clone();
+
+        let res = with_verifier(
+            &mut test_group.group,
+            |_| None,
+            |verifier| verifier.verify_plaintext(message, &membership_key),
+        );
+
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
 
@@ -506,10 +589,15 @@ mod tests {
         };
 
         message.sign(&ted_signer, &signing_context).unwrap();
-        make_verifier(&mut test_group.group, |external_id| {
-            (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
-        })
-        .verify_plaintext(message)
+        let membership_key = test_group.group.key_schedule.membership_key.clone();
+
+        with_verifier(
+            &mut test_group.group,
+            |external_id| {
+                (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
+            },
+            |verifier| verifier.verify_plaintext(message, &membership_key),
+        )
         .unwrap();
     }
 
@@ -534,11 +622,15 @@ mod tests {
 
         message.sign(&ted_signer, &signing_context).unwrap();
         add_membership_tag(&mut message, &test_group.group);
+        let membership_key = test_group.group.key_schedule.membership_key.clone();
 
-        let res = make_verifier(&mut test_group.group, |external_id| {
-            (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
-        })
-        .verify_plaintext(message);
+        let res = with_verifier(
+            &mut test_group.group,
+            |external_id| {
+                (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
+            },
+            |verifier| verifier.verify_plaintext(message, &membership_key),
+        );
 
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
@@ -548,12 +640,19 @@ mod tests {
         let mut env = TestEnv::new();
         let mut message = env.alice.make_member_plaintext();
         env.alice.sign(&mut message, true);
+
         let message = env
             .alice
             .group
             .encrypt_plaintext(message, PaddingMode::None)
             .unwrap();
-        let res = make_verifier(&mut env.alice.group, |_| None).decrypt_ciphertext(message);
+
+        let res = with_verifier(
+            &mut env.alice.group,
+            |_| None,
+            |verifier| verifier.decrypt_ciphertext(message),
+        );
+
         assert_matches!(res, Err(GroupError::CantProcessMessageFromSelf));
     }
 }

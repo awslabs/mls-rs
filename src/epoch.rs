@@ -11,10 +11,6 @@ const DEFAULT_EPOCH_RETENTION_LIMIT: usize = 3;
 pub struct Epoch(crate::group::epoch::Epoch);
 
 impl Epoch {
-    pub fn id(&self) -> u64 {
-        self.0.public.identifier
-    }
-
     pub(crate) fn into_inner(self) -> crate::group::epoch::Epoch {
         self.0
     }
@@ -34,7 +30,7 @@ pub trait EpochRepository {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn get(&self, epoch_id: u64) -> Result<Option<Epoch>, Self::Error>;
-    fn insert(&mut self, epoch: Epoch) -> Result<(), Self::Error>;
+    fn insert(&mut self, epoch_id: u64, epoch: Epoch) -> Result<(), Self::Error>;
 }
 
 #[derive(Clone, Debug)]
@@ -55,9 +51,9 @@ impl InMemoryEpochRepository {
         self.inner.lock().unwrap().get(&epoch_id).cloned()
     }
 
-    fn insert(&self, epoch: Epoch) {
+    fn insert(&self, epoch_id: u64, epoch: Epoch) {
         let mut map = self.inner.lock().unwrap();
-        map.insert(epoch.id(), epoch);
+        map.insert(epoch_id, epoch);
         if map.len() > self.retention_limit {
             map.shift_remove_index(0);
         }
@@ -77,8 +73,8 @@ impl EpochRepository for InMemoryEpochRepository {
         Ok(self.get(epoch_id))
     }
 
-    fn insert(&mut self, epoch: Epoch) -> Result<(), Self::Error> {
-        (*self).insert(epoch);
+    fn insert(&mut self, epoch_id: u64, epoch: Epoch) -> Result<(), Self::Error> {
+        (*self).insert(epoch_id, epoch);
         Ok(())
     }
 }

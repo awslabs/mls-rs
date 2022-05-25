@@ -134,7 +134,7 @@ impl TreeSecretsVec {
     serde::Deserialize,
     serde::Serialize,
 )]
-pub(crate) struct SecretTree {
+pub struct SecretTree {
     cipher_suite: CipherSuite,
     known_secrets: TreeSecretsVec,
     leaf_count: u32,

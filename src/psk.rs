@@ -10,7 +10,6 @@ use ferriscrypt::{
     kdf::KdfError,
     rand::{SecureRng, SecureRngError},
 };
-use std::borrow::Cow;
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -160,7 +159,7 @@ struct PSKLabel<'a> {
     count: u16,
 }
 
-pub(crate) fn psk_secret<'a, S, F, E>(
+pub(crate) fn psk_secret<S, F, E>(
     cipher_suite: CipherSuite,
     secret_store: &S,
     mut get_epoch: F,
@@ -168,7 +167,7 @@ pub(crate) fn psk_secret<'a, S, F, E>(
 ) -> Result<Vec<u8>, PskSecretError>
 where
     S: PskStore,
-    F: FnMut(u64) -> Result<Option<Cow<'a, Epoch>>, E>,
+    F: FnMut(u64) -> Result<Option<Epoch>, E>,
     E: std::error::Error + Send + Sync + 'static,
 {
     let len = psk_ids.len();
@@ -188,9 +187,7 @@ where
                     get_epoch(*psk_epoch)
                         .map_err(|e| PskSecretError::EpochRepositoryError(e.into()))?
                         .ok_or(PskSecretError::EpochNotFound(*psk_epoch))?
-                        .key_schedule
                         .resumption_secret
-                        .clone()
                         .into()
                 }
             };

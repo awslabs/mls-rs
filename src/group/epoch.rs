@@ -3,7 +3,7 @@ use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
 use crate::group::secret_tree::{
     KeyType, MessageKey, SecretKeyRatchet, SecretTree, SecretTreeError,
 };
-use crate::group::{GroupContext, InitSecret};
+use crate::group::GroupContext;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
 use crate::tree_kem::{TreeKemPublic, TreeSecrets, UpdatePathGeneration};
@@ -13,8 +13,7 @@ use ferriscrypt::kdf::KdfError;
 use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
-use tls_codec::Serialize;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroize;
 
 #[derive(Error, Debug)]
 pub enum EpochError {
@@ -34,34 +33,6 @@ pub enum EpochError {
     KeyDerivationFailure,
 }
 
-#[derive(Debug, Clone, Zeroize, PartialEq, serde::Deserialize, serde::Serialize)]
-#[zeroize(drop)]
-pub struct KeySchedule {
-    pub sender_data_secret: Vec<u8>,
-    pub exporter_secret: Vec<u8>,
-    pub authentication_secret: Vec<u8>,
-    pub external_secret: Vec<u8>,
-    pub confirmation_key: Vec<u8>,
-    pub membership_key: Vec<u8>,
-    pub resumption_secret: Vec<u8>,
-}
-
-impl KeySchedule {
-    pub fn export_secret(
-        &self,
-        label: &str,
-        context: &[u8],
-        len: usize,
-        cipher_suite: CipherSuite,
-    ) -> Result<Vec<u8>, KeyScheduleKdfError> {
-        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
-        let derived_secret = Zeroizing::new(kdf.derive_secret(&self.exporter_secret, label)?);
-        let context_hash = cipher_suite.hash_function().digest(context);
-
-        kdf.expand_with_label(&derived_secret, "exporter", &context_hash, len)
-    }
-}
-
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct PublicEpoch {
     pub(crate) identifier: u64,
@@ -70,140 +41,33 @@ pub struct PublicEpoch {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub(crate) struct Epoch {
-    pub public: PublicEpoch,
-    pub secret_tree: SecretTree,
+pub struct Epoch {
+    pub context: GroupContext,
     pub self_index: LeafIndex,
-    pub init_secret: InitSecret,
+    pub resumption_secret: Vec<u8>,
+    pub sender_data_secret: Vec<u8>,
+    pub secret_tree: SecretTree,
     #[serde(with = "crate::serde_utils::map_as_seq")]
     pub handshake_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
     #[serde(with = "crate::serde_utils::map_as_seq")]
     pub application_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
-    pub key_schedule: KeySchedule,
+    pub cipher_suite: CipherSuite,
+    // TODO this is for verifying signatures. replace this by something more efficient
+    pub public_tree: TreeKemPublic,
 }
 
 impl PartialEq for Epoch {
     fn eq(&self, other: &Self) -> bool {
-        self.public.cipher_suite == other.public.cipher_suite
-            && self.public.identifier == other.public.identifier
-            && self.public.public_tree == other.public.public_tree
-            && self.key_schedule == other.key_schedule
-            && self.init_secret == other.init_secret
+        self.context == other.context
+            && self.self_index == other.self_index
+            && self.resumption_secret == other.resumption_secret
+            && self.sender_data_secret == other.sender_data_secret
+            && self.cipher_suite == other.cipher_suite
+            && self.public_tree == other.public_tree
     }
 }
 
 impl Epoch {
-    /// Returns the derived epoch as well as the joiner secret required for building welcome
-    /// messages
-    pub fn derive(
-        cipher_suite: CipherSuite,
-        last_init_secret: &InitSecret,
-        commit_secret: &CommitSecret,
-        public_tree: TreeKemPublic,
-        context: &GroupContext,
-        self_index: LeafIndex,
-        psk_secret: &[u8],
-    ) -> Result<(Epoch, Vec<u8>), EpochError> {
-        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
-
-        let joiner_seed = Zeroizing::new(kdf.extract(commit_secret, last_init_secret.as_ref())?);
-
-        let joiner_secret = kdf.expand_with_label(
-            &joiner_seed,
-            "joiner",
-            &context.tls_serialize_detached()?,
-            kdf.extract_size(),
-        )?;
-
-        let epoch = Self::new_joiner(
-            cipher_suite,
-            &joiner_secret,
-            public_tree,
-            context,
-            self_index,
-            psk_secret,
-        )?;
-
-        Ok((epoch, joiner_secret))
-    }
-
-    pub fn evolved_from(
-        epoch: &Epoch,
-        commit_secret: &CommitSecret,
-        public_tree: TreeKemPublic,
-        context: &GroupContext,
-        psk_secret: &[u8],
-    ) -> Result<(Epoch, Vec<u8>), EpochError> {
-        Self::derive(
-            epoch.public.cipher_suite,
-            &epoch.init_secret,
-            commit_secret,
-            public_tree,
-            context,
-            epoch.self_index,
-            psk_secret,
-        )
-    }
-
-    pub fn new_joiner(
-        cipher_suite: CipherSuite,
-        joiner_secret: &[u8],
-        public_tree: TreeKemPublic,
-        context: &GroupContext,
-        self_index: LeafIndex,
-        psk_secret: &[u8],
-    ) -> Result<Self, EpochError> {
-        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
-
-        let epoch_seed = Zeroizing::new(kdf.extract(psk_secret, joiner_secret)?);
-
-        let epoch_secret = Zeroizing::new(kdf.expand_with_label(
-            &epoch_seed,
-            "epoch",
-            &context.tls_serialize_detached()?,
-            kdf.extract_size(),
-        )?);
-
-        // Derive secrets from epoch secret
-        let sender_data_secret = kdf.derive_secret(&epoch_secret, "sender data")?;
-        let encryption_secret = kdf.derive_secret(&epoch_secret, "encryption")?;
-        let exporter_secret = kdf.derive_secret(&epoch_secret, "exporter")?;
-        let authentication_secret = kdf.derive_secret(&epoch_secret, "authentication")?;
-        let external_secret = kdf.derive_secret(&epoch_secret, "external")?;
-        let confirmation_key = kdf.derive_secret(&epoch_secret, "confirm")?;
-        let membership_key = kdf.derive_secret(&epoch_secret, "membership")?;
-        let resumption_secret = kdf.derive_secret(&epoch_secret, "resumption")?;
-        let init_secret = InitSecret::from_epoch_secret(&kdf, &epoch_secret)?;
-
-        let secret_tree = SecretTree::new(
-            cipher_suite,
-            public_tree.total_leaf_count(),
-            encryption_secret,
-        );
-
-        Ok(Self {
-            public: PublicEpoch {
-                identifier: context.epoch,
-                cipher_suite,
-                public_tree,
-            },
-            secret_tree,
-            key_schedule: KeySchedule {
-                sender_data_secret,
-                exporter_secret,
-                authentication_secret,
-                external_secret,
-                confirmation_key,
-                membership_key,
-                resumption_secret,
-            },
-            init_secret,
-            self_index,
-            application_ratchets: Default::default(),
-            handshake_ratchets: Default::default(),
-        })
-    }
-
     #[inline]
     fn get_ratchet(
         &mut self,
@@ -267,7 +131,7 @@ impl Epoch {
         &self,
         ciphertext: &[u8],
     ) -> Result<(Key, AeadNonce), EpochError> {
-        let kdf = KeyScheduleKdf::new(self.public.cipher_suite.kdf_type());
+        let kdf = KeyScheduleKdf::new(self.cipher_suite.kdf_type());
         // Sample the first extract_size bytes of the ciphertext, and if it is shorter, just use
         // the ciphertext itself
         let ciphertext_sample = if ciphertext.len() <= kdf.extract_size() as usize {
@@ -279,21 +143,21 @@ impl Epoch {
         // Generate a sender data key and nonce using the sender_data_secret from the current
         // epoch's key schedule
         let sender_data_key = kdf.expand_with_label(
-            &self.key_schedule.sender_data_secret,
+            &self.sender_data_secret,
             "key",
             ciphertext_sample,
-            self.public.cipher_suite.aead_type().key_size(),
+            self.cipher_suite.aead_type().key_size(),
         )?;
 
         let sender_data_nonce = kdf.expand_with_label(
-            &self.key_schedule.sender_data_secret,
+            &self.sender_data_secret,
             "nonce",
             ciphertext_sample,
-            self.public.cipher_suite.aead_type().nonce_size(),
+            self.cipher_suite.aead_type().nonce_size(),
         )?;
 
         Ok((
-            Key::new(self.public.cipher_suite.aead_type(), sender_data_key)?,
+            Key::new(self.cipher_suite.aead_type(), sender_data_key)?,
             AeadNonce::new(&sender_data_nonce)?,
         ))
     }
@@ -397,142 +261,43 @@ impl WelcomeSecret {
 pub mod test_utils {
     use super::*;
     use crate::group::secret_tree::test_utils::get_test_tree;
+    use crate::group::test_utils::get_test_group_context;
     use ferriscrypt::kdf::hkdf::Hkdf;
 
-    pub(crate) fn get_test_epoch(
-        cipher_suite: CipherSuite,
-        membership_key: Vec<u8>,
-        confirmation_key: Vec<u8>,
-    ) -> Epoch {
-        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
+    pub(crate) fn get_test_epoch(cipher_suite: CipherSuite) -> Epoch {
+        let secret_tree = get_test_tree(
+            cipher_suite,
+            vec![0 as u8; Hkdf::from(cipher_suite.kdf_type()).extract_size()],
+            2,
+        );
 
         Epoch {
-            public: PublicEpoch {
-                identifier: 1,
-                cipher_suite,
-                public_tree: TreeKemPublic::new(cipher_suite),
-            },
-            secret_tree: get_test_tree(
-                cipher_suite,
-                vec![0_u8; Hkdf::from(cipher_suite.kdf_type()).extract_size()],
-                2,
-            ),
+            context: get_test_group_context(0),
             self_index: LeafIndex(0),
-            key_schedule: KeySchedule {
-                sender_data_secret: vec![],
-                exporter_secret: vec![0u8; kdf.extract_size()],
-                authentication_secret: vec![],
-                external_secret: vec![],
-                confirmation_key,
-                membership_key,
-                resumption_secret: vec![],
-            },
-            init_secret: InitSecret::random(&kdf).unwrap(),
+            resumption_secret: vec![],
+            sender_data_secret: vec![],
+            secret_tree,
             handshake_ratchets: Default::default(),
             application_ratchets: Default::default(),
+            cipher_suite,
+            public_tree: TreeKemPublic::new(cipher_suite),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use ferriscrypt::{kdf::hkdf::Hkdf, rand::SecureRng};
-
     use crate::{
         cipher_suite::CipherSuite,
         group::{epoch::test_utils::get_test_epoch, secret_tree::KeyType},
         tree_kem::node::LeafIndex,
     };
 
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
-    #[derive(serde::Deserialize, serde::Serialize)]
-    struct TestCase {
-        cipher_suite: u16,
-        #[serde(with = "hex::serde")]
-        input: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        output: Vec<u8>,
-    }
-
-    fn generate_epoch_secret_exporter_test_vector() -> Vec<TestCase> {
-        let mut test_cases = Vec::new();
-        for cipher_suite in CipherSuite::all() {
-            let key_size = Hkdf::from(cipher_suite.kdf_type()).extract_size();
-            let mut membership_key = vec![0u8; key_size];
-            SecureRng::fill(&mut membership_key).unwrap();
-            let mut confirmation_key = vec![0u8; key_size];
-            SecureRng::fill(&mut confirmation_key).unwrap();
-            let mut context = vec![0u8; key_size];
-            SecureRng::fill(&mut context).unwrap();
-
-            let mut test_case_input = vec![];
-            test_case_input.extend(&membership_key);
-            test_case_input.extend(&confirmation_key);
-            test_case_input.extend(&context);
-
-            let epoch = get_test_epoch(cipher_suite, membership_key, confirmation_key);
-            let exported_secret = epoch
-                .key_schedule
-                .export_secret("test", &context, key_size, cipher_suite)
-                .unwrap();
-
-            test_cases.push(TestCase {
-                cipher_suite: cipher_suite as u16,
-                input: test_case_input,
-                output: exported_secret,
-            });
-        }
-
-        test_cases
-    }
-
-    fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(
-            epoch_secret_exporter_test_vector,
-            generate_epoch_secret_exporter_test_vector
-        )
-    }
-
-    #[test]
-    fn test_export_secret() {
-        let test_cases = load_test_cases();
-
-        for test_case in test_cases {
-            let cipher_suite = match CipherSuite::from_raw(test_case.cipher_suite) {
-                Some(cs) => cs,
-                None => continue,
-            };
-
-            let key_size = Hkdf::from(cipher_suite.kdf_type()).extract_size();
-
-            let membership_key = &test_case.input[0..key_size];
-            let confirmation_key = &test_case.input[key_size..2 * key_size];
-            let context = &test_case.input[2 * key_size..];
-
-            let epoch = get_test_epoch(
-                cipher_suite,
-                membership_key.to_vec(),
-                confirmation_key.to_vec(),
-            );
-
-            let exported_secret = epoch
-                .key_schedule
-                .export_secret("test", context, key_size, cipher_suite)
-                .unwrap();
-
-            assert_eq!(exported_secret, test_case.output);
-        }
-    }
-
     #[test]
     fn test_get_key() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
-        let key_size = Hkdf::from(cipher_suite.kdf_type()).extract_size();
 
-        let mut epoch_alice =
-            get_test_epoch(cipher_suite, vec![0u8; key_size], vec![0u8; key_size]);
+        let mut epoch_alice = get_test_epoch(cipher_suite);
 
         let mut epoch_bob = epoch_alice.clone();
         epoch_bob.self_index = LeafIndex(1);

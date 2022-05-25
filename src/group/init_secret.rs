@@ -11,6 +11,7 @@ use ferriscrypt::{
     rand::{SecureRng, SecureRngError},
 };
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use zeroize::Zeroize;
 
 const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 
@@ -27,8 +28,10 @@ const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
     TlsSize,
     serde::Deserialize,
     serde::Serialize,
+    Zeroize,
 )]
-pub struct InitSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+#[zeroize(drop)]
+pub struct InitSecret(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
 
 impl AsRef<[u8]> for InitSecret {
     fn as_ref(&self) -> &[u8] {

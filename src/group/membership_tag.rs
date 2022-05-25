@@ -1,4 +1,4 @@
-use crate::group::epoch::Epoch;
+use crate::cipher_suite::CipherSuite;
 use crate::group::framing::{MLSPlaintext, WireFormat};
 use crate::group::message_signature::{MLSMessageAuth, MLSMessageContentTBS};
 use crate::group::GroupContext;
@@ -83,18 +83,14 @@ impl MembershipTag {
     pub(crate) fn create(
         plaintext: &MLSPlaintext,
         group_context: &GroupContext,
-        epoch: &Epoch,
+        membership_key: &[u8],
+        cipher_suite: &CipherSuite,
     ) -> Result<Self, MembershipTagError> {
         let plaintext_tbm =
             MLSPlaintextTBM::from_plaintext(plaintext, group_context, WireFormat::Plain);
         let serialized_tbm = plaintext_tbm.tls_serialize_detached()?;
-
-        let hmac_key = Key::new(
-            &epoch.key_schedule.membership_key,
-            epoch.public.cipher_suite.hash_function(),
-        )?;
+        let hmac_key = Key::new(membership_key, cipher_suite.hash_function())?;
         let tag = hmac_key.generate_tag(&serialized_tbm)?;
-
         Ok(MembershipTag(tag))
     }
 
@@ -102,9 +98,10 @@ impl MembershipTag {
         &self,
         plaintext: &MLSPlaintext,
         group_context: &GroupContext,
-        epoch: &Epoch,
+        membership_key: &[u8],
+        cipher_suite: &CipherSuite,
     ) -> Result<bool, MembershipTagError> {
-        let local = MembershipTag::create(plaintext, group_context, epoch)?;
+        let local = MembershipTag::create(plaintext, group_context, membership_key, cipher_suite)?;
         Ok(&local == self)
     }
 }
@@ -113,7 +110,6 @@ impl MembershipTag {
 mod tests {
     use super::*;
     use crate::cipher_suite::CipherSuite;
-    use crate::group::epoch::test_utils::get_test_epoch;
     use crate::group::framing::test_utils::get_test_plaintext;
     use crate::group::test_utils::get_test_group_context;
 
@@ -128,19 +124,28 @@ mod tests {
             let plaintext_a = get_test_plaintext(b"hello".to_vec());
             let plaintext_b = get_test_plaintext(b"world".to_vec());
 
-            let epoch_a = get_test_epoch(cipher_suite, b"membership_key_a".to_vec(), vec![]);
+            let key_a = b"membership_key_a".to_vec();
 
-            let epoch_b = get_test_epoch(cipher_suite, b"membership_key_b".to_vec(), vec![]);
+            let key_b = b"membership_key_b".to_vec();
 
-            let tag = MembershipTag::create(&plaintext_a, &context_a, &epoch_a).unwrap();
+            let tag =
+                MembershipTag::create(&plaintext_a, &context_a, &key_a, &cipher_suite).unwrap();
 
-            assert!(tag.matches(&plaintext_a, &context_a, &epoch_a).unwrap());
+            assert!(tag
+                .matches(&plaintext_a, &context_a, &key_a, &cipher_suite)
+                .unwrap());
 
-            assert!(!tag.matches(&plaintext_b, &context_a, &epoch_a).unwrap(),);
+            assert!(!tag
+                .matches(&plaintext_b, &context_a, &key_a, &cipher_suite)
+                .unwrap(),);
 
-            assert!(!tag.matches(&plaintext_a, &context_b, &epoch_a).unwrap());
+            assert!(!tag
+                .matches(&plaintext_a, &context_b, &key_a, &cipher_suite)
+                .unwrap());
 
-            assert!(!tag.matches(&plaintext_a, &context_a, &epoch_b).unwrap());
+            assert!(!tag
+                .matches(&plaintext_a, &context_a, &key_b, &cipher_suite)
+                .unwrap());
         }
     }
 }
