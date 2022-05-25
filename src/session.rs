@@ -3,7 +3,7 @@ use crate::client_config::{ClientConfig, ClientGroupConfig};
 use crate::extension::ExtensionList;
 use crate::group::{
     framing::Content, proposal::Proposal, CommitGeneration, Group, GroupContext, GroupInfo,
-    GroupState, OutboundMessage, StateUpdate, VerifiedPlaintext, Welcome,
+    GroupState, OutboundMessage, VerifiedPlaintext, Welcome,
 };
 use crate::key_package::{
     KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
@@ -25,7 +25,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 pub use crate::group::{
     framing::{ContentType, MLSMessage, MLSMessagePayload},
-    GroupError,
+    GroupError, StateUpdate,
 };
 
 #[derive(Error, Debug)]

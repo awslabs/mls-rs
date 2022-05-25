@@ -9,8 +9,9 @@ use aws_mls::client_config::{InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECO
 use aws_mls::credential::Credential;
 use aws_mls::extension::ExtensionList;
 use aws_mls::message::ProcessedMessagePayload;
-use aws_mls::session::Session;
+use aws_mls::session::{Session, StateUpdate};
 use aws_mls::signing_identity::SigningIdentity;
+use aws_mls::tls_codec::Serialize;
 use aws_mls::ProtocolVersion;
 
 use clap::Parser;
@@ -47,6 +48,51 @@ impl TryFrom<i32> for TestVectorType {
             5 => Ok(TestVectorType::Messages),
             _ => Err(()),
         }
+    }
+}
+
+struct ParsedStateUpdate {
+    added: Vec<u32>,
+    updated: Vec<u32>,
+    removed_indices: Vec<u32>,
+    removed_leaves: Vec<Vec<u8>>,
+}
+
+impl TryFrom<&StateUpdate> for ParsedStateUpdate {
+    type Error = Status;
+
+    fn try_from(state_update: &StateUpdate) -> Result<Self, Self::Error> {
+        let added = state_update
+            .added
+            .iter()
+            .map(|leaf_index| **leaf_index)
+            .collect();
+
+        let updated = state_update
+            .updated
+            .iter()
+            .map(|leaf_index| **leaf_index)
+            .collect();
+
+        let removed_indices = state_update
+            .removed
+            .iter()
+            .map(|(leaf_index, _)| **leaf_index)
+            .collect();
+
+        let removed_leaves = state_update
+            .removed
+            .iter()
+            .map(|(_, leaf)| leaf.tls_serialize_detached())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(abort)?;
+
+        Ok(Self {
+            added,
+            updated,
+            removed_indices,
+            removed_leaves,
+        })
     }
 }
 
@@ -496,23 +542,19 @@ impl MlsClient for MlsClientImpl {
             .process_incoming_bytes(&request_ref.commit)
             .map_err(abort)?;
 
-        let state_update = match message.message {
-            ProcessedMessagePayload::Commit(state_update) => state_update,
+        let parsed_state_update = match message.message {
+            ProcessedMessagePayload::Commit(state_update) => {
+                ParsedStateUpdate::try_from(&state_update)?
+            }
             _ => return Err(Status::new(Aborted, "message not a commit.")),
         };
 
-        let added: Vec<Vec<u8>> = state_update
-            .added
-            .iter()
-            .map(|leaf_node_ref| (**leaf_node_ref).to_be_bytes().to_vec())
-            .collect();
-
-        let removed = vec![]; // TODO what to return here??
-
         Ok(Response::new(HandleCommitResponse {
             state_id: request_ref.state_id,
-            added,
-            removed,
+            added: parsed_state_update.added,
+            updated: parsed_state_update.updated,
+            removed_indices: parsed_state_update.removed_indices,
+            removed_leaves: parsed_state_update.removed_leaves,
         }))
     }
 
@@ -530,18 +572,14 @@ impl MlsClient for MlsClientImpl {
             .apply_pending_commit()
             .map_err(abort)?;
 
-        let added: Vec<Vec<u8>> = state_update
-            .added
-            .iter()
-            .map(|leaf_node_ref| (**leaf_node_ref).to_be_bytes().to_vec())
-            .collect();
-
-        let removed = vec![]; // TODO what to return here??
+        let parsed_state_update = ParsedStateUpdate::try_from(&state_update)?;
 
         Ok(Response::new(HandlePendingCommitResponse {
             state_id: request_ref.state_id,
-            added,
-            removed,
+            added: parsed_state_update.added,
+            updated: parsed_state_update.updated,
+            removed_indices: parsed_state_update.removed_indices,
+            removed_leaves: parsed_state_update.removed_leaves,
         }))
     }
 

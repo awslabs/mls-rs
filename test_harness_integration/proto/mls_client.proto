@@ -255,8 +255,10 @@ message HandleCommitRequest {
 
 message HandleCommitResponse { 
   uint32 state_id = 1;
-  repeated bytes added = 2;
-  repeated bytes removed = 3;
+  repeated uint32 added = 2;
+  repeated uint32 removed_indices = 3;
+  repeated bytes removed_leaves = 4;
+  repeated uint32 updated = 5;
 }
 
 // rpc HandlePendingCommit
@@ -266,8 +268,10 @@ message HandlePendingCommitRequest {
 
 message HandlePendingCommitResponse { 
   uint32 state_id = 1;
-  repeated bytes added = 2;
-  repeated bytes removed = 3;
+  repeated uint32 added = 2;
+  repeated uint32 removed_indices = 3;
+  repeated bytes removed_leaves = 4;
+  repeated uint32 updated = 5;
 }
 
 // rpc HandleExternalCommit
