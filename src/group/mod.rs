@@ -3023,6 +3023,7 @@ mod tests {
             .set_extension(RequiredCapabilitiesExt {
                 extensions: vec![LifetimeExt::IDENTIFIER],
                 proposals: vec![],
+                credentials: vec![],
             })
             .unwrap();
 
@@ -3072,6 +3073,7 @@ mod tests {
             .set_extension(RequiredCapabilitiesExt {
                 extensions: vec![42],
                 proposals: vec![],
+                credentials: vec![],
             })
             .unwrap();
 
@@ -3094,6 +3096,7 @@ mod tests {
             .set_extension(RequiredCapabilitiesExt {
                 extensions: vec![999],
                 proposals: vec![],
+                credentials: vec![],
             })
             .unwrap();
 

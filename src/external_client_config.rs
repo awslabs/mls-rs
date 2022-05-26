@@ -1,6 +1,7 @@
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     client_config::{CredentialValidator, PassthroughCredentialValidator},
+    credential::{CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
     epoch::{InMemoryPublicEpochRepository, PublicEpochRepository},
     extension::{CapabilitiesExt, ExtensionType},
     group::ExternalGroupConfig,
@@ -23,6 +24,7 @@ pub trait ExternalClientConfig {
     fn keychain(&self) -> Self::Keychain;
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
+    fn supported_credentials(&self) -> Vec<CredentialType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
     fn epoch_repo(&self, group_id: &[u8]) -> Self::EpochRepository;
     fn credential_validator(&self) -> Self::CredentialValidator;
@@ -39,6 +41,7 @@ pub trait ExternalClientConfig {
                 .collect(),
             extensions: self.supported_extensions(),
             proposals: vec![], // TODO: Support registering custom proposals here
+            credentials: self.supported_credentials(),
         }
     }
 }
@@ -52,6 +55,7 @@ pub struct InMemoryExternalClientConfig {
     cipher_suites: Vec<CipherSuite>,
     epochs: Arc<Mutex<HashMap<Vec<u8>, InMemoryPublicEpochRepository>>>,
     external_signing_keys: HashMap<Vec<u8>, PublicKey>,
+    credential_types: Vec<CredentialType>,
     signatures_checked: bool,
 }
 
@@ -65,6 +69,7 @@ impl InMemoryExternalClientConfig {
             cipher_suites: CipherSuite::all().collect(),
             epochs: Default::default(),
             external_signing_keys: Default::default(),
+            credential_types: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
             signatures_checked: true,
         }
     }
@@ -120,6 +125,12 @@ impl InMemoryExternalClientConfig {
     #[must_use]
     pub fn with_external_signing_key(mut self, id: Vec<u8>, key: PublicKey) -> Self {
         self.external_signing_keys.insert(id, key);
+        self
+    }
+
+    #[must_use]
+    pub fn with_credential_types(mut self, credential_types: Vec<CredentialType>) -> Self {
+        self.credential_types = credential_types;
         self
     }
 
@@ -186,6 +197,10 @@ impl ExternalClientConfig for InMemoryExternalClientConfig {
 
     fn signatures_are_checked(&self) -> bool {
         self.signatures_checked
+    }
+
+    fn supported_credentials(&self) -> Vec<CredentialType> {
+        self.credential_types.clone()
     }
 }
 

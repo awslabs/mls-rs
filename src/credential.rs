@@ -11,6 +11,10 @@ pub enum CredentialError {
     CertificateError(#[from] X509Error),
 }
 
+pub type CredentialType = u16;
+pub const CREDENTIAL_TYPE_BASIC: u16 = 1;
+pub const CREDENTIAL_TYPE_X509: u16 = 2;
+
 #[derive(
     Clone,
     Debug,
@@ -28,7 +32,16 @@ pub enum Credential {
     #[tls_codec(discriminant = 1)]
     Basic(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>),
     #[tls_codec(discriminant = 2)]
-    Certificate(CertificateChain),
+    X509(CertificateChain),
+}
+
+impl Credential {
+    pub fn credential_type(&self) -> CredentialType {
+        match self {
+            Credential::Basic(_) => CREDENTIAL_TYPE_BASIC,
+            Credential::X509(_) => CREDENTIAL_TYPE_X509,
+        }
+    }
 }
 
 pub(crate) trait CredentialConvertible {
@@ -43,7 +56,7 @@ impl CredentialConvertible for Vec<u8> {
 
 impl CredentialConvertible for CertificateChain {
     fn into_credential(self) -> Credential {
-        Credential::Certificate(self)
+        Credential::X509(self)
     }
 }
 
@@ -63,6 +76,6 @@ pub mod test_utils {
         let test_certificate = test_cert(Curve::Ed25519);
         let chain = CertificateChain::from(vec![test_certificate]);
 
-        Credential::Certificate(chain)
+        Credential::X509(chain)
     }
 }

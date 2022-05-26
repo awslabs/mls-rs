@@ -1,7 +1,9 @@
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     client::Client,
-    credential::{Credential, CredentialError},
+    credential::{
+        Credential, CredentialError, CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509,
+    },
     extension::{CapabilitiesExt, ExtensionList, ExtensionType, LifetimeExt},
     group::{proposal::Proposal, CommitOptions, ControlEncryptionMode, GroupConfig},
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
@@ -59,6 +61,7 @@ pub trait ClientConfig {
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
+    fn supported_credential_types(&self) -> Vec<CredentialType>;
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
     fn preferences(&self) -> Preferences;
@@ -83,6 +86,7 @@ pub trait ClientConfig {
                 .collect(),
             extensions: self.supported_extensions(),
             proposals: vec![], // TODO: Support registering custom proposals here
+            credentials: self.supported_credential_types(),
         }
     }
 
@@ -196,6 +200,7 @@ pub struct InMemoryClientConfig {
     leaf_node_extensions: ExtensionList,
     key_package_extensions: ExtensionList,
     lifetime_duration: u64,
+    credential_types: Vec<CredentialType>,
 }
 
 #[derive(Clone)]
@@ -224,6 +229,7 @@ impl InMemoryClientConfig {
             leaf_node_extensions: Default::default(),
             key_package_extensions: Default::default(),
             lifetime_duration: ONE_YEAR_IN_SECONDS,
+            credential_types: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
         }
     }
 
@@ -322,6 +328,11 @@ impl InMemoryClientConfig {
     #[must_use]
     pub fn with_lifetime_duration(mut self, duration: u64) -> Self {
         self.lifetime_duration = duration;
+        self
+    }
+
+    pub fn with_credential_types(mut self, credential_types: Vec<CredentialType>) -> Self {
+        self.credential_types = credential_types;
         self
     }
 
@@ -428,25 +439,16 @@ impl ClientConfig for InMemoryClientConfig {
         self.leaf_node_extensions.clone()
     }
 
-    fn capabilities(&self) -> CapabilitiesExt {
-        CapabilitiesExt {
-            protocol_versions: self.supported_protocol_versions(),
-            cipher_suites: self
-                .supported_cipher_suites()
-                .into_iter()
-                .map(MaybeCipherSuite::from)
-                .collect(),
-            extensions: self.supported_extensions(),
-            proposals: vec![], // TODO: Support registering custom proposals here
-        }
-    }
-
     fn lifetime(&self) -> LifetimeExt {
         let now_timestamp = MlsTime::now().seconds_since_epoch().unwrap();
         LifetimeExt {
             not_before: now_timestamp,
             not_after: now_timestamp + self.lifetime_duration,
         }
+    }
+
+    fn supported_credential_types(&self) -> Vec<CredentialType> {
+        self.credential_types.clone()
     }
 }
 

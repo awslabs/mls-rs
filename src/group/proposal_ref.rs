@@ -88,6 +88,7 @@ mod test {
         let test_extension = RequiredCapabilitiesExt {
             extensions: vec![42],
             proposals: Default::default(),
+            credentials: vec![],
         };
 
         let mut extension_list = ExtensionList::new();

@@ -410,6 +410,7 @@ mod tests {
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![42],
             proposals: vec![],
+            credentials: vec![],
         };
 
         let validator = KeyPackageValidator::new(
@@ -435,6 +436,7 @@ mod tests {
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![255],
             proposals: vec![],
+            credentials: vec![],
         };
 
         let validator = KeyPackageValidator::new(

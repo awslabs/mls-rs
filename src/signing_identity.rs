@@ -69,7 +69,7 @@ impl SigningIdentity {
 
         // If the credential is X509, make sure that its public key matches the signature key
         // presented
-        if let Credential::Certificate(ref cert) = self.credential {
+        if let Credential::X509(ref cert) = self.credential {
             let cert_pk = cert.leaf()?.public_key()?;
 
             if cert_pk != public_key {

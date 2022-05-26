@@ -2,6 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use super::leaf_node::{LeafNode, LeafNodeSource};
 use crate::client_config::CredentialValidator;
+use crate::credential::CredentialType;
 use crate::signing_identity::SigningIdentityError;
 use crate::{
     cipher_suite::CipherSuite,
@@ -90,6 +91,8 @@ pub enum LeafNodeValidationError {
     RequiredExtensionNotFound(ExtensionType),
     #[error("required proposal not found")]
     RequiredProposalNotFound(ProposalType),
+    #[error("required credential not found")]
+    RequiredCredentialNotFound(CredentialType),
     #[error("capabilities must describe extensions used")]
     ExtensionNotInCapabilities(ExtensionType),
     #[error(transparent)]
@@ -189,6 +192,14 @@ impl<'a, C: CredentialValidator> LeafNodeValidator<'a, C> {
             for proposal in &required_capabilities.proposals {
                 if !leaf_node.capabilities.proposals.contains(proposal) {
                     return Err(LeafNodeValidationError::RequiredProposalNotFound(*proposal));
+                }
+            }
+
+            for credential in &required_capabilities.credentials {
+                if !leaf_node.capabilities.credentials.contains(credential) {
+                    return Err(LeafNodeValidationError::RequiredCredentialNotFound(
+                        *credential,
+                    ));
                 }
             }
         }
@@ -491,8 +502,9 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
-        assert_matches!(test_validator.validate(leaf_node, ValidationContext::Add(None)),
-            Err(LeafNodeValidationError::RequiredExtensionNotFound(ext)) if ext == 42u16
+        assert_matches!(
+            test_validator.validate(leaf_node, ValidationContext::Add(None)),
+            Err(LeafNodeValidationError::RequiredExtensionNotFound(42))
         );
     }
 
@@ -511,8 +523,29 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
+        assert_matches!(
+            test_validator.validate(leaf_node, ValidationContext::Add(None)),
+            Err(LeafNodeValidationError::RequiredProposalNotFound(42))
+        );
+    }
+
+    #[test]
+    fn test_required_credential() {
+        let required_capabilities = RequiredCapabilitiesExt {
+            credentials: vec![42],
+            ..Default::default()
+        };
+
+        let (leaf_node, _) = get_test_add_node();
+
+        let test_validator = LeafNodeValidator::new(
+            TEST_CIPHER_SUITE,
+            Some(&required_capabilities),
+            PassthroughCredentialValidator::new(),
+        );
+
         assert_matches!(test_validator.validate(leaf_node, ValidationContext::Add(None)),
-            Err(LeafNodeValidationError::RequiredProposalNotFound(ext)) if ext == 42u16
+            Err(LeafNodeValidationError::RequiredCredentialNotFound(ext)) if ext == 42u16
         );
     }
 

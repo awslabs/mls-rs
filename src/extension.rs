@@ -1,4 +1,5 @@
 use crate::cipher_suite::{CipherSuite, MaybeCipherSuite};
+use crate::credential::{CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509};
 use crate::group::proposal::ProposalType;
 use crate::time::{MlsTime, SystemTimeError};
 use crate::tls::ReadWithCount;
@@ -83,6 +84,8 @@ pub struct CapabilitiesExt {
     pub extensions: Vec<ExtensionType>,
     #[tls_codec(with = "crate::tls::DefVec")]
     pub proposals: Vec<ProposalType>,
+    #[tls_codec(with = "crate::tls::DefVec")]
+    pub credentials: Vec<CredentialType>,
 }
 
 impl Default for CapabilitiesExt {
@@ -92,6 +95,7 @@ impl Default for CapabilitiesExt {
             cipher_suites: CipherSuite::all().map(MaybeCipherSuite::from).collect(),
             extensions: Default::default(),
             proposals: Default::default(),
+            credentials: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
         }
     }
 }
@@ -163,6 +167,8 @@ pub struct RequiredCapabilitiesExt {
     pub extensions: Vec<ExtensionType>,
     #[tls_codec(with = "crate::tls::DefVec")]
     pub proposals: Vec<ProposalType>,
+    #[tls_codec(with = "crate::tls::DefVec")]
+    pub credentials: Vec<CredentialType>,
 }
 
 impl MlsExtension for RequiredCapabilitiesExt {
@@ -352,11 +358,14 @@ mod tests {
 
         let test_extensions = vec![LifetimeExt::IDENTIFIER, ExternalKeyIdExt::IDENTIFIER];
 
+        let test_credential_types = vec![CREDENTIAL_TYPE_X509];
+
         let test_extension = CapabilitiesExt {
             protocol_versions: test_protocol_versions.clone(),
             cipher_suites: test_ciphersuites.clone(),
             extensions: test_extensions.clone(),
             proposals: vec![],
+            credentials: test_credential_types.clone(),
         };
 
         let as_extension = test_extension.to_extension().expect("serialization error");
@@ -367,6 +376,7 @@ mod tests {
         assert_eq!(restored.protocol_versions, test_protocol_versions);
         assert_eq!(restored.cipher_suites, test_ciphersuites);
         assert_eq!(restored.extensions, test_extensions);
+        assert_eq!(restored.credentials, test_credential_types);
     }
 
     #[test]
@@ -406,6 +416,7 @@ mod tests {
         let ext = RequiredCapabilitiesExt {
             extensions: vec![0u16, 1u16],
             proposals: vec![42u16, 43u16],
+            credentials: vec![CREDENTIAL_TYPE_BASIC],
         };
 
         let as_extension = ext.to_extension().unwrap();
