@@ -3108,47 +3108,27 @@ mod tests {
         let cipher_suite = CipherSuite::P256Aes128;
         let mut test_group = test_group(protocol_version, cipher_suite);
 
-        let proposal = test_group
-            .group
-            .group_context_extensions_proposal(ExtensionList::new());
-
         let without_padding = test_group
             .group
-            .create_proposal(
-                proposal.clone(),
+            .encrypt_application_message(
+                &SecureRng::gen(150).unwrap(),
                 &test_group.signing_key,
-                ControlEncryptionMode::Encrypted(PaddingMode::None),
+                PaddingMode::None,
                 vec![],
             )
             .unwrap();
 
         let with_padding = test_group
             .group
-            .create_proposal(
-                proposal,
+            .encrypt_application_message(
+                &SecureRng::gen(150).unwrap(),
                 &test_group.signing_key,
-                ControlEncryptionMode::Encrypted(PaddingMode::StepFunction),
+                PaddingMode::StepFunction,
                 vec![],
             )
             .unwrap();
 
-        let without_padding_length = match without_padding {
-            OutboundMessage::Plaintext(_) => panic!("unexpected plaintext"),
-            OutboundMessage::Ciphertext {
-                original: _,
-                encrypted,
-            } => encrypted.tls_serialized_len(),
-        };
-
-        let with_padding_length = match with_padding {
-            OutboundMessage::Plaintext(_) => panic!("unexpected plaintext"),
-            OutboundMessage::Ciphertext {
-                original: _,
-                encrypted,
-            } => encrypted.tls_serialized_len(),
-        };
-
-        assert!(with_padding_length > without_padding_length);
+        assert!(with_padding.tls_serialized_len() > without_padding.tls_serialized_len());
     }
 
     #[test]

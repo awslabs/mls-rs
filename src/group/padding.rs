@@ -39,12 +39,7 @@ fn padding_length(length: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use ferriscrypt::rand::SecureRng;
-
-    use crate::group::{
-        framing::{Content, MLSCiphertextContent},
-        message_signature::MLSMessageAuth,
-    };
+    use crate::group::framing::test_utils::get_test_ciphertext_content;
 
     use super::{padding_length, PaddingMode};
 
@@ -55,17 +50,6 @@ mod tests {
     struct TestCase {
         input: usize,
         output: usize,
-    }
-
-    fn test_ciphertext_content() -> MLSCiphertextContent {
-        MLSCiphertextContent {
-            content: Content::Application(SecureRng::gen(32).unwrap()),
-            auth: MLSMessageAuth {
-                signature: SecureRng::gen(64).unwrap().into(),
-                confirmation_tag: None,
-            },
-            padding: vec![],
-        }
     }
 
     fn generate_message_padding_test_vector() -> Vec<TestCase> {
@@ -88,7 +72,7 @@ mod tests {
 
     #[test]
     fn test_no_padding() {
-        let mut ciphertext = test_ciphertext_content();
+        let mut ciphertext = get_test_ciphertext_content();
         let padding_mode = PaddingMode::None;
         padding_mode.apply_padding(&mut ciphertext);
         assert!(ciphertext.padding.is_empty())

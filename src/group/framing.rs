@@ -6,7 +6,7 @@ use crate::{
 use super::proposal::Proposal;
 use super::*;
 use std::io::{Read, Write};
-use tls_codec::{Deserialize, Serialize, Size, TlsByteSliceU16, TlsByteVecU16};
+use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Copy, Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -187,17 +187,17 @@ pub struct MLSCiphertextContent {
 
 impl Size for MLSCiphertextContent {
     fn tls_serialized_len(&self) -> usize {
-        self.content.tls_serialized_len()
-            + self.auth.tls_serialized_len()
-            + TlsByteSliceU16(&self.padding).tls_serialized_len()
+        // Padding has arbitrary size
+        self.content.tls_serialized_len() + self.auth.tls_serialized_len() + self.padding.len()
     }
 }
 
 impl Serialize for MLSCiphertextContent {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
+        // Padding has arbitrary size
         Ok(self.content.tls_serialize(writer)?
             + self.auth.tls_serialize(writer)?
-            + TlsByteSliceU16(&self.padding).tls_serialize(writer)?)
+            + writer.write(&self.padding)?)
     }
 }
 
@@ -205,7 +205,16 @@ impl Deserialize for MLSCiphertextContent {
     fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
         let content = Content::tls_deserialize(bytes)?;
         let auth = MLSMessageAuth::tls_deserialize(bytes, content.content_type())?;
-        let padding = TlsByteVecU16::tls_deserialize(bytes)?.into();
+
+        let mut padding = Vec::new();
+        bytes.read_to_end(&mut padding)?;
+
+        if padding.iter().any(|&i| i != 0u8) {
+            return Err(tls_codec::Error::DecodingError(
+                "non-zero padding bytes discovered".to_string(),
+            ));
+        }
+
         Ok(Self {
             content,
             auth,
@@ -359,5 +368,47 @@ pub mod test_utils {
             },
             membership_tag: None,
         }
+    }
+
+    pub fn get_test_ciphertext_content() -> MLSCiphertextContent {
+        MLSCiphertextContent {
+            content: Content::Application(SecureRng::gen(1024).unwrap()),
+            auth: MLSMessageAuth {
+                signature: MessageSignature::from(SecureRng::gen(128).unwrap()),
+                confirmation_tag: None,
+            },
+            padding: vec![],
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert_matches::assert_matches;
+
+    use crate::group::framing::test_utils::get_test_ciphertext_content;
+
+    use super::*;
+
+    #[test]
+    fn test_mls_ciphertext_content_tls_encoding() {
+        let mut ciphertext_content = get_test_ciphertext_content();
+        ciphertext_content.padding = vec![0u8; 128];
+
+        let encoded = ciphertext_content.tls_serialize_detached().unwrap();
+        let decoded = MLSCiphertextContent::tls_deserialize(&mut &*encoded).unwrap();
+
+        assert_eq!(ciphertext_content, decoded);
+    }
+
+    #[test]
+    fn test_mls_ciphertext_content_non_zero_padding_error() {
+        let mut ciphertext_content = get_test_ciphertext_content();
+        ciphertext_content.padding = vec![1u8; 128];
+
+        let encoded = ciphertext_content.tls_serialize_detached().unwrap();
+        let decoded = MLSCiphertextContent::tls_deserialize(&mut &*encoded);
+
+        assert_matches!(decoded, Err(tls_codec::Error::DecodingError(e)) if e == "non-zero padding bytes discovered");
     }
 }
