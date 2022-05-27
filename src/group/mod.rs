@@ -3307,7 +3307,7 @@ mod tests {
             .group
             .create_proposal(
                 update_proposal,
-                &alice.signing_key,
+                &bob.signing_key,
                 ControlEncryptionMode::Plaintext,
                 vec![],
             )
