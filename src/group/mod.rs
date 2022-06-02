@@ -19,6 +19,7 @@ use crate::client_config::{CredentialValidator, PskStore};
 use crate::credential::CredentialError;
 use crate::extension::{
     CapabilitiesExt, ExtensionError, ExtensionList, ExternalPubExt, LifetimeExt, RatchetTreeExt,
+    RequiredCapabilitiesExt,
 };
 use crate::group::{KeySchedule, KeyScheduleError};
 use crate::key_package::{
@@ -89,6 +90,7 @@ mod message_verifier;
 pub mod padding;
 pub mod proposal;
 mod proposal_cache;
+mod proposal_filter;
 mod proposal_ref;
 mod secret_tree;
 mod transcript_hash;
@@ -554,12 +556,7 @@ impl<C: GroupConfig> Group<C> {
 
         Ok(Self {
             config,
-            core: GroupCore {
-                protocol_version,
-                cipher_suite,
-                proposals: ProposalCache::new(),
-                context,
-            },
+            core: GroupCore::new(protocol_version, cipher_suite, context),
             private_tree,
             current_public_epoch: public_epoch,
             interim_transcript_hash: InterimTranscriptHash::from(vec![]),
@@ -775,12 +772,7 @@ impl<C: GroupConfig> Group<C> {
 
         Ok(Group {
             config,
-            core: GroupCore {
-                protocol_version,
-                cipher_suite: public_epoch.cipher_suite,
-                proposals: ProposalCache::new(),
-                context,
-            },
+            core: GroupCore::new(protocol_version, public_epoch.cipher_suite, context),
             private_tree,
             current_public_epoch: public_epoch,
             interim_transcript_hash,
@@ -1018,7 +1010,7 @@ impl<C: GroupConfig> Group<C> {
     ) -> Result<OutboundMessage, GroupError> {
         let plaintext = self.construct_mls_plaintext(
             Sender::Member(self.private_tree.leaf_node_ref.clone()),
-            Content::Proposal(proposal),
+            Content::Proposal(proposal.clone()),
             signer,
             encryption_mode,
             authenticated_data,
@@ -1036,16 +1028,21 @@ impl<C: GroupConfig> Group<C> {
                 &self.current_public_epoch.cipher_suite,
             )?)
         };
+
         let plaintext = MLSPlaintext {
             membership_tag,
             ..plaintext
         };
 
-        self.core.proposals.insert(
+        let proposal_ref = ProposalRef::from_plaintext(
             self.core.cipher_suite,
             &plaintext,
             matches!(encryption_mode, ControlEncryptionMode::Encrypted(_)),
         )?;
+
+        self.core
+            .proposals
+            .insert(proposal_ref, proposal, plaintext.content.sender.clone());
 
         self.format_for_wire(plaintext, encryption_mode)
     }
@@ -1080,10 +1077,13 @@ impl<C: GroupConfig> Group<C> {
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
         // by value
-        let (commit_proposals, proposal_effects) = self
-            .core
-            .proposals
-            .prepare_commit(&self.private_tree.leaf_node_ref, proposals)?;
+        let (commit_proposals, proposal_effects) = self.core.proposals.prepare_commit(
+            &self.private_tree.leaf_node_ref,
+            proposals,
+            self.core.context.extensions.get_extension()?,
+            self.config.credential_validator(),
+            &self.current_public_epoch.public_tree,
+        )?;
 
         // Generate a provisional GroupContext object by applying the proposals referenced in the
         // initial Commit object, as described in Section 11.1. Update proposals are applied first,
@@ -1501,12 +1501,11 @@ impl<C: GroupConfig> Group<C> {
 
         let new_group = Group {
             config: sub_config,
-            core: GroupCore {
-                protocol_version: self.core.protocol_version,
-                cipher_suite: self.core.cipher_suite,
-                proposals: ProposalCache::new(),
-                context: new_context,
-            },
+            core: GroupCore::new(
+                self.core.protocol_version,
+                self.core.cipher_suite,
+                new_context,
+            ),
             private_tree: new_priv_tree,
             current_public_epoch: public_epoch,
             key_schedule: key_schedule_result.key_schedule,
@@ -1941,11 +1940,18 @@ impl<C: GroupConfig> Group<C> {
                 // and check that
             }
             Content::Proposal(ref p) => {
-                self.core.proposals.insert(
+                let proposal_ref = ProposalRef::from_plaintext(
                     self.core.cipher_suite,
                     &plaintext,
                     plaintext.encrypted,
                 )?;
+
+                self.core.proposals.insert(
+                    proposal_ref,
+                    p.clone(),
+                    plaintext.plaintext.content.sender,
+                );
+
                 Ok(ProcessedMessagePayload::Proposal(p.clone()))
             }
         }
@@ -1980,6 +1986,7 @@ impl<C: GroupConfig> Group<C> {
         let proposal_effects = proposal_effects(
             &self.core.proposals,
             &commit_content,
+            self.core.context.extensions.get_extension()?,
             self.config.credential_validator(),
             &self.current_public_epoch.public_tree,
         )?;
@@ -2153,7 +2160,8 @@ impl<C: GroupConfig> Group<C> {
         self.confirmation_tag = confirmation_tag;
 
         // Clear the proposals list
-        self.core.proposals = ProposalCache::new();
+        self.core.proposals.clear();
+
         // Clear the pending updates list
         self.pending_updates = Default::default();
 
@@ -2323,6 +2331,7 @@ fn commit_sender(
 fn proposal_effects<C>(
     proposals: &ProposalCache,
     commit_content: &MLSMessageCommitContent<'_>,
+    required_capabilities: Option<RequiredCapabilitiesExt>,
     credential_validator: C,
     public_tree: &TreeKemPublic,
 ) -> Result<ProposalSetEffects, ProposalCacheError>
@@ -2333,6 +2342,7 @@ where
         commit_content.sender.clone(),
         commit_content.commit.proposals.clone(),
         commit_content.commit.path.as_ref(),
+        required_capabilities,
         credential_validator,
         public_tree,
     )
@@ -2521,6 +2531,10 @@ pub(crate) mod test_utils {
                 membership_tag,
                 ..plaintext
             }
+        }
+
+        pub(crate) fn required_capabilities(&self) -> Option<RequiredCapabilitiesExt> {
+            self.group.context().extensions.get_extension().unwrap()
         }
     }
 
@@ -2753,7 +2767,7 @@ mod tests {
         let existing_leaf = test_group.group.current_user_leaf_node().unwrap().clone();
 
         let mut new_capabilities = CapabilitiesExt::default();
-        new_capabilities.proposals.push(42);
+        new_capabilities.proposals.push(42.into());
 
         let new_extension = TestExtension { foo: 10 };
         let mut extension_list = ExtensionList::default();
@@ -2859,7 +2873,7 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_add_bad_key_package() {
+    fn add_proposal_with_bad_key_package_is_ignored_when_committing() {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128;
 
@@ -2872,19 +2886,34 @@ mod tests {
             kp.key_package.signature = SecureRng::gen(32).unwrap()
         }
 
-        let res = test_group.group.commit_proposals(
-            vec![proposal],
-            test_group.commit_options(),
-            &test_group.secret_store,
-            &test_group.signing_key,
-            vec![],
-        );
+        let (commit, _) = test_group
+            .group
+            .commit_proposals(
+                vec![proposal],
+                test_group.commit_options(),
+                &test_group.secret_store,
+                &test_group.signing_key,
+                vec![],
+            )
+            .unwrap();
 
-        assert_matches!(res, Err(GroupError::KeyPackageValidationError(_)));
+        assert_matches!(
+            commit,
+            CommitGeneration {
+                plaintext: OutboundMessage::Plaintext(MLSPlaintext {
+                    content: MLSMessageContent {
+                        content: Content::Commit(Commit { proposals, .. }),
+                        ..
+                    },
+                    ..
+                }),
+                ..
+            } if proposals.is_empty()
+        );
     }
 
     #[test]
-    fn test_invalid_update_bad_key_package() {
+    fn update_proposal_with_bad_key_package_is_ignored_when_committing() {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128;
 
@@ -2902,39 +2931,49 @@ mod tests {
             panic!("Invalid update proposal")
         }
 
-        let proposal = alice_group
+        let proposal_plaintext = alice_group
             .group
             .create_proposal(
-                proposal,
+                proposal.clone(),
                 &alice_group.signing_key,
                 ControlEncryptionMode::Plaintext,
                 vec![],
             )
             .unwrap();
 
-        // Hack bob's receipt of the proposal
-        bob_group
-            .group
-            .core
-            .proposals
-            .insert(cipher_suite, &proposal, false)
-            .unwrap();
+        let proposal_ref =
+            ProposalRef::from_plaintext(cipher_suite, &proposal_plaintext, false).unwrap();
 
-        let res = bob_group.group.commit_proposals(
-            vec![],
-            bob_group.commit_options(),
-            &bob_group.secret_store,
-            &bob_group.signing_key,
-            vec![],
+        // Hack bob's receipt of the proposal
+        bob_group.group.core.proposals.insert(
+            proposal_ref,
+            proposal,
+            proposal_plaintext.content.sender.clone(),
         );
 
+        let (commit, _) = bob_group
+            .group
+            .commit_proposals(
+                vec![],
+                bob_group.commit_options(),
+                &bob_group.secret_store,
+                &bob_group.signing_key,
+                vec![],
+            )
+            .unwrap();
+
         assert_matches!(
-            res,
-            Err(GroupError::LeafNodeValidationError(
-                LeafNodeValidationError::SignatureError(SignatureError::SignatureValidationFailed(
-                    _
-                ))
-            ))
+            commit,
+            CommitGeneration {
+                plaintext: OutboundMessage::Plaintext(MLSPlaintext {
+                    content: MLSMessageContent {
+                        content: Content::Commit(Commit { proposals, .. }),
+                        ..
+                    },
+                    ..
+                }),
+                ..
+            } if proposals.is_empty()
         );
     }
 

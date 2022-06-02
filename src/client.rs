@@ -807,4 +807,83 @@ mod tests {
             )))
         );
     }
+
+    #[test]
+    fn a_single_proposal_is_included_in_commit_when_multiple_add_proposals_share_same_hpke_key() {
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+        let mut alice_session = create_session(&alice);
+
+        let (_, bob_key_pkg) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+
+        let (alice, mut alice_key_pkg) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice");
+
+        alice_key_pkg.key_package.leaf_node.public_key =
+            bob_key_pkg.key_package.leaf_node.public_key.clone();
+
+        let (_, alice_signer) = alice
+            .config
+            .keychain()
+            .default_identity(TEST_CIPHER_SUITE)
+            .unwrap();
+
+        alice_key_pkg
+            .key_package
+            .leaf_node
+            .sign(&alice_signer, &None)
+            .unwrap();
+        alice_key_pkg.key_package.sign(&alice_signer, &()).unwrap();
+
+        alice_session
+            .commit(
+                vec![
+                    Proposal::Add(AddProposal {
+                        key_package: bob_key_pkg.key_package,
+                    }),
+                    Proposal::Add(AddProposal {
+                        key_package: alice_key_pkg.key_package,
+                    }),
+                ],
+                Vec::new(),
+            )
+            .unwrap();
+
+        let update = alice_session.apply_pending_commit().unwrap();
+
+        assert_eq!(update.added.len(), 1);
+    }
+
+    #[test]
+    fn a_single_proposal_is_included_in_commit_when_multiple_add_proposals_share_same_signature_key(
+    ) {
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+        let mut alice_session = create_session(&alice);
+
+        let bob = get_basic_config(TEST_CIPHER_SUITE, "bob").build_client();
+        let bob_key_pkg = bob
+            .gen_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .unwrap();
+        let alice_key_pkg = bob
+            .gen_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .unwrap();
+
+        alice_session
+            .commit(
+                vec![
+                    Proposal::Add(AddProposal {
+                        key_package: bob_key_pkg.key_package,
+                    }),
+                    Proposal::Add(AddProposal {
+                        key_package: alice_key_pkg.key_package,
+                    }),
+                ],
+                Vec::new(),
+            )
+            .unwrap();
+
+        let update = alice_session.apply_pending_commit().unwrap();
+
+        assert_eq!(update.added.len(), 1);
+    }
 }

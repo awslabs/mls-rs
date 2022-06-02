@@ -23,6 +23,19 @@ pub struct GroupCore {
 }
 
 impl GroupCore {
+    pub(super) fn new(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        context: GroupContext,
+    ) -> Self {
+        Self {
+            protocol_version,
+            cipher_suite,
+            proposals: ProposalCache::new(protocol_version, cipher_suite, context.group_id.clone()),
+            context,
+        }
+    }
+
     pub(super) fn apply_proposals<C>(
         &self,
         current_public_tree: &TreeKemPublic,

@@ -30,9 +30,9 @@ pub enum LeafNodeError {
     #[error(transparent)]
     SigningIdentityError(#[from] SigningIdentityError),
     #[error("parent hash error: {0}")]
-    ParentHashError(#[source] Box<dyn std::error::Error>),
-    #[error("internal signer error: {0:?}")]
-    SignerError(Box<dyn std::error::Error>),
+    ParentHashError(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("internal signer error: {0}")]
+    SignerError(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[derive(
@@ -168,7 +168,10 @@ impl LeafNode {
         capabilities: Option<CapabilitiesExt>,
         extensions: Option<ExtensionList>,
         signer: &S,
-        mut parent_hash: impl FnMut(HpkePublicKey) -> Result<ParentHash, Box<dyn std::error::Error>>,
+        mut parent_hash: impl FnMut(
+            HpkePublicKey,
+        )
+            -> Result<ParentHash, Box<dyn std::error::Error + Send + Sync>>,
     ) -> Result<HpkeSecretKey, LeafNodeError> {
         LeafNode::check_signing_identity(cipher_suite, &self.signing_identity, signer)?;
 

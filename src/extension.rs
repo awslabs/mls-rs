@@ -415,7 +415,7 @@ mod tests {
     fn test_required_capabilities() {
         let ext = RequiredCapabilitiesExt {
             extensions: vec![0u16, 1u16],
-            proposals: vec![42u16, 43u16],
+            proposals: vec![42.into(), 43.into()],
             credentials: vec![CREDENTIAL_TYPE_BASIC],
         };
 

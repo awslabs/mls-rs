@@ -67,10 +67,22 @@ struct PendingCommit {
     commit: CommitGeneration,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CommitResult {
     pub commit_packet: Vec<u8>,
     pub welcome_packet: Option<Vec<u8>>,
+}
+
+impl Debug for CommitResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CommitResult")
+            .field("packet_data", &hex::encode(&self.commit_packet))
+            .field(
+                "welcome_packet",
+                &self.welcome_packet.as_ref().map(hex::encode),
+            )
+            .finish()
+    }
 }
 
 pub struct Session<C>

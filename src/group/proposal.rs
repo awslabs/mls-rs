@@ -3,6 +3,7 @@ use crate::{
     psk::PreSharedKeyID,
     tree_kem::{leaf_node::LeafNode, leaf_node_ref::LeafNodeRef},
 };
+use std::fmt::{self, Debug};
 
 #[derive(
     Clone,
@@ -93,7 +94,50 @@ pub struct ExternalInit {
     pub kem_output: Vec<u8>,
 }
 
-pub type ProposalType = u16;
+#[derive(
+    Clone,
+    Copy,
+    Eq,
+    Hash,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
+pub struct ProposalType(pub u16);
+
+impl ProposalType {
+    pub const ADD: ProposalType = ProposalType(1);
+    pub const UPDATE: ProposalType = ProposalType(2);
+    pub const REMOVE: ProposalType = ProposalType(3);
+    pub const PSK: ProposalType = ProposalType(4);
+    pub const RE_INIT: ProposalType = ProposalType(5);
+    pub const EXTERNAL_INIT: ProposalType = ProposalType(6);
+    pub const GROUP_CONTEXT_EXTENSIONS: ProposalType = ProposalType(8);
+}
+
+impl From<u16> for ProposalType {
+    fn from(n: u16) -> Self {
+        Self(n)
+    }
+}
+
+impl Debug for ProposalType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::ADD => f.write_str("Add"),
+            Self::UPDATE => f.write_str("Update"),
+            Self::REMOVE => f.write_str("Remove"),
+            Self::PSK => f.write_str("Psk"),
+            Self::RE_INIT => f.write_str("ReInit"),
+            Self::EXTERNAL_INIT => f.write_str("ExternalInit"),
+            Self::GROUP_CONTEXT_EXTENSIONS => f.write_str("GroupContextExtensions"),
+            _ => write!(f, "ProposalType({})", self.0),
+        }
+    }
+}
 
 #[derive(
     Clone,
@@ -114,9 +158,22 @@ pub enum Proposal {
     Psk(PreSharedKey),
     ReInit(ReInit),
     ExternalInit(ExternalInit),
-    //TODO: AppAck,
     #[tls_codec(discriminant = 8)]
     GroupContextExtensions(ExtensionList),
+}
+
+impl Proposal {
+    pub fn proposal_type(&self) -> ProposalType {
+        match self {
+            Proposal::Add(_) => ProposalType::ADD,
+            Proposal::Update(_) => ProposalType::UPDATE,
+            Proposal::Remove(_) => ProposalType::REMOVE,
+            Proposal::Psk(_) => ProposalType::PSK,
+            Proposal::ReInit(_) => ProposalType::RE_INIT,
+            Proposal::ExternalInit(_) => ProposalType::EXTERNAL_INIT,
+            Proposal::GroupContextExtensions(_) => ProposalType::GROUP_CONTEXT_EXTENSIONS,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]

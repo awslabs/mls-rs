@@ -45,7 +45,11 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
             core: GroupCore {
                 protocol_version,
                 cipher_suite,
-                proposals: ProposalCache::new(),
+                proposals: ProposalCache::new(
+                    protocol_version,
+                    cipher_suite,
+                    context.group_id.clone(),
+                ),
                 context,
             },
         })
@@ -168,6 +172,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
         let proposal_effects = proposal_effects(
             &self.core.proposals,
             &commit_content,
+            self.core.context.extensions.get_extension()?,
             self.config.credential_validator(),
             &self.current_epoch.public_tree,
         )?;
@@ -216,7 +221,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         self.interim_transcript_hash = interim_transcript_hash;
-        self.core.proposals = ProposalCache::new();
+        self.core.proposals.clear();
 
         Ok(state_update)
     }

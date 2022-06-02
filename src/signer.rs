@@ -25,9 +25,9 @@ pub enum SignatureError {
     #[error(transparent)]
     TlsSerializationError(#[from] tls_codec::Error),
     #[error("internal signer error: {0:?}")]
-    InternalSignerError(#[source] Box<dyn std::error::Error>),
+    InternalSignerError(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("signature validation failed, info: {0:?}")]
-    SignatureValidationFailed(#[source] Box<dyn std::error::Error>),
+    SignatureValidationFailed(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 pub(crate) trait Signable<'a> {

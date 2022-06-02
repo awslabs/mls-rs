@@ -34,6 +34,64 @@ impl TreeIndex {
         Default::default()
     }
 
+    pub fn can_insert(
+        &self,
+        leaf_node_ref: &LeafNodeRef,
+        leaf_node: &LeafNode,
+    ) -> Result<(), TreeIndexError> {
+        self.can_insert_or_update(None, leaf_node_ref, leaf_node)
+    }
+
+    pub fn can_update(
+        &self,
+        current_leaf_node_ref: &LeafNodeRef,
+        new_leaf_node_ref: &LeafNodeRef,
+        new_leaf_node: &LeafNode,
+    ) -> Result<(), TreeIndexError> {
+        self.can_insert_or_update(
+            Some(current_leaf_node_ref),
+            new_leaf_node_ref,
+            new_leaf_node,
+        )
+    }
+
+    fn can_insert_or_update(
+        &self,
+        current_leaf_node_ref: Option<&LeafNodeRef>,
+        new_leaf_node_ref: &LeafNodeRef,
+        new_leaf_node: &LeafNode,
+    ) -> Result<(), TreeIndexError> {
+        let current_index = current_leaf_node_ref
+            .and_then(|r| self.leaves.get(r))
+            .copied();
+
+        let different = |i: &LeafIndex| Some(*i) != current_index;
+
+        self.credential_signature_key
+            .get(&*new_leaf_node.signing_identity.signature_key)
+            .copied()
+            .filter(different)
+            .map_or(Ok(()), |index| {
+                Err(TreeIndexError::DuplicateSignatureKeys(
+                    new_leaf_node_ref.to_string(),
+                    index,
+                ))
+            })?;
+
+        self.hpke_key
+            .get(new_leaf_node.public_key.as_ref())
+            .copied()
+            .filter(different)
+            .map_or(Ok(()), |index| {
+                Err(TreeIndexError::DuplicateHpkeKey(
+                    new_leaf_node_ref.to_string(),
+                    index,
+                ))
+            })?;
+
+        Ok(())
+    }
+
     pub fn insert(
         &mut self,
         leaf_node_ref: LeafNodeRef,

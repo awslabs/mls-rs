@@ -26,7 +26,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     serde::Deserialize,
     serde::Serialize,
 )]
-pub struct ValidatedLeafNode(LeafNode);
+pub struct ValidatedLeafNode(pub(crate) LeafNode);
 
 impl From<ValidatedLeafNode> for LeafNode {
     fn from(ln: ValidatedLeafNode) -> Self {
@@ -511,7 +511,7 @@ mod tests {
     #[test]
     fn test_required_proposal() {
         let required_capabilities = RequiredCapabilitiesExt {
-            proposals: vec![42u16],
+            proposals: vec![42.into()],
             ..Default::default()
         };
 
@@ -525,7 +525,9 @@ mod tests {
 
         assert_matches!(
             test_validator.validate(leaf_node, ValidationContext::Add(None)),
-            Err(LeafNodeValidationError::RequiredProposalNotFound(42))
+            Err(LeafNodeValidationError::RequiredProposalNotFound(
+                ProposalType(42)
+            ))
         );
     }
 

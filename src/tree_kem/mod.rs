@@ -275,6 +275,23 @@ impl TreeKemPublic {
         )
     }
 
+    pub fn can_add_leaf(&self, leaf: &LeafNode) -> Result<(), RatchetTreeError> {
+        let leaf_ref = leaf.to_reference(self.cipher_suite)?;
+        self.index.can_insert(&leaf_ref, leaf)?;
+        Ok(())
+    }
+
+    pub fn can_update_leaf(
+        &self,
+        current_leaf_node_ref: &LeafNodeRef,
+        new_leaf: &LeafNode,
+    ) -> Result<(), RatchetTreeError> {
+        let new_leaf_node_ref = new_leaf.to_reference(self.cipher_suite)?;
+        self.index
+            .can_update(current_leaf_node_ref, &new_leaf_node_ref, new_leaf)?;
+        Ok(())
+    }
+
     // Note that a partial failure of this function will leave the tree in a bad state. Modifying a
     // tree should always be done on a clone of the tree, which is how commits are processed
     pub fn add_leaves(

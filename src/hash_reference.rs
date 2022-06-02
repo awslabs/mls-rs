@@ -1,11 +1,13 @@
-use std::ops::Deref;
+use std::{
+    fmt::{self, Debug},
+    ops::Deref,
+};
 
 use crate::cipher_suite::CipherSuite;
 use ferriscrypt::kdf::{hkdf::Hkdf, KdfError};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(
-    Debug,
     PartialEq,
     Eq,
     PartialOrd,
@@ -19,6 +21,14 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     serde::Serialize,
 )]
 pub struct HashReference([u8; 16]);
+
+impl Debug for HashReference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("HashReference")
+            .field(&hex::encode(&self.0))
+            .finish()
+    }
+}
 
 impl Deref for HashReference {
     type Target = [u8; 16];

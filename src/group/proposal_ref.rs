@@ -50,7 +50,7 @@ impl ProposalRef {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use crate::tree_kem::leaf_node_ref::LeafNodeRef;
+    use crate::{group::test_utils::TEST_GROUP, tree_kem::leaf_node_ref::LeafNodeRef};
 
     use super::*;
 
@@ -62,7 +62,7 @@ pub(crate) mod test_utils {
             },
             membership_tag: Some(Tag::from(Vec::new()).into()),
             ..MLSPlaintext::new(
-                b"test_group".to_vec(),
+                TEST_GROUP.to_vec(),
                 0,
                 Sender::Member(sender),
                 Content::Proposal(proposal),

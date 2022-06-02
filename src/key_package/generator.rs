@@ -10,7 +10,7 @@ use ferriscrypt::asym::ec_key::{generate_keypair, EcKeyError};
 #[derive(Debug, Error)]
 pub enum KeyPackageGenerationError {
     #[error("internal signer error: {0:?}")]
-    SignerError(Box<dyn std::error::Error>),
+    SignerError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
     #[error(transparent)]

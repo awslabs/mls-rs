@@ -16,7 +16,7 @@ pub enum SigningIdentityError {
     #[error(transparent)]
     CertificateError(#[from] X509Error),
     #[error("internal signer error: {0:?}")]
-    SignerError(Box<dyn std::error::Error>),
+    SignerError(Box<dyn std::error::Error + Send + Sync>),
     #[error("certificate public key mismatch")]
     CertPublicKeyMismatch,
     #[error("invalid signature key data for cipher suite: {0:?}, underlying error: {1:?}")]
