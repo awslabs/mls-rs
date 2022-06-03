@@ -115,16 +115,9 @@ mod tests {
 
         let (leaf1, leaf1_hpke, leaf1_signer) = get_basic_test_node_sig_key(cipher_suite, "leaf1");
 
-        let leaf1_private = TreeKemPrivate::new_self_leaf(
-            LeafIndex(1),
-            leaf1.to_reference(cipher_suite).unwrap(),
-            leaf1_hpke,
-        );
+        let leaf1_private = TreeKemPrivate::new_self_leaf(LeafIndex(1), leaf1_hpke);
 
-        test_tree
-            .public
-            .add_leaves(vec![leaf1.clone().into()])
-            .unwrap();
+        test_tree.public.add_leaves(vec![leaf1.into()]).unwrap();
 
         test_tree.public.nodes[1] = Some(Node::Parent(test_parent_node(cipher_suite)));
 
@@ -132,14 +125,7 @@ mod tests {
         let signers = [&test_tree.creator_signing_key, &leaf1_signer];
 
         TreeKem::new(&mut test_tree.public, private_keys[0].clone())
-            .encap(
-                b"test_group",
-                &[],
-                &[leaf1.to_reference(cipher_suite).unwrap()],
-                signers[0],
-                None,
-                None,
-            )
+            .encap(b"test_group", &[], &[LeafIndex(1)], signers[0], None, None)
             .unwrap();
 
         test_tree.public

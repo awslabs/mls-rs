@@ -35,7 +35,6 @@ use crate::signer::{Signable, SignatureError, Signer};
 use crate::signing_identity::SigningIdentityError;
 use crate::tree_kem::kem::TreeKem;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
-use crate::tree_kem::leaf_node_ref::LeafNodeRef;
 use crate::tree_kem::leaf_node_validator::{
     LeafNodeValidationError, LeafNodeValidator, ValidationContext,
 };
@@ -400,7 +399,8 @@ pub struct Group<C: GroupConfig> {
     private_tree: TreeKemPrivate,
     current_public_epoch: PublicEpoch,
     interim_transcript_hash: InterimTranscriptHash,
-    pub pending_updates: HashMap<LeafNodeRef, HpkeSecretKey>, // Hash of key package to key generation
+    // TODO: HpkePublicKey does not have Eq and Hash
+    pub pending_updates: HashMap<Vec<u8>, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
     key_schedule: KeySchedule,
     confirmation_tag: ConfirmationTag,
 }
@@ -679,12 +679,9 @@ impl<C: GroupConfig> Group<C> {
         // to the leaf_node field of the KeyPackage. If no such field exists, return an error. Let
         // index represent the index of this node among the leaves in the tree, namely the index of
         // the node in the tree array divided by two.
-        let leaf_node_ref = key_package_generation
-            .key_package
-            .leaf_node
-            .to_reference(welcome.cipher_suite)?;
-
-        let self_index = public_tree.leaf_node_index(&leaf_node_ref)?;
+        let self_index = public_tree
+            .find_leaf_node(&key_package_generation.key_package.leaf_node)
+            .ok_or(GroupError::WelcomeKeyPackageNotFound)?;
 
         // Construct a new group state using the information in the GroupInfo object. The new
         // member's position in the tree is index, as defined above. In particular, the confirmed
@@ -692,17 +689,14 @@ impl<C: GroupConfig> Group<C> {
         // object.
         let context = GroupContext::from(&group_info);
 
-        let mut private_tree = TreeKemPrivate::new_self_leaf(
-            self_index,
-            leaf_node_ref,
-            key_package_generation.leaf_node_secret_key,
-        );
+        let mut private_tree =
+            TreeKemPrivate::new_self_leaf(self_index, key_package_generation.leaf_node_secret_key);
 
         // If the path_secret value is set in the GroupSecrets object
         if let Some(path_secret) = group_secrets.path_secret {
             private_tree.update_secrets(
                 group_info.cipher_suite,
-                public_tree.leaf_node_index(&group_info.signer)?,
+                group_info.signer,
                 path_secret,
                 &public_tree,
             )?;
@@ -825,19 +819,14 @@ impl<C: GroupConfig> Group<C> {
         )
         .validate(leaf_node, ValidationContext::Add(None))?;
 
-        let leaf_node_ref = leaf_node.to_reference(group_info.cipher_suite)?;
-
         let psk_secret = vec![0; Hkdf::from(group_info.cipher_suite.kdf_type()).extract_size()];
 
         let mut public_tree = find_tree(public_tree, &group_info)?;
         validate_tree(&public_tree, &group_info, config.credential_validator())?;
 
-        public_tree.add_leaves(vec![leaf_node])?;
+        let self_index = public_tree.add_leaves(vec![leaf_node])?[0];
 
-        let self_index = public_tree.leaf_node_index(&leaf_node_ref)?;
-
-        let private_tree =
-            TreeKemPrivate::new_self_leaf(self_index, leaf_node_ref, leaf_node_secret);
+        let private_tree = TreeKemPrivate::new_self_leaf(self_index, leaf_node_secret);
 
         let old_context = GroupContext::from(&group_info);
 
@@ -951,14 +940,9 @@ impl<C: GroupConfig> Group<C> {
         self.private_tree.self_index.0 as u32
     }
 
-    #[inline(always)]
-    pub fn current_user_ref(&self) -> &LeafNodeRef {
-        &self.private_tree.leaf_node_ref
-    }
-
     pub fn current_user_leaf_node(&self) -> Result<&LeafNode, GroupError> {
         self.current_epoch_tree()?
-            .get_leaf_node(self.current_user_ref())
+            .get_leaf_node(self.private_tree.self_index)
             .map_err(Into::into)
     }
 
@@ -972,22 +956,19 @@ impl<C: GroupConfig> Group<C> {
 
         // Apply updates to private tree
         for (_, leaf_node) in &proposals.updates {
-            let leaf_node_ref = leaf_node.to_reference(self.core.cipher_suite)?;
-
             // Update the leaf in the private tree if this is our update
-            if let Some(new_leaf_sk) = self.pending_updates.get(&leaf_node_ref).cloned() {
-                provisional_private_tree.update_leaf(
-                    total_leaf_count,
-                    leaf_node_ref,
-                    new_leaf_sk,
-                )?;
+            if let Some(new_leaf_sk) = self
+                .pending_updates
+                .get(leaf_node.public_key.as_ref())
+                .cloned()
+            {
+                provisional_private_tree.update_leaf(total_leaf_count, new_leaf_sk)?;
             }
         }
 
         // Remove elements from the private tree
-        proposals.removes.iter().try_for_each(|key_package_ref| {
-            let leaf = old_tree.leaf_node_index(key_package_ref)?;
-            provisional_private_tree.remove_leaf(total_leaf_count, leaf)?;
+        proposals.removes.iter().try_for_each(|&leaf_index| {
+            provisional_private_tree.remove_leaf(total_leaf_count, leaf_index)?;
             Ok::<_, GroupError>(())
         })?;
 
@@ -1009,7 +990,7 @@ impl<C: GroupConfig> Group<C> {
         authenticated_data: Vec<u8>,
     ) -> Result<OutboundMessage, GroupError> {
         let plaintext = self.construct_mls_plaintext(
-            Sender::Member(self.private_tree.leaf_node_ref.clone()),
+            Sender::Member(self.private_tree.self_index),
             Content::Proposal(proposal.clone()),
             signer,
             encryption_mode,
@@ -1078,7 +1059,7 @@ impl<C: GroupConfig> Group<C> {
         // received during the current epoch, and an empty path field. Add passed in proposals
         // by value
         let (commit_proposals, proposal_effects) = self.core.proposals.prepare_commit(
-            &self.private_tree.leaf_node_ref,
+            self.private_tree.self_index,
             proposals,
             self.core.context.extensions.get_extension()?,
             self.config.credential_validator(),
@@ -1094,18 +1075,6 @@ impl<C: GroupConfig> Group<C> {
 
         let mut provisional_state = self.apply_proposals(proposal_effects)?;
 
-        let added_refs = provisional_state
-            .public_state
-            .added_leaves
-            .iter()
-            .map(|(key_package, _)| {
-                key_package
-                    .leaf_node
-                    .to_reference(key_package.cipher_suite)
-                    .map(|leaf_ref| (key_package.clone(), leaf_ref))
-            })
-            .collect::<Result<Vec<(KeyPackage, LeafNodeRef)>, _>>()?;
-
         let mut provisional_group_context = provisional_state.public_state.group_context;
         provisional_group_context.epoch += 1;
 
@@ -1114,6 +1083,8 @@ impl<C: GroupConfig> Group<C> {
         // sender MAY omit the path field at its discretion.
         let perform_path_update =
             options.prefer_path_update || provisional_state.public_state.path_update_required;
+
+        let added_leaves = provisional_state.public_state.added_leaves;
 
         let update_path = if perform_path_update {
             // The committer MUST NOT include any Update proposals generated by the committer, since they would be duplicative with the path field in the Commit
@@ -1135,11 +1106,11 @@ impl<C: GroupConfig> Group<C> {
             .encap(
                 &self.core.context.group_id,
                 &context_bytes,
-                &added_refs
+                &added_leaves
                     .iter()
                     // TODO: Modify encap so that clone isn't needed here
-                    .map(|(_, leaf_node_ref)| leaf_node_ref.clone())
-                    .collect::<Vec<LeafNodeRef>>(),
+                    .map(|(_, leaf_index)| *leaf_index)
+                    .collect::<Vec<LeafIndex>>(),
                 signer,
                 options.capabilities_update,
                 options.extension_update,
@@ -1176,7 +1147,7 @@ impl<C: GroupConfig> Group<C> {
 
         //Construct an MLSPlaintext object containing the Commit object
         let mut plaintext = self.construct_mls_plaintext(
-            Sender::Member(self.private_tree.leaf_node_ref.clone()),
+            Sender::Member(self.private_tree.self_index),
             Content::Commit(commit),
             signer,
             options.encryption_mode,
@@ -1263,8 +1234,8 @@ impl<C: GroupConfig> Group<C> {
             confirmation_tag, // The confirmation_tag from the MLSPlaintext object
             signer: update_path
                 .as_ref()
-                .map(|up| up.secrets.private_key.leaf_node_ref.clone())
-                .unwrap_or_else(|| self.private_tree.leaf_node_ref.clone()),
+                .map(|up| up.secrets.private_key.self_index)
+                .unwrap_or_else(|| self.private_tree.self_index),
             signature: vec![],
         };
 
@@ -1273,8 +1244,7 @@ impl<C: GroupConfig> Group<C> {
 
         let welcome = self
             .make_welcome_message(
-                added_refs,
-                &provisional_state.public_state.public_tree,
+                added_leaves,
                 &key_schedule_result.joiner_secret,
                 &psk_secret,
                 update_path.as_ref(),
@@ -1297,8 +1267,7 @@ impl<C: GroupConfig> Group<C> {
     #[allow(clippy::too_many_arguments)]
     fn make_welcome_message(
         &self,
-        new_members: Vec<(KeyPackage, LeafNodeRef)>,
-        tree: &TreeKemPublic,
+        new_members: Vec<(KeyPackage, LeafIndex)>,
         joiner_secret: &[u8],
         psk_secret: &[u8],
         update_path: Option<&UpdatePathGeneration>,
@@ -1317,9 +1286,8 @@ impl<C: GroupConfig> Group<C> {
             .into_iter()
             .map(|(key_package, leaf_node_ref)| {
                 self.encrypt_group_secrets(
-                    tree,
                     &key_package,
-                    &leaf_node_ref,
+                    leaf_node_ref,
                     joiner_secret,
                     update_path,
                     psks.clone(),
@@ -1383,34 +1351,27 @@ impl<C: GroupConfig> Group<C> {
         let new_self_leaf_node =
             leaf_node_validator.validate(leaf_node, ValidationContext::Add(None))?;
 
-        let (new_member_refs, new_members, new_key_pkgs) = {
+        let (new_members, new_key_pkgs) = {
             let current_tree = self.current_epoch_tree()?;
-            let self_leaf_node_ref = &self.private_tree.leaf_node_ref;
+            let self_index = self.private_tree.self_index;
 
             current_tree
-                .get_leaf_node_refs()
-                .filter_map(|leaf_node_ref| {
-                    if self_leaf_node_ref == leaf_node_ref {
+                .non_empty_leaves()
+                .filter_map(|(index, leaf_node)| {
+                    if index == self_index {
                         None
                     } else {
-                        current_tree
-                            .get_leaf_node(leaf_node_ref)
-                            .map(&mut get_new_key_package)
-                            .transpose()
+                        get_new_key_package(leaf_node)
                     }
                 })
                 .try_fold(
-                    (Vec::new(), Vec::new(), Vec::new()),
-                    |(mut refs, mut leaves, mut new_key_pkgs), new_key_pkg| {
-                        let new_key_pkg = new_key_pkg?;
-                        let new_leaf_ref =
-                            new_key_pkg.leaf_node.to_reference(self.core.cipher_suite)?;
+                    (Vec::new(), Vec::new()),
+                    |(mut leaves, mut new_key_pkgs), new_key_pkg| {
                         let new_leaf = key_package_validator
                             .validate(new_key_pkg.clone(), Default::default())?;
-                        refs.push(new_leaf_ref);
                         leaves.push(new_leaf);
                         new_key_pkgs.push(new_key_pkg);
-                        Ok::<_, GroupError>((refs, leaves, new_key_pkgs))
+                        Ok::<_, GroupError>((leaves, new_key_pkgs))
                     },
                 )?
         };
@@ -1419,7 +1380,7 @@ impl<C: GroupConfig> Group<C> {
             TreeKemPublic::derive(self.core.cipher_suite, new_self_leaf_node, leaf_node_secret)?;
 
         // Add existing members to new tree
-        new_pub_tree.add_leaves(new_members)?;
+        let added_member_indexes = new_pub_tree.add_leaves(new_members)?;
         let new_pub_tree_hash = new_pub_tree.tree_hash()?;
 
         let new_context = GroupContext {
@@ -1488,7 +1449,7 @@ impl<C: GroupConfig> Group<C> {
                 &new_context.confirmed_transcript_hash,
                 &self.core.cipher_suite,
             )?,
-            signer: new_priv_tree.leaf_node_ref.clone(),
+            signer: new_priv_tree.self_index,
             signature: Vec::new(),
         };
 
@@ -1515,8 +1476,7 @@ impl<C: GroupConfig> Group<C> {
         };
 
         let welcome = self.make_welcome_message(
-            new_key_pkgs.into_iter().zip(new_member_refs).collect(),
-            &new_pub_tree,
+            new_key_pkgs.into_iter().zip(added_member_indexes).collect(),
             &key_schedule_result.joiner_secret,
             &psk_secret,
             None,
@@ -1573,15 +1533,12 @@ impl<C: GroupConfig> Group<C> {
 
     fn encrypt_group_secrets(
         &self,
-        provisional_tree: &TreeKemPublic,
         key_package: &KeyPackage,
-        leaf_node_ref: &LeafNodeRef,
+        leaf_index: LeafIndex,
         joiner_secret: &[u8],
         update_path: Option<&UpdatePathGeneration>,
         psks: Vec<PreSharedKeyID>,
     ) -> Result<EncryptedGroupSecrets, GroupError> {
-        let leaf_index = provisional_tree.leaf_node_index(leaf_node_ref)?;
-
         let path_secret = update_path.and_then(|up| up.get_common_path_secret(leaf_index));
 
         // Ensure that we have a path secret if one is required
@@ -1635,9 +1592,9 @@ impl<C: GroupConfig> Group<C> {
         capabilities_update: Option<CapabilitiesExt>,
     ) -> Result<Proposal, GroupError> {
         // Grab a copy of the current node and update it to have new key material
-        let mut existing_leaf_node = self.current_user_leaf_node()?.clone();
+        let mut new_leaf_node = self.current_user_leaf_node()?.clone();
 
-        let secret_key = existing_leaf_node.update(
+        let secret_key = new_leaf_node.update(
             self.core.cipher_suite,
             &self.core.context.group_id,
             capabilities_update,
@@ -1646,24 +1603,20 @@ impl<C: GroupConfig> Group<C> {
         )?;
 
         // Store the secret key in the pending updates storage for later
-        self.pending_updates.insert(
-            existing_leaf_node.to_reference(self.core.cipher_suite)?,
-            secret_key,
-        );
+        self.pending_updates
+            .insert(new_leaf_node.public_key.as_ref().to_vec(), secret_key);
 
         Ok(Proposal::Update(UpdateProposal {
-            leaf_node: existing_leaf_node,
+            leaf_node: new_leaf_node,
         }))
     }
 
     pub fn remove_proposal(&mut self, leaf_index: LeafIndex) -> Result<Proposal, GroupError> {
-        let leaf_node_ref = self
-            .current_epoch_tree()?
-            .get_leaf_node_ref(leaf_index)
-            .map_err(GroupError::RatchetTreeError)?;
+        // Verify that this leaf is actually in the tree
+        self.current_epoch_tree()?.get_leaf_node(leaf_index)?;
 
         Ok(Proposal::Remove(RemoveProposal {
-            to_remove: leaf_node_ref,
+            to_remove: leaf_index,
         }))
     }
 
@@ -1827,7 +1780,7 @@ impl<C: GroupConfig> Group<C> {
             content: MLSMessageContent {
                 group_id: self.core.context.group_id.clone(),
                 epoch: self.core.context.epoch,
-                sender: Sender::Member(self.private_tree.leaf_node_ref.clone()),
+                sender: Sender::Member(self.private_tree.self_index),
                 authenticated_data,
                 content: Content::Application(message.to_vec()),
             },
@@ -1917,7 +1870,7 @@ impl<C: GroupConfig> Group<C> {
         plaintext: VerifiedPlaintext,
     ) -> Result<VerifiedPlaintext, GroupError> {
         match &plaintext.content.sender {
-            Sender::Member(sender) if *sender == self.private_tree.leaf_node_ref => {
+            Sender::Member(sender) if *sender == self.private_tree.self_index => {
                 Err(GroupError::CantProcessMessageFromSelf)
             }
             _ => Ok(()),
@@ -1974,9 +1927,7 @@ impl<C: GroupConfig> Group<C> {
     ) -> Result<StateUpdate, GroupError> {
         //TODO: PSK Verify that all PSKs specified in any PreSharedKey proposals in the proposals
         // vector are available.
-
         let commit_content = MLSMessageCommitContent::new(plaintext.deref(), plaintext.encrypted)?;
-        let sender = commit_sender(self.core.cipher_suite, &commit_content)?;
 
         //Generate a provisional GroupContext object by applying the proposals referenced in the
         // initial Commit object, as described in Section 11.1. Update proposals are applied first,
@@ -2033,28 +1984,25 @@ impl<C: GroupConfig> Group<C> {
                     provisional_state
                         .public_state
                         .public_tree
-                        .apply_self_update(
-                            &validated_update_path,
-                            &self.private_tree.leaf_node_ref,
-                        )?;
+                        .apply_self_update(&validated_update_path, self.private_tree.self_index)?;
 
                     Ok(pending.secrets)
                 } else {
+                    let sender = commit_sender(&commit_content, &provisional_state.public_state)?;
+
                     TreeKem::new(
                         &mut provisional_state.public_state.public_tree,
                         provisional_state.private_tree,
                     )
                     .decap(
-                        &sender,
+                        sender,
                         &validated_update_path,
                         &provisional_state
                             .public_state
                             .added_leaves
                             .into_iter()
-                            .map(|(key_package, _)| {
-                                key_package.leaf_node.to_reference(key_package.cipher_suite)
-                            })
-                            .collect::<Result<Vec<LeafNodeRef>, _>>()?,
+                            .map(|(_, index)| index)
+                            .collect::<Vec<LeafIndex>>(),
                         &self.core.context.tls_serialize_detached()?,
                     )
                 }?;
@@ -2197,7 +2145,7 @@ impl<C: GroupConfig> Group<C> {
             group_context_extensions: self.core.context.extensions.clone(),
             other_extensions,
             confirmation_tag: self.confirmation_tag.clone(),
-            signer: self.private_tree.leaf_node_ref.clone(),
+            signer: self.private_tree.self_index,
             signature: Vec::new(),
         };
 
@@ -2287,7 +2235,7 @@ fn validate_tree<C: CredentialValidator>(
     group_info: &GroupInfo,
     credential_validator: C,
 ) -> Result<(), GroupError> {
-    let sender_key_package = public_tree.get_leaf_node(&group_info.signer)?;
+    let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
     group_info.verify(
         &sender_key_package
             .signing_identity
@@ -2312,19 +2260,17 @@ fn validate_tree<C: CredentialValidator>(
 }
 
 fn commit_sender(
-    cipher_suite: CipherSuite,
     commit_content: &MLSMessageCommitContent<'_>,
-) -> Result<LeafNodeRef, GroupError> {
+    provisional_state: &ProvisionalPublicState,
+) -> Result<LeafIndex, GroupError> {
     match commit_content.sender {
-        Sender::Member(sender) => Ok(sender.clone()),
-        Sender::NewMember => commit_content
-            .commit
-            .path
-            .as_ref()
-            .map(|p| p.leaf_node.to_reference(cipher_suite))
-            .transpose()?
-            .ok_or(GroupError::MissingUpdatePathInExternalCommit),
+        Sender::Member(index) => Ok(*index),
         Sender::Preconfigured(_) => Err(GroupError::PreconfiguredSenderCannotCommit),
+        Sender::NewMember => provisional_state
+            .external_init
+            .as_ref()
+            .map(|(index, _)| *index)
+            .ok_or(GroupError::MissingUpdatePathInExternalCommit),
     }
 }
 
@@ -2509,7 +2455,7 @@ pub(crate) mod test_utils {
             let plaintext = self
                 .group
                 .construct_mls_plaintext(
-                    Sender::Member(self.group.private_tree.leaf_node_ref.clone()),
+                    Sender::Member(self.group.private_tree.self_index),
                     content,
                     &self.signing_key,
                     ControlEncryptionMode::Plaintext,

@@ -8,10 +8,7 @@ use crate::{
         UpdateProposalFilter,
     },
     psk::PreSharedKeyID,
-    tree_kem::{
-        leaf_node::{LeafNode, LeafNodeError},
-        leaf_node_ref::LeafNodeRef,
-    },
+    tree_kem::leaf_node::{LeafNode, LeafNodeError},
 };
 
 #[derive(Error, Debug)]
@@ -37,8 +34,8 @@ pub enum ProposalCacheError {
 #[derive(Debug, Default, PartialEq)]
 pub struct ProposalSetEffects {
     pub adds: Vec<KeyPackage>,
-    pub updates: Vec<(LeafNodeRef, LeafNode)>,
-    pub removes: Vec<LeafNodeRef>,
+    pub updates: Vec<(LeafIndex, LeafNode)>,
+    pub removes: Vec<LeafIndex>,
     pub group_context_ext: Option<ExtensionList>,
     pub psks: Vec<PreSharedKeyID>,
     pub reinit: Option<ReInit>,
@@ -188,7 +185,7 @@ impl ProposalCache {
 
     pub fn prepare_commit<C>(
         &self,
-        local_leaf_node: &LeafNodeRef,
+        sender_index: LeafIndex,
         additional_proposals: Vec<Proposal>,
         required_capabilities: Option<RequiredCapabilitiesExt>,
         credential_validator: C,
@@ -210,7 +207,7 @@ impl ProposalCache {
             .chain(
                 additional_proposals
                     .into_iter()
-                    .map(|p| (p, Sender::Member(local_leaf_node.clone()), None)),
+                    .map(|p| (p, Sender::Member(sender_index), None)),
             )
             .fold(
                 ProposalBundle::default(),
@@ -224,7 +221,7 @@ impl ProposalCache {
             self.protocol_version,
             self.cipher_suite,
             self.group_id.clone(),
-            Sender::Member(local_leaf_node.clone()),
+            Sender::Member(sender_index),
             required_capabilities,
             &credential_validator,
             public_tree,
@@ -339,11 +336,11 @@ where
         credential_validator,
         tree,
     ))
-    .and(RemoveProposalFilter::new())
+    .and(RemoveProposalFilter::new(tree))
     .and(PskProposalFilter::new(cipher_suite))
     .and(ReInitProposalFilter::new(protocol_version))
     .and(GroupContextExtensionsProposalFilter)
-    .and(SingleProposalForLeaf::new(cipher_suite))
+    .and(SingleProposalForLeaf)
     .and(ExternalCommitFilter::new(
         committer,
         update_path,
@@ -363,7 +360,6 @@ mod tests {
         key_package::test_utils::test_key_package,
         tree_kem::{
             leaf_node::test_utils::{get_basic_test_node, get_basic_test_node_sig_key},
-            leaf_node_ref::LeafNodeRef,
             leaf_node_validator::{test_utils::FailureCredentialValidator, ValidatedLeafNode},
         },
     };
@@ -376,14 +372,12 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    fn test_ref() -> LeafNodeRef {
-        let mut buffer = [0u8; 16];
-        SecureRng::fill(&mut buffer).unwrap();
-        LeafNodeRef::from(buffer)
+    fn test_sender() -> LeafIndex {
+        LeafIndex(1)
     }
 
     struct TestProposals {
-        test_sender: LeafNodeRef,
+        test_sender: LeafIndex,
         test_proposals: Vec<MLSPlaintext>,
         expected_effects: ProposalSetEffects,
         tree: TreeKemPublic,
@@ -394,7 +388,7 @@ mod tests {
         cipher_suite: CipherSuite,
     ) -> TestProposals {
         let (sender_leaf, sender_leaf_secret, _) = get_basic_test_node_sig_key(cipher_suite, "bar");
-        let sender = sender_leaf.to_reference(cipher_suite).unwrap();
+        let sender = LeafIndex(0);
 
         let (mut tree, _) = TreeKemPublic::derive(
             cipher_suite,
@@ -414,9 +408,10 @@ mod tests {
         };
 
         let remove_package_leaf = get_basic_test_node(cipher_suite, "baz");
-        let remove_package = remove_package_leaf.to_reference(cipher_suite).unwrap();
-        tree.add_leaves(vec![ValidatedLeafNode(remove_package_leaf)])
-            .unwrap();
+
+        let remove_package = tree
+            .add_leaves(vec![ValidatedLeafNode(remove_package_leaf)])
+            .unwrap()[0];
 
         let add = Proposal::Add(AddProposal {
             key_package: add_package.clone(),
@@ -427,7 +422,7 @@ mod tests {
         });
 
         let remove = Proposal::Remove(RemoveProposal {
-            to_remove: remove_package.clone(),
+            to_remove: remove_package,
         });
 
         let extensions = Proposal::GroupContextExtensions(ExtensionList::new());
@@ -435,7 +430,7 @@ mod tests {
         let proposals = vec![add, update, remove, extensions];
         let effects = ProposalSetEffects {
             adds: vec![add_package],
-            updates: vec![(sender.clone(), update_package)],
+            updates: vec![(sender, update_package)],
             removes: vec![remove_package],
             group_context_ext: Some(ExtensionList::new()),
             ..ProposalSetEffects::default()
@@ -443,7 +438,7 @@ mod tests {
 
         let plaintext = proposals
             .into_iter()
-            .map(|p| plaintext_from_proposal(p, sender.clone()))
+            .map(|p| plaintext_from_proposal(p, sender))
             .collect();
 
         TestProposals {
@@ -522,7 +517,7 @@ mod tests {
 
         let (proposals, effects) = cache
             .prepare_commit(
-                &test_ref(),
+                test_sender(),
                 vec![],
                 None,
                 PassthroughCredentialValidator::new(),
@@ -561,7 +556,7 @@ mod tests {
 
         let (proposals, effects) = cache
             .prepare_commit(
-                &test_ref(),
+                test_sender(),
                 additional.clone(),
                 None,
                 PassthroughCredentialValidator::new(),
@@ -598,12 +593,12 @@ mod tests {
             leaf_node: additional_key_package.clone(),
         })];
 
-        let commiter_ref = test_ref();
+        let commiter_ref = test_sender();
         let cache = test_proposal_cache_setup(test_proposals);
 
         let (proposals, effects) = cache
             .prepare_commit(
-                &commiter_ref,
+                commiter_ref,
                 additional.clone(),
                 None,
                 PassthroughCredentialValidator::new(),
@@ -621,33 +616,49 @@ mod tests {
     #[test]
     fn test_proposal_cache_removal_override_update() {
         let TestProposals {
-            test_sender,
             test_proposals,
             tree,
             ..
         } = test_proposals(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        let removal = Proposal::Remove(RemoveProposal {
-            to_remove: test_sender.clone(),
+        let (mut update_leaf, _, signing_key) =
+            get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "foo");
+
+        update_leaf
+            .update(TEST_CIPHER_SUITE, b"test_group", None, None, &signing_key)
+            .unwrap();
+
+        let update = Proposal::Update(UpdateProposal {
+            leaf_node: update_leaf,
         });
 
-        let cache = test_proposal_cache_setup(test_proposals.clone());
+        let mut cache = test_proposal_cache_setup(test_proposals);
+
+        let update_proposal_ref = ProposalRef::from_plaintext(
+            TEST_CIPHER_SUITE,
+            &plaintext_from_proposal(update.clone(), LeafIndex(1)),
+            false,
+        )
+        .unwrap();
+
+        cache.insert(
+            update_proposal_ref.clone(),
+            update,
+            Sender::Member(LeafIndex(1)),
+        );
 
         let (proposals, effects) = cache
             .prepare_commit(
-                &test_ref(),
-                vec![removal],
+                test_sender(),
+                vec![],
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
             )
             .unwrap();
 
-        assert!(effects.removes.contains(&test_sender));
-
-        assert!(!proposals.contains(&ProposalOrRef::Reference(
-            ProposalRef::from_plaintext(TEST_CIPHER_SUITE, &test_proposals[1], false).unwrap()
-        )))
+        assert!(effects.removes.contains(&LeafIndex(1)));
+        assert!(!proposals.contains(&ProposalOrRef::Reference(update_proposal_ref)))
     }
 
     #[test]
@@ -664,7 +675,7 @@ mod tests {
 
         let (proposals, effects) = cache
             .prepare_commit(
-                &test_ref(),
+                test_sender(),
                 vec![],
                 None,
                 PassthroughCredentialValidator::new(),
@@ -714,8 +725,8 @@ mod tests {
 
         let (proposals, effects) = cache
             .prepare_commit(
-                &test_ref(),
-                additional.clone(),
+                test_sender(),
+                additional,
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
@@ -740,14 +751,14 @@ mod tests {
         assert!(cache.is_empty());
 
         let test_proposal = Proposal::Remove(RemoveProposal {
-            to_remove: test_ref(),
+            to_remove: test_sender(),
         });
 
-        let proposer = test_ref();
+        let proposer = test_sender();
 
         let test_proposal_ref = ProposalRef::from_plaintext(
             TEST_CIPHER_SUITE,
-            &plaintext_from_proposal(test_proposal.clone(), proposer.clone()),
+            &plaintext_from_proposal(test_proposal.clone(), proposer),
             false,
         )
         .unwrap();
@@ -775,7 +786,7 @@ mod tests {
         let credential_validator = PassthroughCredentialValidator::new();
 
         let (proposals, effects) = cache
-            .prepare_commit(&test_sender, additional, None, &credential_validator, &tree)
+            .prepare_commit(test_sender, additional, None, &credential_validator, &tree)
             .unwrap();
 
         let resolution = cache
@@ -805,9 +816,7 @@ mod tests {
         });
         let (proposals, effects) = cache
             .prepare_commit(
-                &get_basic_test_node(TEST_CIPHER_SUITE, "foo")
-                    .to_reference(TEST_CIPHER_SUITE)
-                    .unwrap(),
+                test_sender(),
                 vec![proposal.clone(), proposal],
                 None,
                 PassthroughCredentialValidator::new(),
@@ -841,7 +850,7 @@ mod tests {
             None,
             group.required_capabilities(),
             credential_validator,
-            &public_tree,
+            public_tree,
         );
 
         assert_matches!(
@@ -858,9 +867,7 @@ mod tests {
             TEST_CIPHER_SUITE,
             &plaintext_from_proposal(
                 Proposal::ExternalInit(ExternalInit { kem_output }),
-                get_basic_test_node(TEST_CIPHER_SUITE, "foo")
-                    .to_reference(TEST_CIPHER_SUITE)
-                    .unwrap(),
+                test_sender(),
             ),
             false,
         )
@@ -875,7 +882,7 @@ mod tests {
             Some(&test_update_path()),
             group.required_capabilities(),
             credential_validator,
-            &public_tree,
+            public_tree,
         );
         assert_matches!(
             res,
@@ -905,7 +912,7 @@ mod tests {
             Some(&test_update_path()),
             group.required_capabilities(),
             credential_validator,
-            &public_tree,
+            public_tree,
         );
 
         assert_matches!(
@@ -937,7 +944,7 @@ mod tests {
             Some(&test_update_path()),
             group.required_capabilities(),
             credential_validator,
-            &public_tree,
+            public_tree,
         )
     }
 
@@ -969,15 +976,15 @@ mod tests {
             get_basic_test_node(TEST_CIPHER_SUITE, "bar").into(),
         ];
 
-        public_tree.add_leaves(test_leaf_nodes.clone()).unwrap();
+        let test_leaf_node_indexes = public_tree.add_leaves(test_leaf_nodes).unwrap();
 
         let proposals = vec![
             Proposal::ExternalInit(ExternalInit { kem_output }),
             Proposal::Remove(RemoveProposal {
-                to_remove: test_leaf_nodes[0].to_reference(TEST_CIPHER_SUITE).unwrap(),
+                to_remove: test_leaf_node_indexes[0],
             }),
             Proposal::Remove(RemoveProposal {
-                to_remove: test_leaf_nodes[1].to_reference(TEST_CIPHER_SUITE).unwrap(),
+                to_remove: test_leaf_node_indexes[1],
             }),
         ];
 
@@ -1009,12 +1016,12 @@ mod tests {
 
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo").into()];
 
-        public_tree.add_leaves(test_leaf_nodes.clone()).unwrap();
+        let test_leaf_node_indexes = public_tree.add_leaves(test_leaf_nodes).unwrap();
 
         let proposals = vec![
             Proposal::ExternalInit(ExternalInit { kem_output }),
             Proposal::Remove(RemoveProposal {
-                to_remove: test_leaf_nodes[0].to_reference(TEST_CIPHER_SUITE).unwrap(),
+                to_remove: test_leaf_node_indexes[0],
             }),
         ];
 
@@ -1046,12 +1053,12 @@ mod tests {
 
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo").into()];
 
-        public_tree.add_leaves(test_leaf_nodes.clone()).unwrap();
+        let test_leaf_node_indexes = public_tree.add_leaves(test_leaf_nodes).unwrap();
 
         let proposals = vec![
             Proposal::ExternalInit(ExternalInit { kem_output }),
             Proposal::Remove(RemoveProposal {
-                to_remove: test_leaf_nodes[0].to_reference(TEST_CIPHER_SUITE).unwrap(),
+                to_remove: test_leaf_node_indexes[0],
             }),
         ];
 
@@ -1140,11 +1147,10 @@ mod tests {
     #[test]
     fn test_path_update_required_empty() {
         let cache = make_proposal_cache();
-        let test_node = get_basic_test_node(TEST_CIPHER_SUITE, "foo");
 
         let (_, effects) = cache
             .prepare_commit(
-                &test_node.to_reference(TEST_CIPHER_SUITE).unwrap(),
+                test_sender(),
                 vec![],
                 None,
                 PassthroughCredentialValidator::new(),
@@ -1158,7 +1164,6 @@ mod tests {
     #[test]
     fn test_path_update_required_updates() {
         let cache = make_proposal_cache();
-        let test_node = get_basic_test_node(TEST_CIPHER_SUITE, "foo");
 
         let update = Proposal::Update(UpdateProposal {
             leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "bar"),
@@ -1166,7 +1171,7 @@ mod tests {
 
         let (_, effects) = cache
             .prepare_commit(
-                &test_node.to_reference(TEST_CIPHER_SUITE).unwrap(),
+                test_sender(),
                 vec![update],
                 None,
                 PassthroughCredentialValidator::new(),
@@ -1180,17 +1185,14 @@ mod tests {
     #[test]
     fn test_path_update_required_removes() {
         let cache = make_proposal_cache();
-        let test_node = get_basic_test_node(TEST_CIPHER_SUITE, "foo");
 
         let remove = Proposal::Remove(RemoveProposal {
-            to_remove: get_basic_test_node(TEST_CIPHER_SUITE, "bar")
-                .to_reference(TEST_CIPHER_SUITE)
-                .unwrap(),
+            to_remove: LeafIndex(1),
         });
 
         let (_, effects) = cache
             .prepare_commit(
-                &test_node.to_reference(TEST_CIPHER_SUITE).unwrap(),
+                test_sender(),
                 vec![remove],
                 None,
                 PassthroughCredentialValidator::new(),
@@ -1204,7 +1206,6 @@ mod tests {
     #[test]
     fn test_path_update_not_required() {
         let cache = make_proposal_cache();
-        let test_node = get_basic_test_node(TEST_CIPHER_SUITE, "foo");
 
         let psk = Proposal::Psk(PreSharedKey {
             psk: PreSharedKeyID {
@@ -1226,7 +1227,7 @@ mod tests {
 
         let (_, effects) = cache
             .prepare_commit(
-                &test_node.to_reference(TEST_CIPHER_SUITE).unwrap(),
+                test_sender(),
                 vec![psk, add, reinit],
                 None,
                 PassthroughCredentialValidator::new(),

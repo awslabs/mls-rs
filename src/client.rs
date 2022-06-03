@@ -491,11 +491,7 @@ mod tests {
         let (bob, bob_key_pkg_gen) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
-        let bob_key_pkg_ref = bob_key_pkg_gen
-            .key_package
-            .leaf_node
-            .to_reference(TEST_CIPHER_SUITE)
-            .unwrap();
+        let bob_leaf_node = bob_key_pkg_gen.key_package.leaf_node.clone();
 
         let mut bob_session =
             join_session(&mut alice_session, [], bob_key_pkg_gen.key_package, &bob).unwrap();
@@ -517,8 +513,7 @@ mod tests {
 
         let (alice_sub_session, welcome) = alice_session
             .branch(b"subgroup".to_vec(), None, |p| {
-                let r = p.to_reference(TEST_CIPHER_SUITE).unwrap();
-                if r == bob_key_pkg_ref {
+                if p == &bob_leaf_node {
                     Some(bob_sub_key_pkg.key_package.clone())
                 } else {
                     None

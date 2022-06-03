@@ -69,7 +69,7 @@ where
         )?;
 
         self.tree
-            .can_update_leaf(proposer, &proposal.proposal.leaf_node)?;
+            .can_update_leaf(*proposer, &proposal.proposal.leaf_node)?;
 
         (proposal.sender != self.committer)
             .then(|| ())

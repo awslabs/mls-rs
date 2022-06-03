@@ -6,7 +6,7 @@ use crate::{
         MLSSenderData, MLSSenderDataAAD, Sender, VerifiedPlaintext,
     },
     signer::Signable,
-    tree_kem::{leaf_node_ref::LeafNodeRef, TreeKemPrivate, TreeKemPublic},
+    tree_kem::{node::LeafIndex, TreeKemPrivate, TreeKemPublic},
     AddProposal, Proposal,
 };
 use ferriscrypt::asym::ec_key::PublicKey;
@@ -99,7 +99,7 @@ where
         )?;
 
         let sender_data = MLSSenderData::tls_deserialize(&mut &*decrypted_sender)?;
-        if self.private_tree.leaf_node_ref == sender_data.sender {
+        if self.private_tree.self_index == sender_data.sender {
             return Err(GroupError::CantProcessMessageFromSelf);
         }
 
@@ -110,9 +110,7 @@ where
         };
 
         let decryption_key = self.msg_epoch.get_decryption_key(
-            self.msg_epoch
-                .public_tree
-                .leaf_node_index(&sender_data.sender)?,
+            sender_data.sender,
             sender_data.generation,
             key_type,
         )?;
@@ -193,7 +191,7 @@ where
     F: FnMut(&[u8]) -> Option<PublicKey>,
 {
     match sender {
-        Sender::Member(leaf_ref) => public_key_for_member(public_tree, leaf_ref),
+        Sender::Member(leaf_index) => public_key_for_member(public_tree, *leaf_index),
         Sender::Preconfigured(external_key_id) => {
             public_key_for_preconfigured(external_key_id, external_key_id_to_signing_key)
         }
@@ -203,10 +201,10 @@ where
 
 fn public_key_for_member(
     public_tree: &TreeKemPublic,
-    leaf_ref: &LeafNodeRef,
+    leaf_index: LeafIndex,
 ) -> Result<PublicKey, GroupError> {
     Ok(public_tree
-        .get_leaf_node(leaf_ref)?
+        .get_leaf_node(leaf_index)?
         .signing_identity
         .public_key(public_tree.cipher_suite)?)
 }
@@ -278,8 +276,8 @@ mod tests {
     {
         MessageVerifier {
             msg_epoch,
-            context: &context,
-            private_tree: &private_tree,
+            context,
+            private_tree,
             external_key_id_to_signing_key,
         }
     }
@@ -347,7 +345,7 @@ mod tests {
     impl TestMember {
         fn make_member_plaintext(&self) -> MLSPlaintext {
             make_plaintext(
-                Sender::Member(self.group.private_tree.leaf_node_ref.clone()),
+                Sender::Member(self.group.private_tree.self_index),
                 self.group.current_epoch(),
             )
         }

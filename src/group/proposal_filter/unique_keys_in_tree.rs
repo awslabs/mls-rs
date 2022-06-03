@@ -54,9 +54,9 @@ fn apply_update(
     proposal: &ProposalInfo<UpdateProposal>,
 ) -> Result<(), ProposalFilterError> {
     match &proposal.sender {
-        Sender::Member(leaf_ref) => {
+        Sender::Member(leaf_index) => {
             let leaf = ValidatedLeafNode(proposal.proposal.leaf_node.clone());
-            tree.update_leaf(leaf_ref, leaf)?;
+            tree.update_leaf(*leaf_index, leaf)?;
             Ok(())
         }
         _ => Err(ProposalFilterError::InvalidProposalTypeForProposer(

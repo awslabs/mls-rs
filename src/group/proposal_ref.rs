@@ -50,11 +50,10 @@ impl ProposalRef {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use crate::{group::test_utils::TEST_GROUP, tree_kem::leaf_node_ref::LeafNodeRef};
-
     use super::*;
+    use crate::group::test_utils::TEST_GROUP;
 
-    pub fn plaintext_from_proposal(proposal: Proposal, sender: LeafNodeRef) -> MLSPlaintext {
+    pub fn plaintext_from_proposal(proposal: Proposal, sender: LeafIndex) -> MLSPlaintext {
         MLSPlaintext {
             auth: MLSMessageAuth {
                 signature: MessageSignature::from(SecureRng::gen(128).unwrap()),
@@ -112,36 +111,32 @@ mod test {
         for (protocol_version, cipher_suite) in
             ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
         {
-            let mut sender = [0u8; 16];
-            SecureRng::fill(&mut sender).unwrap();
+            let sender = LeafIndex(0);
 
             let add = plaintext_from_proposal(
                 Proposal::Add(AddProposal {
                     key_package: test_key_package(protocol_version, cipher_suite),
                 }),
-                sender.into(),
+                sender,
             );
 
             let update = plaintext_from_proposal(
                 Proposal::Update(UpdateProposal {
                     leaf_node: get_basic_test_node(cipher_suite, "foo"),
                 }),
-                sender.into(),
+                sender,
             );
-
-            let mut key_package_ref = [0u8; 16];
-            SecureRng::fill(&mut key_package_ref).unwrap();
 
             let remove = plaintext_from_proposal(
                 Proposal::Remove(RemoveProposal {
-                    to_remove: key_package_ref.into(),
+                    to_remove: LeafIndex(1),
                 }),
-                sender.into(),
+                sender,
             );
 
             let group_context_ext = plaintext_from_proposal(
                 Proposal::GroupContextExtensions(get_test_extension_list()),
-                sender.into(),
+                sender,
             );
 
             test_cases.push(TestCase {

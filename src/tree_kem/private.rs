@@ -6,22 +6,16 @@ use super::*;
 #[non_exhaustive]
 pub struct TreeKemPrivate {
     pub self_index: LeafIndex,
-    pub leaf_node_ref: LeafNodeRef,
     #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::ByteVec>")]
     #[serde(with = "crate::serde_utils::map_as_seq")]
     pub secret_keys: HashMap<NodeIndex, HpkeSecretKey>,
 }
 
 impl TreeKemPrivate {
-    pub fn new_self_leaf(
-        self_index: LeafIndex,
-        leaf_node_ref: LeafNodeRef,
-        leaf_secret: HpkeSecretKey,
-    ) -> Self {
+    pub fn new_self_leaf(self_index: LeafIndex, leaf_secret: HpkeSecretKey) -> Self {
         TreeKemPrivate {
             self_index,
             secret_keys: HashMap::from([(NodeIndex::from(self_index), leaf_secret)]),
-            leaf_node_ref,
         }
     }
 
@@ -74,7 +68,6 @@ impl TreeKemPrivate {
     pub fn update_leaf(
         &mut self,
         num_leaves: u32,
-        leaf_node_ref: LeafNodeRef,
         new_leaf: HpkeSecretKey,
     ) -> Result<(), RatchetTreeError> {
         self.secret_keys
@@ -86,8 +79,6 @@ impl TreeKemPrivate {
             .for_each(|i| {
                 self.secret_keys.remove(i);
             });
-
-        self.leaf_node_ref = leaf_node_ref;
 
         Ok(())
     }
@@ -133,16 +124,10 @@ mod tests {
     fn test_create_self_leaf() {
         let secret = HpkeSecretKey::try_from(SecretKey::generate(Curve::Ed25519).unwrap()).unwrap();
         let self_index = LeafIndex(42);
-        let mut leaf_node_ref_data = [0u8; 16];
-        SecureRng::fill(&mut leaf_node_ref_data).unwrap();
 
-        let leaf_node_ref = LeafNodeRef::from(leaf_node_ref_data);
-
-        let private_key =
-            TreeKemPrivate::new_self_leaf(self_index, leaf_node_ref.clone(), secret.clone());
+        let private_key = TreeKemPrivate::new_self_leaf(self_index, secret.clone());
 
         assert_eq!(private_key.self_index, self_index);
-        assert_eq!(private_key.leaf_node_ref, leaf_node_ref);
         assert_eq!(private_key.secret_keys.len(), 1);
         assert_eq!(
             private_key.secret_keys.get(&self_index.into()).unwrap(),
@@ -175,7 +160,7 @@ mod tests {
 
         // Add bob and charlie to the tree
         public_tree
-            .add_leaves(vec![bob_leaf.into(), charlie_leaf.clone().into()])
+            .add_leaves(vec![bob_leaf.into(), charlie_leaf.into()])
             .unwrap();
 
         // Generate an update path for Alice
@@ -189,11 +174,7 @@ mod tests {
             .unwrap();
 
         // Private key for Charlie
-        let charlie_private = TreeKemPrivate::new_self_leaf(
-            LeafIndex(2),
-            charlie_leaf.to_reference(cipher_suite).unwrap(),
-            charlie_hpke_secret,
-        );
+        let charlie_private = TreeKemPrivate::new_self_leaf(LeafIndex(2), charlie_hpke_secret);
 
         (public_tree, charlie_private, update_path_gen, path_secret)
     }
@@ -268,8 +249,7 @@ mod tests {
     fn setup_direct_path(self_index: LeafIndex, leaf_count: u32) -> TreeKemPrivate {
         let secret = HpkeSecretKey::try_from(SecretKey::generate(Curve::Ed25519).unwrap()).unwrap();
 
-        let mut private_key =
-            TreeKemPrivate::new_self_leaf(self_index, LeafNodeRef::from([0u8; 16]), secret);
+        let mut private_key = TreeKemPrivate::new_self_leaf(self_index, secret);
 
         self_index
             .direct_path(leaf_count)
@@ -292,11 +272,7 @@ mod tests {
         let new_secret =
             HpkeSecretKey::try_from(SecretKey::generate(Curve::Ed25519).unwrap()).unwrap();
 
-        let new_key_package_ref = LeafNodeRef::from([0u8; 16]);
-
-        private_key
-            .update_leaf(128, new_key_package_ref.clone(), new_secret.clone())
-            .unwrap();
+        private_key.update_leaf(128, new_secret.clone()).unwrap();
 
         // The update operation should have removed all the other keys in our direct path we
         // previously added
@@ -307,8 +283,6 @@ mod tests {
             private_key.secret_keys.get(&self_leaf.into()).unwrap(),
             &new_secret
         );
-
-        assert_eq!(private_key.leaf_node_ref, new_key_package_ref);
     }
 
     #[test]

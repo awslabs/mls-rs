@@ -24,7 +24,7 @@ pub struct GroupInfo {
     pub group_context_extensions: ExtensionList,
     pub other_extensions: ExtensionList,
     pub confirmation_tag: ConfirmationTag,
-    pub signer: LeafNodeRef,
+    pub signer: LeafIndex,
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub signature: Vec<u8>,
 }
@@ -45,7 +45,7 @@ struct SignableGroupInfo<'a> {
     other_extensions: &'a ExtensionList,
     #[tls_codec(with = "crate::tls::ByteVec")]
     confirmation_tag: &'a Tag,
-    signer: &'a LeafNodeRef,
+    signer: LeafIndex,
 }
 
 impl<'a> Signable<'a> for GroupInfo {
@@ -69,7 +69,7 @@ impl<'a> Signable<'a> for GroupInfo {
             group_context_extensions: &self.group_context_extensions,
             other_extensions: &self.other_extensions,
             confirmation_tag: &self.confirmation_tag,
-            signer: &self.signer,
+            signer: self.signer,
         }
         .tls_serialize_detached()
     }

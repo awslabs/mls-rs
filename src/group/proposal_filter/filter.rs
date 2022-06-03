@@ -2,8 +2,8 @@ use crate::{
     group::{proposal_filter::ProposalBundle, ProposalType, Sender},
     key_package::KeyPackageValidationError,
     tree_kem::{
-        leaf_node::LeafNodeError, leaf_node_ref::LeafNodeRef,
-        leaf_node_validator::LeafNodeValidationError, RatchetTreeError,
+        leaf_node::LeafNodeError, leaf_node_validator::LeafNodeValidationError, node::LeafIndex,
+        RatchetTreeError,
     },
     ProtocolVersion,
 };
@@ -67,7 +67,7 @@ pub enum ProposalFilterError {
         original: ProtocolVersion,
     },
     #[error("More than one proposal applying to leaf {0:?}")]
-    MoreThanOneProposalForLeaf(LeafNodeRef),
+    MoreThanOneProposalForLeaf(LeafIndex),
     #[error("More than one GroupContextExtensions proposal")]
     MoreThanOneGroupContextExtensionsProposal,
     #[error("Invalid proposal of type {0:?} for proposer {1:?}")]
@@ -88,4 +88,6 @@ pub enum ProposalFilterError {
     ExternalInitMustBeCommittedByNewMember,
     #[error("Invalid proposal type {0:?} in external commit")]
     InvalidProposalTypeInExternalCommit(ProposalType),
+    #[error("Committer can not remove themselves")]
+    CommitterSelfRemoval,
 }

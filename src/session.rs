@@ -13,7 +13,6 @@ use crate::message::{ProcessedMessage, ProcessedMessagePayload};
 use crate::psk::ExternalPskId;
 use crate::signer::Signer;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
-use crate::tree_kem::leaf_node_ref::LeafNodeRef;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use crate::{keychain::Keychain, ProtocolVersion};
@@ -290,8 +289,8 @@ where
         self.protocol.current_user_leaf_node().map_err(Into::into)
     }
 
-    pub fn current_user_ref(&self) -> &LeafNodeRef {
-        self.protocol.current_user_ref()
+    pub fn current_user_index(&self) -> u32 {
+        self.protocol.current_user_index()
     }
 
     #[inline]

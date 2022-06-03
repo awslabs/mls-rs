@@ -1,7 +1,4 @@
-use crate::{
-    credential::Credential,
-    tree_kem::{leaf_node::LeafNode, leaf_node_ref::LeafNodeRef},
-};
+use crate::{credential::Credential, tree_kem::leaf_node::LeafNode};
 
 use super::proposal::Proposal;
 use super::*;
@@ -40,7 +37,7 @@ impl From<&Content> for ContentType {
 #[repr(u8)]
 pub enum Sender {
     #[tls_codec(discriminant = 1)]
-    Member(LeafNodeRef),
+    Member(LeafIndex),
     Preconfigured(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>),
     NewMember,
 }
@@ -123,9 +120,9 @@ impl MLSPlaintext {
         public_tree: &TreeKemPublic,
     ) -> Result<Option<Credential>, RatchetTreeError> {
         Ok(match &self.content.sender {
-            Sender::Member(leaf_node_ref) => Some(
+            Sender::Member(leaf_index) => Some(
                 public_tree
-                    .get_leaf_node(leaf_node_ref)?
+                    .get_leaf_node(*leaf_index)?
                     .signing_identity
                     .credential
                     .clone(),
@@ -249,7 +246,7 @@ pub struct MLSCiphertext {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSSenderData {
-    pub sender: LeafNodeRef,
+    pub sender: LeafIndex,
     pub generation: u32,
     pub reuse_guard: [u8; 4],
 }
@@ -358,7 +355,7 @@ pub mod test_utils {
             content: MLSMessageContent {
                 group_id: Vec::new(),
                 epoch: 0,
-                sender: Sender::Member([0u8; 16].into()),
+                sender: Sender::Member(LeafIndex(1)),
                 authenticated_data: Vec::new(),
                 content: Content::Application(test_content),
             },

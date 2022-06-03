@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use ferriscrypt::hpke::HpkeError;
 
 use crate::extension::{CapabilitiesExt, ExtensionList};
+use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
-use crate::{signer::Signer, LeafNodeRef};
 
 use super::node::Node;
 use super::EncryptedResolution;
@@ -35,17 +35,12 @@ impl<'a> TreeKem<'a> {
         self,
         group_id: &[u8],
         context: &[u8],
-        excluding: &[LeafNodeRef],
+        excluding: &[LeafIndex],
         signer: &S,
         update_capabilities: Option<CapabilitiesExt>,
         update_extensions: Option<ExtensionList>,
     ) -> Result<UpdatePathGeneration, RatchetTreeError> {
         let secret_generator = PathSecretGenerator::new(self.tree_kem_public.cipher_suite);
-
-        let excluding: Vec<LeafIndex> = excluding
-            .iter()
-            .flat_map(|reference| self.tree_kem_public.leaf_node_index(reference))
-            .collect();
 
         // Generate all the new path secrets and encrypt them to their copath node resolutions
         let mut root_secret = None;
@@ -57,7 +52,7 @@ impl<'a> TreeKem<'a> {
             .zip(
                 self.tree_kem_public
                     .nodes
-                    .direct_path_copath_resolution(self.private_key.self_index, &excluding)?,
+                    .direct_path_copath_resolution(self.private_key.self_index, excluding)?,
             )
             .map(|(path_secret, (index, copath_nodes))| {
                 encrypt_copath_node_resolution(
@@ -109,9 +104,7 @@ impl<'a> TreeKem<'a> {
             .clone();
 
         // Remove the original leaf from the index
-        self.tree_kem_public
-            .index
-            .remove(&private_key.leaf_node_ref, &own_leaf_copy)?;
+        self.tree_kem_public.index.remove(&own_leaf_copy)?;
 
         // Apply parent node updates to the tree to aid with the parent hash calculation
         self.tree_kem_public
@@ -135,20 +128,16 @@ impl<'a> TreeKem<'a> {
             .tree_kem_public
             .nodes
             .borrow_as_leaf_mut(private_key.self_index)?;
-        let new_leaf_ref = own_leaf_copy.to_reference(self.tree_kem_public.cipher_suite)?;
+
         *own_leaf = own_leaf_copy;
 
-        self.tree_kem_public.index.insert(
-            new_leaf_ref.clone(),
-            private_key.self_index,
-            own_leaf,
-        )?;
+        self.tree_kem_public
+            .index
+            .insert(private_key.self_index, own_leaf)?;
 
         private_key
             .secret_keys
             .insert(NodeIndex::from(private_key.self_index), secret_key);
-
-        private_key.leaf_node_ref = new_leaf_ref;
 
         // Create an update path with the new node and parent node updates
         let update_path = UpdatePath {
@@ -167,17 +156,15 @@ impl<'a> TreeKem<'a> {
 
     pub fn decap(
         self,
-        sender: &LeafNodeRef,
+        sender_index: LeafIndex,
         update_path: &ValidatedUpdatePath,
-        added_leaves: &[LeafNodeRef],
+        added_leaves: &[LeafIndex],
         context: &[u8],
     ) -> Result<TreeSecrets, RatchetTreeError> {
-        let sender_index = self.tree_kem_public.leaf_node_index(sender)?;
-
         // Exclude newly added leaf indexes
         let excluding = added_leaves
             .iter()
-            .flat_map(|index| self.tree_kem_public.leaf_node_index(index).map(Into::into))
+            .map(NodeIndex::from)
             .collect::<Vec<NodeIndex>>();
 
         // Find the least common ancestor shared by us and the sender
@@ -263,17 +250,12 @@ impl<'a> TreeKem<'a> {
         let removed_key_package = self
             .tree_kem_public
             .apply_update_path(sender_index, update_path)?;
+
+        self.tree_kem_public.index.remove(&removed_key_package)?;
+
         self.tree_kem_public
             .index
-            .remove(sender, &removed_key_package)?;
-
-        self.tree_kem_public.index.insert(
-            update_path
-                .leaf_node
-                .to_reference(self.tree_kem_public.cipher_suite)?,
-            sender_index,
-            &update_path.leaf_node,
-        )?;
+            .insert(sender_index, &update_path.leaf_node)?;
 
         // Verify the parent hash of the new sender leaf node and update the parent hash values
         // in the local tree
@@ -386,14 +368,8 @@ mod tests {
 
         // Verify that the leaf from the update path has been installed
         assert_eq!(
-            tree.leaf_node_index(
-                &update_path
-                    .leaf_node
-                    .to_reference(tree.cipher_suite)
-                    .unwrap()
-            )
-            .unwrap(),
-            index
+            tree.nodes.borrow_as_leaf(index).unwrap(),
+            &update_path.leaf_node.clone().into()
         );
 
         // Verify that updated capabilities were installed
@@ -453,11 +429,8 @@ mod tests {
                 let (leaf_node, hpke_secret, _) =
                     get_basic_test_node_sig_key(cipher_suite, &format!("{}", index));
 
-                let private_key = TreeKemPrivate::new_self_leaf(
-                    LeafIndex(index as u32),
-                    leaf_node.to_reference(cipher_suite).unwrap(),
-                    hpke_secret,
-                );
+                let private_key =
+                    TreeKemPrivate::new_self_leaf(LeafIndex(index as u32), hpke_secret);
 
                 (ValidatedLeafNode::from(leaf_node), private_key)
             })
@@ -468,8 +441,7 @@ mod tests {
 
         // Build a test tree we can clone for all leaf nodes
         let (mut test_tree, encap_private_key) =
-            TreeKemPublic::derive(cipher_suite, encap_node.clone().into(), encap_hpke_secret)
-                .unwrap();
+            TreeKemPublic::derive(cipher_suite, encap_node.into(), encap_hpke_secret).unwrap();
 
         test_tree.add_leaves(leaf_nodes).unwrap();
 
@@ -517,7 +489,7 @@ mod tests {
             println!("Decap for {:?}, user: {:?}", i, private_keys[i].self_index);
             let secrets = TreeKem::new(tree, private_keys[i].clone())
                 .decap(
-                    &encap_node.to_reference(cipher_suite).unwrap(),
+                    LeafIndex(0),
                     &validated_update_path,
                     &[],
                     b"test_ctx".as_ref(),

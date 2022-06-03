@@ -222,19 +222,14 @@ mod tests {
 
         env.alice_session.apply_pending_commit().unwrap();
 
-        let expected_ref = env
-            .bob_key_gen
-            .key_package
-            .leaf_node
-            .to_reference(TEST_CIPHER_SUITE)
-            .unwrap();
+        let expected_node = env.bob_key_gen.key_package.leaf_node;
 
         // Check that the new member is in the group
         assert!(env
             .alice_session
             .roster()
-            .iter()
-            .any(|leaf_node| leaf_node.to_reference(TEST_CIPHER_SUITE).unwrap() == expected_ref));
+            .into_iter()
+            .any(|leaf_node| leaf_node == &expected_node));
     }
 
     #[test]
@@ -251,7 +246,8 @@ mod tests {
             )
             .unwrap();
 
-        let _ = env.alice_session.apply_pending_commit().unwrap();
+        let state_update = env.alice_session.apply_pending_commit().unwrap();
+        let bob_index = state_update.added[0];
 
         assert!(env
             .alice_session
@@ -259,15 +255,8 @@ mod tests {
             .iter()
             .any(|&p| *p == env.bob_key_gen.key_package.leaf_node));
 
-        let bob_leaf_ref = env
-            .bob_key_gen
-            .key_package
-            .leaf_node
-            .to_reference(TEST_CIPHER_SUITE)
-            .unwrap();
-
         let proposal = RemoveProposal {
-            to_remove: bob_leaf_ref,
+            to_remove: bob_index,
         };
 
         let msg = env
@@ -295,17 +284,12 @@ mod tests {
         let _ = env.alice_session.apply_pending_commit().unwrap();
 
         // Check that bob is no longer in alice's group
-        let bob_leaf_ref = env
-            .bob_key_gen
-            .key_package
-            .leaf_node
-            .to_reference(TEST_CIPHER_SUITE)
-            .unwrap();
+        let bob_leaf_node = env.bob_key_gen.key_package.leaf_node;
 
         assert!(!env
             .alice_session
             .roster()
-            .iter()
-            .any(|leaf_node| leaf_node.to_reference(TEST_CIPHER_SUITE).unwrap() == bob_leaf_ref));
+            .into_iter()
+            .any(|leaf_node| leaf_node == &bob_leaf_node));
     }
 }

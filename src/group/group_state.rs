@@ -1,7 +1,7 @@
 use crate::{
     cipher_suite::CipherSuite,
     group::{GroupContext, InterimTranscriptHash, ProposalCache},
-    tree_kem::{leaf_node_ref::LeafNodeRef, TreeKemPrivate},
+    tree_kem::TreeKemPrivate,
     ProtocolVersion,
 };
 use ferriscrypt::hpke::kem::HpkeSecretKey;
@@ -22,5 +22,5 @@ pub struct GroupState {
     pub(crate) confirmation_tag: ConfirmationTag,
     pub(crate) proposals: ProposalCache,
     #[serde(with = "crate::serde_utils::map_as_seq")]
-    pub(crate) pending_updates: HashMap<LeafNodeRef, HpkeSecretKey>,
+    pub(crate) pending_updates: HashMap<Vec<u8>, HpkeSecretKey>,
 }

@@ -478,9 +478,7 @@ fn test_remove_proposals(
     // Remove people from the group one at a time
     while receiver_sessions.len() > 1 {
         let session_to_remove = receiver_sessions.choose(&mut rand::thread_rng()).unwrap();
-        let to_remove = session_to_remove.current_key_package().unwrap().clone();
-        let to_remove_ref = to_remove.to_reference(cipher_suite).unwrap();
-        let to_remove_index = session_to_remove.group_stats().unwrap().current_index;
+        let to_remove_index = session_to_remove.current_user_index();
 
         let removal = creator_session.remove_proposal(to_remove_index).unwrap();
 
@@ -494,7 +492,7 @@ fn test_remove_proposals(
 
         // Process the removal in the other receiver groups
         for one_session in receiver_sessions.iter_mut() {
-            let expect_inactive = one_session.current_user_ref() == &to_remove_ref;
+            let expect_inactive = one_session.current_user_index() == to_remove_index;
 
             let state_update = one_session
                 .process_incoming_bytes(&commit.commit_packet)
@@ -511,16 +509,15 @@ fn test_remove_proposals(
             if expect_inactive {
                 assert!(!update.active)
             } else {
-                assert!(one_session
-                    .roster()
+                assert!(update
+                    .removed
                     .iter()
-                    .all(|leaf| leaf.to_reference(cipher_suite).unwrap() != to_remove_ref));
-
+                    .any(|(index, _)| **index == to_remove_index));
                 assert!(update.active)
             }
         }
 
-        receiver_sessions.retain(|session| session.current_user_ref() != &to_remove_ref);
+        receiver_sessions.retain(|session| session.current_user_index() != to_remove_index);
 
         for one_session in receiver_sessions.iter() {
             assert!(one_session.has_equal_state(&creator_session));

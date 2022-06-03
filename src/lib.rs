@@ -83,6 +83,5 @@ pub use group::{
 };
 pub use protocol_version::ProtocolVersion;
 pub use tls_codec;
-pub use tree_kem::leaf_node_ref::LeafNodeRef;
 
 pub mod time;

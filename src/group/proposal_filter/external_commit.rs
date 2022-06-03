@@ -69,7 +69,7 @@ where
     fn verify_remove_proposal(&self, proposal: &RemoveProposal) -> Result<(), ProposalFilterError> {
         let credential = &self
             .tree
-            .get_leaf_node(&proposal.to_remove)?
+            .get_leaf_node(proposal.to_remove)?
             .signing_identity
             .credential;
 

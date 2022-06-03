@@ -69,8 +69,8 @@ impl GroupCore {
         let updated_leaves = proposals
             .updates
             .iter()
-            .map(|(leaf_ref, _)| provisional_tree.leaf_node_index(leaf_ref))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|(leaf_index, _)| *leaf_index)
+            .collect();
 
         for (update_sender, leaf_node) in proposals.updates {
             let validated = leaf_node_validator.validate(
@@ -79,7 +79,7 @@ impl GroupCore {
             )?;
 
             // Update the leaf in the provisional tree
-            provisional_tree.update_leaf(&update_sender, validated)?;
+            provisional_tree.update_leaf(update_sender, validated)?;
         }
 
         // Apply removes
@@ -89,8 +89,7 @@ impl GroupCore {
         }
 
         // Remove elements from the public tree
-        let removed_leaves =
-            provisional_tree.remove_leaves(current_public_tree, proposals.removes)?;
+        let removed_leaves = provisional_tree.remove_leaves(proposals.removes)?;
 
         let key_package_validator = KeyPackageValidator::new(
             self.protocol_version,
@@ -115,32 +114,21 @@ impl GroupCore {
             })
             .collect::<Result<_, _>>()?;
 
-        let added_leaves = provisional_tree
-            .add_leaves(adds)?
-            .iter()
-            .map(|leaf_ref| provisional_tree.leaf_node_index(leaf_ref))
-            .collect::<Result<Vec<_>, _>>()?;
+        let added_leaves = provisional_tree.add_leaves(adds)?;
 
         // Apply add by external init
-        if let Some((external_add_leaf, _)) = &proposals.external_init {
-            let validated = leaf_node_validator.validate(
-                external_add_leaf.clone(),
-                ValidationContext::Commit(&self.context.group_id),
-            )?;
-
-            provisional_tree.add_leaves(vec![validated])?;
-        }
 
         let external_init = proposals
             .external_init
-            .map(|(leaf, extern_init)| {
-                leaf.to_reference(self.cipher_suite).map(|leaf_ref| {
-                    provisional_tree
-                        .leaf_node_index(&leaf_ref)
-                        .map(|index| (index, extern_init))
-                })
+            .map(|(external_add_leaf, ext_init)| {
+                let validated = leaf_node_validator.validate(
+                    external_add_leaf,
+                    ValidationContext::Commit(&self.context.group_id),
+                )?;
+
+                let index = provisional_tree.add_leaves(vec![validated])?[0];
+                Ok::<_, GroupError>((index, ext_init))
             })
-            .transpose()?
             .transpose()?;
 
         // Now that the tree is updated we can check required capabilities if needed

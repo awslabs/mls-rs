@@ -1,8 +1,5 @@
 use super::*;
-use crate::{
-    psk::PreSharedKeyID,
-    tree_kem::{leaf_node::LeafNode, leaf_node_ref::LeafNodeRef},
-};
+use crate::{psk::PreSharedKeyID, tree_kem::leaf_node::LeafNode};
 use std::fmt::{self, Debug};
 
 #[derive(
@@ -44,7 +41,7 @@ pub struct UpdateProposal {
     serde::Serialize,
 )]
 pub struct RemoveProposal {
-    pub to_remove: LeafNodeRef,
+    pub to_remove: LeafIndex,
 }
 
 #[derive(
