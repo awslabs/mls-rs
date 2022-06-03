@@ -49,7 +49,7 @@ where
             &self.credential_validator,
         );
 
-        validator.check_is_valid(&proposal.key_package, Default::default())?;
+        validator.check_if_valid(&proposal.key_package, Default::default())?;
         self.tree.can_add_leaf(&proposal.key_package.leaf_node)?;
         Ok(())
     }

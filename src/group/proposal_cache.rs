@@ -330,9 +330,9 @@ where
     )
     .and(UpdateProposalFilter::new(
         committer.clone(),
-        group_id,
+        group_id.clone(),
         cipher_suite,
-        required_capabilities,
+        required_capabilities.clone(),
         credential_validator,
         tree,
     ))
@@ -342,9 +342,12 @@ where
     .and(GroupContextExtensionsProposalFilter)
     .and(SingleProposalForLeaf)
     .and(ExternalCommitFilter::new(
+        cipher_suite,
+        group_id,
         committer,
         update_path,
         tree,
+        required_capabilities,
         credential_validator,
     ))
     .and(UniqueKeysInTree::new(tree))
@@ -360,7 +363,8 @@ mod tests {
         key_package::test_utils::test_key_package,
         tree_kem::{
             leaf_node::test_utils::{get_basic_test_node, get_basic_test_node_sig_key},
-            leaf_node_validator::{test_utils::FailureCredentialValidator, ValidatedLeafNode},
+            leaf_node_validator::test_utils::FailureCredentialValidator,
+            parent_hash::ParentHash,
         },
     };
     use assert_matches::assert_matches;
@@ -390,12 +394,8 @@ mod tests {
         let (sender_leaf, sender_leaf_secret, _) = get_basic_test_node_sig_key(cipher_suite, "bar");
         let sender = LeafIndex(0);
 
-        let (mut tree, _) = TreeKemPublic::derive(
-            cipher_suite,
-            ValidatedLeafNode(sender_leaf),
-            sender_leaf_secret,
-        )
-        .unwrap();
+        let (mut tree, _) =
+            TreeKemPublic::derive(cipher_suite, sender_leaf, sender_leaf_secret).unwrap();
 
         let add_package = test_key_package(protocol_version, cipher_suite);
         let update_package = {
@@ -409,9 +409,7 @@ mod tests {
 
         let remove_package_leaf = get_basic_test_node(cipher_suite, "baz");
 
-        let remove_package = tree
-            .add_leaves(vec![ValidatedLeafNode(remove_package_leaf)])
-            .unwrap()[0];
+        let remove_package = tree.add_leaves(vec![remove_package_leaf]).unwrap()[0];
 
         let add = Proposal::Add(AddProposal {
             key_package: add_package.clone(),
@@ -828,8 +826,16 @@ mod tests {
     }
 
     fn test_update_path() -> UpdatePath {
+        let (mut leaf_node, _, signer) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "foo");
+
+        leaf_node
+            .commit(TEST_CIPHER_SUITE, TEST_GROUP, None, None, &signer, |_| {
+                Ok(ParentHash::empty())
+            })
+            .unwrap();
+
         UpdatePath {
-            leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "foo"),
+            leaf_node,
             nodes: Vec::new(),
         }
     }
@@ -855,7 +861,9 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::MissingUpdatePathInExternalCommit)
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::MissingUpdatePathInExternalCommit
+            ))
         );
     }
 
@@ -972,8 +980,8 @@ mod tests {
         let credential_validator = PassthroughCredentialValidator::new();
 
         let test_leaf_nodes = vec![
-            get_basic_test_node(TEST_CIPHER_SUITE, "foo").into(),
-            get_basic_test_node(TEST_CIPHER_SUITE, "bar").into(),
+            get_basic_test_node(TEST_CIPHER_SUITE, "foo"),
+            get_basic_test_node(TEST_CIPHER_SUITE, "bar"),
         ];
 
         let test_leaf_node_indexes = public_tree.add_leaves(test_leaf_nodes).unwrap();
@@ -1012,9 +1020,9 @@ mod tests {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let required_capabilities = group.required_capabilities();
         let mut public_tree = group.group.current_public_epoch.public_tree;
-        let credential_validator = FailureCredentialValidator::new();
+        let credential_validator = FailureCredentialValidator::new().pass_validation(true);
 
-        let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo").into()];
+        let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo")];
 
         let test_leaf_node_indexes = public_tree.add_leaves(test_leaf_nodes).unwrap();
 
@@ -1051,7 +1059,7 @@ mod tests {
         let mut public_tree = group.group.current_public_epoch.public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
-        let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo").into()];
+        let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo")];
 
         let test_leaf_node_indexes = public_tree.add_leaves(test_leaf_nodes).unwrap();
 
@@ -1236,5 +1244,38 @@ mod tests {
             .unwrap();
 
         assert!(!effects.path_update_required())
+    }
+
+    #[test]
+    fn external_commit_with_invalid_leaf_node_in_path_is_rejected() {
+        let cache = make_proposal_cache();
+        let leaf = get_basic_test_node(TEST_CIPHER_SUITE, "foo");
+
+        let external_init = ExternalInit {
+            kem_output: vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()],
+        };
+
+        let res = cache.resolve_for_commit(
+            Sender::NewMember,
+            vec![ProposalOrRef::Proposal(Proposal::ExternalInit(
+                external_init,
+            ))],
+            Some(&UpdatePath {
+                // This leaf does not have the right leaf node source, which must cause the commit
+                // to be rejected.
+                leaf_node: leaf,
+                nodes: Vec::new(),
+            }),
+            None,
+            PassthroughCredentialValidator::new(),
+            &TreeKemPublic::new(TEST_CIPHER_SUITE),
+        );
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::LeafNodeValidationError(_)
+            ))
+        );
     }
 }

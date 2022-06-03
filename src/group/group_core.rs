@@ -6,11 +6,10 @@ use crate::{
         Content, GroupContext, GroupError, PreSharedKey, Proposal, ProposalCache,
         ProposalSetEffects, ProvisionalPublicState, TreeKemPublic, VerifiedPlaintext,
     },
-    key_package::{KeyPackageValidationOptions, KeyPackageValidator},
     psk::{
         JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, ResumptionPSKUsage, ResumptionPsk,
     },
-    tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext},
+    tree_kem::leaf_node_validator::LeafNodeValidator,
     ProtocolVersion,
 };
 
@@ -57,14 +56,6 @@ impl GroupCore {
             provisional_group_context.extensions = group_context_extensions;
         }
 
-        let required_capabilities = provisional_group_context.extensions.get_extension()?;
-
-        let leaf_node_validator = LeafNodeValidator::new(
-            self.cipher_suite,
-            required_capabilities.as_ref(),
-            &credential_validator,
-        );
-
         // Apply updates
         let updated_leaves = proposals
             .updates
@@ -73,13 +64,8 @@ impl GroupCore {
             .collect();
 
         for (update_sender, leaf_node) in proposals.updates {
-            let validated = leaf_node_validator.validate(
-                leaf_node.clone(),
-                ValidationContext::Update(&self.context.group_id),
-            )?;
-
             // Update the leaf in the provisional tree
-            provisional_tree.update_leaf(update_sender, validated)?;
+            provisional_tree.update_leaf(update_sender, leaf_node)?;
         }
 
         // Apply removes
@@ -91,42 +77,21 @@ impl GroupCore {
         // Remove elements from the public tree
         let removed_leaves = provisional_tree.remove_leaves(proposals.removes)?;
 
-        let key_package_validator = KeyPackageValidator::new(
-            self.protocol_version,
-            self.cipher_suite,
-            required_capabilities.as_ref(),
-            &credential_validator,
-        );
-
         // Apply adds
         let adds = proposals
             .adds
             .iter()
             .cloned()
-            .map(|p| {
-                // This check does not validate lifetime since lifetime is only validated by the sender at
-                // the time the proposal is created. See https://github.com/mlswg/mls-protocol/issues/538
-                //
-                // TODO: If we are supplied a timestamp for the commit message, we can validate the
-                // lifetime was valid at the moment the commit was generated
-                key_package_validator
-                    .validate(p, [KeyPackageValidationOptions::SkipLifetimeCheck].into())
-            })
-            .collect::<Result<_, _>>()?;
+            .map(|p| p.leaf_node)
+            .collect();
 
         let added_leaves = provisional_tree.add_leaves(adds)?;
 
         // Apply add by external init
-
         let external_init = proposals
             .external_init
             .map(|(external_add_leaf, ext_init)| {
-                let validated = leaf_node_validator.validate(
-                    external_add_leaf,
-                    ValidationContext::Commit(&self.context.group_id),
-                )?;
-
-                let index = provisional_tree.add_leaves(vec![validated])?[0];
+                let index = provisional_tree.add_leaves(vec![external_add_leaf])?[0];
                 Ok::<_, GroupError>((index, ext_init))
             })
             .transpose()?;

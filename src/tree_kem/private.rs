@@ -156,11 +156,11 @@ mod tests {
 
         // Create a new public tree with Alice
         let (mut public_tree, alice_private) =
-            TreeKemPublic::derive(cipher_suite, alice_leaf.into(), alice_hpke_secret).unwrap();
+            TreeKemPublic::derive(cipher_suite, alice_leaf, alice_hpke_secret).unwrap();
 
         // Add bob and charlie to the tree
         public_tree
-            .add_leaves(vec![bob_leaf.into(), charlie_leaf.into()])
+            .add_leaves(vec![bob_leaf, charlie_leaf])
             .unwrap();
 
         // Generate an update path for Alice

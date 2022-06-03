@@ -7,9 +7,7 @@ use crate::client_config::CredentialValidator;
 
 use super::{
     leaf_node::LeafNode,
-    leaf_node_validator::{
-        LeafNodeValidationError, LeafNodeValidator, ValidatedLeafNode, ValidationContext,
-    },
+    leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator, ValidationContext},
 };
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -35,7 +33,7 @@ pub enum UpdatePathValidationError {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedUpdatePath {
-    pub leaf_node: ValidatedLeafNode,
+    pub leaf_node: LeafNode,
     pub nodes: Vec<UpdatePathNode>,
 }
 
@@ -53,12 +51,11 @@ impl<'a, C: CredentialValidator> UpdatePathValidator<'a, C> {
         path: UpdatePath,
         group_id: &[u8],
     ) -> Result<ValidatedUpdatePath, UpdatePathValidationError> {
-        let validated_key_package = self
-            .0
-            .validate(path.leaf_node, ValidationContext::Commit(group_id))?;
+        self.0
+            .check_if_valid(&path.leaf_node, ValidationContext::Commit(group_id))?;
 
         Ok(ValidatedUpdatePath {
-            leaf_node: validated_key_package,
+            leaf_node: path.leaf_node,
             nodes: path.nodes,
         })
     }
@@ -71,8 +68,7 @@ mod tests {
     use ferriscrypt::{hpke::kem::HpkePublicKey, rand::SecureRng};
 
     use crate::tree_kem::{
-        leaf_node::{test_utils::get_basic_test_node_sig_key, LeafNode},
-        leaf_node_validator::LeafNodeValidator,
+        leaf_node::test_utils::get_basic_test_node_sig_key, leaf_node_validator::LeafNodeValidator,
         parent_hash::ParentHash,
     };
 
@@ -133,7 +129,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(validated.nodes, update_path.nodes);
-        assert_eq!(LeafNode::from(validated.leaf_node), update_path.leaf_node);
+        assert_eq!(validated.leaf_node, update_path.leaf_node);
     }
 
     #[test]

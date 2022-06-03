@@ -1,4 +1,4 @@
-use super::leaf_node_validator::ValidatedLeafNode;
+use super::leaf_node::LeafNode;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::parent_hash::ParentHash;
@@ -108,7 +108,7 @@ pub enum NodeVecError {
 //TODO: Research if this should actually be a Box<Leaf> for memory / performance reasons
 pub(crate) enum Node {
     #[tls_codec(discriminant = 1)]
-    Leaf(ValidatedLeafNode),
+    Leaf(LeafNode),
     Parent(Parent),
 }
 
@@ -127,8 +127,8 @@ impl From<Parent> for Option<Node> {
     }
 }
 
-impl From<ValidatedLeafNode> for Option<Node> {
-    fn from(l: ValidatedLeafNode) -> Self {
+impl From<LeafNode> for Option<Node> {
+    fn from(l: LeafNode) -> Self {
         Node::from(l).into()
     }
 }
@@ -139,8 +139,8 @@ impl From<Parent> for Node {
     }
 }
 
-impl From<ValidatedLeafNode> for Node {
-    fn from(l: ValidatedLeafNode) -> Self {
+impl From<LeafNode> for Node {
+    fn from(l: LeafNode) -> Self {
         Node::Leaf(l)
     }
 }
@@ -148,8 +148,8 @@ impl From<ValidatedLeafNode> for Node {
 pub(crate) trait NodeTypeResolver {
     fn as_parent(&self) -> Result<&Parent, NodeVecError>;
     fn as_parent_mut(&mut self) -> Result<&mut Parent, NodeVecError>;
-    fn as_leaf(&self) -> Result<&ValidatedLeafNode, NodeVecError>;
-    fn as_leaf_mut(&mut self) -> Result<&mut ValidatedLeafNode, NodeVecError>;
+    fn as_leaf(&self) -> Result<&LeafNode, NodeVecError>;
+    fn as_leaf_mut(&mut self) -> Result<&mut LeafNode, NodeVecError>;
     fn as_non_empty(&self) -> Result<&Node, NodeVecError>;
 }
 
@@ -172,7 +172,7 @@ impl NodeTypeResolver for Option<Node> {
             .ok_or(NodeVecError::NotParentNode)
     }
 
-    fn as_leaf(&self) -> Result<&ValidatedLeafNode, NodeVecError> {
+    fn as_leaf(&self) -> Result<&LeafNode, NodeVecError> {
         self.as_ref()
             .and_then(|n| match n {
                 Node::Parent(_) => None,
@@ -181,7 +181,7 @@ impl NodeTypeResolver for Option<Node> {
             .ok_or(NodeVecError::NotLeafNode)
     }
 
-    fn as_leaf_mut(&mut self) -> Result<&mut ValidatedLeafNode, NodeVecError> {
+    fn as_leaf_mut(&mut self) -> Result<&mut LeafNode, NodeVecError> {
         self.as_mut()
             .and_then(|n| match n {
                 Node::Parent(_) => None,
@@ -258,7 +258,7 @@ impl NodeVec {
             .map(|(i, n)| (LeafIndex(i as u32 / 2), n))
     }
 
-    pub fn non_empty_leaves(&self) -> impl Iterator<Item = (LeafIndex, &ValidatedLeafNode)> + '_ {
+    pub fn non_empty_leaves(&self) -> impl Iterator<Item = (LeafIndex, &LeafNode)> + '_ {
         self.iter()
             .enumerate()
             .step_by(2)
@@ -329,7 +329,7 @@ impl NodeVec {
     pub fn blank_leaf_node(
         &mut self,
         leaf_index: LeafIndex,
-    ) -> Result<Option<ValidatedLeafNode>, NodeVecError> {
+    ) -> Result<Option<LeafNode>, NodeVecError> {
         let node_index = NodeIndex::from(leaf_index);
         let blanked_leaf = self.blank_node(node_index)?.and_then(|node| match node {
             Node::Leaf(l) => Some(l),
@@ -386,16 +386,13 @@ impl NodeVec {
             .and_then(|n| n.as_parent_mut())
     }
 
-    pub fn borrow_as_leaf_mut(
-        &mut self,
-        index: LeafIndex,
-    ) -> Result<&mut ValidatedLeafNode, NodeVecError> {
+    pub fn borrow_as_leaf_mut(&mut self, index: LeafIndex) -> Result<&mut LeafNode, NodeVecError> {
         let node_index = NodeIndex::from(index);
         self.borrow_node_mut(node_index)
             .and_then(|n| n.as_leaf_mut())
     }
 
-    pub fn borrow_as_leaf(&self, index: LeafIndex) -> Result<&ValidatedLeafNode, NodeVecError> {
+    pub fn borrow_as_leaf(&self, index: LeafIndex) -> Result<&LeafNode, NodeVecError> {
         let node_index = NodeIndex::from(index);
         self.borrow_node(node_index).and_then(|n| n.as_leaf())
     }
@@ -492,19 +489,7 @@ impl NodeVec {
 #[cfg(test)]
 pub mod test_utils {
     use super::*;
-    use crate::{
-        cipher_suite::CipherSuite,
-        tree_kem::{
-            leaf_node::{test_utils::get_basic_test_node, LeafNode},
-            leaf_node_validator::ValidatedLeafNode,
-        },
-    };
-
-    impl From<LeafNode> for Option<Node> {
-        fn from(ln: LeafNode) -> Self {
-            Node::Leaf(ValidatedLeafNode::from(ln)).into()
-        }
-    }
+    use crate::{cipher_suite::CipherSuite, tree_kem::leaf_node::test_utils::get_basic_test_node};
 
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
@@ -551,7 +536,7 @@ mod tests {
         .into();
 
         let test_leaf = get_basic_test_node(TEST_CIPHER_SUITE, "B");
-        let test_node_leaf: Node = ValidatedLeafNode::from(test_leaf.clone()).into();
+        let test_node_leaf: Node = test_leaf.clone().into();
 
         assert_eq!(test_node_parent.public_key().as_ref(), b"pub");
         assert_eq!(test_node_leaf.public_key(), &test_leaf.public_key);

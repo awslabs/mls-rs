@@ -211,7 +211,7 @@ mod tests {
             );
 
             validator
-                .validate(generated.key_package, Default::default())
+                .check_if_valid(&generated.key_package, Default::default())
                 .unwrap();
         }
     }

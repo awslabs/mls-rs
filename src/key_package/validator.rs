@@ -7,7 +7,7 @@ use crate::signing_identity::SigningIdentityError;
 use crate::{
     signer::SignatureError,
     tree_kem::leaf_node_validator::{
-        LeafNodeValidationError, LeafNodeValidator, ValidatedLeafNode, ValidationContext,
+        LeafNodeValidationError, LeafNodeValidator, ValidationContext,
     },
 };
 
@@ -90,7 +90,7 @@ impl<'a, C: CredentialValidator> KeyPackageValidator<'a, C> {
             .map_err(Into::into)
     }
 
-    pub fn check_is_valid(
+    pub fn check_if_valid(
         &self,
         package: &KeyPackage,
         options: HashSet<KeyPackageValidationOptions>,
@@ -148,18 +148,6 @@ impl<'a, C: CredentialValidator> KeyPackageValidator<'a, C> {
 
         ValidationContext::Add(time_validation)
     }
-
-    pub fn validate(
-        &self,
-        package: KeyPackage,
-        options: HashSet<KeyPackageValidationOptions>,
-    ) -> Result<ValidatedLeafNode, KeyPackageValidationError> {
-        self.validate_properties(&package)?;
-
-        self.leaf_node_validator
-            .validate(package.leaf_node, self.validation_context(options))
-            .map_err(Into::into)
-    }
 }
 
 #[cfg(test)]
@@ -190,11 +178,10 @@ mod tests {
                 PassthroughCredentialValidator::new(),
             );
 
-            let validated = validator
-                .validate(test_package.clone(), Default::default())
-                .unwrap();
-
-            assert_eq!(validated, test_package.leaf_node.into());
+            assert_matches!(
+                validator.check_if_valid(&test_package, Default::default()),
+                Ok(_)
+            );
         }
     }
 
@@ -220,8 +207,10 @@ mod tests {
                 PassthroughCredentialValidator::new(),
             );
 
-            let res = validator.validate(test_package, Default::default());
-            assert_matches!(res, Err(KeyPackageValidationError::SignatureError(_)));
+            assert_matches!(
+                validator.check_if_valid(&test_package, Default::default()),
+                Err(KeyPackageValidationError::SignatureError(_))
+            );
         }
     }
 
@@ -238,10 +227,11 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
-        let res = validator.validate(test_package, Default::default());
-
-        assert_matches!(res, Err(KeyPackageValidationError::InvalidCipherSuite(found, exp))
-                        if exp == CipherSuite::Curve25519ChaCha20 && found == cipher_suite);
+        assert_matches!(
+            validator.check_if_valid(&test_package, Default::default()),
+            Err(KeyPackageValidationError::InvalidCipherSuite(found, exp))
+                if exp == CipherSuite::Curve25519ChaCha20 && found == cipher_suite
+        );
     }
 
     fn test_init_key_manipulation<F>(
@@ -296,8 +286,10 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
-        let res = validator.validate(key_package, Default::default());
-        assert_matches!(res, Err(KeyPackageValidationError::InvalidInitKey));
+        assert_matches!(
+            validator.check_if_valid(&key_package, Default::default()),
+            Err(KeyPackageValidationError::InvalidInitKey)
+        );
     }
 
     #[test]
@@ -317,9 +309,10 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
-        let res = validator.validate(key_package, Default::default());
-
-        assert_matches!(res, Err(KeyPackageValidationError::InitLeafKeyEquality));
+        assert_matches!(
+            validator.check_if_valid(&key_package, Default::default()),
+            Err(KeyPackageValidationError::InitLeafKeyEquality)
+        );
     }
 
     fn invalid_expiration_leaf_node(
@@ -354,10 +347,8 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
-        let res = validator.validate(test_package, Default::default());
-
         assert_matches!(
-            res,
+            validator.check_if_valid(&test_package, Default::default()),
             Err(KeyPackageValidationError::LeafNodeValidationError(
                 LeafNodeValidationError::InvalidLifetime(_, _)
             ))
@@ -377,14 +368,13 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
-        let res = validator
-            .validate(
-                test_package.clone(),
+        assert_matches!(
+            validator.check_if_valid(
+                &test_package,
                 [KeyPackageValidationOptions::SkipLifetimeCheck].into(),
-            )
-            .unwrap();
-
-        assert_eq!(res, test_package.leaf_node.into());
+            ),
+            Ok(_)
+        );
     }
 
     #[test]
@@ -420,11 +410,10 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
-        let res = validator
-            .validate(key_package.clone(), Default::default())
-            .unwrap();
-
-        assert_eq!(res, key_package.leaf_node.into());
+        assert_matches!(
+            validator.check_if_valid(&key_package, Default::default()),
+            Ok(_)
+        );
     }
 
     #[test]
@@ -446,10 +435,8 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
-        let res = validator.validate(key_package, Default::default());
-
         assert_matches!(
-            res,
+            validator.check_if_valid(&key_package, Default::default()),
             Err(KeyPackageValidationError::LeafNodeValidationError(_))
         );
     }
@@ -482,10 +469,8 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
-        let res = validator.validate(key_package, Default::default());
-
         assert_matches!(
-            res,
+            validator.check_if_valid(&key_package, Default::default()),
             Err(KeyPackageValidationError::LeafNodeValidationError(_))
         );
     }

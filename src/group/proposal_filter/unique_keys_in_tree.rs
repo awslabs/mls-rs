@@ -3,7 +3,7 @@ use crate::{
         proposal_filter::{ProposalBundle, ProposalFilter, ProposalFilterError, ProposalInfo},
         AddProposal, ProposalType, Sender, UpdateProposal,
     },
-    tree_kem::{leaf_node_validator::ValidatedLeafNode, TreeKemPublic},
+    tree_kem::TreeKemPublic,
 };
 
 #[derive(Debug)]
@@ -29,7 +29,7 @@ impl<'a> ProposalFilter for UniqueKeysInTree<'a> {
 
         let additions = proposals
             .by_type::<AddProposal>()
-            .map(|proposal| ValidatedLeafNode(proposal.proposal.key_package.leaf_node.clone()))
+            .map(|proposal| proposal.proposal.key_package.leaf_node.clone())
             .collect();
 
         tree.add_leaves(additions)?;
@@ -41,7 +41,7 @@ impl<'a> ProposalFilter for UniqueKeysInTree<'a> {
         proposals.retain_by_type(|proposal| apply_update(&mut tree, proposal).is_ok());
 
         proposals.retain_by_type::<AddProposal, _>(|proposal| {
-            let leaf = ValidatedLeafNode(proposal.proposal.key_package.leaf_node.clone());
+            let leaf = proposal.proposal.key_package.leaf_node.clone();
             tree.add_leaves(vec![leaf]).is_ok()
         });
 
@@ -55,7 +55,7 @@ fn apply_update(
 ) -> Result<(), ProposalFilterError> {
     match &proposal.sender {
         Sender::Member(leaf_index) => {
-            let leaf = ValidatedLeafNode(proposal.proposal.leaf_node.clone());
+            let leaf = proposal.proposal.leaf_node.clone();
             tree.update_leaf(*leaf_index, leaf)?;
             Ok(())
         }

@@ -516,17 +516,17 @@ impl<C: GroupConfig> Group<C> {
     ) -> Result<Self, GroupError> {
         let required_capabilities = group_context_extensions.get_extension()?;
 
-        let validated_leaf = LeafNodeValidator::new(
+        LeafNodeValidator::new(
             cipher_suite,
             required_capabilities.as_ref(),
             config.credential_validator(),
         )
-        .validate(leaf_node, ValidationContext::Add(None))?;
+        .check_if_valid(&leaf_node, ValidationContext::Add(None))?;
 
         let kdf = Hkdf::from(cipher_suite.kdf_type());
 
         let (public_tree, private_tree) =
-            TreeKemPublic::derive(cipher_suite, validated_leaf, leaf_node_secret)?;
+            TreeKemPublic::derive(cipher_suite, leaf_node, leaf_node_secret)?;
 
         let init_secret = InitSecret::random(&kdf)?;
         let tree_hash = public_tree.tree_hash()?;
@@ -812,12 +812,12 @@ impl<C: GroupConfig> Group<C> {
 
         let required_capabilities = group_info.group_context_extensions.get_extension()?;
 
-        let leaf_node = LeafNodeValidator::new(
+        LeafNodeValidator::new(
             group_info.cipher_suite,
             required_capabilities.as_ref(),
             config.credential_validator(),
         )
-        .validate(leaf_node, ValidationContext::Add(None))?;
+        .check_if_valid(&leaf_node, ValidationContext::Add(None))?;
 
         let psk_secret = vec![0; Hkdf::from(group_info.cipher_suite.kdf_type()).extract_size()];
 
@@ -1322,7 +1322,7 @@ impl<C: GroupConfig> Group<C> {
     {
         let current_leaf_node = self.current_user_leaf_node()?;
 
-        let (leaf_node, leaf_node_secret) = LeafNode::generate(
+        let (new_self_leaf_node, leaf_node_secret) = LeafNode::generate(
             self.core.cipher_suite,
             current_leaf_node.signing_identity.clone(),
             current_leaf_node.capabilities.clone(),
@@ -1346,8 +1346,7 @@ impl<C: GroupConfig> Group<C> {
             self.config.credential_validator(),
         );
 
-        let new_self_leaf_node =
-            leaf_node_validator.validate(leaf_node, ValidationContext::Add(None))?;
+        leaf_node_validator.check_if_valid(&new_self_leaf_node, ValidationContext::Add(None))?;
 
         let (new_members, new_key_pkgs) = {
             let current_tree = self.current_epoch_tree()?;
@@ -1365,8 +1364,8 @@ impl<C: GroupConfig> Group<C> {
                 .try_fold(
                     (Vec::new(), Vec::new()),
                     |(mut leaves, mut new_key_pkgs), new_key_pkg| {
-                        let new_leaf = key_package_validator
-                            .validate(new_key_pkg.clone(), Default::default())?;
+                        key_package_validator.check_if_valid(&new_key_pkg, Default::default())?;
+                        let new_leaf = new_key_pkg.leaf_node.clone();
                         leaves.push(new_leaf);
                         new_key_pkgs.push(new_key_pkg);
                         Ok::<_, GroupError>((leaves, new_key_pkgs))
@@ -1578,7 +1577,7 @@ impl<C: GroupConfig> Group<C> {
             self.config.credential_validator(),
         );
 
-        key_package_validator.check_is_valid(&key_package, Default::default())?;
+        key_package_validator.check_if_valid(&key_package, Default::default())?;
 
         Ok(Proposal::Add(AddProposal { key_package }))
     }

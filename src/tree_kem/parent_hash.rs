@@ -263,10 +263,7 @@ impl TreeKemPublic {
 pub(crate) mod test_utils {
     use ferriscrypt::asym::ec_key::SecretKey;
 
-    use crate::tree_kem::{
-        leaf_node::test_utils::get_basic_test_node, leaf_node_validator::ValidatedLeafNode,
-        node::Parent,
-    };
+    use crate::tree_kem::{leaf_node::test_utils::get_basic_test_node, node::Parent};
 
     use super::*;
 
@@ -300,7 +297,7 @@ pub(crate) mod test_utils {
         let mut tree = TreeKemPublic::new(cipher_suite);
 
         let leaves = ["A", "B", "C", "D", "E", "F", "G"]
-            .map(|l| ValidatedLeafNode::from(get_basic_test_node(cipher_suite, l)))
+            .map(|l| get_basic_test_node(cipher_suite, l))
             .to_vec();
 
         tree.add_leaves(leaves).unwrap();
@@ -332,7 +329,6 @@ mod tests {
     use super::*;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNodeSource;
-    use crate::tree_kem::leaf_node_validator::ValidatedLeafNode;
     use crate::tree_kem::node::{NodeTypeResolver, NodeVec};
     use crate::tree_kem::parent_hash::test_utils::{get_test_tree_fig_12, test_parent_node};
     use crate::tree_kem::RatchetTreeError;
@@ -351,7 +347,7 @@ mod tests {
         let test_key_package = get_basic_test_node(cipher_suite, "foo");
 
         let test_update_path = ValidatedUpdatePath {
-            leaf_node: test_key_package.into(),
+            leaf_node: test_key_package,
             nodes: vec![],
         };
 
@@ -373,7 +369,7 @@ mod tests {
         let test_key_package = get_basic_test_node(cipher_suite, "foo");
 
         let mut test_update_path = ValidatedUpdatePath {
-            leaf_node: test_key_package.into(),
+            leaf_node: test_key_package,
             nodes: vec![],
         };
 
@@ -410,7 +406,7 @@ mod tests {
         let mut tree = TreeKemPublic::new(cipher_suite);
 
         let leaves = ["A", "B", "C", "D", "E", "F"]
-            .map(|l| ValidatedLeafNode::from(get_basic_test_node(cipher_suite, l)))
+            .map(|l| get_basic_test_node(cipher_suite, l))
             .to_vec();
 
         tree.add_leaves(leaves).unwrap();
@@ -446,7 +442,7 @@ mod tests {
         let leaves = [
             "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13",
         ]
-        .map(|l| ValidatedLeafNode::from(get_basic_test_node(cipher_suite, l)))
+        .map(|l| get_basic_test_node(cipher_suite, l))
         .to_vec();
 
         tree.add_leaves(leaves).unwrap();
@@ -468,11 +464,8 @@ mod tests {
         }
 
         for leaf_name in ["A", "B", "C"] {
-            tree.add_leaves(vec![ValidatedLeafNode::from(get_basic_test_node(
-                cipher_suite,
-                leaf_name,
-            ))])
-            .unwrap();
+            tree.add_leaves(vec![get_basic_test_node(cipher_suite, leaf_name)])
+                .unwrap();
         }
 
         assert!(tree.validate_parent_hashes().is_ok());

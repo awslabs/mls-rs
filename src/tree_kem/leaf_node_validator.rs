@@ -1,5 +1,3 @@
-use std::ops::{Deref, DerefMut};
-
 use super::leaf_node::{LeafNode, LeafNodeSource};
 use crate::client_config::CredentialValidator;
 use crate::credential::CredentialType;
@@ -14,46 +12,6 @@ use crate::{
 };
 use ferriscrypt::asym::ec_key::SecretKey;
 use thiserror::Error;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
-
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsSize,
-    TlsSerialize,
-    TlsDeserialize,
-    serde::Deserialize,
-    serde::Serialize,
-)]
-pub struct ValidatedLeafNode(pub(crate) LeafNode);
-
-impl From<ValidatedLeafNode> for LeafNode {
-    fn from(ln: ValidatedLeafNode) -> Self {
-        ln.0
-    }
-}
-
-impl Deref for ValidatedLeafNode {
-    type Target = LeafNode;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for ValidatedLeafNode {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-#[cfg(test)]
-impl From<LeafNode> for ValidatedLeafNode {
-    fn from(ln: LeafNode) -> Self {
-        ValidatedLeafNode(ln)
-    }
-}
 
 pub enum ValidationContext<'a> {
     Add(Option<MlsTime>),
@@ -164,7 +122,7 @@ impl<'a, C: CredentialValidator> LeafNodeValidator<'a, C> {
 
     pub fn revalidate(
         &self,
-        leaf_node: &ValidatedLeafNode,
+        leaf_node: &LeafNode,
         group_id: &[u8],
     ) -> Result<(), LeafNodeValidationError> {
         let context = match leaf_node.leaf_node_source {
@@ -247,15 +205,6 @@ impl<'a, C: CredentialValidator> LeafNodeValidator<'a, C> {
 
         Ok(())
     }
-
-    pub fn validate(
-        &self,
-        leaf_node: LeafNode,
-        context: ValidationContext,
-    ) -> Result<ValidatedLeafNode, LeafNodeValidationError> {
-        self.check_if_valid(&leaf_node, context)?;
-        Ok(ValidatedLeafNode(leaf_node))
-    }
 }
 
 #[cfg(test)]
@@ -299,11 +248,10 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
-        let validated = test_validator
-            .validate(leaf_node.clone(), ValidationContext::Add(None))
-            .unwrap();
-
-        assert_eq!(validated.0, leaf_node);
+        assert_matches!(
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
+            Ok(_)
+        );
     }
 
     #[test]
@@ -313,7 +261,7 @@ mod tests {
             LeafNodeValidator::new(TEST_CIPHER_SUITE, None, FailureCredentialValidator::new());
 
         assert_matches!(
-            fail_test_validator.validate(leaf_node, ValidationContext::Commit(b"foo")),
+            fail_test_validator.check_if_valid(&leaf_node, ValidationContext::Commit(b"foo")),
             Err(LeafNodeValidationError::InvalidCertificateError(_))
         );
     }
@@ -333,11 +281,10 @@ mod tests {
             None,
             PassthroughCredentialValidator::new(),
         );
-        let validated = test_validator
-            .validate(leaf_node.clone(), ValidationContext::Update(group_id))
-            .unwrap();
-
-        assert_eq!(validated.0, leaf_node);
+        assert_matches!(
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Update(group_id)),
+            Ok(_)
+        );
     }
 
     #[test]
@@ -358,11 +305,10 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
-        let validated = test_validator
-            .validate(leaf_node.clone(), ValidationContext::Commit(group_id))
-            .unwrap();
-
-        assert_eq!(validated.0, leaf_node);
+        assert_matches!(
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit(group_id)),
+            Ok(_)
+        );
     }
 
     #[test]
@@ -375,12 +321,12 @@ mod tests {
         let (mut leaf_node, secret) = get_test_add_node();
 
         assert_matches!(
-            test_validator.validate(leaf_node.clone(), ValidationContext::Update(b"foo")),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Update(b"foo")),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
 
         assert_matches!(
-            test_validator.validate(leaf_node.clone(), ValidationContext::Commit(b"foo")),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit(b"foo")),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
 
@@ -389,12 +335,12 @@ mod tests {
             .unwrap();
 
         assert_matches!(
-            test_validator.validate(leaf_node.clone(), ValidationContext::Add(None)),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
 
         assert_matches!(
-            test_validator.validate(leaf_node.clone(), ValidationContext::Commit(b"foo")),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit(b"foo")),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
 
@@ -405,12 +351,12 @@ mod tests {
             .unwrap();
 
         assert_matches!(
-            test_validator.validate(leaf_node.clone(), ValidationContext::Add(None)),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
 
         assert_matches!(
-            test_validator.validate(leaf_node.clone(), ValidationContext::Update(b"foo")),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Update(b"foo")),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
     }
@@ -430,7 +376,7 @@ mod tests {
                 LeafNodeValidator::new(cipher_suite, None, PassthroughCredentialValidator::new());
 
             assert_matches!(
-                test_validator.validate(leaf_node, ValidationContext::Add(None)),
+                test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
                 Err(LeafNodeValidationError::SignatureError(
                     SignatureError::SignatureValidationFailed(_)
                 ))
@@ -467,7 +413,7 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
-        assert_matches!(test_validator.validate(leaf_node, ValidationContext::Add(None)),
+        assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
             Err(LeafNodeValidationError::ExtensionNotInCapabilities(ext)) if ext == ExternalKeyIdExt::IDENTIFIER);
     }
 
@@ -482,7 +428,7 @@ mod tests {
         );
 
         assert_matches!(
-            test_validator.validate(leaf_node, ValidationContext::Add(None)),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
             Err(LeafNodeValidationError::InvalidSigningIdentity(_))
         );
     }
@@ -503,7 +449,7 @@ mod tests {
         );
 
         assert_matches!(
-            test_validator.validate(leaf_node, ValidationContext::Add(None)),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
             Err(LeafNodeValidationError::RequiredExtensionNotFound(42))
         );
     }
@@ -524,7 +470,7 @@ mod tests {
         );
 
         assert_matches!(
-            test_validator.validate(leaf_node, ValidationContext::Add(None)),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
             Err(LeafNodeValidationError::RequiredProposalNotFound(
                 ProposalType(42)
             ))
@@ -546,7 +492,7 @@ mod tests {
             PassthroughCredentialValidator::new(),
         );
 
-        assert_matches!(test_validator.validate(leaf_node, ValidationContext::Add(None)),
+        assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
             Err(LeafNodeValidationError::RequiredCredentialNotFound(ext)) if ext == 42u16
         );
     }
@@ -567,20 +513,19 @@ mod tests {
         let bad_lifetime =
             MlsTime::from_duration_since_epoch(Duration::from_secs(over_one_year)).unwrap();
 
-        assert!(test_validator
-            .validate(
-                leaf_node.clone(),
-                ValidationContext::Add(Some(good_lifetime))
-            )
-            .is_ok());
+        assert_matches!(
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Add(Some(good_lifetime))),
+            Ok(())
+        );
 
         assert_matches!(
-            test_validator.validate(leaf_node, ValidationContext::Add(Some(bad_lifetime))),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Add(Some(bad_lifetime))),
             Err(LeafNodeValidationError::InvalidLifetime(_, _))
         );
     }
 }
 
+#[cfg(test)]
 pub mod test_utils {
     use crate::{
         client_config::CredentialValidator,
@@ -589,25 +534,36 @@ pub mod test_utils {
     };
 
     #[derive(Clone, Debug, Default)]
-    pub struct FailureCredentialValidator;
+    pub struct FailureCredentialValidator {
+        pass_validation: bool,
+        equal: bool,
+    }
 
     impl FailureCredentialValidator {
-        #[allow(dead_code)]
         pub fn new() -> Self {
-            Self
+            Self::default()
+        }
+
+        pub fn pass_validation(self, pass: bool) -> Self {
+            Self {
+                pass_validation: pass,
+                ..self
+            }
         }
     }
 
     impl CredentialValidator for FailureCredentialValidator {
         type Error = CredentialError;
         fn validate(&self, _credential: &Credential) -> Result<(), Self::Error> {
-            Err(CredentialError::CertificateError(
-                X509Error::EmptyCertificateChain,
-            ))
+            self.pass_validation
+                .then(|| ())
+                .ok_or(CredentialError::CertificateError(
+                    X509Error::EmptyCertificateChain,
+                ))
         }
 
         fn is_equal_identity(&self, _left: &Credential, _right: &Credential) -> bool {
-            false
+            self.equal
         }
     }
 }

@@ -141,7 +141,7 @@ impl<'a> TreeKem<'a> {
 
         // Create an update path with the new node and parent node updates
         let update_path = UpdatePath {
-            leaf_node: own_leaf.clone().into(),
+            leaf_node: own_leaf.clone(),
             nodes: node_updates,
         };
 
@@ -339,9 +339,8 @@ mod tests {
         cipher_suite::CipherSuite,
         extension::{test_utils::TestExtension, CapabilitiesExt, ExtensionList},
         tree_kem::{
-            leaf_node::test_utils::get_basic_test_node_sig_key,
-            leaf_node_validator::ValidatedLeafNode, node::LeafIndex, TreeKemPrivate, TreeKemPublic,
-            UpdatePath, ValidatedUpdatePath,
+            leaf_node::test_utils::get_basic_test_node_sig_key, node::LeafIndex, TreeKemPrivate,
+            TreeKemPublic, UpdatePath, ValidatedUpdatePath,
         },
     };
 
@@ -369,7 +368,7 @@ mod tests {
         // Verify that the leaf from the update path has been installed
         assert_eq!(
             tree.nodes.borrow_as_leaf(index).unwrap(),
-            &update_path.leaf_node.clone().into()
+            &update_path.leaf_node
         );
 
         // Verify that updated capabilities were installed
@@ -432,7 +431,7 @@ mod tests {
                 let private_key =
                     TreeKemPrivate::new_self_leaf(LeafIndex(index as u32), hpke_secret);
 
-                (ValidatedLeafNode::from(leaf_node), private_key)
+                (leaf_node, private_key)
             })
             .unzip();
 
@@ -441,7 +440,7 @@ mod tests {
 
         // Build a test tree we can clone for all leaf nodes
         let (mut test_tree, encap_private_key) =
-            TreeKemPublic::derive(cipher_suite, encap_node.into(), encap_hpke_secret).unwrap();
+            TreeKemPublic::derive(cipher_suite, encap_node, encap_hpke_secret).unwrap();
 
         test_tree.add_leaves(leaf_nodes).unwrap();
 
@@ -479,7 +478,7 @@ mod tests {
 
         // Apply the update path to the rest of the leaf nodes using the decap function
         let validated_update_path = ValidatedUpdatePath {
-            leaf_node: ValidatedLeafNode::from(update_path_gen.update_path.leaf_node),
+            leaf_node: update_path_gen.update_path.leaf_node,
             nodes: update_path_gen.update_path.nodes,
         };
 

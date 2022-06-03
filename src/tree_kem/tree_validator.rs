@@ -117,7 +117,7 @@ mod tests {
 
         let leaf1_private = TreeKemPrivate::new_self_leaf(LeafIndex(1), leaf1_hpke);
 
-        test_tree.public.add_leaves(vec![leaf1.into()]).unwrap();
+        test_tree.public.add_leaves(vec![leaf1]).unwrap();
 
         test_tree.public.nodes[1] = Some(Node::Parent(test_parent_node(cipher_suite)));
 

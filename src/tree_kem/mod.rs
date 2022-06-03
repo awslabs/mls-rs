@@ -13,7 +13,6 @@ use math::TreeMathError;
 use node::{LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
 
 use self::leaf_node::{LeafNode, LeafNodeError};
-use self::leaf_node_validator::ValidatedLeafNode;
 
 use crate::cipher_suite::CipherSuite;
 use crate::extension::ExtensionError;
@@ -182,7 +181,7 @@ impl TreeKemPublic {
 
     pub fn derive(
         cipher_suite: CipherSuite,
-        leaf_node: ValidatedLeafNode,
+        leaf_node: LeafNode,
         secret_key: HpkeSecretKey,
     ) -> Result<(TreeKemPublic, TreeKemPrivate), RatchetTreeError> {
         let mut public_tree = TreeKemPublic::new(cipher_suite);
@@ -202,13 +201,6 @@ impl TreeKemPublic {
     }
 
     pub fn get_leaf_node(&self, index: LeafIndex) -> Result<&LeafNode, RatchetTreeError> {
-        self.get_validated_leaf_node(index).map(|p| &**p)
-    }
-
-    pub fn get_validated_leaf_node(
-        &self,
-        index: LeafIndex,
-    ) -> Result<&ValidatedLeafNode, RatchetTreeError> {
         self.nodes.borrow_as_leaf(index).map_err(|e| e.into())
     }
 
@@ -235,7 +227,7 @@ impl TreeKemPublic {
 
     fn fill_empty_leaves(
         &mut self,
-        leaf_nodes: &[ValidatedLeafNode],
+        leaf_nodes: &[LeafNode],
     ) -> Result<Vec<LeafIndex>, RatchetTreeError> {
         // Fill a set of empty leaves given a particular array, return the leaf indexes that were
         // overwritten
@@ -271,7 +263,7 @@ impl TreeKemPublic {
     // tree should always be done on a clone of the tree, which is how commits are processed
     pub fn add_leaves(
         &mut self,
-        leaf_nodes: Vec<ValidatedLeafNode>,
+        leaf_nodes: Vec<LeafNode>,
     ) -> Result<Vec<LeafIndex>, RatchetTreeError> {
         // Fill empty leaves first, then add the remaining nodes by extending
         // the tree to the right
@@ -313,7 +305,7 @@ impl TreeKemPublic {
                 // Replace the leaf node at position removed with a blank node
                 if let Some(removed) = self.nodes.blank_leaf_node(*index)? {
                     self.index.remove(&removed)?;
-                    vec.push((*index, removed.into()));
+                    vec.push((*index, removed));
                 }
 
                 // Blank the intermediate nodes along the path from the removed leaf to the root
@@ -336,7 +328,7 @@ impl TreeKemPublic {
     pub fn update_leaf(
         &mut self,
         index: LeafIndex,
-        leaf_node: ValidatedLeafNode,
+        leaf_node: LeafNode,
     ) -> Result<(), RatchetTreeError> {
         // Update the leaf node
         let existing_leaf = self.nodes.borrow_as_leaf_mut(index)?;
@@ -355,13 +347,10 @@ impl TreeKemPublic {
     }
 
     pub fn get_leaf_nodes(&self) -> Vec<&LeafNode> {
-        self.nodes
-            .non_empty_leaves()
-            .map(|(_, l)| l.deref())
-            .collect()
+        self.nodes.non_empty_leaves().map(|(_, l)| l).collect()
     }
 
-    pub fn non_empty_leaves(&self) -> impl Iterator<Item = (LeafIndex, &ValidatedLeafNode)> + '_ {
+    pub fn non_empty_leaves(&self) -> impl Iterator<Item = (LeafIndex, &LeafNode)> + '_ {
         self.nodes.non_empty_leaves()
     }
 
@@ -384,7 +373,7 @@ impl TreeKemPublic {
         &mut self,
         sender: LeafIndex,
         update_path: &ValidatedUpdatePath,
-    ) -> Result<ValidatedLeafNode, RatchetTreeError> {
+    ) -> Result<LeafNode, RatchetTreeError> {
         // Install the new leaf node
         let existing_leaf = self.nodes.borrow_as_leaf_mut(sender)?;
         let original_leaf_node = existing_leaf.clone();
@@ -452,7 +441,6 @@ pub(crate) mod test_utils {
 
     use super::{
         leaf_node::{test_utils::get_basic_test_node, LeafNode},
-        leaf_node_validator::ValidatedLeafNode,
         TreeKemPrivate, TreeKemPublic,
     };
     use crate::cipher_suite::CipherSuite;
@@ -472,7 +460,7 @@ pub(crate) mod test_utils {
 
         let (test_public, test_private) = TreeKemPublic::derive(
             cipher_suite,
-            creator_leaf.clone().into(),
+            creator_leaf.clone(),
             creator_hpke_secret.clone(),
         )
         .unwrap();
@@ -486,11 +474,11 @@ pub(crate) mod test_utils {
         }
     }
 
-    pub fn get_test_leaf_nodes(cipher_suite: CipherSuite) -> Vec<ValidatedLeafNode> {
+    pub fn get_test_leaf_nodes(cipher_suite: CipherSuite) -> Vec<LeafNode> {
         [
-            get_basic_test_node(cipher_suite, "A").into(),
-            get_basic_test_node(cipher_suite, "B").into(),
-            get_basic_test_node(cipher_suite, "C").into(),
+            get_basic_test_node(cipher_suite, "A"),
+            get_basic_test_node(cipher_suite, "B"),
+            get_basic_test_node(cipher_suite, "C"),
         ]
         .to_vec()
     }
@@ -521,7 +509,7 @@ mod tests {
 
             assert_eq!(
                 test_tree.public.nodes[0],
-                Some(Node::Leaf(test_tree.creator_leaf.clone().into()))
+                Some(Node::Leaf(test_tree.creator_leaf.clone()))
             );
 
             assert_eq!(test_tree.private.self_index, LeafIndex(0));
@@ -565,7 +553,7 @@ mod tests {
 
         // Each added package should be at the proper index and searchable in the tree
         res.into_iter().zip(leaf_nodes.clone()).for_each(|(r, kp)| {
-            assert_eq!(tree.get_leaf_node(r).unwrap(), &*kp);
+            assert_eq!(tree.get_leaf_node(r).unwrap(), &kp);
         });
 
         // Verify the underlying state
@@ -674,7 +662,7 @@ mod tests {
 
         let updated_leaf = get_basic_test_node(cipher_suite, "newpk");
 
-        tree.update_leaf(original_leaf_index, updated_leaf.clone().into())
+        tree.update_leaf(original_leaf_index, updated_leaf.clone())
             .unwrap();
 
         // The tree should not have grown due to an update
@@ -711,7 +699,7 @@ mod tests {
         let new_key_package = get_basic_test_node(cipher_suite, "new");
 
         assert_matches!(
-            tree.update_leaf(LeafIndex(128), new_key_package.into()),
+            tree.update_leaf(LeafIndex(128), new_key_package),
             Err(RatchetTreeError::NodeVecError(
                 NodeVecError::InvalidNodeIndex(256)
             ))
@@ -734,7 +722,7 @@ mod tests {
             .clone()
             .into_iter()
             .zip(key_packages)
-            .map(|(index, ln)| (index, ln.into()))
+            .map(|(index, ln)| (index, ln))
             .collect();
 
         let res = tree.remove_leaves(indexes.clone()).unwrap();
@@ -760,10 +748,7 @@ mod tests {
 
         let res = tree.remove_leaves(vec![to_remove]).unwrap();
 
-        assert_eq!(
-            res,
-            vec![(to_remove, LeafNode::from(leaf_nodes[0].clone()))]
-        );
+        assert_eq!(res, vec![(to_remove, leaf_nodes[0].clone())]);
 
         // The leaf count should have been reduced by 1
         assert_eq!(tree.occupied_leaf_count(), original_leaf_count - 1);
