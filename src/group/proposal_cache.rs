@@ -593,12 +593,12 @@ mod tests {
             leaf_node: additional_key_package.clone(),
         })];
 
-        let commiter_ref = test_sender();
+        let commiter_index = test_sender();
         let cache = test_proposal_cache_setup(test_proposals);
 
         let (proposals, effects) = cache
             .prepare_commit(
-                commiter_ref,
+                commiter_index,
                 additional.clone(),
                 None,
                 PassthroughCredentialValidator::new(),
@@ -610,7 +610,7 @@ mod tests {
 
         assert!(!effects
             .updates
-            .contains(&(commiter_ref, additional_key_package)))
+            .contains(&(commiter_index, additional_key_package)))
     }
 
     #[test]

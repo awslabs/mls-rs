@@ -1108,7 +1108,6 @@ impl<C: GroupConfig> Group<C> {
                 &context_bytes,
                 &added_leaves
                     .iter()
-                    // TODO: Modify encap so that clone isn't needed here
                     .map(|(_, leaf_index)| *leaf_index)
                     .collect::<Vec<LeafIndex>>(),
                 signer,
@@ -1264,7 +1263,6 @@ impl<C: GroupConfig> Group<C> {
         Ok((pending_commit, welcome))
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn make_welcome_message(
         &self,
         new_members: Vec<(KeyPackage, LeafIndex)>,
@@ -1284,10 +1282,10 @@ impl<C: GroupConfig> Group<C> {
 
         let secrets = new_members
             .into_iter()
-            .map(|(key_package, leaf_node_ref)| {
+            .map(|(key_package, leaf_index)| {
                 self.encrypt_group_secrets(
                     &key_package,
-                    leaf_node_ref,
+                    leaf_index,
                     joiner_secret,
                     update_path,
                     psks.clone(),

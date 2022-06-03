@@ -741,7 +741,7 @@ mod tests {
 
         assert_eq!(res, expected_result);
 
-        // The leaf count should have been reduced by 2
+        // The leaves should be removed from the tree
         assert_eq!(
             tree.occupied_leaf_count(),
             original_leaf_count - indexes.len() as u32
@@ -765,7 +765,7 @@ mod tests {
             vec![(to_remove, LeafNode::from(leaf_nodes[0].clone()))]
         );
 
-        // The leaf count should have been reduced by 2
+        // The leaf count should have been reduced by 1
         assert_eq!(tree.occupied_leaf_count(), original_leaf_count - 1);
 
         // There should be a blank in the tree
