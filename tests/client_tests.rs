@@ -589,14 +589,11 @@ fn test_out_of_order_application_messages() {
         Preferences::default(),
     );
 
-    let bob_session = &mut receiver_sessions[0];
-    let mut ciphertexts = vec![];
+    let bob_session = receiver_sessions.get_mut(0).unwrap();
 
-    ciphertexts.push(
-        alice_session
-            .encrypt_application_data(&[0], vec![])
-            .unwrap(),
-    );
+    let mut ciphertexts = vec![alice_session
+        .encrypt_application_data(&[0], vec![])
+        .unwrap()];
 
     ciphertexts.push(
         alice_session
@@ -604,7 +601,26 @@ fn test_out_of_order_application_messages() {
             .unwrap(),
     );
 
-    for i in [1, 0] {
+    let commit = alice_session.commit(vec![], vec![]).unwrap();
+    alice_session.apply_pending_commit().unwrap();
+
+    bob_session
+        .process_incoming_bytes(&commit.commit_packet)
+        .unwrap();
+
+    ciphertexts.push(
+        alice_session
+            .encrypt_application_data(&[2], vec![])
+            .unwrap(),
+    );
+
+    ciphertexts.push(
+        alice_session
+            .encrypt_application_data(&[3], vec![])
+            .unwrap(),
+    );
+
+    for i in [3, 2, 1, 0] {
         assert_matches!(bob_session.process_incoming_bytes(&ciphertexts[i]).unwrap().message, ProcessedMessagePayload::Application(m) if m == [i as u8]);
     }
 }

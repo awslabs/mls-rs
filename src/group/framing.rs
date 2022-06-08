@@ -244,6 +244,17 @@ pub struct MLSCiphertext {
     pub ciphertext: Vec<u8>,
 }
 
+impl From<&MLSCiphertext> for MLSCiphertextContentAAD {
+    fn from(ciphertext: &MLSCiphertext) -> Self {
+        Self {
+            group_id: ciphertext.group_id.clone(),
+            epoch: ciphertext.epoch,
+            content_type: ciphertext.content_type,
+            authenticated_data: ciphertext.authenticated_data.clone(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSSenderData {
     pub sender: LeafIndex,

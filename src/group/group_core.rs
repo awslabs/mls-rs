@@ -138,6 +138,7 @@ impl GroupCore {
                 plaintext.plaintext.content.group_id,
             ));
         }
+
         match &plaintext.plaintext.content.content {
             Content::Application(_) if plaintext.encrypted => Ok(plaintext),
             Content::Application(_) => Err(GroupError::UnencryptedApplicationMessage),

@@ -1807,36 +1807,23 @@ impl<C: GroupConfig> Group<C> {
     {
         let membership_key = self.key_schedule.membership_key.clone();
 
-        self.verify_incoming_message(
-            message.content.epoch,
+        let plaintext = verify_plaintext(
+            message,
+            &membership_key,
+            &self.current_public_epoch,
+            &self.core.context,
             external_key_id_to_signing_key,
-            |verifier| verifier.verify_plaintext(message, &membership_key),
-        )
+        )?;
+
+        self.validate_incoming_message(plaintext)
     }
 
-    pub fn verify_incoming_ciphertext<F>(
+    pub fn verify_incoming_ciphertext(
         &mut self,
         message: MLSCiphertext,
-        external_key_id_to_signing_key: F,
-    ) -> Result<VerifiedPlaintext, GroupError>
-    where
-        F: Fn(&[u8]) -> Option<PublicKey>,
-    {
-        self.verify_incoming_message(message.epoch, external_key_id_to_signing_key, |verifier| {
-            verifier.decrypt_ciphertext(message)
-        })
-    }
+    ) -> Result<VerifiedPlaintext, GroupError> {
+        let epoch_id = message.epoch;
 
-    fn verify_incoming_message<K, F>(
-        &mut self,
-        epoch_id: u64,
-        external_key_id_to_signing_key: K,
-        f: F,
-    ) -> Result<VerifiedPlaintext, GroupError>
-    where
-        K: Fn(&[u8]) -> Option<PublicKey>,
-        F: FnOnce(&mut MessageVerifier<'_, K>) -> Result<VerifiedPlaintext, GroupError>,
-    {
         let mut epoch = self
             .config
             .epoch_repo()
@@ -1844,14 +1831,7 @@ impl<C: GroupConfig> Group<C> {
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?
             .ok_or(GroupError::EpochNotFound(epoch_id))?;
 
-        let mut verifier = MessageVerifier {
-            msg_epoch: epoch.inner_mut(),
-            context: &self.core.context,
-            private_tree: &self.private_tree,
-            external_key_id_to_signing_key,
-        };
-
-        let plaintext = f(&mut verifier)?;
+        let plaintext = decrypt_ciphertext(message, epoch.inner_mut())?;
 
         self.config
             .epoch_repo()
@@ -3339,6 +3319,23 @@ mod tests {
                 assert_eq!(state_update_alice.updated, state_update_bob.updated);
                 assert_eq!(state_update_alice.psks, state_update_bob.psks);
             }
+        }
+    }
+
+    #[test]
+    fn test_commit_from_preconfigured_is_rejected() {
+        let (mut alice_group, mut bob_group) =
+            test_two_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, true);
+
+        let (commit, _) = alice_group.commit(vec![]).unwrap();
+
+        if let OutboundMessage::Plaintext(mut ptxt) = commit.plaintext {
+            ptxt.content.sender = Sender::Preconfigured(vec![0u8]);
+
+            assert_matches!(
+                bob_group.process_message(ptxt),
+                Err(GroupError::PreconfiguredSenderCannotCommit)
+            );
         }
     }
 }

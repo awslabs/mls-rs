@@ -3,10 +3,10 @@ use crate::{
     group::{
         Commit, ContentType, GroupContext, GroupError, KeyType, MLSCiphertext,
         MLSCiphertextContent, MLSCiphertextContentAAD, MLSMessageContent, MLSPlaintext,
-        MLSSenderData, MLSSenderDataAAD, Sender, VerifiedPlaintext,
+        MLSSenderData, MLSSenderDataAAD, PublicEpoch, Sender, VerifiedPlaintext,
     },
     signer::Signable,
-    tree_kem::{node::LeafIndex, TreeKemPrivate, TreeKemPublic},
+    tree_kem::{node::LeafIndex, TreeKemPublic},
     AddProposal, Proposal,
 };
 use ferriscrypt::asym::ec_key::PublicKey;
@@ -14,141 +14,119 @@ use tls_codec::{Deserialize, Serialize};
 
 use super::{epoch::Epoch, framing::Content, message_signature::MessageSigningContext};
 
-pub(crate) struct MessageVerifier<'a, F> {
-    pub(crate) msg_epoch: &'a mut Epoch,
-    pub(crate) context: &'a GroupContext,
-    pub(crate) private_tree: &'a TreeKemPrivate,
-    pub(crate) external_key_id_to_signing_key: F,
-}
-
-impl<F> MessageVerifier<'_, F>
+pub fn verify_plaintext<F>(
+    plaintext: MLSPlaintext,
+    membership_key: &[u8],
+    current_public_epoch: &PublicEpoch,
+    context: &GroupContext,
+    external_key_id_to_signing_key: F,
+) -> Result<VerifiedPlaintext, GroupError>
 where
     F: Fn(&[u8]) -> Option<PublicKey>,
 {
-    pub(crate) fn verify_plaintext(
-        &mut self,
-        plaintext: MLSPlaintext,
-        membership_key: &[u8],
-    ) -> Result<VerifiedPlaintext, GroupError> {
-        // Verify the membership tag if needed
-        match plaintext.content.sender {
-            Sender::Member(_) => {
-                plaintext
-                    .membership_tag
-                    .as_ref()
-                    .map(|tag| {
-                        tag.matches(
-                            &plaintext,
-                            self.context,
-                            membership_key,
-                            &self.msg_epoch.cipher_suite,
-                        )
-                    })
-                    .transpose()?
-                    .filter(|&matched| matched)
-                    .ok_or(GroupError::InvalidMembershipTag)?;
-            }
-            Sender::NewMember | Sender::Preconfigured(_) => {
-                plaintext
-                    .membership_tag
-                    .is_none()
-                    .then(|| ())
-                    .ok_or(GroupError::InvalidMembershipTag)?;
-            }
+    // Verify the membership tag if needed
+    match plaintext.content.sender {
+        Sender::Member(_) => {
+            plaintext
+                .membership_tag
+                .as_ref()
+                .map(|tag| {
+                    tag.matches(
+                        &plaintext,
+                        context,
+                        membership_key,
+                        &current_public_epoch.cipher_suite,
+                    )
+                })
+                .transpose()?
+                .filter(|&matched| matched)
+                .ok_or(GroupError::InvalidMembershipTag)?;
         }
-
-        // Verify that the signature on the MLSPlaintext message verifies using the public key
-        // from the credential stored at the leaf in the tree indicated by the sender field.
-        self.verify_plaintext_signature(plaintext, false)
+        Sender::NewMember | Sender::Preconfigured(_) => {
+            plaintext
+                .membership_tag
+                .is_none()
+                .then(|| ())
+                .ok_or(GroupError::InvalidMembershipTag)?;
+        }
     }
 
-    fn verify_plaintext_signature(
-        &self,
-        plaintext: MLSPlaintext,
-        from_ciphertext: bool,
-    ) -> Result<VerifiedPlaintext, GroupError> {
-        verify_plaintext_signature(
-            &self.msg_epoch.public_tree,
-            self.context,
-            plaintext,
-            from_ciphertext,
-            &self.external_key_id_to_signing_key,
-        )
+    // Verify that the signature on the MLSPlaintext message verifies using the public key
+    // from the credential stored at the leaf in the tree indicated by the sender field.
+    verify_plaintext_signature(
+        &current_public_epoch.public_tree,
+        context,
+        plaintext,
+        false,
+        &external_key_id_to_signing_key,
+    )
+}
+
+pub(crate) fn decrypt_ciphertext(
+    ciphertext: MLSCiphertext,
+    msg_epoch: &mut Epoch,
+) -> Result<VerifiedPlaintext, GroupError> {
+    // Decrypt the sender data with the derived sender_key and sender_nonce from the message
+    // epoch's key schedule
+    let (sender_key, sender_nonce) = msg_epoch.get_sender_data_params(&ciphertext.ciphertext)?;
+
+    let sender_data_aad = MLSSenderDataAAD {
+        group_id: msg_epoch.context.group_id.clone(),
+        epoch: msg_epoch.context.epoch,
+        content_type: ciphertext.content_type,
+    };
+
+    let decrypted_sender = sender_key.decrypt_from_vec(
+        &ciphertext.encrypted_sender_data,
+        Some(&sender_data_aad.tls_serialize_detached()?),
+        sender_nonce,
+    )?;
+
+    let sender_data = MLSSenderData::tls_deserialize(&mut &*decrypted_sender)?;
+    if msg_epoch.self_index == sender_data.sender {
+        return Err(GroupError::CantProcessMessageFromSelf);
     }
 
-    pub(crate) fn decrypt_ciphertext(
-        &mut self,
-        ciphertext: MLSCiphertext,
-    ) -> Result<VerifiedPlaintext, GroupError> {
-        // Decrypt the sender data with the derived sender_key and sender_nonce from the current
-        // epoch's key schedule
-        let (sender_key, sender_nonce) = self
-            .msg_epoch
-            .get_sender_data_params(&ciphertext.ciphertext)?;
+    // Grab a decryption key from the message epoch's key schedule
+    let key_type = match &ciphertext.content_type {
+        ContentType::Application => KeyType::Application,
+        _ => KeyType::Handshake,
+    };
 
-        let sender_data_aad = MLSSenderDataAAD {
-            group_id: self.context.group_id.clone(),
-            epoch: self.context.epoch,
-            content_type: ciphertext.content_type,
-        };
+    let decryption_key =
+        msg_epoch.get_decryption_key(sender_data.sender, sender_data.generation, key_type)?;
 
-        let decrypted_sender = sender_key.decrypt_from_vec(
-            &ciphertext.encrypted_sender_data,
-            Some(&sender_data_aad.tls_serialize_detached()?),
-            sender_nonce,
-        )?;
+    // Decrypt the content of the message using the grabbed key
+    let decrypted_content = decryption_key.decrypt(
+        &ciphertext.ciphertext,
+        &MLSCiphertextContentAAD::from(&ciphertext).tls_serialize_detached()?,
+        &sender_data.reuse_guard,
+    )?;
 
-        let sender_data = MLSSenderData::tls_deserialize(&mut &*decrypted_sender)?;
-        if self.private_tree.self_index == sender_data.sender {
-            return Err(GroupError::CantProcessMessageFromSelf);
-        }
+    let ciphertext_content = MLSCiphertextContent::tls_deserialize(&mut &*decrypted_content)?;
 
-        // Grab an encryption key from the current epoch's key schedule
-        let key_type = match &ciphertext.content_type {
-            ContentType::Application => KeyType::Application,
-            _ => KeyType::Handshake,
-        };
-
-        let decryption_key = self.msg_epoch.get_decryption_key(
-            sender_data.sender,
-            sender_data.generation,
-            key_type,
-        )?;
-
-        // Build ciphertext aad using the ciphertext message
-        let aad = MLSCiphertextContentAAD {
+    // Build the MLS plaintext object and process it
+    let plaintext = MLSPlaintext {
+        content: MLSMessageContent {
             group_id: ciphertext.group_id.clone(),
             epoch: ciphertext.epoch,
-            content_type: ciphertext.content_type,
-            authenticated_data: ciphertext.authenticated_data.clone(),
-        };
+            sender: Sender::Member(sender_data.sender),
+            authenticated_data: ciphertext.authenticated_data,
+            content: ciphertext_content.content,
+        },
+        auth: ciphertext_content.auth,
+        membership_tag: None, // Membership tag is always None for ciphertext messages
+    };
 
-        // Decrypt the content of the message using the
-        let decrypted_content = decryption_key.decrypt(
-            &ciphertext.ciphertext,
-            &aad.tls_serialize_detached()?,
-            &sender_data.reuse_guard,
-        )?;
-
-        let ciphertext_content = MLSCiphertextContent::tls_deserialize(&mut &*decrypted_content)?;
-
-        // Build the MLS plaintext object and process it
-        let plaintext = MLSPlaintext {
-            content: MLSMessageContent {
-                group_id: ciphertext.group_id.clone(),
-                epoch: ciphertext.epoch,
-                sender: Sender::Member(sender_data.sender),
-                authenticated_data: ciphertext.authenticated_data,
-                content: ciphertext_content.content,
-            },
-            auth: ciphertext_content.auth,
-            membership_tag: None, // Membership tag is always None for ciphertext messages
-        };
-
-        //Verify that the signature on the MLSPlaintext message verifies using the public key
-        // from the credential stored at the leaf in the tree indicated by the sender field.
-        self.verify_plaintext_signature(plaintext, true)
-    }
+    //Verify that the signature on the MLSPlaintext message verifies using the public key
+    // from the credential stored at the leaf in the tree indicated by the sender field.
+    verify_plaintext_signature(
+        &msg_epoch.public_tree,
+        &msg_epoch.context,
+        plaintext,
+        true,
+        |_| None,
+    )
 }
 
 pub(crate) fn verify_plaintext_signature<F>(
@@ -242,45 +220,31 @@ mod tests {
         cipher_suite::CipherSuite,
         client_config::InMemoryPskStore,
         group::{
+            framing::MLSCiphertext,
             membership_tag::MembershipTag,
             message_signature::MessageSigningContext,
+            message_verifier::decrypt_ciphertext,
             padding::PaddingMode,
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_member, TEST_GROUP},
-            CommitOptions, Content, ControlEncryptionMode, Epoch, Group, GroupConfig, GroupError,
-            InMemoryGroupConfig, MLSMessagePayload, MLSPlaintext, MessageVerifier, Sender,
+            CommitOptions, Content, ControlEncryptionMode, Group, GroupConfig, GroupError,
+            InMemoryGroupConfig, MLSMessagePayload, MLSPlaintext, Sender, VerifiedPlaintext,
         },
         signer::{Signable, SignatureError},
-        tree_kem::TreeKemPrivate,
-        EpochRepository, GroupContext, ProtocolVersion,
+        EpochRepository, ProtocolVersion,
     };
     use assert_matches::assert_matches;
-    use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
+    use ferriscrypt::asym::ec_key::SecretKey;
 
     use crate::client_config::PassthroughCredentialValidator;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
+    use super::verify_plaintext;
+
     const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
     const TED_EXTERNAL_KEY_ID: &[u8] = b"ted";
-
-    fn make_verifier<'a, K>(
-        msg_epoch: &'a mut Epoch,
-        context: &'a GroupContext,
-        private_tree: &'a TreeKemPrivate,
-        external_key_id_to_signing_key: K,
-    ) -> MessageVerifier<'a, K>
-    where
-        K: Fn(&[u8]) -> Option<PublicKey>,
-    {
-        MessageVerifier {
-            msg_epoch,
-            context,
-            private_tree,
-            external_key_id_to_signing_key,
-        }
-    }
 
     fn make_plaintext(sender: Sender, epoch: u64) -> MLSPlaintext {
         MLSPlaintext::new(
@@ -304,15 +268,10 @@ mod tests {
         );
     }
 
-    fn with_verifier<K, F, R>(
+    fn decrypt(
+        ciphertext: MLSCiphertext,
         group: &mut Group<InMemoryGroupConfig>,
-        external_key_id_to_signing_key: K,
-        f: F,
-    ) -> R
-    where
-        K: Fn(&[u8]) -> Option<PublicKey>,
-        F: FnOnce(&mut MessageVerifier<'_, K>) -> R,
-    {
+    ) -> Result<VerifiedPlaintext, GroupError> {
         let mut epoch = group
             .config
             .epoch_repo()
@@ -320,20 +279,14 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let mut verifier = make_verifier(
-            epoch.inner_mut(),
-            &group.core.context,
-            &group.private_tree,
-            external_key_id_to_signing_key,
-        );
-
-        let res = f(&mut verifier);
+        let res = decrypt_ciphertext(ciphertext, epoch.inner_mut());
 
         group
             .config
             .epoch_repo()
             .insert(group.current_epoch(), epoch)
             .unwrap();
+
         res
     }
 
@@ -436,16 +389,17 @@ mod tests {
 
     #[test]
     fn valid_plaintext_is_verified() {
-        let mut env = TestEnv::new();
+        let env = TestEnv::new();
         let mut message = env.alice.make_member_plaintext();
         env.alice.sign(&mut message, false);
         add_membership_tag(&mut message, &env.alice.group);
-        let membership_key = env.bob.group.key_schedule.membership_key.clone();
 
-        with_verifier(
-            &mut env.bob.group,
+        verify_plaintext(
+            message,
+            &env.bob.group.key_schedule.membership_key,
+            &env.bob.group.current_public_epoch,
+            env.bob.group.context(),
             |_| None,
-            |verifier| verifier.verify_plaintext(message, &membership_key),
         )
         .unwrap();
     }
@@ -462,11 +416,7 @@ mod tests {
             .encrypt_plaintext(message, PaddingMode::None)
             .unwrap();
 
-        let res = with_verifier(
-            &mut env.bob.group,
-            |_| None,
-            |verifier| verifier.decrypt_ciphertext(message),
-        );
+        let res = decrypt(message, &mut env.bob.group);
 
         assert_matches!(
             res,
@@ -488,25 +438,21 @@ mod tests {
             .encrypt_plaintext(message, PaddingMode::None)
             .unwrap();
 
-        with_verifier(
-            &mut env.bob.group,
-            |_| None,
-            |verifier| verifier.decrypt_ciphertext(message),
-        )
-        .unwrap();
+        decrypt(message, &mut env.bob.group).unwrap();
     }
 
     #[test]
     fn plaintext_from_member_requires_membership_tag() {
-        let mut env = TestEnv::new();
+        let env = TestEnv::new();
         let mut message = env.alice.make_member_plaintext();
         env.alice.sign(&mut message, false);
-        let membership_key = env.bob.group.key_schedule.membership_key.clone();
 
-        let res = with_verifier(
-            &mut env.bob.group,
+        let res = verify_plaintext(
+            message,
+            &env.bob.group.key_schedule.membership_key,
+            &env.bob.group.current_public_epoch,
+            env.bob.group.context(),
             |_| None,
-            |verifier| verifier.verify_plaintext(message, &membership_key),
         );
 
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
@@ -515,7 +461,7 @@ mod tests {
     #[test]
     fn valid_proposal_from_new_member_is_verified() {
         let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
-        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let mut message = make_plaintext(Sender::NewMember, test_group.group.current_epoch());
         message.content.content = Content::Proposal(Proposal::Add(AddProposal {
@@ -528,12 +474,13 @@ mod tests {
         };
 
         message.sign(&signer, &signing_context).unwrap();
-        let membership_key = test_group.group.key_schedule.membership_key.clone();
 
-        with_verifier(
-            &mut test_group.group,
+        verify_plaintext(
+            message,
+            &test_group.group.key_schedule.membership_key,
+            &test_group.group.current_public_epoch,
+            test_group.group.context(),
             |_| None,
-            |verifier| verifier.verify_plaintext(message, &membership_key),
         )
         .unwrap();
     }
@@ -541,7 +488,7 @@ mod tests {
     #[test]
     fn proposal_from_new_member_must_not_have_membership_tag() {
         let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
-        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let mut message = make_plaintext(Sender::NewMember, test_group.group.current_epoch());
         message.content.content = Content::Proposal(Proposal::Add(AddProposal {
@@ -555,12 +502,13 @@ mod tests {
 
         message.sign(&signer, &signing_context).unwrap();
         add_membership_tag(&mut message, &test_group.group);
-        let membership_key = test_group.group.key_schedule.membership_key.clone();
 
-        let res = with_verifier(
-            &mut test_group.group,
+        let res = verify_plaintext(
+            message,
+            &test_group.group.key_schedule.membership_key,
+            &test_group.group.current_public_epoch,
+            test_group.group.context(),
             |_| None,
-            |verifier| verifier.verify_plaintext(message, &membership_key),
         );
 
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
@@ -570,7 +518,7 @@ mod tests {
     fn valid_proposal_from_preconfigured_external_is_verified() {
         let (bob_key_pkg_gen, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
         let (_, ted_signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"ted");
-        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let mut message = make_plaintext(
             Sender::Preconfigured(TED_EXTERNAL_KEY_ID.to_vec()),
@@ -587,14 +535,15 @@ mod tests {
         };
 
         message.sign(&ted_signer, &signing_context).unwrap();
-        let membership_key = test_group.group.key_schedule.membership_key.clone();
 
-        with_verifier(
-            &mut test_group.group,
+        verify_plaintext(
+            message,
+            &test_group.group.key_schedule.membership_key,
+            &test_group.group.current_public_epoch,
+            test_group.group.context(),
             |external_id| {
                 (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
             },
-            |verifier| verifier.verify_plaintext(message, &membership_key),
         )
         .unwrap();
     }
@@ -603,7 +552,7 @@ mod tests {
     fn proposal_from_preconfigured_external_must_not_have_membership_tag() {
         let (bob_key_pkg_gen, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
         let (_, ted_signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"ted");
-        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let mut message = make_plaintext(
             Sender::Preconfigured(TED_EXTERNAL_KEY_ID.to_vec()),
@@ -620,14 +569,15 @@ mod tests {
 
         message.sign(&ted_signer, &signing_context).unwrap();
         add_membership_tag(&mut message, &test_group.group);
-        let membership_key = test_group.group.key_schedule.membership_key.clone();
 
-        let res = with_verifier(
-            &mut test_group.group,
+        let res = verify_plaintext(
+            message,
+            &test_group.group.key_schedule.membership_key,
+            &test_group.group.current_public_epoch,
+            test_group.group.context(),
             |external_id| {
                 (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
             },
-            |verifier| verifier.verify_plaintext(message, &membership_key),
         );
 
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
@@ -645,11 +595,7 @@ mod tests {
             .encrypt_plaintext(message, PaddingMode::None)
             .unwrap();
 
-        let res = with_verifier(
-            &mut env.alice.group,
-            |_| None,
-            |verifier| verifier.decrypt_ciphertext(message),
-        );
+        let res = decrypt(message, &mut env.alice.group);
 
         assert_matches!(res, Err(GroupError::CantProcessMessageFromSelf));
     }

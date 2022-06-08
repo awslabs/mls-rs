@@ -483,9 +483,16 @@ where
 
         let (message_payload, sender_credential, authenticated_data) = match message.payload {
             MLSMessagePayload::Plain(message) => {
-                let message = self.protocol.verify_incoming_plaintext(message, |id| {
-                    self.config.external_signing_key(id)
-                })?;
+                // For sender type `external` the `content_type` of the message MUST be `proposal`.
+                let message = match message.content.content_type() {
+                    ContentType::Proposal => {
+                        self.protocol.verify_incoming_plaintext(message, |id| {
+                            self.config.external_signing_key(id)
+                        })
+                    }
+                    _ => self.protocol.verify_incoming_plaintext(message, |_| None),
+                }?;
+
                 let credential = message
                     .plaintext
                     .credential(self.protocol.current_epoch_tree()?)?;
@@ -497,9 +504,7 @@ where
                 )
             }
             MLSMessagePayload::Cipher(message) => {
-                let message = self.protocol.verify_incoming_ciphertext(message, |id| {
-                    self.config.external_signing_key(id)
-                })?;
+                let message = self.protocol.verify_incoming_ciphertext(message)?;
                 let credential = message
                     .plaintext
                     .credential(self.protocol.current_epoch_tree()?)?;
