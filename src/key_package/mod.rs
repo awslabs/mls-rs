@@ -1,7 +1,5 @@
 use crate::cipher_suite::CipherSuite;
 use crate::credential::CredentialError;
-use crate::extension::CapabilitiesExt;
-use crate::extension::LifetimeExt;
 use crate::extension::RequiredCapabilitiesExt;
 use crate::extension::{ExtensionError, ExtensionList, ExtensionType};
 use crate::group::proposal::ProposalType;
@@ -138,7 +136,10 @@ pub(crate) mod test_utils {
     use ferriscrypt::asym::ec_key::SecretKey;
 
     use super::*;
-    use crate::signing_identity::test_utils::get_test_signing_identity;
+    use crate::{
+        signing_identity::test_utils::get_test_signing_identity,
+        tree_kem::{Capabilities, Lifetime},
+    };
 
     pub(crate) fn test_key_package(
         protocol_version: ProtocolVersion,
@@ -177,8 +178,8 @@ pub(crate) mod test_utils {
         test_key_package_custom(protocol_version, cipher_suite, id, |generator| {
             generator
                 .generate(
-                    LifetimeExt::years(1).unwrap(),
-                    CapabilitiesExt::default(),
+                    Lifetime::years(1).unwrap(),
+                    Capabilities::default(),
                     ExtensionList::default(),
                     ExtensionList::default(),
                 )

@@ -1,8 +1,8 @@
-use super::parent_hash::ParentHash;
+use super::{parent_hash::ParentHash, Capabilities, Lifetime};
 use crate::{
     cipher_suite::CipherSuite,
     credential::CredentialError,
-    extension::{CapabilitiesExt, ExtensionList, LifetimeExt},
+    extension::ExtensionList,
     signer::{Signable, SignatureError, Signer},
     signing_identity::{SigningIdentity, SigningIdentityError},
 };
@@ -48,7 +48,7 @@ pub enum LeafNodeError {
 #[repr(u8)]
 pub enum LeafNodeSource {
     #[tls_codec(discriminant = 1)]
-    KeyPackage(LifetimeExt),
+    KeyPackage(Lifetime),
     Update,
     Commit(ParentHash),
 }
@@ -68,7 +68,7 @@ pub struct LeafNode {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub public_key: HpkePublicKey,
     pub signing_identity: SigningIdentity,
-    pub capabilities: CapabilitiesExt,
+    pub capabilities: Capabilities,
     pub leaf_node_source: LeafNodeSource,
     pub extensions: ExtensionList,
     #[tls_codec(with = "crate::tls::ByteVec")]
@@ -89,10 +89,10 @@ impl LeafNode {
     pub fn generate<S: Signer>(
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
-        capabilities: CapabilitiesExt,
+        capabilities: Capabilities,
         extensions: ExtensionList,
         signer: &S,
-        lifetime: LifetimeExt,
+        lifetime: Lifetime,
     ) -> Result<(Self, HpkeSecretKey), LeafNodeError> {
         LeafNode::check_signing_identity(cipher_suite, &signing_identity, signer)?;
 
@@ -116,7 +116,7 @@ impl LeafNode {
         &mut self,
         key_pair: (PublicKey, SecretKey),
         group_id: &[u8],
-        capabilities: Option<CapabilitiesExt>,
+        capabilities: Option<Capabilities>,
         extensions: Option<ExtensionList>,
         leaf_node_source: LeafNodeSource,
         signer: &S,
@@ -143,7 +143,7 @@ impl LeafNode {
         &mut self,
         cipher_suite: CipherSuite,
         group_id: &[u8],
-        capabilities: Option<CapabilitiesExt>,
+        capabilities: Option<Capabilities>,
         extensions: Option<ExtensionList>,
         signer: &S,
     ) -> Result<HpkeSecretKey, LeafNodeError> {
@@ -165,7 +165,7 @@ impl LeafNode {
         &mut self,
         cipher_suite: CipherSuite,
         group_id: &[u8],
-        capabilities: Option<CapabilitiesExt>,
+        capabilities: Option<Capabilities>,
         extensions: Option<ExtensionList>,
         signer: &S,
         mut parent_hash: impl FnMut(
@@ -195,7 +195,7 @@ impl LeafNode {
 struct LeafNodeTBS<'a> {
     public_key: &'a HpkePublicKey,
     signing_identity: &'a SigningIdentity,
-    capabilities: &'a CapabilitiesExt,
+    capabilities: &'a Capabilities,
     leaf_node_source: &'a LeafNodeSource,
     extensions: &'a ExtensionList,
     group_id: Option<&'a [u8]>,
@@ -262,7 +262,7 @@ impl<'a> Signable<'a> for LeafNode {
 pub mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,
-        extension::{ExternalKeyIdExt, MlsExtension},
+        extension::{ApplicationIdExt, MlsExtension},
         signing_identity::test_utils::get_test_signing_identity,
     };
 
@@ -272,7 +272,7 @@ pub mod test_utils {
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
         secret: &SecretKey,
-        capabilities: Option<CapabilitiesExt>,
+        capabilities: Option<Capabilities>,
         extensions: Option<ExtensionList>,
     ) -> (LeafNode, HpkeSecretKey) {
         get_test_node_with_lifetime(
@@ -281,7 +281,7 @@ pub mod test_utils {
             secret,
             capabilities,
             extensions,
-            LifetimeExt::years(1).unwrap(),
+            Lifetime::years(1).unwrap(),
         )
     }
 
@@ -289,9 +289,9 @@ pub mod test_utils {
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
         secret: &SecretKey,
-        capabilities: Option<CapabilitiesExt>,
+        capabilities: Option<Capabilities>,
         extensions: Option<ExtensionList>,
-        lifetime: LifetimeExt,
+        lifetime: Lifetime,
     ) -> (LeafNode, HpkeSecretKey) {
         LeafNode::generate(
             cipher_suite,
@@ -318,10 +318,10 @@ pub mod test_utils {
         LeafNode::generate(
             cipher_suite,
             signing_identity,
-            CapabilitiesExt::default(),
+            Capabilities::default(),
             ExtensionList::default(),
             &signature_key,
-            LifetimeExt::years(1).unwrap(),
+            Lifetime::years(1).unwrap(),
         )
         .map(|(leaf, hpke_secret_key)| (leaf, hpke_secret_key, signature_key))
         .unwrap()
@@ -331,7 +331,7 @@ pub mod test_utils {
         let mut extension_list = ExtensionList::new();
 
         extension_list
-            .set_extension(ExternalKeyIdExt {
+            .set_extension(ApplicationIdExt {
                 identifier: b"identifier".to_vec(),
             })
             .unwrap();
@@ -339,9 +339,9 @@ pub mod test_utils {
         extension_list
     }
 
-    pub fn get_test_capabilities() -> CapabilitiesExt {
-        let mut capabilities = CapabilitiesExt::default();
-        capabilities.extensions.push(ExternalKeyIdExt::IDENTIFIER);
+    pub fn get_test_capabilities() -> Capabilities {
+        let mut capabilities = Capabilities::default();
+        capabilities.extensions.push(ApplicationIdExt::IDENTIFIER);
         capabilities
     }
 }
@@ -362,7 +362,7 @@ mod tests {
     fn test_node_generation() {
         let capabilities = get_test_capabilities();
         let extensions = get_test_extensions();
-        let lifetime = LifetimeExt::years(1).unwrap();
+        let lifetime = Lifetime::years(1).unwrap();
 
         for cipher_suite in CipherSuite::all() {
             let (signing_identity, secret) =
@@ -423,10 +423,10 @@ mod tests {
         let res = LeafNode::generate(
             cipher_suite,
             test_signing_identity,
-            CapabilitiesExt::default(),
+            Capabilities::default(),
             ExtensionList::default(),
             &incorrect_secret,
-            LifetimeExt::years(1).unwrap(),
+            Lifetime::years(1).unwrap(),
         );
 
         assert_matches!(
@@ -447,10 +447,10 @@ mod tests {
         let res = LeafNode::generate(
             cipher_suite,
             test_signing_identity,
-            CapabilitiesExt::default(),
+            Capabilities::default(),
             ExtensionList::default(),
             &signer,
-            LifetimeExt::years(1).unwrap(),
+            Lifetime::years(1).unwrap(),
         );
 
         assert_matches!(res, Err(LeafNodeError::SigningIdentityError(_)));

@@ -1,7 +1,7 @@
 use crate::{
     signer::{SignatureError, Signer},
     signing_identity::SigningIdentity,
-    tree_kem::leaf_node::LeafNodeError,
+    tree_kem::{leaf_node::LeafNodeError, Capabilities, Lifetime},
 };
 
 use super::*;
@@ -45,8 +45,8 @@ impl<'a, S: Signer> KeyPackageGenerator<'a, S> {
 
     pub fn generate(
         &self,
-        lifetime: LifetimeExt,
-        capabilities: CapabilitiesExt,
+        lifetime: Lifetime,
+        capabilities: Capabilities,
         key_package_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
     ) -> Result<KeyPackageGeneration, KeyPackageGenerationError> {
@@ -88,11 +88,14 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
-        extension::{CapabilitiesExt, ExtensionList, LifetimeExt, MlsExtension},
+        extension::{ExtensionList, MlsExtension},
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
         signing_identity::test_utils::get_test_signing_identity,
         signing_identity::SigningIdentityError,
-        tree_kem::leaf_node::{LeafNodeError, LeafNodeSource},
+        tree_kem::{
+            leaf_node::{LeafNodeError, LeafNodeSource},
+            Capabilities, Lifetime,
+        },
         ProtocolVersion,
     };
 
@@ -115,8 +118,8 @@ mod tests {
         ext_list
     }
 
-    fn test_lifetime() -> LifetimeExt {
-        LifetimeExt::years(1).unwrap()
+    fn test_lifetime() -> Lifetime {
+        Lifetime::years(1).unwrap()
     }
 
     #[test]
@@ -138,7 +141,7 @@ mod tests {
                 signing_key: &signing_key,
             };
 
-            let mut capabilities = CapabilitiesExt::default();
+            let mut capabilities = Capabilities::default();
             capabilities.extensions.push(42);
             capabilities.extensions.push(32);
 
@@ -233,7 +236,7 @@ mod tests {
 
         let generated = test_generator.generate(
             test_lifetime(),
-            CapabilitiesExt::default(),
+            Capabilities::default(),
             ExtensionList::default(),
             ExtensionList::default(),
         );
@@ -264,7 +267,7 @@ mod tests {
             let first_key_package = test_generator
                 .generate(
                     test_lifetime(),
-                    CapabilitiesExt::default(),
+                    Capabilities::default(),
                     ExtensionList::default(),
                     ExtensionList::default(),
                 )
@@ -274,7 +277,7 @@ mod tests {
                 let next_key_package = test_generator
                     .generate(
                         test_lifetime(),
-                        CapabilitiesExt::default(),
+                        Capabilities::default(),
                         ExtensionList::default(),
                         ExtensionList::default(),
                     )

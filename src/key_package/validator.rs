@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use super::*;
 use crate::client_config::CredentialValidator;
 use crate::signing_identity::SigningIdentityError;
+use crate::tree_kem::Lifetime;
 use crate::{
     signer::SignatureError,
     tree_kem::leaf_node_validator::{
@@ -29,10 +30,8 @@ pub enum KeyPackageValidationError {
     SigningIdentityError(#[from] SigningIdentityError),
     #[error("key lifetime not found")]
     MissingKeyLifetime,
-    #[error("capabilities extension not found")]
-    MissingCapabilitiesExtension,
     #[error("{0:?} is not within lifetime {1:?}")]
-    InvalidKeyLifetime(MlsTime, LifetimeExt),
+    InvalidKeyLifetime(MlsTime, Lifetime),
     #[error("required extension not found")]
     RequiredExtensionNotFound(ExtensionType),
     #[error("required proposal not found")]
@@ -155,6 +154,7 @@ mod tests {
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
     use crate::signing_identity::test_utils::get_test_signing_identity;
+    use crate::tree_kem::Capabilities;
     use assert_matches::assert_matches;
     use ferriscrypt::rand::SecureRng;
 
@@ -256,8 +256,8 @@ mod tests {
 
                 new_generator
                     .generate(
-                        LifetimeExt::years(1).unwrap(),
-                        CapabilitiesExt::default(),
+                        Lifetime::years(1).unwrap(),
+                        Capabilities::default(),
                         ExtensionList::default(),
                         ExtensionList::default(),
                     )
@@ -322,11 +322,11 @@ mod tests {
         test_key_package_custom(protocol_version, cipher_suite, "foo", |generator| {
             generator
                 .generate(
-                    LifetimeExt {
+                    Lifetime {
                         not_before: 0,
                         not_after: 0,
                     },
-                    CapabilitiesExt::default(),
+                    Capabilities::default(),
                     ExtensionList::default(),
                     ExtensionList::default(),
                 )
@@ -384,12 +384,12 @@ mod tests {
 
         let key_package =
             test_key_package_custom(protocol_version, cipher_suite, "test", |generator| {
-                let mut capabilities = CapabilitiesExt::default();
+                let mut capabilities = Capabilities::default();
                 capabilities.extensions.push(42);
 
                 generator
                     .generate(
-                        LifetimeExt::years(1).unwrap(),
+                        Lifetime::years(1).unwrap(),
                         capabilities,
                         ExtensionList::default(),
                         ExtensionList::default(),
@@ -450,8 +450,8 @@ mod tests {
             test_key_package_custom(protocol_version, cipher_suite, "foo", |generator| {
                 let mut package_gen = generator
                     .generate(
-                        LifetimeExt::years(1).unwrap(),
-                        CapabilitiesExt::default(),
+                        Lifetime::years(1).unwrap(),
+                        Capabilities::default(),
                         ExtensionList::default(),
                         ExtensionList::default(),
                     )

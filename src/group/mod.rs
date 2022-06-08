@@ -18,8 +18,7 @@ use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
 use crate::client_config::{CredentialValidator, PskStore};
 use crate::credential::CredentialError;
 use crate::extension::{
-    CapabilitiesExt, ExtensionError, ExtensionList, ExternalPubExt, LifetimeExt, RatchetTreeExt,
-    RequiredCapabilitiesExt,
+    ExtensionError, ExtensionList, ExternalPubExt, RatchetTreeExt, RequiredCapabilitiesExt,
 };
 use crate::group::{KeySchedule, KeyScheduleError};
 use crate::key_package::{
@@ -42,8 +41,8 @@ use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError};
 use crate::tree_kem::tree_validator::{TreeValidationError, TreeValidator};
 use crate::tree_kem::{
-    RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathGeneration,
-    UpdatePathValidationError, UpdatePathValidator,
+    Capabilities, Lifetime, RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath,
+    UpdatePathGeneration, UpdatePathValidationError, UpdatePathValidator,
 };
 use crate::{EpochRepository, ProtocolVersion};
 
@@ -357,7 +356,7 @@ pub struct CommitGeneration {
 pub struct CommitOptions {
     pub prefer_path_update: bool,
     pub extension_update: Option<ExtensionList>,
-    pub capabilities_update: Option<CapabilitiesExt>,
+    pub capabilities_update: Option<Capabilities>,
     pub encryption_mode: ControlEncryptionMode,
     pub ratchet_tree_extension: bool,
 }
@@ -1308,7 +1307,7 @@ impl<C: GroupConfig> Group<C> {
         &self,
         sub_group_id: Vec<u8>,
         resumption_psk_epoch: Option<u64>,
-        lifetime: LifetimeExt,
+        lifetime: Lifetime,
         psk_store: &P,
         signer: &S,
         make_config: G,
@@ -1586,7 +1585,7 @@ impl<C: GroupConfig> Group<C> {
         &mut self,
         signer: &S,
         extension_list: Option<ExtensionList>,
-        capabilities_update: Option<CapabilitiesExt>,
+        capabilities_update: Option<Capabilities>,
     ) -> Result<Proposal, GroupError> {
         // Grab a copy of the current node and update it to have new key material
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
@@ -2316,7 +2315,7 @@ pub(crate) mod test_utils {
     use super::*;
     use crate::{
         client_config::{InMemoryPskStore, PassthroughCredentialValidator},
-        extension::{CapabilitiesExt, LifetimeExt, RequiredCapabilitiesExt},
+        extension::RequiredCapabilitiesExt,
         key_package::KeyPackageGenerator,
         signing_identity::test_utils::get_test_signing_identity,
         signing_identity::SigningIdentity,
@@ -2499,8 +2498,8 @@ pub(crate) mod test_utils {
         extensions
     }
 
-    pub(crate) fn lifetime() -> LifetimeExt {
-        LifetimeExt::years(1).unwrap()
+    pub(crate) fn lifetime() -> Lifetime {
+        Lifetime::years(1).unwrap()
     }
 
     pub(crate) fn test_member(
@@ -2521,7 +2520,7 @@ pub(crate) mod test_utils {
         let key_package = key_package_generator
             .generate(
                 lifetime(),
-                CapabilitiesExt::default(),
+                Capabilities::default(),
                 ExtensionList::default(),
                 ExtensionList::default(),
             )
@@ -2533,7 +2532,7 @@ pub(crate) mod test_utils {
     pub(crate) fn test_group_custom(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
-        capabilities: CapabilitiesExt,
+        capabilities: Capabilities,
         leaf_extensions: ExtensionList,
     ) -> TestGroup {
         let (signing_identity, signing_key) =
@@ -2575,7 +2574,7 @@ pub(crate) mod test_utils {
         test_group_custom(
             protocol_version,
             cipher_suite,
-            CapabilitiesExt::default(),
+            Capabilities::default(),
             ExtensionList::default(),
         )
     }
@@ -2585,10 +2584,7 @@ pub(crate) mod test_utils {
 mod tests {
     use crate::{
         client_config::InMemoryPskStore,
-        extension::{
-            test_utils::TestExtension, CapabilitiesExt, LifetimeExt, MlsExtension,
-            RequiredCapabilitiesExt,
-        },
+        extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
         group::test_utils::lifetime,
         key_package::test_utils::test_key_package,
         psk::Psk,
@@ -2709,7 +2705,7 @@ mod tests {
 
         let existing_leaf = test_group.group.current_user_leaf_node().unwrap().clone();
 
-        let mut new_capabilities = CapabilitiesExt::default();
+        let mut new_capabilities = Capabilities::default();
         new_capabilities.proposals.push(42.into());
 
         let new_extension = TestExtension { foo: 10 };
@@ -3003,7 +2999,7 @@ mod tests {
         let mut extension_list = ExtensionList::new();
         extension_list
             .set_extension(RequiredCapabilitiesExt {
-                extensions: vec![LifetimeExt::IDENTIFIER],
+                extensions: vec![42],
                 proposals: vec![],
                 credentials: vec![],
             })
@@ -3022,7 +3018,7 @@ mod tests {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128;
 
-        let mut capabilities = CapabilitiesExt::default();
+        let mut capabilities = Capabilities::default();
         capabilities.extensions.push(42);
 
         let mut test_group = test_group_custom(
@@ -3132,7 +3128,7 @@ mod tests {
         let (leaf_node, leaf_secret) = LeafNode::generate(
             cipher_suite,
             group.signing_identity,
-            CapabilitiesExt::default(),
+            Capabilities::default(),
             ExtensionList::default(),
             &group.signing_key,
             lifetime(),

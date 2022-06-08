@@ -1,11 +1,12 @@
 use super::leaf_node::{LeafNode, LeafNodeSource};
+use super::{Lifetime, LifetimeError};
 use crate::client_config::CredentialValidator;
 use crate::credential::CredentialType;
 use crate::signing_identity::SigningIdentityError;
 use crate::{
     cipher_suite::CipherSuite,
     credential::CredentialError,
-    extension::{ExtensionError, ExtensionType, LifetimeExt, RequiredCapabilitiesExt},
+    extension::{ExtensionType, RequiredCapabilitiesExt},
     group::proposal::ProposalType,
     signer::{Signable, SignatureError},
     time::MlsTime,
@@ -32,7 +33,7 @@ impl<'a> ValidationContext<'a> {
 #[derive(Debug, Error)]
 pub enum LeafNodeValidationError {
     #[error(transparent)]
-    ExtensionError(#[from] ExtensionError),
+    LifetimeError(#[from] LifetimeError),
     #[error(transparent)]
     SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
@@ -44,7 +45,7 @@ pub enum LeafNodeValidationError {
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
     #[error("{0:?} is not within lifetime {1:?}")]
-    InvalidLifetime(MlsTime, LifetimeExt),
+    InvalidLifetime(MlsTime, Lifetime),
     #[error("required extension not found")]
     RequiredExtensionNotFound(ExtensionType),
     #[error("required proposal not found")]
@@ -217,11 +218,12 @@ mod tests {
 
     use super::*;
 
-    use crate::extension::{CapabilitiesExt, ExtensionList, ExternalKeyIdExt, MlsExtension};
+    use crate::extension::{ApplicationIdExt, ExtensionList, MlsExtension};
     use crate::signing_identity::test_utils::get_test_signing_identity;
     use crate::tree_kem::leaf_node::test_utils::*;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureCredentialValidator;
     use crate::tree_kem::parent_hash::ParentHash;
+    use crate::tree_kem::Capabilities;
 
     use crate::client_config::PassthroughCredentialValidator;
     #[cfg(target_arch = "wasm32")]
@@ -385,19 +387,19 @@ mod tests {
     }
 
     #[test]
-    fn test_capabilities_extension_mismatch() {
+    fn test_capabilities_mismatch() {
         let (signing_identity, secret) =
             get_test_signing_identity(TEST_CIPHER_SUITE, b"foo".to_vec());
 
         let mut extensions = ExtensionList::new();
 
         extensions
-            .set_extension(ExternalKeyIdExt {
+            .set_extension(ApplicationIdExt {
                 identifier: b"foo".to_vec(),
             })
             .unwrap();
 
-        let capabilities = CapabilitiesExt::default();
+        let capabilities = Capabilities::default();
 
         let (leaf_node, _) = get_test_node(
             TEST_CIPHER_SUITE,
@@ -414,7 +416,7 @@ mod tests {
         );
 
         assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
-            Err(LeafNodeValidationError::ExtensionNotInCapabilities(ext)) if ext == ExternalKeyIdExt::IDENTIFIER);
+            Err(LeafNodeValidationError::ExtensionNotInCapabilities(ext)) if ext == ApplicationIdExt::IDENTIFIER);
     }
 
     #[test]

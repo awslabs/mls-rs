@@ -4,13 +4,14 @@ use crate::{
     credential::{
         Credential, CredentialError, CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509,
     },
-    extension::{CapabilitiesExt, ExtensionList, ExtensionType, LifetimeExt},
+    extension::{ExtensionList, ExtensionType},
     group::{proposal::Proposal, CommitOptions, ControlEncryptionMode, GroupConfig},
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
     keychain::{InMemoryKeychain, Keychain},
     psk::{ExternalPskId, Psk},
     signing_identity::SigningIdentity,
     time::MlsTime,
+    tree_kem::{Capabilities, Lifetime},
     EpochRepository, InMemoryEpochRepository, ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
@@ -74,10 +75,10 @@ pub trait ClientConfig {
     fn credential_validator(&self) -> Self::CredentialValidator;
     fn key_package_extensions(&self) -> ExtensionList;
     fn leaf_node_extensions(&self) -> ExtensionList;
-    fn lifetime(&self) -> LifetimeExt;
+    fn lifetime(&self) -> Lifetime;
 
-    fn capabilities(&self) -> CapabilitiesExt {
-        CapabilitiesExt {
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
             protocol_versions: self.supported_protocol_versions(),
             cipher_suites: self
                 .supported_cipher_suites()
@@ -439,9 +440,9 @@ impl ClientConfig for InMemoryClientConfig {
         self.leaf_node_extensions.clone()
     }
 
-    fn lifetime(&self) -> LifetimeExt {
+    fn lifetime(&self) -> Lifetime {
         let now_timestamp = MlsTime::now().seconds_since_epoch().unwrap();
-        LifetimeExt {
+        Lifetime {
             not_before: now_timestamp,
             not_after: now_timestamp + self.lifetime_duration,
         }

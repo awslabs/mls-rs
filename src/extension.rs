@@ -1,10 +1,7 @@
-use crate::cipher_suite::{CipherSuite, MaybeCipherSuite};
-use crate::credential::{CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509};
+use crate::credential::CredentialType;
 use crate::group::proposal::ProposalType;
-use crate::time::{MlsTime, SystemTimeError};
 use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
-use crate::ProtocolVersion;
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use indexmap::IndexMap;
 use std::io::{Read, Write};
@@ -18,20 +15,14 @@ pub enum ExtensionError {
     UnexpectedExtensionType(ExtensionType, ExtensionType),
     #[error(transparent)]
     TlsCodecError(#[from] tls_codec::Error),
-    #[error(transparent)]
-    SystemTimeError(#[from] SystemTimeError),
-    #[error("invalid lifetime, above max u64")]
-    TimeOverflow,
 }
 
 pub type ExtensionType = u16;
 
-const CAPABILITIES_EXT_ID: ExtensionType = 1;
-const LIFETIME_EXT_ID: ExtensionType = 2;
-const KEY_ID_EXT_ID: ExtensionType = 3;
-const RATCHET_TREE_EXT_ID: ExtensionType = 5;
-const REQUIRED_CAPABILITIES_EXT_ID: ExtensionType = 6;
-const EXTERNAL_PUB_EXT_ID: ExtensionType = 7;
+const APPLICATION_ID_EXT_ID: ExtensionType = 1;
+const RATCHET_TREE_EXT_ID: ExtensionType = 2;
+const REQUIRED_CAPABILITIES_EXT_ID: ExtensionType = 3;
+const EXTERNAL_PUB_EXT_ID: ExtensionType = 4;
 
 pub trait MlsExtension: Sized + Serialize + Deserialize {
     const IDENTIFIER: ExtensionType;
@@ -56,100 +47,13 @@ pub trait MlsExtension: Sized + Serialize + Deserialize {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct ExternalKeyIdExt {
+pub struct ApplicationIdExt {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub identifier: Vec<u8>,
 }
 
-impl MlsExtension for ExternalKeyIdExt {
-    const IDENTIFIER: ExtensionType = KEY_ID_EXT_ID;
-}
-
-#[derive(
-    Clone,
-    PartialEq,
-    Debug,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-)]
-pub struct CapabilitiesExt {
-    #[tls_codec(with = "crate::tls::DefVec")]
-    pub protocol_versions: Vec<ProtocolVersion>,
-    #[tls_codec(with = "crate::tls::DefVec")]
-    pub cipher_suites: Vec<MaybeCipherSuite>,
-    #[tls_codec(with = "crate::tls::DefVec")]
-    pub extensions: Vec<ExtensionType>,
-    #[tls_codec(with = "crate::tls::DefVec")]
-    pub proposals: Vec<ProposalType>,
-    #[tls_codec(with = "crate::tls::DefVec")]
-    pub credentials: Vec<CredentialType>,
-}
-
-impl Default for CapabilitiesExt {
-    fn default() -> Self {
-        Self {
-            protocol_versions: vec![ProtocolVersion::Mls10],
-            cipher_suites: CipherSuite::all().map(MaybeCipherSuite::from).collect(),
-            extensions: Default::default(),
-            proposals: Default::default(),
-            credentials: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
-        }
-    }
-}
-
-impl MlsExtension for CapabilitiesExt {
-    const IDENTIFIER: ExtensionType = CAPABILITIES_EXT_ID;
-}
-
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-    Default,
-)]
-pub struct LifetimeExt {
-    pub not_before: u64,
-    pub not_after: u64,
-}
-
-impl LifetimeExt {
-    pub fn seconds(s: u64) -> Result<Self, ExtensionError> {
-        let not_before = MlsTime::now().seconds_since_epoch()?;
-
-        let not_after = not_before
-            .checked_add(s)
-            .ok_or(ExtensionError::TimeOverflow)?;
-
-        Ok(LifetimeExt {
-            not_before,
-            not_after,
-        })
-    }
-
-    pub fn days(d: u32) -> Result<Self, ExtensionError> {
-        Self::seconds((d * 86400) as u64)
-    }
-
-    pub fn years(y: u8) -> Result<Self, ExtensionError> {
-        Self::days(365 * y as u32)
-    }
-
-    pub fn within_lifetime(&self, time: MlsTime) -> Result<bool, ExtensionError> {
-        let since_epoch = time.seconds_since_epoch()?;
-        Ok(since_epoch >= self.not_before && since_epoch <= self.not_after)
-    }
-}
-
-impl MlsExtension for LifetimeExt {
-    const IDENTIFIER: ExtensionType = LIFETIME_EXT_ID;
+impl MlsExtension for ApplicationIdExt {
+    const IDENTIFIER: ExtensionType = APPLICATION_ID_EXT_ID;
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -326,6 +230,8 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use crate::credential::CREDENTIAL_TYPE_BASIC;
+
     use super::*;
     use assert_matches::assert_matches;
     use ferriscrypt::rand::SecureRng;
@@ -336,66 +242,15 @@ mod tests {
     #[test]
     fn test_key_id_extension() {
         let test_id = vec![0u8; 32];
-        let test_extension = ExternalKeyIdExt {
+        let test_extension = ApplicationIdExt {
             identifier: test_id.clone(),
         };
 
         let as_extension = test_extension.to_extension().unwrap();
-        assert_eq!(as_extension.extension_type, ExternalKeyIdExt::IDENTIFIER);
+        assert_eq!(as_extension.extension_type, ApplicationIdExt::IDENTIFIER);
 
-        let restored = ExternalKeyIdExt::from_extension(as_extension).unwrap();
+        let restored = ApplicationIdExt::from_extension(as_extension).unwrap();
         assert_eq!(restored.identifier, test_id);
-    }
-
-    #[test]
-    fn test_capabilities() {
-        let test_protocol_versions = vec![ProtocolVersion::Mls10];
-
-        let test_ciphersuites = vec![CipherSuite::P256Aes128, CipherSuite::Curve25519Aes128]
-            .into_iter()
-            .map(MaybeCipherSuite::from)
-            .collect::<Vec<MaybeCipherSuite>>();
-
-        let test_extensions = vec![LifetimeExt::IDENTIFIER, ExternalKeyIdExt::IDENTIFIER];
-
-        let test_credential_types = vec![CREDENTIAL_TYPE_X509];
-
-        let test_extension = CapabilitiesExt {
-            protocol_versions: test_protocol_versions.clone(),
-            cipher_suites: test_ciphersuites.clone(),
-            extensions: test_extensions.clone(),
-            proposals: vec![],
-            credentials: test_credential_types.clone(),
-        };
-
-        let as_extension = test_extension.to_extension().expect("serialization error");
-        assert_eq!(as_extension.extension_type, CapabilitiesExt::IDENTIFIER);
-
-        let restored =
-            CapabilitiesExt::from_extension(as_extension).expect("deserialization error");
-        assert_eq!(restored.protocol_versions, test_protocol_versions);
-        assert_eq!(restored.cipher_suites, test_ciphersuites);
-        assert_eq!(restored.extensions, test_extensions);
-        assert_eq!(restored.credentials, test_credential_types);
-    }
-
-    #[test]
-    fn test_lifetime() {
-        let lifetime = LifetimeExt::seconds(1).unwrap();
-        assert_eq!(lifetime.not_after - 1, lifetime.not_before);
-
-        let as_extension = lifetime.to_extension().expect("to extension error");
-        assert_eq!(as_extension.extension_type, LifetimeExt::IDENTIFIER);
-
-        let restored = LifetimeExt::from_extension(as_extension).expect("from extension error");
-        assert_eq!(lifetime.not_after, restored.not_after);
-        assert_eq!(lifetime.not_before, restored.not_before);
-    }
-
-    #[test]
-    fn test_lifetime_overflow() {
-        let res = LifetimeExt::seconds(u64::MAX);
-        assert_matches!(res, Err(ExtensionError::TimeOverflow))
     }
 
     #[test]
@@ -433,79 +288,102 @@ mod tests {
     fn test_bad_deserialize_data() {
         let bad_data = vec![255u8; 32];
         let test_extension = Extension {
-            extension_type: CAPABILITIES_EXT_ID,
+            extension_type: APPLICATION_ID_EXT_ID,
             extension_data: bad_data,
         };
-        let capabilities: Result<CapabilitiesExt, ExtensionError> =
-            CapabilitiesExt::from_extension(test_extension);
+
+        let capabilities: Result<ApplicationIdExt, ExtensionError> =
+            ApplicationIdExt::from_extension(test_extension);
+
         assert!(capabilities.is_err());
     }
 
     #[test]
     fn test_bad_deserialize_type() {
         let test_extension = Extension {
-            extension_type: KEY_ID_EXT_ID,
+            extension_type: RatchetTreeExt::IDENTIFIER,
             extension_data: vec![0u8; 32],
         };
-        assert!(CapabilitiesExt::from_extension(test_extension).is_err());
+        assert!(ApplicationIdExt::from_extension(test_extension).is_err());
     }
 
     #[test]
     fn test_extension_list_get_set() {
         let mut list = ExtensionList::new();
 
-        let lifetime = LifetimeExt::seconds(42).unwrap();
-        let key_id = ExternalKeyIdExt {
+        let required_capabilities = RequiredCapabilitiesExt::default();
+
+        let key_id = ApplicationIdExt {
             identifier: SecureRng::gen(32).unwrap(),
         };
 
         // Add the extensions to the list
-        list.set_extension(lifetime.clone()).unwrap();
+        list.set_extension(required_capabilities.clone()).unwrap();
         list.set_extension(key_id.clone()).unwrap();
 
         assert_eq!(list.len(), 2);
-        assert_eq!(list.get_extension::<LifetimeExt>().unwrap(), Some(lifetime));
+
         assert_eq!(
-            list.get_extension::<ExternalKeyIdExt>().unwrap(),
-            Some(key_id.clone())
+            list.get_extension::<RequiredCapabilitiesExt>().unwrap(),
+            Some(required_capabilities)
         );
-        assert_eq!(list.get_extension::<CapabilitiesExt>().unwrap(), None);
 
-        // Overwrite the extension in the list
-        let lifetime = LifetimeExt::seconds(1).unwrap();
-
-        list.set_extension(lifetime.clone()).unwrap();
-        assert_eq!(list.len(), 2);
-        assert_eq!(list.get_extension::<LifetimeExt>().unwrap(), Some(lifetime));
         assert_eq!(
-            list.get_extension::<ExternalKeyIdExt>().unwrap(),
+            list.get_extension::<ApplicationIdExt>().unwrap(),
             Some(key_id)
         );
-        assert_eq!(list.get_extension::<CapabilitiesExt>().unwrap(), None);
+
+        assert_eq!(list.get_extension::<RatchetTreeExt>().unwrap(), None);
+
+        // Overwrite the extension in the list
+        let key_id = ApplicationIdExt {
+            identifier: SecureRng::gen(32).unwrap(),
+        };
+
+        list.set_extension(key_id.clone()).unwrap();
+        assert_eq!(list.len(), 2);
+
+        assert_eq!(
+            list.get_extension::<ApplicationIdExt>().unwrap(),
+            Some(key_id.clone())
+        );
+
+        assert_eq!(
+            list.get_extension::<ApplicationIdExt>().unwrap(),
+            Some(key_id)
+        );
+
+        assert_eq!(list.get_extension::<RatchetTreeExt>().unwrap(), None);
     }
 
     #[test]
     fn test_extension_list_has_ext() {
         let mut list = ExtensionList::new();
 
-        let lifetime = LifetimeExt::seconds(42).unwrap();
+        let lifetime = ApplicationIdExt {
+            identifier: SecureRng::gen(32).unwrap(),
+        };
+
         list.set_extension(lifetime).unwrap();
 
-        assert!(list.has_extension(LifetimeExt::IDENTIFIER));
+        assert!(list.has_extension(ApplicationIdExt::IDENTIFIER));
         assert!(!list.has_extension(42));
     }
 
     #[test]
     fn extension_list_serialization_roundtrips() {
         let mut extensions = ExtensionList::default();
+
         extensions
-            .set_extension(LifetimeExt::seconds(42).unwrap())
+            .set_extension(RequiredCapabilitiesExt::default())
             .unwrap();
+
         extensions
-            .set_extension(ExternalKeyIdExt {
+            .set_extension(ApplicationIdExt {
                 identifier: SecureRng::gen(32).unwrap(),
             })
             .unwrap();
+
         assert_eq!(
             crate::tls::test_utils::ser_deser(&extensions).unwrap(),
             extensions
@@ -515,14 +393,16 @@ mod tests {
     #[test]
     fn extension_list_is_serialized_like_a_sequence_of_extensions() {
         let extension_vec = vec![
-            LifetimeExt::seconds(42).unwrap().to_extension().unwrap(),
-            ExternalKeyIdExt {
+            RequiredCapabilitiesExt::default().to_extension().unwrap(),
+            ApplicationIdExt {
                 identifier: SecureRng::gen(32).unwrap(),
             }
             .to_extension()
             .unwrap(),
         ];
+
         let extension_list = ExtensionList::from(extension_vec.clone());
+
         assert_eq!(
             tls_codec::TlsSliceU32(&extension_vec)
                 .tls_serialize_detached()
@@ -534,12 +414,14 @@ mod tests {
     #[test]
     fn deserializing_extension_list_fails_on_duplicate_extension() {
         let extensions = vec![
-            LifetimeExt::seconds(42).unwrap().to_extension().unwrap(),
-            LifetimeExt::seconds(43).unwrap().to_extension().unwrap(),
+            RequiredCapabilitiesExt::default().to_extension().unwrap(),
+            RequiredCapabilitiesExt::default().to_extension().unwrap(),
         ];
+
         let serialized_extensions = tls_codec::TlsSliceU32(&extensions)
             .tls_serialize_detached()
             .unwrap();
+
         assert_matches!(
             ExtensionList::tls_deserialize(&mut &*serialized_extensions),
             Err(tls_codec::Error::DecodingError(_))

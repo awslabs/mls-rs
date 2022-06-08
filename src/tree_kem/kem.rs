@@ -2,18 +2,18 @@ use std::collections::HashMap;
 
 use ferriscrypt::hpke::HpkeError;
 
-use crate::extension::{CapabilitiesExt, ExtensionList};
+use crate::extension::ExtensionList;
 use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
 
 use super::node::Node;
-use super::EncryptedResolution;
 use super::{
     node::{LeafIndex, NodeIndex},
     path_secret::{PathSecret, PathSecretGeneration, PathSecretGenerator},
     RatchetTreeError, SecretPath, TreeKemPrivate, TreeKemPublic, TreeSecrets, UpdatePath,
     UpdatePathGeneration, UpdatePathNode, ValidatedUpdatePath,
 };
+use super::{Capabilities, EncryptedResolution};
 
 use crate::cipher_suite::HpkeCiphertext;
 
@@ -37,7 +37,7 @@ impl<'a> TreeKem<'a> {
         context: &[u8],
         excluding: &[LeafIndex],
         signer: &S,
-        update_capabilities: Option<CapabilitiesExt>,
+        update_capabilities: Option<Capabilities>,
         update_extensions: Option<ExtensionList>,
     ) -> Result<UpdatePathGeneration, RatchetTreeError> {
         let secret_generator = PathSecretGenerator::new(self.tree_kem_public.cipher_suite);
@@ -337,10 +337,10 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
-        extension::{test_utils::TestExtension, CapabilitiesExt, ExtensionList},
+        extension::{test_utils::TestExtension, ExtensionList},
         tree_kem::{
-            leaf_node::test_utils::get_basic_test_node_sig_key, node::LeafIndex, TreeKemPrivate,
-            TreeKemPublic, UpdatePath, ValidatedUpdatePath,
+            leaf_node::test_utils::get_basic_test_node_sig_key, node::LeafIndex, Capabilities,
+            TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
         },
     };
 
@@ -353,7 +353,7 @@ mod tests {
         tree: &TreeKemPublic,
         update_path: &UpdatePath,
         index: LeafIndex,
-        capabilities: Option<CapabilitiesExt>,
+        capabilities: Option<Capabilities>,
         extensions: Option<ExtensionList>,
     ) {
         // Make sure the update path is based on the direct path of the sender
@@ -418,7 +418,7 @@ mod tests {
     fn encap_decap(
         cipher_suite: CipherSuite,
         size: usize,
-        capabilities: Option<CapabilitiesExt>,
+        capabilities: Option<Capabilities>,
         extensions: Option<ExtensionList>,
     ) {
         // Generate signing keys and key package generations, and private keys for multiple
@@ -515,7 +515,7 @@ mod tests {
     #[test]
     fn test_encap_capabilities() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
-        let mut capabilities = CapabilitiesExt::default();
+        let mut capabilities = Capabilities::default();
         capabilities.extensions.push(42);
 
         encap_decap(cipher_suite, 10, Some(capabilities.clone()), None);
@@ -533,7 +533,7 @@ mod tests {
     #[test]
     fn test_encap_capabilities_extensions() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
-        let mut capabilities = CapabilitiesExt::default();
+        let mut capabilities = Capabilities::default();
         capabilities.extensions.push(42);
 
         let mut extensions = ExtensionList::default();

@@ -21,6 +21,8 @@ use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageV
 use crate::tree_kem::parent_hash::ParentHashError;
 use crate::tree_kem::path_secret::PathSecretError;
 
+mod capabilities;
+mod lifetime;
 pub(crate) mod math;
 pub mod node;
 pub mod parent_hash;
@@ -30,6 +32,8 @@ mod tree_hash;
 pub mod tree_validator;
 pub mod update_path;
 
+pub use capabilities::*;
+pub use lifetime::*;
 pub use private::*;
 pub use update_path::*;
 

@@ -3,10 +3,11 @@ use crate::{
     client_config::{CredentialValidator, PassthroughCredentialValidator},
     credential::{CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
     epoch::{InMemoryPublicEpochRepository, PublicEpochRepository},
-    extension::{CapabilitiesExt, ExtensionType},
+    extension::ExtensionType,
     group::ExternalGroupConfig,
     keychain::{InMemoryKeychain, Keychain},
     signing_identity::SigningIdentity,
+    tree_kem::Capabilities,
     ExternalClient, ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
@@ -31,8 +32,8 @@ pub trait ExternalClientConfig {
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
     fn signatures_are_checked(&self) -> bool;
 
-    fn capabilities(&self) -> CapabilitiesExt {
-        CapabilitiesExt {
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
             protocol_versions: self.supported_protocol_versions(),
             cipher_suites: self
                 .supported_cipher_suites()
