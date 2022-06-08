@@ -53,7 +53,7 @@ pub struct KeyPackage {
 pub struct KeyPackageRef(HashReference);
 
 impl Deref for KeyPackageRef {
-    type Target = [u8; 16];
+    type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -66,8 +66,8 @@ impl ToString for KeyPackageRef {
     }
 }
 
-impl From<[u8; 16]> for KeyPackageRef {
-    fn from(v: [u8; 16]) -> Self {
+impl From<Vec<u8>> for KeyPackageRef {
+    fn from(v: Vec<u8>) -> Self {
         Self(HashReference::from(v))
     }
 }
@@ -95,7 +95,7 @@ impl KeyPackage {
     }
 
     pub fn to_reference(&self) -> Result<KeyPackageRef, KeyPackageError> {
-        Ok(KeyPackageRef(HashReference::from_value(
+        Ok(KeyPackageRef(HashReference::compute(
             &self.tls_serialize_detached()?,
             b"MLS 1.0 KeyPackage Reference",
             self.cipher_suite,
@@ -239,10 +239,7 @@ mod tests {
             let key_package = KeyPackage::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
             let key_package_ref = key_package.to_reference().unwrap();
 
-            let expected_out = KeyPackageRef(HashReference::from(
-                <[u8; 16]>::try_from(one_case.output).unwrap(),
-            ));
-
+            let expected_out = KeyPackageRef::from(one_case.output);
             assert_eq!(expected_out, key_package_ref);
         }
     }

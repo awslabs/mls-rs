@@ -1,32 +1,37 @@
 [
   {
     "cipher_suite": 1,
-    "input": "0101010101010101",
-    "output": "84b7fb9f6092ce5d657a9a96f847917c"
+    "input": "7465737420696e707574",
+    "output": "36e4f61fbcd9770369abb75eea315983cf60958e2921725b39d90b077c4c08fe"
   },
   {
     "cipher_suite": 2,
-    "input": "0202020202020202",
-    "output": "65633d5b458ef1719ba346a00ae8e5dd"
+    "input": "7465737420696e707574",
+    "output": "36e4f61fbcd9770369abb75eea315983cf60958e2921725b39d90b077c4c08fe"
   },
   {
     "cipher_suite": 3,
-    "input": "0303030303030303",
-    "output": "5db592e404b90ff81117d802f5bb3670"
+    "input": "7465737420696e707574",
+    "output": "36e4f61fbcd9770369abb75eea315983cf60958e2921725b39d90b077c4c08fe"
   },
   {
     "cipher_suite": 4,
-    "input": "0404040404040404",
-    "output": "6cfb8dd33f1a4818efdf463d0891ec14"
+    "input": "7465737420696e707574",
+    "output": "59fa7ff7e684508324d32af53f0a979a193793b0e150696dc8c1bdfe33d80243929393ed2975a465c6e073a9c6507daa2bd17b129f76c995cbf1afd710072166"
   },
   {
     "cipher_suite": 5,
-    "input": "0505050505050505",
-    "output": "830f58393f54dd766645364f62e81bd8"
+    "input": "7465737420696e707574",
+    "output": "59fa7ff7e684508324d32af53f0a979a193793b0e150696dc8c1bdfe33d80243929393ed2975a465c6e073a9c6507daa2bd17b129f76c995cbf1afd710072166"
   },
   {
     "cipher_suite": 6,
-    "input": "0606060606060606",
-    "output": "e6394fd33ecbecd0842e1763bd6158f8"
+    "input": "7465737420696e707574",
+    "output": "59fa7ff7e684508324d32af53f0a979a193793b0e150696dc8c1bdfe33d80243929393ed2975a465c6e073a9c6507daa2bd17b129f76c995cbf1afd710072166"
+  },
+  {
+    "cipher_suite": 7,
+    "input": "7465737420696e707574",
+    "output": "bf0071ebb5a6b5b45c1e07f892c3e542ed77cd78b74b38876382708e79cdfdb588164877c2f34bef6eb56561a3cac168"
   }
 ]

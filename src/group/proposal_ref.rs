@@ -40,7 +40,7 @@ impl ProposalRef {
             content: &plaintext.content,
             auth: &plaintext.auth,
         };
-        Ok(ProposalRef(HashReference::from_value(
+        Ok(ProposalRef(HashReference::compute(
             &message_content_auth.tls_serialize_detached()?,
             b"MLS 1.0 Proposal Reference",
             cipher_suite,
@@ -196,9 +196,7 @@ mod test {
             let proposal_ref =
                 ProposalRef::from_plaintext(cipher_suite.unwrap(), &proposal, false).unwrap();
 
-            let expected_out = ProposalRef(HashReference::from(
-                <[u8; 16]>::try_from(one_case.output).unwrap(),
-            ));
+            let expected_out = ProposalRef(HashReference::from(one_case.output));
 
             assert_eq!(expected_out, proposal_ref);
         }

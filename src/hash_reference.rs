@@ -4,8 +4,16 @@ use std::{
 };
 
 use crate::cipher_suite::CipherSuite;
-use ferriscrypt::kdf::{hkdf::Hkdf, KdfError};
+use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+
+#[derive(Debug, TlsSerialize, TlsSize)]
+struct RefHashInput<'a> {
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    pub label: &'a [u8],
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    pub value: &'a [u8],
+}
 
 #[derive(
     PartialEq,
@@ -20,7 +28,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     serde::Deserialize,
     serde::Serialize,
 )]
-pub struct HashReference([u8; 16]);
+pub struct HashReference(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl Debug for HashReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -31,7 +39,7 @@ impl Debug for HashReference {
 }
 
 impl Deref for HashReference {
-    type Target = [u8; 16];
+    type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -44,68 +52,76 @@ impl AsRef<[u8]> for HashReference {
     }
 }
 
-impl From<[u8; 16]> for HashReference {
-    fn from(val: [u8; 16]) -> Self {
+impl From<Vec<u8>> for HashReference {
+    fn from(val: Vec<u8>) -> Self {
         Self(val)
     }
 }
 
 impl HashReference {
-    pub fn from_value(
+    pub fn compute(
         value: &[u8],
         label: &[u8],
         cipher_suite: CipherSuite,
-    ) -> Result<HashReference, KdfError> {
-        let kdf = Hkdf::new(cipher_suite.hash_function());
+    ) -> Result<HashReference, tls_codec::Error> {
+        let input = RefHashInput { label, value };
 
-        let extracted = kdf.extract(value, &[])?;
-
-        let mut res = [0u8; 16];
-        kdf.expand(&extracted, label, &mut res)?;
-
-        Ok(HashReference(res))
+        input
+            .tls_serialize_detached()
+            .map(|bytes| HashReference(cipher_suite.hash_function().digest(&bytes)))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::Deserialize;
-    use thiserror::Error;
+    use serde::{Deserialize, Serialize};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Debug, Deserialize, Serialize)]
     struct TestCase {
         cipher_suite: u16,
-        #[serde(deserialize_with = "hex::serde::deserialize")]
+        #[serde(with = "hex::serde")]
         input: Vec<u8>,
-        #[serde(deserialize_with = "hex::serde::deserialize")]
+        #[serde(with = "hex::serde")]
         output: Vec<u8>,
     }
 
-    #[derive(Debug, Error)]
-    enum TestError {
-        #[error(transparent)]
-        KdfError(#[from] KdfError),
-        #[error(transparent)]
-        TlsCodecError(#[from] tls_codec::Error),
+    const TEST_LABEL: &[u8] = b"test label";
+
+    fn generate_hash_reference_test_cases() -> Vec<TestCase> {
+        CipherSuite::all()
+            .map(|cipher_suite| {
+                let input = b"test input";
+                let output = HashReference::compute(input, TEST_LABEL, cipher_suite).unwrap();
+
+                TestCase {
+                    cipher_suite: cipher_suite as u16,
+                    input: input.to_vec(),
+                    output: output.to_vec(),
+                }
+            })
+            .collect()
+    }
+
+    fn load_test_cases() -> Vec<TestCase> {
+        load_test_cases!(hash_reference, generate_hash_reference_test_cases)
     }
 
     #[test]
     fn test_hash_reference_construction() {
-        let test_cases: Vec<TestCase> =
-            serde_json::from_slice(include_bytes!("../test_data/hash_reference.json")).unwrap();
+        let test_cases = load_test_cases();
 
         for test_case in test_cases {
             let cipher_suite = CipherSuite::from_raw(test_case.cipher_suite);
 
             if let Some(cipher_suite) = cipher_suite {
                 let output =
-                    HashReference::from_value(&test_case.input, b"MLS 1.0 ref", cipher_suite)
-                        .unwrap();
+                    HashReference::compute(&test_case.input, TEST_LABEL, cipher_suite).unwrap();
 
+                assert_eq!(output.len(), cipher_suite.hash_function().digest_size());
                 assert_eq!(output.as_ref(), &test_case.output);
             } else {
                 println!("Skipping test case for unsupported cipher suite");
