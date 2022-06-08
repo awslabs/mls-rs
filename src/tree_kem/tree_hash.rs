@@ -7,13 +7,13 @@ use std::ops::Deref;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsSerialize, TlsSize};
 
-#[derive(TlsSerialize, TlsSize)]
+#[derive(Debug, TlsSerialize, TlsSize)]
 struct LeafNodeHashInput<'a> {
     node_index: u32,
     leaf_node: Option<&'a LeafNode>,
 }
 
-#[derive(TlsSerialize, TlsSize)]
+#[derive(Debug, TlsSerialize, TlsSize)]
 struct ParentNodeTreeHashInput<'a> {
     node_index: u32,
     parent_node: Option<&'a Parent>,
@@ -21,6 +21,14 @@ struct ParentNodeTreeHashInput<'a> {
     left_hash: &'a [u8],
     #[tls_codec(with = "crate::tls::ByteVec")]
     right_hash: &'a [u8],
+}
+
+#[derive(Debug, TlsSerialize, TlsSize)]
+#[repr(u8)]
+enum TreeHashInput<'a> {
+    #[tls_codec(discriminant = 1)]
+    Leaf(LeafNodeHashInput<'a>),
+    Parent(ParentNodeTreeHashInput<'a>),
 }
 
 trait TreeHashable {
@@ -87,14 +95,14 @@ impl TreeHashable for (NodeIndex, Option<&LeafNode>) {
         _full_size: u32,
         filtered_unmerged: &[LeafIndex],
     ) -> Result<Vec<u8>, RatchetTreeError> {
-        let input = LeafNodeHashInput {
+        let input = TreeHashInput::Leaf(LeafNodeHashInput {
             node_index: self.0 as u32,
             leaf_node: if filtered_unmerged.contains(&LeafIndex((self.0 as u32) >> 1)) {
                 None
             } else {
                 self.1
             },
-        };
+        });
 
         Ok(tree
             .cipher_suite
@@ -130,12 +138,12 @@ impl TreeHashable for (NodeIndex, Option<&Parent>) {
                 .retain(|unmerged_index| !filtered_unmerged.contains(unmerged_index));
         }
 
-        let input = ParentNodeTreeHashInput {
+        let input = TreeHashInput::Parent(ParentNodeTreeHashInput {
             node_index,
             parent_node: parent_node.as_ref(),
             left_hash: &left_hash,
             right_hash: &right_hash,
-        };
+        });
 
         Ok(tree
             .cipher_suite
