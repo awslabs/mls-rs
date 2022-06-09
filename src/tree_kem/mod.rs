@@ -425,15 +425,18 @@ impl TreeKemPublic {
         index: LeafIndex,
     ) -> Result<Vec<Option<HpkePublicKey>>, RatchetTreeError> {
         let indexes = self.nodes.direct_path(index)?;
-        Ok(indexes
+
+        indexes
             .iter()
             .map(|&i| {
-                self.nodes[i as usize]
+                Ok(self
+                    .nodes
+                    .borrow_node(i)?
                     .as_ref()
                     .map(|n| n.public_key())
-                    .cloned()
+                    .cloned())
             })
-            .collect())
+            .collect::<Result<Vec<_>, RatchetTreeError>>()
     }
 }
 
@@ -787,7 +790,11 @@ mod tests {
         assert_eq!(tree.total_leaf_count(), original_leaf_count);
 
         // The location of key_packages[1] should now be blank
-        let removed_location = tree.nodes.borrow_node(LeafIndex(2).into()).unwrap();
+        let removed_location = tree
+            .nodes
+            .get(NodeIndex::from(LeafIndex(2)) as usize)
+            .unwrap();
+
         assert_eq!(removed_location, &None);
     }
 

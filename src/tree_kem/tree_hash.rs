@@ -33,22 +33,20 @@ enum TreeHashInput<'a> {
 
 trait TreeHashable {
     fn get_hash(&self, tree: &TreeKemPublic) -> Result<Vec<u8>, RatchetTreeError> {
-        self.get_full_tree_hash(tree, tree.total_leaf_count(), &[])
+        self.get_tree_hash(tree, &[])
     }
 
-    fn get_full_tree_hash(
+    fn get_tree_hash(
         &self,
         tree: &TreeKemPublic,
-        full_size: u32,
         filtered_unmerged: &[LeafIndex],
     ) -> Result<Vec<u8>, RatchetTreeError>;
 }
 
 impl TreeHashable for (NodeIndex, &Option<Node>) {
-    fn get_full_tree_hash(
+    fn get_tree_hash(
         &self,
         tree: &TreeKemPublic,
-        full_size: u32,
         filtered_unmerged: &[LeafIndex],
     ) -> Result<Vec<u8>, RatchetTreeError> {
         let (node_index, node) = *self;
@@ -56,32 +54,17 @@ impl TreeHashable for (NodeIndex, &Option<Node>) {
         match node {
             None => {
                 if tree_math::level(node_index) == 0 {
-                    (node_index, None::<&LeafNode>).get_full_tree_hash(
-                        tree,
-                        full_size,
-                        filtered_unmerged,
-                    )
+                    (node_index, None::<&LeafNode>).get_tree_hash(tree, filtered_unmerged)
                 } else {
-                    (node_index, None::<&Parent>).get_full_tree_hash(
-                        tree,
-                        full_size,
-                        filtered_unmerged,
-                    )
+                    (node_index, None::<&Parent>).get_tree_hash(tree, filtered_unmerged)
                 }
             }
             Some(_) => {
                 if tree_math::level(node_index) == 0 {
-                    (node_index, Some(node.as_leaf()?.deref())).get_full_tree_hash(
-                        tree,
-                        full_size,
-                        filtered_unmerged,
-                    )
+                    (node_index, Some(node.as_leaf()?.deref()))
+                        .get_tree_hash(tree, filtered_unmerged)
                 } else {
-                    (node_index, Some(node.as_parent()?)).get_full_tree_hash(
-                        tree,
-                        full_size,
-                        filtered_unmerged,
-                    )
+                    (node_index, Some(node.as_parent()?)).get_tree_hash(tree, filtered_unmerged)
                 }
             }
         }
@@ -89,10 +72,9 @@ impl TreeHashable for (NodeIndex, &Option<Node>) {
 }
 
 impl TreeHashable for (NodeIndex, Option<&LeafNode>) {
-    fn get_full_tree_hash(
+    fn get_tree_hash(
         &self,
         tree: &TreeKemPublic,
-        _full_size: u32,
         filtered_unmerged: &[LeafIndex],
     ) -> Result<Vec<u8>, RatchetTreeError> {
         let input = TreeHashInput::Leaf(LeafNodeHashInput {
@@ -112,23 +94,20 @@ impl TreeHashable for (NodeIndex, Option<&LeafNode>) {
 }
 
 impl TreeHashable for (NodeIndex, Option<&Parent>) {
-    fn get_full_tree_hash(
+    fn get_tree_hash(
         &self,
         tree: &TreeKemPublic,
-        full_size: u32,
         filtered_unmerged: &[LeafIndex],
     ) -> Result<Vec<u8>, RatchetTreeError> {
         let (node_index, parent_node) = *self;
 
         let left = tree_math::left(node_index)?;
-        let right = tree_math::right(self.0, full_size)?;
+        let right = tree_math::right(node_index)?;
 
         let left_node = tree.nodes.get(left as usize).unwrap_or(&None);
         let right_node = tree.nodes.get(right as usize).unwrap_or(&None);
-        let left_hash = (left, left_node).get_full_tree_hash(tree, full_size, filtered_unmerged)?;
-
-        let right_hash =
-            (right, right_node).get_full_tree_hash(tree, full_size, filtered_unmerged)?;
+        let left_hash = (left, left_node).get_tree_hash(tree, filtered_unmerged)?;
+        let right_hash = (right, right_node).get_tree_hash(tree, filtered_unmerged)?;
 
         let mut parent_node = parent_node.cloned();
 
@@ -155,21 +134,16 @@ impl TreeHashable for (NodeIndex, Option<&Parent>) {
 impl TreeKemPublic {
     pub fn tree_hash(&self) -> Result<Vec<u8>, RatchetTreeError> {
         let root = tree_math::root(self.total_leaf_count());
-        (root, &self.nodes[root as usize]).get_hash(self)
+        (root, self.nodes.borrow_node(root)?).get_hash(self)
     }
 
-    pub(super) fn original_full_tree_hash(
+    pub(super) fn original_tree_hash(
         &self,
         index: NodeIndex,
         unmerged_leaves: &[LeafIndex],
     ) -> Result<Vec<u8>, RatchetTreeError> {
         let node = self.nodes.get(index as usize).unwrap_or(&None);
-
-        (index, node).get_full_tree_hash(
-            self,
-            self.total_leaf_count().next_power_of_two(),
-            unmerged_leaves,
-        )
+        (index, node).get_tree_hash(self, unmerged_leaves)
     }
 }
 

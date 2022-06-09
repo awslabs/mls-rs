@@ -120,7 +120,11 @@ impl TreeSecretsVec {
     }
 
     fn direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
-        index.direct_path((self.len() / 2 + 1) as u32)
+        index.direct_path(self.total_leaf_count())
+    }
+
+    fn total_leaf_count(&self) -> u32 {
+        ((self.len() / 2 + 1) as u32).next_power_of_two()
     }
 }
 
@@ -174,7 +178,7 @@ impl SecretTree {
 
         if let Some(secret) = self.known_secrets.get_secret(index) {
             let left_index = tree_math::left(index)?;
-            let right_index = tree_math::right(index, self.leaf_count)?;
+            let right_index = tree_math::right(index)?;
 
             let left_secret = TreeSecret::from(kdf.expand_with_label(
                 secret,
@@ -474,9 +478,9 @@ mod tests {
             println!("Running secret tree derivation for {:?}", one_cipher_suite);
 
             let test_secret = [0u8; 32].to_vec();
-            let mut test_tree = get_test_tree(one_cipher_suite, test_secret.clone(), 4);
+            let mut test_tree = get_test_tree(one_cipher_suite, test_secret.clone(), 16);
 
-            let mut secrets: Vec<SecretRatchets> = (0..4)
+            let mut secrets: Vec<SecretRatchets> = (0..16)
                 .into_iter()
                 .map(|i| test_tree.get_leaf_secret_ratchets(LeafIndex(i)).unwrap())
                 .collect();

@@ -109,7 +109,7 @@ impl TreeKemPublic {
         let node = self.nodes.borrow_as_parent(node_index)?;
 
         let original_sibling_tree_hash =
-            self.original_full_tree_hash(co_path_child_index, &node.unmerged_leaves)?;
+            self.original_tree_hash(co_path_child_index, &node.unmerged_leaves)?;
 
         ParentHash::new(
             self.cipher_suite,
@@ -134,7 +134,7 @@ impl TreeKemPublic {
 
         let mut filtered_direct_co_path = self
             .nodes
-            .filtered_direct_path_co_path(index, self.total_leaf_count().next_power_of_two())?
+            .filtered_direct_path_co_path(index)?
             .into_iter()
             .rev();
 
@@ -199,7 +199,6 @@ impl TreeKemPublic {
             .map(|(node_index, _)| node_index)
             .collect();
         let num_leaves = self.total_leaf_count();
-        let num_leaves_full = num_leaves.next_power_of_two();
         let root = tree_math::root(num_leaves);
 
         // For each leaf l, validate all non-blank nodes on the chain from l up the tree.
@@ -210,11 +209,11 @@ impl TreeKemPublic {
                 while n != root {
                     // Find the first non-blank ancestor p of n and p's co-path child s.
                     let mut p = tree_math::parent(n, num_leaves)?;
-                    let mut s = tree_math::sibling(n, num_leaves, num_leaves_full)?;
+                    let mut s = tree_math::sibling(n, num_leaves)?;
                     while self.nodes.is_blank(p)? {
                         match tree_math::parent(p, num_leaves) {
                             Ok(p_parent) => {
-                                s = tree_math::sibling(p, num_leaves, num_leaves_full)?;
+                                s = tree_math::sibling(p, num_leaves)?;
                                 p = p_parent;
                             }
                             // If we reached the root, we're done with this chain.
@@ -515,16 +514,14 @@ mod tests {
             )
             .unwrap();
 
-            for index in 0..tree.total_leaf_count() {
-                if let LeafNodeSource::Commit(parent_hash) = &tree.nodes
-                    [NodeIndex::from(LeafIndex(index)) as usize]
-                    .as_leaf()
-                    .unwrap()
-                    .leaf_node_source
-                {
+            for (index, leaf) in tree.non_empty_leaves() {
+                if let LeafNodeSource::Commit(parent_hash) = &leaf.leaf_node_source {
                     let calculated_parent_hash = tree
-                        .parent_hash_for_leaf(LeafIndex(index), |node_index, parent_hash| {
-                            let expected_parent = &tree.nodes[node_index as usize]
+                        .parent_hash_for_leaf(index, |node_index, parent_hash| {
+                            let expected_parent = &tree
+                                .nodes
+                                .borrow_node(node_index)
+                                .unwrap()
                                 .as_parent()
                                 .unwrap()
                                 .parent_hash;

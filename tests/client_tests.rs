@@ -304,13 +304,14 @@ fn test_many_commits() {
     sessions.push(creator_session);
     let mut rng = rand::rngs::StdRng::from_seed([42; 32]);
 
-    for _ in 0..30 {
+    for i in 0..100 {
+        println!("running step {}", i);
         let num_removed = rng.gen_range(0..sessions.len());
         let mut members = (0..sessions.len()).choose_multiple(&mut rng, num_removed + 1);
         let sender = members.pop().unwrap();
         remove_members(members, sender, sender, &mut sessions);
 
-        let num_added = rng.gen_range(2..10);
+        let num_added = rng.gen_range(2..12);
         let sender = rng.gen_range(0..sessions.len());
 
         add_random_members(

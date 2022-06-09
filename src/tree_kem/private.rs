@@ -197,8 +197,8 @@ mod tests {
             .unwrap();
 
         // Determine the private key values that should now match between Alice and Charlie
-        let alice_path: HashSet<u32> = HashSet::from_iter(LeafIndex(0).direct_path(3).unwrap());
-        let charlie_path: HashSet<u32> = HashSet::from_iter(LeafIndex(2).direct_path(3).unwrap());
+        let alice_path: HashSet<u32> = HashSet::from_iter(LeafIndex(0).direct_path(4).unwrap());
+        let charlie_path: HashSet<u32> = HashSet::from_iter(LeafIndex(2).direct_path(4).unwrap());
 
         let intersection = alice_path
             .intersection(&charlie_path)

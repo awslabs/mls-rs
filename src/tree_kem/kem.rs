@@ -176,7 +176,7 @@ impl<'a> TreeKem<'a> {
         let lca_path_secret = self
             .tree_kem_public
             .nodes
-            .filtered_direct_path_co_path(sender_index, self.tree_kem_public.total_leaf_count())?
+            .filtered_direct_path_co_path(sender_index)?
             .into_iter()
             .zip(&update_path.nodes)
             .find_map(|((direct_path_index, co_path_index), update_path_node)| {
@@ -314,7 +314,7 @@ fn decrypt_parent_path_secret(
 ) -> Result<PathSecret, RatchetTreeError> {
     tree_kem_public
         .nodes
-        .get_resolution_index(lca_direct_path_child, tree_kem_public.total_leaf_count())? // Resolution of the lca child node
+        .get_resolution_index(lca_direct_path_child)? // Resolution of the lca child node
         .iter()
         .filter(|i| !excluding.contains(i)) // Match up the nodes with their ciphertexts
         .zip(update_node.encrypted_path_secret.iter())
@@ -360,7 +360,13 @@ mod tests {
         let direct_path = tree.nodes.direct_path(index).unwrap();
         for (i, &dpi) in direct_path.iter().enumerate() {
             assert_eq!(
-                *tree.nodes[dpi as usize].as_ref().unwrap().public_key(),
+                *tree
+                    .nodes
+                    .borrow_node(dpi)
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .public_key(),
                 update_path.nodes[i].public_key
             );
         }
@@ -382,7 +388,8 @@ mod tests {
         }
 
         // Verify that we have a public keys up to the root
-        assert!(tree.nodes[tree_math::root(tree.total_leaf_count()) as usize].is_some());
+        let root = tree_math::root(tree.total_leaf_count());
+        assert!(tree.nodes.borrow_node(root).unwrap().is_some());
     }
 
     fn verify_tree_private_path(
@@ -395,7 +402,10 @@ mod tests {
         // Make sure we have private values along the direct path, and the public keys match
         for one_index in public_tree.nodes.direct_path(index).unwrap() {
             let secret_key = private_tree.secret_keys.get(&one_index).unwrap();
-            let public_key = public_tree.nodes[one_index as usize]
+            let public_key = public_tree
+                .nodes
+                .borrow_node(one_index)
+                .unwrap()
                 .as_ref()
                 .unwrap()
                 .public_key();

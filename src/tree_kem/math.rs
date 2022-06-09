@@ -12,21 +12,8 @@ pub enum TreeMathError {
     InvalidIndex,
 }
 
-pub fn log2(x: u32) -> u32 {
-    (x as f32).log2().floor() as u32
-}
-
 pub fn level(x: u32) -> u32 {
-    if x & 0x01 == 0 {
-        return 0;
-    }
-
-    let mut k: u32 = 0;
-    while ((x >> k) & 0x01) == 1 {
-        k += 1;
-    }
-
-    k
+    x.trailing_ones()
 }
 
 pub fn node_width(n: u32) -> u32 {
@@ -38,8 +25,7 @@ pub fn node_width(n: u32) -> u32 {
 }
 
 pub fn root(n: u32) -> u32 {
-    let w = node_width(n);
-    (1 << log2(w)) - 1
+    n - 1
 }
 
 pub fn left(x: u32) -> Result<u32, TreeMathError> {
@@ -51,16 +37,12 @@ pub fn left(x: u32) -> Result<u32, TreeMathError> {
     }
 }
 
-pub fn right(x: u32, n: u32) -> Result<u32, TreeMathError> {
+pub fn right(x: u32) -> Result<u32, TreeMathError> {
     let k = level(x);
     if k == 0 {
         Err(TreeMathError::NoChildren)
     } else {
-        let mut r = x ^ (0x03 << (k - 1));
-        while r >= node_width(n) {
-            r = left(r)?
-        }
-        Ok(r)
+        Ok(x ^ (0x03 << (k - 1)))
     }
 }
 
@@ -83,10 +65,10 @@ pub fn parent(x: u32, n: u32) -> Result<u32, TreeMathError> {
     Ok(p)
 }
 
-pub fn sibling(x: u32, n_parent: u32, n_sibling: u32) -> Result<u32, TreeMathError> {
-    let p = parent(x, n_parent)?;
+pub fn sibling(x: u32, n: u32) -> Result<u32, TreeMathError> {
+    let p = parent(x, n)?;
     if x < p {
-        right(p, n_sibling)
+        right(p)
     } else {
         left(p)
     }
@@ -110,20 +92,18 @@ pub fn direct_path(x: u32, n: u32) -> Result<Vec<u32>, TreeMathError> {
     Ok(d)
 }
 
-pub fn copath(x: u32, n_parent: u32, n_sibling: u32) -> Result<Vec<u32>, TreeMathError> {
+pub fn copath(x: u32, n: u32) -> Result<Vec<u32>, TreeMathError> {
     let mut d = Vec::new();
 
-    if x == root(n_parent) {
+    if x == root(n) {
         return Ok(d);
     }
 
-    d = direct_path(x, n_parent)?;
+    d = direct_path(x, n)?;
     d.insert(0, x);
     d.pop();
 
-    d.into_iter()
-        .map(|y| sibling(y, n_parent, n_sibling))
-        .collect()
+    d.into_iter().map(|y| sibling(y, n)).collect()
 }
 
 pub fn common_ancestor_direct(x: u32, y: u32) -> u32 {
@@ -152,42 +132,71 @@ pub fn common_ancestor_direct(x: u32, y: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[derive(Deserialize)]
+    #[derive(Serialize, Deserialize)]
     struct TestCase {
         n_leaves: u32,
         n_nodes: u32,
-        root: Vec<u32>,
+        root: u32,
         left: Vec<Option<u32>>,
         right: Vec<Option<u32>>,
         parent: Vec<Option<u32>>,
         sibling: Vec<Option<u32>>,
     }
 
-    fn run_test_case(case: &TestCase) {
-        assert_eq!(node_width(case.n_leaves), case.n_nodes);
+    fn generate_tree_math_test_cases() -> Vec<TestCase> {
+        let mut test_cases = Vec::new();
 
-        for i in 0..case.n_leaves {
-            assert_eq!(root(i + 1), case.root[i as usize]);
-            assert_eq!(left(i).ok(), case.left[i as usize]);
-            assert_eq!(right(i, case.n_leaves).ok(), case.right[i as usize]);
-            assert_eq!(parent(i, case.n_leaves).ok(), case.parent[i as usize]);
-            assert_eq!(
-                sibling(i, case.n_leaves, case.n_leaves).ok(),
-                case.sibling[i as usize]
-            );
+        for log_n_leaves in 0..8 {
+            let n_leaves = 1 << log_n_leaves;
+            let n_nodes = node_width(n_leaves);
+            let left = (0..n_nodes).map(|x| left(x).ok()).collect::<Vec<_>>();
+            let right = (0..n_nodes).map(|x| right(x).ok()).collect::<Vec<_>>();
+
+            let parent = (0..n_nodes)
+                .map(|x| parent(x, n_leaves).ok())
+                .collect::<Vec<_>>();
+
+            let sibling = (0..n_nodes)
+                .map(|x| sibling(x, n_leaves).ok())
+                .collect::<Vec<_>>();
+
+            test_cases.push(TestCase {
+                n_leaves,
+                n_nodes,
+                root: root(n_leaves),
+                left,
+                right,
+                parent,
+                sibling,
+            })
         }
+
+        test_cases
+    }
+
+    fn load_test_cases() -> Vec<TestCase> {
+        load_test_cases!(tree_math, generate_tree_math_test_cases)
     }
 
     #[test]
     fn test_tree_math() {
-        let data = include_str!("../../test_data/kat_treemath_openmls.json");
-        let test_vectors: Vec<TestCase> = serde_json::from_str(data).unwrap();
-        test_vectors.iter().for_each(run_test_case);
+        let test_cases = load_test_cases();
+
+        for case in test_cases {
+            assert_eq!(node_width(case.n_leaves), case.n_nodes);
+            assert_eq!(root(case.n_leaves), case.root);
+            for x in 0..case.n_nodes {
+                assert_eq!(left(x).ok(), case.left[x as usize]);
+                assert_eq!(right(x).ok(), case.right[x as usize]);
+                assert_eq!(parent(x, case.n_leaves).ok(), case.parent[x as usize]);
+                assert_eq!(sibling(x, case.n_leaves).ok(), case.sibling[x as usize]);
+            }
+        }
     }
 
     #[test]
@@ -209,48 +218,68 @@ mod tests {
             [0x0b, 0x07, 0x0f].to_vec(),
             [0x0d, 0x0b, 0x07, 0x0f].to_vec(),
             [].to_vec(),
-            [0x11, 0x13, 0x0f].to_vec(),
-            [0x13, 0x0f].to_vec(),
-            [0x11, 0x13, 0x0f].to_vec(),
+            [0x11, 0x13, 0x17, 0x0f].to_vec(),
+            [0x13, 0x17, 0x0f].to_vec(),
+            [0x11, 0x13, 0x17, 0x0f].to_vec(),
+            [0x17, 0x0f].to_vec(),
+            [0x15, 0x13, 0x17, 0x0f].to_vec(),
+            [0x13, 0x17, 0x0f].to_vec(),
+            [0x15, 0x13, 0x17, 0x0f].to_vec(),
             [0x0f].to_vec(),
-            [0x13, 0x0f].to_vec(),
+            [0x19, 0x1b, 0x17, 0x0f].to_vec(),
+            [0x1b, 0x17, 0x0f].to_vec(),
+            [0x19, 0x1b, 0x17, 0x0f].to_vec(),
+            [0x17, 0x0f].to_vec(),
+            [0x1d, 0x1b, 0x17, 0x0f].to_vec(),
+            [0x1b, 0x17, 0x0f].to_vec(),
+            [0x1d, 0x1b, 0x17, 0x0f].to_vec(),
         ]
         .to_vec();
 
         for (i, item) in expected.iter().enumerate() {
-            assert_eq!(item, &direct_path(i as u32, 11).unwrap())
+            assert_eq!(item, &direct_path(i as u32, 16).unwrap())
         }
     }
 
     #[test]
     fn test_copath_path() {
         let expected: Vec<Vec<u32>> = [
-            [0x02, 0x05, 0x0b, 0x13].to_vec(),
-            [0x05, 0x0b, 0x13].to_vec(),
-            [0x00, 0x05, 0x0b, 0x13].to_vec(),
-            [0x0b, 0x13].to_vec(),
-            [0x06, 0x01, 0x0b, 0x13].to_vec(),
-            [0x01, 0x0b, 0x13].to_vec(),
-            [0x04, 0x01, 0x0b, 0x13].to_vec(),
-            [0x13].to_vec(),
-            [0x0a, 0x0d, 0x03, 0x13].to_vec(),
-            [0x0d, 0x03, 0x13].to_vec(),
-            [0x08, 0x0d, 0x03, 0x13].to_vec(),
-            [0x03, 0x13].to_vec(),
-            [0x0e, 0x09, 0x03, 0x13].to_vec(),
-            [0x09, 0x03, 0x13].to_vec(),
-            [0x0c, 0x09, 0x03, 0x13].to_vec(),
+            [0x02, 0x05, 0x0b, 0x17].to_vec(),
+            [0x05, 0x0b, 0x17].to_vec(),
+            [0x00, 0x05, 0x0b, 0x17].to_vec(),
+            [0x0b, 0x17].to_vec(),
+            [0x06, 0x01, 0x0b, 0x17].to_vec(),
+            [0x01, 0x0b, 0x17].to_vec(),
+            [0x04, 0x01, 0x0b, 0x17].to_vec(),
+            [0x17].to_vec(),
+            [0x0a, 0x0d, 0x03, 0x17].to_vec(),
+            [0x0d, 0x03, 0x17].to_vec(),
+            [0x08, 0x0d, 0x03, 0x17].to_vec(),
+            [0x03, 0x17].to_vec(),
+            [0x0e, 0x09, 0x03, 0x17].to_vec(),
+            [0x09, 0x03, 0x17].to_vec(),
+            [0x0c, 0x09, 0x03, 0x17].to_vec(),
             [].to_vec(),
-            [0x12, 0x14, 0x07].to_vec(),
-            [0x14, 0x07].to_vec(),
-            [0x10, 0x14, 0x07].to_vec(),
+            [0x12, 0x15, 0x1b, 0x07].to_vec(),
+            [0x15, 0x1b, 0x07].to_vec(),
+            [0x10, 0x15, 0x1b, 0x07].to_vec(),
+            [0x1b, 0x07].to_vec(),
+            [0x16, 0x11, 0x1b, 0x07].to_vec(),
+            [0x11, 0x1b, 0x07].to_vec(),
+            [0x14, 0x11, 0x1b, 0x07].to_vec(),
             [0x07].to_vec(),
-            [0x11, 0x07].to_vec(),
+            [0x1a, 0x1d, 0x13, 0x07].to_vec(),
+            [0x1d, 0x13, 0x07].to_vec(),
+            [0x18, 0x1d, 0x13, 0x07].to_vec(),
+            [0x13, 0x07].to_vec(),
+            [0x1e, 0x19, 0x13, 0x07].to_vec(),
+            [0x19, 0x13, 0x07].to_vec(),
+            [0x1c, 0x19, 0x13, 0x07].to_vec(),
         ]
         .to_vec();
 
         for (i, item) in expected.iter().enumerate() {
-            assert_eq!(item, &copath(i as u32, 11, 11).unwrap())
+            assert_eq!(item, &copath(i as u32, 16).unwrap())
         }
     }
 }
