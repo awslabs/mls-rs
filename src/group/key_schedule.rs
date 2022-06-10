@@ -2,6 +2,7 @@ use ferriscrypt::digest::HashFunction;
 use ferriscrypt::hpke::KdfId;
 use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::kdf::KdfError;
+use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;
@@ -11,6 +12,7 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::cipher_suite::CipherSuite;
 use crate::group::secret_tree::SecretTreeError;
 use crate::group::{CommitSecret, GroupContext, InitSecret, LeafIndex, SecretTree};
+use crate::signing_identity::SigningIdentityError;
 use crate::tree_kem::TreeKemPublic;
 use ferriscrypt::cipher::aead::AeadError;
 use ferriscrypt::cipher::NonceError;
@@ -39,6 +41,8 @@ pub enum KeyScheduleError {
     AeadError(#[from] AeadError),
     #[error(transparent)]
     NonceError(#[from] NonceError),
+    #[error(transparent)]
+    SigningIdentityError(#[from] SigningIdentityError),
     #[error("key derivation failure")]
     KeyDerivationFailure,
 }
@@ -218,6 +222,15 @@ impl KeySchedule {
             encryption_secret,
         );
 
+        let signature_public_keys = public_tree
+            .non_empty_leaves()
+            .map(|(index, leaf)| {
+                leaf.signing_identity
+                    .public_key(cipher_suite)
+                    .map(|pk| (index, pk))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+
         let epoch = Epoch {
             context: context.clone(),
             self_index,
@@ -227,7 +240,7 @@ impl KeySchedule {
             application_ratchets: Default::default(),
             handshake_ratchets: Default::default(),
             cipher_suite,
-            public_tree,
+            signature_public_keys,
         };
 
         let key_schedule = Self {

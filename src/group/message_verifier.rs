@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     cipher_suite::CipherSuite,
     group::{
@@ -13,6 +15,11 @@ use ferriscrypt::asym::ec_key::PublicKey;
 use tls_codec::{Deserialize, Serialize};
 
 use super::{epoch::Epoch, framing::Content, message_signature::MessageSigningContext};
+
+pub(crate) enum SignaturePublicKeysContainer<'a> {
+    RatchetTree(&'a TreeKemPublic),
+    List(&'a HashMap<LeafIndex, PublicKey>),
+}
 
 pub fn verify_plaintext<F>(
     plaintext: MLSPlaintext,
@@ -54,11 +61,12 @@ where
     // Verify that the signature on the MLSPlaintext message verifies using the public key
     // from the credential stored at the leaf in the tree indicated by the sender field.
     verify_plaintext_signature(
-        &current_public_epoch.public_tree,
+        SignaturePublicKeysContainer::RatchetTree(&current_public_epoch.public_tree),
         context,
         plaintext,
         false,
         &external_key_id_to_signing_key,
+        current_public_epoch.cipher_suite,
     )
 }
 
@@ -121,29 +129,32 @@ pub(crate) fn decrypt_ciphertext(
     //Verify that the signature on the MLSPlaintext message verifies using the public key
     // from the credential stored at the leaf in the tree indicated by the sender field.
     verify_plaintext_signature(
-        &msg_epoch.public_tree,
+        SignaturePublicKeysContainer::List(&msg_epoch.signature_public_keys),
         &msg_epoch.context,
         plaintext,
         true,
         |_| None,
+        msg_epoch.cipher_suite,
     )
 }
 
 pub(crate) fn verify_plaintext_signature<F>(
-    public_tree: &TreeKemPublic,
+    signature_keys_container: SignaturePublicKeysContainer,
     context: &GroupContext,
     plaintext: MLSPlaintext,
     from_ciphertext: bool,
     external_key_id_to_signing_key: F,
+    cipher_suite: CipherSuite,
 ) -> Result<VerifiedPlaintext, GroupError>
 where
     F: FnMut(&[u8]) -> Option<PublicKey>,
 {
     let sender_public_key = public_key_for_sender(
-        public_tree,
+        signature_keys_container,
         &plaintext.content.sender,
         &plaintext.content.content,
         external_key_id_to_signing_key,
+        cipher_suite,
     )?;
 
     let context = MessageSigningContext {
@@ -160,31 +171,38 @@ where
 }
 
 fn public_key_for_sender<F>(
-    public_tree: &TreeKemPublic,
+    signature_keys_container: SignaturePublicKeysContainer,
     sender: &Sender,
     content: &Content,
     external_key_id_to_signing_key: F,
+    cipher_suite: CipherSuite,
 ) -> Result<PublicKey, GroupError>
 where
     F: FnMut(&[u8]) -> Option<PublicKey>,
 {
     match sender {
-        Sender::Member(leaf_index) => public_key_for_member(public_tree, *leaf_index),
+        Sender::Member(leaf_index) => public_key_for_member(signature_keys_container, *leaf_index),
         Sender::Preconfigured(external_key_id) => {
             public_key_for_preconfigured(external_key_id, external_key_id_to_signing_key)
         }
-        Sender::NewMember => public_key_for_new_member(content, public_tree.cipher_suite),
+        Sender::NewMember => public_key_for_new_member(content, cipher_suite),
     }
 }
 
 fn public_key_for_member(
-    public_tree: &TreeKemPublic,
+    signature_keys_container: SignaturePublicKeysContainer,
     leaf_index: LeafIndex,
 ) -> Result<PublicKey, GroupError> {
-    Ok(public_tree
-        .get_leaf_node(leaf_index)?
-        .signing_identity
-        .public_key(public_tree.cipher_suite)?)
+    match signature_keys_container {
+        SignaturePublicKeysContainer::RatchetTree(tree) => Ok(tree
+            .get_leaf_node(leaf_index)?
+            .signing_identity
+            .public_key(tree.cipher_suite)?),
+        SignaturePublicKeysContainer::List(list) => list
+            .get(&leaf_index)
+            .ok_or(GroupError::LeafNotFound(*leaf_index))
+            .map(|pk| pk.clone()),
+    }
 }
 
 fn public_key_for_preconfigured<F>(

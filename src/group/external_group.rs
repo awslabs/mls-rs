@@ -13,6 +13,8 @@ use crate::{
 use ferriscrypt::asym::ec_key::PublicKey;
 use tls_codec::Deserialize;
 
+use super::message_verifier::SignaturePublicKeysContainer;
+
 #[derive(Clone, Debug)]
 pub struct ExternalGroup<C> {
     config: C,
@@ -91,11 +93,12 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
                 }
                 let plaintext = if self.config.signatures_are_checked() {
                     verify_plaintext_signature(
-                        &self.current_epoch.public_tree,
+                        SignaturePublicKeysContainer::RatchetTree(&self.current_epoch.public_tree),
                         &self.core.context,
                         plaintext,
                         false,
                         external_key_id_to_signing_key,
+                        self.current_epoch.cipher_suite,
                     )?
                 } else {
                     VerifiedPlaintext {

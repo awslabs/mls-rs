@@ -7,6 +7,7 @@ use crate::group::GroupContext;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
 use crate::tree_kem::{TreeKemPublic, TreeSecrets, UpdatePathGeneration};
+use ferriscrypt::asym::ec_key::PublicKey;
 use ferriscrypt::cipher::aead::{AeadError, AeadNonce, Key};
 use ferriscrypt::cipher::NonceError;
 use ferriscrypt::kdf::KdfError;
@@ -40,20 +41,17 @@ pub struct PublicEpoch {
     pub(crate) public_tree: TreeKemPublic,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug)]
 pub struct Epoch {
     pub context: GroupContext,
     pub self_index: LeafIndex,
     pub resumption_secret: Vec<u8>,
     pub sender_data_secret: Vec<u8>,
     pub secret_tree: SecretTree,
-    #[serde(with = "crate::serde_utils::map_as_seq")]
     pub handshake_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
-    #[serde(with = "crate::serde_utils::map_as_seq")]
     pub application_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
     pub cipher_suite: CipherSuite,
-    // TODO this is for verifying signatures. replace this by something more efficient
-    pub public_tree: TreeKemPublic,
+    pub signature_public_keys: HashMap<LeafIndex, PublicKey>,
 }
 
 impl PartialEq for Epoch {
@@ -63,7 +61,7 @@ impl PartialEq for Epoch {
             && self.resumption_secret == other.resumption_secret
             && self.sender_data_secret == other.sender_data_secret
             && self.cipher_suite == other.cipher_suite
-            && self.public_tree == other.public_tree
+            && self.signature_public_keys == other.signature_public_keys
     }
 }
 
@@ -280,7 +278,7 @@ pub mod test_utils {
             handshake_ratchets: Default::default(),
             application_ratchets: Default::default(),
             cipher_suite,
-            public_tree: TreeKemPublic::new(cipher_suite),
+            signature_public_keys: Default::default(),
         }
     }
 }

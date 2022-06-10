@@ -266,8 +266,8 @@ pub enum GroupError {
     InvalidGroupParticipant(u32),
     #[error("self not found in ratchet tree")]
     TreeMissingSelfUser,
-    #[error("leaf not found in tree for ref {0}")]
-    LeafNotFound(String),
+    #[error("leaf not found in tree for index {0}")]
+    LeafNotFound(u32),
     #[error("remove not allowed on single leaf tree")]
     RemoveNotAllowed,
     #[error("message from self can't be processed")]
