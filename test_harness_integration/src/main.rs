@@ -583,10 +583,10 @@ impl MlsClient for MlsClientImpl {
 
 #[derive(Parser)]
 struct Opts {
-    #[clap(short, long, default_value = "::1")]
+    #[clap(short, long, value_parser, default_value = "::1")]
     host: IpAddr,
 
-    #[clap(short, long, default_value = "50003")]
+    #[clap(short, long, value_parser, default_value = "50003")]
     port: u16,
 }
 
