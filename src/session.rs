@@ -10,7 +10,7 @@ use crate::key_package::{
     KeyPackageRepository,
 };
 use crate::message::{ProcessedMessage, ProcessedMessagePayload};
-use crate::psk::ExternalPskId;
+pub use crate::psk::{ExternalPskId, JustPreSharedKeyID, Psk};
 use crate::signer::Signer;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::tree_kem::node::LeafIndex;

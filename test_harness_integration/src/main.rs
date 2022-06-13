@@ -7,9 +7,9 @@ use aws_mls::cipher_suite::{CipherSuite, SignaturePublicKey};
 use aws_mls::client::Client;
 use aws_mls::client_config::{InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECONDS};
 use aws_mls::credential::Credential;
-use aws_mls::extension::ExtensionList;
+use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::message::ProcessedMessagePayload;
-use aws_mls::session::{Session, StateUpdate};
+use aws_mls::session::{ExternalPskId, Psk, Session, StateUpdate};
 use aws_mls::signing_identity::SigningIdentity;
 use aws_mls::tls_codec::Serialize;
 use aws_mls::ProtocolVersion;
@@ -34,6 +34,7 @@ pub mod mls_client {
 
 const IMPLEMENTATION_NAME: &str = "AWS MLS";
 const TEST_VECTOR: [u8; 4] = [0, 1, 2, 3];
+const TEST_PSK_ID: [u8; 10] = *b"\x01the PskId";
 
 impl TryFrom<i32> for TestVectorType {
     type Error = ();
@@ -56,6 +57,7 @@ struct ParsedStateUpdate {
     updated: Vec<u32>,
     removed_indices: Vec<u32>,
     removed_leaves: Vec<Vec<u8>>,
+    psks: Vec<Vec<u8>>,
 }
 
 impl TryFrom<&StateUpdate> for ParsedStateUpdate {
@@ -87,11 +89,19 @@ impl TryFrom<&StateUpdate> for ParsedStateUpdate {
             .collect::<Result<Vec<_>, _>>()
             .map_err(abort)?;
 
+        let psks = state_update
+            .psks
+            .iter()
+            .map(|psk_id| psk_id.tls_serialize_detached())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(abort)?;
+
         Ok(Self {
             added,
             updated,
             removed_indices,
             removed_leaves,
+            psks,
         })
     }
 }
@@ -100,17 +110,6 @@ impl TryFrom<&StateUpdate> for ParsedStateUpdate {
 pub struct MlsClientImpl {
     clients: Mutex<Vec<Client<InMemoryClientConfig>>>,
     sessions: Mutex<Vec<Session<InMemoryClientConfig>>>,
-}
-
-impl MlsClientImpl {
-    const FIXED_STATE_ID: u32 = 43;
-    // TODO(RLB): Figure out how to make these work with non-fixed values
-    fn new_state_id(&self) -> u32 {
-        MlsClientImpl::FIXED_STATE_ID
-    }
-    fn known_state_id(&self, id: u32) -> bool {
-        id == MlsClientImpl::FIXED_STATE_ID
-    }
 }
 
 #[tonic::async_trait]
@@ -201,7 +200,7 @@ impl MlsClient for MlsClientImpl {
         &self,
         request: tonic::Request<CreateGroupRequest>,
     ) -> Result<tonic::Response<CreateGroupResponse>, tonic::Status> {
-        let request_ref = request.get_ref();
+        let request_ref = request.into_inner();
 
         let cipher_suite = CipherSuite::from_raw(request_ref.cipher_suite as u16)
             .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
@@ -214,13 +213,14 @@ impl MlsClient for MlsClientImpl {
             .with_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
             .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
             .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
+            .with_psk(ExternalPskId(TEST_PSK_ID.to_vec()), Psk(vec![0u8; 16]))
             .build_client();
 
         let session = creator
             .create_session(
                 ProtocolVersion::Mls10,
                 cipher_suite,
-                request_ref.group_id.clone(),
+                request_ref.group_id,
                 ExtensionList::default(),
             )
             .map_err(abort)?;
@@ -249,6 +249,7 @@ impl MlsClient for MlsClientImpl {
             .with_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
             .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
             .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
+            .with_psk(ExternalPskId(TEST_PSK_ID.to_vec()), Psk(vec![0u8; 16]))
             .build_client();
 
         let key_package = client
@@ -287,81 +288,34 @@ impl MlsClient for MlsClientImpl {
 
     async fn external_join(
         &self,
-        request: tonic::Request<ExternalJoinRequest>,
+        _request: tonic::Request<ExternalJoinRequest>,
     ) -> Result<tonic::Response<ExternalJoinResponse>, tonic::Status> {
-        let obj = request.get_ref();
-        let public_group_state = String::from("publicGroupState");
-        let public_group_state_in = String::from_utf8(obj.public_group_state.clone()).unwrap();
-        if public_group_state != public_group_state_in {
-            return Err(tonic::Status::new(
-                tonic::Code::InvalidArgument,
-                "Invalid public_group_state",
-            ));
-        }
-
-        let resp = ExternalJoinResponse {
-            state_id: self.new_state_id(),
-            commit: String::from("commit").into_bytes(),
-        };
-
-        Ok(Response::new(resp)) // TODO
+        // TODO
+        Ok(Response::new(ExternalJoinResponse::default()))
     }
 
     async fn public_group_state(
         &self,
-        request: tonic::Request<PublicGroupStateRequest>,
+        _request: tonic::Request<PublicGroupStateRequest>,
     ) -> Result<tonic::Response<PublicGroupStateResponse>, tonic::Status> {
-        let obj = request.get_ref();
-        if !self.known_state_id(obj.state_id) {
-            return Err(tonic::Status::new(
-                tonic::Code::InvalidArgument,
-                "Invalid state ID",
-            ));
-        }
-
-        let resp = PublicGroupStateResponse {
-            public_group_state: String::from("publicGroupState").into_bytes(),
-        };
-
-        Ok(Response::new(resp)) // TODO
+        // TODO
+        Ok(Response::new(PublicGroupStateResponse::default()))
     }
 
     async fn state_auth(
         &self,
-        request: tonic::Request<StateAuthRequest>,
+        _request: tonic::Request<StateAuthRequest>,
     ) -> Result<tonic::Response<StateAuthResponse>, tonic::Status> {
-        let obj = request.get_ref();
-        if !self.known_state_id(obj.state_id) {
-            return Err(tonic::Status::new(
-                tonic::Code::InvalidArgument,
-                format!("Invalid state ID: {}", obj.state_id),
-            ));
-        }
-
-        let resp = StateAuthResponse {
-            state_auth_secret: String::from("stateAuthSecret").into_bytes(),
-        };
-
-        Ok(Response::new(resp)) // TODO
+        // TODO
+        Ok(Response::new(StateAuthResponse::default()))
     }
 
     async fn export(
         &self,
-        request: tonic::Request<ExportRequest>,
+        _request: tonic::Request<ExportRequest>,
     ) -> Result<tonic::Response<ExportResponse>, tonic::Status> {
-        let obj = request.get_ref();
-        if self.known_state_id(obj.state_id) {
-            return Err(tonic::Status::new(
-                tonic::Code::InvalidArgument,
-                format!("Invalid state ID: {}", obj.state_id),
-            ));
-        }
-
-        let resp = ExportResponse {
-            exported_secret: String::from("exportedSecret").into_bytes(),
-        };
-
-        Ok(Response::new(resp))
+        // TODO
+        Ok(Response::new(ExportResponse::default()))
     }
 
     async fn protect(
@@ -469,23 +423,56 @@ impl MlsClient for MlsClientImpl {
 
     async fn psk_proposal(
         &self,
-        _request: tonic::Request<PskProposalRequest>,
+        request: tonic::Request<PskProposalRequest>,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
-        Ok(Response::new(ProposalResponse::default())) // TODO
+        let request_ref = request.into_inner();
+        let mut sessions = self.sessions.lock().unwrap();
+
+        let proposal_packet = sessions
+            .get_mut(request_ref.state_id as usize - 1)
+            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
+            .propose_psk(ExternalPskId(request_ref.psk_id), vec![])
+            .map_err(abort)?;
+
+        Ok(Response::new(ProposalResponse {
+            proposal: proposal_packet,
+        }))
     }
 
     async fn re_init_proposal(
         &self,
         _request: tonic::Request<ReInitProposalRequest>,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
-        Ok(Response::new(ProposalResponse::default())) // TODO
+        // TODO
+        Ok(Response::new(ProposalResponse::default()))
     }
 
-    async fn app_ack_proposal(
+    async fn group_context_extensions_proposal(
         &self,
-        _request: tonic::Request<AppAckProposalRequest>,
+        request: tonic::Request<GroupContextExtensionsProposalRequest>,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
-        Ok(Response::new(ProposalResponse::default())) // TODO
+        let request_ref = request.into_inner();
+        let mut sessions = self.sessions.lock().unwrap();
+
+        let extensions = request_ref
+            .extension_type
+            .into_iter()
+            .zip(request_ref.extension_data.into_iter())
+            .map(|(extension_type, extension_data)| Extension {
+                extension_type: extension_type as u16,
+                extension_data,
+            })
+            .collect::<Vec<_>>();
+
+        let proposal_packet = sessions
+            .get_mut(request_ref.state_id as usize - 1)
+            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
+            .propose_group_context_extension_update(ExtensionList::from(extensions), vec![])
+            .map_err(abort)?;
+
+        Ok(Response::new(ProposalResponse {
+            proposal: proposal_packet,
+        }))
     }
 
     async fn commit(
@@ -555,6 +542,7 @@ impl MlsClient for MlsClientImpl {
             updated: parsed_state_update.updated,
             removed_indices: parsed_state_update.removed_indices,
             removed_leaves: parsed_state_update.removed_leaves,
+            psks: parsed_state_update.psks,
         }))
     }
 
@@ -580,36 +568,16 @@ impl MlsClient for MlsClientImpl {
             updated: parsed_state_update.updated,
             removed_indices: parsed_state_update.removed_indices,
             removed_leaves: parsed_state_update.removed_leaves,
+            psks: parsed_state_update.psks,
         }))
     }
 
     async fn handle_external_commit(
         &self,
-        request: tonic::Request<HandleExternalCommitRequest>,
+        _request: tonic::Request<HandleExternalCommitRequest>,
     ) -> Result<tonic::Response<HandleExternalCommitResponse>, tonic::Status> {
-        let obj = request.get_ref();
-        if !self.known_state_id(obj.state_id) {
-            return Err(tonic::Status::new(
-                tonic::Code::InvalidArgument,
-                "Invalid state ID",
-            ));
-        }
-
-        let obj = request.get_ref();
-        let commit = String::from("commit");
-        let commit_in = String::from_utf8(obj.commit.clone()).unwrap();
-        if commit != commit_in {
-            return Err(tonic::Status::new(
-                tonic::Code::InvalidArgument,
-                "Invalid commit",
-            ));
-        }
-
-        let resp = HandleExternalCommitResponse {
-            state_id: self.new_state_id(),
-        };
-
-        Ok(Response::new(resp)) // TODO
+        // TODO
+        Ok(Response::new(HandleExternalCommitResponse::default()))
     }
 }
 

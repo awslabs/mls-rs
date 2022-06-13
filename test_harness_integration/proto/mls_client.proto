@@ -38,7 +38,7 @@ service MLSClient {
   rpc RemoveProposal(RemoveProposalRequest) returns (ProposalResponse) {}
   rpc PSKProposal(PSKProposalRequest) returns (ProposalResponse) {}
   rpc ReInitProposal(ReInitProposalRequest) returns (ProposalResponse) {}
-  rpc AppAckProposal(AppAckProposalRequest) returns (ProposalResponse) {}
+  rpc GroupContextExtensionsProposal(GroupContextExtensionsProposalRequest) returns (ProposalResponse) {}
   
   rpc Commit(CommitRequest) returns (CommitResponse) {}
   rpc HandleCommit(HandleCommitRequest) returns (HandleCommitResponse) {}
@@ -229,9 +229,11 @@ message ReInitProposalRequest {
   uint32 cipher_suite = 3; // actually uint16
 }
 
-// rpc AppAckProposal
-message AppAckProposalRequest {
+// rpc GroupContextExtensionsProposal
+message GroupContextExtensionsProposalRequest {
   uint32 state_id = 1;
+  repeated uint32 extension_type = 2;
+  repeated bytes extension_data = 3;
 }
 
 // rpc Commit
@@ -259,6 +261,7 @@ message HandleCommitResponse {
   repeated uint32 removed_indices = 3;
   repeated bytes removed_leaves = 4;
   repeated uint32 updated = 5;
+  repeated bytes psks = 6;
 }
 
 // rpc HandlePendingCommit
@@ -272,6 +275,7 @@ message HandlePendingCommitResponse {
   repeated uint32 removed_indices = 3;
   repeated bytes removed_leaves = 4;
   repeated uint32 updated = 5;
+  repeated bytes psks = 6;
 }
 
 // rpc HandleExternalCommit

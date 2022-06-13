@@ -46,7 +46,7 @@ type MLSClientClient interface {
 	RemoveProposal(ctx context.Context, in *RemoveProposalRequest, opts ...grpc.CallOption) (*ProposalResponse, error)
 	PSKProposal(ctx context.Context, in *PSKProposalRequest, opts ...grpc.CallOption) (*ProposalResponse, error)
 	ReInitProposal(ctx context.Context, in *ReInitProposalRequest, opts ...grpc.CallOption) (*ProposalResponse, error)
-	AppAckProposal(ctx context.Context, in *AppAckProposalRequest, opts ...grpc.CallOption) (*ProposalResponse, error)
+	GroupContextExtensionsProposal(ctx context.Context, in *GroupContextExtensionsProposalRequest, opts ...grpc.CallOption) (*ProposalResponse, error)
 	Commit(ctx context.Context, in *CommitRequest, opts ...grpc.CallOption) (*CommitResponse, error)
 	HandleCommit(ctx context.Context, in *HandleCommitRequest, opts ...grpc.CallOption) (*HandleCommitResponse, error)
 	HandlePendingCommit(ctx context.Context, in *HandlePendingCommitRequest, opts ...grpc.CallOption) (*HandlePendingCommitResponse, error)
@@ -232,9 +232,9 @@ func (c *mLSClientClient) ReInitProposal(ctx context.Context, in *ReInitProposal
 	return out, nil
 }
 
-func (c *mLSClientClient) AppAckProposal(ctx context.Context, in *AppAckProposalRequest, opts ...grpc.CallOption) (*ProposalResponse, error) {
+func (c *mLSClientClient) GroupContextExtensionsProposal(ctx context.Context, in *GroupContextExtensionsProposalRequest, opts ...grpc.CallOption) (*ProposalResponse, error) {
 	out := new(ProposalResponse)
-	err := c.cc.Invoke(ctx, "/mls_client.MLSClient/AppAckProposal", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/mls_client.MLSClient/GroupContextExtensionsProposal", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +305,7 @@ type MLSClientServer interface {
 	RemoveProposal(context.Context, *RemoveProposalRequest) (*ProposalResponse, error)
 	PSKProposal(context.Context, *PSKProposalRequest) (*ProposalResponse, error)
 	ReInitProposal(context.Context, *ReInitProposalRequest) (*ProposalResponse, error)
-	AppAckProposal(context.Context, *AppAckProposalRequest) (*ProposalResponse, error)
+	GroupContextExtensionsProposal(context.Context, *GroupContextExtensionsProposalRequest) (*ProposalResponse, error)
 	Commit(context.Context, *CommitRequest) (*CommitResponse, error)
 	HandleCommit(context.Context, *HandleCommitRequest) (*HandleCommitResponse, error)
 	HandlePendingCommit(context.Context, *HandlePendingCommitRequest) (*HandlePendingCommitResponse, error)
@@ -374,8 +374,8 @@ func (UnimplementedMLSClientServer) PSKProposal(context.Context, *PSKProposalReq
 func (UnimplementedMLSClientServer) ReInitProposal(context.Context, *ReInitProposalRequest) (*ProposalResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReInitProposal not implemented")
 }
-func (UnimplementedMLSClientServer) AppAckProposal(context.Context, *AppAckProposalRequest) (*ProposalResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method AppAckProposal not implemented")
+func (UnimplementedMLSClientServer) GroupContextExtensionsProposal(context.Context, *GroupContextExtensionsProposalRequest) (*ProposalResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GroupContextExtensionsProposal not implemented")
 }
 func (UnimplementedMLSClientServer) Commit(context.Context, *CommitRequest) (*CommitResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Commit not implemented")
@@ -744,20 +744,20 @@ func _MLSClient_ReInitProposal_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MLSClient_AppAckProposal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AppAckProposalRequest)
+func _MLSClient_GroupContextExtensionsProposal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GroupContextExtensionsProposalRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MLSClientServer).AppAckProposal(ctx, in)
+		return srv.(MLSClientServer).GroupContextExtensionsProposal(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/mls_client.MLSClient/AppAckProposal",
+		FullMethod: "/mls_client.MLSClient/GroupContextExtensionsProposal",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MLSClientServer).AppAckProposal(ctx, req.(*AppAckProposalRequest))
+		return srv.(MLSClientServer).GroupContextExtensionsProposal(ctx, req.(*GroupContextExtensionsProposalRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -918,8 +918,8 @@ var MLSClient_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _MLSClient_ReInitProposal_Handler,
 		},
 		{
-			MethodName: "AppAckProposal",
-			Handler:    _MLSClient_AppAckProposal_Handler,
+			MethodName: "GroupContextExtensionsProposal",
+			Handler:    _MLSClient_GroupContextExtensionsProposal_Handler,
 		},
 		{
 			MethodName: "Commit",
