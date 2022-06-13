@@ -48,7 +48,7 @@ impl ProposalSetEffects {
         update_path: Option<&UpdatePath>,
     ) -> Result<Self, ProposalCacheError> {
         proposals
-            .into_iter()
+            .into_proposals()
             .try_fold(ProposalSetEffects::default(), |effects, item| {
                 effects.add(item, update_path)
             })
@@ -183,16 +183,18 @@ impl ProposalCache {
         self.proposals.insert(proposal_ref, cached_proposal);
     }
 
-    pub fn prepare_commit<C>(
+    pub fn prepare_commit<C, F>(
         &self,
         sender_index: LeafIndex,
         additional_proposals: Vec<Proposal>,
         required_capabilities: Option<RequiredCapabilitiesExt>,
         credential_validator: C,
         public_tree: &TreeKemPublic,
+        user_filter: F,
     ) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), ProposalCacheError>
     where
         C: CredentialValidator,
+        F: ProposalFilter,
     {
         let proposals = self
             .proposals
@@ -226,6 +228,7 @@ impl ProposalCache {
             &credential_validator,
             public_tree,
             None,
+            user_filter,
         );
 
         let proposals = filter.filter(proposals)?;
@@ -249,7 +252,8 @@ impl ProposalCache {
         }
     }
 
-    pub fn resolve_for_commit<C>(
+    #[allow(clippy::too_many_arguments)]
+    pub fn resolve_for_commit<C, F>(
         &self,
         sender: Sender,
         proposal_list: Vec<ProposalOrRef>,
@@ -257,9 +261,11 @@ impl ProposalCache {
         required_capabilities: Option<RequiredCapabilitiesExt>,
         credential_validator: C,
         public_tree: &TreeKemPublic,
+        user_filter: F,
     ) -> Result<ProposalSetEffects, ProposalCacheError>
     where
         C: CredentialValidator,
+        F: ProposalFilter,
     {
         let committer_is_member = matches!(sender, Sender::Member(_));
 
@@ -290,6 +296,7 @@ impl ProposalCache {
             &credential_validator,
             public_tree,
             update_path,
+            user_filter,
         );
 
         filter.validate(&proposals)?;
@@ -308,7 +315,7 @@ impl Extend<(ProposalRef, CachedProposal)> for ProposalCache {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn proposal_filter<'a, C>(
+fn proposal_filter<'a, C, F>(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     group_id: Vec<u8>,
@@ -317,40 +324,44 @@ fn proposal_filter<'a, C>(
     credential_validator: &'a C,
     tree: &'a TreeKemPublic,
     update_path: Option<&'a UpdatePath>,
+    user_filter: F,
 ) -> impl ProposalFilter<Error = ProposalFilterError> + 'a
 where
     C: CredentialValidator,
+    F: ProposalFilter + 'a,
 {
-    AddProposalFilter::new(
-        protocol_version,
-        cipher_suite,
-        required_capabilities.clone(),
-        credential_validator,
-        tree,
-    )
-    .and(UpdateProposalFilter::new(
-        committer.clone(),
-        group_id.clone(),
-        cipher_suite,
-        required_capabilities.clone(),
-        credential_validator,
-        tree,
-    ))
-    .and(RemoveProposalFilter::new(tree))
-    .and(PskProposalFilter::new(cipher_suite))
-    .and(ReInitProposalFilter::new(protocol_version))
-    .and(GroupContextExtensionsProposalFilter)
-    .and(SingleProposalForLeaf)
-    .and(ExternalCommitFilter::new(
-        cipher_suite,
-        group_id,
-        committer,
-        update_path,
-        tree,
-        required_capabilities,
-        credential_validator,
-    ))
-    .and(UniqueKeysInTree::new(tree))
+    user_filter
+        .map_err(|e| ProposalFilterError::UserDefined(e.into()))
+        .and(AddProposalFilter::new(
+            protocol_version,
+            cipher_suite,
+            required_capabilities.clone(),
+            credential_validator,
+            tree,
+        ))
+        .and(UpdateProposalFilter::new(
+            committer.clone(),
+            group_id.clone(),
+            cipher_suite,
+            required_capabilities.clone(),
+            credential_validator,
+            tree,
+        ))
+        .and(RemoveProposalFilter::new(tree))
+        .and(PskProposalFilter::new(cipher_suite))
+        .and(ReInitProposalFilter::new(protocol_version))
+        .and(GroupContextExtensionsProposalFilter)
+        .and(SingleProposalForLeaf)
+        .and(ExternalCommitFilter::new(
+            cipher_suite,
+            group_id,
+            committer,
+            update_path,
+            tree,
+            required_capabilities,
+            credential_validator,
+        ))
+        .and(UniqueKeysInTree::new(tree))
 }
 
 #[cfg(test)]
@@ -366,9 +377,11 @@ mod tests {
             leaf_node_validator::test_utils::FailureCredentialValidator,
             parent_hash::ParentHash,
         },
+        PassThroughProposalFilter,
     };
     use assert_matches::assert_matches;
     use ferriscrypt::kdf::hkdf::Hkdf;
+    use std::convert::Infallible;
 
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::P256Aes128;
     const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
@@ -502,6 +515,10 @@ mod tests {
         assert_eq!(expected_effects, effects);
     }
 
+    fn pass_through_filter() -> impl ProposalFilter<Error = Infallible> {
+        PassThroughProposalFilter::new()
+    }
+
     #[test]
     fn test_proposal_cache_commit_all_cached() {
         let TestProposals {
@@ -520,6 +537,7 @@ mod tests {
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
+                pass_through_filter(),
             )
             .unwrap();
 
@@ -559,6 +577,7 @@ mod tests {
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
+                pass_through_filter(),
             )
             .unwrap();
 
@@ -601,6 +620,7 @@ mod tests {
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
+                pass_through_filter(),
             )
             .unwrap();
 
@@ -652,6 +672,7 @@ mod tests {
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
+                pass_through_filter(),
             )
             .unwrap();
 
@@ -678,6 +699,7 @@ mod tests {
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
+                pass_through_filter(),
             )
             .unwrap();
 
@@ -728,6 +750,7 @@ mod tests {
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
+                pass_through_filter(),
             )
             .unwrap();
 
@@ -784,7 +807,14 @@ mod tests {
         let credential_validator = PassthroughCredentialValidator::new();
 
         let (proposals, effects) = cache
-            .prepare_commit(test_sender, additional, None, &credential_validator, &tree)
+            .prepare_commit(
+                test_sender,
+                additional,
+                None,
+                &credential_validator,
+                &tree,
+                pass_through_filter(),
+            )
             .unwrap();
 
         let resolution = cache
@@ -795,6 +825,7 @@ mod tests {
                 None,
                 &credential_validator,
                 &tree,
+                pass_through_filter(),
             )
             .unwrap();
 
@@ -819,6 +850,7 @@ mod tests {
                 None,
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
+                pass_through_filter(),
             )
             .unwrap();
         assert_eq!(proposals.len(), 1);
@@ -857,6 +889,7 @@ mod tests {
             group.required_capabilities(),
             credential_validator,
             public_tree,
+            pass_through_filter(),
         );
 
         assert_matches!(
@@ -891,6 +924,7 @@ mod tests {
             group.required_capabilities(),
             credential_validator,
             public_tree,
+            pass_through_filter(),
         );
         assert_matches!(
             res,
@@ -921,6 +955,7 @@ mod tests {
             group.required_capabilities(),
             credential_validator,
             public_tree,
+            pass_through_filter(),
         );
 
         assert_matches!(
@@ -953,6 +988,7 @@ mod tests {
             group.required_capabilities(),
             credential_validator,
             public_tree,
+            pass_through_filter(),
         )
     }
 
@@ -1003,6 +1039,7 @@ mod tests {
             required_capabilities,
             credential_validator,
             &public_tree,
+            pass_through_filter(),
         );
 
         assert_matches!(
@@ -1040,6 +1077,7 @@ mod tests {
             required_capabilities,
             credential_validator,
             &public_tree,
+            pass_through_filter(),
         );
 
         assert_matches!(
@@ -1077,6 +1115,7 @@ mod tests {
             required_capabilities,
             credential_validator,
             &public_tree,
+            pass_through_filter(),
         );
 
         assert_matches!(res, Ok(_));
@@ -1142,6 +1181,7 @@ mod tests {
             group.required_capabilities(),
             credential_validator,
             public_tree,
+            pass_through_filter(),
         );
 
         assert_matches!(
@@ -1163,6 +1203,7 @@ mod tests {
                 None,
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
+                pass_through_filter(),
             )
             .unwrap();
 
@@ -1184,6 +1225,7 @@ mod tests {
                 None,
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
+                pass_through_filter(),
             )
             .unwrap();
 
@@ -1205,6 +1247,7 @@ mod tests {
                 None,
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
+                pass_through_filter(),
             )
             .unwrap();
 
@@ -1240,6 +1283,7 @@ mod tests {
                 None,
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
+                pass_through_filter(),
             )
             .unwrap();
 
@@ -1269,6 +1313,7 @@ mod tests {
             None,
             PassthroughCredentialValidator::new(),
             &TreeKemPublic::new(TEST_CIPHER_SUITE),
+            pass_through_filter(),
         );
 
         assert_matches!(

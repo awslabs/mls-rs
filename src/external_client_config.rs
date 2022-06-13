@@ -1,6 +1,9 @@
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
-    client_config::{CredentialValidator, PassthroughCredentialValidator},
+    client_config::{
+        CredentialValidator, MakeProposalFilter, PassthroughCredentialValidator,
+        ProposalFilterInit, SimpleError,
+    },
     credential::{CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
     epoch::{InMemoryPublicEpochRepository, PublicEpochRepository},
     extension::ExtensionType,
@@ -8,7 +11,7 @@ use crate::{
     keychain::{InMemoryKeychain, Keychain},
     signing_identity::SigningIdentity,
     tree_kem::Capabilities,
-    ExternalClient, ProtocolVersion,
+    BoxedProposalFilter, ExternalClient, ProposalFilter, ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 use std::{
@@ -20,6 +23,7 @@ pub trait ExternalClientConfig {
     type Keychain: Keychain;
     type EpochRepository: PublicEpochRepository;
     type CredentialValidator: CredentialValidator;
+    type ProposalFilter: ProposalFilter;
 
     fn external_key_id(&self) -> Option<Vec<u8>>;
     fn keychain(&self) -> Self::Keychain;
@@ -31,6 +35,7 @@ pub trait ExternalClientConfig {
     fn credential_validator(&self) -> Self::CredentialValidator;
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
     fn signatures_are_checked(&self) -> bool;
+    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter;
 
     fn capabilities(&self) -> Capabilities {
         Capabilities {
@@ -58,6 +63,7 @@ pub struct InMemoryExternalClientConfig {
     external_signing_keys: HashMap<Vec<u8>, PublicKey>,
     credential_types: Vec<CredentialType>,
     signatures_checked: bool,
+    make_proposal_filter: MakeProposalFilter,
 }
 
 impl InMemoryExternalClientConfig {
@@ -72,6 +78,7 @@ impl InMemoryExternalClientConfig {
             external_signing_keys: Default::default(),
             credential_types: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
             signatures_checked: true,
+            make_proposal_filter: Default::default(),
         }
     }
 
@@ -158,6 +165,7 @@ impl ExternalClientConfig for InMemoryExternalClientConfig {
     type Keychain = InMemoryKeychain;
     type EpochRepository = InMemoryPublicEpochRepository;
     type CredentialValidator = PassthroughCredentialValidator;
+    type ProposalFilter = BoxedProposalFilter<SimpleError>;
 
     fn external_key_id(&self) -> Option<Vec<u8>> {
         self.external_key_id.clone()
@@ -203,20 +211,24 @@ impl ExternalClientConfig for InMemoryExternalClientConfig {
     fn supported_credentials(&self) -> Vec<CredentialType> {
         self.credential_types.clone()
     }
+
+    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
+        (self.make_proposal_filter.0)(init)
+    }
 }
 
 #[derive(Clone, Debug)]
-pub struct ExternalClientGroupConfig<C: ExternalClientConfig> {
-    pub epoch_repo: C::EpochRepository,
-    pub credential_validator: C::CredentialValidator,
-    pub signatures_checked: bool,
+pub struct ExternalClientGroupConfig<C> {
+    client_config: C,
+    group_id: Vec<u8>,
+    signatures_checked: bool,
 }
 
-impl<C: ExternalClientConfig> ExternalClientGroupConfig<C> {
-    pub fn new(client_config: &C, group_id: &[u8]) -> Self {
+impl<C> ExternalClientGroupConfig<C> {
+    pub fn new(client_config: C, group_id: Vec<u8>) -> Self {
         Self {
-            epoch_repo: client_config.epoch_repo(group_id),
-            credential_validator: client_config.credential_validator(),
+            client_config,
+            group_id,
             signatures_checked: true,
         }
     }
@@ -225,21 +237,24 @@ impl<C: ExternalClientConfig> ExternalClientGroupConfig<C> {
 impl<C> ExternalGroupConfig for ExternalClientGroupConfig<C>
 where
     C: ExternalClientConfig,
-    C::EpochRepository: Clone,
-    C::CredentialValidator: Clone,
 {
     type EpochRepository = C::EpochRepository;
     type CredentialValidator = C::CredentialValidator;
+    type ProposalFilter = C::ProposalFilter;
 
     fn epoch_repo(&self) -> Self::EpochRepository {
-        self.epoch_repo.clone()
+        self.client_config.epoch_repo(&self.group_id)
     }
 
     fn credential_validator(&self) -> Self::CredentialValidator {
-        self.credential_validator.clone()
+        self.client_config.credential_validator()
     }
 
     fn signatures_are_checked(&self) -> bool {
         self.signatures_checked
+    }
+
+    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
+        self.client_config.proposal_filter(init)
     }
 }

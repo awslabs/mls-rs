@@ -2,8 +2,8 @@ use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, ClientGroupConfig};
 use crate::extension::ExtensionList;
 use crate::group::{
-    framing::Content, proposal::Proposal, CommitGeneration, Group, GroupContext, GroupInfo,
-    GroupState, OutboundMessage, VerifiedPlaintext, Welcome,
+    proposal::Proposal, CommitGeneration, Group, GroupContext, GroupInfo, GroupState,
+    OutboundMessage, VerifiedPlaintext, Welcome,
 };
 use crate::key_package::{
     KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
@@ -51,8 +51,6 @@ pub enum SessionError {
     SignerNotFound,
     #[error(transparent)]
     KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
-    #[error(transparent)]
-    ProposalRejected(Box<dyn std::error::Error + Send + Sync>),
     #[error("expected MLSMessage containing a Welcome")]
     ExpectedWelcomeMessage,
     #[error("expected protocol version {0:?}, found version {1:?}")]
@@ -84,30 +82,14 @@ impl Debug for CommitResult {
     }
 }
 
+#[derive(Debug)]
 pub struct Session<C>
 where
     C: ClientConfig,
-    C::EpochRepository: Clone,
-    C::CredentialValidator: Clone,
 {
     protocol: Group<ClientGroupConfig<C>>,
     pending_commit: Option<PendingCommit>,
     config: C,
-}
-
-impl<C> Debug for Session<C>
-where
-    C: ClientConfig + Debug,
-    C::EpochRepository: Clone + Debug,
-    C::CredentialValidator: Clone + Debug,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Session")
-            .field("protocol", &self.protocol)
-            .field("pending_comming", &self.pending_commit)
-            .field("config", &self.config)
-            .finish()
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -121,8 +103,6 @@ pub struct GroupStats {
 impl<C> Session<C>
 where
     C: ClientConfig + Clone,
-    C::EpochRepository: Clone,
-    C::CredentialValidator: Clone,
 {
     pub(crate) fn create(
         group_id: Vec<u8>,
@@ -134,7 +114,7 @@ where
         config: C,
     ) -> Result<Self, SessionError> {
         let group = Group::new(
-            ClientGroupConfig::new(&config, &group_id),
+            ClientGroupConfig::new(config.clone(), group_id.clone()),
             group_id,
             cipher_suite,
             protocol_version,
@@ -176,7 +156,7 @@ where
             ratchet_tree,
             key_package_generation,
             &config.secret_store(),
-            |group_id| ClientGroupConfig::new(&config, group_id),
+            |group_id| ClientGroupConfig::new(config.clone(), group_id.to_vec()),
             version_and_cipher_filter(&config),
             config.credential_validator(),
         )?;
@@ -207,7 +187,7 @@ where
                 public_tree,
                 key_package_generation,
                 &self.config.secret_store(),
-                |group_id| ClientGroupConfig::new(&self.config, group_id),
+                |group_id| ClientGroupConfig::new(self.config.clone(), group_id.to_vec()),
                 version_and_cipher_filter(&self.config),
             )?,
             pending_commit: None,
@@ -231,7 +211,7 @@ where
             .transpose()?;
 
         let (protocol, commit_message) = Group::new_external(
-            ClientGroupConfig::new(&config, &group_info.group_id),
+            ClientGroupConfig::new(config.clone(), group_info.group_id.clone()),
             protocol_version,
             group_info,
             tree,
@@ -542,13 +522,6 @@ where
         &mut self,
         message: VerifiedPlaintext,
     ) -> Result<ProcessedMessagePayload, SessionError> {
-        match &message.content.content {
-            Content::Proposal(p) => self
-                .config
-                .filter_proposal(p)
-                .map_err(|e| SessionError::ProposalRejected(e.into())),
-            Content::Application(_) | Content::Commit(_) => Ok(()),
-        }?;
         let res = self
             .protocol
             .process_incoming_message(message, &self.config.secret_store())?;
@@ -650,7 +623,7 @@ where
             self.config.lifetime(),
             &self.config.secret_store(),
             &signer,
-            |group_id| ClientGroupConfig::new(&self.config, group_id),
+            |group_id| ClientGroupConfig::new(self.config.clone(), group_id.to_vec()),
             get_new_key_package,
         )?;
 
@@ -683,7 +656,7 @@ where
     pub(crate) fn import(config: C, state: GroupState) -> Result<Self, SessionError> {
         Ok(Self {
             protocol: Group::import(
-                ClientGroupConfig::new(&config, &state.context.group_id),
+                ClientGroupConfig::new(config.clone(), state.context.group_id.clone()),
                 state,
             )?,
             pending_commit: None,

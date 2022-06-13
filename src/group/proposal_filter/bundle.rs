@@ -72,7 +72,7 @@ impl ProposalBundle {
         T::retain(self, f);
     }
 
-    pub fn into_iter(self) -> impl Iterator<Item = ProposalInfo<Proposal>> {
+    pub fn into_proposals(self) -> impl Iterator<Item = ProposalInfo<Proposal>> {
         self.additions
             .into_iter()
             .map(|p| p.map(Proposal::Add))
@@ -97,7 +97,7 @@ impl ProposalBundle {
     }
 
     pub fn into_proposals_or_refs(self) -> impl Iterator<Item = ProposalOrRef> {
-        self.into_iter().map(|p| {
+        self.into_proposals().map(|p| {
             p.proposal_ref.map_or_else(
                 || ProposalOrRef::Proposal(p.proposal),
                 ProposalOrRef::Reference,

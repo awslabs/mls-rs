@@ -13,7 +13,9 @@ mod update;
 pub use add::AddProposalFilter;
 pub use bundle::{Proposable, ProposalBundle, ProposalInfo};
 pub use external_commit::ExternalCommitFilter;
-pub use filter::{ProposalFilter, ProposalFilterError};
+pub use filter::{
+    BoxedProposalFilter, PassThroughProposalFilter, ProposalFilter, ProposalFilterError,
+};
 pub use group_context_extensions::GroupContextExtensionsProposalFilter;
 pub use psk::PskProposalFilter;
 pub use reinit::ReInitProposalFilter;

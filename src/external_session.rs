@@ -16,9 +16,7 @@ pub struct ExternalSession<C: ExternalClientConfig> {
 
 impl<C> ExternalSession<C>
 where
-    C: ExternalClientConfig,
-    C::EpochRepository: Clone,
-    C::CredentialValidator: Clone,
+    C: ExternalClientConfig + Clone,
 {
     pub fn join(
         config: C,
@@ -28,7 +26,8 @@ where
         tree_data: &[u8],
         confirmation_tag: &[u8],
     ) -> Result<Self, SessionError> {
-        let group_config = ExternalClientGroupConfig::new(&config, &group_context.group_id);
+        let group_config =
+            ExternalClientGroupConfig::new(config.clone(), group_context.group_id.clone());
         let nodes = Deserialize::tls_deserialize(&mut &*tree_data)?;
         let public_tree = TreeKemPublic::import_node_data(cipher_suite, nodes)?;
 

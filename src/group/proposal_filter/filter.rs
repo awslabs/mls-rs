@@ -7,6 +7,7 @@ use crate::{
     },
     ProtocolVersion,
 };
+use std::marker::PhantomData;
 use thiserror::Error;
 
 pub trait ProposalFilter {
@@ -21,6 +22,38 @@ pub trait ProposalFilter {
         T: ProposalFilter<Error = Self::Error>,
     {
         And(self, other)
+    }
+
+    fn map_err<F, E>(self, f: F) -> MapErr<Self, F>
+    where
+        Self: Sized,
+        F: Fn(Self::Error) -> E,
+    {
+        MapErr {
+            filter: self,
+            map: f,
+        }
+    }
+
+    fn boxed(self) -> BoxedProposalFilter<Self::Error>
+    where
+        Self: Send + Sync + Sized + 'static,
+    {
+        Box::new(self)
+    }
+}
+
+pub type BoxedProposalFilter<E> = Box<dyn ProposalFilter<Error = E> + Send + Sync>;
+
+impl<T: ProposalFilter + ?Sized> ProposalFilter for Box<T> {
+    type Error = T::Error;
+
+    fn validate(&self, proposals: &ProposalBundle) -> Result<(), Self::Error> {
+        (**self).validate(proposals)
+    }
+
+    fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
+        (**self).filter(proposals)
     }
 }
 
@@ -42,6 +75,63 @@ where
 
     fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
         self.1.filter(self.0.filter(proposals)?)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MapErr<T, M> {
+    filter: T,
+    map: M,
+}
+
+impl<T, M, E> ProposalFilter for MapErr<T, M>
+where
+    T: ProposalFilter,
+    M: Fn(T::Error) -> E,
+    E: std::error::Error + Send + Sync + 'static,
+{
+    type Error = E;
+
+    fn validate(&self, proposals: &ProposalBundle) -> Result<(), Self::Error> {
+        self.filter.validate(proposals).map_err(&self.map)
+    }
+
+    fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
+        self.filter.filter(proposals).map_err(&self.map)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PassThroughProposalFilter<E> {
+    phantom: PhantomData<fn() -> E>,
+}
+
+impl<E> PassThroughProposalFilter<E> {
+    pub fn new() -> Self {
+        Self {
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<E> Default for PassThroughProposalFilter<E> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<E> ProposalFilter for PassThroughProposalFilter<E>
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    type Error = E;
+
+    fn validate(&self, _: &ProposalBundle) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
+        Ok(proposals)
     }
 }
 
@@ -90,4 +180,6 @@ pub enum ProposalFilterError {
     InvalidProposalTypeInExternalCommit(ProposalType),
     #[error("Committer can not remove themselves")]
     CommitterSelfRemoval,
+    #[error(transparent)]
+    UserDefined(Box<dyn std::error::Error + Send + Sync>),
 }

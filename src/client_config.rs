@@ -5,14 +5,15 @@ use crate::{
         Credential, CredentialError, CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509,
     },
     extension::{ExtensionList, ExtensionType},
-    group::{proposal::Proposal, CommitOptions, ControlEncryptionMode, GroupConfig},
+    group::{framing::Sender, CommitOptions, ControlEncryptionMode, GroupConfig, GroupContext},
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
     keychain::{InMemoryKeychain, Keychain},
     psk::{ExternalPskId, Psk},
     signing_identity::SigningIdentity,
     time::MlsTime,
-    tree_kem::{Capabilities, Lifetime},
-    EpochRepository, InMemoryEpochRepository, ProtocolVersion,
+    tree_kem::{Capabilities, Lifetime, TreeKemPublic},
+    BoxedProposalFilter, EpochRepository, InMemoryEpochRepository, PassThroughProposalFilter,
+    ProposalFilter, ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 use std::{
@@ -53,7 +54,7 @@ impl<T: CredentialValidator> CredentialValidator for &T {
 
 pub trait ClientConfig {
     type KeyPackageRepository: KeyPackageRepository;
-    type ProposalFilterError: std::error::Error + Send + Sync + 'static;
+    type ProposalFilter: ProposalFilter;
     type Keychain: Keychain;
     type PskStore: PskStore;
     type EpochRepository: EpochRepository;
@@ -68,7 +69,7 @@ pub trait ClientConfig {
     fn preferences(&self) -> Preferences;
     fn external_key_id(&self) -> Option<Vec<u8>>;
     fn key_package_repo(&self) -> Self::KeyPackageRepository;
-    fn filter_proposal(&self, proposal: &Proposal) -> Result<(), Self::ProposalFilterError>;
+    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter;
     fn keychain(&self) -> Self::Keychain;
     fn secret_store(&self) -> Self::PskStore;
     fn epoch_repo(&self, group_id: &[u8]) -> Self::EpochRepository;
@@ -184,6 +185,66 @@ impl Preferences {
     }
 }
 
+#[derive(Clone)]
+pub struct MakeProposalFilter(
+    pub Arc<dyn Fn(ProposalFilterInit<'_>) -> BoxedProposalFilter<SimpleError> + Send + Sync>,
+);
+
+impl MakeProposalFilter {
+    pub fn new<F, M>(make: M) -> Self
+    where
+        M: Fn(ProposalFilterInit<'_>) -> F + Send + Sync + 'static,
+        F: ProposalFilter<Error = SimpleError> + Send + Sync + 'static,
+    {
+        Self(Arc::new(move |init| make(init).boxed()))
+    }
+}
+
+impl Debug for MakeProposalFilter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("MakeProposalFilter")
+    }
+}
+
+impl Default for MakeProposalFilter {
+    fn default() -> Self {
+        Self::new(|_| PassThroughProposalFilter::new())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ProposalFilterInit<'a> {
+    tree: &'a TreeKemPublic,
+    group_context: &'a GroupContext,
+    committer: Sender,
+}
+
+impl<'a> ProposalFilterInit<'a> {
+    pub(crate) fn new(
+        tree: &'a TreeKemPublic,
+        group_context: &'a GroupContext,
+        committer: Sender,
+    ) -> Self {
+        Self {
+            tree,
+            group_context,
+            committer,
+        }
+    }
+
+    pub fn tree(&self) -> &TreeKemPublic {
+        self.tree
+    }
+
+    pub fn group_context(&self) -> &GroupContext {
+        self.group_context
+    }
+
+    pub fn committer(&self) -> &Sender {
+        &self.committer
+    }
+}
+
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct InMemoryClientConfig {
@@ -192,7 +253,7 @@ pub struct InMemoryClientConfig {
     external_key_id: Option<Vec<u8>>,
     supported_extensions: Vec<ExtensionType>,
     key_packages: InMemoryKeyPackageRepository,
-    proposal_filter: Option<ProposalFilter>,
+    make_proposal_filter: MakeProposalFilter,
     keychain: InMemoryKeychain,
     psk_store: InMemoryPskStore,
     protocol_versions: Vec<ProtocolVersion>,
@@ -204,15 +265,6 @@ pub struct InMemoryClientConfig {
     credential_types: Vec<CredentialType>,
 }
 
-#[derive(Clone)]
-struct ProposalFilter(Arc<dyn Fn(&Proposal) -> Result<(), String> + Send + Sync>);
-
-impl Debug for ProposalFilter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("ProposalFilter")
-    }
-}
-
 impl InMemoryClientConfig {
     pub fn new() -> Self {
         Self {
@@ -221,7 +273,7 @@ impl InMemoryClientConfig {
             external_key_id: Default::default(),
             supported_extensions: Default::default(),
             key_packages: Default::default(),
-            proposal_filter: Default::default(),
+            make_proposal_filter: Default::default(),
             keychain: Default::default(),
             psk_store: Default::default(),
             protocol_versions: ProtocolVersion::all().collect(),
@@ -263,15 +315,13 @@ impl InMemoryClientConfig {
     }
 
     #[must_use]
-    pub fn with_proposal_filter<F, E>(self, f: F) -> Self
+    pub fn with_proposal_filter<F, M>(self, make: M) -> Self
     where
-        F: Fn(&Proposal) -> Result<(), E> + Send + Sync + 'static,
-        E: ToString,
+        M: Fn(ProposalFilterInit<'_>) -> F + Send + Sync + 'static,
+        F: ProposalFilter<Error = SimpleError> + Send + Sync + 'static,
     {
         Self {
-            proposal_filter: Some(ProposalFilter(Arc::new(move |p| {
-                f(p).map_err(|e| e.to_string())
-            }))),
+            make_proposal_filter: MakeProposalFilter::new(make),
             ..self
         }
     }
@@ -370,7 +420,7 @@ impl CredentialValidator for PassthroughCredentialValidator {
 
 impl ClientConfig for InMemoryClientConfig {
     type KeyPackageRepository = InMemoryKeyPackageRepository;
-    type ProposalFilterError = SimpleError;
+    type ProposalFilter = BoxedProposalFilter<SimpleError>;
     type Keychain = InMemoryKeychain;
     type PskStore = InMemoryPskStore;
     type EpochRepository = InMemoryEpochRepository;
@@ -392,11 +442,8 @@ impl ClientConfig for InMemoryClientConfig {
         self.key_packages.clone()
     }
 
-    fn filter_proposal(&self, proposal: &Proposal) -> Result<(), SimpleError> {
-        self.proposal_filter
-            .as_ref()
-            .map_or(Ok(()), |ProposalFilter(f)| f(proposal))
-            .map_err(SimpleError)
+    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
+        (self.make_proposal_filter.0)(init)
     }
 
     fn secret_store(&self) -> Self::PskStore {
@@ -457,17 +504,29 @@ impl ClientConfig for InMemoryClientConfig {
 #[error("{0}")]
 pub struct SimpleError(String);
 
-#[derive(Clone, Debug)]
-pub struct ClientGroupConfig<C: ClientConfig> {
-    pub epoch_repo: C::EpochRepository,
-    pub credential_validator: C::CredentialValidator,
+impl From<String> for SimpleError {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
 }
 
-impl<C: ClientConfig> ClientGroupConfig<C> {
-    pub fn new(client_config: &C, group_id: &[u8]) -> Self {
+impl From<&str> for SimpleError {
+    fn from(s: &str) -> Self {
+        s.to_string().into()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ClientGroupConfig<C> {
+    client_config: C,
+    group_id: Vec<u8>,
+}
+
+impl<C> ClientGroupConfig<C> {
+    pub fn new(client_config: C, group_id: Vec<u8>) -> Self {
         Self {
-            epoch_repo: client_config.epoch_repo(group_id),
-            credential_validator: client_config.credential_validator(),
+            client_config,
+            group_id,
         }
     }
 }
@@ -475,17 +534,20 @@ impl<C: ClientConfig> ClientGroupConfig<C> {
 impl<C> GroupConfig for ClientGroupConfig<C>
 where
     C: ClientConfig,
-    C::EpochRepository: Clone,
-    C::CredentialValidator: Clone,
 {
     type EpochRepository = C::EpochRepository;
     type CredentialValidator = C::CredentialValidator;
+    type ProposalFilter = C::ProposalFilter;
 
     fn epoch_repo(&self) -> Self::EpochRepository {
-        self.epoch_repo.clone()
+        self.client_config.epoch_repo(&self.group_id)
     }
 
     fn credential_validator(&self) -> Self::CredentialValidator {
-        self.credential_validator.clone()
+        self.client_config.credential_validator()
+    }
+
+    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
+        self.client_config.proposal_filter(init)
     }
 }

@@ -52,8 +52,6 @@ pub struct Client<C: ClientConfig> {
 impl<C> Client<C>
 where
     C: ClientConfig + Clone,
-    C::EpochRepository: Clone,
-    C::CredentialValidator: Clone,
 {
     pub fn new(config: C) -> Self {
         Client { config }
@@ -274,7 +272,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        client_config::InMemoryClientConfig,
+        client_config::{InMemoryClientConfig, SimpleError},
         credential::Credential,
         group::{
             epoch::EpochError,
@@ -285,6 +283,7 @@ mod tests {
         message::ProcessedMessagePayload,
         psk::{ExternalPskId, PskSecretError},
         tree_kem::leaf_node::LeafNodeSource,
+        ProposalBundle, ProposalFilter,
     };
     use assert_matches::assert_matches;
     use ferriscrypt::kdf::hkdf::Hkdf;
@@ -427,10 +426,24 @@ mod tests {
         assert!(msg.is_err());
     }
 
+    struct RejectProposals;
+
+    impl ProposalFilter for RejectProposals {
+        type Error = SimpleError;
+
+        fn validate(&self, _: &ProposalBundle) -> Result<(), Self::Error> {
+            Err("No".into())
+        }
+
+        fn filter(&self, _: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
+            Ok(Default::default())
+        }
+    }
+
     #[test]
     fn proposal_can_be_rejected() {
         let alice = get_basic_config(TEST_CIPHER_SUITE, "alice")
-            .with_proposal_filter(|_| Err("no"))
+            .with_proposal_filter(|_| RejectProposals)
             .build_client();
 
         let mut session = create_session(&alice);
@@ -448,8 +461,15 @@ mod tests {
             )
             .unwrap();
 
-        let res = session.process_incoming_bytes(&proposal);
-        assert_matches!(res, Err(SessionError::ProposalRejected(e)) if e.to_string() == "no");
+        session.process_incoming_bytes(&proposal).unwrap();
+        session.commit(Vec::new(), Vec::new()).unwrap();
+        let res = session.apply_pending_commit();
+        assert_matches!(
+            res,
+            Err(SessionError::ProtocolError(GroupError::ProposalCacheError(
+                _
+            )))
+        );
     }
 
     #[test]

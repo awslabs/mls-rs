@@ -1,5 +1,6 @@
 use crate::{
     cipher_suite::CipherSuite,
+    client_config::ProposalFilterInit,
     epoch::PublicEpochRepository,
     group::{
         message_verifier::verify_plaintext_signature, proposal_effects, transcript_hashes,
@@ -178,6 +179,11 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
             self.core.context.extensions.get_extension()?,
             self.config.credential_validator(),
             &self.current_epoch.public_tree,
+            self.config.proposal_filter(ProposalFilterInit::new(
+                &self.current_epoch.public_tree,
+                &self.core.context,
+                plaintext.plaintext.content.sender.clone(),
+            )),
         )?;
 
         let provisional_state = self.core.apply_proposals(

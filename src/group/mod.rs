@@ -15,7 +15,7 @@ use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
-use crate::client_config::{CredentialValidator, PskStore};
+use crate::client_config::{CredentialValidator, ProposalFilterInit, PskStore};
 use crate::credential::CredentialError;
 use crate::extension::{
     ExtensionError, ExtensionList, ExternalPubExt, RatchetTreeExt, RequiredCapabilitiesExt,
@@ -69,6 +69,9 @@ pub use external_group_config::{ExternalGroupConfig, InMemoryExternalGroupConfig
 pub use group_config::{GroupConfig, InMemoryGroupConfig};
 pub use group_info::GroupInfo;
 pub use group_state::GroupState;
+pub use proposal_filter::{
+    BoxedProposalFilter, PassThroughProposalFilter, ProposalBundle, ProposalFilter,
+};
 pub use secret_tree::SecretTreeError;
 
 mod confirmation_tag;
@@ -1063,6 +1066,11 @@ impl<C: GroupConfig> Group<C> {
             self.core.context.extensions.get_extension()?,
             self.config.credential_validator(),
             &self.current_public_epoch.public_tree,
+            self.config.proposal_filter(ProposalFilterInit::new(
+                &self.current_public_epoch.public_tree,
+                &self.core.context,
+                Sender::Member(self.private_tree.self_index),
+            )),
         )?;
 
         // Generate a provisional GroupContext object by applying the proposals referenced in the
@@ -1916,6 +1924,11 @@ impl<C: GroupConfig> Group<C> {
             self.core.context.extensions.get_extension()?,
             self.config.credential_validator(),
             &self.current_public_epoch.public_tree,
+            self.config.proposal_filter(ProposalFilterInit::new(
+                &self.current_public_epoch.public_tree,
+                &self.core.context,
+                plaintext.plaintext.content.sender.clone(),
+            )),
         )?;
 
         let mut provisional_state = self.apply_proposals(proposal_effects)?;
@@ -2250,15 +2263,17 @@ fn commit_sender(
     }
 }
 
-fn proposal_effects<C>(
+fn proposal_effects<C, F>(
     proposals: &ProposalCache,
     commit_content: &MLSMessageCommitContent<'_>,
     required_capabilities: Option<RequiredCapabilitiesExt>,
     credential_validator: C,
     public_tree: &TreeKemPublic,
+    user_filter: F,
 ) -> Result<ProposalSetEffects, ProposalCacheError>
 where
     C: CredentialValidator,
+    F: ProposalFilter,
 {
     proposals.resolve_for_commit(
         commit_content.sender.clone(),
@@ -2267,6 +2282,7 @@ where
         required_capabilities,
         credential_validator,
         public_tree,
+        user_filter,
     )
 }
 

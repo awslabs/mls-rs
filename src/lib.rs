@@ -79,7 +79,7 @@ pub use external_session::ExternalSession;
 pub use ferriscrypt;
 pub use group::{
     proposal::{AddProposal, Proposal, RemoveProposal, UpdateProposal},
-    GroupContext,
+    BoxedProposalFilter, GroupContext, PassThroughProposalFilter, ProposalBundle, ProposalFilter,
 };
 pub use protocol_version::ProtocolVersion;
 pub use tls_codec;
