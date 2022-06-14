@@ -134,10 +134,12 @@ impl CertificateChain {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
     use super::CertificateData;
-    use ferriscrypt::asym::ec_key::{Curve, SecretKey};
+    use ferriscrypt::asym::ec_key::Curve;
+    #[cfg(test)]
+    use ferriscrypt::asym::ec_key::SecretKey;
 
     pub fn test_cert(curve: Curve) -> CertificateData {
         let data = match curve {
@@ -155,6 +157,7 @@ pub(crate) mod test_utils {
         CertificateData::from(data)
     }
 
+    #[cfg(test)]
     pub fn test_key(curve: Curve) -> SecretKey {
         let data = match curve {
             Curve::P256 => include_bytes!("../test_data/p256_key.der").to_vec(),

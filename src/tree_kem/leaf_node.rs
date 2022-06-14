@@ -258,7 +258,7 @@ impl<'a> Signable<'a> for LeafNode {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,

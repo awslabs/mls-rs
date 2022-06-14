@@ -214,7 +214,7 @@ impl ExtensionList {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
     use super::*;
 

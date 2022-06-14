@@ -60,7 +60,7 @@ impl CredentialConvertible for CertificateChain {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
     use ferriscrypt::asym::ec_key::Curve;
 

@@ -63,14 +63,22 @@ mod serde_utils;
 pub mod session;
 pub mod signer;
 pub mod signing_identity;
-mod tree_kem;
 pub mod x509;
+
+#[cfg(feature = "benchmark")]
+pub mod bench_utils;
 
 #[cfg(feature = "benchmark")]
 pub mod tls;
 
+#[cfg(feature = "benchmark")]
+pub mod tree_kem;
+
 #[cfg(not(feature = "benchmark"))]
 mod tls;
+
+#[cfg(not(feature = "benchmark"))]
+mod tree_kem;
 
 pub use epoch::{Epoch, EpochRepository, InMemoryEpochRepository};
 pub use external_client::ExternalClient;

@@ -43,6 +43,12 @@ pub(crate) struct Parent {
 )]
 pub struct LeafIndex(pub(crate) u32);
 
+impl LeafIndex {
+    pub fn new(i: u32) -> Self {
+        Self(i)
+    }
+}
+
 impl Deref for LeafIndex {
     type Target = u32;
 
