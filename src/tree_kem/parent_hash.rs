@@ -233,7 +233,34 @@ impl TreeKemPublic {
                         if n_node.get_parent_hash()
                             == Some(self.parent_hash(&p_parent_hash, p, s)?)
                         {
-                            if nodes_to_validate.remove(&p) {
+                            // Check that "n is in the resolution of c, and the intersection of p's unmerged_leaves with the subtree
+                            // under c is equal to the resolution of c with n removed".
+                            let c = tree_math::sibling(s, num_leaves)?;
+
+                            let mut c_resolution = self
+                                .nodes
+                                .get_resolution_index(c)?
+                                .into_iter()
+                                .collect::<HashSet<_>>();
+
+                            let (c_leftmost, c_rightmost) = tree_math::subtree(c);
+
+                            let p_unmerged_in_c_subtree = self
+                                .nodes
+                                .borrow_as_parent(p)?
+                                .unmerged_leaves
+                                .iter()
+                                .copied()
+                                .filter_map(|x| {
+                                    (c_leftmost <= (*x * 2) && (*x * 2) < c_rightmost)
+                                        .then(|| (*x * 2))
+                                })
+                                .collect::<HashSet<_>>();
+
+                            if c_resolution.remove(&n)
+                                && c_resolution == p_unmerged_in_c_subtree
+                                && nodes_to_validate.remove(&p)
+                            {
                                 // If n's parent_hash field matches and p has not been validated yet, mark p as validated and continue.
                                 n = p;
                             } else {

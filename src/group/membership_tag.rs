@@ -119,8 +119,8 @@ mod tests {
     #[test]
     fn test_membership_tag_matching() {
         for cipher_suite in CipherSuite::all() {
-            let context_a = get_test_group_context(1);
-            let context_b = get_test_group_context(2);
+            let context_a = get_test_group_context(1, cipher_suite);
+            let context_b = get_test_group_context(2, cipher_suite);
             let plaintext_a = get_test_plaintext(b"hello".to_vec());
             let plaintext_b = get_test_plaintext(b"world".to_vec());
 

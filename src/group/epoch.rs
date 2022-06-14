@@ -270,7 +270,7 @@ pub mod test_utils {
         );
 
         Epoch {
-            context: get_test_group_context(0),
+            context: get_test_group_context(0, cipher_suite),
             self_index: LeafIndex(0),
             resumption_secret: vec![],
             sender_data_secret: vec![],

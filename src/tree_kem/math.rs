@@ -129,6 +129,11 @@ pub fn common_ancestor_direct(x: u32, y: u32) -> u32 {
     }
 }
 
+pub fn subtree(x: u32) -> (u32, u32) {
+    let breadth = 1 << level(x);
+    (x + 1 - breadth, x + breadth)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -207,11 +207,11 @@ where
         authenticated_data: Vec<u8>,
     ) -> Result<(Self, Vec<u8>), SessionError> {
         let tree = tree_data
-            .map(|t| Self::import_ratchet_tree(group_info.cipher_suite, t))
+            .map(|t| Self::import_ratchet_tree(group_info.group_context.cipher_suite, t))
             .transpose()?;
 
         let (protocol, commit_message) = Group::new_external(
-            ClientGroupConfig::new(config.clone(), group_info.group_id.clone()),
+            ClientGroupConfig::new(config.clone(), group_info.group_context.group_id.clone()),
             protocol_version,
             group_info,
             tree,

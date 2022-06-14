@@ -151,11 +151,11 @@ where
         let keychain = self.config.keychain();
 
         let (identity, signer) = keychain
-            .default_identity(group_info.cipher_suite)
+            .default_identity(group_info.group_context.cipher_suite)
             .ok_or(ClientError::NoCredentialFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
-            group_info.cipher_suite,
+            group_info.group_context.cipher_suite,
             identity,
             self.config.capabilities(),
             self.config.leaf_node_extensions(),
