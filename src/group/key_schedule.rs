@@ -1,23 +1,32 @@
+use ferriscrypt::cipher::aead::{AeadNonce, Key};
 use ferriscrypt::digest::HashFunction;
-use ferriscrypt::hpke::KdfId;
+use ferriscrypt::hpke::kem::{HpkePublicKey, KemType};
+use ferriscrypt::hpke::{HpkeError, KdfId};
 use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::kdf::KdfError;
+use ferriscrypt::rand::{SecureRng, SecureRngError};
 use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;
-use tls_codec_derive::{TlsSerialize, TlsSize};
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::cipher_suite::CipherSuite;
 use crate::group::secret_tree::SecretTreeError;
-use crate::group::{CommitSecret, GroupContext, InitSecret, LeafIndex, SecretTree};
+use crate::group::{GroupContext, LeafIndex, MembershipTag, MembershipTagError, SecretTree};
+use crate::psk::{get_epoch_secret, JoinerSecret, Psk, PskSecretError};
 use crate::signing_identity::SigningIdentityError;
 use crate::tree_kem::TreeKemPublic;
+use crate::tree_kem::{
+    path_secret::{PathSecret, PathSecretError, PathSecretGenerator},
+    TreeSecrets, UpdatePathGeneration,
+};
 use ferriscrypt::cipher::aead::AeadError;
 use ferriscrypt::cipher::NonceError;
 
 use super::epoch::Epoch;
+use super::framing::MLSPlaintext;
 
 #[derive(Debug, Error)]
 pub enum KeyScheduleKdfError {
@@ -41,6 +50,10 @@ pub enum KeyScheduleError {
     AeadError(#[from] AeadError),
     #[error(transparent)]
     NonceError(#[from] NonceError),
+    #[error(transparent)]
+    SecureRngError(#[from] SecureRngError),
+    #[error(transparent)]
+    PskSecretError(#[from] PskSecretError),
     #[error(transparent)]
     SigningIdentityError(#[from] SigningIdentityError),
     #[error("key derivation failure")]
@@ -129,45 +142,68 @@ impl KeyScheduleKdf {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize, Zeroize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Zeroize)]
 #[zeroize(drop)]
 pub struct KeySchedule {
-    pub exporter_secret: Vec<u8>,
+    exporter_secret: Vec<u8>,
     pub authentication_secret: Vec<u8>,
-    pub external_secret: Vec<u8>,
-    pub membership_key: Vec<u8>,
-    pub init_secret: InitSecret,
+    external_secret: Vec<u8>,
+    membership_key: Vec<u8>,
+    init_secret: InitSecret,
 }
 
-pub struct KeyScheduleDerivationResult {
-    pub key_schedule: KeySchedule,
-    pub confirmation_key: Vec<u8>,
-    pub joiner_secret: Vec<u8>,
-    pub epoch: Epoch,
+pub(crate) struct KeyScheduleDerivationResult {
+    pub(crate) key_schedule: KeySchedule,
+    pub(crate) confirmation_key: Vec<u8>,
+    pub(crate) joiner_secret: JoinerSecret,
+    pub(crate) epoch: Epoch,
 }
 
 impl KeySchedule {
+    pub fn new(init_secret: InitSecret) -> Self {
+        Self {
+            exporter_secret: vec![],
+            authentication_secret: vec![],
+            external_secret: vec![],
+            membership_key: vec![],
+            init_secret,
+        }
+    }
+
+    pub fn derive_for_external(
+        &self,
+        kem_output: &[u8],
+        cipher_suite: CipherSuite,
+    ) -> Result<KeySchedule, HpkeError> {
+        let init_secret =
+            InitSecret::decode_for_external(cipher_suite, kem_output, &self.external_secret)?;
+        Ok(KeySchedule::new(init_secret))
+    }
+
     /// Returns the derived epoch as well as the joiner secret required for building welcome
     /// messages
-    pub fn derive(
+    pub(crate) fn derive(
         cipher_suite: CipherSuite,
-        last_init_secret: &InitSecret,
+        last_key_schedule: &KeySchedule,
         commit_secret: &CommitSecret,
         context: &GroupContext,
         self_index: LeafIndex,
         public_tree: TreeKemPublic,
-        psk_secret: &[u8],
+        psk_secret: &Psk,
     ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
-        let joiner_seed = Zeroizing::new(kdf.extract(commit_secret, last_init_secret.as_ref())?);
+        let joiner_seed =
+            Zeroizing::new(kdf.extract(&commit_secret.0, &last_key_schedule.init_secret.0)?);
 
-        let joiner_secret = kdf.expand_with_label(
-            &joiner_seed,
-            "joiner",
-            &context.tls_serialize_detached()?,
-            kdf.extract_size(),
-        )?;
+        let joiner_secret: JoinerSecret = kdf
+            .expand_with_label(
+                &joiner_seed,
+                "joiner",
+                &context.tls_serialize_detached()?,
+                kdf.extract_size(),
+            )?
+            .into();
 
         let key_schedule_result = Self::new_joiner(
             cipher_suite,
@@ -186,17 +222,17 @@ impl KeySchedule {
         })
     }
 
-    pub fn new_joiner(
+    pub(crate) fn new_joiner(
         cipher_suite: CipherSuite,
-        joiner_secret: &[u8],
+        joiner_secret: &JoinerSecret,
         context: &GroupContext,
         self_index: LeafIndex,
         public_tree: TreeKemPublic,
-        psk_secret: &[u8],
+        psk_secret: &Psk,
     ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
-        let epoch_seed = Zeroizing::new(kdf.extract(psk_secret, joiner_secret)?);
+        let epoch_seed = Zeroizing::new(get_epoch_secret(cipher_suite, psk_secret, joiner_secret)?);
 
         let epoch_secret = Zeroizing::new(kdf.expand_with_label(
             &epoch_seed,
@@ -231,17 +267,15 @@ impl KeySchedule {
             })
             .collect::<Result<HashMap<_, _>, _>>()?;
 
-        let epoch = Epoch {
-            context: context.clone(),
+        let epoch = Epoch::new(
+            context.clone(),
             self_index,
-            sender_data_secret,
             resumption_secret,
+            sender_data_secret,
             secret_tree,
-            application_ratchets: Default::default(),
-            handshake_ratchets: Default::default(),
             cipher_suite,
             signature_public_keys,
-        };
+        );
 
         let key_schedule = Self {
             exporter_secret,
@@ -254,7 +288,7 @@ impl KeySchedule {
         Ok(KeyScheduleDerivationResult {
             key_schedule,
             confirmation_key,
-            joiner_secret: vec![],
+            joiner_secret: vec![].into(),
             epoch,
         })
     }
@@ -272,13 +306,178 @@ impl KeySchedule {
 
         kdf.expand_with_label(&derived_secret, "exporter", &context_hash, len)
     }
+
+    pub fn get_membership_tag(
+        &self,
+        plaintext: &MLSPlaintext,
+        context: &GroupContext,
+        cipher_suite: &CipherSuite,
+    ) -> Result<MembershipTag, MembershipTagError> {
+        MembershipTag::create(plaintext, context, &self.membership_key, cipher_suite)
+    }
+
+    pub fn ged_external_public_key(
+        &self,
+        cipher_suite: CipherSuite,
+    ) -> Result<HpkePublicKey, HpkeError> {
+        Ok(cipher_suite.kem().derive(&self.external_secret)?.1)
+    }
+}
+
+const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
+
+#[derive(
+    Clone,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+    Zeroize,
+)]
+#[zeroize(drop)]
+pub struct InitSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+
+impl InitSecret {
+    pub fn new(init_secret: Vec<u8>) -> Self {
+        InitSecret(init_secret)
+    }
+
+    pub fn random(kdf: &Hkdf) -> Result<Self, SecureRngError> {
+        SecureRng::gen(kdf.extract_size()).map(InitSecret)
+    }
+
+    pub fn from_epoch_secret(
+        kdf: &KeyScheduleKdf,
+        epoch_secret: &[u8],
+    ) -> Result<Self, KeyScheduleKdfError> {
+        kdf.derive_secret(epoch_secret, "init").map(InitSecret)
+    }
+
+    /// Returns init secret and KEM output to be used when creating an external commit.
+    pub fn encode_for_external(
+        cipher_suite: CipherSuite,
+        external_pub: &HpkePublicKey,
+    ) -> Result<(Self, Vec<u8>), HpkeError> {
+        let (kem_output, context) = cipher_suite.hpke().setup_sender(external_pub, &[], None)?;
+
+        let kdf_extract_size = Hkdf::from(cipher_suite.kdf_type()).extract_size();
+        let mut init_secret = vec![0; kdf_extract_size];
+        context.export(EXPORTER_CONTEXT, &mut init_secret)?;
+
+        Ok((InitSecret(init_secret), kem_output))
+    }
+
+    pub fn decode_for_external(
+        cipher_suite: CipherSuite,
+        kem_output: &[u8],
+        external_secret: &[u8],
+    ) -> Result<Self, HpkeError> {
+        let context = cipher_suite.hpke().setup_receiver(
+            kem_output,
+            &cipher_suite.kem().derive(external_secret)?.0,
+            &[],
+            None,
+        )?;
+
+        let kdf_extract_size = Hkdf::from(cipher_suite.kdf_type()).extract_size();
+
+        let mut init_secret = vec![0; kdf_extract_size];
+        context.export(EXPORTER_CONTEXT, &mut init_secret)?;
+        Ok(InitSecret(init_secret))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Zeroize)]
+#[zeroize(drop)]
+pub struct CommitSecret(PathSecret);
+
+impl CommitSecret {
+    // Define commit_secret as the value path_secret[n+1] derived from the path_secret[n] value
+    // assigned to the root node.
+    pub fn from_update_path(
+        cipher_suite: CipherSuite,
+        update_path: Option<&UpdatePathGeneration>,
+    ) -> Result<Self, PathSecretError> {
+        Self::from_tree_secrets(cipher_suite, update_path.map(|up| &up.secrets))
+    }
+
+    pub fn from_tree_secrets(
+        cipher_suite: CipherSuite,
+        secrets: Option<&TreeSecrets>,
+    ) -> Result<Self, PathSecretError> {
+        match secrets {
+            Some(secrets) => {
+                let mut generator = PathSecretGenerator::starting_from(
+                    cipher_suite,
+                    secrets.secret_path.root_secret.clone(),
+                );
+
+                let secret = generator.next_secret()?;
+                Ok(CommitSecret(secret.path_secret))
+            }
+            None => Ok(Self::empty(cipher_suite)),
+        }
+    }
+
+    pub fn empty(cipher_suite: CipherSuite) -> CommitSecret {
+        CommitSecret(PathSecret::empty(cipher_suite))
+    }
+}
+
+pub(crate) struct WelcomeSecret {
+    key: Key,
+    nonce: AeadNonce,
+}
+
+impl WelcomeSecret {
+    pub(crate) fn from_joiner_secret(
+        cipher_suite: CipherSuite,
+        joiner_secret: &JoinerSecret,
+        psk_secret: &Psk,
+    ) -> Result<WelcomeSecret, KeyScheduleError> {
+        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
+        let epoch_seed = Zeroizing::new(get_epoch_secret(cipher_suite, psk_secret, joiner_secret)?);
+        let welcome_secret = Zeroizing::new(kdf.derive_secret(&epoch_seed, "welcome")?);
+
+        let aead = cipher_suite.aead_type();
+
+        let mut key_buf = vec![0u8; aead.key_size()];
+        kdf.expand(&welcome_secret, b"key", &mut key_buf)?;
+        let key = Key::new(aead, key_buf)?;
+
+        let mut nonce_buf = vec![0u8; aead.nonce_size()];
+        kdf.expand(&welcome_secret, b"nonce", &mut nonce_buf)?;
+        let nonce = AeadNonce::new(&nonce_buf)?;
+
+        Ok(WelcomeSecret { key, nonce })
+    }
+
+    pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, KeyScheduleError> {
+        self.key
+            .encrypt_to_vec(plaintext, None, self.nonce.clone())
+            .map_err(Into::into)
+    }
+
+    pub(crate) fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, KeyScheduleError> {
+        self.key
+            .decrypt_from_vec(ciphertext, None, self.nonce.clone())
+            .map_err(Into::into)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use ferriscrypt::{kdf::hkdf::Hkdf, rand::SecureRng};
 
-    use crate::{cipher_suite::CipherSuite, group::init_secret::InitSecret};
+    use crate::cipher_suite::CipherSuite;
+    use crate::group::InitSecret;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -306,7 +505,7 @@ mod tests {
                 authentication_secret: vec![0u8; key_size],
                 external_secret: vec![0u8; key_size],
                 membership_key: vec![0u8; key_size],
-                init_secret: InitSecret(vec![0u8; key_size]),
+                init_secret: InitSecret::new(vec![0u8; key_size]),
             };
 
             SecureRng::fill(&mut key_schedule.exporter_secret).unwrap();
@@ -357,7 +556,7 @@ mod tests {
                 authentication_secret: vec![0u8; key_size],
                 external_secret: vec![0u8; key_size],
                 membership_key: vec![0u8; key_size],
-                init_secret: InitSecret(vec![0u8; key_size]),
+                init_secret: InitSecret::new(vec![0u8; key_size]),
             };
 
             let context = &test_case.input[key_size..];

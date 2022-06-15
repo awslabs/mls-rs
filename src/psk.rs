@@ -13,6 +13,7 @@ use ferriscrypt::{
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use zeroize::{Zeroize, Zeroizing};
 
 #[derive(
     Clone,
@@ -137,8 +138,9 @@ pub enum ResumptionPSKUsage {
     Branch,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Psk(pub Vec<u8>);
+#[derive(Clone, Debug, PartialEq, Zeroize)]
+#[zeroize(drop)]
+pub struct Psk(Vec<u8>);
 
 impl From<Vec<u8>> for Psk {
     fn from(bytes: Vec<u8>) -> Self {
@@ -146,9 +148,13 @@ impl From<Vec<u8>> for Psk {
     }
 }
 
-impl AsRef<[u8]> for Psk {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
+impl Psk {
+    pub(crate) fn new_zero(cipher_suite: CipherSuite) -> Self {
+        Self(vec![
+            0u8;
+            KeyScheduleKdf::new(cipher_suite.kdf_type())
+                .extract_size()
+        ])
     }
 }
 
@@ -164,7 +170,7 @@ pub(crate) fn psk_secret<S, F, E>(
     secret_store: &S,
     mut get_epoch: F,
     psk_ids: &[PreSharedKeyID],
-) -> Result<Vec<u8>, PskSecretError>
+) -> Result<Psk, PskSecretError>
 where
     S: PskStore,
     F: FnMut(u64) -> Result<Option<Epoch>, E>,
@@ -176,7 +182,7 @@ where
     psk_ids
         .iter()
         .enumerate()
-        .try_fold(vec![0; kdf.extract_size()], |psk_secret, (index, id)| {
+        .try_fold(Psk::new_zero(cipher_suite), |psk_secret, (index, id)| {
             let index = index as u16;
             let psk = match &id.key_id {
                 JustPreSharedKeyID::External(id) => secret_store
@@ -188,7 +194,6 @@ where
                         .map_err(|e| PskSecretError::EpochRepositoryError(e.into()))?
                         .ok_or(PskSecretError::EpochNotFound(*psk_epoch))?
                         .resumption_secret
-                        .into()
                 }
             };
             let label = PSKLabel {
@@ -197,16 +202,35 @@ where
                 count: len,
             };
             let label_bytes = label.tls_serialize_detached()?;
-            let psk_extracted = kdf.extract(&vec![0; kdf.extract_size()], psk.as_ref())?;
-            let psk_input = kdf.expand_with_label(
+            let psk_extracted = Zeroizing::new(kdf.extract(&vec![0; kdf.extract_size()], &psk.0)?);
+            let psk_input = Zeroizing::new(kdf.expand_with_label(
                 &psk_extracted,
                 "derived psk",
                 &label_bytes,
                 kdf.extract_size(),
-            )?;
-            let psk_secret = kdf.extract(&psk_input, &psk_secret)?;
+            )?);
+            let psk_secret = Psk(kdf.extract(&psk_input, &psk_secret.0)?);
             Ok(psk_secret)
         })
+}
+
+#[derive(Clone, Debug, PartialEq, Zeroize, TlsDeserialize, TlsSerialize, TlsSize)]
+#[zeroize(drop)]
+pub(crate) struct JoinerSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+
+impl From<Vec<u8>> for JoinerSecret {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+}
+
+pub(crate) fn get_epoch_secret(
+    cipher_suite: CipherSuite,
+    psk_secret: &Psk,
+    joiner_secret: &JoinerSecret,
+) -> Result<Vec<u8>, PskSecretError> {
+    let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
+    Ok(kdf.extract(&psk_secret.0, &joiner_secret.0)?)
 }
 
 #[derive(Debug, Error)]
@@ -239,8 +263,7 @@ mod tests {
         cipher_suite::CipherSuite,
         client_config::InMemoryPskStore,
         psk::{
-            psk_secret, ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, Psk, PskNonce,
-            PskSecretError,
+            psk_secret, ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskNonce, PskSecretError,
         },
     };
     use assert_matches::assert_matches;
@@ -316,7 +339,7 @@ mod tests {
             let make_psk_list = |cs, n| {
                 iter::repeat_with(|| PskInfo {
                     id: make_external_psk_id(cs).0,
-                    psk: Psk(SecureRng::gen(digest_size(cs)).unwrap()).0,
+                    psk: SecureRng::gen(digest_size(cs)).unwrap(),
                     nonce: make_nonce(cs).0,
                 })
                 .take(n)
@@ -360,6 +383,8 @@ mod tests {
                 &ids,
             )
             .unwrap()
+            .0
+            .clone()
         }
     }
 

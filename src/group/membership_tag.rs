@@ -93,17 +93,6 @@ impl MembershipTag {
         let tag = hmac_key.generate_tag(&serialized_tbm)?;
         Ok(MembershipTag(tag))
     }
-
-    pub(crate) fn matches(
-        &self,
-        plaintext: &MLSPlaintext,
-        group_context: &GroupContext,
-        membership_key: &[u8],
-        cipher_suite: &CipherSuite,
-    ) -> Result<bool, MembershipTagError> {
-        let local = MembershipTag::create(plaintext, group_context, membership_key, cipher_suite)?;
-        Ok(&local == self)
-    }
 }
 
 #[cfg(test)]
@@ -116,36 +105,57 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[test]
-    fn test_membership_tag_matching() {
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    struct TestCase {
+        cipher_suite: u16,
+        #[serde(with = "hex::serde")]
+        tag: Vec<u8>,
+    }
+
+    fn generate_test_cases() -> Vec<TestCase> {
+        let mut test_cases = Vec::new();
+
         for cipher_suite in CipherSuite::all() {
-            let context_a = get_test_group_context(1, cipher_suite);
-            let context_b = get_test_group_context(2, cipher_suite);
-            let plaintext_a = get_test_plaintext(b"hello".to_vec());
-            let plaintext_b = get_test_plaintext(b"world".to_vec());
+            let tag = MembershipTag::create(
+                &get_test_plaintext(b"hello".to_vec()),
+                &get_test_group_context(1, cipher_suite),
+                b"membership_key".as_ref(),
+                &cipher_suite,
+            )
+            .unwrap();
 
-            let key_a = b"membership_key_a".to_vec();
+            test_cases.push(TestCase {
+                cipher_suite: cipher_suite as u16,
+                tag: tag.to_vec(),
+            });
+        }
 
-            let key_b = b"membership_key_b".to_vec();
+        test_cases
+    }
 
-            let tag =
-                MembershipTag::create(&plaintext_a, &context_a, &key_a, &cipher_suite).unwrap();
+    fn load_test_cases() -> Vec<TestCase> {
+        load_test_cases!(membership_tag, generate_test_cases)
+    }
 
-            assert!(tag
-                .matches(&plaintext_a, &context_a, &key_a, &cipher_suite)
-                .unwrap());
+    #[test]
+    fn test_membership_tag() {
+        for case in load_test_cases() {
+            let cipher_suite = CipherSuite::from_raw(case.cipher_suite);
 
-            assert!(!tag
-                .matches(&plaintext_b, &context_a, &key_a, &cipher_suite)
-                .unwrap(),);
+            if cipher_suite.is_none() {
+                println!("Skipping test for unsupported cipher suite");
+                continue;
+            }
 
-            assert!(!tag
-                .matches(&plaintext_a, &context_b, &key_a, &cipher_suite)
-                .unwrap());
+            let tag = MembershipTag::create(
+                &get_test_plaintext(b"hello".to_vec()),
+                &get_test_group_context(1, cipher_suite.unwrap()),
+                b"membership_key".as_ref(),
+                &cipher_suite.unwrap(),
+            )
+            .unwrap();
 
-            assert!(!tag
-                .matches(&plaintext_a, &context_a, &key_b, &cipher_suite)
-                .unwrap());
+            assert_eq!(**tag, case.tag);
         }
     }
 }

@@ -9,7 +9,7 @@ use aws_mls::client_config::{InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECO
 use aws_mls::credential::Credential;
 use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::message::ProcessedMessagePayload;
-use aws_mls::session::{ExternalPskId, Psk, Session, StateUpdate};
+use aws_mls::session::{ExternalPskId, Session, StateUpdate};
 use aws_mls::signing_identity::SigningIdentity;
 use aws_mls::tls_codec::Serialize;
 use aws_mls::ProtocolVersion;
@@ -213,7 +213,7 @@ impl MlsClient for MlsClientImpl {
             .with_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
             .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
             .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
-            .with_psk(ExternalPskId(TEST_PSK_ID.to_vec()), Psk(vec![0u8; 16]))
+            .with_psk(ExternalPskId(TEST_PSK_ID.to_vec()), vec![0u8; 16].into())
             .build_client();
 
         let session = creator
@@ -249,7 +249,7 @@ impl MlsClient for MlsClientImpl {
             .with_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
             .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
             .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
-            .with_psk(ExternalPskId(TEST_PSK_ID.to_vec()), Psk(vec![0u8; 16]))
+            .with_psk(ExternalPskId(TEST_PSK_ID.to_vec()), vec![0u8; 16].into())
             .build_client();
 
         let key_package = client

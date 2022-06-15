@@ -4,8 +4,8 @@ use crate::{
     cipher_suite::CipherSuite,
     group::{
         Commit, ContentType, GroupContext, GroupError, KeyType, MLSCiphertext,
-        MLSCiphertextContent, MLSCiphertextContentAAD, MLSMessageContent, MLSPlaintext,
-        MLSSenderData, MLSSenderDataAAD, PublicEpoch, Sender, VerifiedPlaintext,
+        MLSCiphertextContent, MLSMessageContent, MLSPlaintext, MLSSenderData, MLSSenderDataAAD,
+        PublicEpoch, Sender, VerifiedPlaintext,
     },
     signer::Signable,
     tree_kem::{node::LeafIndex, TreeKemPublic},
@@ -14,7 +14,10 @@ use crate::{
 use ferriscrypt::asym::ec_key::PublicKey;
 use tls_codec::{Deserialize, Serialize};
 
-use super::{epoch::Epoch, framing::Content, message_signature::MessageSigningContext};
+use super::{
+    epoch::Epoch, framing::Content, key_schedule::KeySchedule,
+    message_signature::MessageSigningContext,
+};
 
 pub(crate) enum SignaturePublicKeysContainer<'a> {
     RatchetTree(&'a TreeKemPublic),
@@ -23,7 +26,7 @@ pub(crate) enum SignaturePublicKeysContainer<'a> {
 
 pub fn verify_plaintext<F>(
     plaintext: MLSPlaintext,
-    membership_key: &[u8],
+    key_schedule: &KeySchedule,
     current_public_epoch: &PublicEpoch,
     context: &GroupContext,
     external_key_id_to_signing_key: F,
@@ -32,22 +35,22 @@ where
     F: Fn(&[u8]) -> Option<PublicKey>,
 {
     // Verify the membership tag if needed
-    match plaintext.content.sender {
+    match &plaintext.content.sender {
         Sender::Member(_) => {
-            plaintext
+            let expected_tag = &key_schedule.get_membership_tag(
+                &plaintext,
+                context,
+                &current_public_epoch.cipher_suite,
+            )?;
+
+            let plaintext_tag = plaintext
                 .membership_tag
                 .as_ref()
-                .map(|tag| {
-                    tag.matches(
-                        &plaintext,
-                        context,
-                        membership_key,
-                        &current_public_epoch.cipher_suite,
-                    )
-                })
-                .transpose()?
-                .filter(|&matched| matched)
                 .ok_or(GroupError::InvalidMembershipTag)?;
+
+            if expected_tag != plaintext_tag {
+                return Err(GroupError::InvalidMembershipTag);
+            }
         }
         Sender::NewMember | Sender::Preconfigured(_) => {
             plaintext
@@ -101,13 +104,12 @@ pub(crate) fn decrypt_ciphertext(
         _ => KeyType::Handshake,
     };
 
-    let decryption_key =
-        msg_epoch.get_decryption_key(sender_data.sender, sender_data.generation, key_type)?;
-
     // Decrypt the content of the message using the grabbed key
-    let decrypted_content = decryption_key.decrypt(
-        &ciphertext.ciphertext,
-        &MLSCiphertextContentAAD::from(&ciphertext).tls_serialize_detached()?,
+    let decrypted_content = msg_epoch.decrypt(
+        sender_data.sender,
+        sender_data.generation,
+        key_type,
+        &ciphertext,
         &sender_data.reuse_guard,
     )?;
 
@@ -239,7 +241,6 @@ mod tests {
         client_config::InMemoryPskStore,
         group::{
             framing::MLSCiphertext,
-            membership_tag::MembershipTag,
             message_signature::MessageSigningContext,
             message_verifier::decrypt_ciphertext,
             padding::PaddingMode,
@@ -276,13 +277,10 @@ mod tests {
 
     fn add_membership_tag(message: &mut MLSPlaintext, group: &Group<InMemoryGroupConfig>) {
         message.membership_tag = Some(
-            MembershipTag::create(
-                message,
-                &group.core.context,
-                &group.key_schedule.membership_key,
-                &group.core.cipher_suite,
-            )
-            .unwrap(),
+            group
+                .key_schedule
+                .get_membership_tag(message, &group.core.context, &group.core.cipher_suite)
+                .unwrap(),
         );
     }
 
@@ -414,7 +412,7 @@ mod tests {
 
         verify_plaintext(
             message,
-            &env.bob.group.key_schedule.membership_key,
+            &env.bob.group.key_schedule,
             &env.bob.group.current_public_epoch,
             env.bob.group.context(),
             |_| None,
@@ -467,7 +465,7 @@ mod tests {
 
         let res = verify_plaintext(
             message,
-            &env.bob.group.key_schedule.membership_key,
+            &env.bob.group.key_schedule,
             &env.bob.group.current_public_epoch,
             env.bob.group.context(),
             |_| None,
@@ -495,7 +493,7 @@ mod tests {
 
         verify_plaintext(
             message,
-            &test_group.group.key_schedule.membership_key,
+            &test_group.group.key_schedule,
             &test_group.group.current_public_epoch,
             test_group.group.context(),
             |_| None,
@@ -523,7 +521,7 @@ mod tests {
 
         let res = verify_plaintext(
             message,
-            &test_group.group.key_schedule.membership_key,
+            &test_group.group.key_schedule,
             &test_group.group.current_public_epoch,
             test_group.group.context(),
             |_| None,
@@ -556,7 +554,7 @@ mod tests {
 
         verify_plaintext(
             message,
-            &test_group.group.key_schedule.membership_key,
+            &test_group.group.key_schedule,
             &test_group.group.current_public_epoch,
             test_group.group.context(),
             |external_id| {
@@ -590,7 +588,7 @@ mod tests {
 
         let res = verify_plaintext(
             message,
-            &test_group.group.key_schedule.membership_key,
+            &test_group.group.key_schedule,
             &test_group.group.current_public_epoch,
             test_group.group.context(),
             |external_id| {

@@ -5,7 +5,7 @@ use std::option::Option::Some;
 use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey};
 use ferriscrypt::cipher::aead::AeadError;
 use ferriscrypt::hmac::Tag;
-use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey, KemType};
+use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::kdf::KdfError;
@@ -13,6 +13,7 @@ use ferriscrypt::rand::{SecureRng, SecureRngError};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use zeroize::Zeroizing;
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
 use crate::client_config::{CredentialValidator, ProposalFilterInit, PskStore};
@@ -27,8 +28,8 @@ use crate::key_package::{
 };
 use crate::message::ProcessedMessagePayload;
 use crate::psk::{
-    ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, PskSecretError,
-    ResumptionPSKUsage, ResumptionPsk,
+    ExternalPskId, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
+    PskSecretError, ResumptionPSKUsage, ResumptionPsk,
 };
 use crate::signer::{Signable, SignatureError, Signer};
 use crate::signing_identity::SigningIdentityError;
@@ -49,7 +50,6 @@ use crate::{EpochRepository, ProtocolVersion};
 use confirmation_tag::*;
 use epoch::*;
 use framing::*;
-use init_secret::*;
 use key_schedule::*;
 use membership_tag::*;
 use message_signature::*;
@@ -83,7 +83,6 @@ mod group_config;
 mod group_core;
 mod group_info;
 mod group_state;
-mod init_secret;
 pub mod key_schedule;
 mod membership_tag;
 pub mod message_signature;
@@ -374,12 +373,11 @@ pub struct CommitOptions {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct GroupSecrets {
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    pub joiner_secret: Vec<u8>,
-    pub path_secret: Option<PathSecret>,
+struct GroupSecrets {
+    joiner_secret: JoinerSecret,
+    path_secret: Option<PathSecret>,
     #[tls_codec(with = "crate::tls::DefVec")]
-    pub psks: Vec<PreSharedKeyID>,
+    psks: Vec<PreSharedKeyID>,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -534,12 +532,9 @@ impl<C: GroupConfig> Group<C> {
         )
         .check_if_valid(&leaf_node, ValidationContext::Add(None))?;
 
-        let kdf = Hkdf::from(cipher_suite.kdf_type());
-
         let (public_tree, private_tree) =
             TreeKemPublic::derive(cipher_suite, leaf_node, leaf_node_secret)?;
 
-        let init_secret = InitSecret::random(&kdf)?;
         let tree_hash = public_tree.tree_hash()?;
 
         let context =
@@ -551,14 +546,16 @@ impl<C: GroupConfig> Group<C> {
             public_tree: public_tree.clone(),
         };
 
+        let kdf = Hkdf::from(cipher_suite.kdf_type());
+
         let key_schedule_result = KeySchedule::derive(
             cipher_suite,
-            &init_secret,
+            &KeySchedule::new(InitSecret::random(&kdf)?),
             &CommitSecret::empty(cipher_suite),
             &context,
             LeafIndex(0),
             public_tree,
-            &vec![0; kdf.extract_size()],
+            &Psk::from(vec![0; kdf.extract_size()]),
         )?;
 
         config
@@ -831,8 +828,13 @@ impl<C: GroupConfig> Group<C> {
         )
         .check_if_valid(&leaf_node, ValidationContext::Add(None))?;
 
-        let psk_secret =
-            vec![0; Hkdf::from(group_info.group_context.cipher_suite.kdf_type()).extract_size()];
+        let psk_secret = Psk::from(vec![
+            0u8;
+            Hkdf::from(
+                group_info.group_context.cipher_suite.kdf_type()
+            )
+            .extract_size()
+        ]);
 
         let mut public_tree = find_tree(public_tree, &group_info)?;
         validate_tree(&public_tree, &group_info, config.credential_validator())?;
@@ -897,7 +899,7 @@ impl<C: GroupConfig> Group<C> {
 
         let key_schedule_result = KeySchedule::derive(
             new_context.cipher_suite,
-            &init_secret,
+            &KeySchedule::new(init_secret),
             &commit_secret,
             &new_context,
             self_index,
@@ -1017,10 +1019,9 @@ impl<C: GroupConfig> Group<C> {
         let membership_tag = if matches!(encryption_mode, ControlEncryptionMode::Encrypted(_)) {
             None
         } else {
-            Some(MembershipTag::create(
+            Some(self.key_schedule.get_membership_tag(
                 &plaintext,
                 &self.core.context,
-                &self.key_schedule.membership_key,
                 &self.current_public_epoch.cipher_suite,
             )?)
         };
@@ -1201,7 +1202,7 @@ impl<C: GroupConfig> Group<C> {
 
         let key_schedule_result = KeySchedule::derive(
             self.current_public_epoch.cipher_suite,
-            &self.key_schedule.init_secret,
+            &self.key_schedule,
             &commit_secret,
             &provisional_group_context,
             self.private_tree.self_index,
@@ -1219,10 +1220,9 @@ impl<C: GroupConfig> Group<C> {
 
         if matches!(options.encryption_mode, ControlEncryptionMode::Plaintext) {
             // Create the membership tag using the current group context and key schedule
-            let membership_tag = MembershipTag::create(
+            let membership_tag = self.key_schedule.get_membership_tag(
                 &plaintext,
                 &self.core.context,
-                &self.key_schedule.membership_key,
                 &self.core.cipher_suite,
             )?;
 
@@ -1284,8 +1284,8 @@ impl<C: GroupConfig> Group<C> {
     fn make_welcome_message(
         &self,
         new_members: Vec<(KeyPackage, LeafIndex)>,
-        joiner_secret: &[u8],
-        psk_secret: &[u8],
+        joiner_secret: &JoinerSecret,
+        psk_secret: &Psk,
         update_path: Option<&UpdatePathGeneration>,
         psks: Vec<PreSharedKeyID>,
         group_info: &GroupInfo,
@@ -1408,9 +1408,6 @@ impl<C: GroupConfig> Group<C> {
             )
         };
 
-        let kdf = Hkdf::from(self.core.cipher_suite.kdf_type());
-        let init_secret = InitSecret::random(&kdf)?;
-
         let psk = PreSharedKeyID {
             key_id: JustPreSharedKeyID::Resumption(ResumptionPsk {
                 usage: ResumptionPSKUsage::Branch,
@@ -1434,9 +1431,11 @@ impl<C: GroupConfig> Group<C> {
             &psks,
         )?;
 
+        let kdf = Hkdf::from(self.core.cipher_suite.kdf_type());
+
         let key_schedule_result = KeySchedule::derive(
             self.core.cipher_suite,
-            &init_secret,
+            &KeySchedule::new(InitSecret::random(&kdf)?),
             &CommitSecret::empty(self.core.cipher_suite),
             &new_context,
             LeafIndex(0),
@@ -1546,7 +1545,7 @@ impl<C: GroupConfig> Group<C> {
         &self,
         key_package: &KeyPackage,
         leaf_index: LeafIndex,
-        joiner_secret: &[u8],
+        joiner_secret: &JoinerSecret,
         update_path: Option<&UpdatePathGeneration>,
         psks: Vec<PreSharedKeyID>,
     ) -> Result<EncryptedGroupSecrets, GroupError> {
@@ -1558,12 +1557,12 @@ impl<C: GroupConfig> Group<C> {
         }
 
         let group_secrets = GroupSecrets {
-            joiner_secret: joiner_secret.to_vec(),
+            joiner_secret: joiner_secret.clone(),
             path_secret,
             psks,
         };
 
-        let group_secrets_bytes = group_secrets.tls_serialize_detached()?;
+        let group_secrets_bytes = Zeroizing::new(group_secrets.tls_serialize_detached()?);
 
         let encrypted_group_secrets = self.core.cipher_suite.hpke().seal(
             &key_package.hpke_init_key,
@@ -1720,11 +1719,10 @@ impl<C: GroupConfig> Group<C> {
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?
             .ok_or_else(|| GroupError::EpochNotFound(self.current_epoch()))?;
 
-        let encryption_key = epoch.inner_mut().get_encryption_key(key_type)?;
-
         // Encrypt the ciphertext content using the encryption key and a nonce that is
         // reuse safe by xor the reuse guard with the first 4 bytes
-        let ciphertext = encryption_key.encrypt(
+        let (ciphertext, generation) = epoch.inner_mut().encrypt(
+            key_type,
             &ciphertext_content.tls_serialize_detached()?,
             &aad.tls_serialize_detached()?,
             &reuse_guard,
@@ -1739,7 +1737,7 @@ impl<C: GroupConfig> Group<C> {
                     Err(GroupError::OnlyMembersCanEncryptMessages)
                 }
             }?,
-            generation: encryption_key.generation,
+            generation,
             reuse_guard,
         };
 
@@ -1820,11 +1818,9 @@ impl<C: GroupConfig> Group<C> {
     where
         F: Fn(&[u8]) -> Option<PublicKey>,
     {
-        let membership_key = self.key_schedule.membership_key.clone();
-
         let plaintext = verify_plaintext(
             message,
-            &membership_key,
+            &self.key_schedule,
             &self.current_public_epoch,
             &self.core.context,
             external_key_id_to_signing_key,
@@ -2043,18 +2039,16 @@ impl<C: GroupConfig> Group<C> {
         // from the previous epoch (or from the external init) to compute the epoch secret and
         // derived secrets for the new epoch
 
-        let init_secret = match provisional_state.public_state.external_init {
-            Some((_, ExternalInit { kem_output })) => InitSecret::decode_for_external(
-                self.core.cipher_suite,
-                &kem_output,
-                &self.key_schedule.external_secret,
-            )?,
-            None => self.key_schedule.init_secret.clone(),
+        let key_schedule = match provisional_state.public_state.external_init {
+            Some((_, ExternalInit { kem_output })) => self
+                .key_schedule
+                .derive_for_external(&kem_output, self.core.cipher_suite)?,
+            None => self.key_schedule.clone(),
         };
 
         let key_schedule_result = KeySchedule::derive(
             self.core.cipher_suite,
-            &init_secret,
+            &key_schedule,
             &commit_secret,
             &provisional_group_context,
             self.private_tree.self_index, // The index never changes
@@ -2125,11 +2119,8 @@ impl<C: GroupConfig> Group<C> {
 
         extensions.set_extension(ExternalPubExt {
             external_pub: self
-                .core
-                .cipher_suite
-                .kem()
-                .derive(&self.key_schedule.external_secret)?
-                .1,
+                .key_schedule
+                .ged_external_public_key(self.core.cipher_suite)?,
         })?;
 
         let mut info = GroupInfo {
@@ -2458,13 +2449,14 @@ pub(crate) mod test_utils {
                 .unwrap();
 
             let membership_tag = Some(
-                MembershipTag::create(
-                    &plaintext,
-                    &self.group.core.context,
-                    &self.group.key_schedule.membership_key,
-                    &self.group.core.cipher_suite,
-                )
-                .unwrap(),
+                self.group
+                    .key_schedule
+                    .get_membership_tag(
+                        &plaintext,
+                        &self.group.core.context,
+                        &self.group.core.cipher_suite,
+                    )
+                    .unwrap(),
             );
 
             MLSPlaintext {
@@ -3268,10 +3260,10 @@ mod tests {
         for i in 0..5 {
             alice
                 .secret_store
-                .insert(ExternalPskId(vec![i]), Psk(vec![i]));
+                .insert(ExternalPskId(vec![i]), Psk::from(vec![i]));
 
             bob.secret_store
-                .insert(ExternalPskId(vec![i]), Psk(vec![i]));
+                .insert(ExternalPskId(vec![i]), Psk::from(vec![i]));
 
             proposals.push(alice.group.psk_proposal(ExternalPskId(vec![i])).unwrap());
         }

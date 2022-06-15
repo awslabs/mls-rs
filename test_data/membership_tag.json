@@ -1,0 +1,30 @@
+[
+  {
+    "cipher_suite": 1,
+    "tag": "371a9efba5b6bdac372be93626eb27dd729a488520003b24086d70dcda5c60dd"
+  },
+  {
+    "cipher_suite": 2,
+    "tag": "6ee2457afa282fa975fd61d7f6c9fbaff9bd23dce227f37b70a2f9ccd2195506"
+  },
+  {
+    "cipher_suite": 3,
+    "tag": "ee8e0eb8d9f9038a2bf7b4d553b9932a61354d212b3c7f92c0a6b980109433c3"
+  },
+  {
+    "cipher_suite": 4,
+    "tag": "14169eec0773b1319005e4a19bb677bbe5561de6172922e41ed809d1c699f8227066fec0f1b9667c43b8ef501ab807da58dbbc972d976bbc926b82a970693598"
+  },
+  {
+    "cipher_suite": 5,
+    "tag": "4aeccdc7d0073dc66c58fcbfb51173af3f2c358dfc9b225b643b7cf838295e525515e7908726eab6323a5b4be55939f6995480a420bf1167c4b58a9585cf501a"
+  },
+  {
+    "cipher_suite": 6,
+    "tag": "2e03911714b328c1059e94ef23724c0835a201226c9ab8b85ec214cca2e80307f8baac689c844c05e40decda3fa45f9cdb74589401258547960955856f2c0e76"
+  },
+  {
+    "cipher_suite": 7,
+    "tag": "627b7967cef63e23cb6badd14d95e9ec00653a7dc720ab607d9090ce64ef6afae48930adb415ee262b838dc65e9badb0"
+  }
+]
