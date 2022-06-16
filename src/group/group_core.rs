@@ -1,7 +1,7 @@
 use crate::{
     cipher_suite::CipherSuite,
     client_config::CredentialValidator,
-    extension::{ExtensionList, RequiredCapabilitiesExt},
+    extension::{ExtensionList, ExternalSendersExt, RequiredCapabilitiesExt},
     group::{
         Content, GroupContext, GroupError, PreSharedKey, Proposal, ProposalCache,
         ProposalSetEffects, ProvisionalPublicState, TreeKemPublic, VerifiedPlaintext,
@@ -9,6 +9,7 @@ use crate::{
     psk::{
         JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, ResumptionPSKUsage, ResumptionPsk,
     },
+    signing_identity::SigningIdentity,
     tree_kem::leaf_node_validator::LeafNodeValidator,
     ProtocolVersion,
 };
@@ -192,5 +193,15 @@ impl GroupCore {
         } else {
             Ok(())
         }
+    }
+
+    pub fn external_signers(&self) -> Vec<SigningIdentity> {
+        self.context
+            .extensions
+            .get_extension::<ExternalSendersExt>()
+            .unwrap_or(None)
+            .map_or(vec![], |extern_senders_ext| {
+                extern_senders_ext.allowed_senders
+            })
     }
 }

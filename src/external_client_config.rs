@@ -25,7 +25,6 @@ pub trait ExternalClientConfig {
     type CredentialValidator: CredentialValidator;
     type ProposalFilter: ProposalFilter;
 
-    fn external_key_id(&self) -> Option<Vec<u8>>;
     fn keychain(&self) -> Self::Keychain;
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
@@ -54,7 +53,6 @@ pub trait ExternalClientConfig {
 
 #[derive(Clone, Debug)]
 pub struct InMemoryExternalClientConfig {
-    external_key_id: Option<Vec<u8>>,
     supported_extensions: Vec<ExtensionType>,
     keychain: InMemoryKeychain,
     protocol_versions: Vec<ProtocolVersion>,
@@ -69,7 +67,6 @@ pub struct InMemoryExternalClientConfig {
 impl InMemoryExternalClientConfig {
     pub fn new() -> Self {
         Self {
-            external_key_id: None,
             supported_extensions: Default::default(),
             keychain: Default::default(),
             protocol_versions: ProtocolVersion::all().collect(),
@@ -79,14 +76,6 @@ impl InMemoryExternalClientConfig {
             credential_types: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
             signatures_checked: true,
             make_proposal_filter: Default::default(),
-        }
-    }
-
-    #[must_use]
-    pub fn with_external_key_id(self, id: Vec<u8>) -> Self {
-        Self {
-            external_key_id: Some(id),
-            ..self
         }
     }
 
@@ -166,10 +155,6 @@ impl ExternalClientConfig for InMemoryExternalClientConfig {
     type EpochRepository = InMemoryPublicEpochRepository;
     type CredentialValidator = PassthroughCredentialValidator;
     type ProposalFilter = BoxedProposalFilter<SimpleError>;
-
-    fn external_key_id(&self) -> Option<Vec<u8>> {
-        self.external_key_id.clone()
-    }
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
         self.cipher_suites.clone()

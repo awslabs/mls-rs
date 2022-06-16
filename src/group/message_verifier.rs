@@ -8,6 +8,7 @@ use crate::{
         PublicEpoch, Sender, VerifiedPlaintext,
     },
     signer::Signable,
+    signing_identity::SigningIdentity,
     tree_kem::{node::LeafIndex, TreeKemPublic},
     AddProposal, Proposal,
 };
@@ -24,16 +25,13 @@ pub(crate) enum SignaturePublicKeysContainer<'a> {
     List(&'a HashMap<LeafIndex, PublicKey>),
 }
 
-pub fn verify_plaintext<F>(
+pub fn verify_plaintext(
     plaintext: MLSPlaintext,
     key_schedule: &KeySchedule,
     current_public_epoch: &PublicEpoch,
     context: &GroupContext,
-    external_key_id_to_signing_key: F,
-) -> Result<VerifiedPlaintext, GroupError>
-where
-    F: Fn(&[u8]) -> Option<PublicKey>,
-{
+    external_signers: &[SigningIdentity],
+) -> Result<VerifiedPlaintext, GroupError> {
     // Verify the membership tag if needed
     match &plaintext.content.sender {
         Sender::Member(_) => {
@@ -52,7 +50,7 @@ where
                 return Err(GroupError::InvalidMembershipTag);
             }
         }
-        Sender::NewMember | Sender::Preconfigured(_) => {
+        Sender::NewMember | Sender::External(_) => {
             plaintext
                 .membership_tag
                 .is_none()
@@ -68,7 +66,7 @@ where
         context,
         plaintext,
         false,
-        &external_key_id_to_signing_key,
+        external_signers,
         current_public_epoch.cipher_suite,
     )
 }
@@ -135,27 +133,24 @@ pub(crate) fn decrypt_ciphertext(
         &msg_epoch.context,
         plaintext,
         true,
-        |_| None,
+        &[],
         msg_epoch.cipher_suite,
     )
 }
 
-pub(crate) fn verify_plaintext_signature<F>(
+pub(crate) fn verify_plaintext_signature(
     signature_keys_container: SignaturePublicKeysContainer,
     context: &GroupContext,
     plaintext: MLSPlaintext,
     from_ciphertext: bool,
-    external_key_id_to_signing_key: F,
+    external_signers: &[SigningIdentity],
     cipher_suite: CipherSuite,
-) -> Result<VerifiedPlaintext, GroupError>
-where
-    F: FnMut(&[u8]) -> Option<PublicKey>,
-{
-    let sender_public_key = public_key_for_sender(
+) -> Result<VerifiedPlaintext, GroupError> {
+    let sender_public_key = signing_identity_for_sender(
         signature_keys_container,
         &plaintext.content.sender,
         &plaintext.content.content,
-        external_key_id_to_signing_key,
+        external_signers,
         cipher_suite,
     )?;
 
@@ -172,26 +167,25 @@ where
     })
 }
 
-fn public_key_for_sender<F>(
+fn signing_identity_for_sender(
     signature_keys_container: SignaturePublicKeysContainer,
     sender: &Sender,
     content: &Content,
-    external_key_id_to_signing_key: F,
+    external_signers: &[SigningIdentity],
     cipher_suite: CipherSuite,
-) -> Result<PublicKey, GroupError>
-where
-    F: FnMut(&[u8]) -> Option<PublicKey>,
-{
+) -> Result<PublicKey, GroupError> {
     match sender {
-        Sender::Member(leaf_index) => public_key_for_member(signature_keys_container, *leaf_index),
-        Sender::Preconfigured(external_key_id) => {
-            public_key_for_preconfigured(external_key_id, external_key_id_to_signing_key)
+        Sender::Member(leaf_index) => {
+            signing_identity_for_member(signature_keys_container, *leaf_index)
         }
-        Sender::NewMember => public_key_for_new_member(content, cipher_suite),
+        Sender::External(external_key_index) => {
+            signing_identity_for_external(cipher_suite, *external_key_index, external_signers)
+        }
+        Sender::NewMember => signing_identity_for_new_member(content, cipher_suite),
     }
 }
 
-fn public_key_for_member(
+fn signing_identity_for_member(
     signature_keys_container: SignaturePublicKeysContainer,
     leaf_index: LeafIndex,
 ) -> Result<PublicKey, GroupError> {
@@ -207,18 +201,21 @@ fn public_key_for_member(
     }
 }
 
-fn public_key_for_preconfigured<F>(
-    external_key_id: &[u8],
-    mut external_key_id_to_signing_key: F,
-) -> Result<PublicKey, GroupError>
-where
-    F: FnMut(&[u8]) -> Option<PublicKey>,
-{
-    external_key_id_to_signing_key(external_key_id)
-        .ok_or(GroupError::UnknownSigningKeyForExternalSender)
+fn signing_identity_for_external(
+    cipher_suite: CipherSuite,
+    index: u32,
+    external_signers: &[SigningIdentity],
+) -> Result<PublicKey, GroupError> {
+    let external_identity = external_signers
+        .get(index as usize)
+        .ok_or(GroupError::UnknownSigningIdentityForExternalSender)?;
+
+    external_identity
+        .public_key(cipher_suite)
+        .map_err(Into::into)
 }
 
-fn public_key_for_new_member(
+fn signing_identity_for_new_member(
     content: &Content,
     cipher_suite: CipherSuite,
 ) -> Result<PublicKey, GroupError> {
@@ -250,6 +247,7 @@ mod tests {
             InMemoryGroupConfig, MLSMessagePayload, MLSPlaintext, Sender, VerifiedPlaintext,
         },
         signer::{Signable, SignatureError},
+        signing_identity::test_utils::get_test_signing_identity,
         EpochRepository, ProtocolVersion,
     };
     use assert_matches::assert_matches;
@@ -263,7 +261,7 @@ mod tests {
 
     const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
-    const TED_EXTERNAL_KEY_ID: &[u8] = b"ted";
+    const TED_EXTERNAL_KEY_INDEX: u32 = 0u32;
 
     fn make_plaintext(sender: Sender, epoch: u64) -> MLSPlaintext {
         MLSPlaintext::new(
@@ -415,7 +413,7 @@ mod tests {
             &env.bob.group.key_schedule,
             &env.bob.group.current_public_epoch,
             env.bob.group.context(),
-            |_| None,
+            &[],
         )
         .unwrap();
     }
@@ -468,7 +466,7 @@ mod tests {
             &env.bob.group.key_schedule,
             &env.bob.group.current_public_epoch,
             env.bob.group.context(),
-            |_| None,
+            &[],
         );
 
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
@@ -496,7 +494,7 @@ mod tests {
             &test_group.group.key_schedule,
             &test_group.group.current_public_epoch,
             test_group.group.context(),
-            |_| None,
+            &[],
         )
         .unwrap();
     }
@@ -524,20 +522,23 @@ mod tests {
             &test_group.group.key_schedule,
             &test_group.group.current_public_epoch,
             test_group.group.context(),
-            |_| None,
+            &[],
         );
 
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
 
     #[test]
-    fn valid_proposal_from_preconfigured_external_is_verified() {
+    fn valid_proposal_from_external_is_verified() {
         let (bob_key_pkg_gen, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
-        let (_, ted_signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"ted");
+
+        let (ted_signing, ted_secret) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
+
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let mut message = make_plaintext(
-            Sender::Preconfigured(TED_EXTERNAL_KEY_ID.to_vec()),
+            Sender::External(TED_EXTERNAL_KEY_INDEX),
             test_group.group.current_epoch(),
         );
 
@@ -550,28 +551,65 @@ mod tests {
             encrypted: false,
         };
 
-        message.sign(&ted_signer, &signing_context).unwrap();
+        message.sign(&ted_secret, &signing_context).unwrap();
 
         verify_plaintext(
             message,
             &test_group.group.key_schedule,
             &test_group.group.current_public_epoch,
             test_group.group.context(),
-            |external_id| {
-                (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
-            },
+            &[ted_signing],
         )
         .unwrap();
     }
 
     #[test]
-    fn proposal_from_preconfigured_external_must_not_have_membership_tag() {
+    fn external_proposal_must_be_from_valid_sender() {
         let (bob_key_pkg_gen, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
-        let (_, ted_signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"ted");
+        let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let mut message = make_plaintext(
-            Sender::Preconfigured(TED_EXTERNAL_KEY_ID.to_vec()),
+            Sender::External(TED_EXTERNAL_KEY_INDEX),
+            test_group.group.current_epoch(),
+        );
+
+        message.content.content = Content::Proposal(Proposal::Add(AddProposal {
+            key_package: bob_key_pkg_gen.key_package,
+        }));
+
+        let signing_context = MessageSigningContext {
+            group_context: None,
+            encrypted: false,
+        };
+
+        message.sign(&ted_secret, &signing_context).unwrap();
+
+        let res = verify_plaintext(
+            message,
+            &test_group.group.key_schedule,
+            &test_group.group.current_public_epoch,
+            test_group.group.context(),
+            &[],
+        );
+
+        assert_matches!(
+            res,
+            Err(GroupError::UnknownSigningIdentityForExternalSender)
+        );
+    }
+
+    #[test]
+    fn proposal_from_external_sender_must_not_have_membership_tag() {
+        let (bob_key_pkg_gen, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+
+        let (ted_signing, ted_secret) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
+
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+
+        let mut message = make_plaintext(
+            Sender::External(TED_EXTERNAL_KEY_INDEX),
             test_group.group.current_epoch(),
         );
         message.content.content = Content::Proposal(Proposal::Add(AddProposal {
@@ -583,7 +621,7 @@ mod tests {
             encrypted: false,
         };
 
-        message.sign(&ted_signer, &signing_context).unwrap();
+        message.sign(&ted_secret, &signing_context).unwrap();
         add_membership_tag(&mut message, &test_group.group);
 
         let res = verify_plaintext(
@@ -591,9 +629,7 @@ mod tests {
             &test_group.group.key_schedule,
             &test_group.group.current_public_epoch,
             test_group.group.context(),
-            |external_id| {
-                (external_id == TED_EXTERNAL_KEY_ID).then(|| ted_signer.to_public().unwrap())
-            },
+            &[ted_signing],
         );
 
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));

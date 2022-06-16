@@ -2,19 +2,28 @@ use crate::{
     cipher_suite::CipherSuite,
     client_config::ProposalFilterInit,
     epoch::PublicEpochRepository,
+    extension::ExternalSendersExt,
     group::{
-        message_verifier::verify_plaintext_signature, proposal_effects, transcript_hashes,
-        ConfirmationTag, Content, ExternalGroupConfig, GroupContext, GroupCore, GroupError,
-        InterimTranscriptHash, MLSMessage, MLSMessageCommitContent, MLSMessagePayload,
-        ProposalCache, ProtocolVersion, PublicEpoch, StateUpdate, VerifiedPlaintext,
+        message_verifier::verify_plaintext_signature, proposal_effects, transcript_hashes, Content,
+        ExternalGroupConfig, GroupCore, GroupError, InterimTranscriptHash, MLSMessage,
+        MLSMessageCommitContent, MLSMessagePayload, ProposalCache, PublicEpoch, StateUpdate,
+        VerifiedPlaintext,
     },
     message::{ExternalProcessedMessage, ExternalProcessedMessagePayload},
+    signer::{Signable, Signer},
+    signing_identity::SigningIdentity,
     tree_kem::TreeKemPublic,
+    AddProposal, Proposal, RemoveProposal,
 };
-use ferriscrypt::asym::ec_key::PublicKey;
 use tls_codec::Deserialize;
 
-use super::message_verifier::SignaturePublicKeysContainer;
+use super::{
+    find_tree,
+    framing::{MLSPlaintext, Sender},
+    message_signature::MessageSigningContext,
+    message_verifier::SignaturePublicKeysContainer,
+    GroupInfo,
+};
 
 #[derive(Clone, Debug)]
 pub struct ExternalGroup<C> {
@@ -27,30 +36,30 @@ pub struct ExternalGroup<C> {
 impl<C: ExternalGroupConfig> ExternalGroup<C> {
     pub fn new(
         config: C,
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        context: GroupContext,
-        public_tree: TreeKemPublic,
-        confirmation_tag: &ConfirmationTag,
+        group_info: GroupInfo,
+        public_tree: Option<TreeKemPublic>,
     ) -> Result<Self, GroupError> {
+        let public_tree = find_tree(public_tree, &group_info)?;
+        let context = group_info.group_context;
+
         Ok(Self {
             config,
             current_epoch: PublicEpoch {
                 identifier: context.epoch,
-                cipher_suite,
+                cipher_suite: context.cipher_suite,
                 public_tree,
             },
             interim_transcript_hash: InterimTranscriptHash::create(
-                cipher_suite,
+                context.cipher_suite,
                 &context.confirmed_transcript_hash,
-                confirmation_tag.into(),
+                (&group_info.confirmation_tag).into(),
             )?,
             core: GroupCore {
-                protocol_version,
-                cipher_suite,
+                protocol_version: context.protocol_version,
+                cipher_suite: context.cipher_suite,
                 proposals: ProposalCache::new(
-                    protocol_version,
-                    cipher_suite,
+                    context.protocol_version,
+                    context.cipher_suite,
                     context.group_id.clone(),
                 ),
                 context,
@@ -58,28 +67,21 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
         })
     }
 
-    pub fn process_incoming_bytes<F>(
-        &mut self,
-        message: &[u8],
-        external_key_id_to_signing_key: F,
-    ) -> Result<ExternalProcessedMessage, GroupError>
-    where
-        F: FnMut(&[u8]) -> Option<PublicKey>,
-    {
-        self.process_incoming_message(
-            MLSMessage::tls_deserialize(&mut &*message)?,
-            external_key_id_to_signing_key,
-        )
+    pub fn cipher_suite(&self) -> CipherSuite {
+        self.core.cipher_suite
     }
 
-    pub fn process_incoming_message<F>(
+    pub fn process_incoming_bytes(
+        &mut self,
+        message: &[u8],
+    ) -> Result<ExternalProcessedMessage, GroupError> {
+        self.process_incoming_message(MLSMessage::tls_deserialize(&mut &*message)?)
+    }
+
+    pub fn process_incoming_message(
         &mut self,
         message: MLSMessage,
-        external_key_id_to_signing_key: F,
-    ) -> Result<ExternalProcessedMessage, GroupError>
-    where
-        F: FnMut(&[u8]) -> Option<PublicKey>,
-    {
+    ) -> Result<ExternalProcessedMessage, GroupError> {
         if message.version != self.core.protocol_version {
             return Err(GroupError::InvalidProtocol(
                 self.core.protocol_version,
@@ -98,7 +100,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
                         &self.core.context,
                         plaintext,
                         false,
-                        external_key_id_to_signing_key,
+                        &self.core.external_signers(),
                         self.current_epoch.cipher_suite,
                     )?
                 } else {
@@ -244,21 +246,102 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
                 .map_err(|e| GroupError::EpochRepositoryError(e.into()))?
                 .is_some())
     }
+
+    pub fn propose_add<S: Signer>(
+        &self,
+        proposal: AddProposal,
+        authenticated_data: Vec<u8>,
+        signing_identity: &SigningIdentity,
+        signer: &S,
+    ) -> Result<MLSMessage, GroupError> {
+        self.propose(
+            Proposal::Add(proposal),
+            authenticated_data,
+            signing_identity,
+            signer,
+        )
+    }
+
+    pub fn propose_remove<S: Signer>(
+        &self,
+        proposal: RemoveProposal,
+        authenticated_data: Vec<u8>,
+        signing_identity: &SigningIdentity,
+        signer: &S,
+    ) -> Result<MLSMessage, GroupError> {
+        self.propose(
+            Proposal::Remove(proposal),
+            authenticated_data,
+            signing_identity,
+            signer,
+        )
+    }
+
+    fn propose<S: Signer>(
+        &self,
+        proposal: Proposal,
+        authenticated_data: Vec<u8>,
+        signing_identity: &SigningIdentity,
+        signer: &S,
+    ) -> Result<MLSMessage, GroupError> {
+        let external_senders_ext = self
+            .core
+            .context
+            .extensions
+            .get_extension::<ExternalSendersExt>()?
+            .ok_or(GroupError::ExternalProposalsDisabled)?;
+
+        let sender_index = external_senders_ext
+            .allowed_senders
+            .into_iter()
+            .position(|allowed_signer| *signing_identity == allowed_signer)
+            .ok_or(GroupError::InvalidExternalSigningIdentity)?;
+
+        let sender = Sender::External(sender_index as u32);
+
+        let mut message = MLSPlaintext::new(
+            self.core.context.group_id.clone(),
+            self.core.context.epoch,
+            sender,
+            Content::Proposal(proposal),
+            authenticated_data,
+        );
+
+        let signing_context = MessageSigningContext {
+            group_context: None,
+            encrypted: false,
+        };
+
+        message.sign(signer, &signing_context)?;
+
+        Ok(MLSMessage {
+            version: self.core.protocol_version,
+            payload: MLSMessagePayload::Plain(message),
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
+        extension::{ExtensionList, ExternalSendersExt},
         group::{
+            framing::MLSPlaintext,
+            proposal::ProposalOrRef,
+            proposal_ref::ProposalRef,
             test_utils::{test_group, TestGroup},
             Content, ExternalGroup, GroupError, InMemoryExternalGroupConfig, MLSMessage,
             MLSMessagePayload,
         },
+        key_package::test_utils::test_key_package_with_id,
         message::{ExternalProcessedMessage, ExternalProcessedMessagePayload},
-        ProtocolVersion,
+        signing_identity::{test_utils::get_test_signing_identity, SigningIdentity},
+        tree_kem::node::LeafIndex,
+        AddProposal, Proposal, ProtocolVersion, RemoveProposal,
     };
     use assert_matches::assert_matches;
+    use ferriscrypt::asym::ec_key::SecretKey;
 
     const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
@@ -266,6 +349,38 @@ mod tests {
     fn test_group_with_one_commit(v: ProtocolVersion, cs: CipherSuite) -> TestGroup {
         let mut group = test_group(v, cs);
         let (commit, _) = group.commit(Vec::new()).unwrap();
+        group.process_pending_commit(commit).unwrap();
+        group
+    }
+
+    fn test_group_two_members(
+        v: ProtocolVersion,
+        cs: CipherSuite,
+        ext_identity: Option<SigningIdentity>,
+    ) -> TestGroup {
+        let mut group = test_group_with_one_commit(v, cs);
+
+        let bob_key_package = test_key_package_with_id(v, cs, "bob");
+
+        let add_proposal = AddProposal {
+            key_package: bob_key_package,
+        };
+
+        let mut proposals = vec![Proposal::Add(add_proposal)];
+
+        if let Some(ext_signer) = ext_identity {
+            let mut ext_list = ExtensionList::new();
+
+            ext_list
+                .set_extension(ExternalSendersExt {
+                    allowed_senders: vec![ext_signer],
+                })
+                .unwrap();
+
+            proposals.push(Proposal::GroupContextExtensions(ext_list))
+        }
+
+        let (commit, _) = group.commit(proposals).unwrap();
         group.process_pending_commit(commit).unwrap();
         group
     }
@@ -284,15 +399,8 @@ mod tests {
 
         ExternalGroup::new(
             config,
-            group.group.protocol_version(),
-            public_tree.cipher_suite,
-            group.group.context().clone(),
-            public_tree.clone(),
-            &group
-                .group
-                .external_commit_info(&group.signing_key)
-                .unwrap()
-                .confirmation_tag,
+            group.group.external_commit_info(&group.signing_key)?,
+            Some(public_tree.clone()),
         )
     }
 
@@ -300,13 +408,10 @@ mod tests {
         group: &mut ExternalGroup<InMemoryExternalGroupConfig>,
         payload: MLSMessagePayload,
     ) -> Result<ExternalProcessedMessage, GroupError> {
-        group.process_incoming_message(
-            MLSMessage {
-                version: TEST_PROTOCOL_VERSION,
-                payload,
-            },
-            |_| None,
-        )
+        group.process_incoming_message(MLSMessage {
+            version: TEST_PROTOCOL_VERSION,
+            payload,
+        })
     }
 
     #[test]
@@ -402,5 +507,126 @@ mod tests {
             process_message(&mut server, plaintext.into()),
             Err(GroupError::UnencryptedApplicationMessage)
         );
+    }
+
+    fn setup_extern_proposal_test(
+        extern_proposals_allowed: bool,
+    ) -> (SigningIdentity, SecretKey, TestGroup) {
+        let (server_identity, server_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"server".to_vec());
+
+        let alice = test_group_two_members(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            extern_proposals_allowed.then(|| server_identity.clone()),
+        );
+
+        (server_identity, server_key, alice)
+    }
+
+    fn test_external_proposal<F>(proposal_creation: F)
+    where
+        F: Fn(
+            &ExternalGroup<InMemoryExternalGroupConfig>,
+            &SigningIdentity,
+            &SecretKey,
+        ) -> MLSPlaintext,
+    {
+        let (server_identity, server_key, mut alice) = setup_extern_proposal_test(true);
+
+        let server = make_external_group(&alice).unwrap();
+
+        let external_proposal = proposal_creation(&server, &server_identity, &server_key);
+
+        let proposal_ref =
+            ProposalRef::from_plaintext(TEST_CIPHER_SUITE, &external_proposal, false).unwrap();
+
+        // Alice receives the proposal
+        alice.process_message(external_proposal).unwrap();
+
+        // Alice commits the proposal
+        let (commit_data, _) = alice.commit(vec![]).unwrap();
+
+        let commit = match &commit_data.plaintext.content.content {
+            Content::Commit(commit) => commit,
+            _ => panic!("not a commit"),
+        };
+
+        // The proposal should be in the resulting commit
+        assert!(commit
+            .proposals
+            .contains(&ProposalOrRef::Reference(proposal_ref)))
+    }
+
+    #[test]
+    fn external_group_can_propose_add() {
+        test_external_proposal(|ext_group, signing_id, secret_key| {
+            let charlie_key_package =
+                test_key_package_with_id(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+
+            let add_proposal = AddProposal {
+                key_package: charlie_key_package,
+            };
+
+            ext_group
+                .propose_add(add_proposal, vec![], signing_id, secret_key)
+                .unwrap()
+                .into_plaintext()
+                .unwrap()
+        })
+    }
+
+    #[test]
+    fn external_group_can_propose_remove() {
+        test_external_proposal(|ext_group, signing_id, secret_key| {
+            let remove_proposal = RemoveProposal {
+                to_remove: LeafIndex(1),
+            };
+
+            ext_group
+                .propose_remove(remove_proposal, vec![], signing_id, secret_key)
+                .unwrap()
+                .into_plaintext()
+                .unwrap()
+        })
+    }
+
+    #[test]
+    fn external_group_external_proposal_not_allowed() {
+        let (signing_id, secret_key, alice) = setup_extern_proposal_test(false);
+        let server = make_external_group(&alice).unwrap();
+
+        let charlie_key_package =
+            test_key_package_with_id(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+
+        let add_proposal = AddProposal {
+            key_package: charlie_key_package,
+        };
+
+        let res = server.propose_add(add_proposal, vec![], &signing_id, &secret_key);
+
+        assert_matches!(res, Err(GroupError::ExternalProposalsDisabled));
+    }
+
+    #[test]
+    fn external_group_external_signing_identity_invalid() {
+        let (server_identity, server_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"server".to_vec());
+
+        let alice = test_group_two_members(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            Some(get_test_signing_identity(TEST_CIPHER_SUITE, b"not server".to_vec()).0),
+        );
+
+        let server = make_external_group(&alice).unwrap();
+
+        let remove_proposal = RemoveProposal {
+            to_remove: LeafIndex(1),
+        };
+
+        let res = server.propose_remove(remove_proposal, vec![], &server_identity, &server_key);
+
+        assert_matches!(res, Err(GroupError::InvalidExternalSigningIdentity));
     }
 }

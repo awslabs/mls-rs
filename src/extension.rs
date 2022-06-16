@@ -1,7 +1,7 @@
-use crate::credential::CredentialType;
 use crate::group::proposal::ProposalType;
 use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
+use crate::{credential::CredentialType, signing_identity::SigningIdentity};
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use indexmap::IndexMap;
 use std::io::{Read, Write};
@@ -23,6 +23,7 @@ const APPLICATION_ID_EXT_ID: ExtensionType = 1;
 const RATCHET_TREE_EXT_ID: ExtensionType = 2;
 const REQUIRED_CAPABILITIES_EXT_ID: ExtensionType = 3;
 const EXTERNAL_PUB_EXT_ID: ExtensionType = 4;
+const EXTERNAL_SENDERS_EXT_ID: ExtensionType = 5;
 
 pub trait MlsExtension: Sized + Serialize + Deserialize {
     const IDENTIFIER: ExtensionType;
@@ -87,6 +88,23 @@ pub struct ExternalPubExt {
 
 impl MlsExtension for ExternalPubExt {
     const IDENTIFIER: ExtensionType = EXTERNAL_PUB_EXT_ID;
+}
+
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[non_exhaustive]
+pub struct ExternalSendersExt {
+    #[tls_codec(with = "crate::tls::DefVec")]
+    pub allowed_senders: Vec<SigningIdentity>,
+}
+
+impl ExternalSendersExt {
+    pub fn new(allowed_senders: Vec<SigningIdentity>) -> Self {
+        Self { allowed_senders }
+    }
+}
+
+impl MlsExtension for ExternalSendersExt {
+    const IDENTIFIER: ExtensionType = EXTERNAL_SENDERS_EXT_ID;
 }
 
 #[derive(

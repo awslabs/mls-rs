@@ -164,8 +164,8 @@ pub enum ProposalFilterError {
     InvalidProposalTypeForProposer(ProposalType, Sender),
     #[error("External commit must have exactly one ExternalInit proposal")]
     ExternalCommitMustHaveExactlyOneExternalInit,
-    #[error("Preconfigured sender cannot commit")]
-    PreconfiguredSenderCannotCommit,
+    #[error("External sender cannot commit")]
+    ExternalSenderCannotCommit,
     #[error("Missing update path in external commit")]
     MissingUpdatePathInExternalCommit,
     #[error("External commit contains removal of other identity")]

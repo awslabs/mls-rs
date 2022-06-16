@@ -106,7 +106,7 @@ impl Deserialize for MLSMessageContentTBS {
         let content = MLSMessageContent::tls_deserialize(bytes)?;
         let context = match content.sender {
             Sender::Member(_) | Sender::NewMember => Some(GroupContext::tls_deserialize(bytes)?),
-            Sender::Preconfigured(_) => None,
+            Sender::External(_) => None,
         };
         Ok(Self {
             wire_format,
@@ -132,7 +132,7 @@ impl MLSMessageContentTBS {
             content: plaintext.content.clone(),
             context: match plaintext.content.sender {
                 Sender::Member(_) | Sender::NewMember => group_context.cloned(),
-                Sender::Preconfigured(_) => None,
+                Sender::External(_) => None,
             },
         }
     }

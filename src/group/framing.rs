@@ -38,7 +38,7 @@ impl From<&Content> for ContentType {
 pub enum Sender {
     #[tls_codec(discriminant = 1)]
     Member(LeafIndex),
-    Preconfigured(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>),
+    External(u32),
     NewMember,
 }
 
@@ -165,7 +165,7 @@ impl Deserialize for MLSPlaintext {
         let auth = MLSMessageAuth::tls_deserialize(bytes, content.content_type())?;
         let membership_tag = match content.sender {
             Sender::Member(_) => Some(MembershipTag::tls_deserialize(bytes)?),
-            Sender::NewMember | Sender::Preconfigured(_) => None,
+            Sender::NewMember | Sender::External(_) => None,
         };
         Ok(Self {
             content,
@@ -276,6 +276,48 @@ pub struct MLSMessage {
     pub payload: MLSMessagePayload,
 }
 
+impl MLSMessage {
+    #[inline(always)]
+    pub fn into_plaintext(self) -> Option<MLSPlaintext> {
+        match self.payload {
+            MLSMessagePayload::Plain(plaintext) => Some(plaintext),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
+    pub fn into_ciphertext(self) -> Option<MLSCiphertext> {
+        match self.payload {
+            MLSMessagePayload::Cipher(ciphertext) => Some(ciphertext),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
+    pub fn into_welcome(self) -> Option<Welcome> {
+        match self.payload {
+            MLSMessagePayload::Welcome(welcome) => Some(welcome),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
+    pub fn into_group_info(self) -> Option<GroupInfo> {
+        match self.payload {
+            MLSMessagePayload::GroupInfo(info) => Some(info),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
+    pub fn into_key_package(self) -> Option<KeyPackage> {
+        match self.payload {
+            MLSMessagePayload::KeyPackage(kp) => Some(kp),
+            _ => None,
+        }
+    }
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u8)]
@@ -294,7 +336,7 @@ impl MLSMessage {
             MLSMessagePayload::Plain(_) => WireFormat::Plain,
             MLSMessagePayload::Cipher(_) => WireFormat::Cipher,
             MLSMessagePayload::Welcome(_) => WireFormat::Welcome,
-            MLSMessagePayload::GroupInfo(_) => WireFormat::PublicGroupState,
+            MLSMessagePayload::GroupInfo(_) => WireFormat::GroupInfo,
             MLSMessagePayload::KeyPackage(_) => WireFormat::KeyPackage,
         }
     }
@@ -326,7 +368,7 @@ pub enum WireFormat {
     Plain = 1,
     Cipher,
     Welcome,
-    PublicGroupState,
+    GroupInfo,
     KeyPackage,
 }
 

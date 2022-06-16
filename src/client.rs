@@ -143,10 +143,11 @@ where
         tree_data: Option<&[u8]>,
         authenticated_data: Vec<u8>,
     ) -> Result<(Session<C>, Vec<u8>), ClientError> {
-        let group_info = match group_info_msg.payload {
-            MLSMessagePayload::GroupInfo(g) => Ok(g),
-            _ => Err(ClientError::ExpectedGroupInfoMessage),
-        }?;
+        let version = group_info_msg.version;
+
+        let group_info = group_info_msg
+            .into_group_info()
+            .ok_or(ClientError::ExpectedGroupInfoMessage)?;
 
         let keychain = self.config.keychain();
 
@@ -165,7 +166,7 @@ where
 
         Ok(Session::new_external(
             self.config.clone(),
-            group_info_msg.version,
+            version,
             group_info,
             tree_data,
             leaf_node,

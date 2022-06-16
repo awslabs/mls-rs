@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::option::Option::Some;
 
-use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey};
+use ferriscrypt::asym::ec_key::EcKeyError;
 use ferriscrypt::cipher::aead::AeadError;
 use ferriscrypt::hmac::Tag;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
@@ -282,8 +282,8 @@ pub enum GroupError {
     RatchetTreeNotFound,
     #[error("Only members can encrypt messages")]
     OnlyMembersCanEncryptMessages,
-    #[error("Preconfigured sender cannot commit")]
-    PreconfiguredSenderCannotCommit,
+    #[error("External sender cannot commit")]
+    ExternalSenderCannotCommit,
     #[error("Only members can update")]
     OnlyMembersCanUpdate,
     #[error("commiter must not propose unsupported required capabilities")]
@@ -298,8 +298,12 @@ pub enum GroupError {
     SubgroupWithDifferentCipherSuite(CipherSuite),
     #[error("Unsupported protocol version {0:?} or cipher suite {1:?}")]
     UnsupportedProtocolVersionOrCipherSuite(ProtocolVersion, CipherSuite),
-    #[error("Signing key of preconfigured external sender is unknown")]
-    UnknownSigningKeyForExternalSender,
+    #[error("Signing key of external sender is unknown")]
+    UnknownSigningIdentityForExternalSender,
+    #[error("External proposals are disabled for this group")]
+    ExternalProposalsDisabled,
+    #[error("Signing identity is not allowed to externally propose")]
+    InvalidExternalSigningIdentity,
     #[error("New members can only propose adding themselves")]
     NewMembersCanOnlyProposeAddingThemselves,
     #[error("Missing ExternalPub extension")]
@@ -1733,7 +1737,7 @@ impl<C: GroupConfig> Group<C> {
         let sender_data = MLSSenderData {
             sender: match plaintext.content.sender {
                 Sender::Member(sender) => Ok(sender),
-                Sender::Preconfigured(_) | Sender::NewMember => {
+                Sender::External(_) | Sender::NewMember => {
                     Err(GroupError::OnlyMembersCanEncryptMessages)
                 }
             }?,
@@ -1810,20 +1814,16 @@ impl<C: GroupConfig> Group<C> {
         self.encrypt_plaintext(plaintext, padding)
     }
 
-    pub fn verify_incoming_plaintext<F>(
+    pub fn verify_incoming_plaintext(
         &mut self,
         message: MLSPlaintext,
-        external_key_id_to_signing_key: F,
-    ) -> Result<VerifiedPlaintext, GroupError>
-    where
-        F: Fn(&[u8]) -> Option<PublicKey>,
-    {
+    ) -> Result<VerifiedPlaintext, GroupError> {
         let plaintext = verify_plaintext(
             message,
             &self.key_schedule,
             &self.current_public_epoch,
             &self.core.context,
-            external_key_id_to_signing_key,
+            &self.core.external_signers(),
         )?;
 
         self.validate_incoming_message(plaintext)
@@ -2193,7 +2193,7 @@ impl<C: GroupConfig> Group<C> {
     }
 }
 
-fn find_tree(
+pub(crate) fn find_tree(
     public_tree: Option<TreeKemPublic>,
     group_info: &GroupInfo,
 ) -> Result<TreeKemPublic, GroupError> {
@@ -2247,7 +2247,7 @@ fn commit_sender(
 ) -> Result<LeafIndex, GroupError> {
     match commit_content.sender {
         Sender::Member(index) => Ok(*index),
-        Sender::Preconfigured(_) => Err(GroupError::PreconfiguredSenderCannotCommit),
+        Sender::External(_) => Err(GroupError::ExternalSenderCannotCommit),
         Sender::NewMember => provisional_state
             .external_init
             .as_ref()
@@ -3215,7 +3215,7 @@ mod tests {
         let (mut bob, _) = alice.join("bob");
         let plaintext = alice.make_plaintext(Content::Application(b"hello".to_vec()));
         assert_matches!(
-            bob.group.verify_incoming_plaintext(plaintext, |_| None),
+            bob.group.verify_incoming_plaintext(plaintext),
             Err(GroupError::UnencryptedApplicationMessage)
         );
     }
@@ -3335,18 +3335,18 @@ mod tests {
     }
 
     #[test]
-    fn test_commit_from_preconfigured_is_rejected() {
+    fn test_commit_from_external_is_rejected() {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, true);
 
         let (commit, _) = alice_group.commit(vec![]).unwrap();
 
         if let OutboundMessage::Plaintext(mut ptxt) = commit.plaintext {
-            ptxt.content.sender = Sender::Preconfigured(vec![0u8]);
+            ptxt.content.sender = Sender::External(0);
 
             assert_matches!(
                 bob_group.process_message(ptxt),
-                Err(GroupError::PreconfiguredSenderCannotCommit)
+                Err(GroupError::ExternalSenderCannotCommit)
             );
         }
     }

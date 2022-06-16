@@ -15,7 +15,7 @@ use crate::{
     BoxedProposalFilter, EpochRepository, InMemoryEpochRepository, PassThroughProposalFilter,
     ProposalFilter, ProtocolVersion,
 };
-use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
+use ferriscrypt::asym::ec_key::SecretKey;
 use std::{
     collections::HashMap,
     convert::Infallible,
@@ -65,9 +65,7 @@ pub trait ClientConfig {
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
     fn supported_credential_types(&self) -> Vec<CredentialType>;
 
-    fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
     fn preferences(&self) -> Preferences;
-    fn external_key_id(&self) -> Option<Vec<u8>>;
     fn key_package_repo(&self) -> Self::KeyPackageRepository;
     fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter;
     fn keychain(&self) -> Self::Keychain;
@@ -249,8 +247,6 @@ impl<'a> ProposalFilterInit<'a> {
 #[non_exhaustive]
 pub struct InMemoryClientConfig {
     preferences: Preferences,
-    external_signing_keys: HashMap<Vec<u8>, PublicKey>,
-    external_key_id: Option<Vec<u8>>,
     supported_extensions: Vec<ExtensionType>,
     key_packages: InMemoryKeyPackageRepository,
     make_proposal_filter: MakeProposalFilter,
@@ -269,8 +265,6 @@ impl InMemoryClientConfig {
     pub fn new() -> Self {
         Self {
             preferences: Default::default(),
-            external_signing_keys: Default::default(),
-            external_key_id: Default::default(),
             supported_extensions: Default::default(),
             key_packages: Default::default(),
             make_proposal_filter: Default::default(),
@@ -298,20 +292,6 @@ impl InMemoryClientConfig {
     pub fn with_supported_extension(mut self, extension: ExtensionType) -> Self {
         self.supported_extensions.push(extension);
         self
-    }
-
-    #[must_use]
-    pub fn with_external_signing_key(mut self, id: Vec<u8>, key: PublicKey) -> Self {
-        self.external_signing_keys.insert(id, key);
-        self
-    }
-
-    #[must_use]
-    pub fn with_external_key_id(self, id: Vec<u8>) -> Self {
-        Self {
-            external_key_id: Some(id),
-            ..self
-        }
     }
 
     #[must_use]
@@ -426,16 +406,8 @@ impl ClientConfig for InMemoryClientConfig {
     type EpochRepository = InMemoryEpochRepository;
     type CredentialValidator = PassthroughCredentialValidator;
 
-    fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
-        self.external_signing_keys.get(external_key_id).cloned()
-    }
-
     fn preferences(&self) -> Preferences {
         self.preferences.clone()
-    }
-
-    fn external_key_id(&self) -> Option<Vec<u8>> {
-        self.external_key_id.clone()
     }
 
     fn key_package_repo(&self) -> InMemoryKeyPackageRepository {

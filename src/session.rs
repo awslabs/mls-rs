@@ -49,6 +49,8 @@ pub enum SessionError {
     KeyPackageNotFound,
     #[error("signer not found")]
     SignerNotFound,
+    #[error("signing identity not found for cipher suite {0:?}")]
+    SigningIdentityNotFound(CipherSuite),
     #[error(transparent)]
     KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
     #[error("expected MLSMessage containing a Welcome")]
@@ -463,15 +465,8 @@ where
 
         let (message_payload, sender_credential, authenticated_data) = match message.payload {
             MLSMessagePayload::Plain(message) => {
-                // For sender type `external` the `content_type` of the message MUST be `proposal`.
-                let message = match message.content.content_type() {
-                    ContentType::Proposal => {
-                        self.protocol.verify_incoming_plaintext(message, |id| {
-                            self.config.external_signing_key(id)
-                        })
-                    }
-                    _ => self.protocol.verify_incoming_plaintext(message, |_| None),
-                }?;
+                // TODO: For sender type `external` the `content_type` of the message MUST be `proposal`.
+                let message = self.protocol.verify_incoming_plaintext(message)?;
 
                 let credential = message
                     .plaintext
