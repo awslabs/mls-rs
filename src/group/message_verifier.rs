@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use crate::{
     cipher_suite::CipherSuite,
     group::{
-        Commit, ContentType, GroupContext, GroupError, KeyType, MLSCiphertext,
-        MLSCiphertextContent, MLSMessageContent, MLSPlaintext, MLSSenderData, MLSSenderDataAAD,
-        PublicEpoch, Sender, VerifiedPlaintext,
+        ContentType, GroupContext, GroupError, KeyType, MLSCiphertext, MLSCiphertextContent,
+        MLSMessageContent, MLSPlaintext, MLSSenderData, MLSSenderDataAAD, PublicEpoch, Sender,
+        VerifiedPlaintext,
     },
     signer::Signable,
     signing_identity::SigningIdentity,
@@ -50,7 +50,7 @@ pub fn verify_plaintext(
                 return Err(GroupError::InvalidMembershipTag);
             }
         }
-        Sender::NewMember | Sender::External(_) => {
+        Sender::NewMemberCommit | Sender::NewMemberProposal | Sender::External(_) => {
             plaintext
                 .membership_tag
                 .is_none()
@@ -181,7 +181,10 @@ fn signing_identity_for_sender(
         Sender::External(external_key_index) => {
             signing_identity_for_external(cipher_suite, *external_key_index, external_signers)
         }
-        Sender::NewMember => signing_identity_for_new_member(content, cipher_suite),
+        Sender::NewMemberCommit => signing_identity_for_new_member_commit(content, cipher_suite),
+        Sender::NewMemberProposal => {
+            signing_identity_for_new_member_proposal(content, cipher_suite)
+        }
     }
 }
 
@@ -215,19 +218,38 @@ fn signing_identity_for_external(
         .map_err(Into::into)
 }
 
-fn signing_identity_for_new_member(
+fn signing_identity_for_new_member_commit(
     content: &Content,
     cipher_suite: CipherSuite,
 ) -> Result<PublicKey, GroupError> {
     match content {
-        Content::Commit(Commit {
-            path: Some(path), ..
-        }) => Ok(path.leaf_node.signing_identity.public_key(cipher_suite)?),
-        Content::Proposal(Proposal::Add(AddProposal { key_package })) => Ok(key_package
-            .leaf_node
-            .signing_identity
-            .public_key(cipher_suite)?),
-        _ => Err(GroupError::NewMembersCanOnlyProposeAddingThemselves),
+        Content::Commit(commit) => {
+            if let Some(path) = &commit.path {
+                Ok(path.leaf_node.signing_identity.public_key(cipher_suite)?)
+            } else {
+                Err(GroupError::MissingUpdatePathInExternalCommit)
+            }
+        }
+        _ => Err(GroupError::ExpectedCommitForNewMemberCommit),
+    }
+}
+
+fn signing_identity_for_new_member_proposal(
+    content: &Content,
+    cipher_suite: CipherSuite,
+) -> Result<PublicKey, GroupError> {
+    match content {
+        Content::Proposal(proposal) => {
+            if let Proposal::Add(AddProposal { key_package }) = proposal {
+                Ok(key_package
+                    .leaf_node
+                    .signing_identity
+                    .public_key(cipher_suite)?)
+            } else {
+                Err(GroupError::ExpectedAddProposalForNewMemberProposal)
+            }
+        }
+        _ => Err(GroupError::ExpectedAddProposalForNewMemberProposal),
     }
 }
 
@@ -242,13 +264,15 @@ mod tests {
             message_verifier::decrypt_ciphertext,
             padding::PaddingMode,
             proposal::{AddProposal, Proposal},
-            test_utils::{test_group, test_member, TEST_GROUP},
+            test_utils::{test_group, test_member, TestGroup, TEST_GROUP},
             CommitOptions, Content, ControlEncryptionMode, Group, GroupConfig, GroupError,
             InMemoryGroupConfig, MLSMessagePayload, MLSPlaintext, Sender, VerifiedPlaintext,
         },
-        signer::{Signable, SignatureError},
+        key_package::KeyPackageGeneration,
+        signer::{Signable, SignatureError, Signer},
         signing_identity::test_utils::get_test_signing_identity,
-        EpochRepository, ProtocolVersion,
+        tree_kem::node::LeafIndex,
+        EpochRepository, ProtocolVersion, RemoveProposal,
     };
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::SecretKey;
@@ -261,7 +285,6 @@ mod tests {
 
     const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
-    const TED_EXTERNAL_KEY_INDEX: u32 = 0u32;
 
     fn make_plaintext(sender: Sender, epoch: u64) -> MLSPlaintext {
         MLSPlaintext::new(
@@ -472,22 +495,39 @@ mod tests {
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
 
-    #[test]
-    fn valid_proposal_from_new_member_is_verified() {
-        let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+    fn test_new_member_proposal<F, S>(
+        key_pkg_gen: KeyPackageGeneration,
+        signer: &S,
+        test_group: &TestGroup,
+        mut edit: F,
+    ) -> MLSPlaintext
+    where
+        F: FnMut(&mut MLSPlaintext),
+        S: Signer,
+    {
+        let mut message =
+            make_plaintext(Sender::NewMemberProposal, test_group.group.current_epoch());
 
-        let mut message = make_plaintext(Sender::NewMember, test_group.group.current_epoch());
         message.content.content = Content::Proposal(Proposal::Add(AddProposal {
             key_package: key_pkg_gen.key_package,
         }));
+
+        edit(&mut message);
 
         let signing_context = MessageSigningContext {
             group_context: Some(test_group.group.context()),
             encrypted: false,
         };
 
-        message.sign(&signer, &signing_context).unwrap();
+        message.sign(signer, &signing_context).unwrap();
+        message
+    }
+
+    #[test]
+    fn valid_proposal_from_new_member_is_verified() {
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+        let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |_| {});
 
         verify_plaintext(
             message,
@@ -501,20 +541,10 @@ mod tests {
 
     #[test]
     fn proposal_from_new_member_must_not_have_membership_tag() {
-        let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
 
-        let mut message = make_plaintext(Sender::NewMember, test_group.group.current_epoch());
-        message.content.content = Content::Proposal(Proposal::Add(AddProposal {
-            key_package: key_pkg_gen.key_package,
-        }));
-
-        let signing_context = MessageSigningContext {
-            group_context: Some(test_group.group.context()),
-            encrypted: false,
-        };
-
-        message.sign(&signer, &signing_context).unwrap();
+        let mut message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |_| {});
         add_membership_tag(&mut message, &test_group.group);
 
         let res = verify_plaintext(
@@ -529,6 +559,51 @@ mod tests {
     }
 
     #[test]
+    fn new_member_proposal_sender_must_be_add_proposal() {
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+
+        let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |mut msg| {
+            msg.content.content = Content::Proposal(Proposal::Remove(RemoveProposal {
+                to_remove: LeafIndex(0),
+            }))
+        });
+
+        let res = verify_plaintext(
+            message,
+            &test_group.group.key_schedule,
+            &test_group.group.current_public_epoch,
+            test_group.group.context(),
+            &[],
+        );
+
+        assert_matches!(
+            res,
+            Err(GroupError::ExpectedAddProposalForNewMemberProposal)
+        );
+    }
+
+    #[test]
+    fn new_member_commit_must_be_external_commit() {
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+
+        let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |mut msg| {
+            msg.content.sender = Sender::NewMemberCommit;
+        });
+
+        let res = verify_plaintext(
+            message,
+            &test_group.group.key_schedule,
+            &test_group.group.current_public_epoch,
+            test_group.group.context(),
+            &[],
+        );
+
+        assert_matches!(res, Err(GroupError::ExpectedCommitForNewMemberCommit));
+    }
+
+    #[test]
     fn valid_proposal_from_external_is_verified() {
         let (bob_key_pkg_gen, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
 
@@ -537,21 +612,10 @@ mod tests {
 
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        let mut message = make_plaintext(
-            Sender::External(TED_EXTERNAL_KEY_INDEX),
-            test_group.group.current_epoch(),
-        );
-
-        message.content.content = Content::Proposal(Proposal::Add(AddProposal {
-            key_package: bob_key_pkg_gen.key_package,
-        }));
-
-        let signing_context = MessageSigningContext {
-            group_context: None,
-            encrypted: false,
-        };
-
-        message.sign(&ted_secret, &signing_context).unwrap();
+        let message =
+            test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |mut msg| {
+                msg.content.sender = Sender::External(0)
+            });
 
         verify_plaintext(
             message,
@@ -569,21 +633,10 @@ mod tests {
         let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        let mut message = make_plaintext(
-            Sender::External(TED_EXTERNAL_KEY_INDEX),
-            test_group.group.current_epoch(),
-        );
-
-        message.content.content = Content::Proposal(Proposal::Add(AddProposal {
-            key_package: bob_key_pkg_gen.key_package,
-        }));
-
-        let signing_context = MessageSigningContext {
-            group_context: None,
-            encrypted: false,
-        };
-
-        message.sign(&ted_secret, &signing_context).unwrap();
+        let message =
+            test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |mut msg| {
+                msg.content.sender = Sender::External(0)
+            });
 
         let res = verify_plaintext(
             message,
@@ -608,20 +661,9 @@ mod tests {
 
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        let mut message = make_plaintext(
-            Sender::External(TED_EXTERNAL_KEY_INDEX),
-            test_group.group.current_epoch(),
-        );
-        message.content.content = Content::Proposal(Proposal::Add(AddProposal {
-            key_package: bob_key_pkg_gen.key_package,
-        }));
+        let mut message =
+            test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |_| {});
 
-        let signing_context = MessageSigningContext {
-            group_context: None,
-            encrypted: false,
-        };
-
-        message.sign(&ted_secret, &signing_context).unwrap();
         add_membership_tag(&mut message, &test_group.group);
 
         let res = verify_plaintext(

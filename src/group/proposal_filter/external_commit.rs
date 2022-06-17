@@ -159,10 +159,10 @@ fn at_most_one_external_init_proposal<'a>(
     let mut external_inits = proposals.by_type::<ExternalInit>();
 
     match (committer, external_inits.next(), external_inits.next()) {
-        (Sender::NewMember, Some(p), None) => (*committer == p.sender)
+        (Sender::NewMemberCommit, Some(p), None) => (*committer == p.sender)
             .then(|| Some(p))
             .ok_or(ProposalFilterError::ExternalInitMustBeCommittedByNewMember),
-        (Sender::NewMember, ..) => {
+        (Sender::NewMemberCommit, ..) => {
             Err(ProposalFilterError::ExternalCommitMustHaveExactlyOneExternalInit)
         }
         (_, None, _) => Ok(None),

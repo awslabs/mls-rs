@@ -304,8 +304,6 @@ pub enum GroupError {
     ExternalProposalsDisabled,
     #[error("Signing identity is not allowed to externally propose")]
     InvalidExternalSigningIdentity,
-    #[error("New members can only propose adding themselves")]
-    NewMembersCanOnlyProposeAddingThemselves,
     #[error("Missing ExternalPub extension")]
     MissingExternalPubExtension,
     #[error("Missing update path in external commit")]
@@ -318,6 +316,12 @@ pub enum GroupError {
     InvalidGroupId(Vec<u8>),
     #[error("Unencrypted application message")]
     UnencryptedApplicationMessage,
+    #[error("NewMemberCommit sender type can only be used to send Commit content")]
+    ExpectedCommitForNewMemberCommit,
+    #[error("NewMemberProposal sender type can only be used to send add proposals")]
+    ExpectedAddProposalForNewMemberProposal,
+    #[error("External commit missing ExternalInit proposal")]
+    ExternalCommitMissingExternalInit,
 }
 
 #[derive(
@@ -872,7 +876,7 @@ impl<C: GroupConfig> Group<C> {
 
         let mut commit_message = MLSPlaintext::new_signed(
             &old_context,
-            Sender::NewMember,
+            Sender::NewMemberCommit,
             Content::Commit(commit),
             signer,
             ControlEncryptionMode::Plaintext,
@@ -1737,9 +1741,7 @@ impl<C: GroupConfig> Group<C> {
         let sender_data = MLSSenderData {
             sender: match plaintext.content.sender {
                 Sender::Member(sender) => Ok(sender),
-                Sender::External(_) | Sender::NewMember => {
-                    Err(GroupError::OnlyMembersCanEncryptMessages)
-                }
+                _ => Err(GroupError::OnlyMembersCanEncryptMessages),
             }?,
             generation,
             reuse_guard,
@@ -2248,11 +2250,12 @@ fn commit_sender(
     match commit_content.sender {
         Sender::Member(index) => Ok(*index),
         Sender::External(_) => Err(GroupError::ExternalSenderCannotCommit),
-        Sender::NewMember => provisional_state
+        Sender::NewMemberProposal => Err(GroupError::ExpectedAddProposalForNewMemberProposal),
+        Sender::NewMemberCommit => provisional_state
             .external_init
             .as_ref()
             .map(|(index, _)| *index)
-            .ok_or(GroupError::MissingUpdatePathInExternalCommit),
+            .ok_or(GroupError::ExternalCommitMissingExternalInit),
     }
 }
 

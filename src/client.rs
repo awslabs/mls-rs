@@ -191,7 +191,7 @@ where
         let mut message = MLSPlaintext::new(
             group_context.group_id.clone(),
             group_context.epoch,
-            Sender::NewMember,
+            Sender::NewMemberProposal,
             Content::Proposal(Proposal::Add(AddProposal { key_package })),
             authenticated_data,
         );

@@ -39,7 +39,8 @@ pub enum Sender {
     #[tls_codec(discriminant = 1)]
     Member(LeafIndex),
     External(u32),
-    NewMember,
+    NewMemberCommit,
+    NewMemberProposal,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -163,10 +164,12 @@ impl Deserialize for MLSPlaintext {
     fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
         let content = MLSMessageContent::tls_deserialize(bytes)?;
         let auth = MLSMessageAuth::tls_deserialize(bytes, content.content_type())?;
+
         let membership_tag = match content.sender {
             Sender::Member(_) => Some(MembershipTag::tls_deserialize(bytes)?),
-            Sender::NewMember | Sender::External(_) => None,
+            _ => None,
         };
+
         Ok(Self {
             content,
             auth,

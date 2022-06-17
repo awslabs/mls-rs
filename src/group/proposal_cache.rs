@@ -881,7 +881,7 @@ mod tests {
         let credential_validator = PassthroughCredentialValidator::new();
 
         let res = cache.resolve_for_commit(
-            Sender::NewMember,
+            Sender::NewMemberCommit,
             vec![ProposalOrRef::Proposal(Proposal::ExternalInit(
                 ExternalInit { kem_output },
             ))],
@@ -918,7 +918,7 @@ mod tests {
         let credential_validator = PassthroughCredentialValidator::new();
 
         let res = cache.resolve_for_commit(
-            Sender::NewMember,
+            Sender::NewMemberCommit,
             vec![ProposalOrRef::Reference(proposal)],
             Some(&test_update_path()),
             group.required_capabilities(),
@@ -941,7 +941,7 @@ mod tests {
         let credential_validator = PassthroughCredentialValidator::new();
 
         let res = cache.resolve_for_commit(
-            Sender::NewMember,
+            Sender::NewMemberCommit,
             [
                 Proposal::ExternalInit(ExternalInit {
                     kem_output: kem_output.clone(),
@@ -976,7 +976,7 @@ mod tests {
         let credential_validator = PassthroughCredentialValidator::new();
 
         cache.resolve_for_commit(
-            Sender::NewMember,
+            Sender::NewMemberCommit,
             [
                 Proposal::ExternalInit(ExternalInit { kem_output }),
                 proposal,
@@ -1033,7 +1033,7 @@ mod tests {
         ];
 
         let res = cache.resolve_for_commit(
-            Sender::NewMember,
+            Sender::NewMemberCommit,
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
             Some(&test_update_path()),
             required_capabilities,
@@ -1071,7 +1071,7 @@ mod tests {
         ];
 
         let res = cache.resolve_for_commit(
-            Sender::NewMember,
+            Sender::NewMemberCommit,
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
             Some(&test_update_path()),
             required_capabilities,
@@ -1109,7 +1109,7 @@ mod tests {
         ];
 
         let res = cache.resolve_for_commit(
-            Sender::NewMember,
+            Sender::NewMemberCommit,
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
             Some(&test_update_path()),
             required_capabilities,
@@ -1175,7 +1175,7 @@ mod tests {
         let credential_validator = PassthroughCredentialValidator::new();
 
         let res = cache.resolve_for_commit(
-            Sender::NewMember,
+            Sender::NewMemberCommit,
             Vec::new(),
             Some(&test_update_path()),
             group.required_capabilities(),
@@ -1300,7 +1300,7 @@ mod tests {
         };
 
         let res = cache.resolve_for_commit(
-            Sender::NewMember,
+            Sender::NewMemberCommit,
             vec![ProposalOrRef::Proposal(Proposal::ExternalInit(
                 external_init,
             ))],
