@@ -46,3 +46,8 @@ required-features = ["benchmark"]
 name = "decap"
 harness = false
 required-features = ["benchmark"]
+
+[[bench]]
+name = "group_serialize"
+harness = false
+required-features = ["benchmark"]

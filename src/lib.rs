@@ -52,7 +52,6 @@ pub mod extension;
 mod external_client;
 mod external_client_config;
 mod external_session;
-mod group;
 mod hash_reference;
 pub mod key_package;
 pub mod keychain;
@@ -74,11 +73,17 @@ pub mod tls;
 #[cfg(feature = "benchmark")]
 pub mod tree_kem;
 
+#[cfg(feature = "benchmark")]
+pub mod group;
+
 #[cfg(not(feature = "benchmark"))]
 mod tls;
 
 #[cfg(not(feature = "benchmark"))]
 mod tree_kem;
+
+#[cfg(not(feature = "benchmark"))]
+mod group;
 
 pub use epoch::{Epoch, EpochRepository, InMemoryEpochRepository};
 pub use external_client::ExternalClient;

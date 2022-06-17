@@ -217,8 +217,8 @@ where
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test_utils {
+#[cfg(any(test, feature = "benchmark"))]
+pub mod test_utils {
 
     use super::*;
     use crate::{
@@ -263,6 +263,33 @@ pub(crate) mod test_utils {
             )
             .unwrap()
     }
+
+    pub fn join_session<'a, S>(
+        committer_session: &mut Session<InMemoryClientConfig>,
+        other_sessions: S,
+        key_package: KeyPackage,
+        client: &Client<InMemoryClientConfig>,
+    ) -> Result<Session<InMemoryClientConfig>, ClientError>
+    where
+        S: IntoIterator<Item = &'a mut Session<InMemoryClientConfig>>,
+    {
+        let key_package_ref = key_package.to_reference().unwrap();
+
+        let commit_result =
+            committer_session.commit(vec![Proposal::Add(AddProposal { key_package })], vec![])?;
+
+        committer_session.apply_pending_commit()?;
+
+        for session in other_sessions {
+            session.process_incoming_bytes(&commit_result.commit_packet)?;
+        }
+
+        client.join_session(
+            Some(&key_package_ref),
+            Some(&committer_session.export_tree().unwrap()),
+            &commit_result.welcome_packet.unwrap(),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -280,7 +307,6 @@ mod tests {
             proposal::{AddProposal, Proposal},
             GroupError, SecretTreeError,
         },
-        key_package::KeyPackage,
         message::ProcessedMessagePayload,
         psk::{ExternalPskId, PskSecretError},
         tree_kem::leaf_node::LeafNodeSource,
@@ -335,33 +361,6 @@ mod tests {
             let capabilities = package_gen.key_package.leaf_node.capabilities;
             assert_eq!(capabilities, client.config.capabilities());
         }
-    }
-
-    fn join_session<'a, S>(
-        committer_session: &mut Session<InMemoryClientConfig>,
-        other_sessions: S,
-        key_package: KeyPackage,
-        client: &Client<InMemoryClientConfig>,
-    ) -> Result<Session<InMemoryClientConfig>, ClientError>
-    where
-        S: IntoIterator<Item = &'a mut Session<InMemoryClientConfig>>,
-    {
-        let key_package_ref = key_package.to_reference().unwrap();
-
-        let commit_result =
-            committer_session.commit(vec![Proposal::Add(AddProposal { key_package })], vec![])?;
-
-        committer_session.apply_pending_commit()?;
-
-        for session in other_sessions {
-            session.process_incoming_bytes(&commit_result.commit_packet)?;
-        }
-
-        client.join_session(
-            Some(&key_package_ref),
-            Some(&committer_session.export_tree().unwrap()),
-            &commit_result.welcome_packet.unwrap(),
-        )
     }
 
     #[test]

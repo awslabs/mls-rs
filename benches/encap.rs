@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use aws_mls::bench_utils::create::{create_stage, Tools};
+use aws_mls::bench_utils::create_empty_tree::{create_stage, Tools};
 
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
@@ -21,7 +21,10 @@ fn encap_setup(c: &mut Criterion) {
     for cipher_suite in CipherSuite::all() {
         println!("Benchmarking encap for: {cipher_suite:?}");
 
-        let trees = create_stage(cipher_suite);
+        let trees = [100, 1000, 10000]
+            .into_iter()
+            .map(|length| (length, create_stage(cipher_suite, length)))
+            .collect::<HashMap<_, _>>();
 
         bench_encap(&mut encap_group, &[], None, None, cipher_suite, trees);
     }
