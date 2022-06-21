@@ -137,6 +137,7 @@ pub(crate) mod test_utils {
 
     use super::*;
     use crate::{
+        client_config::PassthroughCredentialValidator,
         signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{Capabilities, Lifetime},
     };
@@ -155,7 +156,9 @@ pub(crate) mod test_utils {
         custom: F,
     ) -> KeyPackage
     where
-        F: Fn(&mut KeyPackageGenerator<SecretKey>) -> KeyPackageGeneration,
+        F: Fn(
+            &mut KeyPackageGenerator<SecretKey, PassthroughCredentialValidator>,
+        ) -> KeyPackageGeneration,
     {
         let (signing_identity, secret_key) =
             get_test_signing_identity(cipher_suite, id.as_bytes().to_vec());
@@ -165,6 +168,7 @@ pub(crate) mod test_utils {
             cipher_suite,
             signing_identity: &signing_identity,
             signing_key: &secret_key,
+            credential_validator: &PassthroughCredentialValidator::new(),
         };
 
         custom(&mut generator).key_package

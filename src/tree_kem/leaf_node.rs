@@ -1,6 +1,7 @@
 use super::{parent_hash::ParentHash, Capabilities, Lifetime};
 use crate::{
     cipher_suite::CipherSuite,
+    client_config::CredentialValidator,
     credential::CredentialError,
     extension::ExtensionList,
     signer::{Signable, SignatureError, Signer},
@@ -76,25 +77,40 @@ pub struct LeafNode {
 }
 
 impl LeafNode {
-    fn check_signing_identity<S: Signer>(
+    fn check_signing_identity<S, C>(
         cipher_suite: CipherSuite,
         signing_identity: &SigningIdentity,
         signer: &S,
-    ) -> Result<(), LeafNodeError> {
+        credential_validator: &C,
+    ) -> Result<(), LeafNodeError>
+    where
+        S: Signer,
+        C: CredentialValidator,
+    {
         signing_identity
-            .check_validity(Some(signer), cipher_suite)
+            .check_validity(credential_validator, Some(signer), cipher_suite)
             .map_err(Into::into)
     }
 
-    pub fn generate<S: Signer>(
+    pub fn generate<S, C>(
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
         capabilities: Capabilities,
         extensions: ExtensionList,
         signer: &S,
         lifetime: Lifetime,
-    ) -> Result<(Self, HpkeSecretKey), LeafNodeError> {
-        LeafNode::check_signing_identity(cipher_suite, &signing_identity, signer)?;
+        credential_validator: &C,
+    ) -> Result<(Self, HpkeSecretKey), LeafNodeError>
+    where
+        S: Signer,
+        C: CredentialValidator,
+    {
+        LeafNode::check_signing_identity(
+            cipher_suite,
+            &signing_identity,
+            signer,
+            credential_validator,
+        )?;
 
         let (public, secret) = generate_keypair(cipher_suite.kem_type().curve())?;
 
@@ -112,7 +128,7 @@ impl LeafNode {
         Ok((leaf_node, secret.try_into()?))
     }
 
-    fn update_keypair<S: Signer>(
+    fn update_keypair<S>(
         &mut self,
         key_pair: (PublicKey, SecretKey),
         group_id: &[u8],
@@ -120,7 +136,10 @@ impl LeafNode {
         extensions: Option<ExtensionList>,
         leaf_node_source: LeafNodeSource,
         signer: &S,
-    ) -> Result<HpkeSecretKey, LeafNodeError> {
+    ) -> Result<HpkeSecretKey, LeafNodeError>
+    where
+        S: Signer,
+    {
         let (public, secret) = key_pair;
 
         self.public_key = public.try_into()?;
@@ -139,16 +158,17 @@ impl LeafNode {
         Ok(secret.try_into()?)
     }
 
-    pub fn update<S: Signer>(
+    pub fn update<S>(
         &mut self,
         cipher_suite: CipherSuite,
         group_id: &[u8],
         capabilities: Option<Capabilities>,
         extensions: Option<ExtensionList>,
         signer: &S,
-    ) -> Result<HpkeSecretKey, LeafNodeError> {
-        LeafNode::check_signing_identity(cipher_suite, &self.signing_identity, signer)?;
-
+    ) -> Result<HpkeSecretKey, LeafNodeError>
+    where
+        S: Signer,
+    {
         let keypair = generate_keypair(cipher_suite.kem_type().curve())?;
 
         self.update_keypair(
@@ -161,7 +181,7 @@ impl LeafNode {
         )
     }
 
-    pub fn commit<S: Signer>(
+    pub fn commit<S>(
         &mut self,
         cipher_suite: CipherSuite,
         group_id: &[u8],
@@ -172,9 +192,10 @@ impl LeafNode {
             HpkePublicKey,
         )
             -> Result<ParentHash, Box<dyn std::error::Error + Send + Sync>>,
-    ) -> Result<HpkeSecretKey, LeafNodeError> {
-        LeafNode::check_signing_identity(cipher_suite, &self.signing_identity, signer)?;
-
+    ) -> Result<HpkeSecretKey, LeafNodeError>
+    where
+        S: Signer,
+    {
         let key_pair = generate_keypair(cipher_suite.kem_type().curve())?;
         let hpke_public = key_pair.0.clone().try_into()?;
 
@@ -262,6 +283,7 @@ impl<'a> Signable<'a> for LeafNode {
 pub mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,
+        client_config::PassthroughCredentialValidator,
         extension::{ApplicationIdExt, MlsExtension},
         signing_identity::test_utils::get_test_signing_identity,
     };
@@ -300,6 +322,7 @@ pub mod test_utils {
             extensions.unwrap_or_default(),
             secret,
             lifetime,
+            &PassthroughCredentialValidator::new(),
         )
         .unwrap()
     }
@@ -322,6 +345,7 @@ pub mod test_utils {
             ExtensionList::default(),
             &signature_key,
             Lifetime::years(1).unwrap(),
+            &PassthroughCredentialValidator::new(),
         )
         .map(|(leaf, hpke_secret_key)| (leaf, hpke_secret_key, signature_key))
         .unwrap()
@@ -352,7 +376,9 @@ mod tests {
     use super::*;
 
     use crate::cipher_suite::CipherSuite;
+    use crate::client_config::PassthroughCredentialValidator;
     use crate::signing_identity::test_utils::get_test_signing_identity;
+    use crate::tree_kem::leaf_node_validator::test_utils::FailureCredentialValidator;
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]
@@ -427,6 +453,7 @@ mod tests {
             ExtensionList::default(),
             &incorrect_secret,
             Lifetime::years(1).unwrap(),
+            &PassthroughCredentialValidator::new(),
         );
 
         assert_matches!(
@@ -451,9 +478,35 @@ mod tests {
             ExtensionList::default(),
             &signer,
             Lifetime::years(1).unwrap(),
+            &PassthroughCredentialValidator::new(),
         );
 
         assert_matches!(res, Err(LeafNodeError::SigningIdentityError(_)));
+    }
+
+    #[test]
+    fn invalid_credential_for_application() {
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+
+        let (test_signing_identity, signer) =
+            get_test_signing_identity(cipher_suite, b"foo".to_vec());
+
+        let res = LeafNode::generate(
+            cipher_suite,
+            test_signing_identity,
+            Capabilities::default(),
+            ExtensionList::default(),
+            &signer,
+            Lifetime::years(1).unwrap(),
+            &FailureCredentialValidator::new().pass_validation(false),
+        );
+
+        assert_matches!(
+            res,
+            Err(LeafNodeError::SigningIdentityError(
+                SigningIdentityError::CredentialValidatorError(_)
+            ))
+        );
     }
 
     #[test]

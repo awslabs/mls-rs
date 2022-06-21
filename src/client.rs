@@ -73,6 +73,7 @@ where
             cipher_suite,
             signing_key: &signer,
             signing_identity: &identity,
+            credential_validator: &self.config.credential_validator(),
         };
 
         let key_pkg_gen = key_package_generator.generate(
@@ -110,6 +111,7 @@ where
             self.config.leaf_node_extensions(),
             &signer,
             self.config.lifetime(),
+            &self.config.credential_validator(),
         )?;
 
         Session::create(
@@ -162,6 +164,7 @@ where
             self.config.leaf_node_extensions(),
             &signer,
             self.config.lifetime(),
+            &self.config.credential_validator(),
         )?;
 
         Ok(Session::new_external(

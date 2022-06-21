@@ -252,6 +252,7 @@ mod tests {
                     cipher_suite,
                     signing_identity: &alternate_sining_id,
                     signing_key: &secret,
+                    credential_validator: &PassthroughCredentialValidator::new(),
                 };
 
                 new_generator

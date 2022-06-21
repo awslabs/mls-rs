@@ -19,7 +19,8 @@ use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
 use crate::client_config::{CredentialValidator, ProposalFilterInit, PskStore};
 use crate::credential::CredentialError;
 use crate::extension::{
-    ExtensionError, ExtensionList, ExternalPubExt, RatchetTreeExt, RequiredCapabilitiesExt,
+    ExtensionError, ExtensionList, ExternalPubExt, ExternalSendersExt, RatchetTreeExt,
+    RequiredCapabilitiesExt,
 };
 use crate::group::{KeySchedule, KeyScheduleError};
 use crate::key_package::{
@@ -695,7 +696,7 @@ impl<C: GroupConfig> Group<C> {
         }
 
         let public_tree = find_tree(public_tree, &group_info)?;
-        validate_tree(&public_tree, &group_info, credential_validator)?;
+        validate_existing_group(&public_tree, &group_info, &credential_validator)?;
 
         // Identify a leaf in the tree array (any even-numbered node) whose leaf_node is identical
         // to the leaf_node field of the KeyPackage. If no such field exists, return an error. Let
@@ -850,7 +851,7 @@ impl<C: GroupConfig> Group<C> {
         ]);
 
         let mut public_tree = find_tree(public_tree, &group_info)?;
-        validate_tree(&public_tree, &group_info, config.credential_validator())?;
+        validate_existing_group(&public_tree, &group_info, &config.credential_validator())?;
 
         let self_index = public_tree.add_leaves(vec![leaf_node])?[0];
 
@@ -1360,6 +1361,7 @@ impl<C: GroupConfig> Group<C> {
             current_leaf_node.extensions.clone(),
             signer,
             lifetime,
+            &self.config.credential_validator(),
         )?;
 
         let required_capabilities = self.core.context.extensions.get_extension()?;
@@ -2220,10 +2222,10 @@ pub(crate) fn find_tree(
     }
 }
 
-fn validate_tree<C: CredentialValidator>(
+fn validate_existing_group<C: CredentialValidator>(
     public_tree: &TreeKemPublic,
     group_info: &GroupInfo,
-    credential_validator: C,
+    credential_validator: &C,
 ) -> Result<(), GroupError> {
     let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
     group_info.verify(
@@ -2245,6 +2247,14 @@ fn validate_tree<C: CredentialValidator>(
     );
 
     tree_validator.validate(public_tree)?;
+
+    if let Some(ext_senders) = group_info
+        .group_context
+        .extensions
+        .get_extension::<ExternalSendersExt>()?
+    {
+        ext_senders.verify_all(&credential_validator, group_info.group_context.cipher_suite)?;
+    }
 
     Ok(())
 }
@@ -2518,6 +2528,7 @@ pub(crate) mod test_utils {
             cipher_suite,
             signing_identity: &signing_identity,
             signing_key: &signing_key,
+            credential_validator: &PassthroughCredentialValidator::new(),
         };
 
         let key_package = key_package_generator
@@ -2548,6 +2559,7 @@ pub(crate) mod test_utils {
             leaf_extensions,
             &signing_key,
             lifetime(),
+            &PassthroughCredentialValidator::new(),
         )
         .unwrap();
 
@@ -3134,6 +3146,7 @@ mod tests {
             ExtensionList::default(),
             &group.signing_key,
             lifetime(),
+            &PassthroughCredentialValidator::new(),
         )
         .unwrap();
 

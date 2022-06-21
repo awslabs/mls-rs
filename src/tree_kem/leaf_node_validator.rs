@@ -5,7 +5,6 @@ use crate::credential::CredentialType;
 use crate::signing_identity::SigningIdentityError;
 use crate::{
     cipher_suite::CipherSuite,
-    credential::CredentialError,
     extension::{ExtensionType, RequiredCapabilitiesExt},
     group::proposal::ProposalType,
     signer::{Signable, SignatureError},
@@ -36,8 +35,6 @@ pub enum LeafNodeValidationError {
     LifetimeError(#[from] LifetimeError),
     #[error(transparent)]
     SerializationError(#[from] tls_codec::Error),
-    #[error(transparent)]
-    CredentialError(#[from] CredentialError),
     #[error("invalid signing identity {0}")]
     InvalidSigningIdentity(#[from] SigningIdentityError),
     #[error("invalid leaf_node_source")]
@@ -54,8 +51,6 @@ pub enum LeafNodeValidationError {
     RequiredCredentialNotFound(CredentialType),
     #[error("capabilities must describe extensions used")]
     ExtensionNotInCapabilities(ExtensionType),
-    #[error(transparent)]
-    InvalidCertificateError(Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[derive(Clone, Debug)]
@@ -171,17 +166,14 @@ impl<'a, C: CredentialValidator> LeafNodeValidator<'a, C> {
         leaf_node: &LeafNode,
         context: ValidationContext,
     ) -> Result<(), LeafNodeValidationError> {
-        // Validate Credential
-        self.credential_validator
-            .validate(&leaf_node.signing_identity.credential)
-            .map_err(|e| LeafNodeValidationError::InvalidCertificateError(e.into()))?;
-
         // Check that we are validating within the proper context
         self.check_context(leaf_node, &context)?;
 
-        leaf_node
-            .signing_identity
-            .check_validity::<SecretKey>(None, self.cipher_suite)?;
+        leaf_node.signing_identity.check_validity::<SecretKey, _>(
+            &self.credential_validator,
+            None,
+            self.cipher_suite,
+        )?;
 
         let public_key = leaf_node.signing_identity.public_key(self.cipher_suite)?;
 
@@ -263,8 +255,8 @@ mod tests {
             LeafNodeValidator::new(TEST_CIPHER_SUITE, None, FailureCredentialValidator::new());
 
         assert_matches!(
-            fail_test_validator.check_if_valid(&leaf_node, ValidationContext::Commit(b"foo")),
-            Err(LeafNodeValidationError::InvalidCertificateError(_))
+            fail_test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
+            Err(LeafNodeValidationError::InvalidSigningIdentity(_))
         );
     }
 

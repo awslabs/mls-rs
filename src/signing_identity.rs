@@ -4,6 +4,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
     cipher_suite::{CipherSuite, SignaturePublicKey},
+    client_config::CredentialValidator,
     credential::Credential,
     signer::Signer,
     x509::X509Error,
@@ -23,6 +24,8 @@ pub enum SigningIdentityError {
     InvalidSignatureKey(CipherSuite, EcKeyError),
     #[error("signing identity not valid for signer")]
     InvalidSignerPublicKey,
+    #[error("credential rejected by custom credential validator")]
+    CredentialValidatorError(#[source] Box<dyn std::error::Error + Sync + Send>),
 }
 
 #[derive(
@@ -59,11 +62,16 @@ impl SigningIdentity {
             .map_err(|e| SigningIdentityError::InvalidSignatureKey(cipher_suite, e))
     }
 
-    pub(crate) fn check_validity<S: Signer>(
+    pub(crate) fn check_validity<S, C>(
         &self,
+        credential_validator: &C,
         signer: Option<&S>,
         cipher_suite: CipherSuite,
-    ) -> Result<(), SigningIdentityError> {
+    ) -> Result<(), SigningIdentityError>
+    where
+        S: Signer,
+        C: CredentialValidator,
+    {
         // Determine that the signature key is the right type based on the cipher suite
         let public_key = self.public_key(cipher_suite)?;
 
@@ -87,7 +95,9 @@ impl SigningIdentity {
             }
         }
 
-        Ok(())
+        credential_validator
+            .validate(&self.credential)
+            .map_err(|e| SigningIdentityError::CredentialValidatorError(Box::new(e)))
     }
 }
 
@@ -129,9 +139,14 @@ mod tests {
             test_utils::{get_test_basic_credential, get_test_certificate_credential},
             Credential,
         },
+        tree_kem::leaf_node_validator::test_utils::FailureCredentialValidator,
     };
 
     use super::{test_utils::get_test_signing_identity, *};
+
+    fn credential_validator(pass: bool) -> FailureCredentialValidator {
+        FailureCredentialValidator::default().pass_validation(pass)
+    }
 
     #[test]
     fn test_signing_identity_creation() {
@@ -180,11 +195,11 @@ mod tests {
                 get_test_signing_identity(cipher_suite, b"alice".to_vec());
 
             assert!(signing_identity
-                .check_validity::<SecretKey>(None, cipher_suite)
+                .check_validity::<SecretKey, _>(&credential_validator(true), None, cipher_suite)
                 .is_ok());
 
             assert!(signing_identity
-                .check_validity(Some(&signer), cipher_suite)
+                .check_validity(&credential_validator(true), Some(&signer), cipher_suite)
                 .is_ok());
         }
     }
@@ -196,7 +211,11 @@ mod tests {
 
         let (signing_identity, _) = get_test_signing_identity(cipher_suite, b"alice".to_vec());
 
-        let res = signing_identity.check_validity::<SecretKey>(None, invalid_cipher_suite);
+        let res = signing_identity.check_validity::<SecretKey, _>(
+            &credential_validator(true),
+            None,
+            invalid_cipher_suite,
+        );
 
         assert_matches!(res, Err(SigningIdentityError::InvalidSignatureKey(cs, _)) if cs == invalid_cipher_suite);
     }
@@ -208,7 +227,11 @@ mod tests {
         let (signing_identity, _) = get_test_signing_identity(cipher_suite, b"alice".to_vec());
         let invalid_signer = cipher_suite.generate_signing_key().unwrap();
 
-        let res = signing_identity.check_validity(Some(&invalid_signer), cipher_suite);
+        let res = signing_identity.check_validity(
+            &credential_validator(true),
+            Some(&invalid_signer),
+            cipher_suite,
+        );
 
         assert_matches!(res, Err(SigningIdentityError::InvalidSignerPublicKey));
     }
@@ -224,8 +247,28 @@ mod tests {
             SignaturePublicKey::try_from(&signature_key).unwrap(),
         );
 
-        let res = signing_identity.check_validity::<SecretKey>(None, cipher_suite);
+        let res = signing_identity.check_validity::<SecretKey, _>(
+            &credential_validator(true),
+            None,
+            cipher_suite,
+        );
 
         assert_matches!(res, Err(SigningIdentityError::CertPublicKeyMismatch));
+    }
+
+    #[test]
+    fn test_signing_identity_application_rejection() {
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+
+        let (signing_identity, _) = get_test_signing_identity(cipher_suite, b"alice".to_vec());
+
+        assert_matches!(
+            signing_identity.check_validity::<SecretKey, _>(
+                &credential_validator(false),
+                None,
+                cipher_suite
+            ),
+            Err(SigningIdentityError::CredentialValidatorError(_))
+        );
     }
 }

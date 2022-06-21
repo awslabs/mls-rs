@@ -354,7 +354,10 @@ where
         .and(RemoveProposalFilter::new(tree))
         .and(PskProposalFilter::new(cipher_suite))
         .and(ReInitProposalFilter::new(protocol_version))
-        .and(GroupContextExtensionsProposalFilter)
+        .and(GroupContextExtensionsProposalFilter::new(
+            credential_validator,
+            cipher_suite,
+        ))
         .and(SingleProposalForLeaf)
         .and(ExternalCommitFilter::new(
             cipher_suite,

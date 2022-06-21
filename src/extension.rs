@@ -1,7 +1,11 @@
+use crate::cipher_suite::CipherSuite;
+use crate::client_config::CredentialValidator;
 use crate::group::proposal::ProposalType;
+use crate::signing_identity::SigningIdentityError;
 use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
 use crate::{credential::CredentialType, signing_identity::SigningIdentity};
+use ferriscrypt::asym::ec_key::SecretKey;
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use indexmap::IndexMap;
 use std::io::{Read, Write};
@@ -100,6 +104,16 @@ pub struct ExternalSendersExt {
 impl ExternalSendersExt {
     pub fn new(allowed_senders: Vec<SigningIdentity>) -> Self {
         Self { allowed_senders }
+    }
+
+    pub fn verify_all<C: CredentialValidator>(
+        &self,
+        validator: &C,
+        cipher_suite: CipherSuite,
+    ) -> Result<(), SigningIdentityError> {
+        self.allowed_senders
+            .iter()
+            .try_for_each(|id| id.check_validity::<SecretKey, _>(validator, None, cipher_suite))
     }
 }
 
