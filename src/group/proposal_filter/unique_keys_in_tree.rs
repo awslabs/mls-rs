@@ -1,6 +1,9 @@
 use crate::{
     group::{
-        proposal_filter::{ProposalBundle, ProposalFilter, ProposalFilterError, ProposalInfo},
+        proposal_filter::{
+            ignore_invalid_by_ref_proposal, ProposalBundle, ProposalFilter, ProposalFilterError,
+            ProposalInfo,
+        },
         AddProposal, ProposalType, Sender, UpdateProposal,
     },
     tree_kem::TreeKemPublic,
@@ -38,12 +41,16 @@ impl<'a> ProposalFilter for UniqueKeysInTree<'a> {
 
     fn filter(&self, mut proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
         let mut tree = self.tree.clone();
-        proposals.retain_by_type(|proposal| apply_update(&mut tree, proposal).is_ok());
+        proposals.retain_by_type(ignore_invalid_by_ref_proposal(|proposal| {
+            apply_update(&mut tree, proposal)
+        }))?;
 
-        proposals.retain_by_type::<AddProposal, _>(|proposal| {
-            let leaf = proposal.proposal.key_package.leaf_node.clone();
-            tree.add_leaves(vec![leaf]).is_ok()
-        });
+        proposals.retain_by_type(ignore_invalid_by_ref_proposal::<_, AddProposal, _>(
+            |proposal| {
+                let leaf = proposal.proposal.key_package.leaf_node.clone();
+                tree.add_leaves(vec![leaf]).map(|_| ())
+            },
+        ))?;
 
         Ok(proposals)
     }

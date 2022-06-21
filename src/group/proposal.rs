@@ -173,6 +173,32 @@ impl Proposal {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+#[repr(u16)]
+pub enum BorrowedProposal<'a> {
+    Add(&'a AddProposal),
+    Update(&'a UpdateProposal),
+    Remove(&'a RemoveProposal),
+    Psk(&'a PreSharedKey),
+    ReInit(&'a ReInit),
+    ExternalInit(&'a ExternalInit),
+    GroupContextExtensions(&'a ExtensionList),
+}
+
+impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
+    fn from(p: &'a Proposal) -> Self {
+        match p {
+            Proposal::Add(p) => BorrowedProposal::Add(p),
+            Proposal::Update(p) => BorrowedProposal::Update(p),
+            Proposal::Remove(p) => BorrowedProposal::Remove(p),
+            Proposal::Psk(p) => BorrowedProposal::Psk(p),
+            Proposal::ReInit(p) => BorrowedProposal::ReInit(p),
+            Proposal::ExternalInit(p) => BorrowedProposal::ExternalInit(p),
+            Proposal::GroupContextExtensions(p) => BorrowedProposal::GroupContextExtensions(p),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[repr(u8)]
 #[allow(clippy::large_enum_variant)]

@@ -127,6 +127,7 @@ impl GroupCore {
             psks,
             reinit: proposals.reinit,
             external_init,
+            rejected_proposals: proposals.rejected_proposals,
         })
     }
 

@@ -30,7 +30,7 @@ impl ProposalRef {
         cipher_suite: CipherSuite,
         plaintext: &MLSPlaintext,
         encrypted: bool,
-    ) -> Result<Self, ProposalCacheError> {
+    ) -> Result<Self, tls_codec::Error> {
         let message_content_auth = MLSMessageContentAuth {
             wire_format: if encrypted {
                 WireFormat::Cipher

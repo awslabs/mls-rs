@@ -1,7 +1,9 @@
 use crate::{
     cipher_suite::CipherSuite,
     group::{
-        proposal_filter::{ProposalBundle, ProposalFilter, ProposalFilterError},
+        proposal_filter::{
+            ignore_invalid_by_ref_proposal, ProposalBundle, ProposalFilter, ProposalFilterError,
+        },
         JustPreSharedKeyID, KeyScheduleKdf, PreSharedKey,
     },
 };
@@ -53,9 +55,12 @@ impl ProposalFilter for PskProposalFilter {
     fn filter(&self, mut proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
         let mut ids = HashSet::new();
 
-        proposals.retain_by_type(|p| {
-            self.validate_proposal(&p.proposal).is_ok() && ids.insert(p.proposal.psk.clone())
-        });
+        proposals.retain_by_type(ignore_invalid_by_ref_proposal(|p| {
+            self.validate_proposal(&p.proposal)?;
+            ids.insert(p.proposal.psk.clone())
+                .then(|| ())
+                .ok_or(ProposalFilterError::DuplicatePskIds)
+        }))?;
 
         Ok(proposals)
     }

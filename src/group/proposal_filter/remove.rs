@@ -1,7 +1,9 @@
 use crate::{
     group::{
         framing::Sender,
-        proposal_filter::{ProposalBundle, ProposalFilter, ProposalFilterError},
+        proposal_filter::{
+            ignore_invalid_by_ref_proposal, ProposalBundle, ProposalFilter, ProposalFilterError,
+        },
     },
     tree_kem::TreeKemPublic,
     RemoveProposal,
@@ -43,7 +45,9 @@ impl<'a> ProposalFilter for RemoveProposalFilter<'a> {
     }
 
     fn filter(&self, mut proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
-        proposals.retain_by_type(|p| self.validate_proposal(&p.proposal, &p.sender).is_ok());
+        proposals.retain_by_type(ignore_invalid_by_ref_proposal(|p| {
+            self.validate_proposal(&p.proposal, &p.sender)
+        }))?;
         Ok(proposals)
     }
 }
@@ -124,14 +128,10 @@ mod tests {
             Err(ProposalFilterError::CommitterSelfRemoval)
         );
 
-        assert_eq!(
-            test_filter
-                .filter(test_bundle)
-                .unwrap()
-                .by_type::<RemoveProposal>()
-                .count(),
-            0
-        )
+        assert_matches!(
+            test_filter.filter(test_bundle),
+            Err(ProposalFilterError::CommitterSelfRemoval)
+        );
     }
 
     #[test]
@@ -147,13 +147,11 @@ mod tests {
             ))
         );
 
-        assert_eq!(
-            test_filter
-                .filter(test_bundle)
-                .unwrap()
-                .by_type::<RemoveProposal>()
-                .count(),
-            0
+        assert_matches!(
+            test_filter.filter(test_bundle),
+            Err(ProposalFilterError::RatchetTreeError(
+                RatchetTreeError::NodeVecError(_)
+            ))
         )
     }
 }

@@ -3,7 +3,10 @@ use crate::{
     client_config::CredentialValidator,
     extension::RequiredCapabilitiesExt,
     group::{
-        proposal_filter::{ProposalBundle, ProposalFilter, ProposalFilterError, ProposalInfo},
+        proposal_filter::{
+            ignore_invalid_by_ref_proposal, ProposalBundle, ProposalFilter, ProposalFilterError,
+            ProposalInfo,
+        },
         ProposalType, Sender, UpdateProposal,
     },
     tree_kem::{
@@ -96,10 +99,9 @@ where
         let required_capabilities =
             proposals.effective_required_capabilities(self.required_capabilities.clone());
 
-        proposals.retain_by_type(|p| {
+        proposals.retain_by_type(ignore_invalid_by_ref_proposal(|p| {
             self.validate_proposal(p, required_capabilities.as_ref())
-                .is_ok()
-        });
+        }))?;
 
         Ok(proposals)
     }

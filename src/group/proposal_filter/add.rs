@@ -2,7 +2,9 @@ use crate::{
     cipher_suite::CipherSuite,
     client_config::CredentialValidator,
     extension::RequiredCapabilitiesExt,
-    group::proposal_filter::{ProposalBundle, ProposalFilter, ProposalFilterError},
+    group::proposal_filter::{
+        ignore_invalid_by_ref_proposal, ProposalBundle, ProposalFilter, ProposalFilterError,
+    },
     key_package::KeyPackageValidator,
     tree_kem::TreeKemPublic,
     AddProposal, ProtocolVersion,
@@ -74,10 +76,9 @@ where
         let required_capabilities =
             proposals.effective_required_capabilities(self.required_capabilities.clone());
 
-        proposals.retain_by_type(|p| {
+        proposals.retain_by_type(ignore_invalid_by_ref_proposal(|p| {
             self.validate_proposal(&p.proposal, required_capabilities.as_ref())
-                .is_ok()
-        });
+        }))?;
 
         Ok(proposals)
     }

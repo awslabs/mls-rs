@@ -1,5 +1,6 @@
 mod add;
 mod bundle;
+mod by_ref_proposal;
 mod external_commit;
 mod filter;
 mod group_context_extensions;
@@ -11,7 +12,8 @@ mod unique_keys_in_tree;
 mod update;
 
 pub use add::AddProposalFilter;
-pub use bundle::{Proposable, ProposalBundle, ProposalInfo};
+pub use bundle::{ignore_invalid_by_ref_proposal, Proposable, ProposalBundle, ProposalInfo};
+pub use by_ref_proposal::ByRefProposalFilter;
 pub use external_commit::ExternalCommitFilter;
 pub use filter::{
     BoxedProposalFilter, PassThroughProposalFilter, ProposalFilter, ProposalFilterError,

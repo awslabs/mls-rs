@@ -176,6 +176,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
 
         let commit_content = MLSMessageCommitContent::new(&plaintext, plaintext.encrypted)?;
         let proposal_effects = proposal_effects(
+            None,
             &self.core.proposals,
             &commit_content,
             self.core.context.extensions.get_extension()?,

@@ -1,5 +1,7 @@
 use crate::group::{
-    proposal_filter::{ProposalBundle, ProposalFilter, ProposalFilterError},
+    proposal_filter::{
+        ignore_invalid_by_ref_proposal, ProposalBundle, ProposalFilter, ProposalFilterError,
+    },
     RemoveProposal, Sender, UpdateProposal,
 };
 use std::collections::HashSet;
@@ -34,12 +36,23 @@ impl ProposalFilter for SingleProposalForLeaf {
     fn filter(&self, mut proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
         let mut leaves = HashSet::new();
 
-        proposals.retain_by_type::<RemoveProposal, _>(|p| leaves.insert(p.proposal.to_remove));
+        proposals.retain_by_type(ignore_invalid_by_ref_proposal::<_, RemoveProposal, _>(
+            |p| {
+                leaves.insert(p.proposal.to_remove).then(|| ()).ok_or(
+                    ProposalFilterError::MoreThanOneProposalForLeaf(p.proposal.to_remove),
+                )
+            },
+        ))?;
 
-        proposals.retain_by_type::<UpdateProposal, _>(|p| match &p.sender {
-            Sender::Member(leaf) => leaves.insert(*leaf),
-            _ => true,
-        });
+        proposals.retain_by_type::<UpdateProposal, _, _>(ignore_invalid_by_ref_proposal(|p| {
+            match &p.sender {
+                Sender::Member(leaf) => leaves
+                    .insert(*leaf)
+                    .then(|| ())
+                    .ok_or(ProposalFilterError::MoreThanOneProposalForLeaf(*leaf)),
+                _ => Ok(()),
+            }
+        }))?;
 
         Ok(proposals)
     }

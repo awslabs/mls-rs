@@ -309,8 +309,8 @@ mod tests {
         },
         message::ProcessedMessagePayload,
         psk::{ExternalPskId, PskSecretError},
-        tree_kem::leaf_node::LeafNodeSource,
-        ProposalBundle, ProposalFilter,
+        tree_kem::{leaf_node::LeafNodeSource, RatchetTreeError, TreeIndexError},
+        ProposalBundle, ProposalFilter, ProposalFilterError,
     };
     use assert_matches::assert_matches;
     use ferriscrypt::kdf::hkdf::Hkdf;
@@ -389,11 +389,7 @@ mod tests {
             ProcessedMessagePayload::Proposal(Proposal::Add(AddProposal { key_package })) if key_package == bob_key_gen.key_package
         );
 
-        let proposal = Proposal::Add(AddProposal {
-            key_package: bob_key_gen.key_package.clone(),
-        });
-
-        let _ = session.commit(vec![proposal], vec![]).unwrap();
+        let _ = session.commit(vec![], vec![]).unwrap();
         let _ = session.apply_pending_commit().unwrap();
 
         // Check that the new member is in the group
@@ -466,9 +462,9 @@ mod tests {
         let res = session.apply_pending_commit();
         assert_matches!(
             res,
-            Err(SessionError::ProtocolError(GroupError::ProposalCacheError(
-                _
-            )))
+            Err(SessionError::ProposalRejected(
+                ProposalFilterError::UserDefined(_)
+            ))
         );
     }
 
@@ -824,7 +820,7 @@ mod tests {
     }
 
     #[test]
-    fn a_single_proposal_is_included_in_commit_when_multiple_add_proposals_share_same_hpke_key() {
+    fn commit_is_rejected_when_multiple_add_proposals_share_same_hpke_key() {
         let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
         let mut alice_session = create_session(&alice);
 
@@ -850,28 +846,30 @@ mod tests {
             .unwrap();
         alice_key_pkg.key_package.sign(&alice_signer, &()).unwrap();
 
-        alice_session
-            .commit(
-                vec![
-                    Proposal::Add(AddProposal {
-                        key_package: bob_key_pkg.key_package,
-                    }),
-                    Proposal::Add(AddProposal {
-                        key_package: alice_key_pkg.key_package,
-                    }),
-                ],
-                Vec::new(),
-            )
-            .unwrap();
+        let res = alice_session.commit(
+            vec![
+                Proposal::Add(AddProposal {
+                    key_package: bob_key_pkg.key_package,
+                }),
+                Proposal::Add(AddProposal {
+                    key_package: alice_key_pkg.key_package,
+                }),
+            ],
+            Vec::new(),
+        );
 
-        let update = alice_session.apply_pending_commit().unwrap();
-
-        assert_eq!(update.added.len(), 1);
+        assert_matches!(
+            res,
+            Err(SessionError::ProposalRejected(
+                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
+                    TreeIndexError::DuplicateHpkeKey(_)
+                ))
+            ))
+        );
     }
 
     #[test]
-    fn a_single_proposal_is_included_in_commit_when_multiple_add_proposals_share_same_signature_key(
-    ) {
+    fn commit_is_rejected_when_multiple_add_proposals_share_same_signature_key() {
         let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
         let mut alice_session = create_session(&alice);
 
@@ -883,22 +881,25 @@ mod tests {
             .gen_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .unwrap();
 
-        alice_session
-            .commit(
-                vec![
-                    Proposal::Add(AddProposal {
-                        key_package: bob_key_pkg.key_package,
-                    }),
-                    Proposal::Add(AddProposal {
-                        key_package: alice_key_pkg.key_package,
-                    }),
-                ],
-                Vec::new(),
-            )
-            .unwrap();
+        let res = alice_session.commit(
+            vec![
+                Proposal::Add(AddProposal {
+                    key_package: bob_key_pkg.key_package,
+                }),
+                Proposal::Add(AddProposal {
+                    key_package: alice_key_pkg.key_package,
+                }),
+            ],
+            Vec::new(),
+        );
 
-        let update = alice_session.apply_pending_commit().unwrap();
-
-        assert_eq!(update.added.len(), 1);
+        assert_matches!(
+            res,
+            Err(SessionError::ProposalRejected(
+                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
+                    TreeIndexError::DuplicateSignatureKeys(_)
+                ))
+            ))
+        );
     }
 }

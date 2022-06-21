@@ -3,7 +3,10 @@ use crate::{
     client_config::CredentialValidator,
     extension::RequiredCapabilitiesExt,
     group::{
-        proposal_filter::{ProposalBundle, ProposalFilter, ProposalFilterError, ProposalInfo},
+        proposal_filter::{
+            ignore_invalid_by_ref_proposal, ProposalBundle, ProposalFilter, ProposalFilterError,
+            ProposalInfo,
+        },
         ExternalInit, ProposalType, RemoveProposal, Sender,
     },
     tree_kem::{
@@ -128,7 +131,11 @@ where
 
     fn filter(&self, mut proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
         match &self.committer {
-            Sender::Member(_) => proposals.retain_by_type::<ExternalInit, _>(|_| false),
+            Sender::Member(_) => {
+                proposals.retain_by_type::<ExternalInit, _, _>(ignore_invalid_by_ref_proposal(
+                    |_| Err(ProposalFilterError::ExternalInitMustBeCommittedByNewMember),
+                ))?;
+            }
             _ => self.validate_custom(&proposals, |_, _| Ok(()))?,
         }
         Ok(proposals)

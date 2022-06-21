@@ -21,6 +21,8 @@ use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageV
 use crate::tree_kem::parent_hash::ParentHashError;
 use crate::tree_kem::path_secret::PathSecretError;
 
+pub use tree_index::TreeIndexError;
+
 mod capabilities;
 mod lifetime;
 pub(crate) mod math;

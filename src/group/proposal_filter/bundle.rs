@@ -1,8 +1,8 @@
 use crate::{
     extension::{ExtensionList, RequiredCapabilitiesExt},
     group::{
-        AddProposal, ExternalInit, PreSharedKey, Proposal, ProposalOrRef, ProposalRef,
-        ProposalType, ReInit, RemoveProposal, Sender, UpdateProposal,
+        AddProposal, BorrowedProposal, ExternalInit, PreSharedKey, Proposal, ProposalOrRef,
+        ProposalRef, ProposalType, ReInit, RemoveProposal, Sender, UpdateProposal,
     },
 };
 
@@ -64,12 +64,60 @@ impl ProposalBundle {
         T::filter(self).iter()
     }
 
-    pub fn retain_by_type<T, F>(&mut self, f: F)
+    pub fn retain_by_type<T, F, E>(&mut self, mut f: F) -> Result<(), E>
     where
         T: Proposable,
-        F: FnMut(&ProposalInfo<T>) -> bool,
+        F: FnMut(&ProposalInfo<T>) -> Result<bool, E>,
     {
-        T::retain(self, f);
+        let mut res = Ok(());
+
+        T::retain(self, |p| match f(p) {
+            Ok(keep) => keep,
+            Err(e) => {
+                if res.is_ok() {
+                    res = Err(e);
+                }
+                false
+            }
+        });
+
+        res
+    }
+
+    pub fn iter_proposals(&self) -> impl Iterator<Item = ProposalInfo<BorrowedProposal<'_>>> {
+        self.additions
+            .iter()
+            .map(|p| p.by_ref().map(BorrowedProposal::Add))
+            .chain(
+                self.updates
+                    .iter()
+                    .map(|p| p.by_ref().map(BorrowedProposal::Update)),
+            )
+            .chain(
+                self.removals
+                    .iter()
+                    .map(|p| p.by_ref().map(BorrowedProposal::Remove)),
+            )
+            .chain(
+                self.psks
+                    .iter()
+                    .map(|p| p.by_ref().map(BorrowedProposal::Psk)),
+            )
+            .chain(
+                self.reinitializations
+                    .iter()
+                    .map(|p| p.by_ref().map(BorrowedProposal::ReInit)),
+            )
+            .chain(
+                self.external_initializations
+                    .iter()
+                    .map(|p| p.by_ref().map(BorrowedProposal::ExternalInit)),
+            )
+            .chain(
+                self.group_context_extensions
+                    .iter()
+                    .map(|p| p.by_ref().map(BorrowedProposal::GroupContextExtensions)),
+            )
     }
 
     pub fn into_proposals(self) -> impl Iterator<Item = ProposalInfo<Proposal>> {
@@ -152,6 +200,14 @@ impl<T> ProposalInfo<T> {
             proposal_ref: self.proposal_ref,
         }
     }
+
+    fn by_ref(&self) -> ProposalInfo<&T> {
+        ProposalInfo {
+            proposal: &self.proposal,
+            sender: self.sender.clone(),
+            proposal_ref: self.proposal_ref.clone(),
+        }
+    }
 }
 
 pub trait Proposable: Sized {
@@ -185,3 +241,16 @@ impl_proposable!(PreSharedKey, psks);
 impl_proposable!(ReInit, reinitializations);
 impl_proposable!(ExternalInit, external_initializations);
 impl_proposable!(ExtensionList, group_context_extensions);
+
+pub fn ignore_invalid_by_ref_proposal<F, T, E>(
+    mut f: F,
+) -> impl FnMut(&ProposalInfo<T>) -> Result<bool, E>
+where
+    F: FnMut(&ProposalInfo<T>) -> Result<(), E>,
+{
+    move |p| match (f(p), &p.proposal_ref) {
+        (Ok(()), _) => Ok(true),
+        (Err(_), Some(_)) => Ok(false),
+        (Err(e), None) => Err(e),
+    }
+}

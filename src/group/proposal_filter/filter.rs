@@ -13,7 +13,13 @@ use thiserror::Error;
 pub trait ProposalFilter {
     type Error: std::error::Error + Send + Sync + 'static;
 
+    /// This is called to validate a received commit. It should report any error making the commit
+    /// invalid.
     fn validate(&self, proposals: &ProposalBundle) -> Result<(), Self::Error>;
+
+    /// This is called when preparing a commit. By-reference proposals causing the commit to be
+    /// invalid should be filtered out. If a by-value proposal causes the commit to be invalid,
+    /// an error should be returned.
     fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error>;
 
     fn and<T>(self, other: T) -> And<Self, T>
@@ -182,4 +188,6 @@ pub enum ProposalFilterError {
     CommitterSelfRemoval,
     #[error(transparent)]
     UserDefined(Box<dyn std::error::Error + Send + Sync>),
+    #[error("Only members can commit proposals by reference")]
+    OnlyMembersCanCommitProposalsByRef,
 }

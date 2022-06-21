@@ -3,7 +3,8 @@ use crate::client_config::{ClientConfig, ClientGroupConfig};
 use crate::extension::ExtensionList;
 use crate::group::{
     proposal::Proposal, CommitGeneration, Group, GroupContext, GroupInfo, GroupState,
-    OutboundMessage, VerifiedPlaintext, Welcome,
+    OutboundMessage, ProposalCacheError, ProposalFilterError, ProposalRef, VerifiedPlaintext,
+    Welcome,
 };
 use crate::key_package::{
     KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
@@ -30,7 +31,7 @@ pub use crate::group::{
 #[derive(Error, Debug)]
 pub enum SessionError {
     #[error(transparent)]
-    ProtocolError(#[from] GroupError),
+    ProtocolError(GroupError),
     #[error(transparent)]
     Serialization(#[from] tls_codec::Error),
     #[error(transparent)]
@@ -57,6 +58,24 @@ pub enum SessionError {
     ExpectedWelcomeMessage,
     #[error("expected protocol version {0:?}, found version {1:?}")]
     InvalidProtocol(ProtocolVersion, ProtocolVersion),
+    #[error(transparent)]
+    ProposalRejected(#[from] ProposalFilterError),
+    #[error("Proposal {0:?} not found")]
+    ProposalNotFound(ProposalRef),
+}
+
+impl From<GroupError> for SessionError {
+    fn from(e: GroupError) -> Self {
+        match e {
+            GroupError::ProposalCacheError(ProposalCacheError::ProposalFilterError(e)) => {
+                SessionError::ProposalRejected(e)
+            }
+            GroupError::ProposalCacheError(ProposalCacheError::ProposalNotFound(r)) => {
+                SessionError::ProposalNotFound(r)
+            }
+            _ => SessionError::ProtocolError(e),
+        }
+    }
 }
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]

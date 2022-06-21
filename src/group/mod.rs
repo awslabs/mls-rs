@@ -56,7 +56,6 @@ use message_signature::*;
 use message_verifier::*;
 use proposal::*;
 use proposal_cache::*;
-use proposal_ref::*;
 use secret_tree::*;
 use transcript_hash::*;
 
@@ -69,9 +68,12 @@ pub use external_group_config::{ExternalGroupConfig, InMemoryExternalGroupConfig
 pub use group_config::{GroupConfig, InMemoryGroupConfig};
 pub use group_info::GroupInfo;
 pub use group_state::GroupState;
+pub(crate) use proposal_cache::ProposalCacheError;
 pub use proposal_filter::{
     BoxedProposalFilter, PassThroughProposalFilter, ProposalBundle, ProposalFilter,
+    ProposalFilterError,
 };
+pub(crate) use proposal_ref::ProposalRef;
 pub use secret_tree::SecretTreeError;
 
 mod confirmation_tag;
@@ -111,6 +113,7 @@ struct ProvisionalPublicState {
     psks: Vec<PreSharedKeyID>,
     reinit: Option<ReInit>,
     external_init: Option<(LeafIndex, ExternalInit)>,
+    rejected_proposals: Vec<(ProposalRef, Proposal)>,
 }
 
 #[derive(Clone, Debug)]
@@ -123,6 +126,7 @@ pub struct StateUpdate {
     pub external_init: Option<LeafIndex>,
     pub active: bool,
     pub epoch: u64,
+    pub rejected_proposals: Vec<(ProposalRef, Proposal)>,
 }
 
 impl From<&ProvisionalPublicState> for StateUpdate {
@@ -159,6 +163,7 @@ impl From<&ProvisionalPublicState> for StateUpdate {
             external_init: external_init_leaf,
             active: false,
             epoch: provisional.epoch,
+            rejected_proposals: provisional.rejected_proposals.clone(),
         }
     }
 }
@@ -1924,6 +1929,7 @@ impl<C: GroupConfig> Group<C> {
         // in the order listed in the proposals vector, and always to the leftmost unoccupied leaf
         // in the tree, or the right edge of the tree if all leaves are occupied.
         let proposal_effects = proposal_effects(
+            Some(self.private_tree.self_index),
             &self.core.proposals,
             &commit_content,
             self.core.context.extensions.get_extension()?,
@@ -2260,6 +2266,7 @@ fn commit_sender(
 }
 
 fn proposal_effects<C, F>(
+    commit_receiver: Option<LeafIndex>,
     proposals: &ProposalCache,
     commit_content: &MLSMessageCommitContent<'_>,
     required_capabilities: Option<RequiredCapabilitiesExt>,
@@ -2273,6 +2280,7 @@ where
 {
     proposals.resolve_for_commit(
         commit_content.sender.clone(),
+        commit_receiver,
         commit_content.commit.proposals.clone(),
         commit_content.commit.path.as_ref(),
         required_capabilities,
@@ -2754,7 +2762,14 @@ mod tests {
             vec![],
         );
 
-        assert_matches!(res, Err(GroupError::InvalidCommitSelfUpdate));
+        assert_matches!(
+            res,
+            Err(GroupError::ProposalCacheError(
+                ProposalCacheError::ProposalFilterError(
+                    ProposalFilterError::InvalidCommitSelfUpdate
+                )
+            ))
+        );
     }
 
     #[test]
@@ -2807,7 +2822,7 @@ mod tests {
     }
 
     #[test]
-    fn add_proposal_with_bad_key_package_is_ignored_when_committing() {
+    fn committing_add_proposal_with_bad_key_package_fails() {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128;
 
@@ -2820,29 +2835,21 @@ mod tests {
             kp.key_package.signature = SecureRng::gen(32).unwrap()
         }
 
-        let (commit, _) = test_group
-            .group
-            .commit_proposals(
-                vec![proposal],
-                test_group.commit_options(),
-                &test_group.secret_store,
-                &test_group.signing_key,
-                vec![],
-            )
-            .unwrap();
+        let res = test_group.group.commit_proposals(
+            vec![proposal],
+            test_group.commit_options(),
+            &test_group.secret_store,
+            &test_group.signing_key,
+            vec![],
+        );
 
         assert_matches!(
-            commit,
-            CommitGeneration {
-                plaintext: OutboundMessage::Plaintext(MLSPlaintext {
-                    content: MLSMessageContent {
-                        content: Content::Commit(Commit { proposals, .. }),
-                        ..
-                    },
-                    ..
-                }),
-                ..
-            } if proposals.is_empty()
+            res,
+            Err(GroupError::ProposalCacheError(
+                ProposalCacheError::ProposalFilterError(
+                    ProposalFilterError::KeyPackageValidationError(_)
+                )
+            ))
         );
     }
 
