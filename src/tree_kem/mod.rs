@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::ops::Deref;
 
 use ferriscrypt::asym::ec_key::EcKeyError;
@@ -13,6 +14,7 @@ use math::TreeMathError;
 use node::{LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
 
 use self::leaf_node::{LeafNode, LeafNodeError};
+use self::tree_utils::build_ascii_tree;
 
 use crate::cipher_suite::CipherSuite;
 use crate::extension::ExtensionError;
@@ -46,6 +48,7 @@ pub mod kem;
 pub mod leaf_node;
 pub mod leaf_node_validator;
 mod tree_index;
+pub(crate) mod tree_utils;
 
 #[derive(Error, Debug)]
 pub enum RatchetTreeError {
@@ -439,6 +442,12 @@ impl TreeKemPublic {
                     .cloned())
             })
             .collect::<Result<Vec<_>, RatchetTreeError>>()
+    }
+}
+
+impl Display for TreeKemPublic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", build_ascii_tree(&self.nodes))
     }
 }
 
