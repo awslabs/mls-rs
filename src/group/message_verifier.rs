@@ -4,7 +4,7 @@ use crate::{
     cipher_suite::CipherSuite,
     group::{
         ContentType, GroupContext, GroupError, KeyType, MLSCiphertext, MLSCiphertextContent,
-        MLSMessageContent, MLSPlaintext, MLSSenderData, MLSSenderDataAAD, PublicEpoch, Sender,
+        MLSContent, MLSPlaintext, MLSSenderData, MLSSenderDataAAD, PublicEpoch, Sender,
         VerifiedPlaintext,
     },
     signer::Signable,
@@ -115,7 +115,7 @@ pub(crate) fn decrypt_ciphertext(
 
     // Build the MLS plaintext object and process it
     let plaintext = MLSPlaintext {
-        content: MLSMessageContent {
+        content: MLSContent {
             group_id: ciphertext.group_id.clone(),
             epoch: ciphertext.epoch,
             sender: Sender::Member(sender_data.sender),

@@ -59,8 +59,8 @@ impl Content {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MLSPlaintext {
-    pub content: MLSMessageContent,
-    pub auth: MLSMessageAuth,
+    pub content: MLSContent,
+    pub auth: MLSContentAuthData,
     pub membership_tag: Option<MembershipTag>,
 }
 
@@ -73,14 +73,14 @@ impl MLSPlaintext {
         authenticated_data: Vec<u8>,
     ) -> Self {
         Self {
-            content: MLSMessageContent {
+            content: MLSContent {
                 group_id,
                 epoch,
                 sender,
                 authenticated_data,
                 content,
             },
-            auth: MLSMessageAuth {
+            auth: MLSContentAuthData {
                 signature: MessageSignature::empty(),
                 confirmation_tag: None,
             },
@@ -162,8 +162,8 @@ impl Serialize for MLSPlaintext {
 
 impl Deserialize for MLSPlaintext {
     fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
-        let content = MLSMessageContent::tls_deserialize(bytes)?;
-        let auth = MLSMessageAuth::tls_deserialize(bytes, content.content_type())?;
+        let content = MLSContent::tls_deserialize(bytes)?;
+        let auth = MLSContentAuthData::tls_deserialize(bytes, content.content_type())?;
 
         let membership_tag = match content.sender {
             Sender::Member(_) => Some(MembershipTag::tls_deserialize(bytes)?),
@@ -181,7 +181,7 @@ impl Deserialize for MLSPlaintext {
 #[derive(Clone, Debug, PartialEq)]
 pub struct MLSCiphertextContent {
     pub content: Content,
-    pub auth: MLSMessageAuth,
+    pub auth: MLSContentAuthData,
     pub padding: Vec<u8>,
 }
 
@@ -204,7 +204,7 @@ impl Serialize for MLSCiphertextContent {
 impl Deserialize for MLSCiphertextContent {
     fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
         let content = Content::tls_deserialize(bytes)?;
-        let auth = MLSMessageAuth::tls_deserialize(bytes, content.content_type())?;
+        let auth = MLSContentAuthData::tls_deserialize(bytes, content.content_type())?;
 
         let mut padding = Vec::new();
         bytes.read_to_end(&mut padding)?;
@@ -385,7 +385,7 @@ impl From<ControlEncryptionMode> for WireFormat {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct MLSMessageContent {
+pub struct MLSContent {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
@@ -395,7 +395,7 @@ pub struct MLSMessageContent {
     pub content: Content,
 }
 
-impl MLSMessageContent {
+impl MLSContent {
     pub fn content_type(&self) -> ContentType {
         self.content.content_type()
     }
@@ -408,14 +408,14 @@ pub mod test_utils {
 
     pub fn get_test_plaintext(test_content: Vec<u8>) -> MLSPlaintext {
         MLSPlaintext {
-            content: MLSMessageContent {
+            content: MLSContent {
                 group_id: Vec::new(),
                 epoch: 0,
                 sender: Sender::Member(LeafIndex(1)),
                 authenticated_data: Vec::new(),
                 content: Content::Application(test_content),
             },
-            auth: MLSMessageAuth {
+            auth: MLSContentAuthData {
                 signature: MessageSignature::empty(),
                 confirmation_tag: None,
             },
@@ -426,7 +426,7 @@ pub mod test_utils {
     pub fn get_test_ciphertext_content() -> MLSCiphertextContent {
         MLSCiphertextContent {
             content: Content::Application(SecureRng::gen(1024).unwrap()),
-            auth: MLSMessageAuth {
+            auth: MLSContentAuthData {
                 signature: MessageSignature::from(SecureRng::gen(128).unwrap()),
                 confirmation_tag: None,
             },

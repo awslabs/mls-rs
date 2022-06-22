@@ -1799,14 +1799,14 @@ impl<C: GroupConfig> Group<C> {
         }
 
         let mut plaintext = MLSPlaintext {
-            content: MLSMessageContent {
+            content: MLSContent {
                 group_id: self.core.context.group_id.clone(),
                 epoch: self.core.context.epoch,
                 sender: Sender::Member(self.private_tree.self_index),
                 authenticated_data,
                 content: Content::Application(message.to_vec()),
             },
-            auth: MLSMessageAuth {
+            auth: MLSContentAuthData {
                 signature: MessageSignature::empty(),
                 confirmation_tag: None,
             },
@@ -2919,7 +2919,7 @@ mod tests {
             commit,
             CommitGeneration {
                 plaintext: OutboundMessage::Plaintext(MLSPlaintext {
-                    content: MLSMessageContent {
+                    content: MLSContent {
                         content: Content::Commit(Commit { proposals, .. }),
                         ..
                     },

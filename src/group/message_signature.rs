@@ -1,4 +1,4 @@
-use crate::group::framing::{ContentType, MLSMessageContent, MLSPlaintext, Sender, WireFormat};
+use crate::group::framing::{ContentType, MLSContent, MLSPlaintext, Sender, WireFormat};
 use crate::group::{ConfirmationTag, GroupContext};
 use crate::signer::Signable;
 use std::{
@@ -9,12 +9,12 @@ use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct MLSMessageAuth {
+pub struct MLSContentAuthData {
     pub signature: MessageSignature,
     pub confirmation_tag: Option<ConfirmationTag>,
 }
 
-impl MLSMessageAuth {
+impl MLSContentAuthData {
     pub(crate) fn tls_serialized_len(&self) -> usize {
         self.signature.tls_serialized_len()
             + self
@@ -38,7 +38,7 @@ impl MLSMessageAuth {
         bytes: &mut R,
         content_type: ContentType,
     ) -> Result<Self, tls_codec::Error> {
-        Ok(MLSMessageAuth {
+        Ok(MLSContentAuthData {
             signature: MessageSignature::tls_deserialize(bytes)?,
             confirmation_tag: match content_type {
                 ContentType::Commit => Some(ConfirmationTag::tls_deserialize(bytes)?),
@@ -49,13 +49,13 @@ impl MLSMessageAuth {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct MLSMessageContentAuth<'a> {
+pub(crate) struct MLSAuthenticatedContent<'a> {
     pub(crate) wire_format: WireFormat,
-    pub(crate) content: &'a MLSMessageContent,
-    pub(crate) auth: &'a MLSMessageAuth,
+    pub(crate) content: &'a MLSContent,
+    pub(crate) auth: &'a MLSContentAuthData,
 }
 
-impl Size for MLSMessageContentAuth<'_> {
+impl Size for MLSAuthenticatedContent<'_> {
     fn tls_serialized_len(&self) -> usize {
         self.wire_format.tls_serialized_len()
             + self.content.tls_serialized_len()
@@ -63,7 +63,7 @@ impl Size for MLSMessageContentAuth<'_> {
     }
 }
 
-impl Serialize for MLSMessageContentAuth<'_> {
+impl Serialize for MLSAuthenticatedContent<'_> {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         Ok(self.wire_format.tls_serialize(writer)?
             + self.content.tls_serialize(writer)?
@@ -72,13 +72,13 @@ impl Serialize for MLSMessageContentAuth<'_> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct MLSMessageContentTBS {
+pub(crate) struct MLSContentTBS {
     pub(crate) wire_format: WireFormat,
-    pub(crate) content: MLSMessageContent,
+    pub(crate) content: MLSContent,
     pub(crate) context: Option<GroupContext>,
 }
 
-impl Size for MLSMessageContentTBS {
+impl Size for MLSContentTBS {
     fn tls_serialized_len(&self) -> usize {
         self.wire_format.tls_serialized_len()
             + self.content.tls_serialized_len()
@@ -89,7 +89,7 @@ impl Size for MLSMessageContentTBS {
     }
 }
 
-impl Serialize for MLSMessageContentTBS {
+impl Serialize for MLSContentTBS {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         Ok(self.wire_format.tls_serialize(writer)?
             + self.content.tls_serialize(writer)?
@@ -100,10 +100,10 @@ impl Serialize for MLSMessageContentTBS {
     }
 }
 
-impl Deserialize for MLSMessageContentTBS {
+impl Deserialize for MLSContentTBS {
     fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
         let wire_format = WireFormat::tls_deserialize(bytes)?;
-        let content = MLSMessageContent::tls_deserialize(bytes)?;
+        let content = MLSContent::tls_deserialize(bytes)?;
         let context = match content.sender {
             Sender::Member(_) | Sender::NewMemberCommit => {
                 Some(GroupContext::tls_deserialize(bytes)?)
@@ -118,14 +118,14 @@ impl Deserialize for MLSMessageContentTBS {
     }
 }
 
-impl MLSMessageContentTBS {
+impl MLSContentTBS {
     /// The group context must not be `None` when the sender is `Member` or `NewMember`.
     pub(crate) fn from_plaintext(
         plaintext: &MLSPlaintext,
         group_context: Option<&GroupContext>,
         encrypted: bool,
     ) -> Self {
-        MLSMessageContentTBS {
+        MLSContentTBS {
             wire_format: if encrypted {
                 WireFormat::Cipher
             } else {
@@ -158,7 +158,7 @@ impl<'a> Signable<'a> for MLSPlaintext {
         &self,
         context: &MessageSigningContext,
     ) -> Result<Vec<u8>, tls_codec::Error> {
-        MLSMessageContentTBS::from_plaintext(self, context.group_context, context.encrypted)
+        MLSContentTBS::from_plaintext(self, context.group_context, context.encrypted)
             .tls_serialize_detached()
     }
 

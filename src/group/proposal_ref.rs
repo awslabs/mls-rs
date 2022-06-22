@@ -31,7 +31,7 @@ impl ProposalRef {
         plaintext: &MLSPlaintext,
         encrypted: bool,
     ) -> Result<Self, tls_codec::Error> {
-        let message_content_auth = MLSMessageContentAuth {
+        let message_content_auth = MLSAuthenticatedContent {
             wire_format: if encrypted {
                 WireFormat::Cipher
             } else {
@@ -55,7 +55,7 @@ pub(crate) mod test_utils {
 
     pub fn plaintext_from_proposal(proposal: Proposal, sender: LeafIndex) -> MLSPlaintext {
         MLSPlaintext {
-            auth: MLSMessageAuth {
+            auth: MLSContentAuthData {
                 signature: MessageSignature::from(SecureRng::gen(128).unwrap()),
                 confirmation_tag: None,
             },

@@ -1,6 +1,6 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::framing::{MLSPlaintext, WireFormat};
-use crate::group::message_signature::{MLSMessageAuth, MLSMessageContentTBS};
+use crate::group::message_signature::{MLSContentAuthData, MLSContentTBS};
 use crate::group::GroupContext;
 use ferriscrypt::hmac::{HMacError, Key, Tag};
 use std::{
@@ -20,39 +20,39 @@ pub enum MembershipTagError {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct MLSPlaintextTBM {
-    content_tbs: MLSMessageContentTBS,
-    auth: MLSMessageAuth,
+struct MLSContentTBM {
+    content_tbs: MLSContentTBS,
+    auth: MLSContentAuthData,
 }
 
-impl Size for MLSPlaintextTBM {
+impl Size for MLSContentTBM {
     fn tls_serialized_len(&self) -> usize {
         self.content_tbs.tls_serialized_len() + self.auth.tls_serialized_len()
     }
 }
 
-impl Serialize for MLSPlaintextTBM {
+impl Serialize for MLSContentTBM {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         Ok(self.content_tbs.tls_serialize(writer)? + self.auth.tls_serialize(writer)?)
     }
 }
 
-impl Deserialize for MLSPlaintextTBM {
+impl Deserialize for MLSContentTBM {
     fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
-        let content_tbs = MLSMessageContentTBS::tls_deserialize(bytes)?;
-        let auth = MLSMessageAuth::tls_deserialize(bytes, content_tbs.content.content_type())?;
+        let content_tbs = MLSContentTBS::tls_deserialize(bytes)?;
+        let auth = MLSContentAuthData::tls_deserialize(bytes, content_tbs.content.content_type())?;
         Ok(Self { content_tbs, auth })
     }
 }
 
-impl MLSPlaintextTBM {
+impl MLSContentTBM {
     pub fn from_plaintext(
         plaintext: &MLSPlaintext,
         group_context: &GroupContext,
         wire_format: WireFormat,
-    ) -> MLSPlaintextTBM {
-        MLSPlaintextTBM {
-            content_tbs: MLSMessageContentTBS {
+    ) -> MLSContentTBM {
+        MLSContentTBM {
+            content_tbs: MLSContentTBS {
                 wire_format,
                 content: plaintext.content.clone(),
                 context: Some(group_context.clone()),
@@ -87,7 +87,7 @@ impl MembershipTag {
         cipher_suite: &CipherSuite,
     ) -> Result<Self, MembershipTagError> {
         let plaintext_tbm =
-            MLSPlaintextTBM::from_plaintext(plaintext, group_context, WireFormat::Plain);
+            MLSContentTBM::from_plaintext(plaintext, group_context, WireFormat::Plain);
         let serialized_tbm = plaintext_tbm.tls_serialize_detached()?;
         let hmac_key = Key::new(membership_key, cipher_suite.hash_function())?;
         let tag = hmac_key.generate_tag(&serialized_tbm)?;
