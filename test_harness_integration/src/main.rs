@@ -413,7 +413,7 @@ impl MlsClient for MlsClientImpl {
         let proposal_packet = sessions
             .get_mut(request_ref.state_id as usize - 1)
             .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
-            .propose_remove(request_ref.removed_leaf_index, vec![])
+            .propose_remove(request_ref.removed, vec![])
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {

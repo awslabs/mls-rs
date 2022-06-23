@@ -1,0 +1,37 @@
+name: Interop Tests
+on: [push, pull_request]
+env:
+  CARGO_TERM_COLOR: always
+  SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+jobs:
+  BuildAndTest:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        path: mls
+    - name: Setup SSH Keys and known_hosts
+      run: |
+        ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+        ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
+    - name: Start test MLS client
+      working-directory: mls/test_harness_integration 
+      run: cargo run &
+    - name: Clone test runner
+      uses: actions/checkout@master
+      with:
+        repository: mulmarta/mls-implementations
+        ref: add-more-functionality
+        path: interop
+    - name: Run tests
+      working-directory: interop/interop
+      run: |
+        python scenario_generators/generate_config_basic.py
+        export GOPATH=$HOME/go
+        export GOBIN=$GOPATH/bin
+        export PATH=$PATH:$GOROOT:$GOPATH:$GOBIN
+        GOFLAGS=-mod=mod go generate ./...
+        make run-test
