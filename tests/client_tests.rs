@@ -4,7 +4,7 @@ use aws_mls::client::Client;
 use aws_mls::client_config::{InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECONDS};
 use aws_mls::credential::Credential;
 use aws_mls::extension::ExtensionList;
-use aws_mls::key_package::KeyPackageGeneration;
+use aws_mls::key_package::KeyPackage;
 use aws_mls::message::ProcessedMessagePayload;
 use aws_mls::session::{GroupError, Session, SessionError};
 use aws_mls::signing_identity::SigningIdentity;
@@ -69,7 +69,9 @@ fn test_create(
         ONE_YEAR_IN_SECONDS,
     );
 
-    let bob_key = bob.gen_key_package(protocol_version, cipher_suite).unwrap();
+    let bob_key_pkg = bob
+        .generate_key_package(protocol_version, cipher_suite)
+        .unwrap();
 
     // Alice creates a session and adds bob
     let mut alice_session = alice
@@ -82,7 +84,7 @@ fn test_create(
         .unwrap();
 
     let add_bob = alice_session
-        .add_proposal(&bob_key.key_package.to_vec().unwrap())
+        .add_proposal(&bob_key_pkg.to_vec().unwrap())
         .unwrap();
 
     let packets = alice_session.commit(vec![add_bob], vec![]).unwrap();
@@ -153,15 +155,15 @@ fn get_test_sessions(
         .iter()
         .map(|client| {
             client
-                .gen_key_package(protocol_version, cipher_suite)
+                .generate_key_package(protocol_version, cipher_suite)
                 .unwrap()
         })
-        .collect::<Vec<KeyPackageGeneration>>();
+        .collect::<Vec<KeyPackage>>();
 
     // Add the generated clients to the group the creator made
     let add_members_proposals = receiver_keys
         .iter()
-        .map(|kg| kg.key_package.to_vec().unwrap())
+        .map(|kg| kg.to_vec().unwrap())
         .map(|key_bytes| creator_session.add_proposal(&key_bytes).unwrap())
         .collect();
     let commit = creator_session
@@ -174,9 +176,9 @@ fn get_test_sessions(
     assert!(update.active);
     assert_eq!(update.epoch, 1);
 
-    assert!(receiver_keys.iter().all(|kpg| creator_session
-        .roster()
-        .contains(&&kpg.key_package.leaf_node)));
+    assert!(receiver_keys
+        .iter()
+        .all(|kpg| creator_session.roster().contains(&&kpg.leaf_node)));
 
     assert!(update.removed.is_empty());
 
@@ -222,10 +224,10 @@ fn add_random_members(
             );
 
             let key_package = new_client
-                .gen_key_package(ProtocolVersion::Mls10, cipher_suite)
+                .generate_key_package(ProtocolVersion::Mls10, cipher_suite)
                 .unwrap();
 
-            let key_package_data = key_package.key_package.to_vec().unwrap();
+            let key_package_data = key_package.to_vec().unwrap();
             let add = sessions[sender].add_proposal(&key_package_data).unwrap();
             (add, new_client)
         })

@@ -253,14 +253,14 @@ impl MlsClient for MlsClientImpl {
             .build_client();
 
         let key_package = client
-            .gen_key_package(ProtocolVersion::Mls10, cipher_suite)
+            .generate_key_package(ProtocolVersion::Mls10, cipher_suite)
             .map_err(abort)?;
 
         clients.push(client);
 
         let resp = CreateKeyPackageResponse {
             transaction_id: clients.len() as u32,
-            key_package: key_package.key_package.to_vec().map_err(abort)?,
+            key_package: key_package.to_vec().map_err(abort)?,
         };
 
         Ok(Response::new(resp))

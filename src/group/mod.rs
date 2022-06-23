@@ -2146,6 +2146,7 @@ impl<C: GroupConfig> Group<C> {
         Ok(info)
     }
 
+    #[cfg(test)]
     pub fn context(&self) -> &GroupContext {
         &self.core.context
     }

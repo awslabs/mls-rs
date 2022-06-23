@@ -5,10 +5,9 @@ use crate::extension::{ExtensionError, ExtensionList};
 use crate::group::framing::{Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender};
 use crate::group::message_signature::MessageSigningContext;
 use crate::group::proposal::{AddProposal, Proposal};
-use crate::group::{GroupContext, GroupState};
+use crate::group::GroupState;
 use crate::key_package::{
-    KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator,
-    KeyPackageRef, KeyPackageRepository,
+    KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef, KeyPackageRepository,
 };
 use crate::session::{Session, SessionError};
 use crate::signer::{Signable, SignatureError};
@@ -57,11 +56,11 @@ where
         Client { config }
     }
 
-    pub fn gen_key_package(
+    pub fn generate_key_package(
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
-    ) -> Result<KeyPackageGeneration, ClientError> {
+    ) -> Result<KeyPackage, ClientError> {
         let (identity, signer) = self
             .config
             .keychain()
@@ -88,7 +87,7 @@ where
             .insert(key_pkg_gen.clone())
             .map_err(|e| ClientError::KeyPackageRepoError(e.into()))?;
 
-        Ok(key_pkg_gen)
+        Ok(key_pkg_gen.key_package)
     }
 
     pub fn create_session(
@@ -183,17 +182,23 @@ where
         Ok(Session::import(self.config.clone(), state)?)
     }
 
-    pub fn propose_add_from_new_member(
+    pub fn external_add_proposal(
         &self,
-        version: ProtocolVersion,
-        group_cipher_suite: CipherSuite,
-        group_context: GroupContext,
-        key_package: KeyPackage,
+        group_info: MLSMessage,
         authenticated_data: Vec<u8>,
     ) -> Result<Vec<u8>, ClientError> {
+        let protocol_version = group_info.version;
+
+        let group_info = group_info
+            .into_group_info()
+            .ok_or(ClientError::ExpectedGroupInfoMessage)?;
+
+        let key_package =
+            self.generate_key_package(protocol_version, group_info.group_context.cipher_suite)?;
+
         let mut message = MLSPlaintext::new(
-            group_context.group_id.clone(),
-            group_context.epoch,
+            group_info.group_context.group_id.clone(),
+            group_info.group_context.epoch,
             Sender::NewMemberProposal,
             Content::Proposal(Proposal::Add(AddProposal { key_package })),
             authenticated_data,
@@ -202,20 +207,21 @@ where
         let (_, signer) = self
             .config
             .keychain()
-            .default_identity(group_cipher_suite)
+            .default_identity(group_info.group_context.cipher_suite)
             .ok_or(ClientError::NoCredentialFound)?;
 
         let signing_context = MessageSigningContext {
-            group_context: Some(&group_context),
+            group_context: Some(&group_info.group_context),
             encrypted: false,
         };
 
         message.sign(&signer, &signing_context)?;
 
         let message = MLSMessage {
-            version,
+            version: protocol_version,
             payload: MLSMessagePayload::Plain(message),
         };
+
         Ok(message.tls_serialize_detached()?)
     }
 }
@@ -246,14 +252,14 @@ pub mod test_utils {
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         identity: &str,
-    ) -> (Client<InMemoryClientConfig>, KeyPackageGeneration) {
+    ) -> (Client<InMemoryClientConfig>, KeyPackage) {
         let client = get_basic_config(cipher_suite, identity).build_client();
 
-        let gen = client
-            .gen_key_package(protocol_version, cipher_suite)
+        let key_package = client
+            .generate_key_package(protocol_version, cipher_suite)
             .unwrap();
 
-        (client, gen)
+        (client, key_package)
     }
 
     pub fn create_session(client: &Client<InMemoryClientConfig>) -> Session<InMemoryClientConfig> {
@@ -334,13 +340,13 @@ mod tests {
             let client = get_basic_config(cipher_suite, "foo").build_client();
 
             // TODO: Tests around extensions
-            let package_gen = client
-                .gen_key_package(protocol_version, cipher_suite)
+            let key_package = client
+                .generate_key_package(protocol_version, cipher_suite)
                 .unwrap();
 
-            assert_eq!(package_gen.key_package.version, protocol_version);
-            assert_eq!(package_gen.key_package.cipher_suite, cipher_suite);
-            assert_matches!(&package_gen.key_package.leaf_node.signing_identity.credential, Credential::Basic(identity) if identity == "foo".as_bytes());
+            assert_eq!(key_package.version, protocol_version);
+            assert_eq!(key_package.cipher_suite, cipher_suite);
+            assert_matches!(&key_package.leaf_node.signing_identity.credential, Credential::Basic(identity) if identity == "foo".as_bytes());
 
             let (expected_credential, _) = client
                 .config
@@ -349,8 +355,7 @@ mod tests {
                 .unwrap();
 
             assert_eq!(
-                package_gen
-                    .key_package
+                key_package
                     .leaf_node
                     .signing_identity
                     .tls_serialize_detached()
@@ -359,9 +364,9 @@ mod tests {
             );
 
             let client_lifetime = client.config.lifetime();
-            assert_matches!(package_gen.key_package.leaf_node.leaf_node_source, LeafNodeSource::KeyPackage(lifetime) if (lifetime.not_after - lifetime.not_before) == (client_lifetime.not_after - client_lifetime.not_before));
+            assert_matches!(key_package.leaf_node.leaf_node_source, LeafNodeSource::KeyPackage(lifetime) if (lifetime.not_after - lifetime.not_before) == (client_lifetime.not_after - client_lifetime.not_before));
 
-            let capabilities = package_gen.key_package.leaf_node.capabilities;
+            let capabilities = key_package.leaf_node.capabilities;
             assert_eq!(capabilities, client.config.capabilities());
         }
     }
@@ -372,57 +377,29 @@ mod tests {
 
         let mut session = create_session(&alice);
 
-        let (bob, bob_key_gen) =
+        let (bob, bob_key_package) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
         let proposal = bob
-            .propose_add_from_new_member(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                session.group_context(),
-                bob_key_gen.key_package.clone(),
-                vec![],
-            )
+            .external_add_proposal(session.group_info_message().unwrap(), vec![])
             .unwrap();
 
         let message = session.process_incoming_bytes(&proposal).unwrap();
 
         assert_matches!(
             message.message,
-            ProcessedMessagePayload::Proposal(Proposal::Add(AddProposal { key_package })) if key_package == bob_key_gen.key_package
+            ProcessedMessagePayload::Proposal(Proposal::Add(AddProposal { key_package })) if key_package.leaf_node.signing_identity == bob_key_package.leaf_node.signing_identity
         );
 
         let _ = session.commit(vec![], vec![]).unwrap();
         let _ = session.apply_pending_commit().unwrap();
 
         // Check that the new member is in the group
-        assert!(session
+        session
             .roster()
-            .contains(&&bob_key_gen.key_package.leaf_node));
-    }
-
-    #[test]
-    fn proposal_from_unknown_external_is_rejected_by_members() {
-        let ted = get_basic_config(TEST_CIPHER_SUITE, "ted").build_client();
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-
-        let mut session = create_session(&alice);
-
-        let (_, bob_key_gen) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-
-        let msg = ted
-            .propose_add_from_new_member(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                session.group_context(),
-                bob_key_gen.key_package,
-                vec![],
-            )
+            .iter()
+            .find(|ln| ln.signing_identity == bob_key_package.leaf_node.signing_identity)
             .unwrap();
-
-        let msg = session.process_incoming_bytes(&msg);
-        assert!(msg.is_err());
     }
 
     struct RejectProposals;
@@ -447,22 +424,16 @@ mod tests {
 
         let mut session = create_session(&alice);
 
-        let (bob, bob_key_gen) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+        let (bob, _) = test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
         let proposal = bob
-            .propose_add_from_new_member(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                session.group_context(),
-                bob_key_gen.key_package,
-                vec![],
-            )
+            .external_add_proposal(session.group_info_message().unwrap(), vec![])
             .unwrap();
 
         session.process_incoming_bytes(&proposal).unwrap();
         session.commit(Vec::new(), Vec::new()).unwrap();
         let res = session.apply_pending_commit();
+
         assert_matches!(
             res,
             Err(SessionError::ProposalRejected(
@@ -507,33 +478,32 @@ mod tests {
         let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
         let mut alice_session = create_session(&alice);
 
-        let (bob, bob_key_pkg_gen) =
+        let (bob, bob_key_pkg) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
-        let bob_leaf_node = bob_key_pkg_gen.key_package.leaf_node.clone();
+        let bob_leaf_node = bob_key_pkg.leaf_node.clone();
 
-        let mut bob_session =
-            join_session(&mut alice_session, [], bob_key_pkg_gen.key_package, &bob).unwrap();
+        let mut bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
 
-        let (carol, carol_key_pkg_gen) =
+        let (carol, carol_key_pkg) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "carol");
 
         let carol_session = join_session(
             &mut alice_session,
             [&mut bob_session],
-            carol_key_pkg_gen.key_package,
+            carol_key_pkg,
             &carol,
         )
         .unwrap();
 
         let bob_sub_key_pkg = bob
-            .gen_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .unwrap();
 
         let (alice_sub_session, welcome) = alice_session
             .branch(b"subgroup".to_vec(), None, |p| {
                 if p == &bob_leaf_node {
-                    Some(bob_sub_key_pkg.key_package.clone())
+                    Some(bob_sub_key_pkg.clone())
                 } else {
                     None
                 }
@@ -570,9 +540,8 @@ mod tests {
         let bob = f(get_basic_config(TEST_CIPHER_SUITE, "bob")).build_client();
 
         let bob_key_pkg = bob
-            .gen_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-            .unwrap()
-            .key_package;
+            .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .unwrap();
 
         let res = join_session(&mut alice_session, [], bob_key_pkg, &bob);
 
@@ -652,8 +621,8 @@ mod tests {
 
         let (bob, bob_key_pkg) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-        let mut bob_session =
-            join_session(&mut alice_session, [], bob_key_pkg.key_package, &bob).unwrap();
+
+        let mut bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
 
         let bob_msg = b"I'm Bob";
         let bob_cred = bob_session
@@ -681,9 +650,8 @@ mod tests {
             version: TEST_PROTOCOL_VERSION,
             payload: MLSMessagePayload::KeyPackage(
                 alice
-                    .gen_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-                    .unwrap()
-                    .key_package,
+                    .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+                    .unwrap(),
             ),
         };
 
@@ -736,8 +704,8 @@ mod tests {
 
         let (bob, bob_key_pkg) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-        let bob_session =
-            join_session(&mut alice_session, [], bob_key_pkg.key_package, &bob).unwrap();
+
+        let bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
 
         assert_eq!(
             alice_session.authentication_secret().unwrap(),
@@ -752,8 +720,7 @@ mod tests {
 
         let (bob, bob_key_pkg) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-        let mut bob_session =
-            join_session(&mut alice_session, [], bob_key_pkg.key_package, &bob).unwrap();
+        let mut bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
 
         // Commit so that Bob's session records a new epoch.
         let commit = bob_session.commit(Vec::new(), Vec::new()).unwrap();
@@ -798,8 +765,7 @@ mod tests {
         let (bob, bob_key_pkg) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
-        let mut bob_session =
-            join_session(&mut alice_session, [], bob_key_pkg.key_package, &bob).unwrap();
+        let mut bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
 
         let message = alice_session
             .encrypt_application_data(b"foobar", Vec::new())
@@ -833,8 +799,7 @@ mod tests {
         let (alice, mut alice_key_pkg) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice");
 
-        alice_key_pkg.key_package.leaf_node.public_key =
-            bob_key_pkg.key_package.leaf_node.public_key.clone();
+        alice_key_pkg.leaf_node.public_key = bob_key_pkg.leaf_node.public_key.clone();
 
         let (_, alice_signer) = alice
             .config
@@ -842,20 +807,16 @@ mod tests {
             .default_identity(TEST_CIPHER_SUITE)
             .unwrap();
 
-        alice_key_pkg
-            .key_package
-            .leaf_node
-            .sign(&alice_signer, &None)
-            .unwrap();
-        alice_key_pkg.key_package.sign(&alice_signer, &()).unwrap();
+        alice_key_pkg.leaf_node.sign(&alice_signer, &None).unwrap();
+        alice_key_pkg.sign(&alice_signer, &()).unwrap();
 
         let res = alice_session.commit(
             vec![
                 Proposal::Add(AddProposal {
-                    key_package: bob_key_pkg.key_package,
+                    key_package: bob_key_pkg,
                 }),
                 Proposal::Add(AddProposal {
-                    key_package: alice_key_pkg.key_package,
+                    key_package: alice_key_pkg,
                 }),
             ],
             Vec::new(),
@@ -877,20 +838,22 @@ mod tests {
         let mut alice_session = create_session(&alice);
 
         let bob = get_basic_config(TEST_CIPHER_SUITE, "bob").build_client();
+
         let bob_key_pkg = bob
-            .gen_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .unwrap();
+
         let alice_key_pkg = bob
-            .gen_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .unwrap();
 
         let res = alice_session.commit(
             vec![
                 Proposal::Add(AddProposal {
-                    key_package: bob_key_pkg.key_package,
+                    key_package: bob_key_pkg,
                 }),
                 Proposal::Add(AddProposal {
-                    key_package: alice_key_pkg.key_package,
+                    key_package: alice_key_pkg,
                 }),
             ],
             Vec::new(),

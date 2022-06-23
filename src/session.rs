@@ -2,9 +2,8 @@ use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, ClientGroupConfig};
 use crate::extension::ExtensionList;
 use crate::group::{
-    proposal::Proposal, CommitGeneration, Group, GroupContext, GroupInfo, GroupState,
-    OutboundMessage, ProposalCacheError, ProposalFilterError, ProposalRef, VerifiedPlaintext,
-    Welcome,
+    proposal::Proposal, CommitGeneration, Group, GroupInfo, GroupState, OutboundMessage,
+    ProposalCacheError, ProposalFilterError, ProposalRef, VerifiedPlaintext, Welcome,
 };
 use crate::key_package::{
     KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
@@ -251,10 +250,6 @@ where
 
         let commit_message = session.serialize_control(commit_message)?;
         Ok((session, commit_message))
-    }
-
-    pub fn group_context(&self) -> GroupContext {
-        self.protocol.context().clone()
     }
 
     pub fn group_info_message(&self) -> Result<MLSMessage, SessionError> {

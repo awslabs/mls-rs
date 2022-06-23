@@ -364,12 +364,12 @@ mod tests {
                 group: alice_group.group,
             };
 
-            let (bob_key_pkg_gen, bob_signing_key) =
+            let (bob_key_pkg, bob_signing_key) =
                 test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
 
             let proposal = alice
                 .group
-                .add_proposal(bob_key_pkg_gen.key_package.clone())
+                .add_proposal(bob_key_pkg.key_package.clone())
                 .unwrap();
 
             let secret_store = InMemoryPskStore::default();
@@ -407,7 +407,7 @@ mod tests {
                 TEST_PROTOCOL_VERSION,
                 welcome,
                 None,
-                bob_key_pkg_gen,
+                bob_key_pkg,
                 &secret_store,
                 |_| InMemoryGroupConfig::default(),
                 |_, _| true,

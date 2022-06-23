@@ -27,7 +27,7 @@ pub fn create_group(cipher_suite: CipherSuite, size: usize) -> GroupState {
         let (bob, bob_key_pkg) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, cipher_suite, &format!("bob{n}"));
 
-        join_session(&mut alice_session, [], bob_key_pkg.key_package, &bob).unwrap();
+        join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
     }
 
     // exporting the session as a group state
