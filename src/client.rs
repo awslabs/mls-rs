@@ -13,6 +13,7 @@ use crate::session::{Session, SessionError};
 use crate::signer::{Signable, SignatureError};
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::{keychain::Keychain, ProtocolVersion};
+use ferriscrypt::rand::{SecureRng, SecureRngError};
 use thiserror::Error;
 use tls_codec::Serialize;
 
@@ -26,6 +27,8 @@ pub enum ClientError {
     SessionError(#[from] SessionError),
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
+    #[error(transparent)]
+    SecureRngError(#[from] SecureRngError),
     #[error("credential not found for cipher suite")]
     NoCredentialFound,
     #[error("the secret key provided does not match the public key in the credential")]
@@ -90,7 +93,7 @@ where
         Ok(key_pkg_gen.key_package)
     }
 
-    pub fn create_session(
+    pub fn create_session_with_group_id(
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -123,6 +126,22 @@ where
             self.config.clone(),
         )
         .map_err(Into::into)
+    }
+
+    pub fn create_session(
+        &self,
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        group_context_extensions: ExtensionList,
+    ) -> Result<Session<C>, ClientError> {
+        let group_id = SecureRng::gen(cipher_suite.hash_function().digest_size())?;
+
+        self.create_session_with_group_id(
+            protocol_version,
+            cipher_suite,
+            group_id,
+            group_context_extensions,
+        )
     }
 
     /// If `key_package` is specified, key package references listed in the welcome message will not
@@ -264,7 +283,7 @@ pub mod test_utils {
 
     pub fn create_session(client: &Client<InMemoryClientConfig>) -> Session<InMemoryClientConfig> {
         client
-            .create_session(
+            .create_session_with_group_id(
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 TEST_GROUP.to_vec(),

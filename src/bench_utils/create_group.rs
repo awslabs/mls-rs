@@ -15,7 +15,7 @@ pub fn create_group(cipher_suite: CipherSuite, size: usize) -> GroupState {
 
     let alice = get_basic_config(cipher_suite, "alice").build_client();
     let mut alice_session = alice
-        .create_session(
+        .create_session_with_group_id(
             TEST_PROTOCOL_VERSION,
             cipher_suite,
             TEST_GROUP.to_vec(),

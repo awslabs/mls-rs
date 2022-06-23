@@ -75,7 +75,7 @@ fn test_create(
 
     // Alice creates a session and adds bob
     let mut alice_session = alice
-        .create_session(
+        .create_session_with_group_id(
             protocol_version,
             cipher_suite,
             b"group".to_vec(),
@@ -131,7 +131,7 @@ fn get_test_sessions(
     );
 
     let mut creator_session = creator
-        .create_session(
+        .create_session_with_group_id(
             protocol_version,
             cipher_suite,
             b"group".to_vec(),
@@ -689,7 +689,7 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
     );
 
     let mut creator_session = creator
-        .create_session(
+        .create_session_with_group_id(
             protocol_version,
             cipher_suite,
             b"group".to_vec(),

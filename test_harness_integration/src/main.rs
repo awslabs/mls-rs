@@ -217,7 +217,7 @@ impl MlsClient for MlsClientImpl {
             .build_client();
 
         let session = creator
-            .create_session(
+            .create_session_with_group_id(
                 ProtocolVersion::Mls10,
                 cipher_suite,
                 request_ref.group_id,
