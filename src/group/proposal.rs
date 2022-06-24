@@ -112,7 +112,7 @@ impl ProposalType {
     pub const PSK: ProposalType = ProposalType(4);
     pub const RE_INIT: ProposalType = ProposalType(5);
     pub const EXTERNAL_INIT: ProposalType = ProposalType(6);
-    pub const GROUP_CONTEXT_EXTENSIONS: ProposalType = ProposalType(8);
+    pub const GROUP_CONTEXT_EXTENSIONS: ProposalType = ProposalType(7);
 }
 
 impl From<u16> for ProposalType {
@@ -155,7 +155,6 @@ pub enum Proposal {
     Psk(PreSharedKey),
     ReInit(ReInit),
     ExternalInit(ExternalInit),
-    #[tls_codec(discriminant = 8)]
     GroupContextExtensions(ExtensionList),
 }
 
@@ -174,7 +173,6 @@ impl Proposal {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-#[repr(u16)]
 pub enum BorrowedProposal<'a> {
     Add(&'a AddProposal),
     Update(&'a UpdateProposal),
