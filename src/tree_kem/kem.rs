@@ -1,19 +1,21 @@
 use std::collections::HashMap;
 
-use ferriscrypt::hpke::HpkeError;
+use ferriscrypt::hpke::kem::HpkePublicKey;
+use tls_codec::Serialize;
 
 use crate::extension::ExtensionList;
 use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
+use crate::GroupContext;
 
 use super::node::Node;
+use super::Capabilities;
 use super::{
     node::{LeafIndex, NodeIndex},
     path_secret::{PathSecret, PathSecretGeneration, PathSecretGenerator},
     RatchetTreeError, SecretPath, TreeKemPrivate, TreeKemPublic, TreeSecrets, UpdatePath,
     UpdatePathGeneration, UpdatePathNode, ValidatedUpdatePath,
 };
-use super::{Capabilities, EncryptedResolution};
 
 use crate::cipher_suite::HpkeCiphertext;
 
@@ -34,7 +36,7 @@ impl<'a> TreeKem<'a> {
     pub fn encap<S: Signer>(
         self,
         group_id: &[u8],
-        context: &[u8],
+        context: &mut GroupContext,
         excluding: &[LeafIndex],
         signer: &S,
         update_capabilities: Option<Capabilities>,
@@ -42,35 +44,29 @@ impl<'a> TreeKem<'a> {
     ) -> Result<UpdatePathGeneration, RatchetTreeError> {
         let secret_generator = PathSecretGenerator::new(self.tree_kem_public.cipher_suite);
 
-        // Generate all the new path secrets and encrypt them to their copath node resolutions
+        // Generate all the new path secrets and and public keys
         let mut root_secret = None;
 
-        let (node_secrets, node_updates): (
+        // This avoids computing the filtered path many times. Can be expensive with large resolutions.
+        let filtered_direct_path_copath = self
+            .tree_kem_public
+            .nodes
+            .filtered_direct_path_co_path(self.private_key.self_index)?;
+
+        let (node_secrets, updated_pks): (
             HashMap<NodeIndex, PathSecretGeneration>,
-            Vec<UpdatePathNode>,
+            Vec<HpkePublicKey>,
         ) = secret_generator
-            .zip(
-                self.tree_kem_public
-                    .nodes
-                    .direct_path_copath_resolution(self.private_key.self_index, excluding)?,
-            )
-            .map(|(path_secret, (index, copath_nodes))| {
-                encrypt_copath_node_resolution(
-                    self.tree_kem_public,
-                    path_secret?,
-                    index,
-                    copath_nodes,
-                    context,
-                )
-            })
+            .zip(&filtered_direct_path_copath)
             .try_fold(
                 (HashMap::new(), Vec::new()),
-                |(mut secrets, mut updates), resolution| {
-                    let encrypted_resolution = resolution?;
-                    root_secret = Some(encrypted_resolution.path_secret.path_secret.clone());
-                    secrets.insert(encrypted_resolution.index, encrypted_resolution.path_secret);
-                    updates.push(encrypted_resolution.update_path_node);
-                    Ok::<_, RatchetTreeError>((secrets, updates))
+                |(mut secrets, mut updated_pks), (path_secret, (index, _))| {
+                    let path_secret = path_secret?;
+                    root_secret = Some(path_secret.path_secret.clone());
+                    let (_, public_key) = path_secret.to_hpke_key_pair()?;
+                    secrets.insert(*index, path_secret);
+                    updated_pks.push(public_key);
+                    Ok::<_, RatchetTreeError>((secrets, updated_pks))
                 },
             )?;
 
@@ -91,8 +87,8 @@ impl<'a> TreeKem<'a> {
 
         let secret_path = SecretPath {
             path_secrets: node_secrets
-                .into_iter()
-                .map(|(index, ps)| (index, ps.path_secret))
+                .iter()
+                .map(|(index, ps)| (*index, ps.path_secret.clone()))
                 .collect(),
             root_secret,
         };
@@ -107,8 +103,10 @@ impl<'a> TreeKem<'a> {
         self.tree_kem_public.index.remove(&own_leaf_copy)?;
 
         // Apply parent node updates to the tree to aid with the parent hash calculation
-        self.tree_kem_public
-            .apply_parent_node_updates(private_key.self_index, &node_updates)?;
+        self.tree_kem_public.apply_parent_node_updates(
+            updated_pks.iter().collect(),
+            &filtered_direct_path_copath,
+        )?;
 
         // Evolve your leaf forward
         let secret_key = own_leaf_copy.commit(
@@ -135,13 +133,43 @@ impl<'a> TreeKem<'a> {
             .index
             .insert(private_key.self_index, own_leaf)?;
 
+        let own_leaf = own_leaf.clone();
+
         private_key
             .secret_keys
             .insert(NodeIndex::from(private_key.self_index), secret_key);
 
+        // Tree modifications are all done so we can update the tree hash and encrypt with the new context
+        context.tree_hash = self.tree_kem_public.tree_hash()?;
+        let context_bytes = context.tls_serialize_detached()?;
+
+        let excluding = excluding
+            .iter()
+            .map(NodeIndex::from)
+            .collect::<Vec<NodeIndex>>();
+
+        let node_updates = updated_pks
+            .into_iter()
+            .zip(&filtered_direct_path_copath)
+            .map(|(public_key, (node, copath_child))| {
+                let encrypted_path_secret = encrypt_copath_node_resolution(
+                    self.tree_kem_public,
+                    &node_secrets[node],
+                    self.tree_kem_public
+                        .nodes
+                        .get_resolution(*copath_child, &excluding)?,
+                    &context_bytes,
+                )?;
+                Ok(UpdatePathNode {
+                    public_key,
+                    encrypted_path_secret,
+                })
+            })
+            .collect::<Result<Vec<_>, RatchetTreeError>>()?;
+
         // Create an update path with the new node and parent node updates
         let update_path = UpdatePath {
-            leaf_node: own_leaf.clone(),
+            leaf_node: own_leaf,
             nodes: node_updates,
         };
 
@@ -159,7 +187,7 @@ impl<'a> TreeKem<'a> {
         sender_index: LeafIndex,
         update_path: &ValidatedUpdatePath,
         added_leaves: &[LeafIndex],
-        context: &[u8],
+        context: &mut GroupContext,
     ) -> Result<TreeSecrets, RatchetTreeError> {
         // Exclude newly added leaf indexes
         let excluding = added_leaves
@@ -173,83 +201,16 @@ impl<'a> TreeKem<'a> {
             sender_index.into(),
         );
 
-        let lca_path_secret = self
+        let filtered_direct_path_co_path = self
             .tree_kem_public
             .nodes
-            .filtered_direct_path_co_path(sender_index)?
-            .into_iter()
-            .zip(&update_path.nodes)
-            .find_map(|((direct_path_index, co_path_index), update_path_node)| {
-                if direct_path_index == lca {
-                    decrypt_parent_path_secret(
-                        self.tree_kem_public,
-                        &self.private_key,
-                        update_path_node,
-                        co_path_index,
-                        &excluding,
-                        context,
-                    )
-                    .into()
-                } else {
-                    None
-                }
-            })
-            .ok_or(RatchetTreeError::LcaNotFoundInDirectPath)??;
+            .filtered_direct_path_co_path(sender_index)?;
 
-        // Derive the rest of the secrets for the tree and assign to the proper nodes
-        let node_secret_gen =
-            PathSecretGenerator::starting_with(self.tree_kem_public.cipher_suite, lca_path_secret);
-
-        // Update secrets based on the decrypted path secret in the update
-        let mut root_secret = None;
-
-        let (path_secrets, private_key) = node_secret_gen
-            .zip(
-                // Get a pairing of direct path index + associated update
-                // This will help us verify that the calculated public key is the expected one
-                self.tree_kem_public
-                    .nodes
-                    .filtered_direct_path(sender_index)?
-                    .iter()
-                    .zip(update_path.nodes.iter())
-                    .skip_while(|(dp, _)| **dp != lca),
-            )
-            .try_fold(
-                (HashMap::new(), self.private_key),
-                |(mut path_secrets, mut private_key), (secret, (&index, update))| {
-                    let secret = secret?;
-                    // Verify the private key we calculated properly matches the public key we were
-                    // expecting
-                    let (hpke_private, hpke_public) = secret.to_hpke_key_pair()?;
-
-                    if hpke_public != update.public_key {
-                        return Err(RatchetTreeError::PubKeyMismatch);
-                    }
-
-                    root_secret = Some(secret.path_secret.clone());
-                    private_key.secret_keys.insert(index, hpke_private);
-                    path_secrets.insert(index, secret.path_secret);
-
-                    Ok((path_secrets, private_key))
-                },
-            )?;
-
-        // The only situation in which there are no path secrets is when the committer is alone in the
-        // group and doesn't add anyone. In such case, he should process pending commit instead of
-        // decrypting.
-        let root_secret = root_secret.ok_or(RatchetTreeError::DecryptFromSelf)?;
-
-        let tree_secrets = TreeSecrets {
-            private_key,
-            secret_path: SecretPath {
-                path_secrets,
-                root_secret,
-            },
-        };
-
-        let removed_key_package = self
-            .tree_kem_public
-            .apply_update_path(sender_index, update_path)?;
+        let removed_key_package = self.tree_kem_public.apply_update_path(
+            sender_index,
+            update_path,
+            &filtered_direct_path_co_path,
+        )?;
 
         self.tree_kem_public.index.remove(&removed_key_package)?;
 
@@ -262,18 +223,82 @@ impl<'a> TreeKem<'a> {
         self.tree_kem_public
             .update_parent_hashes(sender_index, Some(update_path))?;
 
+        // Update the tree hash to get context for decryption
+        context.tree_hash = self.tree_kem_public.tree_hash()?;
+        let context_bytes = context.tls_serialize_detached()?;
+
+        let lca_path_secret = filtered_direct_path_co_path
+            .iter()
+            .zip(&update_path.nodes)
+            .find_map(|((direct_path_index, co_path_index), update_path_node)| {
+                if *direct_path_index == lca {
+                    decrypt_parent_path_secret(
+                        self.tree_kem_public,
+                        &self.private_key,
+                        update_path_node,
+                        *co_path_index,
+                        &excluding,
+                        &context_bytes,
+                    )
+                    .into()
+                } else {
+                    None
+                }
+            })
+            .ok_or(RatchetTreeError::LcaNotFoundInDirectPath)??;
+        // Derive the rest of the secrets for the tree and assign to the proper nodes
+        let node_secret_gen =
+            PathSecretGenerator::starting_with(self.tree_kem_public.cipher_suite, lca_path_secret);
+
+        // Update secrets based on the decrypted path secret in the update
+        let (root_secret, private_key, path_secrets) = filtered_direct_path_co_path
+            .iter()
+            .zip(update_path.nodes.iter())
+            .skip_while(|((index, _), _)| *index != lca)
+            .zip(node_secret_gen)
+            .try_fold(
+                (None, self.private_key, HashMap::new()),
+                |(_, mut private_key, mut path_secrets), ((&(index, _), update), secret)| {
+                    let secret = secret?;
+                    // Verify the private key we calculated properly matches the public key we inserted into the tree. This guarantees
+                    // that we will be able to decrypt later.
+                    let (hpke_private, hpke_public) = secret.to_hpke_key_pair()?;
+
+                    if hpke_public != update.public_key {
+                        return Err(RatchetTreeError::PubKeyMismatch);
+                    }
+
+                    private_key.secret_keys.insert(index, hpke_private);
+                    path_secrets.insert(index, secret.path_secret.clone());
+                    Ok((Some(secret.path_secret), private_key, path_secrets))
+                },
+            )?;
+
+        // The only situation in which there are no path secrets is when the committer is alone in the
+        // group and doesn't add anyone. In such case, he should process pending commit instead of
+        // decrypting.
+        let root_secret = root_secret.ok_or(RatchetTreeError::DecryptFromSelf)?;
+
+        // actially path secrets aren't needed in this output.
+        let tree_secrets = TreeSecrets {
+            private_key,
+            secret_path: SecretPath {
+                path_secrets,
+                root_secret,
+            },
+        };
+
         Ok(tree_secrets)
     }
 }
 
 fn encrypt_copath_node_resolution(
     tree_kem_public: &TreeKemPublic,
-    path_secret: PathSecretGeneration,
-    index: NodeIndex,
+    path_secret: &PathSecretGeneration,
     copath_node_resolution: Vec<&Node>,
     context: &[u8],
-) -> Result<EncryptedResolution, RatchetTreeError> {
-    let ciphertext = copath_node_resolution
+) -> Result<Vec<HpkeCiphertext>, RatchetTreeError> {
+    Ok(copath_node_resolution
         .iter()
         .map(|&copath_node| {
             tree_kem_public
@@ -288,20 +313,7 @@ fn encrypt_copath_node_resolution(
                 )
                 .map(HpkeCiphertext::from)
         })
-        .collect::<Result<Vec<HpkeCiphertext>, HpkeError>>()?;
-
-    let (_, public_key) = path_secret.to_hpke_key_pair()?;
-
-    let update_path_node = UpdatePathNode {
-        public_key,
-        encrypted_path_secret: ciphertext,
-    };
-
-    Ok(EncryptedResolution {
-        path_secret,
-        index,
-        update_path_node,
-    })
+        .collect::<Result<Vec<HpkeCiphertext>, _>>()?)
 }
 
 fn decrypt_parent_path_secret(
@@ -338,6 +350,7 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         extension::{test_utils::TestExtension, ExtensionList},
+        group::test_utils::get_test_group_context,
         tree_kem::{
             leaf_node::test_utils::get_basic_test_node_sig_key, node::LeafIndex, Capabilities,
             TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
@@ -461,7 +474,7 @@ mod tests {
         let update_path_gen = TreeKem::new(&mut encap_tree, encap_private_key)
             .encap(
                 b"test_group",
-                b"test_ctx",
+                &mut get_test_group_context(42, cipher_suite),
                 &[],
                 &encap_signer,
                 capabilities.clone(),
@@ -501,7 +514,7 @@ mod tests {
                     LeafIndex(0),
                     &validated_update_path,
                     &[],
-                    b"test_ctx".as_ref(),
+                    &mut get_test_group_context(42, cipher_suite),
                 )
                 .unwrap();
 

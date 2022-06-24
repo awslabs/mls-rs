@@ -304,11 +304,7 @@ impl NodeVec {
             .into_iter()
             .zip(index.copath(self.total_leaf_count())?)
             .filter_map(|(dp, cp)| {
-                if self
-                    .get_resolution(cp, &[])
-                    .unwrap_or_else(|_| vec![])
-                    .is_empty()
-                {
+                if self.is_resolution_empty(cp) {
                     None
                 } else {
                     Some(Ok((dp, cp)))
@@ -472,22 +468,16 @@ impl NodeVec {
             .collect()
     }
 
-    pub fn direct_path_copath_resolution(
-        &self,
-        index: LeafIndex,
-        excluding: &[LeafIndex],
-    ) -> Result<Vec<(NodeIndex, Vec<&Node>)>, NodeVecError> {
-        let excluding = excluding
-            .iter()
-            .map(NodeIndex::from)
-            .collect::<Vec<NodeIndex>>();
-
-        // This uses direct_path with a filter instead of filtered_direct_path to avoid computing
-        // the resolution of each node twice
-        self.filtered_direct_path_co_path(index)?
-            .into_iter()
-            .map(|(dp, cp)| self.get_resolution(cp, &excluding).map(|r| (dp, r)))
-            .collect()
+    pub fn is_resolution_empty(&self, index: NodeIndex) -> bool {
+        match self.get(index as usize) {
+            Some(Some(_)) => false,
+            _ if self.is_leaf(index) => true,
+            _ => {
+                // Left and right return an error only if `index` is a leaf, so it's safe to unwrap.
+                self.is_resolution_empty(tree_math::left(index).unwrap())
+                    && self.is_resolution_empty(tree_math::right(index).unwrap())
+            }
+        }
     }
 }
 
@@ -640,51 +630,6 @@ mod tests {
         let expected_5: Vec<Node> = [test_vec[5].as_ref().unwrap().clone()].to_vec();
 
         assert_eq!(resolution_node_5, expected_5.iter().collect::<Vec<&Node>>());
-    }
-
-    #[test]
-    fn test_copath_resolution() {
-        let test_vec = get_test_node_vec();
-
-        let expected: Vec<(NodeIndex, Vec<Node>)> = [(
-            3,
-            [
-                test_vec[5].as_ref().unwrap().clone(),
-                test_vec[4].as_ref().unwrap().clone(),
-            ]
-            .to_vec(),
-        )]
-        .to_vec();
-
-        let copath_resolution = test_vec
-            .direct_path_copath_resolution(LeafIndex(0), &[])
-            .unwrap();
-
-        let expected: Vec<(NodeIndex, Vec<&Node>)> = expected
-            .iter()
-            .map(|(i, n)| (*i, n.iter().collect()))
-            .collect();
-
-        assert_eq!(expected, copath_resolution)
-    }
-
-    #[test]
-    fn test_copath_resolution_filter() {
-        let test_vec = get_test_node_vec();
-
-        let expected: Vec<(NodeIndex, Vec<Node>)> =
-            [(3, [test_vec[5].as_ref().unwrap().clone()].to_vec())].to_vec();
-
-        let copath_resolution = test_vec
-            .direct_path_copath_resolution(LeafIndex(0), &[LeafIndex(2)])
-            .unwrap();
-
-        let expected: Vec<(NodeIndex, Vec<&Node>)> = expected
-            .iter()
-            .map(|(i, n)| (*i, n.iter().collect()))
-            .collect();
-
-        assert_eq!(expected, copath_resolution)
     }
 
     #[test]

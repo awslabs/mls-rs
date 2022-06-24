@@ -84,13 +84,16 @@ mod tests {
     use ferriscrypt::{asym::ec_key::SecretKey, hpke::kem::HpkePublicKey, rand::SecureRng};
 
     use super::*;
-    use crate::tree_kem::{
-        kem::TreeKem,
-        leaf_node::test_utils::get_basic_test_node_sig_key,
-        node::{LeafIndex, Node, Parent},
-        parent_hash::ParentHash,
-        test_utils::get_test_tree,
-        TreeKemPrivate,
+    use crate::{
+        group::test_utils::get_test_group_context,
+        tree_kem::{
+            kem::TreeKem,
+            leaf_node::test_utils::get_basic_test_node_sig_key,
+            node::{LeafIndex, Node, Parent},
+            parent_hash::ParentHash,
+            test_utils::get_test_tree,
+            TreeKemPrivate,
+        },
     };
 
     use crate::client_config::PassthroughCredentialValidator;
@@ -125,7 +128,14 @@ mod tests {
         let signers = [&test_tree.creator_signing_key, &leaf1_signer];
 
         TreeKem::new(&mut test_tree.public, private_keys[0].clone())
-            .encap(b"test_group", &[], &[LeafIndex(1)], signers[0], None, None)
+            .encap(
+                b"test_group",
+                &mut get_test_group_context(42, cipher_suite),
+                &[LeafIndex(1)],
+                signers[0],
+                None,
+                None,
+            )
             .unwrap();
 
         test_tree.public

@@ -76,6 +76,7 @@ pub use proposal_filter::{
 };
 pub(crate) use proposal_ref::ProposalRef;
 pub use secret_tree::SecretTreeError;
+pub use transcript_hash::ConfirmedTranscriptHash;
 
 mod confirmation_tag;
 pub(crate) mod epoch;
@@ -857,11 +858,14 @@ impl<C: GroupConfig> Group<C> {
 
         let private_tree = TreeKemPrivate::new_self_leaf(self_index, leaf_node_secret);
 
-        let old_context = group_info.group_context;
+        let old_context = group_info.group_context.clone();
+
+        let mut context = group_info.group_context;
+        context.epoch += 1;
 
         let update_path = TreeKem::new(&mut public_tree, private_tree).encap(
             &old_context.group_id,
-            &old_context.tls_serialize_detached()?,
+            &mut context,
             &[],
             signer,
             None,
@@ -869,7 +873,7 @@ impl<C: GroupConfig> Group<C> {
         )?;
 
         let commit_secret =
-            CommitSecret::from_update_path(old_context.cipher_suite, Some(&update_path))?;
+            CommitSecret::from_update_path(context.cipher_suite, Some(&update_path))?;
 
         let private_tree = update_path.secrets.private_key;
 
@@ -890,32 +894,24 @@ impl<C: GroupConfig> Group<C> {
         )?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
-            old_context.cipher_suite,
-            &old_context.confirmed_transcript_hash,
+            context.cipher_suite,
+            &context.confirmed_transcript_hash,
             (&group_info.confirmation_tag).into(),
         )?;
 
         let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
-            old_context.cipher_suite,
+            context.cipher_suite,
             &interim_transcript_hash,
             MLSMessageCommitContent::new(&commit_message, false)?,
         )?;
 
-        let new_context = GroupContext {
-            protocol_version: old_context.protocol_version,
-            cipher_suite: old_context.cipher_suite,
-            group_id: old_context.group_id,
-            epoch: old_context.epoch + 1,
-            tree_hash: public_tree.tree_hash()?,
-            confirmed_transcript_hash,
-            extensions: old_context.extensions,
-        };
+        context.confirmed_transcript_hash = confirmed_transcript_hash;
 
         let key_schedule_result = KeySchedule::derive(
-            new_context.cipher_suite,
+            context.cipher_suite,
             &KeySchedule::new(init_secret),
             &commit_secret,
-            &new_context,
+            &context,
             self_index,
             public_tree.clone(),
             &psk_secret,
@@ -923,26 +919,26 @@ impl<C: GroupConfig> Group<C> {
 
         let confirmation_tag = ConfirmationTag::create(
             &key_schedule_result.confirmation_key,
-            &new_context.confirmed_transcript_hash,
-            &new_context.cipher_suite,
+            &context.confirmed_transcript_hash,
+            &context.cipher_suite,
         )?;
 
         let public_epoch = PublicEpoch {
-            identifier: new_context.epoch,
-            cipher_suite: new_context.cipher_suite,
+            identifier: context.epoch,
+            cipher_suite: context.cipher_suite,
             public_tree,
         };
 
         config
             .epoch_repo()
-            .insert(new_context.epoch, key_schedule_result.epoch.into())
+            .insert(context.epoch, key_schedule_result.epoch.into())
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         let mut group = Self::join_with(
             config,
             protocol_version,
             &confirmation_tag,
-            new_context,
+            context,
             public_epoch,
             key_schedule_result.key_schedule,
             private_tree,
@@ -1133,14 +1129,13 @@ impl<C: GroupConfig> Group<C> {
             // group_id, epoch, tree_hash, and confirmed_transcript_hash values in the initial
             // GroupContext object. The leaf_key_package for this UpdatePath must have a
             // parent_hash extension.
-            let context_bytes = self.core.context.tls_serialize_detached()?;
             let update_path = TreeKem::new(
                 &mut provisional_state.public_state.public_tree,
                 self.private_tree.clone(),
             )
             .encap(
                 &self.core.context.group_id,
-                &context_bytes,
+                &mut provisional_group_context,
                 &added_leaves
                     .iter()
                     .map(|(_, leaf_index)| *leaf_index)
@@ -1152,12 +1147,11 @@ impl<C: GroupConfig> Group<C> {
 
             Some(update_path)
         } else {
+            // Update the tree hash, since it was not updated by encap.
+            provisional_group_context.tree_hash =
+                provisional_state.public_state.public_tree.tree_hash()?;
             None
         };
-
-        // Update the tree hash in the provisional group context
-        provisional_group_context.tree_hash =
-            provisional_state.public_state.public_tree.tree_hash()?;
 
         let commit_secret =
             CommitSecret::from_update_path(self.core.cipher_suite, update_path.as_ref())?;
@@ -1960,6 +1954,11 @@ impl<C: GroupConfig> Group<C> {
             return Ok(state_update);
         }
 
+        // Generate provisional context for decap. This is the new context but with old tree hash and confirmed transcript
+        // hash. Tree hash will be updated by decap.
+        let mut provisional_group_context = provisional_state.public_state.group_context.clone();
+        provisional_group_context.epoch = provisional_state.public_state.epoch;
+
         // Apply the update path if needed
         let updated_secrets = match &commit_content.commit.path {
             None => None,
@@ -2005,7 +2004,7 @@ impl<C: GroupConfig> Group<C> {
                             .into_iter()
                             .map(|(_, index)| index)
                             .collect::<Vec<LeafIndex>>(),
-                        &self.core.context.tls_serialize_detached()?,
+                        &mut provisional_group_context,
                     )
                 }?;
 
@@ -2016,11 +2015,6 @@ impl<C: GroupConfig> Group<C> {
         let commit_secret =
             CommitSecret::from_tree_secrets(self.core.cipher_suite, updated_secrets.as_ref())?;
 
-        let mut provisional_group_context = provisional_state.public_state.group_context;
-
-        // Bump up the epoch in the provisional group context
-        provisional_group_context.epoch = provisional_state.public_state.epoch;
-
         // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
         let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
             self.core.cipher_suite,
@@ -2029,6 +2023,7 @@ impl<C: GroupConfig> Group<C> {
             (&*plaintext).into(),
         )?;
 
+        // Update the transcript hash to get the new context.
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
         provisional_group_context.tree_hash =
             provisional_state.public_state.public_tree.tree_hash()?;
@@ -3372,6 +3367,30 @@ mod tests {
                 bob_group.process_message(ptxt),
                 Err(GroupError::ExternalSenderCannotCommit)
             );
+        }
+    }
+
+    #[test]
+    fn test_partial_commits() {
+        let protocol_version = ProtocolVersion::Mls10;
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+
+        // Create a group with 3 members
+        let mut alice = test_group(protocol_version, cipher_suite);
+        let (mut bob, _) = alice.join("bob");
+        let (mut charlie, commit) = alice.join("charlie");
+
+        if let OutboundMessage::Plaintext(ptxt) = commit {
+            bob.process_message(ptxt).unwrap();
+        }
+
+        let mut commit_options = charlie.commit_options();
+        commit_options.prefer_path_update = false;
+        let (_, commit) = charlie.join_with_options("dave", commit_options);
+
+        if let OutboundMessage::Plaintext(ptxt) = commit {
+            alice.process_message(ptxt.clone()).unwrap();
+            bob.process_message(ptxt).unwrap();
         }
     }
 }

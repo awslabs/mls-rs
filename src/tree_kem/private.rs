@@ -109,10 +109,13 @@ mod tests {
         rand::SecureRng,
     };
 
-    use crate::tree_kem::{
-        kem::TreeKem,
-        leaf_node::test_utils::{get_basic_test_node, get_basic_test_node_sig_key},
-        node::LeafIndex,
+    use crate::{
+        group::test_utils::get_test_group_context,
+        tree_kem::{
+            kem::TreeKem,
+            leaf_node::test_utils::{get_basic_test_node, get_basic_test_node_sig_key},
+            node::LeafIndex,
+        },
     };
 
     use super::*;
@@ -165,7 +168,14 @@ mod tests {
 
         // Generate an update path for Alice
         let update_path_gen = TreeKem::new(&mut public_tree, alice_private)
-            .encap(b"test_group", b"test_ctx", &[], &alice_signing, None, None)
+            .encap(
+                b"test_group",
+                &mut get_test_group_context(42, cipher_suite),
+                &[],
+                &alice_signing,
+                None,
+                None,
+            )
             .unwrap();
 
         // Get a path secret from Alice for Charlie

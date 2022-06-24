@@ -1,10 +1,12 @@
 use crate::cipher_suite::CipherSuite;
 
+use crate::extension::ExtensionList;
 use crate::ferriscrypt::asym::ec_key::SecretKey;
 use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::TreeKemPrivate;
 use crate::tree_kem::TreeKemPublic;
+use crate::{ConfirmedTranscriptHash, GroupContext, ProtocolVersion};
 
 pub struct Tools {
     pub private_keys: Vec<TreeKemPrivate>,
@@ -12,6 +14,7 @@ pub struct Tools {
     pub encap_tree: TreeKemPublic,
     pub encap_private_key: TreeKemPrivate,
     pub encap_signer: SecretKey,
+    pub group_context: GroupContext,
 }
 
 // Used code from kem.rs to create empty test trees and to begin doing encap/decap
@@ -42,11 +45,27 @@ pub fn create_stage(cipher_suite: CipherSuite, size: usize) -> Tools {
     // Clone the tree for the first leaf, generate a new key package for that leaf
     let encap_tree = test_tree.clone();
 
+    let group_context = GroupContext {
+        protocol_version: ProtocolVersion::Mls10,
+        cipher_suite,
+        group_id: b"test_group".to_vec(),
+        epoch: 42,
+        tree_hash: vec![0u8; cipher_suite.hash_function().digest_size()],
+        confirmed_transcript_hash: ConfirmedTranscriptHash::from(vec![
+            0u8;
+            cipher_suite
+                .hash_function()
+                .digest_size()
+        ]),
+        extensions: ExtensionList::new(),
+    };
+
     Tools {
         private_keys,
         test_tree,
         encap_tree,
         encap_private_key,
         encap_signer,
+        group_context,
     }
 }

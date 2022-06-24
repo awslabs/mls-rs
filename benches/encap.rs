@@ -49,7 +49,7 @@ fn bench_encap(
                     TreeKem::new(&mut value.encap_tree, value.encap_private_key.clone())
                         .encap(
                             b"test_group",
-                            b"test_ctx",
+                            &mut value.group_context,
                             excluding,
                             &value.encap_signer,
                             capabilities.clone(),

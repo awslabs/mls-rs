@@ -9,6 +9,7 @@ use criterion::{
 use aws_mls::cipher_suite::CipherSuite;
 
 use aws_mls::extension::ExtensionList;
+
 use aws_mls::tree_kem::Capabilities;
 
 use aws_mls::tree_kem::kem::TreeKem;
@@ -47,7 +48,7 @@ fn bench_decap(
         let update_path_gen = TreeKem::new(&mut value.encap_tree, value.encap_private_key)
             .encap(
                 b"test_group",
-                b"test_ctx",
+                &mut value.group_context,
                 &[],
                 &value.encap_signer,
                 capabilities.clone(),
@@ -75,7 +76,7 @@ fn bench_decap(
                             LeafIndex::new(0),
                             &validated_update_path,
                             added_leaves,
-                            b"test_ctx".as_ref(),
+                            &mut value.group_context,
                         )
                         .unwrap();
                 })

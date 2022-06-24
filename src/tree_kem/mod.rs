@@ -43,7 +43,7 @@ pub use update_path::*;
 
 use tree_index::*;
 
-use self::path_secret::{PathSecret, PathSecretGeneration, PathSecretGenerator};
+use self::path_secret::{PathSecret, PathSecretGenerator};
 pub mod kem;
 pub mod leaf_node;
 pub mod leaf_node_validator;
@@ -142,12 +142,6 @@ impl UpdatePathGeneration {
 
         self.secrets.secret_path.get_path_secret(lca)
     }
-}
-
-struct EncryptedResolution {
-    path_secret: PathSecretGeneration,
-    index: NodeIndex,
-    update_path_node: UpdatePathNode,
 }
 
 #[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -382,6 +376,7 @@ impl TreeKemPublic {
         &mut self,
         sender: LeafIndex,
         update_path: &ValidatedUpdatePath,
+        filtered_direct_path_co_path: &[(u32, u32)],
     ) -> Result<LeafNode, RatchetTreeError> {
         // Install the new leaf node
         let existing_leaf = self.nodes.borrow_as_leaf_mut(sender)?;
@@ -390,21 +385,27 @@ impl TreeKemPublic {
         *existing_leaf = update_path.leaf_node.clone();
 
         // Update the rest of the nodes on the direct path
-        self.apply_parent_node_updates(sender, &update_path.nodes)?;
+        let updated_pks = update_path
+            .nodes
+            .iter()
+            .map(|update| &update.public_key)
+            .collect::<Vec<_>>();
+
+        self.apply_parent_node_updates(updated_pks, filtered_direct_path_co_path)?;
 
         Ok(original_leaf_node)
     }
 
     fn apply_parent_node_updates(
         &mut self,
-        sender: LeafIndex,
-        node_updates: &[UpdatePathNode],
+        updated_pks: Vec<&HpkePublicKey>,
+        filtered_direct_path_co_path: &[(u32, u32)],
     ) -> Result<(), RatchetTreeError> {
-        node_updates
-            .iter()
-            .zip(self.nodes.filtered_direct_path(sender)?)
-            .try_for_each(|(one_node, node_index)| {
-                self.update_node(one_node.public_key.clone(), node_index)
+        updated_pks
+            .into_iter()
+            .zip(filtered_direct_path_co_path)
+            .try_for_each(|(pub_key, (node_index, _))| {
+                self.update_node(pub_key.clone(), *node_index)
             })
     }
 
@@ -413,7 +414,11 @@ impl TreeKemPublic {
         update_path: &ValidatedUpdatePath,
         sender: LeafIndex,
     ) -> Result<(), RatchetTreeError> {
-        let existing_key_package = self.apply_update_path(sender, update_path)?;
+        let existing_key_package = self.apply_update_path(
+            sender,
+            update_path,
+            &self.nodes.filtered_direct_path_co_path(sender)?,
+        )?;
 
         self.index.remove(&existing_key_package)?;
         self.index.insert(sender, &update_path.leaf_node)?;
