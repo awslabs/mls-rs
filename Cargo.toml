@@ -62,3 +62,8 @@ required-features = ["benchmark"]
 name = "group_application"
 harness = false
 required-features = ["benchmark"]
+
+[[bench]]
+name = "secret_tree_serialize"
+harness = false
+required-features = ["benchmark"]

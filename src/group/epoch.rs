@@ -208,6 +208,11 @@ impl Epoch {
             AeadNonce::new(&sender_data_nonce)?,
         ))
     }
+
+    #[cfg(feature = "benchmark")]
+    pub fn get_secret_tree(&self) -> &SecretTree {
+        &self.secret_tree
+    }
 }
 
 #[cfg(test)]

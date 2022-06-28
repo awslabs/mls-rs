@@ -96,8 +96,13 @@ pub mod proposal;
 mod proposal_cache;
 mod proposal_filter;
 mod proposal_ref;
-mod secret_tree;
 mod transcript_hash;
+
+#[cfg(feature = "benchmark")]
+pub mod secret_tree;
+
+#[cfg(not(feature = "benchmark"))]
+pub(crate) mod secret_tree;
 
 struct ProvisionalState {
     public_state: ProvisionalPublicState,

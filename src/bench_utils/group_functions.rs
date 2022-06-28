@@ -4,6 +4,8 @@ use crate::cipher_suite::CipherSuite;
 
 use crate::ProtocolVersion;
 
+use crate::client::Client;
+
 use crate::client_config::InMemoryClientConfig;
 
 use crate::extension::ExtensionList;
@@ -13,7 +15,13 @@ use crate::client::test_utils::{get_basic_config, join_session, test_client_with
 use crate::session::Session;
 
 // creates group modifying code found in client.rs
-pub fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Session<InMemoryClientConfig>> {
+pub fn create_group(
+    cipher_suite: CipherSuite,
+    size: usize,
+) -> (
+    Client<InMemoryClientConfig>,
+    Vec<Session<InMemoryClientConfig>>,
+) {
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     pub const TEST_GROUP: &[u8] = b"group";
 
@@ -46,7 +54,7 @@ pub fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Session<InMem
         sessions.push(bob_session);
     });
 
-    sessions
+    (alice, sessions)
 }
 
 pub fn commit_groups(

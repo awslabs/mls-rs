@@ -21,7 +21,7 @@ fn commit_setup(c: &mut Criterion) {
         // creates groups of the desired sizes
         let mut container = [10, 50, 100]
             .into_iter()
-            .map(|length| (length, create_group(cipher_suite, length)))
+            .map(|length| (length, create_group(cipher_suite, length).1))
             .collect::<HashMap<_, _>>();
 
         // fills the tree by having everyone commit

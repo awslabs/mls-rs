@@ -20,7 +20,7 @@ fn application_message_setup(c: &mut Criterion) {
         println!("Benchmarking group application message for: {cipher_suite:?}");
 
         // creates group of the desired size
-        let mut container = create_group(cipher_suite, 100);
+        let (_, mut container) = create_group(cipher_suite, 100);
 
         // fills the tree by having everyone commit
         commit_group(&mut container);
