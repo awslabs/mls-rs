@@ -1,4 +1,3 @@
-use crate::cipher_suite::CipherSuite;
 use crate::group::framing::{MLSPlaintext, WireFormat};
 use crate::group::message_signature::{MLSContentAuthData, MLSContentTBS};
 use crate::group::GroupContext;
@@ -84,12 +83,12 @@ impl MembershipTag {
         plaintext: &MLSPlaintext,
         group_context: &GroupContext,
         membership_key: &[u8],
-        cipher_suite: &CipherSuite,
     ) -> Result<Self, MembershipTagError> {
         let plaintext_tbm =
             MLSContentTBM::from_plaintext(plaintext, group_context, WireFormat::Plain);
+
         let serialized_tbm = plaintext_tbm.tls_serialize_detached()?;
-        let hmac_key = Key::new(membership_key, cipher_suite.hash_function())?;
+        let hmac_key = Key::new(membership_key, group_context.cipher_suite.hash_function())?;
         let tag = hmac_key.generate_tag(&serialized_tbm)?;
         Ok(MembershipTag(tag))
     }
@@ -120,7 +119,6 @@ mod tests {
                 &get_test_plaintext(b"hello".to_vec()),
                 &get_test_group_context(1, cipher_suite),
                 b"membership_key".as_ref(),
-                &cipher_suite,
             )
             .unwrap();
 
@@ -151,7 +149,6 @@ mod tests {
                 &get_test_plaintext(b"hello".to_vec()),
                 &get_test_group_context(1, cipher_suite.unwrap()),
                 b"membership_key".as_ref(),
-                &cipher_suite.unwrap(),
             )
             .unwrap();
 

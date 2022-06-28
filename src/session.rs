@@ -658,8 +658,8 @@ where
         Ok(self.protocol.export_secret(label, context, len)?)
     }
 
-    pub fn export(&self) -> GroupState {
-        self.protocol.export()
+    pub fn export(&self) -> Result<GroupState, SessionError> {
+        self.protocol.export().map_err(Into::into)
     }
 
     pub(crate) fn import(config: C, state: GroupState) -> Result<Self, SessionError> {

@@ -35,11 +35,7 @@ pub fn verify_plaintext(
     // Verify the membership tag if needed
     match &plaintext.content.sender {
         Sender::Member(_) => {
-            let expected_tag = &key_schedule.get_membership_tag(
-                &plaintext,
-                context,
-                &current_public_epoch.cipher_suite,
-            )?;
+            let expected_tag = &key_schedule.get_membership_tag(&plaintext, context)?;
 
             let plaintext_tag = plaintext
                 .membership_tag
@@ -300,7 +296,7 @@ mod tests {
         message.membership_tag = Some(
             group
                 .key_schedule
-                .get_membership_tag(message, &group.core.context, &group.core.cipher_suite)
+                .get_membership_tag(message, &group.core.context)
                 .unwrap(),
         );
     }

@@ -55,8 +55,6 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
                 (&group_info.confirmation_tag).into(),
             )?,
             core: GroupCore {
-                protocol_version: context.protocol_version,
-                cipher_suite: context.cipher_suite,
                 proposals: ProposalCache::new(
                     context.protocol_version,
                     context.cipher_suite,
@@ -67,8 +65,9 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
         })
     }
 
+    #[inline(always)]
     pub fn cipher_suite(&self) -> CipherSuite {
-        self.core.cipher_suite
+        self.core.cipher_suite()
     }
 
     pub fn process_incoming_bytes(
@@ -82,9 +81,11 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
         &mut self,
         message: MLSMessage,
     ) -> Result<ExternalProcessedMessage, GroupError> {
-        if message.version != self.core.protocol_version {
+        let protocol_version = self.core.protocol_version();
+
+        if message.version != protocol_version {
             return Err(GroupError::InvalidProtocol(
-                self.core.protocol_version,
+                protocol_version,
                 message.version,
             ));
         }
@@ -210,7 +211,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
 
         // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
         let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
-            self.core.cipher_suite,
+            self.core.cipher_suite(),
             &self.interim_transcript_hash,
             commit_content,
             (&*plaintext).into(),
@@ -221,7 +222,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
 
         let next_epoch = PublicEpoch {
             identifier: provisional_group_context.epoch,
-            cipher_suite: self.core.cipher_suite,
+            cipher_suite: self.core.cipher_suite(),
             public_tree: provisional_state.public_tree,
         };
 
@@ -316,7 +317,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
         message.sign(signer, &signing_context)?;
 
         Ok(MLSMessage {
-            version: self.core.protocol_version,
+            version: self.core.protocol_version(),
             payload: MLSMessagePayload::Plain(message),
         })
     }

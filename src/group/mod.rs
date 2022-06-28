@@ -360,13 +360,14 @@ pub struct GroupContext {
 
 impl GroupContext {
     pub fn new_group(
+        protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         group_id: Vec<u8>,
         tree_hash: Vec<u8>,
         extensions: ExtensionList,
     ) -> Self {
         GroupContext {
-            protocol_version: ProtocolVersion::Mls10,
+            protocol_version,
             cipher_suite,
             group_id,
             epoch: 0,
@@ -436,8 +437,7 @@ pub struct Group<C: GroupConfig> {
 
 impl<C: GroupConfig> PartialEq for Group<C> {
     fn eq(&self, other: &Self) -> bool {
-        self.core.cipher_suite == other.core.cipher_suite
-            && self.core.context == other.core.context
+        self.core.context == other.core.context
             && self.interim_transcript_hash == other.interim_transcript_hash
             && self.core.proposals == other.core.proposals
             && self.key_schedule == other.key_schedule
@@ -557,8 +557,13 @@ impl<C: GroupConfig> Group<C> {
 
         let tree_hash = public_tree.tree_hash()?;
 
-        let context =
-            GroupContext::new_group(cipher_suite, group_id, tree_hash, group_context_extensions);
+        let context = GroupContext::new_group(
+            protocol_version,
+            cipher_suite,
+            group_id,
+            tree_hash,
+            group_context_extensions,
+        );
 
         let public_epoch = PublicEpoch {
             identifier: context.epoch,
@@ -585,7 +590,7 @@ impl<C: GroupConfig> Group<C> {
 
         Ok(Self {
             config,
-            core: GroupCore::new(protocol_version, cipher_suite, context),
+            core: GroupCore::new(context),
             private_tree,
             current_public_epoch: public_epoch,
             interim_transcript_hash: InterimTranscriptHash::from(vec![]),
@@ -767,7 +772,6 @@ impl<C: GroupConfig> Group<C> {
 
         Self::join_with(
             config,
-            protocol_version,
             &group_info.confirmation_tag,
             group_info.group_context,
             public_epoch,
@@ -778,7 +782,6 @@ impl<C: GroupConfig> Group<C> {
 
     fn join_with(
         config: C,
-        protocol_version: ProtocolVersion,
         confirmation_tag: &ConfirmationTag,
         context: GroupContext,
         public_epoch: PublicEpoch,
@@ -795,7 +798,7 @@ impl<C: GroupConfig> Group<C> {
 
         Ok(Group {
             config,
-            core: GroupCore::new(protocol_version, public_epoch.cipher_suite, context),
+            core: GroupCore::new(context),
             private_tree,
             current_public_epoch: public_epoch,
             interim_transcript_hash,
@@ -941,7 +944,6 @@ impl<C: GroupConfig> Group<C> {
 
         let mut group = Self::join_with(
             config,
-            protocol_version,
             &confirmation_tag,
             context,
             public_epoch,
@@ -1034,11 +1036,10 @@ impl<C: GroupConfig> Group<C> {
         let membership_tag = if matches!(encryption_mode, ControlEncryptionMode::Encrypted(_)) {
             None
         } else {
-            Some(self.key_schedule.get_membership_tag(
-                &plaintext,
-                &self.core.context,
-                &self.current_public_epoch.cipher_suite,
-            )?)
+            Some(
+                self.key_schedule
+                    .get_membership_tag(&plaintext, &self.core.context)?,
+            )
         };
 
         let plaintext = MLSPlaintext {
@@ -1047,7 +1048,7 @@ impl<C: GroupConfig> Group<C> {
         };
 
         let proposal_ref = ProposalRef::from_plaintext(
-            self.core.cipher_suite,
+            self.core.cipher_suite(),
             &plaintext,
             matches!(encryption_mode, ControlEncryptionMode::Encrypted(_)),
         )?;
@@ -1159,10 +1160,10 @@ impl<C: GroupConfig> Group<C> {
         };
 
         let commit_secret =
-            CommitSecret::from_update_path(self.core.cipher_suite, update_path.as_ref())?;
+            CommitSecret::from_update_path(self.core.cipher_suite(), update_path.as_ref())?;
 
         let psk_secret = crate::psk::psk_secret(
-            self.core.cipher_suite,
+            self.core.cipher_suite(),
             psk_store,
             |epoch_id| {
                 self.config
@@ -1190,7 +1191,7 @@ impl<C: GroupConfig> Group<C> {
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
         // compute the confirmation_tag value in the MLSPlaintext.
         let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
-            self.core.cipher_suite,
+            self.core.cipher_suite(),
             &self.interim_transcript_hash,
             MLSMessageCommitContent::new(
                 &plaintext,
@@ -1226,18 +1227,16 @@ impl<C: GroupConfig> Group<C> {
         let confirmation_tag = ConfirmationTag::create(
             &key_schedule_result.confirmation_key,
             &provisional_group_context.confirmed_transcript_hash,
-            &self.core.cipher_suite,
+            &self.core.cipher_suite(),
         )?;
 
         plaintext.auth.confirmation_tag = Some(confirmation_tag.clone());
 
         if matches!(options.encryption_mode, ControlEncryptionMode::Plaintext) {
             // Create the membership tag using the current group context and key schedule
-            let membership_tag = self.key_schedule.get_membership_tag(
-                &plaintext,
-                &self.core.context,
-                &self.core.cipher_suite,
-            )?;
+            let membership_tag = self
+                .key_schedule
+                .get_membership_tag(&plaintext, &self.core.context)?;
 
             plaintext.membership_tag = Some(membership_tag);
         }
@@ -1252,7 +1251,7 @@ impl<C: GroupConfig> Group<C> {
             }
             None => {
                 // Welcome messages will be built for each added member
-                (self.core.protocol_version, self.core.cipher_suite)
+                (self.core.protocol_version(), self.core.cipher_suite())
             }
         };
 
@@ -1306,7 +1305,7 @@ impl<C: GroupConfig> Group<C> {
         // Encrypt the GroupInfo using the key and nonce derived from the joiner_secret for
         // the new epoch
         let welcome_secret =
-            WelcomeSecret::from_joiner_secret(self.core.cipher_suite, joiner_secret, psk_secret)?;
+            WelcomeSecret::from_joiner_secret(self.core.cipher_suite(), joiner_secret, psk_secret)?;
 
         let group_info_data = group_info.tls_serialize_detached()?;
         let encrypted_group_info = welcome_secret.encrypt(&group_info_data)?;
@@ -1354,7 +1353,7 @@ impl<C: GroupConfig> Group<C> {
         let current_leaf_node = self.current_user_leaf_node()?;
 
         let (new_self_leaf_node, leaf_node_secret) = LeafNode::generate(
-            self.core.cipher_suite,
+            self.core.cipher_suite(),
             current_leaf_node.signing_identity.clone(),
             current_leaf_node.capabilities.clone(),
             current_leaf_node.extensions.clone(),
@@ -1366,14 +1365,14 @@ impl<C: GroupConfig> Group<C> {
         let required_capabilities = self.core.context.extensions.get_extension()?;
 
         let leaf_node_validator = LeafNodeValidator::new(
-            self.core.cipher_suite,
+            self.core.cipher_suite(),
             required_capabilities.as_ref(),
             self.config.credential_validator(),
         );
 
         let key_package_validator = KeyPackageValidator::new(
-            self.core.protocol_version,
-            self.core.cipher_suite,
+            self.core.protocol_version(),
+            self.core.cipher_suite(),
             required_capabilities.as_ref(),
             self.config.credential_validator(),
         );
@@ -1405,8 +1404,11 @@ impl<C: GroupConfig> Group<C> {
                 )?
         };
 
-        let (mut new_pub_tree, new_priv_tree) =
-            TreeKemPublic::derive(self.core.cipher_suite, new_self_leaf_node, leaf_node_secret)?;
+        let (mut new_pub_tree, new_priv_tree) = TreeKemPublic::derive(
+            self.core.cipher_suite(),
+            new_self_leaf_node,
+            leaf_node_secret,
+        )?;
 
         // Add existing members to new tree
         let added_member_indexes = new_pub_tree.add_leaves(new_members)?;
@@ -1415,7 +1417,8 @@ impl<C: GroupConfig> Group<C> {
         let new_context = GroupContext {
             epoch: 1,
             ..GroupContext::new_group(
-                self.core.cipher_suite,
+                self.core.protocol_version(),
+                self.core.cipher_suite(),
                 sub_group_id.clone(),
                 new_pub_tree_hash,
                 self.core.context.extensions.clone(),
@@ -1428,13 +1431,13 @@ impl<C: GroupConfig> Group<C> {
                 psk_group_id: PskGroupId(sub_group_id.clone()),
                 psk_epoch: resumption_psk_epoch.unwrap_or_else(|| self.current_epoch()),
             }),
-            psk_nonce: PskNonce::random(self.core.cipher_suite)?,
+            psk_nonce: PskNonce::random(self.core.cipher_suite())?,
         };
 
         let psks = vec![psk];
 
         let psk_secret = crate::psk::psk_secret(
-            self.core.cipher_suite,
+            self.core.cipher_suite(),
             psk_store,
             |epoch_id| {
                 self.config
@@ -1445,12 +1448,12 @@ impl<C: GroupConfig> Group<C> {
             &psks,
         )?;
 
-        let kdf = Hkdf::from(self.core.cipher_suite.kdf_type());
+        let kdf = Hkdf::from(self.core.cipher_suite().kdf_type());
 
         let key_schedule_result = KeySchedule::derive(
-            self.core.cipher_suite,
+            self.core.cipher_suite(),
             &KeySchedule::new(InitSecret::random(&kdf)?),
-            &CommitSecret::empty(self.core.cipher_suite),
+            &CommitSecret::empty(self.core.cipher_suite()),
             &new_context,
             LeafIndex(0),
             new_pub_tree.clone(),
@@ -1459,7 +1462,7 @@ impl<C: GroupConfig> Group<C> {
 
         let public_epoch = PublicEpoch {
             identifier: new_context.epoch,
-            cipher_suite: self.core.cipher_suite,
+            cipher_suite: self.core.cipher_suite(),
             public_tree: new_pub_tree.clone(),
         };
 
@@ -1471,7 +1474,7 @@ impl<C: GroupConfig> Group<C> {
             confirmation_tag: ConfirmationTag::create(
                 &key_schedule_result.confirmation_key,
                 &new_context.confirmed_transcript_hash,
-                &self.core.cipher_suite,
+                &self.core.cipher_suite(),
             )?,
             signer: new_priv_tree.self_index,
             signature: Vec::new(),
@@ -1486,16 +1489,12 @@ impl<C: GroupConfig> Group<C> {
 
         let new_group = Group {
             config: sub_config,
-            core: GroupCore::new(
-                self.core.protocol_version,
-                self.core.cipher_suite,
-                new_context,
-            ),
+            core: GroupCore::new(new_context),
             private_tree: new_priv_tree,
             current_public_epoch: public_epoch,
             key_schedule: key_schedule_result.key_schedule,
             interim_transcript_hash: Vec::new().into(),
-            confirmation_tag: ConfirmationTag::empty(&self.core.cipher_suite)?,
+            confirmation_tag: ConfirmationTag::empty(&self.core.cipher_suite())?,
             pending_updates: Default::default(),
         };
 
@@ -1526,7 +1525,7 @@ impl<C: GroupConfig> Group<C> {
         G: FnOnce(&[u8]) -> C,
     {
         let subgroup = Self::join_with_welcome(
-            self.core.protocol_version,
+            self.core.protocol_version(),
             welcome,
             public_tree,
             key_package_generation,
@@ -1542,13 +1541,13 @@ impl<C: GroupConfig> Group<C> {
             self.config.credential_validator(),
         )?;
 
-        if subgroup.core.protocol_version != self.core.protocol_version {
+        if subgroup.core.protocol_version() != self.core.protocol_version() {
             Err(GroupError::SubgroupWithDifferentProtocolVersion(
-                subgroup.core.protocol_version,
+                subgroup.core.protocol_version(),
             ))
-        } else if subgroup.core.cipher_suite != self.core.cipher_suite {
+        } else if subgroup.core.cipher_suite() != self.core.cipher_suite() {
             Err(GroupError::SubgroupWithDifferentCipherSuite(
-                subgroup.core.cipher_suite,
+                subgroup.core.cipher_suite(),
             ))
         } else {
             Ok(subgroup)
@@ -1578,7 +1577,7 @@ impl<C: GroupConfig> Group<C> {
 
         let group_secrets_bytes = Zeroizing::new(group_secrets.tls_serialize_detached()?);
 
-        let encrypted_group_secrets = self.core.cipher_suite.hpke().seal(
+        let encrypted_group_secrets = self.core.cipher_suite().hpke().seal(
             &key_package.hpke_init_key,
             &[],
             None,
@@ -1598,8 +1597,8 @@ impl<C: GroupConfig> Group<C> {
         // Check that this proposal has a valid lifetime, signature, and meets the requirements
         // of the current group required capabilities extension.
         let key_package_validator = KeyPackageValidator::new(
-            self.core.protocol_version,
-            self.core.cipher_suite,
+            self.core.protocol_version(),
+            self.core.cipher_suite(),
             required_capabilities.as_ref(),
             self.config.credential_validator(),
         );
@@ -1619,7 +1618,7 @@ impl<C: GroupConfig> Group<C> {
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
 
         let secret_key = new_leaf_node.update(
-            self.core.cipher_suite,
+            self.core.cipher_suite(),
             &self.core.context.group_id,
             capabilities_update,
             extension_list,
@@ -1648,7 +1647,7 @@ impl<C: GroupConfig> Group<C> {
         Ok(Proposal::Psk(PreSharedKey {
             psk: PreSharedKeyID {
                 key_id: JustPreSharedKeyID::External(psk),
-                psk_nonce: PskNonce::random(self.core.cipher_suite)?,
+                psk_nonce: PskNonce::random(self.core.cipher_suite())?,
             },
         }))
     }
@@ -1889,7 +1888,7 @@ impl<C: GroupConfig> Group<C> {
             }
             Content::Proposal(ref p) => {
                 let proposal_ref = ProposalRef::from_plaintext(
-                    self.core.cipher_suite,
+                    self.core.cipher_suite(),
                     &plaintext,
                     plaintext.encrypted,
                 )?;
@@ -1975,7 +1974,7 @@ impl<C: GroupConfig> Group<C> {
                     .get_extension()?;
 
                 let leaf_validator = LeafNodeValidator::new(
-                    self.core.cipher_suite,
+                    self.core.cipher_suite(),
                     required_capabilities.as_ref(),
                     self.config.credential_validator(),
                 );
@@ -2018,11 +2017,11 @@ impl<C: GroupConfig> Group<C> {
         };
 
         let commit_secret =
-            CommitSecret::from_tree_secrets(self.core.cipher_suite, updated_secrets.as_ref())?;
+            CommitSecret::from_tree_secrets(self.core.cipher_suite(), updated_secrets.as_ref())?;
 
         // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
         let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
-            self.core.cipher_suite,
+            self.core.cipher_suite(),
             &self.interim_transcript_hash,
             commit_content.clone(),
             (&*plaintext).into(),
@@ -2034,7 +2033,7 @@ impl<C: GroupConfig> Group<C> {
             provisional_state.public_state.public_tree.tree_hash()?;
 
         let psk_secret = crate::psk::psk_secret(
-            self.core.cipher_suite,
+            self.core.cipher_suite(),
             secret_store,
             |epoch_id| {
                 self.config
@@ -2052,12 +2051,12 @@ impl<C: GroupConfig> Group<C> {
         let key_schedule = match provisional_state.public_state.external_init {
             Some((_, ExternalInit { kem_output })) => self
                 .key_schedule
-                .derive_for_external(&kem_output, self.core.cipher_suite)?,
+                .derive_for_external(&kem_output, self.core.cipher_suite())?,
             None => self.key_schedule.clone(),
         };
 
         let key_schedule_result = KeySchedule::derive(
-            self.core.cipher_suite,
+            self.core.cipher_suite(),
             &key_schedule,
             &commit_secret,
             &provisional_group_context,
@@ -2072,7 +2071,7 @@ impl<C: GroupConfig> Group<C> {
         let confirmation_tag = ConfirmationTag::create(
             &key_schedule_result.confirmation_key,
             &provisional_group_context.confirmed_transcript_hash,
-            &self.core.cipher_suite,
+            &self.core.cipher_suite(),
         )?;
 
         if Some(confirmation_tag.clone()) != plaintext.auth.confirmation_tag {
@@ -2101,7 +2100,7 @@ impl<C: GroupConfig> Group<C> {
 
         self.current_public_epoch = PublicEpoch {
             identifier: self.current_public_epoch.identifier + 1,
-            cipher_suite: self.core.cipher_suite,
+            cipher_suite: self.core.cipher_suite(),
             public_tree: provisional_state.public_state.public_tree,
         };
 
@@ -2130,7 +2129,7 @@ impl<C: GroupConfig> Group<C> {
         extensions.set_extension(ExternalPubExt {
             external_pub: self
                 .key_schedule
-                .ged_external_public_key(self.core.cipher_suite)?,
+                .ged_external_public_key(self.core.cipher_suite())?,
         })?;
 
         let mut info = GroupInfo {
@@ -2163,44 +2162,11 @@ impl<C: GroupConfig> Group<C> {
     ) -> Result<Vec<u8>, GroupError> {
         Ok(self
             .key_schedule
-            .export_secret(label, context, len, self.core.cipher_suite)?)
-    }
-
-    pub fn export(&self) -> GroupState {
-        GroupState {
-            protocol_version: self.core.protocol_version,
-            cipher_suite: self.core.cipher_suite,
-            context: self.core.context.clone(),
-            private_tree: self.private_tree.clone(),
-            current_public_epoch: self.current_public_epoch.clone(),
-            key_schedule: self.key_schedule.clone(),
-            interim_transcript_hash: self.interim_transcript_hash.clone(),
-            confirmation_tag: self.confirmation_tag.clone(),
-            proposals: self.core.proposals.clone(),
-            pending_updates: self.pending_updates.clone(),
-        }
-    }
-
-    pub fn import(config: C, state: GroupState) -> Result<Self, GroupError> {
-        Ok(Self {
-            config,
-            core: GroupCore {
-                protocol_version: state.protocol_version,
-                cipher_suite: state.cipher_suite,
-                proposals: state.proposals,
-                context: state.context,
-            },
-            private_tree: state.private_tree,
-            current_public_epoch: state.current_public_epoch,
-            key_schedule: state.key_schedule,
-            interim_transcript_hash: state.interim_transcript_hash,
-            confirmation_tag: state.confirmation_tag,
-            pending_updates: state.pending_updates,
-        })
+            .export_secret(label, context, len, self.core.context.cipher_suite)?)
     }
 
     pub fn protocol_version(&self) -> ProtocolVersion {
-        self.core.protocol_version
+        self.core.protocol_version()
     }
 }
 
@@ -2362,8 +2328,8 @@ pub(crate) mod test_utils {
             commit_options: CommitOptions,
         ) -> (TestGroup, OutboundMessage) {
             let (new_key_package, new_key) = test_member(
-                self.group.core.protocol_version,
-                self.group.core.cipher_suite,
+                self.group.core.protocol_version(),
+                self.group.core.cipher_suite(),
                 name.as_bytes(),
             );
 
@@ -2473,11 +2439,7 @@ pub(crate) mod test_utils {
             let membership_tag = Some(
                 self.group
                     .key_schedule
-                    .get_membership_tag(
-                        &plaintext,
-                        &self.group.core.context,
-                        &self.group.core.cipher_suite,
-                    )
+                    .get_membership_tag(&plaintext, &self.group.core.context)
                     .unwrap(),
             );
 
@@ -2627,7 +2589,7 @@ mod tests {
             let test_group = test_group(protocol_version, cipher_suite);
             let group = test_group.group;
 
-            assert_eq!(group.core.cipher_suite, cipher_suite);
+            assert_eq!(group.core.cipher_suite(), cipher_suite);
             assert_eq!(group.core.context.epoch, 0);
             assert_eq!(group.core.context.group_id, TEST_GROUP.to_vec());
             assert_eq!(group.core.context.extensions, group_extensions());

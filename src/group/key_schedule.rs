@@ -311,9 +311,8 @@ impl KeySchedule {
         &self,
         plaintext: &MLSPlaintext,
         context: &GroupContext,
-        cipher_suite: &CipherSuite,
     ) -> Result<MembershipTag, MembershipTagError> {
-        MembershipTag::create(plaintext, context, &self.membership_key, cipher_suite)
+        MembershipTag::create(plaintext, context, &self.membership_key)
     }
 
     pub fn ged_external_public_key(

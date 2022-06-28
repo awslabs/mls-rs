@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     cipher_suite::CipherSuite,
     client_config::CredentialValidator,
@@ -14,26 +16,50 @@ use crate::{
     ProtocolVersion,
 };
 
+use super::{proposal_cache::CachedProposal, ProposalRef};
+
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct GroupCore {
-    pub(crate) protocol_version: ProtocolVersion,
-    pub(crate) cipher_suite: CipherSuite,
     pub(crate) proposals: ProposalCache,
     pub(crate) context: GroupContext,
 }
 
 impl GroupCore {
-    pub(super) fn new(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        context: GroupContext,
-    ) -> Self {
+    pub(super) fn new(context: GroupContext) -> Self {
         Self {
-            protocol_version,
-            cipher_suite,
-            proposals: ProposalCache::new(protocol_version, cipher_suite, context.group_id.clone()),
+            proposals: ProposalCache::new(
+                context.protocol_version,
+                context.cipher_suite,
+                context.group_id.clone(),
+            ),
             context,
         }
+    }
+
+    pub(super) fn import(
+        context: GroupContext,
+        proposals: HashMap<ProposalRef, CachedProposal>,
+    ) -> Self {
+        Self {
+            proposals: ProposalCache::import(
+                context.protocol_version,
+                context.cipher_suite,
+                context.group_id.clone(),
+                proposals,
+            ),
+            context,
+        }
+    }
+
+    #[inline(always)]
+    pub(super) fn cipher_suite(&self) -> CipherSuite {
+        self.context.cipher_suite
+    }
+
+    #[inline(always)]
+    pub(super) fn protocol_version(&self) -> ProtocolVersion {
+        self.context.protocol_version
     }
 
     pub(super) fn apply_proposals<C>(
@@ -111,7 +137,7 @@ impl GroupCore {
                     psk_group_id: PskGroupId(reinit.group_id.clone()),
                     psk_epoch: self.context.epoch + 1,
                 }),
-                psk_nonce: PskNonce::random(self.cipher_suite)?,
+                psk_nonce: PskNonce::random(self.cipher_suite())?,
             }],
             None => proposals.psks,
         };
@@ -182,7 +208,7 @@ impl GroupCore {
 
         if existing_required_capabilities != new_required_capabilities {
             let leaf_node_validator = LeafNodeValidator::new(
-                self.cipher_suite,
+                self.cipher_suite(),
                 new_required_capabilities.as_ref(),
                 credential_validator,
             );

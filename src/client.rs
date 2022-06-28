@@ -748,7 +748,7 @@ mod tests {
             .process_incoming_bytes(&commit.commit_packet)
             .unwrap();
 
-        let bob_session_bytes = serde_json::to_vec(&bob_session.export()).unwrap();
+        let bob_session_bytes = serde_json::to_vec(&bob_session.export().unwrap()).unwrap();
 
         let mut bob_session = bob
             .import_session(serde_json::from_slice(&bob_session_bytes).unwrap())

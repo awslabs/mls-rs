@@ -165,6 +165,20 @@ impl ProposalCache {
         }
     }
 
+    pub fn import(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        group_id: Vec<u8>,
+        proposals: HashMap<ProposalRef, CachedProposal>,
+    ) -> Self {
+        Self {
+            protocol_version,
+            cipher_suite,
+            group_id,
+            proposals,
+        }
+    }
+
     pub fn clear(&mut self) {
         self.proposals.clear();
     }
@@ -176,6 +190,10 @@ impl ProposalCache {
     pub fn insert(&mut self, proposal_ref: ProposalRef, proposal: Proposal, sender: Sender) {
         let cached_proposal = CachedProposal { proposal, sender };
         self.proposals.insert(proposal_ref, cached_proposal);
+    }
+
+    pub fn proposals(&self) -> &HashMap<ProposalRef, CachedProposal> {
+        &self.proposals
     }
 
     pub fn prepare_commit<C, F>(

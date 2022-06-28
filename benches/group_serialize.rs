@@ -41,7 +41,7 @@ fn bench_group_serialize(
             &key,
             |b, _| {
                 b.iter(|| {
-                    serde_json::to_vec(&value[0].export()).unwrap();
+                    serde_json::to_vec(&value[0].export().unwrap()).unwrap();
                 })
             },
         );
