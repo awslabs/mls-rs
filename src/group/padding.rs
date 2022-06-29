@@ -19,29 +19,26 @@ impl PaddingMode {
         content.padding.clear();
         match self {
             PaddingMode::StepFunction => {
-                let original_length = content.tls_serialized_len();
-                let padding = padding_length(original_length);
-                content.padding.resize(padding, 0);
+                let len = content.tls_serialized_len();
+                content.padding.resize(step_padded_len(len) - len, 0);
             }
             PaddingMode::None => {}
         }
     }
 }
 
-fn padding_length(length: usize) -> usize {
-    if length < 8 {
-        return 7 - length;
-    }
-    let bit_length: u32 = f32::log2(length as f32).ceil() as u32;
-    let m = length % (1 << (bit_length - 3));
-    (2_usize.pow(bit_length - 3) - 1) - m
+// The padding hides all but 2 most significant bits of `length`. The hidden bits are replaced
+// by zeros and then the next number is taken to make sure the message fits.
+fn step_padded_len(length: usize) -> usize {
+    let blind = 1 << ((length + 1).next_power_of_two().max(256).trailing_zeros() - 3);
+    (length | (blind - 1)) + 1
 }
 
 #[cfg(test)]
 mod tests {
     use crate::group::framing::test_utils::get_test_ciphertext_content;
 
-    use super::{padding_length, PaddingMode};
+    use super::{step_padded_len, PaddingMode};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -57,7 +54,7 @@ mod tests {
         for x in 1..1024 {
             test_cases.push(TestCase {
                 input: x,
-                output: padding_length(x),
+                output: step_padded_len(x),
             });
         }
         test_cases
@@ -80,9 +77,28 @@ mod tests {
 
     #[test]
     fn test_padding_length() {
+        assert_eq!(step_padded_len(0), 32);
+
+        // Short
+        assert_eq!(step_padded_len(63), 64);
+        assert_eq!(step_padded_len(64), 96);
+        assert_eq!(step_padded_len(65), 96);
+
+        // Almost long and almost short
+        assert_eq!(step_padded_len(127), 128);
+        assert_eq!(step_padded_len(128), 160);
+        assert_eq!(step_padded_len(129), 160);
+
+        // One length from each of the 4 buckets between 256 and 512
+        assert_eq!(step_padded_len(260), 320);
+        assert_eq!(step_padded_len(330), 384);
+        assert_eq!(step_padded_len(390), 448);
+        assert_eq!(step_padded_len(490), 512);
+
+        // All test cases
         let test_cases: Vec<TestCase> = load_test_cases();
         for test_case in test_cases {
-            assert_eq!(test_case.output, padding_length(test_case.input));
+            assert_eq!(test_case.output, step_padded_len(test_case.input));
         }
     }
 }
