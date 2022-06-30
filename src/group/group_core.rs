@@ -12,7 +12,7 @@ use crate::{
         JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, ResumptionPSKUsage, ResumptionPsk,
     },
     signing_identity::SigningIdentity,
-    tree_kem::leaf_node_validator::LeafNodeValidator,
+    tree_kem::{leaf_node_validator::LeafNodeValidator, node::LeafIndex},
     ProtocolVersion,
 };
 
@@ -88,7 +88,7 @@ impl GroupCore {
             .updates
             .iter()
             .map(|(leaf_index, _)| *leaf_index)
-            .collect();
+            .collect::<Vec<LeafIndex>>();
 
         for (update_sender, leaf_node) in proposals.updates {
             // Update the leaf in the provisional tree
@@ -141,6 +141,15 @@ impl GroupCore {
             }],
             None => proposals.psks,
         };
+
+        let mut path_blanked = removed_leaves
+            .iter()
+            .cloned()
+            .map(|(index, _)| index)
+            .chain(updated_leaves.iter().cloned())
+            .collect::<Vec<_>>();
+
+        provisional_tree.update_hashes(&mut path_blanked, &added_leaves)?;
 
         Ok(ProvisionalPublicState {
             public_tree: provisional_tree,

@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use super::node::LeafIndex;
+
 #[derive(Error, Debug)]
 pub enum TreeMathError {
     #[error("leaf node has no children")]
@@ -14,14 +16,6 @@ pub enum TreeMathError {
 
 pub fn level(x: u32) -> u32 {
     x.trailing_ones()
-}
-
-pub fn node_width(n: u32) -> u32 {
-    if n == 0 {
-        0
-    } else {
-        2 * (n - 1) + 1
-    }
 }
 
 pub fn root(n: u32) -> u32 {
@@ -46,23 +40,13 @@ pub fn right(x: u32) -> Result<u32, TreeMathError> {
     }
 }
 
-pub fn parent_step(x: u32) -> u32 {
-    let k = level(x);
-    let b = (x >> (k + 1)) & 0x01;
-    (x | (1 << k)) ^ (b << (k + 1))
-}
-
 pub fn parent(x: u32, n: u32) -> Result<u32, TreeMathError> {
     if x == root(n) {
         return Err(TreeMathError::NoParent);
     }
 
-    let mut p = parent_step(x);
-    while p >= node_width(n) {
-        p = parent_step(p)
-    }
-
-    Ok(p)
+    let lvl = level(x);
+    Ok((x & !(1 << (lvl + 1))) | (1 << lvl))
 }
 
 pub fn sibling(x: u32, n: u32) -> Result<u32, TreeMathError> {
@@ -75,18 +59,15 @@ pub fn sibling(x: u32, n: u32) -> Result<u32, TreeMathError> {
 }
 
 pub fn direct_path(x: u32, n: u32) -> Result<Vec<u32>, TreeMathError> {
-    let r = root(n);
-    let mut d = Vec::new();
-
-    if x == r {
-        return Ok(d);
+    if x > 2 * n - 1 {
+        return Err(TreeMathError::InvalidIndex);
     }
 
-    let mut x_mut = x;
-
-    while x_mut != r {
-        x_mut = parent(x_mut, n)?;
-        d.push(x_mut)
+    let mut d = Vec::new();
+    let mut m = 1 << (level(x) + 1);
+    while m <= n {
+        d.push((x & !m) | (m - 1));
+        m <<= 1;
     }
 
     Ok(d)
@@ -129,9 +110,87 @@ pub fn common_ancestor_direct(x: u32, y: u32) -> u32 {
     }
 }
 
-pub fn subtree(x: u32) -> (u32, u32) {
+pub fn subtree(x: u32) -> (LeafIndex, LeafIndex) {
     let breadth = 1 << level(x);
-    (x + 1 - breadth, x + breadth)
+    (
+        LeafIndex((x + 1 - breadth) >> 1),
+        LeafIndex(((x + breadth) >> 1) + 1),
+    )
+}
+
+pub struct BfsIterBottomUp {
+    level: usize,
+    mask: usize,
+    level_end: usize,
+    ctr: usize,
+}
+
+impl BfsIterBottomUp {
+    pub fn new(num_leaves: usize) -> Self {
+        Self {
+            level: 1,
+            mask: 0,
+            level_end: num_leaves,
+            ctr: 0,
+        }
+    }
+}
+
+impl Iterator for BfsIterBottomUp {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ctr == self.level_end {
+            if self.level_end == 1 {
+                return None;
+            }
+            self.level_end = ((self.level_end - 1) >> 1) + 1;
+            self.level += 1;
+            self.ctr = 0;
+            self.mask = (self.mask << 1) | 1;
+        }
+        let res = Some((self.ctr << self.level) | self.mask);
+        self.ctr += 1;
+        res
+    }
+}
+
+pub struct BfsIterTopDown {
+    level: usize,
+    mask: usize,
+    level_end: usize,
+    ctr: usize,
+}
+
+impl BfsIterTopDown {
+    pub fn new(num_leaves: usize) -> Self {
+        let depth = num_leaves.trailing_zeros() as usize;
+        Self {
+            level: depth + 1,
+            mask: (1 << depth) - 1,
+            level_end: 1,
+            ctr: 0,
+        }
+    }
+}
+
+impl Iterator for BfsIterTopDown {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ctr == self.level_end {
+            if self.level == 1 {
+                return None;
+            }
+            self.level_end = (((self.level_end - 1) << 1) | 1) + 1;
+            self.level -= 1;
+            self.ctr = 0;
+            self.mask >>= 1;
+        }
+        let res = Some((self.ctr << self.level) | self.mask);
+        self.ctr += 1;
+        res
+    }
 }
 
 #[cfg(test)]
@@ -151,6 +210,25 @@ mod tests {
         right: Vec<Option<u32>>,
         parent: Vec<Option<u32>>,
         sibling: Vec<Option<u32>>,
+    }
+
+    pub fn node_width(n: u32) -> u32 {
+        if n == 0 {
+            0
+        } else {
+            2 * (n - 1) + 1
+        }
+    }
+
+    #[test]
+    fn test_bfs_iterator() {
+        let expected = [0, 2, 4, 6, 8, 10, 12, 14, 1, 5, 9, 13, 3, 11, 7];
+        let bfs = BfsIterBottomUp::new(8);
+        assert_eq!(bfs.collect::<Vec<_>>(), expected);
+
+        let expected = [7, 3, 11, 1, 5, 9, 13, 0, 2, 4, 6, 8, 10, 12, 14];
+        let bfs = BfsIterTopDown::new(8);
+        assert_eq!(bfs.collect::<Vec<_>>(), expected);
     }
 
     fn generate_tree_math_test_cases() -> Vec<TestCase> {

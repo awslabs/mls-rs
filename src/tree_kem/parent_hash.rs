@@ -22,6 +22,8 @@ pub enum ParentHashError {
     NodeVecError(#[from] NodeVecError),
     #[error(transparent)]
     TreeMathError(#[from] TreeMathError),
+    #[error("original tree hash not initialized for node index {0}")]
+    TreeHashNotInitialized(u32),
 }
 
 #[derive(Clone, Debug, TlsSerialize, TlsSize)]
@@ -108,14 +110,11 @@ impl TreeKemPublic {
     ) -> Result<ParentHash, RatchetTreeError> {
         let node = self.nodes.borrow_as_parent(node_index)?;
 
-        let original_sibling_tree_hash =
-            self.original_tree_hash(co_path_child_index, &node.unmerged_leaves)?;
-
         ParentHash::new(
             self.cipher_suite,
             &node.public_key,
             parent_parent_hash,
-            &original_sibling_tree_hash,
+            &self.tree_hashes.original[co_path_child_index as usize],
         )
         .map_err(RatchetTreeError::from)
     }
@@ -160,6 +159,9 @@ impl TreeKemPublic {
         index: LeafIndex,
         update_path: Option<&ValidatedUpdatePath>,
     ) -> Result<ParentHash, RatchetTreeError> {
+        // First update the relevant original hashes used for parent hash computation.
+        self.update_hashes(&mut vec![index], &[])?;
+
         let mut changes = HashMap::new();
 
         // Since we can't mut borrow self here we will just collect the list of changes
@@ -188,6 +190,9 @@ impl TreeKemPublic {
                 return Err(RatchetTreeError::ParentHashNotFound);
             }
         }
+
+        // Update hashes after changes to the tree.
+        self.update_hashes(&mut vec![index], &[])?;
 
         Ok(leaf_hash)
     }
@@ -243,18 +248,11 @@ impl TreeKemPublic {
                                 .into_iter()
                                 .collect::<HashSet<_>>();
 
-                            let (c_leftmost, c_rightmost) = tree_math::subtree(c);
-
                             let p_unmerged_in_c_subtree = self
-                                .nodes
-                                .borrow_as_parent(p)?
-                                .unmerged_leaves
+                                .unmerged_in_subtree(p, c)?
                                 .iter()
                                 .copied()
-                                .filter_map(|x| {
-                                    (c_leftmost <= (*x * 2) && (*x * 2) < c_rightmost)
-                                        .then(|| (*x * 2))
-                                })
+                                .map(|x| *x * 2)
                                 .collect::<HashSet<_>>();
 
                             if c_resolution.remove(&n)
@@ -268,11 +266,12 @@ impl TreeKemPublic {
                                 return Err(RatchetTreeError::ParentHashMismatch);
                             }
                         } else {
-                            // If n' parent_hash field doesn't match, we're done with this chain.
+                            // If n's parent_hash field doesn't match, we're done with this chain.
                             return Ok(());
                         }
                     }
                 }
+
                 Ok(())
             })?;
 
@@ -333,14 +332,14 @@ pub(crate) mod test_utils {
 
         tree.nodes[7] = Some(test_parent_node(
             cipher_suite,
-            vec![LeafIndex(3), LeafIndex(7)],
+            vec![LeafIndex(3), LeafIndex(6)],
         ));
 
         tree.nodes[9] = Some(test_parent_node(cipher_suite, vec![LeafIndex(5)]));
 
         tree.nodes[11] = Some(test_parent_node(
             cipher_suite,
-            vec![LeafIndex(5), LeafIndex(7)],
+            vec![LeafIndex(5), LeafIndex(6)],
         ));
 
         tree.update_parent_hashes(LeafIndex(0), None).unwrap();
@@ -444,17 +443,13 @@ mod tests {
         tree.nodes[6] = None;
 
         // Compute parent hashes after E commits and then A commits.
-        tree.nodes
-            .borrow_as_leaf_mut(LeafIndex(4))
-            .unwrap()
-            .leaf_node_source =
-            LeafNodeSource::Commit(tree.update_parent_hashes(LeafIndex(4), None).unwrap());
-
-        tree.nodes
-            .borrow_as_leaf_mut(LeafIndex(0))
-            .unwrap()
-            .leaf_node_source =
-            LeafNodeSource::Commit(tree.update_parent_hashes(LeafIndex(0), None).unwrap());
+        for i in [4, 0] {
+            tree.nodes
+                .borrow_as_leaf_mut(LeafIndex(i))
+                .unwrap()
+                .leaf_node_source =
+                LeafNodeSource::Commit(tree.update_parent_hashes(LeafIndex(i), None).unwrap());
+        }
 
         assert!(tree.validate_parent_hashes().is_ok());
     }

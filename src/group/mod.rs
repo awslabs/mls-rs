@@ -552,7 +552,7 @@ impl<C: GroupConfig> Group<C> {
         )
         .check_if_valid(&leaf_node, ValidationContext::Add(None))?;
 
-        let (public_tree, private_tree) =
+        let (mut public_tree, private_tree) =
             TreeKemPublic::derive(cipher_suite, leaf_node, leaf_node_secret)?;
 
         let tree_hash = public_tree.tree_hash()?;
@@ -706,8 +706,8 @@ impl<C: GroupConfig> Group<C> {
             ));
         }
 
-        let public_tree = find_tree(public_tree, &group_info)?;
-        validate_existing_group(&public_tree, &group_info, &credential_validator)?;
+        let mut public_tree = find_tree(public_tree, &group_info)?;
+        validate_existing_group(&mut public_tree, &group_info, &credential_validator)?;
 
         // Identify a leaf in the tree array (any even-numbered node) whose leaf_node is identical
         // to the leaf_node field of the KeyPackage. If no such field exists, return an error. Let
@@ -860,7 +860,11 @@ impl<C: GroupConfig> Group<C> {
         ]);
 
         let mut public_tree = find_tree(public_tree, &group_info)?;
-        validate_existing_group(&public_tree, &group_info, &config.credential_validator())?;
+        validate_existing_group(
+            &mut public_tree,
+            &group_info,
+            &config.credential_validator(),
+        )?;
 
         let self_index = public_tree.add_leaves(vec![leaf_node])?[0];
 
@@ -884,6 +888,9 @@ impl<C: GroupConfig> Group<C> {
             CommitSecret::from_update_path(context.cipher_suite, Some(&update_path))?;
 
         let private_tree = update_path.secrets.private_key;
+
+        // TODO when we support remove proposals in external init, add removed indices here.
+        public_tree.update_hashes(&mut vec![private_tree.self_index], &[])?;
 
         let proposals = vec![Proposal::ExternalInit(ExternalInit { kem_output }).into()];
 
@@ -1154,6 +1161,10 @@ impl<C: GroupConfig> Group<C> {
             Some(update_path)
         } else {
             // Update the tree hash, since it was not updated by encap.
+            provisional_state
+                .public_state
+                .public_tree
+                .update_hashes(&mut vec![provisional_state.private_tree.self_index], &[])?;
             provisional_group_context.tree_hash =
                 provisional_state.public_state.public_tree.tree_hash()?;
             None
@@ -1943,7 +1954,7 @@ impl<C: GroupConfig> Group<C> {
         )?;
 
         let mut provisional_state = self.apply_proposals(proposal_effects)?;
-
+        let sender = commit_sender(&commit_content, &provisional_state.public_state)?;
         let state_update = StateUpdate::from(&provisional_state);
 
         //Verify that the path value is populated if the proposals vector contains any Update
@@ -1989,12 +2000,15 @@ impl<C: GroupConfig> Group<C> {
                     provisional_state
                         .public_state
                         .public_tree
+                        .update_hashes(&mut vec![self.private_tree.self_index], &[])?;
+
+                    provisional_state
+                        .public_state
+                        .public_tree
                         .apply_self_update(&validated_update_path, self.private_tree.self_index)?;
 
                     Ok(pending.secrets)
                 } else {
-                    let sender = commit_sender(&commit_content, &provisional_state.public_state)?;
-
                     TreeKem::new(
                         &mut provisional_state.public_state.public_tree,
                         provisional_state.private_tree,
@@ -2029,6 +2043,12 @@ impl<C: GroupConfig> Group<C> {
 
         // Update the transcript hash to get the new context.
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
+
+        provisional_state
+            .public_state
+            .public_tree
+            .update_hashes(&mut vec![sender], &[])?;
+
         provisional_group_context.tree_hash =
             provisional_state.public_state.public_tree.tree_hash()?;
 
@@ -2190,7 +2210,7 @@ pub(crate) fn find_tree(
 }
 
 fn validate_existing_group<C: CredentialValidator>(
-    public_tree: &TreeKemPublic,
+    public_tree: &mut TreeKemPublic,
     group_info: &GroupInfo,
     credential_validator: &C,
 ) -> Result<(), GroupError> {

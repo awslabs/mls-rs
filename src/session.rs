@@ -261,7 +261,7 @@ where
         })
     }
 
-    fn import_ratchet_tree(
+    pub fn import_ratchet_tree(
         cipher_suite: CipherSuite,
         tree_data: &[u8],
     ) -> Result<TreeKemPublic, SessionError> {

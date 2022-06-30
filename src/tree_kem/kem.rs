@@ -128,10 +128,11 @@ impl<'a> TreeKem<'a> {
             .borrow_as_leaf_mut(private_key.self_index)?;
 
         *own_leaf = own_leaf_copy;
+        let own_leaf = own_leaf.clone();
 
         self.tree_kem_public
             .index
-            .insert(private_key.self_index, own_leaf)?;
+            .insert(private_key.self_index, &own_leaf)?;
 
         let own_leaf = own_leaf.clone();
 
@@ -140,6 +141,9 @@ impl<'a> TreeKem<'a> {
             .insert(NodeIndex::from(private_key.self_index), secret_key);
 
         // Tree modifications are all done so we can update the tree hash and encrypt with the new context
+        self.tree_kem_public
+            .update_hashes(&mut vec![private_key.self_index], &[])?;
+
         context.tree_hash = self.tree_kem_public.tree_hash()?;
         let context_bytes = context.tls_serialize_detached()?;
 
@@ -505,6 +509,10 @@ mod tests {
             nodes: update_path_gen.update_path.nodes,
         };
 
+        encap_tree
+            .update_hashes(&mut vec![LeafIndex(0)], &[])
+            .unwrap();
+
         let mut receiver_trees: Vec<TreeKemPublic> = (1..size).map(|_| test_tree.clone()).collect();
 
         for (i, tree) in receiver_trees.iter_mut().enumerate() {
@@ -517,6 +525,8 @@ mod tests {
                     &mut get_test_group_context(42, cipher_suite),
                 )
                 .unwrap();
+
+            tree.update_hashes(&mut vec![LeafIndex(0)], &[]).unwrap();
 
             assert_eq!(tree, &encap_tree);
 

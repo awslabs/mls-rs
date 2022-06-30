@@ -22,6 +22,7 @@ use crate::group::key_schedule::KeyScheduleKdfError;
 use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError};
 use crate::tree_kem::parent_hash::ParentHashError;
 use crate::tree_kem::path_secret::PathSecretError;
+use crate::tree_kem::tree_hash::TreeHashes;
 
 pub use tree_index::TreeIndexError;
 
@@ -112,6 +113,7 @@ pub struct TreeKemPublic {
     pub cipher_suite: CipherSuite,
     index: TreeIndex,
     nodes: NodeVec,
+    tree_hashes: TreeHashes,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -156,6 +158,7 @@ impl TreeKemPublic {
             cipher_suite,
             index: Default::default(),
             nodes: Default::default(),
+            tree_hashes: Default::default(),
         }
     }
 
@@ -171,11 +174,14 @@ impl TreeKemPublic {
             },
         )?;
 
-        Ok(TreeKemPublic {
+        let tree = TreeKemPublic {
             cipher_suite,
             index,
             nodes,
-        })
+            tree_hashes: Default::default(),
+        };
+
+        Ok(tree)
     }
 
     pub(crate) fn export_node_data(&self) -> NodeVec {
@@ -319,13 +325,13 @@ impl TreeKemPublic {
         // Truncate the tree by reducing the size of tree until the rightmost non-blank leaf node
         self.nodes.trim();
 
-        let removed_indices = indexes
+        let removed_leaves = indexes
             .into_iter()
             .zip(removed_leaves.into_iter())
             .map(|(index, (_, leaf))| (index, leaf))
             .collect::<Vec<(_, _)>>();
 
-        Ok(removed_indices)
+        Ok(removed_leaves)
     }
 
     pub fn update_leaf(
@@ -346,7 +352,9 @@ impl TreeKemPublic {
         self.nodes
             .blank_direct_path(index)
             .map(|_| ())
-            .map_err(RatchetTreeError::from)
+            .map_err(RatchetTreeError::from)?;
+
+        Ok(())
     }
 
     pub fn get_leaf_nodes(&self) -> Vec<&LeafNode> {

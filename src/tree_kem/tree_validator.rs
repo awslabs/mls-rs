@@ -46,7 +46,7 @@ impl<'a, C: CredentialValidator> TreeValidator<'a, C> {
         }
     }
 
-    pub fn validate(&self, tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
+    pub fn validate(&self, tree: &mut TreeKemPublic) -> Result<(), TreeValidationError> {
         self.validate_tree_hash(tree)
             .and(
                 tree.validate_parent_hashes()
@@ -55,7 +55,7 @@ impl<'a, C: CredentialValidator> TreeValidator<'a, C> {
             .and(self.validate_leaves(tree))
     }
 
-    fn validate_tree_hash(&self, tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
+    fn validate_tree_hash(&self, tree: &mut TreeKemPublic) -> Result<(), TreeValidationError> {
         //Verify that the tree hash of the ratchet tree matches the tree_hash field in the GroupInfo.
         let tree_hash = tree.tree_hash()?;
 
@@ -145,7 +145,7 @@ mod tests {
     fn test_valid_tree() {
         for cipher_suite in CipherSuite::all() {
             println!("Checking cipher suite: {cipher_suite:?}");
-            let test_tree = get_valid_tree(cipher_suite);
+            let mut test_tree = get_valid_tree(cipher_suite);
             let expected_tree_hash = test_tree.tree_hash().unwrap();
 
             let validator = TreeValidator::new(
@@ -156,14 +156,14 @@ mod tests {
                 PassthroughCredentialValidator::new(),
             );
 
-            validator.validate(&test_tree).unwrap();
+            validator.validate(&mut test_tree).unwrap();
         }
     }
 
     #[test]
     fn test_tree_hash_mismatch() {
         for cipher_suite in CipherSuite::all() {
-            let test_tree = get_valid_tree(cipher_suite);
+            let mut test_tree = get_valid_tree(cipher_suite);
             let expected_tree_hash = SecureRng::gen(32).unwrap();
 
             let validator = TreeValidator::new(
@@ -175,7 +175,7 @@ mod tests {
             );
 
             assert_matches!(
-                validator.validate(&test_tree),
+                validator.validate(&mut test_tree),
                 Err(TreeValidationError::TreeHashMismatch(_, _))
             );
         }
@@ -200,7 +200,7 @@ mod tests {
             );
 
             assert_matches!(
-                validator.validate(&test_tree),
+                validator.validate(&mut test_tree),
                 Err(TreeValidationError::ParentHashMismatch)
             );
         }
@@ -228,7 +228,7 @@ mod tests {
             );
 
             assert_matches!(
-                validator.validate(&test_tree),
+                validator.validate(&mut test_tree),
                 Err(TreeValidationError::LeafNodeValidationError(_))
             );
         }

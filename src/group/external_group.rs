@@ -4,10 +4,10 @@ use crate::{
     epoch::PublicEpochRepository,
     extension::ExternalSendersExt,
     group::{
-        message_verifier::verify_plaintext_signature, proposal_effects, transcript_hashes, Content,
-        ExternalGroupConfig, GroupCore, GroupError, InterimTranscriptHash, MLSMessage,
-        MLSMessageCommitContent, MLSMessagePayload, ProposalCache, PublicEpoch, StateUpdate,
-        VerifiedPlaintext,
+        commit_sender, message_verifier::verify_plaintext_signature, proposal_effects,
+        transcript_hashes, Content, ExternalGroupConfig, GroupCore, GroupError,
+        InterimTranscriptHash, MLSMessage, MLSMessageCommitContent, MLSMessagePayload,
+        ProposalCache, PublicEpoch, StateUpdate, VerifiedPlaintext,
     },
     message::{ExternalProcessedMessage, ExternalProcessedMessagePayload},
     signer::{Signable, Signer},
@@ -190,11 +190,16 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
             )),
         )?;
 
-        let provisional_state = self.core.apply_proposals(
+        let mut provisional_state = self.core.apply_proposals(
             &self.current_epoch.public_tree,
             proposal_effects,
             self.config.credential_validator(),
         )?;
+
+        let sender = commit_sender(&commit_content, &provisional_state)?;
+        provisional_state
+            .public_tree
+            .update_hashes(&mut vec![sender], &[])?;
 
         let state_update = StateUpdate::from(&provisional_state);
 
