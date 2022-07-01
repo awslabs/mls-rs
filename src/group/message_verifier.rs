@@ -385,6 +385,7 @@ mod tests {
                     commit_options,
                     &secret_store,
                     &alice.signing_key,
+                    None,
                     vec![],
                 )
                 .unwrap();

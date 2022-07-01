@@ -176,6 +176,8 @@ pub enum ProposalFilterError {
     InvalidProposalTypeForProposer(ProposalType, Sender),
     #[error("External commit must have exactly one ExternalInit proposal")]
     ExternalCommitMustHaveExactlyOneExternalInit,
+    #[error("External commit must have a new leaf")]
+    ExternalCommitMustHaveNewLeaf,
     #[error("External sender cannot commit")]
     ExternalSenderCannotCommit,
     #[error("Missing update path in external commit")]

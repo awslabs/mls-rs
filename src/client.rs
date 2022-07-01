@@ -9,7 +9,7 @@ use crate::group::GroupState;
 use crate::key_package::{
     KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef, KeyPackageRepository,
 };
-use crate::session::{Session, SessionError};
+use crate::session::{ExternalPskId, Session, SessionError};
 use crate::signer::{Signable, SignatureError};
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::{keychain::Keychain, ProtocolVersion};
@@ -161,6 +161,8 @@ where
         &self,
         group_info_msg: MLSMessage,
         tree_data: Option<&[u8]>,
+        to_remove: Option<u32>,
+        external_psks: Vec<ExternalPskId>,
         authenticated_data: Vec<u8>,
     ) -> Result<(Session<C>, Vec<u8>), ClientError> {
         let version = group_info_msg.version;
@@ -193,6 +195,8 @@ where
             leaf_node,
             leaf_node_secret,
             &signer,
+            to_remove,
+            external_psks,
             authenticated_data,
         )?)
     }
@@ -337,6 +341,7 @@ mod tests {
         },
         message::ProcessedMessagePayload,
         psk::{ExternalPskId, PskSecretError},
+        session::Psk,
         tree_kem::{leaf_node::LeafNodeSource, RatchetTreeError, TreeIndexError},
         ProposalBundle, ProposalFilter, ProposalFilterError,
     };
@@ -585,52 +590,89 @@ mod tests {
         joining_group_fails_if_unsupported(|config| config.clear_cipher_suites());
     }
 
-    #[test]
-    fn new_member_can_join_via_external_commit() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+    fn join_via_external_commit(do_remove: bool, with_psk: bool) -> Result<(), ClientError> {
+        let psk_id = ExternalPskId(b"psk id".to_vec());
+        let psk = Psk::from(b"psk".to_vec());
+
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice")
+            .with_psk(psk_id.clone(), psk.clone())
+            .build_client();
+
         let mut alice_session = create_session(&alice);
+
+        let (mut bob, bob_key_pkg) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+
+        bob.config = bob.config.with_psk(psk_id.clone(), psk.clone());
 
         // An external commit cannot be the first commit in a session as it requires
         // interim_transcript_hash to be computed from the confirmed_transcript_hash and
         // confirmation_tag, which is not the case for the initial interim_transcript_hash.
-        let _ = alice_session.commit(Vec::new(), Vec::new()).unwrap();
-        alice_session.apply_pending_commit().unwrap();
+        let mut bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
 
         let group_info_msg = alice_session.group_info_message().unwrap();
-        let bob = get_basic_config(TEST_CIPHER_SUITE, "bob").build_client();
 
-        let (mut bob_session, external_commit) = bob
-            .commit_external(
-                group_info_msg,
-                Some(&alice_session.export_tree().unwrap()),
-                vec![],
-            )
-            .unwrap();
+        let charlie = get_basic_config(TEST_CIPHER_SUITE, "charlie")
+            .with_psk(psk_id.clone(), psk)
+            .build_client();
 
-        assert!(bob_session.participant_count() == 2);
+        let (mut charlie_session, external_commit) = charlie.commit_external(
+            group_info_msg,
+            Some(&alice_session.export_tree().unwrap()),
+            do_remove.then(|| 1),
+            if with_psk { vec![psk_id] } else { vec![] },
+            vec![],
+        )?;
+
+        let num_members = if do_remove { 2 } else { 3 };
+
+        assert!(charlie_session.participant_count() == num_members);
 
         let _ = alice_session
             .process_incoming_bytes(&external_commit)
             .unwrap();
 
-        assert!(alice_session.participant_count() == 2);
+        let message = bob_session
+            .process_incoming_bytes(&external_commit)
+            .unwrap();
+
+        assert!(alice_session.participant_count() == num_members);
+        if !do_remove {
+            assert!(bob_session.participant_count() == num_members);
+        } else if let ProcessedMessagePayload::Commit(update) = message.message {
+            assert!(!update.active);
+        }
 
         let alice_msg = b"I'm Alice";
         let msg = alice_session
             .encrypt_application_data(alice_msg, vec![])
             .unwrap();
 
-        let received = bob_session.process_incoming_bytes(&msg).unwrap();
+        let received = charlie_session.process_incoming_bytes(&msg).unwrap();
         assert_matches!(received.message, ProcessedMessagePayload::Application(bytes) if bytes == alice_msg);
 
-        let bob_msg = b"I'm Bob";
+        let charlie_msg = b"I'm Charlie";
 
-        let msg = bob_session
-            .encrypt_application_data(bob_msg, vec![])
+        let msg = charlie_session
+            .encrypt_application_data(charlie_msg, vec![])
             .unwrap();
         let received = alice_session.process_incoming_bytes(&msg).unwrap();
 
-        assert_matches!(received.message, ProcessedMessagePayload::Application(bytes) if bytes == bob_msg);
+        assert_matches!(received.message, ProcessedMessagePayload::Application(bytes) if bytes == charlie_msg);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_external_commit() {
+        // New member can join
+        join_via_external_commit(false, false).unwrap();
+        // New member can remove an old copy of themselves
+        join_via_external_commit(true, false).unwrap();
+        // New member can inject a PSK
+        join_via_external_commit(false, true).unwrap();
+        // All works together
+        join_via_external_commit(true, true).unwrap();
     }
 
     #[test]
@@ -674,7 +716,7 @@ mod tests {
             ),
         };
 
-        let res = alice.commit_external(msg, None, vec![]);
+        let res = alice.commit_external(msg, None, None, vec![], vec![]);
 
         assert_matches!(res, Err(ClientError::ExpectedGroupInfoMessage));
     }
@@ -707,6 +749,8 @@ mod tests {
             .commit_external(
                 group_info_msg,
                 Some(&bob_session.export_tree().unwrap()),
+                None,
+                vec![],
                 vec![],
             )
             .unwrap();

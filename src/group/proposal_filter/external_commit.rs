@@ -1,7 +1,5 @@
 use crate::{
-    cipher_suite::CipherSuite,
     client_config::CredentialValidator,
-    extension::RequiredCapabilitiesExt,
     group::{
         proposal_filter::{
             ignore_invalid_by_ref_proposal, ProposalBundle, ProposalFilter, ProposalFilterError,
@@ -9,21 +7,14 @@ use crate::{
         },
         ExternalInit, ProposalType, RemoveProposal, Sender,
     },
-    tree_kem::{
-        leaf_node::LeafNode,
-        leaf_node_validator::{LeafNodeValidator, ValidationContext},
-        TreeKemPublic, UpdatePath,
-    },
+    tree_kem::{leaf_node::LeafNode, TreeKemPublic},
 };
 
 #[derive(Debug)]
 pub struct ExternalCommitFilter<'a, C> {
-    cipher_suite: CipherSuite,
-    group_id: Vec<u8>,
     committer: Sender,
-    update_path: Option<&'a UpdatePath>,
+    new_leaf: Option<&'a LeafNode>,
     tree: &'a TreeKemPublic,
-    required_capabilities: Option<RequiredCapabilitiesExt>,
     credential_validator: C,
 }
 
@@ -32,21 +23,15 @@ where
     C: CredentialValidator,
 {
     pub fn new(
-        cipher_suite: CipherSuite,
-        group_id: Vec<u8>,
         committer: Sender,
-        update_path: Option<&'a UpdatePath>,
+        new_leaf: Option<&'a LeafNode>,
         tree: &'a TreeKemPublic,
-        required_capabilities: Option<RequiredCapabilitiesExt>,
         credential_validator: C,
     ) -> Self {
         Self {
-            cipher_suite,
-            group_id,
             committer,
-            update_path,
+            new_leaf,
             tree,
-            required_capabilities,
             credential_validator,
         }
     }
@@ -80,25 +65,10 @@ where
             None => Ok(()),
         }?;
 
-        let leaf_node = &self
-            .update_path
-            .ok_or(ProposalFilterError::MissingUpdatePathInExternalCommit)?
-            .leaf_node;
-
-        let required_capabilities =
-            proposals.effective_required_capabilities(self.required_capabilities.clone());
-
-        let validator = LeafNodeValidator::new(
-            self.cipher_suite,
-            required_capabilities.as_ref(),
-            &self.credential_validator,
-        );
-
-        validator.check_if_valid(leaf_node, ValidationContext::Commit(&self.group_id))?;
-        self.tree.can_add_leaf(leaf_node)?;
-
-        at_most_one_remove_proposal(proposals, leaf_node, validate_removal)?;
-        Ok(())
+        match self.new_leaf {
+            Some(leaf) => at_most_one_remove_proposal(proposals, leaf, validate_removal),
+            None => Err(ProposalFilterError::ExternalCommitMustHaveNewLeaf),
+        }
     }
 
     fn verify_remove_proposal(
@@ -144,7 +114,7 @@ where
 
 fn at_most_one_remove_proposal<F>(
     proposals: &ProposalBundle,
-    update_path_leaf: &LeafNode,
+    new_leaf: &LeafNode,
     validate: F,
 ) -> Result<(), ProposalFilterError>
 where
@@ -154,7 +124,7 @@ where
 
     match (removals.next(), removals.next()) {
         (None, _) => Ok(()),
-        (Some(removal), None) => validate(&removal.proposal, update_path_leaf),
+        (Some(removal), None) => validate(&removal.proposal, new_leaf),
         (Some(_), Some(_)) => Err(ProposalFilterError::ExternalCommitWithMoreThanOneRemove),
     }
 }

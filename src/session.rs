@@ -224,6 +224,8 @@ where
         leaf_node: LeafNode,
         leaf_node_secret: HpkeSecretKey,
         signer: &S,
+        to_remove: Option<u32>,
+        external_psks: Vec<ExternalPskId>,
         authenticated_data: Vec<u8>,
     ) -> Result<(Self, Vec<u8>), SessionError> {
         let tree = tree_data
@@ -239,6 +241,9 @@ where
             leaf_node_secret,
             version_and_cipher_filter(&config),
             signer,
+            to_remove,
+            external_psks,
+            &config.secret_store(),
             authenticated_data,
         )?;
 
@@ -443,6 +448,7 @@ where
             self.config.commit_options(),
             &self.config.secret_store(),
             &signer,
+            None,
             authenticated_data,
         )?;
 

@@ -168,7 +168,7 @@ impl From<&ProvisionalPublicState> for StateUpdate {
             psks,
             reinit: provisional.reinit.clone(),
             external_init: external_init_leaf,
-            active: false,
+            active: true,
             epoch: provisional.epoch,
             rejected_proposals: provisional.rejected_proposals.clone(),
         }
@@ -178,14 +178,13 @@ impl From<&ProvisionalPublicState> for StateUpdate {
 impl From<&ProvisionalState> for StateUpdate {
     fn from(provisional: &ProvisionalState) -> Self {
         Self {
-            active: !provisional.self_removed(),
             ..Self::from(&provisional.public_state)
         }
     }
 }
 
 impl ProvisionalState {
-    fn self_removed(&self) -> bool {
+    fn self_index_removed(&self) -> bool {
         self.public_state
             .removed_leaves
             .iter()
@@ -810,7 +809,7 @@ impl<C: GroupConfig> Group<C> {
 
     /// Returns group and external commit message
     #[allow(clippy::too_many_arguments)]
-    pub fn new_external<S, F>(
+    pub fn new_external<S, F, P>(
         config: C,
         protocol_version: ProtocolVersion,
         group_info: GroupInfo,
@@ -819,12 +818,17 @@ impl<C: GroupConfig> Group<C> {
         leaf_node_secret: HpkeSecretKey,
         support_version_and_cipher: F,
         signer: &S,
+        to_remove: Option<u32>,
+        external_psks: Vec<ExternalPskId>,
+        secret_store: &P,
         authenticated_data: Vec<u8>,
     ) -> Result<(Self, OutboundMessage), GroupError>
     where
         S: Signer,
         F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
+        P: PskStore,
     {
+        // Validate received group info and tree.
         if !support_version_and_cipher(protocol_version, group_info.group_context.cipher_suite) {
             return Err(GroupError::UnsupportedProtocolVersionOrCipherSuite(
                 protocol_version,
@@ -837,11 +841,6 @@ impl<C: GroupConfig> Group<C> {
             .get_extension::<ExternalPubExt>()?
             .ok_or(GroupError::MissingExternalPubExtension)?;
 
-        let (init_secret, kem_output) = InitSecret::encode_for_external(
-            group_info.group_context.cipher_suite,
-            &external_pub_ext.external_pub,
-        )?;
-
         let required_capabilities = group_info.group_context.extensions.get_extension()?;
 
         LeafNodeValidator::new(
@@ -851,14 +850,6 @@ impl<C: GroupConfig> Group<C> {
         )
         .check_if_valid(&leaf_node, ValidationContext::Add(None))?;
 
-        let psk_secret = Psk::from(vec![
-            0u8;
-            Hkdf::from(
-                group_info.group_context.cipher_suite.kdf_type()
-            )
-            .extract_size()
-        ]);
-
         let mut public_tree = find_tree(public_tree, &group_info)?;
         validate_existing_group(
             &mut public_tree,
@@ -866,104 +857,67 @@ impl<C: GroupConfig> Group<C> {
             &config.credential_validator(),
         )?;
 
-        let self_index = public_tree.add_leaves(vec![leaf_node])?[0];
-
-        let private_tree = TreeKemPrivate::new_self_leaf(self_index, leaf_node_secret);
-
-        let old_context = group_info.group_context.clone();
-
-        let mut context = group_info.group_context;
-        context.epoch += 1;
-
-        let update_path = TreeKem::new(&mut public_tree, private_tree).encap(
-            &old_context.group_id,
-            &mut context,
-            &[],
-            signer,
-            None,
-            None,
-        )?;
-
-        let commit_secret =
-            CommitSecret::from_update_path(context.cipher_suite, Some(&update_path))?;
-
-        let private_tree = update_path.secrets.private_key;
-
-        // TODO when we support remove proposals in external init, add removed indices here.
-        public_tree.update_hashes(&mut vec![private_tree.self_index], &[])?;
-
-        let proposals = vec![Proposal::ExternalInit(ExternalInit { kem_output }).into()];
-
-        let commit = Commit {
-            proposals,
-            path: Some(update_path.update_path),
-        };
-
-        let mut commit_message = MLSPlaintext::new_signed(
-            &old_context,
-            Sender::NewMemberCommit,
-            Content::Commit(commit),
-            signer,
-            ControlEncryptionMode::Plaintext,
-            authenticated_data,
-        )?;
-
-        let interim_transcript_hash = InterimTranscriptHash::create(
-            context.cipher_suite,
-            &context.confirmed_transcript_hash,
-            (&group_info.confirmation_tag).into(),
-        )?;
-
-        let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
-            context.cipher_suite,
-            &interim_transcript_hash,
-            MLSMessageCommitContent::new(&commit_message, false)?,
-        )?;
-
-        context.confirmed_transcript_hash = confirmed_transcript_hash;
-
-        let key_schedule_result = KeySchedule::derive(
-            context.cipher_suite,
-            &KeySchedule::new(init_secret),
-            &commit_secret,
-            &context,
-            self_index,
-            public_tree.clone(),
-            &psk_secret,
-        )?;
-
-        let confirmation_tag = ConfirmationTag::create(
-            &key_schedule_result.confirmation_key,
-            &context.confirmed_transcript_hash,
-            &context.cipher_suite,
-        )?;
-
         let public_epoch = PublicEpoch {
-            identifier: context.epoch,
-            cipher_suite: context.cipher_suite,
+            identifier: group_info.group_context.epoch,
+            cipher_suite: group_info.group_context.cipher_suite,
             public_tree,
         };
 
-        config
-            .epoch_repo()
-            .insert(context.epoch, key_schedule_result.epoch.into())
-            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
+        let (init_secret, kem_output) = InitSecret::encode_for_external(
+            group_info.group_context.cipher_suite,
+            &external_pub_ext.external_pub,
+        )?;
 
         let mut group = Self::join_with(
             config,
-            &confirmation_tag,
-            context,
+            &group_info.confirmation_tag,
+            group_info.group_context,
             public_epoch,
-            key_schedule_result.key_schedule,
-            private_tree,
+            KeySchedule::new(init_secret),
+            TreeKemPrivate::new_self_leaf(LeafIndex(0), leaf_node_secret),
         )?;
 
-        commit_message.auth.confirmation_tag = Some(confirmation_tag);
+        let psk_ids = external_psks
+            .into_iter()
+            .map(|psk_id| {
+                Ok(PreSharedKeyID {
+                    key_id: crate::session::JustPreSharedKeyID::External(psk_id),
+                    psk_nonce: PskNonce::random(group.core.cipher_suite())?,
+                })
+            })
+            .collect::<Result<Vec<_>, GroupError>>()?;
 
-        let commit_message =
-            group.format_for_wire(commit_message, ControlEncryptionMode::Plaintext)?;
+        let proposals = psk_ids
+            .into_iter()
+            .map(|psk| Proposal::Psk(PreSharedKey { psk }))
+            .chain([Proposal::ExternalInit(ExternalInit { kem_output })])
+            .chain(to_remove.map(|r| {
+                Proposal::Remove(RemoveProposal {
+                    to_remove: LeafIndex(r),
+                })
+            }))
+            .collect::<Vec<_>>();
 
-        Ok((group, commit_message))
+        let options = CommitOptions {
+            prefer_path_update: true,
+            extension_update: None,
+            capabilities_update: None,
+            encryption_mode: ControlEncryptionMode::Plaintext,
+            ratchet_tree_extension: false,
+        };
+
+        let (commit, _) = group.commit_proposals(
+            proposals,
+            options,
+            secret_store,
+            signer,
+            Some(&leaf_node),
+            authenticated_data,
+        )?;
+
+        group.process_pending_commit(commit.clone(), secret_store)?;
+
+        Ok((group, commit.plaintext))
     }
 
     #[inline(always)]
@@ -1092,21 +1046,31 @@ impl<C: GroupConfig> Group<C> {
         options: CommitOptions,
         psk_store: &P,
         signer: &S,
+        external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
     ) -> Result<(CommitGeneration, Option<MLSMessage>), GroupError> {
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
         // by value
+        let is_external = external_leaf.is_some();
+
+        let sender = if is_external {
+            Sender::NewMemberCommit
+        } else {
+            Sender::Member(self.private_tree.self_index)
+        };
+
         let (commit_proposals, proposal_effects) = self.core.proposals.prepare_commit(
-            self.private_tree.self_index,
+            sender.clone(),
             proposals,
             self.core.context.extensions.get_extension()?,
             self.config.credential_validator(),
             &self.current_public_epoch.public_tree,
+            external_leaf,
             self.config.proposal_filter(ProposalFilterInit::new(
                 &self.current_public_epoch.public_tree,
                 &self.core.context,
-                Sender::Member(self.private_tree.self_index),
+                sender.clone(),
             )),
         )?;
 
@@ -1118,6 +1082,14 @@ impl<C: GroupConfig> Group<C> {
         // the tree if all leaves are occupied
 
         let mut provisional_state = self.apply_proposals(proposal_effects)?;
+
+        if is_external {
+            self.private_tree.self_index = provisional_state
+                .public_state
+                .external_init
+                .ok_or(GroupError::ExternalCommitMissingExternalInit)?
+                .0;
+        }
 
         let mut provisional_group_context = provisional_state.public_state.group_context;
         provisional_group_context.epoch += 1;
@@ -1192,7 +1164,7 @@ impl<C: GroupConfig> Group<C> {
 
         //Construct an MLSPlaintext object containing the Commit object
         let mut plaintext = self.construct_mls_plaintext(
-            Sender::Member(self.private_tree.self_index),
+            sender,
             Content::Commit(commit),
             signer,
             options.encryption_mode,
@@ -1243,7 +1215,7 @@ impl<C: GroupConfig> Group<C> {
 
         plaintext.auth.confirmation_tag = Some(confirmation_tag.clone());
 
-        if matches!(options.encryption_mode, ControlEncryptionMode::Plaintext) {
+        if matches!(options.encryption_mode, ControlEncryptionMode::Plaintext) && !is_external {
             // Create the membership tag using the current group context and key schedule
             let membership_tag = self
                 .key_schedule
@@ -1953,7 +1925,8 @@ impl<C: GroupConfig> Group<C> {
 
         let mut provisional_state = self.apply_proposals(proposal_effects)?;
         let sender = commit_sender(&commit_content, &provisional_state.public_state)?;
-        let state_update = StateUpdate::from(&provisional_state);
+        let mut state_update = StateUpdate::from(&provisional_state);
+        let from_self = local_pending.is_some();
 
         //Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
@@ -1963,7 +1936,8 @@ impl<C: GroupConfig> Group<C> {
             return Err(GroupError::CommitMissingPath);
         }
 
-        if provisional_state.self_removed() {
+        if provisional_state.self_index_removed() && !from_self {
+            state_update.active = false;
             return Ok(state_update);
         }
 
@@ -2067,10 +2041,10 @@ impl<C: GroupConfig> Group<C> {
         // derived secrets for the new epoch
 
         let key_schedule = match provisional_state.public_state.external_init {
-            Some((_, ExternalInit { kem_output })) => self
+            Some((_, ExternalInit { kem_output })) if !from_self => self
                 .key_schedule
                 .derive_for_external(&kem_output, self.core.cipher_suite())?,
-            None => self.key_schedule.clone(),
+            _ => self.key_schedule.clone(),
         };
 
         let key_schedule_result = KeySchedule::derive(
@@ -2277,7 +2251,11 @@ where
         commit_content.sender.clone(),
         commit_receiver,
         commit_content.commit.proposals.clone(),
-        commit_content.commit.path.as_ref(),
+        commit_content
+            .commit
+            .path
+            .as_ref()
+            .map(|path| &path.leaf_node),
         required_capabilities,
         credential_validator,
         public_tree,
@@ -2378,6 +2356,7 @@ pub(crate) mod test_utils {
                     commit_options,
                     &secret_store,
                     &self.signing_key,
+                    None,
                     Vec::new(),
                 )
                 .unwrap();
@@ -2428,6 +2407,7 @@ pub(crate) mod test_utils {
                 self.commit_options(),
                 &self.secret_store,
                 &self.signing_key,
+                None,
                 Vec::new(),
             )
         }
@@ -2683,6 +2663,7 @@ mod tests {
                 test_group.commit_options(),
                 &test_group.secret_store,
                 &test_group.signing_key,
+                None,
                 vec![],
             )
             .unwrap();
@@ -2763,6 +2744,7 @@ mod tests {
             test_group.commit_options(),
             &test_group.secret_store,
             &test_group.signing_key,
+            None,
             vec![],
         );
 
@@ -2806,6 +2788,7 @@ mod tests {
             test_group.commit_options(),
             &test_group.secret_store,
             &test_group.signing_key,
+            None,
             vec![],
         );
 
@@ -2844,6 +2827,7 @@ mod tests {
             test_group.commit_options(),
             &test_group.secret_store,
             &test_group.signing_key,
+            None,
             vec![],
         );
 
@@ -2903,6 +2887,7 @@ mod tests {
                 bob_group.commit_options(),
                 &bob_group.secret_store,
                 &bob_group.signing_key,
+                None,
                 vec![],
             )
             .unwrap();
@@ -2974,6 +2959,7 @@ mod tests {
                 commit_options,
                 &test_group.secret_store,
                 &test_group.signing_key,
+                None,
                 vec![],
             )
             .unwrap();
@@ -3043,6 +3029,7 @@ mod tests {
                 test_group.commit_options(),
                 &test_group.secret_store,
                 &test_group.signing_key,
+                None,
                 vec![],
             )
             .map(|(commit, _)| commit);
@@ -3151,6 +3138,9 @@ mod tests {
             leaf_secret,
             |_, _| true,
             &group.signing_key,
+            None,
+            vec![],
+            &InMemoryPskStore::default(),
             vec![],
         );
 
@@ -3177,6 +3167,7 @@ mod tests {
                 commit_options.clone(),
                 &test_group.secret_store,
                 &test_group.signing_key,
+                None,
                 vec![],
             )
             .unwrap();
@@ -3192,6 +3183,7 @@ mod tests {
                 commit_options,
                 &test_group.secret_store,
                 &test_group.signing_key,
+                None,
                 vec![],
             )
             .unwrap();
@@ -3215,6 +3207,7 @@ mod tests {
                 commit_options,
                 &test_group.secret_store,
                 &test_group.signing_key,
+                None,
                 vec![],
             )
             .unwrap();

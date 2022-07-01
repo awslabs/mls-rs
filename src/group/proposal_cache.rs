@@ -34,7 +34,7 @@ pub struct ProposalSetEffects {
 impl ProposalSetEffects {
     pub fn new(
         proposals: ProposalBundle,
-        update_path: Option<&UpdatePath>,
+        external_leaf: Option<&LeafNode>,
         rejected_proposals: Vec<(ProposalRef, Proposal)>,
     ) -> Result<Self, ProposalCacheError> {
         let init = ProposalSetEffects {
@@ -44,7 +44,7 @@ impl ProposalSetEffects {
 
         proposals
             .into_proposals()
-            .try_fold(init, |effects, item| effects.add(item, update_path))
+            .try_fold(init, |effects, item| effects.add(item, external_leaf))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -71,12 +71,13 @@ impl ProposalSetEffects {
             || self.group_context_ext.is_some()
             || !self.updates.is_empty()
             || !self.removes.is_empty()
+            || self.external_init.is_some()
     }
 
     fn add(
         mut self,
         item: ProposalInfo<Proposal>,
-        update_path: Option<&UpdatePath>,
+        external_leaf: Option<&LeafNode>,
     ) -> Result<Self, ProposalCacheError> {
         match item.proposal {
             Proposal::Add(add) => self.adds.push(add.key_package),
@@ -94,13 +95,11 @@ impl ProposalSetEffects {
                 self.reinit = Some(reinit);
             }
             Proposal::ExternalInit(external_init) => {
-                let new_member_leaf = update_path
+                let new_member_leaf = external_leaf
                     .ok_or(ProposalCacheError::ProposalFilterError(
                         ProposalFilterError::MissingUpdatePathInExternalCommit,
                     ))?
-                    .leaf_node
                     .clone();
-
                 self.external_init = Some((new_member_leaf, external_init));
             }
         };
@@ -196,13 +195,15 @@ impl ProposalCache {
         &self.proposals
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare_commit<C, F>(
         &self,
-        sender_index: LeafIndex,
+        sender: Sender,
         additional_proposals: Vec<Proposal>,
         required_capabilities: Option<RequiredCapabilitiesExt>,
         credential_validator: C,
         public_tree: &TreeKemPublic,
+        external_leaf: Option<&LeafNode>,
         user_filter: F,
     ) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), ProposalCacheError>
     where
@@ -222,7 +223,7 @@ impl ProposalCache {
             .chain(
                 additional_proposals
                     .into_iter()
-                    .map(|p| (p, Sender::Member(sender_index), None)),
+                    .map(|p| (p, sender.clone(), None)),
             )
             .fold(
                 ProposalBundle::default(),
@@ -236,23 +237,19 @@ impl ProposalCache {
             self.protocol_version,
             self.cipher_suite,
             self.group_id.clone(),
-            Sender::Member(sender_index),
+            sender.clone(),
             required_capabilities,
             &credential_validator,
             public_tree,
-            None,
+            external_leaf,
             user_filter,
         );
 
         let proposals = filter.filter(proposals)?;
 
-        let rejected = rejected_proposals(
-            self.proposals.clone(),
-            &proposals,
-            &Sender::Member(sender_index),
-        );
+        let rejected = rejected_proposals(self.proposals.clone(), &proposals, &sender);
 
-        let effects = ProposalSetEffects::new(proposals.clone(), None, rejected)?;
+        let effects = ProposalSetEffects::new(proposals.clone(), external_leaf, rejected)?;
         let proposals = proposals.into_proposals_or_refs().collect();
         Ok((proposals, effects))
     }
@@ -278,7 +275,7 @@ impl ProposalCache {
         sender: Sender,
         receiver: Option<LeafIndex>,
         proposal_list: Vec<ProposalOrRef>,
-        update_path: Option<&UpdatePath>,
+        external_leaf: Option<&LeafNode>,
         required_capabilities: Option<RequiredCapabilitiesExt>,
         credential_validator: C,
         public_tree: &TreeKemPublic,
@@ -310,7 +307,7 @@ impl ProposalCache {
             required_capabilities,
             &credential_validator,
             public_tree,
-            update_path,
+            external_leaf,
             user_filter,
         );
 
@@ -322,7 +319,7 @@ impl ProposalCache {
             })
             .unwrap_or_default();
 
-        ProposalSetEffects::new(proposals, update_path, rejected)
+        ProposalSetEffects::new(proposals, external_leaf, rejected)
     }
 }
 
@@ -344,7 +341,7 @@ fn proposal_filter<'a, C, F>(
     required_capabilities: Option<RequiredCapabilitiesExt>,
     credential_validator: &'a C,
     tree: &'a TreeKemPublic,
-    update_path: Option<&'a UpdatePath>,
+    external_leaf: Option<&'a LeafNode>,
     user_filter: F,
 ) -> impl ProposalFilter<Error = ProposalFilterError> + 'a
 where
@@ -363,9 +360,9 @@ where
         ))
         .and(UpdateProposalFilter::new(
             committer.clone(),
-            group_id.clone(),
+            group_id,
             cipher_suite,
-            required_capabilities.clone(),
+            required_capabilities,
             credential_validator,
             tree,
         ))
@@ -378,12 +375,9 @@ where
         ))
         .and(SingleProposalForLeaf)
         .and(ExternalCommitFilter::new(
-            cipher_suite,
-            group_id,
             committer,
-            update_path,
+            external_leaf,
             tree,
-            required_capabilities,
             credential_validator,
         ))
         .and(UniqueKeysInTree::new(tree))
@@ -576,11 +570,12 @@ mod tests {
 
         let (proposals, effects) = cache
             .prepare_commit(
-                test_sender(),
+                Sender::Member(test_sender()),
                 vec![],
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
+                None,
                 pass_through_filter(),
             )
             .unwrap();
@@ -616,11 +611,12 @@ mod tests {
 
         let (proposals, effects) = cache
             .prepare_commit(
-                test_sender(),
+                Sender::Member(test_sender()),
                 additional.clone(),
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
+                None,
                 pass_through_filter(),
             )
             .unwrap();
@@ -662,11 +658,12 @@ mod tests {
         let cache = test_proposal_cache_setup(test_proposals);
 
         let res = cache.prepare_commit(
-            test_sender(),
+            Sender::Member(test_sender()),
             additional,
             None,
             PassthroughCredentialValidator::new(),
             &tree,
+            None,
             pass_through_filter(),
         );
 
@@ -714,11 +711,12 @@ mod tests {
 
         let (proposals, effects) = cache
             .prepare_commit(
-                test_sender(),
+                Sender::Member(test_sender()),
                 vec![],
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
+                None,
                 pass_through_filter(),
             )
             .unwrap();
@@ -741,11 +739,12 @@ mod tests {
 
         let (proposals, effects) = cache
             .prepare_commit(
-                test_sender(),
+                Sender::Member(test_sender()),
                 vec![],
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
+                None,
                 pass_through_filter(),
             )
             .unwrap();
@@ -788,11 +787,12 @@ mod tests {
 
         let (proposals, effects) = cache
             .prepare_commit(
-                LeafIndex(2),
+                Sender::Member(LeafIndex(2)),
                 Vec::new(),
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
+                None,
                 pass_through_filter(),
             )
             .unwrap();
@@ -851,11 +851,12 @@ mod tests {
 
         let (proposals, effects) = cache
             .prepare_commit(
-                test_sender,
+                Sender::Member(test_sender),
                 additional,
                 None,
                 &credential_validator,
                 &tree,
+                None,
                 pass_through_filter(),
             )
             .unwrap();
@@ -889,11 +890,12 @@ mod tests {
         let proposal = Proposal::Psk(PreSharedKey { psk: psk_id });
 
         let res = cache.prepare_commit(
-            test_sender(),
+            Sender::Member(test_sender()),
             vec![proposal.clone(), proposal],
             None,
             PassthroughCredentialValidator::new(),
             &TreeKemPublic::new(TEST_CIPHER_SUITE),
+            None,
             pass_through_filter(),
         );
 
@@ -905,7 +907,7 @@ mod tests {
         );
     }
 
-    fn test_update_path() -> UpdatePath {
+    fn test_node() -> LeafNode {
         let (mut leaf_node, _, signer) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "foo");
 
         leaf_node
@@ -914,14 +916,11 @@ mod tests {
             })
             .unwrap();
 
-        UpdatePath {
-            leaf_node,
-            nodes: Vec::new(),
-        }
+        leaf_node
     }
 
     #[test]
-    fn external_commit_must_have_update_path() {
+    fn external_commit_must_have_new_leaf() {
         let cache = make_proposal_cache();
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
@@ -944,7 +943,7 @@ mod tests {
         assert_matches!(
             res,
             Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::MissingUpdatePathInExternalCommit
+                ProposalFilterError::ExternalCommitMustHaveNewLeaf
             ))
         );
     }
@@ -978,7 +977,7 @@ mod tests {
             Sender::NewMemberCommit,
             None,
             vec![ProposalOrRef::Reference(proposal_ref)],
-            Some(&test_update_path()),
+            Some(&test_node()),
             group.required_capabilities(),
             PassthroughCredentialValidator::new(),
             public_tree,
@@ -1013,7 +1012,7 @@ mod tests {
             .into_iter()
             .map(ProposalOrRef::Proposal)
             .collect(),
-            Some(&test_update_path()),
+            Some(&test_node()),
             group.required_capabilities(),
             credential_validator,
             public_tree,
@@ -1047,7 +1046,7 @@ mod tests {
             .into_iter()
             .map(ProposalOrRef::Proposal)
             .collect(),
-            Some(&test_update_path()),
+            Some(&test_node()),
             group.required_capabilities(),
             credential_validator,
             public_tree,
@@ -1099,7 +1098,7 @@ mod tests {
             Sender::NewMemberCommit,
             None,
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
-            Some(&test_update_path()),
+            Some(&test_node()),
             required_capabilities,
             credential_validator,
             &public_tree,
@@ -1138,7 +1137,7 @@ mod tests {
             Sender::NewMemberCommit,
             None,
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
-            Some(&test_update_path()),
+            Some(&test_node()),
             required_capabilities,
             credential_validator,
             &public_tree,
@@ -1177,7 +1176,7 @@ mod tests {
             Sender::NewMemberCommit,
             None,
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
-            Some(&test_update_path()),
+            Some(&test_node()),
             required_capabilities,
             credential_validator,
             &public_tree,
@@ -1244,7 +1243,7 @@ mod tests {
             Sender::NewMemberCommit,
             None,
             Vec::new(),
-            Some(&test_update_path()),
+            Some(&test_node()),
             group.required_capabilities(),
             credential_validator,
             public_tree,
@@ -1265,11 +1264,12 @@ mod tests {
 
         let (_, effects) = cache
             .prepare_commit(
-                test_sender(),
+                Sender::Member(test_sender()),
                 vec![],
                 None,
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
+                None,
                 pass_through_filter(),
             )
             .unwrap();
@@ -1305,11 +1305,12 @@ mod tests {
 
         let (_, effects) = cache
             .prepare_commit(
-                test_sender(),
+                Sender::Member(test_sender()),
                 Vec::new(),
                 None,
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
+                None,
                 pass_through_filter(),
             )
             .unwrap();
@@ -1335,11 +1336,12 @@ mod tests {
 
         let (_, effects) = cache
             .prepare_commit(
-                alice,
+                Sender::Member(alice),
                 vec![remove],
                 None,
                 PassthroughCredentialValidator::new(),
                 &tree,
+                None,
                 pass_through_filter(),
             )
             .unwrap();
@@ -1371,50 +1373,16 @@ mod tests {
 
         let (_, effects) = cache
             .prepare_commit(
-                test_sender(),
+                Sender::Member(test_sender()),
                 vec![psk, add, reinit],
                 None,
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
+                None,
                 pass_through_filter(),
             )
             .unwrap();
 
         assert!(!effects.path_update_required())
-    }
-
-    #[test]
-    fn external_commit_with_invalid_leaf_node_in_path_is_rejected() {
-        let cache = make_proposal_cache();
-        let leaf = get_basic_test_node(TEST_CIPHER_SUITE, "foo");
-
-        let external_init = ExternalInit {
-            kem_output: vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()],
-        };
-
-        let res = cache.resolve_for_commit(
-            Sender::NewMemberCommit,
-            None,
-            vec![ProposalOrRef::Proposal(Proposal::ExternalInit(
-                external_init,
-            ))],
-            Some(&UpdatePath {
-                // This leaf does not have the right leaf node source, which must cause the commit
-                // to be rejected.
-                leaf_node: leaf,
-                nodes: Vec::new(),
-            }),
-            None,
-            PassthroughCredentialValidator::new(),
-            &TreeKemPublic::new(TEST_CIPHER_SUITE),
-            pass_through_filter(),
-        );
-
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::LeafNodeValidationError(_)
-            ))
-        );
     }
 }

@@ -728,6 +728,8 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
                 .commit_external(
                     group_info,
                     Some(&existing_session.export_tree().unwrap()),
+                    None,
+                    vec![],
                     vec![],
                 )
                 .unwrap();
