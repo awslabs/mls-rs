@@ -265,7 +265,7 @@ pub enum GroupError {
     #[error("Invalid commit, missing required path")]
     CommitMissingPath,
     #[error("plaintext message for incorrect epoch")]
-    InvalidPlaintextEpoch,
+    InvalidPlaintextEpoch(u64),
     #[error("invalid signature found")]
     InvalidSignature,
     #[error("invalid confirmation tag")]
@@ -1930,8 +1930,6 @@ impl<C: GroupConfig> Group<C> {
         local_pending: Option<UpdatePathGeneration>,
         secret_store: &S,
     ) -> Result<StateUpdate, GroupError> {
-        //TODO: PSK Verify that all PSKs specified in any PreSharedKey proposals in the proposals
-        // vector are available.
         let commit_content = MLSMessageCommitContent::new(plaintext.deref(), plaintext.encrypted)?;
 
         //Generate a provisional GroupContext object by applying the proposals referenced in the
@@ -2340,6 +2338,17 @@ pub(crate) mod test_utils {
 
         pub(crate) fn join(&mut self, name: &str) -> (TestGroup, OutboundMessage) {
             self.join_with_options(name, self.commit_options())
+        }
+
+        pub(crate) fn propose(&mut self, proposal: Proposal) -> OutboundMessage {
+            self.group
+                .create_proposal(
+                    proposal,
+                    &self.signing_key,
+                    ControlEncryptionMode::Plaintext,
+                    vec![],
+                )
+                .unwrap()
         }
 
         pub(crate) fn join_with_options(

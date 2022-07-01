@@ -176,16 +176,18 @@ impl GroupCore {
             ));
         }
 
+        let epoch = plaintext.content.epoch;
+
         match &plaintext.plaintext.content.content {
             Content::Application(_) if plaintext.encrypted => Ok(plaintext),
             Content::Application(_) => Err(GroupError::UnencryptedApplicationMessage),
-            Content::Commit(_) => (plaintext.plaintext.content.epoch == self.context.epoch)
+            Content::Commit(_) => (epoch == self.context.epoch)
                 .then(|| plaintext)
-                .ok_or(GroupError::InvalidPlaintextEpoch),
+                .ok_or(GroupError::InvalidPlaintextEpoch(epoch)),
             Content::Proposal(p) => {
-                (plaintext.plaintext.content.epoch == self.context.epoch)
+                (epoch == self.context.epoch)
                     .then(|| ())
-                    .ok_or(GroupError::InvalidPlaintextEpoch)?;
+                    .ok_or(GroupError::InvalidPlaintextEpoch(epoch))?;
                 match p {
                     Proposal::Psk(PreSharedKey {
                         psk: PreSharedKeyID { key_id, .. },

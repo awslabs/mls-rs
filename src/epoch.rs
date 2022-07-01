@@ -1,4 +1,6 @@
+#[cfg(feature = "benchmark")]
 use crate::group::secret_tree::SecretTree;
+
 use crate::group::PublicEpoch;
 use indexmap::IndexMap;
 use std::{

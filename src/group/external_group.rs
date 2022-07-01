@@ -22,7 +22,7 @@ use super::{
     framing::{MLSPlaintext, Sender},
     message_signature::MessageSigningContext,
     message_verifier::SignaturePublicKeysContainer,
-    GroupInfo,
+    GroupInfo, ProposalRef,
 };
 
 #[derive(Clone, Debug)]
@@ -92,9 +92,6 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
 
         let (payload, sender, authenticated_data) = match message.payload {
             MLSMessagePayload::Plain(plaintext) => {
-                if !self.epoch_is_known(plaintext.content.epoch)? {
-                    return Err(GroupError::EpochNotFound(plaintext.content.epoch));
-                }
                 let plaintext = if self.config.signatures_are_checked() {
                     verify_plaintext_signature(
                         SignaturePublicKeysContainer::RatchetTree(&self.current_epoch.public_tree),
@@ -110,6 +107,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
                         plaintext,
                     }
                 };
+
                 let plaintext = self.core.validate_incoming_message(plaintext)?;
                 let credential = plaintext.credential(&self.current_epoch.public_tree)?;
                 let authenticated_data = plaintext.plaintext.content.authenticated_data.clone();
@@ -163,7 +161,21 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
     ) -> Result<ExternalProcessedMessagePayload, GroupError> {
         match plaintext.plaintext.content.content {
             Content::Application(_) => Err(GroupError::UnencryptedApplicationMessage),
-            Content::Proposal(proposal) => Ok(ExternalProcessedMessagePayload::Proposal(proposal)),
+            Content::Proposal(ref proposal) => {
+                let proposal_ref = ProposalRef::from_plaintext(
+                    self.cipher_suite(),
+                    &plaintext,
+                    plaintext.encrypted,
+                )?;
+
+                self.core.proposals.insert(
+                    proposal_ref,
+                    proposal.clone(),
+                    plaintext.plaintext.content.sender,
+                );
+
+                Ok(ExternalProcessedMessagePayload::Proposal(proposal.clone()))
+            }
             Content::Commit(_) => Ok(ExternalProcessedMessagePayload::Commit(
                 self.process_commit(plaintext)?,
             )),
@@ -171,10 +183,6 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
     }
 
     fn process_commit(&mut self, plaintext: VerifiedPlaintext) -> Result<StateUpdate, GroupError> {
-        if plaintext.content.epoch != self.current_epoch.identifier {
-            return Err(GroupError::InvalidPlaintextEpoch);
-        }
-
         let commit_content = MLSMessageCommitContent::new(&plaintext, plaintext.encrypted)?;
         let proposal_effects = proposal_effects(
             None,
@@ -439,6 +447,33 @@ mod tests {
     }
 
     #[test]
+    fn external_group_can_process_proposals_by_reference() {
+        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let mut server = make_external_group(&alice).unwrap();
+
+        let bob_key_package =
+            test_key_package_with_id(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+
+        let add_proposal = Proposal::Add(AddProposal {
+            key_package: bob_key_package,
+        });
+
+        let packet = alice.propose(add_proposal.clone());
+
+        let proposal_process = process_message(&mut server, packet.into()).unwrap();
+
+        assert_matches!(
+            proposal_process.message,
+            ExternalProcessedMessagePayload::Proposal(ref p) if p == &add_proposal
+        );
+
+        let (commit, _) = alice.commit(vec![]).unwrap();
+        let commit_result = process_message(&mut server, commit.plaintext.into()).unwrap();
+
+        assert_matches!(commit_result.message, ExternalProcessedMessagePayload::Commit(state_update) if state_update.added.contains(&LeafIndex(1)));
+    }
+
+    #[test]
     fn external_group_can_process_commit_adding_member() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let mut server = make_external_group(&alice).unwrap();
@@ -463,7 +498,7 @@ mod tests {
 
         assert_matches!(
             process_message(&mut server, commit.plaintext.into()),
-            Err(GroupError::InvalidPlaintextEpoch)
+            Err(GroupError::InvalidPlaintextEpoch(1))
         );
     }
 

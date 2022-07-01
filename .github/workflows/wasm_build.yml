@@ -3,6 +3,7 @@ on: [push, pull_request]
 env:
   CARGO_TERM_COLOR: always
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+  WASM_BINDGEN_TEST_TIMEOUT: 1000
 jobs:
   BuildAndTest:
     runs-on: [ubuntu-latest] 
@@ -15,4 +16,4 @@ jobs:
     - uses: nanasess/setup-chromedriver@v1
     - uses: jetli/wasm-pack-action@v0.3.0
     - name: Test (WASM + RustCrypto)
-      run: wasm-pack test --headless --chrome -- --no-default-features --features="browser"
+      run: wasm-pack test --headless --chrome --release -- --no-default-features --features="browser"
