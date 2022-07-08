@@ -315,7 +315,7 @@ impl KeySchedule {
         MembershipTag::create(plaintext, context, &self.membership_key)
     }
 
-    pub fn ged_external_public_key(
+    pub fn get_external_public_key(
         &self,
         cipher_suite: CipherSuite,
     ) -> Result<HpkePublicKey, HpkeError> {

@@ -50,9 +50,9 @@ impl<C: GroupConfig> Group<C> {
         Ok(GroupState {
             context: self.core.context.clone(),
             private_tree: self.private_tree.clone(),
-            current_epoch_data: CurrentEpochState::try_from(&self.current_public_epoch)?,
+            current_epoch_data: CurrentEpochState::try_from(&self.core.current_epoch)?,
             key_schedule: self.key_schedule.clone(),
-            interim_transcript_hash: self.interim_transcript_hash.clone(),
+            interim_transcript_hash: self.core.interim_transcript_hash.clone(),
             confirmation_tag: self.confirmation_tag.clone(),
             proposals: self.core.proposals.proposals().clone(),
             pending_updates: self.pending_updates.clone(),
@@ -60,25 +60,29 @@ impl<C: GroupConfig> Group<C> {
     }
 
     pub fn import(config: C, state: GroupState) -> Result<Self, GroupError> {
-        let core = GroupCore::import(state.context, state.proposals);
-        let cipher_suite = core.cipher_suite();
-
         let imported_tree = TreeKemPublic::import_node_data(
-            core.context.cipher_suite,
+            state.context.cipher_suite,
             NodeVec::tls_deserialize(&mut &*state.current_epoch_data.tree_data)?,
         )?;
+
+        let current_epoch = PublicEpoch {
+            identifier: state.current_epoch_data.identifier,
+            cipher_suite: state.context.cipher_suite,
+            public_tree: imported_tree,
+        };
+
+        let core = GroupCore::import(
+            state.context,
+            current_epoch,
+            state.interim_transcript_hash,
+            state.proposals,
+        );
 
         Ok(Self {
             config,
             core,
             private_tree: state.private_tree,
-            current_public_epoch: PublicEpoch {
-                identifier: state.current_epoch_data.identifier,
-                cipher_suite,
-                public_tree: imported_tree,
-            },
             key_schedule: state.key_schedule,
-            interim_transcript_hash: state.interim_transcript_hash,
             confirmation_tag: state.confirmation_tag,
             pending_updates: state.pending_updates,
         })

@@ -4,10 +4,9 @@ use crate::{
     epoch::PublicEpochRepository,
     extension::ExternalSendersExt,
     group::{
-        commit_sender, message_verifier::verify_plaintext_signature, proposal_effects,
-        transcript_hashes, Content, ExternalGroupConfig, GroupCore, GroupError,
-        InterimTranscriptHash, MLSMessage, MLSMessageCommitContent, MLSMessagePayload,
-        ProposalCache, PublicEpoch, StateUpdate, VerifiedPlaintext,
+        message_verifier::verify_plaintext_signature, proposal_effects, transcript_hashes, Content,
+        ExternalGroupConfig, GroupCore, GroupError, InterimTranscriptHash, MLSMessage,
+        MLSMessageCommitContent, MLSMessagePayload, PublicEpoch, StateUpdate, VerifiedPlaintext,
     },
     message::{ExternalProcessedMessage, ExternalProcessedMessagePayload},
     signer::{Signable, Signer},
@@ -18,7 +17,7 @@ use crate::{
 use tls_codec::Deserialize;
 
 use super::{
-    find_tree,
+    commit_sender, find_tree,
     framing::{MLSPlaintext, Sender},
     message_signature::MessageSigningContext,
     message_verifier::SignaturePublicKeysContainer,
@@ -29,8 +28,6 @@ use super::{
 pub struct ExternalGroup<C> {
     config: C,
     core: GroupCore,
-    current_epoch: PublicEpoch,
-    interim_transcript_hash: InterimTranscriptHash,
 }
 
 impl<C: ExternalGroupConfig> ExternalGroup<C> {
@@ -42,26 +39,21 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
         let public_tree = find_tree(public_tree, &group_info)?;
         let context = group_info.group_context;
 
+        let public_epoch = PublicEpoch {
+            identifier: context.epoch,
+            cipher_suite: context.cipher_suite,
+            public_tree,
+        };
+
+        let interim_transcript_hash = InterimTranscriptHash::create(
+            context.cipher_suite,
+            &context.confirmed_transcript_hash,
+            (&group_info.confirmation_tag).into(),
+        )?;
+
         Ok(Self {
             config,
-            current_epoch: PublicEpoch {
-                identifier: context.epoch,
-                cipher_suite: context.cipher_suite,
-                public_tree,
-            },
-            interim_transcript_hash: InterimTranscriptHash::create(
-                context.cipher_suite,
-                &context.confirmed_transcript_hash,
-                (&group_info.confirmation_tag).into(),
-            )?,
-            core: GroupCore {
-                proposals: ProposalCache::new(
-                    context.protocol_version,
-                    context.cipher_suite,
-                    context.group_id.clone(),
-                ),
-                context,
-            },
+            core: GroupCore::new(context, public_epoch, interim_transcript_hash),
         })
     }
 
@@ -94,12 +86,14 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
             MLSMessagePayload::Plain(plaintext) => {
                 let plaintext = if self.config.signatures_are_checked() {
                     verify_plaintext_signature(
-                        SignaturePublicKeysContainer::RatchetTree(&self.current_epoch.public_tree),
+                        SignaturePublicKeysContainer::RatchetTree(
+                            &self.core.current_epoch.public_tree,
+                        ),
                         &self.core.context,
                         plaintext,
                         false,
                         &self.core.external_signers(),
-                        self.current_epoch.cipher_suite,
+                        self.core.current_epoch.cipher_suite,
                     )?
                 } else {
                     VerifiedPlaintext {
@@ -109,7 +103,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
                 };
 
                 let plaintext = self.core.validate_incoming_message(plaintext)?;
-                let credential = plaintext.credential(&self.current_epoch.public_tree)?;
+                let credential = plaintext.credential(&self.core.current_epoch.public_tree)?;
                 let authenticated_data = plaintext.plaintext.content.authenticated_data.clone();
                 (
                     self.process_incoming_plaintext(plaintext)?,
@@ -190,21 +184,22 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
             &commit_content,
             self.core.context.extensions.get_extension()?,
             self.config.credential_validator(),
-            &self.current_epoch.public_tree,
+            &self.core.current_epoch.public_tree,
             self.config.proposal_filter(ProposalFilterInit::new(
-                &self.current_epoch.public_tree,
+                &self.core.current_epoch.public_tree,
                 &self.core.context,
                 plaintext.plaintext.content.sender.clone(),
             )),
         )?;
 
         let mut provisional_state = self.core.apply_proposals(
-            &self.current_epoch.public_tree,
+            &self.core.current_epoch.public_tree,
             proposal_effects,
             self.config.credential_validator(),
         )?;
 
         let sender = commit_sender(&commit_content, &provisional_state)?;
+
         provisional_state
             .public_tree
             .update_hashes(&mut vec![sender], &[])?;
@@ -225,7 +220,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
         // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
         let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
             self.core.cipher_suite(),
-            &self.interim_transcript_hash,
+            &self.core.interim_transcript_hash,
             commit_content,
             (&*plaintext).into(),
         )?;
@@ -243,17 +238,17 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
 
         self.config
             .epoch_repo()
-            .insert(std::mem::replace(&mut self.current_epoch, next_epoch))
+            .insert(std::mem::replace(&mut self.core.current_epoch, next_epoch))
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
-        self.interim_transcript_hash = interim_transcript_hash;
+        self.core.interim_transcript_hash = interim_transcript_hash;
         self.core.proposals.clear();
 
         Ok(state_update)
     }
 
     fn epoch_is_known(&self, id: u64) -> Result<bool, GroupError> {
-        Ok(self.current_epoch.identifier == id
+        Ok(self.core.current_epoch.identifier == id
             || self
                 .config
                 .epoch_repo()
@@ -485,7 +480,11 @@ mod tests {
         };
 
         assert_eq!(update.added.len(), 1);
-        assert_eq!(server.current_epoch.public_tree.get_leaf_nodes().len(), 2);
+
+        assert_eq!(
+            server.core.current_epoch.public_tree.get_leaf_nodes().len(),
+            2
+        );
     }
 
     #[test]

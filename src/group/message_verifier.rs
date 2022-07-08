@@ -431,7 +431,7 @@ mod tests {
         verify_plaintext(
             message,
             &env.bob.group.key_schedule,
-            &env.bob.group.current_public_epoch,
+            &env.bob.group.core.current_epoch,
             env.bob.group.context(),
             &[],
         )
@@ -484,7 +484,7 @@ mod tests {
         let res = verify_plaintext(
             message,
             &env.bob.group.key_schedule,
-            &env.bob.group.current_public_epoch,
+            &env.bob.group.core.current_epoch,
             env.bob.group.context(),
             &[],
         );
@@ -529,7 +529,7 @@ mod tests {
         verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.current_public_epoch,
+            &test_group.group.core.current_epoch,
             test_group.group.context(),
             &[],
         )
@@ -547,7 +547,7 @@ mod tests {
         let res = verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.current_public_epoch,
+            &test_group.group.core.current_epoch,
             test_group.group.context(),
             &[],
         );
@@ -569,7 +569,7 @@ mod tests {
         let res = verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.current_public_epoch,
+            &test_group.group.core.current_epoch,
             test_group.group.context(),
             &[],
         );
@@ -592,7 +592,7 @@ mod tests {
         let res = verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.current_public_epoch,
+            &test_group.group.core.current_epoch,
             test_group.group.context(),
             &[],
         );
@@ -617,7 +617,7 @@ mod tests {
         verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.current_public_epoch,
+            &test_group.group.core.current_epoch,
             test_group.group.context(),
             &[ted_signing],
         )
@@ -638,7 +638,7 @@ mod tests {
         let res = verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.current_public_epoch,
+            &test_group.group.core.current_epoch,
             test_group.group.context(),
             &[],
         );
@@ -666,7 +666,7 @@ mod tests {
         let res = verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.current_public_epoch,
+            &test_group.group.core.current_epoch,
             test_group.group.context(),
             &[ted_signing],
         );

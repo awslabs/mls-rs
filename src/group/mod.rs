@@ -426,8 +426,6 @@ pub struct Group<C: GroupConfig> {
     config: C,
     core: GroupCore,
     private_tree: TreeKemPrivate,
-    current_public_epoch: PublicEpoch,
-    interim_transcript_hash: InterimTranscriptHash,
     // TODO: HpkePublicKey does not have Eq and Hash
     pub pending_updates: HashMap<Vec<u8>, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
     key_schedule: KeySchedule,
@@ -437,7 +435,7 @@ pub struct Group<C: GroupConfig> {
 impl<C: GroupConfig> PartialEq for Group<C> {
     fn eq(&self, other: &Self) -> bool {
         self.core.context == other.core.context
-            && self.interim_transcript_hash == other.interim_transcript_hash
+            && self.core.interim_transcript_hash == other.core.interim_transcript_hash
             && self.core.proposals == other.core.proposals
             && self.key_schedule == other.key_schedule
     }
@@ -564,7 +562,7 @@ impl<C: GroupConfig> Group<C> {
             group_context_extensions,
         );
 
-        let public_epoch = PublicEpoch {
+        let current_epoch = PublicEpoch {
             identifier: context.epoch,
             cipher_suite,
             public_tree: public_tree.clone(),
@@ -582,17 +580,16 @@ impl<C: GroupConfig> Group<C> {
             &Psk::from(vec![0; kdf.extract_size()]),
         )?;
 
+        //TODO: Is this actually needed here?
         config
             .epoch_repo()
-            .insert(public_epoch.identifier, key_schedule_result.epoch.into())
+            .insert(current_epoch.identifier, key_schedule_result.epoch.into())
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         Ok(Self {
             config,
-            core: GroupCore::new(context),
+            core: GroupCore::new(context, current_epoch, InterimTranscriptHash::from(vec![])),
             private_tree,
-            current_public_epoch: public_epoch,
-            interim_transcript_hash: InterimTranscriptHash::from(vec![]),
             confirmation_tag: ConfirmationTag::empty(&cipher_suite)?,
             pending_updates: Default::default(),
             key_schedule: key_schedule_result.key_schedule,
@@ -783,24 +780,22 @@ impl<C: GroupConfig> Group<C> {
         config: C,
         confirmation_tag: &ConfirmationTag,
         context: GroupContext,
-        public_epoch: PublicEpoch,
+        current_epoch: PublicEpoch,
         key_schedule: KeySchedule,
         private_tree: TreeKemPrivate,
     ) -> Result<Self, GroupError> {
         // Use the confirmed transcript hash and confirmation tag to compute the interim transcript
         // hash in the new state.
         let interim_transcript_hash = InterimTranscriptHash::create(
-            public_epoch.cipher_suite,
+            current_epoch.cipher_suite,
             &context.confirmed_transcript_hash,
             MLSPlaintextCommitAuthData::from(confirmation_tag),
         )?;
 
         Ok(Group {
             config,
-            core: GroupCore::new(context),
+            core: GroupCore::new(context, current_epoch, interim_transcript_hash),
             private_tree,
-            current_public_epoch: public_epoch,
-            interim_transcript_hash,
             confirmation_tag: confirmation_tag.clone(),
             pending_updates: Default::default(),
             key_schedule,
@@ -922,7 +917,7 @@ impl<C: GroupConfig> Group<C> {
 
     #[inline(always)]
     pub fn current_epoch_tree(&self) -> Result<&TreeKemPublic, GroupError> {
-        Ok(&self.current_public_epoch.public_tree)
+        Ok(&self.core.current_epoch.public_tree)
     }
 
     #[inline(always)]
@@ -1065,10 +1060,10 @@ impl<C: GroupConfig> Group<C> {
             proposals,
             self.core.context.extensions.get_extension()?,
             self.config.credential_validator(),
-            &self.current_public_epoch.public_tree,
+            &self.core.current_epoch.public_tree,
             external_leaf,
             self.config.proposal_filter(ProposalFilterInit::new(
-                &self.current_public_epoch.public_tree,
+                &self.core.current_epoch.public_tree,
                 &self.core.context,
                 sender.clone(),
             )),
@@ -1175,7 +1170,7 @@ impl<C: GroupConfig> Group<C> {
         // compute the confirmation_tag value in the MLSPlaintext.
         let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
             self.core.cipher_suite(),
-            &self.interim_transcript_hash,
+            &self.core.interim_transcript_hash,
             MLSMessageCommitContent::new(
                 &plaintext,
                 matches!(options.encryption_mode, ControlEncryptionMode::Encrypted(_)),
@@ -1198,12 +1193,12 @@ impl<C: GroupConfig> Group<C> {
         }
 
         let key_schedule_result = KeySchedule::derive(
-            self.current_public_epoch.cipher_suite,
+            self.core.current_epoch.cipher_suite,
             &self.key_schedule,
             &commit_secret,
             &provisional_group_context,
             self.private_tree.self_index,
-            self.current_public_epoch.public_tree.clone(),
+            self.core.current_epoch.public_tree.clone(),
             &psk_secret,
         )?;
 
@@ -1443,7 +1438,7 @@ impl<C: GroupConfig> Group<C> {
             &psk_secret,
         )?;
 
-        let public_epoch = PublicEpoch {
+        let current_epoch = PublicEpoch {
             identifier: new_context.epoch,
             cipher_suite: self.core.cipher_suite(),
             public_tree: new_pub_tree.clone(),
@@ -1467,16 +1462,18 @@ impl<C: GroupConfig> Group<C> {
 
         sub_config
             .epoch_repo()
-            .insert(public_epoch.identifier, key_schedule_result.epoch.into())
+            .insert(current_epoch.identifier, key_schedule_result.epoch.into())
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         let new_group = Group {
             config: sub_config,
-            core: GroupCore::new(new_context),
+            core: GroupCore::new(
+                new_context,
+                current_epoch,
+                InterimTranscriptHash::from(vec![]),
+            ),
             private_tree: new_priv_tree,
-            current_public_epoch: public_epoch,
             key_schedule: key_schedule_result.key_schedule,
-            interim_transcript_hash: Vec::new().into(),
             confirmation_tag: ConfirmationTag::empty(&self.core.cipher_suite())?,
             pending_updates: Default::default(),
         };
@@ -1811,7 +1808,7 @@ impl<C: GroupConfig> Group<C> {
         let plaintext = verify_plaintext(
             message,
             &self.key_schedule,
-            &self.current_public_epoch,
+            &self.core.current_epoch,
             &self.core.context,
             &self.core.external_signers(),
         )?;
@@ -1915,9 +1912,9 @@ impl<C: GroupConfig> Group<C> {
             &commit_content,
             self.core.context.extensions.get_extension()?,
             self.config.credential_validator(),
-            &self.current_public_epoch.public_tree,
+            &self.core.current_epoch.public_tree,
             self.config.proposal_filter(ProposalFilterInit::new(
-                &self.current_public_epoch.public_tree,
+                &self.core.current_epoch.public_tree,
                 &self.core.context,
                 plaintext.plaintext.content.sender.clone(),
             )),
@@ -2008,7 +2005,7 @@ impl<C: GroupConfig> Group<C> {
         // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
         let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
             self.core.cipher_suite(),
-            &self.interim_transcript_hash,
+            &self.core.interim_transcript_hash,
             commit_content.clone(),
             (&*plaintext).into(),
         )?;
@@ -2086,12 +2083,12 @@ impl<C: GroupConfig> Group<C> {
             )
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
-        self.interim_transcript_hash = interim_transcript_hash;
+        self.core.interim_transcript_hash = interim_transcript_hash;
 
         self.key_schedule = key_schedule_result.key_schedule;
 
-        self.current_public_epoch = PublicEpoch {
-            identifier: self.current_public_epoch.identifier + 1,
+        self.core.current_epoch = PublicEpoch {
+            identifier: self.core.current_epoch.identifier + 1,
             cipher_suite: self.core.cipher_suite(),
             public_tree: provisional_state.public_state.public_tree,
         };
@@ -2108,7 +2105,8 @@ impl<C: GroupConfig> Group<C> {
     }
 
     pub fn current_direct_path(&self) -> Result<Vec<Option<HpkePublicKey>>, GroupError> {
-        self.current_public_epoch
+        self.core
+            .current_epoch
             .public_tree
             .direct_path_keys(self.private_tree.self_index)
             .map_err(Into::into)
@@ -2121,7 +2119,7 @@ impl<C: GroupConfig> Group<C> {
         extensions.set_extension(ExternalPubExt {
             external_pub: self
                 .key_schedule
-                .ged_external_public_key(self.core.cipher_suite())?,
+                .get_external_public_key(self.core.cipher_suite())?,
         })?;
 
         let mut info = GroupInfo {
@@ -2611,7 +2609,7 @@ mod tests {
             assert_eq!(group.private_tree.self_index.0, group.current_user_index());
 
             assert_eq!(
-                group.current_public_epoch.public_tree.get_leaf_nodes()[0]
+                group.core.current_epoch.public_tree.get_leaf_nodes()[0]
                     .signing_identity
                     .public_key(cipher_suite)
                     .unwrap(),
