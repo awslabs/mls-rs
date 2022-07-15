@@ -6,7 +6,6 @@ use crate::group::secret_tree::{
 use crate::group::{GroupContext, MLSCiphertext, MLSCiphertextContentAAD};
 use crate::psk::{Psk, PskSecretError};
 use crate::tree_kem::node::LeafIndex;
-use crate::tree_kem::TreeKemPublic;
 use ferriscrypt::asym::ec_key::PublicKey;
 use ferriscrypt::cipher::aead::{AeadError, AeadNonce, Key};
 use ferriscrypt::cipher::NonceError;
@@ -34,13 +33,6 @@ pub enum EpochError {
     NonceError(#[from] NonceError),
     #[error("key derivation failure")]
     KeyDerivationFailure,
-}
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct PublicEpoch {
-    pub(crate) identifier: u64,
-    pub(crate) cipher_suite: CipherSuite,
-    pub(crate) public_tree: TreeKemPublic,
 }
 
 #[derive(Debug, Clone)]

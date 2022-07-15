@@ -1,12 +1,11 @@
 use crate::{
     cipher_suite::CipherSuite,
     client_config::ProposalFilterInit,
-    epoch::PublicEpochRepository,
     extension::ExternalSendersExt,
     group::{
         message_verifier::verify_plaintext_signature, proposal_effects, transcript_hashes, Content,
         ExternalGroupConfig, GroupCore, GroupError, InterimTranscriptHash, MLSMessage,
-        MLSMessageCommitContent, MLSMessagePayload, PublicEpoch, StateUpdate, VerifiedPlaintext,
+        MLSMessageCommitContent, MLSMessagePayload, StateUpdate, VerifiedPlaintext,
     },
     message::{ExternalProcessedMessage, ExternalProcessedMessagePayload},
     signer::{Signable, Signer},
@@ -39,12 +38,6 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
         let public_tree = find_tree(public_tree, &group_info)?;
         let context = group_info.group_context;
 
-        let public_epoch = PublicEpoch {
-            identifier: context.epoch,
-            cipher_suite: context.cipher_suite,
-            public_tree,
-        };
-
         let interim_transcript_hash = InterimTranscriptHash::create(
             context.cipher_suite,
             &context.confirmed_transcript_hash,
@@ -53,7 +46,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
 
         Ok(Self {
             config,
-            core: GroupCore::new(context, public_epoch, interim_transcript_hash),
+            core: GroupCore::new(context, public_tree, interim_transcript_hash),
         })
     }
 
@@ -86,14 +79,12 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
             MLSMessagePayload::Plain(plaintext) => {
                 let plaintext = if self.config.signatures_are_checked() {
                     verify_plaintext_signature(
-                        SignaturePublicKeysContainer::RatchetTree(
-                            &self.core.current_epoch.public_tree,
-                        ),
+                        SignaturePublicKeysContainer::RatchetTree(&self.core.current_tree),
                         &self.core.context,
                         plaintext,
                         false,
                         &self.core.external_signers(),
-                        self.core.current_epoch.cipher_suite,
+                        self.core.current_tree.cipher_suite,
                     )?
                 } else {
                     VerifiedPlaintext {
@@ -103,8 +94,9 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
                 };
 
                 let plaintext = self.core.validate_incoming_message(plaintext)?;
-                let credential = plaintext.credential(&self.core.current_epoch.public_tree)?;
+                let credential = plaintext.credential(&self.core.current_tree)?;
                 let authenticated_data = plaintext.plaintext.content.authenticated_data.clone();
+
                 (
                     self.process_incoming_plaintext(plaintext)?,
                     credential,
@@ -112,9 +104,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
                 )
             }
             MLSMessagePayload::Cipher(ciphertext) => {
-                if !self.epoch_is_known(ciphertext.epoch)? {
-                    return Err(GroupError::EpochNotFound(ciphertext.epoch));
-                }
+                // TODO: Determine if epoch is in a particular allowed range
                 let authenticated_data = ciphertext.authenticated_data.clone();
                 (
                     ExternalProcessedMessagePayload::Ciphertext(ciphertext),
@@ -184,16 +174,16 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
             &commit_content,
             self.core.context.extensions.get_extension()?,
             self.config.credential_validator(),
-            &self.core.current_epoch.public_tree,
+            &self.core.current_tree,
             self.config.proposal_filter(ProposalFilterInit::new(
-                &self.core.current_epoch.public_tree,
+                &self.core.current_tree,
                 &self.core.context,
                 plaintext.plaintext.content.sender.clone(),
             )),
         )?;
 
         let mut provisional_state = self.core.apply_proposals(
-            &self.core.current_epoch.public_tree,
+            &self.core.current_tree,
             proposal_effects,
             self.config.credential_validator(),
         )?;
@@ -228,33 +218,12 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
         provisional_group_context.tree_hash = provisional_state.public_tree.tree_hash()?;
 
-        let next_epoch = PublicEpoch {
-            identifier: provisional_group_context.epoch,
-            cipher_suite: self.core.cipher_suite(),
-            public_tree: provisional_state.public_tree,
-        };
-
+        self.core.current_tree = provisional_state.public_tree;
         self.core.context = provisional_group_context;
-
-        self.config
-            .epoch_repo()
-            .insert(std::mem::replace(&mut self.core.current_epoch, next_epoch))
-            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
-
         self.core.interim_transcript_hash = interim_transcript_hash;
         self.core.proposals.clear();
 
         Ok(state_update)
-    }
-
-    fn epoch_is_known(&self, id: u64) -> Result<bool, GroupError> {
-        Ok(self.core.current_epoch.identifier == id
-            || self
-                .config
-                .epoch_repo()
-                .get(id)
-                .map_err(|e| GroupError::EpochRepositoryError(e.into()))?
-                .is_some())
     }
 
     pub fn propose_add<S: Signer>(
@@ -480,11 +449,7 @@ mod tests {
         };
 
         assert_eq!(update.added.len(), 1);
-
-        assert_eq!(
-            server.core.current_epoch.public_tree.get_leaf_nodes().len(),
-            2
-        );
+        assert_eq!(server.core.current_tree.get_leaf_nodes().len(), 2);
     }
 
     #[test]

@@ -4,8 +4,7 @@ use crate::{
     cipher_suite::CipherSuite,
     group::{
         ContentType, GroupContext, GroupError, KeyType, MLSCiphertext, MLSCiphertextContent,
-        MLSContent, MLSPlaintext, MLSSenderData, MLSSenderDataAAD, PublicEpoch, Sender,
-        VerifiedPlaintext,
+        MLSContent, MLSPlaintext, MLSSenderData, MLSSenderDataAAD, Sender, VerifiedPlaintext,
     },
     signer::Signable,
     signing_identity::SigningIdentity,
@@ -28,7 +27,7 @@ pub(crate) enum SignaturePublicKeysContainer<'a> {
 pub fn verify_plaintext(
     plaintext: MLSPlaintext,
     key_schedule: &KeySchedule,
-    current_public_epoch: &PublicEpoch,
+    current_tree: &TreeKemPublic,
     context: &GroupContext,
     external_signers: &[SigningIdentity],
 ) -> Result<VerifiedPlaintext, GroupError> {
@@ -58,12 +57,12 @@ pub fn verify_plaintext(
     // Verify that the signature on the MLSPlaintext message verifies using the public key
     // from the credential stored at the leaf in the tree indicated by the sender field.
     verify_plaintext_signature(
-        SignaturePublicKeysContainer::RatchetTree(&current_public_epoch.public_tree),
+        SignaturePublicKeysContainer::RatchetTree(current_tree),
         context,
         plaintext,
         false,
         external_signers,
-        current_public_epoch.cipher_suite,
+        current_tree.cipher_suite,
     )
 }
 
@@ -431,7 +430,7 @@ mod tests {
         verify_plaintext(
             message,
             &env.bob.group.key_schedule,
-            &env.bob.group.core.current_epoch,
+            &env.bob.group.core.current_tree,
             env.bob.group.context(),
             &[],
         )
@@ -484,7 +483,7 @@ mod tests {
         let res = verify_plaintext(
             message,
             &env.bob.group.key_schedule,
-            &env.bob.group.core.current_epoch,
+            &env.bob.group.core.current_tree,
             env.bob.group.context(),
             &[],
         );
@@ -529,7 +528,7 @@ mod tests {
         verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.core.current_epoch,
+            &test_group.group.core.current_tree,
             test_group.group.context(),
             &[],
         )
@@ -547,7 +546,7 @@ mod tests {
         let res = verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.core.current_epoch,
+            &test_group.group.core.current_tree,
             test_group.group.context(),
             &[],
         );
@@ -569,7 +568,7 @@ mod tests {
         let res = verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.core.current_epoch,
+            &test_group.group.core.current_tree,
             test_group.group.context(),
             &[],
         );
@@ -592,7 +591,7 @@ mod tests {
         let res = verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.core.current_epoch,
+            &test_group.group.core.current_tree,
             test_group.group.context(),
             &[],
         );
@@ -617,7 +616,7 @@ mod tests {
         verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.core.current_epoch,
+            &test_group.group.core.current_tree,
             test_group.group.context(),
             &[ted_signing],
         )
@@ -638,7 +637,7 @@ mod tests {
         let res = verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.core.current_epoch,
+            &test_group.group.core.current_tree,
             test_group.group.context(),
             &[],
         );
@@ -666,7 +665,7 @@ mod tests {
         let res = verify_plaintext(
             message,
             &test_group.group.key_schedule,
-            &test_group.group.core.current_epoch,
+            &test_group.group.core.current_tree,
             test_group.group.context(),
             &[ted_signing],
         );

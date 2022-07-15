@@ -8,34 +8,15 @@ use tls_codec::{Deserialize, Serialize};
 
 use super::{
     confirmation_tag::ConfirmationTag, group_core::GroupCore, key_schedule::KeySchedule,
-    proposal_cache::CachedProposal, Group, GroupConfig, GroupError, ProposalRef, PublicEpoch,
+    proposal_cache::CachedProposal, Group, GroupConfig, GroupError, ProposalRef,
 };
-
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub(crate) struct CurrentEpochState {
-    pub(crate) identifier: u64,
-    pub(crate) tree_data: Vec<u8>,
-}
-
-impl TryFrom<&PublicEpoch> for CurrentEpochState {
-    type Error = GroupError;
-
-    fn try_from(value: &PublicEpoch) -> Result<Self, Self::Error> {
-        Ok(CurrentEpochState {
-            identifier: value.identifier,
-            tree_data: value
-                .public_tree
-                .export_node_data()
-                .tls_serialize_detached()?,
-        })
-    }
-}
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct GroupState {
     pub(crate) context: GroupContext,
     pub(crate) private_tree: TreeKemPrivate,
-    pub(crate) current_epoch_data: CurrentEpochState,
+    // TODO: This should be base64
+    pub(crate) current_tree_data: Vec<u8>,
     pub(crate) key_schedule: KeySchedule,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
     pub(crate) confirmation_tag: ConfirmationTag,
@@ -50,7 +31,11 @@ impl<C: GroupConfig> Group<C> {
         Ok(GroupState {
             context: self.core.context.clone(),
             private_tree: self.private_tree.clone(),
-            current_epoch_data: CurrentEpochState::try_from(&self.core.current_epoch)?,
+            current_tree_data: self
+                .core
+                .current_tree
+                .export_node_data()
+                .tls_serialize_detached()?,
             key_schedule: self.key_schedule.clone(),
             interim_transcript_hash: self.core.interim_transcript_hash.clone(),
             confirmation_tag: self.confirmation_tag.clone(),
@@ -62,18 +47,12 @@ impl<C: GroupConfig> Group<C> {
     pub fn import(config: C, state: GroupState) -> Result<Self, GroupError> {
         let imported_tree = TreeKemPublic::import_node_data(
             state.context.cipher_suite,
-            NodeVec::tls_deserialize(&mut &*state.current_epoch_data.tree_data)?,
+            NodeVec::tls_deserialize(&mut &*state.current_tree_data)?,
         )?;
-
-        let current_epoch = PublicEpoch {
-            identifier: state.current_epoch_data.identifier,
-            cipher_suite: state.context.cipher_suite,
-            public_tree: imported_tree,
-        };
 
         let core = GroupCore::import(
             state.context,
-            current_epoch,
+            imported_tree,
             state.interim_transcript_hash,
             state.proposals,
         );

@@ -24,10 +24,7 @@ where
         group_info: GroupInfo,
         tree_data: Option<&[u8]>,
     ) -> Result<Self, SessionError> {
-        let group_config = ExternalClientGroupConfig::new(
-            config.clone(),
-            group_info.group_context.group_id.clone(),
-        );
+        let group_config = ExternalClientGroupConfig::new(config.clone());
 
         let public_tree = tree_data
             .map(|rt| {

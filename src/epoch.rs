@@ -1,7 +1,6 @@
 #[cfg(feature = "benchmark")]
 use crate::group::secret_tree::SecretTree;
 
-use crate::group::PublicEpoch;
 use indexmap::IndexMap;
 use std::{
     convert::Infallible,
@@ -83,59 +82,6 @@ impl EpochRepository for InMemoryEpochRepository {
 
     fn insert(&mut self, epoch_id: u64, epoch: Epoch) -> Result<(), Self::Error> {
         (*self).insert(epoch_id, epoch);
-        Ok(())
-    }
-}
-
-pub trait PublicEpochRepository {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    fn get(&self, epoch_id: u64) -> Result<Option<PublicEpoch>, Self::Error>;
-    fn insert(&mut self, epoch: PublicEpoch) -> Result<(), Self::Error>;
-}
-
-#[derive(Clone, Debug)]
-pub struct InMemoryPublicEpochRepository {
-    inner: Arc<Mutex<IndexMap<u64, PublicEpoch>>>,
-    retention_limit: usize,
-}
-
-impl InMemoryPublicEpochRepository {
-    fn new() -> Self {
-        Self {
-            inner: Default::default(),
-            retention_limit: DEFAULT_EPOCH_RETENTION_LIMIT,
-        }
-    }
-
-    fn get(&self, epoch_id: u64) -> Option<PublicEpoch> {
-        self.inner.lock().unwrap().get(&epoch_id).cloned()
-    }
-
-    fn insert(&self, epoch: PublicEpoch) {
-        let mut map = self.inner.lock().unwrap();
-        map.insert(epoch.identifier, epoch);
-        if map.len() > self.retention_limit {
-            map.shift_remove_index(0);
-        }
-    }
-}
-
-impl Default for InMemoryPublicEpochRepository {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl PublicEpochRepository for InMemoryPublicEpochRepository {
-    type Error = Infallible;
-
-    fn get(&self, epoch_id: u64) -> Result<Option<PublicEpoch>, Self::Error> {
-        Ok(self.get(epoch_id))
-    }
-
-    fn insert(&mut self, epoch: PublicEpoch) -> Result<(), Self::Error> {
-        (*self).insert(epoch);
         Ok(())
     }
 }

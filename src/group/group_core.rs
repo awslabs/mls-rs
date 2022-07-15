@@ -16,24 +16,21 @@ use crate::{
     ProtocolVersion,
 };
 
-use super::{
-    proposal_cache::CachedProposal, transcript_hash::InterimTranscriptHash, ProposalRef,
-    PublicEpoch,
-};
+use super::{proposal_cache::CachedProposal, transcript_hash::InterimTranscriptHash, ProposalRef};
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct GroupCore {
     pub(crate) proposals: ProposalCache,
     pub(crate) context: GroupContext,
-    pub(crate) current_epoch: PublicEpoch,
+    pub(crate) current_tree: TreeKemPublic,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
 }
 
 impl GroupCore {
     pub(super) fn new(
         context: GroupContext,
-        current_epoch: PublicEpoch,
+        current_tree: TreeKemPublic,
         interim_transcript_hash: InterimTranscriptHash,
     ) -> Self {
         Self {
@@ -43,14 +40,14 @@ impl GroupCore {
                 context.group_id.clone(),
             ),
             context,
-            current_epoch,
+            current_tree,
             interim_transcript_hash,
         }
     }
 
     pub(super) fn import(
         context: GroupContext,
-        current_epoch: PublicEpoch,
+        current_tree: TreeKemPublic,
         interim_transcript_hash: InterimTranscriptHash,
         proposals: HashMap<ProposalRef, CachedProposal>,
     ) -> Self {
@@ -62,7 +59,7 @@ impl GroupCore {
                 proposals,
             ),
             context,
-            current_epoch,
+            current_tree,
             interim_transcript_hash,
         }
     }

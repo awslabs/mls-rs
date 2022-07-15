@@ -188,7 +188,7 @@ impl KeySchedule {
         commit_secret: &CommitSecret,
         context: &GroupContext,
         self_index: LeafIndex,
-        public_tree: TreeKemPublic,
+        public_tree: &TreeKemPublic,
         psk_secret: &Psk,
     ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
@@ -227,7 +227,7 @@ impl KeySchedule {
         joiner_secret: &JoinerSecret,
         context: &GroupContext,
         self_index: LeafIndex,
-        public_tree: TreeKemPublic,
+        public_tree: &TreeKemPublic,
         psk_secret: &Psk,
     ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());

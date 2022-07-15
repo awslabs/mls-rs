@@ -5,7 +5,6 @@ use crate::{
         ProposalFilterInit, SimpleError,
     },
     credential::{CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
-    epoch::{InMemoryPublicEpochRepository, PublicEpochRepository},
     extension::ExtensionType,
     group::ExternalGroupConfig,
     keychain::{InMemoryKeychain, Keychain},
@@ -14,14 +13,10 @@ use crate::{
     BoxedProposalFilter, ExternalClient, ProposalFilter, ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
 
 pub trait ExternalClientConfig {
     type Keychain: Keychain;
-    type EpochRepository: PublicEpochRepository;
     type CredentialValidator: CredentialValidator;
     type ProposalFilter: ProposalFilter;
 
@@ -30,7 +25,6 @@ pub trait ExternalClientConfig {
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_credentials(&self) -> Vec<CredentialType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
-    fn epoch_repo(&self, group_id: &[u8]) -> Self::EpochRepository;
     fn credential_validator(&self) -> Self::CredentialValidator;
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
     fn signatures_are_checked(&self) -> bool;
@@ -57,7 +51,6 @@ pub struct InMemoryExternalClientConfig {
     keychain: InMemoryKeychain,
     protocol_versions: Vec<ProtocolVersion>,
     cipher_suites: Vec<CipherSuite>,
-    epochs: Arc<Mutex<HashMap<Vec<u8>, InMemoryPublicEpochRepository>>>,
     external_signing_keys: HashMap<Vec<u8>, PublicKey>,
     credential_types: Vec<CredentialType>,
     signatures_checked: bool,
@@ -71,7 +64,6 @@ impl InMemoryExternalClientConfig {
             keychain: Default::default(),
             protocol_versions: ProtocolVersion::all().collect(),
             cipher_suites: CipherSuite::all().collect(),
-            epochs: Default::default(),
             external_signing_keys: Default::default(),
             credential_types: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
             signatures_checked: true,
@@ -152,7 +144,6 @@ impl Default for InMemoryExternalClientConfig {
 
 impl ExternalClientConfig for InMemoryExternalClientConfig {
     type Keychain = InMemoryKeychain;
-    type EpochRepository = InMemoryPublicEpochRepository;
     type CredentialValidator = PassthroughCredentialValidator;
     type ProposalFilter = BoxedProposalFilter<SimpleError>;
 
@@ -170,15 +161,6 @@ impl ExternalClientConfig for InMemoryExternalClientConfig {
 
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion> {
         self.protocol_versions.clone()
-    }
-
-    fn epoch_repo(&self, group_id: &[u8]) -> Self::EpochRepository {
-        self.epochs
-            .lock()
-            .unwrap()
-            .entry(group_id.to_vec())
-            .or_default()
-            .clone()
     }
 
     fn credential_validator(&self) -> Self::CredentialValidator {
@@ -205,15 +187,13 @@ impl ExternalClientConfig for InMemoryExternalClientConfig {
 #[derive(Clone, Debug)]
 pub struct ExternalClientGroupConfig<C> {
     client_config: C,
-    group_id: Vec<u8>,
     signatures_checked: bool,
 }
 
 impl<C> ExternalClientGroupConfig<C> {
-    pub fn new(client_config: C, group_id: Vec<u8>) -> Self {
+    pub fn new(client_config: C) -> Self {
         Self {
             client_config,
-            group_id,
             signatures_checked: true,
         }
     }
@@ -223,13 +203,8 @@ impl<C> ExternalGroupConfig for ExternalClientGroupConfig<C>
 where
     C: ExternalClientConfig,
 {
-    type EpochRepository = C::EpochRepository;
     type CredentialValidator = C::CredentialValidator;
     type ProposalFilter = C::ProposalFilter;
-
-    fn epoch_repo(&self) -> Self::EpochRepository {
-        self.client_config.epoch_repo(&self.group_id)
-    }
 
     fn credential_validator(&self) -> Self::CredentialValidator {
         self.client_config.credential_validator()
