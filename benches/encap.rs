@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use aws_mls::bench_utils::create_empty_tree::{create_stage, Tools};
+use aws_mls::bench_utils::create_empty_tree::{load_test_cases, TestCase};
 
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
@@ -17,17 +17,13 @@ use aws_mls::tree_kem::node::LeafIndex;
 fn encap_setup(c: &mut Criterion) {
     let mut encap_group = c.benchmark_group("encap");
 
-    // running benchmark for each cipher suite
-    for cipher_suite in CipherSuite::all() {
-        println!("Benchmarking encap for: {cipher_suite:?}");
+    let cipher_suite = CipherSuite::Curve25519Aes128;
 
-        let trees = [100, 1000, 10000]
-            .into_iter()
-            .map(|length| (length, create_stage(cipher_suite, length)))
-            .collect::<HashMap<_, _>>();
+    println!("Benchmarking encap for: {cipher_suite:?}");
 
-        bench_encap(&mut encap_group, &[], None, None, cipher_suite, trees);
-    }
+    let trees = load_test_cases();
+
+    bench_encap(&mut encap_group, &[], None, None, cipher_suite, trees);
 
     encap_group.finish();
 }
@@ -38,7 +34,7 @@ fn bench_encap(
     capabilities: Option<Capabilities>,
     extensions: Option<ExtensionList>,
     cipher_suite: CipherSuite,
-    map: HashMap<usize, Tools>,
+    map: HashMap<usize, TestCase>,
 ) {
     for (key, mut value) in map {
         bench_group.bench_with_input(

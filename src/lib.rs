@@ -11,9 +11,12 @@ macro_rules! hex {
     };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "benchmark"))]
 macro_rules! load_test_cases {
-    ($name:ident, $generate:expr) => {{
+    ($name:ident, $generate:expr) => {
+        load_test_cases!($name, $generate, to_vec_pretty)
+    };
+    ($name:ident, $generate:expr, $to_json:ident) => {{
         #[cfg(target_arch = "wasm32")]
         {
             let _ = $generate;
@@ -35,7 +38,7 @@ macro_rules! load_test_cases {
                 ".json"
             );
             if !std::path::Path::new(path).exists() {
-                std::fs::write(path, serde_json::to_vec_pretty(&$generate()).unwrap()).unwrap();
+                std::fs::write(path, serde_json::$to_json(&$generate()).unwrap()).unwrap();
             }
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
         }

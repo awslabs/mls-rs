@@ -1,14 +1,21 @@
+use std::collections::HashMap;
+
 use crate::cipher_suite::CipherSuite;
 
 use crate::extension::ExtensionList;
+
 use crate::ferriscrypt::asym::ec_key::SecretKey;
+
 use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
+
 use crate::tree_kem::node::LeafIndex;
-use crate::tree_kem::TreeKemPrivate;
-use crate::tree_kem::TreeKemPublic;
+
+use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
+
 use crate::{ConfirmedTranscriptHash, GroupContext, ProtocolVersion};
 
-pub struct Tools {
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct TestCase {
     pub private_keys: Vec<TreeKemPrivate>,
     pub test_tree: TreeKemPublic,
     pub encap_tree: TreeKemPublic,
@@ -17,8 +24,21 @@ pub struct Tools {
     pub group_context: GroupContext,
 }
 
+fn generate_test_cases() -> HashMap<usize, TestCase> {
+    let cipher_suite = CipherSuite::Curve25519Aes128;
+
+    [100, 1000, 10000]
+        .into_iter()
+        .map(|length| (length, create_stage(cipher_suite, length)))
+        .collect::<HashMap<_, _>>()
+}
+
+pub fn load_test_cases() -> HashMap<usize, TestCase> {
+    load_test_cases!(empty_trees, generate_test_cases, to_vec)
+}
+
 // Used code from kem.rs to create empty test trees and to begin doing encap/decap
-pub fn create_stage(cipher_suite: CipherSuite, size: usize) -> Tools {
+pub fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
     // Generate signing keys and key package generations, and private keys for multiple
     // participants in order to set up state
     let (leaf_nodes, private_keys): (_, Vec<TreeKemPrivate>) = (1..size)
@@ -60,7 +80,7 @@ pub fn create_stage(cipher_suite: CipherSuite, size: usize) -> Tools {
         extensions: ExtensionList::new(),
     };
 
-    Tools {
+    TestCase {
         private_keys,
         test_tree,
         encap_tree,

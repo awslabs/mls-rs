@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use aws_mls::bench_utils::create_empty_tree::{create_stage, Tools};
+use aws_mls::bench_utils::create_empty_tree::{load_test_cases, TestCase};
 
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
@@ -19,18 +19,14 @@ use aws_mls::tree_kem::update_path::ValidatedUpdatePath;
 fn decap_setup(c: &mut Criterion) {
     let mut decap_group = c.benchmark_group("decap");
 
-    // running benchmark for each cipher suite
-    for cipher_suite in CipherSuite::all() {
-        println!("Benchmarking decap for: {cipher_suite:?}");
+    let cipher_suite = CipherSuite::Curve25519Aes128;
 
-        let trees = [100, 1000, 10000]
-            .into_iter()
-            .map(|length| (length, create_stage(cipher_suite, length)))
-            .collect::<HashMap<_, _>>();
+    println!("Benchmarking decap for: {cipher_suite:?}");
 
-        // Run Decap Benchmark
-        bench_decap(&mut decap_group, cipher_suite, trees, &[], None, None);
-    }
+    let trees = load_test_cases();
+
+    // Run Decap Benchmark
+    bench_decap(&mut decap_group, cipher_suite, trees, &[], None, None);
 
     decap_group.finish();
 }
@@ -38,7 +34,7 @@ fn decap_setup(c: &mut Criterion) {
 fn bench_decap(
     bench_group: &mut BenchmarkGroup<WallTime>,
     cipher_suite: CipherSuite,
-    map: HashMap<usize, Tools>,
+    map: HashMap<usize, TestCase>,
     added_leaves: &[LeafIndex],
     capabilities: Option<Capabilities>,
     extensions: Option<ExtensionList>,
