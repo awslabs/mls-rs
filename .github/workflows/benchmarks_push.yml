@@ -1,0 +1,40 @@
+name: Benchmarks on Push
+on:  
+  push:
+    branches-ignore: 
+      - 'master'
+env:
+  SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v2
+      - run: rustup toolchain update stable && rustup default stable
+      - name: Setup SSH Keys and known_hosts
+        run: |
+          ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+          ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: arn:aws:iam::881928689264:role/Github-Actions-Role
+          aws-region: us-east-1
+      - name: Copy benchmark files to test data
+        run: |
+          aws s3 cp s3://benchmark-wickr-mls/empty_trees.json ./test_data/empty_trees.json
+      - name: Run benchmark
+        run: cargo bench --features benchmark --bench encap --bench decap -- --output-format bencher | tee output.txt
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'cargo'
+          output-file-path: output.txt
+          fail-on-alert: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          alert-threshold: '100%'
+          comment-on-alert: true
+          alert-comment-cc-users: '@tomleavy'

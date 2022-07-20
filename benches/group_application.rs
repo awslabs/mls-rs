@@ -16,19 +16,19 @@ use aws_mls::cipher_suite::CipherSuite;
 fn application_message_setup(c: &mut Criterion) {
     let mut group_application = c.benchmark_group("group_application_message");
 
-    for cipher_suite in CipherSuite::all() {
-        println!("Benchmarking group application message for: {cipher_suite:?}");
+    let cipher_suite = CipherSuite::Curve25519Aes128;
 
-        // creates group of the desired size
-        let (_, mut container) = create_group(cipher_suite, 100);
+    println!("Benchmarking group application message for: {cipher_suite:?}");
 
-        // fills the tree by having everyone commit
-        commit_group(&mut container);
+    // creates group of the desired size
+    let (_, mut container) = create_group(cipher_suite, 100);
 
-        let bytes = SecureRng::gen(1000000).unwrap();
+    // fills the tree by having everyone commit
+    commit_group(&mut container);
 
-        bench_application_message(&mut group_application, cipher_suite, &mut container, bytes);
-    }
+    let bytes = SecureRng::gen(1000000).unwrap();
+
+    bench_application_message(&mut group_application, cipher_suite, &mut container, bytes);
 
     group_application.finish();
 }

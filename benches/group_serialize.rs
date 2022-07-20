@@ -15,16 +15,16 @@ use aws_mls::cipher_suite::CipherSuite;
 fn group_setup(c: &mut Criterion) {
     let mut group_serialize = c.benchmark_group("group_serialize");
 
-    for cipher_suite in CipherSuite::all() {
-        println!("Benchmarking group state serialization for: {cipher_suite:?}");
+    let cipher_suite = CipherSuite::Curve25519Aes128;
 
-        let container = [10, 100, 1000]
-            .into_iter()
-            .map(|length| (length, create_group(cipher_suite, length).1))
-            .collect::<HashMap<_, _>>();
+    println!("Benchmarking group state serialization for: {cipher_suite:?}");
 
-        bench_group_serialize(&mut group_serialize, cipher_suite, container);
-    }
+    let container = [10, 100, 1000]
+        .into_iter()
+        .map(|length| (length, create_group(cipher_suite, length).1))
+        .collect::<HashMap<_, _>>();
+
+    bench_group_serialize(&mut group_serialize, cipher_suite, container);
 
     group_serialize.finish();
 }

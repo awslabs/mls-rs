@@ -18,28 +18,28 @@ fn secret_tree_setup(c: &mut Criterion) {
     let mut secret_tree_group = c.benchmark_group("secret_tree_serialize");
     pub const TEST_GROUP: &[u8] = b"group";
 
-    for cipher_suite in CipherSuite::all() {
-        println!("Benchmarking secret tree serialization for: {cipher_suite:?}");
+    let cipher_suite = CipherSuite::Curve25519Aes128;
 
-        let container = [10, 50, 100]
-            .into_iter()
-            .map(|length| (length, create_group(cipher_suite, length)))
-            .collect::<HashMap<_, _>>();
+    println!("Benchmarking secret tree serialization for: {cipher_suite:?}");
 
-        for (key, value) in container {
-            let group_stats = value.1[0].group_stats().unwrap();
-            let epoch_id = group_stats.epoch;
+    let container = [10, 50, 100]
+        .into_iter()
+        .map(|length| (length, create_group(cipher_suite, length)))
+        .collect::<HashMap<_, _>>();
 
-            let epoch_repo = value.0.config.epoch_repo(TEST_GROUP);
+    for (key, value) in container {
+        let group_stats = value.1[0].group_stats().unwrap();
+        let epoch_id = group_stats.epoch;
 
-            let epoch = EpochRepository::get(&epoch_repo, epoch_id)
-                .unwrap()
-                .unwrap();
+        let epoch_repo = value.0.config.epoch_repo(TEST_GROUP);
 
-            let secret_tree = epoch.secret_tree();
+        let epoch = EpochRepository::get(&epoch_repo, epoch_id)
+            .unwrap()
+            .unwrap();
 
-            bench_secret_tree_serialize(&mut secret_tree_group, cipher_suite, key, secret_tree);
-        }
+        let secret_tree = epoch.secret_tree();
+
+        bench_secret_tree_serialize(&mut secret_tree_group, cipher_suite, key, secret_tree);
     }
 
     secret_tree_group.finish();

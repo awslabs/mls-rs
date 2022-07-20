@@ -15,20 +15,20 @@ use aws_mls::cipher_suite::CipherSuite;
 fn commit_setup(c: &mut Criterion) {
     let mut group_commit = c.benchmark_group("group_commit");
 
-    for cipher_suite in CipherSuite::all() {
-        println!("Benchmarking group commit for: {cipher_suite:?}");
+    let cipher_suite = CipherSuite::Curve25519Aes128;
 
-        // creates groups of the desired sizes
-        let mut container = [10, 50, 100]
-            .into_iter()
-            .map(|length| (length, create_group(cipher_suite, length).1))
-            .collect::<HashMap<_, _>>();
+    println!("Benchmarking group commit for: {cipher_suite:?}");
 
-        // fills the tree by having everyone commit
-        container = commit_groups(container);
+    // creates groups of the desired sizes
+    let mut container = [10, 50, 100]
+        .into_iter()
+        .map(|length| (length, create_group(cipher_suite, length).1))
+        .collect::<HashMap<_, _>>();
 
-        bench_group_commit(&mut group_commit, cipher_suite, container);
-    }
+    // fills the tree by having everyone commit
+    container = commit_groups(container);
+
+    bench_group_commit(&mut group_commit, cipher_suite, container);
 
     group_commit.finish();
 }
