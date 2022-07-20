@@ -274,7 +274,6 @@ impl KeySchedule {
             resumption_secret,
             sender_data_secret,
             secret_tree,
-            cipher_suite,
             signature_public_keys,
         );
 

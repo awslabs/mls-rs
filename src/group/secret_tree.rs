@@ -35,6 +35,40 @@ pub enum SecretTreeError {
     InvalidFutureGeneration(u32, u32),
 }
 
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
+#[repr(u8)]
+enum SecretTreeNode {
+    Secret(TreeSecret),
+    Ratchet(SecretRatchets),
+}
+
+impl SecretTreeNode {
+    fn into_ratchet(self) -> Option<SecretRatchets> {
+        if let SecretTreeNode::Ratchet(ratchets) = self {
+            Some(ratchets)
+        } else {
+            None
+        }
+    }
+
+    fn into_secret(self) -> Option<TreeSecret> {
+        if let SecretTreeNode::Secret(secret) = self {
+            Some(secret)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Zeroize)]
 #[zeroize(drop)]
 #[derive(
@@ -86,12 +120,12 @@ impl From<Vec<u8>> for TreeSecret {
     serde::Serialize,
 )]
 struct TreeSecretsVec(
-    #[tls_codec(with = "crate::tls::Vector::<crate::tls::Optional<crate::tls::ByteVec>>")]
-    Vec<Option<TreeSecret>>,
+    #[tls_codec(with = "crate::tls::Vector::<crate::tls::Optional<crate::tls::DefaultSer>>")]
+    Vec<Option<SecretTreeNode>>,
 );
 
 impl Deref for TreeSecretsVec {
-    type Target = Vec<Option<TreeSecret>>;
+    type Target = Vec<Option<SecretTreeNode>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -108,19 +142,15 @@ impl TreeSecretsVec {
     fn replace_node(
         &mut self,
         index: NodeIndex,
-        value: Option<TreeSecret>,
+        value: Option<SecretTreeNode>,
     ) -> Result<(), SecretTreeError> {
         self.get_mut(index as usize)
             .ok_or(SecretTreeError::InvalidIndex)
             .map(|n| *n = value)
     }
 
-    fn get_secret(&self, index: NodeIndex) -> Option<&TreeSecret> {
-        self.get(index as usize).and_then(|n| n.as_ref())
-    }
-
-    fn direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
-        index.direct_path(self.total_leaf_count())
+    fn get_secret(&self, index: NodeIndex) -> Option<SecretTreeNode> {
+        self.get(index as usize).and_then(|n| n.clone())
     }
 
     fn total_leaf_count(&self) -> u32 {
@@ -150,10 +180,39 @@ struct TreeContext {
     generation: u32,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
 pub struct SecretRatchets {
     pub application: SecretKeyRatchet,
     pub handshake: SecretKeyRatchet,
+}
+
+impl SecretRatchets {
+    pub fn get_message_key(
+        &mut self,
+        generation: u32,
+        key_type: KeyType,
+    ) -> Result<MessageKey, SecretTreeError> {
+        match key_type {
+            KeyType::Handshake => self.handshake.get_message_key(generation),
+            KeyType::Application => self.application.get_message_key(generation),
+        }
+    }
+
+    pub fn next_message_key(&mut self, key_type: KeyType) -> Result<MessageKey, SecretTreeError> {
+        match key_type {
+            KeyType::Handshake => self.handshake.next_message_key(),
+            KeyType::Application => self.application.next_message_key(),
+        }
+    }
 }
 
 impl SecretTree {
@@ -164,7 +223,7 @@ impl SecretTree {
     ) -> SecretTree {
         let mut known_secrets = TreeSecretsVec(vec![None; (leaf_count * 2 - 1) as usize]);
         known_secrets[tree_math::root(leaf_count) as usize] =
-            Some(TreeSecret::from(encryption_secret));
+            Some(SecretTreeNode::Secret(TreeSecret::from(encryption_secret)));
 
         Self {
             cipher_suite,
@@ -176,56 +235,68 @@ impl SecretTree {
     fn consume_node(&mut self, index: NodeIndex) -> Result<(), SecretTreeError> {
         let kdf = KeyScheduleKdf::new(self.cipher_suite.kdf_type());
 
-        if let Some(secret) = self.known_secrets.get_secret(index) {
+        if let Some(secret) = self.read_node(index)?.and_then(|n| n.into_secret()) {
             let left_index = tree_math::left(index)?;
             let right_index = tree_math::right(index)?;
 
             let left_secret = TreeSecret::from(kdf.expand_with_label(
-                secret,
+                &secret,
                 "tree",
                 b"left",
                 kdf.extract_size(),
             )?);
 
             let right_secret = TreeSecret::from(kdf.expand_with_label(
-                secret,
+                &secret,
                 "tree",
                 b"right",
                 kdf.extract_size(),
             )?);
 
-            self.known_secrets
-                .replace_node(left_index, Some(left_secret))?;
-
-            self.known_secrets
-                .replace_node(right_index, Some(right_secret))?;
-
-            self.known_secrets.replace_node(index, None)
+            self.write_node(left_index, Some(SecretTreeNode::Secret(left_secret)))?;
+            self.write_node(right_index, Some(SecretTreeNode::Secret(right_secret)))?;
+            self.write_node(index, None)
         } else {
             Ok(()) // If the node is empty we can just skip it
         }
     }
 
+    fn read_node(&self, index: NodeIndex) -> Result<Option<SecretTreeNode>, SecretTreeError> {
+        Ok(self.known_secrets.get_secret(index))
+    }
+
+    fn write_node(
+        &mut self,
+        index: NodeIndex,
+        value: Option<SecretTreeNode>,
+    ) -> Result<(), SecretTreeError> {
+        self.known_secrets.replace_node(index, value)
+    }
+
     // Start at the root node and work your way down consuming any intermediates needed
-    pub fn get_leaf_secret_ratchets(
+    fn get_leaf_secret_ratchets(
         &mut self,
         leaf_index: LeafIndex,
     ) -> Result<SecretRatchets, SecretTreeError> {
-        self.known_secrets
-            .direct_path(leaf_index)?
+        if let Some(ratchet) = self
+            .read_node(leaf_index.into())?
+            .and_then(|n| n.into_ratchet())
+        {
+            return Ok(ratchet);
+        }
+
+        leaf_index
+            .direct_path(self.known_secrets.total_leaf_count())?
             .iter()
             .rev()
             .try_for_each(|&i| self.consume_node(i))?;
 
-        let node_index = NodeIndex::from(leaf_index);
-
         let secret = self
-            .known_secrets
-            .get_secret(node_index)
-            .ok_or(SecretTreeError::InvalidLeafConsumption)?
-            .clone();
+            .read_node(leaf_index.into())?
+            .and_then(|n| n.into_secret())
+            .ok_or(SecretTreeError::InvalidLeafConsumption)?;
 
-        self.known_secrets.replace_node(node_index, None)?;
+        self.write_node(leaf_index.into(), None)?;
 
         Ok(SecretRatchets {
             application: SecretKeyRatchet::new(
@@ -241,6 +312,25 @@ impl SecretTree {
                 KeyType::Handshake,
             )?,
         })
+    }
+
+    pub fn get_message_key(
+        &mut self,
+        leaf_index: LeafIndex,
+        key_type: KeyType,
+        generation: Option<u32>,
+    ) -> Result<MessageKey, SecretTreeError> {
+        let mut ratchet = self.get_leaf_secret_ratchets(leaf_index)?;
+
+        let message_key = if let Some(generation) = generation {
+            ratchet.get_message_key(generation, key_type)?
+        } else {
+            ratchet.next_message_key(key_type)?
+        };
+
+        self.write_node(leaf_index.into(), Some(SecretTreeNode::Ratchet(ratchet)))?;
+
+        Ok(message_key)
     }
 }
 

@@ -1,8 +1,5 @@
-use crate::cipher_suite::CipherSuite;
 use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
-use crate::group::secret_tree::{
-    KeyType, MessageKey, SecretKeyRatchet, SecretTree, SecretTreeError,
-};
+use crate::group::secret_tree::{KeyType, SecretTree, SecretTreeError};
 use crate::group::{GroupContext, MLSCiphertext, MLSCiphertextContentAAD};
 use crate::psk::{Psk, PskSecretError};
 use crate::tree_kem::node::LeafIndex;
@@ -39,13 +36,15 @@ pub enum EpochError {
 pub(crate) struct Epoch {
     pub context: GroupContext,
     pub self_index: LeafIndex,
+    pub(crate) secrets: EpochSecrets,
+    pub signature_public_keys: HashMap<LeafIndex, PublicKey>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct EpochSecrets {
     pub(crate) resumption_secret: Psk,
     sender_data_secret: SenderDataSecret,
     secret_tree: SecretTree,
-    handshake_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
-    application_ratchets: HashMap<LeafIndex, SecretKeyRatchet>,
-    pub cipher_suite: CipherSuite,
-    pub signature_public_keys: HashMap<LeafIndex, PublicKey>,
 }
 
 #[derive(Clone, Debug, PartialEq, Zeroize)]
@@ -62,9 +61,7 @@ impl PartialEq for Epoch {
     fn eq(&self, other: &Self) -> bool {
         self.context == other.context
             && self.self_index == other.self_index
-            && self.resumption_secret == other.resumption_secret
-            && self.sender_data_secret == other.sender_data_secret
-            && self.cipher_suite == other.cipher_suite
+            && self.secrets == other.secrets
             && self.signature_public_keys == other.signature_public_keys
     }
 }
@@ -76,66 +73,18 @@ impl Epoch {
         resumption_secret: Vec<u8>,
         sender_data_secret: Vec<u8>,
         secret_tree: SecretTree,
-        cipher_suite: CipherSuite,
         signature_public_keys: HashMap<LeafIndex, PublicKey>,
     ) -> Self {
         Self {
             context,
             self_index,
-            resumption_secret: resumption_secret.into(),
-            sender_data_secret: sender_data_secret.into(),
-            secret_tree,
-            handshake_ratchets: Default::default(),
-            application_ratchets: Default::default(),
-            cipher_suite,
+            secrets: EpochSecrets {
+                secret_tree,
+                resumption_secret: resumption_secret.into(),
+                sender_data_secret: sender_data_secret.into(),
+            },
             signature_public_keys,
         }
-    }
-
-    #[inline]
-    fn get_ratchet(
-        &mut self,
-        leaf_index: LeafIndex,
-        key_type: &KeyType,
-    ) -> Option<&mut SecretKeyRatchet> {
-        match key_type {
-            KeyType::Handshake => self.handshake_ratchets.get_mut(&leaf_index),
-            KeyType::Application => self.application_ratchets.get_mut(&leaf_index),
-        }
-    }
-
-    #[inline]
-    fn derive_ratchets(
-        &mut self,
-        leaf_index: LeafIndex,
-        out_type: &KeyType,
-    ) -> Result<&mut SecretKeyRatchet, EpochError> {
-        let ratchets = self.secret_tree.get_leaf_secret_ratchets(leaf_index)?;
-        self.application_ratchets
-            .insert(leaf_index, ratchets.application);
-        self.handshake_ratchets
-            .insert(leaf_index, ratchets.handshake);
-        self.get_ratchet(leaf_index, out_type)
-            .ok_or(EpochError::KeyDerivationFailure)
-    }
-
-    #[inline]
-    fn get_key(
-        &mut self,
-        leaf_index: LeafIndex,
-        generation: Option<u32>,
-        key_type: &KeyType,
-    ) -> Result<MessageKey, EpochError> {
-        let ratchet = match self.get_ratchet(leaf_index, key_type) {
-            Some(ratchet) => ratchet,
-            None => self.derive_ratchets(leaf_index, key_type)?,
-        };
-
-        match generation {
-            None => ratchet.next_message_key(),
-            Some(gen) => ratchet.get_message_key(gen),
-        }
-        .map_err(|e| e.into())
     }
 
     pub fn encrypt(
@@ -145,7 +94,11 @@ impl Epoch {
         aad: &[u8],
         reuse_guard: &[u8; 4],
     ) -> Result<(Vec<u8>, u32), EpochError> {
-        let key = self.get_key(self.self_index, None, &key_type)?;
+        let key = self
+            .secrets
+            .secret_tree
+            .get_message_key(self.self_index, key_type, None)?;
+
         Ok((key.encrypt(plaintext, aad, reuse_guard)?, key.generation))
     }
 
@@ -157,7 +110,10 @@ impl Epoch {
         ciphertext: &MLSCiphertext,
         reuse_guard: &[u8; 4],
     ) -> Result<Vec<u8>, EpochError> {
-        let key = self.get_key(sender, Some(generation), &key_type)?;
+        let key = self
+            .secrets
+            .secret_tree
+            .get_message_key(sender, key_type, Some(generation))?;
 
         Ok(key.decrypt(
             &ciphertext.ciphertext,
@@ -170,7 +126,7 @@ impl Epoch {
         &self,
         ciphertext: &[u8],
     ) -> Result<(Key, AeadNonce), EpochError> {
-        let kdf = KeyScheduleKdf::new(self.cipher_suite.kdf_type());
+        let kdf = KeyScheduleKdf::new(self.context.cipher_suite.kdf_type());
         // Sample the first extract_size bytes of the ciphertext, and if it is shorter, just use
         // the ciphertext itself
         let ciphertext_sample = if ciphertext.len() <= kdf.extract_size() as usize {
@@ -182,34 +138,35 @@ impl Epoch {
         // Generate a sender data key and nonce using the sender_data_secret from the current
         // epoch's key schedule
         let sender_data_key = kdf.expand_with_label(
-            &self.sender_data_secret.0,
+            &self.secrets.sender_data_secret.0,
             "key",
             ciphertext_sample,
-            self.cipher_suite.aead_type().key_size(),
+            self.context.cipher_suite.aead_type().key_size(),
         )?;
 
         let sender_data_nonce = kdf.expand_with_label(
-            &self.sender_data_secret.0,
+            &self.secrets.sender_data_secret.0,
             "nonce",
             ciphertext_sample,
-            self.cipher_suite.aead_type().nonce_size(),
+            self.context.cipher_suite.aead_type().nonce_size(),
         )?;
 
         Ok((
-            Key::new(self.cipher_suite.aead_type(), sender_data_key)?,
+            Key::new(self.context.cipher_suite.aead_type(), sender_data_key)?,
             AeadNonce::new(&sender_data_nonce)?,
         ))
     }
 
     #[cfg(feature = "benchmark")]
     pub fn get_secret_tree(&self) -> &SecretTree {
-        &self.secret_tree
+        &self.secrets.secret_tree
     }
 }
 
 #[cfg(test)]
 pub mod test_utils {
     use super::*;
+    use crate::cipher_suite::CipherSuite;
     use crate::group::secret_tree::test_utils::get_test_tree;
     use crate::group::test_utils::get_test_group_context;
     use ferriscrypt::kdf::hkdf::Hkdf;
@@ -224,12 +181,11 @@ pub mod test_utils {
         Epoch {
             context: get_test_group_context(0, cipher_suite),
             self_index: LeafIndex(0),
-            resumption_secret: vec![].into(),
-            sender_data_secret: vec![].into(),
-            secret_tree,
-            handshake_ratchets: Default::default(),
-            application_ratchets: Default::default(),
-            cipher_suite,
+            secrets: EpochSecrets {
+                resumption_secret: vec![].into(),
+                sender_data_secret: vec![].into(),
+                secret_tree,
+            },
             signature_public_keys: Default::default(),
         }
     }

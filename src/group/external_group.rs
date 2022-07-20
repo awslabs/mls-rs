@@ -84,7 +84,6 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
                         plaintext,
                         false,
                         &self.core.external_signers(),
-                        self.core.current_tree.cipher_suite,
                     )?
                 } else {
                     VerifiedPlaintext {

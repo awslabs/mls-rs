@@ -594,7 +594,7 @@ impl<C: GroupConfig> Group<C> {
         //TODO: Is this actually needed here?
         config
             .epoch_repo()
-            .insert(context.epoch, key_schedule_result.epoch.into())
+            .insert(key_schedule_result.epoch.into())
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         Ok(Self {
@@ -766,10 +766,7 @@ impl<C: GroupConfig> Group<C> {
 
         config
             .epoch_repo()
-            .insert(
-                group_info.group_context.epoch,
-                key_schedule_result.epoch.into(),
-            )
+            .insert(key_schedule_result.epoch.into())
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         Self::join_with(
@@ -1035,6 +1032,10 @@ impl<C: GroupConfig> Group<C> {
         )?)
     }
 
+    pub fn group_id(&self) -> &[u8] {
+        &self.core.context.group_id
+    }
+
     /// Returns commit and optional `MLSMessage` containing a `Welcome`
     pub fn commit_proposals<P: PskStore, S: Signer>(
         &mut self,
@@ -1147,7 +1148,7 @@ impl<C: GroupConfig> Group<C> {
             |epoch_id| {
                 self.config
                     .epoch_repo()
-                    .get(epoch_id)
+                    .get(&self.core.context.group_id, epoch_id)
                     .map(|ep_opt| ep_opt.map(|ep| ep.into_inner()))
             },
             &provisional_state.public_state.psks,
@@ -1368,7 +1369,7 @@ impl<C: GroupConfig> Group<C> {
             |epoch_id| {
                 self.config
                     .epoch_repo()
-                    .get(epoch_id)
+                    .get(self.group_id(), epoch_id)
                     .map(|ep_opt| ep_opt.map(|ep| ep.into_inner()))
             },
             &psks,
@@ -1401,7 +1402,7 @@ impl<C: GroupConfig> Group<C> {
 
         config
             .epoch_repo()
-            .insert(new_context.epoch, key_schedule_result.epoch.into())
+            .insert(key_schedule_result.epoch.into())
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
@@ -1507,7 +1508,7 @@ impl<C: GroupConfig> Group<C> {
             |epoch_id| {
                 self.config
                     .epoch_repo()
-                    .get(epoch_id)
+                    .get(self.group_id(), epoch_id)
                     .map(|ep_opt| ep_opt.map(|ep| ep.into_inner()))
             },
             make_config,
@@ -1627,7 +1628,7 @@ impl<C: GroupConfig> Group<C> {
             |epoch_id| {
                 self.config
                     .epoch_repo()
-                    .get(epoch_id)
+                    .get(self.group_id(), epoch_id)
                     .map(|ep_opt| ep_opt.map(|ep| ep.into_inner()))
             },
             make_config,
@@ -1724,7 +1725,7 @@ impl<C: GroupConfig> Group<C> {
 
         let secret_key = new_leaf_node.update(
             self.core.cipher_suite(),
-            &self.core.context.group_id,
+            self.group_id(),
             capabilities_update,
             extension_list,
             signer,
@@ -1833,7 +1834,7 @@ impl<C: GroupConfig> Group<C> {
         let mut epoch = self
             .config
             .epoch_repo()
-            .get(self.current_epoch())
+            .get(self.group_id(), self.current_epoch())
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?
             .ok_or_else(|| GroupError::EpochNotFound(self.current_epoch()))?;
 
@@ -1858,7 +1859,7 @@ impl<C: GroupConfig> Group<C> {
         };
 
         let sender_data_aad = MLSSenderDataAAD {
-            group_id: self.core.context.group_id.clone(),
+            group_id: self.group_id().to_vec(),
             epoch: self.core.context.epoch,
             content_type,
         };
@@ -1875,12 +1876,12 @@ impl<C: GroupConfig> Group<C> {
 
         self.config
             .epoch_repo()
-            .insert(self.current_epoch(), epoch)
+            .insert(epoch)
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         Ok(MLSCiphertext {
-            group_id: self.core.context.group_id.clone(),
-            epoch: self.core.context.epoch,
+            group_id: self.group_id().to_vec(),
+            epoch: self.current_epoch(),
             content_type,
             authenticated_data,
             encrypted_sender_data,
@@ -1950,7 +1951,7 @@ impl<C: GroupConfig> Group<C> {
         let mut epoch = self
             .config
             .epoch_repo()
-            .get(epoch_id)
+            .get(self.group_id(), epoch_id)
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?
             .ok_or(GroupError::EpochNotFound(epoch_id))?;
 
@@ -1958,7 +1959,7 @@ impl<C: GroupConfig> Group<C> {
 
         self.config
             .epoch_repo()
-            .insert(epoch_id, epoch)
+            .insert(epoch)
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         self.validate_incoming_message(plaintext)
@@ -2158,7 +2159,7 @@ impl<C: GroupConfig> Group<C> {
             |epoch_id| {
                 self.config
                     .epoch_repo()
-                    .get(epoch_id)
+                    .get(self.group_id(), epoch_id)
                     .map(|ep_opt| ep_opt.map(|ep| ep.into_inner()))
             },
             &provisional_state.public_state.psks,
@@ -2207,10 +2208,7 @@ impl<C: GroupConfig> Group<C> {
 
         self.config
             .epoch_repo()
-            .insert(
-                provisional_state.public_state.epoch,
-                key_schedule_result.epoch.into(),
-            )
+            .insert(key_schedule_result.epoch.into())
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         self.core.interim_transcript_hash = interim_transcript_hash;

@@ -179,11 +179,13 @@ where
     let len = psk_ids.len();
     let len = u16::try_from(len).map_err(|_| PskSecretError::TooManyPskIds(len))?;
     let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
+
     psk_ids
         .iter()
         .enumerate()
         .try_fold(Psk::new_zero(cipher_suite), |psk_secret, (index, id)| {
             let index = index as u16;
+
             let psk = match &id.key_id {
                 JustPreSharedKeyID::External(id) => secret_store
                     .ok_or_else(|| PskSecretError::NoPskForId(id.clone()))?
@@ -194,23 +196,29 @@ where
                     get_epoch(*psk_epoch)
                         .map_err(|e| PskSecretError::EpochRepositoryError(e.into()))?
                         .ok_or(PskSecretError::EpochNotFound(*psk_epoch))?
+                        .secrets
                         .resumption_secret
                 }
             };
+
             let label = PSKLabel {
                 id,
                 index,
                 count: len,
             };
+
             let label_bytes = label.tls_serialize_detached()?;
             let psk_extracted = Zeroizing::new(kdf.extract(&vec![0; kdf.extract_size()], &psk.0)?);
+
             let psk_input = Zeroizing::new(kdf.expand_with_label(
                 &psk_extracted,
                 "derived psk",
                 &label_bytes,
                 kdf.extract_size(),
             )?);
+
             let psk_secret = Psk(kdf.extract(&psk_input, &psk_secret.0)?);
+
             Ok(psk_secret)
         })
 }

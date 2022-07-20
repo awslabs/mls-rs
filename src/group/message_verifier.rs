@@ -62,7 +62,6 @@ pub fn verify_plaintext(
         plaintext,
         false,
         external_signers,
-        current_tree.cipher_suite,
     )
 }
 
@@ -129,7 +128,6 @@ pub(crate) fn decrypt_ciphertext(
         plaintext,
         true,
         &[],
-        msg_epoch.cipher_suite,
     )
 }
 
@@ -139,14 +137,13 @@ pub(crate) fn verify_plaintext_signature(
     plaintext: MLSPlaintext,
     from_ciphertext: bool,
     external_signers: &[SigningIdentity],
-    cipher_suite: CipherSuite,
 ) -> Result<VerifiedPlaintext, GroupError> {
     let sender_public_key = signing_identity_for_sender(
         signature_keys_container,
         &plaintext.content.sender,
         &plaintext.content.content,
         external_signers,
-        cipher_suite,
+        context.cipher_suite,
     )?;
 
     let context = MessageSigningContext {
@@ -306,17 +303,13 @@ mod tests {
         let mut epoch = group
             .config
             .epoch_repo()
-            .get(group.current_epoch())
+            .get(group.group_id(), group.current_epoch())
             .unwrap()
             .unwrap();
 
         let res = decrypt_ciphertext(ciphertext, epoch.inner_mut());
 
-        group
-            .config
-            .epoch_repo()
-            .insert(group.current_epoch(), epoch)
-            .unwrap();
+        group.config.epoch_repo().insert(epoch).unwrap();
 
         res
     }
