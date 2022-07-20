@@ -11,7 +11,7 @@ use crate::key_package::{
 };
 use crate::session::{ExternalPskId, Session, SessionError};
 use crate::signer::{Signable, SignatureError};
-use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
+use crate::tree_kem::leaf_node::LeafNodeError;
 use crate::{keychain::Keychain, ProtocolVersion};
 use ferriscrypt::rand::{SecureRng, SecureRngError};
 use thiserror::Error;
@@ -100,28 +100,10 @@ where
         group_id: Vec<u8>,
         group_context_extensions: ExtensionList,
     ) -> Result<Session<C>, ClientError> {
-        let keychain = self.config.keychain();
-
-        let (identity, signer) = keychain
-            .default_identity(cipher_suite)
-            .ok_or(ClientError::NoCredentialFound)?;
-
-        let (leaf_node, leaf_node_secret) = LeafNode::generate(
-            cipher_suite,
-            identity,
-            self.config.capabilities(),
-            self.config.leaf_node_extensions(),
-            &signer,
-            self.config.lifetime(),
-            &self.config.credential_validator(),
-        )?;
-
         Session::create(
             group_id,
             cipher_suite,
             protocol_version,
-            leaf_node,
-            leaf_node_secret,
             group_context_extensions,
             self.config.clone(),
         )
@@ -171,30 +153,11 @@ where
             .into_group_info()
             .ok_or(ClientError::ExpectedGroupInfoMessage)?;
 
-        let keychain = self.config.keychain();
-
-        let (identity, signer) = keychain
-            .default_identity(group_info.group_context.cipher_suite)
-            .ok_or(ClientError::NoCredentialFound)?;
-
-        let (leaf_node, leaf_node_secret) = LeafNode::generate(
-            group_info.group_context.cipher_suite,
-            identity,
-            self.config.capabilities(),
-            self.config.leaf_node_extensions(),
-            &signer,
-            self.config.lifetime(),
-            &self.config.credential_validator(),
-        )?;
-
         Ok(Session::new_external(
             self.config.clone(),
             version,
             group_info,
             tree_data,
-            leaf_node,
-            leaf_node_secret,
-            &signer,
             to_remove,
             external_psks,
             authenticated_data,
@@ -524,8 +487,8 @@ mod tests {
             .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .unwrap();
 
-        let (alice_sub_session, welcome) = alice_session
-            .branch(b"subgroup".to_vec(), None, |p| {
+        let (mut alice_sub_session, welcome) = alice_session
+            .branch(b"subgroup".to_vec(), |p| {
                 if p == &bob_leaf_node {
                     Some(bob_sub_key_pkg.clone())
                 } else {
@@ -536,14 +499,13 @@ mod tests {
 
         let welcome = welcome.unwrap();
 
-        assert_matches!(
-            bob_session.join_subgroup(
+        let mut bob_sub_session = bob_session
+            .join_subgroup(
                 None,
                 welcome.clone(),
                 Some(&alice_sub_session.export_tree().unwrap()),
-            ),
-            Ok(_)
-        );
+            )
+            .unwrap();
 
         assert_matches!(
             carol_session.join_subgroup(
@@ -553,6 +515,12 @@ mod tests {
             ),
             Err(_)
         );
+
+        // Alice and Bob can still talk
+        let commit = alice_sub_session.commit(vec![], vec![]).unwrap();
+        bob_sub_session
+            .process_incoming_bytes(&commit.commit_packet)
+            .unwrap();
     }
 
     fn joining_group_fails_if_unsupported<F>(f: F)

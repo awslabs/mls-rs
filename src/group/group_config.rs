@@ -1,41 +1,27 @@
 use crate::{
-    client_config::{
-        CredentialValidator, MakeProposalFilter, PassthroughCredentialValidator,
-        ProposalFilterInit, SimpleError,
-    },
-    BoxedProposalFilter, EpochRepository, InMemoryEpochRepository, ProposalFilter,
+    cipher_suite::CipherSuite,
+    client_config::{CredentialValidator, ProposalFilterInit},
+    extension::ExtensionList,
+    signer::Signer,
+    signing_identity::SigningIdentity,
+    tree_kem::{Capabilities, Lifetime},
+    EpochRepository, ProposalFilter,
 };
 
 pub trait GroupConfig {
     type EpochRepository: EpochRepository;
     type CredentialValidator: CredentialValidator;
     type ProposalFilter: ProposalFilter;
+    type Signer: Signer;
 
     fn epoch_repo(&self) -> Self::EpochRepository;
     fn credential_validator(&self) -> Self::CredentialValidator;
     fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter;
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct InMemoryGroupConfig {
-    pub epoch_repo: InMemoryEpochRepository,
-    pub make_proposal_filter: MakeProposalFilter,
-}
-
-impl GroupConfig for InMemoryGroupConfig {
-    type EpochRepository = InMemoryEpochRepository;
-    type CredentialValidator = PassthroughCredentialValidator;
-    type ProposalFilter = BoxedProposalFilter<SimpleError>;
-
-    fn epoch_repo(&self) -> InMemoryEpochRepository {
-        self.epoch_repo.clone()
-    }
-
-    fn credential_validator(&self) -> Self::CredentialValidator {
-        PassthroughCredentialValidator::new()
-    }
-
-    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
-        (self.make_proposal_filter.0)(init)
-    }
+    fn leaf_node_extensions(&self) -> ExtensionList;
+    fn lifetime(&self) -> Lifetime;
+    fn capabilities(&self) -> Capabilities;
+    fn signing_identity(
+        &self,
+        cipher_suite: CipherSuite,
+    ) -> Option<(SigningIdentity, Self::Signer)>;
 }

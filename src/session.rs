@@ -11,12 +11,12 @@ use crate::key_package::{
 };
 use crate::message::{ProcessedMessage, ProcessedMessagePayload};
 pub use crate::psk::{ExternalPskId, JustPreSharedKeyID, Psk};
-use crate::signer::Signer;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use crate::{keychain::Keychain, ProtocolVersion};
-use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
+use ferriscrypt::hpke::kem::HpkePublicKey;
+use ferriscrypt::rand::{SecureRng, SecureRngError};
 use std::fmt::{self, Debug};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
@@ -39,6 +39,8 @@ pub enum SessionError {
     KeyPackageGenerationError(#[from] KeyPackageGenerationError),
     #[error(transparent)]
     LeafNodeError(#[from] LeafNodeError),
+    #[error(transparent)]
+    SecureRngError(#[from] SecureRngError),
     #[error("commit already pending, please wait")]
     ExistingPendingCommit,
     #[error("pending commit not found")]
@@ -128,8 +130,6 @@ where
         group_id: Vec<u8>,
         cipher_suite: CipherSuite,
         protocol_version: ProtocolVersion,
-        leaf_node: LeafNode,
-        leaf_node_secret: HpkeSecretKey,
         group_context_extensions: ExtensionList,
         config: C,
     ) -> Result<Self, SessionError> {
@@ -138,8 +138,6 @@ where
             group_id,
             cipher_suite,
             protocol_version,
-            leaf_node,
-            leaf_node_secret,
             group_context_extensions,
         )?;
 
@@ -178,7 +176,6 @@ where
             &config.secret_store(),
             |group_id| ClientGroupConfig::new(config.clone(), group_id.to_vec()),
             version_and_cipher_filter(&config),
-            config.credential_validator(),
         )?;
 
         Ok(Session {
@@ -216,14 +213,11 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new_external<S: Signer>(
+    pub(crate) fn new_external(
         config: C,
         protocol_version: ProtocolVersion,
         group_info: GroupInfo,
         tree_data: Option<&[u8]>,
-        leaf_node: LeafNode,
-        leaf_node_secret: HpkeSecretKey,
-        signer: &S,
         to_remove: Option<u32>,
         external_psks: Vec<ExternalPskId>,
         authenticated_data: Vec<u8>,
@@ -237,10 +231,7 @@ where
             protocol_version,
             group_info,
             tree,
-            leaf_node,
-            leaf_node_secret,
             version_and_cipher_filter(&config),
-            signer,
             to_remove,
             external_psks,
             &config.secret_store(),
@@ -393,6 +384,38 @@ where
         authenticated_data: Vec<u8>,
     ) -> Result<Vec<u8>, SessionError> {
         let proposal = self.protocol.psk_proposal(psk)?;
+        self.send_proposal(proposal, authenticated_data)
+    }
+
+    #[inline(always)]
+    pub fn propose_reinit(
+        &mut self,
+        version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        group_context_extensions: ExtensionList,
+        authenticated_data: Vec<u8>,
+    ) -> Result<Vec<u8>, SessionError> {
+        let group_id = SecureRng::gen(cipher_suite.hash_function().digest_size())?;
+        self.propose_reinit_with_group_id(
+            version,
+            cipher_suite,
+            group_id,
+            group_context_extensions,
+            authenticated_data,
+        )
+    }
+
+    #[inline(always)]
+    pub fn propose_reinit_with_group_id(
+        &mut self,
+        version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        group_id: Vec<u8>,
+        group_context_extensions: ExtensionList,
+        authenticated_data: Vec<u8>,
+    ) -> Result<Vec<u8>, SessionError> {
+        let proposal =
+            self.reinit_proposal(group_id, version, cipher_suite, group_context_extensions)?;
         self.send_proposal(proposal, authenticated_data)
     }
 
@@ -624,7 +647,6 @@ where
     pub fn branch<F>(
         &self,
         sub_group_id: Vec<u8>,
-        resumption_psk_epoch: Option<u64>,
         get_new_key_package: F,
     ) -> Result<(Self, Option<Welcome>), SessionError>
     where
@@ -634,10 +656,55 @@ where
 
         let (new_group, welcome) = self.protocol.branch(
             sub_group_id,
-            resumption_psk_epoch,
-            self.config.lifetime(),
-            &self.config.secret_store(),
             &signer,
+            |group_id| ClientGroupConfig::new(self.config.clone(), group_id.to_vec()),
+            get_new_key_package,
+        )?;
+
+        let new_session = Session {
+            protocol: new_group,
+            pending_commit: None,
+            config: self.config.clone(),
+        };
+
+        Ok((new_session, welcome))
+    }
+
+    pub fn finish_reinit_join(
+        &self,
+        key_package: Option<&KeyPackageRef>,
+        welcome: Welcome,
+        ratchet_tree_data: Option<&[u8]>,
+    ) -> Result<Self, SessionError> {
+        let public_tree = ratchet_tree_data
+            .map(|rt| Self::import_ratchet_tree(welcome.cipher_suite, rt))
+            .transpose()?;
+
+        let key_package_generation =
+            find_key_package_generation(&self.config, key_package, &welcome)?;
+
+        Ok(Session {
+            protocol: self.protocol.finish_reinit_join(
+                welcome,
+                public_tree,
+                key_package_generation,
+                &self.config.secret_store(),
+                |group_id| ClientGroupConfig::new(self.config.clone(), group_id.to_vec()),
+                version_and_cipher_filter(&self.config),
+            )?,
+            pending_commit: None,
+            config: self.config.clone(),
+        })
+    }
+
+    pub fn finish_reinit_commit<F>(
+        &self,
+        get_new_key_package: F,
+    ) -> Result<(Self, Option<Welcome>), SessionError>
+    where
+        F: FnMut(&LeafNode) -> Option<KeyPackage>,
+    {
+        let (new_group, welcome) = self.protocol.finish_reinit_commit(
             |group_id| ClientGroupConfig::new(self.config.clone(), group_id.to_vec()),
             get_new_key_package,
         )?;

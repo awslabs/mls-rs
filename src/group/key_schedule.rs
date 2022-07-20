@@ -183,7 +183,6 @@ impl KeySchedule {
     /// Returns the derived epoch as well as the joiner secret required for building welcome
     /// messages
     pub(crate) fn derive(
-        cipher_suite: CipherSuite,
         last_key_schedule: &KeySchedule,
         commit_secret: &CommitSecret,
         context: &GroupContext,
@@ -191,6 +190,8 @@ impl KeySchedule {
         public_tree: &TreeKemPublic,
         psk_secret: &Psk,
     ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
+        let cipher_suite = context.cipher_suite;
+
         let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
         let joiner_seed =

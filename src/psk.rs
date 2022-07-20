@@ -167,7 +167,7 @@ struct PSKLabel<'a> {
 
 pub(crate) fn psk_secret<S, F, E>(
     cipher_suite: CipherSuite,
-    secret_store: &S,
+    secret_store: Option<&S>,
     mut get_epoch: F,
     psk_ids: &[PreSharedKeyID],
 ) -> Result<Psk, PskSecretError>
@@ -186,6 +186,7 @@ where
             let index = index as u16;
             let psk = match &id.key_id {
                 JustPreSharedKeyID::External(id) => secret_store
+                    .ok_or_else(|| PskSecretError::NoPskForId(id.clone()))?
                     .psk(id)
                     .map_err(|e| PskSecretError::SecretStoreError(Box::new(e)))?
                     .ok_or_else(|| PskSecretError::NoPskForId(id.clone()))?,
@@ -300,7 +301,7 @@ mod tests {
         let expected_id = make_external_psk_id(TEST_CIPHER_SUITE);
         let res = psk_secret(
             TEST_CIPHER_SUITE,
-            &InMemoryPskStore::default(),
+            Some(&InMemoryPskStore::default()),
             |_| Ok::<_, Infallible>(None),
             &[wrap_external_psk_id(TEST_CIPHER_SUITE, expected_id.clone())],
         );
@@ -378,7 +379,7 @@ mod tests {
                 .collect::<Vec<_>>();
             psk_secret(
                 cipher_suite,
-                &secret_store,
+                Some(&secret_store),
                 |_| Ok::<_, Infallible>(None),
                 &ids,
             )

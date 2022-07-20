@@ -16,7 +16,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroizing;
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
-use crate::client_config::{CredentialValidator, ProposalFilterInit, PskStore};
+use crate::client_config::{CredentialValidator, InMemoryPskStore, ProposalFilterInit, PskStore};
 use crate::credential::CredentialError;
 use crate::extension::{
     ExtensionError, ExtensionList, ExternalPubExt, ExternalSendersExt, RatchetTreeExt,
@@ -36,14 +36,12 @@ use crate::signer::{Signable, SignatureError, Signer};
 use crate::signing_identity::SigningIdentityError;
 use crate::tree_kem::kem::TreeKem;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
-use crate::tree_kem::leaf_node_validator::{
-    LeafNodeValidationError, LeafNodeValidator, ValidationContext,
-};
+use crate::tree_kem::leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError};
 use crate::tree_kem::tree_validator::{TreeValidationError, TreeValidator};
 use crate::tree_kem::{
-    Capabilities, Lifetime, RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath,
+    Capabilities, RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath,
     UpdatePathGeneration, UpdatePathValidationError, UpdatePathValidator,
 };
 use crate::{EpochRepository, ProtocolVersion};
@@ -65,7 +63,7 @@ use padding::PaddingMode;
 
 pub use external_group::ExternalGroup;
 pub use external_group_config::{ExternalGroupConfig, InMemoryExternalGroupConfig};
-pub use group_config::{GroupConfig, InMemoryGroupConfig};
+pub use group_config::GroupConfig;
 pub use group_info::GroupInfo;
 pub use group_state::GroupState;
 pub(crate) use proposal_cache::ProposalCacheError;
@@ -332,6 +330,24 @@ pub enum GroupError {
     ExpectedAddProposalForNewMemberProposal,
     #[error("External commit missing ExternalInit proposal")]
     ExternalCommitMissingExternalInit,
+    #[error(
+        "A ReIinit has been applied. The next action must be creating or receiving a welcome."
+    )]
+    GroupUsedAfterReInit,
+    #[error("Pending ReIinit not found.")]
+    PendingReInitNotFound,
+    #[error("A commit after ReIinit did not output a welcome message.")]
+    ReInitCommitDidNotOutputWelcome,
+    #[error("The ciphersuites in the welcome message {0:?} and in the reinit {1:?} do not match.")]
+    ReInitCiphersuiteMismatch(CipherSuite, CipherSuite),
+    #[error("The versions in the welcome message {0:?} and in the reinit {1:?} do not match.")]
+    ReInitVersionMismatch(ProtocolVersion, ProtocolVersion),
+    #[error("The extensions in the welcome message {0:?} and in the reinit {1:?} do not match.")]
+    ReInitExtensionsMismatch(ExtensionList, ExtensionList),
+    #[error("The group ids in the welcome message {0:?} and in the reinit {1:?} do not match.")]
+    ReInitIdMismatch(Vec<u8>, Vec<u8>),
+    #[error("No credential found for given ciphersuite.")]
+    NoCredentialFound,
 }
 
 #[derive(
@@ -535,18 +551,21 @@ impl<C: GroupConfig> Group<C> {
         group_id: Vec<u8>,
         cipher_suite: CipherSuite,
         protocol_version: ProtocolVersion,
-        leaf_node: LeafNode,
-        leaf_node_secret: HpkeSecretKey,
         group_context_extensions: ExtensionList,
     ) -> Result<Self, GroupError> {
-        let required_capabilities = group_context_extensions.get_extension()?;
+        let (signing_identity, signer) = config
+            .signing_identity(cipher_suite)
+            .ok_or(GroupError::NoCredentialFound)?;
 
-        LeafNodeValidator::new(
+        let (leaf_node, leaf_node_secret) = LeafNode::generate(
             cipher_suite,
-            required_capabilities.as_ref(),
-            config.credential_validator(),
-        )
-        .check_if_valid(&leaf_node, ValidationContext::Add(None))?;
+            signing_identity,
+            config.capabilities(),
+            config.leaf_node_extensions(),
+            &signer,
+            config.lifetime(),
+            &config.credential_validator(),
+        )?;
 
         let (mut public_tree, private_tree) =
             TreeKemPublic::derive(cipher_suite, leaf_node, leaf_node_secret)?;
@@ -564,7 +583,6 @@ impl<C: GroupConfig> Group<C> {
         let kdf = Hkdf::from(cipher_suite.kdf_type());
 
         let key_schedule_result = KeySchedule::derive(
-            cipher_suite,
             &KeySchedule::new(InitSecret::random(&kdf)?),
             &CommitSecret::empty(cipher_suite),
             &context,
@@ -589,8 +607,7 @@ impl<C: GroupConfig> Group<C> {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_welcome_message<S, F, G, V>(
+    pub fn from_welcome_message<S, F, G>(
         protocol_version: ProtocolVersion,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
@@ -598,13 +615,11 @@ impl<C: GroupConfig> Group<C> {
         secret_store: &S,
         make_config: G,
         support_version_and_cipher: F,
-        credential_validator: V,
     ) -> Result<Self, GroupError>
     where
         S: PskStore,
         F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
         G: FnOnce(&[u8]) -> C,
-        V: CredentialValidator,
     {
         Self::join_with_welcome(
             protocol_version,
@@ -615,12 +630,11 @@ impl<C: GroupConfig> Group<C> {
             |_| Ok(None),
             make_config,
             support_version_and_cipher,
-            credential_validator,
         )
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn join_with_welcome<P, F, G, E, V>(
+    fn join_with_welcome<P, F, G, E>(
         protocol_version: ProtocolVersion,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
@@ -629,13 +643,11 @@ impl<C: GroupConfig> Group<C> {
         get_epoch: E,
         make_config: G,
         support_version_and_cipher: F,
-        credential_validator: V,
     ) -> Result<Self, GroupError>
     where
         P: PskStore,
         F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
         G: FnOnce(&[u8]) -> C,
-        V: CredentialValidator,
         E: FnMut(u64) -> Result<Option<Epoch>, <C::EpochRepository as EpochRepository>::Error>,
     {
         // Identify an entry in the secrets array where the KeyPackageRef value corresponds to
@@ -669,7 +681,7 @@ impl<C: GroupConfig> Group<C> {
 
         let psk_secret = crate::psk::psk_secret(
             welcome.cipher_suite,
-            psk_store,
+            Some(psk_store),
             get_epoch,
             &group_secrets.psks,
         )?;
@@ -695,8 +707,14 @@ impl<C: GroupConfig> Group<C> {
             ));
         }
 
+        let config = make_config(&group_info.group_context.group_id);
+
         let mut public_tree = find_tree(public_tree, &group_info)?;
-        validate_existing_group(&mut public_tree, &group_info, &credential_validator)?;
+        validate_existing_group(
+            &mut public_tree,
+            &group_info,
+            &config.credential_validator(),
+        )?;
 
         // Identify a leaf in the tree array (any even-numbered node) whose leaf_node is identical
         // to the leaf_node field of the KeyPackage. If no such field exists, return an error. Let
@@ -746,8 +764,6 @@ impl<C: GroupConfig> Group<C> {
             return Err(GroupError::InvalidConfirmationTag);
         }
 
-        let config = make_config(&group_info.group_context.group_id);
-
         config
             .epoch_repo()
             .insert(
@@ -794,22 +810,18 @@ impl<C: GroupConfig> Group<C> {
 
     /// Returns group and external commit message
     #[allow(clippy::too_many_arguments)]
-    pub fn new_external<S, F, P>(
+    pub fn new_external<F, P>(
         config: C,
         protocol_version: ProtocolVersion,
         group_info: GroupInfo,
         public_tree: Option<TreeKemPublic>,
-        leaf_node: LeafNode,
-        leaf_node_secret: HpkeSecretKey,
         support_version_and_cipher: F,
-        signer: &S,
         to_remove: Option<u32>,
         external_psks: Vec<ExternalPskId>,
         secret_store: &P,
         authenticated_data: Vec<u8>,
     ) -> Result<(Self, OutboundMessage), GroupError>
     where
-        S: Signer,
         F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
         P: PskStore,
     {
@@ -826,14 +838,19 @@ impl<C: GroupConfig> Group<C> {
             .get_extension::<ExternalPubExt>()?
             .ok_or(GroupError::MissingExternalPubExtension)?;
 
-        let required_capabilities = group_info.group_context.extensions.get_extension()?;
+        let (identity, signer) = config
+            .signing_identity(group_info.group_context.cipher_suite)
+            .ok_or(GroupError::NoCredentialFound)?;
 
-        LeafNodeValidator::new(
+        let (leaf_node, leaf_node_secret) = LeafNode::generate(
             group_info.group_context.cipher_suite,
-            required_capabilities.as_ref(),
-            config.credential_validator(),
-        )
-        .check_if_valid(&leaf_node, ValidationContext::Add(None))?;
+            identity,
+            config.capabilities(),
+            config.leaf_node_extensions(),
+            &signer,
+            config.lifetime(),
+            &config.credential_validator(),
+        )?;
 
         let mut public_tree = find_tree(public_tree, &group_info)?;
         validate_existing_group(
@@ -889,7 +906,7 @@ impl<C: GroupConfig> Group<C> {
             proposals,
             options,
             secret_store,
-            signer,
+            &signer,
             Some(&leaf_node),
             authenticated_data,
         )?;
@@ -1126,7 +1143,7 @@ impl<C: GroupConfig> Group<C> {
 
         let psk_secret = crate::psk::psk_secret(
             self.core.cipher_suite(),
-            psk_store,
+            Some(psk_store),
             |epoch_id| {
                 self.config
                     .epoch_repo()
@@ -1177,7 +1194,6 @@ impl<C: GroupConfig> Group<C> {
         }
 
         let key_schedule_result = KeySchedule::derive(
-            self.core.current_tree.cipher_suite,
             &self.key_schedule,
             &commit_secret,
             &provisional_group_context,
@@ -1202,20 +1218,6 @@ impl<C: GroupConfig> Group<C> {
 
             plaintext.membership_tag = Some(membership_tag);
         }
-
-        (
-            provisional_group_context.protocol_version,
-            provisional_group_context.cipher_suite,
-        ) = match provisional_state.public_state.reinit {
-            Some(reinit) => {
-                // TODO: This logic needs to be verified when we complete work on reinit
-                (reinit.version, reinit.cipher_suite)
-            }
-            None => {
-                // Welcome messages will be built for each added member
-                (self.core.protocol_version(), self.core.cipher_suite())
-            }
-        };
 
         // Construct a GroupInfo reflecting the new state
         // Group ID, epoch, tree, and confirmed transcript hash from the new state
@@ -1296,51 +1298,30 @@ impl<C: GroupConfig> Group<C> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn branch<S, P, F, G>(
+    fn new_for_resumption<S, F>(
         &self,
-        sub_group_id: Vec<u8>,
-        resumption_psk_epoch: Option<u64>,
-        lifetime: Lifetime,
-        psk_store: &P,
-        signer: &S,
-        make_config: G,
+        new_context: &mut GroupContext,
+        new_validated_leaf: LeafNode,
+        new_leaf_secret: HpkeSecretKey,
+        new_signer: &S,
+        config: C,
         mut get_new_key_package: F,
+        resumption_psk_id: JustPreSharedKeyID,
     ) -> Result<(Self, Option<Welcome>), GroupError>
     where
         S: Signer,
-        P: PskStore,
         F: FnMut(&LeafNode) -> Option<KeyPackage>,
-        G: FnOnce(&[u8]) -> C,
     {
-        let current_leaf_node = self.current_user_leaf_node()?;
-
-        let (new_self_leaf_node, leaf_node_secret) = LeafNode::generate(
-            self.core.cipher_suite(),
-            current_leaf_node.signing_identity.clone(),
-            current_leaf_node.capabilities.clone(),
-            current_leaf_node.extensions.clone(),
-            signer,
-            lifetime,
-            &self.config.credential_validator(),
-        )?;
-
-        let required_capabilities = self.core.context.extensions.get_extension()?;
-
-        let leaf_node_validator = LeafNodeValidator::new(
-            self.core.cipher_suite(),
-            required_capabilities.as_ref(),
-            self.config.credential_validator(),
-        );
+        let required_capabilities = new_context.extensions.get_extension()?;
 
         let key_package_validator = KeyPackageValidator::new(
-            self.core.protocol_version(),
-            self.core.cipher_suite(),
+            new_context.protocol_version,
+            new_context.cipher_suite,
             required_capabilities.as_ref(),
-            self.config.credential_validator(),
+            config.credential_validator(),
         );
 
-        leaf_node_validator.check_if_valid(&new_self_leaf_node, ValidationContext::Add(None))?;
-
+        // Generate new leaves for all existing members
         let (new_members, new_key_pkgs) = {
             let current_tree = self.current_epoch_tree()?;
             let self_index = self.private_tree.self_index;
@@ -1367,40 +1348,23 @@ impl<C: GroupConfig> Group<C> {
         };
 
         let (mut new_pub_tree, new_priv_tree) = TreeKemPublic::derive(
-            self.core.cipher_suite(),
-            new_self_leaf_node,
-            leaf_node_secret,
+            new_context.cipher_suite,
+            new_validated_leaf,
+            new_leaf_secret,
         )?;
 
-        // Add existing members to new tree
+        // Add the generated leaves to new tree
         let added_member_indexes = new_pub_tree.add_leaves(new_members)?;
-        let new_pub_tree_hash = new_pub_tree.tree_hash()?;
+        new_context.tree_hash = new_pub_tree.tree_hash()?;
 
-        let new_context = GroupContext {
-            epoch: 1,
-            ..GroupContext::new_group(
-                self.core.protocol_version(),
-                self.core.cipher_suite(),
-                sub_group_id.clone(),
-                new_pub_tree_hash,
-                self.core.context.extensions.clone(),
-            )
-        };
+        let psks = vec![PreSharedKeyID {
+            key_id: resumption_psk_id,
+            psk_nonce: PskNonce::random(new_context.cipher_suite)?,
+        }];
 
-        let psk = PreSharedKeyID {
-            key_id: JustPreSharedKeyID::Resumption(ResumptionPsk {
-                usage: ResumptionPSKUsage::Branch,
-                psk_group_id: PskGroupId(sub_group_id.clone()),
-                psk_epoch: resumption_psk_epoch.unwrap_or_else(|| self.current_epoch()),
-            }),
-            psk_nonce: PskNonce::random(self.core.cipher_suite())?,
-        };
-
-        let psks = vec![psk];
-
-        let psk_secret = crate::psk::psk_secret(
-            self.core.cipher_suite(),
-            psk_store,
+        let psk_secret = crate::psk::psk_secret::<InMemoryPskStore, _, _>(
+            new_context.cipher_suite,
+            None,
             |epoch_id| {
                 self.config
                     .epoch_repo()
@@ -1410,19 +1374,16 @@ impl<C: GroupConfig> Group<C> {
             &psks,
         )?;
 
-        let kdf = Hkdf::from(self.core.cipher_suite().kdf_type());
+        let kdf = Hkdf::from(new_context.cipher_suite.kdf_type());
 
         let key_schedule_result = KeySchedule::derive(
-            self.core.cipher_suite(),
             &KeySchedule::new(InitSecret::random(&kdf)?),
-            &CommitSecret::empty(self.core.cipher_suite()),
-            &new_context,
+            &CommitSecret::empty(new_context.cipher_suite),
+            new_context,
             LeafIndex(0),
             &new_pub_tree,
             &psk_secret,
         )?;
-
-        let sub_config = make_config(&sub_group_id);
 
         let mut group_info = GroupInfo {
             group_context: new_context.clone(),
@@ -1430,33 +1391,35 @@ impl<C: GroupConfig> Group<C> {
             confirmation_tag: ConfirmationTag::create(
                 &key_schedule_result.confirmation_key,
                 &new_context.confirmed_transcript_hash,
-                &self.core.cipher_suite(),
+                &new_context.cipher_suite,
             )?,
             signer: new_priv_tree.self_index,
             signature: Vec::new(),
         };
 
-        group_info.sign(signer, &())?;
+        group_info.sign(new_signer, &())?;
 
-        sub_config
+        config
             .epoch_repo()
             .insert(new_context.epoch, key_schedule_result.epoch.into())
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
+        let interim_transcript_hash = InterimTranscriptHash::create(
+            new_context.cipher_suite,
+            &new_context.confirmed_transcript_hash,
+            MLSPlaintextCommitAuthData::from(&group_info.confirmation_tag),
+        )?;
+
         let new_group = Group {
-            config: sub_config,
-            core: GroupCore::new(
-                new_context,
-                new_pub_tree,
-                InterimTranscriptHash::from(vec![]),
-            ),
+            config,
+            core: GroupCore::new(new_context.clone(), new_pub_tree, interim_transcript_hash),
             private_tree: new_priv_tree,
             key_schedule: key_schedule_result.key_schedule,
             confirmation_tag: ConfirmationTag::empty(&self.core.cipher_suite())?,
             pending_updates: Default::default(),
         };
 
-        let welcome = self.make_welcome_message(
+        let welcome = new_group.make_welcome_message(
             new_key_pkgs.into_iter().zip(added_member_indexes).collect(),
             &key_schedule_result.joiner_secret,
             &psk_secret,
@@ -1466,6 +1429,59 @@ impl<C: GroupConfig> Group<C> {
         )?;
 
         Ok((new_group, welcome))
+    }
+
+    pub fn branch<S, F, G>(
+        &self,
+        sub_group_id: Vec<u8>,
+        signer: &S,
+        make_config: G,
+        get_new_key_package: F,
+    ) -> Result<(Self, Option<Welcome>), GroupError>
+    where
+        S: Signer,
+        F: FnMut(&LeafNode) -> Option<KeyPackage>,
+        G: FnOnce(&[u8]) -> C,
+    {
+        let current_leaf_node = self.current_user_leaf_node()?;
+        let config = make_config(&sub_group_id);
+
+        let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
+            self.core.cipher_suite(),
+            current_leaf_node.signing_identity.clone(),
+            current_leaf_node.capabilities.clone(),
+            current_leaf_node.extensions.clone(),
+            signer,
+            config.lifetime(),
+            &config.credential_validator(),
+        )?;
+
+        let mut new_context = GroupContext {
+            epoch: 1,
+            ..GroupContext::new_group(
+                self.core.protocol_version(),
+                self.core.cipher_suite(),
+                sub_group_id.clone(),
+                vec![],
+                self.core.context.extensions.clone(),
+            )
+        };
+
+        let resumption_psk_id = JustPreSharedKeyID::Resumption(ResumptionPsk {
+            usage: ResumptionPSKUsage::Branch,
+            psk_group_id: PskGroupId(sub_group_id),
+            psk_epoch: self.current_epoch(),
+        });
+
+        self.new_for_resumption(
+            &mut new_context,
+            new_leaf_node,
+            new_leaf_secret,
+            signer,
+            config,
+            get_new_key_package,
+            resumption_psk_id,
+        )
     }
 
     pub fn join_subgroup<P, F, G>(
@@ -1496,7 +1512,6 @@ impl<C: GroupConfig> Group<C> {
             },
             make_config,
             support_version_and_cipher,
-            self.config.credential_validator(),
         )?;
 
         if subgroup.core.protocol_version() != self.core.protocol_version() {
@@ -1509,6 +1524,138 @@ impl<C: GroupConfig> Group<C> {
             ))
         } else {
             Ok(subgroup)
+        }
+    }
+
+    pub fn finish_reinit_commit<G, F>(
+        &self,
+        make_config: G,
+        get_new_key_package: F,
+    ) -> Result<(Self, Option<Welcome>), GroupError>
+    where
+        F: FnMut(&LeafNode) -> Option<KeyPackage>,
+        G: FnOnce(&[u8]) -> C,
+    {
+        let reinit = self
+            .core
+            .pending_reinit
+            .as_ref()
+            .ok_or(GroupError::PendingReInitNotFound)?;
+
+        let config = make_config(&reinit.group_id);
+
+        let (new_signing_id, new_signer) = config
+            .signing_identity(reinit.cipher_suite)
+            .ok_or(GroupError::NoCredentialFound)?;
+
+        let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
+            reinit.cipher_suite,
+            new_signing_id,
+            config.capabilities(),
+            config.leaf_node_extensions(),
+            &new_signer,
+            config.lifetime(),
+            &config.credential_validator(),
+        )?;
+
+        let mut new_context = GroupContext {
+            epoch: 1,
+            ..GroupContext::new_group(
+                reinit.version,
+                reinit.cipher_suite,
+                reinit.group_id.clone(),
+                vec![],
+                reinit.extensions.clone(),
+            )
+        };
+
+        let resumption_psk_id = JustPreSharedKeyID::Resumption(ResumptionPsk {
+            usage: ResumptionPSKUsage::Reinit,
+            psk_group_id: PskGroupId(self.core.context.group_id.clone()),
+            psk_epoch: self.current_epoch(),
+        });
+
+        let (group, welcome) = self.new_for_resumption(
+            &mut new_context,
+            new_leaf_node,
+            new_leaf_secret,
+            &new_signer,
+            config,
+            get_new_key_package,
+            resumption_psk_id,
+        )?;
+
+        if group.core.current_tree.occupied_leaf_count()
+            != self.core.current_tree.occupied_leaf_count()
+        {
+            Err(GroupError::CommitRequired)
+        } else {
+            Ok((group, welcome))
+        }
+    }
+
+    pub fn finish_reinit_join<P, F, G>(
+        &self,
+        welcome: Welcome,
+        public_tree: Option<TreeKemPublic>,
+        key_package_generation: KeyPackageGeneration,
+        psk_store: &P,
+        make_config: G,
+        support_version_and_cipher: F,
+    ) -> Result<Self, GroupError>
+    where
+        P: PskStore,
+        F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
+        G: FnOnce(&[u8]) -> C,
+    {
+        let reinit = self
+            .core
+            .pending_reinit
+            .as_ref()
+            .ok_or(GroupError::PendingReInitNotFound)?;
+
+        if reinit.cipher_suite != welcome.cipher_suite {
+            return Err(GroupError::CipherSuiteMismatch);
+        }
+
+        let group = Self::join_with_welcome(
+            reinit.version,
+            welcome,
+            public_tree,
+            key_package_generation,
+            psk_store,
+            |epoch_id| {
+                self.config
+                    .epoch_repo()
+                    .get(epoch_id)
+                    .map(|ep_opt| ep_opt.map(|ep| ep.into_inner()))
+            },
+            make_config,
+            support_version_and_cipher,
+        )?;
+
+        if group.core.protocol_version() != reinit.version {
+            Err(GroupError::ReInitVersionMismatch(
+                group.core.protocol_version(),
+                reinit.version,
+            ))
+        } else if group.core.cipher_suite() != reinit.cipher_suite {
+            Err(GroupError::ReInitCiphersuiteMismatch(
+                group.core.cipher_suite(),
+                reinit.cipher_suite,
+            ))
+        } else if group.core.context.group_id != reinit.group_id {
+            Err(GroupError::ReInitIdMismatch(
+                group.core.context.group_id,
+                reinit.group_id.clone(),
+            ))
+        } else if group.core.context.extensions != reinit.extensions {
+            Err(GroupError::ReInitExtensionsMismatch(
+                group.core.context.extensions,
+                reinit.extensions.clone(),
+            ))
+        } else {
+            Ok(group)
         }
     }
 
@@ -1535,7 +1682,7 @@ impl<C: GroupConfig> Group<C> {
 
         let group_secrets_bytes = Zeroizing::new(group_secrets.tls_serialize_detached()?);
 
-        let encrypted_group_secrets = self.core.cipher_suite().hpke().seal(
+        let encrypted_group_secrets = key_package.cipher_suite.hpke().seal(
             &key_package.hpke_init_key,
             &[],
             None,
@@ -1916,6 +2063,12 @@ impl<C: GroupConfig> Group<C> {
             return Ok(state_update);
         }
 
+        if provisional_state.public_state.reinit.is_some() {
+            self.core.pending_reinit = provisional_state.public_state.reinit;
+            state_update.active = false;
+            return Ok(state_update);
+        }
+
         // Generate provisional context for decap. This is the new context but with old tree hash and confirmed transcript
         // hash. Tree hash will be updated by decap.
         let mut provisional_group_context = provisional_state.public_state.group_context.clone();
@@ -2001,7 +2154,7 @@ impl<C: GroupConfig> Group<C> {
 
         let psk_secret = crate::psk::psk_secret(
             self.core.cipher_suite(),
-            secret_store,
+            Some(secret_store),
             |epoch_id| {
                 self.config
                     .epoch_repo()
@@ -2023,7 +2176,6 @@ impl<C: GroupConfig> Group<C> {
         };
 
         let key_schedule_result = KeySchedule::derive(
-            self.core.cipher_suite(),
             &key_schedule,
             &commit_secret,
             &provisional_group_context,
@@ -2257,18 +2409,80 @@ pub(crate) mod test_utils {
 
     use super::*;
     use crate::{
-        client_config::{InMemoryPskStore, PassthroughCredentialValidator},
+        client_config::{
+            InMemoryPskStore, MakeProposalFilter, PassthroughCredentialValidator, SimpleError,
+        },
         extension::RequiredCapabilitiesExt,
         key_package::KeyPackageGenerator,
         signing_identity::test_utils::get_test_signing_identity,
         signing_identity::SigningIdentity,
+        tree_kem::Lifetime,
+        InMemoryEpochRepository,
     };
 
     pub const TEST_GROUP: &[u8] = b"group";
 
+    #[derive(Clone, Debug)]
+    pub(crate) struct InMemoryGroupConfig {
+        pub epoch_repo: InMemoryEpochRepository,
+        pub make_proposal_filter: MakeProposalFilter,
+        pub capabilities: Capabilities,
+        pub leaf_node_extensions: ExtensionList,
+        pub signing_identity: (SigningIdentity, SecretKey),
+    }
+
+    impl InMemoryGroupConfig {
+        pub fn new(cipher_suite: CipherSuite) -> Self {
+            Self {
+                epoch_repo: Default::default(),
+                make_proposal_filter: Default::default(),
+                capabilities: Default::default(),
+                leaf_node_extensions: Default::default(),
+                signing_identity: get_test_signing_identity(cipher_suite, b"member".to_vec()),
+            }
+        }
+    }
+
+    impl GroupConfig for InMemoryGroupConfig {
+        type EpochRepository = InMemoryEpochRepository;
+        type CredentialValidator = PassthroughCredentialValidator;
+        type ProposalFilter = BoxedProposalFilter<SimpleError>;
+        type Signer = SecretKey;
+
+        fn epoch_repo(&self) -> InMemoryEpochRepository {
+            self.epoch_repo.clone()
+        }
+
+        fn credential_validator(&self) -> Self::CredentialValidator {
+            PassthroughCredentialValidator::new()
+        }
+
+        fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
+            (self.make_proposal_filter.0)(init)
+        }
+
+        fn leaf_node_extensions(&self) -> ExtensionList {
+            self.leaf_node_extensions.clone()
+        }
+
+        fn lifetime(&self) -> Lifetime {
+            Lifetime::default()
+        }
+
+        fn capabilities(&self) -> Capabilities {
+            self.capabilities.clone()
+        }
+
+        fn signing_identity(
+            &self,
+            _cipher_suite: CipherSuite,
+        ) -> Option<(SigningIdentity, Self::Signer)> {
+            Some(self.signing_identity.clone())
+        }
+    }
+
     pub(crate) struct TestGroup {
         pub group: Group<InMemoryGroupConfig>,
-        pub signing_identity: SigningIdentity,
         pub signing_key: SecretKey,
         pub secret_store: InMemoryPskStore,
     }
@@ -2350,17 +2564,15 @@ pub(crate) mod test_utils {
                 self.group.protocol_version(),
                 welcome,
                 tree,
-                new_key_package.clone(),
+                new_key_package,
                 &secret_store,
-                |_| InMemoryGroupConfig::default(),
+                |_| InMemoryGroupConfig::new(self.group.core.cipher_suite()),
                 |_, _| true,
-                PassthroughCredentialValidator::new(),
             )
             .unwrap();
 
             let new_test_group = TestGroup {
                 group: new_group,
-                signing_identity: new_key_package.key_package.leaf_node.signing_identity,
                 signing_key: new_key,
                 secret_store,
             };
@@ -2491,34 +2703,22 @@ pub(crate) mod test_utils {
         capabilities: Capabilities,
         leaf_extensions: ExtensionList,
     ) -> TestGroup {
-        let (signing_identity, signing_key) =
-            get_test_signing_identity(cipher_suite, b"alice".to_vec());
-
-        let (leaf_node, leaf_secret_key) = LeafNode::generate(
-            cipher_suite,
-            signing_identity.clone(),
-            capabilities,
-            leaf_extensions,
-            &signing_key,
-            lifetime(),
-            &PassthroughCredentialValidator::new(),
-        )
-        .unwrap();
+        let mut config = InMemoryGroupConfig::new(cipher_suite);
+        config.capabilities = capabilities;
+        config.leaf_node_extensions = leaf_extensions;
+        let (_, signing_key) = config.signing_identity(cipher_suite).unwrap();
 
         let group = Group::new(
-            InMemoryGroupConfig::default(),
+            config,
             TEST_GROUP.to_vec(),
             cipher_suite,
             protocol_version,
-            leaf_node,
-            leaf_secret_key,
             group_extensions(),
         )
         .unwrap();
 
         TestGroup {
             group,
-            signing_identity,
             signing_key,
             secret_store: InMemoryPskStore::default(),
         }
@@ -2542,13 +2742,15 @@ mod tests {
     use crate::{
         client_config::InMemoryPskStore,
         extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
-        group::test_utils::lifetime,
         key_package::test_utils::test_key_package,
         psk::Psk,
     };
 
     use super::{
-        test_utils::{group_extensions, test_group, test_group_custom, test_member, TestGroup},
+        test_utils::{
+            group_extensions, test_group, test_group_custom, test_member, InMemoryGroupConfig,
+            TestGroup,
+        },
         *,
     };
     use assert_matches::assert_matches;
@@ -2556,7 +2758,6 @@ mod tests {
     use crate::group::test_utils::TEST_GROUP;
     use tls_codec::Size;
 
-    use crate::client_config::PassthroughCredentialValidator;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -2946,9 +3147,8 @@ mod tests {
             None,
             bob_key_package,
             &InMemoryPskStore::default(),
-            |_| InMemoryGroupConfig::default(),
+            |_| InMemoryGroupConfig::new(cipher_suite),
             |_, _| true,
-            PassthroughCredentialValidator::new(),
         );
 
         assert_matches!(bob_group, Err(GroupError::RatchetTreeNotFound));
@@ -3088,26 +3288,12 @@ mod tests {
         info.extensions = ExtensionList::new();
         info.sign(&group.signing_key, &()).unwrap();
 
-        let (leaf_node, leaf_secret) = LeafNode::generate(
-            cipher_suite,
-            group.signing_identity,
-            Capabilities::default(),
-            ExtensionList::default(),
-            &group.signing_key,
-            lifetime(),
-            &PassthroughCredentialValidator::new(),
-        )
-        .unwrap();
-
         let res = Group::new_external(
-            InMemoryGroupConfig::default(),
+            InMemoryGroupConfig::new(cipher_suite),
             protocol_version,
             info,
             None,
-            leaf_node,
-            leaf_secret,
             |_, _| true,
-            &group.signing_key,
             None,
             vec![],
             &InMemoryPskStore::default(),

@@ -510,6 +510,7 @@ where
     type EpochRepository = C::EpochRepository;
     type CredentialValidator = C::CredentialValidator;
     type ProposalFilter = C::ProposalFilter;
+    type Signer = <<C as ClientConfig>::Keychain as Keychain>::Signer;
 
     fn epoch_repo(&self) -> Self::EpochRepository {
         self.client_config.epoch_repo(&self.group_id)
@@ -521,5 +522,24 @@ where
 
     fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
         self.client_config.proposal_filter(init)
+    }
+
+    fn leaf_node_extensions(&self) -> ExtensionList {
+        self.client_config.leaf_node_extensions()
+    }
+
+    fn lifetime(&self) -> Lifetime {
+        self.client_config.lifetime()
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        self.client_config.capabilities()
+    }
+
+    fn signing_identity(
+        &self,
+        cipher_suite: CipherSuite,
+    ) -> Option<(SigningIdentity, Self::Signer)> {
+        self.client_config.keychain().default_identity(cipher_suite)
     }
 }

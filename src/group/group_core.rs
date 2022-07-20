@@ -8,15 +8,16 @@ use crate::{
         Content, GroupContext, GroupError, PreSharedKey, Proposal, ProposalCache,
         ProposalSetEffects, ProvisionalPublicState, TreeKemPublic, VerifiedPlaintext,
     },
-    psk::{
-        JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, ResumptionPSKUsage, ResumptionPsk,
-    },
+    psk::{JustPreSharedKeyID, PreSharedKeyID},
     signing_identity::SigningIdentity,
     tree_kem::{leaf_node_validator::LeafNodeValidator, node::LeafIndex},
     ProtocolVersion,
 };
 
-use super::{proposal_cache::CachedProposal, transcript_hash::InterimTranscriptHash, ProposalRef};
+use super::{
+    proposal::ReInit, proposal_cache::CachedProposal, transcript_hash::InterimTranscriptHash,
+    ProposalRef,
+};
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -25,6 +26,7 @@ pub struct GroupCore {
     pub(crate) context: GroupContext,
     pub(crate) current_tree: TreeKemPublic,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
+    pub(crate) pending_reinit: Option<ReInit>,
 }
 
 impl GroupCore {
@@ -42,6 +44,7 @@ impl GroupCore {
             context,
             current_tree,
             interim_transcript_hash,
+            pending_reinit: None,
         }
     }
 
@@ -61,6 +64,7 @@ impl GroupCore {
             context,
             current_tree,
             interim_transcript_hash,
+            pending_reinit: None,
         }
     }
 
@@ -83,6 +87,10 @@ impl GroupCore {
     where
         C: CredentialValidator,
     {
+        if self.pending_reinit.is_some() {
+            return Err(GroupError::GroupUsedAfterReInit);
+        }
+
         let mut provisional_tree = current_public_tree.clone();
         let mut provisional_group_context = self.context.clone();
 
@@ -142,18 +150,6 @@ impl GroupCore {
             &credential_validator,
         )?;
 
-        let psks = match &proposals.reinit {
-            Some(reinit) => vec![PreSharedKeyID {
-                key_id: JustPreSharedKeyID::Resumption(ResumptionPsk {
-                    usage: ResumptionPSKUsage::Reinit,
-                    psk_group_id: PskGroupId(reinit.group_id.clone()),
-                    psk_epoch: self.context.epoch + 1,
-                }),
-                psk_nonce: PskNonce::random(self.cipher_suite())?,
-            }],
-            None => proposals.psks,
-        };
-
         let mut path_blanked = removed_leaves
             .iter()
             .cloned()
@@ -171,7 +167,7 @@ impl GroupCore {
             epoch: self.context.epoch + 1,
             path_update_required,
             group_context: provisional_group_context,
-            psks,
+            psks: proposals.psks,
             reinit: proposals.reinit,
             external_init,
             rejected_proposals: proposals.rejected_proposals,

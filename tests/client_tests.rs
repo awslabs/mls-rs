@@ -122,6 +122,25 @@ fn get_test_sessions(
     Session<InMemoryClientConfig>,
     Vec<Session<InMemoryClientConfig>>,
 ) {
+    let (creator_session, receiver_sessions, _) = get_test_sessions_clients(
+        protocol_version,
+        cipher_suite,
+        num_participants,
+        preferences,
+    );
+    (creator_session, receiver_sessions)
+}
+
+fn get_test_sessions_clients(
+    protocol_version: ProtocolVersion,
+    cipher_suite: CipherSuite,
+    num_participants: usize,
+    preferences: Preferences,
+) -> (
+    Session<InMemoryClientConfig>,
+    Vec<Session<InMemoryClientConfig>>,
+    Vec<Client<InMemoryClientConfig>>,
+) {
     // Create the group with Alice as the group initiator
     let creator = generate_client(
         cipher_suite,
@@ -203,7 +222,7 @@ fn get_test_sessions(
         assert!(creator_session.has_equal_state(one_receiver))
     }
 
-    (creator_session, receiver_sessions)
+    (creator_session, receiver_sessions, receiver_clients)
 }
 
 fn add_random_members(
@@ -792,4 +811,100 @@ fn test_remove_nonexisting_leaf() {
 
     // Removing blank leaf causes error
     assert!(sessions[0].propose_remove(5, vec![]).is_err());
+}
+
+fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite) -> Client<InMemoryClientConfig> {
+    let credential = Credential::Basic(b"id".to_vec());
+    let sk1 = suite1.generate_signing_key().unwrap();
+    let sk2 = suite2.generate_signing_key().unwrap();
+    let id1 = SigningIdentity::new(
+        credential.clone(),
+        SignaturePublicKey::try_from(&sk1).unwrap(),
+    );
+    let id2 = SigningIdentity::new(credential, SignaturePublicKey::try_from(&sk2).unwrap());
+
+    InMemoryClientConfig::default()
+        .with_signing_identity(id1, sk1)
+        .with_signing_identity(id2, sk2)
+        .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
+        .build_client()
+}
+
+#[test]
+fn reinit_works() {
+    let suite1 = CipherSuite::Curve25519Aes128;
+    let suite2 = CipherSuite::P256Aes128;
+    let version = ProtocolVersion::Mls10;
+
+    // Create a group with 2 parties
+    let alice = get_reinit_client(suite1, suite2);
+    let bob = get_reinit_client(suite1, suite2);
+
+    let mut alice_session = alice
+        .create_session(version, suite1, ExtensionList::new())
+        .unwrap();
+    let kp = bob.generate_key_package(version, suite1).unwrap();
+    let add = alice_session.add_proposal(&kp.to_vec().unwrap()).unwrap();
+    let commit = alice_session.commit(vec![add], vec![]).unwrap();
+    alice_session.apply_pending_commit().unwrap();
+    let tree = alice_session.export_tree().unwrap();
+    let mut bob_session = bob
+        .join_session(None, Some(&tree), &commit.welcome_packet.unwrap())
+        .unwrap();
+
+    // Alice proposes reinit
+    let proposal = alice_session
+        .propose_reinit(
+            ProtocolVersion::Mls10,
+            suite2,
+            ExtensionList::default(),
+            vec![],
+        )
+        .unwrap();
+
+    // Bob commits the reinit
+    bob_session.process_incoming_bytes(&proposal).unwrap();
+    let commit = bob_session.commit(vec![], vec![]).unwrap();
+
+    // Both process Bob's commit
+    let state_update = bob_session.apply_pending_commit().unwrap();
+    assert!(!state_update.active && state_update.reinit.is_some());
+
+    let message = alice_session
+        .process_incoming_bytes(&commit.commit_packet)
+        .unwrap();
+    if let ProcessedMessagePayload::Commit(state_update) = message.message {
+        assert!(!state_update.active && state_update.reinit.is_some());
+    }
+
+    // They can't create new epochs anymore
+    assert!(alice_session.commit(vec![], vec![]).is_err());
+    assert!(bob_session.commit(vec![], vec![]).is_err());
+
+    // Alice finishes the reinit by creating the new group
+    let kp = bob.generate_key_package(version, suite2).unwrap();
+    let (mut alice_session, welcome) = alice_session
+        .finish_reinit_commit(|_| Some(kp.clone()))
+        .unwrap();
+
+    // Alice invited Bob
+    let welcome = welcome.unwrap();
+    let tree = alice_session.export_tree().unwrap();
+    let mut bob_session = bob_session
+        .finish_reinit_join(None, welcome, Some(&tree))
+        .unwrap();
+
+    // They can talk
+    let carol = get_reinit_client(suite1, suite2);
+    let kp = carol.generate_key_package(version, suite2).unwrap();
+    let add = alice_session.add_proposal(&kp.to_vec().unwrap()).unwrap();
+    let commit = alice_session.commit(vec![add], vec![]).unwrap();
+    alice_session.apply_pending_commit().unwrap();
+    bob_session
+        .process_incoming_bytes(&commit.commit_packet)
+        .unwrap();
+    let tree = alice_session.export_tree().unwrap();
+    carol
+        .join_session(None, Some(&tree), &commit.welcome_packet.unwrap())
+        .unwrap();
 }

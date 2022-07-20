@@ -259,9 +259,9 @@ mod tests {
             message_verifier::decrypt_ciphertext,
             padding::PaddingMode,
             proposal::{AddProposal, Proposal},
-            test_utils::{test_group, test_member, TestGroup, TEST_GROUP},
+            test_utils::{test_group, test_member, InMemoryGroupConfig, TestGroup, TEST_GROUP},
             CommitOptions, Content, ControlEncryptionMode, Group, GroupConfig, GroupError,
-            InMemoryGroupConfig, MLSMessagePayload, MLSPlaintext, Sender, VerifiedPlaintext,
+            MLSMessagePayload, MLSPlaintext, Sender, VerifiedPlaintext,
         },
         key_package::KeyPackageGeneration,
         signer::{Signable, SignatureError, Signer},
@@ -272,7 +272,6 @@ mod tests {
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::SecretKey;
 
-    use crate::client_config::PassthroughCredentialValidator;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -405,9 +404,8 @@ mod tests {
                 None,
                 bob_key_pkg,
                 &secret_store,
-                |_| InMemoryGroupConfig::default(),
+                |_| InMemoryGroupConfig::new(TEST_CIPHER_SUITE),
                 |_, _| true,
-                PassthroughCredentialValidator::new(),
             )
             .unwrap();
 
