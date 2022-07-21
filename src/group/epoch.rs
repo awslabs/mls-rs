@@ -1,15 +1,16 @@
+use crate::cipher_suite::SignaturePublicKey;
 use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
 use crate::group::secret_tree::{KeyType, SecretTree, SecretTreeError};
 use crate::group::{GroupContext, MLSCiphertext, MLSCiphertextContentAAD};
 use crate::psk::{Psk, PskSecretError};
 use crate::tree_kem::node::LeafIndex;
-use ferriscrypt::asym::ec_key::PublicKey;
 use ferriscrypt::cipher::aead::{AeadError, AeadNonce, Key};
 use ferriscrypt::cipher::NonceError;
 use ferriscrypt::kdf::KdfError;
 use std::collections::HashMap;
 use thiserror::Error;
 use tls_codec::Serialize;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroize;
 
 #[derive(Error, Debug)]
@@ -32,24 +33,46 @@ pub enum EpochError {
     KeyDerivationFailure,
 }
 
-#[derive(Debug, Clone)]
+#[derive(
+    Debug, Clone, TlsSerialize, TlsSize, TlsDeserialize, serde::Serialize, serde::Deserialize,
+)]
 pub(crate) struct Epoch {
     pub context: GroupContext,
     pub self_index: LeafIndex,
     pub(crate) secrets: EpochSecrets,
-    pub signature_public_keys: HashMap<LeafIndex, PublicKey>,
+    #[tls_codec(with = "crate::tls::DefMap")]
+    pub signature_public_keys: HashMap<LeafIndex, SignaturePublicKey>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    TlsSerialize,
+    TlsSize,
+    TlsDeserialize,
+)]
 pub(crate) struct EpochSecrets {
     pub(crate) resumption_secret: Psk,
     sender_data_secret: SenderDataSecret,
     secret_tree: SecretTree,
 }
 
-#[derive(Clone, Debug, PartialEq, Zeroize)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Zeroize,
+    serde::Serialize,
+    serde::Deserialize,
+    TlsSerialize,
+    TlsSize,
+    TlsDeserialize,
+)]
 #[zeroize(drop)]
-struct SenderDataSecret(Vec<u8>);
+struct SenderDataSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl From<Vec<u8>> for SenderDataSecret {
     fn from(bytes: Vec<u8>) -> Self {
@@ -73,7 +96,7 @@ impl Epoch {
         resumption_secret: Vec<u8>,
         sender_data_secret: Vec<u8>,
         secret_tree: SecretTree,
-        signature_public_keys: HashMap<LeafIndex, PublicKey>,
+        signature_public_keys: HashMap<LeafIndex, SignaturePublicKey>,
     ) -> Self {
         Self {
             context,

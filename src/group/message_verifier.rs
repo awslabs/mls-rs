@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    cipher_suite::CipherSuite,
+    cipher_suite::{CipherSuite, SignaturePublicKey},
     group::{
         ContentType, GroupContext, GroupError, KeyType, MLSCiphertext, MLSCiphertextContent,
         MLSContent, MLSPlaintext, MLSSenderData, MLSSenderDataAAD, Sender, VerifiedPlaintext,
@@ -21,7 +21,7 @@ use super::{
 
 pub(crate) enum SignaturePublicKeysContainer<'a> {
     RatchetTree(&'a TreeKemPublic),
-    List(&'a HashMap<LeafIndex, PublicKey>),
+    List(&'a HashMap<LeafIndex, SignaturePublicKey>),
 }
 
 pub fn verify_plaintext(
@@ -168,7 +168,7 @@ fn signing_identity_for_sender(
 ) -> Result<PublicKey, GroupError> {
     match sender {
         Sender::Member(leaf_index) => {
-            signing_identity_for_member(signature_keys_container, *leaf_index)
+            signing_identity_for_member(signature_keys_container, *leaf_index, cipher_suite)
         }
         Sender::External(external_key_index) => {
             signing_identity_for_external(cipher_suite, *external_key_index, external_signers)
@@ -183,6 +183,7 @@ fn signing_identity_for_sender(
 fn signing_identity_for_member(
     signature_keys_container: SignaturePublicKeysContainer,
     leaf_index: LeafIndex,
+    cipher_suite: CipherSuite,
 ) -> Result<PublicKey, GroupError> {
     match signature_keys_container {
         SignaturePublicKeysContainer::RatchetTree(tree) => Ok(tree
@@ -192,7 +193,10 @@ fn signing_identity_for_member(
         SignaturePublicKeysContainer::List(list) => list
             .get(&leaf_index)
             .ok_or(GroupError::LeafNotFound(*leaf_index))
-            .map(|pk| pk.clone()),
+            .and_then(|sig_key| {
+                PublicKey::from_uncompressed_bytes(sig_key, cipher_suite.signature_key_curve())
+                    .map_err(GroupError::from)
+            }),
     }
 }
 

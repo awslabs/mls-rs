@@ -261,12 +261,8 @@ impl KeySchedule {
 
         let signature_public_keys = public_tree
             .non_empty_leaves()
-            .map(|(index, leaf)| {
-                leaf.signing_identity
-                    .public_key(cipher_suite)
-                    .map(|pk| (index, pk))
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
+            .map(|(index, leaf)| (index, leaf.signing_identity.signature_key.clone()))
+            .collect::<HashMap<_, _>>();
 
         let epoch = Epoch::new(
             context.clone(),

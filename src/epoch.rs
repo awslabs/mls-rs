@@ -6,10 +6,20 @@ use std::{
     sync::{Arc, Mutex},
 };
 use thiserror::Error;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 const DEFAULT_EPOCH_RETENTION_LIMIT: usize = 3;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+    TlsSerialize,
+    TlsDeserialize,
+    TlsSize,
+)]
 pub struct Epoch(crate::group::epoch::Epoch);
 
 impl Epoch {
