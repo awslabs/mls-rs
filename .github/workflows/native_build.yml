@@ -18,7 +18,7 @@ jobs:
     - name: Rust Fmt
       run: cargo fmt --all -- --check
     - name: Clippy
-      run: cargo clippy --all-targets --all-features --workspace -- -D warnings
+      run: cargo clippy --all-targets --features="benchmark" --workspace -- -D warnings
     - name: Test (OpenSSL Engine) 
       run: cargo test --verbose -- --ignored
     - name: Test (rust crypto engine)

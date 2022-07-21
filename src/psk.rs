@@ -27,6 +27,7 @@ use zeroize::{Zeroize, Zeroizing};
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct PreSharedKeyID {
     pub key_id: JustPreSharedKeyID,
     pub psk_nonce: PskNonce,
@@ -44,6 +45,7 @@ pub struct PreSharedKeyID {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum JustPreSharedKeyID {
     #[tls_codec(discriminant = 1)]
@@ -63,6 +65,7 @@ pub enum JustPreSharedKeyID {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ExternalPskId(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
 
 #[derive(
@@ -77,6 +80,7 @@ pub struct ExternalPskId(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>)
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct PskGroupId(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
 
 #[derive(
@@ -91,6 +95,7 @@ pub struct PskGroupId(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct PskNonce(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
 
 impl PskNonce {
@@ -113,6 +118,7 @@ impl PskNonce {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ResumptionPsk {
     pub usage: ResumptionPSKUsage,
     pub psk_group_id: PskGroupId,
@@ -131,6 +137,7 @@ pub struct ResumptionPsk {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum ResumptionPSKUsage {
     Application = 1,

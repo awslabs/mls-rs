@@ -20,6 +20,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SignaturePublicKey(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl Deref for SignaturePublicKey {
@@ -53,6 +54,7 @@ impl TryFrom<&SecretKey> for SignaturePublicKey {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct HpkeCiphertext {
     #[tls_codec(with = "crate::tls::ByteVec")]
     kem_output: Vec<u8>,
@@ -91,6 +93,7 @@ impl From<HpkeCiphertext> for ferriscrypt::hpke::HpkeCiphertext {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u16)]
 pub enum CipherSuite {
     Curve25519Aes128 = 0x0001,
@@ -241,6 +244,7 @@ impl CipherSuite {
 }
 
 #[derive(Clone, Debug, Copy, PartialEq, serde::Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum MaybeCipherSuite {
     CipherSuite(CipherSuite),
     Unsupported(u16),

@@ -18,6 +18,7 @@ use crate::{
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Capabilities {
     #[tls_codec(with = "crate::tls::DefVec")]
     pub protocol_versions: Vec<ProtocolVersion>,

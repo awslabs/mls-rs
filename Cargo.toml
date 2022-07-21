@@ -1,5 +1,5 @@
 [workspace]
-members = ["test_harness_integration"]
+members = ["test_harness_integration", "fuzz"]
 
 [package]
 name = "aws-mls"
@@ -13,10 +13,11 @@ rustcrypto_engine = ["ferriscrypt/rustcrypto_engine"]
 openssl_engine = ["ferriscrypt/openssl_engine"]
 browser = ["ferriscrypt/browser", "wasm-bindgen"]
 default = ["openssl_engine"]
+arbitrary = ["dep:arbitrary", "ferriscrypt/arbitrary"]
 
 [dependencies]
 thiserror = "^1"
-ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", default-features = false, features = ["hpke", "serde"], tag = "0.18.1" }
+ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", default-features = false, features = ["hpke", "serde"], tag = "0.18.3" }
 tls_codec = "0.2.0"
 tls_codec_derive = "0.2.0"
 hex = { version = "^0.4.3", features = ["serde"] }
@@ -29,6 +30,7 @@ spki = "^0.5.4"
 wasm-bindgen = { version = "^0.2.79", optional = true }
 zeroize = { version = "^1.3", features = ["zeroize_derive"] }
 debug_tree = "0.4.0"
+arbitrary = { version = "1", features = ["derive"], optional = true }
 
 [dev-dependencies]
 assert_matches = "1.5.0"

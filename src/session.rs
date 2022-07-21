@@ -109,6 +109,9 @@ pub struct Session<C>
 where
     C: ClientConfig,
 {
+    #[cfg(feature = "benchmark")]
+    pub protocol: Group<ClientGroupConfig<C>>,
+    #[cfg(not(feature = "benchmark"))]
     protocol: Group<ClientGroupConfig<C>>,
     pending_commit: Option<PendingCommit>,
     config: C,
@@ -588,13 +591,27 @@ where
         self.pending_commit = None
     }
 
-    fn signer(&self) -> Result<<<C as ClientConfig>::Keychain as Keychain>::Signer, SessionError> {
+    fn get_signer(
+        &self,
+    ) -> Result<<<C as ClientConfig>::Keychain as Keychain>::Signer, SessionError> {
         let key_package = self.protocol.current_user_leaf_node()?;
 
         self.config
             .keychain()
             .signer(&key_package.signing_identity)
             .ok_or(SessionError::SignerNotFound)
+    }
+
+    #[cfg(feature = "benchmark")]
+    pub fn signer(
+        &self,
+    ) -> Result<<<C as ClientConfig>::Keychain as Keychain>::Signer, SessionError> {
+        self.get_signer()
+    }
+
+    #[cfg(not(feature = "benchmark"))]
+    fn signer(&self) -> Result<<<C as ClientConfig>::Keychain as Keychain>::Signer, SessionError> {
+        self.get_signer()
     }
 
     pub fn encrypt_application_data(

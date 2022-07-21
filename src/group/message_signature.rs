@@ -9,6 +9,7 @@ use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MLSContentAuthData {
     pub signature: MessageSignature,
     pub confirmation_tag: Option<ConfirmationTag>,
@@ -168,6 +169,7 @@ impl<'a> Signable<'a> for MLSPlaintext {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MessageSignature(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl MessageSignature {

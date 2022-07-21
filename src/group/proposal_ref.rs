@@ -15,6 +15,7 @@ use crate::hash_reference::HashReference;
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ProposalRef(HashReference);
 
 impl Deref for ProposalRef {

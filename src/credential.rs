@@ -27,6 +27,7 @@ pub const CREDENTIAL_TYPE_X509: u16 = 2;
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u16)]
 pub enum Credential {
     #[tls_codec(discriminant = 1)]

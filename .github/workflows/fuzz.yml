@@ -1,0 +1,26 @@
+name: Fuzz Tests
+on: [pull_request]
+env:
+  CARGO_TERM_COLOR: always
+  SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+  RUNS: 10000
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+        - uses: actions/checkout@v2
+        - run: rustup toolchain update nightly && rustup default nightly
+        - name: Setup SSH Keys and known_hosts
+          run: |
+            ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+            ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
+        - name: Install cargo-fuzz
+          run: cargo install cargo-fuzz
+        - name: Run Fuzz Targets
+          run: |
+            cargo +nightly fuzz run application_data -- -runs=$RUNS
+            cargo +nightly fuzz run cipher_text -- -runs=$RUNS
+            cargo +nightly fuzz run deserialize -- -runs=$RUNS
+            cargo +nightly fuzz run export_secret -- -runs=$RUNS
+            cargo +nightly fuzz run mls_message -- -runs=$RUNS
+            cargo +nightly fuzz run process_bytes -- -runs=$RUNS

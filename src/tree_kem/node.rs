@@ -42,6 +42,7 @@ pub(crate) struct Parent {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct LeafIndex(pub(crate) u32);
 
 impl LeafIndex {

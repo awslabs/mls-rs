@@ -191,6 +191,7 @@ impl ProvisionalState {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Commit {
     #[tls_codec(with = "crate::tls::DefVec")]
     pub proposals: Vec<ProposalOrRef>,
@@ -361,6 +362,7 @@ pub enum GroupError {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct GroupContext {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
@@ -417,12 +419,14 @@ struct GroupSecrets {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct EncryptedGroupSecrets {
     pub new_member: KeyPackageRef,
     pub encrypted_group_secrets: HpkeCiphertext,
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Welcome {
     pub cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::DefVec")]
@@ -440,6 +444,9 @@ pub enum ControlEncryptionMode {
 #[derive(Clone, Debug)]
 pub struct Group<C: GroupConfig> {
     config: C,
+    #[cfg(feature = "benchmark")]
+    pub core: GroupCore,
+    #[cfg(not(feature = "benchmark"))]
     core: GroupCore,
     private_tree: TreeKemPrivate,
     // TODO: HpkePublicKey does not have Eq and Hash
@@ -1808,7 +1815,7 @@ impl<C: GroupConfig> Group<C> {
         )
     }
 
-    fn encrypt_plaintext(
+    fn encrypt_plaintext_to_cipher(
         &mut self,
         plaintext: MLSPlaintext,
         padding: PaddingMode,
@@ -1899,6 +1906,24 @@ impl<C: GroupConfig> Group<C> {
             encrypted_sender_data,
             ciphertext,
         })
+    }
+
+    #[cfg(feature = "benchmark")]
+    pub fn encrypt_plaintext(
+        &mut self,
+        plaintext: MLSPlaintext,
+        padding: PaddingMode,
+    ) -> Result<MLSCiphertext, GroupError> {
+        Self::encrypt_plaintext_to_cipher(self, plaintext, padding)
+    }
+
+    #[cfg(not(feature = "benchmark"))]
+    fn encrypt_plaintext(
+        &mut self,
+        plaintext: MLSPlaintext,
+        padding: PaddingMode,
+    ) -> Result<MLSCiphertext, GroupError> {
+        Self::encrypt_plaintext_to_cipher(self, plaintext, padding)
     }
 
     pub fn encrypt_application_message<S: Signer>(

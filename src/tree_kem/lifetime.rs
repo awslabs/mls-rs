@@ -21,6 +21,7 @@ pub enum LifetimeError {
     serde::Serialize,
     Default,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Lifetime {
     pub not_before: u64,
     pub not_after: u64,

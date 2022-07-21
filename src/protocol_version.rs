@@ -17,6 +17,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum ProtocolVersion {
     /// todo: If a new version is added, please add a test to check that incoming messages with a

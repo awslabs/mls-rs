@@ -36,6 +36,7 @@ pub enum KeyPackageError {
 #[derive(
     Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyPackage {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
@@ -50,6 +51,7 @@ pub struct KeyPackage {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, TlsSerialize, TlsDeserialize, TlsSize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyPackageRef(HashReference);
 
 impl Deref for KeyPackageRef {

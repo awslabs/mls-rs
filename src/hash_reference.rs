@@ -28,6 +28,7 @@ struct RefHashInput<'a> {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct HashReference(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl Debug for HashReference {

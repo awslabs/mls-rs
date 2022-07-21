@@ -748,7 +748,7 @@ mod tests {
         fn from(key: MessageKey) -> Self {
             KeyData {
                 nonce: key.nonce.to_vec(),
-                key: key.key.bytes.clone(),
+                key: key.key.as_ref().to_vec(),
                 generation: key.generation,
             }
         }

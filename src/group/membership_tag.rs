@@ -62,6 +62,7 @@ impl MLSContentTBM {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MembershipTag(#[tls_codec(with = "crate::tls::ByteVec")] Tag);
 
 impl Deref for MembershipTag {

@@ -46,6 +46,7 @@ pub enum LeafNodeError {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum LeafNodeSource {
     #[tls_codec(discriminant = 1)]
@@ -64,6 +65,7 @@ pub enum LeafNodeSource {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
 pub struct LeafNode {
     #[tls_codec(with = "crate::tls::ByteVec")]

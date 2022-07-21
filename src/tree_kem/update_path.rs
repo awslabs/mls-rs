@@ -11,6 +11,7 @@ use super::{
 };
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct UpdatePathNode {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub public_key: HpkePublicKey,
@@ -19,6 +20,7 @@ pub struct UpdatePathNode {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct UpdatePath {
     pub leaf_node: LeafNode,
     #[tls_codec(with = "crate::tls::DefVec")]

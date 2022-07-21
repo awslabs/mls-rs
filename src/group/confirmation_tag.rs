@@ -18,6 +18,7 @@ pub enum ConfirmationTagError {
 #[derive(
     Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ConfirmationTag(#[tls_codec(with = "crate::tls::ByteVec")] Tag);
 
 impl Deref for ConfirmationTag {

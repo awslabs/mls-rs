@@ -7,6 +7,7 @@ use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Copy, Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum ContentType {
     Application,
@@ -34,6 +35,7 @@ impl From<&Content> for ContentType {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum Sender {
     #[tls_codec(discriminant = 1)]
@@ -44,6 +46,7 @@ pub enum Sender {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum Content {
     Application(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>),
@@ -58,6 +61,7 @@ impl Content {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MLSPlaintext {
     pub content: MLSContent,
     pub auth: MLSContentAuthData,
@@ -234,6 +238,7 @@ pub struct MLSCiphertextContentAAD {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MLSCiphertext {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
@@ -274,6 +279,7 @@ pub struct MLSSenderDataAAD {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MLSMessage {
     pub version: ProtocolVersion,
     pub payload: MLSMessagePayload,
@@ -323,6 +329,7 @@ impl MLSMessage {
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum MLSMessagePayload {
     #[tls_codec(discriminant = 1)]
@@ -385,6 +392,7 @@ impl From<ControlEncryptionMode> for WireFormat {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MLSContent {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,

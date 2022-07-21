@@ -12,7 +12,15 @@ use crate::extension::ExtensionList;
 
 use crate::client::test_utils::{get_basic_config, join_session, test_client_with_key_pkg};
 
+use crate::group::{Group, GroupConfig};
+
+use crate::group::framing::MLSPlaintext;
+
 use crate::session::Session;
+
+use crate::signer::{Signable, SignatureError, Signer};
+
+use crate::group::message_signature::MessageSigningContext;
 
 // creates group modifying code found in client.rs
 pub fn create_group(
@@ -81,4 +89,21 @@ pub fn commit_group(container: &mut [Session<InMemoryClientConfig>]) {
             }
         }
     }
+}
+
+pub fn plaintext_sign<C, S>(
+    plaintext: &mut MLSPlaintext,
+    group: &Group<C>,
+    signer: &S,
+) -> Result<(), SignatureError>
+where
+    C: GroupConfig,
+    S: Signer,
+{
+    let signing_context = MessageSigningContext {
+        group_context: Some(&group.core.context),
+        encrypted: true,
+    };
+
+    Signable::sign(plaintext, signer, &signing_context)
 }

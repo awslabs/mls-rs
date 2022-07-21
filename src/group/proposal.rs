@@ -12,6 +12,7 @@ use std::fmt::{self, Debug};
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct AddProposal {
     pub key_package: KeyPackage,
 }
@@ -26,6 +27,7 @@ pub struct AddProposal {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct UpdateProposal {
     pub leaf_node: LeafNode,
 }
@@ -40,6 +42,7 @@ pub struct UpdateProposal {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct RemoveProposal {
     pub to_remove: LeafIndex,
 }
@@ -54,6 +57,7 @@ pub struct RemoveProposal {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct PreSharedKey {
     pub psk: PreSharedKeyID,
 }
@@ -68,6 +72,7 @@ pub struct PreSharedKey {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ReInit {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
@@ -86,6 +91,7 @@ pub struct ReInit {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ExternalInit {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub kem_output: Vec<u8>,
@@ -103,6 +109,7 @@ pub struct ExternalInit {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ProposalType(pub u16);
 
 impl ProposalType {
@@ -146,6 +153,7 @@ impl Debug for ProposalType {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u16)]
 pub enum Proposal {
     #[tls_codec(discriminant = 1)]
@@ -198,6 +206,7 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 #[allow(clippy::large_enum_variant)]
 pub enum ProposalOrRef {

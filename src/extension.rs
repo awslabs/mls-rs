@@ -7,7 +7,6 @@ use crate::tree_kem::node::NodeVec;
 use crate::{credential::CredentialType, signing_identity::SigningIdentity};
 use ferriscrypt::asym::ec_key::SecretKey;
 use ferriscrypt::hpke::kem::HpkePublicKey;
-use indexmap::IndexMap;
 use std::io::{Read, Write};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize, Size};
@@ -131,6 +130,7 @@ impl MlsExtension for ExternalSendersExt {
     serde::Deserialize,
     serde::Serialize,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Extension {
     pub extension_type: ExtensionType,
     #[tls_codec(with = "crate::tls::ByteVec")]
@@ -138,7 +138,52 @@ pub struct Extension {
 }
 
 #[derive(Clone, Debug, PartialEq, Default, serde::Deserialize, serde::Serialize)]
-pub struct ExtensionList(#[serde(with = "indexmap::serde_seq")] IndexMap<ExtensionType, Extension>);
+struct IndexMap(
+    #[serde(with = "indexmap::serde_seq")] indexmap::IndexMap<ExtensionType, Extension>,
+);
+
+impl IndexMap {
+    fn new() -> Self {
+        IndexMap(indexmap::IndexMap::new())
+    }
+}
+
+impl FromIterator<(ExtensionType, Extension)> for IndexMap {
+    fn from_iter<T: IntoIterator<Item = (ExtensionType, Extension)>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl std::ops::Deref for IndexMap {
+    type Target = indexmap::IndexMap<ExtensionType, Extension>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for IndexMap {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for IndexMap {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> Result<Self, arbitrary::Error> {
+        u.arbitrary_iter::<(ExtensionType, Extension)>()?
+            .try_fold(indexmap::IndexMap::new(), |mut map, item| {
+                let (ext_type, ext) = item?;
+                map.insert(ext_type, ext);
+                Ok(map)
+            })
+            .map(Self)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Default, serde::Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct ExtensionList(IndexMap);
 
 impl Size for ExtensionList {
     fn tls_serialized_len(&self) -> usize {
