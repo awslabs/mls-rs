@@ -42,7 +42,7 @@ fn bench_encap(
             &key,
             |b, _| {
                 b.iter(|| {
-                    TreeKem::new(&mut value.encap_tree, value.encap_private_key.clone())
+                    TreeKem::new(&mut value.encap_tree, &mut value.encap_private_key)
                         .encap(
                             b"test_group",
                             &mut value.group_context,

@@ -92,7 +92,6 @@ mod tests {
             node::{LeafIndex, Node, Parent},
             parent_hash::ParentHash,
             test_utils::get_test_tree,
-            TreeKemPrivate,
         },
     };
 
@@ -116,18 +115,15 @@ mod tests {
     fn get_valid_tree(cipher_suite: CipherSuite) -> TreeKemPublic {
         let mut test_tree = get_test_tree(cipher_suite);
 
-        let (leaf1, leaf1_hpke, leaf1_signer) = get_basic_test_node_sig_key(cipher_suite, "leaf1");
-
-        let leaf1_private = TreeKemPrivate::new_self_leaf(LeafIndex(1), leaf1_hpke);
+        let (leaf1, _, leaf1_signer) = get_basic_test_node_sig_key(cipher_suite, "leaf1");
 
         test_tree.public.add_leaves(vec![leaf1]).unwrap();
 
         test_tree.public.nodes[1] = Some(Node::Parent(test_parent_node(cipher_suite)));
 
-        let private_keys = [&test_tree.private, &leaf1_private];
         let signers = [&test_tree.creator_signing_key, &leaf1_signer];
 
-        TreeKem::new(&mut test_tree.public, private_keys[0].clone())
+        TreeKem::new(&mut test_tree.public, &mut test_tree.private)
             .encap(
                 b"test_group",
                 &mut get_test_group_context(42, cipher_suite),

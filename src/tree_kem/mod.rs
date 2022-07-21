@@ -120,36 +120,13 @@ pub struct TreeKemPublic {
 pub struct SecretPath {
     #[tls_codec(with = "crate::tls::DefMap")]
     path_secrets: HashMap<NodeIndex, PathSecret>,
-    pub root_secret: PathSecret,
+    root_secret: PathSecret,
 }
 
 impl SecretPath {
     pub fn get_path_secret(&self, index: NodeIndex) -> Option<PathSecret> {
         self.path_secrets.get(&index).cloned()
     }
-}
-
-#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct UpdatePathGeneration {
-    pub update_path: UpdatePath,
-    pub secrets: TreeSecrets,
-}
-
-impl UpdatePathGeneration {
-    pub fn get_common_path_secret(&self, leaf: LeafIndex) -> Option<PathSecret> {
-        let lca = tree_math::common_ancestor_direct(
-            self.secrets.private_key.self_index.into(),
-            leaf.into(),
-        );
-
-        self.secrets.secret_path.get_path_secret(lca)
-    }
-}
-
-#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct TreeSecrets {
-    pub private_key: TreeKemPrivate,
-    pub secret_path: SecretPath,
 }
 
 impl TreeKemPublic {
@@ -334,7 +311,7 @@ impl TreeKemPublic {
         Ok(removed_leaves)
     }
 
-    pub fn update_leaf(
+    pub fn rekey_leaf(
         &mut self,
         index: LeafIndex,
         leaf_node: LeafNode,
@@ -347,6 +324,16 @@ impl TreeKemPublic {
         self.index.insert(index, &leaf_node)?;
 
         *existing_leaf = leaf_node;
+
+        Ok(())
+    }
+
+    pub fn update_leaf(
+        &mut self,
+        index: LeafIndex,
+        leaf_node: LeafNode,
+    ) -> Result<(), RatchetTreeError> {
+        self.rekey_leaf(index, leaf_node)?;
 
         // Blank the intermediate nodes along the path from the sender's leaf to the root
         self.nodes

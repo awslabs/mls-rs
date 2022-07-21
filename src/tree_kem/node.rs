@@ -3,6 +3,7 @@ use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::parent_hash::ParentHash;
 use ferriscrypt::hpke::kem::HpkePublicKey;
+use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
@@ -459,8 +460,13 @@ impl NodeVec {
     pub fn get_resolution(
         &self,
         node_index: NodeIndex,
-        excluding: &[NodeIndex],
+        excluding: &[LeafIndex],
     ) -> Result<Vec<&Node>, NodeVecError> {
+        let excluding = excluding
+            .iter()
+            .map(NodeIndex::from)
+            .collect::<HashSet<NodeIndex>>();
+
         self.get_resolution_index(node_index)?
             .iter()
             .filter(|i| !excluding.contains(i))
@@ -626,7 +632,7 @@ mod tests {
     #[test]
     fn test_resolution_filter() {
         let test_vec = get_test_node_vec();
-        let resolution_node_5 = test_vec.get_resolution(5, &[4]).unwrap();
+        let resolution_node_5 = test_vec.get_resolution(5, &[LeafIndex(2)]).unwrap();
         let expected_5: Vec<Node> = [test_vec[5].as_ref().unwrap().clone()].to_vec();
 
         assert_eq!(resolution_node_5, expected_5.iter().collect::<Vec<&Node>>());

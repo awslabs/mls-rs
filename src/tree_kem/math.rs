@@ -87,6 +87,20 @@ pub fn copath(x: u32, n: u32) -> Result<Vec<u32>, TreeMathError> {
     d.into_iter().map(|y| sibling(y, n)).collect()
 }
 
+pub fn leaf_lca_level(x: u32, y: u32) -> u32 {
+    let mut xn = x;
+    let mut yn = y;
+    let mut k = 0;
+
+    while xn != yn {
+        xn >>= 1;
+        yn >>= 1;
+        k += 1;
+    }
+
+    k
+}
+
 pub fn common_ancestor_direct(x: u32, y: u32) -> u32 {
     let lx = level(x) + 1;
     let ly = level(y) + 1;

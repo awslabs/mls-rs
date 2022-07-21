@@ -17,11 +17,8 @@ use crate::group::secret_tree::SecretTreeError;
 use crate::group::{GroupContext, LeafIndex, MembershipTag, MembershipTagError, SecretTree};
 use crate::psk::{get_epoch_secret, JoinerSecret, Psk, PskSecretError};
 use crate::signing_identity::SigningIdentityError;
+use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
 use crate::tree_kem::TreeKemPublic;
-use crate::tree_kem::{
-    path_secret::{PathSecret, PathSecretError, PathSecretGenerator},
-    TreeSecrets, UpdatePathGeneration,
-};
 use ferriscrypt::cipher::aead::AeadError;
 use ferriscrypt::cipher::NonceError;
 
@@ -394,28 +391,16 @@ impl InitSecret {
 pub struct CommitSecret(PathSecret);
 
 impl CommitSecret {
-    // Define commit_secret as the value path_secret[n+1] derived from the path_secret[n] value
-    // assigned to the root node.
-    pub fn from_update_path(
+    pub fn from_root_secret(
         cipher_suite: CipherSuite,
-        update_path: Option<&UpdatePathGeneration>,
+        root_secret: Option<&PathSecret>,
     ) -> Result<Self, PathSecretError> {
-        Self::from_tree_secrets(cipher_suite, update_path.map(|up| &up.secrets))
-    }
+        match root_secret {
+            Some(root_secret) => {
+                let mut generator =
+                    PathSecretGenerator::starting_from(cipher_suite, root_secret.clone());
 
-    pub fn from_tree_secrets(
-        cipher_suite: CipherSuite,
-        secrets: Option<&TreeSecrets>,
-    ) -> Result<Self, PathSecretError> {
-        match secrets {
-            Some(secrets) => {
-                let mut generator = PathSecretGenerator::starting_from(
-                    cipher_suite,
-                    secrets.secret_path.root_secret.clone(),
-                );
-
-                let secret = generator.next_secret()?;
-                Ok(CommitSecret(secret.path_secret))
+                Ok(CommitSecret(generator.next_secret()?.path_secret))
             }
             None => Ok(Self::empty(cipher_suite)),
         }

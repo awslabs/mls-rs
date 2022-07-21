@@ -143,12 +143,7 @@ mod tests {
     // The ratchet tree returned has leaf indexes as [alice, bob, charlie]
     fn update_secrets_setup(
         cipher_suite: CipherSuite,
-    ) -> (
-        TreeKemPublic,
-        TreeKemPrivate,
-        UpdatePathGeneration,
-        PathSecret,
-    ) {
+    ) -> (TreeKemPublic, TreeKemPrivate, TreeKemPrivate, PathSecret) {
         let (alice_leaf, alice_hpke_secret, alice_signing) =
             get_basic_test_node_sig_key(cipher_suite, "alice");
 
@@ -158,7 +153,7 @@ mod tests {
             get_basic_test_node_sig_key(cipher_suite, "charlie");
 
         // Create a new public tree with Alice
-        let (mut public_tree, alice_private) =
+        let (mut public_tree, mut alice_private) =
             TreeKemPublic::derive(cipher_suite, alice_leaf, alice_hpke_secret).unwrap();
 
         // Add bob and charlie to the tree
@@ -167,7 +162,7 @@ mod tests {
             .unwrap();
 
         // Generate an update path for Alice
-        let update_path_gen = TreeKem::new(&mut public_tree, alice_private)
+        let encap_gen = TreeKem::new(&mut public_tree, &mut alice_private)
             .encap(
                 b"test_group",
                 &mut get_test_group_context(42, cipher_suite),
@@ -179,21 +174,19 @@ mod tests {
             .unwrap();
 
         // Get a path secret from Alice for Charlie
-        let path_secret = update_path_gen
-            .get_common_path_secret(LeafIndex(2))
-            .unwrap();
+        let path_secret = encap_gen.path_secrets[1].clone().unwrap();
 
         // Private key for Charlie
         let charlie_private = TreeKemPrivate::new_self_leaf(LeafIndex(2), charlie_hpke_secret);
 
-        (public_tree, charlie_private, update_path_gen, path_secret)
+        (public_tree, charlie_private, alice_private, path_secret)
     }
 
     #[test]
     fn test_update_secrets() {
         let cipher_suite = crate::cipher_suite::CipherSuite::Curve25519Aes128;
 
-        let (public_tree, mut charlie_private, update_path_gen, path_secret) =
+        let (public_tree, mut charlie_private, alice_private, path_secret) =
             update_secrets_setup(cipher_suite);
 
         let existing_private = charlie_private
@@ -216,12 +209,7 @@ mod tests {
 
         for one_index in intersection.iter() {
             assert_eq!(
-                update_path_gen
-                    .secrets
-                    .private_key
-                    .secret_keys
-                    .get(one_index)
-                    .unwrap(),
+                alice_private.secret_keys.get(one_index).unwrap(),
                 charlie_private.secret_keys.get(one_index).unwrap()
             );
         }

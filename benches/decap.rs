@@ -41,7 +41,7 @@ fn bench_decap(
 ) {
     for (key, mut value) in map {
         // Perform the encap function
-        let update_path_gen = TreeKem::new(&mut value.encap_tree, value.encap_private_key)
+        let encap_gen = TreeKem::new(&mut value.encap_tree, &mut value.encap_private_key)
             .encap(
                 b"test_group",
                 &mut value.group_context,
@@ -54,20 +54,20 @@ fn bench_decap(
 
         // Apply the update path to the rest of the leaf nodes using the decap function
         let validated_update_path = ValidatedUpdatePath {
-            leaf_node: update_path_gen.update_path.leaf_node,
-            nodes: update_path_gen.update_path.nodes,
+            leaf_node: encap_gen.update_path.leaf_node,
+            nodes: encap_gen.update_path.nodes,
         };
 
         // Create one receiver tree so decap is run once
         let mut receiver_tree = value.test_tree.clone();
-        let private_keys = value.private_keys;
+        let mut private_keys = value.private_keys;
 
         bench_group.bench_with_input(
             BenchmarkId::new(format!("{cipher_suite:?}"), key),
             &key,
             |b, _| {
                 b.iter(|| {
-                    TreeKem::new(&mut receiver_tree, private_keys[0].clone())
+                    TreeKem::new(&mut receiver_tree, &mut private_keys[0])
                         .decap(
                             LeafIndex::new(0),
                             &validated_update_path,
