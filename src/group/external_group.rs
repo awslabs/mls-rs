@@ -5,7 +5,7 @@ use crate::{
     group::{
         message_verifier::verify_plaintext_signature, proposal_effects, transcript_hashes, Content,
         ExternalGroupConfig, GroupCore, GroupError, InterimTranscriptHash, MLSMessage,
-        MLSMessageCommitContent, MLSMessagePayload, StateUpdate, VerifiedPlaintext,
+        MLSMessagePayload, StateUpdate, VerifiedPlaintext,
     },
     message::{ExternalProcessedMessage, ExternalProcessedMessagePayload},
     signer::{Signable, Signer},
@@ -41,7 +41,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
         let interim_transcript_hash = InterimTranscriptHash::create(
             context.cipher_suite,
             &context.confirmed_transcript_hash,
-            (&group_info.confirmation_tag).into(),
+            &group_info.confirmation_tag,
         )?;
 
         Ok(Self {
@@ -166,11 +166,18 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
     }
 
     fn process_commit(&mut self, plaintext: VerifiedPlaintext) -> Result<StateUpdate, GroupError> {
-        let commit_content = MLSMessageCommitContent::new(&plaintext, plaintext.encrypted)?;
+        let (commit, sender) = match plaintext.plaintext.content.content {
+            Content::Commit(ref commit) => Ok((commit, &plaintext.plaintext.content.sender)),
+            _ => Err(GroupError::NotCommitContent(
+                plaintext.plaintext.content.content_type(),
+            )),
+        }?;
+
         let proposal_effects = proposal_effects(
             None,
             &self.core.proposals,
-            &commit_content,
+            commit,
+            sender,
             self.core.context.extensions.get_extension()?,
             self.config.credential_validator(),
             &self.core.current_tree,
@@ -187,7 +194,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
             self.config.credential_validator(),
         )?;
 
-        let sender = commit_sender(&commit_content, &provisional_state)?;
+        let sender = commit_sender(sender, &provisional_state)?;
 
         provisional_state
             .public_tree
@@ -197,7 +204,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
 
         // Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
-        if provisional_state.path_update_required && commit_content.commit.path.is_none() {
+        if provisional_state.path_update_required && commit.path.is_none() {
             return Err(GroupError::CommitMissingPath);
         }
 
@@ -210,8 +217,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
         let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
             self.core.cipher_suite(),
             &self.core.interim_transcript_hash,
-            commit_content,
-            (&*plaintext).into(),
+            &(&plaintext).into(),
         )?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;

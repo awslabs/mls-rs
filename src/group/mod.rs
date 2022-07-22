@@ -350,6 +350,8 @@ pub enum GroupError {
     ReInitIdMismatch(Vec<u8>, Vec<u8>),
     #[error("No credential found for given ciphersuite.")]
     NoCredentialFound,
+    #[error("Expected commit message, found: {0:?}")]
+    NotCommitContent(ContentType),
 }
 
 #[derive(
@@ -800,7 +802,7 @@ impl<C: GroupConfig> Group<C> {
         let interim_transcript_hash = InterimTranscriptHash::create(
             current_tree.cipher_suite,
             &context.confirmed_transcript_hash,
-            MLSPlaintextCommitAuthData::from(confirmation_tag),
+            confirmation_tag,
         )?;
 
         Ok(Group {
@@ -1188,10 +1190,10 @@ impl<C: GroupConfig> Group<C> {
         let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
             self.core.cipher_suite(),
             &self.core.interim_transcript_hash,
-            MLSMessageCommitContent::new(
+            &MLSAuthenticatedContent::from_plaintext(
                 &plaintext,
                 matches!(options.encryption_mode, ControlEncryptionMode::Encrypted(_)),
-            )?,
+            ),
         )?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
@@ -1420,7 +1422,7 @@ impl<C: GroupConfig> Group<C> {
         let interim_transcript_hash = InterimTranscriptHash::create(
             new_context.cipher_suite,
             &new_context.confirmed_transcript_hash,
-            MLSPlaintextCommitAuthData::from(&group_info.confirmation_tag),
+            &group_info.confirmation_tag,
         )?;
 
         let new_group = Group {
@@ -2066,7 +2068,12 @@ impl<C: GroupConfig> Group<C> {
         local_pending: Option<(TreeKemPrivate, PathSecret)>,
         secret_store: &S,
     ) -> Result<StateUpdate, GroupError> {
-        let commit_content = MLSMessageCommitContent::new(plaintext.deref(), plaintext.encrypted)?;
+        let (commit, sender) = match plaintext.plaintext.content.content {
+            Content::Commit(ref commit) => Ok((commit, &plaintext.plaintext.content.sender)),
+            _ => Err(GroupError::NotCommitContent(
+                plaintext.plaintext.content.content_type(),
+            )),
+        }?;
 
         //Generate a provisional GroupContext object by applying the proposals referenced in the
         // initial Commit object, as described in Section 11.1. Update proposals are applied first,
@@ -2076,7 +2083,8 @@ impl<C: GroupConfig> Group<C> {
         let proposal_effects = proposal_effects(
             Some(self.private_tree.self_index),
             &self.core.proposals,
-            &commit_content,
+            commit,
+            sender,
             self.core.context.extensions.get_extension()?,
             self.config.credential_validator(),
             &self.core.current_tree,
@@ -2088,15 +2096,13 @@ impl<C: GroupConfig> Group<C> {
         )?;
 
         let mut provisional_state = self.apply_proposals(proposal_effects)?;
-        let sender = commit_sender(&commit_content, &provisional_state.public_state)?;
+        let sender = commit_sender(sender, &provisional_state.public_state)?;
         let mut state_update = StateUpdate::from(&provisional_state);
         let from_self = local_pending.is_some();
 
         //Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
-        if provisional_state.public_state.path_update_required
-            && commit_content.commit.path.is_none()
-        {
+        if provisional_state.public_state.path_update_required && commit.path.is_none() {
             return Err(GroupError::CommitMissingPath);
         }
 
@@ -2117,7 +2123,7 @@ impl<C: GroupConfig> Group<C> {
         provisional_group_context.epoch = provisional_state.public_state.epoch;
 
         // Apply the update path if needed
-        let updated_secrets = match &commit_content.commit.path {
+        let updated_secrets = match &commit.path {
             None => None,
             Some(update_path) => {
                 let required_capabilities = provisional_state
@@ -2182,8 +2188,7 @@ impl<C: GroupConfig> Group<C> {
         let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
             self.core.cipher_suite(),
             &self.core.interim_transcript_hash,
-            commit_content.clone(),
-            (&*plaintext).into(),
+            &(&plaintext).into(),
         )?;
 
         // Update the transcript hash to get the new context.
@@ -2383,10 +2388,10 @@ fn validate_existing_group<C: CredentialValidator>(
 }
 
 fn commit_sender(
-    commit_content: &MLSMessageCommitContent<'_>,
+    sender: &Sender,
     provisional_state: &ProvisionalPublicState,
 ) -> Result<LeafIndex, GroupError> {
-    match commit_content.sender {
+    match sender {
         Sender::Member(index) => Ok(*index),
         Sender::External(_) => Err(GroupError::ExternalSenderCannotCommit),
         Sender::NewMemberProposal => Err(GroupError::ExpectedAddProposalForNewMemberProposal),
@@ -2398,10 +2403,12 @@ fn commit_sender(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn proposal_effects<C, F>(
     commit_receiver: Option<LeafIndex>,
     proposals: &ProposalCache,
-    commit_content: &MLSMessageCommitContent<'_>,
+    commit: &Commit,
+    sender: &Sender,
     required_capabilities: Option<RequiredCapabilitiesExt>,
     credential_validator: C,
     public_tree: &TreeKemPublic,
@@ -2412,14 +2419,10 @@ where
     F: ProposalFilter,
 {
     proposals.resolve_for_commit(
-        commit_content.sender.clone(),
+        sender.clone(),
         commit_receiver,
-        commit_content.commit.proposals.clone(),
-        commit_content
-            .commit
-            .path
-            .as_ref()
-            .map(|path| &path.leaf_node),
+        commit.proposals.clone(),
+        commit.path.as_ref().map(|path| &path.leaf_node),
         required_capabilities,
         credential_validator,
         public_tree,
@@ -2430,17 +2433,19 @@ where
 fn transcript_hashes(
     cipher_suite: CipherSuite,
     prev_interim_transcript_hash: &InterimTranscriptHash,
-    commit_content: MLSMessageCommitContent<'_>,
-    commit_auth: MLSPlaintextCommitAuthData<'_>,
+    content: &MLSAuthenticatedContent,
 ) -> Result<(InterimTranscriptHash, ConfirmedTranscriptHash), GroupError> {
-    let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
-        cipher_suite,
-        prev_interim_transcript_hash,
-        commit_content,
-    )?;
+    let confirmed_transcript_hash =
+        ConfirmedTranscriptHash::create(cipher_suite, prev_interim_transcript_hash, content)?;
+
+    let confirmation_tag = content
+        .auth
+        .confirmation_tag
+        .as_ref()
+        .ok_or(GroupError::InvalidConfirmationTag)?;
 
     let interim_transcript_hash =
-        InterimTranscriptHash::create(cipher_suite, &confirmed_transcript_hash, commit_auth)?;
+        InterimTranscriptHash::create(cipher_suite, &confirmed_transcript_hash, confirmation_tag)?;
 
     Ok((interim_transcript_hash, confirmed_transcript_hash))
 }

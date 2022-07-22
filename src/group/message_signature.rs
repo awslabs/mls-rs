@@ -8,6 +8,8 @@ use std::{
 use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
+use super::VerifiedPlaintext;
+
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MLSContentAuthData {
@@ -54,6 +56,26 @@ pub(crate) struct MLSAuthenticatedContent<'a> {
     pub(crate) wire_format: WireFormat,
     pub(crate) content: &'a MLSContent,
     pub(crate) auth: &'a MLSContentAuthData,
+}
+
+impl<'a> MLSAuthenticatedContent<'a> {
+    pub fn from_plaintext(plaintext: &'a MLSPlaintext, encrypted: bool) -> Self {
+        Self {
+            wire_format: if encrypted {
+                WireFormat::Cipher
+            } else {
+                WireFormat::Plain
+            },
+            content: &plaintext.content,
+            auth: &plaintext.auth,
+        }
+    }
+}
+
+impl<'a> From<&'a VerifiedPlaintext> for MLSAuthenticatedContent<'a> {
+    fn from(plaintext: &'a VerifiedPlaintext) -> Self {
+        MLSAuthenticatedContent::from_plaintext(&plaintext.plaintext, plaintext.encrypted)
+    }
 }
 
 impl Size for MLSAuthenticatedContent<'_> {
