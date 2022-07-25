@@ -924,8 +924,8 @@ impl<C: GroupConfig> Group<C> {
     }
 
     #[inline(always)]
-    pub fn current_epoch_tree(&self) -> Result<&TreeKemPublic, GroupError> {
-        Ok(&self.core.current_tree)
+    pub fn current_epoch_tree(&self) -> &TreeKemPublic {
+        &self.core.current_tree
     }
 
     #[inline(always)]
@@ -939,7 +939,7 @@ impl<C: GroupConfig> Group<C> {
     }
 
     pub fn current_user_leaf_node(&self) -> Result<&LeafNode, GroupError> {
-        self.current_epoch_tree()?
+        self.current_epoch_tree()
             .get_leaf_node(self.private_tree.self_index)
             .map_err(Into::into)
     }
@@ -948,7 +948,7 @@ impl<C: GroupConfig> Group<C> {
         &self,
         proposals: ProposalSetEffects,
     ) -> Result<ProvisionalState, GroupError> {
-        let old_tree = self.current_epoch_tree()?;
+        let old_tree = self.current_epoch_tree();
         let mut provisional_private_tree = self.private_tree.clone();
         let total_leaf_count = old_tree.total_leaf_count();
 
@@ -1338,7 +1338,7 @@ impl<C: GroupConfig> Group<C> {
 
         // Generate new leaves for all existing members
         let (new_members, new_key_pkgs) = {
-            let current_tree = self.current_epoch_tree()?;
+            let current_tree = self.current_epoch_tree();
             let self_index = self.private_tree.self_index;
 
             current_tree
@@ -1763,7 +1763,7 @@ impl<C: GroupConfig> Group<C> {
 
     pub fn remove_proposal(&mut self, leaf_index: LeafIndex) -> Result<Proposal, GroupError> {
         // Verify that this leaf is actually in the tree
-        self.current_epoch_tree()?.get_leaf_node(leaf_index)?;
+        self.current_epoch_tree().get_leaf_node(leaf_index)?;
 
         Ok(Proposal::Remove(RemoveProposal {
             to_remove: leaf_index,
@@ -2599,7 +2599,7 @@ pub(crate) mod test_utils {
                 .process_pending_commit(commit_generation, &secret_store)
                 .unwrap();
 
-            let tree = (!tree_ext).then(|| self.group.current_epoch_tree().unwrap().clone());
+            let tree = (!tree_ext).then(|| self.group.current_epoch_tree().clone());
 
             let welcome = match welcome.unwrap().payload {
                 MLSMessagePayload::Welcome(w) => w,

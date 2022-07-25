@@ -195,9 +195,9 @@ fn get_test_sessions_clients(
     assert!(update.active);
     assert_eq!(update.epoch, 1);
 
-    assert!(receiver_keys
-        .iter()
-        .all(|kpg| creator_session.roster().contains(&&kpg.leaf_node)));
+    assert!(receiver_keys.iter().all(|kpg| creator_session
+        .roster()
+        .any(|m| m.signing_identity() == &kpg.leaf_node.signing_identity)));
 
     assert!(update.removed.is_empty());
 
@@ -500,7 +500,7 @@ fn test_remove_proposals(
     // Remove people from the group one at a time
     while receiver_sessions.len() > 1 {
         let session_to_remove = receiver_sessions.choose(&mut rand::thread_rng()).unwrap();
-        let to_remove_index = session_to_remove.current_user_index();
+        let to_remove_index = session_to_remove.current_member_index();
 
         let removal = creator_session.remove_proposal(to_remove_index).unwrap();
 
@@ -514,7 +514,7 @@ fn test_remove_proposals(
 
         // Process the removal in the other receiver groups
         for one_session in receiver_sessions.iter_mut() {
-            let expect_inactive = one_session.current_user_index() == to_remove_index;
+            let expect_inactive = one_session.current_member_index() == to_remove_index;
 
             let state_update = one_session
                 .process_incoming_bytes(&commit.commit_packet)
@@ -539,7 +539,7 @@ fn test_remove_proposals(
             }
         }
 
-        receiver_sessions.retain(|session| session.current_user_index() != to_remove_index);
+        receiver_sessions.retain(|session| session.current_member_index() != to_remove_index);
 
         for one_session in receiver_sessions.iter() {
             assert!(one_session.has_equal_state(&creator_session));
@@ -763,7 +763,7 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
 
     assert!(sessions
         .iter()
-        .all(|session| session.participant_count() as usize == PARTICIPANT_COUNT));
+        .all(|session| session.roster().member_count() == PARTICIPANT_COUNT));
 
     for i in 0..sessions.len() {
         let payload = (&mut rng)

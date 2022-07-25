@@ -379,7 +379,7 @@ mod tests {
         group: &TestGroup,
         config: InMemoryExternalGroupConfig,
     ) -> Result<ExternalGroup<InMemoryExternalGroupConfig>, GroupError> {
-        let public_tree = group.group.current_epoch_tree().unwrap();
+        let public_tree = group.group.current_epoch_tree();
 
         ExternalGroup::new(
             config,

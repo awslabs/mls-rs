@@ -11,9 +11,10 @@ use crate::key_package::{
 };
 use crate::message::{ProcessedMessage, ProcessedMessagePayload};
 pub use crate::psk::{ExternalPskId, JustPreSharedKeyID, Psk};
+use crate::signing_identity::SigningIdentity;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::tree_kem::node::LeafIndex;
-use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
+use crate::tree_kem::{Capabilities, RatchetTreeError, TreeKemPublic};
 use crate::{keychain::Keychain, ProtocolVersion};
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
@@ -119,10 +120,79 @@ where
 
 #[derive(Clone, Debug)]
 pub struct GroupStats {
-    pub total_leaves: u32,
+    pub total_leaves: usize,
     pub current_index: u32,
     pub direct_path: Vec<HpkePublicKey>,
     pub epoch: u64,
+}
+
+pub struct Member {
+    node: LeafNode,
+    index: LeafIndex,
+}
+
+impl Member {
+    pub fn index(&self) -> u32 {
+        self.index.0
+    }
+
+    pub fn signing_identity(&self) -> &SigningIdentity {
+        &self.node.signing_identity
+    }
+
+    pub fn capabilities(&self) -> &Capabilities {
+        &self.node.capabilities
+    }
+
+    pub fn extensions(&self) -> &ExtensionList {
+        &self.node.extensions
+    }
+}
+
+impl From<(LeafIndex, &LeafNode)> for Member {
+    fn from(item: (LeafIndex, &LeafNode)) -> Self {
+        Member {
+            node: item.1.clone(),
+            index: item.0,
+        }
+    }
+}
+
+pub struct Roster<I>
+where
+    I: Iterator<Item = Member>,
+{
+    inner: I,
+    total_members: u32,
+}
+
+impl<I> Roster<I>
+where
+    I: Iterator<Item = Member>,
+{
+    pub fn into_vec(self) -> Vec<Member> {
+        self.collect()
+    }
+
+    pub fn member_count(&self) -> usize {
+        self.total_members as usize
+    }
+}
+
+impl<I> Iterator for Roster<I>
+where
+    I: Iterator<Item = Member>,
+{
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let total_members = self.total_members as usize;
+        (total_members, Some(total_members))
+    }
 }
 
 impl<C> Session<C>
@@ -268,24 +338,28 @@ where
         TreeKemPublic::import_node_data(cipher_suite, nodes).map_err(Into::into)
     }
 
-    pub fn participant_count(&self) -> u32 {
-        self.protocol
+    pub fn roster(&self) -> Roster<impl Iterator<Item = Member> + '_> {
+        let roster_iter = self
+            .protocol
             .current_epoch_tree()
-            .map_or(0, |t| t.occupied_leaf_count())
+            .non_empty_leaves()
+            .map(Member::from);
+
+        Roster {
+            inner: roster_iter,
+            total_members: self.protocol.current_epoch_tree().occupied_leaf_count(),
+        }
     }
 
-    pub fn roster(&self) -> Vec<&LeafNode> {
-        self.protocol
-            .current_epoch_tree()
-            .map_or(vec![], |t| t.get_leaf_nodes())
-    }
-
-    pub fn current_key_package(&self) -> Result<&LeafNode, GroupError> {
-        self.protocol.current_user_leaf_node().map_err(Into::into)
-    }
-
-    pub fn current_user_index(&self) -> u32 {
+    pub fn current_member_index(&self) -> u32 {
         self.protocol.current_user_index()
+    }
+
+    pub fn current_member(&self) -> Result<Member, GroupError> {
+        Ok(Member::from((
+            LeafIndex(self.protocol.current_user_index()),
+            self.protocol.current_user_leaf_node()?,
+        )))
     }
 
     #[inline]
@@ -516,7 +590,7 @@ where
 
                 let credential = message
                     .plaintext
-                    .credential(self.protocol.current_epoch_tree()?)?;
+                    .credential(self.protocol.current_epoch_tree())?;
                 let authenticated_data = message.content.authenticated_data.clone();
                 (
                     self.process_incoming_plaintext(message)?,
@@ -528,7 +602,7 @@ where
                 let message = self.protocol.verify_incoming_ciphertext(message)?;
                 let credential = message
                     .plaintext
-                    .credential(self.protocol.current_epoch_tree()?)?;
+                    .credential(self.protocol.current_epoch_tree())?;
                 let authenticated_data = message.content.authenticated_data.clone();
                 (
                     self.process_incoming_plaintext(message)?,
@@ -635,7 +709,7 @@ where
 
     pub fn export_tree(&self) -> Result<Vec<u8>, GroupError> {
         self.protocol
-            .current_epoch_tree()?
+            .current_epoch_tree()
             .export_node_data()
             .tls_serialize_detached()
             .map_err(Into::into)
@@ -654,7 +728,7 @@ where
             .collect();
 
         Ok(GroupStats {
-            total_leaves: self.participant_count(),
+            total_leaves: self.roster().member_count(),
             current_index: self.protocol.current_user_index(),
             direct_path,
             epoch: self.protocol.current_epoch(),

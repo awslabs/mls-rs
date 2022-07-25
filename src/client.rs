@@ -382,11 +382,10 @@ mod tests {
         let _ = session.apply_pending_commit().unwrap();
 
         // Check that the new member is in the group
-        session
+        assert!(session
             .roster()
-            .iter()
-            .find(|ln| ln.signing_identity == bob_key_package.leaf_node.signing_identity)
-            .unwrap();
+            .into_iter()
+            .any(|member| member.signing_identity() == &bob_key_package.leaf_node.signing_identity))
     }
 
     struct RejectProposals;
@@ -594,7 +593,7 @@ mod tests {
 
         let num_members = if do_remove { 2 } else { 3 };
 
-        assert!(charlie_session.participant_count() == num_members);
+        assert!(charlie_session.roster().member_count() == num_members);
 
         let _ = alice_session
             .process_incoming_bytes(&external_commit)
@@ -604,9 +603,10 @@ mod tests {
             .process_incoming_bytes(&external_commit)
             .unwrap();
 
-        assert!(alice_session.participant_count() == num_members);
+        assert!(alice_session.roster().member_count() == num_members);
+
         if !do_remove {
-            assert!(bob_session.participant_count() == num_members);
+            assert!(bob_session.roster().member_count() == num_members);
         } else if let ProcessedMessagePayload::Commit(update) = message.message {
             assert!(!update.active);
         }
@@ -655,9 +655,9 @@ mod tests {
 
         let bob_msg = b"I'm Bob";
         let bob_cred = bob_session
-            .current_key_package()
+            .current_member()
             .unwrap()
-            .signing_identity
+            .signing_identity()
             .clone();
 
         let msg = bob_session
