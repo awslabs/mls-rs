@@ -11,6 +11,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      issues: write 
     steps:
       - uses: actions/checkout@v2
       - run: rustup toolchain update stable && rustup default stable
@@ -34,7 +35,8 @@ jobs:
           tool: 'cargo'
           output-file-path: output.txt
           fail-on-alert: true
+          auto-push: false
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          alert-threshold: '100%'
+          alert-threshold: '200%'
           comment-on-alert: true
           alert-comment-cc-users: '@tomleavy'
