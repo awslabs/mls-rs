@@ -1,5 +1,7 @@
-name: Interop Tests
-on: [push, pull_request]
+name: Full Interop Tests
+on:
+  schedule:
+    - cron: '0 5 * * 6'
 env:
   CARGO_TERM_COLOR: always
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
@@ -29,7 +31,7 @@ jobs:
     - name: Run tests
       working-directory: interop/interop
       run: |
-        python scenario_generators/generate_config_basic.py
+        python scenario_generators/generate_config_random.py
         export GOPATH=$HOME/go
         export GOBIN=$GOPATH/bin
         export PATH=$PATH:$GOROOT:$GOPATH:$GOBIN

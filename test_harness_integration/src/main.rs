@@ -52,18 +52,10 @@ impl TryFrom<i32> for TestVectorType {
     }
 }
 
-struct ParsedStateUpdate {
-    added: Vec<u32>,
-    updated: Vec<u32>,
-    removed_indices: Vec<u32>,
-    removed_leaves: Vec<Vec<u8>>,
-    psks: Vec<Vec<u8>>,
-}
-
-impl TryFrom<&StateUpdate> for ParsedStateUpdate {
+impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
     type Error = Status;
 
-    fn try_from(state_update: &StateUpdate) -> Result<Self, Self::Error> {
+    fn try_from((state_update, state_id): (StateUpdate, u32)) -> Result<Self, Self::Error> {
         let added = state_update
             .added
             .iter()
@@ -97,11 +89,13 @@ impl TryFrom<&StateUpdate> for ParsedStateUpdate {
             .map_err(abort)?;
 
         Ok(Self {
+            state_id,
             added,
             updated,
             removed_indices,
             removed_leaves,
             psks,
+            active: state_update.active as u32,
         })
     }
 }
@@ -410,10 +404,15 @@ impl MlsClient for MlsClientImpl {
         let request_ref = request.get_ref();
         let mut sessions = self.sessions.lock().unwrap();
 
+        let removed = sessions
+            .get(request_ref.removed as usize - 1)
+            .ok_or_else(|| Status::new(Aborted, "removed has no session"))?
+            .current_user_index();
+
         let proposal_packet = sessions
             .get_mut(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
-            .propose_remove(request_ref.removed, vec![])
+            .ok_or_else(|| Status::new(Aborted, "no session with such index"))?
+            .propose_remove(removed, vec![])
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -529,27 +528,18 @@ impl MlsClient for MlsClientImpl {
             .process_incoming_bytes(&request_ref.commit)
             .map_err(abort)?;
 
-        let parsed_state_update = match message.message {
-            ProcessedMessagePayload::Commit(state_update) => {
-                ParsedStateUpdate::try_from(&state_update)?
-            }
-            _ => return Err(Status::new(Aborted, "message not a commit.")),
-        };
-
-        Ok(Response::new(HandleCommitResponse {
-            state_id: request_ref.state_id,
-            added: parsed_state_update.added,
-            updated: parsed_state_update.updated,
-            removed_indices: parsed_state_update.removed_indices,
-            removed_leaves: parsed_state_update.removed_leaves,
-            psks: parsed_state_update.psks,
-        }))
+        match message.message {
+            ProcessedMessagePayload::Commit(state_update) => Ok(Response::new(
+                (state_update, request_ref.state_id).try_into()?,
+            )),
+            _ => Err(Status::new(Aborted, "message not a commit.")),
+        }
     }
 
     async fn handle_pending_commit(
         &self,
         request: tonic::Request<HandlePendingCommitRequest>,
-    ) -> Result<tonic::Response<HandlePendingCommitResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<HandleCommitResponse>, tonic::Status> {
         let request_ref = request.get_ref();
         let session_index = request_ref.state_id as usize - 1;
         let mut sessions = self.sessions.lock().unwrap();
@@ -560,16 +550,9 @@ impl MlsClient for MlsClientImpl {
             .apply_pending_commit()
             .map_err(abort)?;
 
-        let parsed_state_update = ParsedStateUpdate::try_from(&state_update)?;
-
-        Ok(Response::new(HandlePendingCommitResponse {
-            state_id: request_ref.state_id,
-            added: parsed_state_update.added,
-            updated: parsed_state_update.updated,
-            removed_indices: parsed_state_update.removed_indices,
-            removed_leaves: parsed_state_update.removed_leaves,
-            psks: parsed_state_update.psks,
-        }))
+        Ok(Response::new(
+            (state_update, request_ref.state_id).try_into()?,
+        ))
     }
 
     async fn handle_external_commit(
