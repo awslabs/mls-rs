@@ -407,7 +407,9 @@ impl MlsClient for MlsClientImpl {
         let removed = sessions
             .get(request_ref.removed as usize - 1)
             .ok_or_else(|| Status::new(Aborted, "removed has no session"))?
-            .current_user_index();
+            .current_member()
+            .map_err(abort)?
+            .index();
 
         let proposal_packet = sessions
             .get_mut(request_ref.state_id as usize - 1)
