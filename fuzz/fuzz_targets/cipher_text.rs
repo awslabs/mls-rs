@@ -42,11 +42,12 @@ fuzz_target!(|data: (Vec<u8>, u64, Vec<u8>)| {
         data.2,
     );
 
-    let session = &GROUP_DATA.lock().unwrap()[0];
+    let mut sessions = GROUP_DATA.lock().unwrap();
+    let session = &mut sessions[0];
     plaintext_sign(plain_text, &session.protocol).unwrap();
 
     let cipher_text = Group::encrypt_plaintext(
-        &mut GROUP_DATA.lock().unwrap()[0].protocol,
+        &mut session.protocol,
         plain_text.clone(),
         PaddingMode::StepFunction,
     )
@@ -57,5 +58,5 @@ fuzz_target!(|data: (Vec<u8>, u64, Vec<u8>)| {
         payload: MLSMessagePayload::Cipher(cipher_text),
     };
 
-    let _ = GROUP_DATA.lock().unwrap()[1].process_incoming_message(message);
+    let _ = sessions[1].process_incoming_message(message);
 });
