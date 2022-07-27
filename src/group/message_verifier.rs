@@ -253,16 +253,16 @@ fn signing_identity_for_new_member_proposal(
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
-        client_config::InMemoryPskStore,
+        client_config::{test_utils::test_config, ClientConfig, InMemoryClientConfig},
         group::{
             framing::MLSCiphertext,
             message_signature::MessageSigningContext,
             message_verifier::decrypt_ciphertext,
             padding::PaddingMode,
             proposal::{AddProposal, Proposal},
-            test_utils::{test_group, test_member, InMemoryGroupConfig, TestGroup, TEST_GROUP},
-            CommitOptions, Content, ControlEncryptionMode, Group, GroupConfig, GroupError,
-            MLSMessagePayload, MLSPlaintext, Sender, VerifiedPlaintext,
+            test_utils::{test_group, test_member, TestGroup, TEST_GROUP},
+            CommitOptions, Content, ControlEncryptionMode, Group, GroupError, MLSMessagePayload,
+            MLSPlaintext, Sender, VerifiedPlaintext,
         },
         key_package::KeyPackageGeneration,
         signer::{Signable, SignatureError, Signer},
@@ -271,7 +271,6 @@ mod tests {
         EpochRepository, ProtocolVersion, RemoveProposal,
     };
     use assert_matches::assert_matches;
-    use ferriscrypt::asym::ec_key::SecretKey;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -291,7 +290,25 @@ mod tests {
         )
     }
 
-    fn add_membership_tag(message: &mut MLSPlaintext, group: &Group<InMemoryGroupConfig>) {
+    fn make_signed_plaintext(group: &Group<InMemoryClientConfig>, encrypted: bool) -> MLSPlaintext {
+        let mut plaintext = make_plaintext(
+            Sender::Member(group.private_tree.self_index),
+            group.current_epoch(),
+        );
+
+        let signing_context = MessageSigningContext {
+            group_context: Some(&group.core.context),
+            encrypted,
+        };
+
+        plaintext
+            .sign(&group.signer().unwrap(), &signing_context)
+            .unwrap();
+
+        plaintext
+    }
+
+    fn add_membership_tag(message: &mut MLSPlaintext, group: &Group<InMemoryClientConfig>) {
         message.membership_tag = Some(
             group
                 .key_schedule
@@ -302,7 +319,7 @@ mod tests {
 
     fn decrypt(
         ciphertext: MLSCiphertext,
-        group: &mut Group<InMemoryGroupConfig>,
+        group: &mut Group<InMemoryClientConfig>,
     ) -> Result<VerifiedPlaintext, GroupError> {
         let mut epoch = group
             .config
@@ -318,42 +335,14 @@ mod tests {
         res
     }
 
-    struct TestMember {
-        signing_key: SecretKey,
-        group: Group<InMemoryGroupConfig>,
-    }
-
-    impl TestMember {
-        fn make_member_plaintext(&self) -> MLSPlaintext {
-            make_plaintext(
-                Sender::Member(self.group.private_tree.self_index),
-                self.group.current_epoch(),
-            )
-        }
-
-        fn sign(&self, message: &mut MLSPlaintext, encrypted: bool) {
-            let signing_context = MessageSigningContext {
-                group_context: Some(&self.group.core.context),
-                encrypted,
-            };
-
-            message.sign(&self.signing_key, &signing_context).unwrap();
-        }
-    }
-
     struct TestEnv {
-        alice: TestMember,
-        bob: TestMember,
+        alice: TestGroup,
+        bob: TestGroup,
     }
 
     impl TestEnv {
         fn new() -> Self {
-            let alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-
-            let mut alice = TestMember {
-                signing_key: alice_group.signing_key,
-                group: alice_group.group,
-            };
+            let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
             let (bob_key_pkg, bob_signing_key) =
                 test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
@@ -362,8 +351,6 @@ mod tests {
                 .group
                 .add_proposal(bob_key_pkg.key_package.clone())
                 .unwrap();
-
-            let secret_store = InMemoryPskStore::default();
 
             let commit_options = CommitOptions {
                 prefer_path_update: false,
@@ -375,14 +362,7 @@ mod tests {
 
             let (commit_generation, welcome) = alice
                 .group
-                .commit_proposals(
-                    vec![proposal],
-                    commit_options,
-                    &secret_store,
-                    &alice.signing_key,
-                    None,
-                    vec![],
-                )
+                .commit_proposals(vec![proposal], commit_options, None, vec![])
                 .unwrap();
 
             let welcome = match welcome.unwrap().payload {
@@ -392,34 +372,29 @@ mod tests {
 
             alice
                 .group
-                .process_pending_commit(commit_generation, &secret_store)
+                .process_pending_commit(commit_generation)
                 .unwrap();
 
-            let bob_group = Group::from_welcome_message(
+            let bob = Group::from_welcome_message(
                 TEST_PROTOCOL_VERSION,
                 welcome,
                 None,
-                bob_key_pkg,
-                &secret_store,
-                |_| InMemoryGroupConfig::new(TEST_CIPHER_SUITE),
-                |_, _| true,
+                bob_key_pkg.clone(),
+                test_config(bob_signing_key, bob_key_pkg),
             )
             .unwrap();
 
-            let bob = TestMember {
-                signing_key: bob_signing_key,
-                group: bob_group,
-            };
-
-            Self { alice, bob }
+            Self {
+                alice,
+                bob: TestGroup { group: bob },
+            }
         }
     }
 
     #[test]
     fn valid_plaintext_is_verified() {
         let env = TestEnv::new();
-        let mut message = env.alice.make_member_plaintext();
-        env.alice.sign(&mut message, false);
+        let mut message = make_signed_plaintext(&env.alice.group, false);
         add_membership_tag(&mut message, &env.alice.group);
 
         verify_plaintext(
@@ -435,8 +410,7 @@ mod tests {
     #[test]
     fn wire_format_is_signed() {
         let mut env = TestEnv::new();
-        let mut message = env.alice.make_member_plaintext();
-        env.alice.sign(&mut message, false);
+        let message = make_signed_plaintext(&env.alice.group, false);
 
         let message = env
             .alice
@@ -457,8 +431,7 @@ mod tests {
     #[test]
     fn valid_ciphertext_is_verified() {
         let mut env = TestEnv::new();
-        let mut message = env.alice.make_member_plaintext();
-        env.alice.sign(&mut message, true);
+        let message = make_signed_plaintext(&env.alice.group, true);
 
         let message = env
             .alice
@@ -472,8 +445,7 @@ mod tests {
     #[test]
     fn plaintext_from_member_requires_membership_tag() {
         let env = TestEnv::new();
-        let mut message = env.alice.make_member_plaintext();
-        env.alice.sign(&mut message, false);
+        let message = make_signed_plaintext(&env.alice.group, false);
 
         let res = verify_plaintext(
             message,
@@ -671,8 +643,7 @@ mod tests {
     #[test]
     fn ciphertext_from_self_fails_verification() {
         let mut env = TestEnv::new();
-        let mut message = env.alice.make_member_plaintext();
-        env.alice.sign(&mut message, true);
+        let message = make_signed_plaintext(&env.alice.group, true);
 
         let message = env
             .alice

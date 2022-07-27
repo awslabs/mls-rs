@@ -383,7 +383,7 @@ mod tests {
 
         ExternalGroup::new(
             config,
-            group.group.external_commit_info(&group.signing_key)?,
+            group.group.external_commit_info()?,
             Some(public_tree.clone()),
         )
     }

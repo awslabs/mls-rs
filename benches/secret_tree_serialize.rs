@@ -31,7 +31,7 @@ fn secret_tree_setup(c: &mut Criterion) {
         let group_stats = value.1[0].group_stats().unwrap();
         let epoch_id = group_stats.epoch;
 
-        let epoch_repo = value.0.config.epoch_repo(TEST_GROUP);
+        let epoch_repo = value.0.config.epoch_repo();
         let epoch = epoch_repo.get(TEST_GROUP, epoch_id).unwrap().unwrap();
 
         let secret_tree = epoch.secret_tree();

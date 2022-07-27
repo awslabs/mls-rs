@@ -16,7 +16,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroizing;
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
-use crate::client_config::{CredentialValidator, InMemoryPskStore, ProposalFilterInit, PskStore};
+use crate::client_config::{ClientConfig, CredentialValidator, ProposalFilterInit};
 use crate::credential::CredentialError;
 use crate::extension::{
     ExtensionError, ExtensionList, ExternalPubExt, ExternalSendersExt, RatchetTreeExt,
@@ -27,6 +27,7 @@ use crate::key_package::{
     KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
     KeyPackageValidationError, KeyPackageValidator,
 };
+use crate::keychain::Keychain;
 use crate::message::ProcessedMessagePayload;
 use crate::psk::{
     ExternalPskId, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
@@ -64,7 +65,6 @@ use padding::PaddingMode;
 
 pub use external_group::ExternalGroup;
 pub use external_group_config::{ExternalGroupConfig, InMemoryExternalGroupConfig};
-pub use group_config::GroupConfig;
 pub use group_info::GroupInfo;
 pub use group_state::GroupState;
 pub(crate) use proposal_cache::ProposalCacheError;
@@ -81,7 +81,6 @@ pub(crate) mod epoch;
 mod external_group;
 mod external_group_config;
 pub mod framing;
-mod group_config;
 mod group_core;
 mod group_info;
 mod group_state;
@@ -352,6 +351,8 @@ pub enum GroupError {
     NoCredentialFound,
     #[error("Expected commit message, found: {0:?}")]
     NotCommitContent(ContentType),
+    #[error("signer not found")]
+    SignerNotFound,
 }
 
 #[derive(
@@ -444,7 +445,10 @@ pub enum ControlEncryptionMode {
 }
 
 #[derive(Clone, Debug)]
-pub struct Group<C: GroupConfig> {
+pub struct Group<C>
+where
+    C: ClientConfig + Clone,
+{
     config: C,
     #[cfg(feature = "benchmark")]
     pub core: GroupCore,
@@ -457,7 +461,7 @@ pub struct Group<C: GroupConfig> {
     confirmation_tag: ConfirmationTag,
 }
 
-impl<C: GroupConfig> PartialEq for Group<C> {
+impl<C: ClientConfig + Clone> PartialEq for Group<C> {
     fn eq(&self, other: &Self) -> bool {
         self.core.context == other.core.context
             && self.core.interim_transcript_hash == other.core.interim_transcript_hash
@@ -555,7 +559,10 @@ impl From<OutboundMessage> for MLSMessagePayload {
     }
 }
 
-impl<C: GroupConfig> Group<C> {
+impl<C> Group<C>
+where
+    C: ClientConfig + Clone,
+{
     pub fn new(
         config: C,
         group_id: Vec<u8>,
@@ -564,7 +571,8 @@ impl<C: GroupConfig> Group<C> {
         group_context_extensions: ExtensionList,
     ) -> Result<Self, GroupError> {
         let (signing_identity, signer) = config
-            .signing_identity(cipher_suite)
+            .keychain()
+            .default_identity(cipher_suite)
             .ok_or(GroupError::NoCredentialFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
@@ -617,49 +625,31 @@ impl<C: GroupConfig> Group<C> {
         })
     }
 
-    pub fn from_welcome_message<S, F, G>(
+    pub fn from_welcome_message(
         protocol_version: ProtocolVersion,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package: KeyPackageGeneration,
-        secret_store: &S,
-        make_config: G,
-        support_version_and_cipher: F,
-    ) -> Result<Self, GroupError>
-    where
-        S: PskStore,
-        F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
-        G: FnOnce(&[u8]) -> C,
-    {
+        config: C,
+    ) -> Result<Self, GroupError> {
         Self::join_with_welcome(
+            None,
             protocol_version,
             welcome,
             public_tree,
             key_package,
-            secret_store,
-            |_| Ok(None),
-            make_config,
-            support_version_and_cipher,
+            config,
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn join_with_welcome<P, F, G, E>(
+    fn join_with_welcome(
+        parent_group_id: Option<&[u8]>,
         protocol_version: ProtocolVersion,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package_generation: KeyPackageGeneration,
-        psk_store: &P,
-        get_epoch: E,
-        make_config: G,
-        support_version_and_cipher: F,
-    ) -> Result<Self, GroupError>
-    where
-        P: PskStore,
-        F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
-        G: FnOnce(&[u8]) -> C,
-        E: FnMut(u64) -> Result<Option<Epoch>, <C::EpochRepository as EpochRepository>::Error>,
-    {
+        config: C,
+    ) -> Result<Self, GroupError> {
         // Identify an entry in the secrets array where the KeyPackageRef value corresponds to
         // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
         // If no such field exists, or if the ciphersuite indicated in the KeyPackage does not
@@ -688,11 +678,13 @@ impl<C: GroupConfig> Group<C> {
         )?;
 
         let group_secrets = GroupSecrets::tls_deserialize(&mut &*decrypted_group_secrets)?;
+        let psk_store = config.secret_store();
+        let epoch_repo = config.epoch_repo();
 
         let psk_secret = crate::psk::psk_secret(
             welcome.cipher_suite,
-            Some(psk_store),
-            get_epoch,
+            Some(&psk_store),
+            parent_group_id.map(|gid| (gid, &epoch_repo)),
             &group_secrets.psks,
         )?;
 
@@ -710,16 +702,16 @@ impl<C: GroupConfig> Group<C> {
         let group_info = GroupInfo::tls_deserialize(&mut &*decrypted_group_info)?;
 
         let cipher_suite = group_info.group_context.cipher_suite;
-        if !support_version_and_cipher(protocol_version, cipher_suite) {
+
+        if !version_and_cipher_filter(&config, protocol_version, cipher_suite) {
             return Err(GroupError::UnsupportedProtocolVersionOrCipherSuite(
                 protocol_version,
                 cipher_suite,
             ));
         }
 
-        let config = make_config(&group_info.group_context.group_id);
-
         let mut public_tree = find_tree(public_tree, &group_info)?;
+
         validate_existing_group(
             &mut public_tree,
             &group_info,
@@ -816,24 +808,21 @@ impl<C: GroupConfig> Group<C> {
     }
 
     /// Returns group and external commit message
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_external<F, P>(
+    pub fn new_external(
         config: C,
         protocol_version: ProtocolVersion,
         group_info: GroupInfo,
         public_tree: Option<TreeKemPublic>,
-        support_version_and_cipher: F,
         to_remove: Option<u32>,
         external_psks: Vec<ExternalPskId>,
-        secret_store: &P,
         authenticated_data: Vec<u8>,
-    ) -> Result<(Self, OutboundMessage), GroupError>
-    where
-        F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
-        P: PskStore,
-    {
+    ) -> Result<(Self, OutboundMessage), GroupError> {
         // Validate received group info and tree.
-        if !support_version_and_cipher(protocol_version, group_info.group_context.cipher_suite) {
+        if !version_and_cipher_filter(
+            &config,
+            protocol_version,
+            group_info.group_context.cipher_suite,
+        ) {
             return Err(GroupError::UnsupportedProtocolVersionOrCipherSuite(
                 protocol_version,
                 group_info.group_context.cipher_suite,
@@ -846,7 +835,8 @@ impl<C: GroupConfig> Group<C> {
             .ok_or(GroupError::MissingExternalPubExtension)?;
 
         let (identity, signer) = config
-            .signing_identity(group_info.group_context.cipher_suite)
+            .keychain()
+            .default_identity(group_info.group_context.cipher_suite)
             .ok_or(GroupError::NoCredentialFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
@@ -909,16 +899,10 @@ impl<C: GroupConfig> Group<C> {
             ratchet_tree_extension: false,
         };
 
-        let (commit, _) = group.commit_proposals(
-            proposals,
-            options,
-            secret_store,
-            &signer,
-            Some(&leaf_node),
-            authenticated_data,
-        )?;
+        let (commit, _) =
+            group.commit_proposals(proposals, options, Some(&leaf_node), authenticated_data)?;
 
-        group.process_pending_commit(commit.clone(), secret_store)?;
+        group.process_pending_commit(commit.clone())?;
 
         Ok((group, commit.plaintext))
     }
@@ -980,19 +964,18 @@ impl<C: GroupConfig> Group<C> {
         })
     }
 
-    pub fn create_proposal<S: Signer>(
+    pub fn create_proposal(
         &mut self,
         proposal: Proposal,
-        signer: &S,
         encryption_mode: ControlEncryptionMode,
         authenticated_data: Vec<u8>,
     ) -> Result<OutboundMessage, GroupError> {
         let plaintext = self.construct_mls_plaintext(
             Sender::Member(self.private_tree.self_index),
             Content::Proposal(proposal.clone()),
-            signer,
             encryption_mode,
             authenticated_data,
+            &self.signer()?,
         )?;
 
         // If we are going to encrypt then the tag will be dropped so it shouldn't be included
@@ -1024,13 +1007,20 @@ impl<C: GroupConfig> Group<C> {
         self.format_for_wire(plaintext, encryption_mode)
     }
 
+    pub(crate) fn signer(&self) -> Result<<C::Keychain as Keychain>::Signer, GroupError> {
+        self.config
+            .keychain()
+            .signer(&self.current_user_leaf_node()?.signing_identity)
+            .ok_or(GroupError::SignerNotFound)
+    }
+
     fn construct_mls_plaintext<S: Signer>(
         &self,
         sender: Sender,
         content: Content,
-        signer: &S,
         encryption_mode: ControlEncryptionMode,
         authenticated_data: Vec<u8>,
+        signer: &S,
     ) -> Result<MLSPlaintext, GroupError> {
         Ok(MLSPlaintext::new_signed(
             &self.core.context,
@@ -1047,12 +1037,10 @@ impl<C: GroupConfig> Group<C> {
     }
 
     /// Returns commit and optional `MLSMessage` containing a `Welcome`
-    pub fn commit_proposals<P: PskStore, S: Signer>(
+    pub fn commit_proposals(
         &mut self,
         proposals: Vec<Proposal>,
         options: CommitOptions,
-        psk_store: &P,
-        signer: &S,
         external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
     ) -> Result<(CommitGeneration, Option<MLSMessage>), GroupError> {
@@ -1066,6 +1054,15 @@ impl<C: GroupConfig> Group<C> {
         } else {
             Sender::Member(self.private_tree.self_index)
         };
+
+        let signer = match external_leaf {
+            Some(leaf_node) => self
+                .config
+                .keychain()
+                .signer(&leaf_node.signing_identity)
+                .ok_or(GroupError::NoCredentialFound),
+            None => self.signer(),
+        }?;
 
         let (commit_proposals, proposal_effects) = self.core.proposals.prepare_commit(
             sender.clone(),
@@ -1134,7 +1131,7 @@ impl<C: GroupConfig> Group<C> {
                     .iter()
                     .map(|(_, leaf_index)| *leaf_index)
                     .collect::<Vec<LeafIndex>>(),
-                signer,
+                &signer,
                 options.capabilities_update,
                 options.extension_update,
             )?;
@@ -1159,15 +1156,13 @@ impl<C: GroupConfig> Group<C> {
         let commit_secret =
             CommitSecret::from_root_secret(self.core.cipher_suite(), root_secret.as_ref())?;
 
+        let epoch_repo = self.config.epoch_repo();
+        let psk_store = self.config.secret_store();
+
         let psk_secret = crate::psk::psk_secret(
             self.core.cipher_suite(),
-            Some(psk_store),
-            |epoch_id| {
-                self.config
-                    .epoch_repo()
-                    .get(&self.core.context.group_id, epoch_id)
-                    .map(|ep_opt| ep_opt.map(|ep| ep.into_inner()))
-            },
+            Some(&psk_store),
+            Some((&self.core.context.group_id, &epoch_repo)),
             &provisional_state.public_state.psks,
         )?;
 
@@ -1180,9 +1175,9 @@ impl<C: GroupConfig> Group<C> {
         let mut plaintext = self.construct_mls_plaintext(
             sender,
             Content::Commit(commit),
-            signer,
             options.encryption_mode,
             authenticated_data,
+            &signer,
         )?;
 
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
@@ -1248,7 +1243,7 @@ impl<C: GroupConfig> Group<C> {
         };
 
         // Sign the GroupInfo using the member's private signing key
-        group_info.sign(signer, &())?;
+        group_info.sign(&signer, &())?;
 
         let welcome = self
             .make_welcome_message(
@@ -1312,14 +1307,12 @@ impl<C: GroupConfig> Group<C> {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn new_for_resumption<S, F>(
         &self,
         new_context: &mut GroupContext,
         new_validated_leaf: LeafNode,
         new_leaf_secret: HpkeSecretKey,
         new_signer: &S,
-        config: C,
         mut get_new_key_package: F,
         resumption_psk_id: JustPreSharedKeyID,
     ) -> Result<(Self, Option<Welcome>), GroupError>
@@ -1333,7 +1326,7 @@ impl<C: GroupConfig> Group<C> {
             new_context.protocol_version,
             new_context.cipher_suite,
             required_capabilities.as_ref(),
-            config.credential_validator(),
+            self.config.credential_validator(),
         );
 
         // Generate new leaves for all existing members
@@ -1372,20 +1365,17 @@ impl<C: GroupConfig> Group<C> {
         let added_member_indexes = new_pub_tree.add_leaves(new_members)?;
         new_context.tree_hash = new_pub_tree.tree_hash()?;
 
+        let epoch_repo = self.config.epoch_repo();
+
         let psks = vec![PreSharedKeyID {
             key_id: resumption_psk_id,
             psk_nonce: PskNonce::random(new_context.cipher_suite)?,
         }];
 
-        let psk_secret = crate::psk::psk_secret::<InMemoryPskStore, _, _>(
+        let psk_secret = crate::psk::psk_secret(
             new_context.cipher_suite,
-            None,
-            |epoch_id| {
-                self.config
-                    .epoch_repo()
-                    .get(self.group_id(), epoch_id)
-                    .map(|ep_opt| ep_opt.map(|ep| ep.into_inner()))
-            },
+            None::<&C::PskStore>,
+            Some((&self.core.context.group_id, &epoch_repo)),
             &psks,
         )?;
 
@@ -1414,7 +1404,7 @@ impl<C: GroupConfig> Group<C> {
 
         group_info.sign(new_signer, &())?;
 
-        config
+        self.config
             .epoch_repo()
             .insert(key_schedule_result.epoch.into())
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
@@ -1426,7 +1416,7 @@ impl<C: GroupConfig> Group<C> {
         )?;
 
         let new_group = Group {
-            config,
+            config: self.config.clone(),
             core: GroupCore::new(new_context.clone(), new_pub_tree, interim_transcript_hash),
             private_tree: new_priv_tree,
             key_schedule: key_schedule_result.key_schedule,
@@ -1446,29 +1436,26 @@ impl<C: GroupConfig> Group<C> {
         Ok((new_group, welcome))
     }
 
-    pub fn branch<S, F, G>(
+    pub fn branch<F>(
         &self,
         sub_group_id: Vec<u8>,
-        signer: &S,
-        make_config: G,
         get_new_key_package: F,
     ) -> Result<(Self, Option<Welcome>), GroupError>
     where
-        S: Signer,
         F: FnMut(&LeafNode) -> Option<KeyPackage>,
-        G: FnOnce(&[u8]) -> C,
     {
+        let signer = self.signer()?;
+
         let current_leaf_node = self.current_user_leaf_node()?;
-        let config = make_config(&sub_group_id);
 
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
             self.core.cipher_suite(),
             current_leaf_node.signing_identity.clone(),
             current_leaf_node.capabilities.clone(),
             current_leaf_node.extensions.clone(),
-            signer,
-            config.lifetime(),
-            &config.credential_validator(),
+            &signer,
+            self.config.lifetime(),
+            &self.config.credential_validator(),
         )?;
 
         let mut new_context = GroupContext {
@@ -1492,41 +1479,26 @@ impl<C: GroupConfig> Group<C> {
             &mut new_context,
             new_leaf_node,
             new_leaf_secret,
-            signer,
-            config,
+            &signer,
             get_new_key_package,
             resumption_psk_id,
         )
     }
 
-    pub fn join_subgroup<P, F, G>(
+    pub fn join_subgroup(
         &self,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package_generation: KeyPackageGeneration,
-        psk_store: &P,
-        make_config: G,
-        support_version_and_cipher: F,
-    ) -> Result<Self, GroupError>
-    where
-        P: PskStore,
-        F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
-        G: FnOnce(&[u8]) -> C,
-    {
+        config: C,
+    ) -> Result<Self, GroupError> {
         let subgroup = Self::join_with_welcome(
+            Some(&self.core.context.group_id),
             self.core.protocol_version(),
             welcome,
             public_tree,
             key_package_generation,
-            psk_store,
-            |epoch_id| {
-                self.config
-                    .epoch_repo()
-                    .get(self.group_id(), epoch_id)
-                    .map(|ep_opt| ep_opt.map(|ep| ep.into_inner()))
-            },
-            make_config,
-            support_version_and_cipher,
+            config,
         )?;
 
         if subgroup.core.protocol_version() != self.core.protocol_version() {
@@ -1542,14 +1514,13 @@ impl<C: GroupConfig> Group<C> {
         }
     }
 
-    pub fn finish_reinit_commit<G, F>(
+    pub fn finish_reinit_commit<F>(
         &self,
-        make_config: G,
+        config: C,
         get_new_key_package: F,
     ) -> Result<(Self, Option<Welcome>), GroupError>
     where
         F: FnMut(&LeafNode) -> Option<KeyPackage>,
-        G: FnOnce(&[u8]) -> C,
     {
         let reinit = self
             .core
@@ -1557,10 +1528,9 @@ impl<C: GroupConfig> Group<C> {
             .as_ref()
             .ok_or(GroupError::PendingReInitNotFound)?;
 
-        let config = make_config(&reinit.group_id);
-
         let (new_signing_id, new_signer) = config
-            .signing_identity(reinit.cipher_suite)
+            .keychain()
+            .default_identity(reinit.cipher_suite)
             .ok_or(GroupError::NoCredentialFound)?;
 
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
@@ -1595,7 +1565,6 @@ impl<C: GroupConfig> Group<C> {
             new_leaf_node,
             new_leaf_secret,
             &new_signer,
-            config,
             get_new_key_package,
             resumption_psk_id,
         )?;
@@ -1609,20 +1578,13 @@ impl<C: GroupConfig> Group<C> {
         }
     }
 
-    pub fn finish_reinit_join<P, F, G>(
+    pub fn finish_reinit_join(
         &self,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
         key_package_generation: KeyPackageGeneration,
-        psk_store: &P,
-        make_config: G,
-        support_version_and_cipher: F,
-    ) -> Result<Self, GroupError>
-    where
-        P: PskStore,
-        F: FnOnce(ProtocolVersion, CipherSuite) -> bool,
-        G: FnOnce(&[u8]) -> C,
-    {
+        config: C,
+    ) -> Result<Self, GroupError> {
         let reinit = self
             .core
             .pending_reinit
@@ -1634,19 +1596,12 @@ impl<C: GroupConfig> Group<C> {
         }
 
         let group = Self::join_with_welcome(
+            Some(&self.core.context.group_id),
             reinit.version,
             welcome,
             public_tree,
             key_package_generation,
-            psk_store,
-            |epoch_id| {
-                self.config
-                    .epoch_repo()
-                    .get(self.group_id(), epoch_id)
-                    .map(|ep_opt| ep_opt.map(|ep| ep.into_inner()))
-            },
-            make_config,
-            support_version_and_cipher,
+            config,
         )?;
 
         if group.core.protocol_version() != reinit.version {
@@ -1735,12 +1690,12 @@ impl<C: GroupConfig> Group<C> {
         Ok(Proposal::Add(AddProposal { key_package }))
     }
 
-    pub fn update_proposal<S: Signer>(
+    pub fn update_proposal(
         &mut self,
-        signer: &S,
         extension_list: Option<ExtensionList>,
         capabilities_update: Option<Capabilities>,
     ) -> Result<Proposal, GroupError> {
+        let signer = self.signer()?;
         // Grab a copy of the current node and update it to have new key material
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
 
@@ -1749,7 +1704,7 @@ impl<C: GroupConfig> Group<C> {
             self.group_id(),
             capabilities_update,
             extension_list,
-            signer,
+            &signer,
         )?;
 
         // Store the secret key in the pending updates storage for later
@@ -1928,13 +1883,14 @@ impl<C: GroupConfig> Group<C> {
         Self::encrypt_plaintext_to_cipher(self, plaintext, padding)
     }
 
-    pub fn encrypt_application_message<S: Signer>(
+    pub fn encrypt_application_message(
         &mut self,
         message: &[u8],
-        signer: &S,
         padding: PaddingMode,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSCiphertext, GroupError> {
+        let signer = self.signer()?;
+
         // A group member that has observed one or more proposals within an epoch MUST send a Commit message
         // before sending application data
         if !self.core.proposals.is_empty() {
@@ -1961,7 +1917,7 @@ impl<C: GroupConfig> Group<C> {
             encrypted: true,
         };
 
-        plaintext.sign(signer, &signing_context)?;
+        plaintext.sign(&signer, &signing_context)?;
 
         self.encrypt_plaintext(plaintext, padding)
     }
@@ -2017,20 +1973,15 @@ impl<C: GroupConfig> Group<C> {
         self.core.validate_incoming_message(plaintext)
     }
 
-    pub fn process_incoming_message<S: PskStore>(
+    pub fn process_incoming_message(
         &mut self,
         plaintext: VerifiedPlaintext,
-        secret_store: &S,
     ) -> Result<ProcessedMessagePayload, GroupError> {
         match plaintext.plaintext.content.content {
             Content::Application(data) => Ok(ProcessedMessagePayload::Application(data)),
-            Content::Commit(_) => {
-                self.process_commit(plaintext, None, secret_store)
-                    .map(ProcessedMessagePayload::Commit)
-                //TODO: If the Commit included a ReInit proposal, the client MUST NOT use the group to send
-                // messages anymore. Instead, it MUST wait for a Welcome message from the committer
-                // and check that
-            }
+            Content::Commit(_) => self
+                .process_commit(plaintext, None)
+                .map(ProcessedMessagePayload::Commit),
             Content::Proposal(ref p) => {
                 let proposal_ref = ProposalRef::from_plaintext(
                     self.core.cipher_suite(),
@@ -2049,24 +2000,18 @@ impl<C: GroupConfig> Group<C> {
         }
     }
 
-    pub fn process_pending_commit<S: PskStore>(
+    pub fn process_pending_commit(
         &mut self,
         commit: CommitGeneration,
-        secret_store: &S,
     ) -> Result<StateUpdate, GroupError> {
-        self.process_commit(
-            commit.plaintext.into(),
-            commit.pending_secrets,
-            secret_store,
-        )
+        self.process_commit(commit.plaintext.into(), commit.pending_secrets)
     }
 
     // This function takes a provisional copy of the tree and returns an updated tree and epoch key schedule
-    fn process_commit<S: PskStore>(
+    fn process_commit(
         &mut self,
         plaintext: VerifiedPlaintext,
         local_pending: Option<(TreeKemPrivate, PathSecret)>,
-        secret_store: &S,
     ) -> Result<StateUpdate, GroupError> {
         let (commit, sender) = match plaintext.plaintext.content.content {
             Content::Commit(ref commit) => Ok((commit, &plaintext.plaintext.content.sender)),
@@ -2202,15 +2147,13 @@ impl<C: GroupConfig> Group<C> {
         provisional_group_context.tree_hash =
             provisional_state.public_state.public_tree.tree_hash()?;
 
+        let epoch_repo = self.config.epoch_repo();
+        let secret_store = self.config.secret_store();
+
         let psk_secret = crate::psk::psk_secret(
             self.core.cipher_suite(),
-            Some(secret_store),
-            |epoch_id| {
-                self.config
-                    .epoch_repo()
-                    .get(self.group_id(), epoch_id)
-                    .map(|ep_opt| ep_opt.map(|ep| ep.into_inner()))
-            },
+            Some(&secret_store),
+            Some((&self.core.context.group_id, &epoch_repo)),
             &provisional_state.public_state.psks,
         )?;
 
@@ -2284,7 +2227,9 @@ impl<C: GroupConfig> Group<C> {
     }
 
     /// The returned `GroupInfo` is suitable for one external commit for the current epoch.
-    pub fn external_commit_info<S: Signer>(&self, signer: &S) -> Result<GroupInfo, GroupError> {
+    pub fn external_commit_info(&self) -> Result<GroupInfo, GroupError> {
+        let signer = self.signer()?;
+
         let mut extensions = ExtensionList::new();
 
         extensions.set_extension(ExternalPubExt {
@@ -2301,7 +2246,7 @@ impl<C: GroupConfig> Group<C> {
             signature: Vec::new(),
         };
 
-        info.sign(signer, &())?;
+        info.sign(&signer, &())?;
 
         Ok(info)
     }
@@ -2450,88 +2395,35 @@ fn transcript_hashes(
     Ok((interim_transcript_hash, confirmed_transcript_hash))
 }
 
+fn version_and_cipher_filter<C: ClientConfig>(
+    config: &C,
+    version: ProtocolVersion,
+    cipher_suite: CipherSuite,
+) -> bool {
+    config.supported_protocol_versions().contains(&version)
+        && config.supported_cipher_suites().contains(&cipher_suite)
+}
+
 #[cfg(test)]
 pub(crate) mod test_utils {
     use ferriscrypt::asym::ec_key::SecretKey;
 
     use super::*;
     use crate::{
+        cipher_suite::MaybeCipherSuite,
         client_config::{
-            InMemoryPskStore, MakeProposalFilter, PassthroughCredentialValidator, SimpleError,
+            test_utils::test_config, InMemoryClientConfig, PassthroughCredentialValidator,
         },
         extension::RequiredCapabilitiesExt,
         key_package::KeyPackageGenerator,
         signing_identity::test_utils::get_test_signing_identity,
-        signing_identity::SigningIdentity,
         tree_kem::Lifetime,
-        InMemoryEpochRepository,
     };
 
     pub const TEST_GROUP: &[u8] = b"group";
 
-    #[derive(Clone, Debug)]
-    pub(crate) struct InMemoryGroupConfig {
-        pub epoch_repo: InMemoryEpochRepository,
-        pub make_proposal_filter: MakeProposalFilter,
-        pub capabilities: Capabilities,
-        pub leaf_node_extensions: ExtensionList,
-        pub signing_identity: (SigningIdentity, SecretKey),
-    }
-
-    impl InMemoryGroupConfig {
-        pub fn new(cipher_suite: CipherSuite) -> Self {
-            Self {
-                epoch_repo: Default::default(),
-                make_proposal_filter: Default::default(),
-                capabilities: Default::default(),
-                leaf_node_extensions: Default::default(),
-                signing_identity: get_test_signing_identity(cipher_suite, b"member".to_vec()),
-            }
-        }
-    }
-
-    impl GroupConfig for InMemoryGroupConfig {
-        type EpochRepository = InMemoryEpochRepository;
-        type CredentialValidator = PassthroughCredentialValidator;
-        type ProposalFilter = BoxedProposalFilter<SimpleError>;
-        type Signer = SecretKey;
-
-        fn epoch_repo(&self) -> InMemoryEpochRepository {
-            self.epoch_repo.clone()
-        }
-
-        fn credential_validator(&self) -> Self::CredentialValidator {
-            PassthroughCredentialValidator::new()
-        }
-
-        fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
-            (self.make_proposal_filter.0)(init)
-        }
-
-        fn leaf_node_extensions(&self) -> ExtensionList {
-            self.leaf_node_extensions.clone()
-        }
-
-        fn lifetime(&self) -> Lifetime {
-            Lifetime::default()
-        }
-
-        fn capabilities(&self) -> Capabilities {
-            self.capabilities.clone()
-        }
-
-        fn signing_identity(
-            &self,
-            _cipher_suite: CipherSuite,
-        ) -> Option<(SigningIdentity, Self::Signer)> {
-            Some(self.signing_identity.clone())
-        }
-    }
-
     pub(crate) struct TestGroup {
-        pub group: Group<InMemoryGroupConfig>,
-        pub signing_key: SecretKey,
-        pub secret_store: InMemoryPskStore,
+        pub group: Group<InMemoryClientConfig>,
     }
 
     impl TestGroup {
@@ -2551,12 +2443,7 @@ pub(crate) mod test_utils {
 
         pub(crate) fn propose(&mut self, proposal: Proposal) -> OutboundMessage {
             self.group
-                .create_proposal(
-                    proposal,
-                    &self.signing_key,
-                    ControlEncryptionMode::Plaintext,
-                    vec![],
-                )
+                .create_proposal(proposal, ControlEncryptionMode::Plaintext, vec![])
                 .unwrap()
         }
 
@@ -2565,7 +2452,7 @@ pub(crate) mod test_utils {
             name: &str,
             commit_options: CommitOptions,
         ) -> (TestGroup, OutboundMessage) {
-            let (new_key_package, new_key) = test_member(
+            let (new_key_package, secret_key) = test_member(
                 self.group.core.protocol_version(),
                 self.group.core.cipher_suite(),
                 name.as_bytes(),
@@ -2577,26 +2464,18 @@ pub(crate) mod test_utils {
                 .add_proposal(new_key_package.key_package.clone())
                 .unwrap();
 
-            let secret_store = InMemoryPskStore::default();
             let tree_ext = commit_options.ratchet_tree_extension;
 
             let (commit_generation, welcome) = self
                 .group
-                .commit_proposals(
-                    vec![add_proposal],
-                    commit_options,
-                    &secret_store,
-                    &self.signing_key,
-                    None,
-                    Vec::new(),
-                )
+                .commit_proposals(vec![add_proposal], commit_options, None, Vec::new())
                 .unwrap();
 
             let commit = commit_generation.plaintext.clone();
 
             // Apply the commit to the original group
             self.group
-                .process_pending_commit(commit_generation, &secret_store)
+                .process_pending_commit(commit_generation)
                 .unwrap();
 
             let tree = (!tree_ext).then(|| self.group.current_epoch_tree().clone());
@@ -2611,18 +2490,12 @@ pub(crate) mod test_utils {
                 self.group.protocol_version(),
                 welcome,
                 tree,
-                new_key_package,
-                &secret_store,
-                |_| InMemoryGroupConfig::new(self.group.core.cipher_suite()),
-                |_, _| true,
+                new_key_package.clone(),
+                test_config(secret_key, new_key_package),
             )
             .unwrap();
 
-            let new_test_group = TestGroup {
-                group: new_group,
-                signing_key: new_key,
-                secret_store,
-            };
+            let new_test_group = TestGroup { group: new_group };
 
             (new_test_group, commit)
         }
@@ -2631,35 +2504,25 @@ pub(crate) mod test_utils {
             &mut self,
             proposals: Vec<Proposal>,
         ) -> Result<(CommitGeneration, Option<MLSMessage>), GroupError> {
-            self.group.commit_proposals(
-                proposals,
-                self.commit_options(),
-                &self.secret_store,
-                &self.signing_key,
-                None,
-                Vec::new(),
-            )
+            self.group
+                .commit_proposals(proposals, self.commit_options(), None, Vec::new())
         }
 
         pub(crate) fn process_pending_commit(
             &mut self,
             commit: CommitGeneration,
         ) -> Result<StateUpdate, GroupError> {
-            self.group
-                .process_pending_commit(commit, &self.secret_store)
+            self.group.process_pending_commit(commit)
         }
 
         pub(crate) fn process_message(
             &mut self,
             plaintext: MLSPlaintext,
         ) -> Result<ProcessedMessagePayload, GroupError> {
-            self.group.process_incoming_message(
-                VerifiedPlaintext {
-                    encrypted: false,
-                    plaintext,
-                },
-                &self.secret_store,
-            )
+            self.group.process_incoming_message(VerifiedPlaintext {
+                encrypted: false,
+                plaintext,
+            })
         }
 
         pub(crate) fn make_plaintext(&mut self, content: Content) -> MLSPlaintext {
@@ -2668,9 +2531,9 @@ pub(crate) mod test_utils {
                 .construct_mls_plaintext(
                     Sender::Member(self.group.private_tree.self_index),
                     content,
-                    &self.signing_key,
                     ControlEncryptionMode::Plaintext,
                     Vec::new(),
+                    &self.group.signer().unwrap(),
                 )
                 .unwrap();
 
@@ -2750,10 +2613,25 @@ pub(crate) mod test_utils {
         capabilities: Capabilities,
         leaf_extensions: ExtensionList,
     ) -> TestGroup {
-        let mut config = InMemoryGroupConfig::new(cipher_suite);
-        config.capabilities = capabilities;
-        config.leaf_node_extensions = leaf_extensions;
-        let (_, signing_key) = config.signing_identity(cipher_suite).unwrap();
+        let (signing_identity, secret_key) =
+            get_test_signing_identity(cipher_suite, b"member".to_vec());
+
+        let mut config = InMemoryClientConfig::default()
+            .with_signing_identity(signing_identity, secret_key)
+            .with_leaf_node_extensions(leaf_extensions)
+            .with_credential_types(capabilities.credentials);
+
+        config.cipher_suites = capabilities
+            .cipher_suites
+            .into_iter()
+            .map(|cs| match cs {
+                MaybeCipherSuite::CipherSuite(cipher_suite) => cipher_suite,
+                _ => panic!("Unsupported cipher suite found"),
+            })
+            .collect();
+
+        config.supported_extensions = capabilities.extensions;
+        config.protocol_versions = capabilities.protocol_versions;
 
         let group = Group::new(
             config,
@@ -2764,11 +2642,7 @@ pub(crate) mod test_utils {
         )
         .unwrap();
 
-        TestGroup {
-            group,
-            signing_key,
-            secret_store: InMemoryPskStore::default(),
-        }
+        TestGroup { group }
     }
 
     pub(crate) fn test_group(
@@ -2787,17 +2661,14 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::{
-        client_config::InMemoryPskStore,
+        client_config::test_utils::test_config,
         extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
         key_package::test_utils::test_key_package,
         psk::Psk,
     };
 
     use super::{
-        test_utils::{
-            group_extensions, test_group, test_group_custom, test_member, InMemoryGroupConfig,
-            TestGroup,
-        },
+        test_utils::{group_extensions, test_group, test_group_custom, test_member, TestGroup},
         *,
     };
     use assert_matches::assert_matches;
@@ -2833,7 +2704,14 @@ mod tests {
                     .signing_identity
                     .public_key(cipher_suite)
                     .unwrap(),
-                test_group.signing_key.to_public().unwrap()
+                group
+                    .config
+                    .keychain()
+                    .default_identity(cipher_suite)
+                    .unwrap()
+                    .1
+                    .to_public()
+                    .unwrap()
             );
         }
     }
@@ -2855,50 +2733,27 @@ mod tests {
 
         test_group
             .group
-            .create_proposal(
-                proposal,
-                &test_group.signing_key,
-                ControlEncryptionMode::Plaintext,
-                vec![],
-            )
+            .create_proposal(proposal, ControlEncryptionMode::Plaintext, vec![])
             .unwrap();
 
         // We should not be able to send application messages until a commit happens
-        let res = test_group.group.encrypt_application_message(
-            b"test",
-            &test_group.signing_key,
-            PaddingMode::None,
-            vec![],
-        );
+        let res = test_group
+            .group
+            .encrypt_application_message(b"test", PaddingMode::None, vec![]);
 
         assert_matches!(res, Err(GroupError::CommitRequired));
 
         // We should be able to send application messages after a commit
         let (commit, _) = test_group
             .group
-            .commit_proposals(
-                vec![],
-                test_group.commit_options(),
-                &test_group.secret_store,
-                &test_group.signing_key,
-                None,
-                vec![],
-            )
+            .commit_proposals(vec![], test_group.commit_options(), None, vec![])
             .unwrap();
 
-        test_group
-            .group
-            .process_pending_commit(commit, &test_group.secret_store)
-            .unwrap();
+        test_group.group.process_pending_commit(commit).unwrap();
 
         assert!(test_group
             .group
-            .encrypt_application_message(
-                b"test",
-                &test_group.signing_key,
-                PaddingMode::None,
-                vec![]
-            )
+            .encrypt_application_message(b"test", PaddingMode::None, vec![])
             .is_ok());
     }
 
@@ -2921,11 +2776,7 @@ mod tests {
         // Create an update proposal
         let proposal = test_group
             .group
-            .update_proposal(
-                &test_group.signing_key,
-                Some(extension_list.clone()),
-                Some(new_capabilities.clone()),
-            )
+            .update_proposal(Some(extension_list.clone()), Some(new_capabilities.clone()))
             .unwrap();
 
         let update = match proposal {
@@ -2950,18 +2801,13 @@ mod tests {
         let mut test_group = test_group(protocol_version, cipher_suite);
 
         // Create an update proposal
-        let proposal = test_group
-            .group
-            .update_proposal(&test_group.signing_key, None, None)
-            .unwrap();
+        let proposal = test_group.group.update_proposal(None, None).unwrap();
 
         // There should be an error because path_update is set to `true` while there is a pending
         // update proposal for the commiter
         let res = test_group.group.commit_proposals(
             vec![proposal],
             test_group.commit_options(),
-            &test_group.secret_store,
-            &test_group.signing_key,
             None,
             vec![],
         );
@@ -2984,31 +2830,19 @@ mod tests {
         let mut test_group = test_group(protocol_version, cipher_suite);
 
         // Create an update proposal
-        let proposal = test_group
-            .group
-            .update_proposal(&test_group.signing_key, None, None)
-            .unwrap();
+        let proposal = test_group.group.update_proposal(None, None).unwrap();
 
         test_group
             .group
-            .create_proposal(
-                proposal,
-                &test_group.signing_key,
-                ControlEncryptionMode::Plaintext,
-                vec![],
-            )
+            .create_proposal(proposal, ControlEncryptionMode::Plaintext, vec![])
             .unwrap();
 
         // There should be an error because path_update is set to `true` while there is a pending
         // update proposal for the commiter
-        let res = test_group.group.commit_proposals(
-            vec![],
-            test_group.commit_options(),
-            &test_group.secret_store,
-            &test_group.signing_key,
-            None,
-            vec![],
-        );
+        let res =
+            test_group
+                .group
+                .commit_proposals(vec![], test_group.commit_options(), None, vec![]);
 
         assert_matches!(res, Err(GroupError::InvalidCommitSelfUpdate));
     }
@@ -3043,8 +2877,6 @@ mod tests {
         let res = test_group.group.commit_proposals(
             vec![proposal],
             test_group.commit_options(),
-            &test_group.secret_store,
-            &test_group.signing_key,
             None,
             vec![],
         );
@@ -3067,10 +2899,7 @@ mod tests {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(protocol_version, cipher_suite, true);
 
-        let mut proposal = alice_group
-            .group
-            .update_proposal(&alice_group.signing_key, None, None)
-            .unwrap();
+        let mut proposal = alice_group.group.update_proposal(None, None).unwrap();
 
         if let Proposal::Update(ref mut update) = proposal {
             update.leaf_node.signature = SecureRng::gen(32).unwrap();
@@ -3080,12 +2909,7 @@ mod tests {
 
         let proposal_plaintext = alice_group
             .group
-            .create_proposal(
-                proposal.clone(),
-                &alice_group.signing_key,
-                ControlEncryptionMode::Plaintext,
-                vec![],
-            )
+            .create_proposal(proposal.clone(), ControlEncryptionMode::Plaintext, vec![])
             .unwrap();
 
         let proposal_ref =
@@ -3100,14 +2924,7 @@ mod tests {
 
         let (commit, _) = bob_group
             .group
-            .commit_proposals(
-                vec![],
-                bob_group.commit_options(),
-                &bob_group.secret_store,
-                &bob_group.signing_key,
-                None,
-                vec![],
-            )
+            .commit_proposals(vec![], bob_group.commit_options(), None, vec![])
             .unwrap();
 
         assert_matches!(
@@ -3159,7 +2976,7 @@ mod tests {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128;
         let mut test_group = test_group(protocol_version, cipher_suite);
-        let (bob_key_package, _) = test_member(protocol_version, cipher_suite, b"bob");
+        let (bob_key_package, secret_key) = test_member(protocol_version, cipher_suite, b"bob");
 
         // Add bob to the group
         let add_bob_proposal = test_group
@@ -3172,14 +2989,7 @@ mod tests {
 
         let (_, welcome) = test_group
             .group
-            .commit_proposals(
-                vec![add_bob_proposal],
-                commit_options,
-                &test_group.secret_store,
-                &test_group.signing_key,
-                None,
-                vec![],
-            )
+            .commit_proposals(vec![add_bob_proposal], commit_options, None, vec![])
             .unwrap();
 
         let welcome = match welcome.unwrap().payload {
@@ -3192,10 +3002,8 @@ mod tests {
             protocol_version,
             welcome,
             None,
-            bob_key_package,
-            &InMemoryPskStore::default(),
-            |_| InMemoryGroupConfig::new(cipher_suite),
-            |_, _| true,
+            bob_key_package.clone(),
+            test_config(secret_key, bob_key_package),
         );
 
         assert_matches!(bob_group, Err(GroupError::RatchetTreeNotFound));
@@ -3241,14 +3049,7 @@ mod tests {
 
         let commit = test_group
             .group
-            .commit_proposals(
-                proposals,
-                test_group.commit_options(),
-                &test_group.secret_store,
-                &test_group.signing_key,
-                None,
-                vec![],
-            )
+            .commit_proposals(proposals, test_group.commit_options(), None, vec![])
             .map(|(commit, _)| commit);
 
         (test_group, commit)
@@ -3270,7 +3071,7 @@ mod tests {
 
         let state_update = test_group
             .group
-            .process_pending_commit(commit.unwrap(), &test_group.secret_store)
+            .process_pending_commit(commit.unwrap())
             .unwrap();
 
         assert!(state_update.active);
@@ -3301,19 +3102,13 @@ mod tests {
 
         let without_padding = test_group
             .group
-            .encrypt_application_message(
-                &SecureRng::gen(150).unwrap(),
-                &test_group.signing_key,
-                PaddingMode::None,
-                vec![],
-            )
+            .encrypt_application_message(&SecureRng::gen(150).unwrap(), PaddingMode::None, vec![])
             .unwrap();
 
         let with_padding = test_group
             .group
             .encrypt_application_message(
                 &SecureRng::gen(150).unwrap(),
-                &test_group.signing_key,
                 PaddingMode::StepFunction,
                 vec![],
             )
@@ -3328,22 +3123,18 @@ mod tests {
         let cipher_suite = CipherSuite::P256Aes128;
         let group = test_group(protocol_version, cipher_suite);
 
-        let mut info = group
-            .group
-            .external_commit_info(&group.signing_key)
-            .unwrap();
+        let mut info = group.group.external_commit_info().unwrap();
+
         info.extensions = ExtensionList::new();
-        info.sign(&group.signing_key, &()).unwrap();
+        info.sign(&group.group.signer().unwrap(), &()).unwrap();
 
         let res = Group::new_external(
-            InMemoryGroupConfig::new(cipher_suite),
+            group.group.config,
             protocol_version,
             info,
             None,
-            |_, _| true,
             None,
             vec![],
-            &InMemoryPskStore::default(),
             vec![],
         );
 
@@ -3365,14 +3156,7 @@ mod tests {
 
         let (pending_commit, _) = test_group
             .group
-            .commit_proposals(
-                vec![add.clone()],
-                commit_options.clone(),
-                &test_group.secret_store,
-                &test_group.signing_key,
-                None,
-                vec![],
-            )
+            .commit_proposals(vec![add.clone()], commit_options.clone(), None, vec![])
             .unwrap();
 
         assert!(pending_commit.pending_secrets.is_none());
@@ -3381,14 +3165,7 @@ mod tests {
 
         let (pending_commit, _) = test_group
             .group
-            .commit_proposals(
-                vec![add],
-                commit_options,
-                &test_group.secret_store,
-                &test_group.signing_key,
-                None,
-                vec![],
-            )
+            .commit_proposals(vec![add], commit_options, None, vec![])
             .unwrap();
 
         assert!(pending_commit.pending_secrets.is_some());
@@ -3405,14 +3182,7 @@ mod tests {
 
         let (pending_commit, _) = test_group
             .group
-            .commit_proposals(
-                vec![],
-                commit_options,
-                &test_group.secret_store,
-                &test_group.signing_key,
-                None,
-                vec![],
-            )
+            .commit_proposals(vec![], commit_options, None, vec![])
             .unwrap();
 
         assert!(pending_commit.pending_secrets.is_some());
@@ -3470,28 +3240,24 @@ mod tests {
 
         for i in 0..5 {
             alice
-                .secret_store
+                .group
+                .config
+                .secret_store()
                 .insert(ExternalPskId(vec![i]), Psk::from(vec![i]));
 
-            bob.secret_store
+            bob.group
+                .config
+                .secret_store()
                 .insert(ExternalPskId(vec![i]), Psk::from(vec![i]));
 
             proposals.push(alice.group.psk_proposal(ExternalPskId(vec![i])).unwrap());
         }
 
-        let update_proposal = bob
-            .group
-            .update_proposal(&bob.signing_key, None, None)
-            .unwrap();
+        let update_proposal = bob.group.update_proposal(None, None).unwrap();
 
         let update_message = bob
             .group
-            .create_proposal(
-                update_proposal,
-                &bob.signing_key,
-                ControlEncryptionMode::Plaintext,
-                vec![],
-            )
+            .create_proposal(update_proposal, ControlEncryptionMode::Plaintext, vec![])
             .unwrap();
 
         if let OutboundMessage::Plaintext(ptxt) = update_message {

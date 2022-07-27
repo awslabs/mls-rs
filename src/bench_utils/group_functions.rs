@@ -6,19 +6,19 @@ use crate::ProtocolVersion;
 
 use crate::client::Client;
 
-use crate::client_config::InMemoryClientConfig;
+use crate::client_config::{ClientConfig, InMemoryClientConfig};
 
 use crate::extension::ExtensionList;
 
 use crate::client::test_utils::{get_basic_config, join_session, test_client_with_key_pkg};
 
-use crate::group::{Group, GroupConfig};
+use crate::group::Group;
 
 use crate::group::framing::MLSPlaintext;
 
 use crate::session::Session;
 
-use crate::signer::{Signable, SignatureError, Signer};
+use crate::signer::{Signable, SignatureError};
 
 use crate::group::message_signature::MessageSigningContext;
 
@@ -91,19 +91,18 @@ pub fn commit_group(container: &mut [Session<InMemoryClientConfig>]) {
     }
 }
 
-pub fn plaintext_sign<C, S>(
+pub fn plaintext_sign<C>(
     plaintext: &mut MLSPlaintext,
     group: &Group<C>,
-    signer: &S,
 ) -> Result<(), SignatureError>
 where
-    C: GroupConfig,
-    S: Signer,
+    C: ClientConfig + Clone,
 {
     let signing_context = MessageSigningContext {
         group_context: Some(&group.core.context),
         encrypted: true,
     };
 
-    Signable::sign(plaintext, signer, &signing_context)
+    let signer = group.signer().unwrap();
+    plaintext.sign(&signer, &signing_context)
 }

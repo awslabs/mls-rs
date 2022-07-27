@@ -5,7 +5,7 @@ use crate::{
         Credential, CredentialError, CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509,
     },
     extension::{ExtensionList, ExtensionType},
-    group::{framing::Sender, CommitOptions, ControlEncryptionMode, GroupConfig, GroupContext},
+    group::{framing::Sender, CommitOptions, ControlEncryptionMode, GroupContext},
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
     keychain::{InMemoryKeychain, Keychain},
     psk::{ExternalPskId, Psk},
@@ -70,7 +70,7 @@ pub trait ClientConfig {
     fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter;
     fn keychain(&self) -> Self::Keychain;
     fn secret_store(&self) -> Self::PskStore;
-    fn epoch_repo(&self, group_id: &[u8]) -> Self::EpochRepository;
+    fn epoch_repo(&self) -> Self::EpochRepository;
     fn credential_validator(&self) -> Self::CredentialValidator;
     fn key_package_extensions(&self) -> ExtensionList;
     fn leaf_node_extensions(&self) -> ExtensionList;
@@ -247,14 +247,14 @@ impl<'a> ProposalFilterInit<'a> {
 #[non_exhaustive]
 pub struct InMemoryClientConfig {
     preferences: Preferences,
-    supported_extensions: Vec<ExtensionType>,
-    key_packages: InMemoryKeyPackageRepository,
+    pub(crate) supported_extensions: Vec<ExtensionType>,
+    pub(crate) key_packages: InMemoryKeyPackageRepository,
     make_proposal_filter: MakeProposalFilter,
     keychain: InMemoryKeychain,
     psk_store: InMemoryPskStore,
-    protocol_versions: Vec<ProtocolVersion>,
-    cipher_suites: Vec<CipherSuite>,
-    epochs: Arc<Mutex<HashMap<Vec<u8>, InMemoryEpochRepository>>>,
+    pub(crate) protocol_versions: Vec<ProtocolVersion>,
+    pub(crate) cipher_suites: Vec<CipherSuite>,
+    epochs: InMemoryEpochRepository,
     leaf_node_extensions: ExtensionList,
     key_package_extensions: ExtensionList,
     lifetime_duration: u64,
@@ -438,13 +438,8 @@ impl ClientConfig for InMemoryClientConfig {
         self.protocol_versions.clone()
     }
 
-    fn epoch_repo(&self, group_id: &[u8]) -> Self::EpochRepository {
-        self.epochs
-            .lock()
-            .unwrap()
-            .entry(group_id.to_vec())
-            .or_default()
-            .clone()
+    fn epoch_repo(&self) -> Self::EpochRepository {
+        self.epochs.clone()
     }
 
     fn credential_validator(&self) -> Self::CredentialValidator {
@@ -488,58 +483,22 @@ impl From<&str> for SimpleError {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct ClientGroupConfig<C> {
-    client_config: C,
-    group_id: Vec<u8>,
-}
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use super::InMemoryClientConfig;
+    use crate::key_package::KeyPackageGeneration;
+    use ferriscrypt::asym::ec_key::SecretKey;
 
-impl<C> ClientGroupConfig<C> {
-    pub fn new(client_config: C, group_id: Vec<u8>) -> Self {
-        Self {
-            client_config,
-            group_id,
-        }
-    }
-}
+    pub(crate) fn test_config(
+        secret_key: SecretKey,
+        key_package: KeyPackageGeneration,
+    ) -> InMemoryClientConfig {
+        let config = InMemoryClientConfig::default().with_signing_identity(
+            key_package.key_package.leaf_node.signing_identity.clone(),
+            secret_key,
+        );
 
-impl<C> GroupConfig for ClientGroupConfig<C>
-where
-    C: ClientConfig,
-{
-    type EpochRepository = C::EpochRepository;
-    type CredentialValidator = C::CredentialValidator;
-    type ProposalFilter = C::ProposalFilter;
-    type Signer = <<C as ClientConfig>::Keychain as Keychain>::Signer;
-
-    fn epoch_repo(&self) -> Self::EpochRepository {
-        self.client_config.epoch_repo(&self.group_id)
-    }
-
-    fn credential_validator(&self) -> Self::CredentialValidator {
-        self.client_config.credential_validator()
-    }
-
-    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
-        self.client_config.proposal_filter(init)
-    }
-
-    fn leaf_node_extensions(&self) -> ExtensionList {
-        self.client_config.leaf_node_extensions()
-    }
-
-    fn lifetime(&self) -> Lifetime {
-        self.client_config.lifetime()
-    }
-
-    fn capabilities(&self) -> Capabilities {
-        self.client_config.capabilities()
-    }
-
-    fn signing_identity(
-        &self,
-        cipher_suite: CipherSuite,
-    ) -> Option<(SigningIdentity, Self::Signer)> {
-        self.client_config.keychain().default_identity(cipher_suite)
+        config.key_packages.insert(key_package).unwrap();
+        config
     }
 }

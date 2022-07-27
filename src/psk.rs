@@ -1,10 +1,8 @@
 use crate::{
     cipher_suite::CipherSuite,
     client_config::PskStore,
-    group::{
-        epoch::Epoch,
-        key_schedule::{KeyScheduleKdf, KeyScheduleKdfError},
-    },
+    group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError},
+    EpochRepository,
 };
 use ferriscrypt::{
     kdf::KdfError,
@@ -182,16 +180,15 @@ struct PSKLabel<'a> {
     count: u16,
 }
 
-pub(crate) fn psk_secret<S, F, E>(
+pub(crate) fn psk_secret<P, R>(
     cipher_suite: CipherSuite,
-    secret_store: Option<&S>,
-    mut get_epoch: F,
+    external_psk_search: Option<&P>,
+    epoch_search: Option<(&[u8], &R)>,
     psk_ids: &[PreSharedKeyID],
 ) -> Result<Psk, PskSecretError>
 where
-    S: PskStore,
-    F: FnMut(u64) -> Result<Option<Epoch>, E>,
-    E: std::error::Error + Send + Sync + 'static,
+    P: PskStore,
+    R: EpochRepository,
 {
     let len = psk_ids.len();
     let len = u16::try_from(len).map_err(|_| PskSecretError::TooManyPskIds(len))?;
@@ -204,15 +201,20 @@ where
             let index = index as u16;
 
             let psk = match &id.key_id {
-                JustPreSharedKeyID::External(id) => secret_store
+                JustPreSharedKeyID::External(id) => external_psk_search
                     .ok_or_else(|| PskSecretError::NoPskForId(id.clone()))?
                     .psk(id)
                     .map_err(|e| PskSecretError::SecretStoreError(Box::new(e)))?
                     .ok_or_else(|| PskSecretError::NoPskForId(id.clone()))?,
                 JustPreSharedKeyID::Resumption(ResumptionPsk { psk_epoch, .. }) => {
-                    get_epoch(*psk_epoch)
+                    let (group_id, epoch_repository) =
+                        epoch_search.ok_or(PskSecretError::EpochNotFound(*psk_epoch))?;
+
+                    epoch_repository
+                        .get(group_id, *psk_epoch)
                         .map_err(|e| PskSecretError::EpochRepositoryError(e.into()))?
                         .ok_or(PskSecretError::EpochNotFound(*psk_epoch))?
+                        .into_inner()
                         .secrets
                         .resumption_secret
                 }
@@ -291,11 +293,12 @@ mod tests {
         psk::{
             psk_secret, ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskNonce, PskSecretError,
         },
+        InMemoryEpochRepository,
     };
     use assert_matches::assert_matches;
     use ferriscrypt::{kdf::hkdf::Hkdf, rand::SecureRng};
     use serde::{Deserialize, Serialize};
-    use std::{convert::Infallible, iter};
+    use std::iter;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -327,7 +330,7 @@ mod tests {
         let res = psk_secret(
             TEST_CIPHER_SUITE,
             Some(&InMemoryPskStore::default()),
-            |_| Ok::<_, Infallible>(None),
+            None::<(_, &InMemoryEpochRepository)>,
             &[wrap_external_psk_id(TEST_CIPHER_SUITE, expected_id.clone())],
         );
         assert_matches!(res, Err(PskSecretError::NoPskForId(actual_id)) if actual_id == expected_id);
@@ -397,15 +400,17 @@ mod tests {
                     store.insert(ExternalPskId(psk.id.clone()), psk.psk.clone().into());
                     store
                 });
+
             let ids = psks
                 .iter()
                 .cloned()
                 .map(PreSharedKeyID::from)
                 .collect::<Vec<_>>();
+
             psk_secret(
                 cipher_suite,
                 Some(&secret_store),
-                |_| Ok::<_, Infallible>(None),
+                Some((&[], &InMemoryEpochRepository::default())),
                 &ids,
             )
             .unwrap()

@@ -1,5 +1,5 @@
 use crate::cipher_suite::CipherSuite;
-use crate::client_config::{ClientConfig, ClientGroupConfig};
+use crate::client_config::ClientConfig;
 use crate::extension::ExtensionList;
 use crate::group::{
     proposal::Proposal, CommitGeneration, Group, GroupInfo, GroupState, OutboundMessage,
@@ -15,7 +15,7 @@ use crate::signing_identity::SigningIdentity;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{Capabilities, RatchetTreeError, TreeKemPublic};
-use crate::{keychain::Keychain, ProtocolVersion};
+use crate::ProtocolVersion;
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
 use std::fmt::{self, Debug};
@@ -50,8 +50,6 @@ pub enum SessionError {
     PendingCommitMismatch,
     #[error("key package not found")]
     KeyPackageNotFound,
-    #[error("signer not found")]
-    SignerNotFound,
     #[error("signing identity not found for cipher suite {0:?}")]
     SigningIdentityNotFound(CipherSuite),
     #[error(transparent)]
@@ -108,12 +106,12 @@ impl Debug for CommitResult {
 #[derive(Debug)]
 pub struct Session<C>
 where
-    C: ClientConfig,
+    C: ClientConfig + Clone,
 {
     #[cfg(feature = "benchmark")]
-    pub protocol: Group<ClientGroupConfig<C>>,
+    pub protocol: Group<C>,
     #[cfg(not(feature = "benchmark"))]
-    protocol: Group<ClientGroupConfig<C>>,
+    protocol: Group<C>,
     pending_commit: Option<PendingCommit>,
     config: C,
 }
@@ -207,7 +205,7 @@ where
         config: C,
     ) -> Result<Self, SessionError> {
         let group = Group::new(
-            ClientGroupConfig::new(config.clone(), group_id.clone()),
+            config.clone(),
             group_id,
             cipher_suite,
             protocol_version,
@@ -246,9 +244,7 @@ where
             welcome_message,
             ratchet_tree,
             key_package_generation,
-            &config.secret_store(),
-            |group_id| ClientGroupConfig::new(config.clone(), group_id.to_vec()),
-            version_and_cipher_filter(&config),
+            config.clone(),
         )?;
 
         Ok(Session {
@@ -276,9 +272,7 @@ where
                 welcome,
                 public_tree,
                 key_package_generation,
-                &self.config.secret_store(),
-                |group_id| ClientGroupConfig::new(self.config.clone(), group_id.to_vec()),
-                version_and_cipher_filter(&self.config),
+                self.config.clone(),
             )?,
             pending_commit: None,
             config: self.config.clone(),
@@ -300,14 +294,12 @@ where
             .transpose()?;
 
         let (protocol, commit_message) = Group::new_external(
-            ClientGroupConfig::new(config.clone(), group_info.group_context.group_id.clone()),
+            config.clone(),
             protocol_version,
             group_info,
             tree,
-            version_and_cipher_filter(&config),
             to_remove,
             external_psks,
-            &config.secret_store(),
             authenticated_data,
         )?;
 
@@ -324,9 +316,7 @@ where
     pub fn group_info_message(&self) -> Result<MLSMessage, SessionError> {
         Ok(MLSMessage {
             version: self.protocol.protocol_version(),
-            payload: MLSMessagePayload::GroupInfo(
-                self.protocol.external_commit_info(&self.signer()?)?,
-            ),
+            payload: MLSMessagePayload::GroupInfo(self.protocol.external_commit_info()?),
         })
     }
 
@@ -370,17 +360,8 @@ where
 
     #[inline(always)]
     pub fn update_proposal(&mut self) -> Result<Proposal, SessionError> {
-        let leaf_node = self.protocol.current_user_leaf_node()?;
-
-        let signing_key = self
-            .config
-            .keychain()
-            .signer(&leaf_node.signing_identity)
-            .ok_or(SessionError::SignerNotFound)?;
-
         self.protocol
             .update_proposal(
-                &signing_key,
                 Some(self.config.leaf_node_extensions()),
                 Some(self.config.capabilities()),
             )
@@ -508,17 +489,8 @@ where
         proposal: Proposal,
         authenticated_data: Vec<u8>,
     ) -> Result<Vec<u8>, SessionError> {
-        let leaf_node = self.protocol.current_user_leaf_node()?;
-
-        let signer = self
-            .config
-            .keychain()
-            .signer(&leaf_node.signing_identity)
-            .ok_or(SessionError::SignerNotFound)?;
-
         let packet = self.protocol.create_proposal(
             proposal,
-            &signer,
             self.config.preferences().encryption_mode(),
             authenticated_data,
         )?;
@@ -535,19 +507,9 @@ where
             return Err(SessionError::ExistingPendingCommit);
         }
 
-        let leaf_node = self.protocol.current_user_leaf_node()?;
-
-        let signer = self
-            .config
-            .keychain()
-            .signer(&leaf_node.signing_identity)
-            .ok_or(SessionError::SignerNotFound)?;
-
         let (commit_data, welcome) = self.protocol.commit_proposals(
             proposals,
             self.config.commit_options(),
-            &self.config.secret_store(),
-            &signer,
             None,
             authenticated_data,
         )?;
@@ -637,9 +599,7 @@ where
         &mut self,
         message: VerifiedPlaintext,
     ) -> Result<ProcessedMessagePayload, SessionError> {
-        let res = self
-            .protocol
-            .process_incoming_message(message, &self.config.secret_store())?;
+        let res = self.protocol.process_incoming_message(message)?;
 
         // This commit beat our current pending commit to the server, our commit is no longer
         // relevant
@@ -657,35 +617,12 @@ where
             .ok_or(SessionError::PendingCommitNotFound)?;
 
         self.protocol
-            .process_pending_commit(pending.commit, &self.config.secret_store())
+            .process_pending_commit(pending.commit)
             .map_err(Into::into)
     }
 
     pub fn clear_pending_commit(&mut self) {
         self.pending_commit = None
-    }
-
-    fn get_signer(
-        &self,
-    ) -> Result<<<C as ClientConfig>::Keychain as Keychain>::Signer, SessionError> {
-        let key_package = self.protocol.current_user_leaf_node()?;
-
-        self.config
-            .keychain()
-            .signer(&key_package.signing_identity)
-            .ok_or(SessionError::SignerNotFound)
-    }
-
-    #[cfg(feature = "benchmark")]
-    pub fn signer(
-        &self,
-    ) -> Result<<<C as ClientConfig>::Keychain as Keychain>::Signer, SessionError> {
-        self.get_signer()
-    }
-
-    #[cfg(not(feature = "benchmark"))]
-    fn signer(&self) -> Result<<<C as ClientConfig>::Keychain as Keychain>::Signer, SessionError> {
-        self.get_signer()
     }
 
     pub fn encrypt_application_data(
@@ -695,7 +632,6 @@ where
     ) -> Result<Vec<u8>, SessionError> {
         let ciphertext = self.protocol.encrypt_application_message(
             data,
-            &self.signer()?,
             self.config.preferences().padding_mode,
             authenticated_data,
         )?;
@@ -743,14 +679,7 @@ where
     where
         F: FnMut(&LeafNode) -> Option<KeyPackage>,
     {
-        let signer = self.signer()?;
-
-        let (new_group, welcome) = self.protocol.branch(
-            sub_group_id,
-            &signer,
-            |group_id| ClientGroupConfig::new(self.config.clone(), group_id.to_vec()),
-            get_new_key_package,
-        )?;
+        let (new_group, welcome) = self.protocol.branch(sub_group_id, get_new_key_package)?;
 
         let new_session = Session {
             protocol: new_group,
@@ -779,9 +708,7 @@ where
                 welcome,
                 public_tree,
                 key_package_generation,
-                &self.config.secret_store(),
-                |group_id| ClientGroupConfig::new(self.config.clone(), group_id.to_vec()),
-                version_and_cipher_filter(&self.config),
+                self.config.clone(),
             )?,
             pending_commit: None,
             config: self.config.clone(),
@@ -795,10 +722,9 @@ where
     where
         F: FnMut(&LeafNode) -> Option<KeyPackage>,
     {
-        let (new_group, welcome) = self.protocol.finish_reinit_commit(
-            |group_id| ClientGroupConfig::new(self.config.clone(), group_id.to_vec()),
-            get_new_key_package,
-        )?;
+        let (new_group, welcome) = self
+            .protocol
+            .finish_reinit_commit(self.config.clone(), get_new_key_package)?;
 
         let new_session = Session {
             protocol: new_group,
@@ -828,22 +754,10 @@ where
 
     pub(crate) fn import(config: C, state: GroupState) -> Result<Self, SessionError> {
         Ok(Self {
-            protocol: Group::import(
-                ClientGroupConfig::new(config.clone(), state.context.group_id.clone()),
-                state,
-            )?,
+            protocol: Group::import(config.clone(), state)?,
             pending_commit: None,
             config,
         })
-    }
-}
-
-fn version_and_cipher_filter<C: ClientConfig>(
-    config: &C,
-) -> impl Fn(ProtocolVersion, CipherSuite) -> bool + '_ {
-    move |version, cipher_suite| {
-        config.supported_protocol_versions().contains(&version)
-            && config.supported_cipher_suites().contains(&cipher_suite)
     }
 }
 

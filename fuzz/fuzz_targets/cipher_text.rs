@@ -42,9 +42,8 @@ fuzz_target!(|data: (Vec<u8>, u64, Vec<u8>)| {
         data.2,
     );
 
-    let signer = Session::signer(&GROUP_DATA.lock().unwrap()[0]).unwrap();
-
-    plaintext_sign(plain_text, &GROUP_DATA.lock().unwrap()[0].protocol, &signer).unwrap();
+    let session = &GROUP_DATA.lock().unwrap()[0];
+    plaintext_sign(plain_text, &session.protocol).unwrap();
 
     let cipher_text = Group::encrypt_plaintext(
         &mut GROUP_DATA.lock().unwrap()[0].protocol,

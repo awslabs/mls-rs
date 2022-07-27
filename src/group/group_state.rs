@@ -1,4 +1,5 @@
 use crate::{
+    client_config::ClientConfig,
     group::{GroupContext, InterimTranscriptHash},
     tree_kem::{node::NodeVec, TreeKemPrivate, TreeKemPublic},
 };
@@ -8,7 +9,7 @@ use tls_codec::{Deserialize, Serialize};
 
 use super::{
     confirmation_tag::ConfirmationTag, group_core::GroupCore, key_schedule::KeySchedule,
-    proposal_cache::CachedProposal, Group, GroupConfig, GroupError, ProposalRef,
+    proposal_cache::CachedProposal, Group, GroupError, ProposalRef,
 };
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
@@ -26,7 +27,10 @@ pub struct GroupState {
     pub(crate) pending_updates: HashMap<Vec<u8>, HpkeSecretKey>,
 }
 
-impl<C: GroupConfig> Group<C> {
+impl<C> Group<C>
+where
+    C: ClientConfig + Clone,
+{
     pub fn export(&self) -> Result<GroupState, GroupError> {
         Ok(GroupState {
             context: self.core.context.clone(),
