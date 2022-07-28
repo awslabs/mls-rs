@@ -4,6 +4,7 @@ env:
   CARGO_TERM_COLOR: always
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
   RUNS: 10000
+  TIME: 300
 jobs:
   fuzz:
     runs-on: ubuntu-latest
@@ -18,9 +19,9 @@ jobs:
           run: cargo install cargo-fuzz
         - name: Run Fuzz Targets
           run: |
-            cargo +nightly fuzz run application_data -- -runs=$RUNS
-            cargo +nightly fuzz run cipher_text -- -runs=$RUNS
-            cargo +nightly fuzz run deserialize -- -runs=$RUNS
-            cargo +nightly fuzz run export_secret -- -runs=$RUNS
-            cargo +nightly fuzz run mls_message -- -runs=$RUNS
-            cargo +nightly fuzz run process_bytes -- -runs=$RUNS
+            cargo +nightly fuzz run application_data -- -runs=$RUNS -timeout=$TIME
+            cargo +nightly fuzz run cipher_text -- -runs=$RUNS -timeout=$TIME
+            cargo +nightly fuzz run deserialize -- -runs=$RUNS -timeout=$TIME
+            cargo +nightly fuzz run export_secret -- -runs=$RUNS -timeout=$TIME
+            cargo +nightly fuzz run mls_message -- -runs=$RUNS -timeout=$TIME
+            cargo +nightly fuzz run process_bytes -- -runs=$RUNS -timeout=$TIME
