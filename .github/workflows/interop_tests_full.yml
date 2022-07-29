@@ -26,7 +26,7 @@ jobs:
       uses: actions/checkout@master
       with:
         repository: mulmarta/mls-implementations
-        ref: aa8e93d5314589ac8a25200c7865323cf056d29b
+        ref: 5a7d4bd59bdc687d6b37ea8062bbb84426de7b0a
         path: interop
     - name: Run tests
       working-directory: interop/interop

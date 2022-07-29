@@ -5,11 +5,13 @@
 
 use aws_mls::cipher_suite::{CipherSuite, SignaturePublicKey};
 use aws_mls::client::Client;
-use aws_mls::client_config::{InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECONDS};
+use aws_mls::client_config::{
+    ClientConfig, InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECONDS,
+};
 use aws_mls::credential::Credential;
 use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::message::ProcessedMessagePayload;
-use aws_mls::session::{ExternalPskId, Session, StateUpdate};
+use aws_mls::session::{ExternalPskId, Psk, Session, StateUpdate};
 use aws_mls::signing_identity::SigningIdentity;
 use aws_mls::tls_codec::Serialize;
 use aws_mls::ProtocolVersion;
@@ -34,7 +36,6 @@ pub mod mls_client {
 
 const IMPLEMENTATION_NAME: &str = "AWS MLS";
 const TEST_VECTOR: [u8; 4] = [0, 1, 2, 3];
-const TEST_PSK_ID: [u8; 10] = *b"\x01the PskId";
 
 impl TryFrom<i32> for TestVectorType {
     type Error = ();
@@ -104,6 +105,7 @@ impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
 pub struct MlsClientImpl {
     clients: Mutex<Vec<Client<InMemoryClientConfig>>>,
     sessions: Mutex<Vec<Session<InMemoryClientConfig>>>,
+    configs: Mutex<Vec<InMemoryClientConfig>>,
 }
 
 #[tonic::async_trait]
@@ -207,7 +209,6 @@ impl MlsClient for MlsClientImpl {
             .with_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
             .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
             .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
-            .with_psk(ExternalPskId(TEST_PSK_ID.to_vec()), vec![0u8; 16].into())
             .build_client();
 
         let session = creator
@@ -221,6 +222,8 @@ impl MlsClient for MlsClientImpl {
 
         let mut sessions = self.sessions.lock().unwrap();
         sessions.push(session);
+
+        self.configs.lock().unwrap().push(creator.config);
 
         Ok(Response::new(CreateGroupResponse {
             state_id: sessions.len() as u32,
@@ -243,7 +246,6 @@ impl MlsClient for MlsClientImpl {
             .with_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
             .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
             .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
-            .with_psk(ExternalPskId(TEST_PSK_ID.to_vec()), vec![0u8; 16].into())
             .build_client();
 
         let key_package = client
@@ -274,6 +276,11 @@ impl MlsClient for MlsClientImpl {
 
         let mut sessions = self.sessions.lock().unwrap();
         sessions.push(session);
+
+        self.configs
+            .lock()
+            .unwrap()
+            .push(clients[client_index].config.clone());
 
         Ok(Response::new(JoinGroupResponse {
             state_id: sessions.len() as u32,
@@ -356,9 +363,23 @@ impl MlsClient for MlsClientImpl {
 
     async fn store_psk(
         &self,
-        _request: tonic::Request<StorePskRequest>,
+        request: tonic::Request<StorePskRequest>,
     ) -> Result<tonic::Response<StorePskResponse>, tonic::Status> {
-        Ok(Response::new(StorePskResponse::default())) // TODO
+        let request_ref = request.get_ref();
+
+        let _ = self
+            .configs
+            .lock()
+            .unwrap()
+            .get(request_ref.state_id as usize - 1)
+            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
+            .secret_store()
+            .insert(
+                ExternalPskId(request_ref.psk_id.clone()),
+                Psk::from(request_ref.psk.clone()),
+            );
+
+        Ok(Response::new(StorePskResponse::default()))
     }
 
     async fn add_proposal(
