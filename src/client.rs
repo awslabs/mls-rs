@@ -299,13 +299,13 @@ mod tests {
         credential::Credential,
         group::{
             epoch::EpochError,
-            proposal::{AddProposal, Proposal},
+            proposal::{AddProposal, Proposal, RemoveProposal},
             GroupError, SecretTreeError,
         },
         message::ProcessedMessagePayload,
         psk::{ExternalPskId, PskSecretError},
         session::Psk,
-        tree_kem::{leaf_node::LeafNodeSource, RatchetTreeError, TreeIndexError},
+        tree_kem::{leaf_node::LeafNodeSource, node::LeafIndex, RatchetTreeError, TreeIndexError},
         ProposalBundle, ProposalFilter, ProposalFilterError,
     };
     use assert_matches::assert_matches;
@@ -593,7 +593,7 @@ mod tests {
 
         let num_members = if do_remove { 2 } else { 3 };
 
-        assert!(charlie_session.roster().member_count() == num_members);
+        assert_eq!(charlie_session.roster().member_count(), num_members);
 
         let _ = alice_session
             .process_incoming_bytes(&external_commit)
@@ -897,6 +897,47 @@ mod tests {
                     TreeIndexError::DuplicateSignatureKeys(_)
                 ))
             ))
+        );
+    }
+
+    #[test]
+    fn member_cannot_remove_themselves_from_group() {
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+        let mut alice_session = create_session(&alice);
+
+        let (bob, bob_key_pkg) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+
+        let mut bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
+
+        let commit = bob_session.commit(
+            vec![Proposal::Remove(RemoveProposal {
+                to_remove: LeafIndex(bob_session.current_member_index()),
+            })],
+            Vec::new(),
+        );
+
+        assert_matches!(
+            commit,
+            Err(SessionError::ProposalRejected(
+                ProposalFilterError::CommitterSelfRemoval
+            ))
+        );
+    }
+
+    #[test]
+    fn update_of_committer_is_filtered_out() {
+        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+        let mut alice_session = create_session(&alice);
+
+        let _ = alice_session.propose_update(Vec::new()).unwrap();
+        let _ = alice_session.commit(Vec::new(), Vec::new()).unwrap();
+        let state_update = alice_session.apply_pending_commit().unwrap();
+
+        assert_eq!(state_update.updated, Vec::new());
+        assert_matches!(
+            &*state_update.rejected_proposals,
+            [(_, Proposal::Update(_))]
         );
     }
 }

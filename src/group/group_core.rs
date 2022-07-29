@@ -2,15 +2,13 @@ use std::collections::HashMap;
 
 use crate::{
     cipher_suite::CipherSuite,
-    client_config::CredentialValidator,
-    extension::{ExtensionList, ExternalSendersExt, RequiredCapabilitiesExt},
+    extension::ExternalSendersExt,
     group::{
         Content, GroupContext, GroupError, PreSharedKey, Proposal, ProposalCache,
         ProposalSetEffects, ProvisionalPublicState, TreeKemPublic, VerifiedPlaintext,
     },
     psk::{JustPreSharedKeyID, PreSharedKeyID},
     signing_identity::SigningIdentity,
-    tree_kem::{leaf_node_validator::LeafNodeValidator, node::LeafIndex},
     ProtocolVersion,
 };
 
@@ -78,20 +76,14 @@ impl GroupCore {
         self.context.protocol_version
     }
 
-    pub(super) fn apply_proposals<C>(
+    pub(super) fn apply_proposals(
         &self,
-        current_public_tree: &TreeKemPublic,
         proposals: ProposalSetEffects,
-        credential_validator: C,
-    ) -> Result<ProvisionalPublicState, GroupError>
-    where
-        C: CredentialValidator,
-    {
+    ) -> Result<ProvisionalPublicState, GroupError> {
         if self.pending_reinit.is_some() {
             return Err(GroupError::GroupUsedAfterReInit);
         }
 
-        let mut provisional_tree = current_public_tree.clone();
         let mut provisional_group_context = self.context.clone();
 
         // Determine if a path update is required
@@ -103,73 +95,25 @@ impl GroupCore {
             provisional_group_context.extensions = group_context_extensions;
         }
 
-        // Apply updates
-        let updated_leaves = proposals
-            .updates
-            .iter()
-            .map(|(leaf_index, _)| *leaf_index)
-            .collect::<Vec<LeafIndex>>();
-
-        for (update_sender, leaf_node) in proposals.updates {
-            // Update the leaf in the provisional tree
-            provisional_tree.update_leaf(update_sender, leaf_node)?;
-        }
-
-        // Apply removes
-        // If there is only one user in the tree, they can't be removed
-        if !proposals.removes.is_empty() && provisional_tree.occupied_leaf_count() == 1 {
-            return Err(GroupError::RemoveNotAllowed);
-        }
-
-        // Remove elements from the public tree
-        let removed_leaves = provisional_tree.remove_leaves(proposals.removes)?;
-
-        // Apply adds
-        let adds = proposals
-            .adds
-            .iter()
-            .cloned()
-            .map(|p| p.leaf_node)
-            .collect();
-
-        let added_leaves = provisional_tree.add_leaves(adds)?;
-
-        // Apply add by external init
-        let external_init = proposals
-            .external_init
-            .map(|(external_add_leaf, ext_init)| {
-                let index = provisional_tree.add_leaves(vec![external_add_leaf])?[0];
-                Ok::<_, GroupError>((index, ext_init))
-            })
-            .transpose()?;
-
-        // Now that the tree is updated we can check required capabilities if needed
-        self.check_required_capabilities(
-            &provisional_tree,
-            &provisional_group_context.extensions,
-            &credential_validator,
-        )?;
-
-        let mut path_blanked = removed_leaves
-            .iter()
-            .cloned()
-            .map(|(index, _)| index)
-            .chain(updated_leaves.iter().cloned())
-            .collect::<Vec<_>>();
-
-        provisional_tree.update_hashes(&mut path_blanked, &added_leaves)?;
-
         Ok(ProvisionalPublicState {
-            public_tree: provisional_tree,
-            added_leaves: proposals.adds.into_iter().zip(added_leaves).collect(),
-            removed_leaves,
-            updated_leaves,
+            public_tree: proposals.tree,
+            added_leaves: proposals
+                .adds
+                .into_iter()
+                .zip(proposals.added_leaf_indexes)
+                .collect(),
+            removed_leaves: proposals.removed_leaves,
+            updated_leaves: proposals
+                .updates
+                .iter()
+                .map(|&(leaf_index, _)| leaf_index)
+                .collect(),
             epoch: self.context.epoch + 1,
             path_update_required,
             group_context: provisional_group_context,
             psks: proposals.psks,
             reinit: proposals.reinit,
-            external_init,
+            external_init: proposals.external_init,
             rejected_proposals: proposals.rejected_proposals,
         })
     }
@@ -205,39 +149,6 @@ impl GroupCore {
                     _ => Ok(plaintext),
                 }
             }
-        }
-    }
-
-    fn check_required_capabilities<C>(
-        &self,
-        tree: &TreeKemPublic,
-        group_context_extensions: &ExtensionList,
-        credential_validator: C,
-    ) -> Result<(), GroupError>
-    where
-        C: CredentialValidator,
-    {
-        let existing_required_capabilities = self
-            .context
-            .extensions
-            .get_extension::<RequiredCapabilitiesExt>()?;
-
-        let new_required_capabilities =
-            group_context_extensions.get_extension::<RequiredCapabilitiesExt>()?;
-
-        if existing_required_capabilities != new_required_capabilities {
-            let leaf_node_validator = LeafNodeValidator::new(
-                self.cipher_suite(),
-                new_required_capabilities.as_ref(),
-                credential_validator,
-            );
-
-            tree.get_leaf_nodes()
-                .iter()
-                .try_for_each(|ln| leaf_node_validator.validate_required_capabilities(ln))
-                .map_err(|_| GroupError::UnsupportedRequiredCapabilities)
-        } else {
-            Ok(())
         }
     }
 

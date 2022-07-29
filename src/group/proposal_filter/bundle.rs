@@ -5,6 +5,7 @@ use crate::{
         ProposalRef, ProposalType, ReInit, RemoveProposal, Sender, UpdateProposal,
     },
 };
+use std::marker::PhantomData;
 
 #[derive(Clone, Debug, Default)]
 pub struct ProposalBundle {
@@ -60,8 +61,16 @@ impl ProposalBundle {
         }
     }
 
+    pub fn add_proposal(&mut self, p: ProposalInfo<Proposal>) {
+        self.add(p.proposal, p.sender, p.proposal_ref)
+    }
+
     pub fn by_type<'a, T: Proposable + 'a>(&'a self) -> impl Iterator<Item = &'a ProposalInfo<T>> {
         T::filter(self).iter()
+    }
+
+    pub fn by_index<'a, T: Proposable + 'a>(&'a self) -> ProposalBundleIndex<'a, T> {
+        ProposalBundleIndex::new(self)
     }
 
     pub fn retain_by_type<T, F, E>(&mut self, mut f: F) -> Result<(), E>
@@ -182,6 +191,51 @@ impl ProposalBundle {
     }
 }
 
+impl FromIterator<ProposalInfo<Proposal>> for ProposalBundle {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = ProposalInfo<Proposal>>,
+    {
+        iter.into_iter()
+            .fold(ProposalBundle::default(), |mut bundle, p| {
+                bundle.add_proposal(p);
+                bundle
+            })
+    }
+}
+
+impl Extend<ProposalInfo<Proposal>> for ProposalBundle {
+    fn extend<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = ProposalInfo<Proposal>>,
+    {
+        iter.into_iter().for_each(|p| self.add_proposal(p));
+    }
+}
+
+#[derive(Debug)]
+pub struct ProposalBundleIndex<'a, T> {
+    proposals: &'a ProposalBundle,
+    marker: PhantomData<&'a T>,
+}
+
+impl<'a, T> ProposalBundleIndex<'a, T> {
+    fn new(proposals: &'a ProposalBundle) -> Self {
+        Self {
+            proposals,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T: Proposable> std::ops::Index<usize> for ProposalBundleIndex<'_, T> {
+    type Output = ProposalInfo<T>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &T::filter(self.proposals)[index]
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ProposalInfo<T> {
     pub proposal: T,
@@ -190,7 +244,7 @@ pub struct ProposalInfo<T> {
 }
 
 impl<T> ProposalInfo<T> {
-    fn map<U, F>(self, f: F) -> ProposalInfo<U>
+    pub fn map<U, F>(self, f: F) -> ProposalInfo<U>
     where
         F: FnOnce(T) -> U,
     {
@@ -201,7 +255,7 @@ impl<T> ProposalInfo<T> {
         }
     }
 
-    fn by_ref(&self) -> ProposalInfo<&T> {
+    pub fn by_ref(&self) -> ProposalInfo<&T> {
         ProposalInfo {
             proposal: &self.proposal,
             sender: self.sender.clone(),
@@ -241,16 +295,3 @@ impl_proposable!(PreSharedKey, psks);
 impl_proposable!(ReInit, reinitializations);
 impl_proposable!(ExternalInit, external_initializations);
 impl_proposable!(ExtensionList, group_context_extensions);
-
-pub fn ignore_invalid_by_ref_proposal<F, T, E>(
-    mut f: F,
-) -> impl FnMut(&ProposalInfo<T>) -> Result<bool, E>
-where
-    F: FnMut(&ProposalInfo<T>) -> Result<(), E>,
-{
-    move |p| match (f(p), &p.proposal_ref) {
-        (Ok(()), _) => Ok(true),
-        (Err(_), Some(_)) => Ok(false),
-        (Err(e), None) => Err(e),
-    }
-}

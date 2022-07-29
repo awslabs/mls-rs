@@ -205,6 +205,48 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
     }
 }
 
+impl<'a> From<&'a AddProposal> for BorrowedProposal<'a> {
+    fn from(p: &'a AddProposal) -> Self {
+        Self::Add(p)
+    }
+}
+
+impl<'a> From<&'a UpdateProposal> for BorrowedProposal<'a> {
+    fn from(p: &'a UpdateProposal) -> Self {
+        Self::Update(p)
+    }
+}
+
+impl<'a> From<&'a RemoveProposal> for BorrowedProposal<'a> {
+    fn from(p: &'a RemoveProposal) -> Self {
+        Self::Remove(p)
+    }
+}
+
+impl<'a> From<&'a PreSharedKey> for BorrowedProposal<'a> {
+    fn from(p: &'a PreSharedKey) -> Self {
+        Self::Psk(p)
+    }
+}
+
+impl<'a> From<&'a ReInit> for BorrowedProposal<'a> {
+    fn from(p: &'a ReInit) -> Self {
+        Self::ReInit(p)
+    }
+}
+
+impl<'a> From<&'a ExternalInit> for BorrowedProposal<'a> {
+    fn from(p: &'a ExternalInit) -> Self {
+        Self::ExternalInit(p)
+    }
+}
+
+impl<'a> From<&'a ExtensionList> for BorrowedProposal<'a> {
+    fn from(p: &'a ExtensionList) -> Self {
+        Self::GroupContextExtensions(p)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]

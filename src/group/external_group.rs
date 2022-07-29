@@ -188,11 +188,7 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
             )),
         )?;
 
-        let mut provisional_state = self.core.apply_proposals(
-            &self.core.current_tree,
-            proposal_effects,
-            self.config.credential_validator(),
-        )?;
+        let mut provisional_state = self.core.apply_proposals(proposal_effects)?;
 
         let sender = commit_sender(sender, &provisional_state)?;
 

@@ -45,6 +45,12 @@ pub enum Sender {
     NewMemberProposal,
 }
 
+impl From<LeafIndex> for Sender {
+    fn from(leaf_index: LeafIndex) -> Self {
+        Sender::Member(leaf_index)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]

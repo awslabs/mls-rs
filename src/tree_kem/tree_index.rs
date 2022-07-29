@@ -28,42 +28,6 @@ impl TreeIndex {
         Default::default()
     }
 
-    pub fn can_insert(&self, leaf_node: &LeafNode) -> Result<(), TreeIndexError> {
-        self.can_insert_or_update(None, leaf_node)
-    }
-
-    pub fn can_update(
-        &self,
-        current_index: LeafIndex,
-        new_leaf_node: &LeafNode,
-    ) -> Result<(), TreeIndexError> {
-        self.can_insert_or_update(Some(current_index), new_leaf_node)
-    }
-
-    fn can_insert_or_update(
-        &self,
-        current_index: Option<LeafIndex>,
-        new_leaf_node: &LeafNode,
-    ) -> Result<(), TreeIndexError> {
-        let different = |i: &LeafIndex| Some(*i) != current_index;
-
-        self.credential_signature_key
-            .get(&*new_leaf_node.signing_identity.signature_key)
-            .copied()
-            .filter(different)
-            .map_or(Ok(()), |index| {
-                Err(TreeIndexError::DuplicateSignatureKeys(index))
-            })?;
-
-        self.hpke_key
-            .get(new_leaf_node.public_key.as_ref())
-            .copied()
-            .filter(different)
-            .map_or(Ok(()), |index| Err(TreeIndexError::DuplicateHpkeKey(index)))?;
-
-        Ok(())
-    }
-
     pub fn insert(&mut self, index: LeafIndex, leaf_node: &LeafNode) -> Result<(), TreeIndexError> {
         let pub_key = leaf_node.signing_identity.signature_key.deref().clone();
 
@@ -86,13 +50,11 @@ impl TreeIndex {
         Ok(())
     }
 
-    pub fn remove(&mut self, leaf_node: &LeafNode) -> Result<(), TreeIndexError> {
+    pub fn remove(&mut self, leaf_node: &LeafNode) {
         let pub_key = leaf_node.signing_identity.signature_key.deref();
 
         self.credential_signature_key.remove(pub_key);
         self.hpke_key.remove(leaf_node.public_key.as_ref());
-
-        Ok(())
     }
 
     #[cfg(test)]
@@ -198,7 +160,7 @@ mod tests {
     fn test_remove() {
         let (test_data, mut test_index) = test_setup();
 
-        test_index.remove(&test_data[1].leaf_node).unwrap();
+        test_index.remove(&test_data[1].leaf_node);
 
         assert_eq!(
             test_index.credential_signature_key.len(),

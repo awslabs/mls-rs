@@ -19,8 +19,8 @@ jobs:
       run: cargo fmt --all -- --check
     - name: Clippy
       run: cargo clippy --all-targets --features="benchmark" --workspace -- -D warnings
-    - name: Test (OpenSSL Engine) 
-      run: cargo test --verbose -- --ignored
+    - name: Test (OpenSSL Engine)
+      run: cargo test --verbose
     - name: Test (rust crypto engine)
       run: cargo test --verbose --no-default-features --features="rustcrypto_engine"
     - name: Build (Test Harness Integration)

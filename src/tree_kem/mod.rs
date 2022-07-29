@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::ops::Deref;
 
@@ -11,7 +11,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use math as tree_math;
 use math::TreeMathError;
-use node::{LeafIndex, Node, NodeIndex, NodeVec, NodeVecError};
+use node::{LeafIndex, NodeIndex, NodeVec, NodeVecError};
 
 use self::leaf_node::{LeafNode, LeafNodeError};
 use self::tree_utils::build_ascii_tree;
@@ -108,12 +108,20 @@ pub enum RatchetTreeError {
     DecryptFromSelf,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct TreeKemPublic {
     pub cipher_suite: CipherSuite,
     index: TreeIndex,
     nodes: NodeVec,
     tree_hashes: TreeHashes,
+}
+
+impl PartialEq for TreeKemPublic {
+    fn eq(&self, other: &Self) -> bool {
+        self.cipher_suite == other.cipher_suite
+            && self.index == other.index
+            && self.nodes == other.nodes
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -200,115 +208,64 @@ impl TreeKemPublic {
         })
     }
 
-    fn update_unmerged(&mut self, index: LeafIndex) -> Result<(), RatchetTreeError> {
-        // For a given leaf index, find parent nodes and add the leaf to the unmerged leaf
-        self.nodes.direct_path(index)?.into_iter().for_each(|i| {
-            if let Ok(p) = self.nodes.borrow_as_parent_mut(i) {
-                p.unmerged_leaves.push(index)
-            }
-        });
-
-        Ok(())
-    }
-
-    fn fill_empty_leaves(
-        &mut self,
-        leaf_nodes: &[LeafNode],
-    ) -> Result<Vec<LeafIndex>, RatchetTreeError> {
-        // Fill a set of empty leaves given a particular array, return the leaf indexes that were
-        // overwritten
-        self.nodes.empty_leaves().zip(leaf_nodes.iter()).try_fold(
-            Vec::new(),
-            |mut indexs, ((index, empty_node), leaf_node)| {
-                // See TODO in add_nodes, we have to clone here because we can't iterate the list
-                // of packages to insert a single time
-                *empty_node = Some(Node::from(leaf_node.clone()));
-                self.index.insert(index, leaf_node)?;
-                indexs.push(index);
-
-                Ok::<_, RatchetTreeError>(indexs)
-            },
-        )
-    }
-
-    pub fn can_add_leaf(&self, leaf: &LeafNode) -> Result<(), RatchetTreeError> {
-        self.index.can_insert(leaf).map_err(Into::into)
-    }
-
-    pub fn can_update_leaf(
-        &self,
-        current_leaf_index: LeafIndex,
-        new_leaf: &LeafNode,
-    ) -> Result<(), RatchetTreeError> {
-        self.index
-            .can_update(current_leaf_index, new_leaf)
-            .map_err(Into::into)
-    }
-
     // Note that a partial failure of this function will leave the tree in a bad state. Modifying a
     // tree should always be done on a clone of the tree, which is how commits are processed
     pub fn add_leaves(
         &mut self,
         leaf_nodes: Vec<LeafNode>,
     ) -> Result<Vec<LeafIndex>, RatchetTreeError> {
-        // Fill empty leaves first, then add the remaining nodes by extending
-        // the tree to the right
+        #[derive(Default)]
+        struct Accumulator {
+            new_leaf_indexes: Vec<LeafIndex>,
+        }
 
-        // TODO: Find a way to predetermine a single list of nodes to fill by pre-populating new
-        // empty nodes and iterating through a chain of empty leaves + new leaves
-        let mut added_leaf_indexs = self.fill_empty_leaves(&leaf_nodes)?;
+        impl AccumulateBatchResults for Accumulator {
+            type Output = Vec<LeafIndex>;
 
-        leaf_nodes
-            .into_iter()
-            .skip(added_leaf_indexs.len())
-            .try_for_each(|leaf_node| {
-                if !self.nodes.is_empty() {
-                    self.nodes.push(None);
-                }
+            fn on_add(
+                &mut self,
+                _: usize,
+                r: Result<LeafIndex, RatchetTreeError>,
+            ) -> Result<(), RatchetTreeError> {
+                self.new_leaf_indexes.push(r?);
+                Ok(())
+            }
 
-                let index = LeafIndex(self.nodes.len() as u32 / 2);
-                self.index.insert(index, &leaf_node)?;
-                self.nodes.push(Option::from(leaf_node));
-                added_leaf_indexs.push(index);
-                Ok::<_, RatchetTreeError>(())
-            })?;
+            fn finish(self) -> Result<Self::Output, RatchetTreeError> {
+                Ok(self.new_leaf_indexes)
+            }
+        }
 
-        added_leaf_indexs
-            .iter()
-            .try_for_each(|index| self.update_unmerged(*index))?;
-
-        Ok(added_leaf_indexs)
+        self.batch_edit(Accumulator::default(), &[], &[], &leaf_nodes)
     }
 
     pub fn remove_leaves(
         &mut self,
         indexes: Vec<LeafIndex>,
     ) -> Result<Vec<(LeafIndex, LeafNode)>, RatchetTreeError> {
-        // Identify a leaf node containing a key package matching removed.
-        // This lookup MUST be done on the tree before any non-Remove proposals have been applied
-        let removed_leaves: Vec<(LeafIndex, LeafNode)> =
-            indexes.iter().try_fold(Vec::new(), |mut vec, index| {
-                // Replace the leaf node at position removed with a blank node
-                if let Some(removed) = self.nodes.blank_leaf_node(*index)? {
-                    self.index.remove(&removed)?;
-                    vec.push((*index, removed));
-                }
+        #[derive(Default)]
+        struct Accumulator {
+            removed: Vec<(LeafIndex, LeafNode)>,
+        }
 
-                // Blank the intermediate nodes along the path from the removed leaf to the root
-                self.nodes.blank_direct_path(*index)?;
-                Ok::<_, RatchetTreeError>(vec)
-            })?;
+        impl AccumulateBatchResults for Accumulator {
+            type Output = Vec<(LeafIndex, LeafNode)>;
 
-        // Truncate the tree by reducing the size of tree until the rightmost non-blank leaf node
-        self.nodes.trim();
+            fn on_remove(
+                &mut self,
+                _: usize,
+                r: Result<(LeafIndex, LeafNode), RatchetTreeError>,
+            ) -> Result<(), RatchetTreeError> {
+                self.removed.push(r?);
+                Ok(())
+            }
 
-        let removed_leaves = indexes
-            .into_iter()
-            .zip(removed_leaves.into_iter())
-            .map(|(index, (_, leaf))| (index, leaf))
-            .collect::<Vec<(_, _)>>();
+            fn finish(self) -> Result<Self::Output, RatchetTreeError> {
+                Ok(self.removed)
+            }
+        }
 
-        Ok(removed_leaves)
+        self.batch_edit(Accumulator::default(), &[], &indexes, &[])
     }
 
     pub fn rekey_leaf(
@@ -320,7 +277,7 @@ impl TreeKemPublic {
         let existing_leaf = self.nodes.borrow_as_leaf_mut(index)?;
 
         // Update the cache
-        self.index.remove(existing_leaf)?;
+        self.index.remove(existing_leaf);
         self.index.insert(index, &leaf_node)?;
 
         *existing_leaf = leaf_node;
@@ -333,15 +290,17 @@ impl TreeKemPublic {
         index: LeafIndex,
         leaf_node: LeafNode,
     ) -> Result<(), RatchetTreeError> {
-        self.rekey_leaf(index, leaf_node)?;
+        struct Accumulator;
 
-        // Blank the intermediate nodes along the path from the sender's leaf to the root
-        self.nodes
-            .blank_direct_path(index)
-            .map(|_| ())
-            .map_err(RatchetTreeError::from)?;
+        impl AccumulateBatchResults for Accumulator {
+            type Output = ();
 
-        Ok(())
+            fn finish(self) -> Result<Self::Output, RatchetTreeError> {
+                Ok(())
+            }
+        }
+
+        self.batch_edit(Accumulator, &[(index, leaf_node)], &[], &[])
     }
 
     pub fn get_leaf_nodes(&self) -> Vec<&LeafNode> {
@@ -415,7 +374,7 @@ impl TreeKemPublic {
             &self.nodes.filtered_direct_path_co_path(sender)?,
         )?;
 
-        self.index.remove(&existing_key_package)?;
+        self.index.remove(&existing_key_package);
         self.index.insert(sender, &update_path.leaf_node)?;
 
         // Verify the parent hash of the new sender leaf node and update the parent hash values
@@ -443,12 +402,281 @@ impl TreeKemPublic {
             })
             .collect::<Result<Vec<_>, RatchetTreeError>>()
     }
+
+    fn update_unmerged(&mut self, index: LeafIndex) -> Result<(), RatchetTreeError> {
+        // For a given leaf index, find parent nodes and add the leaf to the unmerged leaf
+        self.nodes.direct_path(index)?.into_iter().for_each(|i| {
+            if let Ok(p) = self.nodes.borrow_as_parent_mut(i) {
+                p.unmerged_leaves.push(index)
+            }
+        });
+
+        Ok(())
+    }
+
+    pub fn batch_edit<A>(
+        &mut self,
+        mut accumulator: A,
+        updates: &[(LeafIndex, LeafNode)],
+        removals: &[LeafIndex],
+        additions: &[LeafNode],
+    ) -> Result<A::Output, RatchetTreeError>
+    where
+        A: AccumulateBatchResults,
+    {
+        let mut updates = updates
+            .iter()
+            .map(|(i, l)| (*i, l))
+            .map(Some)
+            .collect::<Vec<_>>();
+
+        let mut removals = removals.iter().copied().map(Some).collect::<Vec<_>>();
+        let tree_index = std::mem::take(&mut self.index);
+        let mut removed_indexes = HashSet::<LeafIndex>::new();
+
+        // Remove about-to-be-removed leaves from tree index.
+        let new_tree_index =
+            removals
+                .iter_mut()
+                .enumerate()
+                .try_fold(tree_index, |mut tree_index, (i, op)| {
+                    let r = empty_on_fail(op, |&leaf_index| {
+                        removed_indexes
+                            .insert(leaf_index)
+                            .then_some(())
+                            .ok_or(NodeVecError::NotLeafNode)?;
+                        let leaf = self.nodes.borrow_as_leaf(leaf_index)?;
+                        tree_index.remove(leaf);
+                        Ok(())
+                    });
+
+                    r.or_else(|e| accumulator.on_remove(i, Err(e)))
+                        .map(|_| tree_index)
+                })?;
+
+        // Verify updates have valid indexes.
+        updates.iter_mut().enumerate().try_for_each(|(i, op)| {
+            let r = empty_on_fail(op, |&(leaf_index, _)| {
+                let _ = self.nodes.borrow_as_leaf(leaf_index)?;
+                Ok(())
+            });
+
+            r.or_else(|e| accumulator.on_update(i, Err(e)))
+        })?;
+
+        // Ignore updates for indexes that are removed. Such a commit is invalid as per the RFC.
+        updates.iter_mut().for_each(|op| {
+            if op.as_ref().map_or(false, |(leaf_index, _)| {
+                removed_indexes.contains(leaf_index)
+            }) {
+                *op = None;
+            }
+        });
+
+        let mut tree_index = loop {
+            let tree_index = new_tree_index.clone();
+
+            // Remove about-to-be-updated leaves from tree index.
+            //
+            // This is done to ensure that inter-dependent updates will not be rejected, e.g.
+            // when an update U1 updates `pk1` to `pk2` and another update U2 updates `pk2` to `pk3`.
+            // Applying U1 fails unless U2 is applied first or `pk2` is removed. The latter approach
+            // is implemented here.
+            let tree_index = updates
+                .iter()
+                .copied()
+                .flatten()
+                .map(|(leaf_index, _)| leaf_index)
+                .fold(tree_index, |mut tree_index, leaf_index| {
+                    if let Ok(leaf) = self.nodes.borrow_as_leaf(leaf_index) {
+                        tree_index.remove(leaf);
+                    }
+                    tree_index
+                });
+
+            // Add updates to tree index.
+            let tree_index =
+                updates
+                    .iter_mut()
+                    .enumerate()
+                    .try_fold(tree_index, |mut tree_index, (i, op)| {
+                        let mut update_failed = false;
+
+                        let r = empty_on_fail(op, |&(leaf_index, leaf)| {
+                            match tree_index.insert(leaf_index, leaf) {
+                                Ok(_) => Ok(()),
+                                Err(e) => {
+                                    update_failed = true;
+                                    Err(e.into())
+                                }
+                            }
+                        });
+
+                        r.or_else(|e| accumulator.on_update(i, Err(e)))
+                            .map_err(Some)?;
+
+                        if update_failed {
+                            Err(None::<RatchetTreeError>)
+                        } else {
+                            Ok(tree_index)
+                        }
+                    });
+
+            match tree_index {
+                Ok(tree_index) => break Ok(tree_index),
+                Err(Some(e)) => break Err(e),
+                Err(None) => {
+                    // An update could not be applied, so its removal from the tree index needs to
+                    // be reverted. However it may not be possible to revert it because another
+                    // update might have introduced the same key in the index. To solve this,
+                    // the failed update is removed from the list of updates to apply, the tree
+                    // index is reverted to its state from before any update and updates are
+                    // processed from the beginning.
+                }
+            }
+        }?;
+
+        updates
+            .iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(i, leaf)| leaf.map(|(li, l)| (i, li, l)))
+            .try_for_each(|(i, leaf_index, leaf)| {
+                *self
+                    .nodes
+                    .borrow_as_leaf_mut(leaf_index)
+                    .expect("Index points to a leaf") = leaf.clone();
+
+                self.nodes
+                    .blank_direct_path(leaf_index)
+                    .expect("Index points to a leaf");
+
+                accumulator.on_update(i, Ok(leaf_index))
+            })?;
+
+        removals
+            .iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(i, leaf_index)| Some((i, leaf_index?)))
+            .try_for_each(|(i, leaf_index)| {
+                let leaf = self
+                    .nodes
+                    .blank_leaf_node(leaf_index)
+                    .expect("Index is valid")
+                    .expect("Index points to a leaf");
+
+                self.nodes
+                    .blank_direct_path(leaf_index)
+                    .expect("Index points to a leaf");
+
+                accumulator.on_remove(i, Ok((leaf_index, leaf)))
+            })?;
+
+        let (new_leaf_indexes, _) = additions.iter().enumerate().try_fold(
+            (Vec::new(), LeafIndex(0)),
+            |(mut leaf_indexes, start), (i, leaf)| {
+                let leaf_index = self.nodes.insert_leaf(start, leaf.clone());
+
+                let r = tree_index
+                    .insert(leaf_index, leaf)
+                    .map(|_| leaf_index)
+                    .map_err(Into::into);
+
+                let failed = r.is_err();
+                accumulator.on_add(i, r)?;
+
+                if failed {
+                    // Revert insertion in the tree.
+                    self.nodes
+                        .blank_leaf_node(leaf_index)
+                        .expect("Index points to a leaf");
+                } else {
+                    leaf_indexes.push(leaf_index);
+                }
+
+                Ok::<_, RatchetTreeError>((leaf_indexes, leaf_index))
+            },
+        )?;
+
+        self.nodes.trim();
+
+        new_leaf_indexes.iter().copied().for_each(|leaf_index| {
+            self.update_unmerged(leaf_index)
+                .expect("Index points to a leaf");
+        });
+
+        self.index = tree_index;
+
+        let mut path_blanked = removals
+            .iter()
+            .copied()
+            .flatten()
+            .chain(
+                updates
+                    .iter()
+                    .copied()
+                    .flatten()
+                    .map(|(leaf_index, _)| leaf_index),
+            )
+            .collect();
+
+        self.update_hashes(&mut path_blanked, &new_leaf_indexes)
+            .expect("All indexes are valid");
+        accumulator.finish()
+    }
+}
+
+fn empty_on_fail<T, F>(opt: &mut Option<T>, f: F) -> Result<(), RatchetTreeError>
+where
+    F: FnOnce(&T) -> Result<(), RatchetTreeError>,
+{
+    match &*opt {
+        Some(x) => match f(x) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                *opt = None;
+                Err(e)
+            }
+        },
+        None => Ok(()),
+    }
 }
 
 impl Display for TreeKemPublic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", build_ascii_tree(&self.nodes))
     }
+}
+
+pub trait AccumulateBatchResults {
+    type Output;
+
+    fn on_update(
+        &mut self,
+        _: usize,
+        r: Result<LeafIndex, RatchetTreeError>,
+    ) -> Result<(), RatchetTreeError> {
+        r.map(|_| ())
+    }
+
+    fn on_remove(
+        &mut self,
+        _: usize,
+        r: Result<(LeafIndex, LeafNode), RatchetTreeError>,
+    ) -> Result<(), RatchetTreeError> {
+        r.map(|_| ())
+    }
+
+    fn on_add(
+        &mut self,
+        _: usize,
+        r: Result<LeafIndex, RatchetTreeError>,
+    ) -> Result<(), RatchetTreeError> {
+        r.map(|_| ())
+    }
+
+    fn finish(self) -> Result<Self::Output, RatchetTreeError>;
 }
 
 #[cfg(test)]
@@ -514,7 +742,7 @@ mod tests {
     use crate::tree_kem::parent_hash::ParentHash;
     use crate::tree_kem::test_utils::{get_test_leaf_nodes, get_test_tree};
     use crate::tree_kem::tree_index::TreeIndexError;
-    use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
+    use crate::tree_kem::{AccumulateBatchResults, RatchetTreeError, TreeKemPublic};
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]
@@ -554,7 +782,8 @@ mod tests {
         let exported = test_tree.public.export_node_data();
         let imported = TreeKemPublic::import_node_data(cipher_suite, exported).unwrap();
 
-        assert_eq!(test_tree.public, imported);
+        assert_eq!(test_tree.public.nodes, imported.nodes);
+        assert_eq!(test_tree.public.index, imported.index);
     }
 
     #[test]
@@ -686,7 +915,7 @@ mod tests {
         // The tree should not have grown due to an update
         assert_eq!(tree.occupied_leaf_count(), original_size);
 
-        // The cache of tree package indexs should not have grown
+        // The cache of tree package indexes should not have grown
         assert_eq!(tree.index.len() as u32, tree.occupied_leaf_count());
 
         // The key package should be updated in the tree
@@ -838,5 +1067,68 @@ mod tests {
             let expected_index = LeafIndex(i as u32 + 1);
             assert_eq!(tree.find_leaf_node(leaf_node), Some(expected_index));
         }
+    }
+
+    #[derive(Debug, Default)]
+    struct BatchAccumulator {
+        additions: Vec<LeafIndex>,
+        removals: Vec<(LeafIndex, LeafNode)>,
+        updates: Vec<LeafIndex>,
+    }
+
+    impl AccumulateBatchResults for BatchAccumulator {
+        type Output = Self;
+
+        fn on_add(
+            &mut self,
+            _: usize,
+            r: Result<LeafIndex, RatchetTreeError>,
+        ) -> Result<(), RatchetTreeError> {
+            self.additions.push(r?);
+            Ok(())
+        }
+
+        fn on_remove(
+            &mut self,
+            _: usize,
+            r: Result<(LeafIndex, LeafNode), RatchetTreeError>,
+        ) -> Result<(), RatchetTreeError> {
+            self.removals.push(r?);
+            Ok(())
+        }
+
+        fn on_update(
+            &mut self,
+            _: usize,
+            r: Result<LeafIndex, RatchetTreeError>,
+        ) -> Result<(), RatchetTreeError> {
+            self.updates.push(r?);
+            Ok(())
+        }
+
+        fn finish(self) -> Result<Self::Output, RatchetTreeError> {
+            Ok(self)
+        }
+    }
+
+    #[test]
+    fn batch_edit_works() {
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let mut tree = get_test_tree(cipher_suite).public;
+        let leaf_nodes = get_test_leaf_nodes(cipher_suite);
+        tree.add_leaves(leaf_nodes.clone()).unwrap();
+
+        let acc = tree
+            .batch_edit(
+                BatchAccumulator::default(),
+                &[(LeafIndex(0), get_basic_test_node(cipher_suite, "A"))],
+                &[LeafIndex(1)],
+                &[get_basic_test_node(cipher_suite, "D")],
+            )
+            .unwrap();
+
+        assert_eq!(acc.additions, [LeafIndex(1)]);
+        assert_eq!(acc.removals, [(LeafIndex(1), leaf_nodes[0].clone())]);
+        assert_eq!(acc.updates, [LeafIndex(0)]);
     }
 }

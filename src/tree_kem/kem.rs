@@ -186,7 +186,7 @@ impl<'a> TreeKem<'a> {
             &filtered_direct_path_co_path,
         )?;
 
-        self.tree_kem_public.index.remove(&removed_key_package)?;
+        self.tree_kem_public.index.remove(&removed_key_package);
 
         self.tree_kem_public
             .index

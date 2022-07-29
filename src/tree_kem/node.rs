@@ -254,13 +254,21 @@ impl NodeVec {
         }
     }
 
-    pub fn empty_leaves(&mut self) -> impl Iterator<Item = (LeafIndex, &mut Option<Node>)> + '_ {
-        // List of empty leaves from left to right
+    fn empty_leaves_from(
+        &mut self,
+        start: LeafIndex,
+    ) -> impl Iterator<Item = (LeafIndex, &mut Option<Node>)> {
         self.iter_mut()
-            .enumerate()
             .step_by(2)
+            .enumerate()
+            .skip(start.0 as usize)
             .filter(|(_, n)| n.is_none())
-            .map(|(i, n)| (LeafIndex(i as u32 / 2), n))
+            .map(|(i, n)| (LeafIndex(i as u32), n))
+    }
+
+    #[cfg(test)]
+    fn empty_leaves(&mut self) -> impl Iterator<Item = (LeafIndex, &mut Option<Node>)> {
+        self.empty_leaves_from(LeafIndex(0))
     }
 
     pub fn non_empty_leaves(&self) -> impl Iterator<Item = (LeafIndex, &LeafNode)> + '_ {
@@ -485,6 +493,25 @@ impl NodeVec {
                     && self.is_resolution_empty(tree_math::right(index).unwrap())
             }
         }
+    }
+
+    /// If `start` is a valid leaf index for the current tree, inserts a leaf at the first blank
+    /// leaf at or after `start`, extending the tree if necessary.
+    ///
+    /// If `start` is larger than or equal to the current number of leaves, inserts a leaf after the
+    /// last leaf.
+    pub fn insert_leaf(&mut self, start: LeafIndex, leaf: LeafNode) -> LeafIndex {
+        if let Some((i, node)) = self.empty_leaves_from(start).next() {
+            *node = Some(leaf.into());
+            return i;
+        }
+
+        if !self.is_empty() {
+            self.push(None);
+        }
+
+        self.push(Some(leaf.into()));
+        LeafIndex(self.len() as u32 / 2)
     }
 }
 
