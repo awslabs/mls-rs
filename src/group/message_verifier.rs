@@ -258,11 +258,9 @@ mod tests {
             framing::MLSCiphertext,
             message_signature::MessageSigningContext,
             message_verifier::decrypt_ciphertext,
-            padding::PaddingMode,
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_member, TestGroup, TEST_GROUP},
-            CommitOptions, Content, ControlEncryptionMode, Group, GroupError, MLSMessagePayload,
-            MLSPlaintext, Sender, VerifiedPlaintext,
+            Content, Group, GroupError, MLSMessagePayload, MLSPlaintext, Sender, VerifiedPlaintext,
         },
         key_package::KeyPackageGeneration,
         signer::{Signable, SignatureError, Signer},
@@ -352,17 +350,9 @@ mod tests {
                 .add_proposal(bob_key_pkg.key_package.clone())
                 .unwrap();
 
-            let commit_options = CommitOptions {
-                prefer_path_update: false,
-                extension_update: None,
-                capabilities_update: None,
-                encryption_mode: ControlEncryptionMode::Plaintext,
-                ratchet_tree_extension: true,
-            };
-
             let (commit_generation, welcome) = alice
                 .group
-                .commit_proposals(vec![proposal], commit_options, None, vec![])
+                .commit_proposals(vec![proposal], None, vec![])
                 .unwrap();
 
             let welcome = match welcome.unwrap().payload {
@@ -375,12 +365,15 @@ mod tests {
                 .process_pending_commit(commit_generation)
                 .unwrap();
 
-            let bob = Group::from_welcome_message(
+            let bob = Group::join(
                 TEST_PROTOCOL_VERSION,
                 welcome,
                 None,
-                bob_key_pkg.clone(),
-                test_config(bob_signing_key, bob_key_pkg),
+                test_config(
+                    bob_signing_key,
+                    bob_key_pkg,
+                    alice.group.config.preferences(),
+                ),
             )
             .unwrap();
 
@@ -411,12 +404,7 @@ mod tests {
     fn wire_format_is_signed() {
         let mut env = TestEnv::new();
         let message = make_signed_plaintext(&env.alice.group, false);
-
-        let message = env
-            .alice
-            .group
-            .encrypt_plaintext(message, PaddingMode::None)
-            .unwrap();
+        let message = env.alice.group.encrypt_plaintext(message).unwrap();
 
         let res = decrypt(message, &mut env.bob.group);
 
@@ -432,12 +420,7 @@ mod tests {
     fn valid_ciphertext_is_verified() {
         let mut env = TestEnv::new();
         let message = make_signed_plaintext(&env.alice.group, true);
-
-        let message = env
-            .alice
-            .group
-            .encrypt_plaintext(message, PaddingMode::None)
-            .unwrap();
+        let message = env.alice.group.encrypt_plaintext(message).unwrap();
 
         decrypt(message, &mut env.bob.group).unwrap();
     }
@@ -644,12 +627,7 @@ mod tests {
     fn ciphertext_from_self_fails_verification() {
         let mut env = TestEnv::new();
         let message = make_signed_plaintext(&env.alice.group, true);
-
-        let message = env
-            .alice
-            .group
-            .encrypt_plaintext(message, PaddingMode::None)
-            .unwrap();
+        let message = env.alice.group.encrypt_plaintext(message).unwrap();
 
         let res = decrypt(message, &mut env.alice.group);
 

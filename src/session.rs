@@ -5,10 +5,7 @@ use crate::group::{
     proposal::Proposal, CommitGeneration, Group, GroupInfo, GroupState, OutboundMessage,
     ProposalCacheError, ProposalFilterError, ProposalRef, VerifiedPlaintext, Welcome,
 };
-use crate::key_package::{
-    KeyPackage, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
-    KeyPackageRepository,
-};
+use crate::key_package::{KeyPackage, KeyPackageGenerationError};
 use crate::message::{ProcessedMessage, ProcessedMessagePayload};
 pub use crate::psk::{ExternalPskId, JustPreSharedKeyID, Psk};
 use crate::signing_identity::SigningIdentity;
@@ -48,8 +45,6 @@ pub enum SessionError {
     PendingCommitNotFound,
     #[error("pending commit mismatch")]
     PendingCommitMismatch,
-    #[error("key package not found")]
-    KeyPackageNotFound,
     #[error("signing identity not found for cipher suite {0:?}")]
     SigningIdentityNotFound(CipherSuite),
     #[error(transparent)]
@@ -113,7 +108,6 @@ where
     #[cfg(not(feature = "benchmark"))]
     protocol: Group<C>,
     pending_commit: Option<PendingCommit>,
-    config: C,
 }
 
 #[derive(Clone, Debug)]
@@ -205,7 +199,7 @@ where
         config: C,
     ) -> Result<Self, SessionError> {
         let group = Group::new(
-            config.clone(),
+            config,
             group_id,
             cipher_suite,
             protocol_version,
@@ -215,12 +209,10 @@ where
         Ok(Session {
             protocol: group,
             pending_commit: None,
-            config,
         })
     }
 
     pub(crate) fn join(
-        key_package: Option<&KeyPackageRef>,
         ratchet_tree_data: Option<&[u8]>,
         welcome_message: &[u8],
         config: C,
@@ -232,31 +224,20 @@ where
             _ => Err(SessionError::ExpectedWelcomeMessage),
         }?;
 
-        let key_package_generation =
-            find_key_package_generation(&config, key_package, &welcome_message)?;
-
         let ratchet_tree = ratchet_tree_data
             .map(|rt| Self::import_ratchet_tree(welcome_message.cipher_suite, rt))
             .transpose()?;
 
-        let group = Group::from_welcome_message(
-            protocol_version,
-            welcome_message,
-            ratchet_tree,
-            key_package_generation,
-            config.clone(),
-        )?;
+        let group = Group::join(protocol_version, welcome_message, ratchet_tree, config)?;
 
         Ok(Session {
             protocol: group,
             pending_commit: None,
-            config,
         })
     }
 
     pub fn join_subgroup(
         &self,
-        key_package: Option<&KeyPackageRef>,
         welcome: Welcome,
         ratchet_tree_data: Option<&[u8]>,
     ) -> Result<Self, SessionError> {
@@ -264,18 +245,9 @@ where
             .map(|rt| Self::import_ratchet_tree(welcome.cipher_suite, rt))
             .transpose()?;
 
-        let key_package_generation =
-            find_key_package_generation(&self.config, key_package, &welcome)?;
-
         Ok(Session {
-            protocol: self.protocol.join_subgroup(
-                welcome,
-                public_tree,
-                key_package_generation,
-                self.config.clone(),
-            )?,
+            protocol: self.protocol.join_subgroup(welcome, public_tree)?,
             pending_commit: None,
-            config: self.config.clone(),
         })
     }
 
@@ -294,7 +266,7 @@ where
             .transpose()?;
 
         let (protocol, commit_message) = Group::new_external(
-            config.clone(),
+            config,
             protocol_version,
             group_info,
             tree,
@@ -306,7 +278,6 @@ where
         let session = Session {
             protocol,
             pending_commit: None,
-            config,
         };
 
         let commit_message = session.serialize_control(commit_message)?;
@@ -360,12 +331,7 @@ where
 
     #[inline(always)]
     pub fn update_proposal(&mut self) -> Result<Proposal, SessionError> {
-        self.protocol
-            .update_proposal(
-                Some(self.config.leaf_node_extensions()),
-                Some(self.config.capabilities()),
-            )
-            .map_err(Into::into)
+        self.protocol.update_proposal().map_err(Into::into)
     }
 
     #[inline(always)]
@@ -489,11 +455,9 @@ where
         proposal: Proposal,
         authenticated_data: Vec<u8>,
     ) -> Result<Vec<u8>, SessionError> {
-        let packet = self.protocol.create_proposal(
-            proposal,
-            self.config.preferences().encryption_mode(),
-            authenticated_data,
-        )?;
+        let packet = self
+            .protocol
+            .create_proposal(proposal, authenticated_data)?;
 
         self.serialize_control(packet)
     }
@@ -507,12 +471,9 @@ where
             return Err(SessionError::ExistingPendingCommit);
         }
 
-        let (commit_data, welcome) = self.protocol.commit_proposals(
-            proposals,
-            self.config.commit_options(),
-            None,
-            authenticated_data,
-        )?;
+        let (commit_data, welcome) =
+            self.protocol
+                .commit_proposals(proposals, None, authenticated_data)?;
 
         let serialized_commit = self.serialize_control(commit_data.plaintext.clone())?;
 
@@ -630,11 +591,9 @@ where
         data: &[u8],
         authenticated_data: Vec<u8>,
     ) -> Result<Vec<u8>, SessionError> {
-        let ciphertext = self.protocol.encrypt_application_message(
-            data,
-            self.config.preferences().padding_mode,
-            authenticated_data,
-        )?;
+        let ciphertext = self
+            .protocol
+            .encrypt_application_message(data, authenticated_data)?;
 
         let msg = MLSMessage {
             version: self.protocol.protocol_version(),
@@ -684,7 +643,6 @@ where
         let new_session = Session {
             protocol: new_group,
             pending_commit: None,
-            config: self.config.clone(),
         };
 
         Ok((new_session, welcome))
@@ -692,7 +650,6 @@ where
 
     pub fn finish_reinit_join(
         &self,
-        key_package: Option<&KeyPackageRef>,
         welcome: Welcome,
         ratchet_tree_data: Option<&[u8]>,
     ) -> Result<Self, SessionError> {
@@ -700,18 +657,9 @@ where
             .map(|rt| Self::import_ratchet_tree(welcome.cipher_suite, rt))
             .transpose()?;
 
-        let key_package_generation =
-            find_key_package_generation(&self.config, key_package, &welcome)?;
-
         Ok(Session {
-            protocol: self.protocol.finish_reinit_join(
-                welcome,
-                public_tree,
-                key_package_generation,
-                self.config.clone(),
-            )?,
+            protocol: self.protocol.finish_reinit_join(welcome, public_tree)?,
             pending_commit: None,
-            config: self.config.clone(),
         })
     }
 
@@ -722,14 +670,11 @@ where
     where
         F: FnMut(&LeafNode) -> Option<KeyPackage>,
     {
-        let (new_group, welcome) = self
-            .protocol
-            .finish_reinit_commit(self.config.clone(), get_new_key_package)?;
+        let (new_group, welcome) = self.protocol.finish_reinit_commit(get_new_key_package)?;
 
         let new_session = Session {
             protocol: new_group,
             pending_commit: None,
-            config: self.config.clone(),
         };
 
         Ok((new_session, welcome))
@@ -754,34 +699,8 @@ where
 
     pub(crate) fn import(config: C, state: GroupState) -> Result<Self, SessionError> {
         Ok(Self {
-            protocol: Group::import(config.clone(), state)?,
+            protocol: Group::import(config, state)?,
             pending_commit: None,
-            config,
         })
     }
-}
-
-fn find_key_package_generation<C>(
-    config: &C,
-    key_package_ref: Option<&KeyPackageRef>,
-    welcome_message: &Welcome,
-) -> Result<KeyPackageGeneration, SessionError>
-where
-    C: ClientConfig,
-{
-    match key_package_ref {
-        Some(r) => config.key_package_repo().get(r),
-        None => welcome_message
-            .secrets
-            .iter()
-            .find_map(|secrets| {
-                config
-                    .key_package_repo()
-                    .get(&secrets.new_member)
-                    .transpose()
-            })
-            .transpose(),
-    }
-    .map_err(|e| SessionError::KeyPackageRepoError(e.into()))?
-    .ok_or(SessionError::KeyPackageNotFound)
 }

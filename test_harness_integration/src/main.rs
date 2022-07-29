@@ -271,7 +271,7 @@ impl MlsClient for MlsClientImpl {
         let client_index = request_ref.transaction_id as usize - 1;
 
         let session = clients[client_index]
-            .join_session(None, None, &request_ref.welcome)
+            .join_session(None, &request_ref.welcome)
             .map_err(abort)?;
 
         let mut sessions = self.sessions.lock().unwrap();

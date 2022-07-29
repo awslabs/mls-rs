@@ -96,7 +96,7 @@ fn test_create(
 
     // Bob receives the welcome message and joins the group
     let bob_session = bob
-        .join_session(None, Some(&tree), &packets.welcome_packet.unwrap())
+        .join_session(Some(&tree), &packets.welcome_packet.unwrap())
         .unwrap();
 
     assert!(alice_session.has_equal_state(&bob_session));
@@ -209,11 +209,7 @@ fn get_test_sessions_clients(
         .iter()
         .map(|client| {
             client
-                .join_session(
-                    None,
-                    Some(&tree_data),
-                    commit.welcome_packet.as_ref().unwrap(),
-                )
+                .join_session(Some(&tree_data), commit.welcome_packet.as_ref().unwrap())
                 .unwrap()
         })
         .collect::<Vec<_>>();
@@ -268,11 +264,7 @@ fn add_random_members(
 
     sessions.extend(new_clients.iter().map(|client| {
         client
-            .join_session(
-                None,
-                Some(&tree_data),
-                commit.welcome_packet.as_ref().unwrap(),
-            )
+            .join_session(Some(&tree_data), commit.welcome_packet.as_ref().unwrap())
             .unwrap()
     }));
 }
@@ -843,13 +835,15 @@ fn reinit_works() {
     let mut alice_session = alice
         .create_session(version, suite1, ExtensionList::new())
         .unwrap();
+
     let kp = bob.generate_key_package(version, suite1).unwrap();
     let add = alice_session.add_proposal(&kp.to_vec().unwrap()).unwrap();
     let commit = alice_session.commit(vec![add], vec![]).unwrap();
     alice_session.apply_pending_commit().unwrap();
     let tree = alice_session.export_tree().unwrap();
+
     let mut bob_session = bob
-        .join_session(None, Some(&tree), &commit.welcome_packet.unwrap())
+        .join_session(Some(&tree), &commit.welcome_packet.unwrap())
         .unwrap();
 
     // Alice proposes reinit
@@ -873,6 +867,7 @@ fn reinit_works() {
     let message = alice_session
         .process_incoming_bytes(&commit.commit_packet)
         .unwrap();
+
     if let ProcessedMessagePayload::Commit(state_update) = message.message {
         assert!(!state_update.active && state_update.reinit.is_some());
     }
@@ -883,6 +878,7 @@ fn reinit_works() {
 
     // Alice finishes the reinit by creating the new group
     let kp = bob.generate_key_package(version, suite2).unwrap();
+
     let (mut alice_session, welcome) = alice_session
         .finish_reinit_commit(|_| Some(kp.clone()))
         .unwrap();
@@ -890,8 +886,9 @@ fn reinit_works() {
     // Alice invited Bob
     let welcome = welcome.unwrap();
     let tree = alice_session.export_tree().unwrap();
+
     let mut bob_session = bob_session
-        .finish_reinit_join(None, welcome, Some(&tree))
+        .finish_reinit_join(welcome, Some(&tree))
         .unwrap();
 
     // They can talk
@@ -899,12 +896,16 @@ fn reinit_works() {
     let kp = carol.generate_key_package(version, suite2).unwrap();
     let add = alice_session.add_proposal(&kp.to_vec().unwrap()).unwrap();
     let commit = alice_session.commit(vec![add], vec![]).unwrap();
+
     alice_session.apply_pending_commit().unwrap();
+
     bob_session
         .process_incoming_bytes(&commit.commit_packet)
         .unwrap();
+
     let tree = alice_session.export_tree().unwrap();
+
     carol
-        .join_session(None, Some(&tree), &commit.welcome_packet.unwrap())
+        .join_session(Some(&tree), &commit.welcome_packet.unwrap())
         .unwrap();
 }

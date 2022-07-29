@@ -7,7 +7,7 @@ use crate::group::message_signature::MessageSigningContext;
 use crate::group::proposal::{AddProposal, Proposal};
 use crate::group::GroupState;
 use crate::key_package::{
-    KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRef, KeyPackageRepository,
+    KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRepository,
 };
 use crate::session::{ExternalPskId, Session, SessionError};
 use crate::signer::{Signable, SignatureError};
@@ -130,12 +130,10 @@ where
     /// be used to identify the key package to use.
     pub fn join_session(
         &self,
-        key_package: Option<&KeyPackageRef>,
         tree_data: Option<&[u8]>,
         welcome_message: &[u8],
     ) -> Result<Session<C>, ClientError> {
-        Session::join(key_package, tree_data, welcome_message, self.config.clone())
-            .map_err(Into::into)
+        Session::join(tree_data, welcome_message, self.config.clone()).map_err(Into::into)
     }
 
     /// Returns session and commit MLSMessage
@@ -268,8 +266,6 @@ pub mod test_utils {
     where
         S: IntoIterator<Item = &'a mut Session<InMemoryClientConfig>>,
     {
-        let key_package_ref = key_package.to_reference().unwrap();
-
         let commit_result =
             committer_session.commit(vec![Proposal::Add(AddProposal { key_package })], vec![])?;
 
@@ -280,7 +276,6 @@ pub mod test_utils {
         }
 
         client.join_session(
-            Some(&key_package_ref),
             Some(&committer_session.export_tree().unwrap()),
             &commit_result.welcome_packet.unwrap(),
         )
@@ -500,18 +495,13 @@ mod tests {
 
         let mut bob_sub_session = bob_session
             .join_subgroup(
-                None,
                 welcome.clone(),
                 Some(&alice_sub_session.export_tree().unwrap()),
             )
             .unwrap();
 
         assert_matches!(
-            carol_session.join_subgroup(
-                None,
-                welcome,
-                Some(&alice_sub_session.export_tree().unwrap())
-            ),
+            carol_session.join_subgroup(welcome, Some(&alice_sub_session.export_tree().unwrap())),
             Err(_)
         );
 

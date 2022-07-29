@@ -94,7 +94,7 @@ pub trait ClientConfig {
         let preferences = self.preferences();
 
         CommitOptions {
-            prefer_path_update: true,
+            prefer_path_update: preferences.force_commit_path_update,
             extension_update: Some(self.leaf_node_extensions()),
             capabilities_update: Some(self.capabilities()),
             encryption_mode: preferences.encryption_mode(),
@@ -485,18 +485,21 @@ impl From<&str> for SimpleError {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use super::InMemoryClientConfig;
+    use super::{InMemoryClientConfig, Preferences};
     use crate::key_package::KeyPackageGeneration;
     use ferriscrypt::asym::ec_key::SecretKey;
 
     pub(crate) fn test_config(
         secret_key: SecretKey,
         key_package: KeyPackageGeneration,
+        preferences: Preferences,
     ) -> InMemoryClientConfig {
-        let config = InMemoryClientConfig::default().with_signing_identity(
-            key_package.key_package.leaf_node.signing_identity.clone(),
-            secret_key,
-        );
+        let config = InMemoryClientConfig::default()
+            .with_signing_identity(
+                key_package.key_package.leaf_node.signing_identity.clone(),
+                secret_key,
+            )
+            .with_preferences(preferences);
 
         config.key_packages.insert(key_package).unwrap();
         config

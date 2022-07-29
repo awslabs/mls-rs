@@ -25,7 +25,7 @@ use crate::extension::{
 use crate::group::{KeySchedule, KeyScheduleError};
 use crate::key_package::{
     KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
-    KeyPackageValidationError, KeyPackageValidator,
+    KeyPackageRepository, KeyPackageValidationError, KeyPackageValidator,
 };
 use crate::keychain::Keychain;
 use crate::message::ProcessedMessagePayload;
@@ -238,6 +238,8 @@ pub enum GroupError {
     #[error(transparent)]
     EpochRepositoryError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
+    KeyPackageRepositoryError(Box<dyn std::error::Error + Send + Sync>),
+    #[error(transparent)]
     ExtensionError(#[from] ExtensionError),
     #[error(transparent)]
     KdfError(#[from] KdfError),
@@ -255,6 +257,8 @@ pub enum GroupError {
     TreeValidationError(#[from] TreeValidationError),
     #[error(transparent)]
     SigningIdentityError(#[from] SigningIdentityError),
+    #[error("key package not found")]
+    KeyPackageNotFound,
     #[error("Cipher suite does not match")]
     CipherSuiteMismatch,
     #[error("Invalid key package signature")]
@@ -619,31 +623,23 @@ where
         })
     }
 
-    pub fn from_welcome_message(
+    pub fn join(
         protocol_version: ProtocolVersion,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
-        key_package: KeyPackageGeneration,
         config: C,
     ) -> Result<Self, GroupError> {
-        Self::join_with_welcome(
-            None,
-            protocol_version,
-            welcome,
-            public_tree,
-            key_package,
-            config,
-        )
+        Self::from_welcome_message(None, protocol_version, welcome, public_tree, config)
     }
 
-    fn join_with_welcome(
+    fn from_welcome_message(
         parent_group_id: Option<&[u8]>,
         protocol_version: ProtocolVersion,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
-        key_package_generation: KeyPackageGeneration,
         config: C,
     ) -> Result<Self, GroupError> {
+        let key_package_generation = find_key_package_generation(&config, &welcome)?;
         // Identify an entry in the secrets array where the KeyPackageRef value corresponds to
         // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
         // If no such field exists, or if the ciphersuite indicated in the KeyPackage does not
@@ -885,16 +881,8 @@ where
             }))
             .collect::<Vec<_>>();
 
-        let options = CommitOptions {
-            prefer_path_update: true,
-            extension_update: None,
-            capabilities_update: None,
-            encryption_mode: ControlEncryptionMode::Plaintext,
-            ratchet_tree_extension: false,
-        };
-
         let (commit, _) =
-            group.commit_proposals(proposals, options, Some(&leaf_node), authenticated_data)?;
+            group.commit_proposals(proposals, Some(&leaf_node), authenticated_data)?;
 
         group.process_pending_commit(commit.clone())?;
 
@@ -956,9 +944,10 @@ where
     pub fn create_proposal(
         &mut self,
         proposal: Proposal,
-        encryption_mode: ControlEncryptionMode,
         authenticated_data: Vec<u8>,
     ) -> Result<OutboundMessage, GroupError> {
+        let encryption_mode = self.config.preferences().encryption_mode();
+
         let plaintext = self.construct_mls_plaintext(
             Sender::Member(self.private_tree.self_index),
             Content::Proposal(proposal.clone()),
@@ -1029,10 +1018,11 @@ where
     pub fn commit_proposals(
         &mut self,
         proposals: Vec<Proposal>,
-        options: CommitOptions,
         external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
     ) -> Result<(CommitGeneration, Option<MLSMessage>), GroupError> {
+        let options = self.config.commit_options();
+
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
         // by value
@@ -1466,16 +1456,13 @@ where
         &self,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
-        key_package_generation: KeyPackageGeneration,
-        config: C,
     ) -> Result<Self, GroupError> {
-        let subgroup = Self::join_with_welcome(
+        let subgroup = Self::from_welcome_message(
             Some(&self.core.context.group_id),
             self.core.protocol_version(),
             welcome,
             public_tree,
-            key_package_generation,
-            config,
+            self.config.clone(),
         )?;
 
         if subgroup.core.protocol_version() != self.core.protocol_version() {
@@ -1493,12 +1480,13 @@ where
 
     pub fn finish_reinit_commit<F>(
         &self,
-        config: C,
         get_new_key_package: F,
     ) -> Result<(Self, Option<Welcome>), GroupError>
     where
         F: FnMut(&LeafNode) -> Option<KeyPackage>,
     {
+        let config = self.config.clone();
+
         let reinit = self
             .core
             .pending_reinit
@@ -1559,8 +1547,6 @@ where
         &self,
         welcome: Welcome,
         public_tree: Option<TreeKemPublic>,
-        key_package_generation: KeyPackageGeneration,
-        config: C,
     ) -> Result<Self, GroupError> {
         let reinit = self
             .core
@@ -1572,13 +1558,12 @@ where
             return Err(GroupError::CipherSuiteMismatch);
         }
 
-        let group = Self::join_with_welcome(
+        let group = Self::from_welcome_message(
             Some(&self.core.context.group_id),
             reinit.version,
             welcome,
             public_tree,
-            key_package_generation,
-            config,
+            self.config.clone(),
         )?;
 
         if group.core.protocol_version() != reinit.version {
@@ -1667,11 +1652,7 @@ where
         Ok(Proposal::Add(AddProposal { key_package }))
     }
 
-    pub fn update_proposal(
-        &mut self,
-        extension_list: Option<ExtensionList>,
-        capabilities_update: Option<Capabilities>,
-    ) -> Result<Proposal, GroupError> {
+    pub fn update_proposal(&mut self) -> Result<Proposal, GroupError> {
         let signer = self.signer()?;
         // Grab a copy of the current node and update it to have new key material
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
@@ -1679,8 +1660,8 @@ where
         let secret_key = new_leaf_node.update(
             self.core.cipher_suite(),
             self.group_id(),
-            capabilities_update,
-            extension_list,
+            Some(self.config.capabilities()),
+            Some(self.config.leaf_node_extensions()),
             &signer,
         )?;
 
@@ -1736,8 +1717,8 @@ where
         encryption_mode: ControlEncryptionMode,
     ) -> Result<OutboundMessage, GroupError> {
         Ok(
-            if let ControlEncryptionMode::Encrypted(padding_mode) = encryption_mode {
-                let ciphertext = self.encrypt_plaintext(plaintext.clone(), padding_mode)?;
+            if let ControlEncryptionMode::Encrypted(_) = encryption_mode {
+                let ciphertext = self.encrypt_plaintext(plaintext.clone())?;
 
                 OutboundMessage::Ciphertext {
                     original: plaintext,
@@ -1752,8 +1733,9 @@ where
     fn encrypt_plaintext_to_cipher(
         &mut self,
         plaintext: MLSPlaintext,
-        padding: PaddingMode,
     ) -> Result<MLSCiphertext, GroupError> {
+        let padding = self.config.preferences().padding_mode;
+
         let content_type = ContentType::from(&plaintext.content.content);
         let authenticated_data = plaintext.content.authenticated_data;
 
@@ -1846,24 +1828,18 @@ where
     pub fn encrypt_plaintext(
         &mut self,
         plaintext: MLSPlaintext,
-        padding: PaddingMode,
     ) -> Result<MLSCiphertext, GroupError> {
-        Self::encrypt_plaintext_to_cipher(self, plaintext, padding)
+        self.encrypt_plaintext_to_cipher(plaintext)
     }
 
     #[cfg(not(feature = "benchmark"))]
-    fn encrypt_plaintext(
-        &mut self,
-        plaintext: MLSPlaintext,
-        padding: PaddingMode,
-    ) -> Result<MLSCiphertext, GroupError> {
-        Self::encrypt_plaintext_to_cipher(self, plaintext, padding)
+    fn encrypt_plaintext(&mut self, plaintext: MLSPlaintext) -> Result<MLSCiphertext, GroupError> {
+        self.encrypt_plaintext_to_cipher(plaintext)
     }
 
     pub fn encrypt_application_message(
         &mut self,
         message: &[u8],
-        padding: PaddingMode,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSCiphertext, GroupError> {
         let signer = self.signer()?;
@@ -1896,7 +1872,7 @@ where
 
         plaintext.sign(&signer, &signing_context)?;
 
-        self.encrypt_plaintext(plaintext, padding)
+        self.encrypt_plaintext(plaintext)
     }
 
     pub fn verify_incoming_plaintext(
@@ -2381,6 +2357,27 @@ fn version_and_cipher_filter<C: ClientConfig>(
         && config.supported_cipher_suites().contains(&cipher_suite)
 }
 
+fn find_key_package_generation<C>(
+    config: &C,
+    welcome_message: &Welcome,
+) -> Result<KeyPackageGeneration, GroupError>
+where
+    C: ClientConfig,
+{
+    welcome_message
+        .secrets
+        .iter()
+        .find_map(|secrets| {
+            config
+                .key_package_repo()
+                .get(&secrets.new_member)
+                .transpose()
+        })
+        .transpose()
+        .map_err(|e| GroupError::KeyPackageRepositoryError(e.into()))?
+        .ok_or(GroupError::KeyPackageNotFound)
+}
+
 #[cfg(test)]
 pub(crate) mod test_utils {
     use ferriscrypt::asym::ec_key::SecretKey;
@@ -2390,6 +2387,7 @@ pub(crate) mod test_utils {
         cipher_suite::MaybeCipherSuite,
         client_config::{
             test_utils::test_config, InMemoryClientConfig, PassthroughCredentialValidator,
+            Preferences,
         },
         extension::RequiredCapabilitiesExt,
         key_package::KeyPackageGenerator,
@@ -2404,30 +2402,14 @@ pub(crate) mod test_utils {
     }
 
     impl TestGroup {
-        pub(crate) fn commit_options(&self) -> CommitOptions {
-            CommitOptions {
-                prefer_path_update: true,
-                extension_update: None,
-                capabilities_update: None,
-                encryption_mode: ControlEncryptionMode::Plaintext,
-                ratchet_tree_extension: true,
-            }
-        }
-
-        pub(crate) fn join(&mut self, name: &str) -> (TestGroup, OutboundMessage) {
-            self.join_with_options(name, self.commit_options())
-        }
-
         pub(crate) fn propose(&mut self, proposal: Proposal) -> OutboundMessage {
-            self.group
-                .create_proposal(proposal, ControlEncryptionMode::Plaintext, vec![])
-                .unwrap()
+            self.group.create_proposal(proposal, vec![]).unwrap()
         }
 
-        pub(crate) fn join_with_options(
+        pub(crate) fn join_with_preferences(
             &mut self,
             name: &str,
-            commit_options: CommitOptions,
+            preferences: Preferences,
         ) -> (TestGroup, OutboundMessage) {
             let (new_key_package, secret_key) = test_member(
                 self.group.core.protocol_version(),
@@ -2441,11 +2423,9 @@ pub(crate) mod test_utils {
                 .add_proposal(new_key_package.key_package.clone())
                 .unwrap();
 
-            let tree_ext = commit_options.ratchet_tree_extension;
-
             let (commit_generation, welcome) = self
                 .group
-                .commit_proposals(vec![add_proposal], commit_options, None, Vec::new())
+                .commit_proposals(vec![add_proposal], None, Vec::new())
                 .unwrap();
 
             let commit = commit_generation.plaintext.clone();
@@ -2455,7 +2435,8 @@ pub(crate) mod test_utils {
                 .process_pending_commit(commit_generation)
                 .unwrap();
 
-            let tree = (!tree_ext).then(|| self.group.current_epoch_tree().clone());
+            let tree = (!preferences.ratchet_tree_extension)
+                .then(|| self.group.current_epoch_tree().clone());
 
             let welcome = match welcome.unwrap().payload {
                 MLSMessagePayload::Welcome(w) => w,
@@ -2463,12 +2444,11 @@ pub(crate) mod test_utils {
             };
 
             // Group from new member's perspective
-            let new_group = Group::from_welcome_message(
+            let new_group = Group::join(
                 self.group.protocol_version(),
                 welcome,
                 tree,
-                new_key_package.clone(),
-                test_config(secret_key, new_key_package),
+                test_config(secret_key, new_key_package, preferences),
             )
             .unwrap();
 
@@ -2477,12 +2457,15 @@ pub(crate) mod test_utils {
             (new_test_group, commit)
         }
 
+        pub(crate) fn join(&mut self, name: &str) -> (TestGroup, OutboundMessage) {
+            self.join_with_preferences(name, self.group.config.preferences())
+        }
+
         pub(crate) fn commit(
             &mut self,
             proposals: Vec<Proposal>,
         ) -> Result<(CommitGeneration, Option<MLSMessage>), GroupError> {
-            self.group
-                .commit_proposals(proposals, self.commit_options(), None, Vec::new())
+            self.group.commit_proposals(proposals, None, Vec::new())
         }
 
         pub(crate) fn process_pending_commit(
@@ -2587,16 +2570,22 @@ pub(crate) mod test_utils {
     pub(crate) fn test_group_custom(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
-        capabilities: Capabilities,
-        leaf_extensions: ExtensionList,
+        capabilities: Option<Capabilities>,
+        leaf_extensions: Option<ExtensionList>,
+        preferences: Option<Preferences>,
     ) -> TestGroup {
+        let capabilities = capabilities.unwrap_or_default();
+        let leaf_extensions = leaf_extensions.unwrap_or_default();
+        let preferences = preferences.unwrap_or_default();
+
         let (signing_identity, secret_key) =
             get_test_signing_identity(cipher_suite, b"member".to_vec());
 
         let mut config = InMemoryClientConfig::default()
             .with_signing_identity(signing_identity, secret_key)
             .with_leaf_node_extensions(leaf_extensions)
-            .with_credential_types(capabilities.credentials);
+            .with_credential_types(capabilities.credentials)
+            .with_preferences(preferences);
 
         config.cipher_suites = capabilities
             .cipher_suites
@@ -2629,8 +2618,9 @@ pub(crate) mod test_utils {
         test_group_custom(
             protocol_version,
             cipher_suite,
-            Capabilities::default(),
-            ExtensionList::default(),
+            None,
+            None,
+            Some(Preferences::default().with_ratchet_tree_extension(true)),
         )
     }
 }
@@ -2638,7 +2628,7 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::{
-        client_config::test_utils::test_config,
+        client_config::{test_utils::test_config, Preferences},
         extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
         key_package::test_utils::test_key_package,
         psk::Psk,
@@ -2708,29 +2698,26 @@ mod tests {
             .add_proposal(bob_key_package.key_package)
             .unwrap();
 
-        test_group
-            .group
-            .create_proposal(proposal, ControlEncryptionMode::Plaintext, vec![])
-            .unwrap();
+        test_group.group.create_proposal(proposal, vec![]).unwrap();
 
         // We should not be able to send application messages until a commit happens
         let res = test_group
             .group
-            .encrypt_application_message(b"test", PaddingMode::None, vec![]);
+            .encrypt_application_message(b"test", vec![]);
 
         assert_matches!(res, Err(GroupError::CommitRequired));
 
         // We should be able to send application messages after a commit
         let (commit, _) = test_group
             .group
-            .commit_proposals(vec![], test_group.commit_options(), None, vec![])
+            .commit_proposals(vec![], None, vec![])
             .unwrap();
 
         test_group.group.process_pending_commit(commit).unwrap();
 
         assert!(test_group
             .group
-            .encrypt_application_message(b"test", PaddingMode::None, vec![])
+            .encrypt_application_message(b"test", vec![])
             .is_ok());
     }
 
@@ -2739,22 +2726,25 @@ mod tests {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128;
 
-        let mut test_group = test_group(protocol_version, cipher_suite);
-
-        let existing_leaf = test_group.group.current_user_leaf_node().unwrap().clone();
-
         let mut new_capabilities = Capabilities::default();
-        new_capabilities.proposals.push(42.into());
+        new_capabilities.extensions.push(42);
 
         let new_extension = TestExtension { foo: 10 };
         let mut extension_list = ExtensionList::default();
         extension_list.set_extension(new_extension).unwrap();
 
+        let mut test_group = test_group_custom(
+            protocol_version,
+            cipher_suite,
+            Some(new_capabilities.clone()),
+            Some(extension_list.clone()),
+            None,
+        );
+
+        let existing_leaf = test_group.group.current_user_leaf_node().unwrap().clone();
+
         // Create an update proposal
-        let proposal = test_group
-            .group
-            .update_proposal(Some(extension_list.clone()), Some(new_capabilities.clone()))
-            .unwrap();
+        let proposal = test_group.group.update_proposal().unwrap();
 
         let update = match proposal {
             Proposal::Update(update) => update,
@@ -2778,16 +2768,13 @@ mod tests {
         let mut test_group = test_group(protocol_version, cipher_suite);
 
         // Create an update proposal
-        let proposal = test_group.group.update_proposal(None, None).unwrap();
+        let proposal = test_group.group.update_proposal().unwrap();
 
         // There should be an error because path_update is set to `true` while there is a pending
-        // update proposal for the commiter
-        let res = test_group.group.commit_proposals(
-            vec![proposal],
-            test_group.commit_options(),
-            None,
-            vec![],
-        );
+        // update proposal for the committer
+        let res = test_group
+            .group
+            .commit_proposals(vec![proposal], None, vec![]);
 
         assert_matches!(
             res,
@@ -2826,12 +2813,9 @@ mod tests {
             kp.key_package.signature = SecureRng::gen(32).unwrap()
         }
 
-        let res = test_group.group.commit_proposals(
-            vec![proposal],
-            test_group.commit_options(),
-            None,
-            vec![],
-        );
+        let res = test_group
+            .group
+            .commit_proposals(vec![proposal], None, vec![]);
 
         assert_matches!(
             res,
@@ -2851,7 +2835,7 @@ mod tests {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(protocol_version, cipher_suite, true);
 
-        let mut proposal = alice_group.group.update_proposal(None, None).unwrap();
+        let mut proposal = alice_group.group.update_proposal().unwrap();
 
         if let Proposal::Update(ref mut update) = proposal {
             update.leaf_node.signature = SecureRng::gen(32).unwrap();
@@ -2861,7 +2845,7 @@ mod tests {
 
         let proposal_plaintext = alice_group
             .group
-            .create_proposal(proposal.clone(), ControlEncryptionMode::Plaintext, vec![])
+            .create_proposal(proposal.clone(), vec![])
             .unwrap();
 
         let proposal_ref =
@@ -2876,7 +2860,7 @@ mod tests {
 
         let (commit, _) = bob_group
             .group
-            .commit_proposals(vec![], bob_group.commit_options(), None, vec![])
+            .commit_proposals(vec![], None, vec![])
             .unwrap();
 
         assert_matches!(
@@ -2899,15 +2883,15 @@ mod tests {
         cipher_suite: CipherSuite,
         tree_ext: bool,
     ) -> (TestGroup, TestGroup) {
-        let mut test_group = test_group(protocol_version, cipher_suite);
-
-        let (bob_test_group, _) = test_group.join_with_options(
-            "bob",
-            CommitOptions {
-                ratchet_tree_extension: tree_ext,
-                ..test_group.commit_options()
-            },
+        let mut test_group = test_group_custom(
+            protocol_version,
+            cipher_suite,
+            None,
+            None,
+            Some(Preferences::default().with_ratchet_tree_extension(tree_ext)),
         );
+
+        let (bob_test_group, _) = test_group.join("bob");
 
         assert_eq!(test_group.group, bob_test_group.group);
         (test_group, bob_test_group)
@@ -2927,7 +2911,15 @@ mod tests {
     fn test_welcome_processing_missing_tree() {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128;
-        let mut test_group = test_group(protocol_version, cipher_suite);
+
+        let mut test_group = test_group_custom(
+            protocol_version,
+            cipher_suite,
+            None,
+            None,
+            Some(Preferences::default().with_ratchet_tree_extension(false)),
+        );
+
         let (bob_key_package, secret_key) = test_member(protocol_version, cipher_suite, b"bob");
 
         // Add bob to the group
@@ -2936,12 +2928,9 @@ mod tests {
             .add_proposal(bob_key_package.key_package.clone())
             .unwrap();
 
-        let mut commit_options = test_group.commit_options();
-        commit_options.ratchet_tree_extension = false;
-
         let (_, welcome) = test_group
             .group
-            .commit_proposals(vec![add_bob_proposal], commit_options, None, vec![])
+            .commit_proposals(vec![add_bob_proposal], None, vec![])
             .unwrap();
 
         let welcome = match welcome.unwrap().payload {
@@ -2950,12 +2939,15 @@ mod tests {
         };
 
         // Group from Bob's perspective
-        let bob_group = Group::from_welcome_message(
+        let bob_group = Group::join(
             protocol_version,
             welcome,
             None,
-            bob_key_package.clone(),
-            test_config(secret_key, bob_key_package),
+            test_config(
+                secret_key,
+                bob_key_package,
+                test_group.group.config.preferences(),
+            ),
         );
 
         assert_matches!(bob_group, Err(GroupError::RatchetTreeNotFound));
@@ -2993,15 +2985,16 @@ mod tests {
         let mut test_group = test_group_custom(
             protocol_version,
             cipher_suite,
-            capabilities,
-            ExtensionList::default(),
+            Some(capabilities),
+            None,
+            None,
         );
 
         let proposals = vec![test_group.group.group_context_extensions_proposal(ext_list)];
 
         let commit = test_group
             .group
-            .commit_proposals(proposals, test_group.commit_options(), None, vec![])
+            .commit_proposals(proposals, None, vec![])
             .map(|(commit, _)| commit);
 
         (test_group, commit)
@@ -3059,20 +3052,31 @@ mod tests {
     fn test_group_encrypt_plaintext_padding() {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128;
-        let mut test_group = test_group(protocol_version, cipher_suite);
+
+        let mut test_group = test_group_custom(
+            protocol_version,
+            cipher_suite,
+            None,
+            None,
+            Some(Preferences::default().with_padding_mode(PaddingMode::None)),
+        );
 
         let without_padding = test_group
             .group
-            .encrypt_application_message(&SecureRng::gen(150).unwrap(), PaddingMode::None, vec![])
+            .encrypt_application_message(&SecureRng::gen(150).unwrap(), vec![])
             .unwrap();
+
+        let mut test_group = test_group_custom(
+            protocol_version,
+            cipher_suite,
+            None,
+            None,
+            Some(Preferences::default().with_padding_mode(PaddingMode::StepFunction)),
+        );
 
         let with_padding = test_group
             .group
-            .encrypt_application_message(
-                &SecureRng::gen(150).unwrap(),
-                PaddingMode::StepFunction,
-                vec![],
-            )
+            .encrypt_application_message(&SecureRng::gen(150).unwrap(), vec![])
             .unwrap();
 
         assert!(with_padding.tls_serialized_len() > without_padding.tls_serialized_len());
@@ -3106,10 +3110,14 @@ mod tests {
     fn test_path_update_preference() {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128;
-        let mut test_group = test_group(protocol_version, cipher_suite);
 
-        let mut commit_options = test_group.commit_options();
-        commit_options.prefer_path_update = false;
+        let mut test_group = test_group_custom(
+            protocol_version,
+            cipher_suite,
+            None,
+            None,
+            Some(Preferences::default().force_commit_path_update(false)),
+        );
 
         let add = Proposal::Add(AddProposal {
             key_package: test_key_package(protocol_version, cipher_suite),
@@ -3117,16 +3125,22 @@ mod tests {
 
         let (pending_commit, _) = test_group
             .group
-            .commit_proposals(vec![add.clone()], commit_options.clone(), None, vec![])
+            .commit_proposals(vec![add.clone()], None, vec![])
             .unwrap();
 
         assert!(pending_commit.pending_secrets.is_none());
 
-        commit_options.prefer_path_update = true;
+        let mut test_group = test_group_custom(
+            protocol_version,
+            cipher_suite,
+            None,
+            None,
+            Some(Preferences::default().force_commit_path_update(true)),
+        );
 
         let (pending_commit, _) = test_group
             .group
-            .commit_proposals(vec![add], commit_options, None, vec![])
+            .commit_proposals(vec![add], None, vec![])
             .unwrap();
 
         assert!(pending_commit.pending_secrets.is_some());
@@ -3136,14 +3150,18 @@ mod tests {
     fn test_path_update_preference_override() {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128;
-        let mut test_group = test_group(protocol_version, cipher_suite);
 
-        let mut commit_options = test_group.commit_options();
-        commit_options.prefer_path_update = false;
+        let mut test_group = test_group_custom(
+            protocol_version,
+            cipher_suite,
+            None,
+            None,
+            Some(Preferences::default().force_commit_path_update(false)),
+        );
 
         let (pending_commit, _) = test_group
             .group
-            .commit_proposals(vec![], commit_options, None, vec![])
+            .commit_proposals(vec![], None, vec![])
             .unwrap();
 
         assert!(pending_commit.pending_secrets.is_some());
@@ -3214,12 +3232,8 @@ mod tests {
             proposals.push(alice.group.psk_proposal(ExternalPskId(vec![i])).unwrap());
         }
 
-        let update_proposal = bob.group.update_proposal(None, None).unwrap();
-
-        let update_message = bob
-            .group
-            .create_proposal(update_proposal, ControlEncryptionMode::Plaintext, vec![])
-            .unwrap();
+        let update_proposal = bob.group.update_proposal().unwrap();
+        let update_message = bob.group.create_proposal(update_proposal, vec![]).unwrap();
 
         if let OutboundMessage::Plaintext(ptxt) = update_message {
             alice.process_message(ptxt).unwrap();
@@ -3301,15 +3315,19 @@ mod tests {
         // Create a group with 3 members
         let mut alice = test_group(protocol_version, cipher_suite);
         let (mut bob, _) = alice.join("bob");
-        let (mut charlie, commit) = alice.join("charlie");
+
+        let (mut charlie, commit) = alice.join_with_preferences(
+            "charlie",
+            Preferences::default()
+                .with_ratchet_tree_extension(true)
+                .force_commit_path_update(false),
+        );
 
         if let OutboundMessage::Plaintext(ptxt) = commit {
             bob.process_message(ptxt).unwrap();
         }
 
-        let mut commit_options = charlie.commit_options();
-        commit_options.prefer_path_update = false;
-        let (_, commit) = charlie.join_with_options("dave", commit_options);
+        let (_, commit) = charlie.join_with_preferences("dave", charlie.group.config.preferences());
 
         if let OutboundMessage::Plaintext(ptxt) = commit {
             alice.process_message(ptxt.clone()).unwrap();

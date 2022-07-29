@@ -7,7 +7,7 @@ use aws_mls::bench_utils::group_functions::{create_group, plaintext_sign};
 
 use aws_mls::session::{MLSMessage, MLSMessagePayload, Session};
 
-use aws_mls::client_config::{InMemoryClientConfig, PaddingMode};
+use aws_mls::client_config::InMemoryClientConfig;
 
 use aws_mls::cipher_suite::CipherSuite;
 
@@ -46,12 +46,7 @@ fuzz_target!(|data: (Vec<u8>, u64, Vec<u8>)| {
     let session = &mut sessions[0];
     plaintext_sign(plain_text, &session.protocol).unwrap();
 
-    let cipher_text = Group::encrypt_plaintext(
-        &mut session.protocol,
-        plain_text.clone(),
-        PaddingMode::StepFunction,
-    )
-    .unwrap();
+    let cipher_text = Group::encrypt_plaintext(&mut session.protocol, plain_text.clone()).unwrap();
 
     let message = MLSMessage {
         version: TEST_PROTOCOL_VERSION,
