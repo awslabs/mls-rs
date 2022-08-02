@@ -1,7 +1,3 @@
-use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
-use std::option::Option::Some;
-
 use ferriscrypt::asym::ec_key::EcKeyError;
 use ferriscrypt::cipher::aead::AeadError;
 use ferriscrypt::hmac::Tag;
@@ -10,6 +6,9 @@ use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::kdf::KdfError;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
+use std::collections::HashMap;
+use std::ops::Deref;
+use std::option::Option::Some;
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -28,7 +27,7 @@ use crate::key_package::{
     KeyPackageRepository, KeyPackageValidationError, KeyPackageValidator,
 };
 use crate::keychain::Keychain;
-use crate::message::ProcessedMessagePayload;
+use crate::message::{Event, ProcessedMessage};
 use crate::psk::{
     ExternalPskId, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
     PskSecretError, ResumptionPSKUsage, ResumptionPsk,
@@ -47,6 +46,9 @@ use crate::tree_kem::{
     UpdatePathValidationError, UpdatePathValidator,
 };
 use crate::{EpochRepository, ProtocolVersion};
+
+#[cfg(feature = "benchmark")]
+use crate::client_config::Preferences;
 
 use confirmation_tag::*;
 use epoch::*;
@@ -73,7 +75,9 @@ pub use proposal_filter::{
     ProposalFilterError,
 };
 pub(crate) use proposal_ref::ProposalRef;
+pub use roster::*;
 pub use secret_tree::SecretTreeError;
+pub use stats::*;
 pub use transcript_hash::ConfirmedTranscriptHash;
 
 mod confirmation_tag;
@@ -93,6 +97,8 @@ pub mod proposal;
 mod proposal_cache;
 mod proposal_filter;
 mod proposal_ref;
+mod roster;
+mod stats;
 mod transcript_hash;
 
 #[cfg(feature = "benchmark")]
@@ -266,7 +272,7 @@ pub enum GroupError {
     #[error("Invalid commit, missing required path")]
     CommitMissingPath,
     #[error("plaintext message for incorrect epoch")]
-    InvalidPlaintextEpoch(u64),
+    InvalidEpoch(u64),
     #[error("invalid signature found")]
     InvalidSignature,
     #[error("invalid confirmation tag")]
@@ -295,8 +301,6 @@ pub enum GroupError {
     ExternalSenderCannotCommit,
     #[error("Only members can update")]
     OnlyMembersCanUpdate,
-    #[error("PSK proposal must contain an external PSK")]
-    PskProposalMustContainExternalPsk,
     #[error(transparent)]
     PskSecretError(#[from] PskSecretError),
     #[error("Subgroup uses a different protocol version: {0:?}")]
@@ -318,7 +322,7 @@ pub enum GroupError {
     #[error("Epoch {0} not found")]
     EpochNotFound(u64),
     #[error("expected protocol version {0:?}, found version {1:?}")]
-    InvalidProtocol(ProtocolVersion, ProtocolVersion),
+    InvalidProtocolVersion(ProtocolVersion, ProtocolVersion),
     #[error("unexpected group ID {0:?}")]
     InvalidGroupId(Vec<u8>),
     #[error("Unencrypted application message")]
@@ -351,6 +355,18 @@ pub enum GroupError {
     NotCommitContent(ContentType),
     #[error("signer not found")]
     SignerNotFound,
+    #[error("commit already pending")]
+    ExistingPendingCommit,
+    #[error("pending commit not found")]
+    PendingCommitNotFound,
+    #[error("received unexpected welcome message")]
+    UnexpectedWelcomeMessage,
+    #[error("received unexpected group info message")]
+    UnexpectedGroupInfo,
+    #[error("received unexpected key package message")]
+    UnexpectedKeyPackage,
+    #[error("membership tag on MLSPlaintext for non-member sender")]
+    MembershipTagForNonMember,
 }
 
 #[derive(
@@ -396,9 +412,11 @@ impl GroupContext {
     }
 }
 
-#[derive(Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(
+    Clone, Debug, serde::Serialize, serde::Deserialize, TlsSerialize, TlsDeserialize, TlsSize,
+)]
 pub struct CommitGeneration {
-    pub plaintext: OutboundMessage,
+    pub content: MLSAuthenticatedContent,
     pub pending_secrets: Option<(TreeKemPrivate, PathSecret)>,
 }
 
@@ -455,105 +473,17 @@ where
     private_tree: TreeKemPrivate,
     // TODO: HpkePublicKey does not have Eq and Hash
     pub pending_updates: HashMap<Vec<u8>, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
+    pending_commit: Option<CommitGeneration>,
     key_schedule: KeySchedule,
     confirmation_tag: ConfirmationTag,
 }
 
 impl<C: ClientConfig + Clone> PartialEq for Group<C> {
     fn eq(&self, other: &Self) -> bool {
-        self.core.context == other.core.context
+        self.context() == other.context()
             && self.core.interim_transcript_hash == other.core.interim_transcript_hash
             && self.core.proposals == other.core.proposals
             && self.key_schedule == other.key_schedule
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct VerifiedPlaintext {
-    pub encrypted: bool,
-    pub plaintext: MLSPlaintext,
-}
-
-impl From<VerifiedPlaintext> for MLSPlaintext {
-    fn from(verified: VerifiedPlaintext) -> Self {
-        verified.plaintext
-    }
-}
-
-impl Deref for VerifiedPlaintext {
-    type Target = MLSPlaintext;
-
-    fn deref(&self) -> &Self::Target {
-        &self.plaintext
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, TlsSerialize, TlsDeserialize, TlsSize)]
-#[repr(u8)]
-pub enum OutboundMessage {
-    Plaintext(MLSPlaintext),
-    Ciphertext {
-        original: MLSPlaintext,
-        encrypted: MLSCiphertext,
-    },
-}
-
-impl OutboundMessage {
-    pub fn into_message(self, version: ProtocolVersion) -> MLSMessage {
-        MLSMessage {
-            version,
-            payload: self.into(),
-        }
-    }
-}
-
-impl Deref for OutboundMessage {
-    type Target = MLSPlaintext;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            OutboundMessage::Plaintext(m) => m,
-            OutboundMessage::Ciphertext { original, .. } => original,
-        }
-    }
-}
-
-impl DerefMut for OutboundMessage {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            OutboundMessage::Plaintext(m) => m,
-            OutboundMessage::Ciphertext { original, .. } => original,
-        }
-    }
-}
-
-impl From<OutboundMessage> for MLSPlaintext {
-    fn from(outbound: OutboundMessage) -> Self {
-        match outbound {
-            OutboundMessage::Plaintext(m) => m,
-            OutboundMessage::Ciphertext { original, .. } => original,
-        }
-    }
-}
-
-impl From<OutboundMessage> for VerifiedPlaintext {
-    fn from(outbound: OutboundMessage) -> Self {
-        VerifiedPlaintext {
-            encrypted: match outbound {
-                OutboundMessage::Plaintext(_) => false,
-                OutboundMessage::Ciphertext { .. } => true,
-            },
-            plaintext: outbound.into(),
-        }
-    }
-}
-
-impl From<OutboundMessage> for MLSMessagePayload {
-    fn from(outbound: OutboundMessage) -> Self {
-        match outbound {
-            OutboundMessage::Plaintext(p) => Self::Plain(p),
-            OutboundMessage::Ciphertext { encrypted, .. } => Self::Cipher(encrypted),
-        }
     }
 }
 
@@ -619,8 +549,14 @@ where
             private_tree,
             confirmation_tag: ConfirmationTag::empty(&cipher_suite)?,
             pending_updates: Default::default(),
+            pending_commit: None,
             key_schedule: key_schedule_result.key_schedule,
         })
+    }
+
+    #[cfg(feature = "benchmark")]
+    pub fn preferences(&self) -> Preferences {
+        self.config.preferences()
     }
 
     pub fn join(
@@ -793,6 +729,7 @@ where
             private_tree,
             confirmation_tag: confirmation_tag.clone(),
             pending_updates: Default::default(),
+            pending_commit: None,
             key_schedule,
         })
     }
@@ -806,7 +743,7 @@ where
         to_remove: Option<u32>,
         external_psks: Vec<ExternalPskId>,
         authenticated_data: Vec<u8>,
-    ) -> Result<(Self, OutboundMessage), GroupError> {
+    ) -> Result<(Self, MLSMessage), GroupError> {
         // Validate received group info and tree.
         if !version_and_cipher_filter(
             &config,
@@ -884,9 +821,9 @@ where
         let (commit, _) =
             group.commit_proposals(proposals, Some(&leaf_node), authenticated_data)?;
 
-        group.process_pending_commit(commit.clone())?;
+        group.process_pending_commit()?;
 
-        Ok((group, commit.plaintext))
+        Ok((group, commit))
     }
 
     #[inline(always)]
@@ -896,7 +833,7 @@ where
 
     #[inline(always)]
     pub fn current_epoch(&self) -> u64 {
-        self.core.context.epoch
+        self.context().epoch
     }
 
     #[inline(always)]
@@ -945,44 +882,25 @@ where
         &mut self,
         proposal: Proposal,
         authenticated_data: Vec<u8>,
-    ) -> Result<OutboundMessage, GroupError> {
-        let encryption_mode = self.config.preferences().encryption_mode();
+    ) -> Result<MLSMessage, GroupError> {
+        let signer = self.signer()?;
 
-        let plaintext = self.construct_mls_plaintext(
+        let auth_content = MLSAuthenticatedContent::new_signed(
+            self.context(),
             Sender::Member(self.private_tree.self_index),
             Content::Proposal(proposal.clone()),
-            encryption_mode,
+            &signer,
+            self.config.preferences().encryption_mode().into(),
             authenticated_data,
-            &self.signer()?,
         )?;
 
-        // If we are going to encrypt then the tag will be dropped so it shouldn't be included
-        // in the hash
-        let membership_tag = if matches!(encryption_mode, ControlEncryptionMode::Encrypted(_)) {
-            None
-        } else {
-            Some(
-                self.key_schedule
-                    .get_membership_tag(&plaintext, &self.core.context)?,
-            )
-        };
-
-        let plaintext = MLSPlaintext {
-            membership_tag,
-            ..plaintext
-        };
-
-        let proposal_ref = ProposalRef::from_plaintext(
-            self.core.cipher_suite(),
-            &plaintext,
-            matches!(encryption_mode, ControlEncryptionMode::Encrypted(_)),
-        )?;
+        let proposal_ref = ProposalRef::from_content(self.core.cipher_suite(), &auth_content)?;
 
         self.core
             .proposals
-            .insert(proposal_ref, proposal, plaintext.content.sender.clone());
+            .insert(proposal_ref, proposal, auth_content.content.sender.clone());
 
-        self.format_for_wire(plaintext, encryption_mode)
+        self.format_for_wire(auth_content)
     }
 
     pub(crate) fn signer(&self) -> Result<<C::Keychain as Keychain>::Signer, GroupError> {
@@ -992,26 +910,9 @@ where
             .ok_or(GroupError::SignerNotFound)
     }
 
-    fn construct_mls_plaintext<S: Signer>(
-        &self,
-        sender: Sender,
-        content: Content,
-        encryption_mode: ControlEncryptionMode,
-        authenticated_data: Vec<u8>,
-        signer: &S,
-    ) -> Result<MLSPlaintext, GroupError> {
-        Ok(MLSPlaintext::new_signed(
-            &self.core.context,
-            sender,
-            content,
-            signer,
-            encryption_mode,
-            authenticated_data,
-        )?)
-    }
-
+    #[inline(always)]
     pub fn group_id(&self) -> &[u8] {
-        &self.core.context.group_id
+        &self.context().group_id
     }
 
     /// Returns commit and optional `MLSMessage` containing a `Welcome`
@@ -1020,7 +921,11 @@ where
         proposals: Vec<Proposal>,
         external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
-    ) -> Result<(CommitGeneration, Option<MLSMessage>), GroupError> {
+    ) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
+        if self.pending_commit.is_some() {
+            return Err(GroupError::ExistingPendingCommit);
+        }
+
         let options = self.config.commit_options();
 
         // Construct an initial Commit object with the proposals field populated from Proposals
@@ -1046,13 +951,13 @@ where
         let (commit_proposals, proposal_effects) = self.core.proposals.prepare_commit(
             sender.clone(),
             proposals,
-            self.core.context.extensions.get_extension()?,
+            self.context().extensions.get_extension()?,
             self.config.credential_validator(),
             &self.core.current_tree,
             external_leaf,
             self.config.proposal_filter(ProposalFilterInit::new(
                 &self.core.current_tree,
-                &self.core.context,
+                self.context(),
                 sender.clone(),
             )),
         )?;
@@ -1092,7 +997,7 @@ where
                 &mut provisional_state.private_tree,
             )
             .encap(
-                &self.core.context.group_id,
+                &self.context().group_id,
                 &mut provisional_group_context,
                 &added_leaves
                     .iter()
@@ -1129,7 +1034,7 @@ where
         let psk_secret = crate::psk::psk_secret(
             self.core.cipher_suite(),
             Some(&psk_store),
-            Some((&self.core.context.group_id, &epoch_repo)),
+            Some((&self.context().group_id, &epoch_repo)),
             &provisional_state.public_state.psks,
         )?;
 
@@ -1138,13 +1043,13 @@ where
             path: update_path,
         };
 
-        //Construct an MLSPlaintext object containing the Commit object
-        let mut plaintext = self.construct_mls_plaintext(
+        let mut auth_content = MLSAuthenticatedContent::new_signed(
+            self.context(),
             sender,
             Content::Commit(commit),
-            options.encryption_mode,
-            authenticated_data,
             &signer,
+            options.encryption_mode.into(),
+            authenticated_data,
         )?;
 
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
@@ -1152,10 +1057,7 @@ where
         let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
             self.core.cipher_suite(),
             &self.core.interim_transcript_hash,
-            &MLSAuthenticatedContent::from_plaintext(
-                &plaintext,
-                matches!(options.encryption_mode, ControlEncryptionMode::Encrypted(_)),
-            ),
+            &auth_content,
         )?;
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
@@ -1188,16 +1090,7 @@ where
             &self.core.cipher_suite(),
         )?;
 
-        plaintext.auth.confirmation_tag = Some(confirmation_tag.clone());
-
-        if matches!(options.encryption_mode, ControlEncryptionMode::Plaintext) && !is_external {
-            // Create the membership tag using the current group context and key schedule
-            let membership_tag = self
-                .key_schedule
-                .get_membership_tag(&plaintext, &self.core.context)?;
-
-            plaintext.membership_tag = Some(membership_tag);
-        }
+        auth_content.auth.confirmation_tag = Some(confirmation_tag.clone());
 
         // Construct a GroupInfo reflecting the new state
         // Group ID, epoch, tree, and confirmed transcript hash from the new state
@@ -1226,12 +1119,16 @@ where
                 payload: MLSMessagePayload::Welcome(welcome),
             });
 
+        let commit_message = self.format_for_wire(auth_content.clone())?;
+
         let pending_commit = CommitGeneration {
-            plaintext: self.format_for_wire(plaintext, options.encryption_mode)?,
+            content: auth_content,
             pending_secrets: root_secret.map(|rs| (provisional_state.private_tree, rs)),
         };
 
-        Ok((pending_commit, welcome))
+        self.pending_commit = Some(pending_commit);
+
+        Ok((commit_message, welcome))
     }
 
     fn make_welcome_message(
@@ -1342,7 +1239,7 @@ where
         let psk_secret = crate::psk::psk_secret(
             new_context.cipher_suite,
             None::<&C::PskStore>,
-            Some((&self.core.context.group_id, &epoch_repo)),
+            Some((&self.context().group_id, &epoch_repo)),
             &psks,
         )?;
 
@@ -1389,6 +1286,7 @@ where
             key_schedule: key_schedule_result.key_schedule,
             confirmation_tag: ConfirmationTag::empty(&self.core.cipher_suite())?,
             pending_updates: Default::default(),
+            pending_commit: None,
         };
 
         let welcome = new_group.make_welcome_message(
@@ -1432,7 +1330,7 @@ where
                 self.core.cipher_suite(),
                 sub_group_id.clone(),
                 vec![],
-                self.core.context.extensions.clone(),
+                self.context().extensions.clone(),
             )
         };
 
@@ -1458,7 +1356,7 @@ where
         public_tree: Option<TreeKemPublic>,
     ) -> Result<Self, GroupError> {
         let subgroup = Self::from_welcome_message(
-            Some(&self.core.context.group_id),
+            Some(&self.context().group_id),
             self.core.protocol_version(),
             welcome,
             public_tree,
@@ -1521,7 +1419,7 @@ where
 
         let resumption_psk_id = JustPreSharedKeyID::Resumption(ResumptionPsk {
             usage: ResumptionPSKUsage::Reinit,
-            psk_group_id: PskGroupId(self.core.context.group_id.clone()),
+            psk_group_id: PskGroupId(self.context().group_id.clone()),
             psk_epoch: self.current_epoch(),
         });
 
@@ -1559,7 +1457,7 @@ where
         }
 
         let group = Self::from_welcome_message(
-            Some(&self.core.context.group_id),
+            Some(&self.context().group_id),
             reinit.version,
             welcome,
             public_tree,
@@ -1636,7 +1534,7 @@ where
     }
 
     pub fn add_proposal(&self, key_package: KeyPackage) -> Result<Proposal, GroupError> {
-        let required_capabilities = self.core.context.extensions.get_extension()?;
+        let required_capabilities = self.context().extensions.get_extension()?;
 
         // Check that this proposal has a valid lifetime, signature, and meets the requirements
         // of the current group required capabilities extension.
@@ -1713,36 +1611,58 @@ where
 
     pub fn format_for_wire(
         &mut self,
-        plaintext: MLSPlaintext,
-        encryption_mode: ControlEncryptionMode,
-    ) -> Result<OutboundMessage, GroupError> {
-        Ok(
-            if let ControlEncryptionMode::Encrypted(_) = encryption_mode {
-                let ciphertext = self.encrypt_plaintext(plaintext.clone())?;
+        content: MLSAuthenticatedContent,
+    ) -> Result<MLSMessage, GroupError> {
+        let message = if content.wire_format == WireFormat::Cipher {
+            let ciphertext = self.create_ciphertext(content)?;
 
-                OutboundMessage::Ciphertext {
-                    original: plaintext,
-                    encrypted: ciphertext,
-                }
-            } else {
-                OutboundMessage::Plaintext(plaintext)
-            },
-        )
+            MLSMessage {
+                version: self.protocol_version(),
+                payload: MLSMessagePayload::Cipher(ciphertext),
+            }
+        } else {
+            let plaintext = self.create_plaintext(content)?;
+
+            MLSMessage {
+                version: self.protocol_version(),
+                payload: MLSMessagePayload::Plain(plaintext),
+            }
+        };
+
+        Ok(message)
     }
 
-    fn encrypt_plaintext_to_cipher(
+    fn create_plaintext(
+        &self,
+        auth_content: MLSAuthenticatedContent,
+    ) -> Result<MLSPlaintext, GroupError> {
+        let membership_tag = matches!(auth_content.content.sender, Sender::Member(_))
+            .then(|| {
+                self.key_schedule
+                    .get_membership_tag(&auth_content, self.context())
+            })
+            .transpose()?;
+
+        Ok(MLSPlaintext {
+            content: auth_content.content,
+            auth: auth_content.auth,
+            membership_tag,
+        })
+    }
+
+    fn create_ciphertext(
         &mut self,
-        plaintext: MLSPlaintext,
+        auth_content: MLSAuthenticatedContent,
     ) -> Result<MLSCiphertext, GroupError> {
         let padding = self.config.preferences().padding_mode;
 
-        let content_type = ContentType::from(&plaintext.content.content);
-        let authenticated_data = plaintext.content.authenticated_data;
+        let content_type = ContentType::from(&auth_content.content.content);
+        let authenticated_data = auth_content.content.authenticated_data;
 
         // Build a ciphertext content using the plaintext content and signature
         let mut ciphertext_content = MLSCiphertextContent {
-            content: plaintext.content.content,
-            auth: plaintext.auth,
+            content: auth_content.content.content,
+            auth: auth_content.auth,
             padding: Vec::new(),
         };
 
@@ -1750,8 +1670,8 @@ where
 
         // Build ciphertext aad using the plaintext message
         let aad = MLSCiphertextContentAAD {
-            group_id: plaintext.content.group_id,
-            epoch: plaintext.content.epoch,
+            group_id: auth_content.content.group_id,
+            epoch: auth_content.content.epoch,
             content_type,
             authenticated_data: authenticated_data.clone(),
         };
@@ -1785,7 +1705,7 @@ where
         // Construct an mls sender data struct using the plaintext sender info, the generation
         // of the key schedule encryption key, and the reuse guard used to encrypt ciphertext
         let sender_data = MLSSenderData {
-            sender: match plaintext.content.sender {
+            sender: match auth_content.content.sender {
                 Sender::Member(sender) => Ok(sender),
                 _ => Err(GroupError::OnlyMembersCanEncryptMessages),
             }?,
@@ -1795,7 +1715,7 @@ where
 
         let sender_data_aad = MLSSenderDataAAD {
             group_id: self.group_id().to_vec(),
-            epoch: self.core.context.epoch,
+            epoch: self.context().epoch,
             content_type,
         };
 
@@ -1824,24 +1744,11 @@ where
         })
     }
 
-    #[cfg(feature = "benchmark")]
-    pub fn encrypt_plaintext(
-        &mut self,
-        plaintext: MLSPlaintext,
-    ) -> Result<MLSCiphertext, GroupError> {
-        self.encrypt_plaintext_to_cipher(plaintext)
-    }
-
-    #[cfg(not(feature = "benchmark"))]
-    fn encrypt_plaintext(&mut self, plaintext: MLSPlaintext) -> Result<MLSCiphertext, GroupError> {
-        self.encrypt_plaintext_to_cipher(plaintext)
-    }
-
     pub fn encrypt_application_message(
         &mut self,
         message: &[u8],
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSCiphertext, GroupError> {
+    ) -> Result<MLSMessage, GroupError> {
         let signer = self.signer()?;
 
         // A group member that has observed one or more proposals within an epoch MUST send a Commit message
@@ -1850,50 +1757,22 @@ where
             return Err(GroupError::CommitRequired);
         }
 
-        let mut plaintext = MLSPlaintext {
-            content: MLSContent {
-                group_id: self.core.context.group_id.clone(),
-                epoch: self.core.context.epoch,
-                sender: Sender::Member(self.private_tree.self_index),
-                authenticated_data,
-                content: Content::Application(message.to_vec()),
-            },
-            auth: MLSContentAuthData {
-                signature: MessageSignature::empty(),
-                confirmation_tag: None,
-            },
-            membership_tag: None,
-        };
-
-        let signing_context = MessageSigningContext {
-            group_context: Some(&self.core.context),
-            encrypted: true,
-        };
-
-        plaintext.sign(&signer, &signing_context)?;
-
-        self.encrypt_plaintext(plaintext)
-    }
-
-    pub fn verify_incoming_plaintext(
-        &mut self,
-        message: MLSPlaintext,
-    ) -> Result<VerifiedPlaintext, GroupError> {
-        let plaintext = verify_plaintext(
-            message,
-            &self.key_schedule,
-            &self.core.current_tree,
-            &self.core.context,
-            &self.core.external_signers(),
+        let auth_content = MLSAuthenticatedContent::new_signed(
+            self.context(),
+            Sender::Member(self.private_tree.self_index),
+            Content::Application(message.to_vec()),
+            &signer,
+            WireFormat::Cipher,
+            authenticated_data,
         )?;
 
-        self.validate_incoming_message(plaintext)
+        self.format_for_wire(auth_content)
     }
 
-    pub fn verify_incoming_ciphertext(
+    pub fn decrypt_incoming_ciphertext(
         &mut self,
         message: MLSCiphertext,
-    ) -> Result<VerifiedPlaintext, GroupError> {
+    ) -> Result<MLSAuthenticatedContent, GroupError> {
         let epoch_id = message.epoch;
 
         let mut epoch = self
@@ -1903,73 +1782,87 @@ where
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?
             .ok_or(GroupError::EpochNotFound(epoch_id))?;
 
-        let plaintext = decrypt_ciphertext(message, epoch.inner_mut())?;
+        let auth_content = decrypt_ciphertext(message, epoch.inner_mut())?;
 
+        // Update the epoch repo with new data post decryption
         self.config
             .epoch_repo()
             .insert(epoch)
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
-        self.validate_incoming_message(plaintext)
-    }
-
-    fn validate_incoming_message(
-        &mut self,
-        plaintext: VerifiedPlaintext,
-    ) -> Result<VerifiedPlaintext, GroupError> {
-        match &plaintext.content.sender {
-            Sender::Member(sender) if *sender == self.private_tree.self_index => {
-                Err(GroupError::CantProcessMessageFromSelf)
-            }
-            _ => Ok(()),
-        }?;
-        self.core.validate_incoming_message(plaintext)
+        Ok(auth_content)
     }
 
     pub fn process_incoming_message(
         &mut self,
-        plaintext: VerifiedPlaintext,
-    ) -> Result<ProcessedMessagePayload, GroupError> {
-        match plaintext.plaintext.content.content {
-            Content::Application(data) => Ok(ProcessedMessagePayload::Application(data)),
-            Content::Commit(_) => self
-                .process_commit(plaintext, None)
-                .map(ProcessedMessagePayload::Commit),
+        message: MLSMessage,
+    ) -> Result<ProcessedMessage<Event>, GroupError> {
+        self.core.check_metadata(&message)?;
+
+        let auth_content = match message.payload {
+            MLSMessagePayload::Welcome(_) => Err(GroupError::UnexpectedWelcomeMessage),
+            MLSMessagePayload::GroupInfo(_) => Err(GroupError::UnexpectedGroupInfo),
+            MLSMessagePayload::KeyPackage(_) => Err(GroupError::UnexpectedKeyPackage),
+            MLSMessagePayload::Plain(plaintext) => self.core.verify_plaintext_authentication(
+                Some(&self.key_schedule),
+                Some(self.private_tree.self_index),
+                plaintext,
+            ),
+            MLSMessagePayload::Cipher(ciphertext) => self.decrypt_incoming_ciphertext(ciphertext),
+        }?;
+
+        let authenticated_data = auth_content.content.authenticated_data.clone();
+
+        let sender_index = match auth_content.content.sender {
+            Sender::Member(index) => Some(index.0),
+            _ => None,
+        };
+
+        let message_payload = match auth_content.content.content {
+            Content::Application(data) => Ok(Event::ApplicationMessage(data)),
+            Content::Commit(_) => self.process_commit(auth_content, None).map(Event::Commit),
             Content::Proposal(ref p) => {
-                let proposal_ref = ProposalRef::from_plaintext(
-                    self.core.cipher_suite(),
-                    &plaintext,
-                    plaintext.encrypted,
-                )?;
+                let proposal_ref =
+                    ProposalRef::from_content(self.core.cipher_suite(), &auth_content)?;
 
-                self.core.proposals.insert(
-                    proposal_ref,
-                    p.clone(),
-                    plaintext.plaintext.content.sender,
-                );
+                self.core
+                    .proposals
+                    .insert(proposal_ref, p.clone(), auth_content.content.sender);
 
-                Ok(ProcessedMessagePayload::Proposal(p.clone()))
+                Ok(Event::Proposal(p.clone()))
             }
-        }
+        }?;
+
+        Ok(ProcessedMessage {
+            event: message_payload,
+            sender_index,
+            authenticated_data,
+        })
     }
 
-    pub fn process_pending_commit(
-        &mut self,
-        commit: CommitGeneration,
-    ) -> Result<StateUpdate, GroupError> {
-        self.process_commit(commit.plaintext.into(), commit.pending_secrets)
+    pub fn process_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
+        let pending_commit = self
+            .pending_commit
+            .take()
+            .ok_or(GroupError::PendingCommitNotFound)?;
+
+        self.process_commit(pending_commit.content, pending_commit.pending_secrets)
+    }
+
+    pub fn clear_pending_commit(&mut self) {
+        self.pending_commit = None
     }
 
     // This function takes a provisional copy of the tree and returns an updated tree and epoch key schedule
     fn process_commit(
         &mut self,
-        plaintext: VerifiedPlaintext,
+        auth_content: MLSAuthenticatedContent,
         local_pending: Option<(TreeKemPrivate, PathSecret)>,
     ) -> Result<StateUpdate, GroupError> {
-        let (commit, sender) = match plaintext.plaintext.content.content {
-            Content::Commit(ref commit) => Ok((commit, &plaintext.plaintext.content.sender)),
+        let (commit, sender) = match auth_content.content.content {
+            Content::Commit(ref commit) => Ok((commit, &auth_content.content.sender)),
             _ => Err(GroupError::NotCommitContent(
-                plaintext.plaintext.content.content_type(),
+                auth_content.content.content_type(),
             )),
         }?;
 
@@ -1983,13 +1876,13 @@ where
             &self.core.proposals,
             commit,
             sender,
-            self.core.context.extensions.get_extension()?,
+            self.context().extensions.get_extension()?,
             self.config.credential_validator(),
             &self.core.current_tree,
             self.config.proposal_filter(ProposalFilterInit::new(
                 &self.core.current_tree,
-                &self.core.context,
-                plaintext.plaintext.content.sender.clone(),
+                self.context(),
+                auth_content.content.sender.clone(),
             )),
         )?;
 
@@ -2039,7 +1932,7 @@ where
                 let update_path_validator = UpdatePathValidator::new(leaf_validator);
 
                 let validated_update_path = update_path_validator
-                    .validate(update_path.clone(), &self.core.context.group_id)?;
+                    .validate(update_path.clone(), &self.context().group_id)?;
 
                 let secrets = if let Some(pending) = local_pending {
                     // Receiving from yourself is a special case, we already have the new private keys
@@ -2086,7 +1979,7 @@ where
         let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
             self.core.cipher_suite(),
             &self.core.interim_transcript_hash,
-            &(&plaintext).into(),
+            &auth_content,
         )?;
 
         // Update the transcript hash to get the new context.
@@ -2139,7 +2032,7 @@ where
             &self.core.cipher_suite(),
         )?;
 
-        if Some(confirmation_tag.clone()) != plaintext.auth.confirmation_tag {
+        if Some(confirmation_tag.clone()) != auth_content.auth.confirmation_tag {
             return Err(GroupError::InvalidConfirmationTag);
         }
 
@@ -2168,6 +2061,7 @@ where
 
         // Clear the pending updates list
         self.pending_updates = Default::default();
+        self.pending_commit = None;
 
         Ok(state_update)
     }
@@ -2180,7 +2074,7 @@ where
     }
 
     /// The returned `GroupInfo` is suitable for one external commit for the current epoch.
-    pub fn external_commit_info(&self) -> Result<GroupInfo, GroupError> {
+    pub fn group_info_message(&self) -> Result<MLSMessage, GroupError> {
         let signer = self.signer()?;
 
         let mut extensions = ExtensionList::new();
@@ -2192,7 +2086,7 @@ where
         })?;
 
         let mut info = GroupInfo {
-            group_context: self.core.context.clone(),
+            group_context: self.context().clone(),
             extensions,
             confirmation_tag: self.confirmation_tag.clone(),
             signer: self.private_tree.self_index,
@@ -2201,10 +2095,13 @@ where
 
         info.sign(&signer, &())?;
 
-        Ok(info)
+        Ok(MLSMessage {
+            version: self.protocol_version(),
+            payload: MLSMessagePayload::GroupInfo(info),
+        })
     }
 
-    #[cfg(test)]
+    #[inline(always)]
     pub fn context(&self) -> &GroupContext {
         &self.core.context
     }
@@ -2221,7 +2118,7 @@ where
     ) -> Result<Vec<u8>, GroupError> {
         Ok(self
             .key_schedule
-            .export_secret(label, context, len, self.core.context.cipher_suite)?)
+            .export_secret(label, context, len, self.context().cipher_suite)?)
     }
 
     pub fn protocol_version(&self) -> ProtocolVersion {
@@ -2402,7 +2299,7 @@ pub(crate) mod test_utils {
     }
 
     impl TestGroup {
-        pub(crate) fn propose(&mut self, proposal: Proposal) -> OutboundMessage {
+        pub(crate) fn propose(&mut self, proposal: Proposal) -> MLSMessage {
             self.group.create_proposal(proposal, vec![]).unwrap()
         }
 
@@ -2410,7 +2307,7 @@ pub(crate) mod test_utils {
             &mut self,
             name: &str,
             preferences: Preferences,
-        ) -> (TestGroup, OutboundMessage) {
+        ) -> (TestGroup, MLSMessage) {
             let (new_key_package, secret_key) = test_member(
                 self.group.core.protocol_version(),
                 self.group.core.cipher_suite(),
@@ -2423,17 +2320,13 @@ pub(crate) mod test_utils {
                 .add_proposal(new_key_package.key_package.clone())
                 .unwrap();
 
-            let (commit_generation, welcome) = self
+            let (commit, welcome) = self
                 .group
                 .commit_proposals(vec![add_proposal], None, Vec::new())
                 .unwrap();
 
-            let commit = commit_generation.plaintext.clone();
-
             // Apply the commit to the original group
-            self.group
-                .process_pending_commit(commit_generation)
-                .unwrap();
+            self.group.process_pending_commit().unwrap();
 
             let tree = (!preferences.ratchet_tree_extension)
                 .then(|| self.group.current_epoch_tree().clone());
@@ -2457,57 +2350,39 @@ pub(crate) mod test_utils {
             (new_test_group, commit)
         }
 
-        pub(crate) fn join(&mut self, name: &str) -> (TestGroup, OutboundMessage) {
+        pub(crate) fn join(&mut self, name: &str) -> (TestGroup, MLSMessage) {
             self.join_with_preferences(name, self.group.config.preferences())
         }
 
         pub(crate) fn commit(
             &mut self,
             proposals: Vec<Proposal>,
-        ) -> Result<(CommitGeneration, Option<MLSMessage>), GroupError> {
+        ) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
             self.group.commit_proposals(proposals, None, Vec::new())
         }
 
-        pub(crate) fn process_pending_commit(
-            &mut self,
-            commit: CommitGeneration,
-        ) -> Result<StateUpdate, GroupError> {
-            self.group.process_pending_commit(commit)
+        pub(crate) fn process_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
+            self.group.process_pending_commit()
         }
 
-        pub(crate) fn process_message(
-            &mut self,
-            plaintext: MLSPlaintext,
-        ) -> Result<ProcessedMessagePayload, GroupError> {
-            self.group.process_incoming_message(VerifiedPlaintext {
-                encrypted: false,
-                plaintext,
-            })
+        pub(crate) fn process_message(&mut self, message: MLSMessage) -> Result<Event, GroupError> {
+            self.group
+                .process_incoming_message(message)
+                .map(|r| r.event)
         }
 
-        pub(crate) fn make_plaintext(&mut self, content: Content) -> MLSPlaintext {
-            let plaintext = self
-                .group
-                .construct_mls_plaintext(
-                    Sender::Member(self.group.private_tree.self_index),
-                    content,
-                    ControlEncryptionMode::Plaintext,
-                    Vec::new(),
-                    &self.group.signer().unwrap(),
-                )
-                .unwrap();
+        pub(crate) fn make_plaintext(&mut self, content: Content) -> MLSMessage {
+            let auth_content = MLSAuthenticatedContent::new_signed(
+                &self.group.core.context,
+                Sender::Member(self.group.private_tree.self_index),
+                content,
+                &self.group.signer().unwrap(),
+                WireFormat::Plain,
+                Vec::new(),
+            )
+            .unwrap();
 
-            let membership_tag = Some(
-                self.group
-                    .key_schedule
-                    .get_membership_tag(&plaintext, &self.group.core.context)
-                    .unwrap(),
-            );
-
-            MLSPlaintext {
-                membership_tag,
-                ..plaintext
-            }
+            self.group.format_for_wire(auth_content).unwrap()
         }
 
         pub(crate) fn required_capabilities(&self) -> Option<RequiredCapabilitiesExt> {
@@ -2708,12 +2583,12 @@ mod tests {
         assert_matches!(res, Err(GroupError::CommitRequired));
 
         // We should be able to send application messages after a commit
-        let (commit, _) = test_group
+        test_group
             .group
             .commit_proposals(vec![], None, vec![])
             .unwrap();
 
-        test_group.group.process_pending_commit(commit).unwrap();
+        test_group.group.process_pending_commit().unwrap();
 
         assert!(test_group
             .group
@@ -2843,19 +2718,24 @@ mod tests {
             panic!("Invalid update proposal")
         }
 
-        let proposal_plaintext = alice_group
+        let proposal_message = alice_group
             .group
             .create_proposal(proposal.clone(), vec![])
             .unwrap();
 
+        let proposal_plaintext = match proposal_message.payload {
+            MLSMessagePayload::Plain(p) => p,
+            _ => panic!("Unexpected non-plaintext message"),
+        };
+
         let proposal_ref =
-            ProposalRef::from_plaintext(cipher_suite, &proposal_plaintext, false).unwrap();
+            ProposalRef::from_content(cipher_suite, &proposal_plaintext.clone().into()).unwrap();
 
         // Hack bob's receipt of the proposal
         bob_group.group.core.proposals.insert(
             proposal_ref,
             proposal,
-            proposal_plaintext.content.sender.clone(),
+            proposal_plaintext.content.sender,
         );
 
         let (commit, _) = bob_group
@@ -2865,14 +2745,18 @@ mod tests {
 
         assert_matches!(
             commit,
-            CommitGeneration {
-                plaintext: OutboundMessage::Plaintext(MLSPlaintext {
-                    content: MLSContent {
-                        content: Content::Commit(Commit { proposals, .. }),
+            MLSMessage {
+                payload: MLSMessagePayload::Plain(
+                    MLSPlaintext {
+                        content: MLSContent {
+                            content: Content::Commit(Commit {
+                                proposals,
+                                ..
+                            }),
+                            ..
+                        },
                         ..
-                    },
-                    ..
-                }),
+                    }),
                 ..
             } if proposals.is_empty()
         );
@@ -2975,7 +2859,7 @@ mod tests {
 
     fn group_context_extension_proposal_test(
         ext_list: ExtensionList,
-    ) -> (TestGroup, Result<CommitGeneration, GroupError>) {
+    ) -> (TestGroup, Result<MLSMessage, GroupError>) {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128;
 
@@ -3011,13 +2895,8 @@ mod tests {
             })
             .unwrap();
 
-        let (mut test_group, commit) =
-            group_context_extension_proposal_test(extension_list.clone());
-
-        let state_update = test_group
-            .group
-            .process_pending_commit(commit.unwrap())
-            .unwrap();
+        let (mut test_group, _) = group_context_extension_proposal_test(extension_list.clone());
+        let state_update = test_group.group.process_pending_commit().unwrap();
 
         assert!(state_update.active);
         assert_eq!(test_group.group.core.context.extensions, extension_list)
@@ -3088,7 +2967,12 @@ mod tests {
         let cipher_suite = CipherSuite::P256Aes128;
         let group = test_group(protocol_version, cipher_suite);
 
-        let mut info = group.group.external_commit_info().unwrap();
+        let mut info = group
+            .group
+            .group_info_message()
+            .unwrap()
+            .into_group_info()
+            .unwrap();
 
         info.extensions = ExtensionList::new();
         info.sign(&group.group.signer().unwrap(), &()).unwrap();
@@ -3123,12 +3007,17 @@ mod tests {
             key_package: test_key_package(protocol_version, cipher_suite),
         });
 
-        let (pending_commit, _) = test_group
+        test_group
             .group
             .commit_proposals(vec![add.clone()], None, vec![])
             .unwrap();
 
-        assert!(pending_commit.pending_secrets.is_none());
+        assert!(test_group
+            .group
+            .pending_commit
+            .unwrap()
+            .pending_secrets
+            .is_none());
 
         let mut test_group = test_group_custom(
             protocol_version,
@@ -3138,12 +3027,17 @@ mod tests {
             Some(Preferences::default().force_commit_path_update(true)),
         );
 
-        let (pending_commit, _) = test_group
+        test_group
             .group
             .commit_proposals(vec![add], None, vec![])
             .unwrap();
 
-        assert!(pending_commit.pending_secrets.is_some());
+        assert!(test_group
+            .group
+            .pending_commit
+            .unwrap()
+            .pending_secrets
+            .is_some());
     }
 
     #[test]
@@ -3159,12 +3053,17 @@ mod tests {
             Some(Preferences::default().force_commit_path_update(false)),
         );
 
-        let (pending_commit, _) = test_group
+        test_group
             .group
             .commit_proposals(vec![], None, vec![])
             .unwrap();
 
-        assert!(pending_commit.pending_secrets.is_some());
+        assert!(test_group
+            .group
+            .pending_commit
+            .unwrap()
+            .pending_secrets
+            .is_some());
     }
 
     #[test]
@@ -3173,9 +3072,10 @@ mod tests {
         let cipher_suite = CipherSuite::P256Aes128;
         let mut alice = test_group(protocol_version, cipher_suite);
         let (mut bob, _) = alice.join("bob");
-        let plaintext = alice.make_plaintext(Content::Application(b"hello".to_vec()));
+        let message = alice.make_plaintext(Content::Application(b"hello".to_vec()));
+
         assert_matches!(
-            bob.group.verify_incoming_plaintext(plaintext),
+            bob.group.process_incoming_message(message),
             Err(GroupError::UnencryptedApplicationMessage)
         );
     }
@@ -3200,9 +3100,7 @@ mod tests {
         for _ in 0..8 {
             let (group, commit) = alice.join("charlie");
             leaves.push(group.group.current_user_leaf_node().unwrap().clone());
-            if let OutboundMessage::Plaintext(ptxt) = commit {
-                bob.process_message(ptxt).unwrap();
-            }
+            bob.process_message(commit).unwrap();
         }
 
         // Create many proposals, make Alice commit them
@@ -3235,14 +3133,12 @@ mod tests {
         let update_proposal = bob.group.update_proposal().unwrap();
         let update_message = bob.group.create_proposal(update_proposal, vec![]).unwrap();
 
-        if let OutboundMessage::Plaintext(ptxt) = update_message {
-            alice.process_message(ptxt).unwrap();
-        }
+        alice.process_message(update_message).unwrap();
 
         let (commit, _) = alice.commit(proposals).unwrap();
 
         // Check that applying pending commit and processing commit yields correct update.
-        let mut state_update_alice = alice.process_pending_commit(commit.clone()).unwrap();
+        let mut state_update_alice = alice.process_pending_commit().unwrap();
         canonicalize_state_update(&mut state_update_alice);
 
         assert_eq!(
@@ -3270,41 +3166,36 @@ mod tests {
                 .collect::<Vec<_>>()
         );
 
-        assert_matches!(commit.plaintext, OutboundMessage::Plaintext(_));
+        let payload = bob.process_message(commit).unwrap();
+        assert_matches!(payload, Event::Commit(_));
 
-        if let OutboundMessage::Plaintext(ptxt) = commit.plaintext {
-            let payload = bob.process_message(ptxt).unwrap();
-            assert_matches!(payload, ProcessedMessagePayload::Commit(_));
-
-            if let ProcessedMessagePayload::Commit(mut state_update_bob) = payload {
-                canonicalize_state_update(&mut state_update_bob);
-                assert_eq!(state_update_alice.added, state_update_bob.added);
-                assert_eq!(state_update_alice.removed, state_update_bob.removed);
-                assert_eq!(state_update_alice.updated, state_update_bob.updated);
-                assert_eq!(state_update_alice.psks, state_update_bob.psks);
-            }
+        if let Event::Commit(mut state_update_bob) = payload {
+            canonicalize_state_update(&mut state_update_bob);
+            assert_eq!(state_update_alice.added, state_update_bob.added);
+            assert_eq!(state_update_alice.removed, state_update_bob.removed);
+            assert_eq!(state_update_alice.updated, state_update_bob.updated);
+            assert_eq!(state_update_alice.psks, state_update_bob.psks);
         }
     }
 
     #[test]
-    fn test_commit_from_external_is_rejected() {
+    fn test_membership_tag_from_non_member() {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, true);
 
-        let (commit, _) = alice_group.commit(vec![]).unwrap();
+        let (mut commit, _) = alice_group.commit(vec![]).unwrap();
 
-        if let OutboundMessage::Plaintext(mut ptxt) = commit.plaintext {
-            ptxt.content.sender = Sender::External(0);
+        let mut plaintext = match commit.payload {
+            MLSMessagePayload::Plain(ref mut plain) => plain,
+            _ => panic!("Non plaintext message"),
+        };
 
-            assert_matches!(
-                bob_group.process_message(ptxt),
-                Err(GroupError::ProposalCacheError(
-                    ProposalCacheError::ProposalFilterError(
-                        ProposalFilterError::ExternalSenderCannotCommit
-                    )
-                ))
-            );
-        }
+        plaintext.content.sender = Sender::External(0);
+
+        assert_matches!(
+            bob_group.process_message(commit),
+            Err(GroupError::MembershipTagForNonMember)
+        );
     }
 
     #[test]
@@ -3323,16 +3214,12 @@ mod tests {
                 .force_commit_path_update(false),
         );
 
-        if let OutboundMessage::Plaintext(ptxt) = commit {
-            bob.process_message(ptxt).unwrap();
-        }
+        bob.process_message(commit).unwrap();
 
         let (_, commit) = charlie.join_with_preferences("dave", charlie.group.config.preferences());
 
-        if let OutboundMessage::Plaintext(ptxt) = commit {
-            alice.process_message(ptxt.clone()).unwrap();
-            bob.process_message(ptxt).unwrap();
-        }
+        alice.process_message(commit.clone()).unwrap();
+        bob.process_message(commit).unwrap();
     }
 
     #[test]
@@ -3341,10 +3228,10 @@ mod tests {
         alice.join("bob");
         alice.join("charlie");
         let remove = alice.group.remove_proposal(LeafIndex(1)).unwrap();
-        let (commit, _) = alice.commit(vec![remove]).unwrap();
+        alice.commit(vec![remove]).unwrap();
 
         assert!(alice.group.private_tree.secret_keys.contains_key(&1));
-        alice.process_pending_commit(commit).unwrap();
+        alice.process_pending_commit().unwrap();
         assert!(!alice.group.private_tree.secret_keys.contains_key(&1));
     }
 }

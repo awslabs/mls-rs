@@ -1,40 +1,51 @@
 use crate::{
-    credential::Credential,
-    group::{framing::MLSCiphertext, GroupInfo, StateUpdate, Welcome},
-    key_package::KeyPackage,
+    group::{framing::MLSCiphertext, GroupError, StateUpdate},
     Proposal,
 };
 
 #[derive(Clone, Debug)]
-pub enum ProcessedMessagePayload {
-    Application(Vec<u8>),
+#[allow(clippy::large_enum_variant)]
+pub enum Event {
+    ApplicationMessage(Vec<u8>),
     Commit(StateUpdate),
     Proposal(Proposal),
-    Welcome(Welcome),
-    GroupInfo(GroupInfo),
-    KeyPackage(KeyPackage),
 }
 
 #[derive(Clone, Debug)]
-pub struct ProcessedMessage {
-    pub message: ProcessedMessagePayload,
-    pub sender_credential: Option<Credential>,
+pub struct ProcessedMessage<E> {
+    pub event: E,
+    pub sender_index: Option<u32>,
     pub authenticated_data: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]
-pub enum ExternalProcessedMessagePayload {
+#[allow(clippy::large_enum_variant)]
+pub enum ExternalEvent {
     Commit(StateUpdate),
     Proposal(Proposal),
-    Welcome(Welcome),
-    GroupInfo(GroupInfo),
-    KeyPackage(KeyPackage),
     Ciphertext(MLSCiphertext),
 }
 
-#[derive(Clone, Debug)]
-pub struct ExternalProcessedMessage {
-    pub message: ExternalProcessedMessagePayload,
-    pub sender_credential: Option<Credential>,
-    pub authenticated_data: Vec<u8>,
+impl TryFrom<Event> for ExternalEvent {
+    type Error = GroupError;
+
+    fn try_from(value: Event) -> Result<Self, Self::Error> {
+        match value {
+            Event::ApplicationMessage(_) => Err(GroupError::UnencryptedApplicationMessage),
+            Event::Commit(c) => Ok(ExternalEvent::Commit(c)),
+            Event::Proposal(p) => Ok(ExternalEvent::Proposal(p)),
+        }
+    }
+}
+
+impl TryFrom<ProcessedMessage<Event>> for ProcessedMessage<ExternalEvent> {
+    type Error = GroupError;
+
+    fn try_from(value: ProcessedMessage<Event>) -> Result<Self, Self::Error> {
+        Ok(Self {
+            event: value.event.try_into()?,
+            sender_index: value.sender_index,
+            authenticated_data: value.authenticated_data,
+        })
+    }
 }

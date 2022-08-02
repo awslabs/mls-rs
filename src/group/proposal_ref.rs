@@ -27,22 +27,12 @@ impl Deref for ProposalRef {
 }
 
 impl ProposalRef {
-    pub fn from_plaintext(
+    pub fn from_content(
         cipher_suite: CipherSuite,
-        plaintext: &MLSPlaintext,
-        encrypted: bool,
+        content: &MLSAuthenticatedContent,
     ) -> Result<Self, tls_codec::Error> {
-        let message_content_auth = MLSAuthenticatedContent {
-            wire_format: if encrypted {
-                WireFormat::Cipher
-            } else {
-                WireFormat::Plain
-            },
-            content: &plaintext.content,
-            auth: &plaintext.auth,
-        };
         Ok(ProposalRef(HashReference::compute(
-            &message_content_auth.tls_serialize_detached()?,
+            &content.tls_serialize_detached()?,
             b"MLS 1.0 Proposal Reference",
             cipher_suite,
         )?))
@@ -54,27 +44,30 @@ pub(crate) mod test_utils {
     use super::*;
     use crate::group::test_utils::TEST_GROUP;
 
-    pub fn plaintext_from_proposal(proposal: Proposal, sender: LeafIndex) -> MLSPlaintext {
-        MLSPlaintext {
+    pub fn auth_content_from_proposal(
+        proposal: Proposal,
+        sender: LeafIndex,
+    ) -> MLSAuthenticatedContent {
+        MLSAuthenticatedContent {
+            wire_format: WireFormat::Plain,
+            content: MLSContent {
+                group_id: TEST_GROUP.to_vec(),
+                epoch: 0,
+                sender: Sender::Member(sender),
+                authenticated_data: vec![],
+                content: Content::Proposal(proposal),
+            },
             auth: MLSContentAuthData {
                 signature: MessageSignature::from(SecureRng::gen(128).unwrap()),
                 confirmation_tag: None,
             },
-            membership_tag: Some(Tag::from(Vec::new()).into()),
-            ..MLSPlaintext::new(
-                TEST_GROUP.to_vec(),
-                0,
-                Sender::Member(sender),
-                Content::Proposal(proposal),
-                vec![],
-            )
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::test_utils::plaintext_from_proposal;
+    use super::test_utils::auth_content_from_proposal;
     use super::*;
     use crate::{
         extension::RequiredCapabilitiesExt, key_package::test_utils::test_key_package,
@@ -114,28 +107,28 @@ mod test {
         {
             let sender = LeafIndex(0);
 
-            let add = plaintext_from_proposal(
+            let add = auth_content_from_proposal(
                 Proposal::Add(AddProposal {
                     key_package: test_key_package(protocol_version, cipher_suite),
                 }),
                 sender,
             );
 
-            let update = plaintext_from_proposal(
+            let update = auth_content_from_proposal(
                 Proposal::Update(UpdateProposal {
                     leaf_node: get_basic_test_node(cipher_suite, "foo"),
                 }),
                 sender,
             );
 
-            let remove = plaintext_from_proposal(
+            let remove = auth_content_from_proposal(
                 Proposal::Remove(RemoveProposal {
                     to_remove: LeafIndex(1),
                 }),
                 sender,
             );
 
-            let group_context_ext = plaintext_from_proposal(
+            let group_context_ext = auth_content_from_proposal(
                 Proposal::GroupContextExtensions(get_test_extension_list()),
                 sender,
             );
@@ -143,7 +136,7 @@ mod test {
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 input: add.tls_serialize_detached().unwrap(),
-                output: ProposalRef::from_plaintext(cipher_suite, &add, false)
+                output: ProposalRef::from_content(cipher_suite, &add)
                     .unwrap()
                     .to_vec(),
             });
@@ -151,7 +144,7 @@ mod test {
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 input: update.tls_serialize_detached().unwrap(),
-                output: ProposalRef::from_plaintext(cipher_suite, &update, false)
+                output: ProposalRef::from_content(cipher_suite, &update)
                     .unwrap()
                     .to_vec(),
             });
@@ -159,7 +152,7 @@ mod test {
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 input: remove.tls_serialize_detached().unwrap(),
-                output: ProposalRef::from_plaintext(cipher_suite, &remove, false)
+                output: ProposalRef::from_content(cipher_suite, &remove)
                     .unwrap()
                     .to_vec(),
             });
@@ -167,7 +160,7 @@ mod test {
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 input: group_context_ext.tls_serialize_detached().unwrap(),
-                output: ProposalRef::from_plaintext(cipher_suite, &group_context_ext, false)
+                output: ProposalRef::from_content(cipher_suite, &group_context_ext)
                     .unwrap()
                     .to_vec(),
             });
@@ -192,10 +185,11 @@ mod test {
                 continue;
             }
 
-            let proposal = MLSPlaintext::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
+            let proposal_content =
+                MLSAuthenticatedContent::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
 
             let proposal_ref =
-                ProposalRef::from_plaintext(cipher_suite.unwrap(), &proposal, false).unwrap();
+                ProposalRef::from_content(cipher_suite.unwrap(), &proposal_content).unwrap();
 
             let expected_out = ProposalRef(HashReference::from(one_case.output));
 

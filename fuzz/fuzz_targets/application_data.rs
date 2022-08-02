@@ -15,7 +15,7 @@ use std::sync::Mutex;
 
 static GROUP_DATA: Lazy<Mutex<Vec<Session<InMemoryClientConfig>>>> = Lazy::new(|| {
     let cipher_suite = CipherSuite::Curve25519Aes128;
-    let (_, container) = create_group(cipher_suite, 2);
+    let (_, container) = create_group(cipher_suite, 2, false);
 
     Mutex::new(container)
 });

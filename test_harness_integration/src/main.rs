@@ -10,7 +10,7 @@ use aws_mls::client_config::{
 };
 use aws_mls::credential::Credential;
 use aws_mls::extension::{Extension, ExtensionList};
-use aws_mls::message::ProcessedMessagePayload;
+use aws_mls::message::Event;
 use aws_mls::session::{ExternalPskId, Psk, Session, StateUpdate};
 use aws_mls::signing_identity::SigningIdentity;
 use aws_mls::tls_codec::Serialize;
@@ -348,8 +348,8 @@ impl MlsClient for MlsClientImpl {
             .process_incoming_bytes(&request_ref.ciphertext)
             .map_err(abort)?;
 
-        let application_data = match message.message {
-            ProcessedMessagePayload::Application(plaintext) => plaintext,
+        let application_data = match message.event {
+            Event::ApplicationMessage(plaintext) => plaintext,
             _ => {
                 return Err(Status::new(
                     Aborted,
@@ -549,8 +549,8 @@ impl MlsClient for MlsClientImpl {
             .process_incoming_bytes(&request_ref.commit)
             .map_err(abort)?;
 
-        match message.message {
-            ProcessedMessagePayload::Commit(state_update) => Ok(Response::new(
+        match message.event {
+            Event::Commit(state_update) => Ok(Response::new(
                 (state_update, request_ref.state_id).try_into()?,
             )),
             _ => Err(Status::new(Aborted, "message not a commit.")),

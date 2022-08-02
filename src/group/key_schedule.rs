@@ -23,7 +23,7 @@ use ferriscrypt::cipher::aead::AeadError;
 use ferriscrypt::cipher::NonceError;
 
 use super::epoch::Epoch;
-use super::framing::MLSPlaintext;
+use super::message_signature::MLSAuthenticatedContent;
 
 #[derive(Debug, Error)]
 pub enum KeyScheduleKdfError {
@@ -302,10 +302,10 @@ impl KeySchedule {
 
     pub fn get_membership_tag(
         &self,
-        plaintext: &MLSPlaintext,
+        content: &MLSAuthenticatedContent,
         context: &GroupContext,
     ) -> Result<MembershipTag, MembershipTagError> {
-        MembershipTag::create(plaintext, context, &self.membership_key)
+        MembershipTag::create(content, context, &self.membership_key)
     }
 
     pub fn get_external_public_key(

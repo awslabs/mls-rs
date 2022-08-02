@@ -16,7 +16,7 @@ use std::sync::Mutex;
 pub const CIPHER_SUITE: aws_mls::cipher_suite::CipherSuite = CipherSuite::Curve25519Aes128;
 
 static GROUP_DATA: Lazy<Mutex<Vec<Session<InMemoryClientConfig>>>> = Lazy::new(|| {
-    let (_, container) = create_group(CIPHER_SUITE, 2);
+    let (_, container) = create_group(CIPHER_SUITE, 2, false);
 
     Mutex::new(container)
 });

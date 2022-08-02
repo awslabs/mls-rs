@@ -2,18 +2,17 @@ use crate::cipher_suite::CipherSuite;
 use crate::client_config::ClientConfig;
 use crate::extension::ExtensionList;
 use crate::group::{
-    proposal::Proposal, CommitGeneration, Group, GroupInfo, GroupState, OutboundMessage,
-    ProposalCacheError, ProposalFilterError, ProposalRef, VerifiedPlaintext, Welcome,
+    proposal::Proposal, CommitGeneration, Group, GroupInfo, GroupState, ProposalCacheError,
+    ProposalFilterError, ProposalRef, Welcome,
 };
+use crate::group::{GroupStats, Member, Roster};
 use crate::key_package::{KeyPackage, KeyPackageGenerationError};
-use crate::message::{ProcessedMessage, ProcessedMessagePayload};
+use crate::message::{Event, ProcessedMessage};
 pub use crate::psk::{ExternalPskId, JustPreSharedKeyID, Psk};
-use crate::signing_identity::SigningIdentity;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::tree_kem::node::LeafIndex;
-use crate::tree_kem::{Capabilities, RatchetTreeError, TreeKemPublic};
+use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use crate::ProtocolVersion;
-use ferriscrypt::hpke::kem::HpkePublicKey;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
 use std::fmt::{self, Debug};
 use thiserror::Error;
@@ -39,20 +38,12 @@ pub enum SessionError {
     LeafNodeError(#[from] LeafNodeError),
     #[error(transparent)]
     SecureRngError(#[from] SecureRngError),
-    #[error("commit already pending, please wait")]
-    ExistingPendingCommit,
-    #[error("pending commit not found")]
-    PendingCommitNotFound,
-    #[error("pending commit mismatch")]
-    PendingCommitMismatch,
     #[error("signing identity not found for cipher suite {0:?}")]
     SigningIdentityNotFound(CipherSuite),
     #[error(transparent)]
     KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
     #[error("expected MLSMessage containing a Welcome")]
     ExpectedWelcomeMessage,
-    #[error("expected protocol version {0:?}, found version {1:?}")]
-    InvalidProtocol(ProtocolVersion, ProtocolVersion),
     #[error(transparent)]
     ProposalRejected(#[from] ProposalFilterError),
     #[error("Proposal {0:?} not found")]
@@ -107,84 +98,6 @@ where
     pub protocol: Group<C>,
     #[cfg(not(feature = "benchmark"))]
     protocol: Group<C>,
-    pending_commit: Option<PendingCommit>,
-}
-
-#[derive(Clone, Debug)]
-pub struct GroupStats {
-    pub total_leaves: usize,
-    pub current_index: u32,
-    pub direct_path: Vec<HpkePublicKey>,
-    pub epoch: u64,
-}
-
-pub struct Member {
-    node: LeafNode,
-    index: LeafIndex,
-}
-
-impl Member {
-    pub fn index(&self) -> u32 {
-        self.index.0
-    }
-
-    pub fn signing_identity(&self) -> &SigningIdentity {
-        &self.node.signing_identity
-    }
-
-    pub fn capabilities(&self) -> &Capabilities {
-        &self.node.capabilities
-    }
-
-    pub fn extensions(&self) -> &ExtensionList {
-        &self.node.extensions
-    }
-}
-
-impl From<(LeafIndex, &LeafNode)> for Member {
-    fn from(item: (LeafIndex, &LeafNode)) -> Self {
-        Member {
-            node: item.1.clone(),
-            index: item.0,
-        }
-    }
-}
-
-pub struct Roster<I>
-where
-    I: Iterator<Item = Member>,
-{
-    inner: I,
-    total_members: u32,
-}
-
-impl<I> Roster<I>
-where
-    I: Iterator<Item = Member>,
-{
-    pub fn into_vec(self) -> Vec<Member> {
-        self.collect()
-    }
-
-    pub fn member_count(&self) -> usize {
-        self.total_members as usize
-    }
-}
-
-impl<I> Iterator for Roster<I>
-where
-    I: Iterator<Item = Member>,
-{
-    type Item = I::Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let total_members = self.total_members as usize;
-        (total_members, Some(total_members))
-    }
 }
 
 impl<C> Session<C>
@@ -206,10 +119,7 @@ where
             group_context_extensions,
         )?;
 
-        Ok(Session {
-            protocol: group,
-            pending_commit: None,
-        })
+        Ok(Session { protocol: group })
     }
 
     pub(crate) fn join(
@@ -230,10 +140,7 @@ where
 
         let group = Group::join(protocol_version, welcome_message, ratchet_tree, config)?;
 
-        Ok(Session {
-            protocol: group,
-            pending_commit: None,
-        })
+        Ok(Session { protocol: group })
     }
 
     pub fn join_subgroup(
@@ -247,7 +154,6 @@ where
 
         Ok(Session {
             protocol: self.protocol.join_subgroup(welcome, public_tree)?,
-            pending_commit: None,
         })
     }
 
@@ -275,20 +181,14 @@ where
             authenticated_data,
         )?;
 
-        let session = Session {
-            protocol,
-            pending_commit: None,
-        };
+        let session = Session { protocol };
 
-        let commit_message = session.serialize_control(commit_message)?;
+        let commit_message = session.serialize_message(&commit_message)?;
         Ok((session, commit_message))
     }
 
     pub fn group_info_message(&self) -> Result<MLSMessage, SessionError> {
-        Ok(MLSMessage {
-            version: self.protocol.protocol_version(),
-            payload: MLSMessagePayload::GroupInfo(self.protocol.external_commit_info()?),
-        })
+        self.protocol.group_info_message().map_err(Into::into)
     }
 
     pub fn import_ratchet_tree(
@@ -300,16 +200,7 @@ where
     }
 
     pub fn roster(&self) -> Roster<impl Iterator<Item = Member> + '_> {
-        let roster_iter = self
-            .protocol
-            .current_epoch_tree()
-            .non_empty_leaves()
-            .map(Member::from);
-
-        Roster {
-            inner: roster_iter,
-            total_members: self.protocol.current_epoch_tree().occupied_leaf_count(),
-        }
+        self.protocol.roster()
     }
 
     pub fn current_member_index(&self) -> u32 {
@@ -444,10 +335,8 @@ where
     }
 
     #[inline(always)]
-    fn serialize_control(&self, plaintext: OutboundMessage) -> Result<Vec<u8>, SessionError> {
-        Ok(plaintext
-            .into_message(self.protocol.protocol_version())
-            .tls_serialize_detached()?)
+    fn serialize_message(&self, message: &MLSMessage) -> Result<Vec<u8>, SessionError> {
+        MLSMessage::tls_serialize_detached(message).map_err(Into::into)
     }
 
     fn send_proposal(
@@ -455,11 +344,11 @@ where
         proposal: Proposal,
         authenticated_data: Vec<u8>,
     ) -> Result<Vec<u8>, SessionError> {
-        let packet = self
+        let message = self
             .protocol
             .create_proposal(proposal, authenticated_data)?;
 
-        self.serialize_control(packet)
+        self.serialize_message(&message)
     }
 
     pub fn commit(
@@ -467,20 +356,11 @@ where
         proposals: Vec<Proposal>,
         authenticated_data: Vec<u8>,
     ) -> Result<CommitResult, SessionError> {
-        if self.pending_commit.is_some() {
-            return Err(SessionError::ExistingPendingCommit);
-        }
-
-        let (commit_data, welcome) =
+        let (commit_message, welcome) =
             self.protocol
                 .commit_proposals(proposals, None, authenticated_data)?;
 
-        let serialized_commit = self.serialize_control(commit_data.plaintext.clone())?;
-
-        self.pending_commit = Some(PendingCommit {
-            packet_data: serialized_commit.clone(),
-            commit: commit_data,
-        });
+        let serialized_commit = self.serialize_message(&commit_message)?;
 
         Ok(CommitResult {
             commit_packet: serialized_commit,
@@ -491,99 +371,25 @@ where
     pub fn process_incoming_bytes(
         &mut self,
         data: &[u8],
-    ) -> Result<ProcessedMessage, SessionError> {
+    ) -> Result<ProcessedMessage<Event>, SessionError> {
         self.process_incoming_message(MLSMessage::tls_deserialize(&mut &*data)?)
     }
 
     pub fn process_incoming_message(
         &mut self,
         message: MLSMessage,
-    ) -> Result<ProcessedMessage, SessionError> {
-        if message.version != self.protocol.protocol_version() {
-            return Err(SessionError::InvalidProtocol(
-                self.protocol.protocol_version(),
-                message.version,
-            ));
-        }
-
-        let (message_payload, sender_credential, authenticated_data) = match message.payload {
-            MLSMessagePayload::Plain(message) => {
-                // TODO: For sender type `external` the `content_type` of the message MUST be `proposal`.
-                let message = self.protocol.verify_incoming_plaintext(message)?;
-
-                let credential = message
-                    .plaintext
-                    .credential(self.protocol.current_epoch_tree())?;
-                let authenticated_data = message.content.authenticated_data.clone();
-                (
-                    self.process_incoming_plaintext(message)?,
-                    credential,
-                    authenticated_data,
-                )
-            }
-            MLSMessagePayload::Cipher(message) => {
-                let message = self.protocol.verify_incoming_ciphertext(message)?;
-                let credential = message
-                    .plaintext
-                    .credential(self.protocol.current_epoch_tree())?;
-                let authenticated_data = message.content.authenticated_data.clone();
-                (
-                    self.process_incoming_plaintext(message)?,
-                    credential,
-                    authenticated_data,
-                )
-            }
-            MLSMessagePayload::Welcome(message) => {
-                (ProcessedMessagePayload::Welcome(message), None, vec![])
-            }
-            MLSMessagePayload::GroupInfo(message) => {
-                (ProcessedMessagePayload::GroupInfo(message), None, vec![])
-            }
-            MLSMessagePayload::KeyPackage(message) => {
-                let credential = message.leaf_node.signing_identity.credential.clone();
-                (
-                    ProcessedMessagePayload::KeyPackage(message),
-                    Some(credential),
-                    vec![],
-                )
-            }
-        };
-
-        Ok(ProcessedMessage {
-            message: message_payload,
-            sender_credential,
-            authenticated_data,
-        })
-    }
-
-    fn process_incoming_plaintext(
-        &mut self,
-        message: VerifiedPlaintext,
-    ) -> Result<ProcessedMessagePayload, SessionError> {
-        let res = self.protocol.process_incoming_message(message)?;
-
-        // This commit beat our current pending commit to the server, our commit is no longer
-        // relevant
-        if let ProcessedMessagePayload::Commit(_) = res {
-            self.pending_commit = None;
-        }
-        Ok(res)
-    }
-
-    pub fn apply_pending_commit(&mut self) -> Result<StateUpdate, SessionError> {
-        // take() will give us the value and set it to None in the session
-        let pending = self
-            .pending_commit
-            .take()
-            .ok_or(SessionError::PendingCommitNotFound)?;
-
+    ) -> Result<ProcessedMessage<Event>, SessionError> {
         self.protocol
-            .process_pending_commit(pending.commit)
+            .process_incoming_message(message)
             .map_err(Into::into)
     }
 
+    pub fn apply_pending_commit(&mut self) -> Result<StateUpdate, SessionError> {
+        self.protocol.process_pending_commit().map_err(Into::into)
+    }
+
     pub fn clear_pending_commit(&mut self) {
-        self.pending_commit = None
+        self.protocol.clear_pending_commit()
     }
 
     pub fn encrypt_application_data(
@@ -591,14 +397,10 @@ where
         data: &[u8],
         authenticated_data: Vec<u8>,
     ) -> Result<Vec<u8>, SessionError> {
-        let ciphertext = self
+        let msg = self
             .protocol
             .encrypt_application_message(data, authenticated_data)?;
 
-        let msg = MLSMessage {
-            version: self.protocol.protocol_version(),
-            payload: MLSMessagePayload::Cipher(ciphertext),
-        };
         Ok(msg.tls_serialize_detached()?)
     }
 
@@ -615,19 +417,7 @@ where
     }
 
     pub fn group_stats(&self) -> Result<GroupStats, SessionError> {
-        let direct_path = self
-            .protocol
-            .current_direct_path()?
-            .iter()
-            .map(|p| p.as_ref().unwrap_or(&vec![].into()).clone())
-            .collect();
-
-        Ok(GroupStats {
-            total_leaves: self.roster().member_count(),
-            current_index: self.protocol.current_user_index(),
-            direct_path,
-            epoch: self.protocol.current_epoch(),
-        })
+        self.protocol.group_stats().map_err(Into::into)
     }
 
     pub fn branch<F>(
@@ -642,7 +432,6 @@ where
 
         let new_session = Session {
             protocol: new_group,
-            pending_commit: None,
         };
 
         Ok((new_session, welcome))
@@ -659,7 +448,6 @@ where
 
         Ok(Session {
             protocol: self.protocol.finish_reinit_join(welcome, public_tree)?,
-            pending_commit: None,
         })
     }
 
@@ -674,7 +462,6 @@ where
 
         let new_session = Session {
             protocol: new_group,
-            pending_commit: None,
         };
 
         Ok((new_session, welcome))
@@ -700,7 +487,6 @@ where
     pub(crate) fn import(config: C, state: GroupState) -> Result<Self, SessionError> {
         Ok(Self {
             protocol: Group::import(config, state)?,
-            pending_commit: None,
         })
     }
 }

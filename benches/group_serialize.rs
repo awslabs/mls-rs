@@ -21,7 +21,7 @@ fn group_setup(c: &mut Criterion) {
 
     let container = [10, 100, 1000]
         .into_iter()
-        .map(|length| (length, create_group(cipher_suite, length).1))
+        .map(|length| (length, create_group(cipher_suite, length, false).1))
         .collect::<HashMap<_, _>>();
 
     bench_group_serialize(&mut group_serialize, cipher_suite, container);

@@ -55,7 +55,7 @@ impl ConfirmedTranscriptHash {
 
         let input = ConfirmedTranscriptHashInput {
             wire_format: content.wire_format,
-            content: content.content,
+            content: &content.content,
             signature: &content.auth.signature,
         };
 

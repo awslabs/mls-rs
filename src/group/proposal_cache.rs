@@ -397,7 +397,7 @@ fn rejected_proposals(
 
 #[cfg(test)]
 mod tests {
-    use super::proposal_ref::test_utils::plaintext_from_proposal;
+    use super::proposal_ref::test_utils::auth_content_from_proposal;
     use super::*;
     use crate::{
         client_config::PassthroughCredentialValidator,
@@ -452,7 +452,7 @@ mod tests {
 
     struct TestProposals {
         test_sender: LeafIndex,
-        test_proposals: Vec<MLSPlaintext>,
+        test_proposals: Vec<MLSAuthenticatedContent>,
         expected_effects: ProposalSetEffects,
         tree: TreeKemPublic,
     }
@@ -521,7 +521,7 @@ mod tests {
 
         let plaintext = proposals
             .into_iter()
-            .map(|p| plaintext_from_proposal(p, sender))
+            .map(|p| auth_content_from_proposal(p, sender))
             .collect();
 
         TestProposals {
@@ -544,14 +544,13 @@ mod tests {
 
     fn filter_proposals(
         cipher_suite: CipherSuite,
-        plaintexts: Vec<MLSPlaintext>,
+        proposals: Vec<MLSAuthenticatedContent>,
     ) -> impl Iterator<Item = (ProposalRef, CachedProposal)> {
-        plaintexts
+        proposals
             .into_iter()
             .filter_map(move |p| match &p.content.content {
                 Content::Proposal(proposal) => {
-                    let proposal_ref =
-                        ProposalRef::from_plaintext(cipher_suite, &p, false).unwrap();
+                    let proposal_ref = ProposalRef::from_content(cipher_suite, &p).unwrap();
                     Some((
                         proposal_ref,
                         CachedProposal::new(proposal.clone(), p.content.sender),
@@ -562,10 +561,9 @@ mod tests {
     }
 
     fn make_proposal_ref(p: &Proposal, sender: LeafIndex) -> ProposalRef {
-        ProposalRef::from_plaintext(
+        ProposalRef::from_content(
             TEST_CIPHER_SUITE,
-            &plaintext_from_proposal(p.clone(), sender),
-            false,
+            &auth_content_from_proposal(p.clone(), sender),
         )
         .unwrap()
     }
@@ -578,9 +576,9 @@ mod tests {
         )
     }
 
-    fn test_proposal_cache_setup(plaintexts: Vec<MLSPlaintext>) -> ProposalCache {
+    fn test_proposal_cache_setup(proposals: Vec<MLSAuthenticatedContent>) -> ProposalCache {
         let mut cache = make_proposal_cache();
-        cache.extend(filter_proposals(TEST_CIPHER_SUITE, plaintexts));
+        cache.extend(filter_proposals(TEST_CIPHER_SUITE, proposals));
         cache
     }
 
@@ -637,9 +635,7 @@ mod tests {
         let expected_proposals = test_proposals
             .into_iter()
             .map(|p| {
-                ProposalOrRef::Reference(
-                    ProposalRef::from_plaintext(TEST_CIPHER_SUITE, &p, false).unwrap(),
-                )
+                ProposalOrRef::Reference(ProposalRef::from_content(TEST_CIPHER_SUITE, &p).unwrap())
             })
             .collect();
 
@@ -679,9 +675,7 @@ mod tests {
         let mut expected_proposals = test_proposals
             .into_iter()
             .map(|p| {
-                ProposalOrRef::Reference(
-                    ProposalRef::from_plaintext(TEST_CIPHER_SUITE, &p, false).unwrap(),
-                )
+                ProposalOrRef::Reference(ProposalRef::from_content(TEST_CIPHER_SUITE, &p).unwrap())
             })
             .collect::<Vec<ProposalOrRef>>();
 
@@ -796,9 +790,7 @@ mod tests {
         let expected_proposals = test_proposals
             .into_iter()
             .map(|p| {
-                ProposalOrRef::Reference(
-                    ProposalRef::from_plaintext(TEST_CIPHER_SUITE, &p, false).unwrap(),
-                )
+                ProposalOrRef::Reference(ProposalRef::from_content(TEST_CIPHER_SUITE, &p).unwrap())
             })
             .collect::<Vec<ProposalOrRef>>();
 
@@ -844,9 +836,7 @@ mod tests {
         let expected_proposals = test_proposals
             .into_iter()
             .map(|p| {
-                ProposalOrRef::Reference(
-                    ProposalRef::from_plaintext(TEST_CIPHER_SUITE, &p, false).unwrap(),
-                )
+                ProposalOrRef::Reference(ProposalRef::from_content(TEST_CIPHER_SUITE, &p).unwrap())
             })
             .collect::<Vec<ProposalOrRef>>();
 

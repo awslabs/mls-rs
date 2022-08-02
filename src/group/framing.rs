@@ -1,7 +1,6 @@
-use crate::{credential::Credential, tree_kem::leaf_node::LeafNode};
-
 use super::proposal::Proposal;
 use super::*;
+use crate::tree_kem::leaf_node::LeafNode;
 use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -96,55 +95,6 @@ impl MLSPlaintext {
             },
             membership_tag: None,
         }
-    }
-
-    pub fn new_signed<S: Signer>(
-        context: &GroupContext,
-        sender: Sender,
-        content: Content,
-        signer: &S,
-        encryption_mode: ControlEncryptionMode,
-        authenticated_data: Vec<u8>,
-    ) -> Result<MLSPlaintext, SignatureError> {
-        // Construct an MLSPlaintext object containing the content
-        let mut plaintext = MLSPlaintext::new(
-            context.group_id.clone(),
-            context.epoch,
-            sender,
-            content,
-            authenticated_data,
-        );
-
-        let signing_context = MessageSigningContext {
-            group_context: Some(context),
-            encrypted: matches!(encryption_mode, ControlEncryptionMode::Encrypted(_)),
-        };
-
-        // Sign the MLSPlaintext using the current epoch's GroupContext as context.
-        plaintext.sign(signer, &signing_context)?;
-
-        Ok(plaintext)
-    }
-
-    pub fn credential(
-        &self,
-        public_tree: &TreeKemPublic,
-    ) -> Result<Option<Credential>, RatchetTreeError> {
-        Ok(match &self.content.sender {
-            Sender::Member(leaf_index) => Some(
-                public_tree
-                    .get_leaf_node(*leaf_index)?
-                    .signing_identity
-                    .credential
-                    .clone(),
-            ),
-            _ => match &self.content.content {
-                Content::Proposal(Proposal::Add(AddProposal { key_package })) => {
-                    Some(key_package.leaf_node.signing_identity.credential.clone())
-                }
-                _ => None,
-            },
-        })
     }
 }
 
@@ -420,8 +370,9 @@ pub mod test_utils {
 
     use super::*;
 
-    pub fn get_test_plaintext(test_content: Vec<u8>) -> MLSPlaintext {
-        MLSPlaintext {
+    pub fn get_test_auth_content(test_content: Vec<u8>) -> MLSAuthenticatedContent {
+        MLSAuthenticatedContent {
+            wire_format: WireFormat::Plain,
             content: MLSContent {
                 group_id: Vec::new(),
                 epoch: 0,
@@ -433,7 +384,6 @@ pub mod test_utils {
                 signature: MessageSignature::empty(),
                 confirmation_tag: None,
             },
-            membership_tag: None,
         }
     }
 

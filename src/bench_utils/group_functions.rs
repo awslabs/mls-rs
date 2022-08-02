@@ -1,31 +1,21 @@
-use std::collections::HashMap;
-
 use crate::cipher_suite::CipherSuite;
-
-use crate::ProtocolVersion;
-
-use crate::client::Client;
-
-use crate::client_config::{ClientConfig, InMemoryClientConfig};
-
-use crate::extension::ExtensionList;
-
 use crate::client::test_utils::{get_basic_config, join_session, test_client_with_key_pkg};
-
-use crate::group::Group;
-
-use crate::group::framing::MLSPlaintext;
-
+use crate::client::Client;
+use crate::client_config::{ClientConfig, InMemoryClientConfig, Preferences};
+use crate::extension::ExtensionList;
+use crate::group::framing::{Content, MLSMessage, Sender, WireFormat};
+use crate::group::message_signature::MLSAuthenticatedContent;
+use crate::group::{Commit, Group, GroupError};
 use crate::session::Session;
-
-use crate::signer::{Signable, SignatureError};
-
-use crate::group::message_signature::MessageSigningContext;
+use crate::tree_kem::node::LeafIndex;
+use crate::ProtocolVersion;
+use std::collections::HashMap;
 
 // creates group modifying code found in client.rs
 pub fn create_group(
     cipher_suite: CipherSuite,
     size: usize,
+    encrypt_controls: bool,
 ) -> (
     Client<InMemoryClientConfig>,
     Vec<Session<InMemoryClientConfig>>,
@@ -33,7 +23,14 @@ pub fn create_group(
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     pub const TEST_GROUP: &[u8] = b"group";
 
-    let alice = get_basic_config(cipher_suite, "alice").build_client();
+    let alice = get_basic_config(cipher_suite, "alice")
+        .with_preferences(
+            Preferences::default()
+                .with_ratchet_tree_extension(true)
+                .with_control_encryption(encrypt_controls),
+        )
+        .build_client();
+
     let alice_session = alice
         .create_session_with_group_id(
             TEST_PROTOCOL_VERSION,
@@ -91,18 +88,36 @@ pub fn commit_group(container: &mut [Session<InMemoryClientConfig>]) {
     }
 }
 
-pub fn plaintext_sign<C>(
-    plaintext: &mut MLSPlaintext,
-    group: &Group<C>,
-) -> Result<(), SignatureError>
+pub fn create_fuzz_commit_message<C>(
+    group_id: Vec<u8>,
+    epoch: u64,
+    authenticated_data: Vec<u8>,
+    group: &mut Group<C>,
+) -> Result<MLSMessage, GroupError>
 where
     C: ClientConfig + Clone,
 {
-    let signing_context = MessageSigningContext {
-        group_context: Some(&group.core.context),
-        encrypted: true,
+    let mut context = group.context().clone();
+    context.group_id = group_id;
+    context.epoch = epoch;
+
+    let wire_format = if group.preferences().encrypt_controls {
+        WireFormat::Cipher
+    } else {
+        WireFormat::Plain
     };
 
-    let signer = group.signer().unwrap();
-    plaintext.sign(&signer, &signing_context)
+    let auth_content = MLSAuthenticatedContent::new_signed(
+        &context,
+        Sender::Member(LeafIndex::new(0)),
+        Content::Commit(Commit {
+            proposals: Vec::new(),
+            path: None,
+        }),
+        &group.signer()?,
+        wire_format,
+        authenticated_data,
+    )?;
+
+    group.format_for_wire(auth_content)
 }

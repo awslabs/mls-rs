@@ -18,7 +18,17 @@ pub enum PathSecretError {
     KemError(#[from] HpkeError),
 }
 
-#[derive(Debug, Clone, Zeroize, PartialEq, TlsSerialize, TlsDeserialize, TlsSize)]
+#[derive(
+    Debug,
+    Clone,
+    Zeroize,
+    PartialEq,
+    TlsSerialize,
+    TlsDeserialize,
+    TlsSize,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 #[zeroize(drop)]
 pub struct PathSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 

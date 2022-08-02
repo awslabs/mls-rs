@@ -1,14 +1,13 @@
-use crate::group::framing::{MLSPlaintext, WireFormat};
+use crate::group::framing::WireFormat;
 use crate::group::message_signature::{MLSContentAuthData, MLSContentTBS};
 use crate::group::GroupContext;
 use ferriscrypt::hmac::{HMacError, Key, Tag};
-use std::{
-    io::{Read, Write},
-    ops::Deref,
-};
+use std::{io::Write, ops::Deref};
 use thiserror::Error;
-use tls_codec::{Deserialize, Serialize, Size};
+use tls_codec::{Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+
+use super::message_signature::MLSAuthenticatedContent;
 
 #[derive(Error, Debug)]
 pub enum MembershipTagError {
@@ -16,47 +15,39 @@ pub enum MembershipTagError {
     HMacError(#[from] HMacError),
     #[error(transparent)]
     SerializationError(#[from] tls_codec::Error),
+    #[error("Membership tags can only be created for the plaintext wire format, found: {0:?}")]
+    NonPlainWireFormat(WireFormat),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct MLSContentTBM {
-    content_tbs: MLSContentTBS,
-    auth: MLSContentAuthData,
+struct MLSContentTBM<'a> {
+    content_tbs: MLSContentTBS<'a>,
+    auth: &'a MLSContentAuthData,
 }
 
-impl Size for MLSContentTBM {
+impl Size for MLSContentTBM<'_> {
     fn tls_serialized_len(&self) -> usize {
         self.content_tbs.tls_serialized_len() + self.auth.tls_serialized_len()
     }
 }
 
-impl Serialize for MLSContentTBM {
+impl Serialize for MLSContentTBM<'_> {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         Ok(self.content_tbs.tls_serialize(writer)? + self.auth.tls_serialize(writer)?)
     }
 }
 
-impl Deserialize for MLSContentTBM {
-    fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
-        let content_tbs = MLSContentTBS::tls_deserialize(bytes)?;
-        let auth = MLSContentAuthData::tls_deserialize(bytes, content_tbs.content.content_type())?;
-        Ok(Self { content_tbs, auth })
-    }
-}
-
-impl MLSContentTBM {
-    pub fn from_plaintext(
-        plaintext: &MLSPlaintext,
-        group_context: &GroupContext,
-        wire_format: WireFormat,
-    ) -> MLSContentTBM {
+impl<'a> MLSContentTBM<'a> {
+    pub fn from_authenticated_content(
+        auth_content: &'a MLSAuthenticatedContent,
+        group_context: &'a GroupContext,
+    ) -> MLSContentTBM<'a> {
         MLSContentTBM {
-            content_tbs: MLSContentTBS {
-                wire_format,
-                content: plaintext.content.clone(),
-                context: Some(group_context.clone()),
-            },
-            auth: plaintext.auth.clone(),
+            content_tbs: MLSContentTBS::from_authenticated_content(
+                auth_content,
+                Some(group_context),
+            ),
+            auth: &auth_content.auth,
         }
     }
 }
@@ -79,18 +70,32 @@ impl From<Tag> for MembershipTag {
     }
 }
 
+#[cfg(test)]
+impl From<Vec<u8>> for MembershipTag {
+    fn from(v: Vec<u8>) -> Self {
+        Self(Tag::from(v))
+    }
+}
+
 impl MembershipTag {
     pub(crate) fn create(
-        plaintext: &MLSPlaintext,
+        authenticated_content: &MLSAuthenticatedContent,
         group_context: &GroupContext,
         membership_key: &[u8],
     ) -> Result<Self, MembershipTagError> {
+        if authenticated_content.wire_format != WireFormat::Plain {
+            return Err(MembershipTagError::NonPlainWireFormat(
+                authenticated_content.wire_format,
+            ));
+        }
+
         let plaintext_tbm =
-            MLSContentTBM::from_plaintext(plaintext, group_context, WireFormat::Plain);
+            MLSContentTBM::from_authenticated_content(authenticated_content, group_context);
 
         let serialized_tbm = plaintext_tbm.tls_serialize_detached()?;
         let hmac_key = Key::new(membership_key, group_context.cipher_suite.hash_function())?;
         let tag = hmac_key.generate_tag(&serialized_tbm)?;
+
         Ok(MembershipTag(tag))
     }
 }
@@ -99,7 +104,7 @@ impl MembershipTag {
 mod tests {
     use super::*;
     use crate::cipher_suite::CipherSuite;
-    use crate::group::framing::test_utils::get_test_plaintext;
+    use crate::group::framing::test_utils::get_test_auth_content;
     use crate::group::test_utils::get_test_group_context;
 
     #[cfg(target_arch = "wasm32")]
@@ -117,7 +122,7 @@ mod tests {
 
         for cipher_suite in CipherSuite::all() {
             let tag = MembershipTag::create(
-                &get_test_plaintext(b"hello".to_vec()),
+                &get_test_auth_content(b"hello".to_vec()),
                 &get_test_group_context(1, cipher_suite),
                 b"membership_key".as_ref(),
             )
@@ -147,7 +152,7 @@ mod tests {
             }
 
             let tag = MembershipTag::create(
-                &get_test_plaintext(b"hello".to_vec()),
+                &get_test_auth_content(b"hello".to_vec()),
                 &get_test_group_context(1, cipher_suite.unwrap()),
                 b"membership_key".as_ref(),
             )

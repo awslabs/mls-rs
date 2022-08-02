@@ -9,7 +9,7 @@ use tls_codec::{Deserialize, Serialize};
 
 use super::{
     confirmation_tag::ConfirmationTag, group_core::GroupCore, key_schedule::KeySchedule,
-    proposal_cache::CachedProposal, Group, GroupError, ProposalRef,
+    proposal_cache::CachedProposal, CommitGeneration, Group, GroupError, ProposalRef,
 };
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
@@ -25,6 +25,7 @@ pub struct GroupState {
     proposals: HashMap<ProposalRef, CachedProposal>,
     #[serde(with = "crate::serde_utils::map_as_seq")]
     pub(crate) pending_updates: HashMap<Vec<u8>, HpkeSecretKey>,
+    pub(crate) pending_commit: Option<CommitGeneration>,
 }
 
 impl<C> Group<C>
@@ -45,6 +46,7 @@ where
             confirmation_tag: self.confirmation_tag.clone(),
             proposals: self.core.proposals.proposals().clone(),
             pending_updates: self.pending_updates.clone(),
+            pending_commit: self.pending_commit.clone(),
         })
     }
 
@@ -68,6 +70,7 @@ where
             key_schedule: state.key_schedule,
             confirmation_tag: state.confirmation_tag,
             pending_updates: state.pending_updates,
+            pending_commit: state.pending_commit,
         })
     }
 }

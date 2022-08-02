@@ -2,7 +2,7 @@ use crate::{
     external_client_config::{ExternalClientConfig, ExternalClientGroupConfig},
     group::{ExternalGroup, GroupInfo},
     keychain::Keychain,
-    message::ExternalProcessedMessage,
+    message::{ExternalEvent, ProcessedMessage},
     session::SessionError,
     signing_identity::SigningIdentity,
     tree_kem::TreeKemPublic,
@@ -42,7 +42,7 @@ where
     pub fn process_incoming_bytes(
         &mut self,
         message: &[u8],
-    ) -> Result<ExternalProcessedMessage, SessionError> {
+    ) -> Result<ProcessedMessage<ExternalEvent>, SessionError> {
         self.protocol
             .process_incoming_bytes(message)
             .map_err(Into::into)

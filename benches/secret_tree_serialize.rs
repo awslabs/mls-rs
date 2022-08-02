@@ -24,7 +24,7 @@ fn secret_tree_setup(c: &mut Criterion) {
 
     let container = [10, 50, 100]
         .into_iter()
-        .map(|length| (length, create_group(cipher_suite, length)))
+        .map(|length| (length, create_group(cipher_suite, length, false)))
         .collect::<HashMap<_, _>>();
 
     for (key, value) in container {

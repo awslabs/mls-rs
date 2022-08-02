@@ -1,57 +1,28 @@
 #![no_main]
-use libfuzzer_sys::fuzz_target;
 
-use once_cell::sync::Lazy;
-
-use aws_mls::bench_utils::group_functions::{create_group, plaintext_sign};
-
-use aws_mls::session::{MLSMessage, MLSMessagePayload, Session};
-
-use aws_mls::client_config::InMemoryClientConfig;
-
+use aws_mls::bench_utils::group_functions::{create_fuzz_commit_message, create_group};
 use aws_mls::cipher_suite::CipherSuite;
-
+use aws_mls::client_config::InMemoryClientConfig;
+use aws_mls::session::Session;
 use aws_mls::ProtocolVersion;
-
+use libfuzzer_sys::fuzz_target;
+use once_cell::sync::Lazy;
 use std::sync::Mutex;
-
-use aws_mls::group::framing::{Content, MLSPlaintext, Sender};
-
-use aws_mls::group::{Commit, Group};
-
-use aws_mls::tree_kem::node::LeafIndex;
 
 pub const CIPHER_SUITE: aws_mls::cipher_suite::CipherSuite = CipherSuite::Curve25519Aes128;
 pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
 
 static GROUP_DATA: Lazy<Mutex<Vec<Session<InMemoryClientConfig>>>> = Lazy::new(|| {
-    let (_, container) = create_group(CIPHER_SUITE, 2);
+    let (_, container) = create_group(CIPHER_SUITE, 2, true);
 
     Mutex::new(container)
 });
 
 fuzz_target!(|data: (Vec<u8>, u64, Vec<u8>)| {
-    let plain_text = &mut MLSPlaintext::new(
-        data.0,
-        data.1,
-        Sender::Member(LeafIndex::new(0)),
-        Content::Commit(Commit {
-            proposals: Vec::new(),
-            path: None,
-        }),
-        data.2,
-    );
-
     let mut sessions = GROUP_DATA.lock().unwrap();
-    let session = &mut sessions[0];
-    plaintext_sign(plain_text, &session.protocol).unwrap();
 
-    let cipher_text = Group::encrypt_plaintext(&mut session.protocol, plain_text.clone()).unwrap();
-
-    let message = MLSMessage {
-        version: TEST_PROTOCOL_VERSION,
-        payload: MLSMessagePayload::Cipher(cipher_text),
-    };
+    let message =
+        create_fuzz_commit_message(data.0, data.1, data.2, &mut sessions[0].protocol).unwrap();
 
     let _ = sessions[1].process_incoming_message(message);
 });

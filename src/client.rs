@@ -2,15 +2,17 @@ use crate::cipher_suite::CipherSuite;
 use crate::client_config::ClientConfig;
 use crate::credential::CredentialError;
 use crate::extension::{ExtensionError, ExtensionList};
-use crate::group::framing::{Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender};
-use crate::group::message_signature::MessageSigningContext;
+use crate::group::framing::{
+    Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender, WireFormat,
+};
+use crate::group::message_signature::MLSAuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
 use crate::group::GroupState;
 use crate::key_package::{
     KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRepository,
 };
 use crate::session::{ExternalPskId, Session, SessionError};
-use crate::signer::{Signable, SignatureError};
+use crate::signer::SignatureError;
 use crate::tree_kem::leaf_node::LeafNodeError;
 use crate::{keychain::Keychain, ProtocolVersion};
 use ferriscrypt::rand::{SecureRng, SecureRngError};
@@ -180,30 +182,30 @@ where
         let key_package =
             self.generate_key_package(protocol_version, group_info.group_context.cipher_suite)?;
 
-        let mut message = MLSPlaintext::new(
-            group_info.group_context.group_id.clone(),
-            group_info.group_context.epoch,
-            Sender::NewMemberProposal,
-            Content::Proposal(Proposal::Add(AddProposal { key_package })),
-            authenticated_data,
-        );
-
         let (_, signer) = self
             .config
             .keychain()
             .default_identity(group_info.group_context.cipher_suite)
             .ok_or(ClientError::NoCredentialFound)?;
 
-        let signing_context = MessageSigningContext {
-            group_context: Some(&group_info.group_context),
-            encrypted: false,
-        };
+        let message = MLSAuthenticatedContent::new_signed(
+            &group_info.group_context,
+            Sender::NewMemberProposal,
+            Content::Proposal(Proposal::Add(AddProposal { key_package })),
+            &signer,
+            WireFormat::Plain,
+            authenticated_data,
+        )?;
 
-        message.sign(&signer, &signing_context)?;
+        let plaintext = MLSPlaintext {
+            content: message.content,
+            auth: message.auth,
+            membership_tag: None,
+        };
 
         let message = MLSMessage {
             version: protocol_version,
-            payload: MLSMessagePayload::Plain(message),
+            payload: MLSMessagePayload::Plain(plaintext),
         };
 
         Ok(message.tls_serialize_detached()?)
@@ -297,9 +299,10 @@ mod tests {
             proposal::{AddProposal, Proposal, RemoveProposal},
             GroupError, SecretTreeError,
         },
-        message::ProcessedMessagePayload,
+        message::Event,
         psk::{ExternalPskId, PskSecretError},
         session::Psk,
+        signer::Signable,
         tree_kem::{leaf_node::LeafNodeSource, node::LeafIndex, RatchetTreeError, TreeIndexError},
         ProposalBundle, ProposalFilter, ProposalFilterError,
     };
@@ -369,12 +372,12 @@ mod tests {
         let message = session.process_incoming_bytes(&proposal).unwrap();
 
         assert_matches!(
-            message.message,
-            ProcessedMessagePayload::Proposal(Proposal::Add(AddProposal { key_package })) if key_package.leaf_node.signing_identity == bob_key_package.leaf_node.signing_identity
+            message.event,
+            Event::Proposal(Proposal::Add(AddProposal { key_package })) if key_package.leaf_node.signing_identity == bob_key_package.leaf_node.signing_identity
         );
 
-        let _ = session.commit(vec![], vec![]).unwrap();
-        let _ = session.apply_pending_commit().unwrap();
+        session.commit(vec![], vec![]).unwrap();
+        session.apply_pending_commit().unwrap();
 
         // Check that the new member is in the group
         assert!(session
@@ -597,7 +600,7 @@ mod tests {
 
         if !do_remove {
             assert!(bob_session.roster().member_count() == num_members);
-        } else if let ProcessedMessagePayload::Commit(update) = message.message {
+        } else if let Event::Commit(update) = message.event {
             assert!(!update.active);
         }
 
@@ -607,7 +610,7 @@ mod tests {
             .unwrap();
 
         let received = charlie_session.process_incoming_bytes(&msg).unwrap();
-        assert_matches!(received.message, ProcessedMessagePayload::Application(bytes) if bytes == alice_msg);
+        assert_matches!(received.event, Event::ApplicationMessage(bytes) if bytes == alice_msg);
 
         let charlie_msg = b"I'm Charlie";
 
@@ -616,7 +619,7 @@ mod tests {
             .unwrap();
         let received = alice_session.process_incoming_bytes(&msg).unwrap();
 
-        assert_matches!(received.message, ProcessedMessagePayload::Application(bytes) if bytes == charlie_msg);
+        assert_matches!(received.event, Event::ApplicationMessage(bytes) if bytes == charlie_msg);
 
         Ok(())
     }
@@ -644,11 +647,6 @@ mod tests {
         let mut bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
 
         let bob_msg = b"I'm Bob";
-        let bob_cred = bob_session
-            .current_member()
-            .unwrap()
-            .signing_identity()
-            .clone();
 
         let msg = bob_session
             .encrypt_application_data(bob_msg, vec![])
@@ -656,8 +654,8 @@ mod tests {
         let received_by_alice = alice_session.process_incoming_bytes(&msg).unwrap();
 
         assert_eq!(
-            Some(bob_cred.credential),
-            received_by_alice.sender_credential
+            Some(bob_session.current_member_index()),
+            received_by_alice.sender_index
         );
     }
 
@@ -762,8 +760,8 @@ mod tests {
         let received_message = bob_session.process_incoming_bytes(&message).unwrap();
 
         assert_matches!(
-            received_message.message,
-            ProcessedMessagePayload::Application(bytes) if bytes == b"hello"
+            received_message.event,
+            Event::ApplicationMessage(bytes) if bytes == b"hello"
         );
 
         let commit = alice_session.commit(Vec::new(), Vec::new()).unwrap();
@@ -795,8 +793,8 @@ mod tests {
         let received_message = bob_session.process_incoming_bytes(&message).unwrap();
 
         assert_matches!(
-            received_message.message,
-            ProcessedMessagePayload::Application(data) if data == b"foobar"
+            received_message.event,
+            Event::ApplicationMessage(data) if data == b"foobar"
         );
 
         let res = bob_session.process_incoming_bytes(&message);

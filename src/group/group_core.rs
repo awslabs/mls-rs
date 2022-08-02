@@ -4,16 +4,22 @@ use crate::{
     cipher_suite::CipherSuite,
     extension::ExternalSendersExt,
     group::{
-        Content, GroupContext, GroupError, PreSharedKey, Proposal, ProposalCache,
-        ProposalSetEffects, ProvisionalPublicState, TreeKemPublic, VerifiedPlaintext,
+        GroupContext, GroupError, ProposalCache, ProposalSetEffects, ProvisionalPublicState,
+        TreeKemPublic,
     },
-    psk::{JustPreSharedKeyID, PreSharedKeyID},
     signing_identity::SigningIdentity,
+    tree_kem::node::LeafIndex,
     ProtocolVersion,
 };
 
 use super::{
-    proposal::ReInit, proposal_cache::CachedProposal, transcript_hash::InterimTranscriptHash,
+    framing::{ContentType, MLSMessage, MLSMessagePayload, MLSPlaintext, WireFormat},
+    key_schedule::KeySchedule,
+    message_signature::MLSAuthenticatedContent,
+    message_verifier::verify_plaintext_authentication,
+    proposal::ReInit,
+    proposal_cache::CachedProposal,
+    transcript_hash::InterimTranscriptHash,
     ProposalRef,
 };
 
@@ -66,6 +72,65 @@ impl GroupCore {
         }
     }
 
+    pub(super) fn check_metadata(&self, message: &MLSMessage) -> Result<(), GroupError> {
+        if message.version != self.protocol_version() {
+            return Err(GroupError::InvalidProtocolVersion(
+                self.protocol_version(),
+                message.version,
+            ));
+        }
+
+        if let Some((group_id, epoch, content_type, wire_format)) = match &message.payload {
+            MLSMessagePayload::Plain(plaintext) => Some((
+                &plaintext.content.group_id,
+                plaintext.content.epoch,
+                plaintext.content.content_type(),
+                WireFormat::Plain,
+            )),
+            MLSMessagePayload::Cipher(ciphertext) => Some((
+                &ciphertext.group_id,
+                ciphertext.epoch,
+                ciphertext.content_type,
+                WireFormat::Cipher,
+            )),
+            _ => None,
+        } {
+            if group_id != &self.context.group_id {
+                return Err(GroupError::InvalidGroupId(group_id.clone()));
+            }
+
+            // Proposal and commit messages must be sent in the current epoch
+            if (content_type == ContentType::Proposal || content_type == ContentType::Commit)
+                && epoch != self.context.epoch
+            {
+                return Err(GroupError::InvalidEpoch(epoch));
+            }
+
+            // Unencrypted application messages are not allowed
+            if wire_format == WireFormat::Plain && content_type == ContentType::Application {
+                return Err(GroupError::UnencryptedApplicationMessage);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn verify_plaintext_authentication(
+        &mut self,
+        key_schedule: Option<&KeySchedule>,
+        self_index: Option<LeafIndex>,
+        message: MLSPlaintext,
+    ) -> Result<MLSAuthenticatedContent, GroupError> {
+        verify_plaintext_authentication(
+            message,
+            key_schedule,
+            self_index,
+            &self.current_tree,
+            &self.context,
+            &self.external_signers(),
+        )
+    }
+
     #[inline(always)]
     pub(super) fn cipher_suite(&self) -> CipherSuite {
         self.context.cipher_suite
@@ -116,40 +181,6 @@ impl GroupCore {
             external_init: proposals.external_init,
             rejected_proposals: proposals.rejected_proposals,
         })
-    }
-
-    pub(super) fn validate_incoming_message(
-        &self,
-        plaintext: VerifiedPlaintext,
-    ) -> Result<VerifiedPlaintext, GroupError> {
-        if plaintext.content.group_id != self.context.group_id {
-            return Err(GroupError::InvalidGroupId(
-                plaintext.plaintext.content.group_id,
-            ));
-        }
-
-        let epoch = plaintext.content.epoch;
-
-        match &plaintext.plaintext.content.content {
-            Content::Application(_) if plaintext.encrypted => Ok(plaintext),
-            Content::Application(_) => Err(GroupError::UnencryptedApplicationMessage),
-            Content::Commit(_) => (epoch == self.context.epoch)
-                .then(|| plaintext)
-                .ok_or(GroupError::InvalidPlaintextEpoch(epoch)),
-            Content::Proposal(p) => {
-                (epoch == self.context.epoch)
-                    .then(|| ())
-                    .ok_or(GroupError::InvalidPlaintextEpoch(epoch))?;
-                match p {
-                    Proposal::Psk(PreSharedKey {
-                        psk: PreSharedKeyID { key_id, .. },
-                    }) => matches!(key_id, JustPreSharedKeyID::External(_))
-                        .then(|| plaintext)
-                        .ok_or(GroupError::PskProposalMustContainExternalPsk),
-                    _ => Ok(plaintext),
-                }
-            }
-        }
     }
 
     pub fn external_signers(&self) -> Vec<SigningIdentity> {

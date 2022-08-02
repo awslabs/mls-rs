@@ -5,7 +5,7 @@ use aws_mls::client_config::{InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECO
 use aws_mls::credential::Credential;
 use aws_mls::extension::ExtensionList;
 use aws_mls::key_package::KeyPackage;
-use aws_mls::message::ProcessedMessagePayload;
+use aws_mls::message::Event;
 use aws_mls::session::{GroupError, Session, SessionError};
 use aws_mls::signing_identity::SigningIdentity;
 use aws_mls::ProtocolVersion;
@@ -441,10 +441,10 @@ fn test_update_proposals(
                 let state_update_message = receiver
                     .process_incoming_bytes(&commit.commit_packet)
                     .unwrap()
-                    .message;
+                    .event;
 
                 match state_update_message {
-                    ProcessedMessagePayload::Commit(update) => Ok(update),
+                    Event::Commit(update) => Ok(update),
                     _ => panic!("Expected commit result"),
                 }
             }
@@ -508,12 +508,12 @@ fn test_remove_proposals(
         for one_session in receiver_sessions.iter_mut() {
             let expect_inactive = one_session.current_member_index() == to_remove_index;
 
-            let state_update = one_session
+            let processed_message = one_session
                 .process_incoming_bytes(&commit.commit_packet)
                 .unwrap();
 
-            let update = match state_update.message {
-                ProcessedMessagePayload::Commit(update) => update,
+            let update = match processed_message.event {
+                Event::Commit(update) => update,
                 _ => panic!("Expected commit result"),
             };
 
@@ -587,7 +587,7 @@ fn test_application_messages(
                     let decrypted = receiver_sessions[j]
                         .process_incoming_bytes(&ciphertext)
                         .unwrap();
-                    assert_matches!(decrypted.message, ProcessedMessagePayload::Application(m) if m == test_message);
+                    assert_matches!(decrypted.event, Event::ApplicationMessage(m) if m == test_message);
                 }
             });
         }
@@ -635,7 +635,7 @@ fn test_out_of_order_application_messages() {
     );
 
     for i in [3, 2, 1, 0] {
-        assert_matches!(bob_session.process_incoming_bytes(&ciphertexts[i]).unwrap().message, ProcessedMessagePayload::Application(m) if m == [i as u8]);
+        assert_matches!(bob_session.process_incoming_bytes(&ciphertexts[i]).unwrap().event, Event::ApplicationMessage(m) if m == [i as u8]);
     }
 }
 
@@ -771,7 +771,7 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
             .filter(|&(j, _)| i != j)
             .all(|(_, session)| {
                 let processed = session.process_incoming_bytes(&message).unwrap();
-                matches!(processed.message, ProcessedMessagePayload::Application(bytes) if bytes == payload)
+                matches!(processed.event, Event::ApplicationMessage(bytes) if bytes == payload)
             });
     }
 }
@@ -868,7 +868,7 @@ fn reinit_works() {
         .process_incoming_bytes(&commit.commit_packet)
         .unwrap();
 
-    if let ProcessedMessagePayload::Commit(state_update) = message.message {
+    if let Event::Commit(state_update) = message.event {
         assert!(!state_update.active && state_update.reinit.is_some());
     }
 
