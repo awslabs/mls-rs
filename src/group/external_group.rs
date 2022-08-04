@@ -3,14 +3,13 @@ use crate::{
     client_config::ProposalFilterInit,
     extension::ExternalSendersExt,
     group::{
-        proposal_effects, transcript_hashes, Content, ExternalGroupConfig, GroupCore, GroupError,
-        InterimTranscriptHash, MLSMessage, MLSMessagePayload, StateUpdate,
+        proposal_effects, transcript_hashes, Content, GroupCore, GroupError, InterimTranscriptHash,
+        MLSMessage, MLSMessagePayload, StateUpdate,
     },
     message::{Event, ExternalEvent, ProcessedMessage},
     signer::Signer,
     signing_identity::SigningIdentity,
-    tree_kem::TreeKemPublic,
-    AddProposal, Proposal, RemoveProposal,
+    AddProposal, ExternalClientConfig, Proposal, RemoveProposal,
 };
 use tls_codec::Deserialize;
 
@@ -18,7 +17,7 @@ use super::{
     commit_sender, find_tree,
     framing::{MLSPlaintext, Sender, WireFormat},
     message_signature::MLSAuthenticatedContent,
-    GroupInfo, ProposalRef,
+    ProposalRef,
 };
 
 #[derive(Clone, Debug)]
@@ -27,13 +26,19 @@ pub struct ExternalGroup<C> {
     core: GroupCore,
 }
 
-impl<C: ExternalGroupConfig> ExternalGroup<C> {
-    pub fn new(
+impl<C: ExternalClientConfig> ExternalGroup<C> {
+    pub fn join(
         config: C,
-        group_info: GroupInfo,
-        public_tree: Option<TreeKemPublic>,
+        group_info: MLSMessage,
+        tree_data: Option<&[u8]>,
     ) -> Result<Self, GroupError> {
-        let public_tree = find_tree(public_tree, &group_info)?;
+        let wire_format = group_info.wire_format();
+
+        let group_info = group_info.into_group_info().ok_or_else(|| {
+            GroupError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
+        })?;
+
+        let public_tree = find_tree(tree_data, &group_info)?;
         let context = group_info.group_context;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
@@ -66,10 +71,9 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
     ) -> Result<ProcessedMessage<ExternalEvent>, GroupError> {
         self.core.check_metadata(&message)?;
 
+        let wire_format = message.wire_format();
+
         let auth_content = match message.payload {
-            MLSMessagePayload::Welcome(_) => Err(GroupError::UnexpectedWelcomeMessage),
-            MLSMessagePayload::GroupInfo(_) => Err(GroupError::UnexpectedGroupInfo),
-            MLSMessagePayload::KeyPackage(_) => Err(GroupError::UnexpectedKeyPackage),
             MLSMessagePayload::Plain(plaintext) => self
                 .core
                 .verify_plaintext_authentication(None, None, plaintext),
@@ -80,6 +84,10 @@ impl<C: ExternalGroupConfig> ExternalGroup<C> {
                     authenticated_data: vec![],
                 })
             }
+            _ => Err(GroupError::UnexpectedMessageType(
+                vec![WireFormat::Plain, WireFormat::Cipher],
+                wire_format,
+            )),
         }?;
 
         let authenticated_data = auth_content.content.authenticated_data.clone();
@@ -260,14 +268,13 @@ mod tests {
             proposal::ProposalOrRef,
             proposal_ref::ProposalRef,
             test_utils::{test_group, TestGroup},
-            Content, ExternalGroup, GroupError, InMemoryExternalGroupConfig, MLSMessage,
-            MLSMessagePayload,
+            Content, ExternalGroup, GroupError, MLSMessage, MLSMessagePayload,
         },
         key_package::test_utils::test_key_package_with_id,
         message::ExternalEvent,
         signing_identity::{test_utils::get_test_signing_identity, SigningIdentity},
         tree_kem::node::LeafIndex,
-        AddProposal, Proposal, ProtocolVersion, RemoveProposal,
+        AddProposal, InMemoryExternalClientConfig, Proposal, ProtocolVersion, RemoveProposal,
     };
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::SecretKey;
@@ -314,25 +321,20 @@ mod tests {
         group
     }
 
-    fn make_external_group(group: &TestGroup) -> ExternalGroup<InMemoryExternalGroupConfig> {
+    fn make_external_group(group: &TestGroup) -> ExternalGroup<InMemoryExternalClientConfig> {
         make_external_group_with_config(group, Default::default())
     }
 
     fn make_external_group_with_config(
         group: &TestGroup,
-        config: InMemoryExternalGroupConfig,
-    ) -> ExternalGroup<InMemoryExternalGroupConfig> {
-        let public_tree = group.group.current_epoch_tree();
+        config: InMemoryExternalClientConfig,
+    ) -> ExternalGroup<InMemoryExternalClientConfig> {
+        let public_tree = group.group.export().unwrap().current_tree_data;
 
-        ExternalGroup::new(
+        ExternalGroup::join(
             config,
-            group
-                .group
-                .group_info_message()
-                .unwrap()
-                .into_group_info()
-                .unwrap(),
-            Some(public_tree.clone()),
+            group.group.group_info_message().unwrap(),
+            Some(&public_tree),
         )
         .unwrap()
     }
@@ -418,13 +420,8 @@ mod tests {
     fn external_group_can_reject_message_with_invalid_signature() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        let mut server = make_external_group_with_config(
-            &alice,
-            InMemoryExternalGroupConfig {
-                signatures_checked: true,
-                ..Default::default()
-            },
-        );
+        let mut server =
+            make_external_group_with_config(&alice, InMemoryExternalClientConfig::default());
 
         let (mut commit, _) = alice.commit(Vec::new()).unwrap();
 
@@ -437,21 +434,6 @@ mod tests {
             server.process_incoming_message(commit),
             Err(GroupError::SignatureError(_))
         );
-    }
-    #[test]
-    fn external_group_can_skip_signature_check() {
-        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-
-        let mut server = make_external_group_with_config(
-            &alice,
-            InMemoryExternalGroupConfig {
-                signatures_checked: false,
-                ..Default::default()
-            },
-        );
-
-        let (commit, _) = alice.commit(Vec::new()).unwrap();
-        assert_matches!(server.process_incoming_message(commit), Ok(_));
     }
 
     #[test]
@@ -484,7 +466,7 @@ mod tests {
     fn test_external_proposal<F>(proposal_creation: F)
     where
         F: Fn(
-            &ExternalGroup<InMemoryExternalGroupConfig>,
+            &ExternalGroup<InMemoryExternalClientConfig>,
             &SigningIdentity,
             &SecretKey,
         ) -> MLSMessage,

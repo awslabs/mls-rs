@@ -7,17 +7,16 @@ use crate::group::framing::{
 };
 use crate::group::message_signature::MLSAuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
-use crate::group::GroupState;
+use crate::group::{Group, GroupError, GroupState};
 use crate::key_package::{
     KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRepository,
 };
-use crate::session::{ExternalPskId, Session, SessionError};
+use crate::psk::ExternalPskId;
 use crate::signer::SignatureError;
 use crate::tree_kem::leaf_node::LeafNodeError;
 use crate::{keychain::Keychain, ProtocolVersion};
 use ferriscrypt::rand::{SecureRng, SecureRngError};
 use thiserror::Error;
-use tls_codec::Serialize;
 
 #[derive(Error, Debug)]
 pub enum ClientError {
@@ -26,7 +25,7 @@ pub enum ClientError {
     #[error(transparent)]
     KeyPackageGenerationError(#[from] KeyPackageGenerationError),
     #[error(transparent)]
-    SessionError(#[from] SessionError),
+    GroupError(#[from] GroupError),
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
     #[error(transparent)]
@@ -95,32 +94,32 @@ where
         Ok(key_pkg_gen.key_package)
     }
 
-    pub fn create_session_with_group_id(
+    pub fn create_group_with_id(
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         group_id: Vec<u8>,
         group_context_extensions: ExtensionList,
-    ) -> Result<Session<C>, ClientError> {
-        Session::create(
+    ) -> Result<Group<C>, ClientError> {
+        Group::new(
+            self.config.clone(),
             group_id,
             cipher_suite,
             protocol_version,
             group_context_extensions,
-            self.config.clone(),
         )
         .map_err(Into::into)
     }
 
-    pub fn create_session(
+    pub fn create_group(
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         group_context_extensions: ExtensionList,
-    ) -> Result<Session<C>, ClientError> {
+    ) -> Result<Group<C>, ClientError> {
         let group_id = SecureRng::gen(cipher_suite.hash_function().digest_size())?;
 
-        self.create_session_with_group_id(
+        self.create_group_with_id(
             protocol_version,
             cipher_suite,
             group_id,
@@ -130,15 +129,15 @@ where
 
     /// If `key_package` is specified, key package references listed in the welcome message will not
     /// be used to identify the key package to use.
-    pub fn join_session(
+    pub fn join_group(
         &self,
         tree_data: Option<&[u8]>,
-        welcome_message: &[u8],
-    ) -> Result<Session<C>, ClientError> {
-        Session::join(tree_data, welcome_message, self.config.clone()).map_err(Into::into)
+        welcome_message: MLSMessage,
+    ) -> Result<Group<C>, ClientError> {
+        Group::join(welcome_message, tree_data, self.config.clone()).map_err(Into::into)
     }
 
-    /// Returns session and commit MLSMessage
+    /// Returns group and commit MLSMessage
     pub fn commit_external(
         &self,
         group_info_msg: MLSMessage,
@@ -146,33 +145,33 @@ where
         to_remove: Option<u32>,
         external_psks: Vec<ExternalPskId>,
         authenticated_data: Vec<u8>,
-    ) -> Result<(Session<C>, Vec<u8>), ClientError> {
-        let version = group_info_msg.version;
-
-        let group_info = group_info_msg
-            .into_group_info()
-            .ok_or(ClientError::ExpectedGroupInfoMessage)?;
-
-        Ok(Session::new_external(
+    ) -> Result<(Group<C>, MLSMessage), ClientError> {
+        Group::new_external(
             self.config.clone(),
-            version,
-            group_info,
+            group_info_msg,
             tree_data,
             to_remove,
             external_psks,
             authenticated_data,
-        )?)
+        )
+        .map_err(|e| {
+            if matches!(e, GroupError::UnexpectedMessageType(..)) {
+                ClientError::ExpectedGroupInfoMessage
+            } else {
+                e.into()
+            }
+        })
     }
 
-    pub fn import_session(&self, state: GroupState) -> Result<Session<C>, ClientError> {
-        Ok(Session::import(self.config.clone(), state)?)
+    pub fn import_group(&self, state: GroupState) -> Result<Group<C>, ClientError> {
+        Ok(Group::import(self.config.clone(), state)?)
     }
 
     pub fn external_add_proposal(
         &self,
         group_info: MLSMessage,
         authenticated_data: Vec<u8>,
-    ) -> Result<Vec<u8>, ClientError> {
+    ) -> Result<MLSMessage, ClientError> {
         let protocol_version = group_info.version;
 
         let group_info = group_info
@@ -203,12 +202,10 @@ where
             membership_tag: None,
         };
 
-        let message = MLSMessage {
+        Ok(MLSMessage {
             version: protocol_version,
             payload: MLSMessagePayload::Plain(plaintext),
-        };
-
-        Ok(message.tls_serialize_detached()?)
+        })
     }
 }
 
@@ -248,9 +245,9 @@ pub mod test_utils {
         (client, key_package)
     }
 
-    pub fn create_session(client: &Client<InMemoryClientConfig>) -> Session<InMemoryClientConfig> {
+    pub fn create_group(client: &Client<InMemoryClientConfig>) -> Group<InMemoryClientConfig> {
         client
-            .create_session_with_group_id(
+            .create_group_with_id(
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 TEST_GROUP.to_vec(),
@@ -259,27 +256,27 @@ pub mod test_utils {
             .unwrap()
     }
 
-    pub fn join_session<'a, S>(
-        committer_session: &mut Session<InMemoryClientConfig>,
-        other_sessions: S,
+    pub fn join_group<'a, S>(
+        committer: &mut Group<InMemoryClientConfig>,
+        other_groups: S,
         key_package: KeyPackage,
         client: &Client<InMemoryClientConfig>,
-    ) -> Result<Session<InMemoryClientConfig>, ClientError>
+    ) -> Result<Group<InMemoryClientConfig>, ClientError>
     where
-        S: IntoIterator<Item = &'a mut Session<InMemoryClientConfig>>,
+        S: IntoIterator<Item = &'a mut Group<InMemoryClientConfig>>,
     {
-        let commit_result =
-            committer_session.commit(vec![Proposal::Add(AddProposal { key_package })], vec![])?;
+        let (commit_msg, welcome_msg) =
+            committer.commit_proposals(vec![Proposal::Add(AddProposal { key_package })], vec![])?;
 
-        committer_session.apply_pending_commit()?;
+        committer.process_pending_commit()?;
 
-        for session in other_sessions {
-            session.process_incoming_bytes(&commit_result.commit_packet)?;
+        for group in other_groups {
+            group.process_incoming_message(commit_msg.clone())?;
         }
 
-        client.join_session(
-            Some(&committer_session.export_tree().unwrap()),
-            &commit_result.welcome_packet.unwrap(),
+        client.join_group(
+            Some(&committer.export_tree().unwrap()),
+            welcome_msg.unwrap(),
         )
     }
 }
@@ -292,22 +289,16 @@ mod tests {
 
     use super::*;
     use crate::{
-        client_config::{InMemoryClientConfig, SimpleError},
         credential::Credential,
         group::{
-            epoch::EpochError,
-            proposal::{AddProposal, Proposal, RemoveProposal},
-            GroupError, SecretTreeError,
+            proposal::{AddProposal, Proposal},
+            test_utils::{test_group, test_group_custom_config},
         },
         message::Event,
-        psk::{ExternalPskId, PskSecretError},
-        session::Psk,
-        signer::Signable,
-        tree_kem::{leaf_node::LeafNodeSource, node::LeafIndex, RatchetTreeError, TreeIndexError},
-        ProposalBundle, ProposalFilter, ProposalFilterError,
+        psk::{ExternalPskId, Psk},
+        tree_kem::leaf_node::LeafNodeSource,
     };
     use assert_matches::assert_matches;
-    use ferriscrypt::kdf::hkdf::Hkdf;
     use tls_codec::Serialize;
 
     #[cfg(target_arch = "wasm32")]
@@ -358,227 +349,62 @@ mod tests {
 
     #[test]
     fn new_member_add_proposal_adds_to_group() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-
-        let mut session = create_session(&alice);
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let (bob, bob_key_package) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
         let proposal = bob
-            .external_add_proposal(session.group_info_message().unwrap(), vec![])
+            .external_add_proposal(alice_group.group.group_info_message().unwrap(), vec![])
             .unwrap();
 
-        let message = session.process_incoming_bytes(&proposal).unwrap();
+        let message = alice_group
+            .group
+            .process_incoming_message(proposal)
+            .unwrap();
 
         assert_matches!(
             message.event,
             Event::Proposal(Proposal::Add(AddProposal { key_package })) if key_package.leaf_node.signing_identity == bob_key_package.leaf_node.signing_identity
         );
 
-        session.commit(vec![], vec![]).unwrap();
-        session.apply_pending_commit().unwrap();
+        alice_group.group.commit_proposals(vec![], vec![]).unwrap();
+        alice_group.group.process_pending_commit().unwrap();
 
         // Check that the new member is in the group
-        assert!(session
+        assert!(alice_group
+            .group
             .roster()
             .into_iter()
             .any(|member| member.signing_identity() == &bob_key_package.leaf_node.signing_identity))
     }
 
-    struct RejectProposals;
-
-    impl ProposalFilter for RejectProposals {
-        type Error = SimpleError;
-
-        fn validate(&self, _: &ProposalBundle) -> Result<(), Self::Error> {
-            Err("No".into())
-        }
-
-        fn filter(&self, _: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
-            Ok(Default::default())
-        }
-    }
-
-    #[test]
-    fn proposal_can_be_rejected() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice")
-            .with_proposal_filter(|_| RejectProposals)
-            .build_client();
-
-        let mut session = create_session(&alice);
-
-        let (bob, _) = test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-
-        let proposal = bob
-            .external_add_proposal(session.group_info_message().unwrap(), vec![])
-            .unwrap();
-
-        session.process_incoming_bytes(&proposal).unwrap();
-        session.commit(Vec::new(), Vec::new()).unwrap();
-        let res = session.apply_pending_commit();
-
-        assert_matches!(
-            res,
-            Err(SessionError::ProposalRejected(
-                ProposalFilterError::UserDefined(_)
-            ))
-        );
-    }
-
-    #[test]
-    fn psk_proposal_can_be_committed() {
-        let expected_id = ExternalPskId(vec![1]);
-
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice")
-            .with_psk(
-                expected_id.clone(),
-                vec![1; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()].into(),
-            )
-            .build_client();
-
-        let mut session = create_session(&alice);
-        let proposal = session.psk_proposal(expected_id).unwrap();
-        let res = session.commit(vec![proposal], vec![]);
-        assert_matches!(res, Ok(_));
-    }
-
-    #[test]
-    fn psk_id_in_psk_proposal_must_be_known() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-        let mut session = create_session(&alice);
-        let expected_id = ExternalPskId(vec![1]);
-        let proposal = session.psk_proposal(expected_id.clone()).unwrap();
-        let res = session.commit(vec![proposal], vec![]);
-
-        assert_matches!(
-            res,
-            Err(SessionError::ProtocolError(GroupError::PskSecretError(PskSecretError::NoPskForId(actual_id)))) if actual_id == expected_id
-        );
-    }
-
-    #[test]
-    fn only_selected_members_of_the_original_group_can_join_subgroup() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-        let mut alice_session = create_session(&alice);
-
-        let (bob, bob_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-
-        let bob_leaf_node = bob_key_pkg.leaf_node.clone();
-
-        let mut bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
-
-        let (carol, carol_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "carol");
-
-        let carol_session = join_session(
-            &mut alice_session,
-            [&mut bob_session],
-            carol_key_pkg,
-            &carol,
-        )
-        .unwrap();
-
-        let bob_sub_key_pkg = bob
-            .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-            .unwrap();
-
-        let (mut alice_sub_session, welcome) = alice_session
-            .branch(b"subgroup".to_vec(), |p| {
-                if p == &bob_leaf_node {
-                    Some(bob_sub_key_pkg.clone())
-                } else {
-                    None
-                }
-            })
-            .unwrap();
-
-        let welcome = welcome.unwrap();
-
-        let mut bob_sub_session = bob_session
-            .join_subgroup(
-                welcome.clone(),
-                Some(&alice_sub_session.export_tree().unwrap()),
-            )
-            .unwrap();
-
-        assert_matches!(
-            carol_session.join_subgroup(welcome, Some(&alice_sub_session.export_tree().unwrap())),
-            Err(_)
-        );
-
-        // Alice and Bob can still talk
-        let commit = alice_sub_session.commit(vec![], vec![]).unwrap();
-        bob_sub_session
-            .process_incoming_bytes(&commit.commit_packet)
-            .unwrap();
-    }
-
-    fn joining_group_fails_if_unsupported<F>(f: F)
-    where
-        F: FnOnce(InMemoryClientConfig) -> InMemoryClientConfig,
-    {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-        let mut alice_session = create_session(&alice);
-        let bob = f(get_basic_config(TEST_CIPHER_SUITE, "bob")).build_client();
-
-        let bob_key_pkg = bob
-            .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-            .unwrap();
-
-        let res = join_session(&mut alice_session, [], bob_key_pkg, &bob);
-
-        assert_matches!(
-            res,
-            Err(ClientError::SessionError(SessionError::ProtocolError(
-                GroupError::UnsupportedProtocolVersionOrCipherSuite(
-                    TEST_PROTOCOL_VERSION,
-                    TEST_CIPHER_SUITE
-                )
-            )))
-        );
-    }
-
-    #[test]
-    fn joining_group_fails_if_protocol_version_is_not_supported() {
-        joining_group_fails_if_unsupported(|config| config.clear_protocol_versions());
-    }
-
-    #[test]
-    fn joining_group_fails_if_cipher_suite_is_not_supported() {
-        joining_group_fails_if_unsupported(|config| config.clear_cipher_suites());
-    }
-
     fn join_via_external_commit(do_remove: bool, with_psk: bool) -> Result<(), ClientError> {
+        // An external commit cannot be the first commit in a group as it requires
+        // interim_transcript_hash to be computed from the confirmed_transcript_hash and
+        // confirmation_tag, which is not the case for the initial interim_transcript_hash.
+
         let psk_id = ExternalPskId(b"psk id".to_vec());
         let psk = Psk::from(b"psk".to_vec());
 
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice")
-            .with_psk(psk_id.clone(), psk.clone())
-            .build_client();
+        let mut alice_group =
+            test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |c| {
+                c.with_psk(psk_id.clone(), psk.clone())
+            });
 
-        let mut alice_session = create_session(&alice);
+        let (mut bob_group, _) = alice_group
+            .join_with_custom_config("bob", |c| c.with_psk(psk_id.clone(), psk.clone()))
+            .unwrap();
 
-        let (mut bob, bob_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-
-        bob.config = bob.config.with_psk(psk_id.clone(), psk.clone());
-
-        // An external commit cannot be the first commit in a session as it requires
-        // interim_transcript_hash to be computed from the confirmed_transcript_hash and
-        // confirmation_tag, which is not the case for the initial interim_transcript_hash.
-        let mut bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
-
-        let group_info_msg = alice_session.group_info_message().unwrap();
+        let group_info_msg = alice_group.group.group_info_message().unwrap();
 
         let charlie = get_basic_config(TEST_CIPHER_SUITE, "charlie")
             .with_psk(psk_id.clone(), psk)
             .build_client();
 
-        let (mut charlie_session, external_commit) = charlie.commit_external(
+        let (mut charlie_group, external_commit) = charlie.commit_external(
             group_info_msg,
-            Some(&alice_session.export_tree().unwrap()),
+            Some(&alice_group.group.export_tree().unwrap()),
             do_remove.then(|| 1),
             if with_psk { vec![psk_id] } else { vec![] },
             vec![],
@@ -586,38 +412,43 @@ mod tests {
 
         let num_members = if do_remove { 2 } else { 3 };
 
-        assert_eq!(charlie_session.roster().member_count(), num_members);
+        assert_eq!(charlie_group.roster().member_count(), num_members);
 
-        let _ = alice_session
-            .process_incoming_bytes(&external_commit)
+        let _ = alice_group
+            .group
+            .process_incoming_message(external_commit.clone())
             .unwrap();
 
-        let message = bob_session
-            .process_incoming_bytes(&external_commit)
+        let message = bob_group
+            .group
+            .process_incoming_message(external_commit)
             .unwrap();
 
-        assert!(alice_session.roster().member_count() == num_members);
+        assert!(alice_group.group.roster().member_count() == num_members);
 
         if !do_remove {
-            assert!(bob_session.roster().member_count() == num_members);
+            assert!(bob_group.group.roster().member_count() == num_members);
         } else if let Event::Commit(update) = message.event {
             assert!(!update.active);
         }
 
         let alice_msg = b"I'm Alice";
-        let msg = alice_session
-            .encrypt_application_data(alice_msg, vec![])
+
+        let msg = alice_group
+            .group
+            .encrypt_application_message(alice_msg, vec![])
             .unwrap();
 
-        let received = charlie_session.process_incoming_bytes(&msg).unwrap();
+        let received = charlie_group.process_incoming_message(msg).unwrap();
         assert_matches!(received.event, Event::ApplicationMessage(bytes) if bytes == alice_msg);
 
         let charlie_msg = b"I'm Charlie";
 
-        let msg = charlie_session
-            .encrypt_application_data(charlie_msg, vec![])
+        let msg = charlie_group
+            .encrypt_application_message(charlie_msg, vec![])
             .unwrap();
-        let received = alice_session.process_incoming_bytes(&msg).unwrap();
+
+        let received = alice_group.group.process_incoming_message(msg).unwrap();
 
         assert_matches!(received.event, Event::ApplicationMessage(bytes) if bytes == charlie_msg);
 
@@ -634,29 +465,6 @@ mod tests {
         join_via_external_commit(false, true).unwrap();
         // All works together
         join_via_external_commit(true, true).unwrap();
-    }
-
-    #[test]
-    fn member_can_see_sender_creds() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-        let mut alice_session = create_session(&alice);
-
-        let (bob, bob_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-
-        let mut bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
-
-        let bob_msg = b"I'm Bob";
-
-        let msg = bob_session
-            .encrypt_application_data(bob_msg, vec![])
-            .unwrap();
-        let received_by_alice = alice_session.process_incoming_bytes(&msg).unwrap();
-
-        assert_eq!(
-            Some(bob_session.current_member_index()),
-            received_by_alice.sender_index
-        );
     }
 
     #[test]
@@ -679,253 +487,32 @@ mod tests {
 
     #[test]
     fn external_commit_with_invalid_group_info_fails() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-        let mut alice_session = create_session(&alice);
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let mut bob_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        // An external commit cannot be the first commit in a session as it requires
-        // interim_transcript_hash to be computed from the confirmed_transcript_hash and
-        // confirmation_tag, which is not the case for the initial interim_transcript_hash.
-        let _ = alice_session.commit(Vec::new(), Vec::new()).unwrap();
-        alice_session.apply_pending_commit().unwrap();
+        bob_group
+            .group
+            .commit_proposals(Vec::new(), Vec::new())
+            .unwrap();
 
-        let bob = get_basic_config(TEST_CIPHER_SUITE, "bob").build_client();
-        let mut bob_session = create_session(&bob);
+        bob_group.group.process_pending_commit().unwrap();
 
-        // An external commit cannot be the first commit in a session as it requires
-        // interim_transcript_hash to be computed from the confirmed_transcript_hash and
-        // confirmation_tag, which is not the case for the initial interim_transcript_hash.
-        let _ = bob_session.commit(Vec::new(), Vec::new()).unwrap();
-        bob_session.apply_pending_commit().unwrap();
-
-        let group_info_msg = bob_session.group_info_message().unwrap();
+        let group_info_msg = bob_group.group.group_info_message().unwrap();
 
         let carol = get_basic_config(TEST_CIPHER_SUITE, "carol").build_client();
 
         let (_, external_commit) = carol
             .commit_external(
                 group_info_msg,
-                Some(&bob_session.export_tree().unwrap()),
+                Some(&bob_group.group.export_tree().unwrap()),
                 None,
                 vec![],
                 vec![],
             )
             .unwrap();
 
-        // If Carol tries to join Alice's group using the group info from Bob's session, that fails.
-        let res = alice_session.process_incoming_bytes(&external_commit);
+        // If Carol tries to join Alice's group using the group info from Bob's group, that fails.
+        let res = alice_group.group.process_incoming_message(external_commit);
         assert_matches!(res, Err(_));
-    }
-
-    #[test]
-    fn members_of_a_group_have_identical_authentication_secrets() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-        let mut alice_session = create_session(&alice);
-
-        let (bob, bob_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-
-        let bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
-
-        assert_eq!(
-            alice_session.authentication_secret().unwrap(),
-            bob_session.authentication_secret().unwrap()
-        );
-    }
-
-    #[test]
-    fn saved_session_can_be_resumed() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-        let mut alice_session = create_session(&alice);
-
-        let (bob, bob_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-        let mut bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
-
-        // Commit so that Bob's session records a new epoch.
-        let commit = bob_session.commit(Vec::new(), Vec::new()).unwrap();
-        bob_session.apply_pending_commit().unwrap();
-        alice_session
-            .process_incoming_bytes(&commit.commit_packet)
-            .unwrap();
-
-        let bob_session_bytes = serde_json::to_vec(&bob_session.export().unwrap()).unwrap();
-
-        let mut bob_session = bob
-            .import_session(serde_json::from_slice(&bob_session_bytes).unwrap())
-            .unwrap();
-
-        let message = alice_session
-            .encrypt_application_data(b"hello", vec![])
-            .unwrap();
-        let received_message = bob_session.process_incoming_bytes(&message).unwrap();
-
-        assert_matches!(
-            received_message.event,
-            Event::ApplicationMessage(bytes) if bytes == b"hello"
-        );
-
-        let commit = alice_session.commit(Vec::new(), Vec::new()).unwrap();
-        alice_session.apply_pending_commit().unwrap();
-        bob_session
-            .process_incoming_bytes(&commit.commit_packet)
-            .unwrap();
-
-        assert_eq!(
-            alice_session.group_stats().unwrap().epoch,
-            bob_session.group_stats().unwrap().epoch
-        );
-    }
-
-    #[test]
-    fn member_cannot_decrypt_same_message_twice() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-        let mut alice_session = create_session(&alice);
-
-        let (bob, bob_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-
-        let mut bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
-
-        let message = alice_session
-            .encrypt_application_data(b"foobar", Vec::new())
-            .unwrap();
-
-        let received_message = bob_session.process_incoming_bytes(&message).unwrap();
-
-        assert_matches!(
-            received_message.event,
-            Event::ApplicationMessage(data) if data == b"foobar"
-        );
-
-        let res = bob_session.process_incoming_bytes(&message);
-
-        assert_matches!(
-            res,
-            Err(SessionError::ProtocolError(GroupError::EpochError(
-                EpochError::SecretTreeError(SecretTreeError::KeyMissing(_))
-            )))
-        );
-    }
-
-    #[test]
-    fn commit_is_rejected_when_multiple_add_proposals_share_same_hpke_key() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-        let mut alice_session = create_session(&alice);
-
-        let (_, bob_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-
-        let (alice, mut alice_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice");
-
-        alice_key_pkg.leaf_node.public_key = bob_key_pkg.leaf_node.public_key.clone();
-
-        let (_, alice_signer) = alice
-            .config
-            .keychain()
-            .default_identity(TEST_CIPHER_SUITE)
-            .unwrap();
-
-        alice_key_pkg.leaf_node.sign(&alice_signer, &None).unwrap();
-        alice_key_pkg.sign(&alice_signer, &()).unwrap();
-
-        let res = alice_session.commit(
-            vec![
-                Proposal::Add(AddProposal {
-                    key_package: bob_key_pkg,
-                }),
-                Proposal::Add(AddProposal {
-                    key_package: alice_key_pkg,
-                }),
-            ],
-            Vec::new(),
-        );
-
-        assert_matches!(
-            res,
-            Err(SessionError::ProposalRejected(
-                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
-                    TreeIndexError::DuplicateHpkeKey(_)
-                ))
-            ))
-        );
-    }
-
-    #[test]
-    fn commit_is_rejected_when_multiple_add_proposals_share_same_signature_key() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-        let mut alice_session = create_session(&alice);
-
-        let bob = get_basic_config(TEST_CIPHER_SUITE, "bob").build_client();
-
-        let bob_key_pkg = bob
-            .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-            .unwrap();
-
-        let alice_key_pkg = bob
-            .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-            .unwrap();
-
-        let res = alice_session.commit(
-            vec![
-                Proposal::Add(AddProposal {
-                    key_package: bob_key_pkg,
-                }),
-                Proposal::Add(AddProposal {
-                    key_package: alice_key_pkg,
-                }),
-            ],
-            Vec::new(),
-        );
-
-        assert_matches!(
-            res,
-            Err(SessionError::ProposalRejected(
-                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
-                    TreeIndexError::DuplicateSignatureKeys(_)
-                ))
-            ))
-        );
-    }
-
-    #[test]
-    fn member_cannot_remove_themselves_from_group() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-        let mut alice_session = create_session(&alice);
-
-        let (bob, bob_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
-
-        let mut bob_session = join_session(&mut alice_session, [], bob_key_pkg, &bob).unwrap();
-
-        let commit = bob_session.commit(
-            vec![Proposal::Remove(RemoveProposal {
-                to_remove: LeafIndex(bob_session.current_member_index()),
-            })],
-            Vec::new(),
-        );
-
-        assert_matches!(
-            commit,
-            Err(SessionError::ProposalRejected(
-                ProposalFilterError::CommitterSelfRemoval
-            ))
-        );
-    }
-
-    #[test]
-    fn update_of_committer_is_filtered_out() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
-        let mut alice_session = create_session(&alice);
-
-        let _ = alice_session.propose_update(Vec::new()).unwrap();
-        let _ = alice_session.commit(Vec::new(), Vec::new()).unwrap();
-        let state_update = alice_session.apply_pending_commit().unwrap();
-
-        assert_eq!(state_update.updated, Vec::new());
-        assert_matches!(
-            &*state_update.rejected_proposals,
-            [(_, Proposal::Update(_))]
-        );
     }
 }

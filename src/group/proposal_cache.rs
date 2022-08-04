@@ -403,7 +403,7 @@ mod tests {
         client_config::PassthroughCredentialValidator,
         extension::{test_utils::TestExtension, ExternalSendersExt},
         group::test_utils::{test_group, TEST_GROUP},
-        key_package::test_utils::test_key_package,
+        key_package::test_utils::{test_key_package, test_key_package_custom},
         signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{
             leaf_node::{
@@ -1552,6 +1552,26 @@ mod tests {
         kp
     }
 
+    fn key_package_with_public_key(key: HpkePublicKey) -> KeyPackage {
+        test_key_package_custom(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test", |gen| {
+            let mut key_package_gen = gen
+                .generate(
+                    Default::default(),
+                    Default::default(),
+                    Default::default(),
+                    Default::default(),
+                )
+                .unwrap();
+
+            key_package_gen.key_package.leaf_node.public_key = key;
+            key_package_gen
+                .key_package
+                .sign(gen.signing_key, &())
+                .unwrap();
+            key_package_gen
+        })
+    }
+
     #[test]
     fn receiving_add_with_invalid_key_package_fails() {
         let (alice, tree) = new_tree("alice");
@@ -1593,6 +1613,47 @@ mod tests {
         let proposal = Proposal::Add(AddProposal {
             key_package: key_package_with_invalid_signature(),
         });
+        let proposal_ref = make_proposal_ref(&proposal, alice);
+
+        let (committed, effects) = CommitSender::new(&tree, alice)
+            .cache(proposal_ref.clone(), proposal.clone(), alice)
+            .send()
+            .unwrap();
+
+        assert_eq!(committed, Vec::new());
+        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+    }
+
+    #[test]
+    fn sending_add_with_hpke_key_of_another_member_fails() {
+        let (alice, tree) = new_tree("alice");
+
+        let res = CommitSender::new(&tree, alice)
+            .with_additional([Proposal::Add(AddProposal {
+                key_package: key_package_with_public_key(
+                    tree.get_leaf_node(alice).unwrap().public_key.clone(),
+                ),
+            })])
+            .send();
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::KeyPackageValidationError(_)
+            ))
+        );
+    }
+
+    #[test]
+    fn sending_add_with_hpke_key_of_another_member_filters_it_out() {
+        let (alice, tree) = new_tree("alice");
+
+        let proposal = Proposal::Add(AddProposal {
+            key_package: key_package_with_public_key(
+                tree.get_leaf_node(alice).unwrap().public_key.clone(),
+            ),
+        });
+
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
         let (committed, effects) = CommitSender::new(&tree, alice)

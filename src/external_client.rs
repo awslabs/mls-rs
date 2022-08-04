@@ -1,17 +1,14 @@
 use thiserror::Error;
 
 use crate::{
-    group::framing::{MLSMessage, WireFormat},
-    session::SessionError,
-    ExternalClientConfig, ExternalSession,
+    group::{framing::MLSMessage, ExternalGroup, GroupError},
+    ExternalClientConfig,
 };
 
 #[derive(Debug, Error)]
 pub enum ExternalClientError {
-    #[error("invalid message type, expected {0:?}")]
-    InvalidMessageType(WireFormat),
     #[error(transparent)]
-    SessionError(#[from] SessionError),
+    GroupError(#[from] GroupError),
 }
 
 pub struct ExternalClient<C: ExternalClientConfig> {
@@ -22,19 +19,12 @@ impl<C> ExternalClient<C>
 where
     C: ExternalClientConfig + Clone,
 {
-    pub fn join_session(
+    pub fn observe_group(
         &self,
         group_info: MLSMessage,
         tree_data: Option<&[u8]>,
-    ) -> Result<ExternalSession<C>, ExternalClientError> {
-        let group_info =
-            group_info
-                .into_group_info()
-                .ok_or(ExternalClientError::InvalidMessageType(
-                    WireFormat::GroupInfo,
-                ))?;
-
-        ExternalSession::join(self.config.clone(), group_info, tree_data).map_err(Into::into)
+    ) -> Result<ExternalGroup<C>, ExternalClientError> {
+        ExternalGroup::join(self.config.clone(), group_info, tree_data).map_err(Into::into)
     }
 }
 

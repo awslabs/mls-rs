@@ -1,17 +1,12 @@
-use ferriscrypt::rand::SecureRng;
-
 use aws_mls::bench_utils::group_functions::{commit_group, create_group};
-
+use aws_mls::cipher_suite::CipherSuite;
+use aws_mls::client_config::InMemoryClientConfig;
+use aws_mls::group::Group;
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
     Throughput,
 };
-
-use aws_mls::client_config::InMemoryClientConfig;
-
-use aws_mls::session::Session;
-
-use aws_mls::cipher_suite::CipherSuite;
+use ferriscrypt::rand::SecureRng;
 
 fn application_message_setup(c: &mut Criterion) {
     let mut group_application = c.benchmark_group("group_application_message");
@@ -37,7 +32,7 @@ fn application_message_setup(c: &mut Criterion) {
 fn bench_application_message(
     bench_group: &mut BenchmarkGroup<WallTime>,
     cipher_suite: CipherSuite,
-    container: &mut [Session<InMemoryClientConfig>],
+    container: &mut [Group<InMemoryClientConfig>],
     bytes: Vec<u8>,
 ) {
     let mut n = 100;
@@ -50,10 +45,10 @@ fn bench_application_message(
             |b, _| {
                 b.iter(|| {
                     let msg = container[0]
-                        .encrypt_application_data(&bytes[..n], vec![])
+                        .encrypt_application_message(&bytes[..n], vec![])
                         .unwrap();
 
-                    container[1].process_incoming_bytes(&msg).unwrap();
+                    container[1].process_incoming_message(msg).unwrap();
                 })
             },
         );

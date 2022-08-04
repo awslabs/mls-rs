@@ -33,12 +33,12 @@ use crate::psk::{
     PskSecretError, ResumptionPSKUsage, ResumptionPsk,
 };
 use crate::signer::{Signable, SignatureError, Signer};
-use crate::signing_identity::SigningIdentityError;
+use crate::signing_identity::{SigningIdentity, SigningIdentityError};
 use crate::tree_kem::kem::TreeKem;
 use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
 use crate::tree_kem::leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator};
 use crate::tree_kem::math as tree_math;
-use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::node::{LeafIndex, NodeVec};
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError};
 use crate::tree_kem::tree_validator::{TreeValidationError, TreeValidator};
 use crate::tree_kem::{
@@ -66,7 +66,6 @@ use group_core::GroupCore;
 use padding::PaddingMode;
 
 pub use external_group::ExternalGroup;
-pub use external_group_config::{ExternalGroupConfig, InMemoryExternalGroupConfig};
 pub use group_info::GroupInfo;
 pub use group_state::GroupState;
 pub(crate) use proposal_cache::ProposalCacheError;
@@ -83,7 +82,6 @@ pub use transcript_hash::ConfirmedTranscriptHash;
 mod confirmation_tag;
 pub(crate) mod epoch;
 mod external_group;
-mod external_group_config;
 pub mod framing;
 mod group_core;
 mod group_info;
@@ -359,12 +357,8 @@ pub enum GroupError {
     ExistingPendingCommit,
     #[error("pending commit not found")]
     PendingCommitNotFound,
-    #[error("received unexpected welcome message")]
-    UnexpectedWelcomeMessage,
-    #[error("received unexpected group info message")]
-    UnexpectedGroupInfo,
-    #[error("received unexpected key package message")]
-    UnexpectedKeyPackage,
+    #[error("unexpected message type, expected {0:?}, found {1:?}")]
+    UnexpectedMessageType(Vec<WireFormat>, WireFormat),
     #[error("membership tag on MLSPlaintext for non-member sender")]
     MembershipTagForNonMember,
 }
@@ -560,21 +554,26 @@ where
     }
 
     pub fn join(
-        protocol_version: ProtocolVersion,
-        welcome: Welcome,
-        public_tree: Option<TreeKemPublic>,
+        welcome: MLSMessage,
+        tree_data: Option<&[u8]>,
         config: C,
     ) -> Result<Self, GroupError> {
-        Self::from_welcome_message(None, protocol_version, welcome, public_tree, config)
+        Self::from_welcome_message(None, welcome, tree_data, config)
     }
 
     fn from_welcome_message(
         parent_group_id: Option<&[u8]>,
-        protocol_version: ProtocolVersion,
-        welcome: Welcome,
-        public_tree: Option<TreeKemPublic>,
+        welcome: MLSMessage,
+        tree_data: Option<&[u8]>,
         config: C,
     ) -> Result<Self, GroupError> {
+        let protocol_version = welcome.version;
+        let wire_format = welcome.wire_format();
+
+        let welcome = welcome.into_welcome().ok_or_else(|| {
+            GroupError::UnexpectedMessageType(vec![WireFormat::Welcome], wire_format)
+        })?;
+
         let key_package_generation = find_key_package_generation(&config, &welcome)?;
         // Identify an entry in the secrets array where the KeyPackageRef value corresponds to
         // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
@@ -636,7 +635,7 @@ where
             ));
         }
 
-        let mut public_tree = find_tree(public_tree, &group_info)?;
+        let mut public_tree = find_tree(tree_data, &group_info)?;
 
         validate_existing_group(
             &mut public_tree,
@@ -737,13 +736,19 @@ where
     /// Returns group and external commit message
     pub fn new_external(
         config: C,
-        protocol_version: ProtocolVersion,
-        group_info: GroupInfo,
-        public_tree: Option<TreeKemPublic>,
+        group_info: MLSMessage,
+        tree_data: Option<&[u8]>,
         to_remove: Option<u32>,
         external_psks: Vec<ExternalPskId>,
         authenticated_data: Vec<u8>,
     ) -> Result<(Self, MLSMessage), GroupError> {
+        let protocol_version = group_info.version;
+        let wire_format = group_info.wire_format();
+
+        let group_info = group_info.into_group_info().ok_or_else(|| {
+            GroupError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
+        })?;
+
         // Validate received group info and tree.
         if !version_and_cipher_filter(
             &config,
@@ -776,7 +781,8 @@ where
             &config.credential_validator(),
         )?;
 
-        let mut public_tree = find_tree(public_tree, &group_info)?;
+        let mut public_tree = find_tree(tree_data, &group_info)?;
+
         validate_existing_group(
             &mut public_tree,
             &group_info,
@@ -801,7 +807,7 @@ where
             .into_iter()
             .map(|psk_id| {
                 Ok(PreSharedKeyID {
-                    key_id: crate::session::JustPreSharedKeyID::External(psk_id),
+                    key_id: JustPreSharedKeyID::External(psk_id),
                     psk_nonce: PskNonce::random(group.core.cipher_suite())?,
                 })
             })
@@ -818,8 +824,7 @@ where
             }))
             .collect::<Vec<_>>();
 
-        let (commit, _) =
-            group.commit_proposals(proposals, Some(&leaf_node), authenticated_data)?;
+        let (commit, _) = group.commit_internal(proposals, Some(&leaf_node), authenticated_data)?;
 
         group.process_pending_commit()?;
 
@@ -837,14 +842,18 @@ where
     }
 
     #[inline(always)]
-    pub fn current_user_index(&self) -> u32 {
+    pub fn current_member_index(&self) -> u32 {
         self.private_tree.self_index.0 as u32
     }
 
-    pub fn current_user_leaf_node(&self) -> Result<&LeafNode, GroupError> {
+    fn current_user_leaf_node(&self) -> Result<&LeafNode, GroupError> {
         self.current_epoch_tree()
             .get_leaf_node(self.private_tree.self_index)
             .map_err(Into::into)
+    }
+
+    pub fn current_member_signing_identity(&self) -> Result<&SigningIdentity, GroupError> {
+        self.current_user_leaf_node().map(|ln| &ln.signing_identity)
     }
 
     fn apply_proposals(
@@ -878,7 +887,7 @@ where
         })
     }
 
-    pub fn create_proposal(
+    pub fn proposal_message(
         &mut self,
         proposal: Proposal,
         authenticated_data: Vec<u8>,
@@ -915,8 +924,16 @@ where
         &self.context().group_id
     }
 
-    /// Returns commit and optional `MLSMessage` containing a `Welcome`
     pub fn commit_proposals(
+        &mut self,
+        proposals: Vec<Proposal>,
+        authenticated_data: Vec<u8>,
+    ) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
+        self.commit_internal(proposals, None, authenticated_data)
+    }
+
+    /// Returns commit and optional `MLSMessage` containing a `Welcome`
+    fn commit_internal(
         &mut self,
         proposals: Vec<Proposal>,
         external_leaf: Option<&LeafNode>,
@@ -1105,19 +1122,14 @@ where
         // Sign the GroupInfo using the member's private signing key
         group_info.sign(&signer, &())?;
 
-        let welcome = self
-            .make_welcome_message(
-                added_leaves,
-                &key_schedule_result.joiner_secret,
-                &psk_secret,
-                path_secrets.as_ref(),
-                provisional_state.public_state.psks,
-                &group_info,
-            )?
-            .map(|welcome| MLSMessage {
-                version: provisional_group_context.protocol_version,
-                payload: MLSMessagePayload::Welcome(welcome),
-            });
+        let welcome = self.make_welcome_message(
+            added_leaves,
+            &key_schedule_result.joiner_secret,
+            &psk_secret,
+            path_secrets.as_ref(),
+            provisional_state.public_state.psks,
+            &group_info,
+        )?;
 
         let commit_message = self.format_for_wire(auth_content.clone())?;
 
@@ -1139,7 +1151,7 @@ where
         path_secrets: Option<&Vec<Option<PathSecret>>>,
         psks: Vec<PreSharedKeyID>,
         group_info: &GroupInfo,
-    ) -> Result<Option<Welcome>, GroupError> {
+    ) -> Result<Option<MLSMessage>, GroupError> {
         // Encrypt the GroupInfo using the key and nonce derived from the joiner_secret for
         // the new epoch
         let welcome_secret =
@@ -1161,14 +1173,14 @@ where
             })
             .collect::<Result<Vec<EncryptedGroupSecrets>, GroupError>>()?;
 
-        Ok(match secrets.len() {
-            0 => None,
-            _ => Some(Welcome {
+        Ok((!secrets.is_empty()).then_some(MLSMessage {
+            version: ProtocolVersion::Mls10,
+            payload: MLSMessagePayload::Welcome(Welcome {
                 cipher_suite: group_info.group_context.cipher_suite,
                 secrets,
                 encrypted_group_info,
             }),
-        })
+        }))
     }
 
     fn new_for_resumption<S, F>(
@@ -1179,10 +1191,10 @@ where
         new_signer: &S,
         mut get_new_key_package: F,
         resumption_psk_id: JustPreSharedKeyID,
-    ) -> Result<(Self, Option<Welcome>), GroupError>
+    ) -> Result<(Self, Option<MLSMessage>), GroupError>
     where
         S: Signer,
-        F: FnMut(&LeafNode) -> Option<KeyPackage>,
+        F: FnMut(&SigningIdentity) -> Option<KeyPackage>,
     {
         let required_capabilities = new_context.extensions.get_extension()?;
 
@@ -1204,7 +1216,7 @@ where
                     if index == self_index {
                         None
                     } else {
-                        get_new_key_package(leaf_node)
+                        get_new_key_package(&leaf_node.signing_identity)
                     }
                 })
                 .try_fold(
@@ -1305,9 +1317,9 @@ where
         &self,
         sub_group_id: Vec<u8>,
         get_new_key_package: F,
-    ) -> Result<(Self, Option<Welcome>), GroupError>
+    ) -> Result<(Self, Option<MLSMessage>), GroupError>
     where
-        F: FnMut(&LeafNode) -> Option<KeyPackage>,
+        F: FnMut(&SigningIdentity) -> Option<KeyPackage>,
     {
         let signer = self.signer()?;
 
@@ -1352,14 +1364,13 @@ where
 
     pub fn join_subgroup(
         &self,
-        welcome: Welcome,
-        public_tree: Option<TreeKemPublic>,
+        welcome: MLSMessage,
+        tree_data: Option<&[u8]>,
     ) -> Result<Self, GroupError> {
         let subgroup = Self::from_welcome_message(
             Some(&self.context().group_id),
-            self.core.protocol_version(),
             welcome,
-            public_tree,
+            tree_data,
             self.config.clone(),
         )?;
 
@@ -1379,9 +1390,9 @@ where
     pub fn finish_reinit_commit<F>(
         &self,
         get_new_key_package: F,
-    ) -> Result<(Self, Option<Welcome>), GroupError>
+    ) -> Result<(Self, Option<MLSMessage>), GroupError>
     where
-        F: FnMut(&LeafNode) -> Option<KeyPackage>,
+        F: FnMut(&SigningIdentity) -> Option<KeyPackage>,
     {
         let config = self.config.clone();
 
@@ -1443,8 +1454,8 @@ where
 
     pub fn finish_reinit_join(
         &self,
-        welcome: Welcome,
-        public_tree: Option<TreeKemPublic>,
+        welcome: MLSMessage,
+        tree_data: Option<&[u8]>,
     ) -> Result<Self, GroupError> {
         let reinit = self
             .core
@@ -1452,15 +1463,10 @@ where
             .as_ref()
             .ok_or(GroupError::PendingReInitNotFound)?;
 
-        if reinit.cipher_suite != welcome.cipher_suite {
-            return Err(GroupError::CipherSuiteMismatch);
-        }
-
         let group = Self::from_welcome_message(
             Some(&self.context().group_id),
-            reinit.version,
             welcome,
-            public_tree,
+            tree_data,
             self.config.clone(),
         )?;
 
@@ -1572,7 +1578,9 @@ where
         }))
     }
 
-    pub fn remove_proposal(&mut self, leaf_index: LeafIndex) -> Result<Proposal, GroupError> {
+    pub fn remove_proposal(&mut self, index: u32) -> Result<Proposal, GroupError> {
+        let leaf_index = LeafIndex(index);
+
         // Verify that this leaf is actually in the tree
         self.current_epoch_tree().get_leaf_node(leaf_index)?;
 
@@ -1590,7 +1598,7 @@ where
         }))
     }
 
-    pub fn reinit_proposal(
+    pub fn reinit_proposal_with_group_id(
         &mut self,
         group_id: Vec<u8>,
         version: ProtocolVersion,
@@ -1603,6 +1611,16 @@ where
             cipher_suite,
             extensions,
         }))
+    }
+
+    pub fn reinit_proposal(
+        &mut self,
+        version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        extensions: ExtensionList,
+    ) -> Result<Proposal, GroupError> {
+        let group_id = SecureRng::gen(cipher_suite.hash_function().digest_size())?;
+        self.reinit_proposal_with_group_id(group_id, version, cipher_suite, extensions)
     }
 
     pub fn group_context_extensions_proposal(&self, extensions: ExtensionList) -> Proposal {
@@ -1799,16 +1817,23 @@ where
     ) -> Result<ProcessedMessage<Event>, GroupError> {
         self.core.check_metadata(&message)?;
 
+        let throw_error = |wire_format| {
+            Err(GroupError::UnexpectedMessageType(
+                vec![WireFormat::Plain, WireFormat::Cipher],
+                wire_format,
+            ))
+        };
+
+        let wire_format = message.wire_format();
+
         let auth_content = match message.payload {
-            MLSMessagePayload::Welcome(_) => Err(GroupError::UnexpectedWelcomeMessage),
-            MLSMessagePayload::GroupInfo(_) => Err(GroupError::UnexpectedGroupInfo),
-            MLSMessagePayload::KeyPackage(_) => Err(GroupError::UnexpectedKeyPackage),
             MLSMessagePayload::Plain(plaintext) => self.core.verify_plaintext_authentication(
                 Some(&self.key_schedule),
                 Some(self.private_tree.self_index),
                 plaintext,
             ),
             MLSMessagePayload::Cipher(ciphertext) => self.decrypt_incoming_ciphertext(ciphertext),
+            _ => throw_error(wire_format),
         }?;
 
         let authenticated_data = auth_content.content.authenticated_data.clone();
@@ -2121,17 +2146,27 @@ where
             .export_secret(label, context, len, self.context().cipher_suite)?)
     }
 
+    pub fn export_tree(&self) -> Result<Vec<u8>, GroupError> {
+        self.current_epoch_tree()
+            .export_node_data()
+            .tls_serialize_detached()
+            .map_err(Into::into)
+    }
+
     pub fn protocol_version(&self) -> ProtocolVersion {
         self.core.protocol_version()
     }
 }
 
 pub(crate) fn find_tree(
-    public_tree: Option<TreeKemPublic>,
+    tree_data: Option<&[u8]>,
     group_info: &GroupInfo,
 ) -> Result<TreeKemPublic, GroupError> {
-    match public_tree {
-        Some(tree) => Ok(tree),
+    match tree_data {
+        Some(tree_data) => Ok(TreeKemPublic::import_node_data(
+            group_info.group_context.cipher_suite,
+            NodeVec::tls_deserialize(&mut &*tree_data)?,
+        )?),
         None => {
             let tree_extension = group_info
                 .extensions
@@ -2294,13 +2329,14 @@ pub(crate) mod test_utils {
 
     pub const TEST_GROUP: &[u8] = b"group";
 
+    #[derive(Debug)]
     pub(crate) struct TestGroup {
         pub group: Group<InMemoryClientConfig>,
     }
 
     impl TestGroup {
         pub(crate) fn propose(&mut self, proposal: Proposal) -> MLSMessage {
-            self.group.create_proposal(proposal, vec![]).unwrap()
+            self.group.proposal_message(proposal, vec![]).unwrap()
         }
 
         pub(crate) fn join_with_preferences(
@@ -2308,6 +2344,18 @@ pub(crate) mod test_utils {
             name: &str,
             preferences: Preferences,
         ) -> (TestGroup, MLSMessage) {
+            self.join_with_custom_config(name, |config| config.with_preferences(preferences))
+                .unwrap()
+        }
+
+        pub(crate) fn join_with_custom_config<F>(
+            &mut self,
+            name: &str,
+            config: F,
+        ) -> Result<(TestGroup, MLSMessage), GroupError>
+        where
+            F: FnOnce(InMemoryClientConfig) -> InMemoryClientConfig,
+        {
             let (new_key_package, secret_key) = test_member(
                 self.group.core.protocol_version(),
                 self.group.core.cipher_suite(),
@@ -2322,32 +2370,27 @@ pub(crate) mod test_utils {
 
             let (commit, welcome) = self
                 .group
-                .commit_proposals(vec![add_proposal], None, Vec::new())
+                .commit_proposals(vec![add_proposal], Vec::new())
                 .unwrap();
 
             // Apply the commit to the original group
             self.group.process_pending_commit().unwrap();
 
-            let tree = (!preferences.ratchet_tree_extension)
-                .then(|| self.group.current_epoch_tree().clone());
+            let config = config(test_config(
+                secret_key,
+                new_key_package,
+                Preferences::default(),
+            ));
 
-            let welcome = match welcome.unwrap().payload {
-                MLSMessagePayload::Welcome(w) => w,
-                _ => panic!("Expected Welcome message"),
-            };
+            let tree = (!config.preferences().ratchet_tree_extension)
+                .then(|| self.group.export_tree().unwrap());
 
             // Group from new member's perspective
-            let new_group = Group::join(
-                self.group.protocol_version(),
-                welcome,
-                tree,
-                test_config(secret_key, new_key_package, preferences),
-            )
-            .unwrap();
+            let new_group = Group::join(welcome.unwrap(), tree.as_ref().map(Vec::as_ref), config)?;
 
             let new_test_group = TestGroup { group: new_group };
 
-            (new_test_group, commit)
+            Ok((new_test_group, commit))
         }
 
         pub(crate) fn join(&mut self, name: &str) -> (TestGroup, MLSMessage) {
@@ -2358,7 +2401,7 @@ pub(crate) mod test_utils {
             &mut self,
             proposals: Vec<Proposal>,
         ) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
-            self.group.commit_proposals(proposals, None, Vec::new())
+            self.group.commit_proposals(proposals, Vec::new())
         }
 
         pub(crate) fn process_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
@@ -2498,12 +2541,42 @@ pub(crate) mod test_utils {
             Some(Preferences::default().with_ratchet_tree_extension(true)),
         )
     }
+
+    pub(crate) fn test_group_custom_config<F>(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        custom: F,
+    ) -> TestGroup
+    where
+        F: FnOnce(InMemoryClientConfig) -> InMemoryClientConfig,
+    {
+        let (signing_identity, secret_key) =
+            get_test_signing_identity(cipher_suite, b"member".to_vec());
+
+        let config = InMemoryClientConfig::default()
+            .with_signing_identity(signing_identity, secret_key)
+            .with_preferences(Preferences::default().with_ratchet_tree_extension(true));
+
+        let config = custom(config);
+
+        let group = Group::new(
+            config,
+            TEST_GROUP.to_vec(),
+            cipher_suite,
+            protocol_version,
+            group_extensions(),
+        )
+        .unwrap();
+
+        TestGroup { group }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        client_config::{test_utils::test_config, Preferences},
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        client_config::{test_utils::test_config, InMemoryClientConfig, Preferences},
         extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
         key_package::test_utils::test_key_package,
         psk::Psk,
@@ -2539,7 +2612,10 @@ mod tests {
             );
             assert!(group.core.proposals.is_empty());
             assert!(group.pending_updates.is_empty());
-            assert_eq!(group.private_tree.self_index.0, group.current_user_index());
+            assert_eq!(
+                group.private_tree.self_index.0,
+                group.current_member_index()
+            );
 
             assert_eq!(
                 group.core.current_tree.get_leaf_nodes()[0]
@@ -2573,7 +2649,7 @@ mod tests {
             .add_proposal(bob_key_package.key_package)
             .unwrap();
 
-        test_group.group.create_proposal(proposal, vec![]).unwrap();
+        test_group.group.proposal_message(proposal, vec![]).unwrap();
 
         // We should not be able to send application messages until a commit happens
         let res = test_group
@@ -2583,10 +2659,7 @@ mod tests {
         assert_matches!(res, Err(GroupError::CommitRequired));
 
         // We should be able to send application messages after a commit
-        test_group
-            .group
-            .commit_proposals(vec![], None, vec![])
-            .unwrap();
+        test_group.group.commit_proposals(vec![], vec![]).unwrap();
 
         test_group.group.process_pending_commit().unwrap();
 
@@ -2647,9 +2720,7 @@ mod tests {
 
         // There should be an error because path_update is set to `true` while there is a pending
         // update proposal for the committer
-        let res = test_group
-            .group
-            .commit_proposals(vec![proposal], None, vec![]);
+        let res = test_group.group.commit_proposals(vec![proposal], vec![]);
 
         assert_matches!(
             res,
@@ -2688,9 +2759,7 @@ mod tests {
             kp.key_package.signature = SecureRng::gen(32).unwrap()
         }
 
-        let res = test_group
-            .group
-            .commit_proposals(vec![proposal], None, vec![]);
+        let res = test_group.group.commit_proposals(vec![proposal], vec![]);
 
         assert_matches!(
             res,
@@ -2720,7 +2789,7 @@ mod tests {
 
         let proposal_message = alice_group
             .group
-            .create_proposal(proposal.clone(), vec![])
+            .proposal_message(proposal.clone(), vec![])
             .unwrap();
 
         let proposal_plaintext = match proposal_message.payload {
@@ -2738,10 +2807,7 @@ mod tests {
             proposal_plaintext.content.sender,
         );
 
-        let (commit, _) = bob_group
-            .group
-            .commit_proposals(vec![], None, vec![])
-            .unwrap();
+        let (commit, _) = bob_group.group.commit_proposals(vec![], vec![]).unwrap();
 
         assert_matches!(
             commit,
@@ -2814,18 +2880,12 @@ mod tests {
 
         let (_, welcome) = test_group
             .group
-            .commit_proposals(vec![add_bob_proposal], None, vec![])
+            .commit_proposals(vec![add_bob_proposal], vec![])
             .unwrap();
-
-        let welcome = match welcome.unwrap().payload {
-            MLSMessagePayload::Welcome(w) => w,
-            _ => panic!("Expected Welcome message"),
-        };
 
         // Group from Bob's perspective
         let bob_group = Group::join(
-            protocol_version,
-            welcome,
+            welcome.unwrap(),
             None,
             test_config(
                 secret_key,
@@ -2878,7 +2938,7 @@ mod tests {
 
         let commit = test_group
             .group
-            .commit_proposals(proposals, None, vec![])
+            .commit_proposals(proposals, vec![])
             .map(|(commit, _)| commit);
 
         (test_group, commit)
@@ -2977,15 +3037,12 @@ mod tests {
         info.extensions = ExtensionList::new();
         info.sign(&group.group.signer().unwrap(), &()).unwrap();
 
-        let res = Group::new_external(
-            group.group.config,
-            protocol_version,
-            info,
-            None,
-            None,
-            vec![],
-            vec![],
-        );
+        let info_msg = MLSMessage {
+            version: protocol_version,
+            payload: MLSMessagePayload::GroupInfo(info),
+        };
+
+        let res = Group::new_external(group.group.config, info_msg, None, None, vec![], vec![]);
 
         assert_matches!(res, Err(GroupError::MissingExternalPubExtension));
     }
@@ -3009,7 +3066,7 @@ mod tests {
 
         test_group
             .group
-            .commit_proposals(vec![add.clone()], None, vec![])
+            .commit_proposals(vec![add.clone()], vec![])
             .unwrap();
 
         assert!(test_group
@@ -3029,7 +3086,7 @@ mod tests {
 
         test_group
             .group
-            .commit_proposals(vec![add], None, vec![])
+            .commit_proposals(vec![add], vec![])
             .unwrap();
 
         assert!(test_group
@@ -3053,10 +3110,7 @@ mod tests {
             Some(Preferences::default().force_commit_path_update(false)),
         );
 
-        test_group
-            .group
-            .commit_proposals(vec![], None, vec![])
-            .unwrap();
+        test_group.group.commit_proposals(vec![], vec![]).unwrap();
 
         assert!(test_group
             .group
@@ -3107,7 +3161,7 @@ mod tests {
         let mut proposals = vec![];
 
         for index in [2, 5, 6] {
-            proposals.push(alice.group.remove_proposal(LeafIndex(index)).unwrap());
+            proposals.push(alice.group.remove_proposal(index).unwrap());
         }
 
         for _ in 0..5 {
@@ -3131,7 +3185,7 @@ mod tests {
         }
 
         let update_proposal = bob.group.update_proposal().unwrap();
-        let update_message = bob.group.create_proposal(update_proposal, vec![]).unwrap();
+        let update_message = bob.group.proposal_message(update_proposal, vec![]).unwrap();
 
         alice.process_message(update_message).unwrap();
 
@@ -3227,11 +3281,149 @@ mod tests {
         let mut alice = test_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128);
         alice.join("bob");
         alice.join("charlie");
-        let remove = alice.group.remove_proposal(LeafIndex(1)).unwrap();
+        let remove = alice.group.remove_proposal(1).unwrap();
         alice.commit(vec![remove]).unwrap();
 
         assert!(alice.group.private_tree.secret_keys.contains_key(&1));
         alice.process_pending_commit().unwrap();
         assert!(!alice.group.private_tree.secret_keys.contains_key(&1));
+    }
+
+    #[test]
+    fn only_selected_members_of_the_original_group_can_join_subgroup() {
+        let mut alice = test_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128);
+        let (mut bob, _) = alice.join("bob");
+        let (carol, commit) = alice.join("carol");
+
+        // Apply the commit that adds carol
+        bob.group.process_incoming_message(commit).unwrap();
+
+        let (mut alice_sub_group, welcome) = alice
+            .group
+            .branch(b"subgroup".to_vec(), |p| {
+                if p == bob.group.current_member_signing_identity().unwrap() {
+                    Some(
+                        bob.group
+                            .config
+                            .clone()
+                            .build_client()
+                            .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+                            .unwrap(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+
+        let welcome = welcome.unwrap();
+
+        let mut bob_sub_group = bob
+            .group
+            .join_subgroup(
+                welcome.clone(),
+                Some(&alice_sub_group.export_tree().unwrap()),
+            )
+            .unwrap();
+
+        // Carol can't join
+        assert_matches!(
+            carol
+                .group
+                .join_subgroup(welcome, Some(&alice_sub_group.export_tree().unwrap())),
+            Err(_)
+        );
+
+        // Alice and Bob can still talk
+        let (commit, _) = alice_sub_group.commit_proposals(vec![], vec![]).unwrap();
+
+        bob_sub_group.process_incoming_message(commit).unwrap();
+    }
+
+    fn joining_group_fails_if_unsupported<F>(f: F)
+    where
+        F: FnOnce(InMemoryClientConfig) -> InMemoryClientConfig,
+    {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let res = alice_group.join_with_custom_config("alice", f);
+
+        assert_matches!(
+            res,
+            Err(GroupError::UnsupportedProtocolVersionOrCipherSuite(
+                TEST_PROTOCOL_VERSION,
+                TEST_CIPHER_SUITE
+            ))
+        );
+    }
+
+    #[test]
+    fn joining_group_fails_if_protocol_version_is_not_supported() {
+        joining_group_fails_if_unsupported(|config| config.clear_protocol_versions());
+    }
+
+    #[test]
+    fn joining_group_fails_if_cipher_suite_is_not_supported() {
+        joining_group_fails_if_unsupported(|config| config.clear_cipher_suites());
+    }
+
+    #[test]
+    fn member_can_see_sender_creds() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let (mut bob_group, _) = alice_group.join("bob");
+
+        let bob_msg = b"I'm Bob";
+
+        let msg = bob_group
+            .group
+            .encrypt_application_message(bob_msg, vec![])
+            .unwrap();
+
+        let received_by_alice = alice_group.group.process_incoming_message(msg).unwrap();
+
+        assert_eq!(
+            Some(bob_group.group.current_member_index()),
+            received_by_alice.sender_index
+        );
+    }
+
+    #[test]
+    fn members_of_a_group_have_identical_authentication_secrets() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let (bob_group, _) = alice_group.join("bob");
+
+        assert_eq!(
+            alice_group.group.authentication_secret().unwrap(),
+            bob_group.group.authentication_secret().unwrap()
+        );
+    }
+
+    #[test]
+    fn member_cannot_decrypt_same_message_twice() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let (mut bob_group, _) = alice_group.join("bob");
+
+        let message = alice_group
+            .group
+            .encrypt_application_message(b"foobar", Vec::new())
+            .unwrap();
+
+        let received_message = bob_group
+            .group
+            .process_incoming_message(message.clone())
+            .unwrap();
+
+        assert_matches!(
+            received_message.event,
+            Event::ApplicationMessage(data) if data == b"foobar"
+        );
+
+        let res = bob_group.group.process_incoming_message(message);
+
+        assert_matches!(
+            res,
+            Err(GroupError::EpochError(EpochError::SecretTreeError(
+                SecretTreeError::KeyMissing(_)
+            )))
+        );
     }
 }

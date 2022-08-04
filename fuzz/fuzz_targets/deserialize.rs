@@ -1,9 +1,6 @@
 #![no_main]
+use aws_mls::{group::framing::MLSMessage, tls_codec::Deserialize};
 use libfuzzer_sys::fuzz_target;
-
-use aws_mls::session::MLSMessage;
-
-use aws_mls::tls_codec::Deserialize;
 
 fuzz_target!(|data: &[u8]| {
     let _ = MLSMessage::tls_deserialize(&mut &*data);

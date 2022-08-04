@@ -10,15 +10,20 @@ use aws_mls::client_config::{
 };
 use aws_mls::credential::Credential;
 use aws_mls::extension::{Extension, ExtensionList};
+use aws_mls::group::framing::MLSMessage;
+use aws_mls::group::{Group, StateUpdate};
+
+use aws_mls::key_package::KeyPackage;
 use aws_mls::message::Event;
-use aws_mls::session::{ExternalPskId, Psk, Session, StateUpdate};
+use aws_mls::psk::{ExternalPskId, Psk};
 use aws_mls::signing_identity::SigningIdentity;
-use aws_mls::tls_codec::Serialize;
+use aws_mls::tls_codec::{Deserialize, Serialize};
 use aws_mls::ProtocolVersion;
 
 use clap::Parser;
 use std::convert::TryFrom;
 use std::net::IpAddr;
+use std::ops::Deref;
 use std::sync::Mutex;
 use tonic::{transport::Server, Code::Aborted, Request, Response, Status};
 
@@ -104,7 +109,7 @@ impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
 #[derive(Default)]
 pub struct MlsClientImpl {
     clients: Mutex<Vec<Client<InMemoryClientConfig>>>,
-    sessions: Mutex<Vec<Session<InMemoryClientConfig>>>,
+    groups: Mutex<Vec<Group<InMemoryClientConfig>>>,
     configs: Mutex<Vec<InMemoryClientConfig>>,
 }
 
@@ -211,8 +216,8 @@ impl MlsClient for MlsClientImpl {
             .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
             .build_client();
 
-        let session = creator
-            .create_session_with_group_id(
+        let group = creator
+            .create_group_with_id(
                 ProtocolVersion::Mls10,
                 cipher_suite,
                 request_ref.group_id,
@@ -220,13 +225,13 @@ impl MlsClient for MlsClientImpl {
             )
             .map_err(abort)?;
 
-        let mut sessions = self.sessions.lock().unwrap();
-        sessions.push(session);
+        let mut groups = self.groups.lock().unwrap();
+        groups.push(group);
 
         self.configs.lock().unwrap().push(creator.config);
 
         Ok(Response::new(CreateGroupResponse {
-            state_id: sessions.len() as u32,
+            state_id: groups.len() as u32,
         }))
     }
 
@@ -270,12 +275,14 @@ impl MlsClient for MlsClientImpl {
         let clients = self.clients.lock().unwrap();
         let client_index = request_ref.transaction_id as usize - 1;
 
-        let session = clients[client_index]
-            .join_session(None, &request_ref.welcome)
+        let welcome_msg = MLSMessage::tls_deserialize(&mut &*request_ref.welcome).map_err(abort)?;
+
+        let group = clients[client_index]
+            .join_group(None, welcome_msg)
             .map_err(abort)?;
 
-        let mut sessions = self.sessions.lock().unwrap();
-        sessions.push(session);
+        let mut groups = self.groups.lock().unwrap();
+        groups.push(group);
 
         self.configs
             .lock()
@@ -283,7 +290,7 @@ impl MlsClient for MlsClientImpl {
             .push(clients[client_index].config.clone());
 
         Ok(Response::new(JoinGroupResponse {
-            state_id: sessions.len() as u32,
+            state_id: groups.len() as u32,
         }))
     }
 
@@ -324,12 +331,13 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<ProtectRequest>,
     ) -> Result<tonic::Response<ProtectResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let mut sessions = self.sessions.lock().unwrap();
+        let mut groups = self.groups.lock().unwrap();
 
-        let ciphertext = sessions
+        let ciphertext = groups
             .get_mut(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
-            .encrypt_application_data(&request_ref.application_data, vec![])
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .encrypt_application_message(&request_ref.application_data, vec![])
+            .and_then(|m| Ok(m.tls_serialize_detached()?))
             .map_err(abort)?;
 
         Ok(Response::new(ProtectResponse { ciphertext }))
@@ -340,12 +348,15 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<UnprotectRequest>,
     ) -> Result<tonic::Response<UnprotectResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let mut sessions = self.sessions.lock().unwrap();
+        let mut groups = self.groups.lock().unwrap();
 
-        let message = sessions
+        let ciphertext =
+            MLSMessage::tls_deserialize(&mut &*request_ref.ciphertext).map_err(abort)?;
+
+        let message = groups
             .get_mut(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
-            .process_incoming_bytes(&request_ref.ciphertext)
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .process_incoming_message(ciphertext)
             .map_err(abort)?;
 
         let application_data = match message.event {
@@ -372,7 +383,7 @@ impl MlsClient for MlsClientImpl {
             .lock()
             .unwrap()
             .get(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
             .secret_store()
             .insert(
                 ExternalPskId(request_ref.psk_id.clone()),
@@ -387,12 +398,20 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<AddProposalRequest>,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let mut sessions = self.sessions.lock().unwrap();
+        let mut groups = self.groups.lock().unwrap();
 
-        let proposal_packet = sessions
+        let group = groups
             .get_mut(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
-            .propose_add(&request_ref.key_package, vec![])
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
+
+        let key_package =
+            KeyPackage::tls_deserialize(&mut &*request_ref.key_package).map_err(abort)?;
+
+        let add_proposal = group.add_proposal(key_package).map_err(abort)?;
+
+        let proposal_packet = group
+            .proposal_message(add_proposal, vec![])
+            .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -405,12 +424,17 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<UpdateProposalRequest>,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let mut sessions = self.sessions.lock().unwrap();
+        let mut groups = self.groups.lock().unwrap();
 
-        let proposal_packet = sessions
+        let group = groups
             .get_mut(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
-            .propose_update(vec![])
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
+
+        let update_proposal = group.update_proposal().map_err(abort)?;
+
+        let proposal_packet = group
+            .proposal_message(update_proposal, vec![])
+            .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -423,17 +447,22 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<RemoveProposalRequest>,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let mut sessions = self.sessions.lock().unwrap();
+        let mut groups = self.groups.lock().unwrap();
 
-        let removed = sessions
+        let removed = groups
             .get(request_ref.removed as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "removed has no session"))?
+            .ok_or_else(|| Status::new(Aborted, "removed has no group"))?
             .current_member_index();
 
-        let proposal_packet = sessions
+        let group = groups
             .get_mut(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no session with such index"))?
-            .propose_remove(removed, vec![])
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
+
+        let remove_proposal = group.remove_proposal(removed).map_err(abort)?;
+
+        let proposal_packet = group
+            .proposal_message(remove_proposal, vec![])
+            .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -446,12 +475,19 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<PskProposalRequest>,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
         let request_ref = request.into_inner();
-        let mut sessions = self.sessions.lock().unwrap();
+        let mut groups = self.groups.lock().unwrap();
 
-        let proposal_packet = sessions
+        let group = groups
             .get_mut(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
-            .propose_psk(ExternalPskId(request_ref.psk_id), vec![])
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
+
+        let psk_proposal = group
+            .psk_proposal(ExternalPskId(request_ref.psk_id))
+            .map_err(abort)?;
+
+        let proposal_packet = group
+            .proposal_message(psk_proposal, vec![])
+            .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -472,7 +508,7 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<GroupContextExtensionsProposalRequest>,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
         let request_ref = request.into_inner();
-        let mut sessions = self.sessions.lock().unwrap();
+        let mut groups = self.groups.lock().unwrap();
 
         let extensions = request_ref
             .extension_type
@@ -484,10 +520,16 @@ impl MlsClient for MlsClientImpl {
             })
             .collect::<Vec<_>>();
 
-        let proposal_packet = sessions
+        let group = groups
             .get_mut(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
-            .propose_group_context_extension_update(ExtensionList::from(extensions), vec![])
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
+
+        let group_context_proposal =
+            group.group_context_extensions_proposal(ExtensionList::from(extensions));
+
+        let proposal_packet = group
+            .proposal_message(group_context_proposal, vec![])
+            .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -500,28 +542,35 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<CommitRequest>,
     ) -> Result<tonic::Response<CommitResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let session_index = request_ref.state_id as usize - 1;
-        let mut sessions = self.sessions.lock().unwrap();
+        let group_index = request_ref.state_id as usize - 1;
+        let mut groups = self.groups.lock().unwrap();
 
-        for proposal in &request_ref.by_reference {
-            sessions
-                .get_mut(session_index)
-                .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
-                .process_incoming_bytes(proposal)
+        for proposal_bytes in &request_ref.by_reference {
+            let proposal =
+                MLSMessage::tls_deserialize(&mut proposal_bytes.deref()).map_err(abort)?;
+
+            groups
+                .get_mut(group_index)
+                .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+                .process_incoming_message(proposal)
                 .map_err(abort)?;
         }
 
         // TODO: handle by value
 
-        let commit = sessions
-            .get_mut(session_index)
-            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
-            .commit(vec![], vec![])
+        let (commit, welcome) = groups
+            .get_mut(group_index)
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .commit_proposals(vec![], vec![])
             .map_err(abort)?;
 
         let resp = CommitResponse {
-            commit: commit.commit_packet,
-            welcome: commit.welcome_packet.unwrap_or_default(),
+            commit: commit.tls_serialize_detached().map_err(abort)?,
+            welcome: welcome
+                .map(|w| w.tls_serialize_detached())
+                .transpose()
+                .map_err(abort)?
+                .unwrap_or_default(),
         };
 
         Ok(Response::new(resp))
@@ -532,21 +581,25 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<HandleCommitRequest>,
     ) -> Result<tonic::Response<HandleCommitResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let session_index = request_ref.state_id as usize - 1;
-        let mut sessions = self.sessions.lock().unwrap();
+        let group_index = request_ref.state_id as usize - 1;
+        let mut groups = self.groups.lock().unwrap();
 
         for proposal in &request_ref.proposal {
-            sessions
-                .get_mut(session_index)
-                .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
-                .process_incoming_bytes(proposal)
+            let proposal = MLSMessage::tls_deserialize(&mut proposal.deref()).map_err(abort)?;
+
+            groups
+                .get_mut(group_index)
+                .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+                .process_incoming_message(proposal)
                 .map_err(abort)?;
         }
 
-        let message = sessions
-            .get_mut(session_index)
-            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
-            .process_incoming_bytes(&request_ref.commit)
+        let commit = MLSMessage::tls_deserialize(&mut &*request_ref.commit).map_err(abort)?;
+
+        let message = groups
+            .get_mut(group_index)
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .process_incoming_message(commit)
             .map_err(abort)?;
 
         match message.event {
@@ -562,13 +615,13 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<HandlePendingCommitRequest>,
     ) -> Result<tonic::Response<HandleCommitResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let session_index = request_ref.state_id as usize - 1;
-        let mut sessions = self.sessions.lock().unwrap();
+        let group_index = request_ref.state_id as usize - 1;
+        let mut groups = self.groups.lock().unwrap();
 
-        let state_update = sessions
-            .get_mut(session_index)
-            .ok_or_else(|| Status::new(Aborted, "no session with such index."))?
-            .apply_pending_commit()
+        let state_update = groups
+            .get_mut(group_index)
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .process_pending_commit()
             .map_err(abort)?;
 
         Ok(Response::new(

@@ -1,16 +1,11 @@
-use std::collections::HashMap;
-
 use aws_mls::bench_utils::group_functions::{commit_groups, create_group};
-
+use aws_mls::cipher_suite::CipherSuite;
+use aws_mls::client_config::InMemoryClientConfig;
+use aws_mls::group::Group;
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 };
-
-use aws_mls::client_config::InMemoryClientConfig;
-
-use aws_mls::session::Session;
-
-use aws_mls::cipher_suite::CipherSuite;
+use std::collections::HashMap;
 
 fn commit_setup(c: &mut Criterion) {
     let mut group_commit = c.benchmark_group("group_commit");
@@ -37,7 +32,7 @@ fn commit_setup(c: &mut Criterion) {
 fn bench_group_commit(
     bench_group: &mut BenchmarkGroup<WallTime>,
     cipher_suite: CipherSuite,
-    container: HashMap<usize, Vec<Session<InMemoryClientConfig>>>,
+    container: HashMap<usize, Vec<Group<InMemoryClientConfig>>>,
 ) {
     for (key, mut value) in container {
         bench_group.bench_with_input(
@@ -45,12 +40,10 @@ fn bench_group_commit(
             &key,
             |b, _| {
                 b.iter(|| {
-                    let commit = value[0].commit(Vec::new(), Vec::new()).unwrap();
-                    value[0].apply_pending_commit().unwrap();
+                    let (commit, _) = value[0].commit_proposals(Vec::new(), Vec::new()).unwrap();
 
-                    value[1]
-                        .process_incoming_bytes(&commit.commit_packet)
-                        .unwrap();
+                    value[0].process_pending_commit().unwrap();
+                    value[1].process_incoming_message(commit).unwrap();
                 })
             },
         );

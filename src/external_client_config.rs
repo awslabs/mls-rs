@@ -6,7 +6,6 @@ use crate::{
     },
     credential::{CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
     extension::ExtensionType,
-    group::ExternalGroupConfig,
     keychain::{InMemoryKeychain, Keychain},
     signing_identity::SigningIdentity,
     tree_kem::Capabilities,
@@ -27,7 +26,6 @@ pub trait ExternalClientConfig {
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
     fn credential_validator(&self) -> Self::CredentialValidator;
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
-    fn signatures_are_checked(&self) -> bool;
     fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter;
 
     fn capabilities(&self) -> Capabilities {
@@ -53,7 +51,6 @@ pub struct InMemoryExternalClientConfig {
     cipher_suites: Vec<CipherSuite>,
     external_signing_keys: HashMap<Vec<u8>, PublicKey>,
     credential_types: Vec<CredentialType>,
-    signatures_checked: bool,
     make_proposal_filter: MakeProposalFilter,
 }
 
@@ -66,7 +63,6 @@ impl InMemoryExternalClientConfig {
             cipher_suites: CipherSuite::all().collect(),
             external_signing_keys: Default::default(),
             credential_types: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
-            signatures_checked: true,
             make_proposal_filter: Default::default(),
         }
     }
@@ -123,14 +119,6 @@ impl InMemoryExternalClientConfig {
         self
     }
 
-    #[must_use]
-    pub fn check_signatures(self, checked: bool) -> Self {
-        Self {
-            signatures_checked: checked,
-            ..self
-        }
-    }
-
     pub fn build_client(self) -> ExternalClient<Self> {
         ExternalClient::new(self)
     }
@@ -171,50 +159,11 @@ impl ExternalClientConfig for InMemoryExternalClientConfig {
         self.external_signing_keys.get(external_key_id).cloned()
     }
 
-    fn signatures_are_checked(&self) -> bool {
-        self.signatures_checked
-    }
-
     fn supported_credentials(&self) -> Vec<CredentialType> {
         self.credential_types.clone()
     }
 
     fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
         (self.make_proposal_filter.0)(init)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct ExternalClientGroupConfig<C> {
-    client_config: C,
-    signatures_checked: bool,
-}
-
-impl<C> ExternalClientGroupConfig<C> {
-    pub fn new(client_config: C) -> Self {
-        Self {
-            client_config,
-            signatures_checked: true,
-        }
-    }
-}
-
-impl<C> ExternalGroupConfig for ExternalClientGroupConfig<C>
-where
-    C: ExternalClientConfig,
-{
-    type CredentialValidator = C::CredentialValidator;
-    type ProposalFilter = C::ProposalFilter;
-
-    fn credential_validator(&self) -> Self::CredentialValidator {
-        self.client_config.credential_validator()
-    }
-
-    fn signatures_are_checked(&self) -> bool {
-        self.signatures_checked
-    }
-
-    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
-        self.client_config.proposal_filter(init)
     }
 }

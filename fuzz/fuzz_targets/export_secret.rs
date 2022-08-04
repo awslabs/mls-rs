@@ -1,17 +1,11 @@
 #![no_main]
+use aws_mls::cipher_suite::CipherSuite;
+use aws_mls::client_config::InMemoryClientConfig;
+use aws_mls::{bench_utils::group_functions::create_group, group::Group};
 use libfuzzer_sys::{arbitrary, fuzz_target};
-
 use once_cell::sync::Lazy;
 
-use aws_mls::bench_utils::group_functions::create_group;
-
-use aws_mls::session::Session;
-
-use aws_mls::client_config::InMemoryClientConfig;
-
-use aws_mls::cipher_suite::CipherSuite;
-
-static GLOBAL_DATA: Lazy<Vec<Session<InMemoryClientConfig>>> = Lazy::new(|| {
+static GLOBAL_DATA: Lazy<Vec<Group<InMemoryClientConfig>>> = Lazy::new(|| {
     let cipher_suite = CipherSuite::Curve25519Aes128;
     let (_, container) = create_group(cipher_suite, 2, false);
 

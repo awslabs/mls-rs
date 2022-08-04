@@ -265,7 +265,7 @@ mod tests {
             message_verifier::decrypt_ciphertext,
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_group_custom, test_member, TestGroup},
-            Content, Group, GroupError, MLSMessagePayload, MLSPlaintext, Sender,
+            Content, Group, GroupError, MLSPlaintext, Sender,
         },
         key_package::KeyPackageGeneration,
         signer::{Signable, Signer},
@@ -285,7 +285,7 @@ mod tests {
 
     fn make_signed_plaintext(group: &mut Group<InMemoryClientConfig>) -> MLSPlaintext {
         group
-            .commit_proposals(vec![], None, vec![])
+            .commit_proposals(vec![], vec![])
             .unwrap()
             .0
             .into_plaintext()
@@ -294,7 +294,7 @@ mod tests {
 
     fn make_signed_ciphertext(group: &mut Group<InMemoryClientConfig>) -> MLSCiphertext {
         group
-            .commit_proposals(vec![], None, vec![])
+            .commit_proposals(vec![], vec![])
             .unwrap()
             .0
             .into_ciphertext()
@@ -348,19 +348,13 @@ mod tests {
 
             let (_, welcome) = alice
                 .group
-                .commit_proposals(vec![proposal], None, vec![])
+                .commit_proposals(vec![proposal], vec![])
                 .unwrap();
-
-            let welcome = match welcome.unwrap().payload {
-                MLSMessagePayload::Welcome(w) => w,
-                _ => panic!("Expected Welcome message"),
-            };
 
             alice.group.process_pending_commit().unwrap();
 
             let bob = Group::join(
-                TEST_PROTOCOL_VERSION,
-                welcome,
+                welcome.unwrap(),
                 None,
                 test_config(
                     bob_signing_key,
@@ -627,7 +621,7 @@ mod tests {
         let res = verify_plaintext_authentication(
             message,
             Some(&env.alice.group.key_schedule),
-            Some(LeafIndex::new(env.alice.group.current_user_index())),
+            Some(LeafIndex::new(env.alice.group.current_member_index())),
             &env.alice.group.core.current_tree,
             env.alice.group.context(),
             &[],

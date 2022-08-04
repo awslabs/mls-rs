@@ -1,16 +1,10 @@
-use std::collections::HashMap;
-
-use aws_mls::bench_utils::group_functions::create_group;
-
+use aws_mls::cipher_suite::CipherSuite;
+use aws_mls::client_config::InMemoryClientConfig;
+use aws_mls::{bench_utils::group_functions::create_group, group::Group};
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 };
-
-use aws_mls::client_config::InMemoryClientConfig;
-
-use aws_mls::session::Session;
-
-use aws_mls::cipher_suite::CipherSuite;
+use std::collections::HashMap;
 
 fn group_setup(c: &mut Criterion) {
     let mut group_serialize = c.benchmark_group("group_serialize");
@@ -33,7 +27,7 @@ fn group_setup(c: &mut Criterion) {
 fn bench_group_serialize(
     bench_group: &mut BenchmarkGroup<WallTime>,
     cipher_suite: CipherSuite,
-    container: HashMap<usize, Vec<Session<InMemoryClientConfig>>>,
+    container: HashMap<usize, Vec<Group<InMemoryClientConfig>>>,
 ) {
     for (key, value) in container {
         bench_group.bench_with_input(

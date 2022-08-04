@@ -158,7 +158,7 @@ pub(crate) mod test_utils {
         custom: F,
     ) -> KeyPackage
     where
-        F: Fn(
+        F: FnOnce(
             &mut KeyPackageGenerator<SecretKey, PassthroughCredentialValidator>,
         ) -> KeyPackageGeneration,
     {
