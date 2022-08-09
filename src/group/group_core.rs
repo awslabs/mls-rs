@@ -1,29 +1,19 @@
 use std::collections::HashMap;
 
+use ferriscrypt::hpke::kem::HpkeSecretKey;
+
 use crate::{
     cipher_suite::CipherSuite,
-    extension::ExternalSendersExt,
-    group::{
-        GroupContext, GroupError, ProposalCache, ProposalSetEffects, ProvisionalPublicState,
-        TreeKemPublic,
-    },
-    signing_identity::SigningIdentity,
-    tree_kem::node::LeafIndex,
+    group::{GroupContext, ProposalCache, TreeKemPublic},
     ProtocolVersion,
 };
 
 use super::{
-    framing::{ContentType, MLSMessage, MLSMessagePayload, MLSPlaintext, WireFormat},
-    key_schedule::KeySchedule,
-    message_signature::MLSAuthenticatedContent,
-    message_verifier::verify_plaintext_authentication,
-    proposal::ReInit,
-    proposal_cache::CachedProposal,
-    transcript_hash::InterimTranscriptHash,
-    ProposalRef,
+    confirmation_tag::ConfirmationTag, proposal::ReInit, proposal_cache::CachedProposal,
+    transcript_hash::InterimTranscriptHash, CommitGeneration, ProposalRef,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct GroupCore {
     pub(crate) proposals: ProposalCache,
@@ -31,6 +21,10 @@ pub struct GroupCore {
     pub(crate) current_tree: TreeKemPublic,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
     pub(crate) pending_reinit: Option<ReInit>,
+    // TODO: HpkePublicKey does not have Eq and Hash
+    pub(crate) pending_updates: HashMap<Vec<u8>, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
+    pub(crate) pending_commit: Option<CommitGeneration>,
+    pub(crate) confirmation_tag: ConfirmationTag,
 }
 
 impl GroupCore {
@@ -38,6 +32,7 @@ impl GroupCore {
         context: GroupContext,
         current_tree: TreeKemPublic,
         interim_transcript_hash: InterimTranscriptHash,
+        confirmation_tag: ConfirmationTag,
     ) -> Self {
         Self {
             proposals: ProposalCache::new(
@@ -49,14 +44,22 @@ impl GroupCore {
             current_tree,
             interim_transcript_hash,
             pending_reinit: None,
+            pending_updates: Default::default(),
+            pending_commit: None,
+            confirmation_tag,
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn import(
         context: GroupContext,
         current_tree: TreeKemPublic,
         interim_transcript_hash: InterimTranscriptHash,
         proposals: HashMap<ProposalRef, CachedProposal>,
+        pending_reinit: Option<ReInit>,
+        pending_updates: HashMap<Vec<u8>, HpkeSecretKey>,
+        pending_commit: Option<CommitGeneration>,
+        confirmation_tag: ConfirmationTag,
     ) -> Self {
         Self {
             proposals: ProposalCache::import(
@@ -68,67 +71,11 @@ impl GroupCore {
             context,
             current_tree,
             interim_transcript_hash,
-            pending_reinit: None,
+            pending_reinit,
+            pending_updates,
+            pending_commit,
+            confirmation_tag,
         }
-    }
-
-    pub(super) fn check_metadata(&self, message: &MLSMessage) -> Result<(), GroupError> {
-        if message.version != self.protocol_version() {
-            return Err(GroupError::InvalidProtocolVersion(
-                self.protocol_version(),
-                message.version,
-            ));
-        }
-
-        if let Some((group_id, epoch, content_type, wire_format)) = match &message.payload {
-            MLSMessagePayload::Plain(plaintext) => Some((
-                &plaintext.content.group_id,
-                plaintext.content.epoch,
-                plaintext.content.content_type(),
-                WireFormat::Plain,
-            )),
-            MLSMessagePayload::Cipher(ciphertext) => Some((
-                &ciphertext.group_id,
-                ciphertext.epoch,
-                ciphertext.content_type,
-                WireFormat::Cipher,
-            )),
-            _ => None,
-        } {
-            if group_id != &self.context.group_id {
-                return Err(GroupError::InvalidGroupId(group_id.clone()));
-            }
-
-            // Proposal and commit messages must be sent in the current epoch
-            if (content_type == ContentType::Proposal || content_type == ContentType::Commit)
-                && epoch != self.context.epoch
-            {
-                return Err(GroupError::InvalidEpoch(epoch));
-            }
-
-            // Unencrypted application messages are not allowed
-            if wire_format == WireFormat::Plain && content_type == ContentType::Application {
-                return Err(GroupError::UnencryptedApplicationMessage);
-            }
-        }
-
-        Ok(())
-    }
-
-    pub(super) fn verify_plaintext_authentication(
-        &mut self,
-        key_schedule: Option<&KeySchedule>,
-        self_index: Option<LeafIndex>,
-        message: MLSPlaintext,
-    ) -> Result<MLSAuthenticatedContent, GroupError> {
-        verify_plaintext_authentication(
-            message,
-            key_schedule,
-            self_index,
-            &self.current_tree,
-            &self.context,
-            &self.external_signers(),
-        )
     }
 
     #[inline(always)]
@@ -139,57 +86,5 @@ impl GroupCore {
     #[inline(always)]
     pub(super) fn protocol_version(&self) -> ProtocolVersion {
         self.context.protocol_version
-    }
-
-    pub(super) fn apply_proposals(
-        &self,
-        proposals: ProposalSetEffects,
-    ) -> Result<ProvisionalPublicState, GroupError> {
-        if self.pending_reinit.is_some() {
-            return Err(GroupError::GroupUsedAfterReInit);
-        }
-
-        let mut provisional_group_context = self.context.clone();
-
-        // Determine if a path update is required
-        let path_update_required = proposals.path_update_required();
-
-        // Locate a group context extension
-        if let Some(group_context_extensions) = proposals.group_context_ext {
-            // Group context extensions are a full replacement and not a merge
-            provisional_group_context.extensions = group_context_extensions;
-        }
-
-        Ok(ProvisionalPublicState {
-            public_tree: proposals.tree,
-            added_leaves: proposals
-                .adds
-                .into_iter()
-                .zip(proposals.added_leaf_indexes)
-                .collect(),
-            removed_leaves: proposals.removed_leaves,
-            updated_leaves: proposals
-                .updates
-                .iter()
-                .map(|&(leaf_index, _)| leaf_index)
-                .collect(),
-            epoch: self.context.epoch + 1,
-            path_update_required,
-            group_context: provisional_group_context,
-            psks: proposals.psks,
-            reinit: proposals.reinit,
-            external_init: proposals.external_init,
-            rejected_proposals: proposals.rejected_proposals,
-        })
-    }
-
-    pub fn external_signers(&self) -> Vec<SigningIdentity> {
-        self.context
-            .extensions
-            .get_extension::<ExternalSendersExt>()
-            .unwrap_or(None)
-            .map_or(vec![], |extern_senders_ext| {
-                extern_senders_ext.allowed_senders
-            })
     }
 }

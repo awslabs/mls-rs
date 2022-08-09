@@ -177,25 +177,7 @@ impl<'a> TreeKem<'a> {
 
         let filtered_direct_path_co_path = self
             .tree_kem_public
-            .nodes
-            .filtered_direct_path_co_path(sender_index)?;
-
-        let removed_key_package = self.tree_kem_public.apply_update_path(
-            sender_index,
-            update_path,
-            &filtered_direct_path_co_path,
-        )?;
-
-        self.tree_kem_public.index.remove(&removed_key_package);
-
-        self.tree_kem_public
-            .index
-            .insert(sender_index, &update_path.leaf_node)?;
-
-        // Verify the parent hash of the new sender leaf node and update the parent hash values
-        // in the local tree
-        self.tree_kem_public
-            .update_parent_hashes(sender_index, Some(update_path))?;
+            .apply_update_path(sender_index, update_path)?;
 
         // Update the tree hash to get context for decryption
         context.tree_hash = self.tree_kem_public.tree_hash()?;

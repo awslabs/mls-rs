@@ -112,7 +112,7 @@ pub enum RatchetTreeError {
 pub struct TreeKemPublic {
     pub cipher_suite: CipherSuite,
     index: TreeIndex,
-    nodes: NodeVec,
+    pub(crate) nodes: NodeVec,
     tree_hashes: TreeHashes,
 }
 
@@ -325,13 +325,11 @@ impl TreeKemPublic {
             })
     }
 
-    // Swap in a new key package at index `sender` and return the old key package
-    fn apply_update_path(
+    pub fn apply_update_path(
         &mut self,
         sender: LeafIndex,
         update_path: &ValidatedUpdatePath,
-        filtered_direct_path_co_path: &[(u32, u32)],
-    ) -> Result<LeafNode, RatchetTreeError> {
+    ) -> Result<Vec<(u32, u32)>, RatchetTreeError> {
         // Install the new leaf node
         let existing_leaf = self.nodes.borrow_as_leaf_mut(sender)?;
         let original_leaf_node = existing_leaf.clone();
@@ -345,9 +343,18 @@ impl TreeKemPublic {
             .map(|update| &update.public_key)
             .collect::<Vec<_>>();
 
-        self.apply_parent_node_updates(updated_pks, filtered_direct_path_co_path)?;
+        let filtered_direct_path_co_path = self.nodes.filtered_direct_path_co_path(sender)?;
 
-        Ok(original_leaf_node)
+        self.apply_parent_node_updates(updated_pks, &filtered_direct_path_co_path)?;
+
+        self.index.remove(&original_leaf_node);
+        self.index.insert(sender, &update_path.leaf_node)?;
+
+        // Verify the parent hash of the new sender leaf node and update the parent hash values
+        // in the local tree
+        self.update_parent_hashes(sender, Some(update_path))?;
+
+        Ok(filtered_direct_path_co_path)
     }
 
     fn apply_parent_node_updates(
@@ -361,27 +368,6 @@ impl TreeKemPublic {
             .try_for_each(|(pub_key, (node_index, _))| {
                 self.update_node(pub_key.clone(), *node_index)
             })
-    }
-
-    pub fn apply_self_update(
-        &mut self,
-        update_path: &ValidatedUpdatePath,
-        sender: LeafIndex,
-    ) -> Result<(), RatchetTreeError> {
-        let existing_key_package = self.apply_update_path(
-            sender,
-            update_path,
-            &self.nodes.filtered_direct_path_co_path(sender)?,
-        )?;
-
-        self.index.remove(&existing_key_package);
-        self.index.insert(sender, &update_path.leaf_node)?;
-
-        // Verify the parent hash of the new sender leaf node and update the parent hash values
-        // in the local tree
-        self.update_parent_hashes(sender, Some(update_path))?;
-
-        Ok(())
     }
 
     pub fn direct_path_keys(

@@ -4,9 +4,8 @@ use aws_mls::client::Client;
 use aws_mls::client_config::{InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECONDS};
 use aws_mls::credential::Credential;
 use aws_mls::extension::ExtensionList;
-use aws_mls::group::{Group, GroupError};
+use aws_mls::group::{Event, Group, GroupError};
 use aws_mls::key_package::KeyPackage;
-use aws_mls::message::Event;
 use aws_mls::signing_identity::SigningIdentity;
 use aws_mls::ProtocolVersion;
 use ferriscrypt::rand::SecureRng;
@@ -95,7 +94,7 @@ fn test_create(
     // Bob receives the welcome message and joins the group
     let bob_group = bob.join_group(Some(&tree), welcome.unwrap()).unwrap();
 
-    assert!(alice_group == bob_group);
+    assert!(Group::equal_group_state(&alice_group, &bob_group));
 }
 
 #[test]
@@ -211,7 +210,7 @@ fn get_test_groups_clients(
         .collect::<Vec<_>>();
 
     for one_receiver in &receiver_groups {
-        assert_eq!(&creator_group, one_receiver)
+        assert!(Group::equal_group_state(&creator_group, one_receiver));
     }
 
     (creator_group, receiver_groups, receiver_clients)
@@ -369,7 +368,7 @@ fn test_empty_commits(
                     .unwrap();
             }
 
-            assert_eq!(one_receiver, &creator_group);
+            assert!(Group::equal_group_state(one_receiver, &creator_group));
         }
     }
 }
@@ -456,7 +455,7 @@ fn test_update_proposals(
             assert_eq!(update.epoch, (i as u64) + 2);
             assert!(update.added.is_empty());
             assert!(update.removed.is_empty());
-            assert_eq!(receiver, &creator_group);
+            assert!(Group::equal_group_state(receiver, &creator_group));
         }
     }
 }
@@ -537,7 +536,7 @@ fn test_remove_proposals(
         receiver_groups.retain(|group| group.current_member_index() != to_remove_index);
 
         for one_group in receiver_groups.iter() {
-            assert_eq!(one_group, &creator_group);
+            assert!(Group::equal_group_state(one_group, &creator_group))
         }
     }
 }

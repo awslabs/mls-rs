@@ -34,7 +34,14 @@ pub enum EpochError {
 }
 
 #[derive(
-    Debug, Clone, TlsSerialize, TlsSize, TlsDeserialize, serde::Serialize, serde::Deserialize,
+    Debug,
+    Clone,
+    TlsSerialize,
+    TlsSize,
+    TlsDeserialize,
+    serde::Serialize,
+    serde::Deserialize,
+    PartialEq,
 )]
 pub(crate) struct Epoch {
     pub context: GroupContext,
@@ -77,15 +84,6 @@ struct SenderDataSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 impl From<Vec<u8>> for SenderDataSecret {
     fn from(bytes: Vec<u8>) -> Self {
         Self(bytes)
-    }
-}
-
-impl PartialEq for Epoch {
-    fn eq(&self, other: &Self) -> bool {
-        self.context == other.context
-            && self.self_index == other.self_index
-            && self.secrets == other.secrets
-            && self.signature_public_keys == other.signature_public_keys
     }
 }
 

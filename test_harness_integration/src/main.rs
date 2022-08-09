@@ -11,10 +11,9 @@ use aws_mls::client_config::{
 use aws_mls::credential::Credential;
 use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::group::framing::MLSMessage;
-use aws_mls::group::{Group, StateUpdate};
+use aws_mls::group::{Event, Group, StateUpdate};
 
 use aws_mls::key_package::KeyPackage;
-use aws_mls::message::Event;
 use aws_mls::psk::{ExternalPskId, Psk};
 use aws_mls::signing_identity::SigningIdentity;
 use aws_mls::tls_codec::{Deserialize, Serialize};

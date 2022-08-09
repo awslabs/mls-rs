@@ -293,8 +293,8 @@ mod tests {
         group::{
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_group_custom_config},
+            Event,
         },
-        message::Event,
         psk::{ExternalPskId, Psk},
         tree_kem::leaf_node::LeafNodeSource,
     };

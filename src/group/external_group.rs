@@ -2,22 +2,20 @@ use crate::{
     cipher_suite::CipherSuite,
     client_config::ProposalFilterInit,
     extension::ExternalSendersExt,
-    group::{
-        proposal_effects, transcript_hashes, Content, GroupCore, GroupError, InterimTranscriptHash,
-        MLSMessage, MLSMessagePayload, StateUpdate,
-    },
-    message::{Event, ExternalEvent, ProcessedMessage},
+    group::{Content, GroupCore, GroupError, InterimTranscriptHash, MLSMessage, MLSMessagePayload},
     signer::Signer,
     signing_identity::SigningIdentity,
+    tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
     AddProposal, ExternalClientConfig, Proposal, RemoveProposal,
 };
-use tls_codec::Deserialize;
 
 use super::{
-    commit_sender, find_tree,
-    framing::{MLSPlaintext, Sender, WireFormat},
+    confirmation_tag::ConfirmationTag,
+    find_tree,
+    framing::{MLSCiphertext, MLSPlaintext, Sender, WireFormat},
+    message_processor::{EventOrContent, MessageProcessor, ProcessedMessage, ProvisionalState},
     message_signature::MLSAuthenticatedContent,
-    ProposalRef,
+    ExternalEvent, ProposalRef,
 };
 
 #[derive(Clone, Debug)]
@@ -26,7 +24,7 @@ pub struct ExternalGroup<C> {
     core: GroupCore,
 }
 
-impl<C: ExternalClientConfig> ExternalGroup<C> {
+impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub fn join(
         config: C,
         group_info: MLSMessage,
@@ -49,7 +47,12 @@ impl<C: ExternalClientConfig> ExternalGroup<C> {
 
         Ok(Self {
             config,
-            core: GroupCore::new(context, public_tree, interim_transcript_hash),
+            core: GroupCore::new(
+                context,
+                public_tree,
+                interim_transcript_hash,
+                group_info.confirmation_tag,
+            ),
         })
     }
 
@@ -58,135 +61,15 @@ impl<C: ExternalClientConfig> ExternalGroup<C> {
         self.core.cipher_suite()
     }
 
-    pub fn process_incoming_bytes(
-        &mut self,
-        message: &[u8],
-    ) -> Result<ProcessedMessage<ExternalEvent>, GroupError> {
-        self.process_incoming_message(MLSMessage::tls_deserialize(&mut &*message)?)
-    }
-
     pub fn process_incoming_message(
         &mut self,
         message: MLSMessage,
     ) -> Result<ProcessedMessage<ExternalEvent>, GroupError> {
-        self.core.check_metadata(&message)?;
-
-        let wire_format = message.wire_format();
-
-        let auth_content = match message.payload {
-            MLSMessagePayload::Plain(plaintext) => self
-                .core
-                .verify_plaintext_authentication(None, None, plaintext),
-            MLSMessagePayload::Cipher(ciphertext) => {
-                return Ok(ProcessedMessage {
-                    event: ExternalEvent::Ciphertext(ciphertext),
-                    sender_index: None,
-                    authenticated_data: vec![],
-                })
-            }
-            _ => Err(GroupError::UnexpectedMessageType(
-                vec![WireFormat::Plain, WireFormat::Cipher],
-                wire_format,
-            )),
-        }?;
-
-        let authenticated_data = auth_content.content.authenticated_data.clone();
-
-        let sender_index = match auth_content.content.sender {
-            Sender::Member(index) => Some(index.0),
-            _ => None,
-        };
-
-        let message_payload = match auth_content.content.content {
-            Content::Application(data) => Ok(Event::ApplicationMessage(data)),
-            Content::Commit(_) => self.process_commit(auth_content).map(Event::Commit),
-            Content::Proposal(ref proposal) => {
-                let proposal_ref = ProposalRef::from_content(self.cipher_suite(), &auth_content)?;
-
-                self.core.proposals.insert(
-                    proposal_ref,
-                    proposal.clone(),
-                    auth_content.content.sender,
-                );
-
-                Ok(Event::Proposal(proposal.clone()))
-            }
-        }?;
-
-        Ok(ProcessedMessage {
-            event: message_payload.try_into()?,
-            sender_index,
-            authenticated_data,
-        })
-    }
-
-    fn process_commit(
-        &mut self,
-        auth_content: MLSAuthenticatedContent,
-    ) -> Result<StateUpdate, GroupError> {
-        let (commit, sender) = match auth_content.content.content {
-            Content::Commit(ref commit) => Ok((commit, &auth_content.content.sender)),
-            _ => Err(GroupError::NotCommitContent(
-                auth_content.content.content_type(),
-            )),
-        }?;
-
-        let proposal_effects = proposal_effects(
-            None,
-            &self.core.proposals,
-            commit,
-            sender,
-            self.core.context.extensions.get_extension()?,
-            self.config.credential_validator(),
-            &self.core.current_tree,
-            self.config.proposal_filter(ProposalFilterInit::new(
-                &self.core.current_tree,
-                &self.core.context,
-                auth_content.content.sender.clone(),
-            )),
-        )?;
-
-        let mut provisional_state = self.core.apply_proposals(proposal_effects)?;
-
-        let sender = commit_sender(sender, &provisional_state)?;
-
-        provisional_state
-            .public_tree
-            .update_hashes(&mut vec![sender], &[])?;
-
-        let state_update = StateUpdate::from(&provisional_state);
-
-        // Verify that the path value is populated if the proposals vector contains any Update
-        // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
-        if provisional_state.path_update_required && commit.path.is_none() {
-            return Err(GroupError::CommitMissingPath);
-        }
-
-        let mut provisional_group_context = provisional_state.group_context;
-
-        // Bump up the epoch in the provisional group context
-        provisional_group_context.epoch = provisional_state.epoch;
-
-        // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
-        let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
-            self.core.cipher_suite(),
-            &self.core.interim_transcript_hash,
-            &auth_content,
-        )?;
-
-        provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
-        provisional_group_context.tree_hash = provisional_state.public_tree.tree_hash()?;
-
-        self.core.current_tree = provisional_state.public_tree;
-        self.core.context = provisional_group_context;
-        self.core.interim_transcript_hash = interim_transcript_hash;
-        self.core.proposals.clear();
-
-        Ok(state_update)
+        MessageProcessor::process_incoming_message(self, message)
     }
 
     pub fn propose_add<S: Signer>(
-        &self,
+        &mut self,
         proposal: AddProposal,
         authenticated_data: Vec<u8>,
         signing_identity: &SigningIdentity,
@@ -201,7 +84,7 @@ impl<C: ExternalClientConfig> ExternalGroup<C> {
     }
 
     pub fn propose_remove<S: Signer>(
-        &self,
+        &mut self,
         proposal: RemoveProposal,
         authenticated_data: Vec<u8>,
         signing_identity: &SigningIdentity,
@@ -216,7 +99,7 @@ impl<C: ExternalClientConfig> ExternalGroup<C> {
     }
 
     fn propose<S: Signer>(
-        &self,
+        &mut self,
         proposal: Proposal,
         authenticated_data: Vec<u8>,
         signing_identity: &SigningIdentity,
@@ -239,12 +122,18 @@ impl<C: ExternalClientConfig> ExternalGroup<C> {
 
         let auth_content = MLSAuthenticatedContent::new_signed(
             &self.core.context,
-            sender,
-            Content::Proposal(proposal),
+            sender.clone(),
+            Content::Proposal(proposal.clone()),
             signer,
             WireFormat::Plain,
             authenticated_data,
         )?;
+
+        self.core.proposals.insert(
+            ProposalRef::from_content(self.core.cipher_suite(), &auth_content)?,
+            proposal,
+            sender,
+        );
 
         let plaintext = MLSPlaintext {
             content: auth_content.content,
@@ -259,6 +148,70 @@ impl<C: ExternalClientConfig> ExternalGroup<C> {
     }
 }
 
+impl<C> MessageProcessor<ExternalEvent> for ExternalGroup<C>
+where
+    C: ExternalClientConfig + Clone,
+{
+    type ProposalFilter = C::ProposalFilter;
+    type CredentialValidator = C::CredentialValidator;
+
+    fn self_index(&self) -> Option<LeafIndex> {
+        None
+    }
+
+    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
+        self.config.proposal_filter(init)
+    }
+
+    fn verify_plaintext_authentication(
+        &self,
+        message: MLSPlaintext,
+    ) -> Result<EventOrContent<ExternalEvent>, GroupError> {
+        let auth_content = crate::group::message_verifier::verify_plaintext_authentication(
+            message, None, None, &self.core,
+        )?;
+
+        Ok(EventOrContent::Content(auth_content))
+    }
+
+    fn process_ciphertext(
+        &mut self,
+        cipher_text: MLSCiphertext,
+    ) -> Result<EventOrContent<ExternalEvent>, GroupError> {
+        Ok(EventOrContent::Event(ExternalEvent::Ciphertext(
+            cipher_text,
+        )))
+    }
+
+    fn update_key_schedule(
+        &mut self,
+        _secrets: Option<(TreeKemPrivate, PathSecret)>,
+        interim_transcript_hash: InterimTranscriptHash,
+        confirmation_tag: ConfirmationTag,
+        provisional_public_state: ProvisionalState,
+    ) -> Result<(), GroupError> {
+        self.core.context = provisional_public_state.group_context;
+        self.core.proposals.clear();
+        self.core.interim_transcript_hash = interim_transcript_hash;
+        self.core.current_tree = provisional_public_state.public_tree;
+        self.core.confirmation_tag = confirmation_tag;
+
+        Ok(())
+    }
+
+    fn credential_validator(&self) -> Self::CredentialValidator {
+        self.config.credential_validator()
+    }
+
+    fn group_state(&self) -> &GroupCore {
+        &self.core
+    }
+
+    fn group_state_mut(&mut self) -> &mut GroupCore {
+        &mut self.core
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -268,10 +221,9 @@ mod tests {
             proposal::ProposalOrRef,
             proposal_ref::ProposalRef,
             test_utils::{test_group, TestGroup},
-            Content, ExternalGroup, GroupError, MLSMessage, MLSMessagePayload,
+            Content, ExternalEvent, ExternalGroup, GroupError, MLSMessage, MLSMessagePayload,
         },
         key_package::test_utils::test_key_package_with_id,
-        message::ExternalEvent,
         signing_identity::{test_utils::get_test_signing_identity, SigningIdentity},
         tree_kem::node::LeafIndex,
         AddProposal, InMemoryExternalClientConfig, Proposal, ProtocolVersion, RemoveProposal,
@@ -353,7 +305,10 @@ mod tests {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let mut server = make_external_group(&alice);
         let (commit, _) = alice.commit(Vec::new()).unwrap();
+        alice.group.process_pending_commit().unwrap();
         server.process_incoming_message(commit).unwrap();
+
+        assert_eq!(alice.group.core, server.core);
     }
 
     #[test]
@@ -378,9 +333,13 @@ mod tests {
         );
 
         let (commit, _) = alice.commit(vec![]).unwrap();
+        alice.group.process_pending_commit().unwrap();
+
         let commit_result = server.process_incoming_message(commit).unwrap();
 
         assert_matches!(commit_result.event, ExternalEvent::Commit(state_update) if state_update.added.contains(&LeafIndex(1)));
+
+        assert_eq!(alice.group.core, server.core);
     }
 
     #[test]
@@ -396,6 +355,8 @@ mod tests {
 
         assert_eq!(update.added.len(), 1);
         assert_eq!(server.core.current_tree.get_leaf_nodes().len(), 2);
+
+        assert_eq!(alice.group.core, server.core);
     }
 
     #[test]
@@ -466,16 +427,16 @@ mod tests {
     fn test_external_proposal<F>(proposal_creation: F)
     where
         F: Fn(
-            &ExternalGroup<InMemoryExternalClientConfig>,
+            &mut ExternalGroup<InMemoryExternalClientConfig>,
             &SigningIdentity,
             &SecretKey,
         ) -> MLSMessage,
     {
         let (server_identity, server_key, mut alice) = setup_extern_proposal_test(true);
-        let server = make_external_group(&alice);
+        let mut server = make_external_group(&alice);
 
         // Create an external proposal
-        let external_proposal = proposal_creation(&server, &server_identity, &server_key);
+        let external_proposal = proposal_creation(&mut server, &server_identity, &server_key);
         let auth_content = external_proposal.clone().into_plaintext().unwrap().into();
         let proposal_ref = ProposalRef::from_content(TEST_CIPHER_SUITE, &auth_content).unwrap();
 
@@ -485,7 +446,13 @@ mod tests {
         // Alice commits the proposal
         let (commit_data, _) = alice.commit(vec![]).unwrap();
 
-        let commit = match commit_data.into_plaintext().unwrap().content.content {
+        let commit = match commit_data
+            .clone()
+            .into_plaintext()
+            .unwrap()
+            .content
+            .content
+        {
             Content::Commit(commit) => commit,
             _ => panic!("not a commit"),
         };
@@ -493,7 +460,12 @@ mod tests {
         // The proposal should be in the resulting commit
         assert!(commit
             .proposals
-            .contains(&ProposalOrRef::Reference(proposal_ref)))
+            .contains(&ProposalOrRef::Reference(proposal_ref)));
+
+        alice.process_pending_commit().unwrap();
+        server.process_incoming_message(commit_data).unwrap();
+
+        assert_eq!(alice.group.core, server.core);
     }
 
     #[test]
@@ -528,7 +500,7 @@ mod tests {
     #[test]
     fn external_group_external_proposal_not_allowed() {
         let (signing_id, secret_key, alice) = setup_extern_proposal_test(false);
-        let server = make_external_group(&alice);
+        let mut server = make_external_group(&alice);
 
         let charlie_key_package =
             test_key_package_with_id(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
@@ -553,7 +525,7 @@ mod tests {
             Some(get_test_signing_identity(TEST_CIPHER_SUITE, b"not server".to_vec()).0),
         );
 
-        let server = make_external_group(&alice);
+        let mut server = make_external_group(&alice);
 
         let remove_proposal = RemoveProposal {
             to_remove: LeafIndex(1),

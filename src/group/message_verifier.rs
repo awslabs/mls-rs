@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     cipher_suite::{CipherSuite, SignaturePublicKey},
+    extension::ExternalSendersExt,
     group::{
         ContentType, GroupContext, GroupError, KeyType, MLSCiphertext, MLSCiphertextContent,
         MLSContent, MLSPlaintext, MLSSenderData, MLSSenderDataAAD, Sender,
@@ -17,6 +18,7 @@ use tls_codec::{Deserialize, Serialize};
 use super::{
     epoch::Epoch,
     framing::{Content, WireFormat},
+    group_core::GroupCore,
     key_schedule::KeySchedule,
     message_signature::{MLSAuthenticatedContent, MessageSigningContext},
 };
@@ -30,12 +32,13 @@ pub fn verify_plaintext_authentication(
     plaintext: MLSPlaintext,
     key_schedule: Option<&KeySchedule>,
     self_index: Option<LeafIndex>,
-    current_tree: &TreeKemPublic,
-    context: &GroupContext,
-    external_signers: &[SigningIdentity],
+    state: &GroupCore,
 ) -> Result<MLSAuthenticatedContent, GroupError> {
     let tag = plaintext.membership_tag.clone();
     let auth_content = MLSAuthenticatedContent::from(plaintext);
+    let context = &state.context;
+    let external_signers = external_signers(context);
+    let current_tree = &state.current_tree;
 
     // Verify the membership tag if needed
     match &auth_content.content.sender {
@@ -67,10 +70,20 @@ pub fn verify_plaintext_authentication(
         SignaturePublicKeysContainer::RatchetTree(current_tree),
         context,
         &auth_content,
-        external_signers,
+        &external_signers,
     )?;
 
     Ok(auth_content)
+}
+
+fn external_signers(context: &GroupContext) -> Vec<SigningIdentity> {
+    context
+        .extensions
+        .get_extension::<ExternalSendersExt>()
+        .unwrap_or(None)
+        .map_or(vec![], |extern_senders_ext| {
+            extern_senders_ext.allowed_senders
+        })
 }
 
 pub(crate) fn decrypt_ciphertext(
@@ -258,6 +271,7 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         client_config::{test_utils::test_config, ClientConfig, InMemoryClientConfig, Preferences},
+        extension::{ExtensionList, ExternalSendersExt},
         group::{
             framing::{MLSCiphertext, WireFormat},
             membership_tag::MembershipTag,
@@ -381,9 +395,7 @@ mod tests {
             message,
             Some(&env.bob.group.key_schedule),
             None,
-            &env.bob.group.core.current_tree,
-            env.bob.group.context(),
-            &[],
+            &env.bob.group.core,
         )
         .unwrap();
     }
@@ -406,9 +418,7 @@ mod tests {
             message,
             Some(&env.bob.group.key_schedule),
             None,
-            &env.bob.group.core.current_tree,
-            env.bob.group.context(),
-            &[],
+            &env.bob.group.core,
         );
 
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
@@ -461,9 +471,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core.current_tree,
-            test_group.group.context(),
-            &[],
+            &test_group.group.core,
         )
         .unwrap();
     }
@@ -480,9 +488,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core.current_tree,
-            test_group.group.context(),
-            &[],
+            &test_group.group.core,
         );
 
         assert_matches!(res, Err(GroupError::MembershipTagForNonMember));
@@ -503,9 +509,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core.current_tree,
-            test_group.group.context(),
-            &[],
+            &test_group.group.core,
         );
 
         assert_matches!(
@@ -527,9 +531,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core.current_tree,
-            test_group.group.context(),
-            &[],
+            &test_group.group.core,
         );
 
         assert_matches!(res, Err(GroupError::ExpectedCommitForNewMemberCommit));
@@ -542,7 +544,26 @@ mod tests {
         let (ted_signing, ted_secret) =
             get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
 
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let mut extensions = ExtensionList::default();
+
+        extensions
+            .set_extension(ExternalSendersExt {
+                allowed_senders: vec![ted_signing],
+            })
+            .unwrap();
+
+        test_group
+            .group
+            .commit_proposals(
+                vec![test_group
+                    .group
+                    .group_context_extensions_proposal(extensions)],
+                vec![],
+            )
+            .unwrap();
+
+        test_group.group.process_pending_commit().unwrap();
 
         let message =
             test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |mut msg| {
@@ -553,9 +574,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core.current_tree,
-            test_group.group.context(),
-            &[ted_signing],
+            &test_group.group.core,
         )
         .unwrap();
     }
@@ -575,9 +594,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core.current_tree,
-            test_group.group.context(),
-            &[],
+            &test_group.group.core,
         );
 
         assert_matches!(
@@ -590,8 +607,7 @@ mod tests {
     fn proposal_from_external_sender_must_not_have_membership_tag() {
         let (bob_key_pkg_gen, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
 
-        let (ted_signing, ted_secret) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
+        let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
 
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
@@ -604,9 +620,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core.current_tree,
-            test_group.group.context(),
-            &[ted_signing],
+            &test_group.group.core,
         );
 
         assert_matches!(res, Err(GroupError::MembershipTagForNonMember));
@@ -622,9 +636,7 @@ mod tests {
             message,
             Some(&env.alice.group.key_schedule),
             Some(LeafIndex::new(env.alice.group.current_member_index())),
-            &env.alice.group.core.current_tree,
-            env.alice.group.context(),
-            &[],
+            &env.alice.group.core,
         );
 
         assert_matches!(res, Err(GroupError::CantProcessMessageFromSelf))

@@ -9,7 +9,8 @@ use tls_codec::{Deserialize, Serialize};
 
 use super::{
     confirmation_tag::ConfirmationTag, group_core::GroupCore, key_schedule::KeySchedule,
-    proposal_cache::CachedProposal, CommitGeneration, Group, GroupError, ProposalRef,
+    proposal::ReInit, proposal_cache::CachedProposal, CommitGeneration, Group, GroupError,
+    ProposalRef,
 };
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
@@ -25,6 +26,7 @@ pub struct GroupState {
     proposals: HashMap<ProposalRef, CachedProposal>,
     #[serde(with = "crate::serde_utils::map_as_seq")]
     pub(crate) pending_updates: HashMap<Vec<u8>, HpkeSecretKey>,
+    pub(crate) pending_reinit: Option<ReInit>,
     pub(crate) pending_commit: Option<CommitGeneration>,
 }
 
@@ -43,10 +45,11 @@ where
                 .tls_serialize_detached()?,
             key_schedule: self.key_schedule.clone(),
             interim_transcript_hash: self.core.interim_transcript_hash.clone(),
-            confirmation_tag: self.confirmation_tag.clone(),
+            confirmation_tag: self.core.confirmation_tag.clone(),
             proposals: self.core.proposals.proposals().clone(),
-            pending_updates: self.pending_updates.clone(),
-            pending_commit: self.pending_commit.clone(),
+            pending_updates: self.core.pending_updates.clone(),
+            pending_commit: self.core.pending_commit.clone(),
+            pending_reinit: self.core.pending_reinit.clone(),
         })
     }
 
@@ -61,6 +64,10 @@ where
             imported_tree,
             state.interim_transcript_hash,
             state.proposals,
+            state.pending_reinit,
+            state.pending_updates,
+            state.pending_commit,
+            state.confirmation_tag,
         );
 
         Ok(Self {
@@ -68,9 +75,6 @@ where
             core,
             private_tree: state.private_tree,
             key_schedule: state.key_schedule,
-            confirmation_tag: state.confirmation_tag,
-            pending_updates: state.pending_updates,
-            pending_commit: state.pending_commit,
         })
     }
 }
@@ -79,8 +83,7 @@ where
 mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        group::{test_utils::test_group, Group},
-        message::Event,
+        group::{test_utils::test_group, Event, Group},
     };
     use assert_matches::assert_matches;
 

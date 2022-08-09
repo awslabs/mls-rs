@@ -1,7 +1,14 @@
 use super::*;
 
 #[derive(
-    Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
+    Clone,
+    Debug,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+    PartialEq,
 )]
 #[non_exhaustive]
 pub struct TreeKemPrivate {
