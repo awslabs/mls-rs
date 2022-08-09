@@ -1,4 +1,7 @@
-use crate::x509::{CertificateChain, X509Error};
+use crate::{
+    signing_identity::SigningIdentityError,
+    x509::{CertificateChain, X509Error},
+};
 use ferriscrypt::asym::ec_key::EcKeyError;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -9,6 +12,8 @@ pub enum CredentialError {
     EcKeyError(#[from] EcKeyError),
     #[error(transparent)]
     CertificateError(#[from] X509Error),
+    #[error(transparent)]
+    SigningIdentityError(#[from] SigningIdentityError),
 }
 
 pub type CredentialType = u16;

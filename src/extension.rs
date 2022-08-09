@@ -5,7 +5,6 @@ use crate::signing_identity::SigningIdentityError;
 use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
 use crate::{credential::CredentialType, signing_identity::SigningIdentity};
-use ferriscrypt::asym::ec_key::SecretKey;
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use std::io::{Read, Write};
 use thiserror::Error;
@@ -110,9 +109,11 @@ impl ExternalSendersExt {
         validator: &C,
         cipher_suite: CipherSuite,
     ) -> Result<(), SigningIdentityError> {
-        self.allowed_senders
-            .iter()
-            .try_for_each(|id| id.check_validity::<SecretKey, _>(validator, None, cipher_suite))
+        self.allowed_senders.iter().try_for_each(|id| {
+            validator
+                .validate(id, cipher_suite)
+                .map_err(|e| SigningIdentityError::CredentialValidatorError(Box::new(e)))
+        })
     }
 }
 

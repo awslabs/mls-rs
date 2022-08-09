@@ -10,7 +10,6 @@ use crate::{
     signer::{Signable, SignatureError},
     time::MlsTime,
 };
-use ferriscrypt::asym::ec_key::SecretKey;
 use thiserror::Error;
 
 pub enum ValidationContext<'a> {
@@ -51,6 +50,8 @@ pub enum LeafNodeValidationError {
     RequiredCredentialNotFound(CredentialType),
     #[error("capabilities must describe extensions used")]
     ExtensionNotInCapabilities(ExtensionType),
+    #[error("credential rejected by custom credential validator")]
+    CredentialValidatorError(#[source] Box<dyn std::error::Error + Sync + Send>),
 }
 
 #[derive(Clone, Debug)]
@@ -169,11 +170,10 @@ impl<'a, C: CredentialValidator> LeafNodeValidator<'a, C> {
         // Check that we are validating within the proper context
         self.check_context(leaf_node, &context)?;
 
-        leaf_node.signing_identity.check_validity::<SecretKey, _>(
-            &self.credential_validator,
-            None,
-            self.cipher_suite,
-        )?;
+        // Verify the credential
+        self.credential_validator
+            .validate(&leaf_node.signing_identity, self.cipher_suite)
+            .map_err(|e| LeafNodeValidationError::CredentialValidatorError(Box::new(e)))?;
 
         let public_key = leaf_node.signing_identity.public_key(self.cipher_suite)?;
 
@@ -256,7 +256,7 @@ mod tests {
 
         assert_matches!(
             fail_test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
-            Err(LeafNodeValidationError::InvalidSigningIdentity(_))
+            Err(LeafNodeValidationError::CredentialValidatorError(_))
         );
     }
 
@@ -423,7 +423,7 @@ mod tests {
 
         assert_matches!(
             test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
-            Err(LeafNodeValidationError::InvalidSigningIdentity(_))
+            Err(LeafNodeValidationError::CredentialValidatorError(_))
         );
     }
 
@@ -522,8 +522,10 @@ mod tests {
 #[cfg(test)]
 pub mod test_utils {
     use crate::{
+        cipher_suite::CipherSuite,
         client_config::CredentialValidator,
         credential::{Credential, CredentialError},
+        signing_identity::SigningIdentity,
         x509::X509Error,
     };
 
@@ -548,7 +550,11 @@ pub mod test_utils {
 
     impl CredentialValidator for FailureCredentialValidator {
         type Error = CredentialError;
-        fn validate(&self, _credential: &Credential) -> Result<(), Self::Error> {
+        fn validate(
+            &self,
+            _signing_identity: &SigningIdentity,
+            _cipher_suite: CipherSuite,
+        ) -> Result<(), Self::Error> {
             self.pass_validation
                 .then(|| ())
                 .ok_or(CredentialError::CertificateError(

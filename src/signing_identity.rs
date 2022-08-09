@@ -4,9 +4,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
     cipher_suite::{CipherSuite, SignaturePublicKey},
-    client_config::CredentialValidator,
     credential::Credential,
-    signer::Signer,
     x509::X509Error,
 };
 
@@ -62,44 +60,6 @@ impl SigningIdentity {
         PublicKey::from_uncompressed_bytes(&self.signature_key, cipher_suite.signature_key_curve())
             .map_err(|e| SigningIdentityError::InvalidSignatureKey(cipher_suite, e))
     }
-
-    pub(crate) fn check_validity<S, C>(
-        &self,
-        credential_validator: &C,
-        signer: Option<&S>,
-        cipher_suite: CipherSuite,
-    ) -> Result<(), SigningIdentityError>
-    where
-        S: Signer,
-        C: CredentialValidator,
-    {
-        // Determine that the signature key is the right type based on the cipher suite
-        let public_key = self.public_key(cipher_suite)?;
-
-        // If the credential is X509, make sure that its public key matches the signature key
-        // presented
-        if let Credential::X509(ref cert) = self.credential {
-            let cert_pk = cert.leaf()?.public_key()?;
-
-            if cert_pk != public_key {
-                return Err(SigningIdentityError::CertPublicKeyMismatch);
-            }
-        }
-
-        if let Some(signer) = signer {
-            let signer_public = signer
-                .public_key()
-                .map_err(|e| SigningIdentityError::SignerError(e.into()))?;
-
-            if signer_public != public_key {
-                return Err(SigningIdentityError::InvalidSignerPublicKey);
-            }
-        }
-
-        credential_validator
-            .validate(&self.credential)
-            .map_err(|e| SigningIdentityError::CredentialValidatorError(Box::new(e)))
-    }
 }
 
 #[cfg(any(test, feature = "benchmark"))]
@@ -132,22 +92,14 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use ferriscrypt::asym::ec_key::{generate_keypair, SecretKey};
+    use ferriscrypt::asym::ec_key::generate_keypair;
 
     use crate::{
         cipher_suite::{CipherSuite, SignaturePublicKey},
-        credential::{
-            test_utils::{get_test_basic_credential, get_test_certificate_credential},
-            Credential,
-        },
-        tree_kem::leaf_node_validator::test_utils::FailureCredentialValidator,
+        credential::{test_utils::get_test_basic_credential, Credential},
     };
 
     use super::{test_utils::get_test_signing_identity, *};
-
-    fn credential_validator(pass: bool) -> FailureCredentialValidator {
-        FailureCredentialValidator::default().pass_validation(pass)
-    }
 
     #[test]
     fn test_signing_identity_creation() {
@@ -187,89 +139,5 @@ mod tests {
         let res = signing_identity.public_key(invalid_cipher_suite);
 
         assert_matches!(res, Err(SigningIdentityError::InvalidSignatureKey(cs, _)) if cs == invalid_cipher_suite);
-    }
-
-    #[test]
-    fn test_signing_identity_validity() {
-        for cipher_suite in CipherSuite::all() {
-            let (signing_identity, signer) =
-                get_test_signing_identity(cipher_suite, b"alice".to_vec());
-
-            assert!(signing_identity
-                .check_validity::<SecretKey, _>(&credential_validator(true), None, cipher_suite)
-                .is_ok());
-
-            assert!(signing_identity
-                .check_validity(&credential_validator(true), Some(&signer), cipher_suite)
-                .is_ok());
-        }
-    }
-
-    #[test]
-    fn test_signing_identity_invalid_wrong_cipher_suite() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let invalid_cipher_suite = CipherSuite::P256Aes128;
-
-        let (signing_identity, _) = get_test_signing_identity(cipher_suite, b"alice".to_vec());
-
-        let res = signing_identity.check_validity::<SecretKey, _>(
-            &credential_validator(true),
-            None,
-            invalid_cipher_suite,
-        );
-
-        assert_matches!(res, Err(SigningIdentityError::InvalidSignatureKey(cs, _)) if cs == invalid_cipher_suite);
-    }
-
-    #[test]
-    fn test_signing_identity_invalid_signer() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-
-        let (signing_identity, _) = get_test_signing_identity(cipher_suite, b"alice".to_vec());
-        let invalid_signer = cipher_suite.generate_signing_key().unwrap();
-
-        let res = signing_identity.check_validity(
-            &credential_validator(true),
-            Some(&invalid_signer),
-            cipher_suite,
-        );
-
-        assert_matches!(res, Err(SigningIdentityError::InvalidSignerPublicKey));
-    }
-
-    #[test]
-    fn test_signing_identity_x509_mismatch() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let test_cert_credential = get_test_certificate_credential();
-        let signature_key = cipher_suite.generate_signing_key().unwrap();
-
-        let signing_identity = SigningIdentity::new(
-            test_cert_credential,
-            SignaturePublicKey::try_from(&signature_key).unwrap(),
-        );
-
-        let res = signing_identity.check_validity::<SecretKey, _>(
-            &credential_validator(true),
-            None,
-            cipher_suite,
-        );
-
-        assert_matches!(res, Err(SigningIdentityError::CertPublicKeyMismatch));
-    }
-
-    #[test]
-    fn test_signing_identity_application_rejection() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-
-        let (signing_identity, _) = get_test_signing_identity(cipher_suite, b"alice".to_vec());
-
-        assert_matches!(
-            signing_identity.check_validity::<SecretKey, _>(
-                &credential_validator(false),
-                None,
-                cipher_suite
-            ),
-            Err(SigningIdentityError::CredentialValidatorError(_))
-        );
     }
 }

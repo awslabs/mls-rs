@@ -34,6 +34,10 @@ pub enum LeafNodeError {
     ParentHashError(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("internal signer error: {0}")]
     SignerError(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("signing identity public key does not match the signer (secret key)")]
+    InvalidSignerPublicKey,
+    #[error("credential rejected by custom credential validator")]
+    CredentialValidatorError(#[source] Box<dyn std::error::Error + Sync + Send>),
 }
 
 #[derive(
@@ -80,18 +84,26 @@ pub struct LeafNode {
 
 impl LeafNode {
     fn check_signing_identity<S, C>(
-        cipher_suite: CipherSuite,
         signing_identity: &SigningIdentity,
         signer: &S,
         credential_validator: &C,
+        cipher_suite: CipherSuite,
     ) -> Result<(), LeafNodeError>
     where
         S: Signer,
         C: CredentialValidator,
     {
-        signing_identity
-            .check_validity(credential_validator, Some(signer), cipher_suite)
-            .map_err(Into::into)
+        let signer_public = signer
+            .public_key()
+            .map_err(|e| LeafNodeError::SignerError(e.into()))?;
+
+        if signer_public.to_uncompressed_bytes()? != *signing_identity.signature_key {
+            return Err(LeafNodeError::InvalidSignerPublicKey);
+        }
+
+        credential_validator
+            .validate(signing_identity, cipher_suite)
+            .map_err(|e| LeafNodeError::CredentialValidatorError(Box::new(e)))
     }
 
     pub fn generate<S, C>(
@@ -108,10 +120,10 @@ impl LeafNode {
         C: CredentialValidator,
     {
         LeafNode::check_signing_identity(
-            cipher_suite,
             &signing_identity,
             signer,
             credential_validator,
+            cipher_suite,
         )?;
 
         let (public, secret) = generate_keypair(cipher_suite.kem_type().curve())?;
@@ -458,12 +470,7 @@ mod tests {
             &PassthroughCredentialValidator::new(),
         );
 
-        assert_matches!(
-            res,
-            Err(LeafNodeError::SigningIdentityError(
-                SigningIdentityError::InvalidSignerPublicKey
-            ))
-        );
+        assert_matches!(res, Err(LeafNodeError::InvalidSignerPublicKey));
     }
 
     #[test]
@@ -483,7 +490,7 @@ mod tests {
             &PassthroughCredentialValidator::new(),
         );
 
-        assert_matches!(res, Err(LeafNodeError::SigningIdentityError(_)));
+        assert_matches!(res, Err(LeafNodeError::CredentialValidatorError(_)));
     }
 
     #[test]
@@ -503,12 +510,7 @@ mod tests {
             &FailureCredentialValidator::new().pass_validation(false),
         );
 
-        assert_matches!(
-            res,
-            Err(LeafNodeError::SigningIdentityError(
-                SigningIdentityError::CredentialValidatorError(_)
-            ))
-        );
+        assert_matches!(res, Err(LeafNodeError::CredentialValidatorError(_)));
     }
 
     #[test]

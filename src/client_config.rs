@@ -36,15 +36,25 @@ pub trait PskStore {
 
 pub trait CredentialValidator {
     type Error: std::error::Error + Send + Sync + 'static;
-    fn validate(&self, credential: &Credential) -> Result<(), Self::Error>;
+
+    fn validate(
+        &self,
+        signing_identity: &SigningIdentity,
+        cipher_suite: CipherSuite,
+    ) -> Result<(), Self::Error>;
+
     fn is_equal_identity(&self, left: &Credential, right: &Credential) -> bool;
 }
 
 impl<T: CredentialValidator> CredentialValidator for &T {
     type Error = T::Error;
 
-    fn validate(&self, credential: &Credential) -> Result<(), Self::Error> {
-        (*self).validate(credential)
+    fn validate(
+        &self,
+        signing_identity: &SigningIdentity,
+        cipher_suite: CipherSuite,
+    ) -> Result<(), Self::Error> {
+        (*self).validate(signing_identity, cipher_suite)
     }
 
     fn is_equal_identity(&self, left: &Credential, right: &Credential) -> bool {
@@ -389,8 +399,17 @@ impl PassthroughCredentialValidator {
 
 impl CredentialValidator for PassthroughCredentialValidator {
     type Error = CredentialError;
-    fn validate(&self, _credential: &Credential) -> Result<(), Self::Error> {
-        Ok(())
+
+    fn validate(
+        &self,
+        signing_identity: &SigningIdentity,
+        cipher_suite: CipherSuite,
+    ) -> Result<(), Self::Error> {
+        // Check that using the public key won't cause errors later
+        signing_identity
+            .public_key(cipher_suite)
+            .map(|_| ())
+            .map_err(Into::into)
     }
 
     fn is_equal_identity(&self, _left: &Credential, _right: &Credential) -> bool {

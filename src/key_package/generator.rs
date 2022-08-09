@@ -102,7 +102,6 @@ mod tests {
         extension::{ExtensionList, MlsExtension},
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
         signing_identity::test_utils::get_test_signing_identity,
-        signing_identity::SigningIdentityError,
         tree_kem::{
             leaf_node::{LeafNodeError, LeafNodeSource},
             leaf_node_validator::test_utils::FailureCredentialValidator,
@@ -258,7 +257,7 @@ mod tests {
         assert_matches!(
             generated,
             Err(KeyPackageGenerationError::LeafNodeError(
-                LeafNodeError::SigningIdentityError(SigningIdentityError::InvalidSignerPublicKey)
+                LeafNodeError::InvalidSignerPublicKey
             ))
         );
     }
@@ -333,9 +332,7 @@ mod tests {
                 ExtensionList::default()
             ),
             Err(KeyPackageGenerationError::LeafNodeError(
-                LeafNodeError::SigningIdentityError(
-                    SigningIdentityError::CredentialValidatorError(_)
-                )
+                LeafNodeError::CredentialValidatorError(_)
             ))
         );
     }

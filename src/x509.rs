@@ -1,21 +1,40 @@
-use std::ops::Deref;
+use std::{collections::HashSet, ops::Deref};
 
-use der::{Decoder, Encodable};
-use ferriscrypt::asym::ec_key::{EcKeyError, PublicKey};
-use spki::SubjectPublicKeyInfo;
+use der::{Decode, Encode};
+use ferriscrypt::asym::ec_key::{self, Curve, EcKeyError};
+use ferriscrypt::digest::digest;
+use ferriscrypt::digest::HashFunction::Sha256;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use x509_cert::certificate::Certificate;
+
+use crate::cipher_suite::CipherSuite;
+use crate::signing_identity::SigningIdentity;
+use crate::{client_config::CredentialValidator, credential::Credential};
 
 #[derive(Debug, Error)]
 pub enum X509Error {
-    #[error("Certificate parsing error: {0}")]
+    #[error("error parsing DER certificate: {0}")]
     CertificateParseError(der::Error),
-    #[error("empty certificate chain found")]
+    #[error("empty certificate chain (it must contain the CA)")]
     EmptyCertificateChain,
-    #[error("unsupported public key type: {0}")]
-    UnsupportedPublicKeyType(String),
     #[error(transparent)]
     EcKeyError(#[from] EcKeyError),
+    #[error("validating a certificate type that is not X.509")]
+    NotX509Certificate,
+    #[error("signature invalid for parent certificate {0} and child certificate {1}")]
+    InvalidSignature(String, String),
+    #[error("CA certificate not in the set of trusted CA's: not found certificate {0}")]
+    CaNotFound(String),
+    #[error("unsupported algorithm with OID {0} for curve {1:?}; the following hash algorithms are supported: 
+        SHA256 for curve P256, SHA384 for curve P384, SHA512 for curve P521")]
+    UnsupportedHash(String, Curve),
+    #[error("unsupported algorithm with OID {0}; only EC algorithms are supported")]
+    UnsupportedAlgorithm(String),
+    #[error("leaf public key does not match signing identity public key")]
+    LeafPublicKeyMismatch,
+    #[error("leaf public key curve {0:?} does not match the curve MLS ciphersuite {1:?}")]
+    CurveMismatch(Curve, Curve),
 }
 
 #[derive(
@@ -47,54 +66,155 @@ impl Deref for CertificateData {
     }
 }
 
-impl CertificateData {
-    pub fn public_key_data(&self) -> Result<Vec<u8>, X509Error> {
-        // Current state of this function is as follows:
-        // x509-parser crate has an unpatched sec vuln https://github.com/rusticata/x509-parser/issues/111
-        // X509 crate in RustCrypto is experimental and does not expose certificate parsing yet
-        // We only need to extract the public key, so we are directly using the RustCrypto der
-        // crate, which is stable and will work well for this purpose. Applications using MLS still
-        // need to write their own X509 validation code, so application developers can
-        // choose whatever they like.
-        let mut decoder = Decoder::new(&self.0).map_err(X509Error::CertificateParseError)?;
+#[derive(Clone, Debug, Default)]
+pub struct BasicX509Validator {
+    ca_certs: HashSet<Vec<u8>>,
+}
 
-        decoder
-            .sequence(|x509_decoder| {
-                let pub_key_data = x509_decoder.sequence(|tbs_decoder| {
-                    let _version = ::der::asn1::ContextSpecific::decode_explicit(
-                        tbs_decoder,
-                        ::der::TagNumber::N0,
-                    )?
-                    .map(|cs| cs.value)
-                    .unwrap_or(0u8);
-
-                    let _serial_number = tbs_decoder.any()?;
-                    let _signature = tbs_decoder.any()?;
-                    let _issuer = tbs_decoder.any()?;
-                    let _validity = tbs_decoder.any()?;
-                    let _subject = tbs_decoder.any()?;
-
-                    let subject_public_key_info: SubjectPublicKeyInfo = tbs_decoder.decode()?;
-
-                    while !tbs_decoder.is_finished() {
-                        tbs_decoder.any()?;
-                    }
-
-                    subject_public_key_info.to_vec()
-                })?;
-
-                while !x509_decoder.is_finished() {
-                    x509_decoder.any()?;
-                }
-
-                Ok(pub_key_data)
+impl BasicX509Validator {
+    pub fn new(ca_certs: Vec<&[u8]>) -> Result<Self, X509Error> {
+        let ca_certs = ca_certs
+            .into_iter()
+            .map(|cert_data| {
+                // Verify the self-signture
+                let cert =
+                    Certificate::from_der(cert_data).map_err(X509Error::CertificateParseError)?;
+                verify_cert(&cert, &cert)?;
+                Ok(hash_cert(cert_data))
             })
-            .map_err(X509Error::CertificateParseError)
+            .collect::<Result<_, X509Error>>()?;
+
+        Ok(Self { ca_certs })
+    }
+}
+
+impl CredentialValidator for BasicX509Validator {
+    type Error = X509Error;
+
+    fn validate(
+        &self,
+        signing_identity: &SigningIdentity,
+        cipher_suite: CipherSuite,
+    ) -> Result<(), Self::Error> {
+        let chain = match &signing_identity.credential {
+            Credential::X509(chain) => Ok(chain),
+            _ => Err(X509Error::NotX509Certificate),
+        }?;
+
+        let ca_cert = chain.last().ok_or(X509Error::EmptyCertificateChain)?;
+        let ca_hash = hash_cert(ca_cert);
+
+        if !self.ca_certs.contains(&ca_hash) {
+            return Err(X509Error::CaNotFound(format!("{:?}", ca_cert)));
+        }
+
+        let chain = chain
+            .iter()
+            .map(|cert_data| Certificate::from_der(cert_data))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(X509Error::CertificateParseError)?;
+
+        let leaf_pk = get_public_key(&chain[0])?;
+
+        if leaf_pk.to_uncompressed_bytes()? != *signing_identity.signature_key {
+            return Err(X509Error::LeafPublicKeyMismatch);
+        }
+
+        if leaf_pk.curve() != cipher_suite.signature_key_curve() {
+            return Err(X509Error::CurveMismatch(
+                leaf_pk.curve(),
+                cipher_suite.signature_key_curve(),
+            ));
+        }
+
+        chain
+            .iter()
+            .zip(chain.iter().skip(1))
+            .try_for_each(|(cert1, cert2)| verify_cert(cert2, cert1))
     }
 
-    pub fn public_key(&self) -> Result<PublicKey, X509Error> {
-        PublicKey::from_der(&self.public_key_data()?).map_err(Into::into)
+    fn is_equal_identity(&self, _left: &Credential, _right: &Credential) -> bool {
+        true
     }
+}
+
+fn verify_cert(verifier: &Certificate, verified: &Certificate) -> Result<(), X509Error> {
+    // Check that we support the signing algorithm
+    check_algorithm_supported(verified)?;
+
+    let public_key = get_public_key(verifier)?;
+
+    // Check that we support the combination of the public key curve and hash algorithm used to signed `verified`
+    check_hash_supported(verified, &public_key)?;
+
+    // Re-encode the verified TBS struct to get the signed bytes
+    let mut tbs = Vec::new();
+
+    verified
+        .tbs_certificate
+        .encode_to_vec(&mut tbs)
+        .map_err(X509Error::CertificateParseError)?;
+
+    // Verify the signature
+    public_key
+        .verify(verified.signature.raw_bytes(), &tbs)?
+        .then_some(())
+        .ok_or_else(|| {
+            X509Error::InvalidSignature(format!("{:?}", verifier), format!("{:?}", verified))
+        })
+}
+
+fn hash_cert(cert_data: &[u8]) -> Vec<u8> {
+    digest(Sha256, cert_data)
+}
+
+fn get_public_key(cert: &Certificate) -> Result<ec_key::PublicKey, X509Error> {
+    // Re-encode the `subject_public_key_info` (containing the key bytes and the algorithm) to get the public key.
+    let mut public_key = Vec::new();
+
+    cert.tbs_certificate
+        .subject_public_key_info
+        .encode_to_vec(&mut public_key)
+        .map_err(X509Error::CertificateParseError)?;
+
+    ec_key::PublicKey::from_der(&public_key).map_err(Into::into)
+}
+
+// OID codes from https://www.rfc-editor.org/rfc/rfc5758#section-3.2 and https://www.rfc-editor.org/rfc/rfc8410.html#section-3
+fn check_algorithm_supported(cert: &Certificate) -> Result<(), X509Error> {
+    let algorithm = cert.signature_algorithm.oid.to_string();
+
+    [
+        "1.2.840.10045.4.3.2",
+        "1.2.840.10045.4.3.3",
+        "1.2.840.10045.4.3.4",
+        "1.3.101.112",
+        "1.3.101.113",
+    ]
+    .contains(&algorithm.as_str())
+    .then_some(())
+    .ok_or(X509Error::UnsupportedAlgorithm(algorithm))
+}
+
+// OID codes from https://www.rfc-editor.org/rfc/rfc5758#section-3.2
+fn check_hash_supported(
+    cert: &Certificate,
+    public_key: &ec_key::PublicKey,
+) -> Result<(), X509Error> {
+    let algorithm = cert.signature_algorithm.oid.to_string();
+
+    let valid = match public_key.curve() {
+        ec_key::Curve::P256 => algorithm == "1.2.840.10045.4.3.2",
+        #[cfg(feature = "openssl_engine")]
+        ec_key::Curve::P384 => algorithm == "1.2.840.10045.4.3.3",
+        #[cfg(feature = "openssl_engine")]
+        ec_key::Curve::P521 => algorithm == "1.2.840.10045.4.3.4",
+        _ => true,
+    };
+
+    valid
+        .then_some(())
+        .ok_or_else(|| X509Error::UnsupportedHash(algorithm, public_key.curve()))
 }
 
 #[derive(
@@ -138,21 +258,21 @@ impl CertificateChain {
 
 #[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
-    use super::CertificateData;
-    use ferriscrypt::asym::ec_key::Curve;
     #[cfg(test)]
-    use ferriscrypt::asym::ec_key::SecretKey;
+    use super::{get_public_key, Certificate, CertificateChain};
+    use crate::x509::CertificateData;
+    use ferriscrypt::asym::ec_key;
 
-    pub fn test_cert(curve: Curve) -> CertificateData {
+    pub fn test_cert(curve: ec_key::Curve) -> CertificateData {
         let data = match curve {
-            Curve::P256 => include_bytes!("../test_data/p256_cert.der").to_vec(),
+            ec_key::Curve::P256 => include_bytes!("../test_data/p256_cert.der").to_vec(),
             #[cfg(feature = "openssl_engine")]
-            Curve::P384 => include_bytes!("../test_data/p384_cert.der").to_vec(),
+            ec_key::Curve::P384 => include_bytes!("../test_data/p384_cert.der").to_vec(),
             #[cfg(feature = "openssl_engine")]
-            Curve::P521 => include_bytes!("../test_data/p521_cert.der").to_vec(),
-            Curve::Ed25519 => include_bytes!("../test_data/ed25519_cert.der").to_vec(),
+            ec_key::Curve::P521 => include_bytes!("../test_data/p521_cert.der").to_vec(),
+            ec_key::Curve::Ed25519 => include_bytes!("../test_data/ed25519_cert.der").to_vec(),
             #[cfg(feature = "openssl_engine")]
-            Curve::Ed448 => include_bytes!("../test_data/ed448_cert.der").to_vec(),
+            ec_key::Curve::Ed448 => include_bytes!("../test_data/ed448_cert.der").to_vec(),
             _ => panic!("invalid test curve"),
         };
 
@@ -160,36 +280,168 @@ pub(crate) mod test_utils {
     }
 
     #[cfg(test)]
-    pub fn test_key(curve: Curve) -> SecretKey {
-        let data = match curve {
-            Curve::P256 => include_bytes!("../test_data/p256_key.der").to_vec(),
-            #[cfg(feature = "openssl_engine")]
-            Curve::P384 => include_bytes!("../test_data/p384_key.der").to_vec(),
-            #[cfg(feature = "openssl_engine")]
-            Curve::P521 => include_bytes!("../test_data/p521_key.der").to_vec(),
-            Curve::Ed25519 => include_bytes!("../test_data/ed25519_key.der").to_vec(),
-            #[cfg(feature = "openssl_engine")]
-            Curve::Ed448 => include_bytes!("../test_data/ed448_key.der").to_vec(),
-            _ => panic!("invalid test curve"),
-        };
+    pub fn test_chain() -> (CertificateChain, ec_key::PublicKey) {
+        use der::Decode;
 
-        SecretKey::from_der(&data).unwrap()
+        let ca_data = include_bytes!("../test_data/cert_chain/id3-ca.der").to_vec();
+        let id2_data = include_bytes!("../test_data/cert_chain/id2.der").to_vec();
+        let id1_data = include_bytes!("../test_data/cert_chain/id1.der").to_vec();
+        let id0_data = include_bytes!("../test_data/cert_chain/id0-leaf.der").to_vec();
+
+        let leaf_cert = Certificate::from_der(&id0_data).unwrap();
+        let leaf_pk = get_public_key(&leaf_cert).unwrap();
+
+        let chain = [id0_data, id1_data, id2_data, ca_data]
+            .into_iter()
+            .map(CertificateData::from)
+            .collect::<Vec<_>>()
+            .into();
+
+        (chain, leaf_pk)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::x509::test_utils::{test_cert, test_key};
+    use crate::x509::{test_utils::test_cert, CertificateData};
+
+    use super::{
+        test_utils::test_chain, BasicX509Validator, Credential, CredentialValidator,
+        SigningIdentity, X509Error,
+    };
+    use crate::cipher_suite::CipherSuite;
     use assert_matches::assert_matches;
-    use ferriscrypt::asym::ec_key::Curve;
+    use der::{asn1::UIntRef, Decode};
+    use ferriscrypt::asym::ec_key::{self, Curve};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
+    use x509_cert::Certificate;
 
     #[test]
-    fn test_certificate_public_key() {
-        let signing_curves = [
+    fn verifying_valid_chain_succeeds() {
+        let (chain, leaf_pk) = test_chain();
+        let validator = BasicX509Validator::new(vec![chain.last().unwrap()]).unwrap();
+        let credential = Credential::X509(chain);
+
+        let signing_id = SigningIdentity {
+            signature_key: leaf_pk.to_uncompressed_bytes().unwrap().into(),
+            credential,
+        };
+
+        validator
+            .validate(&signing_id, CipherSuite::P256Aes128)
+            .unwrap();
+    }
+
+    #[test]
+    fn verifying_invalid_chain_fails() {
+        let (mut chain, leaf_pk) = test_chain();
+
+        // Make the chain invalid by swapping two certificates
+        chain.0.swap(1, 2);
+
+        let validator = BasicX509Validator::new(vec![chain.last().unwrap()]).unwrap();
+        let credential = Credential::X509(chain);
+
+        let signing_id = SigningIdentity {
+            signature_key: leaf_pk.to_uncompressed_bytes().unwrap().into(),
+            credential,
+        };
+
+        assert_matches!(
+            validator.validate(&signing_id, CipherSuite::P256Aes128),
+            Err(X509Error::InvalidSignature(..))
+        );
+    }
+
+    #[test]
+    fn verifying_mismatching_identity_pk_fails() {
+        let (chain, leaf_pk) = test_chain();
+        let validator = BasicX509Validator::new(vec![chain.last().unwrap()]).unwrap();
+        let credential = Credential::X509(chain);
+
+        let curve = leaf_pk.curve();
+        let sk_len = curve.secret_key_size();
+        let mismatching_sk = ec_key::SecretKey::from_bytes(&vec![1u8; sk_len], curve).unwrap();
+        let mismatching_pk = mismatching_sk.to_public().unwrap();
+
+        let signing_id = SigningIdentity {
+            signature_key: mismatching_pk.try_into().unwrap(),
+            credential,
+        };
+
+        assert_matches!(
+            validator.validate(&signing_id, CipherSuite::P256Aes128),
+            Err(X509Error::LeafPublicKeyMismatch)
+        );
+    }
+
+    #[test]
+    fn verifying_unknown_ca_fails() {
+        let (chain, leaf_pk) = test_chain();
+        let validator = BasicX509Validator::new(vec![]).unwrap();
+        let credential = Credential::X509(chain);
+
+        let signing_id = SigningIdentity {
+            signature_key: leaf_pk.try_into().unwrap(),
+            credential,
+        };
+
+        assert_matches!(
+            validator.validate(&signing_id, CipherSuite::P256Aes128),
+            Err(X509Error::CaNotFound(_))
+        );
+    }
+
+    #[test]
+    fn verifying_with_unsupported_hash_fails_gracefully() {
+        let (mut chain, leaf_pk) = test_chain();
+
+        // This certificate the same key as id0.der except id1 signed it using sha256
+        chain.0[0] =
+            CertificateData(include_bytes!("../test_data/cert_chain/id0_sha512.der").to_vec());
+
+        let validator = BasicX509Validator::new(vec![chain.last().unwrap()]).unwrap();
+        let credential = Credential::X509(chain);
+
+        let signing_id = SigningIdentity {
+            signature_key: leaf_pk.try_into().unwrap(),
+            credential,
+        };
+
+        assert_matches!(
+            validator.validate(&signing_id, CipherSuite::P256Aes128),
+            Err(X509Error::UnsupportedHash(..))
+        );
+    }
+
+    #[test]
+    fn verifying_rsa_fails_gracefully() {
+        let rsa_cert_bytes = include_bytes!("../test_data/rsa_cert.der").to_vec();
+        let validator = BasicX509Validator::new(vec![&rsa_cert_bytes]);
+        assert_matches!(validator, Err(X509Error::UnsupportedAlgorithm(_)));
+    }
+
+    #[test]
+    fn creating_validator_with_invalid_ca_cert_fails() {
+        let valid_ca_bytes = include_bytes!("../test_data/cert_chain/id3-ca.der").to_vec();
+
+        let valid_ca_cert = Certificate::from_der(&valid_ca_bytes).unwrap();
+        let mut invalid_ca = valid_ca_cert.clone();
+        invalid_ca.tbs_certificate.serial_number = UIntRef::new(&[1, 2, 3]).unwrap();
+        let mut invalid_ca_bytes = Vec::new();
+        der::Encode::encode_to_vec(&invalid_ca, &mut invalid_ca_bytes).unwrap();
+
+        assert_matches!(
+            BasicX509Validator::new(vec![&valid_ca_bytes, &invalid_ca_bytes]),
+            Err(X509Error::InvalidSignature(..))
+        );
+    }
+
+    #[test]
+    fn all_curves_are_supported() {
+        let curves = [
             Curve::P256,
             #[cfg(feature = "openssl_engine")]
             Curve::P384,
@@ -200,28 +452,42 @@ mod tests {
             Curve::Ed448,
         ];
 
-        for curve in signing_curves {
-            println!("Running certificate parsing test for curve {:?}", curve);
-
-            let cert_data = test_cert(curve);
-            let cert_key = cert_data.public_key().unwrap();
-            let expected_key = test_key(curve).to_public().unwrap();
-
-            assert_eq!(cert_key, expected_key)
-        }
+        let cert_data = curves.into_iter().map(test_cert).collect::<Vec<_>>();
+        let certs = cert_data.iter().map(|cert| &cert[..]).collect();
+        BasicX509Validator::new(certs).unwrap();
     }
 
     #[test]
-    fn test_empty_certificate_chain() {
-        let empty_chain = CertificateChain::from(vec![]);
-        assert_matches!(empty_chain.leaf(), Err(X509Error::EmptyCertificateChain));
+    fn empty_chain_is_rejected() {
+        let (_, leaf_pk) = test_chain();
+        let validator = BasicX509Validator::new(Vec::new()).unwrap();
+        let credential = Credential::X509(Vec::new().into());
+
+        let signing_id = SigningIdentity {
+            signature_key: leaf_pk.try_into().unwrap(),
+            credential,
+        };
+
+        assert_matches!(
+            validator.validate(&signing_id, CipherSuite::P256Aes128),
+            Err(X509Error::EmptyCertificateChain)
+        );
     }
 
     #[test]
-    fn test_leaf_certificate() {
-        let test_chain =
-            CertificateChain::from(vec![test_cert(Curve::P256), test_cert(Curve::Ed25519)]);
+    fn verifying_invalid_ciphersuite_fails() {
+        let (chain, leaf_pk) = test_chain();
+        let validator = BasicX509Validator::new(vec![chain.last().unwrap()]).unwrap();
+        let credential = Credential::X509(chain);
 
-        assert_eq!(test_chain.leaf().unwrap(), &test_cert(Curve::P256));
+        let signing_id = SigningIdentity {
+            signature_key: leaf_pk.to_uncompressed_bytes().unwrap().into(),
+            credential,
+        };
+
+        assert_matches!(
+            validator.validate(&signing_id, CipherSuite::Curve25519Aes128),
+            Err(X509Error::CurveMismatch(..))
+        );
     }
 }
