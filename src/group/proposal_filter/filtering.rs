@@ -1,7 +1,7 @@
 use crate::{
     cipher_suite::CipherSuite,
     client_config::CredentialValidator,
-    extension::{ExtensionList, ExternalSendersExt, RequiredCapabilitiesExt},
+    extension::{is_default_extension, ExtensionList, ExternalSendersExt, RequiredCapabilitiesExt},
     group::{
         proposal_filter::{Proposable, ProposalBundle, ProposalFilterError, ProposalInfo},
         AddProposal, BorrowedProposal, ExternalInit, JustPreSharedKeyID, KeyScheduleKdf,
@@ -49,6 +49,7 @@ pub(crate) struct ProposalApplier<'a, C> {
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     group_id: &'a [u8],
+    original_group_extensions: &'a ExtensionList,
     original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
     external_leaf: Option<&'a LeafNode>,
     credential_validator: C,
@@ -58,11 +59,13 @@ impl<'a, C> ProposalApplier<'a, C>
 where
     C: CredentialValidator,
 {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         original_tree: &'a TreeKemPublic,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         group_id: &'a [u8],
+        original_group_extensions: &'a ExtensionList,
         original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
         external_leaf: Option<&'a LeafNode>,
         credential_validator: C,
@@ -72,6 +75,7 @@ where
             protocol_version,
             cipher_suite,
             group_id,
+            original_group_extensions,
             original_required_capabilities,
             external_leaf,
             credential_validator,
@@ -160,15 +164,14 @@ where
     fn apply_proposal_changes<F>(
         &self,
         strategy: F,
-        state: ProposalState,
+        mut state: ProposalState,
     ) -> Result<ProposalState, ProposalFilterError>
     where
         F: FilterStrategy,
     {
         let extensions_proposal_and_capabilities = state
             .proposals
-            .by_type::<ExtensionList>()
-            .next()
+            .group_context_extensions_proposal()
             .cloned()
             .and_then(|p| {
                 match p
@@ -176,7 +179,7 @@ where
                     .get_extension()
                     .map_err(ProposalFilterError::from)
                 {
-                    Ok(capabilities) => capabilities.map(|c| Ok((p, c))),
+                    Ok(capabilities) => Some(Ok((p, capabilities))),
                     Err(e) => {
                         if strategy.ignore(&p.by_ref().map(Into::into)) {
                             None
@@ -188,54 +191,98 @@ where
             })
             .transpose()?;
 
+        // If the extensions proposal is ignored, remove it from the list of proposals.
+        if extensions_proposal_and_capabilities.is_none() {
+            state.proposals.clear_group_context_extensions();
+        }
+
         match extensions_proposal_and_capabilities {
             Some((group_context_extensions_proposal, new_required_capabilities)) => self
                 .apply_proposals_with_new_capabilities(
                     strategy,
                     state,
                     group_context_extensions_proposal,
-                    &new_required_capabilities,
+                    new_required_capabilities,
                 ),
-            None => self.apply_tree_changes(strategy, state, self.original_required_capabilities),
+            None => self.apply_tree_changes(
+                strategy,
+                state,
+                self.original_group_extensions,
+                self.original_required_capabilities,
+            ),
         }
     }
 
     fn apply_proposals_with_new_capabilities<F>(
         &self,
         strategy: F,
-        state: ProposalState,
+        mut state: ProposalState,
         group_context_extensions_proposal: ProposalInfo<ExtensionList>,
-        new_required_capabilities: &RequiredCapabilitiesExt,
+        new_required_capabilities: Option<RequiredCapabilitiesExt>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
         F: FilterStrategy,
         C: CredentialValidator,
     {
-        let new_state = self.apply_tree_changes(&strategy, state.clone(), None)?;
+        let mut new_state =
+            self.apply_tree_changes(&strategy, state.clone(), &ExtensionList::new(), None)?;
 
-        let leaf_validator = LeafNodeValidator::new(
-            self.cipher_suite,
-            Some(new_required_capabilities),
-            &self.credential_validator,
-        );
+        let new_capabilities_supported =
+            new_required_capabilities.map_or(Ok(()), |new_required_capabilities| {
+                let leaf_validator = LeafNodeValidator::new(
+                    self.cipher_suite,
+                    Some(&new_required_capabilities),
+                    &self.credential_validator,
+                );
 
-        let new_capabilities_supported = new_state
-            .tree
-            .non_empty_leaves()
-            .try_for_each(|(_, leaf)| leaf_validator.validate_required_capabilities(leaf))
-            .map_err(Into::into);
+                new_state
+                    .tree
+                    .non_empty_leaves()
+                    .try_for_each(|(_, leaf)| leaf_validator.validate_required_capabilities(leaf))
+                    .map_err(ProposalFilterError::from)
+            });
 
-        match new_capabilities_supported {
+        let new_extensions_supported = group_context_extensions_proposal
+            .proposal
+            .iter()
+            .map(|extension| extension.extension_type)
+            .filter(|&ext_type| !is_default_extension(ext_type))
+            .find(|ext_type| {
+                !new_state
+                    .tree
+                    .non_empty_leaves()
+                    .all(|(_, leaf)| leaf.capabilities.extensions.contains(ext_type))
+            })
+            .map_or(Ok(()), |ext_type| {
+                Err(ProposalFilterError::UnsupportedGroupExtension(ext_type))
+            });
+
+        let group_extensions_supported = new_capabilities_supported.and(new_extensions_supported);
+
+        match group_extensions_supported {
             Ok(()) => Ok(new_state),
             Err(e) => {
                 let ignored =
                     strategy.ignore(&group_context_extensions_proposal.by_ref().map(Into::into));
-                match (ignored, self.original_required_capabilities) {
-                    (false, _) => Err(e),
-                    (true, Some(required_capabilities)) => {
-                        self.apply_tree_changes(&strategy, state, Some(required_capabilities))
-                    }
-                    (true, None) => Ok(new_state),
+
+                if ignored {
+                    state.proposals.clear_group_context_extensions();
+                    new_state.proposals.clear_group_context_extensions();
+                }
+
+                match (
+                    ignored,
+                    self.original_required_capabilities,
+                    self.original_group_extensions.is_empty(),
+                ) {
+                    (false, ..) => Err(e),
+                    (true, None, true) => Ok(new_state),
+                    (true, ..) => self.apply_tree_changes(
+                        &strategy,
+                        state,
+                        self.original_group_extensions,
+                        self.original_required_capabilities,
+                    ),
                 }
             }
         }
@@ -245,12 +292,18 @@ where
         &self,
         strategy: F,
         state: ProposalState,
+        group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
         F: FilterStrategy,
     {
-        let mut state = self.validate_new_nodes(&strategy, state, required_capabilities)?;
+        let mut state = self.validate_new_nodes(
+            &strategy,
+            state,
+            group_extensions_in_use,
+            required_capabilities,
+        )?;
 
         let mut updates = Vec::new();
         state
@@ -330,14 +383,25 @@ where
         &self,
         strategy: F,
         state: ProposalState,
+        group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
         F: FilterStrategy,
     {
-        let state = self.validate_new_update_nodes(&strategy, state, required_capabilities)?;
+        let state = self.validate_new_update_nodes(
+            &strategy,
+            state,
+            group_extensions_in_use,
+            required_capabilities,
+        )?;
 
-        let state = self.validate_new_key_packages(&strategy, state, required_capabilities)?;
+        let state = self.validate_new_key_packages(
+            &strategy,
+            state,
+            group_extensions_in_use,
+            required_capabilities,
+        )?;
 
         Ok(state)
     }
@@ -346,6 +410,7 @@ where
         &self,
         strategy: F,
         mut state: ProposalState,
+        group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
@@ -360,13 +425,17 @@ where
         let proposals = &mut state.proposals;
 
         proposals.retain_by_type::<UpdateProposal, _, _>(|p| {
-            let res = leaf_node_validator
+            let valid = leaf_node_validator
                 .check_if_valid(
                     &p.proposal.leaf_node,
                     ValidationContext::Update(self.group_id),
                 )
                 .map_err(Into::into);
 
+            let extensions_are_supported =
+                leaf_supports_extensions(&p.proposal.leaf_node, group_extensions_in_use);
+
+            let res = valid.and(extensions_are_supported);
             apply_strategy(&strategy, p, res)
         })?;
 
@@ -377,6 +446,7 @@ where
         &self,
         strategy: F,
         mut state: ProposalState,
+        group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
@@ -392,15 +462,35 @@ where
         let proposals = &mut state.proposals;
 
         proposals.retain_by_type::<AddProposal, _, _>(|p| {
-            let res = package_validator
+            let valid = package_validator
                 .check_if_valid(&p.proposal.key_package, Default::default())
                 .map_err(Into::into);
 
+            let extensions_are_supported = leaf_supports_extensions(
+                &p.proposal.key_package.leaf_node,
+                group_extensions_in_use,
+            );
+
+            let res = valid.and(extensions_are_supported);
             apply_strategy(&strategy, p, res)
         })?;
 
         Ok(state)
     }
+}
+
+fn leaf_supports_extensions(
+    leaf: &LeafNode,
+    extensions: &ExtensionList,
+) -> Result<(), ProposalFilterError> {
+    extensions
+        .iter()
+        .map(|ext| ext.extension_type)
+        .filter(|&ext_type| !is_default_extension(ext_type))
+        .find(|ext_type| !leaf.capabilities.extensions.contains(ext_type))
+        .map_or(Ok(()), |ext_type| {
+            Err(ProposalFilterError::UnsupportedGroupExtension(ext_type))
+        })
 }
 
 pub trait FilterStrategy {

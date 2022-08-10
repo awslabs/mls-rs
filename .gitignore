@@ -2,3 +2,6 @@
 Cargo.lock
 .idea
 .vscode
+
+# Test data files stored in S3
+/test_data/empty_trees.json

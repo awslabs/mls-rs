@@ -1,6 +1,5 @@
 use super::*;
 use crate::{
-    extension::RequiredCapabilitiesExt,
     group::proposal_filter::{
         FailInvalidProposal, IgnoreInvalidByRefProposal, ProposalApplier, ProposalBundle,
         ProposalFilter, ProposalFilterError, ProposalInfo, ProposalState,
@@ -15,6 +14,8 @@ pub enum ProposalCacheError {
     ProposalFilterError(#[from] ProposalFilterError),
     #[error("Proposal {0:?} not found")]
     ProposalNotFound(ProposalRef),
+    #[error("Invalid required capabilities")]
+    InvalidRequiredCapabilities(#[source] ExtensionError),
 }
 
 #[derive(Debug, PartialEq)]
@@ -213,7 +214,7 @@ impl ProposalCache {
         &self,
         sender: Sender,
         additional_proposals: Vec<Proposal>,
-        required_capabilities: Option<RequiredCapabilitiesExt>,
+        group_extensions: &ExtensionList,
         credential_validator: C,
         public_tree: &TreeKemPublic,
         external_leaf: Option<&LeafNode>,
@@ -250,11 +251,16 @@ impl ProposalCache {
             .filter(proposals)
             .map_err(ProposalFilterError::user_defined)?;
 
+        let required_capabilities = group_extensions
+            .get_extension()
+            .map_err(ProposalCacheError::InvalidRequiredCapabilities)?;
+
         let applier = ProposalApplier::new(
             public_tree,
             self.protocol_version,
             self.cipher_suite,
             &self.group_id,
+            group_extensions,
             required_capabilities.as_ref(),
             external_leaf,
             &credential_validator,
@@ -305,7 +311,7 @@ impl ProposalCache {
         receiver: Option<LeafIndex>,
         proposal_list: Vec<ProposalOrRef>,
         external_leaf: Option<&LeafNode>,
-        required_capabilities: Option<RequiredCapabilitiesExt>,
+        group_extensions: &ExtensionList,
         credential_validator: C,
         public_tree: &TreeKemPublic,
         user_filter: F,
@@ -332,11 +338,16 @@ impl ProposalCache {
             .validate(&proposals)
             .map_err(ProposalFilterError::user_defined)?;
 
+        let required_capabilities = group_extensions
+            .get_extension()
+            .map_err(ProposalCacheError::InvalidRequiredCapabilities)?;
+
         let applier = ProposalApplier::new(
             public_tree,
             self.protocol_version,
             self.cipher_suite,
             &self.group_id,
+            group_extensions,
             required_capabilities.as_ref(),
             external_leaf,
             &credential_validator,
@@ -401,7 +412,9 @@ mod tests {
     use super::*;
     use crate::{
         client_config::PassthroughCredentialValidator,
-        extension::{test_utils::TestExtension, ExternalSendersExt},
+        extension::{
+            test_utils::TestExtension, ExternalSendersExt, MlsExtension, RequiredCapabilitiesExt,
+        },
         group::test_utils::{test_group, TEST_GROUP},
         key_package::test_utils::{test_key_package, test_key_package_custom},
         signing_identity::test_utils::get_test_signing_identity,
@@ -410,9 +423,11 @@ mod tests {
                 test_utils::{get_basic_test_node, get_basic_test_node_sig_key},
                 LeafNodeSource,
             },
-            leaf_node_validator::test_utils::FailureCredentialValidator,
+            leaf_node_validator::{
+                test_utils::FailureCredentialValidator, LeafNodeValidationError,
+            },
             parent_hash::ParentHash,
-            AccumulateBatchResults, TreeIndexError,
+            AccumulateBatchResults, Lifetime, TreeIndexError,
         },
         PassThroughProposalFilter,
     };
@@ -624,7 +639,7 @@ mod tests {
             .prepare_commit(
                 Sender::Member(test_sender),
                 vec![],
-                None,
+                &ExtensionList::new(),
                 PassthroughCredentialValidator::new(),
                 &tree,
                 None,
@@ -664,7 +679,7 @@ mod tests {
             .prepare_commit(
                 Sender::Member(test_sender),
                 additional.clone(),
-                None,
+                &ExtensionList::new(),
                 PassthroughCredentialValidator::new(),
                 &tree,
                 None,
@@ -712,7 +727,7 @@ mod tests {
         let res = cache.prepare_commit(
             Sender::Member(test_sender()),
             additional,
-            None,
+            &ExtensionList::new(),
             PassthroughCredentialValidator::new(),
             &tree,
             None,
@@ -750,7 +765,7 @@ mod tests {
             .prepare_commit(
                 Sender::Member(test_sender),
                 vec![],
-                None,
+                &ExtensionList::new(),
                 PassthroughCredentialValidator::new(),
                 &tree,
                 None,
@@ -779,7 +794,7 @@ mod tests {
             .prepare_commit(
                 Sender::Member(test_sender),
                 vec![],
-                None,
+                &ExtensionList::new(),
                 PassthroughCredentialValidator::new(),
                 &tree,
                 None,
@@ -825,7 +840,7 @@ mod tests {
             .prepare_commit(
                 Sender::Member(LeafIndex(2)),
                 Vec::new(),
-                None,
+                &ExtensionList::new(),
                 PassthroughCredentialValidator::new(),
                 &tree,
                 None,
@@ -880,7 +895,7 @@ mod tests {
             .prepare_commit(
                 Sender::Member(test_sender),
                 additional,
-                None,
+                &ExtensionList::new(),
                 &credential_validator,
                 &tree,
                 None,
@@ -894,7 +909,7 @@ mod tests {
                 Some(test_sender),
                 proposals,
                 None,
-                None,
+                &ExtensionList::new(),
                 &credential_validator,
                 &tree,
                 pass_through_filter(),
@@ -919,7 +934,7 @@ mod tests {
         let res = cache.prepare_commit(
             Sender::Member(test_sender()),
             vec![proposal.clone(), proposal],
-            None,
+            &ExtensionList::new(),
             PassthroughCredentialValidator::new(),
             &TreeKemPublic::new(TEST_CIPHER_SUITE),
             None,
@@ -961,7 +976,7 @@ mod tests {
                 ExternalInit { kem_output },
             ))],
             None,
-            group.required_capabilities(),
+            &group.group.context().extensions,
             credential_validator,
             public_tree,
             pass_through_filter(),
@@ -1000,7 +1015,7 @@ mod tests {
             None,
             vec![ProposalOrRef::Reference(proposal_ref)],
             Some(&test_node()),
-            group.required_capabilities(),
+            &group.group.context().extensions,
             PassthroughCredentialValidator::new(),
             public_tree,
             pass_through_filter(),
@@ -1035,7 +1050,7 @@ mod tests {
             .map(ProposalOrRef::Proposal)
             .collect(),
             Some(&test_node()),
-            group.required_capabilities(),
+            &group.group.context().extensions,
             credential_validator,
             public_tree,
             pass_through_filter(),
@@ -1069,7 +1084,7 @@ mod tests {
             .map(ProposalOrRef::Proposal)
             .collect(),
             Some(&test_node()),
-            group.required_capabilities(),
+            &group.group.context().extensions,
             credential_validator,
             public_tree,
             pass_through_filter(),
@@ -1095,7 +1110,7 @@ mod tests {
         let cache = make_proposal_cache();
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let required_capabilities = group.required_capabilities();
+        let group_extensions = group.group.context().extensions.clone();
         let mut public_tree = group.group.core.current_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -1121,7 +1136,7 @@ mod tests {
             None,
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
             Some(&test_node()),
-            required_capabilities,
+            &group_extensions,
             credential_validator,
             &public_tree,
             pass_through_filter(),
@@ -1140,7 +1155,7 @@ mod tests {
         let cache = make_proposal_cache();
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let required_capabilities = group.required_capabilities();
+        let group_extensions = group.group.context().extensions.clone();
         let mut public_tree = group.group.core.current_tree;
         let credential_validator = FailureCredentialValidator::new().pass_validation(true);
 
@@ -1160,7 +1175,7 @@ mod tests {
             None,
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
             Some(&test_node()),
-            required_capabilities,
+            &group_extensions,
             credential_validator,
             &public_tree,
             pass_through_filter(),
@@ -1179,7 +1194,7 @@ mod tests {
         let cache = make_proposal_cache();
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let required_capabilities = group.required_capabilities();
+        let group_extensions = group.group.context().extensions.clone();
         let mut public_tree = group.group.core.current_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
@@ -1199,7 +1214,7 @@ mod tests {
             None,
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
             Some(&test_node()),
-            required_capabilities,
+            &group_extensions,
             credential_validator,
             &public_tree,
             pass_through_filter(),
@@ -1266,7 +1281,7 @@ mod tests {
             None,
             Vec::new(),
             Some(&test_node()),
-            group.required_capabilities(),
+            &group.group.context().extensions,
             credential_validator,
             public_tree,
             pass_through_filter(),
@@ -1288,7 +1303,7 @@ mod tests {
             .prepare_commit(
                 Sender::Member(test_sender()),
                 vec![],
-                None,
+                &ExtensionList::new(),
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
@@ -1314,7 +1329,7 @@ mod tests {
             .prepare_commit(
                 Sender::Member(test_sender()),
                 Vec::new(),
-                None,
+                &ExtensionList::new(),
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
@@ -1345,7 +1360,7 @@ mod tests {
             .prepare_commit(
                 Sender::Member(alice),
                 vec![remove],
-                None,
+                &ExtensionList::new(),
                 PassthroughCredentialValidator::new(),
                 &tree,
                 None,
@@ -1375,7 +1390,7 @@ mod tests {
             .prepare_commit(
                 Sender::Member(test_sender()),
                 vec![psk, add],
-                None,
+                &ExtensionList::new(),
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
@@ -1401,7 +1416,7 @@ mod tests {
             .prepare_commit(
                 Sender::Member(test_sender()),
                 vec![reinit],
-                None,
+                &ExtensionList::new(),
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
@@ -1471,7 +1486,7 @@ mod tests {
                 Some(self.receiver),
                 proposals.into_iter().map(Into::into).collect(),
                 None,
-                None,
+                &ExtensionList::new(),
                 &self.credential_validator,
                 self.tree,
                 pass_through_filter(),
@@ -1537,7 +1552,7 @@ mod tests {
             self.cache.prepare_commit(
                 Sender::Member(self.sender),
                 self.additional_proposals.clone(),
-                None,
+                &ExtensionList::new(),
                 &self.credential_validator,
                 self.tree,
                 None,
@@ -2364,14 +2379,34 @@ mod tests {
     }
 
     fn make_extension_list(foo: u8) -> ExtensionList {
-        let mut list = ExtensionList::new();
-        list.set_extension(TestExtension { foo }).unwrap();
-        list
+        [TestExtension { foo }].try_into().unwrap()
     }
 
     #[test]
     fn sending_multiple_group_context_extensions_keeps_only_one() {
-        let (alice, tree) = new_tree("alice");
+        let (alice, tree) = {
+            let (signing_identity, signature_key) =
+                get_test_signing_identity(TEST_CIPHER_SUITE, b"alice".to_vec());
+
+            let (leaf, secret) = LeafNode::generate(
+                TEST_CIPHER_SUITE,
+                signing_identity,
+                Capabilities {
+                    extensions: vec![TestExtension::IDENTIFIER],
+                    ..Capabilities::default()
+                },
+                ExtensionList::default(),
+                &signature_key,
+                Lifetime::years(1).unwrap(),
+                &PassthroughCredentialValidator::new(),
+            )
+            .unwrap();
+
+            let (pub_tree, priv_tree) =
+                TreeKemPublic::derive(TEST_CIPHER_SUITE, leaf, secret).unwrap();
+
+            (priv_tree.self_index, pub_tree)
+        };
 
         let proposals = [
             Proposal::GroupContextExtensions(make_extension_list(0)),
@@ -2393,13 +2428,11 @@ mod tests {
     }
 
     fn make_external_senders_extension() -> ExtensionList {
-        let mut extensions = ExtensionList::new();
-        extensions
-            .set_extension(ExternalSendersExt::new(vec![
-                get_test_signing_identity(TEST_CIPHER_SUITE, b"alice".to_vec()).0,
-            ]))
-            .unwrap();
-        extensions
+        [ExternalSendersExt::new(vec![
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"alice".to_vec()).0,
+        ])]
+        .try_into()
+        .unwrap()
     }
 
     #[test]
@@ -2568,6 +2601,65 @@ mod tests {
             effects.rejected_proposals,
             vec![(external_init_ref, external_init)]
         );
+    }
+
+    fn required_capabilities_proposal(extension: u16) -> Proposal {
+        let required_capabilities = RequiredCapabilitiesExt {
+            extensions: vec![extension],
+            ..Default::default()
+        };
+        Proposal::GroupContextExtensions([required_capabilities].try_into().unwrap())
+    }
+
+    #[test]
+    fn receiving_required_capabilities_not_supported_by_member_fails() {
+        let (alice, tree) = new_tree("alice");
+
+        let res =
+            CommitReceiver::new(&tree, alice, alice).receive([required_capabilities_proposal(33)]);
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::LeafNodeValidationError(
+                    LeafNodeValidationError::RequiredExtensionNotFound(33)
+                )
+            ))
+        );
+    }
+
+    #[test]
+    fn sending_required_capabilities_not_supported_by_member_fails() {
+        let (alice, tree) = new_tree("alice");
+
+        let res = CommitSender::new(&tree, alice)
+            .with_additional([required_capabilities_proposal(33)])
+            .send();
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::LeafNodeValidationError(
+                    LeafNodeValidationError::RequiredExtensionNotFound(33)
+                )
+            ))
+        );
+    }
+
+    #[test]
+    fn sending_additional_required_capabilities_not_supported_by_member_filters_it_out() {
+        let (alice, tree) = new_tree("alice");
+
+        let proposal = required_capabilities_proposal(33);
+        let proposal_ref = make_proposal_ref(&proposal, alice);
+
+        let (committed, effects) = CommitSender::new(&tree, alice)
+            .cache(proposal_ref.clone(), proposal.clone(), alice)
+            .send()
+            .unwrap();
+
+        assert_eq!(committed, Vec::new());
+        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
     }
 
     #[test]

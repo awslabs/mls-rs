@@ -19,7 +19,6 @@ use crate::client_config::{ClientConfig, CredentialValidator, ProposalFilterInit
 use crate::credential::CredentialError;
 use crate::extension::{
     ExtensionError, ExtensionList, ExternalPubExt, ExternalSendersExt, RatchetTreeExt,
-    RequiredCapabilitiesExt,
 };
 use crate::group::{KeySchedule, KeyScheduleError};
 use crate::key_package::{
@@ -881,7 +880,7 @@ where
         let (commit_proposals, proposal_effects) = self.core.proposals.prepare_commit(
             sender.clone(),
             proposals,
-            self.context().extensions.get_extension()?,
+            &self.context().extensions,
             self.config.credential_validator(),
             &self.core.current_tree,
             external_leaf,
@@ -1450,14 +1449,12 @@ where
     }
 
     pub fn add_proposal(&self, key_package: KeyPackage) -> Result<Proposal, GroupError> {
-        let required_capabilities = self.context().extensions.get_extension()?;
-
-        // Check that this proposal has a valid lifetime, signature, and meets the requirements
-        // of the current group required capabilities extension.
+        // Check that this proposal has a valid lifetime and signature. Required capabilities are
+        // not checked as they may be changed in another proposal in the same commit.
         let key_package_validator = KeyPackageValidator::new(
             self.core.protocol_version(),
             self.core.cipher_suite(),
-            required_capabilities.as_ref(),
+            None,
             self.config.credential_validator(),
         );
 
@@ -1895,7 +1892,7 @@ fn proposal_effects<C, F>(
     proposals: &ProposalCache,
     commit: &Commit,
     sender: &Sender,
-    required_capabilities: Option<RequiredCapabilitiesExt>,
+    group_extensions: &ExtensionList,
     credential_validator: C,
     public_tree: &TreeKemPublic,
     user_filter: F,
@@ -1909,7 +1906,7 @@ where
         commit_receiver,
         commit.proposals.clone(),
         commit.path.as_ref().map(|path| &path.leaf_node),
-        required_capabilities,
+        group_extensions,
         credential_validator,
         public_tree,
         user_filter,
@@ -2258,10 +2255,6 @@ pub(crate) mod test_utils {
             .unwrap();
 
             self.group.format_for_wire(auth_content).unwrap()
-        }
-
-        pub(crate) fn required_capabilities(&self) -> Option<RequiredCapabilitiesExt> {
-            self.group.context().extensions.get_extension().unwrap()
         }
     }
 

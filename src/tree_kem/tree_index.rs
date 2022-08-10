@@ -1,7 +1,7 @@
-use std::collections::hash_map::Entry;
-
 use super::*;
-use crate::credential::CredentialError;
+use crate::credential::{CredentialError, CredentialType};
+use itertools::Itertools;
+use std::collections::hash_map::Entry;
 
 #[derive(Debug, Error)]
 pub enum TreeIndexError {
@@ -13,6 +13,10 @@ pub enum TreeIndexError {
     DuplicateSignatureKeys(LeafIndex),
     #[error("hpke keys must be unique, duplicate key found at index: {0:?}")]
     DuplicateHpkeKey(LeafIndex),
+    #[error("In-use credential type {0} not supported by new leaf at index {1:?}")]
+    InUseCredentialTypeUnsupportedByNewLeaf(CredentialType, LeafIndex),
+    #[error("Not all members support the credential type used by new leaf")]
+    CredentialTypeOfNewLeafIsUnsupported(CredentialType),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -21,6 +25,8 @@ pub struct TreeIndex {
     credential_signature_key: HashMap<Vec<u8>, LeafIndex>,
     #[serde(with = "crate::serde_utils::map_as_seq")]
     hpke_key: HashMap<Vec<u8>, LeafIndex>,
+    #[serde(with = "crate::serde_utils::map_as_seq")]
+    credential_type_counters: HashMap<CredentialType, CredentialTypeCounters>,
 }
 
 impl TreeIndex {
@@ -29,8 +35,9 @@ impl TreeIndex {
     }
 
     pub fn insert(&mut self, index: LeafIndex, leaf_node: &LeafNode) -> Result<(), TreeIndexError> {
-        let pub_key = leaf_node.signing_identity.signature_key.deref().clone();
+        let old_leaf_count = self.credential_signature_key.len();
 
+        let pub_key = leaf_node.signing_identity.signature_key.deref().clone();
         let credential_entry = self.credential_signature_key.entry(pub_key);
 
         if let Entry::Occupied(entry) = credential_entry {
@@ -44,6 +51,46 @@ impl TreeIndex {
             return Err(TreeIndexError::DuplicateHpkeKey(*entry.get()));
         }
 
+        let in_use_cred_type_unsupported_by_new_leaf = self
+            .credential_type_counters
+            .iter()
+            .filter_map(|(cred_type, counters)| Some(*cred_type).filter(|_| counters.used > 0))
+            .find(|cred_type| !leaf_node.capabilities.credentials.contains(cred_type));
+
+        if let Some(cred_type) = in_use_cred_type_unsupported_by_new_leaf {
+            return Err(TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(
+                cred_type, index,
+            ));
+        }
+
+        let new_leaf_cred_type = leaf_node.signing_identity.credential.credential_type();
+
+        let cred_type_counters = self
+            .credential_type_counters
+            .entry(new_leaf_cred_type)
+            .or_default();
+
+        if cred_type_counters.supported != old_leaf_count {
+            return Err(TreeIndexError::CredentialTypeOfNewLeafIsUnsupported(
+                new_leaf_cred_type,
+            ));
+        }
+
+        cred_type_counters.used += 1;
+
+        leaf_node
+            .capabilities
+            .credentials
+            .iter()
+            .copied()
+            .unique()
+            .for_each(|cred_type| {
+                self.credential_type_counters
+                    .entry(cred_type)
+                    .or_default()
+                    .supported += 1;
+            });
+
         credential_entry.or_insert(index);
         hpke_entry.or_insert(index);
 
@@ -52,15 +99,41 @@ impl TreeIndex {
 
     pub fn remove(&mut self, leaf_node: &LeafNode) {
         let pub_key = leaf_node.signing_identity.signature_key.deref();
-
-        self.credential_signature_key.remove(pub_key);
+        let existed = self.credential_signature_key.remove(pub_key).is_some();
         self.hpke_key.remove(leaf_node.public_key.as_ref());
+
+        if !existed {
+            return;
+        }
+
+        let leaf_cred_type = leaf_node.signing_identity.credential.credential_type();
+
+        if let Some(counters) = self.credential_type_counters.get_mut(&leaf_cred_type) {
+            counters.used -= 1;
+        }
+
+        leaf_node
+            .capabilities
+            .credentials
+            .iter()
+            .unique()
+            .for_each(|cred_type| {
+                if let Some(counters) = self.credential_type_counters.get_mut(cred_type) {
+                    counters.supported -= 1;
+                }
+            });
     }
 
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.credential_signature_key.len()
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+struct CredentialTypeCounters {
+    supported: usize,
+    used: usize,
 }
 
 #[cfg(test)]

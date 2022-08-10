@@ -27,6 +27,18 @@ const REQUIRED_CAPABILITIES_EXT_ID: ExtensionType = 3;
 const EXTERNAL_PUB_EXT_ID: ExtensionType = 4;
 const EXTERNAL_SENDERS_EXT_ID: ExtensionType = 5;
 
+const DEFAULT_EXTENSIONS: &[ExtensionType] = &[
+    APPLICATION_ID_EXT_ID,
+    RATCHET_TREE_EXT_ID,
+    REQUIRED_CAPABILITIES_EXT_ID,
+    EXTERNAL_PUB_EXT_ID,
+    EXTERNAL_SENDERS_EXT_ID,
+];
+
+pub fn is_default_extension(ext_type: ExtensionType) -> bool {
+    DEFAULT_EXTENSIONS.contains(&ext_type)
+}
+
 pub trait MlsExtension: Sized + Serialize + Deserialize {
     const IDENTIFIER: ExtensionType;
 
@@ -230,6 +242,23 @@ impl Deserialize for ExtensionList {
 impl From<Vec<Extension>> for ExtensionList {
     fn from(v: Vec<Extension>) -> Self {
         Self(v.into_iter().map(|ext| (ext.extension_type, ext)).collect())
+    }
+}
+
+impl<const N: usize, T> TryFrom<[T; N]> for ExtensionList
+where
+    T: MlsExtension,
+{
+    type Error = ExtensionError;
+
+    fn try_from(a: [T; N]) -> Result<Self, Self::Error> {
+        a.into_iter()
+            .try_fold(IndexMap::default(), |mut acc, x| {
+                let ext = x.to_extension()?;
+                acc.insert(ext.extension_type, ext);
+                Ok(acc)
+            })
+            .map(Self)
     }
 }
 

@@ -267,7 +267,7 @@ where
             &group_state.proposals,
             commit,
             &auth_content.content.sender,
-            group_state.context.extensions.get_extension()?,
+            &group_state.context.extensions,
             self.credential_validator(),
             &group_state.current_tree,
             self.proposal_filter(ProposalFilterInit::new(

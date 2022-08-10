@@ -1,5 +1,5 @@
 use crate::{
-    extension::{ExtensionList, RequiredCapabilitiesExt},
+    extension::ExtensionList,
     group::{
         AddProposal, BorrowedProposal, ExternalInit, PreSharedKey, Proposal, ProposalOrRef,
         ProposalRef, ProposalType, ReInit, RemoveProposal, Sender, UpdateProposal,
@@ -162,17 +162,12 @@ impl ProposalBundle {
         })
     }
 
-    pub fn group_context_extensions(&self) -> Option<&ExtensionList> {
-        self.group_context_extensions.first().map(|p| &p.proposal)
+    pub fn group_context_extensions_proposal(&self) -> Option<&ProposalInfo<ExtensionList>> {
+        self.group_context_extensions.first()
     }
 
-    pub fn effective_required_capabilities(
-        &self,
-        original_capabilities: Option<RequiredCapabilitiesExt>,
-    ) -> Option<RequiredCapabilitiesExt> {
-        self.group_context_extensions()
-            .and_then(|extensions| extensions.get_extension().ok().flatten())
-            .or(original_capabilities)
+    pub fn clear_group_context_extensions(&mut self) {
+        self.group_context_extensions.clear();
     }
 
     pub fn proposal_types(&self) -> impl Iterator<Item = ProposalType> + '_ {

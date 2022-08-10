@@ -1,5 +1,5 @@
 use crate::{
-    extension::ExtensionError,
+    extension::{ExtensionError, ExtensionType},
     group::{proposal_filter::ProposalBundle, ProposalType, Sender},
     key_package::KeyPackageValidationError,
     signing_identity::SigningIdentityError,
@@ -139,6 +139,8 @@ pub enum ProposalFilterError {
     OtherProposalWithReInit,
     #[error("Removing blank node at index {0:?}")]
     RemovingBlankNode(LeafIndex),
+    #[error("Unsupported group extension {0}")]
+    UnsupportedGroupExtension(ExtensionType),
 }
 
 impl ProposalFilterError {
