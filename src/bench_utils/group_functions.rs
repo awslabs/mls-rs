@@ -1,24 +1,87 @@
-use crate::cipher_suite::CipherSuite;
-use crate::client::test_utils::{get_basic_config, join_group, test_client_with_key_pkg};
-use crate::client::Client;
-use crate::client_config::{ClientConfig, InMemoryClientConfig, Preferences};
-use crate::extension::ExtensionList;
-use crate::group::framing::{Content, MLSMessage, Sender, WireFormat};
-use crate::group::message_signature::MLSAuthenticatedContent;
-use crate::group::{Commit, Group, GroupError};
-use crate::tree_kem::node::LeafIndex;
-use crate::ProtocolVersion;
-use std::collections::HashMap;
+use crate::{
+    cipher_suite::CipherSuite,
+    client::test_utils::{get_basic_config, join_group, test_client_with_key_pkg},
+    client_config::{ClientConfig, InMemoryClientConfig, Preferences},
+    extension::ExtensionList,
+    group::{
+        framing::{Content, MLSMessage, Sender, WireFormat},
+        message_signature::MLSAuthenticatedContent,
+        Commit, Group, GroupError, GroupState,
+    },
+    key_package::KeyPackageGeneration,
+    signing_identity::SigningIdentity,
+    tree_kem::node::LeafIndex,
+    Epoch, EpochRepository, ProtocolVersion,
+};
+use ferriscrypt::asym::ec_key::SecretKey;
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+
+struct GroupInfo {
+    session: GroupState,
+    epochs: Vec<u8>,
+    key_packages: Vec<u8>,
+    secrets: Vec<u8>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct TestCase {
+    info: Vec<GroupInfo>,
+}
+
+fn generate_test_cases() -> Vec<TestCase> {
+    let cipher_suite = CipherSuite::Curve25519Aes128;
+
+    [10, 50, 100]
+        .into_iter()
+        .map(|length| get_group_states(cipher_suite, length))
+        .collect()
+}
+
+pub fn load_test_cases() -> Vec<Vec<Group<InMemoryClientConfig>>> {
+    let tests: Vec<TestCase> = load_test_cases!(group_state, generate_test_cases, to_vec);
+
+    tests
+        .into_iter()
+        .map(|test| {
+            test.info
+                .into_iter()
+                .map(|group_info| {
+                    let epochs = serde_json::from_slice::<Vec<Epoch>>(&group_info.epochs).unwrap();
+
+                    let key_packages = serde_json::from_slice::<Vec<KeyPackageGeneration>>(
+                        &group_info.key_packages,
+                    )
+                    .unwrap();
+
+                    let secrets = serde_json::from_slice::<Vec<(SigningIdentity, SecretKey)>>(
+                        &group_info.secrets,
+                    )
+                    .unwrap();
+
+                    let config = InMemoryClientConfig::new();
+
+                    for (signing_identity, secret) in secrets {
+                        config.keychain().insert(signing_identity, secret);
+                    }
+
+                    for epoch in epochs {
+                        config.epoch_repo().insert(epoch).unwrap();
+                    }
+
+                    for key_pkg_gen in key_packages {
+                        config.key_package_repo().insert(key_pkg_gen).unwrap();
+                    }
+
+                    Group::import(config, group_info.session).unwrap()
+                })
+                .collect()
+        })
+        .collect()
+}
 
 // creates group modifying code found in client.rs
-pub fn create_group(
-    cipher_suite: CipherSuite,
-    size: usize,
-    encrypt_controls: bool,
-) -> (
-    Client<InMemoryClientConfig>,
-    Vec<Group<InMemoryClientConfig>>,
-) {
+pub fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<InMemoryClientConfig>> {
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     pub const TEST_GROUP: &[u8] = b"group";
 
@@ -26,7 +89,7 @@ pub fn create_group(
         .with_preferences(
             Preferences::default()
                 .with_ratchet_tree_extension(true)
-                .with_control_encryption(encrypt_controls),
+                .with_control_encryption(true),
         )
         .build_client();
 
@@ -53,13 +116,47 @@ pub fn create_group(
         groups.push(bob_group);
     });
 
-    (alice, groups)
+    groups
+}
+
+fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
+    let sessions = create_group(cipher_suite, size);
+
+    let info = sessions
+        .into_iter()
+        .map(|session| {
+            let config = &session.config;
+
+            let epoch_repo = config.epoch_repo();
+            let exported_epochs = epoch_repo.export();
+            let epochs = serde_json::to_vec(&exported_epochs).unwrap();
+
+            let key_repo = config.key_package_repo();
+            let exported_key_packages = key_repo.export();
+            let key_packages = serde_json::to_vec(&exported_key_packages).unwrap();
+
+            let key_chain = config.keychain();
+            let exported_key_chain = key_chain.export();
+            let secrets = serde_json::to_vec(&exported_key_chain).unwrap();
+
+            let group_state = session.export().unwrap();
+
+            GroupInfo {
+                session: group_state,
+                epochs,
+                key_packages,
+                secrets,
+            }
+        })
+        .collect();
+
+    TestCase { info }
 }
 
 pub fn commit_groups(
-    mut container: HashMap<usize, Vec<Group<InMemoryClientConfig>>>,
-) -> HashMap<usize, Vec<Group<InMemoryClientConfig>>> {
-    for value in container.values_mut() {
+    mut container: Vec<Vec<Group<InMemoryClientConfig>>>,
+) -> Vec<Vec<Group<InMemoryClientConfig>>> {
+    for value in &mut container {
         commit_group(value);
     }
 

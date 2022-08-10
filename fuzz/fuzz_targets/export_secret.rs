@@ -7,9 +7,8 @@ use once_cell::sync::Lazy;
 
 static GLOBAL_DATA: Lazy<Vec<Group<InMemoryClientConfig>>> = Lazy::new(|| {
     let cipher_suite = CipherSuite::Curve25519Aes128;
-    let (_, container) = create_group(cipher_suite, 2, false);
 
-    container
+    create_group(cipher_suite, 2)
 });
 
 #[derive(Clone, Debug)]

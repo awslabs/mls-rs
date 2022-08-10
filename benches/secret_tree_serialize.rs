@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use aws_mls::bench_utils::group_functions::create_group;
+use aws_mls::bench_utils::group_functions::load_test_cases;
 
 use aws_mls::client_config::ClientConfig;
 
@@ -22,21 +20,24 @@ fn secret_tree_setup(c: &mut Criterion) {
 
     println!("Benchmarking secret tree serialization for: {cipher_suite:?}");
 
-    let container = [10, 50, 100]
-        .into_iter()
-        .map(|length| (length, create_group(cipher_suite, length, false)))
-        .collect::<HashMap<_, _>>();
+    let container = load_test_cases();
 
-    for (key, value) in container {
-        let group_stats = value.1[0].group_stats().unwrap();
+    for groups in container {
+        let group_stats = groups[0].group_stats().unwrap();
         let epoch_id = group_stats.epoch;
 
-        let epoch_repo = value.0.config.epoch_repo();
+        let epoch_repo = groups[0].config.epoch_repo();
+
         let epoch = epoch_repo.get(TEST_GROUP, epoch_id).unwrap().unwrap();
 
         let secret_tree = epoch.secret_tree();
 
-        bench_secret_tree_serialize(&mut secret_tree_group, cipher_suite, key, secret_tree);
+        bench_secret_tree_serialize(
+            &mut secret_tree_group,
+            cipher_suite,
+            groups.len(),
+            secret_tree,
+        );
     }
 
     secret_tree_group.finish();

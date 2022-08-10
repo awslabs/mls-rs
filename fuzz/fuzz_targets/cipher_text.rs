@@ -13,7 +13,7 @@ pub const CIPHER_SUITE: aws_mls::cipher_suite::CipherSuite = CipherSuite::Curve2
 pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
 
 static GROUP_DATA: Lazy<Mutex<Vec<Group<InMemoryClientConfig>>>> = Lazy::new(|| {
-    let (_, container) = create_group(CIPHER_SUITE, 2, true);
+    let container = create_group(CIPHER_SUITE, 2);
 
     Mutex::new(container)
 });

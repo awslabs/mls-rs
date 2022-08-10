@@ -26,5 +26,6 @@ jobs:
       - name: Copy benchmark files to test data
         run: |
           aws s3 cp s3://benchmark-wickr-mls/empty_trees.json ./test_data/empty_trees.json
+          aws s3 cp s3://benchmark-wickr-mls/group_state.json ./test_data/group_state.json
       - name: Run benchmark
-        run: cargo bench --features benchmark --bench encap --bench decap -- --output-format bencher
+        run: cargo bench --features benchmark --bench encap --bench decap --bench group_serialize --bench group_commit --bench group_application --bench secret_tree_serialize -- --output-format bencher | tee output.txt

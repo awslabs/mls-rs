@@ -1,10 +1,10 @@
-use aws_mls::cipher_suite::CipherSuite;
-use aws_mls::client_config::InMemoryClientConfig;
-use aws_mls::{bench_utils::group_functions::create_group, group::Group};
+use aws_mls::{
+    bench_utils::group_functions::load_test_cases, cipher_suite::CipherSuite,
+    client_config::InMemoryClientConfig, group::Group,
+};
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 };
-use std::collections::HashMap;
 
 fn group_setup(c: &mut Criterion) {
     let mut group_serialize = c.benchmark_group("group_serialize");
@@ -13,10 +13,7 @@ fn group_setup(c: &mut Criterion) {
 
     println!("Benchmarking group state serialization for: {cipher_suite:?}");
 
-    let container = [10, 100, 1000]
-        .into_iter()
-        .map(|length| (length, create_group(cipher_suite, length, false).1))
-        .collect::<HashMap<_, _>>();
+    let container = load_test_cases();
 
     bench_group_serialize(&mut group_serialize, cipher_suite, container);
 
@@ -27,15 +24,15 @@ fn group_setup(c: &mut Criterion) {
 fn bench_group_serialize(
     bench_group: &mut BenchmarkGroup<WallTime>,
     cipher_suite: CipherSuite,
-    container: HashMap<usize, Vec<Group<InMemoryClientConfig>>>,
+    container: Vec<Vec<Group<InMemoryClientConfig>>>,
 ) {
-    for (key, value) in container {
+    for groups in container {
         bench_group.bench_with_input(
-            BenchmarkId::new(format!("{cipher_suite:?}"), key),
-            &key,
+            BenchmarkId::new(format!("{cipher_suite:?}"), groups.len()),
+            &groups.len(),
             |b, _| {
                 b.iter(|| {
-                    serde_json::to_vec(&value[0].export().unwrap()).unwrap();
+                    serde_json::to_vec(&groups[0].export().unwrap()).unwrap();
                 })
             },
         );

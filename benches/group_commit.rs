@@ -1,11 +1,12 @@
-use aws_mls::bench_utils::group_functions::{commit_groups, create_group};
-use aws_mls::cipher_suite::CipherSuite;
-use aws_mls::client_config::InMemoryClientConfig;
-use aws_mls::group::Group;
+use aws_mls::{
+    bench_utils::group_functions::{commit_groups, load_test_cases},
+    cipher_suite::CipherSuite,
+    client_config::InMemoryClientConfig,
+    group::Group,
+};
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 };
-use std::collections::HashMap;
 
 fn commit_setup(c: &mut Criterion) {
     let mut group_commit = c.benchmark_group("group_commit");
@@ -15,10 +16,7 @@ fn commit_setup(c: &mut Criterion) {
     println!("Benchmarking group commit for: {cipher_suite:?}");
 
     // creates groups of the desired sizes
-    let mut container = [10, 50, 100]
-        .into_iter()
-        .map(|length| (length, create_group(cipher_suite, length, false).1))
-        .collect::<HashMap<_, _>>();
+    let mut container = load_test_cases();
 
     // fills the tree by having everyone commit
     container = commit_groups(container);
@@ -32,18 +30,18 @@ fn commit_setup(c: &mut Criterion) {
 fn bench_group_commit(
     bench_group: &mut BenchmarkGroup<WallTime>,
     cipher_suite: CipherSuite,
-    container: HashMap<usize, Vec<Group<InMemoryClientConfig>>>,
+    mut container: Vec<Vec<Group<InMemoryClientConfig>>>,
 ) {
-    for (key, mut value) in container {
+    for groups in &mut container {
         bench_group.bench_with_input(
-            BenchmarkId::new(format!("{cipher_suite:?}"), key),
-            &key,
+            BenchmarkId::new(format!("{cipher_suite:?}"), groups.len()),
+            &groups.len(),
             |b, _| {
                 b.iter(|| {
-                    let (commit, _) = value[0].commit_proposals(Vec::new(), Vec::new()).unwrap();
+                    let (commit, _) = groups[0].commit_proposals(Vec::new(), Vec::new()).unwrap();
 
-                    value[0].process_pending_commit().unwrap();
-                    value[1].process_incoming_message(commit).unwrap();
+                    groups[0].process_pending_commit().unwrap();
+                    groups[1].process_incoming_message(commit).unwrap();
                 })
             },
         );

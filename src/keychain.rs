@@ -32,6 +32,11 @@ impl InMemoryKeychain {
             .unwrap()
             .insert(identity, secret_key)
     }
+
+    pub fn export(&self) -> Vec<(SigningIdentity, SecretKey)> {
+        let map = self.secret_keys.lock().unwrap_or_else(|e| e.into_inner());
+        map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    }
 }
 
 impl Keychain for InMemoryKeychain {

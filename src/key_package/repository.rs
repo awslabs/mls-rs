@@ -28,6 +28,11 @@ impl InMemoryKeyPackageRepository {
     pub fn get(&self, r: &KeyPackageRef) -> Option<KeyPackageGeneration> {
         self.inner.lock().unwrap().get(r).cloned()
     }
+
+    pub fn export(&self) -> Vec<KeyPackageGeneration> {
+        let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        map.values().cloned().collect()
+    }
 }
 
 impl KeyPackageRepository for InMemoryKeyPackageRepository {

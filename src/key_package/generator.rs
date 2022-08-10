@@ -37,7 +37,7 @@ where
     pub credential_validator: &'a C,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct KeyPackageGeneration {
     pub key_package: KeyPackage,
     pub init_secret_key: HpkeSecretKey,

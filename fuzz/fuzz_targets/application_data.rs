@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 static GROUP_DATA: Lazy<Mutex<Vec<Group<InMemoryClientConfig>>>> = Lazy::new(|| {
     let cipher_suite = CipherSuite::Curve25519Aes128;
-    let (_, container) = create_group(cipher_suite, 2, false);
+    let container = create_group(cipher_suite, 2);
 
     Mutex::new(container)
 });

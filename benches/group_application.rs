@@ -1,12 +1,17 @@
-use aws_mls::bench_utils::group_functions::{commit_group, create_group};
 use aws_mls::cipher_suite::CipherSuite;
+
 use aws_mls::client_config::InMemoryClientConfig;
+
 use aws_mls::group::Group;
+
+use ferriscrypt::rand::SecureRng;
+
+use aws_mls::bench_utils::group_functions::{commit_group, load_test_cases};
+
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
     Throughput,
 };
-use ferriscrypt::rand::SecureRng;
 
 fn application_message_setup(c: &mut Criterion) {
     let mut group_application = c.benchmark_group("group_application_message");
@@ -16,14 +21,16 @@ fn application_message_setup(c: &mut Criterion) {
     println!("Benchmarking group application message for: {cipher_suite:?}");
 
     // creates group of the desired size
-    let (_, mut container) = create_group(cipher_suite, 100, false);
+    let mut container = load_test_cases();
+
+    let sessions = container.iter_mut().next().unwrap();
 
     // fills the tree by having everyone commit
-    commit_group(&mut container);
+    commit_group(sessions);
 
     let bytes = SecureRng::gen(1000000).unwrap();
 
-    bench_application_message(&mut group_application, cipher_suite, &mut container, bytes);
+    bench_application_message(&mut group_application, cipher_suite, sessions, bytes);
 
     group_application.finish();
 }

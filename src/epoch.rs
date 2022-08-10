@@ -66,6 +66,68 @@ pub struct InMemoryEpochRepository {
     retention_limit: usize,
 }
 
+fn get_epoch(
+    map: &HashMap<Vec<u8>, VecDeque<Epoch>>,
+    group_id: &[u8],
+    epoch_id: u64,
+) -> Option<Epoch> {
+    map.get(group_id).and_then(|epoch_vec| {
+        epoch_vec
+            .front()
+            .map(|e| e.inner().context.epoch)
+            .and_then(|front| {
+                if epoch_id > front {
+                    return None;
+                }
+
+                epoch_vec.get((front - epoch_id) as usize).cloned()
+            })
+    })
+}
+
+fn insert_epoch(
+    map: &mut HashMap<Vec<u8>, VecDeque<Epoch>>,
+    epoch: Epoch,
+    retention_limit: Option<usize>,
+) -> Result<(), InMemoryEpochRepositoryError> {
+    let group_id = &epoch.inner().context.group_id;
+
+    let vec = map
+        .entry(group_id.to_vec())
+        .or_insert_with(Default::default);
+
+    if let Some(front) = vec.front() {
+        let front_epoch = front.inner().context.epoch;
+        let epoch_id = epoch.inner().context.epoch;
+
+        if epoch_id == front_epoch + 1 {
+            vec.push_front(epoch);
+        } else if front_epoch >= epoch_id {
+            if let Some(e) = vec.get_mut((front_epoch - epoch_id) as usize) {
+                *e = epoch;
+            } else {
+                return Err(InMemoryEpochRepositoryError::InvalidInsert(
+                    epoch_id,
+                    front_epoch,
+                ));
+            }
+        } else {
+            return Err(InMemoryEpochRepositoryError::InvalidInsert(
+                epoch_id,
+                front_epoch,
+            ));
+        }
+    } else {
+        vec.push_front(epoch)
+    }
+
+    if retention_limit.map_or(false, |n| vec.len() > n) {
+        vec.pop_back();
+    }
+
+    Ok(())
+}
+
 impl InMemoryEpochRepository {
     fn new() -> Self {
         Self {
@@ -76,59 +138,20 @@ impl InMemoryEpochRepository {
 
     fn get(&self, group_id: &[u8], epoch_id: u64) -> Option<Epoch> {
         let map = self.inner.lock().unwrap();
-
-        map.get(group_id).and_then(|epoch_vec| {
-            epoch_vec
-                .front()
-                .map(|e| e.inner().context.epoch)
-                .and_then(|front| {
-                    if epoch_id > front {
-                        return None;
-                    }
-
-                    epoch_vec.get((front - epoch_id) as usize).cloned()
-                })
-        })
+        get_epoch(&map, group_id, epoch_id)
     }
 
     fn insert(&self, epoch: Epoch) -> Result<(), InMemoryEpochRepositoryError> {
         let mut map = self.inner.lock().unwrap();
-        let group_id = &epoch.inner().context.group_id;
+        insert_epoch(&mut map, epoch, Some(self.retention_limit))
+    }
 
-        let vec = map
-            .entry(group_id.to_vec())
-            .or_insert_with(Default::default);
-
-        if let Some(front) = vec.front() {
-            let front_epoch = front.inner().context.epoch;
-            let epoch_id = epoch.inner().context.epoch;
-
-            if epoch_id == front_epoch + 1 {
-                vec.push_front(epoch);
-            } else if front_epoch >= epoch_id {
-                if let Some(e) = vec.get_mut((front_epoch - epoch_id) as usize) {
-                    *e = epoch;
-                } else {
-                    return Err(InMemoryEpochRepositoryError::InvalidInsert(
-                        epoch_id,
-                        front_epoch,
-                    ));
-                }
-            } else {
-                return Err(InMemoryEpochRepositoryError::InvalidInsert(
-                    epoch_id,
-                    front_epoch,
-                ));
-            }
-        } else {
-            vec.push_front(epoch)
-        }
-
-        if vec.len() > self.retention_limit {
-            vec.pop_back();
-        }
-
-        Ok(())
+    pub fn export(&self) -> Vec<Epoch> {
+        let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        map.values()
+            .flat_map(|epochs| epochs.iter().rev())
+            .cloned()
+            .collect()
     }
 }
 

@@ -381,6 +381,9 @@ pub struct Group<C>
 where
     C: ClientConfig + Clone,
 {
+    #[cfg(feature = "benchmark")]
+    pub config: C,
+    #[cfg(not(feature = "benchmark"))]
     config: C,
     core: GroupCore,
     private_tree: TreeKemPrivate,
