@@ -143,24 +143,11 @@ impl CachedProposal {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    TlsSize,
-    TlsSerialize,
-    TlsDeserialize,
-    PartialEq,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ProposalCache {
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    #[serde(with = "hex")]
     group_id: Vec<u8>,
-    #[tls_codec(with = "crate::tls::DefMap")]
-    #[serde(with = "crate::serde_utils::map_as_seq")]
     proposals: HashMap<ProposalRef, CachedProposal>,
 }
 
@@ -966,7 +953,7 @@ mod tests {
         let cache = make_proposal_cache();
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let public_tree = &group.group.core.current_tree;
+        let public_tree = &group.group.state.public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
         let res = cache.resolve_for_commit(
@@ -1008,7 +995,7 @@ mod tests {
         );
 
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let public_tree = &group.group.core.current_tree;
+        let public_tree = &group.group.state.public_tree;
 
         let res = cache.resolve_for_commit(
             Sender::NewMemberCommit,
@@ -1034,7 +1021,7 @@ mod tests {
         let cache = make_proposal_cache();
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let public_tree = &group.group.core.current_tree;
+        let public_tree = &group.group.state.public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
         let res = cache.resolve_for_commit(
@@ -1070,7 +1057,7 @@ mod tests {
         let cache = make_proposal_cache();
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let public_tree = &group.group.core.current_tree;
+        let public_tree = &group.group.state.public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
         cache.resolve_for_commit(
@@ -1111,7 +1098,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
-        let mut public_tree = group.group.core.current_tree;
+        let mut public_tree = group.group.state.public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
         let test_leaf_nodes = vec![
@@ -1156,7 +1143,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
-        let mut public_tree = group.group.core.current_tree;
+        let mut public_tree = group.group.state.public_tree;
         let credential_validator = FailureCredentialValidator::new().pass_validation(true);
 
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo")];
@@ -1195,7 +1182,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
-        let mut public_tree = group.group.core.current_tree;
+        let mut public_tree = group.group.state.public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo")];
@@ -1273,7 +1260,7 @@ mod tests {
     fn new_member_commit_must_contain_an_external_init_proposal() {
         let cache = make_proposal_cache();
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let public_tree = &group.group.core.current_tree;
+        let public_tree = &group.group.state.public_tree;
         let credential_validator = PassthroughCredentialValidator::new();
 
         let res = cache.resolve_for_commit(

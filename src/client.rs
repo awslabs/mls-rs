@@ -7,7 +7,7 @@ use crate::group::framing::{
 };
 use crate::group::message_signature::MLSAuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
-use crate::group::{Group, GroupError, GroupState};
+use crate::group::{Group, GroupError, Snapshot};
 use crate::key_package::{
     KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRepository,
 };
@@ -163,8 +163,8 @@ where
         })
     }
 
-    pub fn import_group(&self, state: GroupState) -> Result<Group<C>, ClientError> {
-        Ok(Group::import(self.config.clone(), state)?)
+    pub fn load_snapshot(&self, snapshot: Snapshot) -> Result<Group<C>, ClientError> {
+        Ok(Group::from_snapshot(self.config.clone(), snapshot))
     }
 
     pub fn external_add_proposal(

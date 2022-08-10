@@ -18,9 +18,9 @@ use tls_codec::{Deserialize, Serialize};
 use super::{
     epoch::Epoch,
     framing::{Content, WireFormat},
-    group_core::GroupCore,
     key_schedule::KeySchedule,
     message_signature::{MLSAuthenticatedContent, MessageSigningContext},
+    state::GroupState,
 };
 
 pub(crate) enum SignaturePublicKeysContainer<'a> {
@@ -32,13 +32,13 @@ pub fn verify_plaintext_authentication(
     plaintext: MLSPlaintext,
     key_schedule: Option<&KeySchedule>,
     self_index: Option<LeafIndex>,
-    state: &GroupCore,
+    state: &GroupState,
 ) -> Result<MLSAuthenticatedContent, GroupError> {
     let tag = plaintext.membership_tag.clone();
     let auth_content = MLSAuthenticatedContent::from(plaintext);
     let context = &state.context;
     let external_signers = external_signers(context);
-    let current_tree = &state.current_tree;
+    let current_tree = &state.public_tree;
 
     // Verify the membership tag if needed
     match &auth_content.content.sender {
@@ -395,7 +395,7 @@ mod tests {
             message,
             Some(&env.bob.group.key_schedule),
             None,
-            &env.bob.group.core,
+            &env.bob.group.state,
         )
         .unwrap();
     }
@@ -418,7 +418,7 @@ mod tests {
             message,
             Some(&env.bob.group.key_schedule),
             None,
-            &env.bob.group.core,
+            &env.bob.group.state,
         );
 
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
@@ -471,7 +471,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core,
+            &test_group.group.state,
         )
         .unwrap();
     }
@@ -488,7 +488,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core,
+            &test_group.group.state,
         );
 
         assert_matches!(res, Err(GroupError::MembershipTagForNonMember));
@@ -509,7 +509,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core,
+            &test_group.group.state,
         );
 
         assert_matches!(
@@ -531,7 +531,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core,
+            &test_group.group.state,
         );
 
         assert_matches!(res, Err(GroupError::ExpectedCommitForNewMemberCommit));
@@ -574,7 +574,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core,
+            &test_group.group.state,
         )
         .unwrap();
     }
@@ -594,7 +594,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core,
+            &test_group.group.state,
         );
 
         assert_matches!(
@@ -620,7 +620,7 @@ mod tests {
             message,
             Some(&test_group.group.key_schedule),
             None,
-            &test_group.group.core,
+            &test_group.group.state,
         );
 
         assert_matches!(res, Err(GroupError::MembershipTagForNonMember));
@@ -636,7 +636,7 @@ mod tests {
             message,
             Some(&env.alice.group.key_schedule),
             Some(LeafIndex::new(env.alice.group.current_member_index())),
-            &env.alice.group.core,
+            &env.alice.group.state,
         );
 
         assert_matches!(res, Err(GroupError::CantProcessMessageFromSelf))

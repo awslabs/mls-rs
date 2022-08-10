@@ -1,8 +1,9 @@
 use crate::{
-    cipher_suite::CipherSuite,
     client_config::ProposalFilterInit,
     extension::ExternalSendersExt,
-    group::{Content, GroupCore, GroupError, InterimTranscriptHash, MLSMessage, MLSMessagePayload},
+    group::{
+        Content, GroupError, GroupState, InterimTranscriptHash, MLSMessage, MLSMessagePayload,
+    },
     signer::Signer,
     signing_identity::SigningIdentity,
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
@@ -21,7 +22,7 @@ use super::{
 #[derive(Clone, Debug)]
 pub struct ExternalGroup<C> {
     config: C,
-    core: GroupCore,
+    state: GroupState,
 }
 
 impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
@@ -47,18 +48,13 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
         Ok(Self {
             config,
-            core: GroupCore::new(
+            state: GroupState::new(
                 context,
                 public_tree,
                 interim_transcript_hash,
                 group_info.confirmation_tag,
             ),
         })
-    }
-
-    #[inline(always)]
-    pub fn cipher_suite(&self) -> CipherSuite {
-        self.core.cipher_suite()
     }
 
     pub fn process_incoming_message(
@@ -106,7 +102,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         signer: &S,
     ) -> Result<MLSMessage, GroupError> {
         let external_senders_ext = self
-            .core
+            .state
             .context
             .extensions
             .get_extension::<ExternalSendersExt>()?
@@ -121,7 +117,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         let sender = Sender::External(sender_index as u32);
 
         let auth_content = MLSAuthenticatedContent::new_signed(
-            &self.core.context,
+            &self.state.context,
             sender.clone(),
             Content::Proposal(proposal.clone()),
             signer,
@@ -129,8 +125,8 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             authenticated_data,
         )?;
 
-        self.core.proposals.insert(
-            ProposalRef::from_content(self.core.cipher_suite(), &auth_content)?,
+        self.state.proposals.insert(
+            ProposalRef::from_content(self.state.cipher_suite(), &auth_content)?,
             proposal,
             sender,
         );
@@ -142,9 +138,14 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         };
 
         Ok(MLSMessage {
-            version: self.core.protocol_version(),
+            version: self.state.protocol_version(),
             payload: MLSMessagePayload::Plain(plaintext),
         })
+    }
+
+    #[inline(always)]
+    pub fn group_state(&self) -> &GroupState {
+        &self.state
     }
 }
 
@@ -168,7 +169,10 @@ where
         message: MLSPlaintext,
     ) -> Result<EventOrContent<ExternalEvent>, GroupError> {
         let auth_content = crate::group::message_verifier::verify_plaintext_authentication(
-            message, None, None, &self.core,
+            message,
+            None,
+            None,
+            &self.state,
         )?;
 
         Ok(EventOrContent::Content(auth_content))
@@ -190,11 +194,11 @@ where
         confirmation_tag: ConfirmationTag,
         provisional_public_state: ProvisionalState,
     ) -> Result<(), GroupError> {
-        self.core.context = provisional_public_state.group_context;
-        self.core.proposals.clear();
-        self.core.interim_transcript_hash = interim_transcript_hash;
-        self.core.current_tree = provisional_public_state.public_tree;
-        self.core.confirmation_tag = confirmation_tag;
+        self.state.context = provisional_public_state.group_context;
+        self.state.proposals.clear();
+        self.state.interim_transcript_hash = interim_transcript_hash;
+        self.state.public_tree = provisional_public_state.public_tree;
+        self.state.confirmation_tag = confirmation_tag;
 
         Ok(())
     }
@@ -203,12 +207,16 @@ where
         self.config.credential_validator()
     }
 
-    fn group_state(&self) -> &GroupCore {
-        &self.core
+    fn group_state(&self) -> &GroupState {
+        &self.state
     }
 
-    fn group_state_mut(&mut self) -> &mut GroupCore {
-        &mut self.core
+    fn group_state_mut(&mut self) -> &mut GroupState {
+        &mut self.state
+    }
+
+    fn can_continue_processing(&self, _provisional_state: &ProvisionalState) -> bool {
+        true
     }
 }
 
@@ -281,7 +289,7 @@ mod tests {
         group: &TestGroup,
         config: InMemoryExternalClientConfig,
     ) -> ExternalGroup<InMemoryExternalClientConfig> {
-        let public_tree = group.group.export().unwrap().current_tree_data;
+        let public_tree = group.group.export_tree().unwrap();
 
         ExternalGroup::join(
             config,
@@ -308,7 +316,7 @@ mod tests {
         alice.group.process_pending_commit().unwrap();
         server.process_incoming_message(commit).unwrap();
 
-        assert_eq!(alice.group.core, server.core);
+        assert_eq!(alice.group.state, server.state);
     }
 
     #[test]
@@ -339,7 +347,7 @@ mod tests {
 
         assert_matches!(commit_result.event, ExternalEvent::Commit(state_update) if state_update.added.contains(&LeafIndex(1)));
 
-        assert_eq!(alice.group.core, server.core);
+        assert_eq!(alice.group.state, server.state);
     }
 
     #[test]
@@ -354,9 +362,9 @@ mod tests {
         };
 
         assert_eq!(update.added.len(), 1);
-        assert_eq!(server.core.current_tree.get_leaf_nodes().len(), 2);
+        assert_eq!(server.state.public_tree.get_leaf_nodes().len(), 2);
 
-        assert_eq!(alice.group.core, server.core);
+        assert_eq!(alice.group.state, server.state);
     }
 
     #[test]
@@ -465,7 +473,7 @@ mod tests {
         alice.process_pending_commit().unwrap();
         server.process_incoming_message(commit_data).unwrap();
 
-        assert_eq!(alice.group.core, server.core);
+        assert_eq!(alice.group.state, server.state);
     }
 
     #[test]

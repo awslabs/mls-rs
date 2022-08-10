@@ -60,8 +60,8 @@ use proposal_cache::*;
 use secret_tree::*;
 use transcript_hash::*;
 
-use group_core::GroupCore;
 use padding::PaddingMode;
+use state::GroupState;
 
 pub use self::message_processor::{Event, ExternalEvent, StateUpdate};
 use self::message_processor::{
@@ -69,15 +69,16 @@ use self::message_processor::{
 };
 pub use external_group::ExternalGroup;
 pub use group_info::GroupInfo;
-pub use group_state::GroupState;
 pub(crate) use proposal_cache::ProposalCacheError;
 pub use proposal_filter::{
     BoxedProposalFilter, PassThroughProposalFilter, ProposalBundle, ProposalFilter,
     ProposalFilterError,
 };
+
 pub(crate) use proposal_ref::ProposalRef;
 pub use roster::*;
 pub use secret_tree::SecretTreeError;
+pub use snapshot::*;
 pub use stats::*;
 pub use transcript_hash::ConfirmedTranscriptHash;
 
@@ -85,9 +86,7 @@ mod confirmation_tag;
 pub(crate) mod epoch;
 mod external_group;
 pub mod framing;
-mod group_core;
 mod group_info;
-mod group_state;
 pub mod key_schedule;
 mod membership_tag;
 mod message_processor;
@@ -99,6 +98,8 @@ mod proposal_cache;
 mod proposal_filter;
 mod proposal_ref;
 mod roster;
+mod snapshot;
+mod state;
 mod stats;
 mod transcript_hash;
 
@@ -385,9 +386,12 @@ where
     pub config: C,
     #[cfg(not(feature = "benchmark"))]
     config: C,
-    core: GroupCore,
+    state: GroupState,
     private_tree: TreeKemPrivate,
     key_schedule: KeySchedule,
+    // TODO: HpkePublicKey does not have Eq and Hash
+    pending_updates: HashMap<Vec<u8>, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
+    pending_commit: Option<CommitGeneration>,
 }
 
 impl<C> Group<C>
@@ -448,7 +452,7 @@ where
 
         Ok(Self {
             config,
-            core: GroupCore::new(
+            state: GroupState::new(
                 context,
                 public_tree,
                 InterimTranscriptHash::from(vec![]),
@@ -456,6 +460,8 @@ where
             ),
             private_tree,
             key_schedule: key_schedule_result.key_schedule,
+            pending_updates: Default::default(),
+            pending_commit: None,
         })
     }
 
@@ -635,7 +641,7 @@ where
 
         Ok(Group {
             config,
-            core: GroupCore::new(
+            state: GroupState::new(
                 context,
                 current_tree,
                 interim_transcript_hash,
@@ -643,6 +649,8 @@ where
             ),
             private_tree,
             key_schedule,
+            pending_updates: Default::default(),
+            pending_commit: None,
         })
     }
 
@@ -721,7 +729,7 @@ where
             .map(|psk_id| {
                 Ok(PreSharedKeyID {
                     key_id: JustPreSharedKeyID::External(psk_id),
-                    psk_nonce: PskNonce::random(group.core.cipher_suite())?,
+                    psk_nonce: PskNonce::random(group.state.cipher_suite())?,
                 })
             })
             .collect::<Result<Vec<_>, GroupError>>()?;
@@ -746,7 +754,7 @@ where
 
     #[inline(always)]
     pub fn current_epoch_tree(&self) -> &TreeKemPublic {
-        &self.core.current_tree
+        &self.state.public_tree
     }
 
     #[inline(always)]
@@ -785,9 +793,9 @@ where
             authenticated_data,
         )?;
 
-        let proposal_ref = ProposalRef::from_content(self.core.cipher_suite(), &auth_content)?;
+        let proposal_ref = ProposalRef::from_content(self.state.cipher_suite(), &auth_content)?;
 
-        self.core
+        self.state
             .proposals
             .insert(proposal_ref, proposal, auth_content.content.sender.clone());
 
@@ -818,7 +826,6 @@ where
         for (_, leaf_node) in &provisional_state.updated_leaves {
             // Update the leaf in the private tree if this is our update
             if let Some(new_leaf_sk) = self
-                .core
                 .pending_updates
                 .get(leaf_node.public_key.as_ref())
                 .cloned()
@@ -854,7 +861,7 @@ where
         external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
     ) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
-        if self.core.pending_commit.is_some() {
+        if self.pending_commit.is_some() {
             return Err(GroupError::ExistingPendingCommit);
         }
 
@@ -880,15 +887,15 @@ where
             None => self.signer(),
         }?;
 
-        let (commit_proposals, proposal_effects) = self.core.proposals.prepare_commit(
+        let (commit_proposals, proposal_effects) = self.state.proposals.prepare_commit(
             sender.clone(),
             proposals,
             &self.context().extensions,
             self.config.credential_validator(),
-            &self.core.current_tree,
+            &self.state.public_tree,
             external_leaf,
             self.config.proposal_filter(ProposalFilterInit::new(
-                &self.core.current_tree,
+                &self.state.public_tree,
                 self.context(),
                 sender.clone(),
             )),
@@ -956,13 +963,13 @@ where
         };
 
         let commit_secret =
-            CommitSecret::from_root_secret(self.core.cipher_suite(), root_secret.as_ref())?;
+            CommitSecret::from_root_secret(self.state.cipher_suite(), root_secret.as_ref())?;
 
         let epoch_repo = self.config.epoch_repo();
         let psk_store = self.config.secret_store();
 
         let psk_secret = crate::psk::psk_secret(
-            self.core.cipher_suite(),
+            self.state.cipher_suite(),
             Some(&psk_store),
             Some((&self.context().group_id, &epoch_repo)),
             &provisional_state.psks,
@@ -985,8 +992,8 @@ where
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
         // compute the confirmation_tag value in the MLSPlaintext.
         let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
-            self.core.cipher_suite(),
-            &self.core.interim_transcript_hash,
+            self.state.cipher_suite(),
+            &self.state.interim_transcript_hash,
             &auth_content,
         )?;
 
@@ -1007,14 +1014,14 @@ where
             &commit_secret,
             &provisional_group_context,
             provisional_private_tree.self_index,
-            &self.core.current_tree,
+            &self.state.public_tree,
             &psk_secret,
         )?;
 
         let confirmation_tag = ConfirmationTag::create(
             &key_schedule_result.confirmation_key,
             &provisional_group_context.confirmed_transcript_hash,
-            &self.core.cipher_suite(),
+            &self.state.cipher_suite(),
         )?;
 
         auth_content.auth.confirmation_tag = Some(confirmation_tag.clone());
@@ -1048,7 +1055,7 @@ where
             pending_secrets: root_secret.map(|rs| (provisional_private_tree, rs)),
         };
 
-        self.core.pending_commit = Some(pending_commit);
+        self.pending_commit = Some(pending_commit);
 
         Ok((commit_message, welcome))
     }
@@ -1064,8 +1071,11 @@ where
     ) -> Result<Option<MLSMessage>, GroupError> {
         // Encrypt the GroupInfo using the key and nonce derived from the joiner_secret for
         // the new epoch
-        let welcome_secret =
-            WelcomeSecret::from_joiner_secret(self.core.cipher_suite(), joiner_secret, psk_secret)?;
+        let welcome_secret = WelcomeSecret::from_joiner_secret(
+            self.state.cipher_suite(),
+            joiner_secret,
+            psk_secret,
+        )?;
 
         let group_info_data = group_info.tls_serialize_detached()?;
         let encrypted_group_info = welcome_secret.encrypt(&group_info_data)?;
@@ -1203,14 +1213,16 @@ where
 
         let new_group = Group {
             config: self.config.clone(),
-            core: GroupCore::new(
+            state: GroupState::new(
                 new_context.clone(),
                 new_pub_tree,
                 interim_transcript_hash,
-                ConfirmationTag::empty(&self.core.cipher_suite())?,
+                ConfirmationTag::empty(&self.state.cipher_suite())?,
             ),
             private_tree: new_priv_tree,
             key_schedule: key_schedule_result.key_schedule,
+            pending_updates: Default::default(),
+            pending_commit: None,
         };
 
         let welcome = new_group.make_welcome_message(
@@ -1238,7 +1250,7 @@ where
         let current_leaf_node = self.current_user_leaf_node()?;
 
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
-            self.core.cipher_suite(),
+            self.state.cipher_suite(),
             current_leaf_node.signing_identity.clone(),
             current_leaf_node.capabilities.clone(),
             current_leaf_node.extensions.clone(),
@@ -1250,8 +1262,8 @@ where
         let mut new_context = GroupContext {
             epoch: 1,
             ..GroupContext::new_group(
-                self.core.protocol_version(),
-                self.core.cipher_suite(),
+                self.state.protocol_version(),
+                self.state.cipher_suite(),
                 sub_group_id.clone(),
                 vec![],
                 self.context().extensions.clone(),
@@ -1286,13 +1298,13 @@ where
             self.config.clone(),
         )?;
 
-        if subgroup.core.protocol_version() != self.core.protocol_version() {
+        if subgroup.state.protocol_version() != self.state.protocol_version() {
             Err(GroupError::SubgroupWithDifferentProtocolVersion(
-                subgroup.core.protocol_version(),
+                subgroup.state.protocol_version(),
             ))
-        } else if subgroup.core.cipher_suite() != self.core.cipher_suite() {
+        } else if subgroup.state.cipher_suite() != self.state.cipher_suite() {
             Err(GroupError::SubgroupWithDifferentCipherSuite(
-                subgroup.core.cipher_suite(),
+                subgroup.state.cipher_suite(),
             ))
         } else {
             Ok(subgroup)
@@ -1309,7 +1321,7 @@ where
         let config = self.config.clone();
 
         let reinit = self
-            .core
+            .state
             .pending_reinit
             .as_ref()
             .ok_or(GroupError::PendingReInitNotFound)?;
@@ -1355,8 +1367,8 @@ where
             resumption_psk_id,
         )?;
 
-        if group.core.current_tree.occupied_leaf_count()
-            != self.core.current_tree.occupied_leaf_count()
+        if group.state.public_tree.occupied_leaf_count()
+            != self.state.public_tree.occupied_leaf_count()
         {
             Err(GroupError::CommitRequired)
         } else {
@@ -1370,7 +1382,7 @@ where
         tree_data: Option<&[u8]>,
     ) -> Result<Self, GroupError> {
         let reinit = self
-            .core
+            .state
             .pending_reinit
             .as_ref()
             .ok_or(GroupError::PendingReInitNotFound)?;
@@ -1382,24 +1394,24 @@ where
             self.config.clone(),
         )?;
 
-        if group.core.protocol_version() != reinit.version {
+        if group.state.protocol_version() != reinit.version {
             Err(GroupError::ReInitVersionMismatch(
-                group.core.protocol_version(),
+                group.state.protocol_version(),
                 reinit.version,
             ))
-        } else if group.core.cipher_suite() != reinit.cipher_suite {
+        } else if group.state.cipher_suite() != reinit.cipher_suite {
             Err(GroupError::ReInitCiphersuiteMismatch(
-                group.core.cipher_suite(),
+                group.state.cipher_suite(),
                 reinit.cipher_suite,
             ))
-        } else if group.core.context.group_id != reinit.group_id {
+        } else if group.state.context.group_id != reinit.group_id {
             Err(GroupError::ReInitIdMismatch(
-                group.core.context.group_id,
+                group.state.context.group_id,
                 reinit.group_id.clone(),
             ))
-        } else if group.core.context.extensions != reinit.extensions {
+        } else if group.state.context.extensions != reinit.extensions {
             Err(GroupError::ReInitExtensionsMismatch(
-                group.core.context.extensions,
+                group.state.context.extensions,
                 reinit.extensions.clone(),
             ))
         } else {
@@ -1455,8 +1467,8 @@ where
         // Check that this proposal has a valid lifetime and signature. Required capabilities are
         // not checked as they may be changed in another proposal in the same commit.
         let key_package_validator = KeyPackageValidator::new(
-            self.core.protocol_version(),
-            self.core.cipher_suite(),
+            self.state.protocol_version(),
+            self.state.cipher_suite(),
             None,
             self.config.credential_validator(),
         );
@@ -1472,7 +1484,7 @@ where
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
 
         let secret_key = new_leaf_node.update(
-            self.core.cipher_suite(),
+            self.state.cipher_suite(),
             self.group_id(),
             Some(self.config.capabilities()),
             Some(self.config.leaf_node_extensions()),
@@ -1480,8 +1492,7 @@ where
         )?;
 
         // Store the secret key in the pending updates storage for later
-        self.core
-            .pending_updates
+        self.pending_updates
             .insert(new_leaf_node.public_key.as_ref().to_vec(), secret_key);
 
         Ok(Proposal::Update(UpdateProposal {
@@ -1504,7 +1515,7 @@ where
         Ok(Proposal::Psk(PreSharedKey {
             psk: PreSharedKeyID {
                 key_id: JustPreSharedKeyID::External(psk),
-                psk_nonce: PskNonce::random(self.core.cipher_suite())?,
+                psk_nonce: PskNonce::random(self.state.cipher_suite())?,
             },
         }))
     }
@@ -1682,7 +1693,7 @@ where
 
         // A group member that has observed one or more proposals within an epoch MUST send a Commit message
         // before sending application data
-        if !self.core.proposals.is_empty() {
+        if !self.state.proposals.is_empty() {
             return Err(GroupError::CommitRequired);
         }
 
@@ -1724,7 +1735,6 @@ where
 
     pub fn process_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
         let pending_commit = self
-            .core
             .pending_commit
             .clone()
             .ok_or(GroupError::PendingCommitNotFound)?;
@@ -1733,12 +1743,12 @@ where
     }
 
     pub fn clear_pending_commit(&mut self) {
-        self.core.pending_commit = None
+        self.pending_commit = None
     }
 
     pub fn current_direct_path(&self) -> Result<Vec<Option<HpkePublicKey>>, GroupError> {
-        self.core
-            .current_tree
+        self.state
+            .public_tree
             .direct_path_keys(self.private_tree.self_index)
             .map_err(Into::into)
     }
@@ -1759,13 +1769,13 @@ where
         extensions.set_extension(ExternalPubExt {
             external_pub: self
                 .key_schedule
-                .get_external_public_key(self.core.cipher_suite())?,
+                .get_external_public_key(self.state.cipher_suite())?,
         })?;
 
         let mut info = GroupInfo {
             group_context: self.context().clone(),
             extensions,
-            confirmation_tag: self.core.confirmation_tag.clone(),
+            confirmation_tag: self.state.confirmation_tag.clone(),
             signer: self.private_tree.self_index,
             signature: Vec::new(),
         };
@@ -1780,7 +1790,7 @@ where
 
     #[inline(always)]
     pub fn context(&self) -> &GroupContext {
-        &self.core.context
+        &self.state.context
     }
 
     pub fn authentication_secret(&self) -> Result<Vec<u8>, GroupError> {
@@ -1806,11 +1816,11 @@ where
     }
 
     pub fn protocol_version(&self) -> ProtocolVersion {
-        self.core.protocol_version()
+        self.state.protocol_version()
     }
 
     pub fn equal_group_state(a: &Group<C>, b: &Group<C>) -> bool {
-        a.core == b.core && a.key_schedule == b.key_schedule
+        a.state == b.state && a.key_schedule == b.key_schedule
     }
 }
 
@@ -1993,7 +2003,7 @@ where
             message,
             Some(&self.key_schedule),
             Some(self.private_tree.self_index),
-            &self.core,
+            &self.state,
         )?;
 
         Ok(EventOrContent::Content(auth_content))
@@ -2009,7 +2019,6 @@ where
         let mut provisional_private_tree = self.provisional_private_tree(provisional_state)?;
 
         let secrets = if let Some(pending) = self
-            .core
             .pending_commit
             .as_ref()
             .and_then(|pc| pc.pending_secrets.as_ref())
@@ -2048,7 +2057,7 @@ where
         provisional_state: ProvisionalState,
     ) -> Result<(), GroupError> {
         let commit_secret = CommitSecret::from_root_secret(
-            self.core.cipher_suite(),
+            self.state.cipher_suite(),
             secrets.as_ref().map(|(_, root_secret)| root_secret),
         )?;
 
@@ -2056,9 +2065,9 @@ where
         let secret_store = self.config.secret_store();
 
         let psk_secret = crate::psk::psk_secret(
-            self.core.cipher_suite(),
+            self.state.cipher_suite(),
             Some(&secret_store),
-            Some((&self.core.context.group_id, &epoch_repo)),
+            Some((&self.state.context.group_id, &epoch_repo)),
             &provisional_state.psks,
         )?;
 
@@ -2067,7 +2076,7 @@ where
         // derived secrets for the new epoch
 
         let key_schedule = match provisional_state.external_init {
-            Some((_, ExternalInit { kem_output })) if self.core.pending_commit.is_none() => self
+            Some((_, ExternalInit { kem_output })) if self.pending_commit.is_none() => self
                 .key_schedule
                 .derive_for_external(&kem_output, provisional_state.group_context.cipher_suite)?,
             _ => self.key_schedule.clone(),
@@ -2101,26 +2110,26 @@ where
             self.private_tree = private_tree
         }
 
-        self.core.context = provisional_state.group_context;
+        self.state.context = provisional_state.group_context;
 
         self.config
             .epoch_repo()
             .insert(key_schedule_result.epoch.into())
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
-        self.core.interim_transcript_hash = interim_transcript_hash;
+        self.state.interim_transcript_hash = interim_transcript_hash;
 
         self.key_schedule = key_schedule_result.key_schedule;
 
-        self.core.current_tree = provisional_state.public_tree;
-        self.core.confirmation_tag = new_confirmation_tag;
+        self.state.public_tree = provisional_state.public_tree;
+        self.state.confirmation_tag = new_confirmation_tag;
 
         // Clear the proposals list
-        self.core.proposals.clear();
+        self.state.proposals.clear();
 
         // Clear the pending updates list
-        self.core.pending_updates = Default::default();
-        self.core.pending_commit = None;
+        self.pending_updates = Default::default();
+        self.pending_commit = None;
 
         Ok(())
     }
@@ -2133,12 +2142,20 @@ where
         self.config.credential_validator()
     }
 
-    fn group_state(&self) -> &GroupCore {
-        &self.core
+    fn group_state(&self) -> &GroupState {
+        &self.state
     }
 
-    fn group_state_mut(&mut self) -> &mut GroupCore {
-        &mut self.core
+    fn group_state_mut(&mut self) -> &mut GroupState {
+        &mut self.state
+    }
+
+    fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool {
+        !(provisional_state
+            .removed_leaves
+            .iter()
+            .any(|(i, _)| Some(*i) == self.self_index())
+            && self.pending_commit.is_none())
     }
 }
 
@@ -2189,8 +2206,8 @@ pub(crate) mod test_utils {
             F: FnOnce(InMemoryClientConfig) -> InMemoryClientConfig,
         {
             let (new_key_package, secret_key) = test_member(
-                self.group.core.protocol_version(),
-                self.group.core.cipher_suite(),
+                self.group.state.protocol_version(),
+                self.group.state.cipher_suite(),
                 name.as_bytes(),
             );
 
@@ -2248,7 +2265,7 @@ pub(crate) mod test_utils {
 
         pub(crate) fn make_plaintext(&mut self, content: Content) -> MLSMessage {
             let auth_content = MLSAuthenticatedContent::new_signed(
-                &self.group.core.context,
+                &self.group.state.context,
                 Sender::Member(self.group.private_tree.self_index),
                 content,
                 &self.group.signer().unwrap(),
@@ -2430,23 +2447,23 @@ mod tests {
             let test_group = test_group(protocol_version, cipher_suite);
             let group = test_group.group;
 
-            assert_eq!(group.core.cipher_suite(), cipher_suite);
-            assert_eq!(group.core.context.epoch, 0);
-            assert_eq!(group.core.context.group_id, TEST_GROUP.to_vec());
-            assert_eq!(group.core.context.extensions, group_extensions());
+            assert_eq!(group.state.cipher_suite(), cipher_suite);
+            assert_eq!(group.state.context.epoch, 0);
+            assert_eq!(group.state.context.group_id, TEST_GROUP.to_vec());
+            assert_eq!(group.state.context.extensions, group_extensions());
             assert_eq!(
-                group.core.context.confirmed_transcript_hash,
+                group.state.context.confirmed_transcript_hash,
                 ConfirmedTranscriptHash::from(vec![])
             );
-            assert!(group.core.proposals.is_empty());
-            assert!(group.core.pending_updates.is_empty());
+            assert!(group.state.proposals.is_empty());
+            assert!(group.pending_updates.is_empty());
             assert_eq!(
                 group.private_tree.self_index.0,
                 group.current_member_index()
             );
 
             assert_eq!(
-                group.core.current_tree.get_leaf_nodes()[0]
+                group.state.public_tree.get_leaf_nodes()[0]
                     .signing_identity
                     .public_key(cipher_suite)
                     .unwrap(),
@@ -2629,7 +2646,7 @@ mod tests {
             ProposalRef::from_content(cipher_suite, &proposal_plaintext.clone().into()).unwrap();
 
         // Hack bob's receipt of the proposal
-        bob_group.group.core.proposals.insert(
+        bob_group.group.state.proposals.insert(
             proposal_ref,
             proposal,
             proposal_plaintext.content.sender,
@@ -2791,7 +2808,7 @@ mod tests {
         let state_update = test_group.group.process_pending_commit().unwrap();
 
         assert!(state_update.active);
-        assert_eq!(test_group.group.core.context.extensions, extension_list)
+        assert_eq!(test_group.group.state.context.extensions, extension_list)
     }
 
     #[test]
@@ -2903,7 +2920,6 @@ mod tests {
 
         assert!(test_group
             .group
-            .core
             .pending_commit
             .unwrap()
             .pending_secrets
@@ -2924,7 +2940,6 @@ mod tests {
 
         assert!(test_group
             .group
-            .core
             .pending_commit
             .unwrap()
             .pending_secrets
@@ -2948,7 +2963,6 @@ mod tests {
 
         assert!(test_group
             .group
-            .core
             .pending_commit
             .unwrap()
             .pending_secrets

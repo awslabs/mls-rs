@@ -15,13 +15,13 @@ fn group_setup(c: &mut Criterion) {
 
     let container = load_test_cases();
 
-    bench_group_serialize(&mut group_serialize, cipher_suite, container);
+    bench_group_snapshot(&mut group_serialize, cipher_suite, container);
 
     group_serialize.finish();
 }
 
 // benches JSON serialization of group state
-fn bench_group_serialize(
+fn bench_group_snapshot(
     bench_group: &mut BenchmarkGroup<WallTime>,
     cipher_suite: CipherSuite,
     container: Vec<Vec<Group<InMemoryClientConfig>>>,
@@ -32,7 +32,7 @@ fn bench_group_serialize(
             &groups.len(),
             |b, _| {
                 b.iter(|| {
-                    serde_json::to_vec(&groups[0].export().unwrap()).unwrap();
+                    serde_json::to_vec(&groups[0].snapshot()).unwrap();
                 })
             },
         );

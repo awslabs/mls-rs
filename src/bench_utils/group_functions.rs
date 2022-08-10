@@ -6,7 +6,7 @@ use crate::{
     group::{
         framing::{Content, MLSMessage, Sender, WireFormat},
         message_signature::MLSAuthenticatedContent,
-        Commit, Group, GroupError, GroupState,
+        Commit, Group, GroupError, Snapshot,
     },
     key_package::KeyPackageGeneration,
     signing_identity::SigningIdentity,
@@ -18,7 +18,7 @@ use ferriscrypt::asym::ec_key::SecretKey;
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 
 struct GroupInfo {
-    session: GroupState,
+    session: Snapshot,
     epochs: Vec<u8>,
     key_packages: Vec<u8>,
     secrets: Vec<u8>,
@@ -73,7 +73,7 @@ pub fn load_test_cases() -> Vec<Vec<Group<InMemoryClientConfig>>> {
                         config.key_package_repo().insert(key_pkg_gen).unwrap();
                     }
 
-                    Group::import(config, group_info.session).unwrap()
+                    Group::from_snapshot(config, group_info.session)
                 })
                 .collect()
         })
@@ -139,7 +139,7 @@ fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
             let exported_key_chain = key_chain.export();
             let secrets = serde_json::to_vec(&exported_key_chain).unwrap();
 
-            let group_state = session.export().unwrap();
+            let group_state = session.snapshot();
 
             GroupInfo {
                 session: group_state,

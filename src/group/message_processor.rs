@@ -17,11 +17,11 @@ use super::{
         Content, ContentType, MLSCiphertext, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender,
         WireFormat,
     },
-    group_core::GroupCore,
     message_signature::MLSAuthenticatedContent,
     proposal::{ExternalInit, ReInit},
     proposal_cache::ProposalSetEffects,
     proposal_effects,
+    state::GroupState,
     transcript_hash::InterimTranscriptHash,
     transcript_hashes, GroupError, ProposalRef,
 };
@@ -269,9 +269,9 @@ where
             &auth_content.content.sender,
             &group_state.context.extensions,
             self.credential_validator(),
-            &group_state.current_tree,
+            &group_state.public_tree,
             self.proposal_filter(ProposalFilterInit::new(
-                &group_state.current_tree,
+                &group_state.public_tree,
                 &group_state.context,
                 auth_content.content.sender.clone(),
             )),
@@ -288,12 +288,7 @@ where
             return Err(GroupError::CommitMissingPath);
         }
 
-        if provisional_state
-            .removed_leaves
-            .iter()
-            .any(|(i, _)| Some(*i) == self.self_index())
-            && group_state.pending_commit.is_none()
-        {
+        if !self.can_continue_processing(&provisional_state) {
             state_update.active = false;
             return Ok(state_update);
         }
@@ -352,11 +347,12 @@ where
         }
     }
 
-    fn group_state(&self) -> &GroupCore;
-    fn group_state_mut(&mut self) -> &mut GroupCore;
+    fn group_state(&self) -> &GroupState;
+    fn group_state_mut(&mut self) -> &mut GroupState;
     fn self_index(&self) -> Option<LeafIndex>;
     fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter;
     fn credential_validator(&self) -> Self::CredentialValidator;
+    fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool;
 
     fn check_metadata(&self, message: &MLSMessage) -> Result<(), GroupError> {
         let context = &self.group_state().context;
