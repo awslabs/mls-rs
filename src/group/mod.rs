@@ -2422,9 +2422,11 @@ mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_config::{test_utils::test_config, InMemoryClientConfig, Preferences},
+        credential::{CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
         extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
-        key_package::test_utils::test_key_package,
+        key_package::test_utils::{test_key_package, test_key_package_custom},
         psk::Psk,
+        tree_kem::Lifetime,
     };
 
     use super::{
@@ -3274,5 +3276,57 @@ mod tests {
                 SecretTreeError::KeyMissing(_)
             )))
         );
+    }
+
+    #[test]
+    fn removing_requirements_allows_to_add() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+
+        alice_group
+            .commit(vec![Proposal::GroupContextExtensions(
+                [RequiredCapabilitiesExt {
+                    credentials: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
+                    ..RequiredCapabilitiesExt::default()
+                }]
+                .try_into()
+                .unwrap(),
+            )])
+            .unwrap();
+
+        alice_group.process_pending_commit().unwrap();
+
+        let add = alice_group
+            .group
+            .add_proposal(test_key_package_custom(
+                TEST_PROTOCOL_VERSION,
+                TEST_CIPHER_SUITE,
+                "bob",
+                |gen| {
+                    gen.generate(
+                        Lifetime::years(1).unwrap(),
+                        Capabilities {
+                            credentials: vec![CREDENTIAL_TYPE_BASIC],
+                            ..Default::default()
+                        },
+                        Default::default(),
+                        Default::default(),
+                    )
+                    .unwrap()
+                },
+            ))
+            .unwrap();
+
+        let group_context_extensions = alice_group
+            .group
+            .group_context_extensions_proposal(Default::default());
+
+        alice_group
+            .commit(vec![add, group_context_extensions])
+            .unwrap();
+
+        let state_update = alice_group.process_pending_commit().unwrap();
+
+        assert_eq!(state_update.added, vec![LeafIndex::new(1)]);
+        assert_eq!(alice_group.group.roster().member_count(), 2);
     }
 }

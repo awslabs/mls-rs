@@ -399,11 +399,18 @@ mod tests {
     use super::*;
     use crate::{
         client_config::PassthroughCredentialValidator,
+        credential::{
+            test_utils::get_test_certificate_credential, CREDENTIAL_TYPE_BASIC,
+            CREDENTIAL_TYPE_X509,
+        },
         extension::{
             test_utils::TestExtension, ExternalSendersExt, MlsExtension, RequiredCapabilitiesExt,
         },
         group::test_utils::{test_group, TEST_GROUP},
-        key_package::test_utils::{test_key_package, test_key_package_custom},
+        key_package::{
+            test_utils::{test_key_package, test_key_package_custom},
+            KeyPackageGenerator,
+        },
         signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{
             leaf_node::{
@@ -2741,5 +2748,143 @@ mod tests {
 
         assert_eq!(effects.updates, vec![(alice, alice_new_leaf)]);
         assert_eq!(effects.removes, vec![bob]);
+    }
+
+    fn x509_key_package(name: &str) -> KeyPackage {
+        let (mut signing_identity, secret_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, name.as_bytes().to_vec());
+
+        signing_identity.credential = get_test_certificate_credential();
+
+        let generator = KeyPackageGenerator {
+            protocol_version: TEST_PROTOCOL_VERSION,
+            cipher_suite: TEST_CIPHER_SUITE,
+            signing_identity: &signing_identity,
+            signing_key: &secret_key,
+            credential_validator: &PassthroughCredentialValidator::new(),
+        };
+
+        generator
+            .generate(
+                Lifetime::years(1).unwrap(),
+                Capabilities {
+                    credentials: vec![CREDENTIAL_TYPE_X509],
+                    ..Default::default()
+                },
+                Default::default(),
+                Default::default(),
+            )
+            .unwrap()
+            .key_package
+    }
+
+    #[test]
+    fn receiving_add_with_leaf_not_supporting_credential_type_of_other_leaf_fails() {
+        let (alice, tree) = new_tree("alice");
+
+        let res = CommitReceiver::new(&tree, alice, alice).receive([Proposal::Add(AddProposal {
+            key_package: x509_key_package("bob"),
+        })]);
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
+                    TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(
+                        CREDENTIAL_TYPE_BASIC,
+                        _
+                    )
+                ))
+            ))
+        );
+    }
+
+    #[test]
+    fn sending_additional_add_with_leaf_not_supporting_credential_type_of_other_leaf_fails() {
+        let (alice, tree) = new_tree("alice");
+
+        let res = CommitSender::new(&tree, alice)
+            .with_additional([Proposal::Add(AddProposal {
+                key_package: x509_key_package("bob"),
+            })])
+            .send();
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
+                    TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(
+                        CREDENTIAL_TYPE_BASIC,
+                        _
+                    )
+                ))
+            ))
+        );
+    }
+
+    #[test]
+    fn sending_add_with_leaf_not_supporting_credential_type_of_other_leaf_filters_it_out() {
+        let (alice, tree) = new_tree("alice");
+
+        let add = Proposal::Add(AddProposal {
+            key_package: x509_key_package("bob"),
+        });
+
+        let add_ref = make_proposal_ref(&add, alice);
+
+        let (committed, effects) = CommitSender::new(&tree, alice)
+            .cache(add_ref.clone(), add.clone(), alice)
+            .send()
+            .unwrap();
+
+        assert_eq!(committed, Vec::new());
+        assert_eq!(effects.rejected_proposals, vec![(add_ref, add)]);
+    }
+
+    #[test]
+    fn receiving_group_extension_unsupported_by_leaf_fails() {
+        let (alice, tree) = new_tree("alice");
+
+        let res = CommitReceiver::new(&tree, alice, alice)
+            .receive([Proposal::GroupContextExtensions(make_extension_list(0))]);
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::UnsupportedGroupExtension(TestExtension::IDENTIFIER)
+            ))
+        );
+    }
+
+    #[test]
+    fn sending_additional_group_extension_unsupported_by_leaf_fails() {
+        let (alice, tree) = new_tree("alice");
+
+        let res = CommitSender::new(&tree, alice)
+            .with_additional([Proposal::GroupContextExtensions(make_extension_list(0))])
+            .send();
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::UnsupportedGroupExtension(TestExtension::IDENTIFIER)
+            ))
+        );
+    }
+
+    #[test]
+    fn sending_group_extension_unsupported_by_leaf_filters_it_out() {
+        let (alice, tree) = new_tree("alice");
+
+        let proposal = Proposal::GroupContextExtensions(make_extension_list(0));
+        let proposal_ref = make_proposal_ref(&proposal, alice);
+
+        let (committed, effects) = CommitSender::new(&tree, alice)
+            .cache(proposal_ref.clone(), proposal.clone(), alice)
+            .send()
+            .unwrap();
+
+        assert_eq!(committed, Vec::new());
+        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
     }
 }
