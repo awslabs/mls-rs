@@ -35,6 +35,8 @@ where
             key_schedule: snapshot.key_schedule,
             pending_updates: snapshot.pending_updates,
             pending_commit: snapshot.pending_commit,
+            #[cfg(test)]
+            commit_modifiers: Default::default(),
         }
     }
 }

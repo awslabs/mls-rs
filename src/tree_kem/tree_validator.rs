@@ -131,6 +131,8 @@ mod tests {
                 signers[0],
                 None,
                 None,
+                #[cfg(test)]
+                &Default::default(),
             )
             .unwrap();
 

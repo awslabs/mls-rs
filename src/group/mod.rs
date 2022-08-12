@@ -49,6 +49,11 @@ use crate::{EpochRepository, ProtocolVersion};
 #[cfg(feature = "benchmark")]
 use crate::client_config::Preferences;
 
+#[cfg(test)]
+use crate::tree_kem::UpdatePathNode;
+#[cfg(test)]
+use std::fmt;
+
 use confirmation_tag::*;
 use epoch::*;
 use framing::*;
@@ -431,6 +436,8 @@ where
     // TODO: HpkePublicKey does not have Eq and Hash
     pending_updates: HashMap<Vec<u8>, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
     pending_commit: Option<CommitGeneration>,
+    #[cfg(test)]
+    pub commit_modifiers: CommitModifiers<<<C as ClientConfig>::Keychain as Keychain>::Signer>,
 }
 
 impl<C> Group<C>
@@ -501,6 +508,8 @@ where
             key_schedule: key_schedule_result.key_schedule,
             pending_updates: Default::default(),
             pending_commit: None,
+            #[cfg(test)]
+            commit_modifiers: Default::default(),
         })
     }
 
@@ -688,6 +697,8 @@ where
             key_schedule,
             pending_updates: Default::default(),
             pending_commit: None,
+            #[cfg(test)]
+            commit_modifiers: Default::default(),
         })
     }
 
@@ -973,6 +984,8 @@ where
                 &signer,
                 options.capabilities_update,
                 options.extension_update,
+                #[cfg(test)]
+                &self.commit_modifiers,
             )?;
 
             (
@@ -1251,6 +1264,8 @@ where
             key_schedule: key_schedule_result.key_schedule,
             pending_updates: Default::default(),
             pending_commit: None,
+            #[cfg(test)]
+            commit_modifiers: Default::default(),
         };
 
         let welcome = new_group.make_welcome_message(
@@ -2261,8 +2276,43 @@ where
 }
 
 #[cfg(test)]
+pub struct CommitModifiers<S> {
+    pub modify_leaf: fn(&mut LeafNode, &S),
+    pub modify_tree: fn(&mut TreeKemPublic),
+    pub modify_path: fn(Vec<UpdatePathNode>) -> Vec<UpdatePathNode>,
+}
+
+#[cfg(test)]
+impl<S> fmt::Debug for CommitModifiers<S> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "CommitModifiers")
+    }
+}
+
+#[cfg(test)]
+impl<S> Copy for CommitModifiers<S> {}
+
+#[cfg(test)]
+impl<S> Clone for CommitModifiers<S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+#[cfg(test)]
+impl<S> Default for CommitModifiers<S> {
+    fn default() -> Self {
+        Self {
+            modify_leaf: |_, _| (),
+            modify_tree: |_| (),
+            modify_path: |a| a,
+        }
+    }
+}
+
+#[cfg(test)]
 pub(crate) mod test_utils {
-    use ferriscrypt::asym::ec_key::SecretKey;
+    use ferriscrypt::asym::ec_key::{self, SecretKey};
 
     use super::*;
     use crate::{
@@ -2270,6 +2320,7 @@ pub(crate) mod test_utils {
             test_utils::test_config, InMemoryClientConfig, PassthroughCredentialValidator,
             Preferences,
         },
+        credential::CredentialType,
         extension::RequiredCapabilitiesExt,
         key_package::KeyPackageGenerator,
         signing_identity::test_utils::get_test_signing_identity,
@@ -2517,6 +2568,93 @@ pub(crate) mod test_utils {
 
         TestGroup { group }
     }
+
+    pub(crate) fn test_n_member_group(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        num_members: usize,
+    ) -> Vec<TestGroup> {
+        let group = test_group(protocol_version, cipher_suite);
+
+        let mut groups: Vec<TestGroup> = vec![group];
+
+        for i in 1..num_members {
+            let (new_group, commit) = groups.get_mut(0).unwrap().join(&format!("name {}", i));
+            process_commit(&mut groups, commit, 0);
+            groups.push(new_group);
+        }
+
+        groups
+    }
+
+    pub(crate) fn process_commit(groups: &mut [TestGroup], commit: MLSMessage, excluded: u32) {
+        groups
+            .iter_mut()
+            .filter(|g| g.group.current_member_index() != excluded)
+            .for_each(|g| {
+                g.process_message(commit.clone()).unwrap();
+            });
+    }
+
+    pub(crate) fn get_test_25519_key(key_byte: u8) -> HpkePublicKey {
+        ec_key::PublicKey::from_uncompressed_bytes(&[key_byte; 32], ec_key::Curve::Ed25519)
+            .unwrap()
+            .try_into()
+            .unwrap()
+    }
+
+    pub(crate) fn get_test_groups_with_features(
+        n: usize,
+        extensions: ExtensionList,
+        leaf_extensions: ExtensionList,
+        credentials: Option<Vec<CredentialType>>,
+    ) -> Vec<Group<InMemoryClientConfig>> {
+        let clients = (0..n)
+            .map(|_| {
+                let (identity, secret_key) =
+                    get_test_signing_identity(CipherSuite::Curve25519Aes128, b"member".to_vec());
+
+                InMemoryClientConfig::default()
+                    .with_supported_extension(999)
+                    .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
+                    .with_credential_types(credentials.clone().unwrap_or_else(|| vec![1, 2]))
+                    .with_signing_identity(identity, secret_key)
+                    .with_leaf_node_extensions(leaf_extensions.clone())
+                    .build_client()
+            })
+            .collect::<Vec<_>>();
+
+        let group = clients[0]
+            .create_group(
+                ProtocolVersion::Mls10,
+                CipherSuite::Curve25519Aes128,
+                extensions,
+            )
+            .unwrap();
+
+        let mut groups = vec![group];
+
+        clients.iter().skip(1).for_each(|client| {
+            let add = groups[0]
+                .add_proposal(
+                    client
+                        .generate_key_package(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128)
+                        .unwrap(),
+                )
+                .unwrap();
+
+            let (commit, welcome) = groups[0].commit_proposals(vec![add], vec![]).unwrap();
+            groups[0].process_pending_commit().unwrap();
+
+            for group in groups.iter_mut().skip(1) {
+                group.process_incoming_message(commit.clone()).unwrap();
+            }
+
+            groups.push(client.join_group(None, welcome.unwrap()).unwrap());
+        });
+
+        groups
+    }
 }
 
 #[cfg(test)]
@@ -2525,19 +2663,25 @@ mod tests {
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_config::{test_utils::test_config, InMemoryClientConfig, Preferences},
         credential::{CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
-        extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
+        extension::{test_utils::TestExtension, Extension, RequiredCapabilitiesExt},
         key_package::test_utils::{test_key_package, test_key_package_custom},
         psk::Psk,
-        tree_kem::Lifetime,
+        tree_kem::{
+            leaf_node::LeafNodeSource, leaf_node_validator::LeafNodeValidationError, Lifetime,
+            TreeIndexError,
+        },
     };
 
     use super::{
-        test_utils::{group_extensions, test_group, test_group_custom, test_member, TestGroup},
+        test_utils::{
+            get_test_25519_key, get_test_groups_with_features, group_extensions, process_commit,
+            test_group, test_group_custom, test_member, test_n_member_group, TestGroup, TEST_GROUP,
+        },
         *,
     };
     use assert_matches::assert_matches;
 
-    use crate::group::test_utils::TEST_GROUP;
+    use ferriscrypt::asym::ec_key;
     use tls_codec::Size;
 
     #[cfg(target_arch = "wasm32")]
@@ -3433,5 +3577,456 @@ mod tests {
 
         assert_eq!(state_update.added, vec![LeafIndex::new(1)]);
         assert_eq!(alice_group.group.roster().member_count(), 2);
+    }
+
+    #[test]
+    fn commit_leaf_wrong_source() {
+        // RFC, 13.4.2. "The leaf_node_source field MUST be set to commit."
+        let mut groups =
+            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 3);
+
+        groups[0].group.commit_modifiers.modify_leaf =
+            |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+                leaf.leaf_node_source = LeafNodeSource::Update;
+                leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+            };
+
+        let (commit, _) = groups[0].commit(vec![]).unwrap();
+
+        assert_matches!(
+            groups[2].process_message(commit),
+            Err(GroupError::UpdatePathValidationError(
+                UpdatePathValidationError::LeafNodeValidationError(
+                    LeafNodeValidationError::InvalidLeafNodeSource
+                )
+            ))
+        );
+    }
+
+    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore]
+    fn commit_leaf_same_hpke_key() {
+        // RFC 13.4.2. "Verify that the encryption_key value in the LeafNode is different from the committer's current leaf node"
+
+        let mut groups =
+            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 3);
+
+        // Group 0 starts using fixed key
+        groups[0].group.commit_modifiers.modify_leaf =
+            |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+                leaf.public_key = get_test_25519_key(1u8);
+                leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+            };
+
+        let (commit, _) = groups[0].commit(vec![]).unwrap();
+        groups[0].process_pending_commit().unwrap();
+        groups[2].process_message(commit).unwrap();
+
+        // Group 0 tries to use the fixed key againd
+        let (commit, _) = groups[0].commit(vec![]).unwrap();
+        assert!(groups[2].process_message(commit).is_err());
+    }
+
+    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore]
+    fn commit_path_additional_ciphertext() {
+        // RFC, 8.6. "The length of the encrypted_path_secret vector MUST be equal to the length of the resolution
+        // of the copath node (excluding new leaf nodes)"
+
+        let mut groups =
+            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10);
+
+        groups[0].group.commit_modifiers.modify_path = |path: Vec<UpdatePathNode>| {
+            let mut path = path;
+            let ctx = path[0].encrypted_path_secret[0].clone();
+            path[0].encrypted_path_secret.push(ctx);
+            path
+        };
+
+        let (commit, _) = groups[0].commit(vec![]).unwrap();
+        assert!(groups[7].process_message(commit).is_err());
+    }
+
+    #[test]
+    fn commit_leaf_duplicate_hpke_key() {
+        // RFC 8.3 "Verify that the following fields are unique among the members of the group: `encryption_key`"
+
+        let mut groups =
+            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10);
+
+        // Group 1 uses the fixed key
+        groups[1].group.commit_modifiers.modify_leaf =
+            |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+                leaf.public_key = get_test_25519_key(1u8);
+                leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+            };
+
+        let (commit, _) = groups.get_mut(1).unwrap().commit(vec![]).unwrap();
+        process_commit(&mut groups, commit, 1);
+
+        // Group 0 tries to use the fixed key too
+        groups[0].group.commit_modifiers.modify_leaf =
+            |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+                leaf.public_key = get_test_25519_key(1u8);
+                leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+            };
+
+        let (commit, _) = groups[0].commit(vec![]).unwrap();
+
+        assert_matches!(
+            groups[7].process_message(commit),
+            Err(GroupError::RatchetTreeError(
+                RatchetTreeError::TreeIndexError(TreeIndexError::DuplicateHpkeKey(_))
+            ))
+        );
+    }
+
+    #[test]
+    fn commit_leaf_duplicate_signature_key() {
+        // RFC 8.3 "Verify that the following fields are unique among the members of the group: `signature_key`"
+
+        let mut groups =
+            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10);
+
+        // Group 1 uses the fixed key
+        groups[1].group.commit_modifiers.modify_leaf = |leaf: &mut LeafNode, _: &_| {
+            let sk = ec_key::SecretKey::from_bytes(&[2u8; 32], ec_key::Curve::Ed25519).unwrap();
+            leaf.signing_identity.signature_key = sk.to_public().unwrap().try_into().unwrap();
+            leaf.sign(&sk, &Some(TEST_GROUP)).unwrap();
+        };
+
+        let (commit, _) = groups.get_mut(1).unwrap().commit(vec![]).unwrap();
+        process_commit(&mut groups, commit, 1);
+
+        // Group 0 tries to use the fixed key too
+        groups[0].group.commit_modifiers.modify_leaf = |leaf: &mut LeafNode, _: &_| {
+            let sk = ec_key::SecretKey::from_bytes(&[2u8; 32], ec_key::Curve::Ed25519).unwrap();
+            leaf.signing_identity.signature_key = sk.to_public().unwrap().try_into().unwrap();
+            leaf.sign(&sk, &Some(TEST_GROUP)).unwrap();
+        };
+
+        let (commit, _) = groups[0].commit(vec![]).unwrap();
+
+        assert_matches!(
+            groups[7].process_message(commit),
+            Err(GroupError::RatchetTreeError(
+                RatchetTreeError::TreeIndexError(TreeIndexError::DuplicateSignatureKeys(_))
+            ))
+        );
+    }
+
+    #[test]
+    fn commit_leaf_incorrect_signature() {
+        let mut groups =
+            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 3);
+
+        groups[0].group.commit_modifiers.modify_leaf = |leaf: &mut LeafNode, _: &_| {
+            leaf.signature[0] ^= 1;
+        };
+
+        let (commit, _) = groups[0].commit(vec![]).unwrap();
+
+        assert_matches!(
+            groups[2].process_message(commit),
+            Err(GroupError::UpdatePathValidationError(
+                UpdatePathValidationError::LeafNodeValidationError(
+                    LeafNodeValidationError::SignatureError(_)
+                )
+            ))
+        );
+    }
+
+    #[test]
+    fn commit_leaf_not_supporting_used_context_extension() {
+        // The new leaf of the committer doesn't support an extension set in group context
+        let extension = Extension {
+            extension_type: 999,
+            extension_data: vec![],
+        };
+
+        let mut groups =
+            get_test_groups_with_features(3, vec![extension].into(), Default::default(), None);
+
+        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+            leaf.capabilities = Capabilities::default();
+            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+        };
+
+        let (commit, _) = groups[0].commit_proposals(vec![], vec![]).unwrap();
+        assert!(groups[1].process_incoming_message(commit).is_err());
+    }
+
+    #[test]
+    fn commit_leaf_not_supporting_used_leaf_extension() {
+        // The new leaf of the committer doesn't support an extension set in another leaf
+        let extension = Extension {
+            extension_type: 999,
+            extension_data: vec![],
+        };
+
+        let mut groups =
+            get_test_groups_with_features(3, Default::default(), vec![extension].into(), None);
+
+        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+            leaf.capabilities = Capabilities::default();
+            leaf.extensions = ExtensionList::new();
+            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+        };
+
+        let (commit, _) = groups[0].commit_proposals(vec![], vec![]).unwrap();
+
+        assert!(groups[1].process_incoming_message(commit).is_err());
+    }
+
+    #[test]
+    fn commit_leaf_uses_extension_unsupported_by_another_leaf() {
+        // The new leaf of the committer uses an extension unsupported by another leaf
+        let mut groups =
+            get_test_groups_with_features(3, Default::default(), Default::default(), None);
+
+        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+            let extensions = [666, 999]
+                .into_iter()
+                .map(|extension_type| Extension {
+                    extension_type,
+                    extension_data: vec![],
+                })
+                .collect::<Vec<_>>()
+                .into();
+
+            leaf.extensions = extensions;
+            leaf.capabilities.extensions = vec![666, 999];
+            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+        };
+
+        let (commit, _) = groups[0].commit_proposals(vec![], vec![]).unwrap();
+        assert!(groups[1].process_incoming_message(commit).is_err());
+    }
+
+    #[test]
+    fn commit_leaf_not_supporting_required_extension() {
+        // The new leaf of the committer doesn't support an extension required by group context
+        use crate::extension::MlsExtension;
+
+        let extension = RequiredCapabilitiesExt {
+            extensions: vec![999],
+            proposals: vec![],
+            credentials: vec![],
+        };
+
+        let extensions = vec![extension.to_extension().unwrap()];
+        let mut groups =
+            get_test_groups_with_features(3, extensions.into(), Default::default(), None);
+
+        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+            leaf.capabilities = Capabilities::default();
+            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+        };
+
+        let (commit, _) = groups[0].commit_proposals(vec![], vec![]).unwrap();
+        assert!(groups[2].process_incoming_message(commit).is_err());
+    }
+
+    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore]
+    fn commit_leaf_has_unsupported_credential() {
+        // The new leaf of the committer has a credential unsupported by another leaf
+
+        use crate::credential::Credential;
+        let mut groups =
+            get_test_groups_with_features(3, Default::default(), Default::default(), Some(vec![1]));
+
+        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+            leaf.signing_identity.credential = Credential::X509(vec![].into());
+            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+        };
+
+        let (commit, _) = groups[0].commit_proposals(vec![], vec![]).unwrap();
+
+        assert_matches!(
+            groups[2].process_incoming_message(commit),
+            Err(GroupError::RatchetTreeError(
+                RatchetTreeError::TreeIndexError(
+                    TreeIndexError::CredentialTypeOfNewLeafIsUnsupported(_)
+                )
+            ))
+        );
+    }
+
+    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore]
+    fn commit_leaf_not_supporting_credential_used_in_another_leaf() {
+        // The new leaf of the committer doesn't support another leaf's credential
+
+        let mut groups =
+            get_test_groups_with_features(3, Default::default(), Default::default(), Some(vec![1]));
+
+        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+            leaf.capabilities.credentials = vec![2];
+            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+        };
+
+        let (commit, _) = groups[0].commit_proposals(vec![], vec![]).unwrap();
+
+        assert_matches!(
+            groups[2].process_incoming_message(commit),
+            Err(GroupError::RatchetTreeError(
+                RatchetTreeError::TreeIndexError(
+                    TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(..)
+                )
+            ))
+        );
+    }
+
+    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore]
+    fn commit_leaf_not_supporting_required_credential() {
+        // The new leaf of the committer doesn't support a credentia required by group context
+        use crate::extension::MlsExtension;
+
+        let extension = RequiredCapabilitiesExt {
+            extensions: vec![],
+            proposals: vec![],
+            credentials: vec![2],
+        };
+
+        let extensions = vec![extension.to_extension().unwrap()];
+        let mut groups =
+            get_test_groups_with_features(3, extensions.into(), Default::default(), None);
+
+        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+            leaf.capabilities.credentials = vec![1];
+            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+        };
+
+        let (commit, _) = groups[0].commit_proposals(vec![], vec![]).unwrap();
+        assert_matches!(
+            groups[2].process_incoming_message(commit),
+            Err(GroupError::UpdatePathValidationError(
+                UpdatePathValidationError::LeafNodeValidationError(
+                    LeafNodeValidationError::RequiredCredentialNotFound(_)
+                )
+            ))
+        );
+    }
+
+    #[test]
+    fn commit_leaf_not_supporting_credential_used_by_external_sender() {
+        use ferriscrypt::asym::ec_key::generate_keypair;
+
+        // The new leaf of the committer doesn't support credential used by an external sender
+        use crate::{credential::Credential, extension::MlsExtension};
+
+        let (ext_sender_pk, _) =
+            generate_keypair(CipherSuite::Curve25519Aes128.signature_key_curve()).unwrap();
+
+        let ext_sender_id = SigningIdentity {
+            signature_key: ext_sender_pk.try_into().unwrap(),
+            credential: Credential::X509(vec![].into()),
+        };
+
+        let ext_senders = ExternalSendersExt::new(vec![ext_sender_id])
+            .to_extension()
+            .unwrap();
+
+        let mut groups =
+            get_test_groups_with_features(3, vec![ext_senders].into(), Default::default(), None);
+
+        // New leaf for group 0 supports only basic credentials (used by the group) but not X509 used by external sender
+        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+            leaf.capabilities.credentials = vec![1];
+            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+        };
+
+        let (commit, _) = groups[0].commit_proposals(vec![], vec![]).unwrap();
+
+        assert!(groups[2].process_incoming_message(commit).is_err());
+    }
+
+    /*
+     * Edge case paths
+     */
+
+    #[test]
+    fn committing_degenerate_path_succeeds() {
+        let mut groups =
+            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10);
+
+        groups[0].group.commit_modifiers.modify_tree = |tree: &mut TreeKemPublic| {
+            tree.do_update_node(get_test_25519_key(1u8), 1).unwrap();
+            tree.do_update_node(get_test_25519_key(1u8), 3).unwrap();
+        };
+
+        groups[0].group.commit_modifiers.modify_leaf =
+            |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+                leaf.public_key = get_test_25519_key(1u8);
+                leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+            };
+
+        let (commit, _) = groups[0].commit(vec![]).unwrap();
+        assert!(groups[7].process_message(commit).is_ok());
+    }
+
+    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    #[ignore]
+    fn inserting_key_in_filtered_node_fails() {
+        let mut groups =
+            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10);
+
+        let remove = groups[0].group.remove_proposal(1).unwrap();
+        let (commit, _) = groups[0].commit(vec![remove]).unwrap();
+        groups[0].process_pending_commit().unwrap();
+
+        groups.iter_mut().skip(2).for_each(|group| {
+            group.process_message(commit.clone()).unwrap();
+        });
+
+        groups[0].group.commit_modifiers.modify_tree = |tree: &mut TreeKemPublic| {
+            tree.do_update_node(get_test_25519_key(1u8), 1).unwrap();
+        };
+
+        let (commit, _) = groups[0].commit(vec![]).unwrap();
+
+        // We should get a path validation error, since the path is too long
+        assert_matches!(
+            groups[7].process_message(commit),
+            Err(GroupError::UpdatePathValidationError(_))
+        );
+    }
+
+    #[test]
+    fn commit_with_too_short_path_fails() {
+        let mut groups =
+            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10);
+
+        let remove = groups[0].group.remove_proposal(1).unwrap();
+        let (commit, _) = groups[0].commit(vec![remove]).unwrap();
+        groups[0].process_pending_commit().unwrap();
+
+        groups.iter_mut().skip(2).for_each(|group| {
+            group.process_message(commit.clone()).unwrap();
+        });
+
+        groups[0].group.commit_modifiers.modify_path = |path: Vec<UpdatePathNode>| {
+            let mut path = path;
+            path.pop();
+            path
+        };
+
+        let (commit, _) = groups[0].commit(vec![]).unwrap();
+
+        assert!(groups[7].process_message(commit).is_err());
     }
 }

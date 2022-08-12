@@ -16,6 +16,9 @@ use super::{
 
 use crate::cipher_suite::HpkeCiphertext;
 
+#[cfg(test)]
+use crate::group::CommitModifiers;
+
 pub struct TreeKem<'a> {
     tree_kem_public: &'a mut TreeKemPublic,
     private_key: &'a mut TreeKemPrivate,
@@ -38,6 +41,7 @@ impl<'a> TreeKem<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn encap<S: Signer>(
         self,
         group_id: &[u8],
@@ -46,6 +50,7 @@ impl<'a> TreeKem<'a> {
         signer: &S,
         update_capabilities: Option<Capabilities>,
         update_extensions: Option<ExtensionList>,
+        #[cfg(test)] commit_modifiers: &CommitModifiers<S>,
     ) -> Result<EncapGeneration, RatchetTreeError> {
         let num_leaves = self.tree_kem_public.nodes.total_leaf_count();
         let self_index = self.private_key.self_index;
@@ -69,6 +74,9 @@ impl<'a> TreeKem<'a> {
             })
             .collect::<Result<Vec<_>, RatchetTreeError>>()?;
 
+        #[cfg(test)]
+        (commit_modifiers.modify_tree)(self.tree_kem_public);
+
         let mut own_leaf_copy = self
             .tree_kem_public
             .nodes
@@ -91,6 +99,16 @@ impl<'a> TreeKem<'a> {
 
         self.tree_kem_public
             .rekey_leaf(self_index, own_leaf_copy.clone())?;
+
+        #[cfg(test)]
+        {
+            (commit_modifiers.modify_leaf)(&mut own_leaf_copy, signer);
+            *self
+                .tree_kem_public
+                .nodes
+                .borrow_as_leaf_mut(self_index)
+                .unwrap() = own_leaf_copy.clone();
+        }
 
         self.private_key
             .secret_keys
@@ -131,6 +149,9 @@ impl<'a> TreeKem<'a> {
                 })
             })
             .collect::<Result<Vec<_>, RatchetTreeError>>()?;
+
+        #[cfg(test)]
+        let node_updates = (commit_modifiers.modify_path)(node_updates);
 
         // Create an update path with the new node and parent node updates
         let update_path = UpdatePath {
@@ -415,6 +436,8 @@ mod tests {
                 &encap_signer,
                 capabilities.clone(),
                 extensions.clone(),
+                #[cfg(test)]
+                &Default::default(),
             )
             .unwrap();
 

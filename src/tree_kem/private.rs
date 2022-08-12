@@ -177,6 +177,8 @@ mod tests {
                 &alice_signing,
                 None,
                 None,
+                #[cfg(test)]
+                &Default::default(),
             )
             .unwrap();
 

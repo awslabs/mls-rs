@@ -666,6 +666,17 @@ pub trait AccumulateBatchResults {
 }
 
 #[cfg(test)]
+impl TreeKemPublic {
+    pub fn do_update_node(
+        &mut self,
+        pub_key: HpkePublicKey,
+        index: NodeIndex,
+    ) -> Result<(), RatchetTreeError> {
+        self.update_node(pub_key, index)
+    }
+}
+
+#[cfg(test)]
 pub(crate) mod test_utils {
     use ferriscrypt::{asym::ec_key::SecretKey, hpke::kem::HpkeSecretKey};
 
