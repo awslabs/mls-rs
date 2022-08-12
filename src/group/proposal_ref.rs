@@ -74,6 +74,7 @@ mod test {
         tree_kem::leaf_node::test_utils::get_basic_test_node,
     };
 
+    use num_enum::TryFromPrimitive;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -178,9 +179,9 @@ mod test {
         let test_cases = load_test_cases();
 
         for one_case in test_cases {
-            let cipher_suite = CipherSuite::from_raw(one_case.cipher_suite);
+            let cipher_suite = CipherSuite::try_from_primitive(one_case.cipher_suite);
 
-            if cipher_suite.is_none() {
+            if cipher_suite.is_err() {
                 println!("Skipping test case due to unsupported cipher suite");
                 continue;
             }

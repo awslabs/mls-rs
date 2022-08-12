@@ -104,6 +104,7 @@ mod tests {
     use crate::cipher_suite::CipherSuite;
     use assert_matches::assert_matches;
     use ferriscrypt::{asym::ec_key::SecretKey, rand::SecureRng};
+    use num_enum::TryFromPrimitive;
     use tls_codec::{Serialize, TlsByteVecU32};
 
     #[cfg(target_arch = "wasm32")]
@@ -185,7 +186,7 @@ mod tests {
         let cases = load_test_cases();
 
         for one_case in cases {
-            if CipherSuite::from_raw(one_case.cipher_suite).is_none() {
+            if CipherSuite::try_from_primitive(one_case.cipher_suite).is_err() {
                 println!("Skipping test for unsupported cipher suite");
                 continue;
             }

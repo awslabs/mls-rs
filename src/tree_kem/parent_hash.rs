@@ -359,6 +359,7 @@ mod tests {
     use crate::tree_kem::parent_hash::test_utils::{get_test_tree_fig_12, test_parent_node};
     use crate::tree_kem::RatchetTreeError;
     use assert_matches::assert_matches;
+    use num_enum::TryFromPrimitive;
     use tls_codec::Deserialize;
 
     #[cfg(target_arch = "wasm32")]
@@ -524,9 +525,9 @@ mod tests {
         let cases = load_test_cases();
 
         for one_case in cases {
-            let cipher_suite = CipherSuite::from_raw(one_case.cipher_suite);
+            let cipher_suite = CipherSuite::try_from_primitive(one_case.cipher_suite);
 
-            if cipher_suite.is_none() {
+            if cipher_suite.is_err() {
                 println!("Skipping test for unsupported cipher suite");
                 continue;
             }

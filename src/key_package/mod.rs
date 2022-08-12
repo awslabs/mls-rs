@@ -197,6 +197,7 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num_enum::TryFromPrimitive;
     use tls_codec::Deserialize;
 
     #[cfg(target_arch = "wasm32")]
@@ -237,7 +238,7 @@ mod tests {
         let cases = load_test_cases();
 
         for one_case in cases {
-            if CipherSuite::from_raw(one_case.cipher_suite).is_none() {
+            if CipherSuite::try_from_primitive(one_case.cipher_suite).is_err() {
                 println!("Skipping test for unsupported cipher suite");
                 continue;
             }

@@ -7,10 +7,11 @@ use crate::group::framing::{
 };
 use crate::group::message_signature::MLSAuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
-use crate::group::{Group, GroupError, Snapshot};
+use crate::group::{process_group_info, Group, GroupError, Snapshot};
 use crate::key_package::{
     KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRepository,
 };
+use crate::protocol_version::MaybeProtocolVersion;
 use crate::psk::ExternalPskId;
 use crate::signer::SignatureError;
 use crate::tree_kem::leaf_node::LeafNodeError;
@@ -42,8 +43,10 @@ pub enum ClientError {
     KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     LeafNodeError(#[from] LeafNodeError),
-    #[error("Expected group info message")]
+    #[error("expected group info message")]
     ExpectedGroupInfoMessage,
+    #[error("unsupported message version: {0:?}")]
+    UnsupportedMessageVersion(MaybeProtocolVersion),
 }
 
 #[non_exhaustive]
@@ -170,25 +173,38 @@ where
     pub fn external_add_proposal(
         &self,
         group_info: MLSMessage,
+        tree_data: Option<&[u8]>,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, ClientError> {
-        let protocol_version = group_info.version;
+        let protocol_version = group_info
+            .version
+            .into_enum()
+            .filter(|&version| self.config.version_supported(version))
+            .ok_or(ClientError::UnsupportedMessageVersion(group_info.version))?;
 
         let group_info = group_info
             .into_group_info()
             .ok_or(ClientError::ExpectedGroupInfoMessage)?;
 
+        let (group_context, _, _, _) = process_group_info(
+            &self.config.supported_protocol_versions(),
+            &self.config.supported_cipher_suites(),
+            protocol_version,
+            group_info,
+            tree_data,
+        )?;
+
         let key_package =
-            self.generate_key_package(protocol_version, group_info.group_context.cipher_suite)?;
+            self.generate_key_package(protocol_version, group_context.cipher_suite)?;
 
         let (_, signer) = self
             .config
             .keychain()
-            .default_identity(group_info.group_context.cipher_suite)
+            .default_identity(group_context.cipher_suite)
             .ok_or(ClientError::NoCredentialFound)?;
 
         let message = MLSAuthenticatedContent::new_signed(
-            &group_info.group_context,
+            &group_context,
             Sender::NewMemberProposal,
             Content::Proposal(Proposal::Add(AddProposal { key_package })),
             &signer,
@@ -203,7 +219,7 @@ where
         };
 
         Ok(MLSMessage {
-            version: protocol_version,
+            version: MaybeProtocolVersion::Enum(protocol_version),
             payload: MLSMessagePayload::Plain(plaintext),
         })
     }
@@ -355,7 +371,11 @@ mod tests {
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
         let proposal = bob
-            .external_add_proposal(alice_group.group.group_info_message().unwrap(), vec![])
+            .external_add_proposal(
+                alice_group.group.group_info_message().unwrap(),
+                Some(&alice_group.group.export_tree().unwrap()),
+                vec![],
+            )
             .unwrap();
 
         let message = alice_group
@@ -471,15 +491,13 @@ mod tests {
     fn creating_an_external_commit_requires_a_group_info_message() {
         let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
 
-        let msg = MLSMessage {
-            version: TEST_PROTOCOL_VERSION,
-            payload: MLSMessagePayload::KeyPackage(
-                alice
-                    .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-                    .unwrap(),
-            ),
-        };
+        let payload = MLSMessagePayload::KeyPackage(
+            alice
+                .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+                .unwrap(),
+        );
 
+        let msg = MLSMessage::new(TEST_PROTOCOL_VERSION, payload);
         let res = alice.commit_external(msg, None, None, vec![], vec![]);
 
         assert_matches!(res, Err(ClientError::ExpectedGroupInfoMessage));

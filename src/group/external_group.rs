@@ -11,12 +11,12 @@ use crate::{
 };
 
 use super::{
+    check_protocol_version,
     confirmation_tag::ConfirmationTag,
-    find_tree,
     framing::{MLSCiphertext, MLSPlaintext, Sender, WireFormat},
     message_processor::{EventOrContent, MessageProcessor, ProcessedMessage, ProvisionalState},
     message_signature::MLSAuthenticatedContent,
-    ExternalEvent, ProposalRef,
+    validate_group_info, ExternalEvent, ProposalRef,
 };
 
 #[derive(Clone, Debug)]
@@ -33,26 +33,35 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     ) -> Result<Self, GroupError> {
         let wire_format = group_info.wire_format();
 
+        let protocol_version =
+            check_protocol_version(&config.supported_protocol_versions(), group_info.version)?;
+
         let group_info = group_info.into_group_info().ok_or_else(|| {
             GroupError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
         })?;
 
-        let public_tree = find_tree(tree_data, &group_info)?;
-        let context = group_info.group_context;
+        let (group_context, confirmation_tag, public_tree, _) = validate_group_info(
+            &config.supported_protocol_versions(),
+            &config.supported_cipher_suites(),
+            protocol_version,
+            group_info,
+            tree_data,
+            &config.credential_validator(),
+        )?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
-            context.cipher_suite,
-            &context.confirmed_transcript_hash,
-            &group_info.confirmation_tag,
+            group_context.cipher_suite,
+            &group_context.confirmed_transcript_hash,
+            &confirmation_tag,
         )?;
 
         Ok(Self {
             config,
             state: GroupState::new(
-                context,
+                group_context,
                 public_tree,
                 interim_transcript_hash,
-                group_info.confirmation_tag,
+                confirmation_tag,
             ),
         })
     }
@@ -137,10 +146,10 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             membership_tag: None,
         };
 
-        Ok(MLSMessage {
-            version: self.state.protocol_version(),
-            payload: MLSMessagePayload::Plain(plaintext),
-        })
+        Ok(MLSMessage::new(
+            self.state.protocol_version(),
+            MLSMessagePayload::Plain(plaintext),
+        ))
     }
 
     #[inline(always)]
@@ -223,7 +232,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        cipher_suite::CipherSuite,
+        cipher_suite::{CipherSuite, MaybeCipherSuite},
         extension::{ExtensionList, ExternalSendersExt},
         group::{
             proposal::ProposalOrRef,
@@ -232,6 +241,7 @@ mod tests {
             Content, ExternalEvent, ExternalGroup, GroupError, MLSMessage, MLSMessagePayload,
         },
         key_package::test_utils::test_key_package_with_id,
+        protocol_version::MaybeProtocolVersion,
         signing_identity::{test_utils::get_test_signing_identity, SigningIdentity},
         tree_kem::node::LeafIndex,
         AddProposal, InMemoryExternalClientConfig, Proposal, ProtocolVersion, RemoveProposal,
@@ -414,6 +424,43 @@ mod tests {
         assert_matches!(
             server.process_incoming_message(plaintext),
             Err(GroupError::UnencryptedApplicationMessage)
+        );
+    }
+
+    #[test]
+    fn external_group_will_reject_unsupported_cipher_suites() {
+        let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+
+        let config = InMemoryExternalClientConfig::default()
+            .clear_cipher_suites()
+            .with_cipher_suite(CipherSuite::Curve25519ChaCha20);
+
+        let res = ExternalGroup::join(config, alice.group.group_info_message().unwrap(), None);
+
+        assert_matches!(
+            res,
+            Err(GroupError::UnsupportedCipherSuite(MaybeCipherSuite::Enum(
+                CipherSuite::Curve25519Aes128
+            )))
+        );
+    }
+
+    #[test]
+    fn external_group_will_reject_unsupported_protocol_versions() {
+        let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+
+        let config = InMemoryExternalClientConfig::default();
+
+        let mut group_info = alice.group.group_info_message().unwrap();
+        group_info.version = MaybeProtocolVersion::Other(64);
+
+        let res = ExternalGroup::join(config, group_info, None);
+
+        assert_matches!(
+            res,
+            Err(GroupError::UnsupportedProtocolVersion(
+                MaybeProtocolVersion::Other(64)
+            ))
         );
     }
 

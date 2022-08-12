@@ -8,6 +8,7 @@ use crate::{
     group::{framing::Sender, CommitOptions, ControlEncryptionMode, GroupContext},
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
     keychain::{InMemoryKeychain, Keychain},
+    protocol_version::MaybeProtocolVersion,
     psk::{ExternalPskId, Psk},
     signing_identity::SigningIdentity,
     time::MlsTime,
@@ -88,7 +89,11 @@ pub trait ClientConfig {
 
     fn capabilities(&self) -> Capabilities {
         Capabilities {
-            protocol_versions: self.supported_protocol_versions(),
+            protocol_versions: self
+                .supported_protocol_versions()
+                .into_iter()
+                .map(MaybeProtocolVersion::from)
+                .collect(),
             cipher_suites: self
                 .supported_cipher_suites()
                 .into_iter()
@@ -110,6 +115,14 @@ pub trait ClientConfig {
             encryption_mode: preferences.encryption_mode(),
             ratchet_tree_extension: preferences.ratchet_tree_extension,
         }
+    }
+
+    fn version_supported(&self, version: ProtocolVersion) -> bool {
+        self.supported_protocol_versions().contains(&version)
+    }
+
+    fn cipher_suite_supported(&self, cipher_suite: CipherSuite) -> bool {
+        self.supported_cipher_suites().contains(&cipher_suite)
     }
 }
 

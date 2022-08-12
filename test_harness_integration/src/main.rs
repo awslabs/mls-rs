@@ -3,7 +3,7 @@
 //!
 //! It is based on the Mock client written by Richard Barnes.
 
-use aws_mls::cipher_suite::{CipherSuite, SignaturePublicKey};
+use aws_mls::cipher_suite::{CipherSuite, MaybeCipherSuite, SignaturePublicKey};
 use aws_mls::client::Client;
 use aws_mls::client_config::{
     ClientConfig, InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECONDS,
@@ -202,7 +202,8 @@ impl MlsClient for MlsClientImpl {
     ) -> Result<tonic::Response<CreateGroupResponse>, tonic::Status> {
         let request_ref = request.into_inner();
 
-        let cipher_suite = CipherSuite::from_raw(request_ref.cipher_suite as u16)
+        let cipher_suite = MaybeCipherSuite::from_raw_value(request_ref.cipher_suite as u16)
+            .into_enum()
             .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
 
         let secret_key = cipher_suite.generate_signing_key().map_err(abort)?;
@@ -240,7 +241,10 @@ impl MlsClient for MlsClientImpl {
     ) -> Result<tonic::Response<CreateKeyPackageResponse>, tonic::Status> {
         let request_ref = request.get_ref();
         let mut clients = self.clients.lock().unwrap();
-        let cipher_suite = CipherSuite::from_raw(request_ref.cipher_suite as u16).unwrap();
+
+        let cipher_suite = MaybeCipherSuite::from_raw_value(request_ref.cipher_suite as u16)
+            .into_enum()
+            .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
 
         let secret_key = cipher_suite.generate_signing_key().map_err(abort)?;
         let credential = Credential::Basic(format!("alice{}", clients.len()).into_bytes());

@@ -1,6 +1,6 @@
 use super::proposal::Proposal;
 use super::*;
-use crate::tree_kem::leaf_node::LeafNode;
+use crate::{protocol_version::MaybeProtocolVersion, tree_kem::leaf_node::LeafNode};
 use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -237,11 +237,18 @@ pub struct MLSSenderDataAAD {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MLSMessage {
-    pub version: ProtocolVersion,
+    pub version: MaybeProtocolVersion,
     pub payload: MLSMessagePayload,
 }
 
 impl MLSMessage {
+    pub fn new(version: ProtocolVersion, payload: MLSMessagePayload) -> MLSMessage {
+        Self {
+            version: version.into(),
+            payload,
+        }
+    }
+
     #[inline(always)]
     pub fn into_plaintext(self) -> Option<MLSPlaintext> {
         match self.payload {

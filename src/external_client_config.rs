@@ -7,6 +7,7 @@ use crate::{
     credential::{CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
     extension::ExtensionType,
     keychain::{InMemoryKeychain, Keychain},
+    protocol_version::MaybeProtocolVersion,
     signing_identity::SigningIdentity,
     tree_kem::Capabilities,
     BoxedProposalFilter, ExternalClient, ProposalFilter, ProtocolVersion,
@@ -30,7 +31,11 @@ pub trait ExternalClientConfig {
 
     fn capabilities(&self) -> Capabilities {
         Capabilities {
-            protocol_versions: self.supported_protocol_versions(),
+            protocol_versions: self
+                .supported_protocol_versions()
+                .into_iter()
+                .map(MaybeProtocolVersion::from)
+                .collect(),
             cipher_suites: self
                 .supported_cipher_suites()
                 .into_iter()
@@ -40,6 +45,14 @@ pub trait ExternalClientConfig {
             proposals: vec![], // TODO: Support registering custom proposals here
             credentials: self.supported_credentials(),
         }
+    }
+
+    fn version_supported(&self, version: ProtocolVersion) -> bool {
+        self.supported_protocol_versions().contains(&version)
+    }
+
+    fn cipher_suite_supported(&self, cipher_suite: CipherSuite) -> bool {
+        self.supported_cipher_suites().contains(&cipher_suite)
     }
 }
 

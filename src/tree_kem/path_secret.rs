@@ -157,6 +157,7 @@ impl Iterator for PathSecretGenerator {
 mod tests {
     use super::*;
 
+    use num_enum::TryFromPrimitive;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -195,9 +196,9 @@ mod tests {
         let cases = load_test_cases();
 
         for one_case in cases {
-            let cipher_suite = CipherSuite::from_raw(one_case.cipher_suite);
+            let cipher_suite = CipherSuite::try_from_primitive(one_case.cipher_suite);
 
-            if cipher_suite.is_none() {
+            if cipher_suite.is_err() {
                 println!("Skipping test for unsupported cipher suite");
                 continue;
             }

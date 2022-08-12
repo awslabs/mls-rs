@@ -1,4 +1,6 @@
+use crate::maybe::MaybeEnum;
 use enum_iterator::IntoEnumIterator;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(
@@ -16,17 +18,27 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     TlsSize,
     serde::Deserialize,
     serde::Serialize,
+    TryFromPrimitive,
+    IntoPrimitive,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum ProtocolVersion {
-    /// todo: If a new version is added, please add a test to check that incoming messages with a
-    /// version different from the group version are rejected.
-    Mls10 = 0x01,
+    #[cfg(test)]
+    Reserved = 0,
+    Mls10 = 1,
 }
 
 impl ProtocolVersion {
     pub fn all() -> impl Iterator<Item = ProtocolVersion> {
-        ProtocolVersion::into_enum_iter()
+        cfg_if::cfg_if! {
+            if #[cfg(test)] {
+                ProtocolVersion::into_enum_iter().filter(|&p| p != ProtocolVersion::Reserved)
+            } else {
+                ProtocolVersion::into_enum_iter()
+            }
+        }
     }
 }
+
+pub type MaybeProtocolVersion = MaybeEnum<ProtocolVersion, u8>;

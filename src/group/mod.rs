@@ -14,7 +14,7 @@ use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroizing;
 
-use crate::cipher_suite::{CipherSuite, HpkeCiphertext};
+use crate::cipher_suite::{CipherSuite, HpkeCiphertext, MaybeCipherSuite};
 use crate::client_config::{ClientConfig, CredentialValidator, ProposalFilterInit};
 use crate::credential::CredentialError;
 use crate::extension::{
@@ -26,6 +26,7 @@ use crate::key_package::{
     KeyPackageRepository, KeyPackageValidationError, KeyPackageValidator,
 };
 use crate::keychain::Keychain;
+use crate::protocol_version::MaybeProtocolVersion;
 use crate::psk::{
     ExternalPskId, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
     PskSecretError, ResumptionPSKUsage, ResumptionPsk,
@@ -221,8 +222,18 @@ pub enum GroupError {
     SubgroupWithDifferentProtocolVersion(ProtocolVersion),
     #[error("Subgroup uses a different cipher suite: {0:?}")]
     SubgroupWithDifferentCipherSuite(CipherSuite),
-    #[error("Unsupported protocol version {0:?} or cipher suite {1:?}")]
-    UnsupportedProtocolVersionOrCipherSuite(ProtocolVersion, CipherSuite),
+    #[error("Unsupported protocol version {0:?}")]
+    UnsupportedProtocolVersion(MaybeProtocolVersion),
+    #[error(
+        "message protocol version {msg_version:?} does not match version {version:?} in {wire_format:?}"
+    )]
+    ProtocolVersionMismatch {
+        msg_version: ProtocolVersion,
+        wire_format: WireFormat,
+        version: ProtocolVersion,
+    },
+    #[error("Unsupported cipher suite {0:?}")]
+    UnsupportedCipherSuite(MaybeCipherSuite),
     #[error("Signing key of external sender is unknown")]
     UnknownSigningIdentityForExternalSender,
     #[error("External proposals are disabled for this group")]
@@ -236,7 +247,7 @@ pub enum GroupError {
     #[error("Epoch {0} not found")]
     EpochNotFound(u64),
     #[error("expected protocol version {0:?}, found version {1:?}")]
-    InvalidProtocolVersion(ProtocolVersion, ProtocolVersion),
+    InvalidProtocolVersion(ProtocolVersion, MaybeProtocolVersion),
     #[error("unexpected group ID {0:?}")]
     InvalidGroupId(Vec<u8>),
     #[error("Unencrypted application message")]
@@ -318,6 +329,34 @@ impl GroupContext {
             tree_hash,
             confirmed_transcript_hash: ConfirmedTranscriptHash::from(vec![]),
             extensions,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct GroupContextWire {
+    pub protocol_version: MaybeProtocolVersion,
+    pub cipher_suite: MaybeCipherSuite,
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    pub group_id: Vec<u8>,
+    pub epoch: u64,
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    pub tree_hash: Vec<u8>,
+    pub confirmed_transcript_hash: ConfirmedTranscriptHash,
+    pub extensions: ExtensionList,
+}
+
+impl From<GroupContext> for GroupContextWire {
+    fn from(context: GroupContext) -> Self {
+        Self {
+            protocol_version: context.protocol_version.into(),
+            cipher_suite: context.cipher_suite.into(),
+            group_id: context.group_id,
+            epoch: context.epoch,
+            tree_hash: context.tree_hash,
+            confirmed_transcript_hash: context.confirmed_transcript_hash,
+            extensions: context.extensions,
         }
     }
 }
@@ -484,7 +523,9 @@ where
         tree_data: Option<&[u8]>,
         config: C,
     ) -> Result<Self, GroupError> {
-        let protocol_version = welcome.version;
+        let protocol_version =
+            check_protocol_version(&config.supported_protocol_versions(), welcome.version)?;
+
         let wire_format = welcome.wire_format();
 
         let welcome = welcome.into_welcome().ok_or_else(|| {
@@ -492,6 +533,15 @@ where
         })?;
 
         let key_package_generation = find_key_package_generation(&config, &welcome)?;
+
+        if key_package_generation.key_package.version != protocol_version {
+            return Err(GroupError::ProtocolVersionMismatch {
+                msg_version: protocol_version,
+                wire_format: WireFormat::KeyPackage,
+                version: key_package_generation.key_package.version,
+            });
+        }
+
         // Identify an entry in the secrets array where the KeyPackageRef value corresponds to
         // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
         // If no such field exists, or if the ciphersuite indicated in the KeyPackage does not
@@ -543,22 +593,15 @@ where
         let decrypted_group_info = welcome_secret.decrypt(&welcome.encrypted_group_info)?;
         let group_info = GroupInfo::tls_deserialize(&mut &*decrypted_group_info)?;
 
-        let cipher_suite = group_info.group_context.cipher_suite;
-
-        if !version_and_cipher_filter(&config, protocol_version, cipher_suite) {
-            return Err(GroupError::UnsupportedProtocolVersionOrCipherSuite(
+        let (group_context, confirmation_tag, public_tree, group_info_signer) =
+            validate_group_info(
+                &config.supported_protocol_versions(),
+                &config.supported_cipher_suites(),
                 protocol_version,
-                cipher_suite,
-            ));
-        }
-
-        let mut public_tree = find_tree(tree_data, &group_info)?;
-
-        validate_existing_group(
-            &mut public_tree,
-            &group_info,
-            &config.credential_validator(),
-        )?;
+                group_info,
+                tree_data,
+                &config.credential_validator(),
+            )?;
 
         // Identify a leaf in the tree array (any even-numbered node) whose leaf_node is identical
         // to the leaf_node field of the KeyPackage. If no such field exists, return an error. Let
@@ -568,20 +611,14 @@ where
             .find_leaf_node(&key_package_generation.key_package.leaf_node)
             .ok_or(GroupError::WelcomeKeyPackageNotFound)?;
 
-        // Construct a new group state using the information in the GroupInfo object. The new
-        // member's position in the tree is index, as defined above. In particular, the confirmed
-        // transcript hash for the new state is the prior_confirmed_transcript_hash in the GroupInfo
-        // object.
-        let context = &group_info.group_context;
-
         let mut private_tree =
             TreeKemPrivate::new_self_leaf(self_index, key_package_generation.leaf_node_secret_key);
 
         // If the path_secret value is set in the GroupSecrets object
         if let Some(path_secret) = group_secrets.path_secret {
             private_tree.update_secrets(
-                group_info.group_context.cipher_suite,
-                group_info.signer,
+                group_context.cipher_suite,
+                group_info_signer,
                 path_secret,
                 &public_tree,
             )?;
@@ -590,9 +627,9 @@ where
         // Use the joiner_secret from the GroupSecrets object to generate the epoch secret and
         // other derived secrets for the current epoch.
         let key_schedule_result = KeySchedule::new_joiner(
-            group_info.group_context.cipher_suite,
+            group_context.cipher_suite,
             &group_secrets.joiner_secret,
-            context,
+            &group_context,
             self_index,
             &public_tree,
             &psk_secret,
@@ -600,10 +637,10 @@ where
 
         // Verify the confirmation tag in the GroupInfo using the derived confirmation key and the
         // confirmed_transcript_hash from the GroupInfo.
-        if !group_info.confirmation_tag.matches(
+        if !confirmation_tag.matches(
             &key_schedule_result.confirmation_key,
-            &group_info.group_context.confirmed_transcript_hash,
-            &group_info.group_context.cipher_suite,
+            &group_context.confirmed_transcript_hash,
+            &group_context.cipher_suite,
         )? {
             return Err(GroupError::InvalidConfirmationTag);
         }
@@ -615,8 +652,8 @@ where
 
         Self::join_with(
             config,
-            &group_info.confirmation_tag,
-            group_info.group_context,
+            &confirmation_tag,
+            group_context,
             public_tree,
             key_schedule_result.key_schedule,
             private_tree,
@@ -663,37 +700,36 @@ where
         external_psks: Vec<ExternalPskId>,
         authenticated_data: Vec<u8>,
     ) -> Result<(Self, MLSMessage), GroupError> {
-        let protocol_version = group_info.version;
+        let protocol_version =
+            check_protocol_version(&config.supported_protocol_versions(), group_info.version)?;
+
         let wire_format = group_info.wire_format();
 
         let group_info = group_info.into_group_info().ok_or_else(|| {
             GroupError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
         })?;
 
-        // Validate received group info and tree.
-        if !version_and_cipher_filter(
-            &config,
-            protocol_version,
-            group_info.group_context.cipher_suite,
-        ) {
-            return Err(GroupError::UnsupportedProtocolVersionOrCipherSuite(
-                protocol_version,
-                group_info.group_context.cipher_suite,
-            ));
-        }
-
         let external_pub_ext = group_info
             .extensions
             .get_extension::<ExternalPubExt>()?
             .ok_or(GroupError::MissingExternalPubExtension)?;
 
+        let (group_context, confirmation_tag, public_tree, _) = validate_group_info(
+            &config.supported_protocol_versions(),
+            &config.supported_cipher_suites(),
+            protocol_version,
+            group_info,
+            tree_data,
+            &config.credential_validator(),
+        )?;
+
         let (identity, signer) = config
             .keychain()
-            .default_identity(group_info.group_context.cipher_suite)
+            .default_identity(group_context.cipher_suite)
             .ok_or(GroupError::NoCredentialFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
-            group_info.group_context.cipher_suite,
+            group_context.cipher_suite,
             identity,
             config.capabilities(),
             config.leaf_node_extensions(),
@@ -702,23 +738,15 @@ where
             &config.credential_validator(),
         )?;
 
-        let mut public_tree = find_tree(tree_data, &group_info)?;
-
-        validate_existing_group(
-            &mut public_tree,
-            &group_info,
-            &config.credential_validator(),
-        )?;
-
         let (init_secret, kem_output) = InitSecret::encode_for_external(
-            group_info.group_context.cipher_suite,
+            group_context.cipher_suite,
             &external_pub_ext.external_pub,
         )?;
 
         let mut group = Self::join_with(
             config,
-            &group_info.confirmation_tag,
-            group_info.group_context,
+            &confirmation_tag,
+            group_context,
             public_tree,
             KeySchedule::new(init_secret),
             TreeKemPrivate::new_self_leaf(LeafIndex(0), leaf_node_secret),
@@ -1029,7 +1057,7 @@ where
         // Construct a GroupInfo reflecting the new state
         // Group ID, epoch, tree, and confirmed transcript hash from the new state
         let mut group_info = GroupInfo {
-            group_context: provisional_group_context.clone(),
+            group_context: provisional_group_context.clone().into(),
             extensions,
             confirmation_tag, // The confirmation_tag from the MLSPlaintext object
             signer: provisional_private_tree.self_index,
@@ -1093,14 +1121,14 @@ where
             })
             .collect::<Result<Vec<EncryptedGroupSecrets>, GroupError>>()?;
 
-        Ok((!secrets.is_empty()).then_some(MLSMessage {
-            version: ProtocolVersion::Mls10,
-            payload: MLSMessagePayload::Welcome(Welcome {
-                cipher_suite: group_info.group_context.cipher_suite,
+        Ok((!secrets.is_empty()).then_some(MLSMessage::new(
+            self.context().protocol_version,
+            MLSMessagePayload::Welcome(Welcome {
+                cipher_suite: self.context().cipher_suite,
                 secrets,
                 encrypted_group_info,
             }),
-        }))
+        )))
     }
 
     fn new_for_resumption<S, F>(
@@ -1187,7 +1215,7 @@ where
         )?;
 
         let mut group_info = GroupInfo {
-            group_context: new_context.clone(),
+            group_context: new_context.clone().into(),
             extensions: ExtensionList::new(),
             confirmation_tag: ConfirmationTag::create(
                 &key_schedule_result.confirmation_key,
@@ -1553,23 +1581,13 @@ where
         &mut self,
         content: MLSAuthenticatedContent,
     ) -> Result<MLSMessage, GroupError> {
-        let message = if content.wire_format == WireFormat::Cipher {
-            let ciphertext = self.create_ciphertext(content)?;
-
-            MLSMessage {
-                version: self.protocol_version(),
-                payload: MLSMessagePayload::Cipher(ciphertext),
-            }
+        let payload = if content.wire_format == WireFormat::Cipher {
+            MLSMessagePayload::Cipher(self.create_ciphertext(content)?)
         } else {
-            let plaintext = self.create_plaintext(content)?;
-
-            MLSMessage {
-                version: self.protocol_version(),
-                payload: MLSMessagePayload::Plain(plaintext),
-            }
+            MLSMessagePayload::Plain(self.create_plaintext(content)?)
         };
 
-        Ok(message)
+        Ok(MLSMessage::new(self.protocol_version(), payload))
     }
 
     fn create_plaintext(
@@ -1766,6 +1784,15 @@ where
 
         let mut extensions = ExtensionList::new();
 
+        let preferences = self.config.preferences();
+
+        if preferences.ratchet_tree_extension {
+            extensions.set_extension(RatchetTreeExt {
+                tree_data: self.state.public_tree.nodes.clone(),
+            })?;
+        }
+
+        //TODO: This should be set via a preference
         extensions.set_extension(ExternalPubExt {
             external_pub: self
                 .key_schedule
@@ -1773,7 +1800,7 @@ where
         })?;
 
         let mut info = GroupInfo {
-            group_context: self.context().clone(),
+            group_context: self.context().clone().into(),
             extensions,
             confirmation_tag: self.state.confirmation_tag.clone(),
             signer: self.private_tree.self_index,
@@ -1782,10 +1809,10 @@ where
 
         info.sign(&signer, &())?;
 
-        Ok(MLSMessage {
-            version: self.protocol_version(),
-            payload: MLSMessagePayload::GroupInfo(info),
-        })
+        Ok(MLSMessage::new(
+            self.protocol_version(),
+            MLSMessagePayload::GroupInfo(info),
+        ))
     }
 
     #[inline(always)]
@@ -1824,22 +1851,94 @@ where
     }
 }
 
+pub(crate) fn process_group_info(
+    protocol_versions_allowed: &[ProtocolVersion],
+    cipher_suites_allowed: &[CipherSuite],
+    msg_protocol_version: ProtocolVersion,
+    group_info: GroupInfo,
+    tree_data: Option<&[u8]>,
+) -> Result<(GroupContext, ConfirmationTag, TreeKemPublic, LeafIndex), GroupError> {
+    let group_protocol_version = check_protocol_version(
+        protocol_versions_allowed,
+        group_info.group_context.protocol_version,
+    )?;
+
+    if msg_protocol_version != group_protocol_version {
+        return Err(GroupError::ProtocolVersionMismatch {
+            msg_version: msg_protocol_version,
+            wire_format: WireFormat::GroupInfo,
+            version: group_protocol_version,
+        });
+    }
+
+    let cipher_suite =
+        check_cipher_suite(cipher_suites_allowed, group_info.group_context.cipher_suite)?;
+
+    let ratchet_tree_ext = group_info.extensions.get_extension::<RatchetTreeExt>()?;
+
+    let public_tree = find_tree(tree_data, cipher_suite, ratchet_tree_ext)?;
+
+    let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
+
+    group_info.verify(
+        &sender_key_package
+            .signing_identity
+            .public_key(public_tree.cipher_suite)?,
+        &(),
+    )?;
+
+    let confirmation_tag = group_info.confirmation_tag;
+    let signer = group_info.signer;
+
+    let group_context = GroupContext {
+        protocol_version: group_protocol_version,
+        cipher_suite,
+        group_id: group_info.group_context.group_id,
+        epoch: group_info.group_context.epoch,
+        tree_hash: group_info.group_context.tree_hash,
+        confirmed_transcript_hash: group_info.group_context.confirmed_transcript_hash,
+        extensions: group_info.group_context.extensions,
+    };
+
+    Ok((group_context, confirmation_tag, public_tree, signer))
+}
+
+fn validate_group_info<C: CredentialValidator>(
+    protocol_versions_allowed: &[ProtocolVersion],
+    cipher_suites_allowed: &[CipherSuite],
+    msg_protocol_version: ProtocolVersion,
+    group_info: GroupInfo,
+    tree_data: Option<&[u8]>,
+    credential_validator: &C,
+) -> Result<(GroupContext, ConfirmationTag, TreeKemPublic, LeafIndex), GroupError> {
+    let (group_context, confirmation_tag, mut public_tree, signer) = process_group_info(
+        protocol_versions_allowed,
+        cipher_suites_allowed,
+        msg_protocol_version,
+        group_info,
+        tree_data,
+    )?;
+
+    validate_existing_group(&mut public_tree, &group_context, credential_validator)?;
+
+    Ok((group_context, confirmation_tag, public_tree, signer))
+}
+
 pub(crate) fn find_tree(
     tree_data: Option<&[u8]>,
-    group_info: &GroupInfo,
+    cipher_suite: CipherSuite,
+    extension: Option<RatchetTreeExt>,
 ) -> Result<TreeKemPublic, GroupError> {
     match tree_data {
         Some(tree_data) => Ok(TreeKemPublic::import_node_data(
-            group_info.group_context.cipher_suite,
+            cipher_suite,
             NodeVec::tls_deserialize(&mut &*tree_data)?,
         )?),
         None => {
-            let tree_extension = group_info
-                .extensions
-                .get_extension::<RatchetTreeExt>()?
-                .ok_or(GroupError::RatchetTreeNotFound)?;
+            let tree_extension = extension.ok_or(GroupError::RatchetTreeNotFound)?;
+
             Ok(TreeKemPublic::import_node_data(
-                group_info.group_context.cipher_suite,
+                cipher_suite,
                 tree_extension.tree_data,
             )?)
         }
@@ -1848,36 +1947,27 @@ pub(crate) fn find_tree(
 
 fn validate_existing_group<C: CredentialValidator>(
     public_tree: &mut TreeKemPublic,
-    group_info: &GroupInfo,
+    group_context: &GroupContext,
     credential_validator: &C,
 ) -> Result<(), GroupError> {
-    let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
-    group_info.verify(
-        &sender_key_package
-            .signing_identity
-            .public_key(public_tree.cipher_suite)?,
-        &(),
-    )?;
-
-    let required_capabilities = group_info.group_context.extensions.get_extension()?;
+    let required_capabilities = group_context.extensions.get_extension()?;
 
     // Verify the integrity of the ratchet tree
     let tree_validator = TreeValidator::new(
-        group_info.group_context.cipher_suite,
-        &group_info.group_context.group_id,
-        &group_info.group_context.tree_hash,
+        group_context.cipher_suite,
+        &group_context.group_id,
+        &group_context.tree_hash,
         required_capabilities.as_ref(),
         credential_validator,
     );
 
     tree_validator.validate(public_tree)?;
 
-    if let Some(ext_senders) = group_info
-        .group_context
+    if let Some(ext_senders) = group_context
         .extensions
         .get_extension::<ExternalSendersExt>()?
     {
-        ext_senders.verify_all(&credential_validator, group_info.group_context.cipher_suite)?;
+        ext_senders.verify_all(&credential_validator, group_context.cipher_suite)?;
     }
 
     Ok(())
@@ -1946,13 +2036,24 @@ fn transcript_hashes(
     Ok((interim_transcript_hash, confirmed_transcript_hash))
 }
 
-fn version_and_cipher_filter<C: ClientConfig>(
-    config: &C,
-    version: ProtocolVersion,
-    cipher_suite: CipherSuite,
-) -> bool {
-    config.supported_protocol_versions().contains(&version)
-        && config.supported_cipher_suites().contains(&cipher_suite)
+fn check_protocol_version(
+    allowed: &[ProtocolVersion],
+    version: MaybeProtocolVersion,
+) -> Result<ProtocolVersion, GroupError> {
+    version
+        .into_enum()
+        .filter(|v| allowed.contains(v))
+        .ok_or(GroupError::UnsupportedProtocolVersion(version))
+}
+
+fn check_cipher_suite(
+    allowed: &[CipherSuite],
+    cipher_suite: MaybeCipherSuite,
+) -> Result<CipherSuite, GroupError> {
+    cipher_suite
+        .into_enum()
+        .filter(|cs| allowed.contains(cs))
+        .ok_or(GroupError::UnsupportedCipherSuite(cipher_suite))
 }
 
 fn find_key_package_generation<C>(
@@ -2165,7 +2266,6 @@ pub(crate) mod test_utils {
 
     use super::*;
     use crate::{
-        cipher_suite::MaybeCipherSuite,
         client_config::{
             test_utils::test_config, InMemoryClientConfig, PassthroughCredentialValidator,
             Preferences,
@@ -2353,14 +2453,16 @@ pub(crate) mod test_utils {
         config.cipher_suites = capabilities
             .cipher_suites
             .into_iter()
-            .map(|cs| match cs {
-                MaybeCipherSuite::CipherSuite(cipher_suite) => cipher_suite,
-                _ => panic!("Unsupported cipher suite found"),
-            })
+            .map(|cs| cs.into_enum().unwrap())
             .collect();
 
         config.supported_extensions = capabilities.extensions;
-        config.protocol_versions = capabilities.protocol_versions;
+
+        config.protocol_versions = capabilities
+            .protocol_versions
+            .into_iter()
+            .map(|p| p.into_enum().unwrap())
+            .collect();
 
         let group = Group::new(
             config,
@@ -2888,10 +2990,7 @@ mod tests {
         info.extensions = ExtensionList::new();
         info.sign(&group.group.signer().unwrap(), &()).unwrap();
 
-        let info_msg = MLSMessage {
-            version: protocol_version,
-            payload: MLSMessagePayload::GroupInfo(info),
-        };
+        let info_msg = MLSMessage::new(protocol_version, MLSMessagePayload::GroupInfo(info));
 
         let res = Group::new_external(group.group.config, info_msg, None, None, vec![], vec![]);
 
@@ -3191,30 +3290,36 @@ mod tests {
         bob_sub_group.process_incoming_message(commit).unwrap();
     }
 
-    fn joining_group_fails_if_unsupported<F>(f: F)
+    fn joining_group_fails_if_unsupported<F>(f: F) -> Result<(TestGroup, MLSMessage), GroupError>
     where
         F: FnOnce(InMemoryClientConfig) -> InMemoryClientConfig,
     {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let res = alice_group.join_with_custom_config("alice", f);
+        alice_group.join_with_custom_config("alice", f)
+    }
+
+    #[test]
+    fn joining_group_fails_if_protocol_version_is_not_supported() {
+        let res = joining_group_fails_if_unsupported(|config| config.clear_protocol_versions());
 
         assert_matches!(
             res,
-            Err(GroupError::UnsupportedProtocolVersionOrCipherSuite(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE
+            Err(GroupError::UnsupportedProtocolVersion(
+                MaybeProtocolVersion::Enum(TEST_PROTOCOL_VERSION)
             ))
         );
     }
 
     #[test]
-    fn joining_group_fails_if_protocol_version_is_not_supported() {
-        joining_group_fails_if_unsupported(|config| config.clear_protocol_versions());
-    }
-
-    #[test]
     fn joining_group_fails_if_cipher_suite_is_not_supported() {
-        joining_group_fails_if_unsupported(|config| config.clear_cipher_suites());
+        let res = joining_group_fails_if_unsupported(|config| config.clear_cipher_suites());
+
+        assert_matches!(
+            res,
+            Err(GroupError::UnsupportedCipherSuite(MaybeCipherSuite::Enum(
+                TEST_CIPHER_SUITE
+            )))
+        );
     }
 
     #[test]

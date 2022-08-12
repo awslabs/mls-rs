@@ -76,6 +76,7 @@ impl HashReference {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num_enum::TryFromPrimitive;
     use serde::{Deserialize, Serialize};
 
     #[cfg(target_arch = "wasm32")]
@@ -116,9 +117,9 @@ mod tests {
         let test_cases = load_test_cases();
 
         for test_case in test_cases {
-            let cipher_suite = CipherSuite::from_raw(test_case.cipher_suite);
+            let cipher_suite = CipherSuite::try_from_primitive(test_case.cipher_suite);
 
-            if let Some(cipher_suite) = cipher_suite {
+            if let Ok(cipher_suite) = cipher_suite {
                 let output =
                     HashReference::compute(&test_case.input, TEST_LABEL, cipher_suite).unwrap();
 

@@ -1933,11 +1933,9 @@ mod tests {
     }
 
     // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    #[ignore = "Cannot be fully implemented until https://github.com/WickrInc/mls/issues/392"]
     fn receiving_reinit_downgrading_version_fails() {
-        let smaller_protocol_version = TEST_PROTOCOL_VERSION;
+        let smaller_protocol_version = ProtocolVersion::Reserved;
         let (alice, tree) = new_tree("alice");
 
         let res = CommitReceiver::new(&tree, alice, alice)
@@ -1953,11 +1951,9 @@ mod tests {
     }
 
     // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    #[ignore = "Cannot be fully implemented until https://github.com/WickrInc/mls/issues/392"]
     fn sending_additional_reinit_downgrading_version_fails() {
-        let smaller_protocol_version = TEST_PROTOCOL_VERSION;
+        let smaller_protocol_version = ProtocolVersion::Reserved;
         let (alice, tree) = new_tree("alice");
 
         let res = CommitSender::new(&tree, alice)
@@ -1974,11 +1970,9 @@ mod tests {
     }
 
     // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    #[ignore = "Cannot be fully implemented until https://github.com/WickrInc/mls/issues/392"]
     fn sending_reinit_downgrading_version_filters_it_out() {
-        let smaller_protocol_version = TEST_PROTOCOL_VERSION;
+        let smaller_protocol_version = ProtocolVersion::Reserved;
         let (alice, tree) = new_tree("alice");
         let proposal = Proposal::ReInit(make_reinit(smaller_protocol_version));
         let proposal_ref = make_proposal_ref(&proposal, alice);

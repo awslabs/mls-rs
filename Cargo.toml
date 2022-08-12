@@ -34,6 +34,8 @@ debug_tree = "0.4.0"
 arbitrary = { version = "1", features = ["derive"], optional = true }
 x509-cert = "0.1.0"
 base64 = "0.13.0"
+num_enum = "0.5"
+cfg-if = "^1"
 
 [dev-dependencies]
 assert_matches = "1.5.0"

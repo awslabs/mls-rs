@@ -297,6 +297,7 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use ferriscrypt::{kdf::hkdf::Hkdf, rand::SecureRng};
+    use num_enum::TryFromPrimitive;
     use serde::{Deserialize, Serialize};
     use std::iter;
 
@@ -427,7 +428,8 @@ mod tests {
                 .enumerate()
                 .map(|(i, scenario)| (format!("Scenario #{i}"), scenario))
                 .find(|(_, scenario)| {
-                    if let Some(cipher_suite) = CipherSuite::from_raw(scenario.cipher_suite) {
+                    if let Ok(cipher_suite) = CipherSuite::try_from_primitive(scenario.cipher_suite)
+                    {
                         scenario.psk_secret
                             != TestScenario::compute_psk_secret(cipher_suite, &scenario.psks)
                     } else {

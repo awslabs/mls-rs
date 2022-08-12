@@ -455,6 +455,7 @@ impl WelcomeSecret {
 #[cfg(test)]
 mod tests {
     use ferriscrypt::{kdf::hkdf::Hkdf, rand::SecureRng};
+    use num_enum::TryFromPrimitive;
 
     use crate::cipher_suite::CipherSuite;
     use crate::group::InitSecret;
@@ -523,9 +524,9 @@ mod tests {
         let test_cases = load_test_cases();
 
         for test_case in test_cases {
-            let cipher_suite = match CipherSuite::from_raw(test_case.cipher_suite) {
-                Some(cs) => cs,
-                None => continue,
+            let cipher_suite = match CipherSuite::try_from_primitive(test_case.cipher_suite) {
+                Ok(cs) => cs,
+                Err(_) => continue,
             };
 
             let kdf = Hkdf::from(cipher_suite.kdf_type());

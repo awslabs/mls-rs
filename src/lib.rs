@@ -58,6 +58,7 @@ pub mod group;
 mod hash_reference;
 pub mod key_package;
 pub mod keychain;
+mod maybe;
 mod protocol_version;
 pub mod psk;
 mod serde_utils;

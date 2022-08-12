@@ -107,6 +107,7 @@ mod tests {
     use crate::group::framing::test_utils::get_test_auth_content;
     use crate::group::test_utils::get_test_group_context;
 
+    use num_enum::TryFromPrimitive;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -144,9 +145,9 @@ mod tests {
     #[test]
     fn test_membership_tag() {
         for case in load_test_cases() {
-            let cipher_suite = CipherSuite::from_raw(case.cipher_suite);
+            let cipher_suite = CipherSuite::try_from_primitive(case.cipher_suite);
 
-            if cipher_suite.is_none() {
+            if cipher_suite.is_err() {
                 println!("Skipping test for unsupported cipher suite");
                 continue;
             }

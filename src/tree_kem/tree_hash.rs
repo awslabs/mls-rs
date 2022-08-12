@@ -332,6 +332,7 @@ impl TreeKemPublic {
 
 #[cfg(test)]
 mod tests {
+    use num_enum::TryFromPrimitive;
     use tls_codec::Deserialize;
 
     use crate::{
@@ -378,9 +379,9 @@ mod tests {
         let cases = load_test_cases();
 
         for one_case in cases {
-            let cipher_suite = CipherSuite::from_raw(one_case.cipher_suite);
+            let cipher_suite = CipherSuite::try_from_primitive(one_case.cipher_suite);
 
-            if cipher_suite.is_none() {
+            if cipher_suite.is_err() {
                 println!("Skipping test for unsupported cipher suite");
                 continue;
             }
