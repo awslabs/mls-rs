@@ -613,7 +613,7 @@ mod tests {
         assert_eq!(expected_effects, effects);
     }
 
-    fn pass_through_filter() -> impl ProposalFilter<Error = Infallible> {
+    fn pass_through_filter() -> PassThroughProposalFilter<Infallible> {
         PassThroughProposalFilter::new()
     }
 
@@ -1422,15 +1422,16 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct CommitReceiver<'a, C> {
+    struct CommitReceiver<'a, C, F> {
         tree: &'a TreeKemPublic,
         sender: Sender,
         receiver: LeafIndex,
         cache: ProposalCache,
         credential_validator: C,
+        user_filter: F,
     }
 
-    impl<'a> CommitReceiver<'a, PassthroughCredentialValidator> {
+    impl<'a> CommitReceiver<'a, PassthroughCredentialValidator, PassThroughProposalFilter<Infallible>> {
         fn new<S>(tree: &'a TreeKemPublic, sender: S, receiver: LeafIndex) -> Self
         where
             S: Into<Sender>,
@@ -1441,15 +1442,17 @@ mod tests {
                 receiver,
                 cache: make_proposal_cache(),
                 credential_validator: PassthroughCredentialValidator::new(),
+                user_filter: pass_through_filter(),
             }
         }
     }
 
-    impl<'a, C> CommitReceiver<'a, C>
+    impl<'a, C, F> CommitReceiver<'a, C, F>
     where
         C: CredentialValidator,
+        F: ProposalFilter,
     {
-        fn with_credential_validator<V>(self, validator: V) -> CommitReceiver<'a, V>
+        fn with_credential_validator<V>(self, validator: V) -> CommitReceiver<'a, V, F>
         where
             V: CredentialValidator,
         {
@@ -1459,6 +1462,21 @@ mod tests {
                 receiver: self.receiver,
                 cache: self.cache,
                 credential_validator: validator,
+                user_filter: self.user_filter,
+            }
+        }
+
+        fn with_user_filter<G>(self, f: G) -> CommitReceiver<'a, C, G>
+        where
+            G: ProposalFilter,
+        {
+            CommitReceiver {
+                tree: self.tree,
+                sender: self.sender,
+                receiver: self.receiver,
+                cache: self.cache,
+                credential_validator: self.credential_validator,
+                user_filter: f,
             }
         }
 
@@ -1483,21 +1501,22 @@ mod tests {
                 &ExtensionList::new(),
                 &self.credential_validator,
                 self.tree,
-                pass_through_filter(),
+                &self.user_filter,
             )
         }
     }
 
     #[derive(Debug)]
-    struct CommitSender<'a, C> {
+    struct CommitSender<'a, C, F> {
         tree: &'a TreeKemPublic,
         sender: LeafIndex,
         cache: ProposalCache,
         additional_proposals: Vec<Proposal>,
         credential_validator: C,
+        user_filter: F,
     }
 
-    impl<'a> CommitSender<'a, PassthroughCredentialValidator> {
+    impl<'a> CommitSender<'a, PassthroughCredentialValidator, PassThroughProposalFilter<Infallible>> {
         fn new(tree: &'a TreeKemPublic, sender: LeafIndex) -> Self {
             Self {
                 tree,
@@ -1505,15 +1524,17 @@ mod tests {
                 cache: make_proposal_cache(),
                 additional_proposals: Vec::new(),
                 credential_validator: PassthroughCredentialValidator::new(),
+                user_filter: pass_through_filter(),
             }
         }
     }
 
-    impl<'a, C> CommitSender<'a, C>
+    impl<'a, C, F> CommitSender<'a, C, F>
     where
         C: CredentialValidator,
+        F: ProposalFilter,
     {
-        fn with_credential_validator<V>(self, validator: V) -> CommitSender<'a, V>
+        fn with_credential_validator<V>(self, validator: V) -> CommitSender<'a, V, F>
         where
             V: CredentialValidator,
         {
@@ -1523,6 +1544,7 @@ mod tests {
                 cache: self.cache,
                 additional_proposals: self.additional_proposals,
                 credential_validator: validator,
+                user_filter: self.user_filter,
             }
         }
 
@@ -1542,6 +1564,20 @@ mod tests {
             self
         }
 
+        fn with_user_filter<G>(self, f: G) -> CommitSender<'a, C, G>
+        where
+            G: ProposalFilter,
+        {
+            CommitSender {
+                tree: self.tree,
+                sender: self.sender,
+                cache: self.cache,
+                additional_proposals: self.additional_proposals,
+                credential_validator: self.credential_validator,
+                user_filter: f,
+            }
+        }
+
         fn send(&self) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), ProposalCacheError> {
             self.cache.prepare_commit(
                 Sender::Member(self.sender),
@@ -1550,7 +1586,7 @@ mod tests {
                 &self.credential_validator,
                 self.tree,
                 None,
-                pass_through_filter(),
+                &self.user_filter,
             )
         }
     }
@@ -2880,5 +2916,80 @@ mod tests {
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+    }
+
+    #[test]
+    fn user_defined_filter_can_remove_proposals() {
+        struct RemoveGroupContextExtensions;
+
+        impl ProposalFilter for RemoveGroupContextExtensions {
+            type Error = Infallible;
+
+            fn validate(&self, _: &ProposalBundle) -> Result<(), Self::Error> {
+                Ok(())
+            }
+
+            fn filter(&self, mut proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
+                proposals.retain_by_type::<ExtensionList, _, Infallible>(|_| Ok(false))?;
+                Ok(proposals)
+            }
+        }
+
+        let (alice, tree) = new_tree("alice");
+
+        let (committed, _) = CommitSender::new(&tree, alice)
+            .with_additional([Proposal::GroupContextExtensions(Default::default())])
+            .with_user_filter(RemoveGroupContextExtensions)
+            .send()
+            .unwrap();
+
+        assert_eq!(committed, Vec::new());
+    }
+
+    struct FailureProposalFilter;
+
+    impl ProposalFilter for FailureProposalFilter {
+        type Error = std::io::Error;
+
+        fn validate(&self, _: &ProposalBundle) -> Result<(), Self::Error> {
+            Err(std::io::ErrorKind::TimedOut.into())
+        }
+
+        fn filter(&self, _: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
+            Err(std::io::ErrorKind::TimedOut.into())
+        }
+    }
+
+    #[test]
+    fn user_defined_filter_can_refuse_to_send_commit() {
+        let (alice, tree) = new_tree("alice");
+
+        let res = CommitSender::new(&tree, alice)
+            .with_additional([Proposal::GroupContextExtensions(Default::default())])
+            .with_user_filter(FailureProposalFilter)
+            .send();
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::UserDefined(_)
+            ))
+        );
+    }
+
+    #[test]
+    fn user_defined_filter_can_reject_incoming_commit() {
+        let (alice, tree) = new_tree("alice");
+
+        let res = CommitReceiver::new(&tree, alice, alice)
+            .with_user_filter(FailureProposalFilter)
+            .receive([Proposal::GroupContextExtensions(Default::default())]);
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::UserDefined(_)
+            ))
+        );
     }
 }

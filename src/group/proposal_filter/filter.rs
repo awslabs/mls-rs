@@ -34,16 +34,26 @@ pub trait ProposalFilter {
 
 pub type BoxedProposalFilter<E> = Box<dyn ProposalFilter<Error = E> + Send + Sync>;
 
+macro_rules! delegate_proposal_filter {
+    () => {
+        type Error = <<Self as std::ops::Deref>::Target as ProposalFilter>::Error;
+
+        fn validate(&self, proposals: &ProposalBundle) -> Result<(), Self::Error> {
+            (**self).validate(proposals)
+        }
+
+        fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
+            (**self).filter(proposals)
+        }
+    };
+}
+
 impl<T: ProposalFilter + ?Sized> ProposalFilter for Box<T> {
-    type Error = T::Error;
+    delegate_proposal_filter!();
+}
 
-    fn validate(&self, proposals: &ProposalBundle) -> Result<(), Self::Error> {
-        (**self).validate(proposals)
-    }
-
-    fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
-        (**self).filter(proposals)
-    }
+impl<T: ProposalFilter + ?Sized> ProposalFilter for &T {
+    delegate_proposal_filter!();
 }
 
 #[derive(Clone, Debug)]
