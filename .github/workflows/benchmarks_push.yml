@@ -1,7 +1,7 @@
 name: Benchmarks on Push
-on:  
+on:
   push:
-    branches-ignore: 
+    branches-ignore:
       - 'master'
 env:
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
@@ -11,7 +11,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-      issues: write 
+      issues: write
     steps:
       - uses: actions/checkout@v2
       - run: rustup toolchain update stable && rustup default stable
@@ -29,7 +29,7 @@ jobs:
           aws s3 cp s3://benchmark-wickr-mls/empty_trees.json ./test_data/empty_trees.json
           aws s3 cp s3://benchmark-wickr-mls/group_state.json ./test_data/group_state.json
       - name: Run benchmark
-        run: cargo bench --features benchmark --bench encap --bench decap --bench group_serialize --bench group_commit --bench group_application --bench secret_tree_serialize -- --output-format bencher | tee output.txt
+        run: ( set -o pipefail; cargo bench --features benchmark --bench encap --bench decap --bench group_serialize --bench group_commit --bench group_application --bench secret_tree_serialize -- --output-format bencher | tee output.txt )
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
