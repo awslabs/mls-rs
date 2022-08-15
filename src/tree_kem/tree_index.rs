@@ -1,6 +1,8 @@
 use super::*;
 use crate::credential::{CredentialError, CredentialType};
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use itertools::Itertools;
+use serde_with::serde_as;
 use std::collections::hash_map::Entry;
 
 #[derive(Debug, Error)]
@@ -19,13 +21,14 @@ pub enum TreeIndexError {
     CredentialTypeOfNewLeafIsUnsupported(CredentialType),
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct TreeIndex {
-    #[serde(with = "crate::serde_utils::map_as_seq")]
+    #[serde_as(as = "HashMap<VecAsBase64, _>")]
     credential_signature_key: HashMap<Vec<u8>, LeafIndex>,
-    #[serde(with = "crate::serde_utils::map_as_seq")]
+    #[serde_as(as = "HashMap<VecAsBase64, _>")]
     hpke_key: HashMap<Vec<u8>, LeafIndex>,
-    #[serde(with = "crate::serde_utils::map_as_seq")]
+    #[serde_as(as = "Vec<(_,_)>")]
     credential_type_counters: HashMap<CredentialType, CredentialTypeCounters>,
 }
 

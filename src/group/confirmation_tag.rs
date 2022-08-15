@@ -1,7 +1,9 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::transcript_hash::ConfirmedTranscriptHash;
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use ferriscrypt::hmac::{HMacError, Key, Tag};
 use ferriscrypt::kdf::hkdf::Hkdf;
+use serde_with::serde_as;
 use std::{
     fmt::{self, Debug},
     ops::Deref,
@@ -15,11 +17,16 @@ pub enum ConfirmationTagError {
     HMacError(#[from] HMacError),
 }
 
+#[serde_as]
 #[derive(
     Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ConfirmationTag(#[tls_codec(with = "crate::tls::ByteVec")] Tag);
+pub struct ConfirmationTag(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    Tag,
+);
 
 impl Deref for ConfirmationTag {
     type Target = Tag;

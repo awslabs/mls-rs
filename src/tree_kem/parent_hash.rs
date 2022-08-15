@@ -1,10 +1,12 @@
 use crate::cipher_suite::CipherSuite;
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVecError};
 use crate::tree_kem::RatchetTreeError;
 use crate::tree_kem::TreeKemPublic;
 use ferriscrypt::hpke::kem::HpkePublicKey;
+use serde_with::serde_as;
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use thiserror::Error;
@@ -36,11 +38,16 @@ struct ParentHashInput<'a> {
     original_sibling_tree_hash: &'a [u8],
 }
 
+#[serde_as]
 #[derive(
     Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ParentHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct ParentHash(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    Vec<u8>,
+);
 
 impl From<Vec<u8>> for ParentHash {
     fn from(v: Vec<u8>) -> Self {

@@ -1,4 +1,5 @@
 use super::{parent_hash::ParentHash, Capabilities, Lifetime};
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::{
     cipher_suite::CipherSuite,
     client_config::CredentialValidator,
@@ -12,6 +13,7 @@ use ferriscrypt::{
     hpke::kem::{HpkePublicKey, HpkeSecretKey},
     kdf::KdfError,
 };
+use serde_with::serde_as;
 use thiserror::Error;
 use tls_codec::{Serialize, Size, TlsByteSliceU32};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -59,6 +61,7 @@ pub enum LeafNodeSource {
     Commit(ParentHash),
 }
 
+#[serde_as]
 #[derive(
     Debug,
     Clone,
@@ -73,12 +76,14 @@ pub enum LeafNodeSource {
 #[non_exhaustive]
 pub struct LeafNode {
     #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
     pub public_key: HpkePublicKey,
     pub signing_identity: SigningIdentity,
     pub capabilities: Capabilities,
     pub leaf_node_source: LeafNodeSource,
     pub extensions: ExtensionList,
     #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
     pub signature: Vec<u8>,
 }
 

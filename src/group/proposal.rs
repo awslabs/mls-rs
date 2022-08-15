@@ -64,6 +64,7 @@ pub struct PreSharedKey {
     pub psk: PreSharedKeyID,
 }
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -77,12 +78,14 @@ pub struct PreSharedKey {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ReInit {
     #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
     pub group_id: Vec<u8>,
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     pub extensions: ExtensionList,
 }
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -97,6 +100,7 @@ pub struct ReInit {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ExternalInit {
     #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
     pub kem_output: Vec<u8>,
 }
 

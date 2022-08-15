@@ -1,10 +1,12 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, NodeIndex};
 use ferriscrypt::cipher::aead::{AeadError, AeadNonce, Key};
 use ferriscrypt::cipher::NonceError;
+use serde_with::serde_as;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
@@ -69,6 +71,7 @@ impl SecretTreeNode {
     }
 }
 
+#[serde_as]
 #[derive(Zeroize)]
 #[zeroize(drop)]
 #[derive(
@@ -81,7 +84,11 @@ impl SecretTreeNode {
     serde::Deserialize,
     serde::Serialize,
 )]
-struct TreeSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+struct TreeSecret(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    Vec<u8>,
+);
 
 impl Deref for TreeSecret {
     type Target = Vec<u8>;
@@ -406,6 +413,7 @@ impl ToString for KeyType {
     }
 }
 
+#[serde_as]
 #[derive(
     Debug,
     Clone,
@@ -420,11 +428,14 @@ impl ToString for KeyType {
 #[zeroize(drop)]
 struct DerivedKey {
     #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
     nonce: Vec<u8>,
     #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
     key: Vec<u8>,
 }
 
+#[serde_as]
 #[derive(
     Debug,
     Clone,
@@ -437,10 +448,9 @@ struct DerivedKey {
 )]
 pub struct SecretKeyRatchet {
     cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec")]
     secret: TreeSecret,
     #[tls_codec(with = "crate::tls::DefMap")]
-    #[serde(with = "crate::serde_utils::map_as_seq")]
+    #[serde_as(as = "Vec<(_,_)>")]
     history: HashMap<u32, DerivedKey>,
     node_index: NodeIndex,
     generation: u32,

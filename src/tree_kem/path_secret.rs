@@ -1,8 +1,10 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey, KemType};
 use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
+use serde_with::serde_as;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -18,6 +20,7 @@ pub enum PathSecretError {
     KemError(#[from] HpkeError),
 }
 
+#[serde_as]
 #[derive(
     Debug,
     Clone,
@@ -31,7 +34,11 @@ pub enum PathSecretError {
     serde::Deserialize,
 )]
 #[zeroize(drop)]
-pub struct PathSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct PathSecret(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    Vec<u8>,
+);
 
 impl Deref for PathSecret {
     type Target = Vec<u8>;

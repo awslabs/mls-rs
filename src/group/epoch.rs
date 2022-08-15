@@ -3,10 +3,12 @@ use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
 use crate::group::secret_tree::{KeyType, SecretTree, SecretTreeError};
 use crate::group::{GroupContext, MLSCiphertext, MLSCiphertextContentAAD};
 use crate::psk::{Psk, PskSecretError};
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::node::LeafIndex;
 use ferriscrypt::cipher::aead::{AeadError, AeadNonce, Key};
 use ferriscrypt::cipher::NonceError;
 use ferriscrypt::kdf::KdfError;
+use serde_with::serde_as;
 use std::collections::HashMap;
 use thiserror::Error;
 use tls_codec::Serialize;
@@ -67,6 +69,7 @@ pub(crate) struct EpochSecrets {
     secret_tree: SecretTree,
 }
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -79,7 +82,11 @@ pub(crate) struct EpochSecrets {
     TlsDeserialize,
 )]
 #[zeroize(drop)]
-struct SenderDataSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+struct SenderDataSecret(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    Vec<u8>,
+);
 
 impl From<Vec<u8>> for SenderDataSecret {
     fn from(bytes: Vec<u8>) -> Self {

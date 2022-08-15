@@ -1,8 +1,10 @@
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::{
     signing_identity::SigningIdentityError,
     x509::{CertificateChain, X509Error},
 };
 use ferriscrypt::asym::ec_key::EcKeyError;
+use serde_with::serde_as;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -20,6 +22,7 @@ pub type CredentialType = u16;
 pub const CREDENTIAL_TYPE_BASIC: u16 = 1;
 pub const CREDENTIAL_TYPE_X509: u16 = 2;
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -36,7 +39,11 @@ pub const CREDENTIAL_TYPE_X509: u16 = 2;
 #[repr(u16)]
 pub enum Credential {
     #[tls_codec(discriminant = 1)]
-    Basic(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>),
+    Basic(
+        #[tls_codec(with = "crate::tls::ByteVec")]
+        #[serde_as(as = "VecAsBase64")]
+        Vec<u8>,
+    ),
     #[tls_codec(discriminant = 2)]
     X509(CertificateChain),
 }

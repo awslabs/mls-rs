@@ -1,3 +1,4 @@
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::{
     cipher_suite::CipherSuite,
     client_config::PskStore,
@@ -8,6 +9,7 @@ use ferriscrypt::{
     kdf::KdfError,
     rand::{SecureRng, SecureRngError},
 };
+use serde_with::serde_as;
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -51,6 +53,7 @@ pub enum JustPreSharedKeyID {
     Resumption(ResumptionPsk),
 }
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -64,8 +67,13 @@ pub enum JustPreSharedKeyID {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ExternalPskId(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
+pub struct ExternalPskId(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    pub Vec<u8>,
+);
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -79,8 +87,13 @@ pub struct ExternalPskId(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>)
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct PskGroupId(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
+pub struct PskGroupId(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    pub Vec<u8>,
+);
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -94,7 +107,11 @@ pub struct PskGroupId(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct PskNonce(#[tls_codec(with = "crate::tls::ByteVec")] pub Vec<u8>);
+pub struct PskNonce(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    pub Vec<u8>,
+);
 
 impl PskNonce {
     pub fn random(cipher_suite: CipherSuite) -> Result<Self, SecureRngError> {
@@ -143,6 +160,7 @@ pub enum ResumptionPSKUsage {
     Branch,
 }
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -156,7 +174,11 @@ pub enum ResumptionPSKUsage {
     TlsSize,
 )]
 #[zeroize(drop)]
-pub struct Psk(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct Psk(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    Vec<u8>,
+);
 
 impl From<Vec<u8>> for Psk {
     fn from(bytes: Vec<u8>) -> Self {

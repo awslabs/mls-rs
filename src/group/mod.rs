@@ -6,6 +6,7 @@ use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::kdf::KdfError;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
+use serde_with::serde_as;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::option::Option::Some;
@@ -31,6 +32,7 @@ use crate::psk::{
     ExternalPskId, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
     PskSecretError, ResumptionPSKUsage, ResumptionPsk,
 };
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::{Signable, SignatureError, Signer};
 use crate::signing_identity::{SigningIdentity, SigningIdentityError};
 use crate::tree_kem::kem::TreeKem;
@@ -295,6 +297,7 @@ pub enum GroupError {
     MembershipTagForNonMember,
 }
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -310,9 +313,11 @@ pub struct GroupContext {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,
     pub extensions: ExtensionList,
@@ -433,8 +438,7 @@ where
     state: GroupState,
     private_tree: TreeKemPrivate,
     key_schedule: KeySchedule,
-    // TODO: HpkePublicKey does not have Eq and Hash
-    pending_updates: HashMap<Vec<u8>, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
+    pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
     pending_commit: Option<CommitGeneration>,
     #[cfg(test)]
     pub commit_modifiers: CommitModifiers<<<C as ClientConfig>::Keychain as Keychain>::Signer>,
@@ -864,11 +868,7 @@ where
         // Apply updates to private tree
         for (_, leaf_node) in &provisional_state.updated_leaves {
             // Update the leaf in the private tree if this is our update
-            if let Some(new_leaf_sk) = self
-                .pending_updates
-                .get(leaf_node.public_key.as_ref())
-                .cloned()
-            {
+            if let Some(new_leaf_sk) = self.pending_updates.get(&leaf_node.public_key).cloned() {
                 provisional_private_tree.update_leaf(total_leaf_count, new_leaf_sk)?;
             }
         }
@@ -1536,7 +1536,7 @@ where
 
         // Store the secret key in the pending updates storage for later
         self.pending_updates
-            .insert(new_leaf_node.public_key.as_ref().to_vec(), secret_key);
+            .insert(new_leaf_node.public_key.clone(), secret_key);
 
         Ok(Proposal::Update(UpdateProposal {
             leaf_node: new_leaf_node,

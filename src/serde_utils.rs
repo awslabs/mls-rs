@@ -1,1 +1,1 @@
-pub mod map_as_seq;
+pub mod vec_u8_as_base64;

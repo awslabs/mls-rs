@@ -14,6 +14,7 @@ pub enum TranscriptHashError {
     TlsCodecError(#[from] tls_codec::Error),
 }
 
+#[serde_as]
 #[derive(
     Clone,
     PartialEq,
@@ -25,7 +26,11 @@ pub enum TranscriptHashError {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ConfirmedTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct ConfirmedTranscriptHash(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    Vec<u8>,
+);
 
 impl Deref for ConfirmedTranscriptHash {
     type Target = Vec<u8>;
@@ -78,10 +83,15 @@ impl ConfirmedTranscriptHash {
     }
 }
 
+#[serde_as]
 #[derive(
     Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
 )]
-pub(crate) struct InterimTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub(crate) struct InterimTranscriptHash(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    Vec<u8>,
+);
 
 impl Deref for InterimTranscriptHash {
     type Target = Vec<u8>;

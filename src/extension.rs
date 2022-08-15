@@ -1,11 +1,13 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::CredentialValidator;
 use crate::group::proposal::ProposalType;
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signing_identity::SigningIdentityError;
 use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
 use crate::{credential::CredentialType, signing_identity::SigningIdentity};
 use ferriscrypt::hpke::kem::HpkePublicKey;
+use serde_with::serde_as;
 use std::io::{Read, Write};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize, Size};
@@ -133,6 +135,7 @@ impl MlsExtension for ExternalSendersExt {
     const IDENTIFIER: ExtensionType = EXTERNAL_SENDERS_EXT_ID;
 }
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -148,6 +151,7 @@ impl MlsExtension for ExternalSendersExt {
 pub struct Extension {
     pub extension_type: ExtensionType,
     #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
     pub extension_data: Vec<u8>,
 }
 

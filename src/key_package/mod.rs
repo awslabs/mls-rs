@@ -4,12 +4,14 @@ use crate::extension::RequiredCapabilitiesExt;
 use crate::extension::{ExtensionError, ExtensionList, ExtensionType};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::HashReference;
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
 use crate::time::MlsTime;
 use crate::tree_kem::leaf_node::LeafNode;
 use crate::ProtocolVersion;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::kdf::KdfError;
+use serde_with::serde_as;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;
@@ -32,6 +34,7 @@ pub enum KeyPackageError {
     KdfError(#[from] KdfError),
 }
 
+#[serde_as]
 #[non_exhaustive]
 #[derive(
     Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
@@ -41,10 +44,12 @@ pub struct KeyPackage {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
     pub hpke_init_key: HpkePublicKey,
     pub leaf_node: LeafNode,
     pub extensions: ExtensionList,
     #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
     pub signature: Vec<u8>,
 }
 

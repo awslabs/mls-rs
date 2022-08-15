@@ -1,26 +1,27 @@
+use crate::cipher_suite::CipherSuite;
+use crate::group::secret_tree::SecretTreeError;
+use crate::group::{GroupContext, LeafIndex, MembershipTag, MembershipTagError, SecretTree};
+use crate::psk::{get_epoch_secret, JoinerSecret, Psk, PskSecretError};
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
+use crate::signing_identity::SigningIdentityError;
+use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
+use crate::tree_kem::TreeKemPublic;
+use ferriscrypt::cipher::aead::AeadError;
 use ferriscrypt::cipher::aead::{AeadNonce, Key};
+use ferriscrypt::cipher::NonceError;
 use ferriscrypt::digest::HashFunction;
 use ferriscrypt::hpke::kem::{HpkePublicKey, KemType};
 use ferriscrypt::hpke::{HpkeError, KdfId};
 use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::kdf::KdfError;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
+use serde_with::serde_as;
 use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::{Zeroize, Zeroizing};
-
-use crate::cipher_suite::CipherSuite;
-use crate::group::secret_tree::SecretTreeError;
-use crate::group::{GroupContext, LeafIndex, MembershipTag, MembershipTagError, SecretTree};
-use crate::psk::{get_epoch_secret, JoinerSecret, Psk, PskSecretError};
-use crate::signing_identity::SigningIdentityError;
-use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
-use crate::tree_kem::TreeKemPublic;
-use ferriscrypt::cipher::aead::AeadError;
-use ferriscrypt::cipher::NonceError;
 
 use super::epoch::Epoch;
 use super::message_signature::MLSAuthenticatedContent;
@@ -318,6 +319,7 @@ impl KeySchedule {
 
 const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -334,7 +336,11 @@ const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
     Zeroize,
 )]
 #[zeroize(drop)]
-pub struct InitSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct InitSecret(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    Vec<u8>,
+);
 
 impl InitSecret {
     pub fn new(init_secret: Vec<u8>) -> Self {

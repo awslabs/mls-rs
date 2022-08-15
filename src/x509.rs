@@ -1,14 +1,15 @@
-use std::{collections::HashSet, ops::Deref};
-
 use der::{Decode, Encode};
 use ferriscrypt::asym::ec_key::{self, Curve, EcKeyError};
 use ferriscrypt::digest::digest;
 use ferriscrypt::digest::HashFunction::Sha256;
+use serde_with::serde_as;
+use std::{collections::HashSet, ops::Deref};
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use x509_cert::certificate::Certificate;
 
 use crate::cipher_suite::CipherSuite;
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signing_identity::SigningIdentity;
 use crate::{client_config::CredentialValidator, credential::Credential};
 
@@ -37,6 +38,7 @@ pub enum X509Error {
     CurveMismatch(Curve, Curve),
 }
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -50,7 +52,11 @@ pub enum X509Error {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct CertificateData(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct CertificateData(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    Vec<u8>,
+);
 
 impl From<Vec<u8>> for CertificateData {
     fn from(data: Vec<u8>) -> Self {

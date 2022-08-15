@@ -4,6 +4,8 @@ use std::{
 };
 
 use crate::cipher_suite::CipherSuite;
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
+use serde_with::serde_as;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -15,6 +17,7 @@ struct RefHashInput<'a> {
     pub value: &'a [u8],
 }
 
+#[serde_as]
 #[derive(
     PartialEq,
     Eq,
@@ -29,7 +32,11 @@ struct RefHashInput<'a> {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct HashReference(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct HashReference(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    Vec<u8>,
+);
 
 impl Debug for HashReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

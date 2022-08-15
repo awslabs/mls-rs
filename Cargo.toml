@@ -17,7 +17,7 @@ arbitrary = ["dep:arbitrary", "ferriscrypt/arbitrary"]
 
 [dependencies]
 thiserror = "^1"
-ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", default-features = false, features = ["hpke", "serde"], tag = "0.18.3" }
+ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", default-features = false, features = ["hpke", "serde"], tag = "0.18.4" }
 tls_codec = "0.2.0"
 tls_codec_derive = "0.2.0"
 hex = { version = "^0.4.3", features = ["serde"] }
@@ -36,6 +36,7 @@ x509-cert = "0.1.0"
 base64 = "0.13.0"
 num_enum = "0.5"
 cfg-if = "^1"
+serde_with = "^2"
 
 [dev-dependencies]
 assert_matches = "1.5.0"

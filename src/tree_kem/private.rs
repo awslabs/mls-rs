@@ -1,5 +1,8 @@
+use serde_with::serde_as;
+
 use super::*;
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -15,7 +18,7 @@ use super::*;
 pub struct TreeKemPrivate {
     pub self_index: LeafIndex,
     #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::ByteVec>")]
-    #[serde(with = "crate::serde_utils::map_as_seq")]
+    #[serde_as(as = "Vec<(_,_)>")]
     pub secret_keys: HashMap<NodeIndex, HpkeSecretKey>,
 }
 

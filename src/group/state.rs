@@ -1,3 +1,5 @@
+use serde_with::serde_as;
+
 use super::{
     confirmation_tag::ConfirmationTag, proposal::ReInit, proposal_cache::CachedProposal,
     transcript_hash::InterimTranscriptHash, ProposalRef,
@@ -26,10 +28,10 @@ impl serde::Serialize for GroupState {
     where
         S: serde::Serializer,
     {
+        #[serde_as]
         #[derive(serde::Serialize)]
         struct GroupStateData<'a> {
             context: &'a GroupContext,
-            #[serde(with = "crate::serde_utils::map_as_seq")]
             proposals: &'a HashMap<ProposalRef, CachedProposal>,
             tree_data: NodeVec,
             interim_transcript_hash: &'a InterimTranscriptHash,
@@ -58,7 +60,6 @@ impl<'de> serde::Deserialize<'de> for GroupState {
         #[derive(serde::Deserialize)]
         struct GroupStateData {
             context: GroupContext,
-            #[serde(with = "crate::serde_utils::map_as_seq")]
             proposals: HashMap<ProposalRef, CachedProposal>,
             tree_data: NodeVec,
             interim_transcript_hash: InterimTranscriptHash,

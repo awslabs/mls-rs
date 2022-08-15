@@ -1,4 +1,5 @@
 use crate::maybe::MaybeEnum;
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use enum_iterator::IntoEnumIterator;
 use ferriscrypt::asym::ec_key::{Curve, EcKeyError, PublicKey, SecretKey};
 use ferriscrypt::cipher::aead::Aead;
@@ -6,9 +7,11 @@ use ferriscrypt::digest::HashFunction;
 use ferriscrypt::hpke::kem::Kem;
 use ferriscrypt::hpke::{AeadId, Hpke, KdfId, KemId};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use serde_with::serde_as;
 use std::ops::Deref;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -22,7 +25,11 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct SignaturePublicKey(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct SignaturePublicKey(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    Vec<u8>,
+);
 
 impl Deref for SignaturePublicKey {
     type Target = Vec<u8>;
