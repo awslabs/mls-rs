@@ -398,14 +398,14 @@ struct GroupSecrets {
     psks: Vec<PreSharedKeyID>,
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct EncryptedGroupSecrets {
     pub new_member: KeyPackageRef,
     pub encrypted_group_secrets: HpkeCiphertext,
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, Eq, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Welcome {
     pub cipher_suite: CipherSuite,
@@ -415,7 +415,7 @@ pub struct Welcome {
     pub encrypted_group_info: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlEncryptionMode {
     Plaintext,
     Encrypted(PaddingMode),

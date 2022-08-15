@@ -8,6 +8,7 @@ use super::*;
     TlsSize,
     serde::Deserialize,
     serde::Serialize,
+    Eq,
     PartialEq,
 )]
 #[non_exhaustive]

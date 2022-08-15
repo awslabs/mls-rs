@@ -147,6 +147,7 @@ pub enum ResumptionPSKUsage {
     Clone,
     Debug,
     PartialEq,
+    Eq,
     Zeroize,
     serde::Serialize,
     serde::Deserialize,

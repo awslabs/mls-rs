@@ -223,7 +223,7 @@ impl<'a> Signable<'a> for MLSAuthenticatedContent {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MessageSignature(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 

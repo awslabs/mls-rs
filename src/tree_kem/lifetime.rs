@@ -14,6 +14,7 @@ pub enum LifetimeError {
     Clone,
     Debug,
     PartialEq,
+    Eq,
     TlsDeserialize,
     TlsSerialize,
     TlsSize,

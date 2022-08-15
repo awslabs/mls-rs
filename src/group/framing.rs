@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-#[derive(Copy, Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum ContentType {
@@ -28,6 +28,7 @@ impl From<&Content> for ContentType {
     Clone,
     Debug,
     PartialEq,
+    Eq,
     TlsDeserialize,
     TlsSerialize,
     TlsSize,
@@ -183,7 +184,7 @@ impl Deserialize for MLSCiphertextContent {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSCiphertextContentAAD {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
@@ -193,7 +194,7 @@ pub struct MLSCiphertextContentAAD {
     pub authenticated_data: Vec<u8>,
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MLSCiphertext {
     #[tls_codec(with = "crate::tls::ByteVec")]
@@ -219,14 +220,14 @@ impl From<&MLSCiphertext> for MLSCiphertextContentAAD {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSSenderData {
     pub sender: LeafIndex,
     pub generation: u32,
     pub reuse_guard: [u8; 4],
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct MLSSenderDataAAD {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,

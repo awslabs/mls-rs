@@ -10,7 +10,7 @@ use super::{
     leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator, ValidationContext},
 };
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct UpdatePathNode {
     #[tls_codec(with = "crate::tls::ByteVec")]

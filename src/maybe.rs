@@ -1,7 +1,7 @@
 use num_enum::TryFromPrimitive;
 use std::io::{Read, Write};
 
-#[derive(Clone, Debug, Copy, PartialEq)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum MaybeEnum<T, V>
 where

@@ -124,7 +124,7 @@ impl PartialEq for TreeKemPublic {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct SecretPath {
     #[tls_codec(with = "crate::tls::DefMap")]
     path_secrets: HashMap<NodeIndex, PathSecret>,

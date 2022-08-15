@@ -139,7 +139,7 @@ impl KeyScheduleKdf {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Zeroize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Zeroize)]
 #[zeroize(drop)]
 pub struct KeySchedule {
     exporter_secret: Vec<u8>,
@@ -386,7 +386,7 @@ impl InitSecret {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Zeroize)]
+#[derive(Debug, Clone, PartialEq, Eq, Zeroize)]
 #[zeroize(drop)]
 pub struct CommitSecret(PathSecret);
 

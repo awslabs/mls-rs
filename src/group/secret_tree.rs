@@ -334,7 +334,7 @@ impl SecretTree {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct MessageKey {
     nonce: AeadNonce,
     key: Key,

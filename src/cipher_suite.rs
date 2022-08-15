@@ -54,7 +54,7 @@ impl TryFrom<&SecretKey> for SignaturePublicKey {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct HpkeCiphertext {
     #[tls_codec(with = "crate::tls::ByteVec")]

@@ -15,7 +15,14 @@ pub enum TranscriptHashError {
 }
 
 #[derive(
-    Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
+    Clone,
+    PartialEq,
+    Eq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ConfirmedTranscriptHash(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);

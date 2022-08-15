@@ -22,6 +22,7 @@ pub enum PathSecretError {
     Debug,
     Clone,
     Zeroize,
+    Eq,
     PartialEq,
     TlsSerialize,
     TlsDeserialize,

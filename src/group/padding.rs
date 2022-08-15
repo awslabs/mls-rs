@@ -2,7 +2,7 @@ use tls_codec::Size;
 
 use super::framing::MLSCiphertextContent;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaddingMode {
     StepFunction,
     None,

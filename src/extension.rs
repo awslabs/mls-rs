@@ -61,7 +61,7 @@ pub trait MlsExtension: Sized + Serialize + Deserialize {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct ApplicationIdExt {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub identifier: Vec<u8>,
@@ -80,7 +80,7 @@ impl MlsExtension for RatchetTreeExt {
     const IDENTIFIER: ExtensionType = RATCHET_TREE_EXT_ID;
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize, Default)]
 pub struct RequiredCapabilitiesExt {
     #[tls_codec(with = "crate::tls::DefVec")]
     pub extensions: Vec<ExtensionType>,
@@ -94,7 +94,7 @@ impl MlsExtension for RequiredCapabilitiesExt {
     const IDENTIFIER: ExtensionType = REQUIRED_CAPABILITIES_EXT_ID;
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub struct ExternalPubExt {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub external_pub: HpkePublicKey,
@@ -104,7 +104,7 @@ impl MlsExtension for ExternalPubExt {
     const IDENTIFIER: ExtensionType = EXTERNAL_PUB_EXT_ID;
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[non_exhaustive]
 pub struct ExternalSendersExt {
     #[tls_codec(with = "crate::tls::DefVec")]
@@ -137,6 +137,7 @@ impl MlsExtension for ExternalSendersExt {
     Clone,
     Debug,
     PartialEq,
+    Eq,
     TlsDeserialize,
     TlsSerialize,
     TlsSize,

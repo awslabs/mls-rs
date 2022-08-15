@@ -12,6 +12,7 @@ use crate::{
 #[derive(
     Clone,
     PartialEq,
+    Eq,
     Debug,
     TlsDeserialize,
     TlsSerialize,
