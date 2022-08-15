@@ -35,6 +35,7 @@ fn abort<T: std::fmt::Debug>(e: T) -> Status {
 }
 
 pub mod mls_client {
+    #![allow(clippy::derive_partial_eq_without_eq)]
     tonic::include_proto!("mls_client");
 }
 

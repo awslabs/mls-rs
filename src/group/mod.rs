@@ -3448,9 +3448,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(GroupError::UnsupportedProtocolVersion(
-                MaybeProtocolVersion::Enum(TEST_PROTOCOL_VERSION)
-            ))
+            Err(GroupError::UnsupportedProtocolVersion(v)) if v ==
+                MaybeProtocolVersion::from(TEST_PROTOCOL_VERSION)
         );
     }
 
@@ -3460,9 +3459,9 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(GroupError::UnsupportedCipherSuite(MaybeCipherSuite::Enum(
+            Err(GroupError::UnsupportedCipherSuite(cs)) if cs == MaybeCipherSuite::from(
                 TEST_CIPHER_SUITE
-            )))
+            )
         );
     }
 

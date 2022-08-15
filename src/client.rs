@@ -219,7 +219,7 @@ where
         };
 
         Ok(MLSMessage {
-            version: MaybeProtocolVersion::Enum(protocol_version),
+            version: MaybeProtocolVersion::from(protocol_version),
             payload: MLSMessagePayload::Plain(plaintext),
         })
     }

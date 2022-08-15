@@ -235,4 +235,4 @@ impl CipherSuite {
     }
 }
 
-pub type MaybeCipherSuite = MaybeEnum<CipherSuite, u16>;
+pub type MaybeCipherSuite = MaybeEnum<CipherSuite>;

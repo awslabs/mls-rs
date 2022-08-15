@@ -41,4 +41,4 @@ impl ProtocolVersion {
     }
 }
 
-pub type MaybeProtocolVersion = MaybeEnum<ProtocolVersion, u8>;
+pub type MaybeProtocolVersion = MaybeEnum<ProtocolVersion>;

@@ -2,54 +2,72 @@ use num_enum::TryFromPrimitive;
 use std::io::{Read, Write};
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub enum MaybeEnum<T, V>
+enum MaybeEnumInner<T>
 where
-    T: TryFromPrimitive<Primitive = V>,
+    T: TryFromPrimitive,
 {
     Enum(T),
-    Other(V),
+    Other(T::Primitive),
 }
 
-impl<T, V> From<T> for MaybeEnum<T, V>
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+pub struct MaybeEnum<T: TryFromPrimitive>(MaybeEnumInner<T>);
+
+impl<T> From<T> for MaybeEnum<T>
 where
-    T: TryFromPrimitive<Primitive = V>,
+    T: TryFromPrimitive,
 {
     fn from(value: T) -> Self {
-        MaybeEnum::Enum(value)
+        Self(MaybeEnumInner::Enum(value))
     }
 }
 
-impl<T, V> MaybeEnum<T, V>
+#[cfg(feature = "arbitrary")]
+impl<'a, T> arbitrary::Arbitrary<'a> for MaybeEnum<T>
 where
-    T: Copy + Into<V> + TryFromPrimitive<Primitive = V>,
-    V: Copy,
+    T: TryFromPrimitive,
+    T::Primitive: arbitrary::Arbitrary<'a>,
 {
-    pub fn from_raw_value(value: V) -> Self {
-        T::try_from_primitive(value)
-            .map(MaybeEnum::Enum)
-            .unwrap_or_else(|_| MaybeEnum::Other(value))
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        Ok(Self::from_raw_value(arbitrary::Arbitrary::arbitrary(u)?))
     }
+}
 
-    pub fn raw_value(&self) -> V {
-        match self {
-            MaybeEnum::Enum(item) => (*item).into(),
-            MaybeEnum::Other(value) => *value,
-        }
+impl<T> MaybeEnum<T>
+where
+    T: TryFromPrimitive,
+{
+    pub fn from_raw_value(value: T::Primitive) -> Self {
+        Self(
+            T::try_from_primitive(value)
+                .map_or_else(|_| MaybeEnumInner::Other(value), MaybeEnumInner::Enum),
+        )
     }
 
     pub fn into_enum(self) -> Option<T> {
-        match self {
-            MaybeEnum::Enum(e) => Some(e),
-            MaybeEnum::Other(_) => None,
+        match self.0 {
+            MaybeEnumInner::Enum(e) => Some(e),
+            MaybeEnumInner::Other(_) => None,
         }
     }
 }
 
-impl<T, V> serde::Serialize for MaybeEnum<T, V>
+impl<T> MaybeEnum<T>
 where
-    T: Copy + Into<V> + TryFromPrimitive<Primitive = V>,
-    V: Copy + serde::Serialize,
+    T: Copy + TryFromPrimitive + Into<T::Primitive>,
+{
+    pub fn raw_value(&self) -> T::Primitive {
+        match self.0 {
+            MaybeEnumInner::Enum(item) => item.into(),
+            MaybeEnumInner::Other(value) => value,
+        }
+    }
+}
+
+impl<T> serde::Serialize for MaybeEnum<T>
+where
+    T: Copy + TryFromPrimitive + Into<T::Primitive>,
+    T::Primitive: serde::Serialize,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -59,50 +77,47 @@ where
     }
 }
 
-impl<'de, T, V> serde::Deserialize<'de> for MaybeEnum<T, V>
+impl<'de, T> serde::Deserialize<'de> for MaybeEnum<T>
 where
-    T: Copy + Into<V> + TryFromPrimitive<Primitive = V>,
-    V: Copy + serde::Deserialize<'de>,
+    T: TryFromPrimitive,
+    T::Primitive: serde::Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        let raw_value = V::deserialize(deserializer)?;
+        let raw_value = serde::Deserialize::deserialize(deserializer)?;
         Ok(MaybeEnum::from_raw_value(raw_value))
     }
 }
 
-impl<T, V> tls_codec::Size for MaybeEnum<T, V>
+impl<T> tls_codec::Size for MaybeEnum<T>
 where
-    T: Copy + Into<V> + TryFromPrimitive<Primitive = V>,
-    V: Copy + tls_codec::Size,
+    T: Copy + Into<T::Primitive> + TryFromPrimitive,
+    T::Primitive: tls_codec::Size,
 {
     fn tls_serialized_len(&self) -> usize {
         self.raw_value().tls_serialized_len()
     }
 }
 
-impl<T, V> tls_codec::Serialize for MaybeEnum<T, V>
+impl<T> tls_codec::Serialize for MaybeEnum<T>
 where
-    T: Copy + Into<V> + TryFromPrimitive<Primitive = V>,
-    V: Copy + tls_codec::Serialize,
+    T: Copy + Into<T::Primitive> + TryFromPrimitive,
+    T::Primitive: tls_codec::Serialize,
 {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         self.raw_value().tls_serialize(writer)
     }
 }
 
-impl<T, V> tls_codec::Deserialize for MaybeEnum<T, V>
+impl<T> tls_codec::Deserialize for MaybeEnum<T>
 where
-    T: Copy + Into<V> + TryFromPrimitive<Primitive = V>,
-    V: Copy + tls_codec::Deserialize,
+    T: Copy + Into<T::Primitive> + TryFromPrimitive,
+    T::Primitive: tls_codec::Deserialize,
 {
-    fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error>
-    where
-        Self: Sized,
-    {
-        let raw_value = V::tls_deserialize(bytes)?;
+    fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
+        let raw_value = tls_codec::Deserialize::tls_deserialize(bytes)?;
         Ok(Self::from_raw_value(raw_value))
     }
 }
@@ -110,7 +125,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_matches::assert_matches;
     use enum_iterator::IntoEnumIterator;
     use num_enum::IntoPrimitive;
     use tls_codec::Serialize;
@@ -141,25 +155,26 @@ mod tests {
     #[test]
     fn test_maybe_enum() {
         for enum_value in TestEnum::into_enum_iter() {
-            let maybe: MaybeEnum<TestEnum, _> = MaybeEnum::from_raw_value(enum_value as u8);
-            assert_matches!(maybe, MaybeEnum::Enum(v) if v == enum_value);
+            let maybe: MaybeEnum<TestEnum> = MaybeEnum::from_raw_value(enum_value as u8);
+            assert_eq!(maybe, MaybeEnum::from(enum_value));
         }
 
         let test_val = 4u8;
-        let other: MaybeEnum<TestEnum, _> = MaybeEnum::from_raw_value(test_val);
-        assert_eq!(other, MaybeEnum::Other(test_val));
+        let other: MaybeEnum<TestEnum> = MaybeEnum::from_raw_value(test_val);
+        assert_eq!(other.into_enum(), None);
+        assert_eq!(other.raw_value(), test_val);
     }
 
     #[test]
     fn test_maybe_enum_serialize() {
-        let supported = MaybeEnum::Enum(TestEnum::One);
+        let supported = MaybeEnum::from(TestEnum::One);
 
         assert_eq!(
             TestEnum::One.tls_serialize_detached().unwrap(),
             supported.tls_serialize_detached().unwrap()
         );
 
-        let not_supported: MaybeEnum<TestEnum, _> = MaybeEnum::Other(32);
+        let not_supported: MaybeEnum<TestEnum> = MaybeEnum::from_raw_value(32);
 
         assert_eq!(
             32u8.tls_serialize_detached().unwrap(),
@@ -169,11 +184,22 @@ mod tests {
 
     #[test]
     fn test_maybe_enum_from() {
-        let supported = MaybeEnum::Enum(TestEnum::One);
+        let supported = MaybeEnum::from(TestEnum::One);
 
-        assert_eq!(MaybeEnum::from(TestEnum::One), supported);
+        assert_eq!(supported.into_enum(), Some(TestEnum::One));
 
-        let unsupported: MaybeEnum<TestEnum, _> = MaybeEnum::Other(32);
-        assert_eq!(MaybeEnum::from_raw_value(32u8), unsupported);
+        let unsupported: MaybeEnum<TestEnum> = MaybeEnum::from_raw_value(32);
+        assert_eq!(unsupported.into_enum(), None);
+        assert_eq!(unsupported.raw_value(), 32);
+    }
+
+    #[test]
+    fn from_raw_value_and_raw_value_are_inverse() {
+        for x in TestEnum::into_enum_iter()
+            .map(MaybeEnum::from)
+            .chain(Some(MaybeEnum::from_raw_value(4)))
+        {
+            assert_eq!(x, MaybeEnum::from_raw_value(x.raw_value()));
+        }
     }
 }

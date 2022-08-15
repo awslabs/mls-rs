@@ -439,9 +439,9 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(GroupError::UnsupportedCipherSuite(MaybeCipherSuite::Enum(
+            Err(GroupError::UnsupportedCipherSuite(cs)) if cs == MaybeCipherSuite::from(
                 CipherSuite::Curve25519Aes128
-            )))
+            )
         );
     }
 
@@ -452,15 +452,14 @@ mod tests {
         let config = InMemoryExternalClientConfig::default();
 
         let mut group_info = alice.group.group_info_message().unwrap();
-        group_info.version = MaybeProtocolVersion::Other(64);
+        group_info.version = MaybeProtocolVersion::from_raw_value(64);
 
         let res = ExternalGroup::join(config, group_info, None);
 
         assert_matches!(
             res,
-            Err(GroupError::UnsupportedProtocolVersion(
-                MaybeProtocolVersion::Other(64)
-            ))
+            Err(GroupError::UnsupportedProtocolVersion(v)) if v ==
+                MaybeProtocolVersion::from_raw_value(64)
         );
     }
 

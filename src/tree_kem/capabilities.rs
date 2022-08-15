@@ -37,7 +37,7 @@ pub struct Capabilities {
 impl Default for Capabilities {
     fn default() -> Self {
         Self {
-            protocol_versions: vec![MaybeProtocolVersion::Enum(ProtocolVersion::Mls10)],
+            protocol_versions: vec![MaybeProtocolVersion::from(ProtocolVersion::Mls10)],
             cipher_suites: CipherSuite::all().map(MaybeCipherSuite::from).collect(),
             extensions: Default::default(),
             proposals: Default::default(),
