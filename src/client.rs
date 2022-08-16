@@ -336,8 +336,8 @@ mod tests {
                 .generate_key_package(protocol_version, cipher_suite)
                 .unwrap();
 
-            assert_eq!(key_package.version, protocol_version);
-            assert_eq!(key_package.cipher_suite, cipher_suite);
+            assert_eq!(key_package.version, protocol_version.into());
+            assert_eq!(key_package.cipher_suite, cipher_suite.into());
             assert_matches!(&key_package.leaf_node.signing_identity.credential, Credential::Basic(identity) if identity == "foo".as_bytes());
 
             let (expected_credential, _) = client

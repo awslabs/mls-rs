@@ -553,11 +553,16 @@ where
 
         let key_package_generation = find_key_package_generation(&config, &welcome)?;
 
-        if key_package_generation.key_package.version != protocol_version {
+        let key_package_version = check_protocol_version(
+            &config.supported_protocol_versions(),
+            key_package_generation.key_package.version,
+        )?;
+
+        if key_package_version != protocol_version {
             return Err(GroupError::ProtocolVersionMismatch {
                 msg_version: protocol_version,
                 wire_format: WireFormat::KeyPackage,
-                version: key_package_generation.key_package.version,
+                version: key_package_version,
             });
         }
 
@@ -1499,7 +1504,7 @@ where
 
         let group_secrets_bytes = Zeroizing::new(group_secrets.tls_serialize_detached()?);
 
-        let encrypted_group_secrets = key_package.cipher_suite.hpke().seal(
+        let encrypted_group_secrets = self.state.cipher_suite().hpke().seal(
             &key_package.hpke_init_key,
             &[],
             None,

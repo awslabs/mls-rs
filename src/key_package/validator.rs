@@ -37,9 +37,9 @@ pub enum KeyPackageValidationError {
     #[error("required proposal not found")]
     RequiredProposalNotFound(ProposalType),
     #[error("found cipher suite {0:?} expected {1:?}")]
-    InvalidCipherSuite(CipherSuite, CipherSuite),
+    InvalidCipherSuite(MaybeCipherSuite, CipherSuite),
     #[error("found protocol version {0:?} expected {1:?}")]
-    InvalidProtocolVersion(ProtocolVersion, ProtocolVersion),
+    InvalidProtocolVersion(MaybeProtocolVersion, ProtocolVersion),
     #[error("init key is not valid for cipher suite")]
     InvalidInitKey,
     #[error("init key can not be equal to leaf node public key")]
@@ -105,7 +105,7 @@ impl<'a, C: CredentialValidator> KeyPackageValidator<'a, C> {
         self.check_signature(package)?;
 
         // Verify that the protocol version matches
-        if package.version != self.protocol_version {
+        if package.version != self.protocol_version.into() {
             return Err(KeyPackageValidationError::InvalidProtocolVersion(
                 package.version,
                 self.protocol_version,
@@ -113,7 +113,7 @@ impl<'a, C: CredentialValidator> KeyPackageValidator<'a, C> {
         }
 
         // Verify that the cipher suite matches
-        if package.cipher_suite != self.cipher_suite {
+        if package.cipher_suite != self.cipher_suite.into() {
             return Err(KeyPackageValidationError::InvalidCipherSuite(
                 package.cipher_suite,
                 self.cipher_suite,
@@ -230,7 +230,7 @@ mod tests {
         assert_matches!(
             validator.check_if_valid(&test_package, Default::default()),
             Err(KeyPackageValidationError::InvalidCipherSuite(found, exp))
-                if exp == CipherSuite::Curve25519ChaCha20 && found == cipher_suite
+                if exp == CipherSuite::Curve25519ChaCha20 && found == cipher_suite.into()
         );
     }
 

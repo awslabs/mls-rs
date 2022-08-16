@@ -74,8 +74,8 @@ where
         )?;
 
         let mut package = KeyPackage {
-            version: self.protocol_version,
-            cipher_suite: self.cipher_suite,
+            version: self.protocol_version.into(),
+            cipher_suite: self.cipher_suite.into(),
             hpke_init_key: public_init.try_into()?,
             leaf_node,
             extensions: key_package_extensions,
@@ -204,8 +204,8 @@ mod tests {
             );
 
             assert_eq!(generated.key_package.extensions, key_package_ext);
-            assert_eq!(generated.key_package.cipher_suite, cipher_suite);
-            assert_eq!(generated.key_package.version, protocol_version);
+            assert_eq!(generated.key_package.cipher_suite, cipher_suite.into());
+            assert_eq!(generated.key_package.version, protocol_version.into());
 
             let curve = test_generator.cipher_suite.kem_type().curve();
 

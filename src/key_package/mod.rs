@@ -1,9 +1,10 @@
-use crate::cipher_suite::CipherSuite;
+use crate::cipher_suite::{CipherSuite, MaybeCipherSuite};
 use crate::credential::CredentialError;
 use crate::extension::{ExtensionError, ExtensionList, ExtensionType};
 use crate::extension::{KeyPackageExtension, RequiredCapabilitiesExt};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::HashReference;
+use crate::protocol_version::MaybeProtocolVersion;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
 use crate::time::MlsTime;
@@ -32,6 +33,8 @@ pub enum KeyPackageError {
     SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
     KdfError(#[from] KdfError),
+    #[error("unsupported cipher suite: {0:?}")]
+    UnsupportedCipherSuite(MaybeCipherSuite),
 }
 
 #[serde_as]
@@ -41,8 +44,8 @@ pub enum KeyPackageError {
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyPackage {
-    pub version: ProtocolVersion,
-    pub cipher_suite: CipherSuite,
+    pub version: MaybeProtocolVersion,
+    pub cipher_suite: MaybeCipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
     pub hpke_init_key: HpkePublicKey,
@@ -87,8 +90,8 @@ impl PartialEq for KeyPackage {
 
 #[derive(TlsSerialize, TlsSize)]
 pub struct KeyPackageData<'a> {
-    pub version: &'a ProtocolVersion,
-    pub cipher_suite: &'a CipherSuite,
+    pub version: MaybeProtocolVersion,
+    pub cipher_suite: MaybeCipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub hpke_init_key: &'a HpkePublicKey,
     pub leaf_node: &'a LeafNode,
@@ -105,7 +108,9 @@ impl KeyPackage {
         Ok(KeyPackageRef(HashReference::compute(
             &self.tls_serialize_detached()?,
             b"MLS 1.0 KeyPackage Reference",
-            self.cipher_suite,
+            self.cipher_suite
+                .into_enum()
+                .ok_or(KeyPackageError::UnsupportedCipherSuite(self.cipher_suite))?,
         )?))
     }
 }
@@ -124,8 +129,8 @@ impl<'a> Signable<'a> for KeyPackage {
         _context: &Self::SigningContext,
     ) -> Result<Vec<u8>, tls_codec::Error> {
         KeyPackageData {
-            version: &self.version,
-            cipher_suite: &self.cipher_suite,
+            version: self.version,
+            cipher_suite: self.cipher_suite,
             hpke_init_key: &self.hpke_init_key,
             leaf_node: &self.leaf_node,
             extensions: &self.extensions,
@@ -201,7 +206,10 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
+
+    use super::{test_utils::test_key_package_with_id, *};
+    use assert_matches::assert_matches;
     use num_enum::TryFromPrimitive;
     use tls_codec::Deserialize;
 
@@ -254,5 +262,20 @@ mod tests {
             let expected_out = KeyPackageRef::from(one_case.output);
             assert_eq!(expected_out, key_package_ref);
         }
+    }
+
+    #[test]
+    fn key_package_ref_fails_invalid_cipher_suite() {
+        let mut key_package =
+            test_key_package_with_id(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test");
+
+        let unsupported = MaybeCipherSuite::from_raw_value(255);
+
+        key_package.cipher_suite = unsupported;
+
+        assert_matches!(
+            key_package.to_reference(),
+            Err(KeyPackageError::UnsupportedCipherSuite(_))
+        )
     }
 }
