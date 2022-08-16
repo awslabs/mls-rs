@@ -1,10 +1,12 @@
+use crate::extension::GroupInfoExtension;
+
 use super::*;
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct GroupInfo {
     pub group_context: GroupContextWire,
-    pub extensions: ExtensionList,
+    pub extensions: ExtensionList<GroupInfoExtension>,
     pub confirmation_tag: ConfirmationTag,
     pub signer: LeafIndex,
     #[tls_codec(with = "crate::tls::ByteVec")]
@@ -16,7 +18,7 @@ struct SignableGroupInfo<'a> {
     #[tls_codec(with = "crate::tls::DefRef")]
     group_context: &'a GroupContextWire,
     #[tls_codec(with = "crate::tls::DefRef")]
-    extensions: &'a ExtensionList,
+    extensions: &'a ExtensionList<GroupInfoExtension>,
     #[tls_codec(with = "crate::tls::ByteVec")]
     confirmation_tag: &'a Tag,
     signer: LeafIndex,

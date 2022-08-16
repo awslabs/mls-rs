@@ -19,7 +19,8 @@ use crate::cipher_suite::{CipherSuite, HpkeCiphertext, MaybeCipherSuite};
 use crate::client_config::{ClientConfig, CredentialValidator, ProposalFilterInit};
 use crate::credential::CredentialError;
 use crate::extension::{
-    ExtensionError, ExtensionList, ExternalPubExt, ExternalSendersExt, RatchetTreeExt,
+    ExtensionError, ExtensionList, ExternalPubExt, ExternalSendersExt, GroupContextExtension,
+    LeafNodeExtension, RatchetTreeExt,
 };
 use crate::group::{KeySchedule, KeyScheduleError};
 use crate::key_package::{
@@ -278,7 +279,10 @@ pub enum GroupError {
     #[error("The versions in the welcome message {0:?} and in the reinit {1:?} do not match.")]
     ReInitVersionMismatch(ProtocolVersion, ProtocolVersion),
     #[error("The extensions in the welcome message {0:?} and in the reinit {1:?} do not match.")]
-    ReInitExtensionsMismatch(ExtensionList, ExtensionList),
+    ReInitExtensionsMismatch(
+        ExtensionList<GroupContextExtension>,
+        ExtensionList<GroupContextExtension>,
+    ),
     #[error("The group ids in the welcome message {0:?} and in the reinit {1:?} do not match.")]
     ReInitIdMismatch(Vec<u8>, Vec<u8>),
     #[error("No credential found for given ciphersuite.")]
@@ -320,7 +324,7 @@ pub struct GroupContext {
     #[serde_as(as = "VecAsBase64")]
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,
-    pub extensions: ExtensionList,
+    pub extensions: ExtensionList<GroupContextExtension>,
 }
 
 impl GroupContext {
@@ -329,7 +333,7 @@ impl GroupContext {
         cipher_suite: CipherSuite,
         group_id: Vec<u8>,
         tree_hash: Vec<u8>,
-        extensions: ExtensionList,
+        extensions: ExtensionList<GroupContextExtension>,
     ) -> Self {
         GroupContext {
             protocol_version,
@@ -354,7 +358,7 @@ pub struct GroupContextWire {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,
-    pub extensions: ExtensionList,
+    pub extensions: ExtensionList<GroupContextExtension>,
 }
 
 impl From<GroupContext> for GroupContextWire {
@@ -389,7 +393,7 @@ pub struct CommitGeneration {
 #[derive(Clone, Debug)]
 pub struct CommitOptions {
     pub prefer_path_update: bool,
-    pub extension_update: Option<ExtensionList>,
+    pub extension_update: Option<ExtensionList<LeafNodeExtension>>,
     pub capabilities_update: Option<Capabilities>,
     pub encryption_mode: ControlEncryptionMode,
     pub ratchet_tree_extension: bool,
@@ -453,7 +457,7 @@ where
         group_id: Vec<u8>,
         cipher_suite: CipherSuite,
         protocol_version: ProtocolVersion,
-        group_context_extensions: ExtensionList,
+        group_context_extensions: ExtensionList<GroupContextExtension>,
     ) -> Result<Self, GroupError> {
         let (signing_identity, signer) = config
             .keychain()
@@ -1568,7 +1572,7 @@ where
         group_id: Vec<u8>,
         version: ProtocolVersion,
         cipher_suite: CipherSuite,
-        extensions: ExtensionList,
+        extensions: ExtensionList<GroupContextExtension>,
     ) -> Result<Proposal, GroupError> {
         Ok(Proposal::ReInit(ReInit {
             group_id,
@@ -1582,13 +1586,16 @@ where
         &mut self,
         version: ProtocolVersion,
         cipher_suite: CipherSuite,
-        extensions: ExtensionList,
+        extensions: ExtensionList<GroupContextExtension>,
     ) -> Result<Proposal, GroupError> {
         let group_id = SecureRng::gen(cipher_suite.hash_function().digest_size())?;
         self.reinit_proposal_with_group_id(group_id, version, cipher_suite, extensions)
     }
 
-    pub fn group_context_extensions_proposal(&self, extensions: ExtensionList) -> Proposal {
+    pub fn group_context_extensions_proposal(
+        &self,
+        extensions: ExtensionList<GroupContextExtension>,
+    ) -> Proposal {
         Proposal::GroupContextExtensions(extensions)
     }
 
@@ -2010,7 +2017,7 @@ fn proposal_effects<C, F>(
     proposals: &ProposalCache,
     commit: &Commit,
     sender: &Sender,
-    group_extensions: &ExtensionList,
+    group_extensions: &ExtensionList<GroupContextExtension>,
     credential_validator: C,
     public_tree: &TreeKemPublic,
     user_filter: F,
@@ -2441,7 +2448,7 @@ pub(crate) mod test_utils {
         }
     }
 
-    pub(crate) fn group_extensions() -> ExtensionList {
+    pub(crate) fn group_extensions() -> ExtensionList<GroupContextExtension> {
         let required_capabilities = RequiredCapabilitiesExt::default();
 
         let mut extensions = ExtensionList::new();
@@ -2485,7 +2492,7 @@ pub(crate) mod test_utils {
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         capabilities: Option<Capabilities>,
-        leaf_extensions: Option<ExtensionList>,
+        leaf_extensions: Option<ExtensionList<LeafNodeExtension>>,
         preferences: Option<Preferences>,
     ) -> TestGroup {
         let capabilities = capabilities.unwrap_or_default();
@@ -2605,8 +2612,8 @@ pub(crate) mod test_utils {
 
     pub(crate) fn get_test_groups_with_features(
         n: usize,
-        extensions: ExtensionList,
-        leaf_extensions: ExtensionList,
+        extensions: ExtensionList<GroupContextExtension>,
+        leaf_extensions: ExtensionList<LeafNodeExtension>,
         credentials: Option<Vec<CredentialType>>,
     ) -> Vec<Group<InMemoryClientConfig>> {
         let clients = (0..n)
@@ -3015,7 +3022,7 @@ mod tests {
     }
 
     fn group_context_extension_proposal_test(
-        ext_list: ExtensionList,
+        ext_list: ExtensionList<GroupContextExtension>,
     ) -> (TestGroup, Result<MLSMessage, GroupError>) {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128;

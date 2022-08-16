@@ -8,7 +8,7 @@ use criterion::{
 
 use aws_mls::cipher_suite::CipherSuite;
 
-use aws_mls::extension::ExtensionList;
+use aws_mls::extension::{ExtensionList, LeafNodeExtension};
 use aws_mls::tree_kem::Capabilities;
 
 use aws_mls::tree_kem::kem::TreeKem;
@@ -32,7 +32,7 @@ fn bench_encap(
     bench_group: &mut BenchmarkGroup<WallTime>,
     excluding: &[LeafIndex],
     capabilities: Option<Capabilities>,
-    extensions: Option<ExtensionList>,
+    extensions: Option<ExtensionList<LeafNodeExtension>>,
     cipher_suite: CipherSuite,
     map: HashMap<usize, TestCase>,
 ) {

@@ -1,5 +1,6 @@
 use crate::{
     client_config::CredentialValidator,
+    extension::{KeyPackageExtension, LeafNodeExtension},
     signer::{SignatureError, Signer},
     signing_identity::SigningIdentity,
     tree_kem::{leaf_node::LeafNodeError, Capabilities, Lifetime},
@@ -57,8 +58,8 @@ where
         &self,
         lifetime: Lifetime,
         capabilities: Capabilities,
-        key_package_extensions: ExtensionList,
-        leaf_node_extensions: ExtensionList,
+        key_package_extensions: ExtensionList<KeyPackageExtension>,
+        leaf_node_extensions: ExtensionList<LeafNodeExtension>,
     ) -> Result<KeyPackageGeneration, KeyPackageGenerationError> {
         let (public_init, secret_init) = generate_keypair(self.cipher_suite.kem_type().curve())?;
 
@@ -99,7 +100,7 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
-        extension::{ExtensionList, MlsExtension},
+        extension::{ExtensionList, KeyPackageExtension, LeafNodeExtension, MlsExtension},
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
         signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{
@@ -117,15 +118,28 @@ mod tests {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[derive(Debug, PartialEq, TlsSize, TlsSerialize, TlsDeserialize)]
-    struct TestExt(u32);
+    struct TestKpExt(u32);
 
-    impl MlsExtension for TestExt {
+    impl MlsExtension<KeyPackageExtension> for TestKpExt {
         const IDENTIFIER: crate::extension::ExtensionType = 42;
     }
 
-    fn test_ext(val: u32) -> ExtensionList {
+    #[derive(Debug, PartialEq, TlsSize, TlsSerialize, TlsDeserialize)]
+    struct TestLnExt(u32);
+
+    impl MlsExtension<LeafNodeExtension> for TestLnExt {
+        const IDENTIFIER: crate::extension::ExtensionType = 43;
+    }
+
+    fn test_key_package_ext(val: u32) -> ExtensionList<KeyPackageExtension> {
         let mut ext_list = ExtensionList::new();
-        ext_list.set_extension(TestExt(val)).unwrap();
+        ext_list.set_extension(TestKpExt(val)).unwrap();
+        ext_list
+    }
+
+    fn test_leaf_node_ext(val: u32) -> ExtensionList<LeafNodeExtension> {
+        let mut ext_list = ExtensionList::new();
+        ext_list.set_extension(TestLnExt(val)).unwrap();
         ext_list
     }
 
@@ -141,8 +155,8 @@ mod tests {
             let (signing_identity, signing_key) =
                 get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
-            let key_package_ext = test_ext(32);
-            let leaf_node_ext = test_ext(42);
+            let key_package_ext = test_key_package_ext(32);
+            let leaf_node_ext = test_leaf_node_ext(42);
             let lifetime = test_lifetime();
 
             let test_generator = KeyPackageGenerator {
@@ -155,6 +169,7 @@ mod tests {
 
             let mut capabilities = Capabilities::default();
             capabilities.extensions.push(42);
+            capabilities.extensions.push(43);
             capabilities.extensions.push(32);
 
             let generated = test_generator

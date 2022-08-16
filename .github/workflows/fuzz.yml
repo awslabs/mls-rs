@@ -9,8 +9,8 @@ jobs:
   fuzz:
     runs-on: ubuntu-latest
     steps:
-        - uses: actions/checkout@v2
-        - run: rustup toolchain update nightly && rustup default nightly
+        - uses: actions/checkout@v3
+        - uses: dtolnay/rust-toolchain@nightly
         - name: Setup SSH Keys and known_hosts
           run: |
             ssh-agent -a $SSH_AUTH_SOCK > /dev/null

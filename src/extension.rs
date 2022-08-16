@@ -8,6 +8,7 @@ use crate::tree_kem::node::NodeVec;
 use crate::{credential::CredentialType, signing_identity::SigningIdentity};
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use serde_with::serde_as;
+use std::fmt::Debug;
 use std::io::{Read, Write};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize, Size};
@@ -20,6 +21,28 @@ pub enum ExtensionError {
     #[error(transparent)]
     TlsCodecError(#[from] tls_codec::Error),
 }
+
+#[derive(Debug, PartialEq, Eq, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct LeafNodeExtension;
+
+#[derive(Debug, PartialEq, Eq, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct GroupInfoExtension;
+
+#[derive(Debug, PartialEq, Eq, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct GroupContextExtension;
+
+#[derive(Debug, PartialEq, Eq, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct KeyPackageExtension;
+
+pub trait ExtensionClass {}
+impl ExtensionClass for LeafNodeExtension {}
+impl ExtensionClass for GroupInfoExtension {}
+impl ExtensionClass for GroupContextExtension {}
+impl ExtensionClass for KeyPackageExtension {}
 
 pub type ExtensionType = u16;
 
@@ -41,7 +64,10 @@ pub fn is_default_extension(ext_type: ExtensionType) -> bool {
     DEFAULT_EXTENSIONS.contains(&ext_type)
 }
 
-pub trait MlsExtension: Sized + Serialize + Deserialize {
+pub trait MlsExtension<T>: Sized + Serialize + Deserialize
+where
+    T: ExtensionClass,
+{
     const IDENTIFIER: ExtensionType;
 
     fn to_extension(&self) -> Result<Extension, ExtensionError> {
@@ -69,7 +95,7 @@ pub struct ApplicationIdExt {
     pub identifier: Vec<u8>,
 }
 
-impl MlsExtension for ApplicationIdExt {
+impl MlsExtension<LeafNodeExtension> for ApplicationIdExt {
     const IDENTIFIER: ExtensionType = APPLICATION_ID_EXT_ID;
 }
 
@@ -78,7 +104,7 @@ pub struct RatchetTreeExt {
     pub(crate) tree_data: NodeVec,
 }
 
-impl MlsExtension for RatchetTreeExt {
+impl MlsExtension<GroupInfoExtension> for RatchetTreeExt {
     const IDENTIFIER: ExtensionType = RATCHET_TREE_EXT_ID;
 }
 
@@ -92,7 +118,7 @@ pub struct RequiredCapabilitiesExt {
     pub credentials: Vec<CredentialType>,
 }
 
-impl MlsExtension for RequiredCapabilitiesExt {
+impl MlsExtension<GroupContextExtension> for RequiredCapabilitiesExt {
     const IDENTIFIER: ExtensionType = REQUIRED_CAPABILITIES_EXT_ID;
 }
 
@@ -102,7 +128,7 @@ pub struct ExternalPubExt {
     pub external_pub: HpkePublicKey,
 }
 
-impl MlsExtension for ExternalPubExt {
+impl MlsExtension<GroupInfoExtension> for ExternalPubExt {
     const IDENTIFIER: ExtensionType = EXTERNAL_PUB_EXT_ID;
 }
 
@@ -131,7 +157,7 @@ impl ExternalSendersExt {
     }
 }
 
-impl MlsExtension for ExternalSendersExt {
+impl MlsExtension<GroupContextExtension> for ExternalSendersExt {
     const IDENTIFIER: ExtensionType = EXTERNAL_SENDERS_EXT_ID;
 }
 
@@ -199,11 +225,30 @@ impl<'a> arbitrary::Arbitrary<'a> for IndexMap {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Default, serde::Deserialize, serde::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ExtensionList(IndexMap);
+pub struct ExtensionList<T: ExtensionClass> {
+    extensions: IndexMap,
+    #[serde(skip_serializing, default)]
+    ext_class: T,
+}
 
-impl Size for ExtensionList {
+impl<T> From<IndexMap> for ExtensionList<T>
+where
+    T: ExtensionClass + Default,
+{
+    fn from(map: IndexMap) -> Self {
+        Self {
+            extensions: map,
+            ext_class: Default::default(),
+        }
+    }
+}
+
+impl<T> Size for ExtensionList<T>
+where
+    T: ExtensionClass + Default,
+{
     fn tls_serialized_len(&self) -> usize {
         (self.len() as u32).tls_serialized_len()
             + self
@@ -213,7 +258,10 @@ impl Size for ExtensionList {
     }
 }
 
-impl Serialize for ExtensionList {
+impl<T> Serialize for ExtensionList<T>
+where
+    T: ExtensionClass + Default,
+{
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         let len = self
             .iter()
@@ -226,7 +274,10 @@ impl Serialize for ExtensionList {
     }
 }
 
-impl Deserialize for ExtensionList {
+impl<T> Deserialize for ExtensionList<T>
+where
+    T: ExtensionClass + Default,
+{
     fn tls_deserialize<R: Read>(reader: &mut R) -> Result<Self, tls_codec::Error> {
         let len = u32::tls_deserialize(reader)? as usize;
         let reader = &mut ReadWithCount::new(reader);
@@ -240,39 +291,48 @@ impl Deserialize for ExtensionList {
                 )));
             }
         }
-        Ok(ExtensionList(items))
+        Ok(ExtensionList::from(items))
     }
 }
 
-impl From<Vec<Extension>> for ExtensionList {
-    fn from(v: Vec<Extension>) -> Self {
-        Self(v.into_iter().map(|ext| (ext.extension_type, ext)).collect())
-    }
-}
-
-impl<const N: usize, T> TryFrom<[T; N]> for ExtensionList
+impl<T> From<Vec<Extension>> for ExtensionList<T>
 where
-    T: MlsExtension,
+    T: ExtensionClass + Default,
+{
+    fn from(v: Vec<Extension>) -> Self {
+        Self::from(IndexMap::from_iter(
+            v.into_iter().map(|ext| (ext.extension_type, ext)),
+        ))
+    }
+}
+
+impl<const N: usize, E, T> TryFrom<[E; N]> for ExtensionList<T>
+where
+    E: MlsExtension<T>,
+    T: ExtensionClass + Default,
 {
     type Error = ExtensionError;
 
-    fn try_from(a: [T; N]) -> Result<Self, Self::Error> {
+    fn try_from(a: [E; N]) -> Result<Self, Self::Error> {
         a.into_iter()
             .try_fold(IndexMap::default(), |mut acc, x| {
                 let ext = x.to_extension()?;
                 acc.insert(ext.extension_type, ext);
                 Ok(acc)
             })
-            .map(Self)
+            .map(Self::from)
     }
 }
 
-impl<'a> IntoIterator for &'a ExtensionList {
+impl<'a, T> IntoIterator for &'a ExtensionList<T>
+where
+    T: ExtensionClass,
+{
     type Item = &'a Extension;
     type IntoIter = ExtensionListIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        ExtensionListIter(self.0.values())
+        ExtensionListIter(self.extensions.values())
     }
 }
 
@@ -286,35 +346,38 @@ impl<'a> Iterator for ExtensionListIter<'a> {
     }
 }
 
-impl ExtensionList {
-    pub fn new() -> ExtensionList {
+impl<T> ExtensionList<T>
+where
+    T: ExtensionClass + Default,
+{
+    pub fn new() -> ExtensionList<T> {
         Default::default()
     }
 
-    pub fn get_extension<T: MlsExtension>(&self) -> Result<Option<T>, ExtensionError> {
+    pub fn get_extension<E: MlsExtension<T>>(&self) -> Result<Option<E>, ExtensionError> {
         Ok(self
-            .0
-            .get(&T::IDENTIFIER)
-            .map(|ext| T::tls_deserialize(&mut &*ext.extension_data))
+            .extensions
+            .get(&E::IDENTIFIER)
+            .map(|ext| E::tls_deserialize(&mut &*ext.extension_data))
             .transpose()?)
     }
 
     pub fn has_extension(&self, ext_id: ExtensionType) -> bool {
-        self.0.contains_key(&ext_id)
+        self.extensions.contains_key(&ext_id)
     }
 
-    pub fn set_extension<T: MlsExtension>(&mut self, ext: T) -> Result<(), ExtensionError> {
+    pub fn set_extension<E: MlsExtension<T>>(&mut self, ext: E) -> Result<(), ExtensionError> {
         let ext = ext.to_extension()?;
-        self.0.insert(ext.extension_type, ext);
+        self.extensions.insert(ext.extension_type, ext);
         Ok(())
     }
 
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.extensions.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.extensions.is_empty()
     }
 
     pub fn iter(&self) -> ExtensionListIter<'_> {
@@ -322,7 +385,7 @@ impl ExtensionList {
     }
 
     pub fn remove(&mut self, ext_type: ExtensionType) {
-        self.0.shift_remove(&ext_type);
+        self.extensions.shift_remove(&ext_type);
     }
 }
 
@@ -335,14 +398,20 @@ pub(crate) mod test_utils {
         pub(crate) foo: u8,
     }
 
-    impl MlsExtension for TestExtension {
+    impl MlsExtension<LeafNodeExtension> for TestExtension {
+        const IDENTIFIER: crate::extension::ExtensionType = 42;
+    }
+
+    impl MlsExtension<GroupContextExtension> for TestExtension {
         const IDENTIFIER: crate::extension::ExtensionType = 42;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::credential::CREDENTIAL_TYPE_BASIC;
+    use crate::{
+        credential::CREDENTIAL_TYPE_BASIC, signing_identity::test_utils::get_test_signing_identity,
+    };
 
     use super::*;
     use assert_matches::assert_matches;
@@ -350,6 +419,13 @@ mod tests {
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
+
+    #[derive(Debug, Clone, TlsSerialize, TlsSize, TlsDeserialize, PartialEq)]
+    struct TestExt;
+
+    impl MlsExtension<GroupContextExtension> for TestExt {
+        const IDENTIFIER: ExtensionType = 42;
+    }
 
     #[test]
     fn test_key_id_extension() {
@@ -425,13 +501,13 @@ mod tests {
 
         let required_capabilities = RequiredCapabilitiesExt::default();
 
-        let key_id = ApplicationIdExt {
-            identifier: SecureRng::gen(32).unwrap(),
+        let ext_senders = ExternalSendersExt {
+            allowed_senders: vec![],
         };
 
         // Add the extensions to the list
         list.set_extension(required_capabilities.clone()).unwrap();
-        list.set_extension(key_id.clone()).unwrap();
+        list.set_extension(ext_senders.clone()).unwrap();
 
         assert_eq!(list.len(), 2);
 
@@ -441,31 +517,33 @@ mod tests {
         );
 
         assert_eq!(
-            list.get_extension::<ApplicationIdExt>().unwrap(),
-            Some(key_id)
+            list.get_extension::<ExternalSendersExt>().unwrap(),
+            Some(ext_senders)
         );
 
-        assert_eq!(list.get_extension::<RatchetTreeExt>().unwrap(), None);
+        assert_eq!(list.get_extension::<TestExt>().unwrap(), None);
 
         // Overwrite the extension in the list
-        let key_id = ApplicationIdExt {
-            identifier: SecureRng::gen(32).unwrap(),
+        let ext_senders = ExternalSendersExt {
+            allowed_senders: vec![
+                get_test_signing_identity(CipherSuite::Curve25519Aes128, vec![]).0,
+            ],
         };
 
-        list.set_extension(key_id.clone()).unwrap();
+        list.set_extension(ext_senders.clone()).unwrap();
         assert_eq!(list.len(), 2);
 
         assert_eq!(
-            list.get_extension::<ApplicationIdExt>().unwrap(),
-            Some(key_id.clone())
+            list.get_extension::<ExternalSendersExt>().unwrap(),
+            Some(ext_senders.clone())
         );
 
         assert_eq!(
-            list.get_extension::<ApplicationIdExt>().unwrap(),
-            Some(key_id)
+            list.get_extension::<ExternalSendersExt>().unwrap(),
+            Some(ext_senders)
         );
 
-        assert_eq!(list.get_extension::<RatchetTreeExt>().unwrap(), None);
+        assert_eq!(list.get_extension::<TestExt>().unwrap(), None);
     }
 
     #[test]
@@ -491,8 +569,8 @@ mod tests {
             .unwrap();
 
         extensions
-            .set_extension(ApplicationIdExt {
-                identifier: SecureRng::gen(32).unwrap(),
+            .set_extension(ExternalSendersExt {
+                allowed_senders: vec![],
             })
             .unwrap();
 
@@ -506,14 +584,15 @@ mod tests {
     fn extension_list_is_serialized_like_a_sequence_of_extensions() {
         let extension_vec = vec![
             RequiredCapabilitiesExt::default().to_extension().unwrap(),
-            ApplicationIdExt {
-                identifier: SecureRng::gen(32).unwrap(),
+            ExternalSendersExt {
+                allowed_senders: vec![],
             }
             .to_extension()
             .unwrap(),
         ];
 
-        let extension_list = ExtensionList::from(extension_vec.clone());
+        let extension_list: ExtensionList<GroupContextExtension> =
+            ExtensionList::from(extension_vec.clone());
 
         assert_eq!(
             tls_codec::TlsSliceU32(&extension_vec)
@@ -535,7 +614,7 @@ mod tests {
             .unwrap();
 
         assert_matches!(
-            ExtensionList::tls_deserialize(&mut &*serialized_extensions),
+            ExtensionList::<GroupContextExtension>::tls_deserialize(&mut &*serialized_extensions),
             Err(tls_codec::Error::DecodingError(_))
         );
     }

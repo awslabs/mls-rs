@@ -10,7 +10,8 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
     - name: Setup SSH Keys and known_hosts
       run: |
         ssh-agent -a $SSH_AUTH_SOCK > /dev/null

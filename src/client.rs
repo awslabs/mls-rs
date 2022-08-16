@@ -1,7 +1,7 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::ClientConfig;
 use crate::credential::CredentialError;
-use crate::extension::{ExtensionError, ExtensionList};
+use crate::extension::{ExtensionError, ExtensionList, GroupContextExtension};
 use crate::group::framing::{
     Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender, WireFormat,
 };
@@ -102,7 +102,7 @@ where
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         group_id: Vec<u8>,
-        group_context_extensions: ExtensionList,
+        group_context_extensions: ExtensionList<GroupContextExtension>,
     ) -> Result<Group<C>, ClientError> {
         Group::new(
             self.config.clone(),
@@ -118,7 +118,7 @@ where
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
-        group_context_extensions: ExtensionList,
+        group_context_extensions: ExtensionList<GroupContextExtension>,
     ) -> Result<Group<C>, ClientError> {
         let group_id = SecureRng::gen(cipher_suite.hash_function().digest_size())?;
 

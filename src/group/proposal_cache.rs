@@ -26,7 +26,7 @@ pub struct ProposalSetEffects {
     pub adds: Vec<KeyPackage>,
     pub updates: Vec<(LeafIndex, LeafNode)>,
     pub removes: Vec<LeafIndex>,
-    pub group_context_ext: Option<ExtensionList>,
+    pub group_context_ext: Option<ExtensionList<GroupContextExtension>>,
     pub psks: Vec<PreSharedKeyID>,
     pub reinit: Option<ReInit>,
     pub external_init: Option<(LeafIndex, ExternalInit)>,
@@ -201,7 +201,7 @@ impl ProposalCache {
         &self,
         sender: Sender,
         additional_proposals: Vec<Proposal>,
-        group_extensions: &ExtensionList,
+        group_extensions: &ExtensionList<GroupContextExtension>,
         credential_validator: C,
         public_tree: &TreeKemPublic,
         external_leaf: Option<&LeafNode>,
@@ -298,7 +298,7 @@ impl ProposalCache {
         receiver: Option<LeafIndex>,
         proposal_list: Vec<ProposalOrRef>,
         external_leaf: Option<&LeafNode>,
-        group_extensions: &ExtensionList,
+        group_extensions: &ExtensionList<GroupContextExtension>,
         credential_validator: C,
         public_tree: &TreeKemPublic,
         user_filter: F,
@@ -403,9 +403,7 @@ mod tests {
             test_utils::get_test_certificate_credential, CREDENTIAL_TYPE_BASIC,
             CREDENTIAL_TYPE_X509,
         },
-        extension::{
-            test_utils::TestExtension, ExternalSendersExt, MlsExtension, RequiredCapabilitiesExt,
-        },
+        extension::{test_utils::TestExtension, ExternalSendersExt, RequiredCapabilitiesExt},
         group::test_utils::{test_group, TEST_GROUP},
         key_package::{
             test_utils::{test_key_package, test_key_package_custom},
@@ -2402,7 +2400,7 @@ mod tests {
         );
     }
 
-    fn make_extension_list(foo: u8) -> ExtensionList {
+    fn make_extension_list(foo: u8) -> ExtensionList<GroupContextExtension> {
         [TestExtension { foo }].try_into().unwrap()
     }
 
@@ -2416,7 +2414,7 @@ mod tests {
                 TEST_CIPHER_SUITE,
                 signing_identity,
                 Capabilities {
-                    extensions: vec![TestExtension::IDENTIFIER],
+                    extensions: vec![42],
                     ..Capabilities::default()
                 },
                 ExtensionList::default(),
@@ -2451,7 +2449,7 @@ mod tests {
         );
     }
 
-    fn make_external_senders_extension() -> ExtensionList {
+    fn make_external_senders_extension() -> ExtensionList<GroupContextExtension> {
         [ExternalSendersExt::new(vec![
             get_test_signing_identity(TEST_CIPHER_SUITE, b"alice".to_vec()).0,
         ])]
@@ -2881,7 +2879,7 @@ mod tests {
         assert_matches!(
             res,
             Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::UnsupportedGroupExtension(TestExtension::IDENTIFIER)
+                ProposalFilterError::UnsupportedGroupExtension(42)
             ))
         );
     }
@@ -2897,7 +2895,7 @@ mod tests {
         assert_matches!(
             res,
             Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::UnsupportedGroupExtension(TestExtension::IDENTIFIER)
+                ProposalFilterError::UnsupportedGroupExtension(42)
             ))
         );
     }
@@ -2930,7 +2928,9 @@ mod tests {
             }
 
             fn filter(&self, mut proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
-                proposals.retain_by_type::<ExtensionList, _, Infallible>(|_| Ok(false))?;
+                proposals.retain_by_type::<ExtensionList<GroupContextExtension>, _, Infallible>(
+                    |_| Ok(false),
+                )?;
                 Ok(proposals)
             }
         }

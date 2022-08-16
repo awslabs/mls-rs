@@ -1,5 +1,5 @@
 use crate::{
-    extension::ExtensionList,
+    extension::{ExtensionList, GroupContextExtension},
     group::{
         AddProposal, BorrowedProposal, ExternalInit, PreSharedKey, Proposal, ProposalOrRef,
         ProposalRef, ProposalType, ReInit, RemoveProposal, Sender, UpdateProposal,
@@ -15,7 +15,7 @@ pub struct ProposalBundle {
     psks: Vec<ProposalInfo<PreSharedKey>>,
     reinitializations: Vec<ProposalInfo<ReInit>>,
     external_initializations: Vec<ProposalInfo<ExternalInit>>,
-    group_context_extensions: Vec<ProposalInfo<ExtensionList>>,
+    group_context_extensions: Vec<ProposalInfo<ExtensionList<GroupContextExtension>>>,
 }
 
 impl ProposalBundle {
@@ -162,7 +162,9 @@ impl ProposalBundle {
         })
     }
 
-    pub fn group_context_extensions_proposal(&self) -> Option<&ProposalInfo<ExtensionList>> {
+    pub fn group_context_extensions_proposal(
+        &self,
+    ) -> Option<&ProposalInfo<ExtensionList<GroupContextExtension>>> {
         self.group_context_extensions.first()
     }
 
@@ -289,4 +291,8 @@ impl_proposable!(RemoveProposal, removals);
 impl_proposable!(PreSharedKey, psks);
 impl_proposable!(ReInit, reinitializations);
 impl_proposable!(ExternalInit, external_initializations);
-impl_proposable!(ExtensionList, group_context_extensions);
+
+impl_proposable!(
+    ExtensionList<GroupContextExtension>,
+    group_context_extensions
+);

@@ -1,7 +1,7 @@
 use crate::cipher_suite::CipherSuite;
 use crate::credential::CredentialError;
-use crate::extension::RequiredCapabilitiesExt;
 use crate::extension::{ExtensionError, ExtensionList, ExtensionType};
+use crate::extension::{KeyPackageExtension, RequiredCapabilitiesExt};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::HashReference;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
@@ -47,7 +47,7 @@ pub struct KeyPackage {
     #[serde_as(as = "VecAsBase64")]
     pub hpke_init_key: HpkePublicKey,
     pub leaf_node: LeafNode,
-    pub extensions: ExtensionList,
+    pub extensions: ExtensionList<KeyPackageExtension>,
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
     pub signature: Vec<u8>,
@@ -93,7 +93,7 @@ pub struct KeyPackageData<'a> {
     pub hpke_init_key: &'a HpkePublicKey,
     pub leaf_node: &'a LeafNode,
     #[tls_codec(with = "crate::tls::DefRef")]
-    pub extensions: &'a ExtensionList,
+    pub extensions: &'a ExtensionList<KeyPackageExtension>,
 }
 
 impl KeyPackage {

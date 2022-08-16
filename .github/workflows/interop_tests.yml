@@ -10,7 +10,8 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
       with:
         path: mls
     - name: Setup SSH Keys and known_hosts
@@ -18,7 +19,7 @@ jobs:
         ssh-agent -a $SSH_AUTH_SOCK > /dev/null
         ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
     - name: Start test MLS client
-      working-directory: mls/test_harness_integration 
+      working-directory: test_harness_integration 
       run: cargo run &
     - name: Clone test runner
       uses: actions/checkout@master

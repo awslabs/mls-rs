@@ -4,7 +4,7 @@ use crate::{
     credential::{
         Credential, CredentialError, CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509,
     },
-    extension::{ExtensionList, ExtensionType},
+    extension::{ExtensionList, ExtensionType, KeyPackageExtension, LeafNodeExtension},
     group::{framing::Sender, CommitOptions, ControlEncryptionMode, GroupContext},
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
     keychain::{InMemoryKeychain, Keychain},
@@ -83,8 +83,8 @@ pub trait ClientConfig {
     fn secret_store(&self) -> Self::PskStore;
     fn epoch_repo(&self) -> Self::EpochRepository;
     fn credential_validator(&self) -> Self::CredentialValidator;
-    fn key_package_extensions(&self) -> ExtensionList;
-    fn leaf_node_extensions(&self) -> ExtensionList;
+    fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension>;
+    fn leaf_node_extensions(&self) -> ExtensionList<LeafNodeExtension>;
     fn lifetime(&self) -> Lifetime;
 
     fn capabilities(&self) -> Capabilities {
@@ -278,8 +278,8 @@ pub struct InMemoryClientConfig {
     pub(crate) protocol_versions: Vec<ProtocolVersion>,
     pub(crate) cipher_suites: Vec<CipherSuite>,
     epochs: InMemoryEpochRepository,
-    leaf_node_extensions: ExtensionList,
-    key_package_extensions: ExtensionList,
+    leaf_node_extensions: ExtensionList<LeafNodeExtension>,
+    key_package_extensions: ExtensionList<KeyPackageExtension>,
     lifetime_duration: u64,
     credential_types: Vec<CredentialType>,
 }
@@ -369,12 +369,18 @@ impl InMemoryClientConfig {
         self
     }
 
-    pub fn with_key_package_extensions(mut self, extensions: ExtensionList) -> Self {
+    pub fn with_key_package_extensions(
+        mut self,
+        extensions: ExtensionList<KeyPackageExtension>,
+    ) -> Self {
         self.key_package_extensions = extensions;
         self
     }
 
-    pub fn with_leaf_node_extensions(mut self, extensions: ExtensionList) -> Self {
+    pub fn with_leaf_node_extensions(
+        mut self,
+        extensions: ExtensionList<LeafNodeExtension>,
+    ) -> Self {
         self.leaf_node_extensions = extensions;
         self
     }
@@ -478,11 +484,11 @@ impl ClientConfig for InMemoryClientConfig {
         PassthroughCredentialValidator::new()
     }
 
-    fn key_package_extensions(&self) -> ExtensionList {
+    fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension> {
         self.key_package_extensions.clone()
     }
 
-    fn leaf_node_extensions(&self) -> ExtensionList {
+    fn leaf_node_extensions(&self) -> ExtensionList<LeafNodeExtension> {
         self.leaf_node_extensions.clone()
     }
 

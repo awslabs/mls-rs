@@ -1,6 +1,6 @@
 use tls_codec::Serialize;
 
-use crate::extension::ExtensionList;
+use crate::extension::{ExtensionList, LeafNodeExtension};
 use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
 use crate::GroupContext;
@@ -49,7 +49,7 @@ impl<'a> TreeKem<'a> {
         excluding: &[LeafIndex],
         signer: &S,
         update_capabilities: Option<Capabilities>,
-        update_extensions: Option<ExtensionList>,
+        update_extensions: Option<ExtensionList<LeafNodeExtension>>,
         #[cfg(test)] commit_modifiers: &CommitModifiers<S>,
     ) -> Result<EncapGeneration, RatchetTreeError> {
         let num_leaves = self.tree_kem_public.nodes.total_leaf_count();
@@ -306,7 +306,7 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
-        extension::{test_utils::TestExtension, ExtensionList},
+        extension::{test_utils::TestExtension, ExtensionList, LeafNodeExtension},
         group::test_utils::get_test_group_context,
         tree_kem::{
             leaf_node::test_utils::get_basic_test_node_sig_key, node::LeafIndex, Capabilities,
@@ -324,7 +324,7 @@ mod tests {
         update_path: &UpdatePath,
         index: LeafIndex,
         capabilities: Option<Capabilities>,
-        extensions: Option<ExtensionList>,
+        extensions: Option<ExtensionList<LeafNodeExtension>>,
     ) {
         // Make sure the update path is based on the direct path of the sender
         let direct_path = tree.nodes.direct_path(index).unwrap();
@@ -399,7 +399,7 @@ mod tests {
         cipher_suite: CipherSuite,
         size: usize,
         capabilities: Option<Capabilities>,
-        extensions: Option<ExtensionList>,
+        extensions: Option<ExtensionList<LeafNodeExtension>>,
     ) {
         // Generate signing keys and key package generations, and private keys for multiple
         // participants in order to set up state

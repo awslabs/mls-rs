@@ -8,7 +8,7 @@ use criterion::{
 
 use aws_mls::cipher_suite::CipherSuite;
 
-use aws_mls::extension::ExtensionList;
+use aws_mls::extension::{ExtensionList, LeafNodeExtension};
 
 use aws_mls::tree_kem::Capabilities;
 
@@ -37,7 +37,7 @@ fn bench_decap(
     map: HashMap<usize, TestCase>,
     added_leaves: &[LeafIndex],
     capabilities: Option<Capabilities>,
-    extensions: Option<ExtensionList>,
+    extensions: Option<ExtensionList<LeafNodeExtension>>,
 ) {
     for (key, mut value) in map {
         // Perform the encap function

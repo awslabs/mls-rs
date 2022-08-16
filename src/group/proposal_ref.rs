@@ -78,7 +78,7 @@ mod test {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    fn get_test_extension_list() -> ExtensionList {
+    fn get_test_extension_list() -> ExtensionList<GroupContextExtension> {
         let test_extension = RequiredCapabilitiesExt {
             extensions: vec![42],
             proposals: Default::default(),

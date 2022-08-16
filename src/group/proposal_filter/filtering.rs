@@ -1,7 +1,10 @@
 use crate::{
     cipher_suite::CipherSuite,
     client_config::CredentialValidator,
-    extension::{is_default_extension, ExtensionList, ExternalSendersExt, RequiredCapabilitiesExt},
+    extension::{
+        is_default_extension, ExtensionList, ExternalSendersExt, GroupContextExtension,
+        RequiredCapabilitiesExt,
+    },
     group::{
         proposal_filter::{Proposable, ProposalBundle, ProposalFilterError, ProposalInfo},
         AddProposal, BorrowedProposal, ExternalInit, JustPreSharedKeyID, KeyScheduleKdf,
@@ -49,7 +52,7 @@ pub(crate) struct ProposalApplier<'a, C> {
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     group_id: &'a [u8],
-    original_group_extensions: &'a ExtensionList,
+    original_group_extensions: &'a ExtensionList<GroupContextExtension>,
     original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
     external_leaf: Option<&'a LeafNode>,
     credential_validator: C,
@@ -65,7 +68,7 @@ where
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         group_id: &'a [u8],
-        original_group_extensions: &'a ExtensionList,
+        original_group_extensions: &'a ExtensionList<GroupContextExtension>,
         original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
         external_leaf: Option<&'a LeafNode>,
         credential_validator: C,
@@ -217,7 +220,7 @@ where
         &self,
         strategy: F,
         mut state: ProposalState,
-        group_context_extensions_proposal: ProposalInfo<ExtensionList>,
+        group_context_extensions_proposal: ProposalInfo<ExtensionList<GroupContextExtension>>,
         new_required_capabilities: Option<RequiredCapabilitiesExt>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
@@ -292,7 +295,7 @@ where
         &self,
         strategy: F,
         state: ProposalState,
-        group_extensions_in_use: &ExtensionList,
+        group_extensions_in_use: &ExtensionList<GroupContextExtension>,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
@@ -383,7 +386,7 @@ where
         &self,
         strategy: F,
         state: ProposalState,
-        group_extensions_in_use: &ExtensionList,
+        group_extensions_in_use: &ExtensionList<GroupContextExtension>,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
@@ -410,7 +413,7 @@ where
         &self,
         strategy: F,
         mut state: ProposalState,
-        group_extensions_in_use: &ExtensionList,
+        group_extensions_in_use: &ExtensionList<GroupContextExtension>,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
@@ -446,7 +449,7 @@ where
         &self,
         strategy: F,
         mut state: ProposalState,
-        group_extensions_in_use: &ExtensionList,
+        group_extensions_in_use: &ExtensionList<GroupContextExtension>,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
@@ -481,7 +484,7 @@ where
 
 fn leaf_supports_extensions(
     leaf: &LeafNode,
-    extensions: &ExtensionList,
+    extensions: &ExtensionList<GroupContextExtension>,
 ) -> Result<(), ProposalFilterError> {
     extensions
         .iter()
@@ -638,7 +641,7 @@ where
     F: FilterStrategy,
     C: CredentialValidator,
 {
-    proposals.retain_by_type::<ExtensionList, _, _>(|p| {
+    proposals.retain_by_type::<ExtensionList<GroupContextExtension>, _, _>(|p| {
         let res = p
             .proposal
             .get_extension::<ExternalSendersExt>()
@@ -666,7 +669,7 @@ where
 {
     let mut found = false;
 
-    proposals.retain_by_type::<ExtensionList, _, _>(|p| {
+    proposals.retain_by_type::<ExtensionList<GroupContextExtension>, _, _>(|p| {
         apply_strategy(
             &strategy,
             p,

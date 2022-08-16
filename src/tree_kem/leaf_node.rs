@@ -1,4 +1,5 @@
 use super::{parent_hash::ParentHash, Capabilities, Lifetime};
+use crate::extension::LeafNodeExtension;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::{
     cipher_suite::CipherSuite,
@@ -81,7 +82,7 @@ pub struct LeafNode {
     pub signing_identity: SigningIdentity,
     pub capabilities: Capabilities,
     pub leaf_node_source: LeafNodeSource,
-    pub extensions: ExtensionList,
+    pub extensions: ExtensionList<LeafNodeExtension>,
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
     pub signature: Vec<u8>,
@@ -115,7 +116,7 @@ impl LeafNode {
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
         capabilities: Capabilities,
-        extensions: ExtensionList,
+        extensions: ExtensionList<LeafNodeExtension>,
         signer: &S,
         lifetime: Lifetime,
         credential_validator: &C,
@@ -152,7 +153,7 @@ impl LeafNode {
         key_pair: (PublicKey, SecretKey),
         group_id: &[u8],
         capabilities: Option<Capabilities>,
-        extensions: Option<ExtensionList>,
+        extensions: Option<ExtensionList<LeafNodeExtension>>,
         leaf_node_source: LeafNodeSource,
         signer: &S,
     ) -> Result<HpkeSecretKey, LeafNodeError>
@@ -182,7 +183,7 @@ impl LeafNode {
         cipher_suite: CipherSuite,
         group_id: &[u8],
         capabilities: Option<Capabilities>,
-        extensions: Option<ExtensionList>,
+        extensions: Option<ExtensionList<LeafNodeExtension>>,
         signer: &S,
     ) -> Result<HpkeSecretKey, LeafNodeError>
     where
@@ -205,7 +206,7 @@ impl LeafNode {
         cipher_suite: CipherSuite,
         group_id: &[u8],
         capabilities: Option<Capabilities>,
-        extensions: Option<ExtensionList>,
+        extensions: Option<ExtensionList<LeafNodeExtension>>,
         signer: &S,
         mut parent_hash: impl FnMut(
             HpkePublicKey,
@@ -237,7 +238,7 @@ struct LeafNodeTBS<'a> {
     signing_identity: &'a SigningIdentity,
     capabilities: &'a Capabilities,
     leaf_node_source: &'a LeafNodeSource,
-    extensions: &'a ExtensionList,
+    extensions: &'a ExtensionList<LeafNodeExtension>,
     group_id: Option<&'a [u8]>,
 }
 
@@ -314,7 +315,7 @@ pub mod test_utils {
         signing_identity: SigningIdentity,
         secret: &SecretKey,
         capabilities: Option<Capabilities>,
-        extensions: Option<ExtensionList>,
+        extensions: Option<ExtensionList<LeafNodeExtension>>,
     ) -> (LeafNode, HpkeSecretKey) {
         get_test_node_with_lifetime(
             cipher_suite,
@@ -331,7 +332,7 @@ pub mod test_utils {
         signing_identity: SigningIdentity,
         secret: &SecretKey,
         capabilities: Option<Capabilities>,
-        extensions: Option<ExtensionList>,
+        extensions: Option<ExtensionList<LeafNodeExtension>>,
         lifetime: Lifetime,
     ) -> (LeafNode, HpkeSecretKey) {
         LeafNode::generate(
@@ -370,7 +371,7 @@ pub mod test_utils {
         .unwrap()
     }
 
-    pub fn get_test_extensions() -> ExtensionList {
+    pub fn get_test_extensions() -> ExtensionList<LeafNodeExtension> {
         let mut extension_list = ExtensionList::new();
 
         extension_list
