@@ -372,7 +372,7 @@ mod tests {
 
         let proposal = bob
             .external_add_proposal(
-                alice_group.group.group_info_message().unwrap(),
+                alice_group.group.group_info_message(true).unwrap(),
                 Some(&alice_group.group.export_tree().unwrap()),
                 vec![],
             )
@@ -416,7 +416,7 @@ mod tests {
             .join_with_custom_config("bob", |c| c.with_psk(psk_id.clone(), psk.clone()))
             .unwrap();
 
-        let group_info_msg = alice_group.group.group_info_message().unwrap();
+        let group_info_msg = alice_group.group.group_info_message(true).unwrap();
 
         let charlie = get_basic_config(TEST_CIPHER_SUITE, "charlie")
             .with_psk(psk_id.clone(), psk)
@@ -515,7 +515,7 @@ mod tests {
 
         bob_group.group.process_pending_commit().unwrap();
 
-        let group_info_msg = bob_group.group.group_info_message().unwrap();
+        let group_info_msg = bob_group.group.group_info_message(true).unwrap();
 
         let carol = get_basic_config(TEST_CIPHER_SUITE, "carol").build_client();
 

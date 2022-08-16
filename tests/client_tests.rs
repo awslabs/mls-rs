@@ -740,7 +740,7 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
         .iter()
         .fold(vec![creator_group], |mut groups, client| {
             let existing_group = groups.choose_mut(&mut rng).unwrap();
-            let group_info = existing_group.group_info_message().unwrap();
+            let group_info = existing_group.group_info_message(true).unwrap();
 
             let (new_group, commit) = client
                 .commit_external(

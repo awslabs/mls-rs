@@ -1809,7 +1809,10 @@ where
     }
 
     /// The returned `GroupInfo` is suitable for one external commit for the current epoch.
-    pub fn group_info_message(&self) -> Result<MLSMessage, GroupError> {
+    pub fn group_info_message(
+        &self,
+        allow_external_commit: bool,
+    ) -> Result<MLSMessage, GroupError> {
         let signer = self.signer()?;
 
         let mut extensions = ExtensionList::new();
@@ -1822,12 +1825,13 @@ where
             })?;
         }
 
-        //TODO: This should be set via a preference
-        extensions.set_extension(ExternalPubExt {
-            external_pub: self
-                .key_schedule
-                .get_external_public_key(self.state.cipher_suite())?,
-        })?;
+        if allow_external_commit {
+            extensions.set_extension(ExternalPubExt {
+                external_pub: self
+                    .key_schedule
+                    .get_external_public_key(self.state.cipher_suite())?,
+            })?;
+        }
 
         let mut info = GroupInfo {
             group_context: self.context().clone().into(),
@@ -3147,18 +3151,14 @@ mod tests {
         let cipher_suite = CipherSuite::P256Aes128;
         let group = test_group(protocol_version, cipher_suite);
 
-        let mut info = group
+        let info = group
             .group
-            .group_info_message()
+            .group_info_message(false)
             .unwrap()
             .into_group_info()
             .unwrap();
 
-        info.extensions = ExtensionList::new();
-        info.sign(&group.group.signer().unwrap(), &()).unwrap();
-
         let info_msg = MLSMessage::new(protocol_version, MLSMessagePayload::GroupInfo(info));
-
         let res = Group::new_external(group.group.config, info_msg, None, None, vec![], vec![]);
 
         assert_matches!(res, Err(GroupError::MissingExternalPubExtension));

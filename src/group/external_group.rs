@@ -308,7 +308,7 @@ mod tests {
 
         ExternalGroup::join(
             config,
-            group.group.group_info_message().unwrap(),
+            group.group.group_info_message(true).unwrap(),
             Some(&public_tree),
         )
         .unwrap()
@@ -440,7 +440,7 @@ mod tests {
             .clear_cipher_suites()
             .with_cipher_suite(CipherSuite::Curve25519ChaCha20);
 
-        let res = ExternalGroup::join(config, alice.group.group_info_message().unwrap(), None);
+        let res = ExternalGroup::join(config, alice.group.group_info_message(true).unwrap(), None);
 
         assert_matches!(
             res,
@@ -456,7 +456,7 @@ mod tests {
 
         let config = InMemoryExternalClientConfig::default();
 
-        let mut group_info = alice.group.group_info_message().unwrap();
+        let mut group_info = alice.group.group_info_message(true).unwrap();
         group_info.version = MaybeProtocolVersion::from_raw_value(64);
 
         let res = ExternalGroup::join(config, group_info, None);
