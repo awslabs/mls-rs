@@ -1,7 +1,7 @@
 use crate::{
     client_config::{CredentialValidator, ProposalFilterInit},
     key_package::KeyPackage,
-    psk::{JustPreSharedKeyID, PreSharedKeyID},
+    psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
     tree_kem::{
         leaf_node::LeafNode, leaf_node_validator::LeafNodeValidator, node::LeafIndex,
         path_secret::PathSecret, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathValidator,
@@ -177,6 +177,7 @@ where
 {
     type ProposalFilter: ProposalFilter;
     type CredentialValidator: CredentialValidator;
+    type ExternalPskIdValidator: ExternalPskIdValidator;
 
     fn process_incoming_message(
         &mut self,
@@ -270,6 +271,7 @@ where
             &group_state.context.extensions,
             self.credential_validator(),
             &group_state.public_tree,
+            self.external_psk_id_validator(),
             self.proposal_filter(ProposalFilterInit::new(
                 &group_state.public_tree,
                 &group_state.context,
@@ -352,6 +354,7 @@ where
     fn self_index(&self) -> Option<LeafIndex>;
     fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter;
     fn credential_validator(&self) -> Self::CredentialValidator;
+    fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator;
     fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool;
 
     fn check_metadata(&self, message: &MLSMessage) -> Result<(), GroupError> {

@@ -1,8 +1,8 @@
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::{
     cipher_suite::CipherSuite,
     client_config::PskStore,
     group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError},
+    serde_utils::vec_u8_as_base64::VecAsBase64,
     EpochRepository,
 };
 use ferriscrypt::{
@@ -10,6 +10,7 @@ use ferriscrypt::{
     rand::{SecureRng, SecureRngError},
 };
 use serde_with::serde_as;
+use std::convert::Infallible;
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -305,6 +306,34 @@ pub enum PskSecretError {
 impl From<KdfError> for PskSecretError {
     fn from(e: KdfError) -> Self {
         PskSecretError::KdfError(e.into())
+    }
+}
+
+pub trait ExternalPskIdValidator {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn validate(&self, psk_id: &ExternalPskId) -> Result<(), Self::Error>;
+}
+
+impl<F> ExternalPskIdValidator for &F
+where
+    F: ExternalPskIdValidator + ?Sized,
+{
+    type Error = F::Error;
+
+    fn validate(&self, psk_id: &ExternalPskId) -> Result<(), Self::Error> {
+        (**self).validate(psk_id)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PassThroughPskIdValidator;
+
+impl ExternalPskIdValidator for PassThroughPskIdValidator {
+    type Error = Infallible;
+
+    fn validate(&self, _: &ExternalPskId) -> Result<(), Self::Error> {
+        Ok(())
     }
 }
 

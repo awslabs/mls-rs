@@ -16,7 +16,9 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroizing;
 
 use crate::cipher_suite::{CipherSuite, HpkeCiphertext, MaybeCipherSuite};
-use crate::client_config::{ClientConfig, CredentialValidator, ProposalFilterInit};
+use crate::client_config::{
+    ClientConfig, CredentialValidator, ProposalFilterInit, PskStore, PskStoreIdValidator,
+};
 use crate::credential::CredentialError;
 use crate::extension::{
     ExtensionError, ExtensionList, ExternalPubExt, ExternalSendersExt, GroupContextExtension,
@@ -30,8 +32,8 @@ use crate::key_package::{
 use crate::keychain::Keychain;
 use crate::protocol_version::MaybeProtocolVersion;
 use crate::psk::{
-    ExternalPskId, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
-    PskSecretError, ResumptionPSKUsage, ResumptionPsk,
+    ExternalPskId, ExternalPskIdValidator, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk,
+    PskGroupId, PskNonce, PskSecretError, ResumptionPSKUsage, ResumptionPsk,
 };
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::{Signable, SignatureError, Signer};
@@ -937,6 +939,7 @@ where
             self.config.credential_validator(),
             &self.state.public_tree,
             external_leaf,
+            self.config.secret_store().into_external_id_validator(),
             self.config.proposal_filter(ProposalFilterInit::new(
                 &self.state.public_tree,
                 self.context(),
@@ -2012,7 +2015,7 @@ fn commit_sender(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn proposal_effects<C, F>(
+fn proposal_effects<C, F, P>(
     commit_receiver: Option<LeafIndex>,
     proposals: &ProposalCache,
     commit: &Commit,
@@ -2020,11 +2023,13 @@ fn proposal_effects<C, F>(
     group_extensions: &ExtensionList<GroupContextExtension>,
     credential_validator: C,
     public_tree: &TreeKemPublic,
+    external_psk_id_validator: P,
     user_filter: F,
 ) -> Result<ProposalSetEffects, ProposalCacheError>
 where
     C: CredentialValidator,
     F: ProposalFilter,
+    P: ExternalPskIdValidator,
 {
     proposals.resolve_for_commit(
         sender.clone(),
@@ -2034,6 +2039,7 @@ where
         group_extensions,
         credential_validator,
         public_tree,
+        external_psk_id_validator,
         user_filter,
     )
 }
@@ -2105,6 +2111,7 @@ where
 {
     type ProposalFilter = C::ProposalFilter;
     type CredentialValidator = C::CredentialValidator;
+    type ExternalPskIdValidator = PskStoreIdValidator<C::PskStore>;
 
     fn self_index(&self) -> Option<LeafIndex> {
         Some(self.private_tree.self_index)
@@ -2263,6 +2270,10 @@ where
 
     fn credential_validator(&self) -> Self::CredentialValidator {
         self.config.credential_validator()
+    }
+
+    fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator {
+        self.config.secret_store().into_external_id_validator()
     }
 
     fn group_state(&self) -> &GroupState {

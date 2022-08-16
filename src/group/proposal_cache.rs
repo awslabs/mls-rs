@@ -4,7 +4,7 @@ use crate::{
         FailInvalidProposal, IgnoreInvalidByRefProposal, ProposalApplier, ProposalBundle,
         ProposalFilter, ProposalFilterError, ProposalInfo, ProposalState,
     },
-    psk::PreSharedKeyID,
+    psk::ExternalPskIdValidator,
     tree_kem::leaf_node::LeafNode,
 };
 
@@ -197,7 +197,7 @@ impl ProposalCache {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn prepare_commit<C, F>(
+    pub fn prepare_commit<C, F, P>(
         &self,
         sender: Sender,
         additional_proposals: Vec<Proposal>,
@@ -205,11 +205,13 @@ impl ProposalCache {
         credential_validator: C,
         public_tree: &TreeKemPublic,
         external_leaf: Option<&LeafNode>,
+        external_psk_id_validator: P,
         user_filter: F,
     ) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), ProposalCacheError>
     where
         C: CredentialValidator,
         F: ProposalFilter,
+        P: ExternalPskIdValidator,
     {
         let proposals = self
             .proposals
@@ -251,6 +253,7 @@ impl ProposalCache {
             required_capabilities.as_ref(),
             external_leaf,
             &credential_validator,
+            external_psk_id_validator,
         );
 
         let ProposalState {
@@ -292,7 +295,7 @@ impl ProposalCache {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn resolve_for_commit<C, F>(
+    pub fn resolve_for_commit<C, F, P>(
         &self,
         sender: Sender,
         receiver: Option<LeafIndex>,
@@ -301,11 +304,13 @@ impl ProposalCache {
         group_extensions: &ExtensionList<GroupContextExtension>,
         credential_validator: C,
         public_tree: &TreeKemPublic,
+        external_psk_id_validator: P,
         user_filter: F,
     ) -> Result<ProposalSetEffects, ProposalCacheError>
     where
         C: CredentialValidator,
         F: ProposalFilter,
+        P: ExternalPskIdValidator,
     {
         let proposals = proposal_list.into_iter().try_fold(
             ProposalBundle::default(),
@@ -338,6 +343,7 @@ impl ProposalCache {
             required_capabilities.as_ref(),
             external_leaf,
             &credential_validator,
+            external_psk_id_validator,
         );
 
         let ProposalState {
@@ -409,6 +415,7 @@ mod tests {
             test_utils::{test_key_package, test_key_package_custom},
             KeyPackageGenerator,
         },
+        psk::PassThroughPskIdValidator,
         signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{
             leaf_node::{
@@ -635,6 +642,7 @@ mod tests {
                 PassthroughCredentialValidator::new(),
                 &tree,
                 None,
+                PassThroughPskIdValidator,
                 pass_through_filter(),
             )
             .unwrap();
@@ -675,6 +683,7 @@ mod tests {
                 PassthroughCredentialValidator::new(),
                 &tree,
                 None,
+                PassThroughPskIdValidator,
                 pass_through_filter(),
             )
             .unwrap();
@@ -723,6 +732,7 @@ mod tests {
             PassthroughCredentialValidator::new(),
             &tree,
             None,
+            PassThroughPskIdValidator,
             pass_through_filter(),
         );
 
@@ -761,6 +771,7 @@ mod tests {
                 PassthroughCredentialValidator::new(),
                 &tree,
                 None,
+                PassThroughPskIdValidator,
                 pass_through_filter(),
             )
             .unwrap();
@@ -790,6 +801,7 @@ mod tests {
                 PassthroughCredentialValidator::new(),
                 &tree,
                 None,
+                PassThroughPskIdValidator,
                 pass_through_filter(),
             )
             .unwrap();
@@ -836,6 +848,7 @@ mod tests {
                 PassthroughCredentialValidator::new(),
                 &tree,
                 None,
+                PassThroughPskIdValidator,
                 pass_through_filter(),
             )
             .unwrap();
@@ -891,6 +904,7 @@ mod tests {
                 &credential_validator,
                 &tree,
                 None,
+                PassThroughPskIdValidator,
                 pass_through_filter(),
             )
             .unwrap();
@@ -904,6 +918,7 @@ mod tests {
                 &ExtensionList::new(),
                 &credential_validator,
                 &tree,
+                PassThroughPskIdValidator,
                 pass_through_filter(),
             )
             .unwrap();
@@ -930,6 +945,7 @@ mod tests {
             PassthroughCredentialValidator::new(),
             &TreeKemPublic::new(TEST_CIPHER_SUITE),
             None,
+            PassThroughPskIdValidator,
             pass_through_filter(),
         );
 
@@ -971,6 +987,7 @@ mod tests {
             &group.group.context().extensions,
             credential_validator,
             public_tree,
+            PassThroughPskIdValidator,
             pass_through_filter(),
         );
 
@@ -1010,6 +1027,7 @@ mod tests {
             &group.group.context().extensions,
             PassthroughCredentialValidator::new(),
             public_tree,
+            PassThroughPskIdValidator,
             pass_through_filter(),
         );
 
@@ -1045,6 +1063,7 @@ mod tests {
             &group.group.context().extensions,
             credential_validator,
             public_tree,
+            PassThroughPskIdValidator,
             pass_through_filter(),
         );
 
@@ -1079,6 +1098,7 @@ mod tests {
             &group.group.context().extensions,
             credential_validator,
             public_tree,
+            PassThroughPskIdValidator,
             pass_through_filter(),
         )
     }
@@ -1131,6 +1151,7 @@ mod tests {
             &group_extensions,
             credential_validator,
             &public_tree,
+            PassThroughPskIdValidator,
             pass_through_filter(),
         );
 
@@ -1170,6 +1191,7 @@ mod tests {
             &group_extensions,
             credential_validator,
             &public_tree,
+            PassThroughPskIdValidator,
             pass_through_filter(),
         );
 
@@ -1209,6 +1231,7 @@ mod tests {
             &group_extensions,
             credential_validator,
             &public_tree,
+            PassThroughPskIdValidator,
             pass_through_filter(),
         );
 
@@ -1276,6 +1299,7 @@ mod tests {
             &group.group.context().extensions,
             credential_validator,
             public_tree,
+            PassThroughPskIdValidator,
             pass_through_filter(),
         );
 
@@ -1299,6 +1323,7 @@ mod tests {
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
+                PassThroughPskIdValidator,
                 pass_through_filter(),
             )
             .unwrap();
@@ -1325,6 +1350,7 @@ mod tests {
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
+                PassThroughPskIdValidator,
                 pass_through_filter(),
             )
             .unwrap();
@@ -1356,6 +1382,7 @@ mod tests {
                 PassthroughCredentialValidator::new(),
                 &tree,
                 None,
+                PassThroughPskIdValidator,
                 pass_through_filter(),
             )
             .unwrap();
@@ -1386,6 +1413,7 @@ mod tests {
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
+                PassThroughPskIdValidator,
                 pass_through_filter(),
             )
             .unwrap();
@@ -1412,6 +1440,7 @@ mod tests {
                 PassthroughCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
+                PassThroughPskIdValidator,
                 pass_through_filter(),
             )
             .unwrap();
@@ -1420,16 +1449,24 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct CommitReceiver<'a, C, F> {
+    struct CommitReceiver<'a, C, F, P> {
         tree: &'a TreeKemPublic,
         sender: Sender,
         receiver: LeafIndex,
         cache: ProposalCache,
         credential_validator: C,
         user_filter: F,
+        external_psk_id_validator: P,
     }
 
-    impl<'a> CommitReceiver<'a, PassthroughCredentialValidator, PassThroughProposalFilter<Infallible>> {
+    impl<'a>
+        CommitReceiver<
+            'a,
+            PassthroughCredentialValidator,
+            PassThroughProposalFilter<Infallible>,
+            PassThroughPskIdValidator,
+        >
+    {
         fn new<S>(tree: &'a TreeKemPublic, sender: S, receiver: LeafIndex) -> Self
         where
             S: Into<Sender>,
@@ -1441,16 +1478,18 @@ mod tests {
                 cache: make_proposal_cache(),
                 credential_validator: PassthroughCredentialValidator::new(),
                 user_filter: pass_through_filter(),
+                external_psk_id_validator: PassThroughPskIdValidator,
             }
         }
     }
 
-    impl<'a, C, F> CommitReceiver<'a, C, F>
+    impl<'a, C, F, P> CommitReceiver<'a, C, F, P>
     where
         C: CredentialValidator,
         F: ProposalFilter,
+        P: ExternalPskIdValidator,
     {
-        fn with_credential_validator<V>(self, validator: V) -> CommitReceiver<'a, V, F>
+        fn with_credential_validator<V>(self, validator: V) -> CommitReceiver<'a, V, F, P>
         where
             V: CredentialValidator,
         {
@@ -1461,10 +1500,11 @@ mod tests {
                 cache: self.cache,
                 credential_validator: validator,
                 user_filter: self.user_filter,
+                external_psk_id_validator: self.external_psk_id_validator,
             }
         }
 
-        fn with_user_filter<G>(self, f: G) -> CommitReceiver<'a, C, G>
+        fn with_user_filter<G>(self, f: G) -> CommitReceiver<'a, C, G, P>
         where
             G: ProposalFilter,
         {
@@ -1475,6 +1515,22 @@ mod tests {
                 cache: self.cache,
                 credential_validator: self.credential_validator,
                 user_filter: f,
+                external_psk_id_validator: self.external_psk_id_validator,
+            }
+        }
+
+        fn with_external_psk_id_validator<V>(self, v: V) -> CommitReceiver<'a, C, F, V>
+        where
+            V: ExternalPskIdValidator,
+        {
+            CommitReceiver {
+                tree: self.tree,
+                sender: self.sender,
+                receiver: self.receiver,
+                cache: self.cache,
+                credential_validator: self.credential_validator,
+                user_filter: self.user_filter,
+                external_psk_id_validator: v,
             }
         }
 
@@ -1499,22 +1555,31 @@ mod tests {
                 &ExtensionList::new(),
                 &self.credential_validator,
                 self.tree,
+                &self.external_psk_id_validator,
                 &self.user_filter,
             )
         }
     }
 
     #[derive(Debug)]
-    struct CommitSender<'a, C, F> {
+    struct CommitSender<'a, C, F, P> {
         tree: &'a TreeKemPublic,
         sender: LeafIndex,
         cache: ProposalCache,
         additional_proposals: Vec<Proposal>,
         credential_validator: C,
         user_filter: F,
+        external_psk_id_validator: P,
     }
 
-    impl<'a> CommitSender<'a, PassthroughCredentialValidator, PassThroughProposalFilter<Infallible>> {
+    impl<'a>
+        CommitSender<
+            'a,
+            PassthroughCredentialValidator,
+            PassThroughProposalFilter<Infallible>,
+            PassThroughPskIdValidator,
+        >
+    {
         fn new(tree: &'a TreeKemPublic, sender: LeafIndex) -> Self {
             Self {
                 tree,
@@ -1523,16 +1588,18 @@ mod tests {
                 additional_proposals: Vec::new(),
                 credential_validator: PassthroughCredentialValidator::new(),
                 user_filter: pass_through_filter(),
+                external_psk_id_validator: PassThroughPskIdValidator,
             }
         }
     }
 
-    impl<'a, C, F> CommitSender<'a, C, F>
+    impl<'a, C, F, P> CommitSender<'a, C, F, P>
     where
         C: CredentialValidator,
         F: ProposalFilter,
+        P: ExternalPskIdValidator,
     {
-        fn with_credential_validator<V>(self, validator: V) -> CommitSender<'a, V, F>
+        fn with_credential_validator<V>(self, validator: V) -> CommitSender<'a, V, F, P>
         where
             V: CredentialValidator,
         {
@@ -1543,6 +1610,7 @@ mod tests {
                 additional_proposals: self.additional_proposals,
                 credential_validator: validator,
                 user_filter: self.user_filter,
+                external_psk_id_validator: self.external_psk_id_validator,
             }
         }
 
@@ -1562,7 +1630,7 @@ mod tests {
             self
         }
 
-        fn with_user_filter<G>(self, f: G) -> CommitSender<'a, C, G>
+        fn with_user_filter<G>(self, f: G) -> CommitSender<'a, C, G, P>
         where
             G: ProposalFilter,
         {
@@ -1573,6 +1641,22 @@ mod tests {
                 additional_proposals: self.additional_proposals,
                 credential_validator: self.credential_validator,
                 user_filter: f,
+                external_psk_id_validator: self.external_psk_id_validator,
+            }
+        }
+
+        fn with_external_psk_id_validator<V>(self, v: V) -> CommitSender<'a, C, F, V>
+        where
+            V: ExternalPskIdValidator,
+        {
+            CommitSender {
+                tree: self.tree,
+                sender: self.sender,
+                cache: self.cache,
+                additional_proposals: self.additional_proposals,
+                credential_validator: self.credential_validator,
+                user_filter: self.user_filter,
+                external_psk_id_validator: v,
             }
         }
 
@@ -1584,6 +1668,7 @@ mod tests {
                 &self.credential_validator,
                 self.tree,
                 None,
+                &self.external_psk_id_validator,
                 &self.user_filter,
             )
         }
@@ -2908,6 +2993,66 @@ mod tests {
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
         let (committed, effects) = CommitSender::new(&tree, alice)
+            .cache(proposal_ref.clone(), proposal.clone(), alice)
+            .send()
+            .unwrap();
+
+        assert_eq!(committed, Vec::new());
+        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+    }
+
+    #[derive(Debug)]
+    struct FailurePskIdValidator;
+
+    impl ExternalPskIdValidator for FailurePskIdValidator {
+        type Error = std::io::Error;
+
+        fn validate(&self, _: &ExternalPskId) -> Result<(), Self::Error> {
+            Err(std::io::ErrorKind::InvalidData.into())
+        }
+    }
+
+    #[test]
+    fn receiving_external_psk_with_unknown_id_fails() {
+        let (alice, tree) = new_tree("alice");
+
+        let res = CommitReceiver::new(&tree, alice, alice)
+            .with_external_psk_id_validator(FailurePskIdValidator)
+            .receive([Proposal::Psk(new_external_psk(b"abc"))]);
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::PskIdValidationError(_)
+            ))
+        );
+    }
+
+    #[test]
+    fn sending_additional_external_psk_with_unknown_id_fails() {
+        let (alice, tree) = new_tree("alice");
+
+        let res = CommitSender::new(&tree, alice)
+            .with_external_psk_id_validator(FailurePskIdValidator)
+            .with_additional([Proposal::Psk(new_external_psk(b"abc"))])
+            .send();
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::PskIdValidationError(_)
+            ))
+        );
+    }
+
+    #[test]
+    fn sending_external_psk_with_unknown_id_filters_it_out() {
+        let (alice, tree) = new_tree("alice");
+        let proposal = Proposal::Psk(new_external_psk(b"abc"));
+        let proposal_ref = make_proposal_ref(&proposal, alice);
+
+        let (committed, effects) = CommitSender::new(&tree, alice)
+            .with_external_psk_id_validator(FailurePskIdValidator)
             .cache(proposal_ref.clone(), proposal.clone(), alice)
             .send()
             .unwrap();

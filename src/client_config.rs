@@ -9,7 +9,7 @@ use crate::{
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
     keychain::{InMemoryKeychain, Keychain},
     protocol_version::MaybeProtocolVersion,
-    psk::{ExternalPskId, Psk},
+    psk::{ExternalPskId, ExternalPskIdValidator, Psk},
     signing_identity::SigningIdentity,
     time::MlsTime,
     tree_kem::{Capabilities, Lifetime, TreeKemPublic},
@@ -33,6 +33,35 @@ pub trait PskStore {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn psk(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error>;
+
+    fn into_external_id_validator(self) -> PskStoreIdValidator<Self>
+    where
+        Self: Sized,
+    {
+        PskStoreIdValidator(self)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PskStoreIdValidator<T>(T);
+
+impl<T: PskStore> ExternalPskIdValidator for PskStoreIdValidator<T> {
+    type Error = PskStoreIdValidationError<T::Error>;
+
+    fn validate(&self, id: &ExternalPskId) -> Result<(), Self::Error> {
+        self.0
+            .psk(id)?
+            .map(|_| ())
+            .ok_or_else(|| PskStoreIdValidationError::ExternalIdNotFound(id.clone()))
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum PskStoreIdValidationError<E: std::error::Error> {
+    #[error("External PSK ID {0:?} not found")]
+    ExternalIdNotFound(ExternalPskId),
+    #[error(transparent)]
+    Other(#[from] E),
 }
 
 pub trait CredentialValidator {

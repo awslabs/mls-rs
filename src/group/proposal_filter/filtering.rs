@@ -12,6 +12,7 @@ use crate::{
         Sender, UpdateProposal,
     },
     key_package::KeyPackageValidator,
+    psk::ExternalPskIdValidator,
     tree_kem::{
         leaf_node::LeafNode,
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
@@ -47,7 +48,7 @@ impl ProposalState {
 }
 
 #[derive(Debug)]
-pub(crate) struct ProposalApplier<'a, C> {
+pub(crate) struct ProposalApplier<'a, C, P> {
     original_tree: &'a TreeKemPublic,
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
@@ -56,11 +57,13 @@ pub(crate) struct ProposalApplier<'a, C> {
     original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
     external_leaf: Option<&'a LeafNode>,
     credential_validator: C,
+    external_psk_id_validator: P,
 }
 
-impl<'a, C> ProposalApplier<'a, C>
+impl<'a, C, P> ProposalApplier<'a, C, P>
 where
     C: CredentialValidator,
+    P: ExternalPskIdValidator,
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
@@ -72,6 +75,7 @@ where
         original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
         external_leaf: Option<&'a LeafNode>,
         credential_validator: C,
+        external_psk_id_validator: P,
     ) -> Self {
         Self {
             original_tree,
@@ -82,6 +86,7 @@ where
             original_required_capabilities,
             external_leaf,
             credential_validator,
+            external_psk_id_validator,
         }
     }
 
@@ -117,7 +122,12 @@ where
         let proposals = filter_out_update_for_committer(&strategy, commit_sender, proposals)?;
         let proposals = filter_out_removal_of_committer(&strategy, commit_sender, proposals)?;
         let proposals = filter_out_extra_removal_or_update_for_same_leaf(&strategy, proposals)?;
-        let proposals = filter_out_invalid_psks(&strategy, self.cipher_suite, proposals)?;
+        let proposals = filter_out_invalid_psks(
+            &strategy,
+            self.cipher_suite,
+            proposals,
+            &self.external_psk_id_validator,
+        )?;
 
         let proposals = filter_out_invalid_group_extensions(
             &strategy,
@@ -155,7 +165,12 @@ where
 
         ensure_proposals_in_external_commit_are_allowed(&proposals)?;
         ensure_no_proposal_by_ref(&proposals)?;
-        let proposals = filter_out_invalid_psks(FailInvalidProposal, self.cipher_suite, proposals)?;
+        let proposals = filter_out_invalid_psks(
+            FailInvalidProposal,
+            self.cipher_suite,
+            proposals,
+            &self.external_psk_id_validator,
+        )?;
         let state = ProposalState::new(self.original_tree.clone(), proposals);
 
         let state = self.apply_proposal_changes(&FailInvalidProposal, state)?;
@@ -750,13 +765,15 @@ where
     Ok(proposals)
 }
 
-fn filter_out_invalid_psks<F>(
+fn filter_out_invalid_psks<F, P>(
     strategy: F,
     cipher_suite: CipherSuite,
     mut proposals: ProposalBundle,
+    external_psk_id_validator: &P,
 ) -> Result<ProposalBundle, ProposalFilterError>
 where
     F: FilterStrategy,
+    P: ExternalPskIdValidator,
 {
     let mut ids = HashSet::new();
     let kdf_extract_size = KeyScheduleKdf::new(cipher_suite.kdf_type()).extract_size();
@@ -775,6 +792,13 @@ where
         let nonce_valid = nonce_length == kdf_extract_size;
         let is_new_id = ids.insert(p.proposal.psk.clone());
 
+        let external_id_is_valid = match &p.proposal.psk.key_id {
+            JustPreSharedKeyID::External(id) => external_psk_id_validator
+                .validate(id)
+                .map_err(|e| ProposalFilterError::PskIdValidationError(e.into())),
+            JustPreSharedKeyID::Resumption(_) => Ok(()),
+        };
+
         let res = if !valid {
             Err(ProposalFilterError::InvalidTypeOrUsageInPreSharedKeyProposal)
         } else if !nonce_valid {
@@ -785,7 +809,7 @@ where
         } else if !is_new_id {
             Err(ProposalFilterError::DuplicatePskIds)
         } else {
-            Ok(())
+            external_id_is_valid
         };
 
         apply_strategy(&strategy, p, res)

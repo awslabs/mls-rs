@@ -151,6 +151,8 @@ pub enum ProposalFilterError {
     RemovingBlankNode(LeafIndex),
     #[error("Unsupported group extension {0}")]
     UnsupportedGroupExtension(ExtensionType),
+    #[error(transparent)]
+    PskIdValidationError(Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl ProposalFilterError {

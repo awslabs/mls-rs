@@ -1,15 +1,3 @@
-use crate::{
-    client_config::ProposalFilterInit,
-    extension::ExternalSendersExt,
-    group::{
-        Content, GroupError, GroupState, InterimTranscriptHash, MLSMessage, MLSMessagePayload,
-    },
-    signer::Signer,
-    signing_identity::SigningIdentity,
-    tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
-    AddProposal, ExternalClientConfig, Proposal, RemoveProposal,
-};
-
 use super::{
     check_protocol_version,
     confirmation_tag::ConfirmationTag,
@@ -17,6 +5,18 @@ use super::{
     message_processor::{EventOrContent, MessageProcessor, ProcessedMessage, ProvisionalState},
     message_signature::MLSAuthenticatedContent,
     validate_group_info, ExternalEvent, ProposalRef,
+};
+use crate::{
+    client_config::ProposalFilterInit,
+    extension::ExternalSendersExt,
+    group::{
+        Content, GroupError, GroupState, InterimTranscriptHash, MLSMessage, MLSMessagePayload,
+    },
+    psk::PassThroughPskIdValidator,
+    signer::Signer,
+    signing_identity::SigningIdentity,
+    tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
+    AddProposal, ExternalClientConfig, Proposal, RemoveProposal,
 };
 
 #[derive(Clone, Debug)]
@@ -164,6 +164,7 @@ where
 {
     type ProposalFilter = C::ProposalFilter;
     type CredentialValidator = C::CredentialValidator;
+    type ExternalPskIdValidator = PassThroughPskIdValidator;
 
     fn self_index(&self) -> Option<LeafIndex> {
         None
@@ -214,6 +215,10 @@ where
 
     fn credential_validator(&self) -> Self::CredentialValidator {
         self.config.credential_validator()
+    }
+
+    fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator {
+        PassThroughPskIdValidator
     }
 
     fn group_state(&self) -> &GroupState {
