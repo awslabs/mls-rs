@@ -1,9 +1,9 @@
 use crate::{
     cipher_suite::CipherSuite,
     client_config::PskStore,
+    epoch::EpochRepository,
     group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError},
     serde_utils::vec_u8_as_base64::VecAsBase64,
-    EpochRepository,
 };
 use ferriscrypt::{
     kdf::KdfError,
@@ -342,10 +342,10 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         client_config::InMemoryPskStore,
+        epoch::InMemoryEpochRepository,
         psk::{
             psk_secret, ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskNonce, PskSecretError,
         },
-        InMemoryEpochRepository,
     };
     use assert_matches::assert_matches;
     use ferriscrypt::{kdf::hkdf::Hkdf, rand::SecureRng};

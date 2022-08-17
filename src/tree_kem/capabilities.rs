@@ -6,7 +6,7 @@ use crate::{
     extension::ExtensionType,
     group::proposal::ProposalType,
     protocol_version::MaybeProtocolVersion,
-    ProtocolVersion,
+    protocol_version::ProtocolVersion,
 };
 
 #[derive(

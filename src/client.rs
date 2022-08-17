@@ -15,7 +15,7 @@ use crate::protocol_version::MaybeProtocolVersion;
 use crate::psk::ExternalPskId;
 use crate::signer::SignatureError;
 use crate::tree_kem::leaf_node::LeafNodeError;
-use crate::{keychain::Keychain, ProtocolVersion};
+use crate::{keychain::Keychain, protocol_version::ProtocolVersion};
 use ferriscrypt::rand::{SecureRng, SecureRngError};
 use thiserror::Error;
 

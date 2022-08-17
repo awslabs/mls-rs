@@ -2,12 +2,12 @@ use crate::{
     extension::{ExtensionError, ExtensionType},
     group::{proposal_filter::ProposalBundle, ProposalType, Sender},
     key_package::KeyPackageValidationError,
+    protocol_version::ProtocolVersion,
     signing_identity::SigningIdentityError,
     tree_kem::{
         leaf_node::LeafNodeError, leaf_node_validator::LeafNodeValidationError, node::LeafIndex,
         RatchetTreeError,
     },
-    ProtocolVersion,
 };
 use std::marker::PhantomData;
 use thiserror::Error;

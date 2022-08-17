@@ -4,11 +4,13 @@ use super::{
     framing::{MLSCiphertext, MLSPlaintext, Sender, WireFormat},
     message_processor::{EventOrContent, MessageProcessor, ProcessedMessage, ProvisionalState},
     message_signature::MLSAuthenticatedContent,
+    proposal::{AddProposal, Proposal, RemoveProposal},
     validate_group_info, ExternalEvent, ProposalRef,
 };
 use crate::{
     client_config::ProposalFilterInit,
     extension::ExternalSendersExt,
+    external_client_config::ExternalClientConfig,
     group::{
         Content, GroupError, GroupState, InterimTranscriptHash, MLSMessage, MLSMessagePayload,
     },
@@ -16,7 +18,6 @@ use crate::{
     signer::Signer,
     signing_identity::SigningIdentity,
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
-    AddProposal, ExternalClientConfig, Proposal, RemoveProposal,
 };
 
 #[derive(Clone, Debug)]
@@ -245,17 +246,17 @@ mod tests {
     use crate::{
         cipher_suite::{CipherSuite, MaybeCipherSuite},
         extension::{ExtensionList, ExternalSendersExt},
+        external_client_config::InMemoryExternalClientConfig,
         group::{
-            proposal::ProposalOrRef,
+            proposal::{AddProposal, Proposal, ProposalOrRef, RemoveProposal},
             proposal_ref::ProposalRef,
             test_utils::{test_group, TestGroup},
             Content, ExternalEvent, ExternalGroup, GroupError, MLSMessage, MLSMessagePayload,
         },
         key_package::test_utils::test_key_package_with_id,
-        protocol_version::MaybeProtocolVersion,
+        protocol_version::{MaybeProtocolVersion, ProtocolVersion},
         signing_identity::{test_utils::get_test_signing_identity, SigningIdentity},
         tree_kem::node::LeafIndex,
-        AddProposal, InMemoryExternalClientConfig, Proposal, ProtocolVersion, RemoveProposal,
     };
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::SecretKey;

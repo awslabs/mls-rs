@@ -2,6 +2,8 @@ use crate::{
     cipher_suite::CipherSuite,
     client::test_utils::{get_basic_config, join_group, test_client_with_key_pkg},
     client_config::{ClientConfig, InMemoryClientConfig, Preferences},
+    epoch::Epoch,
+    epoch::EpochRepository,
     extension::ExtensionList,
     group::{
         framing::{Content, MLSMessage, Sender, WireFormat},
@@ -9,9 +11,9 @@ use crate::{
         Commit, Group, GroupError, Snapshot,
     },
     key_package::KeyPackageGeneration,
+    protocol_version::ProtocolVersion,
     signing_identity::SigningIdentity,
     tree_kem::node::LeafIndex,
-    Epoch, EpochRepository, ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::SecretKey;
 

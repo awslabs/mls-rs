@@ -12,6 +12,7 @@ use crate::{
         Sender, UpdateProposal,
     },
     key_package::KeyPackageValidator,
+    protocol_version::ProtocolVersion,
     psk::ExternalPskIdValidator,
     tree_kem::{
         leaf_node::LeafNode,
@@ -19,7 +20,6 @@ use crate::{
         node::LeafIndex,
         AccumulateBatchResults, RatchetTreeError, TreeKemPublic,
     },
-    ProtocolVersion,
 };
 use std::{
     collections::{HashMap, HashSet},

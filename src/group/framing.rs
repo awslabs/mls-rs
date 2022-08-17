@@ -1,6 +1,9 @@
 use super::proposal::Proposal;
 use super::*;
-use crate::{protocol_version::MaybeProtocolVersion, tree_kem::leaf_node::LeafNode};
+use crate::{
+    protocol_version::{MaybeProtocolVersion, ProtocolVersion},
+    tree_kem::leaf_node::LeafNode,
+};
 use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};

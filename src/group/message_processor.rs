@@ -7,7 +7,6 @@ use crate::{
         path_secret::PathSecret, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathValidator,
         ValidatedUpdatePath,
     },
-    GroupContext, Proposal, ProposalFilter,
 };
 
 use super::{
@@ -18,12 +17,12 @@ use super::{
         WireFormat,
     },
     message_signature::MLSAuthenticatedContent,
-    proposal::{ExternalInit, ReInit},
+    proposal::{ExternalInit, Proposal, ReInit},
     proposal_cache::ProposalSetEffects,
     proposal_effects,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
-    transcript_hashes, GroupError, ProposalRef,
+    transcript_hashes, GroupContext, GroupError, ProposalFilter, ProposalRef,
 };
 
 #[derive(Debug)]

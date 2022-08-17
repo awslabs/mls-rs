@@ -4,7 +4,7 @@ use aws_mls::bench_utils::group_functions::{create_fuzz_commit_message, create_g
 use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client_config::InMemoryClientConfig;
 use aws_mls::group::Group;
-use aws_mls::ProtocolVersion;
+use aws_mls::protocol_version::ProtocolVersion;
 use libfuzzer_sys::fuzz_target;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;

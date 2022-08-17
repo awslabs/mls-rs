@@ -14,10 +14,10 @@ use aws_mls::group::framing::MLSMessage;
 use aws_mls::group::{Event, Group, StateUpdate};
 
 use aws_mls::key_package::KeyPackage;
+use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::psk::{ExternalPskId, Psk};
 use aws_mls::signing_identity::SigningIdentity;
 use aws_mls::tls_codec::{Deserialize, Serialize};
-use aws_mls::ProtocolVersion;
 
 use clap::Parser;
 use std::convert::TryFrom;

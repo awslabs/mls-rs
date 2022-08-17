@@ -10,7 +10,6 @@ use crate::{
     signer::Signable,
     signing_identity::SigningIdentity,
     tree_kem::{node::LeafIndex, TreeKemPublic},
-    AddProposal, Proposal,
 };
 use ferriscrypt::asym::ec_key::PublicKey;
 use tls_codec::{Deserialize, Serialize};
@@ -20,6 +19,7 @@ use super::{
     framing::{Content, WireFormat},
     key_schedule::KeySchedule,
     message_signature::{MLSAuthenticatedContent, MessageSigningContext},
+    proposal::{AddProposal, Proposal},
     state::GroupState,
 };
 
@@ -271,21 +271,22 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         client_config::{test_utils::test_config, ClientConfig, InMemoryClientConfig, Preferences},
+        epoch::EpochRepository,
         extension::{ExtensionList, ExternalSendersExt},
         group::{
             framing::{MLSCiphertext, WireFormat},
             membership_tag::MembershipTag,
             message_signature::{MLSAuthenticatedContent, MessageSigningContext},
             message_verifier::decrypt_ciphertext,
-            proposal::{AddProposal, Proposal},
+            proposal::{AddProposal, Proposal, RemoveProposal},
             test_utils::{test_group, test_group_custom, test_member, TestGroup},
             Content, Group, GroupError, MLSPlaintext, Sender,
         },
         key_package::KeyPackageGeneration,
+        protocol_version::ProtocolVersion,
         signer::{Signable, Signer},
         signing_identity::test_utils::get_test_signing_identity,
         tree_kem::node::LeafIndex,
-        EpochRepository, ProtocolVersion, RemoveProposal,
     };
     use assert_matches::assert_matches;
 

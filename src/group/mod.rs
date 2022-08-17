@@ -20,6 +20,7 @@ use crate::client_config::{
     ClientConfig, CredentialValidator, ProposalFilterInit, PskStore, PskStoreIdValidator,
 };
 use crate::credential::CredentialError;
+use crate::epoch::EpochRepository;
 use crate::extension::{
     ExtensionError, ExtensionList, ExternalPubExt, ExternalSendersExt, GroupContextExtension,
     LeafNodeExtension, RatchetTreeExt,
@@ -30,7 +31,7 @@ use crate::key_package::{
     KeyPackageRepository, KeyPackageValidationError, KeyPackageValidator,
 };
 use crate::keychain::Keychain;
-use crate::protocol_version::MaybeProtocolVersion;
+use crate::protocol_version::{MaybeProtocolVersion, ProtocolVersion};
 use crate::psk::{
     ExternalPskId, ExternalPskIdValidator, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk,
     PskGroupId, PskNonce, PskSecretError, ResumptionPSKUsage, ResumptionPsk,
@@ -49,7 +50,6 @@ use crate::tree_kem::{
     Capabilities, RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath,
     UpdatePathValidationError,
 };
-use crate::{EpochRepository, ProtocolVersion};
 
 #[cfg(feature = "benchmark")]
 use crate::client_config::Preferences;

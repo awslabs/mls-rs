@@ -428,8 +428,8 @@ mod tests {
             parent_hash::ParentHash,
             AccumulateBatchResults, Lifetime, TreeIndexError,
         },
-        PassThroughProposalFilter,
     };
+
     use assert_matches::assert_matches;
     use ferriscrypt::kdf::hkdf::Hkdf;
     use std::convert::Infallible;

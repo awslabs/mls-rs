@@ -50,20 +50,21 @@ pub mod cipher_suite;
 pub mod client;
 pub mod client_config;
 pub mod credential;
-mod epoch;
+pub mod epoch;
 pub mod extension;
-mod external_client;
-mod external_client_config;
+pub mod external_client;
+pub mod external_client_config;
 pub mod group;
 mod hash_reference;
 pub mod key_package;
 pub mod keychain;
 mod maybe;
-mod protocol_version;
+pub mod protocol_version;
 pub mod psk;
 mod serde_utils;
 pub mod signer;
 pub mod signing_identity;
+pub mod time;
 pub mod x509;
 
 #[cfg(feature = "benchmark")]
@@ -81,17 +82,5 @@ mod tls;
 #[cfg(not(feature = "benchmark"))]
 mod tree_kem;
 
-pub use epoch::{Epoch, EpochRepository, InMemoryEpochRepository};
-pub use external_client::ExternalClient;
-pub use external_client_config::{ExternalClientConfig, InMemoryExternalClientConfig};
 pub use ferriscrypt;
-
-pub use group::{
-    proposal::{AddProposal, Proposal, RemoveProposal, UpdateProposal},
-    BoxedProposalFilter, ConfirmedTranscriptHash, GroupContext, PassThroughProposalFilter,
-    ProposalBundle, ProposalFilter, ProposalFilterError,
-};
-pub use protocol_version::ProtocolVersion;
 pub use tls_codec;
-
-pub mod time;

@@ -102,13 +102,13 @@ mod tests {
         cipher_suite::CipherSuite,
         extension::{ExtensionList, KeyPackageExtension, LeafNodeExtension, MlsExtension},
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
+        protocol_version::ProtocolVersion,
         signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{
             leaf_node::{LeafNodeError, LeafNodeSource},
             leaf_node_validator::test_utils::FailureCredentialValidator,
             Capabilities, Lifetime,
         },
-        ProtocolVersion,
     };
 
     use super::KeyPackageGenerator;

@@ -4,17 +4,19 @@ use crate::{
     credential::{
         Credential, CredentialError, CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509,
     },
+    epoch::{EpochRepository, InMemoryEpochRepository},
     extension::{ExtensionList, ExtensionType, KeyPackageExtension, LeafNodeExtension},
-    group::{framing::Sender, CommitOptions, ControlEncryptionMode, GroupContext},
+    group::{
+        framing::Sender, BoxedProposalFilter, CommitOptions, ControlEncryptionMode, GroupContext,
+        PassThroughProposalFilter, ProposalFilter,
+    },
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
     keychain::{InMemoryKeychain, Keychain},
-    protocol_version::MaybeProtocolVersion,
+    protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     psk::{ExternalPskId, ExternalPskIdValidator, Psk},
     signing_identity::SigningIdentity,
     time::MlsTime,
     tree_kem::{Capabilities, Lifetime, TreeKemPublic},
-    BoxedProposalFilter, EpochRepository, InMemoryEpochRepository, PassThroughProposalFilter,
-    ProposalFilter, ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::SecretKey;
 use std::{

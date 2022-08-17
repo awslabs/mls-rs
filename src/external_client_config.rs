@@ -6,11 +6,12 @@ use crate::{
     },
     credential::{CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
     extension::ExtensionType,
+    external_client::ExternalClient,
+    group::{BoxedProposalFilter, ProposalFilter},
     keychain::{InMemoryKeychain, Keychain},
-    protocol_version::MaybeProtocolVersion,
+    protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     signing_identity::SigningIdentity,
     tree_kem::Capabilities,
-    BoxedProposalFilter, ExternalClient, ProposalFilter, ProtocolVersion,
 };
 use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 use std::collections::HashMap;

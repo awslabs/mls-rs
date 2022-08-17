@@ -54,7 +54,7 @@ mod tests {
             test_utils::{test_group, TestGroup},
             Group,
         },
-        ProtocolVersion,
+        protocol_version::ProtocolVersion,
     };
 
     use super::Snapshot;

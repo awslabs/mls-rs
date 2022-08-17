@@ -7,8 +7,8 @@ use super::{
 use crate::{
     cipher_suite::CipherSuite,
     group::{GroupContext, ProposalCache, TreeKemPublic},
+    protocol_version::ProtocolVersion,
     tree_kem::node::NodeVec,
-    ProtocolVersion,
 };
 use std::collections::HashMap;
 

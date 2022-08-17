@@ -6,8 +6,8 @@ use aws_mls::credential::Credential;
 use aws_mls::extension::ExtensionList;
 use aws_mls::group::{Event, Group, GroupError};
 use aws_mls::key_package::KeyPackage;
+use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::signing_identity::SigningIdentity;
-use aws_mls::ProtocolVersion;
 use ferriscrypt::rand::SecureRng;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 

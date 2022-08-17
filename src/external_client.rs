@@ -1,8 +1,8 @@
 use thiserror::Error;
 
 use crate::{
+    external_client_config::ExternalClientConfig,
     group::{framing::MLSMessage, ExternalGroup, GroupError},
-    ExternalClientConfig,
 };
 
 #[derive(Debug, Error)]

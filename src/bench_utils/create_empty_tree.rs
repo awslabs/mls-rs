@@ -1,18 +1,12 @@
-use std::collections::HashMap;
-
 use crate::cipher_suite::CipherSuite;
-
 use crate::extension::ExtensionList;
-
 use crate::ferriscrypt::asym::ec_key::SecretKey;
-
+use crate::group::{ConfirmedTranscriptHash, GroupContext};
+use crate::protocol_version::ProtocolVersion;
 use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
-
 use crate::tree_kem::node::LeafIndex;
-
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
-
-use crate::{ConfirmedTranscriptHash, GroupContext, ProtocolVersion};
+use std::collections::HashMap;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct TestCase {

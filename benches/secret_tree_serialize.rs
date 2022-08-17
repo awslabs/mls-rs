@@ -10,7 +10,7 @@ use aws_mls::group::secret_tree::SecretTree;
 
 use aws_mls::cipher_suite::CipherSuite;
 
-use aws_mls::EpochRepository;
+use aws_mls::epoch::EpochRepository;
 
 fn secret_tree_setup(c: &mut Criterion) {
     let mut secret_tree_group = c.benchmark_group("secret_tree_serialize");

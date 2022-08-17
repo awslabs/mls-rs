@@ -1,9 +1,9 @@
 use tls_codec::Serialize;
 
 use crate::extension::{ExtensionList, LeafNodeExtension};
+use crate::group::GroupContext;
 use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
-use crate::GroupContext;
 
 use super::node::Node;
 use super::Capabilities;
