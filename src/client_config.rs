@@ -7,7 +7,7 @@ use crate::{
     epoch::{EpochRepository, InMemoryEpochRepository},
     extension::{ExtensionList, ExtensionType, KeyPackageExtension, LeafNodeExtension},
     group::{
-        framing::Sender, BoxedProposalFilter, CommitOptions, ControlEncryptionMode, GroupContext,
+        framing::Sender, BoxedProposalFilter, ControlEncryptionMode, GroupContext,
         PassThroughProposalFilter, ProposalFilter,
     },
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
@@ -133,18 +133,6 @@ pub trait ClientConfig {
             extensions: self.supported_extensions(),
             proposals: vec![], // TODO: Support registering custom proposals here
             credentials: self.supported_credential_types(),
-        }
-    }
-
-    fn commit_options(&self) -> CommitOptions {
-        let preferences = self.preferences();
-
-        CommitOptions {
-            prefer_path_update: preferences.force_commit_path_update,
-            extension_update: Some(self.leaf_node_extensions()),
-            capabilities_update: Some(self.capabilities()),
-            encryption_mode: preferences.encryption_mode(),
-            ratchet_tree_extension: preferences.ratchet_tree_extension,
         }
     }
 
