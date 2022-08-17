@@ -29,6 +29,10 @@ pub trait ExternalClientConfig {
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
     fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter;
 
+    fn max_epoch_jitter(&self) -> Option<u64> {
+        None
+    }
+
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             protocol_versions: self
@@ -65,6 +69,7 @@ pub struct InMemoryExternalClientConfig {
     external_signing_keys: HashMap<Vec<u8>, PublicKey>,
     credential_types: Vec<CredentialType>,
     make_proposal_filter: MakeProposalFilter,
+    max_epoch_jitter: Option<u64>,
 }
 
 impl InMemoryExternalClientConfig {
@@ -77,6 +82,7 @@ impl InMemoryExternalClientConfig {
             external_signing_keys: Default::default(),
             credential_types: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
             make_proposal_filter: Default::default(),
+            max_epoch_jitter: Default::default(),
         }
     }
 
@@ -132,6 +138,14 @@ impl InMemoryExternalClientConfig {
         self
     }
 
+    #[must_use]
+    pub fn with_max_epoch_jitter(self, max_jitter: u64) -> Self {
+        Self {
+            max_epoch_jitter: Some(max_jitter),
+            ..self
+        }
+    }
+
     pub fn build_client(self) -> ExternalClient<Self> {
         ExternalClient::new(self)
     }
@@ -178,5 +192,9 @@ impl ExternalClientConfig for InMemoryExternalClientConfig {
 
     fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
         (self.make_proposal_filter.0)(init)
+    }
+
+    fn max_epoch_jitter(&self) -> Option<u64> {
+        self.max_epoch_jitter
     }
 }

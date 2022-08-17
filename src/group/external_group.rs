@@ -232,6 +232,12 @@ where
     fn can_continue_processing(&self, _provisional_state: &ProvisionalState) -> bool {
         true
     }
+
+    fn min_epoch_available(&self) -> Option<u64> {
+        self.config
+            .max_epoch_jitter()
+            .map(|j| self.state.context.epoch - j)
+    }
 }
 
 #[cfg(test)]
@@ -593,5 +599,27 @@ mod tests {
         let res = server.propose_remove(remove_proposal, vec![], &server_identity, &server_key);
 
         assert_matches!(res, Err(GroupError::InvalidExternalSigningIdentity));
+    }
+
+    #[test]
+    fn external_group_errors_on_old_epoch() {
+        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+
+        let mut server = make_external_group_with_config(
+            &alice,
+            InMemoryExternalClientConfig::default().with_max_epoch_jitter(0),
+        );
+
+        let old_application_msg = alice
+            .group
+            .encrypt_application_message(&[], vec![])
+            .unwrap();
+
+        let (commit, _) = alice.commit(vec![]).unwrap();
+        server.process_incoming_message(commit).unwrap();
+
+        let res = server.process_incoming_message(old_application_msg);
+
+        assert_matches!(res, Err(GroupError::InvalidEpoch(1)));
     }
 }

@@ -198,6 +198,8 @@ pub enum GroupError {
     CommitMissingPath,
     #[error("plaintext message for incorrect epoch")]
     InvalidEpoch(u64),
+    #[error("epoch metadata not found for group: {0:?}")]
+    EpochMetadataNotFound(Vec<u8>),
     #[error("invalid signature found")]
     InvalidSignature,
     #[error("invalid confirmation tag")]
@@ -2299,6 +2301,10 @@ where
             .iter()
             .any(|(i, _)| Some(*i) == self.self_index())
             && self.pending_commit.is_none())
+    }
+
+    fn min_epoch_available(&self) -> Option<u64> {
+        None
     }
 }
 

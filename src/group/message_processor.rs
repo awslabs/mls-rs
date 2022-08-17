@@ -356,6 +356,7 @@ where
     fn credential_validator(&self) -> Self::CredentialValidator;
     fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator;
     fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool;
+    fn min_epoch_available(&self) -> Option<u64>;
 
     fn check_metadata(&self, message: &MLSMessage) -> Result<(), GroupError> {
         let context = &self.group_state().context;
@@ -386,6 +387,27 @@ where
             if group_id != &context.group_id {
                 return Err(GroupError::InvalidGroupId(group_id.clone()));
             }
+
+            match content_type {
+                ContentType::Proposal | ContentType::Commit => {
+                    if context.epoch != epoch {
+                        Err(GroupError::InvalidEpoch(epoch))
+                    } else {
+                        Ok(())
+                    }
+                }
+                ContentType::Application => {
+                    if let Some(min) = self.min_epoch_available() {
+                        if epoch < min {
+                            Err(GroupError::InvalidEpoch(epoch))
+                        } else {
+                            Ok(())
+                        }
+                    } else {
+                        Ok(())
+                    }
+                }
+            }?;
 
             // Proposal and commit messages must be sent in the current epoch
             if (content_type == ContentType::Proposal || content_type == ContentType::Commit)

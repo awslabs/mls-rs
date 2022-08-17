@@ -8,7 +8,7 @@ use std::{
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-const DEFAULT_EPOCH_RETENTION_LIMIT: usize = 3;
+const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
 
 #[derive(
     Clone,
@@ -52,6 +52,10 @@ pub trait EpochRepository {
 
     fn get(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<Epoch>, Self::Error>;
     fn insert(&mut self, epoch: Epoch) -> Result<(), Self::Error>;
+
+    fn retention_limit(&self) -> Option<u64> {
+        Some(DEFAULT_EPOCH_RETENTION_LIMIT)
+    }
 }
 
 #[derive(Debug, Error)]
@@ -63,7 +67,7 @@ pub enum InMemoryEpochRepositoryError {
 #[derive(Clone, Debug)]
 pub struct InMemoryEpochRepository {
     inner: Arc<Mutex<HashMap<Vec<u8>, VecDeque<Epoch>>>>,
-    retention_limit: usize,
+    retention_limit: u64,
 }
 
 fn get_epoch(
@@ -88,7 +92,7 @@ fn get_epoch(
 fn insert_epoch(
     map: &mut HashMap<Vec<u8>, VecDeque<Epoch>>,
     epoch: Epoch,
-    retention_limit: Option<usize>,
+    retention_limit: Option<u64>,
 ) -> Result<(), InMemoryEpochRepositoryError> {
     let group_id = &epoch.inner().context.group_id;
 
@@ -121,7 +125,7 @@ fn insert_epoch(
         vec.push_front(epoch)
     }
 
-    if retention_limit.map_or(false, |n| vec.len() > n) {
+    if retention_limit.map_or(false, |n| vec.len() as u64 > n) {
         vec.pop_back();
     }
 
@@ -170,6 +174,10 @@ impl EpochRepository for InMemoryEpochRepository {
 
     fn insert(&mut self, epoch: Epoch) -> Result<(), Self::Error> {
         (*self).insert(epoch)
+    }
+
+    fn retention_limit(&self) -> Option<u64> {
+        Some(self.retention_limit)
     }
 }
 
