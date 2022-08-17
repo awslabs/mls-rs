@@ -125,7 +125,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use enum_iterator::IntoEnumIterator;
     use num_enum::IntoPrimitive;
     use tls_codec::Serialize;
 
@@ -138,7 +137,7 @@ mod tests {
         PartialEq,
         IntoPrimitive,
         TryFromPrimitive,
-        IntoEnumIterator,
+        enum_iterator::Sequence,
         Clone,
         Copy,
         TlsSize,
@@ -154,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_maybe_enum() {
-        for enum_value in TestEnum::into_enum_iter() {
+        for enum_value in enum_iterator::all::<TestEnum>() {
             let maybe: MaybeEnum<TestEnum> = MaybeEnum::from_raw_value(enum_value as u8);
             assert_eq!(maybe, MaybeEnum::from(enum_value));
         }
@@ -195,7 +194,7 @@ mod tests {
 
     #[test]
     fn from_raw_value_and_raw_value_are_inverse() {
-        for x in TestEnum::into_enum_iter()
+        for x in enum_iterator::all::<TestEnum>()
             .map(MaybeEnum::from)
             .chain(Some(MaybeEnum::from_raw_value(4)))
         {

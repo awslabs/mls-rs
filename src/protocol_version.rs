@@ -1,5 +1,4 @@
 use crate::maybe::MaybeEnum;
-use enum_iterator::IntoEnumIterator;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -9,7 +8,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     Copy,
     Eq,
     Hash,
-    IntoEnumIterator,
+    enum_iterator::Sequence,
     Ord,
     PartialEq,
     PartialOrd,
@@ -33,9 +32,9 @@ impl ProtocolVersion {
     pub fn all() -> impl Iterator<Item = ProtocolVersion> {
         cfg_if::cfg_if! {
             if #[cfg(test)] {
-                ProtocolVersion::into_enum_iter().filter(|&p| p != ProtocolVersion::Reserved)
+                enum_iterator::all().filter(|&p| p != ProtocolVersion::Reserved)
             } else {
-                ProtocolVersion::into_enum_iter()
+                enum_iterator::all()
             }
         }
     }

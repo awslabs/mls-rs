@@ -1,6 +1,5 @@
 use crate::maybe::MaybeEnum;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
-use enum_iterator::IntoEnumIterator;
 use ferriscrypt::asym::ec_key::{Curve, EcKeyError, PublicKey, SecretKey};
 use ferriscrypt::cipher::aead::Aead;
 use ferriscrypt::digest::HashFunction;
@@ -93,7 +92,7 @@ impl From<HpkeCiphertext> for ferriscrypt::hpke::HpkeCiphertext {
     Copy,
     Clone,
     Eq,
-    IntoEnumIterator,
+    enum_iterator::Sequence,
     PartialEq,
     TlsDeserialize,
     TlsSerialize,
@@ -142,7 +141,7 @@ impl ToString for CipherSuite {
 
 impl CipherSuite {
     pub fn all() -> impl Iterator<Item = CipherSuite> {
-        Self::into_enum_iter()
+        enum_iterator::all()
     }
 
     #[inline(always)]
