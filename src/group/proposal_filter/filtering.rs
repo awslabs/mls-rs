@@ -342,7 +342,7 @@ where
         state
             .proposals
             .retain_by_type::<UpdateProposal, _, _>(|p| {
-                let r = update_sender_leaf_index(p);
+                let r = leaf_index_of_update_sender(p);
 
                 if let Ok(leaf_index) = r {
                     updates.push((leaf_index, p.proposal.leaf_node.clone()));
@@ -1025,7 +1025,7 @@ fn ensure_no_proposal_by_ref(proposals: &ProposalBundle) -> Result<(), ProposalF
         })
 }
 
-fn update_sender_leaf_index(
+fn leaf_index_of_update_sender(
     p: &ProposalInfo<UpdateProposal>,
 ) -> Result<LeafIndex, ProposalFilterError> {
     match p.sender {
