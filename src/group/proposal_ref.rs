@@ -44,16 +44,16 @@ pub(crate) mod test_utils {
     use super::*;
     use crate::group::test_utils::TEST_GROUP;
 
-    pub fn auth_content_from_proposal(
-        proposal: Proposal,
-        sender: LeafIndex,
-    ) -> MLSAuthenticatedContent {
+    pub fn auth_content_from_proposal<S>(proposal: Proposal, sender: S) -> MLSAuthenticatedContent
+    where
+        S: Into<Sender>,
+    {
         MLSAuthenticatedContent {
             wire_format: WireFormat::Plain,
             content: MLSContent {
                 group_id: TEST_GROUP.to_vec(),
                 epoch: 0,
-                sender: Sender::Member(sender),
+                sender: sender.into(),
                 authenticated_data: vec![],
                 content: Content::Proposal(proposal),
             },

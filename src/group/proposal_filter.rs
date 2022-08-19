@@ -9,3 +9,6 @@ pub use filter::{
 pub(crate) use filtering::{
     FailInvalidProposal, IgnoreInvalidByRefProposal, ProposalApplier, ProposalState,
 };
+
+#[cfg(test)]
+pub(crate) use filtering::proposer_can_propose;

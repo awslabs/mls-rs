@@ -262,6 +262,8 @@ impl<T> ProposalInfo<T> {
 }
 
 pub trait Proposable: Sized {
+    const TYPE: ProposalType;
+
     fn filter(bundle: &ProposalBundle) -> &[ProposalInfo<Self>];
     fn retain<F>(bundle: &mut ProposalBundle, f: F)
     where
@@ -269,8 +271,10 @@ pub trait Proposable: Sized {
 }
 
 macro_rules! impl_proposable {
-    ($ty:ty, $field:ident) => {
+    ($ty:ty, $proposal_type:ident, $field:ident) => {
         impl Proposable for $ty {
+            const TYPE: ProposalType = ProposalType::$proposal_type;
+
             fn filter(bundle: &ProposalBundle) -> &[ProposalInfo<Self>] {
                 &bundle.$field
             }
@@ -285,14 +289,14 @@ macro_rules! impl_proposable {
     };
 }
 
-impl_proposable!(AddProposal, additions);
-impl_proposable!(UpdateProposal, updates);
-impl_proposable!(RemoveProposal, removals);
-impl_proposable!(PreSharedKey, psks);
-impl_proposable!(ReInit, reinitializations);
-impl_proposable!(ExternalInit, external_initializations);
-
+impl_proposable!(AddProposal, ADD, additions);
+impl_proposable!(UpdateProposal, UPDATE, updates);
+impl_proposable!(RemoveProposal, REMOVE, removals);
+impl_proposable!(PreSharedKey, PSK, psks);
+impl_proposable!(ReInit, RE_INIT, reinitializations);
+impl_proposable!(ExternalInit, EXTERNAL_INIT, external_initializations);
 impl_proposable!(
     ExtensionList<GroupContextExtension>,
+    GROUP_CONTEXT_EXTENSIONS,
     group_context_extensions
 );

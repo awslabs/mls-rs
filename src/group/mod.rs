@@ -2595,18 +2595,18 @@ mod tests {
 
         // Create an update proposal
         let proposal = test_group.group.update_proposal().unwrap();
+        let _ = test_group
+            .group
+            .proposal_message(proposal.clone(), Vec::new())
+            .unwrap();
 
-        // There should be an error because path_update is set to `true` while there is a pending
-        // update proposal for the committer
-        let res = test_group.group.commit_proposals(vec![proposal], vec![]);
+        // The update should be filtered out because the committer commits an update for itself
+        test_group.group.commit_proposals(vec![], vec![]).unwrap();
+        let state_update = test_group.group.process_pending_commit().unwrap();
 
         assert_matches!(
-            res,
-            Err(GroupError::ProposalCacheError(
-                ProposalCacheError::ProposalFilterError(
-                    ProposalFilterError::InvalidCommitSelfUpdate
-                )
-            ))
+            &*state_update.rejected_proposals,
+            [(_, p)] if *p == proposal
         );
     }
 

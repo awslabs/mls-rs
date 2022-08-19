@@ -119,8 +119,12 @@ pub enum ProposalFilterError {
     MoreThanOneProposalForLeaf(LeafIndex),
     #[error("More than one GroupContextExtensions proposal")]
     MoreThanOneGroupContextExtensionsProposal,
-    #[error("Invalid proposal of type {0:?} for proposer {1:?}")]
-    InvalidProposalTypeForProposer(ProposalType, Sender),
+    #[error("Invalid {} proposal of type {proposal_type:?} for sender {sender:?}", by_ref_or_value_str(*.by_ref))]
+    InvalidProposalTypeForSender {
+        proposal_type: ProposalType,
+        sender: Sender,
+        by_ref: bool,
+    },
     #[error("External commit must have exactly one ExternalInit proposal")]
     ExternalCommitMustHaveExactlyOneExternalInit,
     #[error("External commit must have a new leaf")]
@@ -135,8 +139,6 @@ pub enum ProposalFilterError {
     ExternalCommitWithMoreThanOneRemove,
     #[error("Duplicate PSK IDs")]
     DuplicatePskIds,
-    #[error("ExternalInit must be committed by NewMember")]
-    ExternalInitMustBeCommittedByNewMember,
     #[error("Invalid proposal type {0:?} in external commit")]
     InvalidProposalTypeInExternalCommit(ProposalType),
     #[error("Committer can not remove themselves")]
@@ -153,6 +155,12 @@ pub enum ProposalFilterError {
     UnsupportedGroupExtension(ExtensionType),
     #[error(transparent)]
     PskIdValidationError(Box<dyn std::error::Error + Send + Sync>),
+    #[error("Invalid index {0:?} for member proposer")]
+    InvalidMemberProposer(LeafIndex),
+    #[error("Invalid external sender index {0}")]
+    InvalidExternalSenderIndex(u32),
+    #[error("External sender without External Senders extension")]
+    ExternalSenderWithoutExternalSendersExtension,
 }
 
 impl ProposalFilterError {
@@ -161,5 +169,13 @@ impl ProposalFilterError {
         E: Into<Box<dyn std::error::Error + Send + Sync>>,
     {
         Self::UserDefined(e.into())
+    }
+}
+
+fn by_ref_or_value_str(by_ref: bool) -> &'static str {
+    if by_ref {
+        "by reference"
+    } else {
+        "by value"
     }
 }

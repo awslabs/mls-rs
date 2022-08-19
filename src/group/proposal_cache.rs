@@ -410,7 +410,10 @@ mod tests {
             CREDENTIAL_TYPE_X509,
         },
         extension::{test_utils::TestExtension, ExternalSendersExt, RequiredCapabilitiesExt},
-        group::test_utils::{test_group, TEST_GROUP},
+        group::{
+            proposal_filter::proposer_can_propose,
+            test_utils::{test_group, TEST_GROUP},
+        },
         key_package::{
             test_utils::{test_key_package, test_key_package_custom},
             KeyPackageGenerator,
@@ -432,6 +435,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use ferriscrypt::kdf::hkdf::Hkdf;
+    use itertools::Itertools;
     use std::convert::Infallible;
 
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::P256Aes128;
@@ -574,7 +578,10 @@ mod tests {
             })
     }
 
-    fn make_proposal_ref(p: &Proposal, sender: LeafIndex) -> ProposalRef {
+    fn make_proposal_ref<S>(p: &Proposal, sender: S) -> ProposalRef
+    where
+        S: Into<Sender>,
+    {
         ProposalRef::from_content(
             TEST_CIPHER_SUITE,
             &auth_content_from_proposal(p.clone(), sender),
@@ -739,7 +746,11 @@ mod tests {
         assert_matches!(
             res,
             Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidCommitSelfUpdate
+                ProposalFilterError::InvalidProposalTypeForSender {
+                    proposal_type: ProposalType::UPDATE,
+                    sender: Sender::Member(_),
+                    by_ref: false,
+                }
             ))
         );
     }
@@ -928,22 +939,20 @@ mod tests {
 
     #[test]
     fn proposal_cache_filters_duplicate_psk_ids() {
+        let (alice, tree) = new_tree("alice");
         let cache = make_proposal_cache();
-        let len = Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size();
 
-        let psk_id = PreSharedKeyID {
-            key_id: JustPreSharedKeyID::External(ExternalPskId(vec![1; len])),
-            psk_nonce: PskNonce::random(TEST_CIPHER_SUITE).unwrap(),
-        };
-
-        let proposal = Proposal::Psk(PreSharedKey { psk: psk_id });
+        let proposal = Proposal::Psk(make_external_psk(
+            b"ted",
+            PskNonce::random(TEST_CIPHER_SUITE).unwrap(),
+        ));
 
         let res = cache.prepare_commit(
-            Sender::Member(test_sender()),
+            Sender::Member(alice),
             vec![proposal.clone(), proposal],
             &ExtensionList::new(),
             PassthroughCredentialValidator::new(),
-            &TreeKemPublic::new(TEST_CIPHER_SUITE),
+            &tree,
             None,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1392,6 +1401,7 @@ mod tests {
 
     #[test]
     fn test_path_update_not_required() {
+        let (alice, tree) = new_tree("alice");
         let cache = make_proposal_cache();
 
         let psk = Proposal::Psk(PreSharedKey {
@@ -1407,11 +1417,11 @@ mod tests {
 
         let (_, effects) = cache
             .prepare_commit(
-                Sender::Member(test_sender()),
+                Sender::Member(alice),
                 vec![psk, add],
                 &ExtensionList::new(),
                 PassthroughCredentialValidator::new(),
-                &TreeKemPublic::new(TEST_CIPHER_SUITE),
+                &tree,
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
@@ -1423,6 +1433,7 @@ mod tests {
 
     #[test]
     fn path_update_is_not_required_for_re_init() {
+        let (alice, tree) = new_tree("alice");
         let cache = make_proposal_cache();
 
         let reinit = Proposal::ReInit(ReInit {
@@ -1434,11 +1445,11 @@ mod tests {
 
         let (_, effects) = cache
             .prepare_commit(
-                Sender::Member(test_sender()),
+                Sender::Member(alice),
                 vec![reinit],
                 &ExtensionList::new(),
                 PassthroughCredentialValidator::new(),
-                &TreeKemPublic::new(TEST_CIPHER_SUITE),
+                &tree,
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
@@ -1455,6 +1466,7 @@ mod tests {
         receiver: LeafIndex,
         cache: ProposalCache,
         credential_validator: C,
+        group_context_extensions: ExtensionList<GroupContextExtension>,
         user_filter: F,
         external_psk_id_validator: P,
     }
@@ -1477,6 +1489,7 @@ mod tests {
                 receiver,
                 cache: make_proposal_cache(),
                 credential_validator: PassthroughCredentialValidator::new(),
+                group_context_extensions: Default::default(),
                 user_filter: pass_through_filter(),
                 external_psk_id_validator: PassThroughPskIdValidator,
             }
@@ -1499,6 +1512,7 @@ mod tests {
                 receiver: self.receiver,
                 cache: self.cache,
                 credential_validator: validator,
+                group_context_extensions: self.group_context_extensions,
                 user_filter: self.user_filter,
                 external_psk_id_validator: self.external_psk_id_validator,
             }
@@ -1514,6 +1528,7 @@ mod tests {
                 receiver: self.receiver,
                 cache: self.cache,
                 credential_validator: self.credential_validator,
+                group_context_extensions: self.group_context_extensions,
                 user_filter: f,
                 external_psk_id_validator: self.external_psk_id_validator,
             }
@@ -1529,8 +1544,16 @@ mod tests {
                 receiver: self.receiver,
                 cache: self.cache,
                 credential_validator: self.credential_validator,
+                group_context_extensions: self.group_context_extensions,
                 user_filter: self.user_filter,
                 external_psk_id_validator: v,
+            }
+        }
+
+        fn with_extensions(self, extensions: ExtensionList<GroupContextExtension>) -> Self {
+            Self {
+                group_context_extensions: extensions,
+                ..self
             }
         }
 
@@ -1552,7 +1575,7 @@ mod tests {
                 Some(self.receiver),
                 proposals.into_iter().map(Into::into).collect(),
                 None,
-                &ExtensionList::new(),
+                &self.group_context_extensions,
                 &self.credential_validator,
                 self.tree,
                 &self.external_psk_id_validator,
@@ -2114,9 +2137,12 @@ mod tests {
     #[test]
     fn receiving_update_for_committer_fails() {
         let (alice, tree) = new_tree("alice");
+        let update = Proposal::Update(make_update_proposal("alice"));
+        let update_ref = make_proposal_ref(&update, alice);
 
         let res = CommitReceiver::new(&tree, alice, alice)
-            .receive([Proposal::Update(make_update_proposal("alice"))]);
+            .cache(update_ref.clone(), update, alice)
+            .receive([update_ref]);
 
         assert_matches!(
             res,
@@ -2137,7 +2163,11 @@ mod tests {
         assert_matches!(
             res,
             Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidCommitSelfUpdate
+                ProposalFilterError::InvalidProposalTypeForSender {
+                    proposal_type: ProposalType::UPDATE,
+                    sender: Sender::Member(_),
+                    by_ref: false,
+                }
             ))
         );
     }
@@ -2671,7 +2701,11 @@ mod tests {
         assert_matches!(
             res,
             Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::ExternalInitMustBeCommittedByNewMember
+                ProposalFilterError::InvalidProposalTypeForSender {
+                    proposal_type: ProposalType::EXTERNAL_INIT,
+                    sender: Sender::Member(_),
+                    by_ref: false,
+                }
             ))
         );
     }
@@ -2687,7 +2721,11 @@ mod tests {
         assert_matches!(
             res,
             Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::ExternalInitMustBeCommittedByNewMember
+                ProposalFilterError::InvalidProposalTypeForSender {
+                    proposal_type: ProposalType::EXTERNAL_INIT,
+                    sender: Sender::Member(_),
+                    by_ref: false,
+                }
             ))
         );
     }
@@ -3136,5 +3174,101 @@ mod tests {
                 ProposalFilterError::UserDefined(_)
             ))
         );
+    }
+
+    #[test]
+    fn proposers_are_verified() {
+        let (alice, mut tree) = new_tree("alice");
+        let bob = add_member(&mut tree, "bob");
+
+        let external_senders = ExternalSendersExt::new(vec![
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"carol".to_vec()).0,
+        ]);
+
+        let sender_is_valid = |sender: &Sender| match sender {
+            Sender::Member(i) => tree.get_leaf_node(*i).is_ok(),
+            Sender::External(i) => (*i as usize) < external_senders.allowed_senders.len(),
+            _ => true,
+        };
+
+        let proposals: &[Proposal] = &[
+            Proposal::Add(make_add_proposal()),
+            Proposal::Update(make_update_proposal("alice")),
+            Proposal::Remove(RemoveProposal { to_remove: bob }),
+            Proposal::Psk(make_external_psk(
+                b"ted",
+                PskNonce::random(TEST_CIPHER_SUITE).unwrap(),
+            )),
+            Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION)),
+            Proposal::ExternalInit(make_external_init()),
+            Proposal::GroupContextExtensions(Default::default()),
+        ];
+
+        let proposers = [
+            Sender::Member(alice),
+            Sender::Member(LeafIndex::new(33)),
+            Sender::External(0),
+            Sender::External(1),
+            Sender::NewMemberCommit,
+            Sender::NewMemberProposal,
+        ];
+
+        proposers
+            .into_iter()
+            .cartesian_product(proposals)
+            .cartesian_product([false, true])
+            .for_each(|((proposer, proposal), by_ref)| {
+                let committer = Sender::Member(alice);
+
+                let receiver = CommitReceiver::new(&tree, committer.clone(), alice)
+                    .with_extensions([external_senders.clone()].try_into().unwrap());
+
+                let (receiver, proposals, proposer) = if by_ref {
+                    let proposal_ref = make_proposal_ref(proposal, proposer.clone());
+                    let receiver =
+                        receiver.cache(proposal_ref.clone(), proposal.clone(), proposer.clone());
+                    (receiver, vec![ProposalOrRef::from(proposal_ref)], proposer)
+                } else {
+                    (receiver, vec![proposal.clone().into()], committer)
+                };
+
+                let res = receiver.receive(proposals);
+
+                if !proposer_can_propose(&proposer, proposal.proposal_type(), by_ref) {
+                    assert_matches!(
+                        res,
+                        Err(ProposalCacheError::ProposalFilterError(
+                            ProposalFilterError::InvalidProposalTypeForSender {
+                                proposal_type: found_type,
+                                sender: found_sender,
+                                by_ref: found_by_ref,
+                            }
+                        )) if found_type == proposal.proposal_type() && found_sender == proposer && found_by_ref == by_ref
+                    );
+                } else if !sender_is_valid(&proposer) {
+                    match proposer {
+                        Sender::Member(i) => assert_matches!(
+                            res,
+                            Err(ProposalCacheError::ProposalFilterError(
+                                ProposalFilterError::InvalidMemberProposer(index)
+                            )) if i == index
+                        ),
+                        Sender::External(i) => assert_matches!(
+                            res,
+                            Err(ProposalCacheError::ProposalFilterError(
+                                ProposalFilterError::InvalidExternalSenderIndex(index)
+                            )) if i == index
+                        ),
+                        _ => unreachable!(),
+                    }
+                } else {
+                    let is_self_update = proposal.proposal_type() == ProposalType::UPDATE &&
+                        by_ref && matches!(proposer, Sender::Member(_));
+
+                    if !is_self_update {
+                        res.unwrap();
+                    }
+                }
+            });
     }
 }

@@ -119,6 +119,13 @@ where
     where
         F: FilterStrategy,
     {
+        let proposals = filter_out_invalid_proposers(
+            &strategy,
+            self.original_tree,
+            self.original_group_extensions,
+            proposals,
+        )?;
+
         let proposals = filter_out_update_for_committer(&strategy, commit_sender, proposals)?;
         let proposals = filter_out_removal_of_committer(&strategy, commit_sender, proposals)?;
         let proposals = filter_out_extra_removal_or_update_for_same_leaf(&strategy, proposals)?;
@@ -139,7 +146,7 @@ where
         let proposals = filter_out_extra_group_context_extensions(&strategy, proposals)?;
         let proposals = filter_out_invalid_reinit(&strategy, proposals, self.protocol_version)?;
         let proposals = filter_out_reinit_if_other_proposals(&strategy, proposals)?;
-        let proposals = filter_out_external_init(&strategy, proposals)?;
+        let proposals = filter_out_external_init(&strategy, commit_sender, proposals)?;
 
         let state = ProposalState::new(self.original_tree.clone(), proposals);
         let state = self.apply_proposal_changes(&strategy, state)?;
@@ -165,6 +172,14 @@ where
 
         ensure_proposals_in_external_commit_are_allowed(&proposals)?;
         ensure_no_proposal_by_ref(&proposals)?;
+
+        let proposals = filter_out_invalid_proposers(
+            FailInvalidProposal,
+            self.original_tree,
+            self.original_group_extensions,
+            proposals,
+        )?;
+
         let proposals = filter_out_invalid_psks(
             FailInvalidProposal,
             self.cipher_suite,
@@ -327,7 +342,7 @@ where
         state
             .proposals
             .retain_by_type::<UpdateProposal, _, _>(|p| {
-                let r = update_sender_leaf_index(&p.sender);
+                let r = update_sender_leaf_index(p);
 
                 if let Ok(leaf_index) = r {
                     updates.push((leaf_index, p.proposal.leaf_node.clone()));
@@ -749,6 +764,7 @@ where
 
 fn filter_out_external_init<F>(
     strategy: F,
+    commit_sender: LeafIndex,
     mut proposals: ProposalBundle,
 ) -> Result<ProposalBundle, ProposalFilterError>
 where
@@ -758,7 +774,11 @@ where
         apply_strategy(
             &strategy,
             p,
-            Err(ProposalFilterError::ExternalInitMustBeCommittedByNewMember),
+            Err(ProposalFilterError::InvalidProposalTypeForSender {
+                proposal_type: ProposalType::EXTERNAL_INIT,
+                sender: Sender::Member(commit_sender),
+                by_ref: p.proposal_ref.is_some(),
+            }),
         )
     })?;
 
@@ -814,6 +834,118 @@ where
 
         apply_strategy(&strategy, p, res)
     })?;
+
+    Ok(proposals)
+}
+
+fn validate_proposer<P, F>(
+    strategy: F,
+    tree: &TreeKemPublic,
+    external_senders: Option<&ExternalSendersExt>,
+    proposals: &mut ProposalBundle,
+) -> Result<(), ProposalFilterError>
+where
+    P: Proposable,
+    for<'a> &'a P: Into<BorrowedProposal<'a>>,
+    F: FilterStrategy,
+{
+    proposals.retain_by_type::<P, _, _>(|p| {
+        let res = proposer_can_propose(&p.sender, P::TYPE, p.proposal_ref.is_some())
+            .then_some(())
+            .ok_or_else(|| ProposalFilterError::InvalidProposalTypeForSender {
+                proposal_type: P::TYPE,
+                sender: p.sender.clone(),
+                by_ref: p.proposal_ref.is_some(),
+            })
+            .and_then(|_| validate_sender(tree, external_senders, &p.sender));
+        apply_strategy(&strategy, p, res)
+    })
+}
+
+fn validate_sender(
+    tree: &TreeKemPublic,
+    external_senders: Option<&ExternalSendersExt>,
+    sender: &Sender,
+) -> Result<(), ProposalFilterError> {
+    match sender {
+        &Sender::Member(i) => tree
+            .get_leaf_node(i)
+            .map(|_| ())
+            .map_err(|_| ProposalFilterError::InvalidMemberProposer(i)),
+        &Sender::External(i) => external_senders
+            .ok_or(ProposalFilterError::ExternalSenderWithoutExternalSendersExtension)
+            .and_then(|ext| {
+                (ext.allowed_senders.len() > i as usize)
+                    .then_some(())
+                    .ok_or(ProposalFilterError::InvalidExternalSenderIndex(i))
+            }),
+        Sender::NewMemberCommit | Sender::NewMemberProposal => Ok(()),
+    }
+}
+
+pub(crate) fn proposer_can_propose(
+    proposer: &Sender,
+    proposal_type: ProposalType,
+    by_ref: bool,
+) -> bool {
+    match (proposer, by_ref) {
+        (Sender::Member(_), false) => matches!(
+            proposal_type,
+            ProposalType::ADD
+                | ProposalType::REMOVE
+                | ProposalType::PSK
+                | ProposalType::RE_INIT
+                | ProposalType::GROUP_CONTEXT_EXTENSIONS
+        ),
+        (Sender::Member(_), true) => matches!(
+            proposal_type,
+            ProposalType::ADD
+                | ProposalType::UPDATE
+                | ProposalType::REMOVE
+                | ProposalType::PSK
+                | ProposalType::RE_INIT
+                | ProposalType::GROUP_CONTEXT_EXTENSIONS
+        ),
+        (Sender::External(_), false) => false,
+        (Sender::External(_), true) => matches!(
+            proposal_type,
+            ProposalType::ADD | ProposalType::REMOVE | ProposalType::RE_INIT
+        ),
+        (Sender::NewMemberCommit, false) => matches!(
+            proposal_type,
+            ProposalType::REMOVE | ProposalType::PSK | ProposalType::EXTERNAL_INIT
+        ),
+        (Sender::NewMemberCommit, true) => false,
+        (Sender::NewMemberProposal, false) => false,
+        (Sender::NewMemberProposal, true) => matches!(proposal_type, ProposalType::ADD),
+    }
+}
+
+fn filter_out_invalid_proposers<F>(
+    strategy: F,
+    tree: &TreeKemPublic,
+    group_context_extensions: &ExtensionList<GroupContextExtension>,
+    mut proposals: ProposalBundle,
+) -> Result<ProposalBundle, ProposalFilterError>
+where
+    F: FilterStrategy,
+{
+    let external_senders = group_context_extensions.get_extension().ok().flatten();
+    let external_senders = external_senders.as_ref();
+
+    validate_proposer::<AddProposal, _>(&strategy, tree, external_senders, &mut proposals)?;
+    validate_proposer::<UpdateProposal, _>(&strategy, tree, external_senders, &mut proposals)?;
+    validate_proposer::<RemoveProposal, _>(&strategy, tree, external_senders, &mut proposals)?;
+    validate_proposer::<PreSharedKey, _>(&strategy, tree, external_senders, &mut proposals)?;
+    validate_proposer::<ReInit, _>(&strategy, tree, external_senders, &mut proposals)?;
+    validate_proposer::<ExternalInit, _>(&strategy, tree, external_senders, &mut proposals)?;
+
+    validate_proposer::<ExtensionList<GroupContextExtension>, _>(
+        &strategy,
+        tree,
+        external_senders,
+        &mut proposals,
+    )?;
 
     Ok(proposals)
 }
@@ -893,13 +1025,16 @@ fn ensure_no_proposal_by_ref(proposals: &ProposalBundle) -> Result<(), ProposalF
         })
 }
 
-fn update_sender_leaf_index(sender: &Sender) -> Result<LeafIndex, ProposalFilterError> {
-    match *sender {
+fn update_sender_leaf_index(
+    p: &ProposalInfo<UpdateProposal>,
+) -> Result<LeafIndex, ProposalFilterError> {
+    match p.sender {
         Sender::Member(i) => Ok(i),
-        _ => Err(ProposalFilterError::InvalidProposalTypeForProposer(
-            ProposalType::UPDATE,
-            sender.clone(),
-        )),
+        _ => Err(ProposalFilterError::InvalidProposalTypeForSender {
+            proposal_type: ProposalType::UPDATE,
+            sender: p.sender.clone(),
+            by_ref: p.proposal_ref.is_some(),
+        }),
     }
 }
 
