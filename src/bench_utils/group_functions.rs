@@ -167,9 +167,7 @@ pub fn commit_groups(
 
 pub fn commit_group(container: &mut [Group<InMemoryClientConfig>]) {
     for committer_index in 0..container.len() {
-        let (commit, _) = container[committer_index]
-            .commit_proposals(Vec::new(), Vec::new())
-            .unwrap();
+        let (commit, _) = container[committer_index].commit(Vec::new()).unwrap();
 
         for (index, bob) in container.iter_mut().enumerate() {
             if index == committer_index {

@@ -411,11 +411,9 @@ impl MlsClient for MlsClientImpl {
         let key_package =
             KeyPackage::tls_deserialize(&mut &*request_ref.key_package).map_err(abort)?;
 
-        let add_proposal = group.add_proposal(key_package).map_err(abort)?;
-
         let proposal_packet = group
-            .proposal_message(add_proposal, vec![])
-            .and_then(|p| Ok(p.tls_serialize_detached()?))
+            .propose_add(key_package, vec![])
+            .and_then(|m| Ok(m.tls_serialize_detached()?))
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -434,10 +432,8 @@ impl MlsClient for MlsClientImpl {
             .get_mut(request_ref.state_id as usize - 1)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
 
-        let update_proposal = group.update_proposal().map_err(abort)?;
-
         let proposal_packet = group
-            .proposal_message(update_proposal, vec![])
+            .propose_update(vec![])
             .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;
 
@@ -462,10 +458,8 @@ impl MlsClient for MlsClientImpl {
             .get_mut(request_ref.state_id as usize - 1)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
 
-        let remove_proposal = group.remove_proposal(removed).map_err(abort)?;
-
         let proposal_packet = group
-            .proposal_message(remove_proposal, vec![])
+            .propose_remove(removed, vec![])
             .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;
 
@@ -485,12 +479,8 @@ impl MlsClient for MlsClientImpl {
             .get_mut(request_ref.state_id as usize - 1)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
 
-        let psk_proposal = group
-            .psk_proposal(ExternalPskId(request_ref.psk_id))
-            .map_err(abort)?;
-
         let proposal_packet = group
-            .proposal_message(psk_proposal, vec![])
+            .propose_psk(ExternalPskId(request_ref.psk_id), vec![])
             .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;
 
@@ -528,11 +518,8 @@ impl MlsClient for MlsClientImpl {
             .get_mut(request_ref.state_id as usize - 1)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
 
-        let group_context_proposal =
-            group.group_context_extensions_proposal(ExtensionList::from(extensions));
-
         let proposal_packet = group
-            .proposal_message(group_context_proposal, vec![])
+            .propose_group_context_extensions(ExtensionList::from(extensions), vec![])
             .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;
 
@@ -565,7 +552,7 @@ impl MlsClient for MlsClientImpl {
         let (commit, welcome) = groups
             .get_mut(group_index)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
-            .commit_proposals(vec![], vec![])
+            .commit(vec![])
             .map_err(abort)?;
 
         let resp = CommitResponse {

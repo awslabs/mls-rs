@@ -1,9 +1,13 @@
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
+    cipher_suite::CipherSuite,
     client_config::{ClientConfig, ProposalFilterInit, PskStore},
-    extension::{ExtensionList, LeafNodeExtension, RatchetTreeExt},
+    extension::{ExtensionList, GroupContextExtension, LeafNodeExtension, RatchetTreeExt},
+    key_package::KeyPackage,
     keychain::Keychain,
+    protocol_version::ProtocolVersion,
+    psk::ExternalPskId,
     signer::Signable,
     tree_kem::{
         kem::TreeKem, leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, Capabilities,
@@ -53,16 +57,100 @@ struct CommitOptions {
     pub ratchet_tree_extension: bool,
 }
 
+#[derive(Debug)]
+pub struct CommitBuilder<'a, C>
+where
+    C: ClientConfig + Clone,
+{
+    group: &'a mut Group<C>,
+    pub(super) proposals: Vec<Proposal>,
+    authenticated_data: Vec<u8>,
+}
+
+impl<'a, C> CommitBuilder<'a, C>
+where
+    C: ClientConfig + Clone,
+{
+    pub fn add_member(mut self, key_package: KeyPackage) -> Result<Self, GroupError> {
+        let proposal = self.group.add_proposal(key_package)?;
+        self.proposals.push(proposal);
+        Ok(self)
+    }
+
+    pub fn remove_member(mut self, index: u32) -> Result<Self, GroupError> {
+        let proposal = self.group.remove_proposal(index)?;
+        self.proposals.push(proposal);
+        Ok(self)
+    }
+
+    pub fn set_group_context_ext(
+        mut self,
+        extensions: ExtensionList<GroupContextExtension>,
+    ) -> Result<Self, GroupError> {
+        let proposal = self.group.group_context_extensions_proposal(extensions);
+        self.proposals.push(proposal);
+        Ok(self)
+    }
+
+    pub fn add_psk(mut self, psk_id: ExternalPskId) -> Result<Self, GroupError> {
+        let proposal = self.group.psk_proposal(psk_id)?;
+        self.proposals.push(proposal);
+        Ok(self)
+    }
+
+    pub fn reinit(
+        mut self,
+        group_id: Option<Vec<u8>>,
+        version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        extensions: ExtensionList<GroupContextExtension>,
+    ) -> Result<Self, GroupError> {
+        let proposal = self
+            .group
+            .reinit_proposal(group_id, version, cipher_suite, extensions)?;
+
+        self.proposals.push(proposal);
+        Ok(self)
+    }
+
+    pub fn authenticated_data(self, authenticated_data: Vec<u8>) -> Self {
+        Self {
+            authenticated_data,
+            ..self
+        }
+    }
+
+    pub fn build(self) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
+        self.group
+            .commit_proposals(self.proposals, self.authenticated_data)
+    }
+}
+
 impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
-    pub fn commit_proposals(
+    fn commit_proposals(
         &mut self,
         proposals: Vec<Proposal>,
         authenticated_data: Vec<u8>,
     ) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
         self.commit_internal(proposals, None, authenticated_data)
+    }
+
+    pub fn commit(
+        &mut self,
+        authenticated_data: Vec<u8>,
+    ) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
+        self.commit_internal(vec![], None, authenticated_data)
+    }
+
+    pub fn commit_builder(&mut self) -> CommitBuilder<C> {
+        CommitBuilder {
+            group: self,
+            proposals: Default::default(),
+            authenticated_data: Default::default(),
+        }
     }
 
     /// Returns commit and optional `MLSMessage` containing a `Welcome`
@@ -280,5 +368,314 @@ where
         self.pending_commit = Some(pending_commit);
 
         Ok((commit_message, welcome))
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use crate::tree_kem::{leaf_node::LeafNode, TreeKemPublic, UpdatePathNode};
+    use core::fmt;
+
+    pub struct CommitModifiers<S> {
+        pub modify_leaf: fn(&mut LeafNode, &S),
+        pub modify_tree: fn(&mut TreeKemPublic),
+        pub modify_path: fn(Vec<UpdatePathNode>) -> Vec<UpdatePathNode>,
+    }
+
+    impl<S> fmt::Debug for CommitModifiers<S> {
+        fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            write!(fmt, "CommitModifiers")
+        }
+    }
+
+    impl<S> Copy for CommitModifiers<S> {}
+
+    impl<S> Clone for CommitModifiers<S> {
+        fn clone(&self) -> Self {
+            *self
+        }
+    }
+
+    impl<S> Default for CommitModifiers<S> {
+        fn default() -> Self {
+            Self {
+                modify_leaf: |_, _| (),
+                modify_tree: |_| (),
+                modify_path: |a| a,
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        client_config::InMemoryClientConfig,
+        extension::RequiredCapabilitiesExt,
+        group::{proposal::PreSharedKey, test_utils::test_group},
+        key_package::test_utils::test_key_package,
+        psk::{JustPreSharedKeyID, PreSharedKeyID, Psk},
+    };
+
+    use super::*;
+
+    fn test_commit_builder_group() -> Group<InMemoryClientConfig> {
+        test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).group
+    }
+
+    fn assert_commit_builder_output(
+        group: Group<InMemoryClientConfig>,
+        commit_message: MLSMessage,
+        expected: Vec<Proposal>,
+        welcome_message: Option<MLSMessage>,
+        welcome_count: usize,
+    ) {
+        let plaintext = commit_message.into_plaintext().unwrap();
+
+        let commit_data = match plaintext.content.content {
+            Content::Commit(commit) => commit,
+            _ => panic!("Found non-commit data"),
+        };
+
+        assert_eq!(commit_data.proposals.len(), expected.len());
+
+        commit_data.proposals.into_iter().for_each(|proposal| {
+            let proposal = match proposal {
+                ProposalOrRef::Proposal(p) => p,
+                ProposalOrRef::Reference(_) => panic!("found proposal reference"),
+            };
+
+            if let Some(psk_id) = match &proposal {
+                Proposal::Psk(PreSharedKey { psk: PreSharedKeyID { key_id: JustPreSharedKeyID::External(psk_id), .. },}) => Some(psk_id),
+                _ => None,
+            } {
+                let found = expected.iter().any(|item| matches!(item, Proposal::Psk(PreSharedKey { psk: PreSharedKeyID { key_id: JustPreSharedKeyID::External(id), .. }}) if id == psk_id));
+
+                assert!(found)
+            } else {
+                assert!(expected.contains(&proposal));
+            }
+        });
+
+        if welcome_count > 0 {
+            let welcome_msg = welcome_message.unwrap();
+
+            assert_eq!(
+                welcome_msg.version,
+                group.state.context.protocol_version.into()
+            );
+
+            let welcome_msg = welcome_msg.into_welcome().unwrap();
+
+            assert_eq!(welcome_msg.cipher_suite, group.state.context.cipher_suite);
+            assert_eq!(welcome_msg.secrets.len(), welcome_count);
+        } else {
+            assert!(welcome_message.is_none());
+        }
+    }
+
+    #[test]
+    fn test_commit_builder_add() {
+        let mut group = test_commit_builder_group();
+        let test_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+
+        let (commit_message, welcome_message) = group
+            .commit_builder()
+            .add_member(test_key_package.clone())
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let expected_add = group.add_proposal(test_key_package).unwrap();
+
+        assert_commit_builder_output(
+            group,
+            commit_message,
+            vec![expected_add],
+            welcome_message,
+            1,
+        )
+    }
+
+    #[test]
+    fn test_commit_builder_remove() {
+        let mut group = test_commit_builder_group();
+        let test_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+
+        group
+            .commit_builder()
+            .add_member(test_key_package)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        group.process_pending_commit().unwrap();
+
+        let (commit_message, welcome_message) = group
+            .commit_builder()
+            .remove_member(1)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let expected_remove = group.remove_proposal(1).unwrap();
+
+        assert_commit_builder_output(
+            group,
+            commit_message,
+            vec![expected_remove],
+            welcome_message,
+            0,
+        );
+    }
+
+    #[test]
+    fn test_commit_builder_psk() {
+        let mut group = test_commit_builder_group();
+        let test_psk = ExternalPskId(vec![1]);
+
+        group
+            .config
+            .secret_store()
+            .insert(test_psk.clone(), Psk::from(vec![]));
+
+        let (commit_message, welcome_message) = group
+            .commit_builder()
+            .add_psk(test_psk.clone())
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let expected_psk = group.psk_proposal(test_psk).unwrap();
+
+        assert_commit_builder_output(
+            group,
+            commit_message,
+            vec![expected_psk],
+            welcome_message,
+            0,
+        )
+    }
+
+    #[test]
+    fn test_commit_builder_group_context_ext() {
+        let mut group = test_commit_builder_group();
+        let mut test_ext = ExtensionList::default();
+        test_ext
+            .set_extension(RequiredCapabilitiesExt::default())
+            .unwrap();
+
+        let (commit_message, welcome_message) = group
+            .commit_builder()
+            .set_group_context_ext(test_ext.clone())
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let expected_ext = group.group_context_extensions_proposal(test_ext);
+
+        assert_commit_builder_output(
+            group,
+            commit_message,
+            vec![expected_ext],
+            welcome_message,
+            0,
+        );
+    }
+
+    #[test]
+    fn test_commit_builder_reinit() {
+        let mut group = test_commit_builder_group();
+        let test_group_id = "foo".as_bytes().to_vec();
+        let test_cipher_suite = CipherSuite::Curve25519ChaCha20;
+        let test_protocol_version = ProtocolVersion::Mls10;
+        let mut test_ext = ExtensionList::default();
+
+        test_ext
+            .set_extension(RequiredCapabilitiesExt::default())
+            .unwrap();
+
+        let (commit_message, welcome_message) = group
+            .commit_builder()
+            .reinit(
+                Some(test_group_id.clone()),
+                test_protocol_version,
+                test_cipher_suite,
+                test_ext.clone(),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let expected_reinit = group
+            .reinit_proposal(
+                Some(test_group_id),
+                test_protocol_version,
+                test_cipher_suite,
+                test_ext,
+            )
+            .unwrap();
+
+        assert_commit_builder_output(
+            group,
+            commit_message,
+            vec![expected_reinit],
+            welcome_message,
+            0,
+        );
+    }
+
+    #[test]
+    fn test_commit_builder_chaining() {
+        let mut group = test_commit_builder_group();
+        let kp1 = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let kp2 = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+
+        let expected_adds = vec![
+            group.add_proposal(kp1.clone()).unwrap(),
+            group.add_proposal(kp2.clone()).unwrap(),
+        ];
+
+        let (commit_message, welcome_message) = group
+            .commit_builder()
+            .add_member(kp1)
+            .unwrap()
+            .add_member(kp2)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_commit_builder_output(group, commit_message, expected_adds, welcome_message, 2);
+    }
+
+    #[test]
+    fn test_commit_builder_empty_commit() {
+        let mut group = test_commit_builder_group();
+
+        let (commit_message, welcome_message) = group.commit_builder().build().unwrap();
+
+        assert_commit_builder_output(group, commit_message, vec![], welcome_message, 0);
+    }
+
+    #[test]
+    fn test_commit_builder_authenticated_data() {
+        let mut group = test_commit_builder_group();
+        let test_data = "test".as_bytes().to_vec();
+
+        let (commit_message, _) = group
+            .commit_builder()
+            .authenticated_data(test_data.clone())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            commit_message
+                .into_plaintext()
+                .unwrap()
+                .content
+                .authenticated_data,
+            test_data
+        );
     }
 }

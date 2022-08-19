@@ -38,7 +38,7 @@ fn bench_group_commit(
             &groups.len(),
             |b, _| {
                 b.iter(|| {
-                    let (commit, _) = groups[0].commit_proposals(Vec::new(), Vec::new()).unwrap();
+                    let (commit, _) = groups[0].commit(Vec::new()).unwrap();
 
                     groups[0].process_pending_commit().unwrap();
                     groups[1].process_incoming_message(commit).unwrap();

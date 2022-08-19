@@ -266,7 +266,7 @@ mod tests {
 
     fn test_group_with_one_commit(v: ProtocolVersion, cs: CipherSuite) -> TestGroup {
         let mut group = test_group(v, cs);
-        group.commit(Vec::new()).unwrap();
+        group.group.commit(Vec::new()).unwrap();
         group.process_pending_commit().unwrap();
         group
     }
@@ -280,11 +280,11 @@ mod tests {
 
         let bob_key_package = test_key_package_with_id(v, cs, "bob");
 
-        let add_proposal = AddProposal {
-            key_package: bob_key_package,
-        };
-
-        let mut proposals = vec![Proposal::Add(add_proposal)];
+        let mut commit_builder = group
+            .group
+            .commit_builder()
+            .add_member(bob_key_package)
+            .unwrap();
 
         if let Some(ext_signer) = ext_identity {
             let mut ext_list = ExtensionList::new();
@@ -295,10 +295,11 @@ mod tests {
                 })
                 .unwrap();
 
-            proposals.push(Proposal::GroupContextExtensions(ext_list))
+            commit_builder = commit_builder.set_group_context_ext(ext_list).unwrap();
         }
 
-        group.commit(proposals).unwrap();
+        commit_builder.build().unwrap();
+
         group.process_pending_commit().unwrap();
         group
     }
@@ -334,7 +335,7 @@ mod tests {
     fn external_group_can_process_commit() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let mut server = make_external_group(&alice);
-        let (commit, _) = alice.commit(Vec::new()).unwrap();
+        let (commit, _) = alice.group.commit(Vec::new()).unwrap();
         alice.group.process_pending_commit().unwrap();
         server.process_incoming_message(commit).unwrap();
 
@@ -362,7 +363,7 @@ mod tests {
             ExternalEvent::Proposal(ref p) if p == &add_proposal
         );
 
-        let (commit, _) = alice.commit(vec![]).unwrap();
+        let (commit, _) = alice.group.commit(vec![]).unwrap();
         alice.group.process_pending_commit().unwrap();
 
         let commit_result = server.process_incoming_message(commit).unwrap();
@@ -394,7 +395,7 @@ mod tests {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let mut server = make_external_group(&alice);
 
-        let (mut commit, _) = alice.commit(vec![]).unwrap();
+        let (mut commit, _) = alice.group.commit(vec![]).unwrap();
 
         match commit.payload {
             MLSMessagePayload::Plain(ref mut plain) => plain.content.epoch = 0,
@@ -414,7 +415,7 @@ mod tests {
         let mut server =
             make_external_group_with_config(&alice, InMemoryExternalClientConfig::default());
 
-        let (mut commit, _) = alice.commit(Vec::new()).unwrap();
+        let (mut commit, _) = alice.group.commit(Vec::new()).unwrap();
 
         match commit.payload {
             MLSMessagePayload::Plain(ref mut plain) => plain.auth.signature = Vec::new().into(),
@@ -510,7 +511,7 @@ mod tests {
         alice.process_message(external_proposal).unwrap();
 
         // Alice commits the proposal
-        let (commit_data, _) = alice.commit(vec![]).unwrap();
+        let (commit_data, _) = alice.group.commit(vec![]).unwrap();
 
         let commit = match commit_data
             .clone()
@@ -616,7 +617,7 @@ mod tests {
             .encrypt_application_message(&[], vec![])
             .unwrap();
 
-        let (commit, _) = alice.commit(vec![]).unwrap();
+        let (commit, _) = alice.group.commit(vec![]).unwrap();
         server.process_incoming_message(commit).unwrap();
 
         let res = server.process_incoming_message(old_application_msg);

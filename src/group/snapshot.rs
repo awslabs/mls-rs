@@ -77,7 +77,7 @@ mod tests {
     #[test]
     fn snapshot_with_pending_commit_can_be_serialized_to_json() {
         let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        group.group.commit_proposals(vec![], vec![]).unwrap();
+        group.group.commit(vec![]).unwrap();
 
         serialize_to_json_test(group)
     }

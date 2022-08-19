@@ -299,21 +299,11 @@ mod tests {
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
     fn make_signed_plaintext(group: &mut Group<InMemoryClientConfig>) -> MLSPlaintext {
-        group
-            .commit_proposals(vec![], vec![])
-            .unwrap()
-            .0
-            .into_plaintext()
-            .unwrap()
+        group.commit(vec![]).unwrap().0.into_plaintext().unwrap()
     }
 
     fn make_signed_ciphertext(group: &mut Group<InMemoryClientConfig>) -> MLSCiphertext {
-        group
-            .commit_proposals(vec![], vec![])
-            .unwrap()
-            .0
-            .into_ciphertext()
-            .unwrap()
+        group.commit(vec![]).unwrap().0.into_ciphertext().unwrap()
     }
 
     fn decrypt(
@@ -356,14 +346,12 @@ mod tests {
             let (bob_key_pkg, bob_signing_key) =
                 test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
 
-            let proposal = alice
-                .group
-                .add_proposal(bob_key_pkg.key_package.clone())
-                .unwrap();
-
             let (_, welcome) = alice
                 .group
-                .commit_proposals(vec![proposal], vec![])
+                .commit_builder()
+                .add_member(bob_key_pkg.key_package.clone())
+                .unwrap()
+                .build()
                 .unwrap();
 
             alice.group.process_pending_commit().unwrap();
@@ -556,12 +544,10 @@ mod tests {
 
         test_group
             .group
-            .commit_proposals(
-                vec![test_group
-                    .group
-                    .group_context_extensions_proposal(extensions)],
-                vec![],
-            )
+            .commit_builder()
+            .set_group_context_ext(extensions)
+            .unwrap()
+            .build()
             .unwrap();
 
         test_group.group.process_pending_commit().unwrap();

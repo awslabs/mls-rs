@@ -281,8 +281,10 @@ pub mod test_utils {
     where
         S: IntoIterator<Item = &'a mut Group<InMemoryClientConfig>>,
     {
-        let (commit_msg, welcome_msg) =
-            committer.commit_proposals(vec![Proposal::Add(AddProposal { key_package })], vec![])?;
+        let (commit_msg, welcome_msg) = committer
+            .commit_builder()
+            .add_member(key_package)?
+            .build()?;
 
         committer.process_pending_commit()?;
 
@@ -388,7 +390,7 @@ mod tests {
             Event::Proposal(Proposal::Add(AddProposal { key_package })) if key_package.leaf_node.signing_identity == bob_key_package.leaf_node.signing_identity
         );
 
-        alice_group.group.commit_proposals(vec![], vec![]).unwrap();
+        alice_group.group.commit(vec![]).unwrap();
         alice_group.group.process_pending_commit().unwrap();
 
         // Check that the new member is in the group
@@ -508,11 +510,7 @@ mod tests {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let mut bob_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        bob_group
-            .group
-            .commit_proposals(Vec::new(), Vec::new())
-            .unwrap();
-
+        bob_group.group.commit(vec![]).unwrap();
         bob_group.group.process_pending_commit().unwrap();
 
         let group_info_msg = bob_group.group.group_info_message(true).unwrap();
