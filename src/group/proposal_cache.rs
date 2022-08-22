@@ -419,7 +419,7 @@ mod tests {
             KeyPackageGenerator,
         },
         psk::PassThroughPskIdValidator,
-        signing_identity::test_utils::get_test_signing_identity,
+        signing_identity::{test_utils::get_test_signing_identity, SigningIdentityError},
         tree_kem::{
             leaf_node::{
                 test_utils::{get_basic_test_node, get_basic_test_node_sig_key},
@@ -429,7 +429,7 @@ mod tests {
                 test_utils::FailureCredentialValidator, LeafNodeValidationError,
             },
             parent_hash::ParentHash,
-            AccumulateBatchResults, Lifetime, TreeIndexError,
+            AccumulateBatchResults, Lifetime, RatchetTreeError, TreeIndexError,
         },
     };
 

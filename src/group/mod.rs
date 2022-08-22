@@ -1,11 +1,7 @@
-use ferriscrypt::asym::ec_key::EcKeyError;
-use ferriscrypt::cipher::aead::AeadError;
 use ferriscrypt::hmac::Tag;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
-use ferriscrypt::hpke::HpkeError;
 use ferriscrypt::kdf::hkdf::Hkdf;
-use ferriscrypt::kdf::KdfError;
-use ferriscrypt::rand::{SecureRng, SecureRngError};
+use ferriscrypt::rand::SecureRng;
 use serde_with::serde_as;
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -15,46 +11,36 @@ use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroizing;
 
-use crate::cipher_suite::{CipherSuite, MaybeCipherSuite};
+use crate::cipher_suite::CipherSuite;
 use crate::client_config::{
     ClientConfig, CredentialValidator, ProposalFilterInit, PskStore, PskStoreIdValidator,
 };
-use crate::credential::CredentialError;
 use crate::epoch::EpochRepository;
 use crate::extension::{
-    ExtensionError, ExtensionList, ExternalPubExt, ExternalSendersExt, GroupContextExtension,
-    LeafNodeExtension, RatchetTreeExt,
+    ExtensionError, ExtensionList, ExternalPubExt, GroupContextExtension, LeafNodeExtension,
+    RatchetTreeExt,
 };
-use crate::group::{KeySchedule, KeyScheduleError};
-use crate::key_package::{
-    KeyPackage, KeyPackageError, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageRef,
-    KeyPackageRepository, KeyPackageValidationError, KeyPackageValidator,
-};
+use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
 use crate::keychain::Keychain;
-use crate::protocol_version::{MaybeProtocolVersion, ProtocolVersion};
+use crate::protocol_version::ProtocolVersion;
 use crate::psk::{
-    ExternalPskId, ExternalPskIdValidator, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk,
-    PskGroupId, PskNonce, PskSecretError, ResumptionPSKUsage, ResumptionPsk,
+    ExternalPskId, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
+    ResumptionPSKUsage, ResumptionPsk,
 };
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
-use crate::signer::{Signable, SignatureError, Signer};
-use crate::signing_identity::{SigningIdentity, SigningIdentityError};
+use crate::signer::{Signable, Signer};
+use crate::signing_identity::SigningIdentity;
 use crate::tree_kem::kem::TreeKem;
-use crate::tree_kem::leaf_node::{LeafNode, LeafNodeError};
-use crate::tree_kem::leaf_node_validator::LeafNodeValidationError;
-use crate::tree_kem::node::{LeafIndex, NodeVec};
-use crate::tree_kem::path_secret::{PathSecret, PathSecretError};
-use crate::tree_kem::tree_validator::{TreeValidationError, TreeValidator};
+use crate::tree_kem::leaf_node::LeafNode;
+use crate::tree_kem::node::LeafIndex;
+use crate::tree_kem::path_secret::PathSecret;
 use crate::tree_kem::{math as tree_math, HpkeCiphertext, ValidatedUpdatePath};
-use crate::tree_kem::{
-    Capabilities, RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePathValidationError,
-};
+use crate::tree_kem::{Capabilities, TreeKemPrivate, TreeKemPublic};
 
 #[cfg(feature = "benchmark")]
 use crate::client_config::Preferences;
 
 use confirmation_tag::*;
-use epoch::*;
 use framing::*;
 use key_schedule::*;
 use membership_tag::*;
@@ -77,12 +63,14 @@ pub(crate) use proposal_cache::ProposalCacheError;
 
 pub use self::framing::MLSMessage;
 pub use commit::*;
+pub use error::*;
 pub use padding::*;
 pub(crate) use proposal_ref::ProposalRef;
 pub use roster::*;
 pub use snapshot::*;
 pub use stats::*;
 pub(crate) use transcript_hash::ConfirmedTranscriptHash;
+pub(crate) use util::*;
 
 #[cfg(feature = "benchmark")]
 pub use context::*;
@@ -94,6 +82,7 @@ mod commit;
 mod confirmation_tag;
 mod context;
 pub(crate) mod epoch;
+mod error;
 mod external_group;
 pub(crate) mod framing;
 mod group_info;
@@ -112,189 +101,13 @@ mod snapshot;
 mod state;
 mod stats;
 mod transcript_hash;
+mod util;
 
 #[cfg(feature = "benchmark")]
 pub mod secret_tree;
 
 #[cfg(not(feature = "benchmark"))]
 pub(crate) mod secret_tree;
-
-#[derive(Error, Debug)]
-pub enum GroupError {
-    #[error(transparent)]
-    RatchetTreeError(#[from] RatchetTreeError),
-    #[error(transparent)]
-    EpochError(#[from] EpochError),
-    #[error(transparent)]
-    SignerError(Box<dyn std::error::Error>),
-    #[error(transparent)]
-    EcKeyError(#[from] EcKeyError),
-    #[error(transparent)]
-    SignatureError(#[from] SignatureError),
-    #[error(transparent)]
-    TlsCodecError(#[from] tls_codec::Error),
-    #[error(transparent)]
-    TranscriptHashError(#[from] TranscriptHashError),
-    #[error(transparent)]
-    KeyPackageError(#[from] KeyPackageError),
-    #[error(transparent)]
-    LeafNodeError(#[from] LeafNodeError),
-    #[error(transparent)]
-    LeafNodeValidationError(#[from] LeafNodeValidationError),
-    #[error(transparent)]
-    MembershipTagError(#[from] MembershipTagError),
-    #[error(transparent)]
-    RngError(#[from] SecureRngError),
-    #[error(transparent)]
-    HpkeError(#[from] HpkeError),
-    #[error(transparent)]
-    CredentialError(#[from] CredentialError),
-    #[error(transparent)]
-    ConfirmationTagError(#[from] ConfirmationTagError),
-    #[error(transparent)]
-    KeyScheduleKdfError(#[from] KeyScheduleKdfError),
-    #[error(transparent)]
-    AeadError(#[from] AeadError),
-    #[error(transparent)]
-    LeafSecretError(#[from] PathSecretError),
-    #[error(transparent)]
-    EpochRepositoryError(Box<dyn std::error::Error + Send + Sync>),
-    #[error(transparent)]
-    KeyPackageRepositoryError(Box<dyn std::error::Error + Send + Sync>),
-    #[error(transparent)]
-    ExtensionError(#[from] ExtensionError),
-    #[error(transparent)]
-    KdfError(#[from] KdfError),
-    #[error(transparent)]
-    KeyScheduleError(#[from] KeyScheduleError),
-    #[error(transparent)]
-    KeyPackageGenerationError(#[from] KeyPackageGenerationError),
-    #[error(transparent)]
-    KeyPackageValidationError(#[from] KeyPackageValidationError),
-    #[error(transparent)]
-    UpdatePathValidationError(#[from] UpdatePathValidationError),
-    #[error(transparent)]
-    ProposalCacheError(#[from] ProposalCacheError),
-    #[error(transparent)]
-    TreeValidationError(#[from] TreeValidationError),
-    #[error(transparent)]
-    SigningIdentityError(#[from] SigningIdentityError),
-    #[error("key package not found")]
-    KeyPackageNotFound,
-    #[error("Cipher suite does not match")]
-    CipherSuiteMismatch,
-    #[error("Invalid key package signature")]
-    InvalidKeyPackage,
-    #[error("Invalid commit, missing required path")]
-    CommitMissingPath,
-    #[error("plaintext message for incorrect epoch")]
-    InvalidEpoch(u64),
-    #[error("epoch metadata not found for group: {0:?}")]
-    EpochMetadataNotFound(Vec<u8>),
-    #[error("invalid signature found")]
-    InvalidSignature,
-    #[error("invalid confirmation tag")]
-    InvalidConfirmationTag,
-    #[error("invalid membership tag")]
-    InvalidMembershipTag,
-    #[error("corrupt private key, missing required values")]
-    InvalidTreeKemPrivateKey,
-    #[error("key package not found, unable to process")]
-    WelcomeKeyPackageNotFound,
-    #[error("invalid participant {0}")]
-    InvalidGroupParticipant(u32),
-    #[error("self not found in ratchet tree")]
-    TreeMissingSelfUser,
-    #[error("leaf not found in tree for index {0}")]
-    LeafNotFound(u32),
-    #[error("message from self can't be processed")]
-    CantProcessMessageFromSelf,
-    #[error("pending proposals found, commit required before application messages can be sent")]
-    CommitRequired,
-    #[error("ratchet tree not provided or discovered in GroupInfo")]
-    RatchetTreeNotFound,
-    #[error("Only members can encrypt messages")]
-    OnlyMembersCanEncryptMessages,
-    #[error("External sender cannot commit")]
-    ExternalSenderCannotCommit,
-    #[error("Only members can update")]
-    OnlyMembersCanUpdate,
-    #[error(transparent)]
-    PskSecretError(#[from] PskSecretError),
-    #[error("Subgroup uses a different protocol version: {0:?}")]
-    SubgroupWithDifferentProtocolVersion(ProtocolVersion),
-    #[error("Subgroup uses a different cipher suite: {0:?}")]
-    SubgroupWithDifferentCipherSuite(CipherSuite),
-    #[error("Unsupported protocol version {0:?}")]
-    UnsupportedProtocolVersion(MaybeProtocolVersion),
-    #[error(
-        "message protocol version {msg_version:?} does not match version {version:?} in {wire_format:?}"
-    )]
-    ProtocolVersionMismatch {
-        msg_version: ProtocolVersion,
-        wire_format: WireFormat,
-        version: ProtocolVersion,
-    },
-    #[error("Unsupported cipher suite {0:?}")]
-    UnsupportedCipherSuite(MaybeCipherSuite),
-    #[error("Signing key of external sender is unknown")]
-    UnknownSigningIdentityForExternalSender,
-    #[error("External proposals are disabled for this group")]
-    ExternalProposalsDisabled,
-    #[error("Signing identity is not allowed to externally propose")]
-    InvalidExternalSigningIdentity,
-    #[error("Missing ExternalPub extension")]
-    MissingExternalPubExtension,
-    #[error("Missing update path in external commit")]
-    MissingUpdatePathInExternalCommit,
-    #[error("Epoch {0} not found")]
-    EpochNotFound(u64),
-    #[error("expected protocol version {0:?}, found version {1:?}")]
-    InvalidProtocolVersion(ProtocolVersion, MaybeProtocolVersion),
-    #[error("unexpected group ID {0:?}")]
-    InvalidGroupId(Vec<u8>),
-    #[error("Unencrypted application message")]
-    UnencryptedApplicationMessage,
-    #[error("NewMemberCommit sender type can only be used to send Commit content")]
-    ExpectedCommitForNewMemberCommit,
-    #[error("NewMemberProposal sender type can only be used to send add proposals")]
-    ExpectedAddProposalForNewMemberProposal,
-    #[error("External commit missing ExternalInit proposal")]
-    ExternalCommitMissingExternalInit,
-    #[error(
-        "A ReIinit has been applied. The next action must be creating or receiving a welcome."
-    )]
-    GroupUsedAfterReInit,
-    #[error("Pending ReIinit not found.")]
-    PendingReInitNotFound,
-    #[error("A commit after ReIinit did not output a welcome message.")]
-    ReInitCommitDidNotOutputWelcome,
-    #[error("The ciphersuites in the welcome message {0:?} and in the reinit {1:?} do not match.")]
-    ReInitCiphersuiteMismatch(CipherSuite, CipherSuite),
-    #[error("The versions in the welcome message {0:?} and in the reinit {1:?} do not match.")]
-    ReInitVersionMismatch(ProtocolVersion, ProtocolVersion),
-    #[error("The extensions in the welcome message {0:?} and in the reinit {1:?} do not match.")]
-    ReInitExtensionsMismatch(
-        ExtensionList<GroupContextExtension>,
-        ExtensionList<GroupContextExtension>,
-    ),
-    #[error("The group ids in the welcome message {0:?} and in the reinit {1:?} do not match.")]
-    ReInitIdMismatch(Vec<u8>, Vec<u8>),
-    #[error("No credential found for given ciphersuite.")]
-    NoCredentialFound,
-    #[error("Expected commit message, found: {0:?}")]
-    NotCommitContent(ContentType),
-    #[error("signer not found")]
-    SignerNotFound,
-    #[error("commit already pending")]
-    ExistingPendingCommit,
-    #[error("pending commit not found")]
-    PendingCommitNotFound,
-    #[error("unexpected message type, expected {0:?}, found {1:?}")]
-    UnexpectedMessageType(Vec<WireFormat>, WireFormat),
-    #[error("membership tag on MLSPlaintext for non-member sender")]
-    MembershipTagForNonMember,
-}
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 struct GroupSecrets {
@@ -1617,235 +1430,6 @@ where
     }
 }
 
-pub(crate) fn process_group_info(
-    protocol_versions_allowed: &[ProtocolVersion],
-    cipher_suites_allowed: &[CipherSuite],
-    msg_protocol_version: ProtocolVersion,
-    group_info: GroupInfo,
-    tree_data: Option<&[u8]>,
-) -> Result<(GroupContext, ConfirmationTag, TreeKemPublic, LeafIndex), GroupError> {
-    let group_protocol_version = check_protocol_version(
-        protocol_versions_allowed,
-        group_info.group_context.protocol_version,
-    )?;
-
-    if msg_protocol_version != group_protocol_version {
-        return Err(GroupError::ProtocolVersionMismatch {
-            msg_version: msg_protocol_version,
-            wire_format: WireFormat::GroupInfo,
-            version: group_protocol_version,
-        });
-    }
-
-    let cipher_suite =
-        check_cipher_suite(cipher_suites_allowed, group_info.group_context.cipher_suite)?;
-
-    let ratchet_tree_ext = group_info.extensions.get_extension::<RatchetTreeExt>()?;
-
-    let public_tree = find_tree(tree_data, cipher_suite, ratchet_tree_ext)?;
-
-    let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
-
-    group_info.verify(
-        &sender_key_package
-            .signing_identity
-            .public_key(public_tree.cipher_suite)?,
-        &(),
-    )?;
-
-    let confirmation_tag = group_info.confirmation_tag;
-    let signer = group_info.signer;
-
-    let group_context = GroupContext {
-        protocol_version: group_protocol_version,
-        cipher_suite,
-        group_id: group_info.group_context.group_id,
-        epoch: group_info.group_context.epoch,
-        tree_hash: group_info.group_context.tree_hash,
-        confirmed_transcript_hash: group_info.group_context.confirmed_transcript_hash,
-        extensions: group_info.group_context.extensions,
-    };
-
-    Ok((group_context, confirmation_tag, public_tree, signer))
-}
-
-fn validate_group_info<C: CredentialValidator>(
-    protocol_versions_allowed: &[ProtocolVersion],
-    cipher_suites_allowed: &[CipherSuite],
-    msg_protocol_version: ProtocolVersion,
-    group_info: GroupInfo,
-    tree_data: Option<&[u8]>,
-    credential_validator: &C,
-) -> Result<(GroupContext, ConfirmationTag, TreeKemPublic, LeafIndex), GroupError> {
-    let (group_context, confirmation_tag, mut public_tree, signer) = process_group_info(
-        protocol_versions_allowed,
-        cipher_suites_allowed,
-        msg_protocol_version,
-        group_info,
-        tree_data,
-    )?;
-
-    validate_existing_group(&mut public_tree, &group_context, credential_validator)?;
-
-    Ok((group_context, confirmation_tag, public_tree, signer))
-}
-
-pub(crate) fn find_tree(
-    tree_data: Option<&[u8]>,
-    cipher_suite: CipherSuite,
-    extension: Option<RatchetTreeExt>,
-) -> Result<TreeKemPublic, GroupError> {
-    match tree_data {
-        Some(tree_data) => Ok(TreeKemPublic::import_node_data(
-            cipher_suite,
-            NodeVec::tls_deserialize(&mut &*tree_data)?,
-        )?),
-        None => {
-            let tree_extension = extension.ok_or(GroupError::RatchetTreeNotFound)?;
-
-            Ok(TreeKemPublic::import_node_data(
-                cipher_suite,
-                tree_extension.tree_data,
-            )?)
-        }
-    }
-}
-
-fn validate_existing_group<C: CredentialValidator>(
-    public_tree: &mut TreeKemPublic,
-    group_context: &GroupContext,
-    credential_validator: &C,
-) -> Result<(), GroupError> {
-    let required_capabilities = group_context.extensions.get_extension()?;
-
-    // Verify the integrity of the ratchet tree
-    let tree_validator = TreeValidator::new(
-        group_context.cipher_suite,
-        &group_context.group_id,
-        &group_context.tree_hash,
-        required_capabilities.as_ref(),
-        credential_validator,
-    );
-
-    tree_validator.validate(public_tree)?;
-
-    if let Some(ext_senders) = group_context
-        .extensions
-        .get_extension::<ExternalSendersExt>()?
-    {
-        ext_senders.verify_all(&credential_validator, group_context.cipher_suite)?;
-    }
-
-    Ok(())
-}
-
-fn commit_sender(
-    sender: &Sender,
-    provisional_state: &ProvisionalState,
-) -> Result<LeafIndex, GroupError> {
-    match sender {
-        Sender::Member(index) => Ok(*index),
-        Sender::External(_) => Err(GroupError::ExternalSenderCannotCommit),
-        Sender::NewMemberProposal => Err(GroupError::ExpectedAddProposalForNewMemberProposal),
-        Sender::NewMemberCommit => provisional_state
-            .external_init
-            .as_ref()
-            .map(|(index, _)| *index)
-            .ok_or(GroupError::ExternalCommitMissingExternalInit),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn proposal_effects<C, F, P>(
-    commit_receiver: Option<LeafIndex>,
-    proposals: &ProposalCache,
-    commit: &Commit,
-    sender: &Sender,
-    group_extensions: &ExtensionList<GroupContextExtension>,
-    credential_validator: C,
-    public_tree: &TreeKemPublic,
-    external_psk_id_validator: P,
-    user_filter: F,
-) -> Result<ProposalSetEffects, ProposalCacheError>
-where
-    C: CredentialValidator,
-    F: ProposalFilter,
-    P: ExternalPskIdValidator,
-{
-    proposals.resolve_for_commit(
-        sender.clone(),
-        commit_receiver,
-        commit.proposals.clone(),
-        commit.path.as_ref().map(|path| &path.leaf_node),
-        group_extensions,
-        credential_validator,
-        public_tree,
-        external_psk_id_validator,
-        user_filter,
-    )
-}
-
-fn transcript_hashes(
-    cipher_suite: CipherSuite,
-    prev_interim_transcript_hash: &InterimTranscriptHash,
-    content: &MLSAuthenticatedContent,
-) -> Result<(InterimTranscriptHash, ConfirmedTranscriptHash), GroupError> {
-    let confirmed_transcript_hash =
-        ConfirmedTranscriptHash::create(cipher_suite, prev_interim_transcript_hash, content)?;
-
-    let confirmation_tag = content
-        .auth
-        .confirmation_tag
-        .as_ref()
-        .ok_or(GroupError::InvalidConfirmationTag)?;
-
-    let interim_transcript_hash =
-        InterimTranscriptHash::create(cipher_suite, &confirmed_transcript_hash, confirmation_tag)?;
-
-    Ok((interim_transcript_hash, confirmed_transcript_hash))
-}
-
-fn check_protocol_version(
-    allowed: &[ProtocolVersion],
-    version: MaybeProtocolVersion,
-) -> Result<ProtocolVersion, GroupError> {
-    version
-        .into_enum()
-        .filter(|v| allowed.contains(v))
-        .ok_or(GroupError::UnsupportedProtocolVersion(version))
-}
-
-fn check_cipher_suite(
-    allowed: &[CipherSuite],
-    cipher_suite: MaybeCipherSuite,
-) -> Result<CipherSuite, GroupError> {
-    cipher_suite
-        .into_enum()
-        .filter(|cs| allowed.contains(cs))
-        .ok_or(GroupError::UnsupportedCipherSuite(cipher_suite))
-}
-
-fn find_key_package_generation<C>(
-    config: &C,
-    welcome_message: &Welcome,
-) -> Result<KeyPackageGeneration, GroupError>
-where
-    C: ClientConfig,
-{
-    welcome_message
-        .secrets
-        .iter()
-        .find_map(|secrets| {
-            config
-                .key_package_repo()
-                .get(&secrets.new_member)
-                .transpose()
-        })
-        .transpose()
-        .map_err(|e| GroupError::KeyPackageRepositoryError(e.into()))?
-        .ok_or(GroupError::KeyPackageNotFound)
-}
-
 impl<C> MessageProcessor<Event> for Group<C>
 where
     C: ClientConfig + Clone,
@@ -2039,357 +1623,25 @@ where
 }
 
 #[cfg(test)]
-pub(crate) mod test_utils {
-    use ferriscrypt::asym::ec_key::{self, SecretKey};
-
-    use super::*;
-    use crate::{
-        client_config::{
-            test_utils::test_config, InMemoryClientConfig, PassthroughCredentialValidator,
-            Preferences,
-        },
-        credential::CredentialType,
-        extension::RequiredCapabilitiesExt,
-        key_package::KeyPackageGenerator,
-        signing_identity::test_utils::get_test_signing_identity,
-        tree_kem::Lifetime,
-    };
-
-    pub const TEST_GROUP: &[u8] = b"group";
-
-    #[derive(Debug)]
-    pub(crate) struct TestGroup {
-        pub group: Group<InMemoryClientConfig>,
-    }
-
-    impl TestGroup {
-        pub(crate) fn propose(&mut self, proposal: Proposal) -> MLSMessage {
-            self.group.proposal_message(proposal, vec![]).unwrap()
-        }
-
-        pub(crate) fn join_with_preferences(
-            &mut self,
-            name: &str,
-            preferences: Preferences,
-        ) -> (TestGroup, MLSMessage) {
-            self.join_with_custom_config(name, |config| config.with_preferences(preferences))
-                .unwrap()
-        }
-
-        pub(crate) fn join_with_custom_config<F>(
-            &mut self,
-            name: &str,
-            config: F,
-        ) -> Result<(TestGroup, MLSMessage), GroupError>
-        where
-            F: FnOnce(InMemoryClientConfig) -> InMemoryClientConfig,
-        {
-            let (new_key_package, secret_key) = test_member(
-                self.group.state.protocol_version(),
-                self.group.state.cipher_suite(),
-                name.as_bytes(),
-            );
-
-            // Add new member to the group
-            let (commit, welcome) = self
-                .group
-                .commit_builder()
-                .add_member(new_key_package.key_package.clone())
-                .unwrap()
-                .build()
-                .unwrap();
-
-            // Apply the commit to the original group
-            self.group.apply_pending_commit().unwrap();
-
-            let config = config(test_config(
-                secret_key,
-                new_key_package,
-                Preferences::default(),
-            ));
-
-            let tree = (!config.preferences().ratchet_tree_extension)
-                .then(|| self.group.export_tree().unwrap());
-
-            // Group from new member's perspective
-            let new_group = Group::join(welcome.unwrap(), tree.as_ref().map(Vec::as_ref), config)?;
-
-            let new_test_group = TestGroup { group: new_group };
-
-            Ok((new_test_group, commit))
-        }
-
-        pub(crate) fn join(&mut self, name: &str) -> (TestGroup, MLSMessage) {
-            self.join_with_preferences(name, self.group.config.preferences())
-        }
-
-        pub(crate) fn process_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
-            self.group.apply_pending_commit()
-        }
-
-        pub(crate) fn process_message(&mut self, message: MLSMessage) -> Result<Event, GroupError> {
-            self.group
-                .process_incoming_message(message)
-                .map(|r| r.event)
-        }
-
-        pub(crate) fn make_plaintext(&mut self, content: Content) -> MLSMessage {
-            let auth_content = MLSAuthenticatedContent::new_signed(
-                &self.group.state.context,
-                Sender::Member(self.group.private_tree.self_index),
-                content,
-                &self.group.signer().unwrap(),
-                WireFormat::Plain,
-                Vec::new(),
-            )
-            .unwrap();
-
-            self.group.format_for_wire(auth_content).unwrap()
-        }
-    }
-
-    pub(crate) fn get_test_group_context(epoch: u64, cipher_suite: CipherSuite) -> GroupContext {
-        GroupContext {
-            protocol_version: ProtocolVersion::Mls10,
-            cipher_suite,
-            group_id: vec![],
-            epoch,
-            tree_hash: vec![],
-            confirmed_transcript_hash: ConfirmedTranscriptHash::from(vec![]),
-            extensions: ExtensionList::from(vec![]),
-        }
-    }
-
-    pub(crate) fn group_extensions() -> ExtensionList<GroupContextExtension> {
-        let required_capabilities = RequiredCapabilitiesExt::default();
-
-        let mut extensions = ExtensionList::new();
-        extensions.set_extension(required_capabilities).unwrap();
-        extensions
-    }
-
-    pub(crate) fn lifetime() -> Lifetime {
-        Lifetime::years(1).unwrap()
-    }
-
-    pub(crate) fn test_member(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        identifier: &[u8],
-    ) -> (KeyPackageGeneration, SecretKey) {
-        let (signing_identity, signing_key) =
-            get_test_signing_identity(cipher_suite, identifier.to_vec());
-
-        let key_package_generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite,
-            signing_identity: &signing_identity,
-            signing_key: &signing_key,
-            credential_validator: &PassthroughCredentialValidator::new(),
-        };
-
-        let key_package = key_package_generator
-            .generate(
-                lifetime(),
-                Capabilities::default(),
-                ExtensionList::default(),
-                ExtensionList::default(),
-            )
-            .unwrap();
-
-        (key_package, signing_key)
-    }
-
-    pub(crate) fn test_group_custom(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        capabilities: Option<Capabilities>,
-        leaf_extensions: Option<ExtensionList<LeafNodeExtension>>,
-        preferences: Option<Preferences>,
-    ) -> TestGroup {
-        let capabilities = capabilities.unwrap_or_default();
-        let leaf_extensions = leaf_extensions.unwrap_or_default();
-        let preferences = preferences.unwrap_or_default();
-
-        let (signing_identity, secret_key) =
-            get_test_signing_identity(cipher_suite, b"member".to_vec());
-
-        let mut config = InMemoryClientConfig::default()
-            .with_signing_identity(signing_identity, secret_key)
-            .with_leaf_node_extensions(leaf_extensions)
-            .with_credential_types(capabilities.credentials)
-            .with_preferences(preferences);
-
-        config.cipher_suites = capabilities
-            .cipher_suites
-            .into_iter()
-            .map(|cs| cs.into_enum().unwrap())
-            .collect();
-
-        config.supported_extensions = capabilities.extensions;
-
-        config.protocol_versions = capabilities
-            .protocol_versions
-            .into_iter()
-            .map(|p| p.into_enum().unwrap())
-            .collect();
-
-        let group = Group::new(
-            config,
-            TEST_GROUP.to_vec(),
-            cipher_suite,
-            protocol_version,
-            group_extensions(),
-        )
-        .unwrap();
-
-        TestGroup { group }
-    }
-
-    pub(crate) fn test_group(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-    ) -> TestGroup {
-        test_group_custom(
-            protocol_version,
-            cipher_suite,
-            None,
-            None,
-            Some(Preferences::default().with_ratchet_tree_extension(true)),
-        )
-    }
-
-    pub(crate) fn test_group_custom_config<F>(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        custom: F,
-    ) -> TestGroup
-    where
-        F: FnOnce(InMemoryClientConfig) -> InMemoryClientConfig,
-    {
-        let (signing_identity, secret_key) =
-            get_test_signing_identity(cipher_suite, b"member".to_vec());
-
-        let config = InMemoryClientConfig::default()
-            .with_signing_identity(signing_identity, secret_key)
-            .with_preferences(Preferences::default().with_ratchet_tree_extension(true));
-
-        let config = custom(config);
-
-        let group = Group::new(
-            config,
-            TEST_GROUP.to_vec(),
-            cipher_suite,
-            protocol_version,
-            group_extensions(),
-        )
-        .unwrap();
-
-        TestGroup { group }
-    }
-
-    pub(crate) fn test_n_member_group(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        num_members: usize,
-    ) -> Vec<TestGroup> {
-        let group = test_group(protocol_version, cipher_suite);
-
-        let mut groups: Vec<TestGroup> = vec![group];
-
-        for i in 1..num_members {
-            let (new_group, commit) = groups.get_mut(0).unwrap().join(&format!("name {}", i));
-            process_commit(&mut groups, commit, 0);
-            groups.push(new_group);
-        }
-
-        groups
-    }
-
-    pub(crate) fn process_commit(groups: &mut [TestGroup], commit: MLSMessage, excluded: u32) {
-        groups
-            .iter_mut()
-            .filter(|g| g.group.current_member_index() != excluded)
-            .for_each(|g| {
-                g.process_message(commit.clone()).unwrap();
-            });
-    }
-
-    pub(crate) fn get_test_25519_key(key_byte: u8) -> HpkePublicKey {
-        ec_key::PublicKey::from_uncompressed_bytes(&[key_byte; 32], ec_key::Curve::Ed25519)
-            .unwrap()
-            .try_into()
-            .unwrap()
-    }
-
-    pub(crate) fn get_test_groups_with_features(
-        n: usize,
-        extensions: ExtensionList<GroupContextExtension>,
-        leaf_extensions: ExtensionList<LeafNodeExtension>,
-        credentials: Option<Vec<CredentialType>>,
-    ) -> Vec<Group<InMemoryClientConfig>> {
-        let clients = (0..n)
-            .map(|_| {
-                let (identity, secret_key) =
-                    get_test_signing_identity(CipherSuite::Curve25519Aes128, b"member".to_vec());
-
-                InMemoryClientConfig::default()
-                    .with_supported_extension(999)
-                    .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
-                    .with_credential_types(credentials.clone().unwrap_or_else(|| vec![1, 2]))
-                    .with_signing_identity(identity, secret_key)
-                    .with_leaf_node_extensions(leaf_extensions.clone())
-                    .build_client()
-            })
-            .collect::<Vec<_>>();
-
-        let group = clients[0]
-            .create_group(
-                ProtocolVersion::Mls10,
-                CipherSuite::Curve25519Aes128,
-                extensions,
-            )
-            .unwrap();
-
-        let mut groups = vec![group];
-
-        clients.iter().skip(1).for_each(|client| {
-            let key_package = client
-                .generate_key_package(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128)
-                .unwrap();
-
-            let (commit, welcome) = groups[0]
-                .commit_builder()
-                .add_member(key_package)
-                .unwrap()
-                .build()
-                .unwrap();
-
-            groups[0].apply_pending_commit().unwrap();
-
-            for group in groups.iter_mut().skip(1) {
-                group.process_incoming_message(commit.clone()).unwrap();
-            }
-
-            groups.push(client.join_group(None, welcome.unwrap()).unwrap());
-        });
-
-        groups
-    }
-}
+pub(crate) mod test_utils;
 
 #[cfg(test)]
 mod tests {
     use crate::{
+        cipher_suite::MaybeCipherSuite,
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_config::{test_utils::test_config, InMemoryClientConfig, Preferences},
         credential::{CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
-        extension::{test_utils::TestExtension, Extension, RequiredCapabilitiesExt},
+        extension::{
+            test_utils::TestExtension, Extension, ExternalSendersExt, RequiredCapabilitiesExt,
+        },
+        group::epoch::EpochError,
         key_package::test_utils::{test_key_package, test_key_package_custom},
+        protocol_version::MaybeProtocolVersion,
         psk::Psk,
         tree_kem::{
             leaf_node::LeafNodeSource, leaf_node_validator::LeafNodeValidationError, Lifetime,
-            TreeIndexError, UpdatePathNode,
+            RatchetTreeError, TreeIndexError, UpdatePathNode, UpdatePathValidationError,
         },
     };
 
