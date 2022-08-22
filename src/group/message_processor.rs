@@ -22,7 +22,7 @@ use super::{
     proposal_effects,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
-    transcript_hashes, GroupContext, GroupError, ProposalFilter, ProposalRef,
+    transcript_hashes, GroupContext, GroupError, Member, ProposalFilter, ProposalRef,
 };
 
 #[derive(Debug)]
@@ -42,12 +42,12 @@ pub(crate) struct ProvisionalState {
 
 #[derive(Clone, Debug)]
 pub struct StateUpdate {
-    pub added: Vec<LeafIndex>,
-    pub removed: Vec<(LeafIndex, LeafNode)>,
-    pub updated: Vec<LeafIndex>,
+    pub added: Vec<u32>,
+    pub removed: Vec<Member>,
+    pub updated: Vec<u32>,
     pub psks: Vec<JustPreSharedKeyID>,
     pub reinit: Option<ReInit>,
-    pub external_init: Option<LeafIndex>,
+    pub external_init: Option<u32>,
     pub active: bool,
     pub epoch: u64,
     pub rejected_proposals: Vec<(ProposalRef, Proposal)>,
@@ -58,14 +58,14 @@ impl From<&ProvisionalState> for StateUpdate {
         let added = provisional
             .added_leaves
             .iter()
-            .map(|(_, leaf_index)| *leaf_index)
+            .map(|(_, leaf_index)| leaf_index.0)
             .collect::<Vec<_>>();
 
         let removed = provisional
             .removed_leaves
             .iter()
-            .map(|(index, kp)| (*index, kp.clone()))
-            .collect::<Vec<(_, _)>>();
+            .map(From::from)
+            .collect::<Vec<_>>();
 
         let external_init_leaf = provisional
             .external_init
@@ -81,10 +81,14 @@ impl From<&ProvisionalState> for StateUpdate {
         StateUpdate {
             added,
             removed,
-            updated: provisional.updated_leaves.iter().map(|(i, _)| *i).collect(),
+            updated: provisional
+                .updated_leaves
+                .iter()
+                .map(|(i, _)| i.0)
+                .collect(),
             psks,
             reinit: provisional.reinit.clone(),
-            external_init: external_init_leaf,
+            external_init: external_init_leaf.map(|i| i.0),
             active: true,
             epoch: provisional.epoch,
             rejected_proposals: provisional.rejected_proposals.clone(),
@@ -271,11 +275,7 @@ where
             self.credential_validator(),
             &group_state.public_tree,
             self.external_psk_id_validator(),
-            self.proposal_filter(ProposalFilterInit::new(
-                &group_state.public_tree,
-                &group_state.context,
-                auth_content.content.sender.clone(),
-            )),
+            self.proposal_filter(ProposalFilterInit::new(auth_content.content.sender.clone())),
         )?;
 
         let mut provisional_state = self.calculate_provisional_state(proposal_effects)?;
@@ -351,7 +351,7 @@ where
     fn group_state(&self) -> &GroupState;
     fn group_state_mut(&mut self) -> &mut GroupState;
     fn self_index(&self) -> Option<LeafIndex>;
-    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter;
+    fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter;
     fn credential_validator(&self) -> Self::CredentialValidator;
     fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator;
     fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool;

@@ -2,8 +2,8 @@
 use aws_mls::bench_utils::group_functions::create_group;
 use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client_config::InMemoryClientConfig;
-use aws_mls::group::framing::MLSMessage;
 use aws_mls::group::Group;
+use aws_mls::group::MLSMessage;
 use libfuzzer_sys::fuzz_target;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;

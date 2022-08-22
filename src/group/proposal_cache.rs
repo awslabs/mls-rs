@@ -19,7 +19,7 @@ pub enum ProposalCacheError {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct ProposalSetEffects {
+pub(crate) struct ProposalSetEffects {
     pub tree: TreeKemPublic,
     pub added_leaf_indexes: Vec<LeafIndex>,
     pub removed_leaves: Vec<(LeafIndex, LeafNode)>,

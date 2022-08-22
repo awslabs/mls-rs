@@ -15,7 +15,7 @@ use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroizing;
 
-use crate::cipher_suite::{CipherSuite, HpkeCiphertext, MaybeCipherSuite};
+use crate::cipher_suite::{CipherSuite, MaybeCipherSuite};
 use crate::client_config::{
     ClientConfig, CredentialValidator, ProposalFilterInit, PskStore, PskStoreIdValidator,
 };
@@ -45,7 +45,7 @@ use crate::tree_kem::leaf_node_validator::LeafNodeValidationError;
 use crate::tree_kem::node::{LeafIndex, NodeVec};
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError};
 use crate::tree_kem::tree_validator::{TreeValidationError, TreeValidator};
-use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
+use crate::tree_kem::{math as tree_math, HpkeCiphertext, ValidatedUpdatePath};
 use crate::tree_kem::{
     Capabilities, RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePathValidationError,
 };
@@ -63,46 +63,46 @@ use message_verifier::*;
 use proposal::*;
 use proposal_cache::*;
 use secret_tree::*;
+use state::*;
 use transcript_hash::*;
-
-use padding::PaddingMode;
-use state::GroupState;
 
 #[cfg(test)]
 pub(crate) use self::commit::test_utils::CommitModifiers;
 
-pub use self::message_processor::{Event, ExternalEvent, StateUpdate};
-use self::message_processor::{
-    EventOrContent, MessageProcessor, ProcessedMessage, ProvisionalState,
-};
+pub use self::message_processor::{Event, ExternalEvent, ProcessedMessage, StateUpdate};
+use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
 pub use external_group::ExternalGroup;
-pub use group_info::GroupInfo;
+pub(crate) use group_info::GroupInfo;
 pub(crate) use proposal_cache::ProposalCacheError;
-pub use proposal_filter::{
-    BoxedProposalFilter, PassThroughProposalFilter, ProposalBundle, ProposalFilter,
-    ProposalFilterError,
-};
 
+pub use self::framing::MLSMessage;
 pub use commit::*;
+pub use padding::*;
 pub(crate) use proposal_ref::ProposalRef;
 pub use roster::*;
-pub use secret_tree::SecretTreeError;
 pub use snapshot::*;
 pub use stats::*;
-pub use transcript_hash::ConfirmedTranscriptHash;
+pub(crate) use transcript_hash::ConfirmedTranscriptHash;
+
+#[cfg(feature = "benchmark")]
+pub use context::*;
+
+#[cfg(not(feature = "benchmark"))]
+pub(crate) use context::*;
 
 mod commit;
 mod confirmation_tag;
+mod context;
 pub(crate) mod epoch;
 mod external_group;
-pub mod framing;
+pub(crate) mod framing;
 mod group_info;
-pub mod key_schedule;
+pub(crate) mod key_schedule;
 mod membership_tag;
 mod message_processor;
-pub mod message_signature;
+pub(crate) mod message_signature;
 mod message_verifier;
-pub mod padding;
+mod padding;
 pub mod proposal;
 mod proposal_cache;
 mod proposal_filter;
@@ -296,80 +296,6 @@ pub enum GroupError {
     MembershipTagForNonMember,
 }
 
-#[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct GroupContext {
-    pub protocol_version: ProtocolVersion,
-    pub cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    #[serde_as(as = "VecAsBase64")]
-    pub group_id: Vec<u8>,
-    pub epoch: u64,
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    #[serde_as(as = "VecAsBase64")]
-    pub tree_hash: Vec<u8>,
-    pub confirmed_transcript_hash: ConfirmedTranscriptHash,
-    pub extensions: ExtensionList<GroupContextExtension>,
-}
-
-impl GroupContext {
-    pub fn new_group(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        group_id: Vec<u8>,
-        tree_hash: Vec<u8>,
-        extensions: ExtensionList<GroupContextExtension>,
-    ) -> Self {
-        GroupContext {
-            protocol_version,
-            cipher_suite,
-            group_id,
-            epoch: 0,
-            tree_hash,
-            confirmed_transcript_hash: ConfirmedTranscriptHash::from(vec![]),
-            extensions,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct GroupContextWire {
-    pub protocol_version: MaybeProtocolVersion,
-    pub cipher_suite: MaybeCipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    pub group_id: Vec<u8>,
-    pub epoch: u64,
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    pub tree_hash: Vec<u8>,
-    pub confirmed_transcript_hash: ConfirmedTranscriptHash,
-    pub extensions: ExtensionList<GroupContextExtension>,
-}
-
-impl From<GroupContext> for GroupContextWire {
-    fn from(context: GroupContext) -> Self {
-        Self {
-            protocol_version: context.protocol_version.into(),
-            cipher_suite: context.cipher_suite.into(),
-            group_id: context.group_id,
-            epoch: context.epoch,
-            tree_hash: context.tree_hash,
-            confirmed_transcript_hash: context.confirmed_transcript_hash,
-            extensions: context.extensions,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 struct GroupSecrets {
     joiner_secret: JoinerSecret,
@@ -380,14 +306,14 @@ struct GroupSecrets {
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct EncryptedGroupSecrets {
+pub(crate) struct EncryptedGroupSecrets {
     pub new_member: KeyPackageRef,
     pub encrypted_group_secrets: HpkeCiphertext,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct Welcome {
+pub(crate) struct Welcome {
     pub cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::DefVec")]
     pub secrets: Vec<EncryptedGroupSecrets>,
@@ -396,7 +322,7 @@ pub struct Welcome {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ControlEncryptionMode {
+pub(crate) enum ControlEncryptionMode {
     Plaintext,
     Encrypted(PaddingMode),
 }
@@ -416,14 +342,15 @@ where
     pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
     pending_commit: Option<CommitGeneration>,
     #[cfg(test)]
-    pub commit_modifiers: CommitModifiers<<<C as ClientConfig>::Keychain as Keychain>::Signer>,
+    pub(crate) commit_modifiers:
+        CommitModifiers<<<C as ClientConfig>::Keychain as Keychain>::Signer>,
 }
 
 impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
-    pub fn new(
+    pub(crate) fn new(
         config: C,
         group_id: Vec<u8>,
         cipher_suite: CipherSuite,
@@ -497,7 +424,7 @@ where
         self.config.preferences()
     }
 
-    pub fn join(
+    pub(crate) fn join(
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
         config: C,
@@ -687,7 +614,7 @@ where
     }
 
     /// Returns group and external commit message
-    pub fn new_external(
+    pub(crate) fn new_external(
         config: C,
         group_info: MLSMessage,
         tree_data: Option<&[u8]>,
@@ -770,13 +697,13 @@ where
 
         let (commit, _) = group.commit_internal(proposals, Some(&leaf_node), authenticated_data)?;
 
-        group.process_pending_commit()?;
+        group.apply_pending_commit()?;
 
         Ok((group, commit))
     }
 
     #[inline(always)]
-    pub fn current_epoch_tree(&self) -> &TreeKemPublic {
+    pub(crate) fn current_epoch_tree(&self) -> &TreeKemPublic {
         &self.state.public_tree
     }
 
@@ -1048,7 +975,7 @@ where
         &self,
         sub_group_id: Vec<u8>,
         get_new_key_package: F,
-    ) -> Result<(Self, Option<MLSMessage>), GroupError>
+    ) -> Result<(Group<C>, Option<MLSMessage>), GroupError>
     where
         F: FnMut(&SigningIdentity) -> Option<KeyPackage>,
     {
@@ -1097,7 +1024,7 @@ where
         &self,
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
-    ) -> Result<Self, GroupError> {
+    ) -> Result<Group<C>, GroupError> {
         let subgroup = Self::from_welcome_message(
             Some(&self.context().group_id),
             welcome,
@@ -1121,7 +1048,7 @@ where
     pub fn finish_reinit_commit<F>(
         &self,
         get_new_key_package: F,
-    ) -> Result<(Self, Option<MLSMessage>), GroupError>
+    ) -> Result<(Group<C>, Option<MLSMessage>), GroupError>
     where
         F: FnMut(&SigningIdentity) -> Option<KeyPackage>,
     {
@@ -1187,7 +1114,7 @@ where
         &self,
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
-    ) -> Result<Self, GroupError> {
+    ) -> Result<Group<C>, GroupError> {
         let reinit = self
             .state
             .pending_reinit
@@ -1408,7 +1335,7 @@ where
         Proposal::GroupContextExtensions(extensions)
     }
 
-    pub fn format_for_wire(
+    pub(crate) fn format_for_wire(
         &mut self,
         content: MLSAuthenticatedContent,
     ) -> Result<MLSMessage, GroupError> {
@@ -1558,7 +1485,7 @@ where
         self.format_for_wire(auth_content)
     }
 
-    pub fn decrypt_incoming_ciphertext(
+    pub(self) fn decrypt_incoming_ciphertext(
         &mut self,
         message: MLSCiphertext,
     ) -> Result<MLSAuthenticatedContent, GroupError> {
@@ -1582,7 +1509,7 @@ where
         Ok(auth_content)
     }
 
-    pub fn process_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
+    pub fn apply_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
         let pending_commit = self
             .pending_commit
             .clone()
@@ -1651,7 +1578,7 @@ where
     }
 
     #[inline(always)]
-    pub fn context(&self) -> &GroupContext {
+    pub(crate) fn context(&self) -> &GroupContext {
         &self.state.context
     }
 
@@ -1678,7 +1605,11 @@ where
     }
 
     pub fn protocol_version(&self) -> ProtocolVersion {
-        self.state.protocol_version()
+        self.context().protocol_version
+    }
+
+    pub fn cipher_suite(&self) -> CipherSuite {
+        self.context().cipher_suite
     }
 
     pub fn equal_group_state(a: &Group<C>, b: &Group<C>) -> bool {
@@ -2074,7 +2005,7 @@ where
         Ok(())
     }
 
-    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
+    fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter {
         self.config.proposal_filter(init)
     }
 
@@ -2169,7 +2100,7 @@ pub(crate) mod test_utils {
                 .unwrap();
 
             // Apply the commit to the original group
-            self.group.process_pending_commit().unwrap();
+            self.group.apply_pending_commit().unwrap();
 
             let config = config(test_config(
                 secret_key,
@@ -2193,7 +2124,7 @@ pub(crate) mod test_utils {
         }
 
         pub(crate) fn process_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
-            self.group.process_pending_commit()
+            self.group.apply_pending_commit()
         }
 
         pub(crate) fn process_message(&mut self, message: MLSMessage) -> Result<Event, GroupError> {
@@ -2434,7 +2365,7 @@ pub(crate) mod test_utils {
                 .build()
                 .unwrap();
 
-            groups[0].process_pending_commit().unwrap();
+            groups[0].apply_pending_commit().unwrap();
 
             for group in groups.iter_mut().skip(1) {
                 group.process_incoming_message(commit.clone()).unwrap();
@@ -2544,7 +2475,7 @@ mod tests {
         // We should be able to send application messages after a commit
         test_group.group.commit(vec![]).unwrap();
 
-        test_group.group.process_pending_commit().unwrap();
+        test_group.group.apply_pending_commit().unwrap();
 
         assert!(test_group
             .group
@@ -2608,7 +2539,7 @@ mod tests {
 
         // The update should be filtered out because the committer commits an update for itself
         test_group.group.commit(vec![]).unwrap();
-        let state_update = test_group.group.process_pending_commit().unwrap();
+        let state_update = test_group.group.apply_pending_commit().unwrap();
 
         assert_matches!(
             &*state_update.rejected_proposals,
@@ -2845,7 +2776,7 @@ mod tests {
             .unwrap();
 
         let (mut test_group, _) = group_context_extension_proposal_test(extension_list.clone());
-        let state_update = test_group.group.process_pending_commit().unwrap();
+        let state_update = test_group.group.apply_pending_commit().unwrap();
 
         assert!(state_update.active);
         assert_eq!(test_group.group.state.context.extensions, extension_list)
@@ -3024,7 +2955,7 @@ mod tests {
         update.added.sort();
         update.updated.sort();
 
-        update.removed.sort_by_key(|a| a.0);
+        update.removed.sort_by_key(|a| a.index());
     }
 
     #[test]
@@ -3090,23 +3021,17 @@ mod tests {
         let mut state_update_alice = alice.process_pending_commit().unwrap();
         canonicalize_state_update(&mut state_update_alice);
 
-        assert_eq!(
-            state_update_alice.added,
-            vec![2, 5, 6, 10, 11]
-                .into_iter()
-                .map(LeafIndex)
-                .collect::<Vec<_>>()
-        );
+        assert_eq!(state_update_alice.added, vec![2, 5, 6, 10, 11]);
 
         assert_eq!(
             state_update_alice.removed,
             vec![2, 5, 6]
                 .into_iter()
-                .map(|i| (LeafIndex(i), leaves[i as usize - 2].clone()))
+                .map(|i| Member::from((LeafIndex(i), &leaves[i as usize - 2])))
                 .collect::<Vec<_>>()
         );
 
-        assert_eq!(state_update_alice.updated, vec![LeafIndex(1)]);
+        assert_eq!(state_update_alice.updated, vec![1]);
 
         assert_eq!(
             state_update_alice.psks,
@@ -3380,7 +3305,7 @@ mod tests {
 
         let state_update = alice_group.process_pending_commit().unwrap();
 
-        assert_eq!(state_update.added, vec![LeafIndex::new(1)]);
+        assert_eq!(state_update.added, vec![1]);
         assert_eq!(alice_group.group.roster().member_count(), 2);
     }
 

@@ -2,7 +2,7 @@
 use aws_mls::bench_utils::group_functions::create_group;
 use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client_config::InMemoryClientConfig;
-use aws_mls::group::framing::MLSMessage;
+use aws_mls::group::MLSMessage;
 use aws_mls::group::{Group, GroupError};
 use aws_mls::tls_codec::Deserialize;
 use libfuzzer_sys::fuzz_target;

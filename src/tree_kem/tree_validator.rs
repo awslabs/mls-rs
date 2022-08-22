@@ -18,7 +18,7 @@ pub enum TreeValidationError {
     ParentHashMismatch,
 }
 
-pub struct TreeValidator<'a, C>
+pub(crate) struct TreeValidator<'a, C>
 where
     C: CredentialValidator,
 {

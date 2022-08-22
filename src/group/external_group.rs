@@ -171,7 +171,7 @@ where
         None
     }
 
-    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
+    fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter {
         self.config.proposal_filter(init)
     }
 
@@ -336,7 +336,7 @@ mod tests {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let mut server = make_external_group(&alice);
         let (commit, _) = alice.group.commit(Vec::new()).unwrap();
-        alice.group.process_pending_commit().unwrap();
+        alice.group.apply_pending_commit().unwrap();
         server.process_incoming_message(commit).unwrap();
 
         assert_eq!(alice.group.state, server.state);
@@ -364,7 +364,7 @@ mod tests {
         );
 
         let (commit, _) = alice.group.commit(vec![]).unwrap();
-        alice.group.process_pending_commit().unwrap();
+        alice.group.apply_pending_commit().unwrap();
 
         let commit_result = server.process_incoming_message(commit).unwrap();
 

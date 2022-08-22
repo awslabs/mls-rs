@@ -162,7 +162,7 @@ impl TreeKemPublic {
 
     // Updates all of the required parent hash values, and returns the calculated parent hash value for the leaf node
     // If an update path is provided, additionally verify that the calculated parent hash matches
-    pub fn update_parent_hashes(
+    pub(crate) fn update_parent_hashes(
         &mut self,
         index: LeafIndex,
         update_path: Option<&ValidatedUpdatePath>,

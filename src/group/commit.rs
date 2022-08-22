@@ -27,7 +27,7 @@ use super::{
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct Commit {
+pub(crate) struct Commit {
     #[tls_codec(with = "crate::tls::DefVec")]
     pub proposals: Vec<ProposalOrRef>,
     pub path: Option<UpdatePath>,
@@ -202,11 +202,8 @@ where
             &self.state.public_tree,
             external_leaf,
             self.config.secret_store().into_external_id_validator(),
-            self.config.proposal_filter(ProposalFilterInit::new(
-                &self.state.public_tree,
-                self.context(),
-                sender.clone(),
-            )),
+            self.config
+                .proposal_filter(ProposalFilterInit::new(sender.clone())),
         )?;
 
         let mut provisional_state = self.calculate_provisional_state(proposal_effects)?;
@@ -510,7 +507,7 @@ mod tests {
             .build()
             .unwrap();
 
-        group.process_pending_commit().unwrap();
+        group.apply_pending_commit().unwrap();
 
         let (commit_message, welcome_message) = group
             .commit_builder()

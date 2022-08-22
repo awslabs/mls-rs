@@ -4,7 +4,7 @@ use super::*;
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct GroupInfo {
+pub(crate) struct GroupInfo {
     pub group_context: GroupContextWire,
     pub extensions: ExtensionList<GroupInfoExtension>,
     pub confirmation_tag: ConfirmationTag,

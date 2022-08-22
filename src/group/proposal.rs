@@ -2,6 +2,11 @@ use super::*;
 use crate::{psk::PreSharedKeyID, tree_kem::leaf_node::LeafNode};
 use std::fmt::{self, Debug};
 
+pub use proposal_filter::{
+    BoxedProposalFilter, PassThroughProposalFilter, ProposalBundle, ProposalFilter,
+    ProposalFilterError,
+};
+
 #[derive(
     Clone,
     Debug,
@@ -258,7 +263,7 @@ impl<'a> From<&'a ExtensionList<GroupContextExtension>> for BorrowedProposal<'a>
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 #[allow(clippy::large_enum_variant)]
-pub enum ProposalOrRef {
+pub(crate) enum ProposalOrRef {
     #[tls_codec(discriminant = 1)]
     Proposal(Proposal),
     Reference(ProposalRef),

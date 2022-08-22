@@ -24,10 +24,24 @@ impl Member {
     pub fn extensions(&self) -> &ExtensionList<LeafNodeExtension> {
         &self.node.extensions
     }
+
+    #[cfg(feature = "benchmark")]
+    pub fn leaf_bytes(&self) -> Result<Vec<u8>, tls_codec::Error> {
+        self.node.tls_serialize_detached()
+    }
 }
 
 impl From<(LeafIndex, &LeafNode)> for Member {
     fn from(item: (LeafIndex, &LeafNode)) -> Self {
+        Member {
+            node: item.1.clone(),
+            index: item.0,
+        }
+    }
+}
+
+impl From<&(LeafIndex, LeafNode)> for Member {
+    fn from(item: &(LeafIndex, LeafNode)) -> Self {
         Member {
             node: item.1.clone(),
             index: item.0,

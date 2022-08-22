@@ -2,12 +2,12 @@ use ferriscrypt::hpke::kem::HpkePublicKey;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-use crate::cipher_suite::HpkeCiphertext;
 use crate::client_config::CredentialValidator;
 
 use super::{
     leaf_node::LeafNode,
     leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator, ValidationContext},
+    HpkeCiphertext,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -39,7 +39,7 @@ pub struct ValidatedUpdatePath {
     pub nodes: Vec<UpdatePathNode>,
 }
 
-pub struct UpdatePathValidator<'a, C: CredentialValidator>(LeafNodeValidator<'a, C>);
+pub(crate) struct UpdatePathValidator<'a, C: CredentialValidator>(LeafNodeValidator<'a, C>);
 
 impl<'a, C: CredentialValidator> UpdatePathValidator<'a, C> {
     pub fn new(validator: LeafNodeValidator<'a, C>) -> Self {

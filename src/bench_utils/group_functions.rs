@@ -171,7 +171,7 @@ pub fn commit_group(container: &mut [Group<InMemoryClientConfig>]) {
 
         for (index, bob) in container.iter_mut().enumerate() {
             if index == committer_index {
-                bob.process_pending_commit().unwrap();
+                bob.apply_pending_commit().unwrap();
             } else {
                 bob.process_incoming_message(commit.clone()).unwrap();
             }

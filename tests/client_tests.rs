@@ -1,10 +1,10 @@
 use assert_matches::assert_matches;
 use aws_mls::cipher_suite::{CipherSuite, SignaturePublicKey};
 use aws_mls::client::Client;
-use aws_mls::client_config::{InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECONDS};
+use aws_mls::client_config::{InMemoryClientConfig, Preferences};
 use aws_mls::credential::Credential;
 use aws_mls::extension::ExtensionList;
-use aws_mls::group::framing::MLSMessage;
+use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, GroupError};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
@@ -32,7 +32,6 @@ fn generate_client(
     cipher_suite: CipherSuite,
     id: Vec<u8>,
     preferences: Preferences,
-    lifetime_duration: u64,
 ) -> Client<InMemoryClientConfig> {
     let key = cipher_suite.generate_signing_key().unwrap();
     let credential = Credential::Basic(id);
@@ -43,7 +42,6 @@ fn generate_client(
     InMemoryClientConfig::default()
         .with_signing_identity(signing_identity, key)
         .with_preferences(preferences)
-        .with_lifetime_duration(lifetime_duration)
         .build_client()
 }
 
@@ -56,18 +54,8 @@ fn test_create(
         "Testing group creation for cipher suite: {protocol_version:?} {cipher_suite:?}, participants: 1, {preferences:?}"
     );
 
-    let alice = generate_client(
-        cipher_suite,
-        b"alice".to_vec(),
-        preferences.clone(),
-        ONE_YEAR_IN_SECONDS,
-    );
-    let bob = generate_client(
-        cipher_suite,
-        b"bob".to_vec(),
-        preferences,
-        ONE_YEAR_IN_SECONDS,
-    );
+    let alice = generate_client(cipher_suite, b"alice".to_vec(), preferences.clone());
+    let bob = generate_client(cipher_suite, b"bob".to_vec(), preferences);
 
     let bob_key_pkg = bob
         .generate_key_package(protocol_version, cipher_suite)
@@ -91,7 +79,7 @@ fn test_create(
         .unwrap();
 
     // Upon server confirmation, alice applies the commit to her own state
-    alice_group.process_pending_commit().unwrap();
+    alice_group.apply_pending_commit().unwrap();
 
     let tree = alice_group.export_tree().unwrap();
 
@@ -141,12 +129,7 @@ fn get_test_groups_clients(
     Vec<Client<InMemoryClientConfig>>,
 ) {
     // Create the group with Alice as the group initiator
-    let creator = generate_client(
-        cipher_suite,
-        b"alice".to_vec(),
-        preferences.clone(),
-        ONE_YEAR_IN_SECONDS,
-    );
+    let creator = generate_client(cipher_suite, b"alice".to_vec(), preferences.clone());
 
     let mut creator_group = creator
         .create_group_with_id(
@@ -159,12 +142,7 @@ fn get_test_groups_clients(
 
     // Generate random clients that will be members of the group
     let receiver_clients = std::iter::repeat_with(|| {
-        generate_client(
-            cipher_suite,
-            b"test".to_vec(),
-            preferences.clone(),
-            ONE_YEAR_IN_SECONDS,
-        )
+        generate_client(cipher_suite, b"test".to_vec(), preferences.clone())
     })
     .take(num_participants)
     .collect::<Vec<_>>();
@@ -189,7 +167,7 @@ fn get_test_groups_clients(
         .unwrap();
 
     // Creator can confirm the commit was processed by the server
-    let update = creator_group.process_pending_commit().unwrap();
+    let update = creator_group.apply_pending_commit().unwrap();
 
     assert!(update.active);
     assert_eq!(update.epoch, 1);
@@ -230,12 +208,7 @@ fn add_random_members(
 ) {
     let (key_packages, new_clients): (Vec<_>, Vec<_>) = (0..num_added)
         .map(|_| {
-            let new_client = generate_client(
-                cipher_suite,
-                b"test".to_vec(),
-                preferences.clone(),
-                ONE_YEAR_IN_SECONDS,
-            );
+            let new_client = generate_client(cipher_suite, b"test".to_vec(), preferences.clone());
 
             let key_package = new_client
                 .generate_key_package(ProtocolVersion::Mls10, cipher_suite)
@@ -262,7 +235,7 @@ fn add_random_members(
 
     for (i, group) in groups.iter_mut().enumerate() {
         if i == committer {
-            group.process_pending_commit().unwrap();
+            group.apply_pending_commit().unwrap();
         } else {
             group.process_incoming_message(commit.clone()).unwrap();
         }
@@ -303,7 +276,7 @@ fn remove_members(
 
     for (i, group) in groups.iter_mut().enumerate() {
         if i == committer {
-            group.process_pending_commit().unwrap();
+            group.apply_pending_commit().unwrap();
         } else {
             group.process_incoming_message(commit.clone()).unwrap();
         }
@@ -382,7 +355,7 @@ fn test_empty_commits(
         // Receiver groups process the commit
         for (j, one_receiver) in receiver_groups.iter_mut().enumerate() {
             if i == j {
-                one_receiver.process_pending_commit().unwrap();
+                one_receiver.apply_pending_commit().unwrap();
             } else {
                 one_receiver
                     .process_incoming_message(commit.clone())
@@ -452,7 +425,7 @@ fn test_update_proposals(
 
         for (j, receiver) in receiver_groups.iter_mut().enumerate() {
             let update = if j == committer_index {
-                receiver.process_pending_commit()
+                receiver.apply_pending_commit()
             } else {
                 let state_update_message = receiver
                     .process_incoming_message(commit.clone())
@@ -520,7 +493,7 @@ fn test_remove_proposals(
         assert!(welcome.is_none());
 
         // Process the removal in the creator group
-        creator_group.process_pending_commit().unwrap();
+        creator_group.apply_pending_commit().unwrap();
 
         epoch_count += 1;
 
@@ -544,7 +517,7 @@ fn test_remove_proposals(
                 assert!(update
                     .removed
                     .iter()
-                    .any(|(index, _)| **index == to_remove_index));
+                    .any(|member| member.index() == to_remove_index));
                 assert!(update.active)
             }
         }
@@ -638,7 +611,7 @@ fn test_out_of_order_application_messages() {
 
     let (commit, _) = alice_group.commit(vec![]).unwrap();
 
-    alice_group.process_pending_commit().unwrap();
+    alice_group.apply_pending_commit().unwrap();
 
     bob_group.process_incoming_message(commit).unwrap();
 
@@ -710,12 +683,7 @@ fn test_processing_message_from_self_returns_error() {
 }
 
 fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: CipherSuite) {
-    let creator = generate_client(
-        cipher_suite,
-        b"alice-0".to_vec(),
-        Default::default(),
-        ONE_YEAR_IN_SECONDS,
-    );
+    let creator = generate_client(cipher_suite, b"alice-0".to_vec(), Default::default());
 
     let mut creator_group = creator
         .create_group_with_id(
@@ -731,7 +699,7 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
     // confirmation_tag, which is not the case for the initial interim_transcript_hash.
     creator_group.commit(Vec::new()).unwrap();
 
-    creator_group.process_pending_commit().unwrap();
+    creator_group.apply_pending_commit().unwrap();
 
     const PARTICIPANT_COUNT: usize = 10;
 
@@ -741,7 +709,6 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
                 cipher_suite,
                 format!("alice-{i}").into_bytes(),
                 Default::default(),
-                ONE_YEAR_IN_SECONDS,
             )
         })
         .collect::<Vec<_>>();
@@ -819,7 +786,7 @@ fn test_remove_nonexisting_leaf() {
     assert!(groups[0].propose_remove(13, vec![]).is_err());
 
     groups[0].commit(vec![]).unwrap();
-    groups[0].process_pending_commit().unwrap();
+    groups[0].apply_pending_commit().unwrap();
 
     // Removing blank leaf causes error
     assert!(groups[0].propose_remove(5, vec![]).is_err());
@@ -838,7 +805,6 @@ fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite) -> Client<InMemor
     InMemoryClientConfig::default()
         .with_signing_identity(id1, sk1)
         .with_signing_identity(id2, sk2)
-        .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
         .build_client()
 }
 
@@ -865,7 +831,7 @@ fn reinit_works() {
         .build()
         .unwrap();
 
-    alice_group.process_pending_commit().unwrap();
+    alice_group.apply_pending_commit().unwrap();
     let tree = alice_group.export_tree().unwrap();
 
     let mut bob_group = bob.join_group(Some(&tree), welcome.unwrap()).unwrap();
@@ -889,7 +855,7 @@ fn reinit_works() {
     let (commit, _) = bob_group.commit(vec![]).unwrap();
 
     // Both process Bob's commit
-    let state_update = bob_group.process_pending_commit().unwrap();
+    let state_update = bob_group.apply_pending_commit().unwrap();
     assert!(!state_update.active && state_update.reinit.is_some());
 
     let message = alice_group.process_incoming_message(commit).unwrap();
@@ -927,7 +893,7 @@ fn reinit_works() {
         .build()
         .unwrap();
 
-    alice_group.process_pending_commit().unwrap();
+    alice_group.apply_pending_commit().unwrap();
     bob_group.process_incoming_message(commit).unwrap();
 
     let tree = alice_group.export_tree().unwrap();

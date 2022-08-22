@@ -60,7 +60,7 @@ const DEFAULT_EXTENSIONS: &[ExtensionType] = &[
     EXTERNAL_SENDERS_EXT_ID,
 ];
 
-pub fn is_default_extension(ext_type: ExtensionType) -> bool {
+pub(crate) fn is_default_extension(ext_type: ExtensionType) -> bool {
     DEFAULT_EXTENSIONS.contains(&ext_type)
 }
 

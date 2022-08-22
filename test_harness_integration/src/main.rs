@@ -5,12 +5,10 @@
 
 use aws_mls::cipher_suite::{CipherSuite, MaybeCipherSuite, SignaturePublicKey};
 use aws_mls::client::Client;
-use aws_mls::client_config::{
-    ClientConfig, InMemoryClientConfig, Preferences, ONE_YEAR_IN_SECONDS,
-};
+use aws_mls::client_config::{ClientConfig, InMemoryClientConfig, Preferences};
 use aws_mls::credential::Credential;
 use aws_mls::extension::{Extension, ExtensionList};
-use aws_mls::group::framing::MLSMessage;
+use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, StateUpdate};
 
 use aws_mls::key_package::KeyPackage;
@@ -65,25 +63,21 @@ impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
         let added = state_update
             .added
             .iter()
-            .map(|leaf_index| **leaf_index)
+            .map(|leaf_index| *leaf_index.deref())
             .collect();
 
-        let updated = state_update
-            .updated
-            .iter()
-            .map(|leaf_index| **leaf_index)
-            .collect();
+        let updated = state_update.updated;
 
         let removed_indices = state_update
             .removed
             .iter()
-            .map(|(leaf_index, _)| **leaf_index)
+            .map(|removed| removed.index())
             .collect();
 
         let removed_leaves = state_update
             .removed
             .iter()
-            .map(|(_, leaf)| leaf.tls_serialize_detached())
+            .map(|member| member.leaf_bytes())
             .collect::<Result<Vec<_>, _>>()
             .map_err(abort)?;
 
@@ -214,7 +208,6 @@ impl MlsClient for MlsClientImpl {
         let creator = InMemoryClientConfig::default()
             .with_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
             .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
-            .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
             .build_client();
 
         let group = creator
@@ -254,7 +247,6 @@ impl MlsClient for MlsClientImpl {
         let client = InMemoryClientConfig::default()
             .with_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
             .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
-            .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
             .build_client();
 
         let key_package = client
@@ -612,7 +604,7 @@ impl MlsClient for MlsClientImpl {
         let state_update = groups
             .get_mut(group_index)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
-            .process_pending_commit()
+            .apply_pending_commit()
             .map_err(abort)?;
 
         Ok(Response::new(

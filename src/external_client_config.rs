@@ -7,7 +7,7 @@ use crate::{
     credential::{CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
     extension::ExtensionType,
     external_client::ExternalClient,
-    group::{BoxedProposalFilter, ProposalFilter},
+    group::proposal::{BoxedProposalFilter, ProposalFilter},
     keychain::{InMemoryKeychain, Keychain},
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     signing_identity::SigningIdentity,
@@ -28,7 +28,7 @@ pub trait ExternalClientConfig {
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
     fn credential_validator(&self) -> Self::CredentialValidator;
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
-    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter;
+    fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter;
 
     fn max_epoch_jitter(&self) -> Option<u64> {
         None
@@ -191,7 +191,7 @@ impl ExternalClientConfig for InMemoryExternalClientConfig {
         self.credential_types.clone()
     }
 
-    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
+    fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter {
         (self.make_proposal_filter.0)(init)
     }
 

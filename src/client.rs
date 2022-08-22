@@ -230,7 +230,7 @@ pub mod test_utils {
 
     use super::*;
     use crate::{
-        client_config::{InMemoryClientConfig, ONE_YEAR_IN_SECONDS},
+        client_config::InMemoryClientConfig,
         signing_identity::test_utils::get_test_signing_identity,
     };
 
@@ -244,7 +244,7 @@ pub mod test_utils {
 
         InMemoryClientConfig::default()
             .with_signing_identity(signing_identity, secret_key)
-            .with_lifetime_duration(ONE_YEAR_IN_SECONDS)
+            .with_lifetime_duration(10000)
     }
 
     pub fn test_client_with_key_pkg(
@@ -286,7 +286,7 @@ pub mod test_utils {
             .add_member(key_package)?
             .build()?;
 
-        committer.process_pending_commit()?;
+        committer.apply_pending_commit()?;
 
         for group in other_groups {
             group.process_incoming_message(commit_msg.clone())?;
@@ -391,7 +391,7 @@ mod tests {
         );
 
         alice_group.group.commit(vec![]).unwrap();
-        alice_group.group.process_pending_commit().unwrap();
+        alice_group.group.apply_pending_commit().unwrap();
 
         // Check that the new member is in the group
         assert!(alice_group
@@ -511,7 +511,7 @@ mod tests {
         let mut bob_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         bob_group.group.commit(vec![]).unwrap();
-        bob_group.group.process_pending_commit().unwrap();
+        bob_group.group.apply_pending_commit().unwrap();
 
         let group_info_msg = bob_group.group.group_info_message(true).unwrap();
 

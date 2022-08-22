@@ -18,8 +18,8 @@ use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-pub mod repository;
-pub use repository::{InMemoryKeyPackageRepository, KeyPackageRepository};
+mod repository;
+pub use repository::*;
 
 mod validator;
 pub use validator::*;

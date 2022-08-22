@@ -39,7 +39,7 @@ pub mod update_path;
 
 pub use capabilities::*;
 pub use lifetime::*;
-pub use private::*;
+pub(crate) use private::*;
 pub use update_path::*;
 
 use tree_index::*;
@@ -106,6 +106,33 @@ pub enum RatchetTreeError {
     HPKEDecryptionError,
     #[error("decrypting commit from self")]
     DecryptFromSelf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct HpkeCiphertext {
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    kem_output: Vec<u8>,
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    ciphertext: Vec<u8>,
+}
+
+impl From<ferriscrypt::hpke::HpkeCiphertext> for HpkeCiphertext {
+    fn from(ciphertext: ferriscrypt::hpke::HpkeCiphertext) -> Self {
+        Self {
+            kem_output: ciphertext.enc,
+            ciphertext: ciphertext.ciphertext,
+        }
+    }
+}
+
+impl From<HpkeCiphertext> for ferriscrypt::hpke::HpkeCiphertext {
+    fn from(ciphertext: HpkeCiphertext) -> Self {
+        Self {
+            enc: ciphertext.kem_output,
+            ciphertext: ciphertext.ciphertext,
+        }
+    }
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
@@ -325,7 +352,7 @@ impl TreeKemPublic {
             })
     }
 
-    pub fn apply_update_path(
+    pub(crate) fn apply_update_path(
         &mut self,
         sender: LeafIndex,
         update_path: &ValidatedUpdatePath,
@@ -689,7 +716,7 @@ pub(crate) mod test_utils {
     use crate::cipher_suite::CipherSuite;
 
     #[derive(Debug)]
-    pub struct TestTree {
+    pub(crate) struct TestTree {
         pub public: TreeKemPublic,
         pub private: TreeKemPrivate,
         pub creator_leaf: LeafNode,
@@ -697,7 +724,7 @@ pub(crate) mod test_utils {
         pub creator_hpke_secret: HpkeSecretKey,
     }
 
-    pub fn get_test_tree(cipher_suite: CipherSuite) -> TestTree {
+    pub(crate) fn get_test_tree(cipher_suite: CipherSuite) -> TestTree {
         let (creator_leaf, creator_hpke_secret, creator_signing_key) =
             get_basic_test_node_sig_key(cipher_suite, "creator");
 

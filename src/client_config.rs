@@ -7,8 +7,8 @@ use crate::{
     epoch::{EpochRepository, InMemoryEpochRepository},
     extension::{ExtensionList, ExtensionType, KeyPackageExtension, LeafNodeExtension},
     group::{
-        framing::Sender, BoxedProposalFilter, ControlEncryptionMode, GroupContext,
-        PassThroughProposalFilter, ProposalFilter,
+        framing::Sender, proposal::BoxedProposalFilter, proposal::PassThroughProposalFilter,
+        proposal::ProposalFilter, ControlEncryptionMode, PaddingMode,
     },
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
     keychain::{InMemoryKeychain, Keychain},
@@ -16,7 +16,7 @@ use crate::{
     psk::{ExternalPskId, ExternalPskIdValidator, Psk},
     signing_identity::SigningIdentity,
     time::MlsTime,
-    tree_kem::{Capabilities, Lifetime, TreeKemPublic},
+    tree_kem::{Capabilities, Lifetime},
 };
 use ferriscrypt::asym::ec_key::SecretKey;
 use std::{
@@ -26,10 +26,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 use thiserror::Error;
-
-pub use crate::group::padding::PaddingMode;
-
-pub const ONE_YEAR_IN_SECONDS: u64 = 365 * 24 * 60 * 60;
 
 pub trait PskStore {
     type Error: std::error::Error + Send + Sync + 'static;
@@ -109,7 +105,7 @@ pub trait ClientConfig {
 
     fn preferences(&self) -> Preferences;
     fn key_package_repo(&self) -> Self::KeyPackageRepository;
-    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter;
+    fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter;
     fn keychain(&self) -> Self::Keychain;
     fn secret_store(&self) -> Self::PskStore;
     fn epoch_repo(&self) -> Self::EpochRepository;
@@ -227,13 +223,13 @@ impl Preferences {
 
 #[derive(Clone)]
 pub struct MakeProposalFilter(
-    pub Arc<dyn Fn(ProposalFilterInit<'_>) -> BoxedProposalFilter<SimpleError> + Send + Sync>,
+    pub Arc<dyn Fn(ProposalFilterInit) -> BoxedProposalFilter<SimpleError> + Send + Sync>,
 );
 
 impl MakeProposalFilter {
     pub fn new<F, M>(make: M) -> Self
     where
-        M: Fn(ProposalFilterInit<'_>) -> F + Send + Sync + 'static,
+        M: Fn(ProposalFilterInit) -> F + Send + Sync + 'static,
         F: ProposalFilter<Error = SimpleError> + Send + Sync + 'static,
     {
         Self(Arc::new(move |init| make(init).boxed()))
@@ -253,31 +249,13 @@ impl Default for MakeProposalFilter {
 }
 
 #[derive(Clone, Debug)]
-pub struct ProposalFilterInit<'a> {
-    tree: &'a TreeKemPublic,
-    group_context: &'a GroupContext,
+pub struct ProposalFilterInit {
     committer: Sender,
 }
 
-impl<'a> ProposalFilterInit<'a> {
-    pub(crate) fn new(
-        tree: &'a TreeKemPublic,
-        group_context: &'a GroupContext,
-        committer: Sender,
-    ) -> Self {
-        Self {
-            tree,
-            group_context,
-            committer,
-        }
-    }
-
-    pub fn tree(&self) -> &TreeKemPublic {
-        self.tree
-    }
-
-    pub fn group_context(&self) -> &GroupContext {
-        self.group_context
+impl ProposalFilterInit {
+    pub(crate) fn new(committer: Sender) -> Self {
+        Self { committer }
     }
 
     pub fn committer(&self) -> &Sender {
@@ -317,7 +295,7 @@ impl InMemoryClientConfig {
             epochs: Default::default(),
             leaf_node_extensions: Default::default(),
             key_package_extensions: Default::default(),
-            lifetime_duration: ONE_YEAR_IN_SECONDS,
+            lifetime_duration: 31536000, // One year
             credential_types: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
         }
     }
@@ -339,7 +317,7 @@ impl InMemoryClientConfig {
     #[must_use]
     pub fn with_proposal_filter<F, M>(self, make: M) -> Self
     where
-        M: Fn(ProposalFilterInit<'_>) -> F + Send + Sync + 'static,
+        M: Fn(ProposalFilterInit) -> F + Send + Sync + 'static,
         F: ProposalFilter<Error = SimpleError> + Send + Sync + 'static,
     {
         Self {
@@ -471,7 +449,7 @@ impl ClientConfig for InMemoryClientConfig {
         self.key_packages.clone()
     }
 
-    fn proposal_filter(&self, init: ProposalFilterInit<'_>) -> Self::ProposalFilter {
+    fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter {
         (self.make_proposal_filter.0)(init)
     }
 

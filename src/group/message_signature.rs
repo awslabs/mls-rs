@@ -48,7 +48,7 @@ impl From<MLSPlaintext> for MLSAuthenticatedContent {
 }
 
 impl MLSAuthenticatedContent {
-    pub fn new(
+    pub(crate) fn new(
         context: &GroupContext,
         sender: Sender,
         content: Content,
@@ -71,7 +71,7 @@ impl MLSAuthenticatedContent {
         }
     }
 
-    pub fn new_signed<S: Signer>(
+    pub(crate) fn new_signed<S: Signer>(
         context: &GroupContext,
         sender: Sender,
         content: Content,

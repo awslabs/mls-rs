@@ -40,4 +40,4 @@ impl ProtocolVersion {
     }
 }
 
-pub type MaybeProtocolVersion = MaybeEnum<ProtocolVersion>;
+pub(crate) type MaybeProtocolVersion = MaybeEnum<ProtocolVersion>;

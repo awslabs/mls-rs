@@ -28,7 +28,7 @@ pub(crate) enum SignaturePublicKeysContainer<'a> {
     List(&'a HashMap<LeafIndex, SignaturePublicKey>),
 }
 
-pub fn verify_plaintext_authentication(
+pub(crate) fn verify_plaintext_authentication(
     plaintext: MLSPlaintext,
     key_schedule: Option<&KeySchedule>,
     self_index: Option<LeafIndex>,
@@ -354,7 +354,7 @@ mod tests {
                 .build()
                 .unwrap();
 
-            alice.group.process_pending_commit().unwrap();
+            alice.group.apply_pending_commit().unwrap();
 
             let bob = Group::join(
                 welcome.unwrap(),
@@ -550,7 +550,7 @@ mod tests {
             .build()
             .unwrap();
 
-        test_group.group.process_pending_commit().unwrap();
+        test_group.group.apply_pending_commit().unwrap();
 
         let message =
             test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |mut msg| {

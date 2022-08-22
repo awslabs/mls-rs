@@ -6,15 +6,13 @@ use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
 
 use super::node::Node;
-use super::Capabilities;
 use super::{
     node::{LeafIndex, NodeIndex},
     path_secret::{PathSecret, PathSecretGeneration, PathSecretGenerator},
     RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathNode,
     ValidatedUpdatePath,
 };
-
-use crate::cipher_suite::HpkeCiphertext;
+use super::{Capabilities, HpkeCiphertext};
 
 #[cfg(test)]
 use crate::group::CommitModifiers;

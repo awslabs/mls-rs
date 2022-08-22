@@ -60,33 +60,6 @@ impl TryFrom<&SecretKey> for SignaturePublicKey {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct HpkeCiphertext {
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    kem_output: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    ciphertext: Vec<u8>,
-}
-
-impl From<ferriscrypt::hpke::HpkeCiphertext> for HpkeCiphertext {
-    fn from(ciphertext: ferriscrypt::hpke::HpkeCiphertext) -> Self {
-        Self {
-            kem_output: ciphertext.enc,
-            ciphertext: ciphertext.ciphertext,
-        }
-    }
-}
-
-impl From<HpkeCiphertext> for ferriscrypt::hpke::HpkeCiphertext {
-    fn from(ciphertext: HpkeCiphertext) -> Self {
-        Self {
-            enc: ciphertext.kem_output,
-            ciphertext: ciphertext.ciphertext,
-        }
-    }
-}
-
 #[derive(
     Debug,
     Copy,

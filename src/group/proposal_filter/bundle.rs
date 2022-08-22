@@ -153,7 +153,7 @@ impl ProposalBundle {
             )
     }
 
-    pub fn into_proposals_or_refs(self) -> impl Iterator<Item = ProposalOrRef> {
+    pub(crate) fn into_proposals_or_refs(self) -> impl Iterator<Item = ProposalOrRef> {
         self.into_proposals().map(|p| {
             p.proposal_ref.map_or_else(
                 || ProposalOrRef::Proposal(p.proposal),

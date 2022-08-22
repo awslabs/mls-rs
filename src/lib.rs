@@ -64,7 +64,7 @@ pub mod psk;
 mod serde_utils;
 pub mod signer;
 pub mod signing_identity;
-pub mod time;
+mod time;
 pub mod x509;
 
 #[cfg(feature = "benchmark")]

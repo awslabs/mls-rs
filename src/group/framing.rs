@@ -57,7 +57,7 @@ impl From<LeafIndex> for Sender {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
-pub enum Content {
+pub(crate) enum Content {
     Application(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>),
     Proposal(Proposal),
     Commit(Commit),
@@ -71,35 +71,10 @@ impl Content {
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct MLSPlaintext {
+pub(crate) struct MLSPlaintext {
     pub content: MLSContent,
     pub auth: MLSContentAuthData,
     pub membership_tag: Option<MembershipTag>,
-}
-
-impl MLSPlaintext {
-    pub fn new(
-        group_id: Vec<u8>,
-        epoch: u64,
-        sender: Sender,
-        content: Content,
-        authenticated_data: Vec<u8>,
-    ) -> Self {
-        Self {
-            content: MLSContent {
-                group_id,
-                epoch,
-                sender,
-                authenticated_data,
-                content,
-            },
-            auth: MLSContentAuthData {
-                signature: MessageSignature::empty(),
-                confirmation_tag: None,
-            },
-            membership_tag: None,
-        }
-    }
 }
 
 impl Size for MLSPlaintext {
@@ -143,7 +118,7 @@ impl Deserialize for MLSPlaintext {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct MLSCiphertextContent {
+pub(crate) struct MLSCiphertextContent {
     pub content: Content,
     pub auth: MLSContentAuthData,
     pub padding: Vec<u8>,
@@ -241,12 +216,13 @@ pub struct MLSSenderDataAAD {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MLSMessage {
-    pub version: MaybeProtocolVersion,
-    pub payload: MLSMessagePayload,
+    pub(crate) version: MaybeProtocolVersion,
+    pub(crate) payload: MLSMessagePayload,
 }
 
+#[allow(dead_code)]
 impl MLSMessage {
-    pub fn new(version: ProtocolVersion, payload: MLSMessagePayload) -> MLSMessage {
+    pub(crate) fn new(version: ProtocolVersion, payload: MLSMessagePayload) -> MLSMessage {
         Self {
             version: version.into(),
             payload,
@@ -254,7 +230,7 @@ impl MLSMessage {
     }
 
     #[inline(always)]
-    pub fn into_plaintext(self) -> Option<MLSPlaintext> {
+    pub(crate) fn into_plaintext(self) -> Option<MLSPlaintext> {
         match self.payload {
             MLSMessagePayload::Plain(plaintext) => Some(plaintext),
             _ => None,
@@ -262,7 +238,7 @@ impl MLSMessage {
     }
 
     #[inline(always)]
-    pub fn into_ciphertext(self) -> Option<MLSCiphertext> {
+    pub(crate) fn into_ciphertext(self) -> Option<MLSCiphertext> {
         match self.payload {
             MLSMessagePayload::Cipher(ciphertext) => Some(ciphertext),
             _ => None,
@@ -270,7 +246,7 @@ impl MLSMessage {
     }
 
     #[inline(always)]
-    pub fn into_welcome(self) -> Option<Welcome> {
+    pub(crate) fn into_welcome(self) -> Option<Welcome> {
         match self.payload {
             MLSMessagePayload::Welcome(welcome) => Some(welcome),
             _ => None,
@@ -278,7 +254,7 @@ impl MLSMessage {
     }
 
     #[inline(always)]
-    pub fn into_group_info(self) -> Option<GroupInfo> {
+    pub(crate) fn into_group_info(self) -> Option<GroupInfo> {
         match self.payload {
             MLSMessagePayload::GroupInfo(info) => Some(info),
             _ => None,
@@ -286,7 +262,7 @@ impl MLSMessage {
     }
 
     #[inline(always)]
-    pub fn into_key_package(self) -> Option<KeyPackage> {
+    pub(crate) fn into_key_package(self) -> Option<KeyPackage> {
         match self.payload {
             MLSMessagePayload::KeyPackage(kp) => Some(kp),
             _ => None,
@@ -298,7 +274,7 @@ impl MLSMessage {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
-pub enum MLSMessagePayload {
+pub(crate) enum MLSMessagePayload {
     #[tls_codec(discriminant = 1)]
     Plain(MLSPlaintext),
     Cipher(MLSCiphertext),
@@ -360,7 +336,7 @@ impl From<ControlEncryptionMode> for WireFormat {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct MLSContent {
+pub(crate) struct MLSContent {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
@@ -377,11 +353,11 @@ impl MLSContent {
 }
 
 #[cfg(test)]
-pub mod test_utils {
+pub(crate) mod test_utils {
 
     use super::*;
 
-    pub fn get_test_auth_content(test_content: Vec<u8>) -> MLSAuthenticatedContent {
+    pub(crate) fn get_test_auth_content(test_content: Vec<u8>) -> MLSAuthenticatedContent {
         MLSAuthenticatedContent {
             wire_format: WireFormat::Plain,
             content: MLSContent {
@@ -398,7 +374,7 @@ pub mod test_utils {
         }
     }
 
-    pub fn get_test_ciphertext_content() -> MLSCiphertextContent {
+    pub(crate) fn get_test_ciphertext_content() -> MLSCiphertextContent {
         MLSCiphertextContent {
             content: Content::Application(SecureRng::gen(1024).unwrap()),
             auth: MLSContentAuthData {
