@@ -84,3 +84,4 @@ mod tree_kem;
 
 pub use ferriscrypt;
 pub use tls_codec;
+pub use x509_cert;
