@@ -1222,11 +1222,13 @@ where
             .map_err(|e| GroupError::EpochRepositoryError(e.into()))?
             .ok_or_else(|| GroupError::EpochNotFound(self.current_epoch()))?;
 
+        let ciphertext_content = Zeroizing::new(ciphertext_content.tls_serialize_detached()?);
+
         // Encrypt the ciphertext content using the encryption key and a nonce that is
         // reuse safe by xor the reuse guard with the first 4 bytes
         let (ciphertext, generation) = epoch.inner_mut().encrypt(
             key_type,
-            &ciphertext_content.tls_serialize_detached()?,
+            &ciphertext_content,
             &aad.tls_serialize_detached()?,
             &reuse_guard,
         )?;
@@ -1289,7 +1291,7 @@ where
         let auth_content = MLSAuthenticatedContent::new_signed(
             self.context(),
             Sender::Member(self.private_tree.self_index),
-            Content::Application(message.to_vec()),
+            Content::Application(message.to_vec().into()),
             &signer,
             WireFormat::Cipher,
             authenticated_data,
@@ -2195,7 +2197,7 @@ mod tests {
         let cipher_suite = CipherSuite::P256Aes128;
         let mut alice = test_group(protocol_version, cipher_suite);
         let (mut bob, _) = alice.join("bob");
-        let message = alice.make_plaintext(Content::Application(b"hello".to_vec()));
+        let message = alice.make_plaintext(Content::Application(b"hello".to_vec().into()));
 
         assert_matches!(
             bob.group.process_incoming_message(message),

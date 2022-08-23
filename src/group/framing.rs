@@ -7,6 +7,7 @@ use crate::{
 use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use zeroize::Zeroize;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -54,11 +55,30 @@ impl From<LeafIndex> for Sender {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Zeroize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[zeroize(drop)]
+pub(crate) struct ApplicationData(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+
+impl From<Vec<u8>> for ApplicationData {
+    fn from(data: Vec<u8>) -> Self {
+        Self(data)
+    }
+}
+
+impl TryFrom<ApplicationData> for Event {
+    type Error = GroupError;
+
+    fn try_from(data: ApplicationData) -> Result<Self, Self::Error> {
+        Ok(Event::ApplicationMessage(data.0.clone()))
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub(crate) enum Content {
-    Application(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>),
+    Application(ApplicationData),
     Proposal(Proposal),
     Commit(Commit),
 }
@@ -365,7 +385,7 @@ pub(crate) mod test_utils {
                 epoch: 0,
                 sender: Sender::Member(LeafIndex(1)),
                 authenticated_data: Vec::new(),
-                content: Content::Application(test_content),
+                content: Content::Application(test_content.into()),
             },
             auth: MLSContentAuthData {
                 signature: MessageSignature::empty(),
@@ -376,7 +396,7 @@ pub(crate) mod test_utils {
 
     pub(crate) fn get_test_ciphertext_content() -> MLSCiphertextContent {
         MLSCiphertextContent {
-            content: Content::Application(SecureRng::gen(1024).unwrap()),
+            content: Content::Application(SecureRng::gen(1024).unwrap().into()),
             auth: MLSContentAuthData {
                 signature: MessageSignature::from(SecureRng::gen(128).unwrap()),
                 confirmation_tag: None,

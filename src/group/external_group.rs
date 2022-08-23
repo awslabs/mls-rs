@@ -432,7 +432,7 @@ mod tests {
     fn external_group_rejects_unencrypted_application_message() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let mut server = make_external_group(&alice);
-        let plaintext = alice.make_plaintext(Content::Application(b"hello".to_vec()));
+        let plaintext = alice.make_plaintext(Content::Application(b"hello".to_vec().into()));
 
         assert_matches!(
             server.process_incoming_message(plaintext),

@@ -13,6 +13,7 @@ use crate::{
 };
 use ferriscrypt::asym::ec_key::PublicKey;
 use tls_codec::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 use super::{
     epoch::Epoch,
@@ -100,13 +101,13 @@ pub(crate) fn decrypt_ciphertext(
         content_type: ciphertext.content_type,
     };
 
-    let decrypted_sender = sender_key.decrypt_from_vec(
+    let decrypted_sender = Zeroizing::new(sender_key.decrypt_from_vec(
         &ciphertext.encrypted_sender_data,
         Some(&sender_data_aad.tls_serialize_detached()?),
         sender_nonce,
-    )?;
+    )?);
 
-    let sender_data = MLSSenderData::tls_deserialize(&mut &*decrypted_sender)?;
+    let sender_data = MLSSenderData::tls_deserialize(&mut &**decrypted_sender)?;
     if msg_epoch.self_index == sender_data.sender {
         return Err(GroupError::CantProcessMessageFromSelf);
     }
@@ -118,15 +119,15 @@ pub(crate) fn decrypt_ciphertext(
     };
 
     // Decrypt the content of the message using the grabbed key
-    let decrypted_content = msg_epoch.decrypt(
+    let decrypted_content = Zeroizing::new(msg_epoch.decrypt(
         sender_data.sender,
         sender_data.generation,
         key_type,
         &ciphertext,
         &sender_data.reuse_guard,
-    )?;
+    )?);
 
-    let ciphertext_content = MLSCiphertextContent::tls_deserialize(&mut &*decrypted_content)?;
+    let ciphertext_content = MLSCiphertextContent::tls_deserialize(&mut &**decrypted_content)?;
 
     // Build the MLS plaintext object and process it
     let auth_content = MLSAuthenticatedContent {

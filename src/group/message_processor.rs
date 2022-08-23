@@ -13,8 +13,8 @@ use super::{
     commit_sender,
     confirmation_tag::ConfirmationTag,
     framing::{
-        Content, ContentType, MLSCiphertext, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender,
-        WireFormat,
+        ApplicationData, Content, ContentType, MLSCiphertext, MLSMessage, MLSMessagePayload,
+        MLSPlaintext, Sender, WireFormat,
     },
     message_signature::MLSAuthenticatedContent,
     proposal::{ExternalInit, Proposal, ReInit},
@@ -96,7 +96,7 @@ impl From<&ProvisionalState> for StateUpdate {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Event {
     ApplicationMessage(Vec<u8>),
@@ -129,14 +129,6 @@ impl<E> From<E> for ProcessedMessage<E> {
     }
 }
 
-impl TryFrom<Vec<u8>> for Event {
-    type Error = GroupError;
-
-    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        Ok(Event::ApplicationMessage(value))
-    }
-}
-
 impl From<StateUpdate> for Event {
     fn from(update: StateUpdate) -> Self {
         Event::Commit(update)
@@ -149,10 +141,10 @@ impl From<StateUpdate> for ExternalEvent {
     }
 }
 
-impl TryFrom<Vec<u8>> for ExternalEvent {
+impl TryFrom<ApplicationData> for ExternalEvent {
     type Error = GroupError;
 
-    fn try_from(_: Vec<u8>) -> Result<Self, Self::Error> {
+    fn try_from(_: ApplicationData) -> Result<Self, Self::Error> {
         Err(GroupError::UnencryptedApplicationMessage)
     }
 }
@@ -176,7 +168,7 @@ pub(crate) enum EventOrContent<E> {
 
 pub(crate) trait MessageProcessor<E>
 where
-    E: From<Proposal> + TryFrom<Vec<u8>, Error = GroupError> + From<StateUpdate>,
+    E: From<Proposal> + TryFrom<ApplicationData, Error = GroupError> + From<StateUpdate>,
 {
     type ProposalFilter: ProposalFilter;
     type CredentialValidator: CredentialValidator;
