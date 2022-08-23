@@ -1019,7 +1019,7 @@ where
         self.proposal_message(proposal, authenticated_data)
     }
 
-    pub(self) fn add_proposal(&self, key_package: KeyPackage) -> Result<Proposal, GroupError> {
+    fn add_proposal(&self, key_package: KeyPackage) -> Result<Proposal, GroupError> {
         // Check that this proposal has a valid lifetime and signature. Required capabilities are
         // not checked as they may be changed in another proposal in the same commit.
         let key_package_validator = KeyPackageValidator::new(
@@ -1042,7 +1042,7 @@ where
         self.proposal_message(proposal, authenticated_data)
     }
 
-    pub(self) fn update_proposal(&mut self) -> Result<Proposal, GroupError> {
+    fn update_proposal(&mut self) -> Result<Proposal, GroupError> {
         let signer = self.signer()?;
         // Grab a copy of the current node and update it to have new key material
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
@@ -1073,7 +1073,7 @@ where
         self.proposal_message(proposal, authenticated_data)
     }
 
-    pub(self) fn remove_proposal(&self, index: u32) -> Result<Proposal, GroupError> {
+    fn remove_proposal(&self, index: u32) -> Result<Proposal, GroupError> {
         let leaf_index = LeafIndex(index);
 
         // Verify that this leaf is actually in the tree
@@ -1093,7 +1093,7 @@ where
         self.proposal_message(proposal, authenticated_data)
     }
 
-    pub(self) fn psk_proposal(&self, psk: ExternalPskId) -> Result<Proposal, GroupError> {
+    fn psk_proposal(&self, psk: ExternalPskId) -> Result<Proposal, GroupError> {
         Ok(Proposal::Psk(PreSharedKey {
             psk: PreSharedKeyID {
                 key_id: JustPreSharedKeyID::External(psk),
@@ -1114,7 +1114,7 @@ where
         self.proposal_message(proposal, authenticated_data)
     }
 
-    pub(self) fn reinit_proposal(
+    fn reinit_proposal(
         &self,
         group_id: Option<Vec<u8>>,
         version: ProtocolVersion,
@@ -1141,7 +1141,7 @@ where
         self.proposal_message(proposal, authenticated_data)
     }
 
-    pub(self) fn group_context_extensions_proposal(
+    fn group_context_extensions_proposal(
         &self,
         extensions: ExtensionList<GroupContextExtension>,
     ) -> Proposal {
@@ -1300,7 +1300,7 @@ where
         self.format_for_wire(auth_content)
     }
 
-    pub(self) fn decrypt_incoming_ciphertext(
+    fn decrypt_incoming_ciphertext(
         &mut self,
         message: MLSCiphertext,
     ) -> Result<MLSAuthenticatedContent, GroupError> {
@@ -1824,21 +1824,9 @@ mod tests {
 
         bob_keys.key_package.signature = SecureRng::gen(32).unwrap();
 
-        let mut commit_builder = test_group.group.commit_builder();
-
-        commit_builder.proposals.push(Proposal::Add(AddProposal {
-            key_package: bob_keys.key_package,
-        }));
-
-        let res = commit_builder.build();
-
         assert_matches!(
-            res,
-            Err(GroupError::ProposalCacheError(
-                ProposalCacheError::ProposalFilterError(
-                    ProposalFilterError::KeyPackageValidationError(_)
-                )
-            ))
+            test_group.group.propose_add(bob_keys.key_package, vec![]),
+            Err(GroupError::KeyPackageValidationError(_))
         );
     }
 
@@ -2230,8 +2218,7 @@ mod tests {
 
         // Create many proposals, make Alice commit them
 
-        let update_proposal = bob.group.update_proposal().unwrap();
-        let update_message = bob.group.proposal_message(update_proposal, vec![]).unwrap();
+        let update_message = bob.group.propose_update(vec![]).unwrap();
 
         alice.process_message(update_message).unwrap();
 
