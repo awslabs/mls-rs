@@ -1,5 +1,5 @@
 use crate::{
-    client_config::CredentialValidator,
+    credential::CredentialValidator,
     extension::{KeyPackageExtension, LeafNodeExtension},
     signer::{SignatureError, Signer},
     signing_identity::SigningIdentity,
@@ -100,6 +100,7 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
+        credential::PassthroughCredentialValidator,
         extension::{ExtensionList, KeyPackageExtension, LeafNodeExtension, MlsExtension},
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
         protocol_version::ProtocolVersion,
@@ -113,7 +114,6 @@ mod tests {
 
     use super::KeyPackageGenerator;
 
-    use crate::client_config::PassthroughCredentialValidator;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -336,7 +336,7 @@ mod tests {
             cipher_suite,
             signing_identity: &signing_identity,
             signing_key: &signing_key,
-            credential_validator: &FailureCredentialValidator::new().pass_validation(false),
+            credential_validator: &FailureCredentialValidator,
         };
 
         assert_matches!(

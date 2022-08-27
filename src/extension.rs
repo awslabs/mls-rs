@@ -1,5 +1,5 @@
 use crate::cipher_suite::CipherSuite;
-use crate::client_config::CredentialValidator;
+use crate::credential::CredentialValidator;
 use crate::group::proposal::ProposalType;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signing_identity::SigningIdentityError;

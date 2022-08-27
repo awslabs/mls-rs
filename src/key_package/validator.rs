@@ -2,7 +2,7 @@ use ferriscrypt::asym::ec_key::PublicKey;
 use std::collections::HashSet;
 
 use super::*;
-use crate::client_config::CredentialValidator;
+use crate::credential::CredentialValidator;
 use crate::signing_identity::SigningIdentityError;
 use crate::tree_kem::Lifetime;
 use crate::{
@@ -151,6 +151,7 @@ impl<'a, C: CredentialValidator> KeyPackageValidator<'a, C> {
 
 #[cfg(test)]
 mod tests {
+    use crate::credential::PassthroughCredentialValidator;
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
     use crate::signing_identity::test_utils::get_test_signing_identity;
@@ -160,7 +161,6 @@ mod tests {
 
     use super::*;
 
-    use crate::client_config::PassthroughCredentialValidator;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -169,7 +169,11 @@ mod tests {
         for (protocol_version, cipher_suite) in
             ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
         {
-            let test_package = test_key_package(protocol_version, cipher_suite);
+            let test_package = test_key_package(
+                protocol_version,
+                cipher_suite,
+                &format!("alice-{protocol_version:?}-{cipher_suite:?}"),
+            );
 
             let validator = KeyPackageValidator::new(
                 protocol_version,
@@ -189,7 +193,7 @@ mod tests {
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> KeyPackage {
-        let mut test_package = test_key_package(protocol_version, cipher_suite);
+        let mut test_package = test_key_package(protocol_version, cipher_suite, "mallory");
         test_package.signature = SecureRng::gen(32).unwrap();
         test_package
     }
@@ -218,7 +222,7 @@ mod tests {
     fn test_invalid_cipher_suite() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
         let version = ProtocolVersion::Mls10;
-        let test_package = test_key_package(version, cipher_suite);
+        let test_package = test_key_package(version, cipher_suite, "mallory");
 
         let validator = KeyPackageValidator::new(
             version,
@@ -421,7 +425,7 @@ mod tests {
     fn test_required_capabilities_failure() {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128;
-        let key_package = test_key_package(protocol_version, cipher_suite);
+        let key_package = test_key_package(protocol_version, cipher_suite, "alice");
 
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![255],

@@ -1,9 +1,12 @@
-use super::{
-    leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator},
-    RatchetTreeError, TreeKemPublic,
+use crate::{
+    cipher_suite::CipherSuite,
+    credential::CredentialValidator,
+    extension::RequiredCapabilitiesExt,
+    tree_kem::{
+        leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator},
+        RatchetTreeError, TreeKemPublic,
+    },
 };
-use crate::client_config::CredentialValidator;
-use crate::{cipher_suite::CipherSuite, extension::RequiredCapabilitiesExt};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -85,6 +88,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        credential::PassthroughCredentialValidator,
         group::test_utils::get_test_group_context,
         tree_kem::{
             kem::TreeKem,
@@ -95,7 +99,6 @@ mod tests {
         },
     };
 
-    use crate::client_config::PassthroughCredentialValidator;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -117,7 +120,10 @@ mod tests {
 
         let (leaf1, _, leaf1_signer) = get_basic_test_node_sig_key(cipher_suite, "leaf1");
 
-        test_tree.public.add_leaves(vec![leaf1]).unwrap();
+        test_tree
+            .public
+            .add_leaves(vec![leaf1], PassthroughCredentialValidator)
+            .unwrap();
 
         test_tree.public.nodes[1] = Some(Node::Parent(test_parent_node(cipher_suite)));
 
@@ -131,6 +137,7 @@ mod tests {
                 signers[0],
                 None,
                 None,
+                PassthroughCredentialValidator,
                 #[cfg(test)]
                 &Default::default(),
             )

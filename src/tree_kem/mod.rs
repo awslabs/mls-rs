@@ -17,6 +17,7 @@ use self::leaf_node::{LeafNode, LeafNodeError};
 use self::tree_utils::build_ascii_tree;
 
 use crate::cipher_suite::CipherSuite;
+use crate::credential::CredentialValidator;
 use crate::extension::ExtensionError;
 use crate::group::key_schedule::KeyScheduleKdfError;
 use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError};
@@ -106,6 +107,19 @@ pub enum RatchetTreeError {
     HPKEDecryptionError,
     #[error("decrypting commit from self")]
     DecryptFromSelf,
+    #[error(transparent)]
+    CredentialValidationError(Box<dyn std::error::Error + Send + Sync>),
+    #[error("update and remove proposals for same leaf {0:?}")]
+    UpdateAndRemoveForSameLeaf(LeafIndex),
+    #[error("different identity in update for leaf {0:?}")]
+    DifferentIdentityInUpdate(LeafIndex),
+}
+
+fn credential_validation_error<E>(e: E) -> RatchetTreeError
+where
+    E: Into<Box<dyn std::error::Error + Send + Sync>>,
+{
+    RatchetTreeError::CredentialValidationError(e.into())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -174,14 +188,22 @@ impl TreeKemPublic {
         }
     }
 
-    pub(crate) fn import_node_data(
+    pub(crate) fn import_node_data<C>(
         cipher_suite: CipherSuite,
         nodes: NodeVec,
-    ) -> Result<TreeKemPublic, RatchetTreeError> {
+        credential_validator: C,
+    ) -> Result<TreeKemPublic, RatchetTreeError>
+    where
+        C: CredentialValidator,
+    {
         let index = nodes.non_empty_leaves().try_fold(
             TreeIndex::new(),
             |mut tree_index, (leaf_index, leaf)| {
-                tree_index.insert(leaf_index, leaf)?;
+                let identity = credential_validator
+                    .identity(&leaf.signing_identity)
+                    .map_err(credential_validation_error)?;
+
+                tree_index.insert(leaf_index, leaf, identity)?;
                 Ok::<_, RatchetTreeError>(tree_index)
             },
         )?;
@@ -200,13 +222,17 @@ impl TreeKemPublic {
         self.nodes.clone()
     }
 
-    pub fn derive(
+    pub fn derive<C>(
         cipher_suite: CipherSuite,
         leaf_node: LeafNode,
         secret_key: HpkeSecretKey,
-    ) -> Result<(TreeKemPublic, TreeKemPrivate), RatchetTreeError> {
+        credential_validator: C,
+    ) -> Result<(TreeKemPublic, TreeKemPrivate), RatchetTreeError>
+    where
+        C: CredentialValidator,
+    {
         let mut public_tree = TreeKemPublic::new(cipher_suite);
-        public_tree.add_leaves(vec![leaf_node])?;
+        public_tree.add_leaves(vec![leaf_node], credential_validator)?;
 
         let private_tree = TreeKemPrivate::new_self_leaf(LeafIndex(0), secret_key);
 
@@ -237,10 +263,14 @@ impl TreeKemPublic {
 
     // Note that a partial failure of this function will leave the tree in a bad state. Modifying a
     // tree should always be done on a clone of the tree, which is how commits are processed
-    pub fn add_leaves(
+    pub fn add_leaves<C>(
         &mut self,
         leaf_nodes: Vec<LeafNode>,
-    ) -> Result<Vec<LeafIndex>, RatchetTreeError> {
+        credential_validator: C,
+    ) -> Result<Vec<LeafIndex>, RatchetTreeError>
+    where
+        C: CredentialValidator,
+    {
         #[derive(Default)]
         struct Accumulator {
             new_leaf_indexes: Vec<LeafIndex>,
@@ -263,13 +293,23 @@ impl TreeKemPublic {
             }
         }
 
-        self.batch_edit(Accumulator::default(), &[], &[], &leaf_nodes)
+        self.batch_edit(
+            Accumulator::default(),
+            &[],
+            &[],
+            &leaf_nodes,
+            credential_validator,
+        )
     }
 
-    pub fn remove_leaves(
+    pub fn remove_leaves<C>(
         &mut self,
         indexes: Vec<LeafIndex>,
-    ) -> Result<Vec<(LeafIndex, LeafNode)>, RatchetTreeError> {
+        credential_validator: C,
+    ) -> Result<Vec<(LeafIndex, LeafNode)>, RatchetTreeError>
+    where
+        C: CredentialValidator,
+    {
         #[derive(Default)]
         struct Accumulator {
             removed: Vec<(LeafIndex, LeafNode)>,
@@ -292,31 +332,52 @@ impl TreeKemPublic {
             }
         }
 
-        self.batch_edit(Accumulator::default(), &[], &indexes, &[])
+        self.batch_edit(
+            Accumulator::default(),
+            &[],
+            &indexes,
+            &[],
+            credential_validator,
+        )
     }
 
-    pub fn rekey_leaf(
+    pub fn rekey_leaf<C>(
         &mut self,
         index: LeafIndex,
         leaf_node: LeafNode,
-    ) -> Result<(), RatchetTreeError> {
+        credential_validator: C,
+    ) -> Result<(), RatchetTreeError>
+    where
+        C: CredentialValidator,
+    {
         // Update the leaf node
         let existing_leaf = self.nodes.borrow_as_leaf_mut(index)?;
 
-        // Update the cache
-        self.index.remove(existing_leaf);
-        self.index.insert(index, &leaf_node)?;
+        let existing_identity = credential_validator
+            .identity(&existing_leaf.signing_identity)
+            .map_err(credential_validation_error)?;
 
+        let new_identity = credential_validator
+            .identity(&leaf_node.signing_identity)
+            .map_err(credential_validation_error)?;
+
+        // Update the cache
+        self.index.remove(existing_leaf, &existing_identity);
+        self.index.insert(index, &leaf_node, new_identity)?;
         *existing_leaf = leaf_node;
 
         Ok(())
     }
 
-    pub fn update_leaf(
+    pub fn update_leaf<C>(
         &mut self,
         index: LeafIndex,
         leaf_node: LeafNode,
-    ) -> Result<(), RatchetTreeError> {
+        credential_validator: C,
+    ) -> Result<(), RatchetTreeError>
+    where
+        C: CredentialValidator,
+    {
         struct Accumulator;
 
         impl AccumulateBatchResults for Accumulator {
@@ -327,7 +388,13 @@ impl TreeKemPublic {
             }
         }
 
-        self.batch_edit(Accumulator, &[(index, leaf_node)], &[], &[])
+        self.batch_edit(
+            Accumulator,
+            &[(index, leaf_node)],
+            &[],
+            &[],
+            credential_validator,
+        )
     }
 
     pub fn get_leaf_nodes(&self) -> Vec<&LeafNode> {
@@ -352,14 +419,30 @@ impl TreeKemPublic {
             })
     }
 
-    pub(crate) fn apply_update_path(
+    pub(crate) fn apply_update_path<C>(
         &mut self,
         sender: LeafIndex,
         update_path: &ValidatedUpdatePath,
-    ) -> Result<Vec<(u32, u32)>, RatchetTreeError> {
+        credential_validator: C,
+    ) -> Result<Vec<(u32, u32)>, RatchetTreeError>
+    where
+        C: CredentialValidator,
+    {
         // Install the new leaf node
         let existing_leaf = self.nodes.borrow_as_leaf_mut(sender)?;
         let original_leaf_node = existing_leaf.clone();
+
+        let original_identity = credential_validator
+            .identity(&original_leaf_node.signing_identity)
+            .map_err(credential_validation_error)?;
+
+        let updated_identity = credential_validator
+            .identity(&update_path.leaf_node.signing_identity)
+            .map_err(credential_validation_error)?;
+
+        (original_identity == updated_identity)
+            .then_some(())
+            .ok_or(RatchetTreeError::DifferentIdentityInUpdate(sender))?;
 
         *existing_leaf = update_path.leaf_node.clone();
 
@@ -374,8 +457,9 @@ impl TreeKemPublic {
 
         self.apply_parent_node_updates(updated_pks, &filtered_direct_path_co_path)?;
 
-        self.index.remove(&original_leaf_node);
-        self.index.insert(sender, &update_path.leaf_node)?;
+        self.index.remove(&original_leaf_node, &original_identity);
+        self.index
+            .insert(sender, &update_path.leaf_node, updated_identity)?;
 
         // Verify the parent hash of the new sender leaf node and update the parent hash values
         // in the local tree
@@ -427,22 +511,18 @@ impl TreeKemPublic {
         Ok(())
     }
 
-    pub fn batch_edit<A>(
+    pub fn batch_edit<A, C>(
         &mut self,
         mut accumulator: A,
         updates: &[(LeafIndex, LeafNode)],
         removals: &[LeafIndex],
         additions: &[LeafNode],
+        credential_validator: C,
     ) -> Result<A::Output, RatchetTreeError>
     where
         A: AccumulateBatchResults,
+        C: CredentialValidator,
     {
-        let mut updates = updates
-            .iter()
-            .map(|(i, l)| (*i, l))
-            .map(Some)
-            .collect::<Vec<_>>();
-
         let mut removals = removals.iter().copied().map(Some).collect::<Vec<_>>();
         let tree_index = std::mem::take(&mut self.index);
         let mut removed_indexes = HashSet::<LeafIndex>::new();
@@ -454,12 +534,18 @@ impl TreeKemPublic {
                 .enumerate()
                 .try_fold(tree_index, |mut tree_index, (i, op)| {
                     let r = empty_on_fail(op, |&leaf_index| {
+                        let leaf = self.nodes.borrow_as_leaf(leaf_index)?;
+
+                        let identity = credential_validator
+                            .identity(&leaf.signing_identity)
+                            .map_err(credential_validation_error)?;
+
                         removed_indexes
                             .insert(leaf_index)
                             .then_some(())
                             .ok_or(NodeVecError::NotLeafNode)?;
-                        let leaf = self.nodes.borrow_as_leaf(leaf_index)?;
-                        tree_index.remove(leaf);
+
+                        tree_index.remove(leaf, &identity);
                         Ok(())
                     });
 
@@ -467,24 +553,43 @@ impl TreeKemPublic {
                         .map(|_| tree_index)
                 })?;
 
-        // Verify updates have valid indexes.
-        updates.iter_mut().enumerate().try_for_each(|(i, op)| {
-            let r = empty_on_fail(op, |&(leaf_index, _)| {
-                let _ = self.nodes.borrow_as_leaf(leaf_index)?;
-                Ok(())
-            });
+        // Verify updates have valid indexes and old and new leaves have the same identity.
+        let mut updates = updates.iter().enumerate().try_fold(
+            Vec::new(),
+            |mut updates, (i, (leaf_index, new_leaf))| {
+                let r = if removed_indexes.contains(leaf_index) {
+                    Err(RatchetTreeError::UpdateAndRemoveForSameLeaf(*leaf_index))
+                } else {
+                    self.nodes
+                        .borrow_as_leaf(*leaf_index)
+                        .map_err(Into::into)
+                        .and_then(|old_leaf| {
+                            let old_identity = credential_validator
+                                .identity(&old_leaf.signing_identity)
+                                .map_err(credential_validation_error)?;
 
-            r.or_else(|e| accumulator.on_update(i, Err(e)))
-        })?;
+                            let new_identity = credential_validator
+                                .identity(&new_leaf.signing_identity)
+                                .map_err(credential_validation_error)?;
 
-        // Ignore updates for indexes that are removed. Such a commit is invalid as per the RFC.
-        updates.iter_mut().for_each(|op| {
-            if op.as_ref().map_or(false, |(leaf_index, _)| {
-                removed_indexes.contains(leaf_index)
-            }) {
-                *op = None;
-            }
-        });
+                            (old_identity == new_identity)
+                                .then_some((*leaf_index, new_leaf, old_identity, new_identity))
+                                .ok_or(RatchetTreeError::DifferentIdentityInUpdate(*leaf_index))
+                        })
+                };
+
+                match r {
+                    Ok(update) => {
+                        updates.push(Some(update));
+                        Ok(updates)
+                    }
+                    Err(e) => {
+                        updates.push(None);
+                        accumulator.on_update(i, Err(e)).map(|()| updates)
+                    }
+                }
+            },
+        )?;
 
         let mut tree_index = loop {
             let tree_index = new_tree_index.clone();
@@ -497,13 +602,15 @@ impl TreeKemPublic {
             // is implemented here.
             let tree_index = updates
                 .iter()
-                .copied()
                 .flatten()
-                .map(|(leaf_index, _)| leaf_index)
-                .fold(tree_index, |mut tree_index, leaf_index| {
-                    if let Ok(leaf) = self.nodes.borrow_as_leaf(leaf_index) {
-                        tree_index.remove(leaf);
+                .map(|(leaf_index, _, old_identity, _)| (*leaf_index, old_identity))
+                .fold(tree_index, |mut tree_index, (leaf_index, old_identity)| {
+                    let old_leaf = self.nodes.borrow_as_leaf(leaf_index);
+
+                    if let Ok(old_leaf) = old_leaf {
+                        tree_index.remove(old_leaf, old_identity);
                     }
+
                     tree_index
                 });
 
@@ -515,14 +622,16 @@ impl TreeKemPublic {
                     .try_fold(tree_index, |mut tree_index, (i, op)| {
                         let mut update_failed = false;
 
-                        let r = empty_on_fail(op, |&(leaf_index, leaf)| {
-                            match tree_index.insert(leaf_index, leaf) {
-                                Ok(_) => Ok(()),
-                                Err(e) => {
-                                    update_failed = true;
-                                    Err(e.into())
-                                }
+                        let r = empty_on_fail(op, |(leaf_index, new_leaf, _, new_identity)| {
+                            let r = tree_index
+                                .insert(*leaf_index, *new_leaf, new_identity.clone())
+                                .map_err(Into::into);
+
+                            if r.is_err() {
+                                update_failed = true;
                             }
+
+                            r
                         });
 
                         r.or_else(|e| accumulator.on_update(i, Err(e)))
@@ -551,14 +660,13 @@ impl TreeKemPublic {
 
         updates
             .iter()
-            .copied()
             .enumerate()
-            .filter_map(|(i, leaf)| leaf.map(|(li, l)| (i, li, l)))
-            .try_for_each(|(i, leaf_index, leaf)| {
+            .filter_map(|(i, update)| Some((i, update.as_ref()?)))
+            .try_for_each(|(i, &(leaf_index, new_leaf, ..))| {
                 *self
                     .nodes
                     .borrow_as_leaf_mut(leaf_index)
-                    .expect("Index points to a leaf") = leaf.clone();
+                    .expect("Index points to a leaf") = new_leaf.clone();
 
                 self.nodes
                     .blank_direct_path(leaf_index)
@@ -591,10 +699,15 @@ impl TreeKemPublic {
             |(mut leaf_indexes, start), (i, leaf)| {
                 let leaf_index = self.nodes.insert_leaf(start, leaf.clone());
 
-                let r = tree_index
-                    .insert(leaf_index, leaf)
-                    .map(|_| leaf_index)
-                    .map_err(Into::into);
+                let r = credential_validator
+                    .identity(&leaf.signing_identity)
+                    .map_err(credential_validation_error)
+                    .and_then(|identity| {
+                        tree_index
+                            .insert(leaf_index, leaf, identity)
+                            .map(|_| leaf_index)
+                            .map_err(Into::into)
+                    });
 
                 let failed = r.is_err();
                 accumulator.on_add(i, r)?;
@@ -625,13 +738,7 @@ impl TreeKemPublic {
             .iter()
             .copied()
             .flatten()
-            .chain(
-                updates
-                    .iter()
-                    .copied()
-                    .flatten()
-                    .map(|(leaf_index, _)| leaf_index),
-            )
+            .chain(updates.iter().flatten().map(|&(leaf_index, ..)| leaf_index))
             .collect();
 
         self.update_hashes(&mut path_blanked, &new_leaf_indexes)
@@ -707,13 +814,15 @@ impl TreeKemPublic {
 pub(crate) mod test_utils {
     use ferriscrypt::{asym::ec_key::SecretKey, hpke::kem::HpkeSecretKey};
 
-    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
+    use crate::{
+        cipher_suite::CipherSuite, credential::PassthroughCredentialValidator,
+        tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key,
+    };
 
     use super::{
         leaf_node::{test_utils::get_basic_test_node, LeafNode},
         TreeKemPrivate, TreeKemPublic,
     };
-    use crate::cipher_suite::CipherSuite;
 
     #[derive(Debug)]
     pub(crate) struct TestTree {
@@ -732,6 +841,7 @@ pub(crate) mod test_utils {
             cipher_suite,
             creator_leaf.clone(),
             creator_hpke_secret.clone(),
+            PassthroughCredentialValidator,
         )
         .unwrap();
 
@@ -757,8 +867,10 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::cipher_suite::CipherSuite;
-
-    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
+    use crate::credential::PassthroughCredentialValidator;
+    use crate::tree_kem::leaf_node::test_utils::{
+        get_basic_test_node, get_basic_test_node_sig_key,
+    };
     use crate::tree_kem::leaf_node::LeafNode;
     use crate::tree_kem::node::{
         LeafIndex, Node, NodeIndex, NodeTypeResolver, NodeVecError, Parent,
@@ -766,7 +878,9 @@ mod tests {
     use crate::tree_kem::parent_hash::ParentHash;
     use crate::tree_kem::test_utils::{get_test_leaf_nodes, get_test_tree};
     use crate::tree_kem::tree_index::TreeIndexError;
-    use crate::tree_kem::{AccumulateBatchResults, RatchetTreeError, TreeKemPublic};
+    use crate::tree_kem::{
+        AccumulateBatchResults, RatchetTreeError, TreeKemPublic, ValidatedUpdatePath,
+    };
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]
@@ -800,11 +914,13 @@ mod tests {
 
         test_tree
             .public
-            .add_leaves(additional_key_packages)
+            .add_leaves(additional_key_packages, PassthroughCredentialValidator)
             .unwrap();
 
         let exported = test_tree.public.export_node_data();
-        let imported = TreeKemPublic::import_node_data(cipher_suite, exported).unwrap();
+        let imported =
+            TreeKemPublic::import_node_data(cipher_suite, exported, PassthroughCredentialValidator)
+                .unwrap();
 
         assert_eq!(test_tree.public.nodes, imported.nodes);
         assert_eq!(test_tree.public.index, imported.index);
@@ -816,7 +932,9 @@ mod tests {
         let mut tree = TreeKemPublic::new(cipher_suite);
 
         let leaf_nodes = get_test_leaf_nodes(cipher_suite);
-        let res = tree.add_leaves(leaf_nodes.clone()).unwrap();
+        let res = tree
+            .add_leaves(leaf_nodes.clone(), PassthroughCredentialValidator)
+            .unwrap();
 
         // The leaf count should be equal to the number of packages we added
         assert_eq!(res.len(), leaf_nodes.len());
@@ -843,7 +961,8 @@ mod tests {
         let mut tree = TreeKemPublic::new(cipher_suite);
 
         let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages).unwrap();
+        tree.add_leaves(key_packages, PassthroughCredentialValidator)
+            .unwrap();
 
         let key_packages = tree.get_leaf_nodes();
         assert_eq!(key_packages, key_packages.to_owned());
@@ -855,9 +974,10 @@ mod tests {
         let mut tree = TreeKemPublic::new(cipher_suite);
 
         let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages.clone()).unwrap();
+        tree.add_leaves(key_packages.clone(), PassthroughCredentialValidator)
+            .unwrap();
 
-        let add_res = tree.add_leaves(key_packages);
+        let add_res = tree.add_leaves(key_packages, PassthroughCredentialValidator);
 
         assert_matches!(
             add_res,
@@ -873,9 +993,17 @@ mod tests {
         let mut tree = get_test_tree(cipher_suite).public;
         let key_packages = get_test_leaf_nodes(cipher_suite);
 
-        tree.add_leaves([key_packages[0].clone()].to_vec()).unwrap();
+        tree.add_leaves(
+            [key_packages[0].clone()].to_vec(),
+            PassthroughCredentialValidator,
+        )
+        .unwrap();
         tree.nodes[0] = None; // Set the original first node to none
-        tree.add_leaves([key_packages[1].clone()].to_vec()).unwrap();
+        tree.add_leaves(
+            [key_packages[1].clone()].to_vec(),
+            PassthroughCredentialValidator,
+        )
+        .unwrap();
 
         assert_eq!(tree.nodes[0], key_packages[1].clone().into());
         assert_eq!(tree.nodes[1], None);
@@ -889,8 +1017,11 @@ mod tests {
         let mut tree = get_test_tree(cipher_suite).public;
         let key_packages = get_test_leaf_nodes(cipher_suite);
 
-        tree.add_leaves([key_packages[0].clone(), key_packages[1].clone()].to_vec())
-            .unwrap();
+        tree.add_leaves(
+            [key_packages[0].clone(), key_packages[1].clone()].to_vec(),
+            PassthroughCredentialValidator,
+        )
+        .unwrap();
 
         tree.nodes[3] = Parent {
             public_key: vec![].into(),
@@ -899,7 +1030,11 @@ mod tests {
         }
         .into();
 
-        tree.add_leaves([key_packages[2].clone()].to_vec()).unwrap();
+        tree.add_leaves(
+            [key_packages[2].clone()].to_vec(),
+            PassthroughCredentialValidator,
+        )
+        .unwrap();
 
         assert_eq!(
             tree.nodes[3].as_parent().unwrap().unmerged_leaves,
@@ -915,7 +1050,8 @@ mod tests {
         let mut tree = get_test_tree(cipher_suite).public;
 
         let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages).unwrap();
+        tree.add_leaves(key_packages, PassthroughCredentialValidator)
+            .unwrap();
 
         // Add in parent nodes so we can detect them clearing after update
         tree.nodes
@@ -931,10 +1067,14 @@ mod tests {
         let original_size = tree.occupied_leaf_count();
         let original_leaf_index = LeafIndex(1);
 
-        let updated_leaf = get_basic_test_node(cipher_suite, "newpk");
+        let updated_leaf = get_basic_test_node(cipher_suite, "A");
 
-        tree.update_leaf(original_leaf_index, updated_leaf.clone())
-            .unwrap();
+        tree.update_leaf(
+            original_leaf_index,
+            updated_leaf.clone(),
+            PassthroughCredentialValidator,
+        )
+        .unwrap();
 
         // The tree should not have grown due to an update
         assert_eq!(tree.occupied_leaf_count(), original_size);
@@ -965,12 +1105,17 @@ mod tests {
         // Create a tree
         let mut tree = get_test_tree(cipher_suite).public;
         let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages).unwrap();
+        tree.add_leaves(key_packages, PassthroughCredentialValidator)
+            .unwrap();
 
         let new_key_package = get_basic_test_node(cipher_suite, "new");
 
         assert_matches!(
-            tree.update_leaf(LeafIndex(128), new_key_package),
+            tree.update_leaf(
+                LeafIndex(128),
+                new_key_package,
+                PassthroughCredentialValidator
+            ),
             Err(RatchetTreeError::NodeVecError(
                 NodeVecError::InvalidNodeIndex(256)
             ))
@@ -984,7 +1129,9 @@ mod tests {
         // Create a tree
         let mut tree = get_test_tree(cipher_suite).public;
         let key_packages = get_test_leaf_nodes(cipher_suite);
-        let indexes = tree.add_leaves(key_packages.clone()).unwrap();
+        let indexes = tree
+            .add_leaves(key_packages.clone(), PassthroughCredentialValidator)
+            .unwrap();
 
         let original_leaf_count = tree.occupied_leaf_count();
 
@@ -996,7 +1143,9 @@ mod tests {
             .map(|(index, ln)| (index, ln))
             .collect();
 
-        let res = tree.remove_leaves(indexes.clone()).unwrap();
+        let res = tree
+            .remove_leaves(indexes.clone(), PassthroughCredentialValidator)
+            .unwrap();
 
         assert_eq!(res, expected_result);
 
@@ -1014,10 +1163,14 @@ mod tests {
         // Create a tree
         let mut tree = get_test_tree(cipher_suite).public;
         let leaf_nodes = get_test_leaf_nodes(cipher_suite);
-        let to_remove = tree.add_leaves(leaf_nodes.clone()).unwrap()[0];
+        let to_remove = tree
+            .add_leaves(leaf_nodes.clone(), PassthroughCredentialValidator)
+            .unwrap()[0];
         let original_leaf_count = tree.occupied_leaf_count();
 
-        let res = tree.remove_leaves(vec![to_remove]).unwrap();
+        let res = tree
+            .remove_leaves(vec![to_remove], PassthroughCredentialValidator)
+            .unwrap();
 
         assert_eq!(res, vec![(to_remove, leaf_nodes[0].clone())]);
 
@@ -1038,14 +1191,16 @@ mod tests {
         // Create a tree
         let mut tree = get_test_tree(cipher_suite).public;
         let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages).unwrap();
+        tree.add_leaves(key_packages, PassthroughCredentialValidator)
+            .unwrap();
 
         let original_leaf_count = tree.occupied_leaf_count();
 
         let to_remove = vec![LeafIndex(2)];
 
         // Remove the leaf from the tree
-        tree.remove_leaves(to_remove).unwrap();
+        tree.remove_leaves(to_remove, PassthroughCredentialValidator)
+            .unwrap();
 
         // The occupied leaf count should have been reduced by 1
         assert_eq!(tree.occupied_leaf_count(), original_leaf_count - 1);
@@ -1070,7 +1225,7 @@ mod tests {
         let mut tree = get_test_tree(cipher_suite).public;
 
         assert_matches!(
-            tree.remove_leaves(vec![LeafIndex(128)]),
+            tree.remove_leaves(vec![LeafIndex(128)], PassthroughCredentialValidator),
             Err(RatchetTreeError::NodeVecError(
                 NodeVecError::InvalidNodeIndex(256)
             ))
@@ -1084,7 +1239,8 @@ mod tests {
         // Create a tree
         let mut tree = get_test_tree(cipher_suite).public;
         let leaf_nodes = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(leaf_nodes.clone()).unwrap();
+        tree.add_leaves(leaf_nodes.clone(), PassthroughCredentialValidator)
+            .unwrap();
 
         // Find each node
         for (i, leaf_node) in leaf_nodes.iter().enumerate() {
@@ -1140,19 +1296,50 @@ mod tests {
         let cipher_suite = CipherSuite::Curve25519Aes128;
         let mut tree = get_test_tree(cipher_suite).public;
         let leaf_nodes = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(leaf_nodes.clone()).unwrap();
+        tree.add_leaves(leaf_nodes.clone(), PassthroughCredentialValidator)
+            .unwrap();
 
         let acc = tree
             .batch_edit(
                 BatchAccumulator::default(),
-                &[(LeafIndex(0), get_basic_test_node(cipher_suite, "A"))],
-                &[LeafIndex(1)],
+                &[(LeafIndex(1), get_basic_test_node(cipher_suite, "A"))],
+                &[LeafIndex(2)],
                 &[get_basic_test_node(cipher_suite, "D")],
+                PassthroughCredentialValidator,
             )
             .unwrap();
 
-        assert_eq!(acc.additions, [LeafIndex(1)]);
-        assert_eq!(acc.removals, [(LeafIndex(1), leaf_nodes[0].clone())]);
-        assert_eq!(acc.updates, [LeafIndex(0)]);
+        assert_eq!(acc.additions, [LeafIndex(2)]);
+        assert_eq!(acc.removals, [(LeafIndex(2), leaf_nodes[1].clone())]);
+        assert_eq!(acc.updates, [LeafIndex(1)]);
+    }
+
+    #[test]
+    fn applying_update_path_fails_if_different_identity() {
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let mut tree = get_test_tree(cipher_suite);
+        let (mut leaf_node, _, signer) = get_basic_test_node_sig_key(cipher_suite, "foo");
+
+        leaf_node
+            .commit(cipher_suite, b"group", None, None, &signer, |_| {
+                Ok(ParentHash::empty())
+            })
+            .unwrap();
+
+        let update_path = ValidatedUpdatePath {
+            leaf_node,
+            nodes: Vec::new(),
+        };
+
+        let res = tree.public.apply_update_path(
+            LeafIndex(0),
+            &update_path,
+            PassthroughCredentialValidator,
+        );
+
+        assert_matches!(
+            res,
+            Err(RatchetTreeError::DifferentIdentityInUpdate(LeafIndex(0)))
+        );
     }
 }

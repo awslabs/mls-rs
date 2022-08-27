@@ -12,9 +12,8 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroizing;
 
 use crate::cipher_suite::CipherSuite;
-use crate::client_config::{
-    ClientConfig, CredentialValidator, ProposalFilterInit, PskStore, PskStoreIdValidator,
-};
+use crate::client_config::{ClientConfig, ProposalFilterInit, PskStore, PskStoreIdValidator};
+use crate::credential::CredentialValidator;
 use crate::epoch::EpochRepository;
 use crate::extension::{
     ExtensionError, ExtensionList, ExternalPubExt, GroupContextExtension, LeafNodeExtension,
@@ -185,8 +184,12 @@ where
             &config.credential_validator(),
         )?;
 
-        let (mut public_tree, private_tree) =
-            TreeKemPublic::derive(cipher_suite, leaf_node, leaf_node_secret)?;
+        let (mut public_tree, private_tree) = TreeKemPublic::derive(
+            cipher_suite,
+            leaf_node,
+            leaf_node_secret,
+            config.credential_validator(),
+        )?;
 
         let tree_hash = public_tree.tree_hash()?;
 
@@ -700,10 +703,12 @@ where
             new_context.cipher_suite,
             new_validated_leaf,
             new_leaf_secret,
+            self.config.credential_validator(),
         )?;
 
         // Add the generated leaves to new tree
-        let added_member_indexes = new_pub_tree.add_leaves(new_members)?;
+        let added_member_indexes =
+            new_pub_tree.add_leaves(new_members, self.config.credential_validator())?;
         new_context.tree_hash = new_pub_tree.tree_hash()?;
 
         let epoch_repo = self.config.epoch_repo();
@@ -1480,9 +1485,11 @@ where
             .as_ref()
             .and_then(|pc| pc.pending_secrets.as_ref())
         {
-            provisional_state
-                .public_tree
-                .apply_update_path(self.private_tree.self_index, &update_path)?;
+            provisional_state.public_tree.apply_update_path(
+                self.private_tree.self_index,
+                &update_path,
+                self.credential_validator(),
+            )?;
 
             Ok(pending.clone())
         } else {
@@ -1499,6 +1506,7 @@ where
                     .map(|(_, index)| *index)
                     .collect::<Vec<LeafIndex>>(),
                 &mut provisional_state.group_context,
+                self.config.credential_validator(),
             )
             .map(|root_secret| (provisional_private_tree, root_secret))
         }?;
@@ -2115,7 +2123,7 @@ mod tests {
             Some(Preferences::default().force_commit_path_update(false)),
         );
 
-        let test_key_package = test_key_package(protocol_version, cipher_suite);
+        let test_key_package = test_key_package(protocol_version, cipher_suite, "alice");
 
         test_group
             .group
@@ -2210,8 +2218,8 @@ mod tests {
         let (mut bob, _) = alice.join("bob");
         let mut leaves = vec![];
 
-        for _ in 0..8 {
-            let (group, commit) = alice.join("charlie");
+        for i in 0..8 {
+            let (group, commit) = alice.join(&format!("charlie{i}"));
             leaves.push(group.group.current_user_leaf_node().unwrap().clone());
             bob.process_message(commit).unwrap();
         }
@@ -2251,8 +2259,12 @@ mod tests {
             commit_builder = commit_builder.remove_member(index).unwrap();
         }
 
-        for _ in 0..5 {
-            let (key_package, _) = test_member(protocol_version, cipher_suite, b"dave");
+        for i in 0..5 {
+            let (key_package, _) = test_member(
+                protocol_version,
+                cipher_suite,
+                format!("dave{i}").as_bytes(),
+            );
             commit_builder = commit_builder.add_member(key_package.key_package).unwrap()
         }
 

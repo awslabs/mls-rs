@@ -1,7 +1,6 @@
 use super::leaf_node::{LeafNode, LeafNodeSource};
 use super::{Lifetime, LifetimeError};
-use crate::client_config::CredentialValidator;
-use crate::credential::CredentialType;
+use crate::credential::{CredentialType, CredentialValidator};
 use crate::signing_identity::SigningIdentityError;
 use crate::{
     cipher_suite::CipherSuite,
@@ -210,6 +209,7 @@ mod tests {
 
     use super::*;
 
+    use crate::credential::PassthroughCredentialValidator;
     use crate::extension::{ApplicationIdExt, ExtensionList, MlsExtension};
     use crate::signing_identity::test_utils::get_test_signing_identity;
     use crate::tree_kem::leaf_node::test_utils::*;
@@ -217,7 +217,6 @@ mod tests {
     use crate::tree_kem::parent_hash::ParentHash;
     use crate::tree_kem::Capabilities;
 
-    use crate::client_config::PassthroughCredentialValidator;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -523,28 +522,17 @@ mod tests {
 pub mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,
-        client_config::CredentialValidator,
-        credential::{Credential, CredentialError},
+        credential::{CredentialError, CredentialValidator},
         signing_identity::SigningIdentity,
         x509::X509Error,
     };
 
     #[derive(Clone, Debug, Default)]
-    pub struct FailureCredentialValidator {
-        pass_validation: bool,
-        equal: bool,
-    }
+    pub struct FailureCredentialValidator;
 
     impl FailureCredentialValidator {
         pub fn new() -> Self {
             Self::default()
-        }
-
-        pub fn pass_validation(self, pass: bool) -> Self {
-            Self {
-                pass_validation: pass,
-                ..self
-            }
         }
     }
 
@@ -555,15 +543,13 @@ pub mod test_utils {
             _signing_identity: &SigningIdentity,
             _cipher_suite: CipherSuite,
         ) -> Result<(), Self::Error> {
-            self.pass_validation
-                .then(|| ())
-                .ok_or(CredentialError::CertificateError(
-                    X509Error::EmptyCertificateChain,
-                ))
+            Err(CredentialError::CertificateError(
+                X509Error::EmptyCertificateChain,
+            ))
         }
 
-        fn is_equal_identity(&self, _left: &Credential, _right: &Credential) -> bool {
-            self.equal
+        fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
+            Ok(signing_id.credential.to_bytes()?)
         }
     }
 }

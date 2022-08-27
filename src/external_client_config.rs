@@ -1,10 +1,10 @@
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
-    client_config::{
-        CredentialValidator, MakeProposalFilter, PassthroughCredentialValidator,
-        ProposalFilterInit, SimpleError,
+    client_config::{MakeProposalFilter, ProposalFilterInit, SimpleError},
+    credential::{
+        CredentialType, CredentialValidator, PassthroughCredentialValidator, CREDENTIAL_TYPE_BASIC,
+        CREDENTIAL_TYPE_X509,
     },
-    credential::{CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
     extension::ExtensionType,
     external_client::ExternalClient,
     group::proposal::{BoxedProposalFilter, ProposalFilter},

@@ -1,5 +1,6 @@
 use crate::{
-    client_config::{CredentialValidator, ProposalFilterInit},
+    client_config::ProposalFilterInit,
+    credential::CredentialValidator,
     key_package::KeyPackage,
     psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
     tree_kem::{
@@ -500,7 +501,7 @@ where
     ) -> Result<Option<(TreeKemPrivate, PathSecret)>, GroupError> {
         provisional_state
             .public_tree
-            .apply_update_path(sender, &update_path)
+            .apply_update_path(sender, &update_path, self.credential_validator())
             .map(|_| None)
             .map_err(Into::into)
     }

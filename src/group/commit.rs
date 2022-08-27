@@ -250,6 +250,7 @@ where
                 &signer,
                 options.capabilities_update,
                 options.extension_update,
+                self.config.credential_validator(),
                 #[cfg(test)]
                 &self.commit_modifiers,
             )?;
@@ -475,7 +476,7 @@ mod tests {
     #[test]
     fn test_commit_builder_add() {
         let mut group = test_commit_builder_group();
-        let test_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let test_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice");
 
         let (commit_message, welcome_message) = group
             .commit_builder()
@@ -498,7 +499,7 @@ mod tests {
     #[test]
     fn test_commit_builder_remove() {
         let mut group = test_commit_builder_group();
-        let test_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let test_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice");
 
         group
             .commit_builder()
@@ -626,8 +627,8 @@ mod tests {
     #[test]
     fn test_commit_builder_chaining() {
         let mut group = test_commit_builder_group();
-        let kp1 = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let kp2 = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let kp1 = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice");
+        let kp2 = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
         let expected_adds = vec![
             group.add_proposal(kp1.clone()).unwrap(),

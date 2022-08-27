@@ -1,4 +1,5 @@
 use crate::cipher_suite::CipherSuite;
+use crate::credential::PassthroughCredentialValidator;
 use crate::extension::ExtensionList;
 use crate::ferriscrypt::asym::ec_key::SecretKey;
 use crate::group::{ConfirmedTranscriptHash, GroupContext};
@@ -51,10 +52,17 @@ pub fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
         get_basic_test_node_sig_key(cipher_suite, "encap");
 
     // Build a test tree we can clone for all leaf nodes
-    let (mut test_tree, encap_private_key) =
-        TreeKemPublic::derive(cipher_suite, encap_node, encap_hpke_secret).unwrap();
+    let (mut test_tree, encap_private_key) = TreeKemPublic::derive(
+        cipher_suite,
+        encap_node,
+        encap_hpke_secret,
+        PassthroughCredentialValidator,
+    )
+    .unwrap();
 
-    test_tree.add_leaves(leaf_nodes).unwrap();
+    test_tree
+        .add_leaves(leaf_nodes, PassthroughCredentialValidator)
+        .unwrap();
 
     // Clone the tree for the first leaf, generate a new key package for that leaf
     let encap_tree = test_tree.clone();

@@ -167,7 +167,7 @@ where
     }
 
     pub fn load_snapshot(&self, snapshot: Snapshot) -> Result<Group<C>, ClientError> {
-        Ok(Group::from_snapshot(self.config.clone(), snapshot))
+        Ok(Group::from_snapshot(self.config.clone(), snapshot)?)
     }
 
     pub fn external_add_proposal(
@@ -192,6 +192,7 @@ where
             protocol_version,
             group_info,
             tree_data,
+            self.config.credential_validator(),
         )?;
 
         let key_package =
@@ -420,11 +421,12 @@ mod tests {
 
         let group_info_msg = alice_group.group.group_info_message(true).unwrap();
 
-        let charlie = get_basic_config(TEST_CIPHER_SUITE, "charlie")
+        let new_client_id = if do_remove { "bob" } else { "charlie" };
+        let new_client = get_basic_config(TEST_CIPHER_SUITE, new_client_id)
             .with_psk(psk_id.clone(), psk)
             .build_client();
 
-        let (mut charlie_group, external_commit) = charlie.commit_external(
+        let (mut new_group, external_commit) = new_client.commit_external(
             group_info_msg,
             Some(&alice_group.group.export_tree().unwrap()),
             do_remove.then(|| 1),
@@ -434,7 +436,7 @@ mod tests {
 
         let num_members = if do_remove { 2 } else { 3 };
 
-        assert_eq!(charlie_group.roster().member_count(), num_members);
+        assert_eq!(new_group.roster().member_count(), num_members);
 
         let _ = alice_group
             .group
@@ -461,18 +463,18 @@ mod tests {
             .encrypt_application_message(alice_msg, vec![])
             .unwrap();
 
-        let received = charlie_group.process_incoming_message(msg).unwrap();
+        let received = new_group.process_incoming_message(msg).unwrap();
         assert_matches!(received.event, Event::ApplicationMessage(bytes) if bytes == alice_msg);
 
-        let charlie_msg = b"I'm Charlie";
+        let new_msg = b"I'm the new guy";
 
-        let msg = charlie_group
-            .encrypt_application_message(charlie_msg, vec![])
+        let msg = new_group
+            .encrypt_application_message(new_msg, vec![])
             .unwrap();
 
         let received = alice_group.group.process_incoming_message(msg).unwrap();
 
-        assert_matches!(received.event, Event::ApplicationMessage(bytes) if bytes == charlie_msg);
+        assert_matches!(received.event, Event::ApplicationMessage(bytes) if bytes == new_msg);
 
         Ok(())
     }

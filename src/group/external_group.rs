@@ -253,7 +253,7 @@ mod tests {
             test_utils::{test_group, TestGroup},
             Content, ExternalEvent, ExternalGroup, GroupError, MLSMessage, MLSMessagePayload,
         },
-        key_package::test_utils::test_key_package_with_id,
+        key_package::test_utils::test_key_package,
         protocol_version::{MaybeProtocolVersion, ProtocolVersion},
         signing_identity::{test_utils::get_test_signing_identity, SigningIdentity},
         tree_kem::node::LeafIndex,
@@ -278,7 +278,7 @@ mod tests {
     ) -> TestGroup {
         let mut group = test_group_with_one_commit(v, cs);
 
-        let bob_key_package = test_key_package_with_id(v, cs, "bob");
+        let bob_key_package = test_key_package(v, cs, "bob");
 
         let mut commit_builder = group
             .group
@@ -347,8 +347,7 @@ mod tests {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let mut server = make_external_group(&alice);
 
-        let bob_key_package =
-            test_key_package_with_id(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+        let bob_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
         let add_proposal = Proposal::Add(AddProposal {
             key_package: bob_key_package,
@@ -539,7 +538,7 @@ mod tests {
     fn external_group_can_propose_add() {
         test_external_proposal(|ext_group, signing_id, secret_key| {
             let charlie_key_package =
-                test_key_package_with_id(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+                test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "charlie");
 
             let add_proposal = AddProposal {
                 key_package: charlie_key_package,
@@ -570,7 +569,7 @@ mod tests {
         let mut server = make_external_group(&alice);
 
         let charlie_key_package =
-            test_key_package_with_id(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+            test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "charlie");
 
         let add_proposal = AddProposal {
             key_package: charlie_key_package,

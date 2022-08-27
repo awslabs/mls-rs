@@ -2,7 +2,7 @@ use ferriscrypt::hpke::kem::HpkePublicKey;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-use crate::client_config::CredentialValidator;
+use crate::credential::CredentialValidator;
 
 use super::{
     leaf_node::LeafNode,
@@ -77,7 +77,7 @@ mod tests {
     use super::{UpdatePath, UpdatePathNode, UpdatePathValidator};
     use crate::{cipher_suite::CipherSuite, tree_kem::UpdatePathValidationError};
 
-    use crate::client_config::{CredentialValidator, PassthroughCredentialValidator};
+    use crate::credential::{CredentialValidator, PassthroughCredentialValidator};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;

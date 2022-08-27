@@ -1,6 +1,6 @@
 use crate::{
     cipher_suite::CipherSuite,
-    client_config::CredentialValidator,
+    credential::CredentialValidator,
     extension::{
         is_default_extension, ExtensionList, ExternalSendersExt, GroupContextExtension,
         RequiredCapabilitiesExt,
@@ -190,7 +190,7 @@ where
 
         let state = self.apply_proposal_changes(&FailInvalidProposal, state)?;
 
-        let state = insert_external_leaf(state, external_leaf.clone())?;
+        let state = insert_external_leaf(state, external_leaf.clone(), &self.credential_validator)?;
         Ok(state)
     }
 
@@ -365,9 +365,13 @@ where
 
         let accumulator = TreeBatchEditAccumulator::new(&strategy, &state.proposals);
 
-        let accumulator = state
-            .tree
-            .batch_edit(accumulator, &updates, &removals, &additions)?;
+        let accumulator = state.tree.batch_edit(
+            accumulator,
+            &updates,
+            &removals,
+            &additions,
+            &self.credential_validator,
+        )?;
 
         let TreeBatchEditAccumulator {
             strategy: _,
@@ -1005,13 +1009,17 @@ fn ensure_removal_is_for_self<C>(
 where
     C: CredentialValidator,
 {
-    let credential = &tree
-        .get_leaf_node(removal.to_remove)?
-        .signing_identity
-        .credential;
+    let existing_signing_id = &tree.get_leaf_node(removal.to_remove)?.signing_identity;
 
-    credential_validator
-        .is_equal_identity(&external_leaf.signing_identity.credential, credential)
+    let existing_identity = credential_validator
+        .identity(existing_signing_id)
+        .map_err(|e| RatchetTreeError::CredentialValidationError(e.into()))?;
+
+    let external_identity = credential_validator
+        .identity(&external_leaf.signing_identity)
+        .map_err(|e| RatchetTreeError::CredentialValidationError(e.into()))?;
+
+    (existing_identity == external_identity)
         .then_some(())
         .ok_or(ProposalFilterError::ExternalCommitRemovesOtherIdentity)
 }
@@ -1038,11 +1046,17 @@ fn leaf_index_of_update_sender(
     }
 }
 
-fn insert_external_leaf(
+fn insert_external_leaf<C>(
     mut state: ProposalState,
     leaf_node: LeafNode,
-) -> Result<ProposalState, ProposalFilterError> {
-    let leaf_indexes = state.tree.add_leaves(vec![leaf_node])?;
+    credential_validator: C,
+) -> Result<ProposalState, ProposalFilterError>
+where
+    C: CredentialValidator,
+{
+    let leaf_indexes = state
+        .tree
+        .add_leaves(vec![leaf_node], credential_validator)?;
     state.external_leaf_index = leaf_indexes.first().copied();
     Ok(state)
 }

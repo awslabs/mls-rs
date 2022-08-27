@@ -1,11 +1,13 @@
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::{
-    signing_identity::SigningIdentityError,
+    cipher_suite::CipherSuite,
+    serde_utils::vec_u8_as_base64::VecAsBase64,
+    signing_identity::{SigningIdentity, SigningIdentityError},
     x509::{CertificateChain, X509Error},
 };
 use ferriscrypt::asym::ec_key::EcKeyError;
 use serde_with::serde_as;
 use thiserror::Error;
+use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
@@ -16,6 +18,8 @@ pub enum CredentialError {
     CertificateError(#[from] X509Error),
     #[error(transparent)]
     SigningIdentityError(#[from] SigningIdentityError),
+    #[error(transparent)]
+    SerializationError(#[from] tls_codec::Error),
 }
 
 pub type CredentialType = u16;
@@ -55,21 +59,66 @@ impl Credential {
             Credential::X509(_) => CREDENTIAL_TYPE_X509,
         }
     }
-}
 
-pub(crate) trait CredentialConvertible {
-    fn into_credential(self) -> Credential;
-}
-
-impl CredentialConvertible for Vec<u8> {
-    fn into_credential(self) -> Credential {
-        Credential::Basic(self)
+    pub fn to_bytes(&self) -> Result<Vec<u8>, tls_codec::Error> {
+        self.tls_serialize_detached()
     }
 }
 
-impl CredentialConvertible for CertificateChain {
-    fn into_credential(self) -> Credential {
-        Credential::X509(self)
+pub trait CredentialValidator {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn validate(
+        &self,
+        signing_identity: &SigningIdentity,
+        cipher_suite: CipherSuite,
+    ) -> Result<(), Self::Error>;
+
+    fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error>;
+}
+
+impl<T: CredentialValidator> CredentialValidator for &T {
+    type Error = T::Error;
+
+    fn validate(
+        &self,
+        signing_identity: &SigningIdentity,
+        cipher_suite: CipherSuite,
+    ) -> Result<(), Self::Error> {
+        (*self).validate(signing_identity, cipher_suite)
+    }
+
+    fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
+        (*self).identity(signing_id)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PassthroughCredentialValidator;
+
+impl PassthroughCredentialValidator {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl CredentialValidator for PassthroughCredentialValidator {
+    type Error = CredentialError;
+
+    fn validate(
+        &self,
+        signing_identity: &SigningIdentity,
+        cipher_suite: CipherSuite,
+    ) -> Result<(), Self::Error> {
+        // Check that using the public key won't cause errors later
+        signing_identity
+            .public_key(cipher_suite)
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
+    fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
+        Ok(signing_id.credential.to_bytes()?)
     }
 }
 

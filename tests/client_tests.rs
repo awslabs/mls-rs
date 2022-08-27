@@ -141,11 +141,15 @@ fn get_test_groups_clients(
         .unwrap();
 
     // Generate random clients that will be members of the group
-    let receiver_clients = std::iter::repeat_with(|| {
-        generate_client(cipher_suite, b"test".to_vec(), preferences.clone())
-    })
-    .take(num_participants)
-    .collect::<Vec<_>>();
+    let receiver_clients = (0..num_participants)
+        .map(|i| {
+            generate_client(
+                cipher_suite,
+                format!("bob{i}").into_bytes(),
+                preferences.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
 
     let receiver_keys = receiver_clients
         .iter()
@@ -199,6 +203,7 @@ fn get_test_groups_clients(
 }
 
 fn add_random_members(
+    first_id: usize,
     num_added: usize,
     sender: usize,
     committer: usize,
@@ -207,8 +212,13 @@ fn add_random_members(
     preferences: Preferences,
 ) {
     let (key_packages, new_clients): (Vec<_>, Vec<_>) = (0..num_added)
-        .map(|_| {
-            let new_client = generate_client(cipher_suite, b"test".to_vec(), preferences.clone());
+        .map(|i| {
+            let id = first_id + i;
+            let new_client = generate_client(
+                cipher_suite,
+                format!("dave-{id}").into(),
+                preferences.clone(),
+            );
 
             let key_package = new_client
                 .generate_key_package(ProtocolVersion::Mls10, cipher_suite)
@@ -304,6 +314,7 @@ fn test_many_commits() {
     groups.push(creator_group);
     let mut rng = rand::rngs::StdRng::from_seed([42; 32]);
 
+    let mut random_member_first_index = 0;
     for i in 0..100 {
         println!("running step {}", i);
         let num_removed = rng.gen_range(0..groups.len());
@@ -315,6 +326,7 @@ fn test_many_commits() {
         let sender = rng.gen_range(0..groups.len());
 
         add_random_members(
+            random_member_first_index,
             num_added,
             sender,
             sender,
@@ -322,6 +334,8 @@ fn test_many_commits() {
             cipher_suite,
             preferences.clone(),
         );
+
+        random_member_first_index += num_added;
     }
 }
 
@@ -792,8 +806,12 @@ fn test_remove_nonexisting_leaf() {
     assert!(groups[0].propose_remove(5, vec![]).is_err());
 }
 
-fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite) -> Client<InMemoryClientConfig> {
-    let credential = Credential::Basic(b"id".to_vec());
+fn get_reinit_client(
+    suite1: CipherSuite,
+    suite2: CipherSuite,
+    id: &str,
+) -> Client<InMemoryClientConfig> {
+    let credential = Credential::Basic(id.as_bytes().to_vec());
     let sk1 = suite1.generate_signing_key().unwrap();
     let sk2 = suite2.generate_signing_key().unwrap();
     let id1 = SigningIdentity::new(
@@ -815,8 +833,8 @@ fn reinit_works() {
     let version = ProtocolVersion::Mls10;
 
     // Create a group with 2 parties
-    let alice = get_reinit_client(suite1, suite2);
-    let bob = get_reinit_client(suite1, suite2);
+    let alice = get_reinit_client(suite1, suite2, "alice");
+    let bob = get_reinit_client(suite1, suite2, "bob");
 
     let mut alice_group = alice
         .create_group(version, suite1, ExtensionList::new())
@@ -883,7 +901,7 @@ fn reinit_works() {
     let mut bob_group = bob_group.finish_reinit_join(welcome, Some(&tree)).unwrap();
 
     // They can talk
-    let carol = get_reinit_client(suite1, suite2);
+    let carol = get_reinit_client(suite1, suite2, "carol");
     let kp = carol.generate_key_package(version, suite2).unwrap();
 
     let (commit, welcome) = alice_group

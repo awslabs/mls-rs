@@ -2,7 +2,8 @@ use tls_codec::Deserialize;
 
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
-    client_config::{ClientConfig, CredentialValidator},
+    client_config::ClientConfig,
+    credential::CredentialValidator,
     extension::{ExtensionList, ExternalSendersExt, GroupContextExtension, RatchetTreeExt},
     key_package::{KeyPackageGeneration, KeyPackageRepository},
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
@@ -27,13 +28,17 @@ use super::{
     Welcome,
 };
 
-pub(crate) fn process_group_info(
+pub(crate) fn process_group_info<C>(
     protocol_versions_allowed: &[ProtocolVersion],
     cipher_suites_allowed: &[CipherSuite],
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
     tree_data: Option<&[u8]>,
-) -> Result<(GroupContext, ConfirmationTag, TreeKemPublic, LeafIndex), GroupError> {
+    credential_validator: C,
+) -> Result<(GroupContext, ConfirmationTag, TreeKemPublic, LeafIndex), GroupError>
+where
+    C: CredentialValidator,
+{
     let group_protocol_version = check_protocol_version(
         protocol_versions_allowed,
         group_info.group_context.protocol_version,
@@ -52,7 +57,12 @@ pub(crate) fn process_group_info(
 
     let ratchet_tree_ext = group_info.extensions.get_extension::<RatchetTreeExt>()?;
 
-    let public_tree = find_tree(tree_data, cipher_suite, ratchet_tree_ext)?;
+    let public_tree = find_tree(
+        tree_data,
+        cipher_suite,
+        ratchet_tree_ext,
+        credential_validator,
+    )?;
 
     let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
 
@@ -93,6 +103,7 @@ pub(super) fn validate_group_info<C: CredentialValidator>(
         msg_protocol_version,
         group_info,
         tree_data,
+        credential_validator,
     )?;
 
     validate_existing_group(&mut public_tree, &group_context, credential_validator)?;
@@ -100,15 +111,20 @@ pub(super) fn validate_group_info<C: CredentialValidator>(
     Ok((group_context, confirmation_tag, public_tree, signer))
 }
 
-pub(super) fn find_tree(
+pub(super) fn find_tree<C>(
     tree_data: Option<&[u8]>,
     cipher_suite: CipherSuite,
     extension: Option<RatchetTreeExt>,
-) -> Result<TreeKemPublic, GroupError> {
+    credential_validator: C,
+) -> Result<TreeKemPublic, GroupError>
+where
+    C: CredentialValidator,
+{
     match tree_data {
         Some(tree_data) => Ok(TreeKemPublic::import_node_data(
             cipher_suite,
             NodeVec::tls_deserialize(&mut &*tree_data)?,
+            credential_validator,
         )?),
         None => {
             let tree_extension = extension.ok_or(GroupError::RatchetTreeNotFound)?;
@@ -116,6 +132,7 @@ pub(super) fn find_tree(
             Ok(TreeKemPublic::import_node_data(
                 cipher_suite,
                 tree_extension.tree_data,
+                credential_validator,
             )?)
         }
     }

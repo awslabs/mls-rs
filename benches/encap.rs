@@ -1,18 +1,14 @@
-use std::collections::HashMap;
-
-use aws_mls::bench_utils::create_empty_tree::{load_test_cases, TestCase};
-
+use aws_mls::{
+    bench_utils::create_empty_tree::{load_test_cases, TestCase},
+    cipher_suite::CipherSuite,
+    credential::PassthroughCredentialValidator,
+    extension::{ExtensionList, LeafNodeExtension},
+    tree_kem::{kem::TreeKem, node::LeafIndex, Capabilities},
+};
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 };
-
-use aws_mls::cipher_suite::CipherSuite;
-
-use aws_mls::extension::{ExtensionList, LeafNodeExtension};
-use aws_mls::tree_kem::Capabilities;
-
-use aws_mls::tree_kem::kem::TreeKem;
-use aws_mls::tree_kem::node::LeafIndex;
+use std::collections::HashMap;
 
 fn encap_setup(c: &mut Criterion) {
     let mut encap_group = c.benchmark_group("encap");
@@ -50,6 +46,7 @@ fn bench_encap(
                             &value.encap_signer,
                             capabilities.clone(),
                             extensions.clone(),
+                            PassthroughCredentialValidator,
                         )
                         .unwrap()
                 })

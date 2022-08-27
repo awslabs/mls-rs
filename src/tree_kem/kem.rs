@@ -1,9 +1,9 @@
-use tls_codec::Serialize;
-
+use crate::credential::CredentialValidator;
 use crate::extension::{ExtensionList, LeafNodeExtension};
 use crate::group::GroupContext;
 use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
+use tls_codec::Serialize;
 
 use super::node::Node;
 use super::{
@@ -40,7 +40,7 @@ impl<'a> TreeKem<'a> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn encap<S: Signer>(
+    pub fn encap<S, C>(
         self,
         group_id: &[u8],
         context: &mut GroupContext,
@@ -48,8 +48,13 @@ impl<'a> TreeKem<'a> {
         signer: &S,
         update_capabilities: Option<Capabilities>,
         update_extensions: Option<ExtensionList<LeafNodeExtension>>,
+        credential_validator: C,
         #[cfg(test)] commit_modifiers: &CommitModifiers<S>,
-    ) -> Result<EncapGeneration, RatchetTreeError> {
+    ) -> Result<EncapGeneration, RatchetTreeError>
+    where
+        S: Signer,
+        C: CredentialValidator,
+    {
         let num_leaves = self.tree_kem_public.nodes.total_leaf_count();
         let self_index = self.private_key.self_index;
         let copath = tree_math::copath(self_index.into(), num_leaves)?;
@@ -96,7 +101,7 @@ impl<'a> TreeKem<'a> {
         )?;
 
         self.tree_kem_public
-            .rekey_leaf(self_index, own_leaf_copy.clone())?;
+            .rekey_leaf(self_index, own_leaf_copy.clone(), credential_validator)?;
 
         #[cfg(test)]
         {
@@ -175,13 +180,17 @@ impl<'a> TreeKem<'a> {
         })
     }
 
-    pub fn decap(
+    pub fn decap<C>(
         self,
         sender_index: LeafIndex,
         update_path: &ValidatedUpdatePath,
         added_leaves: &[LeafIndex],
         context: &mut GroupContext,
-    ) -> Result<PathSecret, RatchetTreeError> {
+        credential_validator: C,
+    ) -> Result<PathSecret, RatchetTreeError>
+    where
+        C: CredentialValidator,
+    {
         // Exclude newly added leaf indexes
         let excluding = added_leaves
             .iter()
@@ -194,9 +203,11 @@ impl<'a> TreeKem<'a> {
             sender_index.into(),
         );
 
-        let filtered_direct_path_co_path = self
-            .tree_kem_public
-            .apply_update_path(sender_index, update_path)?;
+        let filtered_direct_path_co_path = self.tree_kem_public.apply_update_path(
+            sender_index,
+            update_path,
+            credential_validator,
+        )?;
 
         // Update the tree hash to get context for decryption
         context.tree_hash = self.tree_kem_public.tree_hash()?;
@@ -304,6 +315,7 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
+        credential::PassthroughCredentialValidator,
         extension::{test_utils::TestExtension, ExtensionList, LeafNodeExtension},
         group::test_utils::get_test_group_context,
         tree_kem::{
@@ -417,10 +429,17 @@ mod tests {
             get_basic_test_node_sig_key(cipher_suite, "encap");
 
         // Build a test tree we can clone for all leaf nodes
-        let (mut test_tree, mut encap_private_key) =
-            TreeKemPublic::derive(cipher_suite, encap_node, encap_hpke_secret).unwrap();
+        let (mut test_tree, mut encap_private_key) = TreeKemPublic::derive(
+            cipher_suite,
+            encap_node,
+            encap_hpke_secret,
+            PassthroughCredentialValidator,
+        )
+        .unwrap();
 
-        test_tree.add_leaves(leaf_nodes).unwrap();
+        test_tree
+            .add_leaves(leaf_nodes, PassthroughCredentialValidator)
+            .unwrap();
 
         // Clone the tree for the first leaf, generate a new key package for that leaf
         let mut encap_tree = test_tree.clone();
@@ -434,6 +453,7 @@ mod tests {
                 &encap_signer,
                 capabilities.clone(),
                 extensions.clone(),
+                PassthroughCredentialValidator,
                 #[cfg(test)]
                 &Default::default(),
             )
@@ -471,6 +491,7 @@ mod tests {
                     &validated_update_path,
                     &[],
                     &mut get_test_group_context(42, cipher_suite),
+                    PassthroughCredentialValidator,
                 )
                 .unwrap();
 

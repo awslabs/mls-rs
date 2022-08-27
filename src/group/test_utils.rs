@@ -2,10 +2,8 @@ use ferriscrypt::asym::ec_key::{self, SecretKey};
 
 use super::*;
 use crate::{
-    client_config::{
-        test_utils::test_config, InMemoryClientConfig, PassthroughCredentialValidator, Preferences,
-    },
-    credential::CredentialType,
+    client_config::{test_utils::test_config, InMemoryClientConfig, Preferences},
+    credential::{CredentialType, PassthroughCredentialValidator},
     extension::RequiredCapabilitiesExt,
     key_package::{KeyPackageGeneration, KeyPackageGenerator},
     signing_identity::test_utils::get_test_signing_identity,
@@ -286,9 +284,11 @@ pub(crate) fn get_test_groups_with_features(
     credentials: Option<Vec<CredentialType>>,
 ) -> Vec<Group<InMemoryClientConfig>> {
     let clients = (0..n)
-        .map(|_| {
-            let (identity, secret_key) =
-                get_test_signing_identity(CipherSuite::Curve25519Aes128, b"member".to_vec());
+        .map(|i| {
+            let (identity, secret_key) = get_test_signing_identity(
+                CipherSuite::Curve25519Aes128,
+                format!("member{i}").into_bytes(),
+            );
 
             InMemoryClientConfig::default()
                 .with_supported_extension(999)

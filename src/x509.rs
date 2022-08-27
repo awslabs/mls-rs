@@ -9,9 +9,9 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use x509_cert::certificate::Certificate;
 
 use crate::cipher_suite::CipherSuite;
+use crate::credential::{Credential, CredentialValidator};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signing_identity::SigningIdentity;
-use crate::{client_config::CredentialValidator, credential::Credential};
 
 #[derive(Debug, Error)]
 pub enum X509Error {
@@ -27,7 +27,7 @@ pub enum X509Error {
     InvalidSignature(String, String),
     #[error("CA certificate not in the set of trusted CA's: not found certificate {0}")]
     CaNotFound(String),
-    #[error("unsupported algorithm with OID {0} for curve {1:?}; the following hash algorithms are supported: 
+    #[error("unsupported algorithm with OID {0} for curve {1:?}; the following hash algorithms are supported:
         SHA256 for curve P256, SHA384 for curve P384, SHA512 for curve P521")]
     UnsupportedHash(String, Curve),
     #[error("unsupported algorithm with OID {0}; only EC algorithms are supported")]
@@ -36,6 +36,8 @@ pub enum X509Error {
     LeafPublicKeyMismatch,
     #[error("leaf public key curve {0:?} does not match the curve MLS ciphersuite {1:?}")]
     CurveMismatch(Curve, Curve),
+    #[error(transparent)]
+    SerializationError(#[from] tls_codec::Error),
 }
 
 #[serde_as]
@@ -139,8 +141,8 @@ impl CredentialValidator for BasicX509Validator {
             .try_for_each(|(cert1, cert2)| verify_cert(cert2, cert1))
     }
 
-    fn is_equal_identity(&self, _left: &Credential, _right: &Credential) -> bool {
-        true
+    fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
+        Ok(signing_id.credential.to_bytes()?)
     }
 }
 

@@ -110,7 +110,7 @@ mod test {
 
             let add = auth_content_from_proposal(
                 Proposal::Add(AddProposal {
-                    key_package: test_key_package(protocol_version, cipher_suite),
+                    key_package: test_key_package(protocol_version, cipher_suite, "alice"),
                 }),
                 sender,
             );

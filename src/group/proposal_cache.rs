@@ -404,10 +404,9 @@ mod tests {
     use super::proposal_ref::test_utils::auth_content_from_proposal;
     use super::*;
     use crate::{
-        client_config::PassthroughCredentialValidator,
         credential::{
-            test_utils::get_test_certificate_credential, CREDENTIAL_TYPE_BASIC,
-            CREDENTIAL_TYPE_X509,
+            test_utils::get_test_certificate_credential, PassthroughCredentialValidator,
+            CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509,
         },
         extension::{test_utils::TestExtension, ExternalSendersExt, RequiredCapabilitiesExt},
         group::{
@@ -450,13 +449,22 @@ mod tests {
 
     fn new_tree(name: &str) -> (LeafIndex, TreeKemPublic) {
         let (leaf, secret, _) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, name);
-        let (pub_tree, priv_tree) = TreeKemPublic::derive(TEST_CIPHER_SUITE, leaf, secret).unwrap();
+        let (pub_tree, priv_tree) = TreeKemPublic::derive(
+            TEST_CIPHER_SUITE,
+            leaf,
+            secret,
+            PassthroughCredentialValidator,
+        )
+        .unwrap();
         (priv_tree.self_index, pub_tree)
     }
 
     fn add_member(tree: &mut TreeKemPublic, name: &str) -> LeafIndex {
-        tree.add_leaves(vec![get_basic_test_node(TEST_CIPHER_SUITE, name)])
-            .unwrap()[0]
+        tree.add_leaves(
+            vec![get_basic_test_node(TEST_CIPHER_SUITE, name)],
+            PassthroughCredentialValidator,
+        )
+        .unwrap()[0]
     }
 
     fn update_leaf_node(name: &str) -> LeafNode {
@@ -479,16 +487,22 @@ mod tests {
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> TestProposals {
-        let (sender_leaf, sender_leaf_secret, _) = get_basic_test_node_sig_key(cipher_suite, "bar");
+        let (sender_leaf, sender_leaf_secret, _) =
+            get_basic_test_node_sig_key(cipher_suite, "alice");
         let sender = LeafIndex(0);
 
-        let (mut tree, _) =
-            TreeKemPublic::derive(cipher_suite, sender_leaf, sender_leaf_secret).unwrap();
+        let (mut tree, _) = TreeKemPublic::derive(
+            cipher_suite,
+            sender_leaf,
+            sender_leaf_secret,
+            PassthroughCredentialValidator,
+        )
+        .unwrap();
 
-        let add_package = test_key_package(protocol_version, cipher_suite);
-        let update_leaf = update_leaf_node("foo");
+        let add_package = test_key_package(protocol_version, cipher_suite, "dave");
+        let update_leaf = update_leaf_node("alice");
 
-        let remove_leaf_index = add_member(&mut tree, "baz");
+        let remove_leaf_index = add_member(&mut tree, "carol");
 
         let add = Proposal::Add(AddProposal {
             key_package: add_package.clone(),
@@ -507,7 +521,10 @@ mod tests {
         let proposals = vec![add, update, remove, extensions];
 
         let test_sender = tree
-            .add_leaves(vec![get_basic_test_node(cipher_suite, "quux")])
+            .add_leaves(
+                vec![get_basic_test_node(cipher_suite, "charlie")],
+                PassthroughCredentialValidator,
+            )
             .unwrap()[0];
 
         let mut expected_tree = tree.clone();
@@ -517,6 +534,7 @@ mod tests {
                 &[(sender, update_leaf.clone())],
                 &[remove_leaf_index],
                 &[add_package.leaf_node.clone()],
+                PassthroughCredentialValidator,
             )
             .unwrap();
 
@@ -674,7 +692,8 @@ mod tests {
             ..
         } = test_proposals(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        let additional_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let additional_key_package =
+            test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "frank");
 
         let additional = vec![Proposal::Add(AddProposal {
             key_package: additional_key_package.clone(),
@@ -711,6 +730,7 @@ mod tests {
                 &[],
                 &[],
                 &[additional_key_package.leaf_node.clone()],
+                PassthroughCredentialValidator,
             )
             .unwrap();
 
@@ -902,7 +922,7 @@ mod tests {
         let cache = test_proposal_cache_setup(test_proposals);
 
         let additional = vec![Proposal::Add(AddProposal {
-            key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE),
+            key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "frank"),
         })];
 
         let credential_validator = PassthroughCredentialValidator::new();
@@ -1115,7 +1135,7 @@ mod tests {
     #[test]
     fn new_member_cannot_commit_add_proposal() {
         let res = new_member_commits_proposal(Proposal::Add(AddProposal {
-            key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE),
+            key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "frank"),
         }));
 
         assert_matches!(
@@ -1140,7 +1160,9 @@ mod tests {
             get_basic_test_node(TEST_CIPHER_SUITE, "bar"),
         ];
 
-        let test_leaf_node_indexes = public_tree.add_leaves(test_leaf_nodes).unwrap();
+        let test_leaf_node_indexes = public_tree
+            .add_leaves(test_leaf_nodes, PassthroughCredentialValidator)
+            .unwrap();
 
         let proposals = vec![
             Proposal::ExternalInit(ExternalInit { kem_output }),
@@ -1179,11 +1201,12 @@ mod tests {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
-        let credential_validator = FailureCredentialValidator::new().pass_validation(true);
 
-        let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo")];
+        let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "bar")];
 
-        let test_leaf_node_indexes = public_tree.add_leaves(test_leaf_nodes).unwrap();
+        let test_leaf_node_indexes = public_tree
+            .add_leaves(test_leaf_nodes, PassthroughCredentialValidator)
+            .unwrap();
 
         let proposals = vec![
             Proposal::ExternalInit(ExternalInit { kem_output }),
@@ -1198,7 +1221,7 @@ mod tests {
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
             Some(&test_node()),
             &group_extensions,
-            credential_validator,
+            PassthroughCredentialValidator,
             &public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1223,7 +1246,9 @@ mod tests {
 
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo")];
 
-        let test_leaf_node_indexes = public_tree.add_leaves(test_leaf_nodes).unwrap();
+        let test_leaf_node_indexes = public_tree
+            .add_leaves(test_leaf_nodes, PassthroughCredentialValidator)
+            .unwrap();
 
         let proposals = vec![
             Proposal::ExternalInit(ExternalInit { kem_output }),
@@ -1374,11 +1399,19 @@ mod tests {
         let (alice_leaf, alice_secret, _) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice");
         let alice = LeafIndex(0);
 
-        let (mut tree, _) =
-            TreeKemPublic::derive(TEST_CIPHER_SUITE, alice_leaf, alice_secret).unwrap();
+        let (mut tree, _) = TreeKemPublic::derive(
+            TEST_CIPHER_SUITE,
+            alice_leaf,
+            alice_secret,
+            PassthroughCredentialValidator,
+        )
+        .unwrap();
 
         let bob = tree
-            .add_leaves(vec![get_basic_test_node(TEST_CIPHER_SUITE, "bob")])
+            .add_leaves(
+                vec![get_basic_test_node(TEST_CIPHER_SUITE, "bob")],
+                PassthroughCredentialValidator,
+            )
             .unwrap()[0];
 
         let remove = Proposal::Remove(RemoveProposal { to_remove: bob });
@@ -1412,7 +1445,7 @@ mod tests {
         });
 
         let add = Proposal::Add(AddProposal {
-            key_package: test_key_package(ProtocolVersion::Mls10, TEST_CIPHER_SUITE),
+            key_package: test_key_package(ProtocolVersion::Mls10, TEST_CIPHER_SUITE, "bob"),
         });
 
         let (_, effects) = cache
@@ -1698,7 +1731,7 @@ mod tests {
     }
 
     fn key_package_with_invalid_signature() -> KeyPackage {
-        let mut kp = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let mut kp = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "mallory");
         kp.signature.clear();
         kp
     }
@@ -2280,14 +2313,11 @@ mod tests {
 
     fn make_add_proposal() -> AddProposal {
         AddProposal {
-            key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE),
+            key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "frank"),
         }
     }
 
-    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    #[ignore = "Cannot be fully implemented until https://github.com/WickrInc/mls/issues/342"]
     fn receiving_add_proposals_for_same_client_fails() {
         let (alice, tree) = new_tree("alice");
 
@@ -2296,14 +2326,17 @@ mod tests {
             Proposal::Add(make_add_proposal()),
         ]);
 
-        // todo: Use precise error when this test is enabled.
-        assert_matches!(res, Err(_));
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
+                    TreeIndexError::DuplicateIdentity(LeafIndex(1))
+                ))
+            ))
+        );
     }
 
-    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    #[ignore = "Cannot be fully implemented until https://github.com/WickrInc/mls/issues/342"]
     fn sending_additional_add_proposals_for_same_client_fails() {
         let (alice, tree) = new_tree("alice");
 
@@ -2314,14 +2347,17 @@ mod tests {
             ])
             .send();
 
-        // todo: Use precise error when this test is enabled.
-        assert_matches!(res, Err(_));
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
+                    TreeIndexError::DuplicateIdentity(LeafIndex(1))
+                ))
+            ))
+        );
     }
 
-    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    #[ignore = "Cannot be fully implemented until https://github.com/WickrInc/mls/issues/342"]
     fn sending_add_proposals_for_same_client_keeps_only_one() {
         let (alice, tree) = new_tree("alice");
 
@@ -2341,6 +2377,48 @@ mod tests {
             (&*committed, &*effects.rejected_proposals),
             ([ProposalOrRef::Reference(cr)], [(rr, _)]) if cr != rr && add_refs.contains(cr) && add_refs.contains(rr)
         );
+    }
+
+    #[test]
+    fn receiving_update_for_different_identity_fails() {
+        let (alice, mut tree) = new_tree("alice");
+        let bob = add_member(&mut tree, "bob");
+
+        let update = Proposal::Update(make_update_proposal("carol"));
+        let update_ref = make_proposal_ref(&update, bob);
+
+        let res = CommitReceiver::new(&tree, alice, alice)
+            .cache(update_ref.clone(), update, bob)
+            .receive([update_ref]);
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::RatchetTreeError(RatchetTreeError::DifferentIdentityInUpdate(
+                    LeafIndex(1)
+                ))
+            ))
+        );
+    }
+
+    #[test]
+    fn sending_update_for_different_identity_filters_it_out() {
+        let (alice, mut tree) = new_tree("alice");
+        let bob = add_member(&mut tree, "bob");
+
+        let update = Proposal::Update(make_update_proposal("carol"));
+        let update_ref = make_proposal_ref(&update, bob);
+
+        let (committed, effects) = CommitSender::new(&tree, alice)
+            .cache(update_ref, update, bob)
+            .send()
+            .unwrap();
+
+        assert_eq!(committed, Vec::new());
+
+        // Bob proposed the update, so it is not listed as rejected when Alice commits it because
+        // she didn't propose it.
+        assert_eq!(effects.rejected_proposals, Vec::new());
     }
 
     #[test]
@@ -2539,8 +2617,13 @@ mod tests {
             )
             .unwrap();
 
-            let (pub_tree, priv_tree) =
-                TreeKemPublic::derive(TEST_CIPHER_SUITE, leaf, secret).unwrap();
+            let (pub_tree, priv_tree) = TreeKemPublic::derive(
+                TEST_CIPHER_SUITE,
+                leaf,
+                secret,
+                PassthroughCredentialValidator,
+            )
+            .unwrap();
 
             (priv_tree.self_index, pub_tree)
         };
@@ -2812,8 +2895,13 @@ mod tests {
         let (alice_leaf, alice_secret, alice_signer) =
             get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice");
 
-        let (mut tree, priv_tree) =
-            TreeKemPublic::derive(TEST_CIPHER_SUITE, alice_leaf.clone(), alice_secret).unwrap();
+        let (mut tree, priv_tree) = TreeKemPublic::derive(
+            TEST_CIPHER_SUITE,
+            alice_leaf.clone(),
+            alice_secret,
+            PassthroughCredentialValidator,
+        )
+        .unwrap();
 
         let alice = priv_tree.self_index;
 
@@ -2862,8 +2950,13 @@ mod tests {
         let (alice_leaf, alice_secret, alice_signer) =
             get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice");
 
-        let (mut tree, priv_tree) =
-            TreeKemPublic::derive(TEST_CIPHER_SUITE, alice_leaf.clone(), alice_secret).unwrap();
+        let (mut tree, priv_tree) = TreeKemPublic::derive(
+            TEST_CIPHER_SUITE,
+            alice_leaf.clone(),
+            alice_secret,
+            PassthroughCredentialValidator,
+        )
+        .unwrap();
 
         let alice = priv_tree.self_index;
 

@@ -149,17 +149,10 @@ pub(crate) mod test_utils {
 
     use super::*;
     use crate::{
-        client_config::PassthroughCredentialValidator,
+        credential::PassthroughCredentialValidator,
         signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{Capabilities, Lifetime},
     };
-
-    pub(crate) fn test_key_package(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-    ) -> KeyPackage {
-        test_key_package_with_id(protocol_version, cipher_suite, "foo")
-    }
 
     pub(crate) fn test_key_package_custom<F>(
         protocol_version: ProtocolVersion,
@@ -186,7 +179,7 @@ pub(crate) mod test_utils {
         custom(&mut generator).key_package
     }
 
-    pub(crate) fn test_key_package_with_id(
+    pub(crate) fn test_key_package(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         id: &str,
@@ -208,7 +201,7 @@ pub(crate) mod test_utils {
 mod tests {
     use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
 
-    use super::{test_utils::test_key_package_with_id, *};
+    use super::{test_utils::test_key_package, *};
     use assert_matches::assert_matches;
     use num_enum::TryFromPrimitive;
     use tls_codec::Deserialize;
@@ -229,8 +222,10 @@ mod tests {
         fn generate() -> Vec<TestCase> {
             ProtocolVersion::all()
                 .flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-                .map(|(protocol_version, cipher_suite)| {
-                    let pkg = test_utils::test_key_package(protocol_version, cipher_suite);
+                .enumerate()
+                .map(|(i, (protocol_version, cipher_suite))| {
+                    let pkg =
+                        test_key_package(protocol_version, cipher_suite, &format!("alice{i}"));
                     let pkg_ref = pkg.to_reference().unwrap();
                     TestCase {
                         cipher_suite: cipher_suite as u16,
@@ -266,8 +261,7 @@ mod tests {
 
     #[test]
     fn key_package_ref_fails_invalid_cipher_suite() {
-        let mut key_package =
-            test_key_package_with_id(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test");
+        let mut key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test");
 
         let unsupported = MaybeCipherSuite::from_raw_value(255);
 

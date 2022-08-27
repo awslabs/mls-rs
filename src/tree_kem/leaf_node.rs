@@ -3,8 +3,7 @@ use crate::extension::LeafNodeExtension;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::{
     cipher_suite::CipherSuite,
-    client_config::CredentialValidator,
-    credential::CredentialError,
+    credential::{CredentialError, CredentialValidator},
     extension::ExtensionList,
     signer::{Signable, SignatureError, Signer},
     signing_identity::{SigningIdentity, SigningIdentityError},
@@ -303,7 +302,7 @@ impl<'a> Signable<'a> for LeafNode {
 pub mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,
-        client_config::PassthroughCredentialValidator,
+        credential::PassthroughCredentialValidator,
         extension::{ApplicationIdExt, MlsExtension},
         signing_identity::test_utils::get_test_signing_identity,
     };
@@ -388,6 +387,10 @@ pub mod test_utils {
         capabilities.extensions.push(ApplicationIdExt::IDENTIFIER);
         capabilities
     }
+
+    pub fn get_test_client_identity(leaf: &LeafNode) -> Vec<u8> {
+        leaf.signing_identity.credential.to_bytes().unwrap()
+    }
 }
 
 #[cfg(test)]
@@ -396,7 +399,7 @@ mod tests {
     use super::*;
 
     use crate::cipher_suite::CipherSuite;
-    use crate::client_config::PassthroughCredentialValidator;
+    use crate::credential::PassthroughCredentialValidator;
     use crate::signing_identity::test_utils::get_test_signing_identity;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureCredentialValidator;
     use assert_matches::assert_matches;
@@ -513,7 +516,7 @@ mod tests {
             ExtensionList::default(),
             &signer,
             Lifetime::years(1).unwrap(),
-            &FailureCredentialValidator::new().pass_validation(false),
+            &FailureCredentialValidator,
         );
 
         assert_matches!(res, Err(LeafNodeError::CredentialValidatorError(_)));

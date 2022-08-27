@@ -2,7 +2,8 @@ use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     client::Client,
     credential::{
-        Credential, CredentialError, CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509,
+        CredentialType, CredentialValidator, PassthroughCredentialValidator, CREDENTIAL_TYPE_BASIC,
+        CREDENTIAL_TYPE_X509,
     },
     epoch::{EpochRepository, InMemoryEpochRepository},
     extension::{ExtensionList, ExtensionType, KeyPackageExtension, LeafNodeExtension},
@@ -60,34 +61,6 @@ pub enum PskStoreIdValidationError<E: std::error::Error> {
     ExternalIdNotFound(ExternalPskId),
     #[error(transparent)]
     Other(#[from] E),
-}
-
-pub trait CredentialValidator {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    fn validate(
-        &self,
-        signing_identity: &SigningIdentity,
-        cipher_suite: CipherSuite,
-    ) -> Result<(), Self::Error>;
-
-    fn is_equal_identity(&self, left: &Credential, right: &Credential) -> bool;
-}
-
-impl<T: CredentialValidator> CredentialValidator for &T {
-    type Error = T::Error;
-
-    fn validate(
-        &self,
-        signing_identity: &SigningIdentity,
-        cipher_suite: CipherSuite,
-    ) -> Result<(), Self::Error> {
-        (*self).validate(signing_identity, cipher_suite)
-    }
-
-    fn is_equal_identity(&self, left: &Credential, right: &Credential) -> bool {
-        (*self).is_equal_identity(left, right)
-    }
 }
 
 pub trait ClientConfig {
@@ -401,35 +374,6 @@ impl InMemoryClientConfig {
 impl Default for InMemoryClientConfig {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct PassthroughCredentialValidator;
-
-impl PassthroughCredentialValidator {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl CredentialValidator for PassthroughCredentialValidator {
-    type Error = CredentialError;
-
-    fn validate(
-        &self,
-        signing_identity: &SigningIdentity,
-        cipher_suite: CipherSuite,
-    ) -> Result<(), Self::Error> {
-        // Check that using the public key won't cause errors later
-        signing_identity
-            .public_key(cipher_suite)
-            .map(|_| ())
-            .map_err(Into::into)
-    }
-
-    fn is_equal_identity(&self, _left: &Credential, _right: &Credential) -> bool {
-        true
     }
 }
 

@@ -75,7 +75,7 @@ pub fn load_test_cases() -> Vec<Vec<Group<InMemoryClientConfig>>> {
                         config.key_package_repo().insert(key_pkg_gen).unwrap();
                     }
 
-                    Group::from_snapshot(config, group_info.session)
+                    Group::from_snapshot(config, group_info.session).unwrap()
                 })
                 .collect()
         })

@@ -15,6 +15,8 @@ pub enum TreeIndexError {
     DuplicateSignatureKeys(LeafIndex),
     #[error("hpke keys must be unique, duplicate key found at index: {0:?}")]
     DuplicateHpkeKey(LeafIndex),
+    #[error("identities must be unique, duplicate identity found at index {0:?}")]
+    DuplicateIdentity(LeafIndex),
     #[error("In-use credential type {0} not supported by new leaf at index {1:?}")]
     InUseCredentialTypeUnsupportedByNewLeaf(CredentialType, LeafIndex),
     #[error("Not all members support the credential type used by new leaf")]
@@ -28,6 +30,8 @@ pub struct TreeIndex {
     credential_signature_key: HashMap<Vec<u8>, LeafIndex>,
     #[serde_as(as = "HashMap<VecAsBase64, _>")]
     hpke_key: HashMap<Vec<u8>, LeafIndex>,
+    #[serde_as(as = "HashMap<VecAsBase64, _>")]
+    identities: HashMap<Vec<u8>, LeafIndex>,
     #[serde_as(as = "Vec<(_,_)>")]
     credential_type_counters: HashMap<CredentialType, CredentialTypeCounters>,
 }
@@ -37,7 +41,12 @@ impl TreeIndex {
         Default::default()
     }
 
-    pub fn insert(&mut self, index: LeafIndex, leaf_node: &LeafNode) -> Result<(), TreeIndexError> {
+    pub fn insert(
+        &mut self,
+        index: LeafIndex,
+        leaf_node: &LeafNode,
+        identity: Vec<u8>,
+    ) -> Result<(), TreeIndexError> {
         let old_leaf_count = self.credential_signature_key.len();
 
         let pub_key = leaf_node.signing_identity.signature_key.deref().clone();
@@ -52,6 +61,11 @@ impl TreeIndex {
 
         if let Entry::Occupied(entry) = hpke_entry {
             return Err(TreeIndexError::DuplicateHpkeKey(*entry.get()));
+        }
+
+        let identity_entry = self.identities.entry(identity);
+        if let Entry::Occupied(entry) = identity_entry {
+            return Err(TreeIndexError::DuplicateIdentity(*entry.get()));
         }
 
         let in_use_cred_type_unsupported_by_new_leaf = self
@@ -94,15 +108,17 @@ impl TreeIndex {
                     .supported += 1;
             });
 
+        identity_entry.or_insert(index);
         credential_entry.or_insert(index);
         hpke_entry.or_insert(index);
 
         Ok(())
     }
 
-    pub fn remove(&mut self, leaf_node: &LeafNode) {
+    pub fn remove(&mut self, leaf_node: &LeafNode, identity: &[u8]) {
+        let existed = self.identities.remove(identity).is_some();
         let pub_key = leaf_node.signing_identity.signature_key.deref();
-        let existed = self.credential_signature_key.remove(pub_key).is_some();
+        self.credential_signature_key.remove(pub_key);
         self.hpke_key.remove(leaf_node.public_key.as_ref());
 
         if !existed {
@@ -142,7 +158,10 @@ struct CredentialTypeCounters {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{cipher_suite::CipherSuite, tree_kem::leaf_node::test_utils::get_basic_test_node};
+    use crate::{
+        cipher_suite::CipherSuite,
+        tree_kem::leaf_node::test_utils::{get_basic_test_node, get_test_client_identity},
+    };
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]
@@ -156,7 +175,7 @@ mod tests {
 
     fn get_test_data(index: LeafIndex) -> TestData {
         let cipher_suite = CipherSuite::P256Aes128;
-        let leaf_node = get_basic_test_node(cipher_suite, "foo");
+        let leaf_node = get_basic_test_node(cipher_suite, &format!("foo{}", index.0));
 
         TestData { leaf_node, index }
     }
@@ -168,10 +187,15 @@ mod tests {
 
         let mut test_index = TreeIndex::new();
 
-        test_data
-            .clone()
-            .into_iter()
-            .for_each(|d| test_index.insert(d.index, &d.leaf_node).unwrap());
+        test_data.clone().into_iter().for_each(|d| {
+            test_index
+                .insert(
+                    d.index,
+                    &d.leaf_node,
+                    get_test_client_identity(&d.leaf_node),
+                )
+                .unwrap()
+        });
 
         (test_data, test_index)
     }
@@ -207,7 +231,11 @@ mod tests {
         let mut new_key_package = get_basic_test_node(CipherSuite::P256Aes128, "foo");
         new_key_package.signing_identity = test_data[1].leaf_node.signing_identity.clone();
 
-        let res = test_index.insert(test_data[1].index, &new_key_package);
+        let res = test_index.insert(
+            test_data[1].index,
+            &new_key_package,
+            get_test_client_identity(&new_key_package),
+        );
 
         assert_matches!(res, Err(TreeIndexError::DuplicateSignatureKeys(index))
                         if index == test_data[1].index);
@@ -224,7 +252,11 @@ mod tests {
         let mut new_leaf_node = get_basic_test_node(cipher_suite, "foo");
         new_leaf_node.public_key = test_data[1].leaf_node.public_key.clone();
 
-        let res = test_index.insert(test_data[1].index, &new_leaf_node);
+        let res = test_index.insert(
+            test_data[1].index,
+            &new_leaf_node,
+            get_test_client_identity(&new_leaf_node),
+        );
 
         assert_matches!(res, Err(TreeIndexError::DuplicateHpkeKey(index))
                         if index == test_data[1].index);
@@ -236,7 +268,10 @@ mod tests {
     fn test_remove() {
         let (test_data, mut test_index) = test_setup();
 
-        test_index.remove(&test_data[1].leaf_node);
+        test_index.remove(
+            &test_data[1].leaf_node,
+            &get_test_client_identity(&test_data[1].leaf_node),
+        );
 
         assert_eq!(
             test_index.credential_signature_key.len(),
