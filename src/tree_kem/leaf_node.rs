@@ -87,6 +87,13 @@ pub struct LeafNode {
     pub signature: Vec<u8>,
 }
 
+#[derive(Clone, Debug)]
+pub struct ConfigProperties {
+    pub capabilities: Option<Capabilities>,
+    pub extensions: Option<ExtensionList<LeafNodeExtension>>,
+    pub signing_identity: SigningIdentity,
+}
+
 impl LeafNode {
     fn check_signing_identity<S, C>(
         signing_identity: &SigningIdentity,
@@ -113,9 +120,7 @@ impl LeafNode {
 
     pub fn generate<S, C>(
         cipher_suite: CipherSuite,
-        signing_identity: SigningIdentity,
-        capabilities: Capabilities,
-        extensions: ExtensionList<LeafNodeExtension>,
+        properties: ConfigProperties,
         signer: &S,
         lifetime: Lifetime,
         credential_validator: &C,
@@ -125,7 +130,7 @@ impl LeafNode {
         C: CredentialValidator,
     {
         LeafNode::check_signing_identity(
-            &signing_identity,
+            &properties.signing_identity,
             signer,
             credential_validator,
             cipher_suite,
@@ -135,10 +140,10 @@ impl LeafNode {
 
         let mut leaf_node = LeafNode {
             public_key: public.try_into()?,
-            signing_identity,
-            capabilities,
+            signing_identity: properties.signing_identity,
+            capabilities: properties.capabilities.unwrap_or_default(),
             leaf_node_source: LeafNodeSource::KeyPackage(lifetime),
-            extensions,
+            extensions: properties.extensions.unwrap_or_default(),
             signature: Default::default(),
         };
 
@@ -151,8 +156,7 @@ impl LeafNode {
         &mut self,
         key_pair: (PublicKey, SecretKey),
         group_id: &[u8],
-        capabilities: Option<Capabilities>,
-        extensions: Option<ExtensionList<LeafNodeExtension>>,
+        new_properties: ConfigProperties,
         leaf_node_source: LeafNodeSource,
         signer: &S,
     ) -> Result<HpkeSecretKey, LeafNodeError>
@@ -163,14 +167,15 @@ impl LeafNode {
 
         self.public_key = public.try_into()?;
 
-        if let Some(capabilities) = capabilities {
+        if let Some(capabilities) = new_properties.capabilities {
             self.capabilities = capabilities;
         }
 
-        if let Some(extensions) = extensions {
+        if let Some(extensions) = new_properties.extensions {
             self.extensions = extensions;
         }
 
+        self.signing_identity = new_properties.signing_identity;
         self.leaf_node_source = leaf_node_source;
         self.sign(signer, &Some(group_id))?;
 
@@ -181,8 +186,7 @@ impl LeafNode {
         &mut self,
         cipher_suite: CipherSuite,
         group_id: &[u8],
-        capabilities: Option<Capabilities>,
-        extensions: Option<ExtensionList<LeafNodeExtension>>,
+        new_properties: ConfigProperties,
         signer: &S,
     ) -> Result<HpkeSecretKey, LeafNodeError>
     where
@@ -193,8 +197,7 @@ impl LeafNode {
         self.update_keypair(
             keypair,
             group_id,
-            capabilities,
-            extensions,
+            new_properties,
             LeafNodeSource::Update,
             signer,
         )
@@ -204,8 +207,7 @@ impl LeafNode {
         &mut self,
         cipher_suite: CipherSuite,
         group_id: &[u8],
-        capabilities: Option<Capabilities>,
-        extensions: Option<ExtensionList<LeafNodeExtension>>,
+        update_leaf_properties: ConfigProperties,
         signer: &S,
         mut parent_hash: impl FnMut(
             HpkePublicKey,
@@ -223,8 +225,7 @@ impl LeafNode {
         self.update_keypair(
             key_pair,
             group_id,
-            capabilities,
-            extensions,
+            update_leaf_properties,
             LeafNodeSource::Commit(parent_hash),
             signer,
         )
@@ -334,11 +335,15 @@ pub mod test_utils {
         extensions: Option<ExtensionList<LeafNodeExtension>>,
         lifetime: Lifetime,
     ) -> (LeafNode, HpkeSecretKey) {
+        let properties = ConfigProperties {
+            signing_identity,
+            capabilities,
+            extensions,
+        };
+
         LeafNode::generate(
             cipher_suite,
-            signing_identity,
-            capabilities.unwrap_or_default(),
-            extensions.unwrap_or_default(),
+            properties,
             secret,
             lifetime,
             &PassthroughCredentialValidator::new(),
@@ -350,6 +355,14 @@ pub mod test_utils {
         get_basic_test_node_sig_key(cipher_suite, id).0
     }
 
+    pub fn default_properties(signing_identity: SigningIdentity) -> ConfigProperties {
+        ConfigProperties {
+            signing_identity,
+            capabilities: Default::default(),
+            extensions: Default::default(),
+        }
+    }
+
     pub fn get_basic_test_node_sig_key(
         cipher_suite: CipherSuite,
         id: &str,
@@ -359,9 +372,7 @@ pub mod test_utils {
 
         LeafNode::generate(
             cipher_suite,
-            signing_identity,
-            Capabilities::default(),
-            ExtensionList::default(),
+            default_properties(signing_identity),
             &signature_key,
             Lifetime::years(1).unwrap(),
             &PassthroughCredentialValidator::new(),
@@ -471,9 +482,7 @@ mod tests {
 
         let res = LeafNode::generate(
             cipher_suite,
-            test_signing_identity,
-            Capabilities::default(),
-            ExtensionList::default(),
+            default_properties(test_signing_identity),
             &incorrect_secret,
             Lifetime::years(1).unwrap(),
             &PassthroughCredentialValidator::new(),
@@ -491,9 +500,7 @@ mod tests {
 
         let res = LeafNode::generate(
             cipher_suite,
-            test_signing_identity,
-            Capabilities::default(),
-            ExtensionList::default(),
+            default_properties(test_signing_identity),
             &signer,
             Lifetime::years(1).unwrap(),
             &PassthroughCredentialValidator::new(),
@@ -511,9 +518,7 @@ mod tests {
 
         let res = LeafNode::generate(
             cipher_suite,
-            test_signing_identity,
-            Capabilities::default(),
-            ExtensionList::default(),
+            default_properties(test_signing_identity),
             &signer,
             Lifetime::years(1).unwrap(),
             &FailureCredentialValidator,
@@ -552,7 +557,12 @@ mod tests {
             let original_leaf = leaf.clone();
 
             let new_secret = leaf
-                .update(cipher_suite, b"group", None, None, &secret)
+                .update(
+                    cipher_suite,
+                    b"group",
+                    default_properties(leaf.signing_identity.clone()),
+                    &secret,
+                )
                 .unwrap();
 
             assert_ne!(new_secret, leaf_secret);
@@ -589,21 +599,19 @@ mod tests {
 
         let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
+        let new_properties = ConfigProperties {
+            signing_identity: signing_identity.clone(),
+            capabilities: Some(get_test_capabilities()),
+            extensions: Some(get_test_extensions()),
+        };
+
         let (mut leaf, _) = get_test_node(cipher_suite, signing_identity, &secret, None, None);
-        let new_capabilities = get_test_capabilities();
-        let new_extensions = get_test_extensions();
 
-        leaf.update(
-            cipher_suite,
-            b"group",
-            Some(new_capabilities.clone()),
-            Some(new_extensions.clone()),
-            &secret,
-        )
-        .unwrap();
+        leaf.update(cipher_suite, b"group", new_properties.clone(), &secret)
+            .unwrap();
 
-        assert_eq!(leaf.capabilities, new_capabilities);
-        assert_eq!(leaf.extensions, new_extensions);
+        assert_eq!(leaf.capabilities, new_properties.capabilities.unwrap());
+        assert_eq!(leaf.extensions, new_properties.extensions.unwrap());
     }
 
     #[test]
@@ -620,10 +628,16 @@ mod tests {
             let test_parent_hash = ParentHash::from(vec![42u8; 32]);
 
             let new_secret = leaf
-                .commit(cipher_suite, b"group", None, None, &secret, |key| {
-                    assert_ne!(original_leaf.public_key, key);
-                    Ok(test_parent_hash.clone())
-                })
+                .commit(
+                    cipher_suite,
+                    b"group",
+                    default_properties(leaf.signing_identity.clone()),
+                    &secret,
+                    |key| {
+                        assert_ne!(original_leaf.public_key, key);
+                        Ok(test_parent_hash.clone())
+                    },
+                )
                 .unwrap();
 
             assert_ne!(new_secret, leaf_secret);
@@ -662,9 +676,13 @@ mod tests {
 
         let (mut leaf, _) = get_test_node(cipher_suite, signing_identity, &secret, None, None);
 
-        let res = leaf.commit(cipher_suite, b"group", None, None, &secret, |_| {
-            Err(String::from("test").into())
-        });
+        let res = leaf.commit(
+            cipher_suite,
+            b"group",
+            default_properties(leaf.signing_identity.clone()),
+            &secret,
+            |_| Err(String::from("test").into()),
+        );
 
         assert!(res.is_err());
     }
@@ -674,23 +692,28 @@ mod tests {
         let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
-
         let (mut leaf, _) = get_test_node(cipher_suite, signing_identity, &secret, None, None);
-        let new_capabilities = get_test_capabilities();
-        let new_extensions = get_test_extensions();
+
+        let new_properties = ConfigProperties {
+            // The new identity has a fresh public key
+            signing_identity: get_test_signing_identity(cipher_suite, b"foo".to_vec()).0,
+            capabilities: Some(get_test_capabilities()),
+            extensions: Some(get_test_extensions()),
+        };
+
         let test_parent_hash = ParentHash::from(vec![42u8; 32]);
 
         leaf.commit(
             cipher_suite,
             b"group",
-            Some(new_capabilities.clone()),
-            Some(new_extensions.clone()),
+            new_properties.clone(),
             &secret,
             |_| Ok(test_parent_hash.clone()),
         )
         .unwrap();
 
-        assert_eq!(leaf.capabilities, new_capabilities);
-        assert_eq!(leaf.extensions, new_extensions);
+        assert_eq!(leaf.capabilities, new_properties.capabilities.unwrap());
+        assert_eq!(leaf.extensions, new_properties.extensions.unwrap());
+        assert_eq!(leaf.signing_identity, new_properties.signing_identity);
     }
 }

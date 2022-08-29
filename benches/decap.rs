@@ -3,7 +3,10 @@ use aws_mls::{
     cipher_suite::CipherSuite,
     credential::PassthroughCredentialValidator,
     extension::{ExtensionList, LeafNodeExtension},
-    tree_kem::{kem::TreeKem, node::LeafIndex, update_path::ValidatedUpdatePath, Capabilities},
+    tree_kem::{
+        kem::TreeKem, leaf_node::ConfigProperties, node::LeafIndex,
+        update_path::ValidatedUpdatePath, Capabilities,
+    },
 };
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
@@ -35,14 +38,19 @@ fn bench_decap(
 ) {
     for (key, mut value) in map {
         // Perform the encap function
+        let update_leaf_properties = ConfigProperties {
+            capabilities: capabilities.clone(),
+            extensions: extensions.clone(),
+            signing_identity: value.encap_identity.clone(),
+        };
+
         let encap_gen = TreeKem::new(&mut value.encap_tree, &mut value.encap_private_key)
             .encap(
                 b"test_group",
                 &mut value.group_context,
                 &[],
                 &value.encap_signer,
-                capabilities.clone(),
-                extensions.clone(),
+                update_leaf_properties,
                 PassthroughCredentialValidator,
             )
             .unwrap();

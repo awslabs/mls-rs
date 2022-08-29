@@ -92,7 +92,7 @@ mod tests {
         group::test_utils::get_test_group_context,
         tree_kem::{
             kem::TreeKem,
-            leaf_node::test_utils::get_basic_test_node_sig_key,
+            leaf_node::test_utils::{default_properties, get_basic_test_node_sig_key},
             node::{LeafIndex, Node, Parent},
             parent_hash::ParentHash,
             test_utils::get_test_tree,
@@ -135,8 +135,7 @@ mod tests {
                 &mut get_test_group_context(42, cipher_suite),
                 &[LeafIndex(1)],
                 signers[0],
-                None,
-                None,
+                default_properties(test_tree.creator_leaf.signing_identity),
                 PassthroughCredentialValidator,
                 #[cfg(test)]
                 &Default::default(),

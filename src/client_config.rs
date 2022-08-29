@@ -243,7 +243,7 @@ pub struct InMemoryClientConfig {
     pub(crate) supported_extensions: Vec<ExtensionType>,
     pub(crate) key_packages: InMemoryKeyPackageRepository,
     make_proposal_filter: MakeProposalFilter,
-    keychain: InMemoryKeychain,
+    pub(crate) keychain: InMemoryKeychain,
     psk_store: InMemoryPskStore,
     pub(crate) protocol_versions: Vec<ProtocolVersion>,
     pub(crate) cipher_suites: Vec<CipherSuite>,

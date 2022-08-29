@@ -266,7 +266,12 @@ mod tests {
         let (mut leaf_node, secret) = get_test_add_node();
 
         leaf_node
-            .update(TEST_CIPHER_SUITE, group_id, None, None, &secret)
+            .update(
+                TEST_CIPHER_SUITE,
+                group_id,
+                default_properties(leaf_node.signing_identity.clone()),
+                &secret,
+            )
             .unwrap();
 
         let test_validator = LeafNodeValidator::new(
@@ -287,9 +292,13 @@ mod tests {
         let (mut leaf_node, secret) = get_test_add_node();
 
         leaf_node
-            .commit(TEST_CIPHER_SUITE, group_id, None, None, &secret, |_| {
-                Ok(ParentHash::from(vec![0u8; 32]))
-            })
+            .commit(
+                TEST_CIPHER_SUITE,
+                group_id,
+                default_properties(leaf_node.signing_identity.clone()),
+                &secret,
+                |_| Ok(ParentHash::from(vec![0u8; 32])),
+            )
             .unwrap();
 
         let test_validator = LeafNodeValidator::new(
@@ -324,7 +333,12 @@ mod tests {
         );
 
         leaf_node
-            .update(TEST_CIPHER_SUITE, b"foo", None, None, &secret)
+            .update(
+                TEST_CIPHER_SUITE,
+                b"foo",
+                default_properties(leaf_node.signing_identity.clone()),
+                &secret,
+            )
             .unwrap();
 
         assert_matches!(
@@ -338,9 +352,13 @@ mod tests {
         );
 
         leaf_node
-            .commit(TEST_CIPHER_SUITE, b"foo", None, None, &secret, |_| {
-                Ok(ParentHash::from(vec![0u8; 32]))
-            })
+            .commit(
+                TEST_CIPHER_SUITE,
+                b"foo",
+                default_properties(leaf_node.signing_identity.clone()),
+                &secret,
+                |_| Ok(ParentHash::from(vec![0u8; 32])),
+            )
             .unwrap();
 
         assert_matches!(

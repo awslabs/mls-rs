@@ -869,7 +869,7 @@ mod tests {
     use crate::cipher_suite::CipherSuite;
     use crate::credential::PassthroughCredentialValidator;
     use crate::tree_kem::leaf_node::test_utils::{
-        get_basic_test_node, get_basic_test_node_sig_key,
+        default_properties, get_basic_test_node, get_basic_test_node_sig_key,
     };
     use crate::tree_kem::leaf_node::LeafNode;
     use crate::tree_kem::node::{
@@ -1321,9 +1321,13 @@ mod tests {
         let (mut leaf_node, _, signer) = get_basic_test_node_sig_key(cipher_suite, "foo");
 
         leaf_node
-            .commit(cipher_suite, b"group", None, None, &signer, |_| {
-                Ok(ParentHash::empty())
-            })
+            .commit(
+                cipher_suite,
+                b"group",
+                default_properties(leaf_node.signing_identity.clone()),
+                &signer,
+                |_| Ok(ParentHash::empty()),
+            )
             .unwrap();
 
         let update_path = ValidatedUpdatePath {

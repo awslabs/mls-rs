@@ -1,18 +1,18 @@
 use crate::credential::CredentialValidator;
-use crate::extension::{ExtensionList, LeafNodeExtension};
 use crate::group::GroupContext;
 use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
 use tls_codec::Serialize;
 
+use super::leaf_node::ConfigProperties;
 use super::node::Node;
+use super::HpkeCiphertext;
 use super::{
     node::{LeafIndex, NodeIndex},
     path_secret::{PathSecret, PathSecretGeneration, PathSecretGenerator},
     RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathNode,
     ValidatedUpdatePath,
 };
-use super::{Capabilities, HpkeCiphertext};
 
 #[cfg(test)]
 use crate::group::CommitModifiers;
@@ -46,8 +46,7 @@ impl<'a> TreeKem<'a> {
         context: &mut GroupContext,
         excluding: &[LeafIndex],
         signer: &S,
-        update_capabilities: Option<Capabilities>,
-        update_extensions: Option<ExtensionList<LeafNodeExtension>>,
+        update_leaf_properties: ConfigProperties,
         credential_validator: C,
         #[cfg(test)] commit_modifiers: &CommitModifiers<S>,
     ) -> Result<EncapGeneration, RatchetTreeError>
@@ -86,12 +85,10 @@ impl<'a> TreeKem<'a> {
             .borrow_as_leaf(self_index)?
             .clone();
 
-        // Evolve your leaf forward
         let secret_key = own_leaf_copy.commit(
             self.tree_kem_public.cipher_suite,
             group_id,
-            update_capabilities,
-            update_extensions,
+            update_leaf_properties,
             signer,
             |_| {
                 self.tree_kem_public
@@ -319,8 +316,9 @@ mod tests {
         extension::{test_utils::TestExtension, ExtensionList, LeafNodeExtension},
         group::test_utils::get_test_group_context,
         tree_kem::{
-            leaf_node::test_utils::get_basic_test_node_sig_key, node::LeafIndex, Capabilities,
-            TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
+            leaf_node::{test_utils::get_basic_test_node_sig_key, ConfigProperties},
+            node::LeafIndex,
+            Capabilities, TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
         },
     };
 
@@ -428,6 +426,8 @@ mod tests {
         let (encap_node, encap_hpke_secret, encap_signer) =
             get_basic_test_node_sig_key(cipher_suite, "encap");
 
+        let signing_identity = encap_node.signing_identity.clone();
+
         // Build a test tree we can clone for all leaf nodes
         let (mut test_tree, mut encap_private_key) = TreeKemPublic::derive(
             cipher_suite,
@@ -444,6 +444,12 @@ mod tests {
         // Clone the tree for the first leaf, generate a new key package for that leaf
         let mut encap_tree = test_tree.clone();
 
+        let update_leaf_properties = ConfigProperties {
+            capabilities,
+            extensions,
+            signing_identity,
+        };
+
         // Perform the encap function
         let encap_gen = TreeKem::new(&mut encap_tree, &mut encap_private_key)
             .encap(
@@ -451,8 +457,7 @@ mod tests {
                 &mut get_test_group_context(42, cipher_suite),
                 &[],
                 &encap_signer,
-                capabilities.clone(),
-                extensions.clone(),
+                update_leaf_properties.clone(),
                 PassthroughCredentialValidator,
                 #[cfg(test)]
                 &Default::default(),
@@ -464,8 +469,8 @@ mod tests {
             &encap_tree,
             &encap_gen.update_path,
             LeafIndex(0),
-            capabilities,
-            extensions,
+            update_leaf_properties.capabilities,
+            update_leaf_properties.extensions,
         );
 
         // Verify that the private key matches the data in the public key

@@ -19,6 +19,7 @@ pub trait Keychain {
 #[derive(Clone, Debug, Default)]
 pub struct InMemoryKeychain {
     secret_keys: Arc<Mutex<HashMap<SigningIdentity, SecretKey>>>,
+    pub default_identity: Option<SigningIdentity>,
 }
 
 impl InMemoryKeychain {
@@ -41,7 +42,16 @@ impl InMemoryKeychain {
 
 impl Keychain for InMemoryKeychain {
     fn default_identity(&self, cipher_suite: CipherSuite) -> Option<(SigningIdentity, SecretKey)> {
-        let cipher_suite_curve = cipher_suite.signature_key_curve();
+        if let Some(identity) = &self.default_identity {
+            if identity.public_key(cipher_suite).is_ok() {
+                return self
+                    .secret_keys
+                    .lock()
+                    .unwrap()
+                    .get_key_value(identity)
+                    .map(|(id, sk)| (id.clone(), sk.clone()));
+            }
+        }
 
         self.secret_keys
             .lock()
@@ -51,7 +61,6 @@ impl Keychain for InMemoryKeychain {
                 identity
                     .public_key(cipher_suite)
                     .ok()
-                    .filter(|pk| pk.curve() == cipher_suite_curve)
                     .map(|_| (identity.clone(), sk.clone()))
             })
     }

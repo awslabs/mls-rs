@@ -30,7 +30,7 @@ use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::{Signable, Signer};
 use crate::signing_identity::SigningIdentity;
 use crate::tree_kem::kem::TreeKem;
-use crate::tree_kem::leaf_node::LeafNode;
+use crate::tree_kem::leaf_node::{ConfigProperties, LeafNode};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::PathSecret;
 use crate::tree_kem::{math as tree_math, HpkeCiphertext, ValidatedUpdatePath};
@@ -169,16 +169,11 @@ where
         protocol_version: ProtocolVersion,
         group_context_extensions: ExtensionList<GroupContextExtension>,
     ) -> Result<Self, GroupError> {
-        let (signing_identity, signer) = config
-            .keychain()
-            .default_identity(cipher_suite)
-            .ok_or(GroupError::NoCredentialFound)?;
+        let (leaf_properties, signer) = Group::config_leaf_properties(&config, cipher_suite)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             cipher_suite,
-            signing_identity,
-            config.capabilities(),
-            config.leaf_node_extensions(),
+            leaf_properties,
             &signer,
             config.lifetime(),
             &config.credential_validator(),
@@ -461,16 +456,12 @@ where
             &config.credential_validator(),
         )?;
 
-        let (identity, signer) = config
-            .keychain()
-            .default_identity(group_context.cipher_suite)
-            .ok_or(GroupError::NoCredentialFound)?;
+        let (leaf_properties, signer) =
+            Group::config_leaf_properties(&config, group_context.cipher_suite)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             group_context.cipher_suite,
-            identity,
-            config.capabilities(),
-            config.leaf_node_extensions(),
+            leaf_properties,
             &signer,
             config.lifetime(),
             &config.credential_validator(),
@@ -573,6 +564,31 @@ where
             .keychain()
             .signer(&self.current_user_leaf_node()?.signing_identity)
             .ok_or(GroupError::SignerNotFound)
+    }
+
+    pub(crate) fn current_leaf_properties(
+        &self,
+    ) -> Result<(ConfigProperties, <C::Keychain as Keychain>::Signer), GroupError> {
+        Group::config_leaf_properties(&self.config, self.cipher_suite())
+    }
+
+    pub(crate) fn config_leaf_properties(
+        config: &C,
+        cipher_suite: CipherSuite,
+    ) -> Result<(ConfigProperties, <C::Keychain as Keychain>::Signer), GroupError> {
+        let (signing_identity, signer) = config
+            .keychain()
+            .default_identity(cipher_suite)
+            .ok_or(GroupError::NoCredentialFound)?;
+
+        Ok((
+            ConfigProperties {
+                signing_identity,
+                capabilities: Some(config.capabilities()),
+                extensions: Some(config.leaf_node_extensions()),
+            },
+            signer,
+        ))
     }
 
     #[inline(always)]
@@ -801,11 +817,15 @@ where
 
         let current_leaf_node = self.current_user_leaf_node()?;
 
+        let leaf_properties = ConfigProperties {
+            signing_identity: current_leaf_node.signing_identity.clone(),
+            capabilities: Some(current_leaf_node.capabilities.clone()),
+            extensions: Some(current_leaf_node.extensions.clone()),
+        };
+
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
             self.state.cipher_suite(),
-            current_leaf_node.signing_identity.clone(),
-            current_leaf_node.capabilities.clone(),
-            current_leaf_node.extensions.clone(),
+            leaf_properties,
             &signer,
             self.config.lifetime(),
             &self.config.credential_validator(),
@@ -878,16 +898,12 @@ where
             .as_ref()
             .ok_or(GroupError::PendingReInitNotFound)?;
 
-        let (new_signing_id, new_signer) = config
-            .keychain()
-            .default_identity(reinit.cipher_suite)
-            .ok_or(GroupError::NoCredentialFound)?;
+        let (leaf_properties, new_signer) =
+            Group::config_leaf_properties(&config, reinit.cipher_suite)?;
 
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
             reinit.cipher_suite,
-            new_signing_id,
-            config.capabilities(),
-            config.leaf_node_extensions(),
+            leaf_properties,
             &new_signer,
             config.lifetime(),
             &config.credential_validator(),
@@ -1048,15 +1064,14 @@ where
     }
 
     fn update_proposal(&mut self) -> Result<Proposal, GroupError> {
-        let signer = self.signer()?;
         // Grab a copy of the current node and update it to have new key material
+        let (new_properties, signer) = self.current_leaf_properties()?;
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
 
         let secret_key = new_leaf_node.update(
             self.state.cipher_suite(),
             self.group_id(),
-            Some(self.config.capabilities()),
-            Some(self.config.leaf_node_extensions()),
+            new_properties,
             &signer,
         )?;
 
@@ -1641,7 +1656,7 @@ mod tests {
         cipher_suite::MaybeCipherSuite,
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_config::{test_utils::test_config, InMemoryClientConfig, Preferences},
-        credential::{CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
+        credential::{Credential, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
         extension::{
             test_utils::TestExtension, Extension, ExternalSendersExt, RequiredCapabilitiesExt,
         },
@@ -1649,6 +1664,7 @@ mod tests {
         key_package::test_utils::{test_key_package, test_key_package_custom},
         protocol_version::MaybeProtocolVersion,
         psk::Psk,
+        signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{
             leaf_node::LeafNodeSource, leaf_node_validator::LeafNodeValidationError, Lifetime,
             RatchetTreeError, TreeIndexError, UpdatePathNode, UpdatePathValidationError,
@@ -3029,5 +3045,53 @@ mod tests {
         let (commit, _) = groups[0].group.commit(vec![]).unwrap();
 
         assert!(groups[7].process_message(commit).is_err());
+    }
+
+    #[test]
+    fn update_proposal_can_change_credential() {
+        let cs = CipherSuite::Curve25519Aes128;
+        let mut groups = test_n_member_group(ProtocolVersion::Mls10, cs, 3);
+        let (identity, secret_key) = get_test_signing_identity(cs, b"member".to_vec());
+
+        groups[0]
+            .group
+            .config
+            .keychain
+            .insert(identity.clone(), secret_key);
+
+        groups[0].group.config.keychain.default_identity = Some(identity.clone());
+
+        let update_proposal = groups[0].group.update_proposal().unwrap();
+        let update_message = groups[0].propose(update_proposal);
+        groups[1].process_message(update_message).unwrap();
+        let (commit, _) = groups[1].group.commit(vec![]).unwrap();
+
+        // Check that the credential was updated by in the committer's state.
+        groups[1].process_pending_commit().unwrap();
+        let new_member = groups[1].group.roster().next().unwrap();
+
+        assert_eq!(
+            new_member.signing_identity().credential,
+            Credential::Basic(b"member".to_vec())
+        );
+
+        assert_eq!(
+            new_member.signing_identity().signature_key,
+            identity.signature_key
+        );
+
+        // Check that the credential was updated in the updater's state.
+        groups[0].process_message(commit).unwrap();
+        let new_member = groups[0].group.roster().next().unwrap();
+
+        assert_eq!(
+            new_member.signing_identity().credential,
+            Credential::Basic(b"member".to_vec())
+        );
+
+        assert_eq!(
+            new_member.signing_identity().signature_key,
+            identity.signature_key
+        );
     }
 }

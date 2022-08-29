@@ -125,7 +125,9 @@ mod tests {
         group::test_utils::get_test_group_context,
         tree_kem::{
             kem::TreeKem,
-            leaf_node::test_utils::{get_basic_test_node, get_basic_test_node_sig_key},
+            leaf_node::test_utils::{
+                default_properties, get_basic_test_node, get_basic_test_node_sig_key,
+            },
             node::LeafIndex,
         },
     };
@@ -164,6 +166,8 @@ mod tests {
         let (charlie_leaf, charlie_hpke_secret, _charlie_signing) =
             get_basic_test_node_sig_key(cipher_suite, "charlie");
 
+        let alice_identity = alice_leaf.signing_identity.clone();
+
         // Create a new public tree with Alice
         let (mut public_tree, mut alice_private) = TreeKemPublic::derive(
             cipher_suite,
@@ -185,8 +189,7 @@ mod tests {
                 &mut get_test_group_context(42, cipher_suite),
                 &[],
                 &alice_signing,
-                None,
-                None,
+                default_properties(alice_identity),
                 PassthroughCredentialValidator,
                 #[cfg(test)]
                 &Default::default(),

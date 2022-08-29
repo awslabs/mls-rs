@@ -4,6 +4,7 @@ use crate::extension::ExtensionList;
 use crate::ferriscrypt::asym::ec_key::SecretKey;
 use crate::group::{ConfirmedTranscriptHash, GroupContext};
 use crate::protocol_version::ProtocolVersion;
+use crate::signing_identity::SigningIdentity;
 use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
@@ -17,6 +18,7 @@ pub struct TestCase {
     pub encap_private_key: TreeKemPrivate,
     pub encap_signer: SecretKey,
     pub group_context: GroupContext,
+    pub encap_identity: SigningIdentity,
 }
 
 fn generate_test_cases() -> HashMap<usize, TestCase> {
@@ -50,6 +52,8 @@ pub fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
 
     let (encap_node, encap_hpke_secret, encap_signer) =
         get_basic_test_node_sig_key(cipher_suite, "encap");
+
+    let encap_identity = encap_node.signing_identity.clone();
 
     // Build a test tree we can clone for all leaf nodes
     let (mut test_tree, encap_private_key) = TreeKemPublic::derive(
@@ -89,5 +93,6 @@ pub fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
         encap_private_key,
         encap_signer,
         group_context,
+        encap_identity,
     }
 }

@@ -3,14 +3,14 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use crate::{
     cipher_suite::CipherSuite,
     client_config::{ClientConfig, ProposalFilterInit, PskStore},
-    extension::{ExtensionList, GroupContextExtension, LeafNodeExtension, RatchetTreeExt},
+    extension::{ExtensionList, GroupContextExtension, RatchetTreeExt},
     key_package::KeyPackage,
     keychain::Keychain,
     protocol_version::ProtocolVersion,
     psk::ExternalPskId,
     signer::Signable,
     tree_kem::{
-        kem::TreeKem, leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, Capabilities,
+        kem::TreeKem, leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret,
         TreeKemPrivate, UpdatePath,
     },
 };
@@ -51,8 +51,6 @@ pub(super) struct CommitGeneration {
 #[derive(Clone, Debug)]
 struct CommitOptions {
     pub prefer_path_update: bool,
-    pub extension_update: Option<ExtensionList<LeafNodeExtension>>,
-    pub capabilities_update: Option<Capabilities>,
     pub encryption_mode: ControlEncryptionMode,
     pub ratchet_tree_extension: bool,
 }
@@ -168,8 +166,6 @@ where
 
         let options = CommitOptions {
             prefer_path_update: preferences.force_commit_path_update,
-            extension_update: Some(self.config.leaf_node_extensions()),
-            capabilities_update: Some(self.config.capabilities()),
             encryption_mode: preferences.encryption_mode(),
             ratchet_tree_extension: preferences.ratchet_tree_extension,
         };
@@ -236,6 +232,8 @@ where
             // group_id, epoch, tree_hash, and confirmed_transcript_hash values in the initial
             // GroupContext object. The leaf_key_package for this UpdatePath must have a
             // parent_hash extension.
+            let (update_leaf_properties, signer) = self.current_leaf_properties()?;
+
             let encap_gen = TreeKem::new(
                 &mut provisional_state.public_tree,
                 &mut provisional_private_tree,
@@ -248,8 +246,7 @@ where
                     .map(|(_, leaf_index)| *leaf_index)
                     .collect::<Vec<LeafIndex>>(),
                 &signer,
-                options.capabilities_update,
-                options.extension_update,
+                update_leaf_properties,
                 self.config.credential_validator(),
                 #[cfg(test)]
                 &self.commit_modifiers,
@@ -410,10 +407,15 @@ mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_config::InMemoryClientConfig,
+        credential::Credential,
         extension::RequiredCapabilitiesExt,
-        group::{proposal::PreSharedKey, test_utils::test_group},
+        group::{
+            proposal::PreSharedKey,
+            test_utils::{test_group, test_n_member_group},
+        },
         key_package::test_utils::test_key_package,
         psk::{JustPreSharedKeyID, PreSharedKeyID, Psk},
+        signing_identity::test_utils::get_test_signing_identity,
     };
 
     use super::*;
@@ -674,6 +676,50 @@ mod tests {
                 .content
                 .authenticated_data,
             test_data
+        );
+    }
+
+    #[test]
+    fn commit_can_change_credential() {
+        let cs = CipherSuite::Curve25519Aes128;
+        let mut groups = test_n_member_group(ProtocolVersion::Mls10, cs, 3);
+        let (identity, secret_key) = get_test_signing_identity(cs, b"member".to_vec());
+
+        groups[0]
+            .group
+            .config
+            .keychain
+            .insert(identity.clone(), secret_key);
+
+        groups[0].group.config.keychain.default_identity = Some(identity.clone());
+        let (commit, _) = groups[0].group.commit(vec![]).unwrap();
+
+        // Check that the credential was updated by in the committer's state.
+        groups[0].process_pending_commit().unwrap();
+        let new_member = groups[0].group.roster().next().unwrap();
+
+        assert_eq!(
+            new_member.signing_identity().credential,
+            Credential::Basic(b"member".to_vec())
+        );
+
+        assert_eq!(
+            new_member.signing_identity().signature_key,
+            identity.signature_key
+        );
+
+        // Check that the credential was updated in another member's state.
+        groups[1].process_message(commit).unwrap();
+        let new_member = groups[1].group.roster().next().unwrap();
+
+        assert_eq!(
+            new_member.signing_identity().credential,
+            Credential::Basic(b"member".to_vec())
+        );
+
+        assert_eq!(
+            new_member.signing_identity().signature_key,
+            identity.signature_key
         );
     }
 }

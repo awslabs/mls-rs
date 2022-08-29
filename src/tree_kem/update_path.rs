@@ -69,6 +69,7 @@ mod tests {
 
     use ferriscrypt::{hpke::kem::HpkePublicKey, rand::SecureRng};
 
+    use crate::tree_kem::leaf_node::test_utils::default_properties;
     use crate::tree_kem::{
         leaf_node::test_utils::get_basic_test_node_sig_key, leaf_node_validator::LeafNodeValidator,
         parent_hash::ParentHash,
@@ -88,9 +89,13 @@ mod tests {
         let (mut leaf_node, _, signer) = get_basic_test_node_sig_key(cipher_suite, "foo");
 
         leaf_node
-            .commit(cipher_suite, TEST_GROUP_ID, None, None, &signer, |_| {
-                Ok(ParentHash::empty())
-            })
+            .commit(
+                cipher_suite,
+                TEST_GROUP_ID,
+                default_properties(leaf_node.signing_identity.clone()),
+                &signer,
+                |_| Ok(ParentHash::empty()),
+            )
             .unwrap();
 
         let ciphertext = ferriscrypt::hpke::HpkeCiphertext {

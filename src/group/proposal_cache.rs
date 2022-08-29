@@ -421,8 +421,10 @@ mod tests {
         signing_identity::{test_utils::get_test_signing_identity, SigningIdentityError},
         tree_kem::{
             leaf_node::{
-                test_utils::{get_basic_test_node, get_basic_test_node_sig_key},
-                LeafNodeSource,
+                test_utils::{
+                    default_properties, get_basic_test_node, get_basic_test_node_sig_key,
+                },
+                ConfigProperties, LeafNodeSource,
             },
             leaf_node_validator::{
                 test_utils::FailureCredentialValidator, LeafNodeValidationError,
@@ -470,8 +472,13 @@ mod tests {
     fn update_leaf_node(name: &str) -> LeafNode {
         let (mut leaf, _, signer) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, name);
 
-        leaf.update(TEST_CIPHER_SUITE, TEST_GROUP, None, None, &signer)
-            .unwrap();
+        leaf.update(
+            TEST_CIPHER_SUITE,
+            TEST_GROUP,
+            default_properties(leaf.signing_identity.clone()),
+            &signer,
+        )
+        .unwrap();
 
         leaf
     }
@@ -990,9 +997,13 @@ mod tests {
         let (mut leaf_node, _, signer) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "foo");
 
         leaf_node
-            .commit(TEST_CIPHER_SUITE, TEST_GROUP, None, None, &signer, |_| {
-                Ok(ParentHash::empty())
-            })
+            .commit(
+                TEST_CIPHER_SUITE,
+                TEST_GROUP,
+                default_properties(leaf_node.signing_identity.clone()),
+                &signer,
+                |_| Ok(ParentHash::empty()),
+            )
             .unwrap();
 
         leaf_node
@@ -2603,14 +2614,18 @@ mod tests {
             let (signing_identity, signature_key) =
                 get_test_signing_identity(TEST_CIPHER_SUITE, b"alice".to_vec());
 
-            let (leaf, secret) = LeafNode::generate(
-                TEST_CIPHER_SUITE,
+            let properties = ConfigProperties {
                 signing_identity,
-                Capabilities {
+                capabilities: Some(Capabilities {
                     extensions: vec![42],
                     ..Capabilities::default()
-                },
-                ExtensionList::default(),
+                }),
+                extensions: None,
+            };
+
+            let (leaf, secret) = LeafNode::generate(
+                TEST_CIPHER_SUITE,
+                properties,
                 &signature_key,
                 Lifetime::years(1).unwrap(),
                 &PassthroughCredentialValidator::new(),

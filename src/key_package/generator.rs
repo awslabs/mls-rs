@@ -3,7 +3,10 @@ use crate::{
     extension::{KeyPackageExtension, LeafNodeExtension},
     signer::{SignatureError, Signer},
     signing_identity::SigningIdentity,
-    tree_kem::{leaf_node::LeafNodeError, Capabilities, Lifetime},
+    tree_kem::{
+        leaf_node::{ConfigProperties, LeafNodeError},
+        Capabilities, Lifetime,
+    },
 };
 
 use super::*;
@@ -63,11 +66,15 @@ where
     ) -> Result<KeyPackageGeneration, KeyPackageGenerationError> {
         let (public_init, secret_init) = generate_keypair(self.cipher_suite.kem_type().curve())?;
 
+        let properties = ConfigProperties {
+            signing_identity: self.signing_identity.clone(),
+            capabilities: Some(capabilities),
+            extensions: Some(leaf_node_extensions),
+        };
+
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             self.cipher_suite,
-            self.signing_identity.clone(),
-            capabilities,
-            leaf_node_extensions,
+            properties,
             self.signing_key,
             lifetime,
             self.credential_validator,
