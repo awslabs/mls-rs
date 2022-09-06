@@ -87,7 +87,7 @@ pub(crate) mod framing;
 mod group_info;
 pub(crate) mod key_schedule;
 mod membership_tag;
-mod message_processor;
+pub(crate) mod message_processor;
 pub(crate) mod message_signature;
 mod message_verifier;
 mod padding;
@@ -1669,6 +1669,7 @@ mod tests {
             leaf_node::LeafNodeSource, leaf_node_validator::LeafNodeValidationError, Lifetime,
             RatchetTreeError, TreeIndexError, UpdatePathNode, UpdatePathValidationError,
         },
+        x509::CertificateData,
     };
 
     use super::{
@@ -2602,10 +2603,7 @@ mod tests {
         );
     }
 
-    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    #[ignore]
     fn commit_leaf_same_hpke_key() {
         // RFC 13.4.2. "Verify that the encryption_key value in the LeafNode is different from the committer's current leaf node"
 
@@ -2625,31 +2623,13 @@ mod tests {
 
         // Group 0 tries to use the fixed key againd
         let (commit, _) = groups[0].group.commit(vec![]).unwrap();
-        assert!(groups[2].process_message(commit).is_err());
-    }
 
-    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    #[ignore]
-    fn commit_path_additional_ciphertext() {
-        // RFC, 8.6. "The length of the encrypted_path_secret vector MUST be equal to the length of the resolution
-        // of the copath node (excluding new leaf nodes)"
-
-        use crate::tree_kem::UpdatePathNode;
-
-        let mut groups =
-            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10);
-
-        groups[0].group.commit_modifiers.modify_path = |path: Vec<UpdatePathNode>| {
-            let mut path = path;
-            let ctx = path[0].encrypted_path_secret[0].clone();
-            path[0].encrypted_path_secret.push(ctx);
-            path
-        };
-
-        let (commit, _) = groups[0].group.commit(vec![]).unwrap();
-        assert!(groups[7].process_message(commit).is_err());
+        assert_matches!(
+            groups[2].process_message(commit),
+            Err(GroupError::UpdatePathValidationError(
+                UpdatePathValidationError::SameHpkeKey(LeafIndex(0))
+            ))
+        );
     }
 
     #[test]
@@ -2834,10 +2814,7 @@ mod tests {
         assert!(groups[2].process_incoming_message(commit).is_err());
     }
 
-    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    #[ignore]
     fn commit_leaf_has_unsupported_credential() {
         // The new leaf of the committer has a credential unsupported by another leaf
 
@@ -2846,8 +2823,9 @@ mod tests {
             get_test_groups_with_features(3, Default::default(), Default::default(), Some(vec![1]));
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
-            leaf.signing_identity.credential = Credential::X509(vec![].into());
-            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+            leaf.signing_identity.credential =
+                Credential::X509(vec![CertificateData::from(b"member0".to_vec())].into());
+            leaf.sign(sk, &Some(b"TEST GROUP")).unwrap();
         };
 
         let (commit, _) = groups[0].commit(vec![]).unwrap();
@@ -2862,10 +2840,7 @@ mod tests {
         );
     }
 
-    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    #[ignore]
     fn commit_leaf_not_supporting_credential_used_in_another_leaf() {
         // The new leaf of the committer doesn't support another leaf's credential
 
@@ -2874,7 +2849,7 @@ mod tests {
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
             leaf.capabilities.credentials = vec![2];
-            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+            leaf.sign(sk, &Some(b"TEST GROUP")).unwrap();
         };
 
         let (commit, _) = groups[0].commit(vec![]).unwrap();
@@ -2889,10 +2864,7 @@ mod tests {
         );
     }
 
-    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    #[ignore]
     fn commit_leaf_not_supporting_required_credential() {
         // The new leaf of the committer doesn't support a credentia required by group context
         use crate::extension::MlsExtension;
@@ -2909,7 +2881,7 @@ mod tests {
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
             leaf.capabilities.credentials = vec![1];
-            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+            leaf.sign(sk, &Some(b"TEST GROUP")).unwrap();
         };
 
         let (commit, _) = groups[0].commit(vec![]).unwrap();
@@ -2982,10 +2954,7 @@ mod tests {
         assert!(groups[7].process_message(commit).is_ok());
     }
 
-    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
-    #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    #[ignore]
     fn inserting_key_in_filtered_node_fails() {
         let mut groups =
             test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10);
@@ -3006,6 +2975,14 @@ mod tests {
 
         groups[0].group.commit_modifiers.modify_tree = |tree: &mut TreeKemPublic| {
             tree.do_update_node(get_test_25519_key(1u8), 1).unwrap();
+        };
+
+        groups[0].group.commit_modifiers.modify_path = |path: Vec<UpdatePathNode>| {
+            let mut path = path;
+            let mut node = path[0].clone();
+            node.public_key = get_test_25519_key(1u8);
+            path.insert(0, node);
+            path
         };
 
         let (commit, _) = groups[0].group.commit(vec![]).unwrap();

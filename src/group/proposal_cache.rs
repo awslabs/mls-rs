@@ -2118,7 +2118,6 @@ mod tests {
         }
     }
 
-    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
     #[test]
     fn receiving_reinit_downgrading_version_fails() {
         let smaller_protocol_version = ProtocolVersion::Reserved;
@@ -2136,7 +2135,6 @@ mod tests {
         );
     }
 
-    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
     #[test]
     fn sending_additional_reinit_downgrading_version_fails() {
         let smaller_protocol_version = ProtocolVersion::Reserved;
@@ -2155,7 +2153,6 @@ mod tests {
         );
     }
 
-    // The `ignore` attribute does not seem to be supported by `wasm_bindgen_test`.
     #[test]
     fn sending_reinit_downgrading_version_filters_it_out() {
         let smaller_protocol_version = ProtocolVersion::Reserved;

@@ -197,6 +197,7 @@ impl<'a> MLSContentTBS<'a> {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct MessageSigningContext<'a> {
     pub group_context: Option<&'a GroupContext>,
 }

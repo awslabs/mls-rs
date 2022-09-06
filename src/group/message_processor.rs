@@ -4,9 +4,8 @@ use crate::{
     key_package::KeyPackage,
     psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
     tree_kem::{
-        leaf_node::LeafNode, leaf_node_validator::LeafNodeValidator, node::LeafIndex,
-        path_secret::PathSecret, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathValidator,
-        ValidatedUpdatePath,
+        leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, validate_update_path,
+        TreeKemPrivate, TreeKemPublic, ValidatedUpdatePath,
     },
 };
 
@@ -296,7 +295,14 @@ where
         let update_path = commit
             .path
             .as_ref()
-            .map(|update_path| self.validate_update_path(&provisional_state, update_path))
+            .map(|update_path| {
+                validate_update_path(
+                    &self.credential_validator(),
+                    update_path,
+                    &provisional_state,
+                    sender,
+                )
+            })
             .transpose()?;
 
         provisional_state.group_context.epoch = provisional_state.epoch;
@@ -465,32 +471,6 @@ where
             external_init: proposals.external_init,
             rejected_proposals: proposals.rejected_proposals,
         })
-    }
-
-    fn validate_update_path(
-        &self,
-        provisional_public_state: &ProvisionalState,
-        update_path: &UpdatePath,
-    ) -> Result<ValidatedUpdatePath, GroupError> {
-        let required_capabilities = provisional_public_state
-            .group_context
-            .extensions
-            .get_extension()?;
-
-        let leaf_validator = LeafNodeValidator::new(
-            provisional_public_state.group_context.cipher_suite,
-            required_capabilities.as_ref(),
-            self.credential_validator(),
-        );
-
-        let update_path_validator = UpdatePathValidator::new(leaf_validator);
-
-        let validated_update_path = update_path_validator.validate(
-            update_path.clone(),
-            &provisional_public_state.group_context.group_id,
-        )?;
-
-        Ok(validated_update_path)
     }
 
     fn apply_update_path(

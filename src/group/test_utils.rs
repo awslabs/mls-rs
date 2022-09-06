@@ -301,9 +301,10 @@ pub(crate) fn get_test_groups_with_features(
         .collect::<Vec<_>>();
 
     let group = clients[0]
-        .create_group(
+        .create_group_with_id(
             ProtocolVersion::Mls10,
             CipherSuite::Curve25519Aes128,
+            b"TEST GROUP".to_vec(),
             extensions,
         )
         .unwrap();

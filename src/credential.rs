@@ -118,7 +118,14 @@ impl CredentialValidator for PassthroughCredentialValidator {
     }
 
     fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
-        Ok(signing_id.credential.to_bytes()?)
+        match &signing_id.credential {
+            Credential::Basic(cred) => Ok(cred.clone()),
+            Credential::X509(cred) => cred
+                .get(0)
+                .cloned()
+                .map(|cert| cert.to_vec())
+                .ok_or_else(|| X509Error::EmptyCertificateChain.into()),
+        }
     }
 }
 

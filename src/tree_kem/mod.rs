@@ -440,10 +440,6 @@ impl TreeKemPublic {
             .identity(&update_path.leaf_node.signing_identity)
             .map_err(credential_validation_error)?;
 
-        (original_identity == updated_identity)
-            .then_some(())
-            .ok_or(RatchetTreeError::DifferentIdentityInUpdate(sender))?;
-
         *existing_leaf = update_path.leaf_node.clone();
 
         // Update the rest of the nodes on the direct path
@@ -868,9 +864,7 @@ pub(crate) mod test_utils {
 mod tests {
     use crate::cipher_suite::CipherSuite;
     use crate::credential::PassthroughCredentialValidator;
-    use crate::tree_kem::leaf_node::test_utils::{
-        default_properties, get_basic_test_node, get_basic_test_node_sig_key,
-    };
+    use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNode;
     use crate::tree_kem::node::{
         LeafIndex, Node, NodeIndex, NodeTypeResolver, NodeVecError, Parent,
@@ -878,9 +872,7 @@ mod tests {
     use crate::tree_kem::parent_hash::ParentHash;
     use crate::tree_kem::test_utils::{get_test_leaf_nodes, get_test_tree};
     use crate::tree_kem::tree_index::TreeIndexError;
-    use crate::tree_kem::{
-        AccumulateBatchResults, RatchetTreeError, TreeKemPublic, ValidatedUpdatePath,
-    };
+    use crate::tree_kem::{AccumulateBatchResults, RatchetTreeError, TreeKemPublic};
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]
@@ -1312,38 +1304,5 @@ mod tests {
         assert_eq!(acc.additions, [LeafIndex(2)]);
         assert_eq!(acc.removals, [(LeafIndex(2), leaf_nodes[1].clone())]);
         assert_eq!(acc.updates, [LeafIndex(1)]);
-    }
-
-    #[test]
-    fn applying_update_path_fails_if_different_identity() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let mut tree = get_test_tree(cipher_suite);
-        let (mut leaf_node, _, signer) = get_basic_test_node_sig_key(cipher_suite, "foo");
-
-        leaf_node
-            .commit(
-                cipher_suite,
-                b"group",
-                default_properties(leaf_node.signing_identity.clone()),
-                &signer,
-                |_| Ok(ParentHash::empty()),
-            )
-            .unwrap();
-
-        let update_path = ValidatedUpdatePath {
-            leaf_node,
-            nodes: Vec::new(),
-        };
-
-        let res = tree.public.apply_update_path(
-            LeafIndex(0),
-            &update_path,
-            PassthroughCredentialValidator,
-        );
-
-        assert_matches!(
-            res,
-            Err(RatchetTreeError::DifferentIdentityInUpdate(LeafIndex(0)))
-        );
     }
 }
