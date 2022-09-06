@@ -2,7 +2,7 @@ use assert_matches::assert_matches;
 use aws_mls::cipher_suite::{CipherSuite, SignaturePublicKey};
 use aws_mls::client::Client;
 use aws_mls::client_config::{InMemoryClientConfig, Preferences};
-use aws_mls::credential::Credential;
+use aws_mls::credential::{BasicCredential, Credential, MlsCredential};
 use aws_mls::extension::ExtensionList;
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, GroupError};
@@ -17,6 +17,15 @@ use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test_configure!(run_in_browser);
+
+// The same method exists in `credential::test_utils` but is not compiled without the `test` flag.
+pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {
+    BasicCredential {
+        credential: identity,
+    }
+    .to_credential()
+    .unwrap()
+}
 
 fn test_params() -> impl Iterator<Item = (ProtocolVersion, CipherSuite, bool)> {
     ProtocolVersion::all().flat_map(|p| {
@@ -34,7 +43,7 @@ fn generate_client(
     preferences: Preferences,
 ) -> Client<InMemoryClientConfig> {
     let key = cipher_suite.generate_signing_key().unwrap();
-    let credential = Credential::Basic(id);
+    let credential = get_test_basic_credential(id);
 
     let signing_identity =
         SigningIdentity::new(credential, SignaturePublicKey::try_from(&key).unwrap());
@@ -811,7 +820,8 @@ fn get_reinit_client(
     suite2: CipherSuite,
     id: &str,
 ) -> Client<InMemoryClientConfig> {
-    let credential = Credential::Basic(id.as_bytes().to_vec());
+    let credential = get_test_basic_credential(id.as_bytes().to_vec());
+
     let sk1 = suite1.generate_signing_key().unwrap();
     let sk2 = suite2.generate_signing_key().unwrap();
     let id1 = SigningIdentity::new(

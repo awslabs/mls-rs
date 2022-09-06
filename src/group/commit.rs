@@ -407,7 +407,7 @@ mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_config::InMemoryClientConfig,
-        credential::Credential,
+        credential::test_utils::get_test_basic_credential,
         extension::RequiredCapabilitiesExt,
         group::{
             proposal::PreSharedKey,
@@ -700,7 +700,7 @@ mod tests {
 
         assert_eq!(
             new_member.signing_identity().credential,
-            Credential::Basic(b"member".to_vec())
+            get_test_basic_credential(b"member".to_vec())
         );
 
         assert_eq!(
@@ -714,7 +714,7 @@ mod tests {
 
         assert_eq!(
             new_member.signing_identity().credential,
-            Credential::Basic(b"member".to_vec())
+            get_test_basic_credential(b"member".to_vec())
         );
 
         assert_eq!(

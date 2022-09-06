@@ -400,7 +400,10 @@ pub mod test_utils {
     }
 
     pub fn get_test_client_identity(leaf: &LeafNode) -> Vec<u8> {
-        leaf.signing_identity.credential.to_bytes().unwrap()
+        leaf.signing_identity
+            .credential
+            .tls_serialize_detached()
+            .unwrap()
     }
 }
 

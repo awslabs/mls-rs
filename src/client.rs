@@ -308,7 +308,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        credential::Credential,
+        credential::test_utils::get_test_basic_credential,
         group::{
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_group_custom_config},
@@ -341,7 +341,11 @@ mod tests {
 
             assert_eq!(key_package.version, protocol_version.into());
             assert_eq!(key_package.cipher_suite, cipher_suite.into());
-            assert_matches!(&key_package.leaf_node.signing_identity.credential, Credential::Basic(identity) if identity == "foo".as_bytes());
+
+            assert_eq!(
+                &key_package.leaf_node.signing_identity.credential,
+                &get_test_basic_credential(b"foo".to_vec())
+            );
 
             let (expected_credential, _) = client
                 .config

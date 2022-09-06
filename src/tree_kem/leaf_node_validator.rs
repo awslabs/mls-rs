@@ -538,11 +538,12 @@ mod tests {
 
 #[cfg(test)]
 pub mod test_utils {
+    use tls_codec::Serialize;
+
     use crate::{
         cipher_suite::CipherSuite,
-        credential::{CredentialError, CredentialValidator},
+        credential::{CredentialError, CredentialValidator, CREDENTIAL_TYPE_BASIC},
         signing_identity::SigningIdentity,
-        x509::X509Error,
     };
 
     #[derive(Clone, Debug, Default)]
@@ -561,13 +562,14 @@ pub mod test_utils {
             _signing_identity: &SigningIdentity,
             _cipher_suite: CipherSuite,
         ) -> Result<(), Self::Error> {
-            Err(CredentialError::CertificateError(
-                X509Error::EmptyCertificateChain,
+            Err(CredentialError::UnexpectedCredentialType(
+                CREDENTIAL_TYPE_BASIC,
+                CREDENTIAL_TYPE_BASIC,
             ))
         }
 
         fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
-            Ok(signing_id.credential.to_bytes()?)
+            Ok(signing_id.credential.tls_serialize_detached()?)
         }
     }
 }

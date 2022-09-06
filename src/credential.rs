@@ -2,29 +2,48 @@ use crate::{
     cipher_suite::CipherSuite,
     serde_utils::vec_u8_as_base64::VecAsBase64,
     signing_identity::{SigningIdentity, SigningIdentityError},
-    x509::{CertificateChain, X509Error},
+    x509::CertificateChain,
 };
-use ferriscrypt::asym::ec_key::EcKeyError;
 use serde_with::serde_as;
 use thiserror::Error;
-use tls_codec::Serialize;
+use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum CredentialError {
     #[error(transparent)]
-    EcKeyError(#[from] EcKeyError),
-    #[error(transparent)]
-    CertificateError(#[from] X509Error),
-    #[error(transparent)]
     SigningIdentityError(#[from] SigningIdentityError),
     #[error(transparent)]
     SerializationError(#[from] tls_codec::Error),
+    #[error("Unexpected extension type: {0}, expected: {1}")]
+    UnexpectedCredentialType(CredentialType, CredentialType),
 }
 
 pub type CredentialType = u16;
 pub const CREDENTIAL_TYPE_BASIC: u16 = 1;
 pub const CREDENTIAL_TYPE_X509: u16 = 2;
+
+pub trait MlsCredential: Sized + Serialize + Deserialize {
+    const IDENTIFIER: CredentialType;
+
+    fn to_credential(&self) -> Result<Credential, CredentialError> {
+        Ok(Credential {
+            credential_type: Self::IDENTIFIER,
+            credential_data: self.tls_serialize_detached()?,
+        })
+    }
+
+    fn from_credential(credential: &Credential) -> Result<Self, CredentialError> {
+        if credential.credential_type != Self::IDENTIFIER {
+            Err(CredentialError::UnexpectedCredentialType(
+                credential.credential_type,
+                Self::IDENTIFIER,
+            ))
+        } else {
+            Self::tls_deserialize(&mut &*credential.credential_data).map_err(|e| e.into())
+        }
+    }
+}
 
 #[serde_as]
 #[derive(
@@ -40,29 +59,30 @@ pub const CREDENTIAL_TYPE_X509: u16 = 2;
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[repr(u16)]
-pub enum Credential {
-    #[tls_codec(discriminant = 1)]
-    Basic(
-        #[tls_codec(with = "crate::tls::ByteVec")]
-        #[serde_as(as = "VecAsBase64")]
-        Vec<u8>,
-    ),
-    #[tls_codec(discriminant = 2)]
-    X509(CertificateChain),
+pub struct Credential {
+    pub credential_type: CredentialType,
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    pub credential_data: Vec<u8>,
 }
 
-impl Credential {
-    pub fn credential_type(&self) -> CredentialType {
-        match self {
-            Credential::Basic(_) => CREDENTIAL_TYPE_BASIC,
-            Credential::X509(_) => CREDENTIAL_TYPE_X509,
-        }
-    }
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct BasicCredential {
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    pub credential: Vec<u8>,
+}
 
-    pub fn to_bytes(&self) -> Result<Vec<u8>, tls_codec::Error> {
-        self.tls_serialize_detached()
-    }
+impl MlsCredential for BasicCredential {
+    const IDENTIFIER: CredentialType = CREDENTIAL_TYPE_BASIC;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub struct X509Credential {
+    pub credential: CertificateChain,
+}
+
+impl MlsCredential for X509Credential {
+    const IDENTIFIER: CredentialType = CREDENTIAL_TYPE_X509;
 }
 
 pub trait CredentialValidator {
@@ -118,14 +138,7 @@ impl CredentialValidator for PassthroughCredentialValidator {
     }
 
     fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
-        match &signing_id.credential {
-            Credential::Basic(cred) => Ok(cred.clone()),
-            Credential::X509(cred) => cred
-                .get(0)
-                .cloned()
-                .map(|cert| cert.to_vec())
-                .ok_or_else(|| X509Error::EmptyCertificateChain.into()),
-        }
+        Ok(signing_id.credential.credential_data.clone())
     }
 }
 
@@ -138,13 +151,24 @@ pub mod test_utils {
     use super::*;
 
     pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {
-        Credential::Basic(identity)
+        BasicCredential {
+            credential: identity,
+        }
+        .to_credential()
+        .unwrap()
     }
 
     pub fn get_test_certificate_credential() -> Credential {
         let test_certificate = test_cert(Curve::Ed25519);
         let chain = CertificateChain::from(vec![test_certificate]);
+        X509Credential { credential: chain }
+            .to_credential()
+            .unwrap()
+    }
 
-        Credential::X509(chain)
+    pub fn get_test_x509_credential(chain: CertificateChain) -> Credential {
+        X509Credential { credential: chain }
+            .to_credential()
+            .unwrap()
     }
 }

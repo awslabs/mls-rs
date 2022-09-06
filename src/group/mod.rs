@@ -1652,11 +1652,13 @@ pub(crate) mod test_utils;
 
 #[cfg(test)]
 mod tests {
+    use crate::credential::test_utils::{get_test_basic_credential, get_test_x509_credential};
+    use crate::extension::MlsExtension;
     use crate::{
         cipher_suite::MaybeCipherSuite,
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_config::{test_utils::test_config, InMemoryClientConfig, Preferences},
-        credential::{Credential, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
+        credential::{CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
         extension::{
             test_utils::TestExtension, Extension, ExternalSendersExt, RequiredCapabilitiesExt,
         },
@@ -1669,7 +1671,6 @@ mod tests {
             leaf_node::LeafNodeSource, leaf_node_validator::LeafNodeValidationError, Lifetime,
             RatchetTreeError, TreeIndexError, UpdatePathNode, UpdatePathValidationError,
         },
-        x509::CertificateData,
     };
 
     use super::{
@@ -2817,14 +2818,11 @@ mod tests {
     #[test]
     fn commit_leaf_has_unsupported_credential() {
         // The new leaf of the committer has a credential unsupported by another leaf
-
-        use crate::credential::Credential;
         let mut groups =
             get_test_groups_with_features(3, Default::default(), Default::default(), Some(vec![1]));
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
-            leaf.signing_identity.credential =
-                Credential::X509(vec![CertificateData::from(b"member0".to_vec())].into());
+            leaf.signing_identity.credential.credential_type = CREDENTIAL_TYPE_X509;
             leaf.sign(sk, &Some(b"TEST GROUP")).unwrap();
         };
 
@@ -2901,14 +2899,12 @@ mod tests {
         use ferriscrypt::asym::ec_key::generate_keypair;
 
         // The new leaf of the committer doesn't support credential used by an external sender
-        use crate::{credential::Credential, extension::MlsExtension};
-
         let (ext_sender_pk, _) =
             generate_keypair(CipherSuite::Curve25519Aes128.signature_key_curve()).unwrap();
 
         let ext_sender_id = SigningIdentity {
             signature_key: ext_sender_pk.try_into().unwrap(),
-            credential: Credential::X509(vec![].into()),
+            credential: get_test_x509_credential(vec![].into()),
         };
 
         let ext_senders = ExternalSendersExt::new(vec![ext_sender_id])
@@ -3049,7 +3045,7 @@ mod tests {
 
         assert_eq!(
             new_member.signing_identity().credential,
-            Credential::Basic(b"member".to_vec())
+            get_test_basic_credential(b"member".to_vec())
         );
 
         assert_eq!(
@@ -3063,7 +3059,7 @@ mod tests {
 
         assert_eq!(
             new_member.signing_identity().credential,
-            Credential::Basic(b"member".to_vec())
+            get_test_basic_credential(b"member".to_vec())
         );
 
         assert_eq!(

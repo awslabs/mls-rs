@@ -5,15 +5,12 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use crate::{
     cipher_suite::{CipherSuite, SignaturePublicKey},
     credential::Credential,
-    x509::X509Error,
 };
 
 #[derive(Debug, Error)]
 pub enum SigningIdentityError {
     #[error(transparent)]
     EcKeyError(#[from] EcKeyError),
-    #[error(transparent)]
-    CertificateError(#[from] X509Error),
     #[error("internal signer error: {0:?}")]
     SignerError(Box<dyn std::error::Error + Send + Sync>),
     #[error("certificate public key mismatch")]
@@ -96,7 +93,7 @@ mod tests {
 
     use crate::{
         cipher_suite::{CipherSuite, SignaturePublicKey},
-        credential::{test_utils::get_test_basic_credential, Credential},
+        credential::test_utils::get_test_basic_credential,
     };
 
     use super::{test_utils::get_test_signing_identity, *};
@@ -111,7 +108,10 @@ mod tests {
         let basic = get_test_basic_credential(b"alice".to_vec());
         let signing_identity = SigningIdentity::new(basic, signature_public_key);
 
-        assert_matches!(signing_identity.credential, Credential::Basic(id) if id == b"alice".to_vec());
+        assert_eq!(
+            signing_identity.credential,
+            get_test_basic_credential(b"alice".to_vec())
+        );
     }
 
     #[test]

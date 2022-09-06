@@ -6,7 +6,7 @@
 use aws_mls::cipher_suite::{CipherSuite, MaybeCipherSuite, SignaturePublicKey};
 use aws_mls::client::Client;
 use aws_mls::client_config::{ClientConfig, InMemoryClientConfig, Preferences};
-use aws_mls::credential::Credential;
+use aws_mls::credential::{BasicCredential, MlsCredential};
 use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, StateUpdate};
@@ -202,7 +202,13 @@ impl MlsClient for MlsClientImpl {
             .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
 
         let secret_key = cipher_suite.generate_signing_key().map_err(abort)?;
-        let credential = Credential::Basic(b"creator".to_vec());
+
+        let credential = BasicCredential {
+            credential: b"creator".to_vec(),
+        }
+        .to_credential()
+        .unwrap();
+
         let signature_key = SignaturePublicKey::try_from(&secret_key).map_err(abort)?;
 
         let creator = InMemoryClientConfig::default()
@@ -241,7 +247,13 @@ impl MlsClient for MlsClientImpl {
             .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
 
         let secret_key = cipher_suite.generate_signing_key().map_err(abort)?;
-        let credential = Credential::Basic(format!("alice{}", clients.len()).into_bytes());
+
+        let credential = BasicCredential {
+            credential: format!("alice{}", clients.len()).into_bytes(),
+        }
+        .to_credential()
+        .unwrap();
+
         let signature_key = SignaturePublicKey::try_from(&secret_key).map_err(abort)?;
 
         let client = InMemoryClientConfig::default()
