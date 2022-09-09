@@ -23,12 +23,20 @@ pub enum LifetimeError {
     Default,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[non_exhaustive]
 pub struct Lifetime {
     pub not_before: u64,
     pub not_after: u64,
 }
 
 impl Lifetime {
+    pub fn new(not_before: u64, not_after: u64) -> Lifetime {
+        Lifetime {
+            not_before,
+            not_after,
+        }
+    }
+
     pub fn seconds(s: u64) -> Result<Self, LifetimeError> {
         let not_before = MlsTime::now().seconds_since_epoch()?;
 
@@ -37,7 +45,8 @@ impl Lifetime {
             .ok_or(LifetimeError::TimeOverflow)?;
 
         Ok(Lifetime {
-            not_before,
+            // Subtract 1 hour to address time difference between machines
+            not_before: not_before - 3600,
             not_after,
         })
     }
@@ -50,7 +59,7 @@ impl Lifetime {
         Self::days(365 * y as u32)
     }
 
-    pub fn within_lifetime(&self, time: MlsTime) -> Result<bool, LifetimeError> {
+    pub(crate) fn within_lifetime(&self, time: MlsTime) -> Result<bool, LifetimeError> {
         let since_epoch = time.seconds_since_epoch()?;
         Ok(since_epoch >= self.not_before && since_epoch <= self.not_after)
     }
@@ -73,7 +82,7 @@ mod tests {
     fn test_seconds() {
         let seconds = 10;
         let lifetime = Lifetime::seconds(seconds).unwrap();
-        assert_eq!(lifetime.not_after - lifetime.not_before, 10);
+        assert_eq!(lifetime.not_after - lifetime.not_before, 3610);
     }
 
     #[test]
@@ -83,7 +92,7 @@ mod tests {
 
         assert_eq!(
             lifetime.not_after - lifetime.not_before,
-            86400u64 * days as u64
+            86400u64 * days as u64 + 3600
         );
     }
 
@@ -91,9 +100,10 @@ mod tests {
     fn test_years() {
         let years = 2;
         let lifetime = Lifetime::years(years).unwrap();
+
         assert_eq!(
             lifetime.not_after - lifetime.not_before,
-            86400 * 365 * years as u64
+            86400 * 365 * years as u64 + 3600
         );
     }
 

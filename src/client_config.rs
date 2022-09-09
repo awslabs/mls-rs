@@ -17,7 +17,7 @@ use crate::{
     psk::{ExternalPskId, ExternalPskIdValidator, Psk},
     signing_identity::SigningIdentity,
     time::MlsTime,
-    tree_kem::{Capabilities, Lifetime},
+    tree_kem::Capabilities,
 };
 use ferriscrypt::asym::ec_key::SecretKey;
 use std::{
@@ -27,6 +27,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 use thiserror::Error;
+
+pub use crate::tree_kem::{Lifetime, LifetimeError};
 
 pub trait PskStore {
     type Error: std::error::Error + Send + Sync + 'static;
