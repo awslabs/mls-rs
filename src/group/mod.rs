@@ -24,7 +24,7 @@ use crate::keychain::Keychain;
 use crate::protocol_version::ProtocolVersion;
 use crate::psk::{
     ExternalPskId, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
-    ResumptionPSKUsage, ResumptionPsk,
+    ResumptionPSKUsage, ResumptionPsk, ResumptionPskSearch,
 };
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::{Signable, Signer};
@@ -39,6 +39,7 @@ use crate::tree_kem::{Capabilities, TreeKemPrivate, TreeKemPublic};
 #[cfg(feature = "benchmark")]
 use crate::client_config::Preferences;
 
+use ciphertext_processor::*;
 use confirmation_tag::*;
 use framing::*;
 use key_schedule::*;
@@ -54,6 +55,7 @@ use transcript_hash::*;
 #[cfg(test)]
 pub(crate) use self::commit::test_utils::CommitModifiers;
 
+use self::epoch::{Epoch, EpochSecrets, SenderDataSecret};
 pub use self::message_processor::{Event, ExternalEvent, ProcessedMessage, StateUpdate};
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
 pub use external_group::ExternalGroup;
@@ -77,6 +79,7 @@ pub use context::*;
 #[cfg(not(feature = "benchmark"))]
 pub(crate) use context::*;
 
+mod ciphertext_processor;
 mod commit;
 mod confirmation_tag;
 mod context;
@@ -149,6 +152,7 @@ where
     #[cfg(not(feature = "benchmark"))]
     config: C,
     state: GroupState,
+    current_epoch: EpochSecrets,
     private_tree: TreeKemPrivate,
     key_schedule: KeySchedule,
     pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
@@ -202,16 +206,9 @@ where
             &KeySchedule::new(InitSecret::random(&kdf)?),
             &CommitSecret::empty(cipher_suite),
             &context,
-            LeafIndex(0),
             &public_tree,
             &Psk::from(vec![0; kdf.extract_size()]),
         )?;
-
-        //TODO: Is this actually needed here?
-        config
-            .epoch_repo()
-            .insert(key_schedule_result.epoch.into())
-            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         Ok(Self {
             config,
@@ -227,6 +224,7 @@ where
             pending_commit: None,
             #[cfg(test)]
             commit_modifiers: Default::default(),
+            current_epoch: key_schedule_result.epoch_secrets,
         })
     }
 
@@ -244,7 +242,7 @@ where
     }
 
     fn from_welcome_message(
-        parent_group_id: Option<&[u8]>,
+        parent_group: Option<&Group<C>>,
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
         config: C,
@@ -307,7 +305,11 @@ where
         let psk_secret = crate::psk::psk_secret(
             welcome.cipher_suite,
             Some(&psk_store),
-            parent_group_id.map(|gid| (gid, &epoch_repo)),
+            parent_group.map(|parent| ResumptionPskSearch {
+                group_context: parent.context(),
+                current_epoch: &parent.current_epoch,
+                prior_epochs: &epoch_repo,
+            }),
             &group_secrets.psks,
         )?;
 
@@ -361,7 +363,6 @@ where
             group_context.cipher_suite,
             &group_secrets.joiner_secret,
             &group_context,
-            self_index,
             &public_tree,
             &psk_secret,
         )?;
@@ -376,17 +377,13 @@ where
             return Err(GroupError::InvalidConfirmationTag);
         }
 
-        config
-            .epoch_repo()
-            .insert(key_schedule_result.epoch.into())
-            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
-
         Self::join_with(
             config,
             &confirmation_tag,
             group_context,
             public_tree,
             key_schedule_result.key_schedule,
+            key_schedule_result.epoch_secrets,
             private_tree,
         )
     }
@@ -397,6 +394,7 @@ where
         context: GroupContext,
         current_tree: TreeKemPublic,
         key_schedule: KeySchedule,
+        epoch_secrets: EpochSecrets,
         private_tree: TreeKemPrivate,
     ) -> Result<Self, GroupError> {
         // Use the confirmed transcript hash and confirmation tag to compute the interim transcript
@@ -421,6 +419,7 @@ where
             pending_commit: None,
             #[cfg(test)]
             commit_modifiers: Default::default(),
+            current_epoch: epoch_secrets,
         })
     }
 
@@ -472,12 +471,19 @@ where
             &external_pub_ext.external_pub,
         )?;
 
+        let epoch_secrets = EpochSecrets {
+            resumption_secret: Psk::from(vec![]),
+            sender_data_secret: SenderDataSecret::from(vec![]),
+            secret_tree: SecretTree::empty(group_context.cipher_suite),
+        };
+
         let mut group = Self::join_with(
             config,
             &confirmation_tag,
             group_context,
             public_tree,
             KeySchedule::new(init_secret),
+            epoch_secrets,
             TreeKemPrivate::new_self_leaf(LeafIndex(0), leaf_node_secret),
         )?;
 
@@ -725,6 +731,7 @@ where
         // Add the generated leaves to new tree
         let added_member_indexes =
             new_pub_tree.add_leaves(new_members, self.config.credential_validator())?;
+
         new_context.tree_hash = new_pub_tree.tree_hash()?;
 
         let epoch_repo = self.config.epoch_repo();
@@ -734,10 +741,16 @@ where
             psk_nonce: PskNonce::random(new_context.cipher_suite)?,
         }];
 
+        let resumption_psk_search = ResumptionPskSearch {
+            group_context: self.context(),
+            current_epoch: &self.current_epoch,
+            prior_epochs: &epoch_repo,
+        };
+
         let psk_secret = crate::psk::psk_secret(
             new_context.cipher_suite,
             None::<&C::PskStore>,
-            Some((&self.context().group_id, &epoch_repo)),
+            Some(resumption_psk_search),
             &psks,
         )?;
 
@@ -747,7 +760,6 @@ where
             &KeySchedule::new(InitSecret::random(&kdf)?),
             &CommitSecret::empty(new_context.cipher_suite),
             new_context,
-            LeafIndex(0),
             &new_pub_tree,
             &psk_secret,
         )?;
@@ -765,11 +777,6 @@ where
         };
 
         group_info.sign(new_signer, &())?;
-
-        self.config
-            .epoch_repo()
-            .insert(key_schedule_result.epoch.into())
-            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
             new_context.cipher_suite,
@@ -791,6 +798,7 @@ where
             pending_commit: None,
             #[cfg(test)]
             commit_modifiers: Default::default(),
+            current_epoch: key_schedule_result.epoch_secrets,
         };
 
         let welcome = new_group.make_welcome_message(
@@ -863,12 +871,8 @@ where
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
     ) -> Result<Group<C>, GroupError> {
-        let subgroup = Self::from_welcome_message(
-            Some(&self.context().group_id),
-            welcome,
-            tree_data,
-            self.config.clone(),
-        )?;
+        let subgroup =
+            Self::from_welcome_message(Some(self), welcome, tree_data, self.config.clone())?;
 
         if subgroup.state.protocol_version() != self.state.protocol_version() {
             Err(GroupError::SubgroupWithDifferentProtocolVersion(
@@ -955,12 +959,8 @@ where
             .as_ref()
             .ok_or(GroupError::PendingReInitNotFound)?;
 
-        let group = Self::from_welcome_message(
-            Some(&self.context().group_id),
-            welcome,
-            tree_data,
-            self.config.clone(),
-        )?;
+        let group =
+            Self::from_welcome_message(Some(self), welcome, tree_data, self.config.clone())?;
 
         if group.state.protocol_version() != reinit.version {
             Err(GroupError::ReInitVersionMismatch(
@@ -1203,96 +1203,13 @@ where
         &mut self,
         auth_content: MLSAuthenticatedContent,
     ) -> Result<MLSCiphertext, GroupError> {
-        let padding = self.config.preferences().padding_mode;
+        let preferences = self.config.preferences();
 
-        let content_type = ContentType::from(&auth_content.content.content);
-        let authenticated_data = auth_content.content.authenticated_data;
+        let mut encryptor = CiphertextProcessor::new(self);
 
-        // Build a ciphertext content using the plaintext content and signature
-        let mut ciphertext_content = MLSCiphertextContent {
-            content: auth_content.content.content,
-            auth: auth_content.auth,
-            padding: Vec::new(),
-        };
-
-        padding.apply_padding(&mut ciphertext_content);
-
-        // Build ciphertext aad using the plaintext message
-        let aad = MLSCiphertextContentAAD {
-            group_id: auth_content.content.group_id,
-            epoch: auth_content.content.epoch,
-            content_type,
-            authenticated_data: authenticated_data.clone(),
-        };
-
-        // Generate a 4 byte reuse guard
-        let mut reuse_guard = [0u8; 4];
-        SecureRng::fill(&mut reuse_guard)?;
-
-        // Grab an encryption key from the current epoch's key schedule
-        let key_type = match &content_type {
-            ContentType::Application => KeyType::Application,
-            _ => KeyType::Handshake,
-        };
-
-        let mut epoch = self
-            .config
-            .epoch_repo()
-            .get(self.group_id(), self.current_epoch())
-            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?
-            .ok_or_else(|| GroupError::EpochNotFound(self.current_epoch()))?;
-
-        let ciphertext_content = Zeroizing::new(ciphertext_content.tls_serialize_detached()?);
-
-        // Encrypt the ciphertext content using the encryption key and a nonce that is
-        // reuse safe by xor the reuse guard with the first 4 bytes
-        let (ciphertext, generation) = epoch.inner_mut().encrypt(
-            key_type,
-            &ciphertext_content,
-            &aad.tls_serialize_detached()?,
-            &reuse_guard,
-        )?;
-
-        // Construct an mls sender data struct using the plaintext sender info, the generation
-        // of the key schedule encryption key, and the reuse guard used to encrypt ciphertext
-        let sender_data = MLSSenderData {
-            sender: match auth_content.content.sender {
-                Sender::Member(sender) => Ok(sender),
-                _ => Err(GroupError::OnlyMembersCanEncryptMessages),
-            }?,
-            generation,
-            reuse_guard,
-        };
-
-        let sender_data_aad = MLSSenderDataAAD {
-            group_id: self.group_id().to_vec(),
-            epoch: self.context().epoch,
-            content_type,
-        };
-
-        // Encrypt the sender data with the derived sender_key and sender_nonce from the current
-        // epoch's key schedule
-        let (sender_key, sender_nonce) = epoch.inner_mut().get_sender_data_params(&ciphertext)?;
-
-        let encrypted_sender_data = sender_key.encrypt_to_vec(
-            &sender_data.tls_serialize_detached()?,
-            Some(&sender_data_aad.tls_serialize_detached()?),
-            sender_nonce,
-        )?;
-
-        self.config
-            .epoch_repo()
-            .insert(epoch)
-            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
-
-        Ok(MLSCiphertext {
-            group_id: self.group_id().to_vec(),
-            epoch: self.current_epoch(),
-            content_type,
-            authenticated_data,
-            encrypted_sender_data,
-            ciphertext,
-        })
+        encryptor
+            .seal(auth_content, preferences.padding_mode)
+            .map_err(Into::into)
     }
 
     pub fn encrypt_application_message(
@@ -1326,20 +1243,43 @@ where
     ) -> Result<MLSAuthenticatedContent, GroupError> {
         let epoch_id = message.epoch;
 
-        let mut epoch = self
-            .config
-            .epoch_repo()
-            .get(self.group_id(), epoch_id)
-            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?
-            .ok_or(GroupError::EpochNotFound(epoch_id))?;
+        let auth_content = if epoch_id == self.context().epoch {
+            let content = CiphertextProcessor::new(self).open(message)?;
 
-        let auth_content = decrypt_ciphertext(message, epoch.inner_mut())?;
+            verify_auth_content_signature(
+                SignaturePublicKeysContainer::RatchetTree(&self.state.public_tree),
+                self.context(),
+                &content,
+                &[],
+            )?;
 
-        // Update the epoch repo with new data post decryption
-        self.config
-            .epoch_repo()
-            .insert(epoch)
-            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
+            Ok::<_, GroupError>(content)
+        } else {
+            let mut epoch = self
+                .config
+                .epoch_repo()
+                .get(self.group_id(), epoch_id)
+                .map_err(|e| GroupError::EpochRepositoryError(e.into()))?
+                .ok_or(GroupError::EpochNotFound(epoch_id))?
+                .into_inner();
+
+            let content = CiphertextProcessor::new(&mut epoch).open(message)?;
+
+            verify_auth_content_signature(
+                SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
+                &epoch.context,
+                &content,
+                &[],
+            )?;
+
+            // Update the epoch repo with new data post decryption
+            self.config
+                .epoch_repo()
+                .insert(epoch.into())
+                .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
+
+            Ok(content)
+        }?;
 
         Ok(auth_content)
     }
@@ -1448,7 +1388,33 @@ where
     }
 
     pub fn equal_group_state(a: &Group<C>, b: &Group<C>) -> bool {
-        a.state == b.state && a.key_schedule == b.key_schedule
+        a.state == b.state && a.key_schedule == b.key_schedule && a.current_epoch == b.current_epoch
+    }
+
+    #[cfg(feature = "benchmark")]
+    pub fn secret_tree(&self) -> &SecretTree {
+        &self.current_epoch.secret_tree
+    }
+}
+
+impl<C> EpochSecretsProvider for Group<C>
+where
+    C: ClientConfig + Clone,
+{
+    fn group_context(&self) -> &GroupContext {
+        self.context()
+    }
+
+    fn self_index(&self) -> LeafIndex {
+        self.private_tree.self_index
+    }
+
+    fn epoch_secrets_mut(&mut self) -> &mut EpochSecrets {
+        &mut self.current_epoch
+    }
+
+    fn epoch_secrets(&self) -> &EpochSecrets {
+        &self.current_epoch
     }
 }
 
@@ -1544,10 +1510,16 @@ where
         let epoch_repo = self.config.epoch_repo();
         let secret_store = self.config.secret_store();
 
+        let resumption_psk_search = ResumptionPskSearch {
+            group_context: self.context(),
+            current_epoch: &self.current_epoch,
+            prior_epochs: &epoch_repo,
+        };
+
         let psk_secret = crate::psk::psk_secret(
             self.state.cipher_suite(),
             Some(&secret_store),
-            Some((&self.state.context.group_id, &epoch_repo)),
+            Some(resumption_psk_search),
             &provisional_state.psks,
         )?;
 
@@ -1566,7 +1538,6 @@ where
             &key_schedule,
             &commit_secret,
             &provisional_state.group_context,
-            self.private_tree.self_index, // The index never changes
             &provisional_state.public_tree,
             &psk_secret,
         )?;
@@ -1584,6 +1555,29 @@ where
             return Err(GroupError::InvalidConfirmationTag);
         }
 
+        let signature_public_keys = self
+            .state
+            .public_tree
+            .non_empty_leaves()
+            .map(|(index, leaf)| (index, leaf.signing_identity.signature_key.clone()))
+            .collect::<HashMap<_, _>>();
+
+        let past_epoch = Epoch {
+            context: self.context().clone(),
+            self_index: self.private_tree.self_index,
+            secrets: self.current_epoch.clone(),
+            signature_public_keys,
+        };
+
+        // TODO: Currently if you never export the group after calling this there is a loss of
+        // keys, this will be fixed in a follow up safe-storage mechanism
+        self.config
+            .epoch_repo()
+            .insert(past_epoch.into())
+            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
+
+        self.current_epoch = key_schedule_result.epoch_secrets;
+
         // If the above checks are successful, consider the updated GroupContext object
         // as the current state of the group
         if let Some(private_tree) = secrets.map(|(private_key, _)| private_key) {
@@ -1591,11 +1585,6 @@ where
         }
 
         self.state.context = provisional_state.group_context;
-
-        self.config
-            .epoch_repo()
-            .insert(key_schedule_result.epoch.into())
-            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
         self.state.interim_transcript_hash = interim_transcript_hash;
 
@@ -1638,7 +1627,7 @@ where
         !(provisional_state
             .removed_leaves
             .iter()
-            .any(|(i, _)| Some(*i) == self.self_index())
+            .any(|(i, _)| *i == self.private_tree.self_index)
             && self.pending_commit.is_none())
     }
 
@@ -1662,7 +1651,6 @@ mod tests {
         extension::{
             test_utils::TestExtension, Extension, ExternalSendersExt, RequiredCapabilitiesExt,
         },
-        group::epoch::EpochError,
         key_package::test_utils::{test_key_package, test_key_package_custom},
         protocol_version::MaybeProtocolVersion,
         psk::Psk,
@@ -2523,9 +2511,9 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(GroupError::EpochError(EpochError::SecretTreeError(
-                SecretTreeError::KeyMissing(_)
-            )))
+            Err(GroupError::CiphertextProcessorError(
+                CiphertextProcessorError::SecretTreeError(SecretTreeError::KeyMissing(_))
+            ))
         );
     }
 

@@ -423,7 +423,7 @@ mod tests {
 
         assert_matches!(
             server.process_incoming_message(commit),
-            Err(GroupError::SignatureError(_))
+            Err(GroupError::InvalidSignature)
         );
     }
 

@@ -13,11 +13,14 @@ use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use serde_with::serde_as;
 use std::collections::HashMap;
 
+use super::epoch::EpochSecrets;
+
 #[serde_as]
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct Snapshot {
     state: RawGroupState,
     private_tree: TreeKemPrivate,
+    current_epoch: EpochSecrets,
     key_schedule: KeySchedule,
     #[serde_as(as = "HashMap<VecAsBase64, VecAsBase64>")]
     pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>,
@@ -87,6 +90,7 @@ where
             key_schedule: self.key_schedule.clone(),
             pending_updates: self.pending_updates.clone(),
             pending_commit: self.pending_commit.clone(),
+            current_epoch: self.current_epoch.clone(),
         }
     }
 
@@ -101,6 +105,7 @@ where
             pending_commit: snapshot.pending_commit,
             #[cfg(test)]
             commit_modifiers: Default::default(),
+            current_epoch: snapshot.current_epoch,
         })
     }
 }

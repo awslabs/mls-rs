@@ -7,7 +7,7 @@ use crate::{
     key_package::KeyPackage,
     keychain::Keychain,
     protocol_version::ProtocolVersion,
-    psk::ExternalPskId,
+    psk::{ExternalPskId, ResumptionPskSearch},
     signer::Signable,
     tree_kem::{
         kem::TreeKem, leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret,
@@ -273,10 +273,16 @@ where
         let epoch_repo = self.config.epoch_repo();
         let psk_store = self.config.secret_store();
 
+        let resumption_psk_search = ResumptionPskSearch {
+            group_context: self.context(),
+            current_epoch: &self.current_epoch,
+            prior_epochs: &epoch_repo,
+        };
+
         let psk_secret = crate::psk::psk_secret(
             self.state.cipher_suite(),
             Some(&psk_store),
-            Some((&self.context().group_id, &epoch_repo)),
+            Some(resumption_psk_search),
             &provisional_state.psks,
         )?;
 
@@ -318,7 +324,6 @@ where
             &self.key_schedule,
             &commit_secret,
             &provisional_group_context,
-            provisional_private_tree.self_index,
             &self.state.public_tree,
             &psk_secret,
         )?;

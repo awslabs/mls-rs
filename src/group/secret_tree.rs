@@ -181,6 +181,16 @@ pub struct SecretTree {
     leaf_count: u32,
 }
 
+impl SecretTree {
+    pub(crate) fn empty(cipher_suite: CipherSuite) -> SecretTree {
+        SecretTree {
+            cipher_suite,
+            known_secrets: TreeSecretsVec(vec![]),
+            leaf_count: 0,
+        }
+    }
+}
+
 #[derive(TlsDeserialize, TlsSerialize, TlsSize)]
 struct TreeContext {
     node: u32,

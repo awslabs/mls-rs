@@ -21,8 +21,8 @@ use crate::{
 };
 
 use super::{
+    ciphertext_processor::CiphertextProcessorError,
     confirmation_tag::ConfirmationTagError,
-    epoch::EpochError,
     framing::{ContentType, WireFormat},
     key_schedule::{KeyScheduleError, KeyScheduleKdfError},
     membership_tag::MembershipTagError,
@@ -35,7 +35,7 @@ pub enum GroupError {
     #[error(transparent)]
     RatchetTreeError(#[from] RatchetTreeError),
     #[error(transparent)]
-    EpochError(#[from] EpochError),
+    CiphertextProcessorError(CiphertextProcessorError),
     #[error(transparent)]
     SignerError(Box<dyn std::error::Error>),
     #[error(transparent)]
@@ -205,4 +205,14 @@ pub enum GroupError {
     UnexpectedMessageType(Vec<WireFormat>, WireFormat),
     #[error("membership tag on MLSPlaintext for non-member sender")]
     MembershipTagForNonMember,
+}
+
+impl From<CiphertextProcessorError> for GroupError {
+    fn from(e: CiphertextProcessorError) -> Self {
+        if matches!(e, CiphertextProcessorError::CantProcessMessageFromSelf) {
+            GroupError::CantProcessMessageFromSelf
+        } else {
+            GroupError::CiphertextProcessorError(e)
+        }
+    }
 }

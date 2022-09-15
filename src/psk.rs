@@ -2,7 +2,11 @@ use crate::{
     cipher_suite::CipherSuite,
     client_config::PskStore,
     epoch::EpochRepository,
-    group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError},
+    group::{
+        epoch::EpochSecrets,
+        key_schedule::{KeyScheduleKdf, KeyScheduleKdfError},
+        GroupContext,
+    },
     serde_utils::vec_u8_as_base64::VecAsBase64,
 };
 use ferriscrypt::{
@@ -204,10 +208,20 @@ struct PSKLabel<'a> {
     count: u16,
 }
 
-pub(crate) fn psk_secret<P, R>(
+pub(crate) struct ResumptionPskSearch<'a, R>
+where
+    R: EpochRepository,
+{
+    pub group_context: &'a GroupContext,
+    pub current_epoch: &'a EpochSecrets,
+    pub prior_epochs: &'a R,
+}
+
+// TODO: This should have a strategy pattern to make it cleaner
+pub(crate) fn psk_secret<'a, P, R>(
     cipher_suite: CipherSuite,
     external_psk_search: Option<&P>,
-    epoch_search: Option<(&[u8], &R)>,
+    epoch_search: Option<ResumptionPskSearch<'a, R>>,
     psk_ids: &[PreSharedKeyID],
 ) -> Result<Psk, PskSecretError>
 where
@@ -231,16 +245,25 @@ where
                     .map_err(|e| PskSecretError::SecretStoreError(Box::new(e)))?
                     .ok_or_else(|| PskSecretError::NoPskForId(id.clone()))?,
                 JustPreSharedKeyID::Resumption(ResumptionPsk { psk_epoch, .. }) => {
-                    let (group_id, epoch_repository) =
-                        epoch_search.ok_or(PskSecretError::EpochNotFound(*psk_epoch))?;
+                    let resumption_psk_search = epoch_search
+                        .as_ref()
+                        .ok_or(PskSecretError::EpochNotFound(*psk_epoch))?;
 
-                    epoch_repository
-                        .get(group_id, *psk_epoch)
-                        .map_err(|e| PskSecretError::EpochRepositoryError(e.into()))?
-                        .ok_or(PskSecretError::EpochNotFound(*psk_epoch))?
-                        .into_inner()
-                        .secrets
-                        .resumption_secret
+                    if *psk_epoch == resumption_psk_search.group_context.epoch {
+                        resumption_psk_search
+                            .current_epoch
+                            .resumption_secret
+                            .clone()
+                    } else {
+                        resumption_psk_search
+                            .prior_epochs
+                            .get(&resumption_psk_search.group_context.group_id, *psk_epoch)
+                            .map_err(|e| PskSecretError::EpochRepositoryError(e.into()))?
+                            .ok_or(PskSecretError::EpochNotFound(*psk_epoch))?
+                            .into_inner()
+                            .secrets
+                            .resumption_secret
+                    }
                 }
             };
 
@@ -380,10 +403,10 @@ mod tests {
     #[test]
     fn unknown_id_leads_to_error() {
         let expected_id = make_external_psk_id(TEST_CIPHER_SUITE);
-        let res = psk_secret(
+        let res = psk_secret::<_, InMemoryEpochRepository>(
             TEST_CIPHER_SUITE,
             Some(&InMemoryPskStore::default()),
-            None::<(_, &InMemoryEpochRepository)>,
+            None,
             &[wrap_external_psk_id(TEST_CIPHER_SUITE, expected_id.clone())],
         );
         assert_matches!(res, Err(PskSecretError::NoPskForId(actual_id)) if actual_id == expected_id);
@@ -460,15 +483,10 @@ mod tests {
                 .map(PreSharedKeyID::from)
                 .collect::<Vec<_>>();
 
-            psk_secret(
-                cipher_suite,
-                Some(&secret_store),
-                Some((&[], &InMemoryEpochRepository::default())),
-                &ids,
-            )
-            .unwrap()
-            .0
-            .clone()
+            psk_secret::<_, InMemoryEpochRepository>(cipher_suite, Some(&secret_store), None, &ids)
+                .unwrap()
+                .0
+                .clone()
         }
     }
 

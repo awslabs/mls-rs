@@ -1,6 +1,6 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::secret_tree::SecretTreeError;
-use crate::group::{GroupContext, LeafIndex, MembershipTag, MembershipTagError, SecretTree};
+use crate::group::{GroupContext, MembershipTag, MembershipTagError, SecretTree};
 use crate::psk::{get_epoch_secret, JoinerSecret, Psk, PskSecretError};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signing_identity::SigningIdentityError;
@@ -16,14 +16,13 @@ use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::kdf::KdfError;
 use ferriscrypt::rand::{SecureRng, SecureRngError};
 use serde_with::serde_as;
-use std::collections::HashMap;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::{Zeroize, Zeroizing};
 
-use super::epoch::Epoch;
+use super::epoch::{EpochSecrets, SenderDataSecret};
 use super::message_signature::MLSAuthenticatedContent;
 
 #[derive(Debug, Error)]
@@ -154,7 +153,7 @@ pub(crate) struct KeyScheduleDerivationResult {
     pub(crate) key_schedule: KeySchedule,
     pub(crate) confirmation_key: Vec<u8>,
     pub(crate) joiner_secret: JoinerSecret,
-    pub(crate) epoch: Epoch,
+    pub(crate) epoch_secrets: EpochSecrets,
 }
 
 impl KeySchedule {
@@ -184,7 +183,6 @@ impl KeySchedule {
         last_key_schedule: &KeySchedule,
         commit_secret: &CommitSecret,
         context: &GroupContext,
-        self_index: LeafIndex,
         public_tree: &TreeKemPublic,
         psk_secret: &Psk,
     ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
@@ -208,7 +206,6 @@ impl KeySchedule {
             cipher_suite,
             &joiner_secret,
             context,
-            self_index,
             public_tree,
             psk_secret,
         )?;
@@ -217,7 +214,7 @@ impl KeySchedule {
             key_schedule: key_schedule_result.key_schedule,
             confirmation_key: key_schedule_result.confirmation_key,
             joiner_secret,
-            epoch: key_schedule_result.epoch,
+            epoch_secrets: key_schedule_result.epoch_secrets,
         })
     }
 
@@ -225,7 +222,6 @@ impl KeySchedule {
         cipher_suite: CipherSuite,
         joiner_secret: &JoinerSecret,
         context: &GroupContext,
-        self_index: LeafIndex,
         public_tree: &TreeKemPublic,
         psk_secret: &Psk,
     ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
@@ -257,19 +253,11 @@ impl KeySchedule {
             encryption_secret,
         );
 
-        let signature_public_keys = public_tree
-            .non_empty_leaves()
-            .map(|(index, leaf)| (index, leaf.signing_identity.signature_key.clone()))
-            .collect::<HashMap<_, _>>();
-
-        let epoch = Epoch::new(
-            context.clone(),
-            self_index,
-            resumption_secret,
-            sender_data_secret,
+        let epoch_secrets = EpochSecrets {
+            resumption_secret: Psk::from(resumption_secret),
+            sender_data_secret: SenderDataSecret::from(sender_data_secret),
             secret_tree,
-            signature_public_keys,
-        );
+        };
 
         let key_schedule = Self {
             exporter_secret,
@@ -283,7 +271,7 @@ impl KeySchedule {
             key_schedule,
             confirmation_key,
             joiner_secret: vec![].into(),
-            epoch,
+            epoch_secrets,
         })
     }
 

@@ -1,6 +1,3 @@
-#[cfg(feature = "benchmark")]
-use crate::group::secret_tree::SecretTree;
-
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
@@ -29,15 +26,6 @@ impl Epoch {
 
     pub(crate) fn into_inner(self) -> crate::group::epoch::Epoch {
         self.0
-    }
-
-    pub(crate) fn inner_mut(&mut self) -> &mut crate::group::epoch::Epoch {
-        &mut self.0
-    }
-
-    #[cfg(feature = "benchmark")]
-    pub fn secret_tree(&self) -> &SecretTree {
-        self.0.get_secret_tree()
     }
 }
 
