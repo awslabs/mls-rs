@@ -1,6 +1,8 @@
 use aws_mls::{
-    bench_utils::group_functions::load_test_cases, cipher_suite::CipherSuite,
-    client_config::InMemoryClientConfig, group::Group,
+    bench_utils::group_functions::{get_snapshot, load_test_cases},
+    cipher_suite::CipherSuite,
+    client_config::InMemoryClientConfig,
+    group::Group,
 };
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
@@ -32,7 +34,7 @@ fn bench_group_snapshot(
             &groups.len(),
             |b, _| {
                 b.iter(|| {
-                    serde_json::to_vec(&groups[0].snapshot()).unwrap();
+                    get_snapshot(&groups[0]).unwrap();
                 })
             },
         );

@@ -447,6 +447,28 @@ impl WelcomeSecret {
 }
 
 #[cfg(test)]
+pub(crate) mod test_utils {
+    use ferriscrypt::kdf::hkdf::Hkdf;
+
+    use crate::cipher_suite::CipherSuite;
+
+    use super::{InitSecret, KeySchedule};
+
+    pub(crate) fn get_test_key_schedule(cipher_suite: CipherSuite) -> KeySchedule {
+        let kdf = Hkdf::from(cipher_suite.kdf_type());
+        let key_size = kdf.extract_size();
+
+        KeySchedule {
+            exporter_secret: vec![0u8; key_size],
+            authentication_secret: vec![0u8; key_size],
+            external_secret: vec![0u8; key_size],
+            membership_key: vec![0u8; key_size],
+            init_secret: InitSecret::new(vec![0u8; key_size]),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use ferriscrypt::{kdf::hkdf::Hkdf, rand::SecureRng};
     use num_enum::TryFromPrimitive;
@@ -457,6 +479,7 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
+    use super::test_utils::get_test_key_schedule;
     use super::KeySchedule;
 
     #[derive(serde::Deserialize, serde::Serialize)]
@@ -475,13 +498,7 @@ mod tests {
             let kdf = Hkdf::from(cipher_suite.kdf_type());
             let key_size = kdf.extract_size();
 
-            let mut key_schedule = KeySchedule {
-                exporter_secret: vec![0u8; key_size],
-                authentication_secret: vec![0u8; key_size],
-                external_secret: vec![0u8; key_size],
-                membership_key: vec![0u8; key_size],
-                init_secret: InitSecret::new(vec![0u8; key_size]),
-            };
+            let mut key_schedule = get_test_key_schedule(cipher_suite);
 
             SecureRng::fill(&mut key_schedule.exporter_secret).unwrap();
 

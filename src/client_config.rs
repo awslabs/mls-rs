@@ -5,11 +5,13 @@ use crate::{
         CredentialType, CredentialValidator, PassthroughCredentialValidator, CREDENTIAL_TYPE_BASIC,
         CREDENTIAL_TYPE_X509,
     },
-    epoch::{EpochRepository, InMemoryEpochRepository},
     extension::{ExtensionList, ExtensionType, KeyPackageExtension, LeafNodeExtension},
     group::{
         framing::Sender, proposal::BoxedProposalFilter, proposal::PassThroughProposalFilter,
         proposal::ProposalFilter, ControlEncryptionMode, PaddingMode,
+    },
+    group_state_repo::{
+        GroupStateStorage, InMemoryGroupStateStorage, DEFAULT_EPOCH_RETENTION_LIMIT,
     },
     key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
     keychain::{InMemoryKeychain, Keychain},
@@ -70,7 +72,7 @@ pub trait ClientConfig {
     type ProposalFilter: ProposalFilter;
     type Keychain: Keychain;
     type PskStore: PskStore;
-    type EpochRepository: EpochRepository;
+    type GroupStateStorage: GroupStateStorage;
     type CredentialValidator: CredentialValidator;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
@@ -83,7 +85,9 @@ pub trait ClientConfig {
     fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter;
     fn keychain(&self) -> Self::Keychain;
     fn secret_store(&self) -> Self::PskStore;
-    fn epoch_repo(&self) -> Self::EpochRepository;
+
+    fn group_state_storage(&self) -> Self::GroupStateStorage;
+
     fn credential_validator(&self) -> Self::CredentialValidator;
     fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension>;
     fn leaf_node_extensions(&self) -> ExtensionList<LeafNodeExtension>;
@@ -141,6 +145,7 @@ pub struct Preferences {
     pub ratchet_tree_extension: bool,
     pub padding_mode: PaddingMode,
     pub force_commit_path_update: bool,
+    pub max_epoch_retention: u64,
 }
 
 impl Default for Preferences {
@@ -150,6 +155,7 @@ impl Default for Preferences {
             ratchet_tree_extension: Default::default(),
             padding_mode: Default::default(),
             force_commit_path_update: true,
+            max_epoch_retention: DEFAULT_EPOCH_RETENTION_LIMIT,
         }
     }
 }
@@ -249,7 +255,7 @@ pub struct InMemoryClientConfig {
     psk_store: InMemoryPskStore,
     pub(crate) protocol_versions: Vec<ProtocolVersion>,
     pub(crate) cipher_suites: Vec<CipherSuite>,
-    epochs: InMemoryEpochRepository,
+    pub(crate) group_state_storage: InMemoryGroupStateStorage,
     leaf_node_extensions: ExtensionList<LeafNodeExtension>,
     key_package_extensions: ExtensionList<KeyPackageExtension>,
     lifetime_duration: u64,
@@ -267,7 +273,7 @@ impl InMemoryClientConfig {
             psk_store: Default::default(),
             protocol_versions: ProtocolVersion::all().collect(),
             cipher_suites: CipherSuite::all().collect(),
-            epochs: Default::default(),
+            group_state_storage: Default::default(),
             leaf_node_extensions: Default::default(),
             key_package_extensions: Default::default(),
             lifetime_duration: 31536000, // One year
@@ -384,7 +390,7 @@ impl ClientConfig for InMemoryClientConfig {
     type ProposalFilter = BoxedProposalFilter<SimpleError>;
     type Keychain = InMemoryKeychain;
     type PskStore = InMemoryPskStore;
-    type EpochRepository = InMemoryEpochRepository;
+    type GroupStateStorage = InMemoryGroupStateStorage;
     type CredentialValidator = PassthroughCredentialValidator;
 
     fn preferences(&self) -> Preferences {
@@ -419,8 +425,8 @@ impl ClientConfig for InMemoryClientConfig {
         self.protocol_versions.clone()
     }
 
-    fn epoch_repo(&self) -> Self::EpochRepository {
-        self.epochs.clone()
+    fn group_state_storage(&self) -> Self::GroupStateStorage {
+        self.group_state_storage.clone()
     }
 
     fn credential_validator(&self) -> Self::CredentialValidator {

@@ -8,6 +8,7 @@ use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     credential::CredentialError,
     extension::{ExtensionError, ExtensionList, GroupContextExtension},
+    group_state_repo::GroupStateRepositoryError,
     key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError},
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     psk::PskSecretError,
@@ -69,7 +70,7 @@ pub enum GroupError {
     #[error(transparent)]
     LeafSecretError(#[from] PathSecretError),
     #[error(transparent)]
-    EpochRepositoryError(Box<dyn std::error::Error + Send + Sync>),
+    GroupStateRepositoryError(#[from] GroupStateRepositoryError),
     #[error(transparent)]
     KeyPackageRepositoryError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]

@@ -7,7 +7,8 @@ use crate::group::framing::{
 };
 use crate::group::message_signature::MLSAuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
-use crate::group::{process_group_info, Group, GroupError, Snapshot};
+use crate::group::{process_group_info, Group, GroupError};
+use crate::group_state_repo::GroupStateStorage;
 use crate::key_package::{
     KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRepository,
 };
@@ -17,6 +18,7 @@ use crate::signer::SignatureError;
 use crate::tree_kem::leaf_node::LeafNodeError;
 use crate::{keychain::Keychain, protocol_version::ProtocolVersion};
 use ferriscrypt::rand::{SecureRng, SecureRngError};
+use hex::ToHex;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -47,6 +49,10 @@ pub enum ClientError {
     ExpectedGroupInfoMessage,
     #[error("unsupported message version: {0:?}")]
     UnsupportedMessageVersion(MaybeProtocolVersion),
+    #[error("unable to load group from storage: {0:?}")]
+    GroupStorageError(Box<dyn std::error::Error + Send + Sync>),
+    #[error("group not found: {0}")]
+    GroupNotFound(String),
 }
 
 #[non_exhaustive]
@@ -166,7 +172,14 @@ where
         })
     }
 
-    pub fn load_snapshot(&self, snapshot: Snapshot) -> Result<Group<C>, ClientError> {
+    pub fn load_group(&self, group_id: &[u8]) -> Result<Group<C>, ClientError> {
+        let snapshot = self
+            .config
+            .group_state_storage()
+            .get_snapshot(group_id)
+            .map_err(|e| ClientError::GroupStorageError(e.into()))?
+            .ok_or_else(|| ClientError::GroupNotFound(group_id.encode_hex_upper()))?;
+
         Ok(Group::from_snapshot(self.config.clone(), snapshot)?)
     }
 

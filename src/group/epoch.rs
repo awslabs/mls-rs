@@ -22,12 +22,40 @@ use super::ciphertext_processor::EpochSecretsProvider;
     serde::Deserialize,
     PartialEq,
 )]
-pub(crate) struct Epoch {
-    pub context: GroupContext,
-    pub self_index: LeafIndex,
+pub struct PriorEpoch {
+    pub(crate) context: GroupContext,
+    pub(crate) self_index: LeafIndex,
     pub(crate) secrets: EpochSecrets,
     #[tls_codec(with = "crate::tls::DefMap")]
-    pub signature_public_keys: HashMap<LeafIndex, SignaturePublicKey>,
+    pub(crate) signature_public_keys: HashMap<LeafIndex, SignaturePublicKey>,
+}
+
+impl PriorEpoch {
+    pub fn epoch_id(&self) -> u64 {
+        self.context.epoch
+    }
+
+    pub fn group_id(&self) -> &[u8] {
+        &self.context.group_id
+    }
+}
+
+impl EpochSecretsProvider for PriorEpoch {
+    fn group_context(&self) -> &GroupContext {
+        &self.context
+    }
+
+    fn self_index(&self) -> LeafIndex {
+        self.self_index
+    }
+
+    fn epoch_secrets_mut(&mut self) -> &mut EpochSecrets {
+        &mut self.secrets
+    }
+
+    fn epoch_secrets(&self) -> &EpochSecrets {
+        &self.secrets
+    }
 }
 
 #[derive(
@@ -79,52 +107,46 @@ impl From<Vec<u8>> for SenderDataSecret {
     }
 }
 
-impl EpochSecretsProvider for Epoch {
-    fn group_context(&self) -> &GroupContext {
-        &self.context
-    }
-
-    fn self_index(&self) -> LeafIndex {
-        self.self_index
-    }
-
-    fn epoch_secrets_mut(&mut self) -> &mut EpochSecrets {
-        &mut self.secrets
-    }
-
-    fn epoch_secrets(&self) -> &EpochSecrets {
-        &self.secrets
-    }
-}
-
 #[cfg(test)]
 pub mod test_utils {
     use super::*;
     use crate::cipher_suite::CipherSuite;
     use crate::group::secret_tree::test_utils::get_test_tree;
-    use crate::group::test_utils::get_test_group_context;
+    use crate::group::test_utils::get_test_group_context_with_id;
     use ferriscrypt::kdf::hkdf::Hkdf;
     use ferriscrypt::rand::SecureRng;
 
-    pub(crate) fn get_test_epoch(cipher_suite: CipherSuite) -> Epoch {
+    pub(crate) fn get_test_epoch_secrets(cipher_suite: CipherSuite) -> EpochSecrets {
         let secret_tree = get_test_tree(
             cipher_suite,
             vec![0_u8; Hkdf::from(cipher_suite.kdf_type()).extract_size()],
             2,
         );
 
-        Epoch {
-            context: get_test_group_context(0, cipher_suite),
+        EpochSecrets {
+            resumption_secret: SecureRng::gen(cipher_suite.hash_function().digest_size())
+                .unwrap()
+                .into(),
+            sender_data_secret: SecureRng::gen(cipher_suite.hash_function().digest_size())
+                .unwrap()
+                .into(),
+            secret_tree,
+        }
+    }
+
+    pub(crate) fn get_test_epoch(cipher_suite: CipherSuite) -> PriorEpoch {
+        get_test_epoch_with_id(Vec::new(), cipher_suite, 0)
+    }
+
+    pub(crate) fn get_test_epoch_with_id(
+        group_id: Vec<u8>,
+        cipher_suite: CipherSuite,
+        id: u64,
+    ) -> PriorEpoch {
+        PriorEpoch {
+            context: get_test_group_context_with_id(group_id, id, cipher_suite),
             self_index: LeafIndex(0),
-            secrets: EpochSecrets {
-                resumption_secret: SecureRng::gen(cipher_suite.hash_function().digest_size())
-                    .unwrap()
-                    .into(),
-                sender_data_secret: SecureRng::gen(cipher_suite.hash_function().digest_size())
-                    .unwrap()
-                    .into(),
-                secret_tree,
-            },
+            secrets: get_test_epoch_secrets(cipher_suite),
             signature_public_keys: Default::default(),
         }
     }

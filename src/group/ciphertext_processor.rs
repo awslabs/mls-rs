@@ -269,7 +269,7 @@ mod test {
         cipher_suite::CipherSuite,
         client::test_utils::TEST_CIPHER_SUITE,
         group::{
-            epoch::{test_utils::get_test_epoch, Epoch},
+            epoch::{test_utils::get_test_epoch, PriorEpoch},
             framing::{ApplicationData, Content, Sender, WireFormat},
             message_signature::MLSAuthenticatedContent,
             PaddingMode,
@@ -285,7 +285,7 @@ mod test {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     struct TestData {
-        epoch: Epoch,
+        epoch: PriorEpoch,
         content: MLSAuthenticatedContent,
     }
 

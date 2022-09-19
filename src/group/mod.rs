@@ -14,11 +14,11 @@ use zeroize::Zeroizing;
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, ProposalFilterInit, PskStore, PskStoreIdValidator};
 use crate::credential::CredentialValidator;
-use crate::epoch::EpochRepository;
 use crate::extension::{
     ExtensionError, ExtensionList, ExternalPubExt, GroupContextExtension, LeafNodeExtension,
     RatchetTreeExt,
 };
+use crate::group_state_repo::GroupStateRepository;
 use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
 use crate::keychain::Keychain;
 use crate::protocol_version::ProtocolVersion;
@@ -55,7 +55,7 @@ use transcript_hash::*;
 #[cfg(test)]
 pub(crate) use self::commit::test_utils::CommitModifiers;
 
-use self::epoch::{Epoch, EpochSecrets, SenderDataSecret};
+use self::epoch::{EpochSecrets, PriorEpoch, SenderDataSecret};
 pub use self::message_processor::{Event, ExternalEvent, ProcessedMessage, StateUpdate};
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
 pub use external_group::ExternalGroup;
@@ -99,7 +99,7 @@ mod proposal_cache;
 mod proposal_filter;
 mod proposal_ref;
 mod roster;
-mod snapshot;
+pub(crate) mod snapshot;
 mod state;
 mod stats;
 mod transcript_hash;
@@ -151,8 +151,9 @@ where
     pub config: C,
     #[cfg(not(feature = "benchmark"))]
     config: C,
+    state_repo: GroupStateRepository<C::GroupStateStorage>,
     state: GroupState,
-    current_epoch: EpochSecrets,
+    epoch_secrets: EpochSecrets,
     private_tree: TreeKemPrivate,
     key_schedule: KeySchedule,
     pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
@@ -210,6 +211,12 @@ where
             &Psk::from(vec![0; kdf.extract_size()]),
         )?;
 
+        let state_repo = GroupStateRepository::new(
+            context.group_id.clone(),
+            config.preferences().max_epoch_retention,
+            config.group_state_storage(),
+        )?;
+
         Ok(Self {
             config,
             state: GroupState::new(
@@ -224,7 +231,8 @@ where
             pending_commit: None,
             #[cfg(test)]
             commit_modifiers: Default::default(),
-            current_epoch: key_schedule_result.epoch_secrets,
+            epoch_secrets: key_schedule_result.epoch_secrets,
+            state_repo,
         })
     }
 
@@ -300,15 +308,14 @@ where
 
         let group_secrets = GroupSecrets::tls_deserialize(&mut &*decrypted_group_secrets)?;
         let psk_store = config.secret_store();
-        let epoch_repo = config.epoch_repo();
 
-        let psk_secret = crate::psk::psk_secret(
+        let psk_secret = crate::psk::psk_secret::<C>(
             welcome.cipher_suite,
             Some(&psk_store),
             parent_group.map(|parent| ResumptionPskSearch {
                 group_context: parent.context(),
-                current_epoch: &parent.current_epoch,
-                prior_epochs: &epoch_repo,
+                current_epoch: &parent.epoch_secrets,
+                prior_epochs: &parent.state_repo,
             }),
             &group_secrets.psks,
         )?;
@@ -405,6 +412,12 @@ where
             confirmation_tag,
         )?;
 
+        let state_repo = GroupStateRepository::new(
+            context.group_id.clone(),
+            config.preferences().max_epoch_retention,
+            config.group_state_storage(),
+        )?;
+
         Ok(Group {
             config,
             state: GroupState::new(
@@ -419,7 +432,8 @@ where
             pending_commit: None,
             #[cfg(test)]
             commit_modifiers: Default::default(),
-            current_epoch: epoch_secrets,
+            epoch_secrets,
+            state_repo,
         })
     }
 
@@ -734,20 +748,24 @@ where
 
         new_context.tree_hash = new_pub_tree.tree_hash()?;
 
-        let epoch_repo = self.config.epoch_repo();
-
         let psks = vec![PreSharedKeyID {
             key_id: resumption_psk_id,
             psk_nonce: PskNonce::random(new_context.cipher_suite)?,
         }];
 
+        let state_repo = GroupStateRepository::new(
+            new_context.group_id.clone(),
+            self.config.preferences().max_epoch_retention,
+            self.config.group_state_storage(),
+        )?;
+
         let resumption_psk_search = ResumptionPskSearch {
             group_context: self.context(),
-            current_epoch: &self.current_epoch,
-            prior_epochs: &epoch_repo,
+            current_epoch: &self.epoch_secrets,
+            prior_epochs: &state_repo,
         };
 
-        let psk_secret = crate::psk::psk_secret(
+        let psk_secret = crate::psk::psk_secret::<C>(
             new_context.cipher_suite,
             None::<&C::PskStore>,
             Some(resumption_psk_search),
@@ -798,7 +816,8 @@ where
             pending_commit: None,
             #[cfg(test)]
             commit_modifiers: Default::default(),
-            current_epoch: key_schedule_result.epoch_secrets,
+            epoch_secrets: key_schedule_result.epoch_secrets,
+            state_repo,
         };
 
         let welcome = new_group.make_welcome_message(
@@ -1255,15 +1274,12 @@ where
 
             Ok::<_, GroupError>(content)
         } else {
-            let mut epoch = self
-                .config
-                .epoch_repo()
-                .get(self.group_id(), epoch_id)
-                .map_err(|e| GroupError::EpochRepositoryError(e.into()))?
-                .ok_or(GroupError::EpochNotFound(epoch_id))?
-                .into_inner();
+            let epoch = self
+                .state_repo
+                .get_epoch_mut(epoch_id)?
+                .ok_or(GroupError::EpochNotFound(epoch_id))?;
 
-            let content = CiphertextProcessor::new(&mut epoch).open(message)?;
+            let content = CiphertextProcessor::new(epoch).open(message)?;
 
             verify_auth_content_signature(
                 SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
@@ -1271,12 +1287,6 @@ where
                 &content,
                 &[],
             )?;
-
-            // Update the epoch repo with new data post decryption
-            self.config
-                .epoch_repo()
-                .insert(epoch.into())
-                .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
 
             Ok(content)
         }?;
@@ -1388,12 +1398,12 @@ where
     }
 
     pub fn equal_group_state(a: &Group<C>, b: &Group<C>) -> bool {
-        a.state == b.state && a.key_schedule == b.key_schedule && a.current_epoch == b.current_epoch
+        a.state == b.state && a.key_schedule == b.key_schedule && a.epoch_secrets == b.epoch_secrets
     }
 
     #[cfg(feature = "benchmark")]
     pub fn secret_tree(&self) -> &SecretTree {
-        &self.current_epoch.secret_tree
+        &self.epoch_secrets.secret_tree
     }
 }
 
@@ -1410,11 +1420,11 @@ where
     }
 
     fn epoch_secrets_mut(&mut self) -> &mut EpochSecrets {
-        &mut self.current_epoch
+        &mut self.epoch_secrets
     }
 
     fn epoch_secrets(&self) -> &EpochSecrets {
-        &self.current_epoch
+        &self.epoch_secrets
     }
 }
 
@@ -1507,16 +1517,15 @@ where
             secrets.as_ref().map(|(_, root_secret)| root_secret),
         )?;
 
-        let epoch_repo = self.config.epoch_repo();
         let secret_store = self.config.secret_store();
 
         let resumption_psk_search = ResumptionPskSearch {
             group_context: self.context(),
-            current_epoch: &self.current_epoch,
-            prior_epochs: &epoch_repo,
+            current_epoch: &self.epoch_secrets,
+            prior_epochs: &self.state_repo,
         };
 
-        let psk_secret = crate::psk::psk_secret(
+        let psk_secret = crate::psk::psk_secret::<C>(
             self.state.cipher_suite(),
             Some(&secret_store),
             Some(resumption_psk_search),
@@ -1562,21 +1571,16 @@ where
             .map(|(index, leaf)| (index, leaf.signing_identity.signature_key.clone()))
             .collect::<HashMap<_, _>>();
 
-        let past_epoch = Epoch {
+        let past_epoch = PriorEpoch {
             context: self.context().clone(),
             self_index: self.private_tree.self_index,
-            secrets: self.current_epoch.clone(),
+            secrets: self.epoch_secrets.clone(),
             signature_public_keys,
         };
 
-        // TODO: Currently if you never export the group after calling this there is a loss of
-        // keys, this will be fixed in a follow up safe-storage mechanism
-        self.config
-            .epoch_repo()
-            .insert(past_epoch.into())
-            .map_err(|e| GroupError::EpochRepositoryError(e.into()))?;
+        self.state_repo.insert(past_epoch)?;
 
-        self.current_epoch = key_schedule_result.epoch_secrets;
+        self.epoch_secrets = key_schedule_result.epoch_secrets;
 
         // If the above checks are successful, consider the updated GroupContext object
         // as the current state of the group

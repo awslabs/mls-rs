@@ -55,7 +55,6 @@ struct CommitOptions {
     pub ratchet_tree_extension: bool,
 }
 
-#[derive(Debug)]
 pub struct CommitBuilder<'a, C>
 where
     C: ClientConfig + Clone,
@@ -270,16 +269,15 @@ where
         let commit_secret =
             CommitSecret::from_root_secret(self.state.cipher_suite(), root_secret.as_ref())?;
 
-        let epoch_repo = self.config.epoch_repo();
         let psk_store = self.config.secret_store();
 
         let resumption_psk_search = ResumptionPskSearch {
             group_context: self.context(),
-            current_epoch: &self.current_epoch,
-            prior_epochs: &epoch_repo,
+            current_epoch: &self.epoch_secrets,
+            prior_epochs: &self.state_repo,
         };
 
-        let psk_secret = crate::psk::psk_secret(
+        let psk_secret = crate::psk::psk_secret::<C>(
             self.state.cipher_suite(),
             Some(&psk_store),
             Some(resumption_psk_search),

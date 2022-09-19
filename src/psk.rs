@@ -1,12 +1,12 @@
 use crate::{
     cipher_suite::CipherSuite,
-    client_config::PskStore,
-    epoch::EpochRepository,
+    client_config::{ClientConfig, PskStore},
     group::{
         epoch::EpochSecrets,
         key_schedule::{KeyScheduleKdf, KeyScheduleKdfError},
         GroupContext,
     },
+    group_state_repo::{GroupStateRepository, GroupStateStorage},
     serde_utils::vec_u8_as_base64::VecAsBase64,
 };
 use ferriscrypt::{
@@ -210,23 +210,22 @@ struct PSKLabel<'a> {
 
 pub(crate) struct ResumptionPskSearch<'a, R>
 where
-    R: EpochRepository,
+    R: GroupStateStorage,
 {
     pub group_context: &'a GroupContext,
     pub current_epoch: &'a EpochSecrets,
-    pub prior_epochs: &'a R,
+    pub prior_epochs: &'a GroupStateRepository<R>,
 }
 
 // TODO: This should have a strategy pattern to make it cleaner
-pub(crate) fn psk_secret<'a, P, R>(
+pub(crate) fn psk_secret<'a, C>(
     cipher_suite: CipherSuite,
-    external_psk_search: Option<&P>,
-    epoch_search: Option<ResumptionPskSearch<'a, R>>,
+    external_psk_search: Option<&C::PskStore>,
+    epoch_search: Option<ResumptionPskSearch<'a, C::GroupStateStorage>>,
     psk_ids: &[PreSharedKeyID],
 ) -> Result<Psk, PskSecretError>
 where
-    P: PskStore,
-    R: EpochRepository,
+    C: ClientConfig,
 {
     let len = psk_ids.len();
     let len = u16::try_from(len).map_err(|_| PskSecretError::TooManyPskIds(len))?;
@@ -257,10 +256,9 @@ where
                     } else {
                         resumption_psk_search
                             .prior_epochs
-                            .get(&resumption_psk_search.group_context.group_id, *psk_epoch)
+                            .get_epoch_owned(*psk_epoch)
                             .map_err(|e| PskSecretError::EpochRepositoryError(e.into()))?
                             .ok_or(PskSecretError::EpochNotFound(*psk_epoch))?
-                            .into_inner()
                             .secrets
                             .resumption_secret
                     }
@@ -364,8 +362,7 @@ impl ExternalPskIdValidator for PassThroughPskIdValidator {
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
-        client_config::InMemoryPskStore,
-        epoch::InMemoryEpochRepository,
+        client_config::{InMemoryClientConfig, InMemoryPskStore},
         psk::{
             psk_secret, ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskNonce, PskSecretError,
         },
@@ -403,7 +400,7 @@ mod tests {
     #[test]
     fn unknown_id_leads_to_error() {
         let expected_id = make_external_psk_id(TEST_CIPHER_SUITE);
-        let res = psk_secret::<_, InMemoryEpochRepository>(
+        let res = psk_secret::<InMemoryClientConfig>(
             TEST_CIPHER_SUITE,
             Some(&InMemoryPskStore::default()),
             None,
@@ -483,7 +480,7 @@ mod tests {
                 .map(PreSharedKeyID::from)
                 .collect::<Vec<_>>();
 
-            psk_secret::<_, InMemoryEpochRepository>(cipher_suite, Some(&secret_store), None, &ids)
+            psk_secret::<InMemoryClientConfig>(cipher_suite, Some(&secret_store), None, &ids)
                 .unwrap()
                 .0
                 .clone()

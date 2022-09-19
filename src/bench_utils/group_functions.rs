@@ -2,14 +2,13 @@ use crate::{
     cipher_suite::CipherSuite,
     client::test_utils::{get_basic_config, join_group, test_client_with_key_pkg},
     client_config::{ClientConfig, InMemoryClientConfig, Preferences},
-    epoch::Epoch,
-    epoch::EpochRepository,
     extension::ExtensionList,
     group::{
         framing::{Content, MLSMessage, Sender, WireFormat},
         message_signature::MLSAuthenticatedContent,
         Commit, Group, GroupError, Snapshot,
     },
+    group_state_repo::{GroupStateStorage, InMemoryGroupStateStorage, PriorEpoch},
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     signing_identity::SigningIdentity,
@@ -49,8 +48,6 @@ pub fn load_test_cases() -> Vec<Vec<Group<InMemoryClientConfig>>> {
             test.info
                 .into_iter()
                 .map(|group_info| {
-                    let epochs = serde_json::from_slice::<Vec<Epoch>>(&group_info.epochs).unwrap();
-
                     let key_packages = serde_json::from_slice::<Vec<KeyPackageGeneration>>(
                         &group_info.key_packages,
                     )
@@ -61,21 +58,25 @@ pub fn load_test_cases() -> Vec<Vec<Group<InMemoryClientConfig>>> {
                     )
                     .unwrap();
 
-                    let config = InMemoryClientConfig::new();
+                    let mut config = InMemoryClientConfig::new();
 
                     for (signing_identity, secret) in secrets {
                         config.keychain().insert(signing_identity, secret);
                     }
 
-                    for epoch in epochs {
-                        config.epoch_repo().insert(epoch).unwrap();
-                    }
+                    let epochs =
+                        serde_json::from_slice::<Vec<PriorEpoch>>(&group_info.epochs).unwrap();
+
+                    let group_id = group_info.session.group_id().to_vec();
+
+                    config.group_state_storage =
+                        InMemoryGroupStateStorage::from_benchmark_data(group_info.session, epochs);
 
                     for key_pkg_gen in key_packages {
                         config.key_package_repo().insert(key_pkg_gen).unwrap();
                     }
 
-                    Group::from_snapshot(config, group_info.session).unwrap()
+                    config.build_client().load_group(&group_id).unwrap()
                 })
                 .collect()
         })
@@ -121,16 +122,33 @@ pub fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<InMemor
     groups
 }
 
-fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
-    let sessions = create_group(cipher_suite, size);
+pub fn get_snapshot<C>(group: &Group<C>) -> Result<Vec<u8>, serde_json::Error>
+where
+    C: ClientConfig + Clone,
+{
+    serde_json::to_vec(&group.snapshot())
+}
 
-    let info = sessions
+fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
+    let mut groups = create_group(cipher_suite, size);
+
+    groups
+        .iter_mut()
+        .for_each(|group| group.write_to_storage().unwrap());
+
+    let info = groups
         .into_iter()
         .map(|session| {
             let config = &session.config;
 
-            let epoch_repo = config.epoch_repo();
-            let exported_epochs = epoch_repo.export();
+            let epoch_repo = config.group_state_storage();
+            let exported_epochs = epoch_repo.export_epoch_data(session.group_id()).unwrap();
+
+            let group_state = epoch_repo
+                .get_snapshot(session.group_id())
+                .unwrap()
+                .unwrap();
+
             let epochs = serde_json::to_vec(&exported_epochs).unwrap();
 
             let key_repo = config.key_package_repo();
@@ -140,8 +158,6 @@ fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
             let key_chain = config.keychain();
             let exported_key_chain = key_chain.export();
             let secrets = serde_json::to_vec(&exported_key_chain).unwrap();
-
-            let group_state = session.snapshot();
 
             GroupInfo {
                 session: group_state,

@@ -23,6 +23,13 @@ pub struct TreeKemPrivate {
 }
 
 impl TreeKemPrivate {
+    pub fn new(self_index: LeafIndex) -> Self {
+        TreeKemPrivate {
+            self_index,
+            secret_keys: HashMap::new(),
+        }
+    }
+
     pub fn new_self_leaf(self_index: LeafIndex, leaf_secret: HpkeSecretKey) -> Self {
         TreeKemPrivate {
             self_index,

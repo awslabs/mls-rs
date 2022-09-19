@@ -6,6 +6,7 @@ use crate::{
         GroupContext, GroupError, GroupState, InterimTranscriptHash, ProposalCache, ProposalRef,
         ReInit, TreeKemPublic,
     },
+    group_state_repo::GroupStateRepository,
     serde_utils::vec_u8_as_base64::VecAsBase64,
     tree_kem::{node::NodeVec, TreeKemPrivate},
 };
@@ -16,18 +17,24 @@ use std::collections::HashMap;
 use super::epoch::EpochSecrets;
 
 #[serde_as]
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
 pub struct Snapshot {
     state: RawGroupState,
     private_tree: TreeKemPrivate,
-    current_epoch: EpochSecrets,
+    epoch_secrets: EpochSecrets,
     key_schedule: KeySchedule,
     #[serde_as(as = "HashMap<VecAsBase64, VecAsBase64>")]
     pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>,
     pending_commit: Option<CommitGeneration>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+impl Snapshot {
+    pub fn group_id(&self) -> &[u8] {
+        &self.state.context.group_id
+    }
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
 struct RawGroupState {
     context: GroupContext,
     proposals: HashMap<ProposalRef, CachedProposal>,
@@ -83,19 +90,32 @@ impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
-    pub fn snapshot(&self) -> Snapshot {
+    pub fn write_to_storage(&mut self) -> Result<(), GroupError> {
+        self.state_repo
+            .write_to_storage(self.snapshot())
+            .map_err(Into::into)
+    }
+
+    pub(crate) fn snapshot(&self) -> Snapshot {
         Snapshot {
             state: RawGroupState::export(&self.state),
             private_tree: self.private_tree.clone(),
             key_schedule: self.key_schedule.clone(),
             pending_updates: self.pending_updates.clone(),
             pending_commit: self.pending_commit.clone(),
-            current_epoch: self.current_epoch.clone(),
+            epoch_secrets: self.epoch_secrets.clone(),
         }
     }
 
     pub(crate) fn from_snapshot(config: C, snapshot: Snapshot) -> Result<Self, GroupError> {
         let credential_validator = config.credential_validator();
+
+        let state_repo = GroupStateRepository::new(
+            snapshot.state.context.group_id.clone(),
+            config.preferences().max_epoch_retention,
+            config.group_state_storage(),
+        )?;
+
         Ok(Group {
             config,
             state: snapshot.state.import(credential_validator)?,
@@ -105,8 +125,42 @@ where
             pending_commit: snapshot.pending_commit,
             #[cfg(test)]
             commit_modifiers: Default::default(),
-            current_epoch: snapshot.current_epoch,
+            epoch_secrets: snapshot.epoch_secrets,
+            state_repo,
         })
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use crate::{
+        cipher_suite::CipherSuite,
+        group::{
+            confirmation_tag::ConfirmationTag, epoch::test_utils::get_test_epoch_secrets,
+            key_schedule::test_utils::get_test_key_schedule, test_utils::get_test_group_context,
+            transcript_hash::InterimTranscriptHash,
+        },
+        tree_kem::{node::LeafIndex, TreeKemPrivate},
+    };
+
+    use super::{RawGroupState, Snapshot};
+
+    pub(crate) fn get_test_snapshot(cipher_suite: CipherSuite, epoch_id: u64) -> Snapshot {
+        Snapshot {
+            state: RawGroupState {
+                context: get_test_group_context(epoch_id, cipher_suite),
+                proposals: Default::default(),
+                tree_data: Default::default(),
+                interim_transcript_hash: InterimTranscriptHash::from(vec![]),
+                pending_reinit: None,
+                confirmation_tag: ConfirmationTag::empty(&cipher_suite).unwrap(),
+            },
+            private_tree: TreeKemPrivate::new(LeafIndex(0)),
+            epoch_secrets: get_test_epoch_secrets(cipher_suite),
+            key_schedule: get_test_key_schedule(cipher_suite),
+            pending_updates: Default::default(),
+            pending_commit: None,
+        }
     }
 }
 

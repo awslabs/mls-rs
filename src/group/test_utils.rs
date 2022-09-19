@@ -107,7 +107,23 @@ pub(crate) fn get_test_group_context(epoch: u64, cipher_suite: CipherSuite) -> G
     GroupContext {
         protocol_version: ProtocolVersion::Mls10,
         cipher_suite,
-        group_id: vec![],
+        group_id: Vec::new(),
+        epoch,
+        tree_hash: vec![],
+        confirmed_transcript_hash: ConfirmedTranscriptHash::from(vec![]),
+        extensions: ExtensionList::from(vec![]),
+    }
+}
+
+pub(crate) fn get_test_group_context_with_id(
+    group_id: Vec<u8>,
+    epoch: u64,
+    cipher_suite: CipherSuite,
+) -> GroupContext {
+    GroupContext {
+        protocol_version: ProtocolVersion::Mls10,
+        cipher_suite,
+        group_id,
         epoch,
         tree_hash: vec![],
         confirmed_transcript_hash: ConfirmedTranscriptHash::from(vec![]),
