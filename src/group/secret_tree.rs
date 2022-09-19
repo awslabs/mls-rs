@@ -585,11 +585,12 @@ mod tests {
 
     #[test]
     fn test_secret_tree() {
-        for one_cipher_suite in CipherSuite::all() {
-            println!("Running secret tree derivation for {:?}", one_cipher_suite);
+        for cipher_suite in CipherSuite::all() {
+            println!("Running secret tree derivation for {:?}", cipher_suite);
 
-            let test_secret = [0u8; 32].to_vec();
-            let mut test_tree = get_test_tree(one_cipher_suite, test_secret.clone(), 16);
+            let test_secret = vec![0u8; cipher_suite.hash_function().digest_size()];
+
+            let mut test_tree = get_test_tree(cipher_suite, test_secret.clone(), 16);
 
             let mut secrets: Vec<SecretRatchets> = (0..16)
                 .into_iter()
@@ -613,21 +614,21 @@ mod tests {
 
     #[test]
     fn test_secret_key_ratchet() {
-        for one_cipher_suite in CipherSuite::all() {
-            println!("Running secret tree ratchet for {:?}", one_cipher_suite);
+        for cipher_suite in CipherSuite::all() {
+            println!("Running secret tree ratchet for {:?}", cipher_suite);
 
             let mut app_ratchet = SecretKeyRatchet::new(
-                one_cipher_suite,
+                cipher_suite,
                 LeafIndex(42),
-                &[0u8; 32],
+                &vec![0u8; cipher_suite.hash_function().digest_size()],
                 KeyType::Application,
             )
             .unwrap();
 
             let mut handshake_ratchet = SecretKeyRatchet::new(
-                one_cipher_suite,
+                cipher_suite,
                 LeafIndex(42),
-                &[0u8; 32],
+                &vec![0u8; cipher_suite.hash_function().digest_size()],
                 KeyType::Handshake,
             )
             .unwrap();
@@ -652,13 +653,13 @@ mod tests {
 
     #[test]
     fn test_get_key() {
-        for one_cipher_suite in CipherSuite::all() {
-            println!("Running secret tree get key for {:?}", one_cipher_suite);
+        for cipher_suite in CipherSuite::all() {
+            println!("Running secret tree get key for {:?}", cipher_suite);
 
             let mut ratchet = SecretKeyRatchet::new(
-                one_cipher_suite,
+                cipher_suite,
                 LeafIndex(42),
-                &[0u8; 32],
+                &vec![0u8; cipher_suite.hash_function().digest_size()],
                 KeyType::Application,
             )
             .unwrap();
@@ -684,13 +685,13 @@ mod tests {
 
     #[test]
     fn test_secret_ratchet() {
-        for one_cipher_suite in CipherSuite::all() {
-            println!("Running secret tree secret ratchet {:?}", one_cipher_suite);
+        for cipher_suite in CipherSuite::all() {
+            println!("Running secret tree secret ratchet {:?}", cipher_suite);
 
             let mut ratchet = SecretKeyRatchet::new(
-                one_cipher_suite,
+                cipher_suite,
                 LeafIndex(42),
-                &[0u8; 32],
+                &vec![0u8; cipher_suite.hash_function().digest_size()],
                 KeyType::Application,
             )
             .unwrap();
