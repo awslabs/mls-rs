@@ -2,6 +2,11 @@ use crate::credential::CredentialValidator;
 use crate::group::GroupContext;
 use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
+use cfg_if::cfg_if;
+
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
 use tls_codec::Serialize;
 
 use super::leaf_node::ConfigProperties;
@@ -121,9 +126,15 @@ impl<'a> TreeKem<'a> {
         context.tree_hash = self.tree_kem_public.tree_hash()?;
         let context_bytes = context.tls_serialize_detached()?;
 
-        let node_updates = copath
-            .into_iter()
-            .zip(path_secrets.iter())
+        cfg_if! {
+            if #[cfg(feature = "rayon")] {
+                let copath_iter = copath.into_par_iter().zip(path_secrets.par_iter());
+            } else {
+                let copath_iter = copath.into_iter().zip(path_secrets.iter());
+            }
+        }
+
+        let node_updates = copath_iter
             .filter_map(|(copath_index, path_secret)| {
                 path_secret.as_ref().map(|path_secret| {
                     let encrypted_path_secret = encrypt_copath_node_resolution(
