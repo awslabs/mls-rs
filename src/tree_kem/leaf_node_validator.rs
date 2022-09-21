@@ -209,7 +209,7 @@ mod tests {
 
     use super::*;
 
-    use crate::credential::PassthroughCredentialValidator;
+    use crate::credential::{BasicCredentialValidator, CREDENTIAL_TYPE_BASIC};
     use crate::extension::{ApplicationIdExt, ExtensionList, MlsExtension};
     use crate::signing_identity::test_utils::get_test_signing_identity;
     use crate::tree_kem::leaf_node::test_utils::*;
@@ -235,11 +235,8 @@ mod tests {
     #[test]
     fn test_basic_add_validation() {
         let (leaf_node, _) = get_test_add_node();
-        let test_validator = LeafNodeValidator::new(
-            TEST_CIPHER_SUITE,
-            None,
-            PassthroughCredentialValidator::new(),
-        );
+        let test_validator =
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicCredentialValidator::new());
 
         assert_matches!(
             test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
@@ -274,11 +271,8 @@ mod tests {
             )
             .unwrap();
 
-        let test_validator = LeafNodeValidator::new(
-            TEST_CIPHER_SUITE,
-            None,
-            PassthroughCredentialValidator::new(),
-        );
+        let test_validator =
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicCredentialValidator::new());
         assert_matches!(
             test_validator.check_if_valid(&leaf_node, ValidationContext::Update(group_id)),
             Ok(_)
@@ -301,11 +295,8 @@ mod tests {
             )
             .unwrap();
 
-        let test_validator = LeafNodeValidator::new(
-            TEST_CIPHER_SUITE,
-            None,
-            PassthroughCredentialValidator::new(),
-        );
+        let test_validator =
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicCredentialValidator::new());
 
         assert_matches!(
             test_validator.check_if_valid(&leaf_node, ValidationContext::Commit(group_id)),
@@ -315,11 +306,8 @@ mod tests {
 
     #[test]
     fn test_incorrect_context() {
-        let test_validator = LeafNodeValidator::new(
-            TEST_CIPHER_SUITE,
-            None,
-            PassthroughCredentialValidator::new(),
-        );
+        let test_validator =
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicCredentialValidator::new());
         let (mut leaf_node, secret) = get_test_add_node();
 
         assert_matches!(
@@ -384,7 +372,7 @@ mod tests {
             leaf_node.signature = SecureRng::gen(leaf_node.signature.len()).unwrap();
 
             let test_validator =
-                LeafNodeValidator::new(cipher_suite, None, PassthroughCredentialValidator::new());
+                LeafNodeValidator::new(cipher_suite, None, BasicCredentialValidator::new());
 
             assert_matches!(
                 test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
@@ -408,7 +396,10 @@ mod tests {
             })
             .unwrap();
 
-        let capabilities = Capabilities::default();
+        let capabilities = Capabilities {
+            credentials: vec![CREDENTIAL_TYPE_BASIC],
+            ..Default::default()
+        };
 
         let (leaf_node, _) = get_test_node(
             TEST_CIPHER_SUITE,
@@ -418,11 +409,8 @@ mod tests {
             Some(extensions),
         );
 
-        let test_validator = LeafNodeValidator::new(
-            TEST_CIPHER_SUITE,
-            None,
-            PassthroughCredentialValidator::new(),
-        );
+        let test_validator =
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicCredentialValidator::new());
 
         assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
             Err(LeafNodeValidationError::ExtensionNotInCapabilities(ext)) if ext == ApplicationIdExt::IDENTIFIER);
@@ -435,7 +423,7 @@ mod tests {
         let test_validator = LeafNodeValidator::new(
             CipherSuite::P256Aes128,
             None,
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
         );
 
         assert_matches!(
@@ -456,7 +444,7 @@ mod tests {
         let test_validator = LeafNodeValidator::new(
             TEST_CIPHER_SUITE,
             Some(&required_capabilities),
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
         );
 
         assert_matches!(
@@ -477,7 +465,7 @@ mod tests {
         let test_validator = LeafNodeValidator::new(
             TEST_CIPHER_SUITE,
             Some(&required_capabilities),
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
         );
 
         assert_matches!(
@@ -500,7 +488,7 @@ mod tests {
         let test_validator = LeafNodeValidator::new(
             TEST_CIPHER_SUITE,
             Some(&required_capabilities),
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
         );
 
         assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
@@ -511,11 +499,8 @@ mod tests {
     #[test]
     fn test_add_lifetime() {
         let (leaf_node, _) = get_test_add_node();
-        let test_validator = LeafNodeValidator::new(
-            TEST_CIPHER_SUITE,
-            None,
-            PassthroughCredentialValidator::new(),
-        );
+        let test_validator =
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicCredentialValidator::new());
 
         let good_lifetime = MlsTime::now();
 
@@ -542,7 +527,9 @@ pub mod test_utils {
 
     use crate::{
         cipher_suite::CipherSuite,
-        credential::{CredentialError, CredentialValidator, CREDENTIAL_TYPE_BASIC},
+        credential::{
+            CredentialError, CredentialValidator, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509,
+        },
         signing_identity::SigningIdentity,
     };
 
@@ -570,6 +557,21 @@ pub mod test_utils {
 
         fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
             Ok(signing_id.credential.tls_serialize_detached()?)
+        }
+
+        fn valid_successor(
+            &self,
+            _predecessor: &SigningIdentity,
+            _successor: &SigningIdentity,
+        ) -> Result<bool, Self::Error> {
+            Err(CredentialError::UnexpectedCredentialType(
+                CREDENTIAL_TYPE_BASIC,
+                CREDENTIAL_TYPE_BASIC,
+            ))
+        }
+
+        fn supported_types(&self) -> Vec<crate::credential::CredentialType> {
+            vec![CREDENTIAL_TYPE_X509]
         }
     }
 }

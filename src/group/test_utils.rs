@@ -2,19 +2,19 @@ use ferriscrypt::asym::ec_key::{self, SecretKey};
 
 use super::*;
 use crate::{
-    client_config::{test_utils::test_config, InMemoryClientConfig, Preferences},
-    credential::{CredentialType, PassthroughCredentialValidator},
+    client_config::{test_utils::*, InMemoryClientConfig, Preferences},
+    credential::BasicCredentialValidator,
     extension::RequiredCapabilitiesExt,
     key_package::{KeyPackageGeneration, KeyPackageGenerator},
     signing_identity::test_utils::get_test_signing_identity,
-    tree_kem::Lifetime,
+    tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
 };
 
 pub const TEST_GROUP: &[u8] = b"group";
 
 #[derive(Debug)]
 pub(crate) struct TestGroup {
-    pub group: Group<InMemoryClientConfig>,
+    pub group: Group<TestClientConfig>,
 }
 
 impl TestGroup {
@@ -37,7 +37,7 @@ impl TestGroup {
         config: F,
     ) -> Result<(TestGroup, MLSMessage), GroupError>
     where
-        F: FnOnce(InMemoryClientConfig) -> InMemoryClientConfig,
+        F: FnOnce(TestClientConfig) -> TestClientConfig,
     {
         let (new_key_package, secret_key) = test_member(
             self.group.state.protocol_version(),
@@ -156,13 +156,13 @@ pub(crate) fn test_member(
         cipher_suite,
         signing_identity: &signing_identity,
         signing_key: &signing_key,
-        credential_validator: &PassthroughCredentialValidator::new(),
+        credential_validator: &BasicCredentialValidator::new(),
     };
 
     let key_package = key_package_generator
         .generate(
             lifetime(),
-            Capabilities::default(),
+            get_test_capabilities(),
             ExtensionList::default(),
             ExtensionList::default(),
         )
@@ -188,7 +188,6 @@ pub(crate) fn test_group_custom(
     let mut config = InMemoryClientConfig::default()
         .with_signing_identity(signing_identity, secret_key)
         .with_leaf_node_extensions(leaf_extensions)
-        .with_credential_types(capabilities.credentials)
         .with_preferences(preferences);
 
     config.cipher_suites = capabilities
@@ -236,7 +235,7 @@ pub(crate) fn test_group_custom_config<F>(
     custom: F,
 ) -> TestGroup
 where
-    F: FnOnce(InMemoryClientConfig) -> InMemoryClientConfig,
+    F: FnOnce(TestClientConfig) -> TestClientConfig,
 {
     let (signing_identity, secret_key) =
         get_test_signing_identity(cipher_suite, b"member".to_vec());
@@ -297,8 +296,7 @@ pub(crate) fn get_test_groups_with_features(
     n: usize,
     extensions: ExtensionList<GroupContextExtension>,
     leaf_extensions: ExtensionList<LeafNodeExtension>,
-    credentials: Option<Vec<CredentialType>>,
-) -> Vec<Group<InMemoryClientConfig>> {
+) -> Vec<Group<TestClientConfig>> {
     let clients = (0..n)
         .map(|i| {
             let (identity, secret_key) = get_test_signing_identity(
@@ -309,7 +307,6 @@ pub(crate) fn get_test_groups_with_features(
             InMemoryClientConfig::default()
                 .with_supported_extension(999)
                 .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
-                .with_credential_types(credentials.clone().unwrap_or_else(|| vec![1, 2]))
                 .with_signing_identity(identity, secret_key)
                 .with_leaf_node_extensions(leaf_extensions.clone())
                 .build_client()

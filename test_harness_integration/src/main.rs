@@ -6,7 +6,7 @@
 use aws_mls::cipher_suite::{CipherSuite, MaybeCipherSuite, SignaturePublicKey};
 use aws_mls::client::Client;
 use aws_mls::client_config::{ClientConfig, InMemoryClientConfig, Preferences};
-use aws_mls::credential::{BasicCredential, MlsCredential};
+use aws_mls::credential::{BasicCredential, BasicCredentialValidator, MlsCredential};
 use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, StateUpdate};
@@ -100,11 +100,13 @@ impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
     }
 }
 
+type TestClientConfig = InMemoryClientConfig<BasicCredentialValidator>;
+
 #[derive(Default)]
 pub struct MlsClientImpl {
-    clients: Mutex<Vec<Client<InMemoryClientConfig>>>,
-    groups: Mutex<Vec<Group<InMemoryClientConfig>>>,
-    configs: Mutex<Vec<InMemoryClientConfig>>,
+    clients: Mutex<Vec<Client<TestClientConfig>>>,
+    groups: Mutex<Vec<Group<TestClientConfig>>>,
+    configs: Mutex<Vec<TestClientConfig>>,
 }
 
 #[tonic::async_trait]

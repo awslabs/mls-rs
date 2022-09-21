@@ -151,11 +151,11 @@ impl<'a, C: CredentialValidator> KeyPackageValidator<'a, C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::credential::PassthroughCredentialValidator;
+    use crate::credential::BasicCredentialValidator;
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
     use crate::signing_identity::test_utils::get_test_signing_identity;
-    use crate::tree_kem::Capabilities;
+    use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use assert_matches::assert_matches;
     use ferriscrypt::rand::SecureRng;
 
@@ -179,7 +179,7 @@ mod tests {
                 protocol_version,
                 cipher_suite,
                 None,
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
             );
 
             assert_matches!(
@@ -208,7 +208,7 @@ mod tests {
                 protocol_version,
                 cipher_suite,
                 None,
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
             );
 
             assert_matches!(
@@ -228,7 +228,7 @@ mod tests {
             version,
             CipherSuite::Curve25519ChaCha20,
             None,
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
         );
 
         assert_matches!(
@@ -256,13 +256,13 @@ mod tests {
                     cipher_suite,
                     signing_identity: &alternate_sining_id,
                     signing_key: &secret,
-                    credential_validator: &PassthroughCredentialValidator::new(),
+                    credential_validator: &BasicCredentialValidator::new(),
                 };
 
                 new_generator
                     .generate(
                         Lifetime::years(1).unwrap(),
-                        Capabilities::default(),
+                        get_test_capabilities(),
                         ExtensionList::default(),
                         ExtensionList::default(),
                     )
@@ -288,7 +288,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             None,
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
         );
 
         assert_matches!(
@@ -311,7 +311,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             None,
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
         );
 
         assert_matches!(
@@ -331,7 +331,7 @@ mod tests {
                         not_before: 0,
                         not_after: 0,
                     },
-                    Capabilities::default(),
+                    get_test_capabilities(),
                     ExtensionList::default(),
                     ExtensionList::default(),
                 )
@@ -349,7 +349,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             None,
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
         );
 
         assert_matches!(
@@ -370,7 +370,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             None,
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
         );
 
         assert_matches!(
@@ -389,7 +389,7 @@ mod tests {
 
         let key_package =
             test_key_package_custom(protocol_version, cipher_suite, "test", |generator| {
-                let mut capabilities = Capabilities::default();
+                let mut capabilities = get_test_capabilities();
                 capabilities.extensions.push(42);
 
                 generator
@@ -412,7 +412,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             Some(&required_capabilities),
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
         );
 
         assert_matches!(
@@ -437,7 +437,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             Some(&required_capabilities),
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
         );
 
         assert_matches!(
@@ -456,7 +456,7 @@ mod tests {
                 let mut package_gen = generator
                     .generate(
                         Lifetime::years(1).unwrap(),
-                        Capabilities::default(),
+                        get_test_capabilities(),
                         ExtensionList::default(),
                         ExtensionList::default(),
                     )
@@ -471,7 +471,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             None,
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
         );
 
         assert_matches!(

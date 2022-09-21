@@ -149,9 +149,9 @@ pub(crate) mod test_utils {
 
     use super::*;
     use crate::{
-        credential::PassthroughCredentialValidator,
+        credential::BasicCredentialValidator,
         signing_identity::test_utils::get_test_signing_identity,
-        tree_kem::{Capabilities, Lifetime},
+        tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
     };
 
     pub(crate) fn test_key_package_custom<F>(
@@ -162,7 +162,7 @@ pub(crate) mod test_utils {
     ) -> KeyPackage
     where
         F: FnOnce(
-            &mut KeyPackageGenerator<SecretKey, PassthroughCredentialValidator>,
+            &mut KeyPackageGenerator<SecretKey, BasicCredentialValidator>,
         ) -> KeyPackageGeneration,
     {
         let (signing_identity, secret_key) =
@@ -173,7 +173,7 @@ pub(crate) mod test_utils {
             cipher_suite,
             signing_identity: &signing_identity,
             signing_key: &secret_key,
-            credential_validator: &PassthroughCredentialValidator::new(),
+            credential_validator: &BasicCredentialValidator::new(),
         };
 
         custom(&mut generator).key_package
@@ -188,7 +188,7 @@ pub(crate) mod test_utils {
             generator
                 .generate(
                     Lifetime::years(1).unwrap(),
-                    Capabilities::default(),
+                    get_test_capabilities(),
                     ExtensionList::default(),
                     ExtensionList::default(),
                 )

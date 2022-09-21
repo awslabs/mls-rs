@@ -323,11 +323,14 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
-        credential::PassthroughCredentialValidator,
+        credential::BasicCredentialValidator,
         extension::{test_utils::TestExtension, ExtensionList, LeafNodeExtension},
         group::test_utils::get_test_group_context,
         tree_kem::{
-            leaf_node::{test_utils::get_basic_test_node_sig_key, ConfigProperties},
+            leaf_node::{
+                test_utils::{get_basic_test_node_sig_key, get_test_capabilities},
+                ConfigProperties,
+            },
             node::LeafIndex,
             Capabilities, TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
         },
@@ -444,20 +447,20 @@ mod tests {
             cipher_suite,
             encap_node,
             encap_hpke_secret,
-            PassthroughCredentialValidator,
+            BasicCredentialValidator,
         )
         .unwrap();
 
         test_tree
-            .add_leaves(leaf_nodes, PassthroughCredentialValidator)
+            .add_leaves(leaf_nodes, BasicCredentialValidator)
             .unwrap();
 
         // Clone the tree for the first leaf, generate a new key package for that leaf
         let mut encap_tree = test_tree.clone();
 
         let update_leaf_properties = ConfigProperties {
-            capabilities,
-            extensions,
+            capabilities: capabilities.clone().unwrap_or_else(get_test_capabilities),
+            extensions: extensions.clone().unwrap_or_default(),
             signing_identity,
         };
 
@@ -468,8 +471,8 @@ mod tests {
                 &mut get_test_group_context(42, cipher_suite),
                 &[],
                 &encap_signer,
-                update_leaf_properties.clone(),
-                PassthroughCredentialValidator,
+                update_leaf_properties,
+                BasicCredentialValidator,
                 #[cfg(test)]
                 &Default::default(),
             )
@@ -480,8 +483,8 @@ mod tests {
             &encap_tree,
             &encap_gen.update_path,
             LeafIndex(0),
-            update_leaf_properties.capabilities,
-            update_leaf_properties.extensions,
+            capabilities,
+            extensions,
         );
 
         // Verify that the private key matches the data in the public key
@@ -507,7 +510,7 @@ mod tests {
                     &validated_update_path,
                     &[],
                     &mut get_test_group_context(42, cipher_suite),
-                    PassthroughCredentialValidator,
+                    BasicCredentialValidator,
                 )
                 .unwrap();
 
@@ -528,7 +531,7 @@ mod tests {
     #[test]
     fn test_encap_capabilities() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
-        let mut capabilities = Capabilities::default();
+        let mut capabilities = get_test_capabilities();
         capabilities.extensions.push(42);
 
         encap_decap(cipher_suite, 10, Some(capabilities.clone()), None);
@@ -546,7 +549,7 @@ mod tests {
     #[test]
     fn test_encap_capabilities_extensions() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
-        let mut capabilities = Capabilities::default();
+        let mut capabilities = get_test_capabilities();
         capabilities.extensions.push(42);
 
         let mut extensions = ExtensionList::default();

@@ -1011,15 +1011,9 @@ where
 {
     let existing_signing_id = &tree.get_leaf_node(removal.to_remove)?.signing_identity;
 
-    let existing_identity = credential_validator
-        .identity(existing_signing_id)
-        .map_err(|e| RatchetTreeError::CredentialValidationError(e.into()))?;
-
-    let external_identity = credential_validator
-        .identity(&external_leaf.signing_identity)
-        .map_err(|e| RatchetTreeError::CredentialValidationError(e.into()))?;
-
-    (existing_identity == external_identity)
+    credential_validator
+        .valid_successor(existing_signing_id, &external_leaf.signing_identity)
+        .map_err(|e| RatchetTreeError::CredentialValidationError(e.into()))?
         .then_some(())
         .ok_or(ProposalFilterError::ExternalCommitRemovesOtherIdentity)
 }

@@ -1,5 +1,5 @@
 use crate::cipher_suite::CipherSuite;
-use crate::credential::PassthroughCredentialValidator;
+use crate::credential::BasicCredentialValidator;
 use crate::extension::ExtensionList;
 use crate::ferriscrypt::asym::ec_key::SecretKey;
 use crate::group::{ConfirmedTranscriptHash, GroupContext};
@@ -60,12 +60,12 @@ pub fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
         cipher_suite,
         encap_node,
         encap_hpke_secret,
-        PassthroughCredentialValidator,
+        BasicCredentialValidator,
     )
     .unwrap();
 
     test_tree
-        .add_leaves(leaf_nodes, PassthroughCredentialValidator)
+        .add_leaves(leaf_nodes, BasicCredentialValidator)
         .unwrap();
 
     // Clone the tree for the first leaf, generate a new key package for that leaf

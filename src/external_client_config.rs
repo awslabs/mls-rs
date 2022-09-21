@@ -1,10 +1,7 @@
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     client_config::{MakeProposalFilter, ProposalFilterInit, SimpleError},
-    credential::{
-        CredentialType, CredentialValidator, PassthroughCredentialValidator, CREDENTIAL_TYPE_BASIC,
-        CREDENTIAL_TYPE_X509,
-    },
+    credential::{CredentialType, CredentialValidator},
     extension::ExtensionType,
     external_client::ExternalClient,
     group::proposal::{BoxedProposalFilter, ProposalFilter},
@@ -24,7 +21,6 @@ pub trait ExternalClientConfig {
     fn keychain(&self) -> Self::Keychain;
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
-    fn supported_credentials(&self) -> Vec<CredentialType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
     fn credential_validator(&self) -> Self::CredentialValidator;
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
@@ -59,31 +55,35 @@ pub trait ExternalClientConfig {
     fn cipher_suite_supported(&self, cipher_suite: CipherSuite) -> bool {
         self.supported_cipher_suites().contains(&cipher_suite)
     }
+
+    fn supported_credentials(&self) -> Vec<CredentialType> {
+        self.credential_validator().supported_types()
+    }
 }
 
 #[derive(Clone, Debug)]
-pub struct InMemoryExternalClientConfig {
+pub struct InMemoryExternalClientConfig<C: CredentialValidator> {
     supported_extensions: Vec<ExtensionType>,
     keychain: InMemoryKeychain,
     protocol_versions: Vec<ProtocolVersion>,
     cipher_suites: Vec<CipherSuite>,
     external_signing_keys: HashMap<Vec<u8>, PublicKey>,
-    credential_types: Vec<CredentialType>,
     make_proposal_filter: MakeProposalFilter,
     max_epoch_jitter: Option<u64>,
+    credential_validator: C,
 }
 
-impl InMemoryExternalClientConfig {
-    pub fn new() -> Self {
+impl<C: CredentialValidator + Clone> InMemoryExternalClientConfig<C> {
+    pub fn new(credential_validator: C) -> Self {
         Self {
             supported_extensions: Default::default(),
             keychain: Default::default(),
             protocol_versions: ProtocolVersion::all().collect(),
             cipher_suites: CipherSuite::all().collect(),
             external_signing_keys: Default::default(),
-            credential_types: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
             make_proposal_filter: Default::default(),
             max_epoch_jitter: Default::default(),
+            credential_validator,
         }
     }
 
@@ -134,12 +134,6 @@ impl InMemoryExternalClientConfig {
     }
 
     #[must_use]
-    pub fn with_credential_types(mut self, credential_types: Vec<CredentialType>) -> Self {
-        self.credential_types = credential_types;
-        self
-    }
-
-    #[must_use]
     pub fn with_max_epoch_jitter(self, max_jitter: u64) -> Self {
         Self {
             max_epoch_jitter: Some(max_jitter),
@@ -152,15 +146,9 @@ impl InMemoryExternalClientConfig {
     }
 }
 
-impl Default for InMemoryExternalClientConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ExternalClientConfig for InMemoryExternalClientConfig {
+impl<C: CredentialValidator + Clone> ExternalClientConfig for InMemoryExternalClientConfig<C> {
     type Keychain = InMemoryKeychain;
-    type CredentialValidator = PassthroughCredentialValidator;
+    type CredentialValidator = C;
     type ProposalFilter = BoxedProposalFilter<SimpleError>;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
@@ -180,15 +168,11 @@ impl ExternalClientConfig for InMemoryExternalClientConfig {
     }
 
     fn credential_validator(&self) -> Self::CredentialValidator {
-        Default::default()
+        self.credential_validator.clone()
     }
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
         self.external_signing_keys.get(external_key_id).cloned()
-    }
-
-    fn supported_credentials(&self) -> Vec<CredentialType> {
-        self.credential_types.clone()
     }
 
     fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter {
@@ -197,5 +181,19 @@ impl ExternalClientConfig for InMemoryExternalClientConfig {
 
     fn max_epoch_jitter(&self) -> Option<u64> {
         self.max_epoch_jitter
+    }
+}
+
+#[cfg(test)]
+pub mod test_utils {
+    use super::InMemoryExternalClientConfig;
+    use crate::credential::BasicCredentialValidator;
+
+    pub type TestExternalClientConfig = InMemoryExternalClientConfig<BasicCredentialValidator>;
+
+    impl Default for InMemoryExternalClientConfig<BasicCredentialValidator> {
+        fn default() -> Self {
+            InMemoryExternalClientConfig::new(BasicCredentialValidator::new())
+        }
     }
 }

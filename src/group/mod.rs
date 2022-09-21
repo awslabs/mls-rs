@@ -604,8 +604,8 @@ where
         Ok((
             ConfigProperties {
                 signing_identity,
-                capabilities: Some(config.capabilities()),
-                extensions: Some(config.leaf_node_extensions()),
+                capabilities: config.capabilities(),
+                extensions: config.leaf_node_extensions(),
             },
             signer,
         ))
@@ -846,8 +846,8 @@ where
 
         let leaf_properties = ConfigProperties {
             signing_identity: current_leaf_node.signing_identity.clone(),
-            capabilities: Some(current_leaf_node.capabilities.clone()),
-            extensions: Some(current_leaf_node.extensions.clone()),
+            capabilities: current_leaf_node.capabilities.clone(),
+            extensions: current_leaf_node.extensions.clone(),
         };
 
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
@@ -1645,13 +1645,15 @@ pub(crate) mod test_utils;
 
 #[cfg(test)]
 mod tests {
+    use crate::client_config::test_utils::TestClientConfig;
     use crate::credential::test_utils::{get_test_basic_credential, get_test_x509_credential};
     use crate::extension::MlsExtension;
+    use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use crate::{
         cipher_suite::MaybeCipherSuite,
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        client_config::{test_utils::test_config, InMemoryClientConfig, Preferences},
-        credential::{CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
+        client_config::{test_utils::test_config, Preferences},
+        credential::CREDENTIAL_TYPE_X509,
         extension::{
             test_utils::TestExtension, Extension, ExternalSendersExt, RequiredCapabilitiesExt,
         },
@@ -1760,7 +1762,7 @@ mod tests {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::Curve25519Aes128;
 
-        let mut new_capabilities = Capabilities::default();
+        let mut new_capabilities = get_test_capabilities();
         new_capabilities.extensions.push(42);
 
         let new_extension = TestExtension { foo: 10 };
@@ -2002,7 +2004,7 @@ mod tests {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128;
 
-        let mut capabilities = Capabilities::default();
+        let mut capabilities = get_test_capabilities();
         capabilities.extensions.push(42);
 
         let mut test_group = test_group_custom(
@@ -2431,7 +2433,7 @@ mod tests {
 
     fn joining_group_fails_if_unsupported<F>(f: F) -> Result<(TestGroup, MLSMessage), GroupError>
     where
-        F: FnOnce(InMemoryClientConfig) -> InMemoryClientConfig,
+        F: FnOnce(TestClientConfig) -> TestClientConfig,
     {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         alice_group.join_with_custom_config("alice", f)
@@ -2523,14 +2525,23 @@ mod tests {
 
     #[test]
     fn removing_requirements_allows_to_add() {
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let mut capabilities = get_test_capabilities();
+        capabilities.extensions = vec![17];
+
+        let mut alice_group = test_group_custom(
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
+            Some(capabilities),
+            None,
+            None,
+        );
 
         alice_group
             .group
             .commit_builder()
             .set_group_context_ext(
                 [RequiredCapabilitiesExt {
-                    credentials: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
+                    extensions: vec![17],
                     ..Default::default()
                 }]
                 .try_into()
@@ -2546,10 +2557,7 @@ mod tests {
             test_key_package_custom(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob", |gen| {
                 gen.generate(
                     Lifetime::years(1).unwrap(),
-                    Capabilities {
-                        credentials: vec![CREDENTIAL_TYPE_BASIC],
-                        ..Default::default()
-                    },
+                    get_test_capabilities(),
                     Default::default(),
                     Default::default(),
                 )
@@ -2725,10 +2733,10 @@ mod tests {
         };
 
         let mut groups =
-            get_test_groups_with_features(3, vec![extension].into(), Default::default(), None);
+            get_test_groups_with_features(3, vec![extension].into(), Default::default());
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
-            leaf.capabilities = Capabilities::default();
+            leaf.capabilities = get_test_capabilities();
             leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
         };
 
@@ -2745,10 +2753,10 @@ mod tests {
         };
 
         let mut groups =
-            get_test_groups_with_features(3, Default::default(), vec![extension].into(), None);
+            get_test_groups_with_features(3, Default::default(), vec![extension].into());
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
-            leaf.capabilities = Capabilities::default();
+            leaf.capabilities = get_test_capabilities();
             leaf.extensions = ExtensionList::new();
             leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
         };
@@ -2761,8 +2769,7 @@ mod tests {
     #[test]
     fn commit_leaf_uses_extension_unsupported_by_another_leaf() {
         // The new leaf of the committer uses an extension unsupported by another leaf
-        let mut groups =
-            get_test_groups_with_features(3, Default::default(), Default::default(), None);
+        let mut groups = get_test_groups_with_features(3, Default::default(), Default::default());
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
             let extensions = [666, 999]
@@ -2795,8 +2802,7 @@ mod tests {
         };
 
         let extensions = vec![extension.to_extension().unwrap()];
-        let mut groups =
-            get_test_groups_with_features(3, extensions.into(), Default::default(), None);
+        let mut groups = get_test_groups_with_features(3, extensions.into(), Default::default());
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
             leaf.capabilities = Capabilities::default();
@@ -2810,8 +2816,7 @@ mod tests {
     #[test]
     fn commit_leaf_has_unsupported_credential() {
         // The new leaf of the committer has a credential unsupported by another leaf
-        let mut groups =
-            get_test_groups_with_features(3, Default::default(), Default::default(), Some(vec![1]));
+        let mut groups = get_test_groups_with_features(3, Default::default(), Default::default());
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
             leaf.signing_identity.credential.credential_type = CREDENTIAL_TYPE_X509;
@@ -2834,8 +2839,7 @@ mod tests {
     fn commit_leaf_not_supporting_credential_used_in_another_leaf() {
         // The new leaf of the committer doesn't support another leaf's credential
 
-        let mut groups =
-            get_test_groups_with_features(3, Default::default(), Default::default(), Some(vec![1]));
+        let mut groups = get_test_groups_with_features(3, Default::default(), Default::default());
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
             leaf.capabilities.credentials = vec![2];
@@ -2862,15 +2866,14 @@ mod tests {
         let extension = RequiredCapabilitiesExt {
             extensions: vec![],
             proposals: vec![],
-            credentials: vec![2],
+            credentials: vec![1],
         };
 
         let extensions = vec![extension.to_extension().unwrap()];
-        let mut groups =
-            get_test_groups_with_features(3, extensions.into(), Default::default(), None);
+        let mut groups = get_test_groups_with_features(3, extensions.into(), Default::default());
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
-            leaf.capabilities.credentials = vec![1];
+            leaf.capabilities.credentials = vec![2];
             leaf.sign(sk, &Some(b"TEST GROUP")).unwrap();
         };
 
@@ -2904,7 +2907,7 @@ mod tests {
             .unwrap();
 
         let mut groups =
-            get_test_groups_with_features(3, vec![ext_senders].into(), Default::default(), None);
+            get_test_groups_with_features(3, vec![ext_senders].into(), Default::default());
 
         // New leaf for group 0 supports only basic credentials (used by the group) but not X509 used by external sender
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {

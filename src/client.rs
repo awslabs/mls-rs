@@ -244,7 +244,7 @@ pub mod test_utils {
 
     use super::*;
     use crate::{
-        client_config::InMemoryClientConfig,
+        client_config::test_utils::TestClientConfig, client_config::InMemoryClientConfig,
         signing_identity::test_utils::get_test_signing_identity,
     };
 
@@ -252,7 +252,7 @@ pub mod test_utils {
     pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
     pub const TEST_GROUP: &[u8] = b"group";
 
-    pub fn get_basic_config(cipher_suite: CipherSuite, identity: &str) -> InMemoryClientConfig {
+    pub fn get_basic_config(cipher_suite: CipherSuite, identity: &str) -> TestClientConfig {
         let (signing_identity, secret_key) =
             get_test_signing_identity(cipher_suite, identity.as_bytes().to_vec());
 
@@ -265,7 +265,7 @@ pub mod test_utils {
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         identity: &str,
-    ) -> (Client<InMemoryClientConfig>, KeyPackage) {
+    ) -> (Client<TestClientConfig>, KeyPackage) {
         let client = get_basic_config(cipher_suite, identity).build_client();
 
         let key_package = client
@@ -275,7 +275,7 @@ pub mod test_utils {
         (client, key_package)
     }
 
-    pub fn create_group(client: &Client<InMemoryClientConfig>) -> Group<InMemoryClientConfig> {
+    pub fn create_group(client: &Client<TestClientConfig>) -> Group<TestClientConfig> {
         client
             .create_group_with_id(
                 TEST_PROTOCOL_VERSION,
@@ -287,13 +287,13 @@ pub mod test_utils {
     }
 
     pub fn join_group<'a, S>(
-        committer: &mut Group<InMemoryClientConfig>,
+        committer: &mut Group<TestClientConfig>,
         other_groups: S,
         key_package: KeyPackage,
-        client: &Client<InMemoryClientConfig>,
-    ) -> Result<Group<InMemoryClientConfig>, ClientError>
+        client: &Client<TestClientConfig>,
+    ) -> Result<Group<TestClientConfig>, ClientError>
     where
-        S: IntoIterator<Item = &'a mut Group<InMemoryClientConfig>>,
+        S: IntoIterator<Item = &'a mut Group<TestClientConfig>>,
     {
         let (commit_msg, welcome_msg) = committer
             .commit_builder()

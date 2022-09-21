@@ -2,7 +2,7 @@
 
 use aws_mls::bench_utils::group_functions::{create_fuzz_commit_message, create_group};
 use aws_mls::cipher_suite::CipherSuite;
-use aws_mls::client_config::InMemoryClientConfig;
+use aws_mls::client_config::test_utils::TestClientConfig;
 use aws_mls::group::Group;
 use aws_mls::protocol_version::ProtocolVersion;
 use libfuzzer_sys::fuzz_target;
@@ -12,7 +12,7 @@ use std::sync::Mutex;
 pub const CIPHER_SUITE: aws_mls::cipher_suite::CipherSuite = CipherSuite::Curve25519Aes128;
 pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
 
-static GROUP_DATA: Lazy<Mutex<Vec<Group<InMemoryClientConfig>>>> = Lazy::new(|| {
+static GROUP_DATA: Lazy<Mutex<Vec<Group<TestClientConfig>>>> = Lazy::new(|| {
     let container = create_group(CIPHER_SUITE, 2);
 
     Mutex::new(container)

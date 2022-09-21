@@ -88,7 +88,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        credential::PassthroughCredentialValidator,
+        credential::BasicCredentialValidator,
         group::test_utils::get_test_group_context,
         tree_kem::{
             kem::TreeKem,
@@ -122,7 +122,7 @@ mod tests {
 
         test_tree
             .public
-            .add_leaves(vec![leaf1], PassthroughCredentialValidator)
+            .add_leaves(vec![leaf1], BasicCredentialValidator)
             .unwrap();
 
         test_tree.public.nodes[1] = Some(Node::Parent(test_parent_node(cipher_suite)));
@@ -136,7 +136,7 @@ mod tests {
                 &[LeafIndex(1)],
                 signers[0],
                 default_properties(test_tree.creator_leaf.signing_identity),
-                PassthroughCredentialValidator,
+                BasicCredentialValidator,
                 #[cfg(test)]
                 &Default::default(),
             )
@@ -157,7 +157,7 @@ mod tests {
                 b"test_group",
                 &expected_tree_hash,
                 None,
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
             );
 
             validator.validate(&mut test_tree).unwrap();
@@ -175,7 +175,7 @@ mod tests {
                 b"test_group",
                 &expected_tree_hash,
                 None,
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
             );
 
             assert_matches!(
@@ -200,7 +200,7 @@ mod tests {
                 b"test_troup",
                 &expected_tree_hash,
                 None,
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
             );
 
             assert_matches!(
@@ -228,7 +228,7 @@ mod tests {
                 b"test_group",
                 &expected_tree_hash,
                 None,
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
             );
 
             assert_matches!(

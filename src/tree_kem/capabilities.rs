@@ -2,7 +2,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
-    credential::{CredentialType, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
+    credential::{CredentialType, CREDENTIAL_TYPE_X509},
     extension::ExtensionType,
     group::proposal::ProposalType,
     protocol_version::MaybeProtocolVersion,
@@ -41,7 +41,7 @@ impl Default for Capabilities {
             cipher_suites: CipherSuite::all().map(MaybeCipherSuite::from).collect(),
             extensions: Default::default(),
             proposals: Default::default(),
-            credentials: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
+            credentials: vec![CREDENTIAL_TYPE_X509],
         }
     }
 }

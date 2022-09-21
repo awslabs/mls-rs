@@ -246,7 +246,9 @@ mod tests {
     use crate::{
         cipher_suite::{CipherSuite, MaybeCipherSuite},
         extension::{ExtensionList, ExternalSendersExt},
-        external_client_config::InMemoryExternalClientConfig,
+        external_client_config::{
+            test_utils::TestExternalClientConfig, InMemoryExternalClientConfig,
+        },
         group::{
             proposal::{AddProposal, Proposal, ProposalOrRef, RemoveProposal},
             proposal_ref::ProposalRef,
@@ -304,14 +306,14 @@ mod tests {
         group
     }
 
-    fn make_external_group(group: &TestGroup) -> ExternalGroup<InMemoryExternalClientConfig> {
+    fn make_external_group(group: &TestGroup) -> ExternalGroup<TestExternalClientConfig> {
         make_external_group_with_config(group, Default::default())
     }
 
     fn make_external_group_with_config(
         group: &TestGroup,
-        config: InMemoryExternalClientConfig,
-    ) -> ExternalGroup<InMemoryExternalClientConfig> {
+        config: TestExternalClientConfig,
+    ) -> ExternalGroup<TestExternalClientConfig> {
         let public_tree = group.group.export_tree().unwrap();
 
         ExternalGroup::join(
@@ -493,7 +495,7 @@ mod tests {
     fn test_external_proposal<F>(proposal_creation: F)
     where
         F: Fn(
-            &mut ExternalGroup<InMemoryExternalClientConfig>,
+            &mut ExternalGroup<TestExternalClientConfig>,
             &SigningIdentity,
             &SecretKey,
         ) -> MLSMessage,

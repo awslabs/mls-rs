@@ -201,7 +201,10 @@ fn signing_identity_for_new_member_proposal(
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
-        client_config::{test_utils::test_config, ClientConfig, InMemoryClientConfig, Preferences},
+        client_config::{
+            test_utils::{test_config, TestClientConfig},
+            ClientConfig, Preferences,
+        },
         extension::{ExtensionList, ExternalSendersExt},
         group::{
             framing::WireFormat,
@@ -227,7 +230,7 @@ mod tests {
     const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
-    fn make_signed_plaintext(group: &mut Group<InMemoryClientConfig>) -> MLSPlaintext {
+    fn make_signed_plaintext(group: &mut Group<TestClientConfig>) -> MLSPlaintext {
         group.commit(vec![]).unwrap().0.into_plaintext().unwrap()
     }
 

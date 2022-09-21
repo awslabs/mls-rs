@@ -811,7 +811,7 @@ pub(crate) mod test_utils {
     use ferriscrypt::{asym::ec_key::SecretKey, hpke::kem::HpkeSecretKey};
 
     use crate::{
-        cipher_suite::CipherSuite, credential::PassthroughCredentialValidator,
+        cipher_suite::CipherSuite, credential::BasicCredentialValidator,
         tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key,
     };
 
@@ -837,7 +837,7 @@ pub(crate) mod test_utils {
             cipher_suite,
             creator_leaf.clone(),
             creator_hpke_secret.clone(),
-            PassthroughCredentialValidator,
+            BasicCredentialValidator,
         )
         .unwrap();
 
@@ -863,7 +863,7 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::cipher_suite::CipherSuite;
-    use crate::credential::PassthroughCredentialValidator;
+    use crate::credential::BasicCredentialValidator;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNode;
     use crate::tree_kem::node::{
@@ -906,12 +906,12 @@ mod tests {
 
         test_tree
             .public
-            .add_leaves(additional_key_packages, PassthroughCredentialValidator)
+            .add_leaves(additional_key_packages, BasicCredentialValidator)
             .unwrap();
 
         let exported = test_tree.public.export_node_data();
         let imported =
-            TreeKemPublic::import_node_data(cipher_suite, exported, PassthroughCredentialValidator)
+            TreeKemPublic::import_node_data(cipher_suite, exported, BasicCredentialValidator)
                 .unwrap();
 
         assert_eq!(test_tree.public.nodes, imported.nodes);
@@ -925,7 +925,7 @@ mod tests {
 
         let leaf_nodes = get_test_leaf_nodes(cipher_suite);
         let res = tree
-            .add_leaves(leaf_nodes.clone(), PassthroughCredentialValidator)
+            .add_leaves(leaf_nodes.clone(), BasicCredentialValidator)
             .unwrap();
 
         // The leaf count should be equal to the number of packages we added
@@ -953,7 +953,7 @@ mod tests {
         let mut tree = TreeKemPublic::new(cipher_suite);
 
         let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages, PassthroughCredentialValidator)
+        tree.add_leaves(key_packages, BasicCredentialValidator)
             .unwrap();
 
         let key_packages = tree.get_leaf_nodes();
@@ -966,10 +966,10 @@ mod tests {
         let mut tree = TreeKemPublic::new(cipher_suite);
 
         let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages.clone(), PassthroughCredentialValidator)
+        tree.add_leaves(key_packages.clone(), BasicCredentialValidator)
             .unwrap();
 
-        let add_res = tree.add_leaves(key_packages, PassthroughCredentialValidator);
+        let add_res = tree.add_leaves(key_packages, BasicCredentialValidator);
 
         assert_matches!(
             add_res,
@@ -985,17 +985,11 @@ mod tests {
         let mut tree = get_test_tree(cipher_suite).public;
         let key_packages = get_test_leaf_nodes(cipher_suite);
 
-        tree.add_leaves(
-            [key_packages[0].clone()].to_vec(),
-            PassthroughCredentialValidator,
-        )
-        .unwrap();
+        tree.add_leaves([key_packages[0].clone()].to_vec(), BasicCredentialValidator)
+            .unwrap();
         tree.nodes[0] = None; // Set the original first node to none
-        tree.add_leaves(
-            [key_packages[1].clone()].to_vec(),
-            PassthroughCredentialValidator,
-        )
-        .unwrap();
+        tree.add_leaves([key_packages[1].clone()].to_vec(), BasicCredentialValidator)
+            .unwrap();
 
         assert_eq!(tree.nodes[0], key_packages[1].clone().into());
         assert_eq!(tree.nodes[1], None);
@@ -1011,7 +1005,7 @@ mod tests {
 
         tree.add_leaves(
             [key_packages[0].clone(), key_packages[1].clone()].to_vec(),
-            PassthroughCredentialValidator,
+            BasicCredentialValidator,
         )
         .unwrap();
 
@@ -1022,11 +1016,8 @@ mod tests {
         }
         .into();
 
-        tree.add_leaves(
-            [key_packages[2].clone()].to_vec(),
-            PassthroughCredentialValidator,
-        )
-        .unwrap();
+        tree.add_leaves([key_packages[2].clone()].to_vec(), BasicCredentialValidator)
+            .unwrap();
 
         assert_eq!(
             tree.nodes[3].as_parent().unwrap().unmerged_leaves,
@@ -1042,7 +1033,7 @@ mod tests {
         let mut tree = get_test_tree(cipher_suite).public;
 
         let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages, PassthroughCredentialValidator)
+        tree.add_leaves(key_packages, BasicCredentialValidator)
             .unwrap();
 
         // Add in parent nodes so we can detect them clearing after update
@@ -1064,7 +1055,7 @@ mod tests {
         tree.update_leaf(
             original_leaf_index,
             updated_leaf.clone(),
-            PassthroughCredentialValidator,
+            BasicCredentialValidator,
         )
         .unwrap();
 
@@ -1097,17 +1088,13 @@ mod tests {
         // Create a tree
         let mut tree = get_test_tree(cipher_suite).public;
         let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages, PassthroughCredentialValidator)
+        tree.add_leaves(key_packages, BasicCredentialValidator)
             .unwrap();
 
         let new_key_package = get_basic_test_node(cipher_suite, "new");
 
         assert_matches!(
-            tree.update_leaf(
-                LeafIndex(128),
-                new_key_package,
-                PassthroughCredentialValidator
-            ),
+            tree.update_leaf(LeafIndex(128), new_key_package, BasicCredentialValidator),
             Err(RatchetTreeError::NodeVecError(
                 NodeVecError::InvalidNodeIndex(256)
             ))
@@ -1122,7 +1109,7 @@ mod tests {
         let mut tree = get_test_tree(cipher_suite).public;
         let key_packages = get_test_leaf_nodes(cipher_suite);
         let indexes = tree
-            .add_leaves(key_packages.clone(), PassthroughCredentialValidator)
+            .add_leaves(key_packages.clone(), BasicCredentialValidator)
             .unwrap();
 
         let original_leaf_count = tree.occupied_leaf_count();
@@ -1136,7 +1123,7 @@ mod tests {
             .collect();
 
         let res = tree
-            .remove_leaves(indexes.clone(), PassthroughCredentialValidator)
+            .remove_leaves(indexes.clone(), BasicCredentialValidator)
             .unwrap();
 
         assert_eq!(res, expected_result);
@@ -1156,12 +1143,12 @@ mod tests {
         let mut tree = get_test_tree(cipher_suite).public;
         let leaf_nodes = get_test_leaf_nodes(cipher_suite);
         let to_remove = tree
-            .add_leaves(leaf_nodes.clone(), PassthroughCredentialValidator)
+            .add_leaves(leaf_nodes.clone(), BasicCredentialValidator)
             .unwrap()[0];
         let original_leaf_count = tree.occupied_leaf_count();
 
         let res = tree
-            .remove_leaves(vec![to_remove], PassthroughCredentialValidator)
+            .remove_leaves(vec![to_remove], BasicCredentialValidator)
             .unwrap();
 
         assert_eq!(res, vec![(to_remove, leaf_nodes[0].clone())]);
@@ -1183,7 +1170,7 @@ mod tests {
         // Create a tree
         let mut tree = get_test_tree(cipher_suite).public;
         let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages, PassthroughCredentialValidator)
+        tree.add_leaves(key_packages, BasicCredentialValidator)
             .unwrap();
 
         let original_leaf_count = tree.occupied_leaf_count();
@@ -1191,7 +1178,7 @@ mod tests {
         let to_remove = vec![LeafIndex(2)];
 
         // Remove the leaf from the tree
-        tree.remove_leaves(to_remove, PassthroughCredentialValidator)
+        tree.remove_leaves(to_remove, BasicCredentialValidator)
             .unwrap();
 
         // The occupied leaf count should have been reduced by 1
@@ -1217,7 +1204,7 @@ mod tests {
         let mut tree = get_test_tree(cipher_suite).public;
 
         assert_matches!(
-            tree.remove_leaves(vec![LeafIndex(128)], PassthroughCredentialValidator),
+            tree.remove_leaves(vec![LeafIndex(128)], BasicCredentialValidator),
             Err(RatchetTreeError::NodeVecError(
                 NodeVecError::InvalidNodeIndex(256)
             ))
@@ -1231,7 +1218,7 @@ mod tests {
         // Create a tree
         let mut tree = get_test_tree(cipher_suite).public;
         let leaf_nodes = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(leaf_nodes.clone(), PassthroughCredentialValidator)
+        tree.add_leaves(leaf_nodes.clone(), BasicCredentialValidator)
             .unwrap();
 
         // Find each node
@@ -1288,7 +1275,7 @@ mod tests {
         let cipher_suite = CipherSuite::Curve25519Aes128;
         let mut tree = get_test_tree(cipher_suite).public;
         let leaf_nodes = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(leaf_nodes.clone(), PassthroughCredentialValidator)
+        tree.add_leaves(leaf_nodes.clone(), BasicCredentialValidator)
             .unwrap();
 
         let acc = tree
@@ -1297,7 +1284,7 @@ mod tests {
                 &[(LeafIndex(1), get_basic_test_node(cipher_suite, "A"))],
                 &[LeafIndex(2)],
                 &[get_basic_test_node(cipher_suite, "D")],
-                PassthroughCredentialValidator,
+                BasicCredentialValidator,
             )
             .unwrap();
 

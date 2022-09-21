@@ -130,7 +130,7 @@ mod tests {
     use super::{UpdatePath, UpdatePathNode};
     use crate::{cipher_suite::CipherSuite, tree_kem::UpdatePathValidationError};
 
-    use crate::credential::PassthroughCredentialValidator;
+    use crate::credential::BasicCredentialValidator;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -171,7 +171,7 @@ mod tests {
         let mut tree = get_test_tree(cipher_suite).public;
         let leaf_nodes = get_test_leaf_nodes(cipher_suite);
 
-        tree.add_leaves(leaf_nodes, PassthroughCredentialValidator::new())
+        tree.add_leaves(leaf_nodes, BasicCredentialValidator::new())
             .unwrap();
 
         ProvisionalState {
@@ -195,7 +195,7 @@ mod tests {
         let update_path = test_update_path(cipher_suite, "creator");
 
         let validated = validate_update_path(
-            &PassthroughCredentialValidator::new(),
+            &BasicCredentialValidator::new(),
             &update_path,
             &test_provisional_state(cipher_suite),
             LeafIndex(0),
@@ -213,7 +213,7 @@ mod tests {
         update_path.leaf_node.signature = SecureRng::gen(32).unwrap();
 
         let validated = validate_update_path(
-            &PassthroughCredentialValidator::new(),
+            &BasicCredentialValidator::new(),
             &update_path,
             &test_provisional_state(cipher_suite),
             LeafIndex(0),
@@ -231,7 +231,7 @@ mod tests {
         let update_path = test_update_path(cipher_suite, "foobar");
 
         let validated = validate_update_path(
-            &PassthroughCredentialValidator::new(),
+            &BasicCredentialValidator::new(),
             &update_path,
             &test_provisional_state(cipher_suite),
             LeafIndex(0),
@@ -257,7 +257,7 @@ mod tests {
             .public_key = update_path.leaf_node.public_key.clone();
 
         let validated = validate_update_path(
-            &PassthroughCredentialValidator::new(),
+            &BasicCredentialValidator::new(),
             &update_path,
             &state,
             LeafIndex(0),

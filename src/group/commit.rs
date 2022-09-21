@@ -409,7 +409,7 @@ pub(crate) mod test_utils {
 mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        client_config::InMemoryClientConfig,
+        client_config::test_utils::TestClientConfig,
         credential::test_utils::get_test_basic_credential,
         extension::RequiredCapabilitiesExt,
         group::{
@@ -423,12 +423,12 @@ mod tests {
 
     use super::*;
 
-    fn test_commit_builder_group() -> Group<InMemoryClientConfig> {
+    fn test_commit_builder_group() -> Group<TestClientConfig> {
         test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).group
     }
 
     fn assert_commit_builder_output(
-        group: Group<InMemoryClientConfig>,
+        group: Group<TestClientConfig>,
         commit_message: MLSMessage,
         expected: Vec<Proposal>,
         welcome_message: Option<MLSMessage>,

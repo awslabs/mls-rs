@@ -1,9 +1,14 @@
 use aws_mls::{
     bench_utils::create_empty_tree::{load_test_cases, TestCase},
     cipher_suite::CipherSuite,
-    credential::PassthroughCredentialValidator,
+    credential::BasicCredentialValidator,
     extension::{ExtensionList, LeafNodeExtension},
-    tree_kem::{kem::TreeKem, leaf_node::ConfigProperties, node::LeafIndex, Capabilities},
+    tree_kem::{
+        kem::TreeKem,
+        leaf_node::{test_utils::get_test_capabilities, ConfigProperties},
+        node::LeafIndex,
+        Capabilities,
+    },
 };
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
@@ -39,8 +44,8 @@ fn bench_encap(
             |b, _| {
                 b.iter(|| {
                     let update_leaf_properties = ConfigProperties {
-                        capabilities: capabilities.clone(),
-                        extensions: extensions.clone(),
+                        capabilities: capabilities.clone().unwrap_or_else(get_test_capabilities),
+                        extensions: extensions.clone().unwrap_or_default(),
                         signing_identity: value.encap_identity.clone(),
                     };
 
@@ -51,7 +56,7 @@ fn bench_encap(
                             excluding,
                             &value.encap_signer,
                             update_leaf_properties,
-                            PassthroughCredentialValidator,
+                            BasicCredentialValidator,
                         )
                         .unwrap()
                 })

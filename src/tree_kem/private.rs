@@ -128,7 +128,7 @@ mod tests {
     };
 
     use crate::{
-        credential::PassthroughCredentialValidator,
+        credential::BasicCredentialValidator,
         group::test_utils::get_test_group_context,
         tree_kem::{
             kem::TreeKem,
@@ -180,13 +180,13 @@ mod tests {
             cipher_suite,
             alice_leaf,
             alice_hpke_secret,
-            PassthroughCredentialValidator,
+            BasicCredentialValidator,
         )
         .unwrap();
 
         // Add bob and charlie to the tree
         public_tree
-            .add_leaves(vec![bob_leaf, charlie_leaf], PassthroughCredentialValidator)
+            .add_leaves(vec![bob_leaf, charlie_leaf], BasicCredentialValidator)
             .unwrap();
 
         // Generate an update path for Alice
@@ -197,7 +197,7 @@ mod tests {
                 &[],
                 &alice_signing,
                 default_properties(alice_identity),
-                PassthroughCredentialValidator,
+                BasicCredentialValidator,
                 #[cfg(test)]
                 &Default::default(),
             )

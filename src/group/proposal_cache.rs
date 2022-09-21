@@ -405,7 +405,7 @@ mod tests {
     use super::*;
     use crate::{
         credential::{
-            test_utils::get_test_certificate_credential, PassthroughCredentialValidator,
+            test_utils::get_test_certificate_credential, BasicCredentialValidator,
             CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509,
         },
         extension::{test_utils::TestExtension, ExternalSendersExt, RequiredCapabilitiesExt},
@@ -451,20 +451,16 @@ mod tests {
 
     fn new_tree(name: &str) -> (LeafIndex, TreeKemPublic) {
         let (leaf, secret, _) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, name);
-        let (pub_tree, priv_tree) = TreeKemPublic::derive(
-            TEST_CIPHER_SUITE,
-            leaf,
-            secret,
-            PassthroughCredentialValidator,
-        )
-        .unwrap();
+        let (pub_tree, priv_tree) =
+            TreeKemPublic::derive(TEST_CIPHER_SUITE, leaf, secret, BasicCredentialValidator)
+                .unwrap();
         (priv_tree.self_index, pub_tree)
     }
 
     fn add_member(tree: &mut TreeKemPublic, name: &str) -> LeafIndex {
         tree.add_leaves(
             vec![get_basic_test_node(TEST_CIPHER_SUITE, name)],
-            PassthroughCredentialValidator,
+            BasicCredentialValidator,
         )
         .unwrap()[0]
     }
@@ -502,7 +498,7 @@ mod tests {
             cipher_suite,
             sender_leaf,
             sender_leaf_secret,
-            PassthroughCredentialValidator,
+            BasicCredentialValidator,
         )
         .unwrap();
 
@@ -530,7 +526,7 @@ mod tests {
         let test_sender = tree
             .add_leaves(
                 vec![get_basic_test_node(cipher_suite, "charlie")],
-                PassthroughCredentialValidator,
+                BasicCredentialValidator,
             )
             .unwrap()[0];
 
@@ -541,7 +537,7 @@ mod tests {
                 &[(sender, update_leaf.clone())],
                 &[remove_leaf_index],
                 &[add_package.leaf_node.clone()],
-                PassthroughCredentialValidator,
+                BasicCredentialValidator,
             )
             .unwrap();
 
@@ -671,7 +667,7 @@ mod tests {
                 Sender::Member(test_sender),
                 vec![],
                 &ExtensionList::new(),
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -713,7 +709,7 @@ mod tests {
                 Sender::Member(test_sender),
                 additional.clone(),
                 &ExtensionList::new(),
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -737,7 +733,7 @@ mod tests {
                 &[],
                 &[],
                 &[additional_key_package.leaf_node.clone()],
-                PassthroughCredentialValidator,
+                BasicCredentialValidator,
             )
             .unwrap();
 
@@ -763,7 +759,7 @@ mod tests {
             Sender::Member(test_sender()),
             additional,
             &ExtensionList::new(),
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
             &tree,
             None,
             PassThroughPskIdValidator,
@@ -806,7 +802,7 @@ mod tests {
                 Sender::Member(test_sender),
                 vec![],
                 &ExtensionList::new(),
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -836,7 +832,7 @@ mod tests {
                 Sender::Member(test_sender),
                 vec![],
                 &ExtensionList::new(),
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -883,7 +879,7 @@ mod tests {
                 Sender::Member(LeafIndex(2)),
                 Vec::new(),
                 &ExtensionList::new(),
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -932,7 +928,7 @@ mod tests {
             key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "frank"),
         })];
 
-        let credential_validator = PassthroughCredentialValidator::new();
+        let credential_validator = BasicCredentialValidator::new();
 
         let (proposals, effects) = cache
             .prepare_commit(
@@ -978,7 +974,7 @@ mod tests {
             Sender::Member(alice),
             vec![proposal.clone(), proposal],
             &ExtensionList::new(),
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
             &tree,
             None,
             PassThroughPskIdValidator,
@@ -1015,7 +1011,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
-        let credential_validator = PassthroughCredentialValidator::new();
+        let credential_validator = BasicCredentialValidator::new();
 
         let res = cache.resolve_for_commit(
             Sender::NewMemberCommit,
@@ -1065,7 +1061,7 @@ mod tests {
             vec![ProposalOrRef::Reference(proposal_ref)],
             Some(&test_node()),
             &group.group.context().extensions,
-            PassthroughCredentialValidator::new(),
+            BasicCredentialValidator::new(),
             public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1085,7 +1081,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
-        let credential_validator = PassthroughCredentialValidator::new();
+        let credential_validator = BasicCredentialValidator::new();
 
         let res = cache.resolve_for_commit(
             Sender::NewMemberCommit,
@@ -1122,7 +1118,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
-        let credential_validator = PassthroughCredentialValidator::new();
+        let credential_validator = BasicCredentialValidator::new();
 
         cache.resolve_for_commit(
             Sender::NewMemberCommit,
@@ -1164,7 +1160,7 @@ mod tests {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
-        let credential_validator = PassthroughCredentialValidator::new();
+        let credential_validator = BasicCredentialValidator::new();
 
         let test_leaf_nodes = vec![
             get_basic_test_node(TEST_CIPHER_SUITE, "foo"),
@@ -1172,7 +1168,7 @@ mod tests {
         ];
 
         let test_leaf_node_indexes = public_tree
-            .add_leaves(test_leaf_nodes, PassthroughCredentialValidator)
+            .add_leaves(test_leaf_nodes, BasicCredentialValidator)
             .unwrap();
 
         let proposals = vec![
@@ -1216,7 +1212,7 @@ mod tests {
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "bar")];
 
         let test_leaf_node_indexes = public_tree
-            .add_leaves(test_leaf_nodes, PassthroughCredentialValidator)
+            .add_leaves(test_leaf_nodes, BasicCredentialValidator)
             .unwrap();
 
         let proposals = vec![
@@ -1232,7 +1228,7 @@ mod tests {
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
             Some(&test_node()),
             &group_extensions,
-            PassthroughCredentialValidator,
+            BasicCredentialValidator,
             &public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1253,12 +1249,12 @@ mod tests {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
-        let credential_validator = PassthroughCredentialValidator::new();
+        let credential_validator = BasicCredentialValidator::new();
 
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo")];
 
         let test_leaf_node_indexes = public_tree
-            .add_leaves(test_leaf_nodes, PassthroughCredentialValidator)
+            .add_leaves(test_leaf_nodes, BasicCredentialValidator)
             .unwrap();
 
         let proposals = vec![
@@ -1334,7 +1330,7 @@ mod tests {
         let cache = make_proposal_cache();
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
-        let credential_validator = PassthroughCredentialValidator::new();
+        let credential_validator = BasicCredentialValidator::new();
 
         let res = cache.resolve_for_commit(
             Sender::NewMemberCommit,
@@ -1365,7 +1361,7 @@ mod tests {
                 Sender::Member(test_sender()),
                 vec![],
                 &ExtensionList::new(),
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
                 PassThroughPskIdValidator,
@@ -1392,7 +1388,7 @@ mod tests {
                 Sender::Member(test_sender()),
                 Vec::new(),
                 &ExtensionList::new(),
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
                 PassThroughPskIdValidator,
@@ -1414,14 +1410,14 @@ mod tests {
             TEST_CIPHER_SUITE,
             alice_leaf,
             alice_secret,
-            PassthroughCredentialValidator,
+            BasicCredentialValidator,
         )
         .unwrap();
 
         let bob = tree
             .add_leaves(
                 vec![get_basic_test_node(TEST_CIPHER_SUITE, "bob")],
-                PassthroughCredentialValidator,
+                BasicCredentialValidator,
             )
             .unwrap()[0];
 
@@ -1432,7 +1428,7 @@ mod tests {
                 Sender::Member(alice),
                 vec![remove],
                 &ExtensionList::new(),
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -1464,7 +1460,7 @@ mod tests {
                 Sender::Member(alice),
                 vec![psk, add],
                 &ExtensionList::new(),
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -1492,7 +1488,7 @@ mod tests {
                 Sender::Member(alice),
                 vec![reinit],
                 &ExtensionList::new(),
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -1518,7 +1514,7 @@ mod tests {
     impl<'a>
         CommitReceiver<
             'a,
-            PassthroughCredentialValidator,
+            BasicCredentialValidator,
             PassThroughProposalFilter<Infallible>,
             PassThroughPskIdValidator,
         >
@@ -1532,7 +1528,7 @@ mod tests {
                 sender: sender.into(),
                 receiver,
                 cache: make_proposal_cache(),
-                credential_validator: PassthroughCredentialValidator::new(),
+                credential_validator: BasicCredentialValidator::new(),
                 group_context_extensions: Default::default(),
                 user_filter: pass_through_filter(),
                 external_psk_id_validator: PassThroughPskIdValidator,
@@ -1642,7 +1638,7 @@ mod tests {
     impl<'a>
         CommitSender<
             'a,
-            PassthroughCredentialValidator,
+            BasicCredentialValidator,
             PassThroughProposalFilter<Infallible>,
             PassThroughPskIdValidator,
         >
@@ -1653,7 +1649,7 @@ mod tests {
                 sender,
                 cache: make_proposal_cache(),
                 additional_proposals: Vec::new(),
-                credential_validator: PassthroughCredentialValidator::new(),
+                credential_validator: BasicCredentialValidator::new(),
                 user_filter: pass_through_filter(),
                 external_psk_id_validator: PassThroughPskIdValidator,
             }
@@ -2613,11 +2609,11 @@ mod tests {
 
             let properties = ConfigProperties {
                 signing_identity,
-                capabilities: Some(Capabilities {
+                capabilities: Capabilities {
                     extensions: vec![42],
                     ..Capabilities::default()
-                }),
-                extensions: None,
+                },
+                extensions: Default::default(),
             };
 
             let (leaf, secret) = LeafNode::generate(
@@ -2625,17 +2621,13 @@ mod tests {
                 properties,
                 &signature_key,
                 Lifetime::years(1).unwrap(),
-                &PassthroughCredentialValidator::new(),
+                &BasicCredentialValidator::new(),
             )
             .unwrap();
 
-            let (pub_tree, priv_tree) = TreeKemPublic::derive(
-                TEST_CIPHER_SUITE,
-                leaf,
-                secret,
-                PassthroughCredentialValidator,
-            )
-            .unwrap();
+            let (pub_tree, priv_tree) =
+                TreeKemPublic::derive(TEST_CIPHER_SUITE, leaf, secret, BasicCredentialValidator)
+                    .unwrap();
 
             (priv_tree.self_index, pub_tree)
         };
@@ -2911,7 +2903,7 @@ mod tests {
             TEST_CIPHER_SUITE,
             alice_leaf.clone(),
             alice_secret,
-            PassthroughCredentialValidator,
+            BasicCredentialValidator,
         )
         .unwrap();
 
@@ -2966,7 +2958,7 @@ mod tests {
             TEST_CIPHER_SUITE,
             alice_leaf.clone(),
             alice_secret,
-            PassthroughCredentialValidator,
+            BasicCredentialValidator,
         )
         .unwrap();
 
@@ -3017,7 +3009,7 @@ mod tests {
             cipher_suite: TEST_CIPHER_SUITE,
             signing_identity: &signing_identity,
             signing_key: &secret_key,
-            credential_validator: &PassthroughCredentialValidator::new(),
+            credential_validator: &BasicCredentialValidator::new(),
         };
 
         generator

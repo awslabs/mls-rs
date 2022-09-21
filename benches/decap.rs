@@ -1,11 +1,14 @@
 use aws_mls::{
     bench_utils::create_empty_tree::{load_test_cases, TestCase},
     cipher_suite::CipherSuite,
-    credential::PassthroughCredentialValidator,
+    credential::BasicCredentialValidator,
     extension::{ExtensionList, LeafNodeExtension},
     tree_kem::{
-        kem::TreeKem, leaf_node::ConfigProperties, node::LeafIndex,
-        update_path::ValidatedUpdatePath, Capabilities,
+        kem::TreeKem,
+        leaf_node::{test_utils::get_test_capabilities, ConfigProperties},
+        node::LeafIndex,
+        update_path::ValidatedUpdatePath,
+        Capabilities,
     },
 };
 use criterion::{
@@ -39,8 +42,8 @@ fn bench_decap(
     for (key, mut value) in map {
         // Perform the encap function
         let update_leaf_properties = ConfigProperties {
-            capabilities: capabilities.clone(),
-            extensions: extensions.clone(),
+            capabilities: capabilities.clone().unwrap_or_else(get_test_capabilities),
+            extensions: extensions.clone().unwrap_or_default(),
             signing_identity: value.encap_identity.clone(),
         };
 
@@ -51,7 +54,7 @@ fn bench_decap(
                 &[],
                 &value.encap_signer,
                 update_leaf_properties,
-                PassthroughCredentialValidator,
+                BasicCredentialValidator,
             )
             .unwrap();
 
@@ -76,7 +79,7 @@ fn bench_decap(
                             &validated_update_path,
                             added_leaves,
                             &mut value.group_context,
-                            PassthroughCredentialValidator,
+                            BasicCredentialValidator,
                         )
                         .unwrap();
                 })

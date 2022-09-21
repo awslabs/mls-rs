@@ -68,8 +68,8 @@ where
 
         let properties = ConfigProperties {
             signing_identity: self.signing_identity.clone(),
-            capabilities: Some(capabilities),
-            extensions: Some(leaf_node_extensions),
+            capabilities,
+            extensions: leaf_node_extensions,
         };
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
@@ -107,15 +107,15 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
-        credential::PassthroughCredentialValidator,
+        credential::BasicCredentialValidator,
         extension::{ExtensionList, KeyPackageExtension, LeafNodeExtension, MlsExtension},
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
         protocol_version::ProtocolVersion,
         signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{
-            leaf_node::{LeafNodeError, LeafNodeSource},
+            leaf_node::{test_utils::get_test_capabilities, LeafNodeError, LeafNodeSource},
             leaf_node_validator::test_utils::FailureCredentialValidator,
-            Capabilities, Lifetime,
+            Lifetime,
         },
     };
 
@@ -171,10 +171,10 @@ mod tests {
                 cipher_suite,
                 signing_identity: &signing_identity,
                 signing_key: &signing_key,
-                credential_validator: &PassthroughCredentialValidator::new(),
+                credential_validator: &BasicCredentialValidator::new(),
             };
 
-            let mut capabilities = Capabilities::default();
+            let mut capabilities = get_test_capabilities();
             capabilities.extensions.push(42);
             capabilities.extensions.push(43);
             capabilities.extensions.push(32);
@@ -244,7 +244,7 @@ mod tests {
                 protocol_version,
                 cipher_suite,
                 None,
-                PassthroughCredentialValidator::new(),
+                BasicCredentialValidator::new(),
             );
 
             validator
@@ -266,12 +266,12 @@ mod tests {
             cipher_suite,
             signing_identity: &signing_identity,
             signing_key: &signing_key,
-            credential_validator: &PassthroughCredentialValidator::new(),
+            credential_validator: &BasicCredentialValidator::new(),
         };
 
         let generated = test_generator.generate(
             test_lifetime(),
-            Capabilities::default(),
+            get_test_capabilities(),
             ExtensionList::default(),
             ExtensionList::default(),
         );
@@ -297,13 +297,13 @@ mod tests {
                 cipher_suite,
                 signing_identity: &signing_identity,
                 signing_key: &signing_key,
-                credential_validator: &PassthroughCredentialValidator::new(),
+                credential_validator: &BasicCredentialValidator::new(),
             };
 
             let first_key_package = test_generator
                 .generate(
                     test_lifetime(),
-                    Capabilities::default(),
+                    get_test_capabilities(),
                     ExtensionList::default(),
                     ExtensionList::default(),
                 )
@@ -313,7 +313,7 @@ mod tests {
                 let next_key_package = test_generator
                     .generate(
                         test_lifetime(),
-                        Capabilities::default(),
+                        get_test_capabilities(),
                         ExtensionList::default(),
                         ExtensionList::default(),
                     )
@@ -349,7 +349,7 @@ mod tests {
         assert_matches!(
             test_generator.generate(
                 test_lifetime(),
-                Capabilities::default(),
+                get_test_capabilities(),
                 ExtensionList::default(),
                 ExtensionList::default()
             ),

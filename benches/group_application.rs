@@ -1,7 +1,5 @@
 use aws_mls::cipher_suite::CipherSuite;
-
-use aws_mls::client_config::InMemoryClientConfig;
-
+use aws_mls::client_config::test_utils::TestClientConfig;
 use aws_mls::group::Group;
 
 use ferriscrypt::rand::SecureRng;
@@ -39,7 +37,7 @@ fn application_message_setup(c: &mut Criterion) {
 fn bench_application_message(
     bench_group: &mut BenchmarkGroup<WallTime>,
     cipher_suite: CipherSuite,
-    container: &mut [Group<InMemoryClientConfig>],
+    container: &mut [Group<TestClientConfig>],
     bytes: Vec<u8>,
 ) {
     let mut n = 100;

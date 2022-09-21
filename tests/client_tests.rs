@@ -2,7 +2,7 @@ use assert_matches::assert_matches;
 use aws_mls::cipher_suite::{CipherSuite, SignaturePublicKey};
 use aws_mls::client::Client;
 use aws_mls::client_config::{InMemoryClientConfig, Preferences};
-use aws_mls::credential::{BasicCredential, Credential, MlsCredential};
+use aws_mls::credential::{BasicCredential, BasicCredentialValidator, Credential, MlsCredential};
 use aws_mls::extension::ExtensionList;
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, GroupError};
@@ -17,6 +17,9 @@ use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test_configure!(run_in_browser);
+
+// The same method exists in `client_config::test_utils` but is not compiled without the `test` flag.
+type TestClientConfig = InMemoryClientConfig<BasicCredentialValidator>;
 
 // The same method exists in `credential::test_utils` but is not compiled without the `test` flag.
 pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {
@@ -41,14 +44,14 @@ fn generate_client(
     cipher_suite: CipherSuite,
     id: Vec<u8>,
     preferences: Preferences,
-) -> Client<InMemoryClientConfig> {
+) -> Client<TestClientConfig> {
     let key = cipher_suite.generate_signing_key().unwrap();
     let credential = get_test_basic_credential(id);
 
     let signing_identity =
         SigningIdentity::new(credential, SignaturePublicKey::try_from(&key).unwrap());
 
-    InMemoryClientConfig::default()
+    InMemoryClientConfig::new(BasicCredentialValidator::new())
         .with_signing_identity(signing_identity, key)
         .with_preferences(preferences)
         .build_client()
@@ -114,10 +117,7 @@ fn get_test_groups(
     cipher_suite: CipherSuite,
     num_participants: usize,
     preferences: Preferences,
-) -> (
-    Group<InMemoryClientConfig>,
-    Vec<Group<InMemoryClientConfig>>,
-) {
+) -> (Group<TestClientConfig>, Vec<Group<TestClientConfig>>) {
     let (creator_group, receiver_groups, _) = get_test_groups_clients(
         protocol_version,
         cipher_suite,
@@ -133,9 +133,9 @@ fn get_test_groups_clients(
     num_participants: usize,
     preferences: Preferences,
 ) -> (
-    Group<InMemoryClientConfig>,
-    Vec<Group<InMemoryClientConfig>>,
-    Vec<Client<InMemoryClientConfig>>,
+    Group<TestClientConfig>,
+    Vec<Group<TestClientConfig>>,
+    Vec<Client<TestClientConfig>>,
 ) {
     // Create the group with Alice as the group initiator
     let creator = generate_client(cipher_suite, b"alice".to_vec(), preferences.clone());
@@ -216,7 +216,7 @@ fn add_random_members(
     num_added: usize,
     sender: usize,
     committer: usize,
-    groups: &mut Vec<Group<InMemoryClientConfig>>,
+    groups: &mut Vec<Group<TestClientConfig>>,
     cipher_suite: CipherSuite,
     preferences: Preferences,
 ) {
@@ -273,7 +273,7 @@ fn remove_members(
     removed_members: Vec<usize>,
     sender: usize,
     committer: usize,
-    groups: &mut Vec<Group<InMemoryClientConfig>>,
+    groups: &mut Vec<Group<TestClientConfig>>,
 ) {
     let remove_proposals: Vec<MLSMessage> = removed_members
         .iter()
@@ -819,7 +819,7 @@ fn get_reinit_client(
     suite1: CipherSuite,
     suite2: CipherSuite,
     id: &str,
-) -> Client<InMemoryClientConfig> {
+) -> Client<TestClientConfig> {
     let credential = get_test_basic_credential(id.as_bytes().to_vec());
 
     let sk1 = suite1.generate_signing_key().unwrap();
@@ -830,7 +830,7 @@ fn get_reinit_client(
     );
     let id2 = SigningIdentity::new(credential, SignaturePublicKey::try_from(&sk2).unwrap());
 
-    InMemoryClientConfig::default()
+    InMemoryClientConfig::new(BasicCredentialValidator::new())
         .with_signing_identity(id1, sk1)
         .with_signing_identity(id2, sk2)
         .build_client()

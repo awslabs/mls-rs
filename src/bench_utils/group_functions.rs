@@ -1,7 +1,9 @@
 use crate::{
     cipher_suite::CipherSuite,
     client::test_utils::{get_basic_config, join_group, test_client_with_key_pkg},
-    client_config::{ClientConfig, InMemoryClientConfig, Preferences},
+    client_config::{
+        test_utils::TestClientConfig, ClientConfig, InMemoryClientConfig, Preferences,
+    },
     extension::ExtensionList,
     group::{
         framing::{Content, MLSMessage, Sender, WireFormat},
@@ -39,7 +41,7 @@ fn generate_test_cases() -> Vec<TestCase> {
         .collect()
 }
 
-pub fn load_test_cases() -> Vec<Vec<Group<InMemoryClientConfig>>> {
+pub fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
     let tests: Vec<TestCase> = load_test_cases!(group_state, generate_test_cases, to_vec);
 
     tests
@@ -58,7 +60,7 @@ pub fn load_test_cases() -> Vec<Vec<Group<InMemoryClientConfig>>> {
                     )
                     .unwrap();
 
-                    let mut config = InMemoryClientConfig::new();
+                    let mut config = InMemoryClientConfig::default();
 
                     for (signing_identity, secret) in secrets {
                         config.keychain().insert(signing_identity, secret);
@@ -84,7 +86,7 @@ pub fn load_test_cases() -> Vec<Vec<Group<InMemoryClientConfig>>> {
 }
 
 // creates group modifying code found in client.rs
-pub fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<InMemoryClientConfig>> {
+pub fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<TestClientConfig>> {
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     pub const TEST_GROUP: &[u8] = b"group";
 
@@ -172,8 +174,8 @@ fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
 }
 
 pub fn commit_groups(
-    mut container: Vec<Vec<Group<InMemoryClientConfig>>>,
-) -> Vec<Vec<Group<InMemoryClientConfig>>> {
+    mut container: Vec<Vec<Group<TestClientConfig>>>,
+) -> Vec<Vec<Group<TestClientConfig>>> {
     for value in &mut container {
         commit_group(value);
     }
@@ -181,7 +183,7 @@ pub fn commit_groups(
     container
 }
 
-pub fn commit_group(container: &mut [Group<InMemoryClientConfig>]) {
+pub fn commit_group(container: &mut [Group<TestClientConfig>]) {
     for committer_index in 0..container.len() {
         let (commit, _) = container[committer_index].commit(Vec::new()).unwrap();
 

@@ -1,10 +1,7 @@
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     client::Client,
-    credential::{
-        CredentialType, CredentialValidator, PassthroughCredentialValidator, CREDENTIAL_TYPE_BASIC,
-        CREDENTIAL_TYPE_X509,
-    },
+    credential::{CredentialType, CredentialValidator},
     extension::{ExtensionList, ExtensionType, KeyPackageExtension, LeafNodeExtension},
     group::{
         framing::Sender, proposal::BoxedProposalFilter, proposal::PassThroughProposalFilter,
@@ -78,7 +75,6 @@ pub trait ClientConfig {
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
-    fn supported_credential_types(&self) -> Vec<CredentialType>;
 
     fn preferences(&self) -> Preferences;
     fn key_package_repo(&self) -> Self::KeyPackageRepository;
@@ -117,6 +113,10 @@ pub trait ClientConfig {
 
     fn cipher_suite_supported(&self, cipher_suite: CipherSuite) -> bool {
         self.supported_cipher_suites().contains(&cipher_suite)
+    }
+
+    fn supported_credential_types(&self) -> Vec<CredentialType> {
+        self.credential_validator().supported_types()
     }
 }
 
@@ -246,7 +246,7 @@ impl ProposalFilterInit {
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
-pub struct InMemoryClientConfig {
+pub struct InMemoryClientConfig<C: CredentialValidator> {
     preferences: Preferences,
     pub(crate) supported_extensions: Vec<ExtensionType>,
     pub(crate) key_packages: InMemoryKeyPackageRepository,
@@ -259,11 +259,11 @@ pub struct InMemoryClientConfig {
     leaf_node_extensions: ExtensionList<LeafNodeExtension>,
     key_package_extensions: ExtensionList<KeyPackageExtension>,
     lifetime_duration: u64,
-    credential_types: Vec<CredentialType>,
+    credential_validator: C,
 }
 
-impl InMemoryClientConfig {
-    pub fn new() -> Self {
+impl<C: CredentialValidator + Clone> InMemoryClientConfig<C> {
+    pub fn new(credential_validator: C) -> Self {
         Self {
             preferences: Default::default(),
             supported_extensions: Default::default(),
@@ -277,7 +277,7 @@ impl InMemoryClientConfig {
             leaf_node_extensions: Default::default(),
             key_package_extensions: Default::default(),
             lifetime_duration: 31536000, // One year
-            credential_types: vec![CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509],
+            credential_validator,
         }
     }
 
@@ -369,29 +369,18 @@ impl InMemoryClientConfig {
         self
     }
 
-    pub fn with_credential_types(mut self, credential_types: Vec<CredentialType>) -> Self {
-        self.credential_types = credential_types;
-        self
-    }
-
     pub fn build_client(self) -> Client<Self> {
         Client::new(self)
     }
 }
 
-impl Default for InMemoryClientConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ClientConfig for InMemoryClientConfig {
+impl<C: CredentialValidator + Clone> ClientConfig for InMemoryClientConfig<C> {
     type KeyPackageRepository = InMemoryKeyPackageRepository;
     type ProposalFilter = BoxedProposalFilter<SimpleError>;
     type Keychain = InMemoryKeychain;
     type PskStore = InMemoryPskStore;
     type GroupStateStorage = InMemoryGroupStateStorage;
-    type CredentialValidator = PassthroughCredentialValidator;
+    type CredentialValidator = C;
 
     fn preferences(&self) -> Preferences {
         self.preferences.clone()
@@ -430,7 +419,7 @@ impl ClientConfig for InMemoryClientConfig {
     }
 
     fn credential_validator(&self) -> Self::CredentialValidator {
-        PassthroughCredentialValidator::new()
+        self.credential_validator.clone()
     }
 
     fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension> {
@@ -447,10 +436,6 @@ impl ClientConfig for InMemoryClientConfig {
             not_before: now_timestamp,
             not_after: now_timestamp + self.lifetime_duration,
         }
-    }
-
-    fn supported_credential_types(&self) -> Vec<CredentialType> {
-        self.credential_types.clone()
     }
 }
 
@@ -470,17 +455,31 @@ impl From<&str> for SimpleError {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test_utils {
-    use super::{InMemoryClientConfig, Preferences};
-    use crate::key_package::KeyPackageGeneration;
+#[cfg(any(feature = "benchmark", test))]
+pub mod test_utils {
+    use super::InMemoryClientConfig;
+    use crate::credential::BasicCredentialValidator;
+
+    #[cfg(test)]
+    use crate::{client_config::Preferences, key_package::KeyPackageGeneration};
+
+    #[cfg(test)]
     use ferriscrypt::asym::ec_key::SecretKey;
 
+    pub type TestClientConfig = InMemoryClientConfig<BasicCredentialValidator>;
+
+    impl Default for InMemoryClientConfig<BasicCredentialValidator> {
+        fn default() -> Self {
+            InMemoryClientConfig::new(BasicCredentialValidator::new())
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn test_config(
         secret_key: SecretKey,
         key_package: KeyPackageGeneration,
         preferences: Preferences,
-    ) -> InMemoryClientConfig {
+    ) -> TestClientConfig {
         let config = InMemoryClientConfig::default()
             .with_signing_identity(
                 key_package.key_package.leaf_node.signing_identity.clone(),

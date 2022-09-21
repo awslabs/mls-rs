@@ -362,7 +362,7 @@ impl ExternalPskIdValidator for PassThroughPskIdValidator {
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
-        client_config::{InMemoryClientConfig, InMemoryPskStore},
+        client_config::{test_utils::TestClientConfig, InMemoryPskStore},
         psk::{
             psk_secret, ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskNonce, PskSecretError,
         },
@@ -400,7 +400,7 @@ mod tests {
     #[test]
     fn unknown_id_leads_to_error() {
         let expected_id = make_external_psk_id(TEST_CIPHER_SUITE);
-        let res = psk_secret::<InMemoryClientConfig>(
+        let res = psk_secret::<TestClientConfig>(
             TEST_CIPHER_SUITE,
             Some(&InMemoryPskStore::default()),
             None,
@@ -480,7 +480,7 @@ mod tests {
                 .map(PreSharedKeyID::from)
                 .collect::<Vec<_>>();
 
-            psk_secret::<InMemoryClientConfig>(cipher_suite, Some(&secret_store), None, &ids)
+            psk_secret::<TestClientConfig>(cipher_suite, Some(&secret_store), None, &ids)
                 .unwrap()
                 .0
                 .clone()

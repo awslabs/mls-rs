@@ -95,6 +95,14 @@ pub trait CredentialValidator {
     ) -> Result<(), Self::Error>;
 
     fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error>;
+
+    fn valid_successor(
+        &self,
+        predecessor: &SigningIdentity,
+        successor: &SigningIdentity,
+    ) -> Result<bool, Self::Error>;
+
+    fn supported_types(&self) -> Vec<CredentialType>;
 }
 
 impl<T: CredentialValidator> CredentialValidator for &T {
@@ -111,18 +119,30 @@ impl<T: CredentialValidator> CredentialValidator for &T {
     fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
         (*self).identity(signing_id)
     }
+
+    fn valid_successor(
+        &self,
+        predecessor: &SigningIdentity,
+        successor: &SigningIdentity,
+    ) -> Result<bool, Self::Error> {
+        (*self).valid_successor(predecessor, successor)
+    }
+
+    fn supported_types(&self) -> Vec<CredentialType> {
+        vec![CREDENTIAL_TYPE_X509]
+    }
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct PassthroughCredentialValidator;
+pub struct BasicCredentialValidator;
 
-impl PassthroughCredentialValidator {
+impl BasicCredentialValidator {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl CredentialValidator for PassthroughCredentialValidator {
+impl CredentialValidator for BasicCredentialValidator {
     type Error = CredentialError;
 
     fn validate(
@@ -139,6 +159,18 @@ impl CredentialValidator for PassthroughCredentialValidator {
 
     fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
         Ok(signing_id.credential.credential_data.clone())
+    }
+
+    fn valid_successor(
+        &self,
+        predecessor: &SigningIdentity,
+        successor: &SigningIdentity,
+    ) -> Result<bool, Self::Error> {
+        Ok(predecessor.credential.credential_data == successor.credential.credential_data)
+    }
+
+    fn supported_types(&self) -> Vec<CredentialType> {
+        vec![CREDENTIAL_TYPE_BASIC]
     }
 }
 
@@ -160,7 +192,7 @@ pub mod test_utils {
 
     pub fn get_test_certificate_credential() -> Credential {
         let test_certificate = test_cert(Curve::Ed25519);
-        let chain = CertificateChain::from(vec![test_certificate]);
+        let chain = vec![test_certificate].into();
         X509Credential { credential: chain }
             .to_credential()
             .unwrap()
