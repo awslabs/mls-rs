@@ -10,7 +10,7 @@ use super::{
     HpkeCiphertext,
 };
 use crate::group::message_processor::ProvisionalState;
-use crate::{credential::CredentialValidator, extension::ExtensionError};
+use crate::{extension::ExtensionError, provider::identity_validation::IdentityValidator};
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -55,8 +55,8 @@ pub struct ValidatedUpdatePath {
     pub nodes: Vec<UpdatePathNode>,
 }
 
-pub(crate) fn validate_update_path<C: CredentialValidator>(
-    credential_validator: &C,
+pub(crate) fn validate_update_path<C: IdentityValidator>(
+    identity_validator: &C,
     path: &UpdatePath,
     state: &ProvisionalState,
     sender: LeafIndex,
@@ -66,7 +66,7 @@ pub(crate) fn validate_update_path<C: CredentialValidator>(
     let leaf_validator = LeafNodeValidator::new(
         state.group_context.cipher_suite,
         required_capabilities.as_ref(),
-        credential_validator,
+        identity_validator,
     );
 
     leaf_validator.check_if_valid(
@@ -77,11 +77,11 @@ pub(crate) fn validate_update_path<C: CredentialValidator>(
     let existing_leaf = state.public_tree.nodes.borrow_as_leaf(sender)?;
     let original_leaf_node = existing_leaf.clone();
 
-    let original_identity = credential_validator
+    let original_identity = identity_validator
         .identity(&original_leaf_node.signing_identity)
         .map_err(|e| UpdatePathValidationError::CredentialValidationError(Box::new(e)))?;
 
-    let updated_identity = credential_validator
+    let updated_identity = identity_validator
         .identity(&path.leaf_node.signing_identity)
         .map_err(|e| UpdatePathValidationError::CredentialValidationError(Box::new(e)))?;
 
@@ -119,6 +119,7 @@ mod tests {
 
     use crate::group::message_processor::ProvisionalState;
     use crate::group::test_utils::get_test_group_context;
+    use crate::provider::identity_validation::BasicIdentityValidator;
     use crate::tree_kem::leaf_node::test_utils::default_properties;
     use crate::tree_kem::node::LeafIndex;
     use crate::tree_kem::test_utils::{get_test_leaf_nodes, get_test_tree};
@@ -129,8 +130,6 @@ mod tests {
 
     use super::{UpdatePath, UpdatePathNode};
     use crate::{cipher_suite::CipherSuite, tree_kem::UpdatePathValidationError};
-
-    use crate::credential::BasicCredentialValidator;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -171,7 +170,7 @@ mod tests {
         let mut tree = get_test_tree(cipher_suite).public;
         let leaf_nodes = get_test_leaf_nodes(cipher_suite);
 
-        tree.add_leaves(leaf_nodes, BasicCredentialValidator::new())
+        tree.add_leaves(leaf_nodes, BasicIdentityValidator::new())
             .unwrap();
 
         ProvisionalState {
@@ -195,7 +194,7 @@ mod tests {
         let update_path = test_update_path(cipher_suite, "creator");
 
         let validated = validate_update_path(
-            &BasicCredentialValidator::new(),
+            &BasicIdentityValidator::new(),
             &update_path,
             &test_provisional_state(cipher_suite),
             LeafIndex(0),
@@ -213,7 +212,7 @@ mod tests {
         update_path.leaf_node.signature = SecureRng::gen(32).unwrap();
 
         let validated = validate_update_path(
-            &BasicCredentialValidator::new(),
+            &BasicIdentityValidator::new(),
             &update_path,
             &test_provisional_state(cipher_suite),
             LeafIndex(0),
@@ -231,7 +230,7 @@ mod tests {
         let update_path = test_update_path(cipher_suite, "foobar");
 
         let validated = validate_update_path(
-            &BasicCredentialValidator::new(),
+            &BasicIdentityValidator::new(),
             &update_path,
             &test_provisional_state(cipher_suite),
             LeafIndex(0),
@@ -257,7 +256,7 @@ mod tests {
             .public_key = update_path.leaf_node.public_key.clone();
 
         let validated = validate_update_path(
-            &BasicCredentialValidator::new(),
+            &BasicIdentityValidator::new(),
             &update_path,
             &state,
             LeafIndex(0),

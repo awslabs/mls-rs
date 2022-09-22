@@ -8,11 +8,12 @@ use crate::{
     group::{
         framing::{Content, MLSMessage, Sender, WireFormat},
         message_signature::MLSAuthenticatedContent,
+        state_repo::PriorEpoch,
         Commit, Group, GroupError, Snapshot,
     },
-    group_state_repo::{GroupStateStorage, InMemoryGroupStateStorage, PriorEpoch},
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
+    provider::group_state::{GroupStateStorage, InMemoryGroupStateStorage},
     signing_identity::SigningIdentity,
     tree_kem::node::LeafIndex,
 };

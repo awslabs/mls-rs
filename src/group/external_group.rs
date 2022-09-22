@@ -47,7 +47,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             protocol_version,
             group_info,
             tree_data,
-            &config.credential_validator(),
+            &config.identity_validator(),
         )?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
@@ -164,7 +164,7 @@ where
     C: ExternalClientConfig + Clone,
 {
     type ProposalFilter = C::ProposalFilter;
-    type CredentialValidator = C::CredentialValidator;
+    type IdentityValidator = C::IdentityValidator;
     type ExternalPskIdValidator = PassThroughPskIdValidator;
 
     fn self_index(&self) -> Option<LeafIndex> {
@@ -214,8 +214,8 @@ where
         Ok(())
     }
 
-    fn credential_validator(&self) -> Self::CredentialValidator {
-        self.config.credential_validator()
+    fn identity_validator(&self) -> Self::IdentityValidator {
+        self.config.identity_validator()
     }
 
     fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator {

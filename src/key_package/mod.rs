@@ -1,13 +1,14 @@
 use crate::cipher_suite::{CipherSuite, MaybeCipherSuite};
-use crate::credential::CredentialError;
 use crate::extension::{ExtensionError, ExtensionList, ExtensionType};
 use crate::extension::{KeyPackageExtension, RequiredCapabilitiesExt};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::HashReference;
+use crate::identity::CredentialError;
 use crate::protocol_version::MaybeProtocolVersion;
 use crate::protocol_version::ProtocolVersion;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
+use crate::signing_identity::SigningIdentity;
 use crate::time::MlsTime;
 use crate::tree_kem::leaf_node::LeafNode;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
@@ -18,14 +19,11 @@ use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-mod repository;
-pub use repository::*;
-
 mod validator;
-pub use validator::*;
+pub(crate) use validator::*;
 
 mod generator;
-pub use generator::*;
+pub(crate) use generator::*;
 
 #[derive(Error, Debug)]
 pub enum KeyPackageError {
@@ -44,16 +42,16 @@ pub enum KeyPackageError {
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyPackage {
-    pub version: MaybeProtocolVersion,
-    pub cipher_suite: MaybeCipherSuite,
+    pub(crate) version: MaybeProtocolVersion,
+    pub(crate) cipher_suite: MaybeCipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
-    pub hpke_init_key: HpkePublicKey,
-    pub leaf_node: LeafNode,
-    pub extensions: ExtensionList<KeyPackageExtension>,
+    pub(crate) hpke_init_key: HpkePublicKey,
+    pub(crate) leaf_node: LeafNode,
+    pub(crate) extensions: ExtensionList<KeyPackageExtension>,
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
-    pub signature: Vec<u8>,
+    pub(crate) signature: Vec<u8>,
 }
 
 #[derive(
@@ -89,7 +87,7 @@ impl PartialEq for KeyPackage {
 }
 
 #[derive(TlsSerialize, TlsSize)]
-pub struct KeyPackageData<'a> {
+struct KeyPackageData<'a> {
     pub version: MaybeProtocolVersion,
     pub cipher_suite: MaybeCipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
@@ -100,6 +98,22 @@ pub struct KeyPackageData<'a> {
 }
 
 impl KeyPackage {
+    pub fn version(&self) -> MaybeProtocolVersion {
+        self.version
+    }
+
+    pub fn cipher_suite(&self) -> MaybeCipherSuite {
+        self.cipher_suite
+    }
+
+    pub fn extensions(&self) -> &ExtensionList<KeyPackageExtension> {
+        &self.extensions
+    }
+
+    pub fn signing_identity(&self) -> &SigningIdentity {
+        &self.leaf_node.signing_identity
+    }
+
     pub fn to_vec(&self) -> Result<Vec<u8>, KeyPackageError> {
         Ok(self.tls_serialize_detached()?)
     }
@@ -149,7 +163,7 @@ pub(crate) mod test_utils {
 
     use super::*;
     use crate::{
-        credential::BasicCredentialValidator,
+        provider::identity_validation::BasicIdentityValidator,
         signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
     };
@@ -162,7 +176,7 @@ pub(crate) mod test_utils {
     ) -> KeyPackage
     where
         F: FnOnce(
-            &mut KeyPackageGenerator<SecretKey, BasicCredentialValidator>,
+            &mut KeyPackageGenerator<SecretKey, BasicIdentityValidator>,
         ) -> KeyPackageGeneration,
     {
         let (signing_identity, secret_key) =
@@ -173,7 +187,7 @@ pub(crate) mod test_utils {
             cipher_suite,
             signing_identity: &signing_identity,
             signing_key: &secret_key,
-            credential_validator: &BasicCredentialValidator::new(),
+            identity_validator: &BasicIdentityValidator::new(),
         };
 
         custom(&mut generator).key_package

@@ -1,9 +1,9 @@
 use crate::cipher_suite::CipherSuite;
-use crate::credential::BasicCredentialValidator;
 use crate::extension::ExtensionList;
 use crate::ferriscrypt::asym::ec_key::SecretKey;
 use crate::group::{ConfirmedTranscriptHash, GroupContext};
 use crate::protocol_version::ProtocolVersion;
+use crate::provider::identity_validation::BasicIdentityValidator;
 use crate::signing_identity::SigningIdentity;
 use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
 use crate::tree_kem::node::LeafIndex;
@@ -60,12 +60,12 @@ pub fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
         cipher_suite,
         encap_node,
         encap_hpke_secret,
-        BasicCredentialValidator,
+        BasicIdentityValidator,
     )
     .unwrap();
 
     test_tree
-        .add_leaves(leaf_nodes, BasicCredentialValidator)
+        .add_leaves(leaf_nodes, BasicIdentityValidator)
         .unwrap();
 
     // Clone the tree for the first leaf, generate a new key package for that leaf

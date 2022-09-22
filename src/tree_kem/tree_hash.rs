@@ -167,11 +167,11 @@ impl TreeKemPublic {
 
         let mut nodes = VecDeque::from_iter(
             leaf_indices
-                .filter_map(|l| (**l < num_leaves).then(|| **l * 2))
+                .filter_map(|l| (**l < num_leaves).then_some(**l * 2))
                 .chain((0..num_leaves).rev().map_while(|l| {
                     self.tree_hashes.current[2 * l as usize]
                         .is_empty()
-                        .then(|| l * 2)
+                        .then_some(l * 2)
                 })),
         );
 
@@ -337,7 +337,7 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
-        credential::BasicCredentialValidator,
+        provider::identity_validation::BasicIdentityValidator,
         tree_kem::{node::NodeVec, parent_hash::test_utils::get_test_tree_fig_12},
     };
 
@@ -390,7 +390,7 @@ mod tests {
             let mut tree = TreeKemPublic::import_node_data(
                 cipher_suite.unwrap(),
                 NodeVec::tls_deserialize(&mut &*one_case.tree_data).unwrap(),
-                BasicCredentialValidator,
+                BasicIdentityValidator,
             )
             .unwrap();
 

@@ -1,10 +1,11 @@
 use super::{parent_hash::ParentHash, Capabilities, Lifetime};
 use crate::extension::LeafNodeExtension;
+use crate::provider::identity_validation::IdentityValidator;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::{
     cipher_suite::CipherSuite,
-    credential::{CredentialError, CredentialValidator},
     extension::ExtensionList,
+    identity::CredentialError,
     signer::{Signable, SignatureError, Signer},
     signing_identity::{SigningIdentity, SigningIdentityError},
 };
@@ -39,7 +40,7 @@ pub enum LeafNodeError {
     #[error("signing identity public key does not match the signer (secret key)")]
     InvalidSignerPublicKey,
     #[error("credential rejected by custom credential validator")]
-    CredentialValidatorError(#[source] Box<dyn std::error::Error + Sync + Send>),
+    IdentityValidatorError(#[source] Box<dyn std::error::Error + Sync + Send>),
 }
 
 #[derive(
@@ -98,12 +99,12 @@ impl LeafNode {
     fn check_signing_identity<S, C>(
         signing_identity: &SigningIdentity,
         signer: &S,
-        credential_validator: &C,
+        identity_validator: &C,
         cipher_suite: CipherSuite,
     ) -> Result<(), LeafNodeError>
     where
         S: Signer,
-        C: CredentialValidator,
+        C: IdentityValidator,
     {
         let signer_public = signer
             .public_key()
@@ -113,9 +114,9 @@ impl LeafNode {
             return Err(LeafNodeError::InvalidSignerPublicKey);
         }
 
-        credential_validator
+        identity_validator
             .validate(signing_identity, cipher_suite)
-            .map_err(|e| LeafNodeError::CredentialValidatorError(Box::new(e)))
+            .map_err(|e| LeafNodeError::IdentityValidatorError(Box::new(e)))
     }
 
     pub fn generate<S, C>(
@@ -123,16 +124,16 @@ impl LeafNode {
         properties: ConfigProperties,
         signer: &S,
         lifetime: Lifetime,
-        credential_validator: &C,
+        identity_validator: &C,
     ) -> Result<(Self, HpkeSecretKey), LeafNodeError>
     where
         S: Signer,
-        C: CredentialValidator,
+        C: IdentityValidator,
     {
         LeafNode::check_signing_identity(
             &properties.signing_identity,
             signer,
-            credential_validator,
+            identity_validator,
             cipher_suite,
         )?;
 
@@ -296,8 +297,9 @@ impl<'a> Signable<'a> for LeafNode {
 pub mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,
-        credential::{BasicCredentialValidator, CREDENTIAL_TYPE_BASIC},
         extension::{ApplicationIdExt, MlsExtension},
+        identity::CREDENTIAL_TYPE_BASIC,
+        provider::identity_validation::BasicIdentityValidator,
         signing_identity::test_utils::get_test_signing_identity,
     };
 
@@ -339,7 +341,7 @@ pub mod test_utils {
             properties,
             secret,
             lifetime,
-            &BasicCredentialValidator::new(),
+            &BasicIdentityValidator::new(),
         )
         .unwrap()
     }
@@ -368,7 +370,7 @@ pub mod test_utils {
             default_properties(signing_identity),
             &signature_key,
             Lifetime::years(1).unwrap(),
-            &BasicCredentialValidator::new(),
+            &BasicIdentityValidator::new(),
         )
         .map(|(leaf, hpke_secret_key)| (leaf, hpke_secret_key, signature_key))
         .unwrap()
@@ -409,9 +411,9 @@ mod tests {
     use super::*;
 
     use crate::cipher_suite::CipherSuite;
-    use crate::credential::BasicCredentialValidator;
+    use crate::provider::identity_validation::BasicIdentityValidator;
     use crate::signing_identity::test_utils::get_test_signing_identity;
-    use crate::tree_kem::leaf_node_validator::test_utils::FailureCredentialValidator;
+    use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityValidator;
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]
@@ -484,7 +486,7 @@ mod tests {
             default_properties(test_signing_identity),
             &incorrect_secret,
             Lifetime::years(1).unwrap(),
-            &BasicCredentialValidator::new(),
+            &BasicIdentityValidator::new(),
         );
 
         assert_matches!(res, Err(LeafNodeError::InvalidSignerPublicKey));
@@ -502,10 +504,10 @@ mod tests {
             default_properties(test_signing_identity),
             &signer,
             Lifetime::years(1).unwrap(),
-            &BasicCredentialValidator::new(),
+            &BasicIdentityValidator::new(),
         );
 
-        assert_matches!(res, Err(LeafNodeError::CredentialValidatorError(_)));
+        assert_matches!(res, Err(LeafNodeError::IdentityValidatorError(_)));
     }
 
     #[test]
@@ -520,10 +522,10 @@ mod tests {
             default_properties(test_signing_identity),
             &signer,
             Lifetime::years(1).unwrap(),
-            &FailureCredentialValidator,
+            &FailureIdentityValidator,
         );
 
-        assert_matches!(res, Err(LeafNodeError::CredentialValidatorError(_)));
+        assert_matches!(res, Err(LeafNodeError::IdentityValidatorError(_)));
     }
 
     #[test]

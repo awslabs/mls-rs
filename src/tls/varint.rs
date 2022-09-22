@@ -43,7 +43,7 @@ impl TryFrom<u32> for VarInt {
 
     fn try_from(n: u32) -> Result<Self, VarIntOutOfRange> {
         (n <= u32::from(VarInt::MAX))
-            .then(|| VarInt(n))
+            .then_some(VarInt(n))
             .ok_or(VarIntOutOfRange)
     }
 }
@@ -89,7 +89,7 @@ impl Deserialize for VarInt {
     fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
         let first = u8::tls_deserialize(bytes)?;
         let prefix = first >> 6;
-        let count = (prefix < 3).then(|| 1 << prefix).ok_or_else(|| {
+        let count = (prefix < 3).then_some(1 << prefix).ok_or_else(|| {
             tls_codec::Error::DecodingError(format!("Invalid VarInt prefix {}", prefix))
         })?;
         let n = (1..count).try_fold(u32::from(first & 0x3f), |n, _| {

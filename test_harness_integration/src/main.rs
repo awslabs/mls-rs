@@ -6,15 +6,16 @@
 use aws_mls::cipher_suite::{CipherSuite, MaybeCipherSuite, SignaturePublicKey};
 use aws_mls::client::Client;
 use aws_mls::client_config::{ClientConfig, InMemoryClientConfig, Preferences};
-use aws_mls::credential::{BasicCredential, BasicCredentialValidator, MlsCredential};
 use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, StateUpdate};
+use aws_mls::identity::{BasicCredential, MlsCredential};
+use aws_mls::provider::identity_validation::BasicIdentityValidator;
 
+use aws_mls::identity::SigningIdentity;
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::psk::{ExternalPskId, Psk};
-use aws_mls::signing_identity::SigningIdentity;
 use aws_mls::tls_codec::{Deserialize, Serialize};
 
 use clap::Parser;
@@ -100,7 +101,7 @@ impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
     }
 }
 
-type TestClientConfig = InMemoryClientConfig<BasicCredentialValidator>;
+type TestClientConfig = InMemoryClientConfig<BasicIdentityValidator>;
 
 #[derive(Default)]
 pub struct MlsClientImpl {

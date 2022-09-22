@@ -3,10 +3,10 @@ use tls_codec::Deserialize;
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     client_config::ClientConfig,
-    credential::CredentialValidator,
     extension::{ExtensionList, ExternalSendersExt, GroupContextExtension, RatchetTreeExt},
-    key_package::{KeyPackageGeneration, KeyPackageRepository},
+    key_package::KeyPackageGeneration,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
+    provider::{identity_validation::IdentityValidator, key_package::KeyPackageRepository},
     psk::ExternalPskIdValidator,
     signer::Signable,
     tree_kem::{
@@ -34,10 +34,10 @@ pub(crate) fn process_group_info<C>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
     tree_data: Option<&[u8]>,
-    credential_validator: C,
+    identity_validator: C,
 ) -> Result<(GroupContext, ConfirmationTag, TreeKemPublic, LeafIndex), GroupError>
 where
-    C: CredentialValidator,
+    C: IdentityValidator,
 {
     let group_protocol_version = check_protocol_version(
         protocol_versions_allowed,
@@ -61,7 +61,7 @@ where
         tree_data,
         cipher_suite,
         ratchet_tree_ext,
-        credential_validator,
+        identity_validator,
     )?;
 
     let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
@@ -89,13 +89,13 @@ where
     Ok((group_context, confirmation_tag, public_tree, signer))
 }
 
-pub(super) fn validate_group_info<C: CredentialValidator>(
+pub(super) fn validate_group_info<C: IdentityValidator>(
     protocol_versions_allowed: &[ProtocolVersion],
     cipher_suites_allowed: &[CipherSuite],
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
     tree_data: Option<&[u8]>,
-    credential_validator: &C,
+    identity_validator: &C,
 ) -> Result<(GroupContext, ConfirmationTag, TreeKemPublic, LeafIndex), GroupError> {
     let (group_context, confirmation_tag, mut public_tree, signer) = process_group_info(
         protocol_versions_allowed,
@@ -103,10 +103,10 @@ pub(super) fn validate_group_info<C: CredentialValidator>(
         msg_protocol_version,
         group_info,
         tree_data,
-        credential_validator,
+        identity_validator,
     )?;
 
-    validate_existing_group(&mut public_tree, &group_context, credential_validator)?;
+    validate_existing_group(&mut public_tree, &group_context, identity_validator)?;
 
     Ok((group_context, confirmation_tag, public_tree, signer))
 }
@@ -115,16 +115,16 @@ pub(super) fn find_tree<C>(
     tree_data: Option<&[u8]>,
     cipher_suite: CipherSuite,
     extension: Option<RatchetTreeExt>,
-    credential_validator: C,
+    identity_validator: C,
 ) -> Result<TreeKemPublic, GroupError>
 where
-    C: CredentialValidator,
+    C: IdentityValidator,
 {
     match tree_data {
         Some(tree_data) => Ok(TreeKemPublic::import_node_data(
             cipher_suite,
             NodeVec::tls_deserialize(&mut &*tree_data)?,
-            credential_validator,
+            identity_validator,
         )?),
         None => {
             let tree_extension = extension.ok_or(GroupError::RatchetTreeNotFound)?;
@@ -132,16 +132,16 @@ where
             Ok(TreeKemPublic::import_node_data(
                 cipher_suite,
                 tree_extension.tree_data,
-                credential_validator,
+                identity_validator,
             )?)
         }
     }
 }
 
-pub(super) fn validate_existing_group<C: CredentialValidator>(
+pub(super) fn validate_existing_group<C: IdentityValidator>(
     public_tree: &mut TreeKemPublic,
     group_context: &GroupContext,
-    credential_validator: &C,
+    identity_validator: &C,
 ) -> Result<(), GroupError> {
     let required_capabilities = group_context.extensions.get_extension()?;
 
@@ -151,7 +151,7 @@ pub(super) fn validate_existing_group<C: CredentialValidator>(
         &group_context.group_id,
         &group_context.tree_hash,
         required_capabilities.as_ref(),
-        credential_validator,
+        identity_validator,
     );
 
     tree_validator.validate(public_tree)?;
@@ -160,7 +160,7 @@ pub(super) fn validate_existing_group<C: CredentialValidator>(
         .extensions
         .get_extension::<ExternalSendersExt>()?
     {
-        ext_senders.verify_all(&credential_validator, group_context.cipher_suite)?;
+        ext_senders.verify_all(&identity_validator, group_context.cipher_suite)?;
     }
 
     Ok(())
@@ -189,13 +189,13 @@ pub(super) fn proposal_effects<C, F, P>(
     commit: &Commit,
     sender: &Sender,
     group_extensions: &ExtensionList<GroupContextExtension>,
-    credential_validator: C,
+    identity_validator: C,
     public_tree: &TreeKemPublic,
     external_psk_id_validator: P,
     user_filter: F,
 ) -> Result<ProposalSetEffects, ProposalCacheError>
 where
-    C: CredentialValidator,
+    C: IdentityValidator,
     F: ProposalFilter,
     P: ExternalPskIdValidator,
 {
@@ -205,7 +205,7 @@ where
         commit.proposals.clone(),
         commit.path.as_ref().map(|path| &path.leaf_node),
         group_extensions,
-        credential_validator,
+        identity_validator,
         public_tree,
         external_psk_id_validator,
         user_filter,

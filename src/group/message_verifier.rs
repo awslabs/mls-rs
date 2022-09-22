@@ -55,7 +55,7 @@ pub(crate) fn verify_plaintext_authentication(
         }
         Sender::NewMemberCommit | Sender::NewMemberProposal | Sender::External(_) => {
             tag.is_none()
-                .then(|| ())
+                .then_some(())
                 .ok_or(GroupError::MembershipTagForNonMember)?;
         }
     }

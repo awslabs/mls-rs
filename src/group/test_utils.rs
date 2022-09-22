@@ -3,9 +3,9 @@ use ferriscrypt::asym::ec_key::{self, SecretKey};
 use super::*;
 use crate::{
     client_config::{test_utils::*, InMemoryClientConfig, Preferences},
-    credential::BasicCredentialValidator,
     extension::RequiredCapabilitiesExt,
     key_package::{KeyPackageGeneration, KeyPackageGenerator},
+    provider::identity_validation::BasicIdentityValidator,
     signing_identity::test_utils::get_test_signing_identity,
     tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
 };
@@ -156,7 +156,7 @@ pub(crate) fn test_member(
         cipher_suite,
         signing_identity: &signing_identity,
         signing_key: &signing_key,
-        credential_validator: &BasicCredentialValidator::new(),
+        identity_validator: &BasicIdentityValidator::new(),
     };
 
     let key_package = key_package_generator

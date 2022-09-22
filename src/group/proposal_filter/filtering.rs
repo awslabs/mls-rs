@@ -1,6 +1,5 @@
 use crate::{
     cipher_suite::CipherSuite,
-    credential::CredentialValidator,
     extension::{
         is_default_extension, ExtensionList, ExternalSendersExt, GroupContextExtension,
         RequiredCapabilitiesExt,
@@ -13,6 +12,7 @@ use crate::{
     },
     key_package::KeyPackageValidator,
     protocol_version::ProtocolVersion,
+    provider::identity_validation::IdentityValidator,
     psk::ExternalPskIdValidator,
     tree_kem::{
         leaf_node::LeafNode,
@@ -56,13 +56,13 @@ pub(crate) struct ProposalApplier<'a, C, P> {
     original_group_extensions: &'a ExtensionList<GroupContextExtension>,
     original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
     external_leaf: Option<&'a LeafNode>,
-    credential_validator: C,
+    identity_validator: C,
     external_psk_id_validator: P,
 }
 
 impl<'a, C, P> ProposalApplier<'a, C, P>
 where
-    C: CredentialValidator,
+    C: IdentityValidator,
     P: ExternalPskIdValidator,
 {
     #[allow(clippy::too_many_arguments)]
@@ -74,7 +74,7 @@ where
         original_group_extensions: &'a ExtensionList<GroupContextExtension>,
         original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
         external_leaf: Option<&'a LeafNode>,
-        credential_validator: C,
+        identity_validator: C,
         external_psk_id_validator: P,
     ) -> Self {
         Self {
@@ -85,7 +85,7 @@ where
             original_group_extensions,
             original_required_capabilities,
             external_leaf,
-            credential_validator,
+            identity_validator,
             external_psk_id_validator,
         }
     }
@@ -140,7 +140,7 @@ where
             &strategy,
             proposals,
             self.cipher_suite,
-            &self.credential_validator,
+            &self.identity_validator,
         )?;
 
         let proposals = filter_out_extra_group_context_extensions(&strategy, proposals)?;
@@ -167,7 +167,7 @@ where
             &proposals,
             external_leaf,
             self.original_tree,
-            &self.credential_validator,
+            &self.identity_validator,
         )?;
 
         ensure_proposals_in_external_commit_are_allowed(&proposals)?;
@@ -190,7 +190,7 @@ where
 
         let state = self.apply_proposal_changes(&FailInvalidProposal, state)?;
 
-        let state = insert_external_leaf(state, external_leaf.clone(), &self.credential_validator)?;
+        let state = insert_external_leaf(state, external_leaf.clone(), &self.identity_validator)?;
         Ok(state)
     }
 
@@ -255,7 +255,7 @@ where
     ) -> Result<ProposalState, ProposalFilterError>
     where
         F: FilterStrategy,
-        C: CredentialValidator,
+        C: IdentityValidator,
     {
         let mut new_state =
             self.apply_tree_changes(&strategy, state.clone(), &ExtensionList::new(), None)?;
@@ -265,7 +265,7 @@ where
                 let leaf_validator = LeafNodeValidator::new(
                     self.cipher_suite,
                     Some(&new_required_capabilities),
-                    &self.credential_validator,
+                    &self.identity_validator,
                 );
 
                 new_state
@@ -370,7 +370,7 @@ where
             &updates,
             &removals,
             &additions,
-            &self.credential_validator,
+            &self.identity_validator,
         )?;
 
         let TreeBatchEditAccumulator {
@@ -456,7 +456,7 @@ where
         let leaf_node_validator = LeafNodeValidator::new(
             self.cipher_suite,
             required_capabilities,
-            &self.credential_validator,
+            &self.identity_validator,
         );
 
         let proposals = &mut state.proposals;
@@ -493,7 +493,7 @@ where
             self.protocol_version,
             self.cipher_suite,
             required_capabilities,
-            &self.credential_validator,
+            &self.identity_validator,
         );
 
         let proposals = &mut state.proposals;
@@ -669,11 +669,11 @@ fn filter_out_invalid_group_extensions<F, C>(
     strategy: F,
     mut proposals: ProposalBundle,
     cipher_suite: CipherSuite,
-    credential_validator: C,
+    identity_validator: C,
 ) -> Result<ProposalBundle, ProposalFilterError>
 where
     F: FilterStrategy,
-    C: CredentialValidator,
+    C: IdentityValidator,
 {
     proposals.retain_by_type::<ExtensionList<GroupContextExtension>, _, _>(|p| {
         let res = p
@@ -683,7 +683,7 @@ where
             .and_then(|extension| {
                 extension.map_or(Ok(()), |extension| {
                     extension
-                        .verify_all(&credential_validator, cipher_suite)
+                        .verify_all(&identity_validator, cipher_suite)
                         .map_err(Into::into)
                 })
             });
@@ -984,16 +984,16 @@ fn ensure_at_most_one_removal_for_self<C>(
     proposals: &ProposalBundle,
     external_leaf: &LeafNode,
     tree: &TreeKemPublic,
-    credential_validator: C,
+    identity_validator: C,
 ) -> Result<(), ProposalFilterError>
 where
-    C: CredentialValidator,
+    C: IdentityValidator,
 {
     let mut removals = proposals.by_type::<RemoveProposal>();
 
     match (removals.next(), removals.next()) {
         (Some(removal), None) => {
-            ensure_removal_is_for_self(&removal.proposal, external_leaf, tree, credential_validator)
+            ensure_removal_is_for_self(&removal.proposal, external_leaf, tree, identity_validator)
         }
         (Some(_), Some(_)) => Err(ProposalFilterError::ExternalCommitWithMoreThanOneRemove),
         (None, _) => Ok(()),
@@ -1004,14 +1004,14 @@ fn ensure_removal_is_for_self<C>(
     removal: &RemoveProposal,
     external_leaf: &LeafNode,
     tree: &TreeKemPublic,
-    credential_validator: C,
+    identity_validator: C,
 ) -> Result<(), ProposalFilterError>
 where
-    C: CredentialValidator,
+    C: IdentityValidator,
 {
     let existing_signing_id = &tree.get_leaf_node(removal.to_remove)?.signing_identity;
 
-    credential_validator
+    identity_validator
         .valid_successor(existing_signing_id, &external_leaf.signing_identity)
         .map_err(|e| RatchetTreeError::CredentialValidationError(e.into()))?
         .then_some(())
@@ -1043,14 +1043,12 @@ fn leaf_index_of_update_sender(
 fn insert_external_leaf<C>(
     mut state: ProposalState,
     leaf_node: LeafNode,
-    credential_validator: C,
+    identity_validator: C,
 ) -> Result<ProposalState, ProposalFilterError>
 where
-    C: CredentialValidator,
+    C: IdentityValidator,
 {
-    let leaf_indexes = state
-        .tree
-        .add_leaves(vec![leaf_node], credential_validator)?;
+    let leaf_indexes = state.tree.add_leaves(vec![leaf_node], identity_validator)?;
     state.external_leaf_index = leaf_indexes.first().copied();
     Ok(state)
 }

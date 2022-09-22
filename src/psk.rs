@@ -1,12 +1,13 @@
 use crate::{
     cipher_suite::CipherSuite,
-    client_config::{ClientConfig, PskStore},
+    client_config::ClientConfig,
     group::{
         epoch::EpochSecrets,
         key_schedule::{KeyScheduleKdf, KeyScheduleKdfError},
+        state_repo::GroupStateRepository,
         GroupContext,
     },
-    group_state_repo::{GroupStateRepository, GroupStateStorage},
+    provider::{group_state::GroupStateStorage, psk::PskStore},
     serde_utils::vec_u8_as_base64::VecAsBase64,
 };
 use ferriscrypt::{
@@ -330,7 +331,7 @@ impl From<KdfError> for PskSecretError {
     }
 }
 
-pub trait ExternalPskIdValidator {
+pub(crate) trait ExternalPskIdValidator {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn validate(&self, psk_id: &ExternalPskId) -> Result<(), Self::Error>;
@@ -348,7 +349,7 @@ where
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct PassThroughPskIdValidator;
+pub(crate) struct PassThroughPskIdValidator;
 
 impl ExternalPskIdValidator for PassThroughPskIdValidator {
     type Error = Infallible;
@@ -362,7 +363,8 @@ impl ExternalPskIdValidator for PassThroughPskIdValidator {
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
-        client_config::{test_utils::TestClientConfig, InMemoryPskStore},
+        client_config::test_utils::TestClientConfig,
+        provider::psk::InMemoryPskStore,
         psk::{
             psk_secret, ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskNonce, PskSecretError,
         },

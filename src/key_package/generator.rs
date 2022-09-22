@@ -1,6 +1,6 @@
 use crate::{
-    credential::CredentialValidator,
     extension::{KeyPackageExtension, LeafNodeExtension},
+    provider::identity_validation::IdentityValidator,
     signer::{SignatureError, Signer},
     signing_identity::SigningIdentity,
     tree_kem::{
@@ -32,13 +32,13 @@ pub enum KeyPackageGenerationError {
 pub struct KeyPackageGenerator<'a, S, C>
 where
     S: Signer,
-    C: CredentialValidator,
+    C: IdentityValidator,
 {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     pub signing_identity: &'a SigningIdentity,
     pub signing_key: &'a S,
-    pub credential_validator: &'a C,
+    pub identity_validator: &'a C,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -51,7 +51,7 @@ pub struct KeyPackageGeneration {
 impl<'a, S, C> KeyPackageGenerator<'a, S, C>
 where
     S: Signer,
-    C: CredentialValidator,
+    C: IdentityValidator,
 {
     pub(super) fn sign(&self, package: &mut KeyPackage) -> Result<(), KeyPackageGenerationError> {
         package.sign(self.signing_key, &()).map_err(Into::into)
@@ -77,7 +77,7 @@ where
             properties,
             self.signing_key,
             lifetime,
-            self.credential_validator,
+            self.identity_validator,
         )?;
 
         let mut package = KeyPackage {
@@ -107,14 +107,14 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
-        credential::BasicCredentialValidator,
         extension::{ExtensionList, KeyPackageExtension, LeafNodeExtension, MlsExtension},
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
         protocol_version::ProtocolVersion,
+        provider::identity_validation::BasicIdentityValidator,
         signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{
             leaf_node::{test_utils::get_test_capabilities, LeafNodeError, LeafNodeSource},
-            leaf_node_validator::test_utils::FailureCredentialValidator,
+            leaf_node_validator::test_utils::FailureIdentityValidator,
             Lifetime,
         },
     };
@@ -171,7 +171,7 @@ mod tests {
                 cipher_suite,
                 signing_identity: &signing_identity,
                 signing_key: &signing_key,
-                credential_validator: &BasicCredentialValidator::new(),
+                identity_validator: &BasicIdentityValidator::new(),
             };
 
             let mut capabilities = get_test_capabilities();
@@ -244,7 +244,7 @@ mod tests {
                 protocol_version,
                 cipher_suite,
                 None,
-                BasicCredentialValidator::new(),
+                BasicIdentityValidator::new(),
             );
 
             validator
@@ -266,7 +266,7 @@ mod tests {
             cipher_suite,
             signing_identity: &signing_identity,
             signing_key: &signing_key,
-            credential_validator: &BasicCredentialValidator::new(),
+            identity_validator: &BasicIdentityValidator::new(),
         };
 
         let generated = test_generator.generate(
@@ -297,7 +297,7 @@ mod tests {
                 cipher_suite,
                 signing_identity: &signing_identity,
                 signing_key: &signing_key,
-                credential_validator: &BasicCredentialValidator::new(),
+                identity_validator: &BasicIdentityValidator::new(),
             };
 
             let first_key_package = test_generator
@@ -343,7 +343,7 @@ mod tests {
             cipher_suite,
             signing_identity: &signing_identity,
             signing_key: &signing_key,
-            credential_validator: &FailureCredentialValidator,
+            identity_validator: &FailureIdentityValidator,
         };
 
         assert_matches!(
@@ -354,7 +354,7 @@ mod tests {
                 ExtensionList::default()
             ),
             Err(KeyPackageGenerationError::LeafNodeError(
-                LeafNodeError::CredentialValidatorError(_)
+                LeafNodeError::IdentityValidatorError(_)
             ))
         );
     }

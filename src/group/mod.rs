@@ -12,16 +12,15 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroizing;
 
 use crate::cipher_suite::CipherSuite;
-use crate::client_config::{ClientConfig, ProposalFilterInit, PskStore, PskStoreIdValidator};
-use crate::credential::CredentialValidator;
+use crate::client_config::{ClientConfig, ProposalFilterInit};
 use crate::extension::{
     ExtensionError, ExtensionList, ExternalPubExt, GroupContextExtension, LeafNodeExtension,
     RatchetTreeExt,
 };
-use crate::group_state_repo::GroupStateRepository;
 use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
-use crate::keychain::Keychain;
 use crate::protocol_version::ProtocolVersion;
+use crate::provider::keychain::Keychain;
+use crate::provider::psk::PskStoreIdValidator;
 use crate::psk::{
     ExternalPskId, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
     ResumptionPSKUsage, ResumptionPsk, ResumptionPskSearch,
@@ -58,6 +57,7 @@ pub(crate) use self::commit::test_utils::CommitModifiers;
 use self::epoch::{EpochSecrets, PriorEpoch, SenderDataSecret};
 pub use self::message_processor::{Event, ExternalEvent, ProcessedMessage, StateUpdate};
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
+use self::state_repo::GroupStateRepository;
 pub use external_group::ExternalGroup;
 pub(crate) use group_info::GroupInfo;
 pub(crate) use proposal_cache::ProposalCacheError;
@@ -101,6 +101,7 @@ mod proposal_ref;
 mod roster;
 pub(crate) mod snapshot;
 mod state;
+pub(crate) mod state_repo;
 mod stats;
 mod transcript_hash;
 mod util;
@@ -181,14 +182,14 @@ where
             leaf_properties,
             &signer,
             config.lifetime(),
-            &config.credential_validator(),
+            &config.identity_validator(),
         )?;
 
         let (mut public_tree, private_tree) = TreeKemPublic::derive(
             cipher_suite,
             leaf_node,
             leaf_node_secret,
-            config.credential_validator(),
+            config.identity_validator(),
         )?;
 
         let tree_hash = public_tree.tree_hash()?;
@@ -340,7 +341,7 @@ where
                 protocol_version,
                 group_info,
                 tree_data,
-                &config.credential_validator(),
+                &config.identity_validator(),
             )?;
 
         // Identify a leaf in the tree array (any even-numbered node) whose leaf_node is identical
@@ -466,7 +467,7 @@ where
             protocol_version,
             group_info,
             tree_data,
-            &config.credential_validator(),
+            &config.identity_validator(),
         )?;
 
         let (leaf_properties, signer) =
@@ -477,7 +478,7 @@ where
             leaf_properties,
             &signer,
             config.lifetime(),
-            &config.credential_validator(),
+            &config.identity_validator(),
         )?;
 
         let (init_secret, kem_output) = InitSecret::encode_for_external(
@@ -706,7 +707,7 @@ where
             new_context.protocol_version,
             new_context.cipher_suite,
             required_capabilities.as_ref(),
-            self.config.credential_validator(),
+            self.config.identity_validator(),
         );
 
         // Generate new leaves for all existing members
@@ -739,12 +740,12 @@ where
             new_context.cipher_suite,
             new_validated_leaf,
             new_leaf_secret,
-            self.config.credential_validator(),
+            self.config.identity_validator(),
         )?;
 
         // Add the generated leaves to new tree
         let added_member_indexes =
-            new_pub_tree.add_leaves(new_members, self.config.credential_validator())?;
+            new_pub_tree.add_leaves(new_members, self.config.identity_validator())?;
 
         new_context.tree_hash = new_pub_tree.tree_hash()?;
 
@@ -855,7 +856,7 @@ where
             leaf_properties,
             &signer,
             self.config.lifetime(),
-            &self.config.credential_validator(),
+            &self.config.identity_validator(),
         )?;
 
         let mut new_context = GroupContext {
@@ -929,7 +930,7 @@ where
             leaf_properties,
             &new_signer,
             config.lifetime(),
-            &config.credential_validator(),
+            &config.identity_validator(),
         )?;
 
         let mut new_context = GroupContext {
@@ -1066,7 +1067,7 @@ where
             self.state.protocol_version(),
             self.state.cipher_suite(),
             None,
-            self.config.credential_validator(),
+            self.config.identity_validator(),
         );
 
         key_package_validator.check_if_valid(&key_package, Default::default())?;
@@ -1433,7 +1434,7 @@ where
     C: ClientConfig + Clone,
 {
     type ProposalFilter = C::ProposalFilter;
-    type CredentialValidator = C::CredentialValidator;
+    type IdentityValidator = C::IdentityValidator;
     type ExternalPskIdValidator = PskStoreIdValidator<C::PskStore>;
 
     fn self_index(&self) -> Option<LeafIndex> {
@@ -1479,7 +1480,7 @@ where
             provisional_state.public_tree.apply_update_path(
                 self.private_tree.self_index,
                 &update_path,
-                self.credential_validator(),
+                self.identity_validator(),
             )?;
 
             Ok(pending.clone())
@@ -1497,7 +1498,7 @@ where
                     .map(|(_, index)| *index)
                     .collect::<Vec<LeafIndex>>(),
                 &mut provisional_state.group_context,
-                self.config.credential_validator(),
+                self.config.identity_validator(),
             )
             .map(|root_secret| (provisional_private_tree, root_secret))
         }?;
@@ -1611,12 +1612,12 @@ where
         self.config.proposal_filter(init)
     }
 
-    fn credential_validator(&self) -> Self::CredentialValidator {
-        self.config.credential_validator()
+    fn identity_validator(&self) -> Self::IdentityValidator {
+        self.config.identity_validator()
     }
 
     fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator {
-        self.config.secret_store().into_external_id_validator()
+        PskStoreIdValidator::from(self.config.secret_store())
     }
 
     fn group_state(&self) -> &GroupState {
@@ -1646,17 +1647,17 @@ pub(crate) mod test_utils;
 #[cfg(test)]
 mod tests {
     use crate::client_config::test_utils::TestClientConfig;
-    use crate::credential::test_utils::{get_test_basic_credential, get_test_x509_credential};
     use crate::extension::MlsExtension;
+    use crate::identity::test_utils::{get_test_basic_credential, get_test_x509_credential};
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use crate::{
         cipher_suite::MaybeCipherSuite,
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_config::{test_utils::test_config, Preferences},
-        credential::CREDENTIAL_TYPE_X509,
         extension::{
             test_utils::TestExtension, Extension, ExternalSendersExt, RequiredCapabilitiesExt,
         },
+        identity::CREDENTIAL_TYPE_X509,
         key_package::test_utils::{test_key_package, test_key_package_custom},
         protocol_version::MaybeProtocolVersion,
         psk::Psk,

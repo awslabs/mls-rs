@@ -1,11 +1,11 @@
 use crate::cipher_suite::CipherSuite;
-use crate::credential::CredentialValidator;
 use crate::group::proposal::ProposalType;
+use crate::provider::identity_validation::IdentityValidator;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signing_identity::SigningIdentityError;
 use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
-use crate::{credential::CredentialType, signing_identity::SigningIdentity};
+use crate::{identity::CredentialType, signing_identity::SigningIdentity};
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use serde_with::serde_as;
 use std::fmt::Debug;
@@ -144,7 +144,7 @@ impl ExternalSendersExt {
         Self { allowed_senders }
     }
 
-    pub fn verify_all<C: CredentialValidator>(
+    pub fn verify_all<C: IdentityValidator>(
         &self,
         validator: &C,
         cipher_suite: CipherSuite,
@@ -152,7 +152,7 @@ impl ExternalSendersExt {
         self.allowed_senders.iter().try_for_each(|id| {
             validator
                 .validate(id, cipher_suite)
-                .map_err(|e| SigningIdentityError::CredentialValidatorError(Box::new(e)))
+                .map_err(|e| SigningIdentityError::IdentityValidatorError(Box::new(e)))
         })
     }
 }
@@ -410,7 +410,7 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::{
-        credential::CREDENTIAL_TYPE_BASIC, signing_identity::test_utils::get_test_signing_identity,
+        identity::CREDENTIAL_TYPE_BASIC, signing_identity::test_utils::get_test_signing_identity,
     };
 
     use super::*;

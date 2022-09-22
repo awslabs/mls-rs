@@ -1,7 +1,7 @@
 use crate::{
     client_config::ProposalFilterInit,
-    credential::CredentialValidator,
     key_package::KeyPackage,
+    provider::identity_validation::IdentityValidator,
     psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
     tree_kem::{
         leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, validate_update_path,
@@ -171,7 +171,7 @@ where
     E: From<Proposal> + TryFrom<ApplicationData, Error = GroupError> + From<StateUpdate>,
 {
     type ProposalFilter: ProposalFilter;
-    type CredentialValidator: CredentialValidator;
+    type IdentityValidator: IdentityValidator;
     type ExternalPskIdValidator: ExternalPskIdValidator;
 
     fn process_incoming_message(
@@ -264,7 +264,7 @@ where
             commit,
             &auth_content.content.sender,
             &group_state.context.extensions,
-            self.credential_validator(),
+            self.identity_validator(),
             &group_state.public_tree,
             self.external_psk_id_validator(),
             self.proposal_filter(ProposalFilterInit::new(auth_content.content.sender.clone())),
@@ -297,7 +297,7 @@ where
             .as_ref()
             .map(|update_path| {
                 validate_update_path(
-                    &self.credential_validator(),
+                    &self.identity_validator(),
                     update_path,
                     &provisional_state,
                     sender,
@@ -351,7 +351,7 @@ where
     fn group_state_mut(&mut self) -> &mut GroupState;
     fn self_index(&self) -> Option<LeafIndex>;
     fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter;
-    fn credential_validator(&self) -> Self::CredentialValidator;
+    fn identity_validator(&self) -> Self::IdentityValidator;
     fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator;
     fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool;
     fn min_epoch_available(&self) -> Option<u64>;
@@ -481,7 +481,7 @@ where
     ) -> Result<Option<(TreeKemPrivate, PathSecret)>, GroupError> {
         provisional_state
             .public_tree
-            .apply_update_path(sender, &update_path, self.credential_validator())
+            .apply_update_path(sender, &update_path, self.identity_validator())
             .map(|_| None)
             .map_err(Into::into)
     }

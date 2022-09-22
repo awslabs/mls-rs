@@ -1,6 +1,5 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::ClientConfig;
-use crate::credential::CredentialError;
 use crate::extension::{ExtensionError, ExtensionList, GroupContextExtension};
 use crate::group::framing::{
     Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender, WireFormat,
@@ -8,15 +7,16 @@ use crate::group::framing::{
 use crate::group::message_signature::MLSAuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
 use crate::group::{process_group_info, Group, GroupError};
-use crate::group_state_repo::GroupStateStorage;
-use crate::key_package::{
-    KeyPackage, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageRepository,
-};
+use crate::identity::CredentialError;
+use crate::key_package::{KeyPackage, KeyPackageGenerationError, KeyPackageGenerator};
 use crate::protocol_version::MaybeProtocolVersion;
+use crate::protocol_version::ProtocolVersion;
+use crate::provider::group_state::GroupStateStorage;
+use crate::provider::key_package::KeyPackageRepository;
+use crate::provider::keychain::Keychain;
 use crate::psk::ExternalPskId;
 use crate::signer::SignatureError;
 use crate::tree_kem::leaf_node::LeafNodeError;
-use crate::{keychain::Keychain, protocol_version::ProtocolVersion};
 use ferriscrypt::rand::{SecureRng, SecureRngError};
 use hex::ToHex;
 use thiserror::Error;
@@ -85,7 +85,7 @@ where
             cipher_suite,
             signing_key: &signer,
             signing_identity: &identity,
-            credential_validator: &self.config.credential_validator(),
+            identity_validator: &self.config.identity_validator(),
         };
 
         let key_pkg_gen = key_package_generator.generate(
@@ -205,7 +205,7 @@ where
             protocol_version,
             group_info,
             tree_data,
-            self.config.credential_validator(),
+            self.config.identity_validator(),
         )?;
 
         let key_package =
@@ -321,12 +321,12 @@ mod tests {
 
     use super::*;
     use crate::{
-        credential::test_utils::get_test_basic_credential,
         group::{
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_group_custom_config},
             Event,
         },
+        identity::test_utils::get_test_basic_credential,
         psk::{ExternalPskId, Psk},
         tree_kem::leaf_node::LeafNodeSource,
     };
@@ -446,7 +446,7 @@ mod tests {
         let (mut new_group, external_commit) = new_client.commit_external(
             group_info_msg,
             Some(&alice_group.group.export_tree().unwrap()),
-            do_remove.then(|| 1),
+            do_remove.then_some(1),
             if with_psk { vec![psk_id] } else { vec![] },
             vec![],
         )?;

@@ -70,7 +70,7 @@ pub(crate) fn build_ascii_tree(nodes: &NodeVec) -> String {
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
-        credential::BasicCredentialValidator,
+        provider::identity_validation::BasicIdentityValidator,
         tree_kem::{
             node::Parent,
             parent_hash::ParentHash,
@@ -87,7 +87,7 @@ mod tests {
         // Create a tree
         let mut tree = get_test_tree(cipher_suite).public;
         let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages, BasicCredentialValidator)
+        tree.add_leaves(key_packages, BasicIdentityValidator)
             .unwrap();
 
         let tree_str = concat!(
@@ -111,10 +111,10 @@ mod tests {
         let mut tree = get_test_tree(cipher_suite).public;
         let key_packages = get_test_leaf_nodes(cipher_suite);
         let to_remove = tree
-            .add_leaves(key_packages, BasicCredentialValidator)
+            .add_leaves(key_packages, BasicIdentityValidator)
             .unwrap()[0];
 
-        tree.remove_leaves(vec![to_remove], BasicCredentialValidator)
+        tree.remove_leaves(vec![to_remove], BasicIdentityValidator)
             .unwrap();
 
         let tree_str = concat!(
@@ -140,7 +140,7 @@ mod tests {
 
         tree.add_leaves(
             [key_packages[0].clone(), key_packages[1].clone()].to_vec(),
-            BasicCredentialValidator,
+            BasicIdentityValidator,
         )
         .unwrap();
 
@@ -151,7 +151,7 @@ mod tests {
         }
         .into();
 
-        tree.add_leaves([key_packages[2].clone()].to_vec(), BasicCredentialValidator)
+        tree.add_leaves([key_packages[2].clone()].to_vec(), BasicIdentityValidator)
             .unwrap();
 
         let tree_str = concat!(

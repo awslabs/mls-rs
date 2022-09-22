@@ -174,16 +174,18 @@ impl ProposalBundle {
 
     pub fn proposal_types(&self) -> impl Iterator<Item = ProposalType> + '_ {
         (!self.additions.is_empty())
-            .then(|| ProposalType::ADD)
+            .then_some(ProposalType::ADD)
             .into_iter()
-            .chain((!self.updates.is_empty()).then(|| ProposalType::UPDATE))
-            .chain((!self.removals.is_empty()).then(|| ProposalType::REMOVE))
-            .chain((!self.psks.is_empty()).then(|| ProposalType::PSK))
-            .chain((!self.reinitializations.is_empty()).then(|| ProposalType::RE_INIT))
-            .chain((!self.external_initializations.is_empty()).then(|| ProposalType::EXTERNAL_INIT))
+            .chain((!self.updates.is_empty()).then_some(ProposalType::UPDATE))
+            .chain((!self.removals.is_empty()).then_some(ProposalType::REMOVE))
+            .chain((!self.psks.is_empty()).then_some(ProposalType::PSK))
+            .chain((!self.reinitializations.is_empty()).then_some(ProposalType::RE_INIT))
+            .chain(
+                (!self.external_initializations.is_empty()).then_some(ProposalType::EXTERNAL_INIT),
+            )
             .chain(
                 (!self.group_context_extensions.is_empty())
-                    .then(|| ProposalType::GROUP_CONTEXT_EXTENSIONS),
+                    .then_some(ProposalType::GROUP_CONTEXT_EXTENSIONS),
             )
     }
 }

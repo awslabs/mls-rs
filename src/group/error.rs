@@ -6,9 +6,8 @@ use thiserror::Error;
 
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
-    credential::CredentialError,
     extension::{ExtensionError, ExtensionList, GroupContextExtension},
-    group_state_repo::GroupStateRepositoryError,
+    identity::CredentialError,
     key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError},
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     psk::PskSecretError,
@@ -27,6 +26,7 @@ use super::{
     framing::{ContentType, WireFormat},
     key_schedule::{KeyScheduleError, KeyScheduleKdfError},
     membership_tag::MembershipTagError,
+    state_repo::GroupStateRepositoryError,
     transcript_hash::TranscriptHashError,
     ProposalCacheError,
 };

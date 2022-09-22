@@ -1,8 +1,8 @@
 use aws_mls::{
     bench_utils::create_empty_tree::{load_test_cases, TestCase},
     cipher_suite::CipherSuite,
-    credential::BasicCredentialValidator,
     extension::{ExtensionList, LeafNodeExtension},
+    provider::identity_validation::BasicIdentityValidator,
     tree_kem::{
         kem::TreeKem,
         leaf_node::{test_utils::get_test_capabilities, ConfigProperties},
@@ -54,7 +54,7 @@ fn bench_decap(
                 &[],
                 &value.encap_signer,
                 update_leaf_properties,
-                BasicCredentialValidator,
+                BasicIdentityValidator,
             )
             .unwrap();
 
@@ -79,7 +79,7 @@ fn bench_decap(
                             &validated_update_path,
                             added_leaves,
                             &mut value.group_context,
-                            BasicCredentialValidator,
+                            BasicIdentityValidator,
                         )
                         .unwrap();
                 })

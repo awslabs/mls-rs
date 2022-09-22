@@ -1,68 +1,34 @@
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     client::Client,
-    credential::{CredentialType, CredentialValidator},
     extension::{ExtensionList, ExtensionType, KeyPackageExtension, LeafNodeExtension},
     group::{
         framing::Sender, proposal::BoxedProposalFilter, proposal::PassThroughProposalFilter,
-        proposal::ProposalFilter, ControlEncryptionMode, PaddingMode,
+        proposal::ProposalFilter, state_repo::DEFAULT_EPOCH_RETENTION_LIMIT, ControlEncryptionMode,
+        PaddingMode,
     },
-    group_state_repo::{
-        GroupStateStorage, InMemoryGroupStateStorage, DEFAULT_EPOCH_RETENTION_LIMIT,
-    },
-    key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
-    keychain::{InMemoryKeychain, Keychain},
+    identity::CredentialType,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
-    psk::{ExternalPskId, ExternalPskIdValidator, Psk},
+    provider::{
+        group_state::{GroupStateStorage, InMemoryGroupStateStorage},
+        identity_validation::IdentityValidator,
+        key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
+        keychain::{InMemoryKeychain, Keychain},
+        psk::{InMemoryPskStore, PskStore},
+    },
+    psk::{ExternalPskId, Psk},
     signing_identity::SigningIdentity,
     time::MlsTime,
     tree_kem::Capabilities,
 };
 use ferriscrypt::asym::ec_key::SecretKey;
 use std::{
-    collections::HashMap,
-    convert::Infallible,
     fmt::{self, Debug},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 use thiserror::Error;
 
 pub use crate::tree_kem::{Lifetime, LifetimeError};
-
-pub trait PskStore {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    fn psk(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error>;
-
-    fn into_external_id_validator(self) -> PskStoreIdValidator<Self>
-    where
-        Self: Sized,
-    {
-        PskStoreIdValidator(self)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct PskStoreIdValidator<T>(T);
-
-impl<T: PskStore> ExternalPskIdValidator for PskStoreIdValidator<T> {
-    type Error = PskStoreIdValidationError<T::Error>;
-
-    fn validate(&self, id: &ExternalPskId) -> Result<(), Self::Error> {
-        self.0
-            .psk(id)?
-            .map(|_| ())
-            .ok_or_else(|| PskStoreIdValidationError::ExternalIdNotFound(id.clone()))
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum PskStoreIdValidationError<E: std::error::Error> {
-    #[error("External PSK ID {0:?} not found")]
-    ExternalIdNotFound(ExternalPskId),
-    #[error(transparent)]
-    Other(#[from] E),
-}
 
 pub trait ClientConfig {
     type KeyPackageRepository: KeyPackageRepository;
@@ -70,7 +36,7 @@ pub trait ClientConfig {
     type Keychain: Keychain;
     type PskStore: PskStore;
     type GroupStateStorage: GroupStateStorage;
-    type CredentialValidator: CredentialValidator;
+    type IdentityValidator: IdentityValidator;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
@@ -84,7 +50,7 @@ pub trait ClientConfig {
 
     fn group_state_storage(&self) -> Self::GroupStateStorage;
 
-    fn credential_validator(&self) -> Self::CredentialValidator;
+    fn identity_validator(&self) -> Self::IdentityValidator;
     fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension>;
     fn leaf_node_extensions(&self) -> ExtensionList<LeafNodeExtension>;
     fn lifetime(&self) -> Lifetime;
@@ -116,26 +82,7 @@ pub trait ClientConfig {
     }
 
     fn supported_credential_types(&self) -> Vec<CredentialType> {
-        self.credential_validator().supported_types()
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct InMemoryPskStore {
-    inner: Arc<Mutex<HashMap<ExternalPskId, Psk>>>,
-}
-
-impl InMemoryPskStore {
-    pub fn insert(&mut self, id: ExternalPskId, psk: Psk) -> Option<Psk> {
-        self.inner.lock().unwrap().insert(id, psk)
-    }
-}
-
-impl PskStore for InMemoryPskStore {
-    type Error = Infallible;
-
-    fn psk(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error> {
-        Ok(self.inner.lock().unwrap().get(id).cloned())
+        self.identity_validator().supported_types()
     }
 }
 
@@ -246,7 +193,7 @@ impl ProposalFilterInit {
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
-pub struct InMemoryClientConfig<C: CredentialValidator> {
+pub struct InMemoryClientConfig<C: IdentityValidator> {
     preferences: Preferences,
     pub(crate) supported_extensions: Vec<ExtensionType>,
     pub(crate) key_packages: InMemoryKeyPackageRepository,
@@ -259,11 +206,11 @@ pub struct InMemoryClientConfig<C: CredentialValidator> {
     leaf_node_extensions: ExtensionList<LeafNodeExtension>,
     key_package_extensions: ExtensionList<KeyPackageExtension>,
     lifetime_duration: u64,
-    credential_validator: C,
+    identity_validator: C,
 }
 
-impl<C: CredentialValidator + Clone> InMemoryClientConfig<C> {
-    pub fn new(credential_validator: C) -> Self {
+impl<C: IdentityValidator + Clone> InMemoryClientConfig<C> {
+    pub fn new(identity_validator: C) -> Self {
         Self {
             preferences: Default::default(),
             supported_extensions: Default::default(),
@@ -277,7 +224,7 @@ impl<C: CredentialValidator + Clone> InMemoryClientConfig<C> {
             leaf_node_extensions: Default::default(),
             key_package_extensions: Default::default(),
             lifetime_duration: 31536000, // One year
-            credential_validator,
+            identity_validator,
         }
     }
 
@@ -374,13 +321,13 @@ impl<C: CredentialValidator + Clone> InMemoryClientConfig<C> {
     }
 }
 
-impl<C: CredentialValidator + Clone> ClientConfig for InMemoryClientConfig<C> {
+impl<C: IdentityValidator + Clone> ClientConfig for InMemoryClientConfig<C> {
     type KeyPackageRepository = InMemoryKeyPackageRepository;
     type ProposalFilter = BoxedProposalFilter<SimpleError>;
     type Keychain = InMemoryKeychain;
     type PskStore = InMemoryPskStore;
     type GroupStateStorage = InMemoryGroupStateStorage;
-    type CredentialValidator = C;
+    type IdentityValidator = C;
 
     fn preferences(&self) -> Preferences {
         self.preferences.clone()
@@ -418,8 +365,8 @@ impl<C: CredentialValidator + Clone> ClientConfig for InMemoryClientConfig<C> {
         self.group_state_storage.clone()
     }
 
-    fn credential_validator(&self) -> Self::CredentialValidator {
-        self.credential_validator.clone()
+    fn identity_validator(&self) -> Self::IdentityValidator {
+        self.identity_validator.clone()
     }
 
     fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension> {
@@ -458,19 +405,19 @@ impl From<&str> for SimpleError {
 #[cfg(any(feature = "benchmark", test))]
 pub mod test_utils {
     use super::InMemoryClientConfig;
-    use crate::credential::BasicCredentialValidator;
 
+    use crate::provider::identity_validation::BasicIdentityValidator;
     #[cfg(test)]
     use crate::{client_config::Preferences, key_package::KeyPackageGeneration};
 
     #[cfg(test)]
     use ferriscrypt::asym::ec_key::SecretKey;
 
-    pub type TestClientConfig = InMemoryClientConfig<BasicCredentialValidator>;
+    pub type TestClientConfig = InMemoryClientConfig<BasicIdentityValidator>;
 
-    impl Default for InMemoryClientConfig<BasicCredentialValidator> {
+    impl Default for InMemoryClientConfig<BasicIdentityValidator> {
         fn default() -> Self {
-            InMemoryClientConfig::new(BasicCredentialValidator::new())
+            InMemoryClientConfig::new(BasicIdentityValidator::new())
         }
     }
 

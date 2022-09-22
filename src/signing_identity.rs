@@ -4,7 +4,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
     cipher_suite::{CipherSuite, SignaturePublicKey},
-    credential::Credential,
+    identity::Credential,
 };
 
 #[derive(Debug, Error)]
@@ -20,7 +20,7 @@ pub enum SigningIdentityError {
     #[error("signing identity not valid for signer")]
     InvalidSignerPublicKey,
     #[error("credential rejected by custom credential validator")]
-    CredentialValidatorError(#[source] Box<dyn std::error::Error + Sync + Send>),
+    IdentityValidatorError(#[source] Box<dyn std::error::Error + Sync + Send>),
 }
 
 #[derive(
@@ -64,7 +64,7 @@ pub(crate) mod test_utils {
     use super::SigningIdentity;
     use crate::{
         cipher_suite::{CipherSuite, SignaturePublicKey},
-        credential::test_utils::get_test_basic_credential,
+        identity::test_utils::get_test_basic_credential,
     };
     use ferriscrypt::asym::ec_key::{generate_keypair, SecretKey};
 
@@ -93,7 +93,7 @@ mod tests {
 
     use crate::{
         cipher_suite::{CipherSuite, SignaturePublicKey},
-        credential::test_utils::get_test_basic_credential,
+        identity::test_utils::get_test_basic_credential,
     };
 
     use super::{test_utils::get_test_signing_identity, *};

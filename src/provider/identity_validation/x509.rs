@@ -2,17 +2,15 @@ use der::{Decode, Encode};
 use ferriscrypt::asym::ec_key::{self, Curve, EcKeyError};
 use ferriscrypt::digest::digest;
 use ferriscrypt::digest::HashFunction::Sha256;
-use serde_with::serde_as;
-use std::{collections::HashSet, ops::Deref};
+use std::collections::HashSet;
 use thiserror::Error;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use x509_cert::certificate::Certificate;
 
 use crate::cipher_suite::CipherSuite;
-use crate::credential::{
-    CredentialError, CredentialValidator, MlsCredential, X509Credential, CREDENTIAL_TYPE_X509,
+use crate::identity::{
+    CertificateData, CredentialError, MlsCredential, X509Credential, CREDENTIAL_TYPE_X509,
 };
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
+use crate::provider::identity_validation::IdentityValidator;
 use crate::signing_identity::SigningIdentity;
 
 #[derive(Debug, Error)]
@@ -46,83 +44,6 @@ pub enum X509Error {
     SelfSignedWrongLength(usize),
     #[error("pinned certificate not found in the chain")]
     PinnedCertNotFound,
-}
-
-#[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsSize,
-    TlsSerialize,
-    TlsDeserialize,
-    Eq,
-    Hash,
-    serde::Deserialize,
-    serde::Serialize,
-)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct CertificateData(
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    #[serde_as(as = "VecAsBase64")]
-    Vec<u8>,
-);
-
-impl From<Vec<u8>> for CertificateData {
-    fn from(data: Vec<u8>) -> Self {
-        CertificateData(data)
-    }
-}
-
-impl Deref for CertificateData {
-    type Target = Vec<u8>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsSize,
-    TlsSerialize,
-    TlsDeserialize,
-    Eq,
-    Hash,
-    serde::Deserialize,
-    serde::Serialize,
-)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct CertificateChain(#[tls_codec(with = "crate::tls::DefVec")] Vec<CertificateData>);
-
-impl From<Vec<CertificateData>> for CertificateChain {
-    fn from(cert_data: Vec<CertificateData>) -> Self {
-        CertificateChain(cert_data)
-    }
-}
-
-impl Deref for CertificateChain {
-    type Target = Vec<CertificateData>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl CertificateChain {
-    pub fn empty() -> Self {
-        Self(vec![])
-    }
-
-    pub fn leaf(&self) -> Result<&CertificateData, X509Error> {
-        self.0.first().ok_or(X509Error::EmptyCertificateChain)
-    }
-
-    pub fn ca(&self) -> Result<&CertificateData, X509Error> {
-        self.0.last().ok_or(X509Error::EmptyCertificateChain)
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -183,7 +104,9 @@ impl<I: X509IdentityExtractor> BasicX509Validator<I> {
         let x509_cred = X509Credential::from_credential(&signing_identity.credential)?;
         let chain = x509_cred.credential;
 
-        if !self.ca_certs.contains(&hash_cert(chain.ca()?)) {
+        if !self.ca_certs.contains(&hash_cert(
+            chain.ca().ok_or(X509Error::EmptyCertificateChain)?,
+        )) {
             return Err(X509Error::CaNotFound);
         }
 
@@ -220,7 +143,7 @@ impl<I: X509IdentityExtractor> BasicX509Validator<I> {
     }
 }
 
-impl<I: X509IdentityExtractor> CredentialValidator for BasicX509Validator<I> {
+impl<I: X509IdentityExtractor> IdentityValidator for BasicX509Validator<I> {
     type Error = X509Error;
 
     fn validate(
@@ -259,7 +182,7 @@ impl<I: X509IdentityExtractor> CredentialValidator for BasicX509Validator<I> {
             .map_err(|e| X509Error::IdentityError(Box::new(e)))
     }
 
-    fn supported_types(&self) -> Vec<crate::credential::CredentialType> {
+    fn supported_types(&self) -> Vec<crate::identity::CredentialType> {
         vec![CREDENTIAL_TYPE_X509]
     }
 }
@@ -302,16 +225,15 @@ fn hash_cert(cert_data: &[u8]) -> Vec<u8> {
     digest(Sha256, cert_data)
 }
 
-fn get_public_key(cert: &Certificate) -> Result<ec_key::PublicKey, X509Error> {
+pub(crate) fn get_public_key(cert: &Certificate) -> Result<ec_key::PublicKey, X509Error> {
     // Re-encode the `subject_public_key_info` (containing the key bytes and the algorithm) to get the public key.
-    let mut public_key = Vec::new();
-
-    cert.tbs_certificate
+    let key_der = cert
+        .tbs_certificate
         .subject_public_key_info
-        .encode_to_vec(&mut public_key)
+        .to_vec()
         .map_err(X509Error::CertificateParseError)?;
 
-    ec_key::PublicKey::from_der(&public_key).map_err(Into::into)
+    ec_key::PublicKey::from_der(&key_der).map_err(Into::into)
 }
 
 // OID codes from https://www.rfc-editor.org/rfc/rfc5758#section-3.2 and https://www.rfc-editor.org/rfc/rfc8410.html#section-3
@@ -379,61 +301,11 @@ fn validate_self_signed(
 
 #[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
-    #[cfg(test)]
-    use super::{
-        get_public_key, BasicX509Validator, Certificate, CertificateChain, X509Error,
-        X509IdentityExtractor,
-    };
-    #[cfg(test)]
-    use crate::credential::{test_utils::get_test_x509_credential, CredentialValidator};
-    #[cfg(test)]
-    use crate::signing_identity::SigningIdentity;
+    use super::{Certificate, X509Error, X509IdentityExtractor};
 
-    use crate::x509::CertificateData;
-    use ferriscrypt::asym::ec_key;
-
-    pub fn test_cert(curve: ec_key::Curve) -> CertificateData {
-        let data = match curve {
-            ec_key::Curve::P256 => include_bytes!("../test_data/p256_cert.der").to_vec(),
-            #[cfg(feature = "openssl_engine")]
-            ec_key::Curve::P384 => include_bytes!("../test_data/p384_cert.der").to_vec(),
-            #[cfg(feature = "openssl_engine")]
-            ec_key::Curve::P521 => include_bytes!("../test_data/p521_cert.der").to_vec(),
-            ec_key::Curve::Ed25519 => include_bytes!("../test_data/ed25519_cert.der").to_vec(),
-            #[cfg(feature = "openssl_engine")]
-            ec_key::Curve::Ed448 => include_bytes!("../test_data/ed448_cert.der").to_vec(),
-            _ => panic!("invalid test curve"),
-        };
-
-        CertificateData::from(data)
-    }
-
-    #[cfg(test)]
-    pub fn test_chain() -> (CertificateChain, ec_key::PublicKey) {
-        use der::Decode;
-
-        let ca_data = include_bytes!("../test_data/cert_chain/id3-ca.der").to_vec();
-        let id2_data = include_bytes!("../test_data/cert_chain/id2.der").to_vec();
-        let id1_data = include_bytes!("../test_data/cert_chain/id1.der").to_vec();
-        let id0_data = include_bytes!("../test_data/cert_chain/id0-leaf.der").to_vec();
-
-        let leaf_cert = Certificate::from_der(&id0_data).unwrap();
-        let leaf_pk = get_public_key(&leaf_cert).unwrap();
-
-        let chain = [id0_data, id1_data, id2_data, ca_data]
-            .into_iter()
-            .map(CertificateData::from)
-            .collect::<Vec<_>>()
-            .into();
-
-        (chain, leaf_pk)
-    }
-
-    #[cfg(test)]
     #[derive(Clone, Debug)]
     pub struct TestIdGenerator {}
 
-    #[cfg(test)]
     impl X509IdentityExtractor for TestIdGenerator {
         type Error = X509Error;
 
@@ -471,14 +343,32 @@ pub(crate) mod test_utils {
             Ok(id1 == id2)
         }
     }
+}
 
-    #[cfg(test)]
+#[cfg(test)]
+mod tests {
+    use crate::identity::{
+        test_utils::{get_test_x509_credential, test_cert, test_chain},
+        CertificateChain, CertificateData, MlsCredential, X509Credential,
+    };
+
+    use super::{
+        get_public_key, test_utils::TestIdGenerator, BasicX509Validator, IdentityValidator,
+        SigningIdentity, X509Error,
+    };
+    use crate::cipher_suite::CipherSuite;
+    use assert_matches::assert_matches;
+    use der::{asn1::UIntRef, Decode};
+    use ferriscrypt::asym::ec_key::{self, Curve};
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+    use x509_cert::Certificate;
+
     pub fn get_validation_result(
         chain: CertificateChain,
         leaf_pk: ec_key::PublicKey,
     ) -> Result<(), X509Error> {
-        use crate::cipher_suite::CipherSuite;
-
         let ca: Vec<&[u8]> = vec![chain.ca().unwrap()];
         let validator = BasicX509Validator::new(ca, TestIdGenerator {}).unwrap();
         let credential = get_test_x509_credential(chain);
@@ -490,27 +380,6 @@ pub(crate) mod test_utils {
 
         validator.validate(&signing_id, CipherSuite::P256Aes128)
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        credential::{test_utils::get_test_x509_credential, MlsCredential, X509Credential},
-        x509::{get_public_key, test_utils::test_cert, CertificateData},
-    };
-
-    use super::{
-        test_utils::{get_validation_result, test_chain, TestIdGenerator},
-        BasicX509Validator, CredentialValidator, SigningIdentity, X509Error,
-    };
-    use crate::cipher_suite::CipherSuite;
-    use assert_matches::assert_matches;
-    use der::{asn1::UIntRef, Decode};
-    use ferriscrypt::asym::ec_key::{self, Curve};
-
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-    use x509_cert::Certificate;
 
     #[test]
     fn verifying_valid_chain_succeeds() {
@@ -520,14 +389,13 @@ mod tests {
 
     #[test]
     fn verifying_invalid_chain_fails() {
-        let (chain, leaf_pk) = test_chain();
+        let (mut chain, leaf_pk) = test_chain();
 
         // Make the chain invalid by swapping two certificates
-        let mut chain = chain.0;
         chain.swap(1, 2);
 
         assert_matches!(
-            get_validation_result(chain.into(), leaf_pk),
+            get_validation_result(chain, leaf_pk),
             Err(X509Error::InvalidSignature(..))
         );
     }
@@ -566,29 +434,29 @@ mod tests {
 
     #[test]
     fn verifying_with_unsupported_hash_fails_gracefully() {
-        let (chain, leaf_pk) = test_chain();
+        let (mut chain, leaf_pk) = test_chain();
 
         // This certificate the same key as id0.der except id1 signed it using sha256
-        let mut chain = chain.0;
-        chain[0] =
-            CertificateData(include_bytes!("../test_data/cert_chain/id0_sha512.der").to_vec());
+        chain[0] = CertificateData::from(
+            include_bytes!("../../../test_data/cert_chain/id0_sha512.der").to_vec(),
+        );
 
         assert_matches!(
-            get_validation_result(chain.into(), leaf_pk),
+            get_validation_result(chain, leaf_pk),
             Err(X509Error::UnsupportedHash(..))
         );
     }
 
     #[test]
     fn verifying_rsa_fails_gracefully() {
-        let rsa_cert_bytes = include_bytes!("../test_data/rsa_cert.der").to_vec();
+        let rsa_cert_bytes = include_bytes!("../../../test_data/rsa_cert.der").to_vec();
         let validator = BasicX509Validator::new(vec![&rsa_cert_bytes], TestIdGenerator {});
         assert_matches!(validator, Err(X509Error::UnsupportedAlgorithm(_)));
     }
 
     #[test]
     fn creating_validator_with_invalid_ca_cert_fails() {
-        let valid_ca_bytes = include_bytes!("../test_data/cert_chain/id3-ca.der").to_vec();
+        let valid_ca_bytes = include_bytes!("../../../test_data/cert_chain/id3-ca.der").to_vec();
         let valid_ca_cert = Certificate::from_der(&valid_ca_bytes).unwrap();
 
         let mut invalid_ca = valid_ca_cert.clone();
@@ -669,7 +537,7 @@ mod tests {
         let mut validator = BasicX509Validator::new(vec![], TestIdGenerator {}).unwrap();
         validator.allow_self_signed(true);
 
-        let bytes = include_bytes!("../test_data/cert_chain/id3-ca.der").to_vec();
+        let bytes = include_bytes!("../../../test_data/cert_chain/id3-ca.der").to_vec();
         let cert = Certificate::from_der(&bytes).unwrap();
 
         let credential = X509Credential {
@@ -699,7 +567,7 @@ mod tests {
         let mut validator = BasicX509Validator::new(vec![], TestIdGenerator {}).unwrap();
         validator.allow_self_signed(true);
 
-        let bytes = include_bytes!("../test_data/cert_chain/id3-ca.der").to_vec();
+        let bytes = include_bytes!("../../../test_data/cert_chain/id3-ca.der").to_vec();
         let cert = Certificate::from_der(&bytes).unwrap();
 
         let credential = X509Credential {

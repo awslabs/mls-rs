@@ -49,23 +49,21 @@ macro_rules! load_test_cases {
 pub mod cipher_suite;
 pub mod client;
 pub mod client_config;
-pub mod credential;
 pub mod extension;
 pub mod external_client;
 pub mod external_client_config;
 pub mod group;
-pub mod group_state_repo;
 mod hash_reference;
+pub mod identity;
 pub mod key_package;
-pub mod keychain;
 mod maybe;
 pub mod protocol_version;
+pub mod provider;
 pub mod psk;
 mod serde_utils;
-pub mod signer;
-pub mod signing_identity;
+mod signer;
+mod signing_identity;
 mod time;
-pub mod x509;
 
 #[cfg(feature = "benchmark")]
 pub mod bench_utils;

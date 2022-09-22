@@ -1,5 +1,5 @@
 use super::*;
-use crate::credential::{CredentialError, CredentialType};
+use crate::identity::{CredentialError, CredentialType};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use itertools::Itertools;
 use serde_with::serde_as;

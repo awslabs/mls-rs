@@ -1,9 +1,11 @@
-use crate::{cipher_suite::CipherSuite, signer::Signer, signing_identity::SigningIdentity};
+use crate::{cipher_suite::CipherSuite, signing_identity::SigningIdentity};
 use ferriscrypt::asym::ec_key::SecretKey;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+
+pub use crate::signer::Signer;
 
 pub trait Keychain {
     type Signer: Signer;

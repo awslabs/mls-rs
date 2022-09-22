@@ -2,13 +2,14 @@ use assert_matches::assert_matches;
 use aws_mls::cipher_suite::{CipherSuite, SignaturePublicKey};
 use aws_mls::client::Client;
 use aws_mls::client_config::{InMemoryClientConfig, Preferences};
-use aws_mls::credential::{BasicCredential, BasicCredentialValidator, Credential, MlsCredential};
 use aws_mls::extension::ExtensionList;
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, GroupError};
+use aws_mls::identity::SigningIdentity;
+use aws_mls::identity::{BasicCredential, Credential, MlsCredential};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
-use aws_mls::signing_identity::SigningIdentity;
+use aws_mls::provider::identity_validation::BasicIdentityValidator;
 use ferriscrypt::rand::SecureRng;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 
@@ -19,7 +20,7 @@ use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 wasm_bindgen_test_configure!(run_in_browser);
 
 // The same method exists in `client_config::test_utils` but is not compiled without the `test` flag.
-type TestClientConfig = InMemoryClientConfig<BasicCredentialValidator>;
+type TestClientConfig = InMemoryClientConfig<BasicIdentityValidator>;
 
 // The same method exists in `credential::test_utils` but is not compiled without the `test` flag.
 pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {
@@ -51,7 +52,7 @@ fn generate_client(
     let signing_identity =
         SigningIdentity::new(credential, SignaturePublicKey::try_from(&key).unwrap());
 
-    InMemoryClientConfig::new(BasicCredentialValidator::new())
+    InMemoryClientConfig::new(BasicIdentityValidator::new())
         .with_signing_identity(signing_identity, key)
         .with_preferences(preferences)
         .build_client()
@@ -187,7 +188,7 @@ fn get_test_groups_clients(
 
     assert!(receiver_keys.into_iter().all(|kpg| creator_group
         .roster()
-        .any(|m| m.signing_identity() == &kpg.leaf_node.signing_identity)));
+        .any(|m| m.signing_identity() == kpg.signing_identity())));
 
     assert!(update.removed.is_empty());
 
@@ -830,7 +831,7 @@ fn get_reinit_client(
     );
     let id2 = SigningIdentity::new(credential, SignaturePublicKey::try_from(&sk2).unwrap());
 
-    InMemoryClientConfig::new(BasicCredentialValidator::new())
+    InMemoryClientConfig::new(BasicIdentityValidator::new())
         .with_signing_identity(id1, sk1)
         .with_signing_identity(id2, sk2)
         .build_client()

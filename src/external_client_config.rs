@@ -1,12 +1,15 @@
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     client_config::{MakeProposalFilter, ProposalFilterInit, SimpleError},
-    credential::{CredentialType, CredentialValidator},
     extension::ExtensionType,
     external_client::ExternalClient,
     group::proposal::{BoxedProposalFilter, ProposalFilter},
-    keychain::{InMemoryKeychain, Keychain},
+    identity::CredentialType,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
+    provider::{
+        identity_validation::IdentityValidator,
+        keychain::{InMemoryKeychain, Keychain},
+    },
     signing_identity::SigningIdentity,
     tree_kem::Capabilities,
 };
@@ -15,14 +18,14 @@ use std::collections::HashMap;
 
 pub trait ExternalClientConfig {
     type Keychain: Keychain;
-    type CredentialValidator: CredentialValidator;
+    type IdentityValidator: IdentityValidator;
     type ProposalFilter: ProposalFilter;
 
     fn keychain(&self) -> Self::Keychain;
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
-    fn credential_validator(&self) -> Self::CredentialValidator;
+    fn identity_validator(&self) -> Self::IdentityValidator;
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
     fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter;
 
@@ -57,12 +60,12 @@ pub trait ExternalClientConfig {
     }
 
     fn supported_credentials(&self) -> Vec<CredentialType> {
-        self.credential_validator().supported_types()
+        self.identity_validator().supported_types()
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct InMemoryExternalClientConfig<C: CredentialValidator> {
+pub struct InMemoryExternalClientConfig<C: IdentityValidator> {
     supported_extensions: Vec<ExtensionType>,
     keychain: InMemoryKeychain,
     protocol_versions: Vec<ProtocolVersion>,
@@ -70,11 +73,11 @@ pub struct InMemoryExternalClientConfig<C: CredentialValidator> {
     external_signing_keys: HashMap<Vec<u8>, PublicKey>,
     make_proposal_filter: MakeProposalFilter,
     max_epoch_jitter: Option<u64>,
-    credential_validator: C,
+    identity_validator: C,
 }
 
-impl<C: CredentialValidator + Clone> InMemoryExternalClientConfig<C> {
-    pub fn new(credential_validator: C) -> Self {
+impl<C: IdentityValidator + Clone> InMemoryExternalClientConfig<C> {
+    pub fn new(identity_validator: C) -> Self {
         Self {
             supported_extensions: Default::default(),
             keychain: Default::default(),
@@ -83,7 +86,7 @@ impl<C: CredentialValidator + Clone> InMemoryExternalClientConfig<C> {
             external_signing_keys: Default::default(),
             make_proposal_filter: Default::default(),
             max_epoch_jitter: Default::default(),
-            credential_validator,
+            identity_validator,
         }
     }
 
@@ -146,9 +149,9 @@ impl<C: CredentialValidator + Clone> InMemoryExternalClientConfig<C> {
     }
 }
 
-impl<C: CredentialValidator + Clone> ExternalClientConfig for InMemoryExternalClientConfig<C> {
+impl<C: IdentityValidator + Clone> ExternalClientConfig for InMemoryExternalClientConfig<C> {
     type Keychain = InMemoryKeychain;
-    type CredentialValidator = C;
+    type IdentityValidator = C;
     type ProposalFilter = BoxedProposalFilter<SimpleError>;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
@@ -167,8 +170,8 @@ impl<C: CredentialValidator + Clone> ExternalClientConfig for InMemoryExternalCl
         self.protocol_versions.clone()
     }
 
-    fn credential_validator(&self) -> Self::CredentialValidator {
-        self.credential_validator.clone()
+    fn identity_validator(&self) -> Self::IdentityValidator {
+        self.identity_validator.clone()
     }
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
@@ -186,14 +189,15 @@ impl<C: CredentialValidator + Clone> ExternalClientConfig for InMemoryExternalCl
 
 #[cfg(test)]
 pub mod test_utils {
+    use crate::provider::identity_validation::BasicIdentityValidator;
+
     use super::InMemoryExternalClientConfig;
-    use crate::credential::BasicCredentialValidator;
 
-    pub type TestExternalClientConfig = InMemoryExternalClientConfig<BasicCredentialValidator>;
+    pub type TestExternalClientConfig = InMemoryExternalClientConfig<BasicIdentityValidator>;
 
-    impl Default for InMemoryExternalClientConfig<BasicCredentialValidator> {
+    impl Default for InMemoryExternalClientConfig<BasicIdentityValidator> {
         fn default() -> Self {
-            InMemoryExternalClientConfig::new(BasicCredentialValidator::new())
+            InMemoryExternalClientConfig::new(BasicIdentityValidator::new())
         }
     }
 }

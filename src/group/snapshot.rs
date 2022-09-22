@@ -1,12 +1,11 @@
 use crate::{
     client_config::ClientConfig,
-    credential::CredentialValidator,
     group::{
         key_schedule::KeySchedule, CachedProposal, CommitGeneration, ConfirmationTag, Group,
         GroupContext, GroupError, GroupState, InterimTranscriptHash, ProposalCache, ProposalRef,
         ReInit, TreeKemPublic,
     },
-    group_state_repo::GroupStateRepository,
+    provider::identity_validation::IdentityValidator,
     serde_utils::vec_u8_as_base64::VecAsBase64,
     tree_kem::{node::NodeVec, TreeKemPrivate},
 };
@@ -14,7 +13,7 @@ use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use serde_with::serde_as;
 use std::collections::HashMap;
 
-use super::epoch::EpochSecrets;
+use super::{epoch::EpochSecrets, state_repo::GroupStateRepository};
 
 #[serde_as]
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
@@ -56,9 +55,9 @@ impl RawGroupState {
         }
     }
 
-    fn import<C>(self, credential_validator: C) -> Result<GroupState, GroupError>
+    fn import<C>(self, identity_validator: C) -> Result<GroupState, GroupError>
     where
-        C: CredentialValidator,
+        C: IdentityValidator,
     {
         let context = self.context;
 
@@ -72,7 +71,7 @@ impl RawGroupState {
         let current_tree = TreeKemPublic::import_node_data(
             context.cipher_suite,
             self.tree_data,
-            credential_validator,
+            identity_validator,
         )?;
 
         Ok(GroupState {
@@ -108,7 +107,7 @@ where
     }
 
     pub(crate) fn from_snapshot(config: C, snapshot: Snapshot) -> Result<Self, GroupError> {
-        let credential_validator = config.credential_validator();
+        let identity_validator = config.identity_validator();
 
         let state_repo = GroupStateRepository::new(
             snapshot.state.context.group_id.clone(),
@@ -118,7 +117,7 @@ where
 
         Ok(Group {
             config,
-            state: snapshot.state.import(credential_validator)?,
+            state: snapshot.state.import(identity_validator)?,
             private_tree: snapshot.private_tree,
             key_schedule: snapshot.key_schedule,
             pending_updates: snapshot.pending_updates,

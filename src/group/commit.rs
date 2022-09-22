@@ -2,11 +2,11 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
     cipher_suite::CipherSuite,
-    client_config::{ClientConfig, ProposalFilterInit, PskStore},
+    client_config::{ClientConfig, ProposalFilterInit},
     extension::{ExtensionList, GroupContextExtension, RatchetTreeExt},
     key_package::KeyPackage,
-    keychain::Keychain,
     protocol_version::ProtocolVersion,
+    provider::{keychain::Keychain, psk::PskStoreIdValidator},
     psk::{ExternalPskId, ResumptionPskSearch},
     signer::Signable,
     tree_kem::{
@@ -193,10 +193,10 @@ where
             sender.clone(),
             proposals,
             &self.context().extensions,
-            self.config.credential_validator(),
+            self.config.identity_validator(),
             &self.state.public_tree,
             external_leaf,
-            self.config.secret_store().into_external_id_validator(),
+            PskStoreIdValidator::from(self.config.secret_store()),
             self.config
                 .proposal_filter(ProposalFilterInit::new(sender.clone())),
         )?;
@@ -246,7 +246,7 @@ where
                     .collect::<Vec<LeafIndex>>(),
                 &signer,
                 update_leaf_properties,
-                self.config.credential_validator(),
+                self.config.identity_validator(),
                 #[cfg(test)]
                 &self.commit_modifiers,
             )?;
@@ -410,12 +410,12 @@ mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_config::test_utils::TestClientConfig,
-        credential::test_utils::get_test_basic_credential,
         extension::RequiredCapabilitiesExt,
         group::{
             proposal::PreSharedKey,
             test_utils::{test_group, test_n_member_group},
         },
+        identity::test_utils::get_test_basic_credential,
         key_package::test_utils::test_key_package,
         psk::{JustPreSharedKeyID, PreSharedKeyID, Psk},
         signing_identity::test_utils::get_test_signing_identity,

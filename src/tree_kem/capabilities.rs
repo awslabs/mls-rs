@@ -2,9 +2,9 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
-    credential::{CredentialType, CREDENTIAL_TYPE_X509},
     extension::ExtensionType,
     group::proposal::ProposalType,
+    identity::{CredentialType, CREDENTIAL_TYPE_X509},
     protocol_version::MaybeProtocolVersion,
     protocol_version::ProtocolVersion,
 };
