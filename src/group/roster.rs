@@ -81,19 +81,13 @@ where
     }
 }
 
-impl<C> Group<C>
-where
-    C: ClientConfig + Clone,
-{
-    pub fn roster(&self) -> Roster<impl Iterator<Item = Member> + '_> {
-        let roster_iter = self
-            .current_epoch_tree()
-            .non_empty_leaves()
-            .map(Member::from);
+impl GroupState {
+    pub(crate) fn roster(&self) -> Roster<impl Iterator<Item = Member> + '_> {
+        let roster_iter = self.public_tree.non_empty_leaves().map(Member::from);
 
         Roster {
             inner: roster_iter,
-            total_members: self.current_epoch_tree().occupied_leaf_count(),
+            total_members: self.public_tree.occupied_leaf_count(),
         }
     }
 }

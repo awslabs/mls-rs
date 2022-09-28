@@ -1,3 +1,5 @@
+use tls_codec::Serialize;
+
 use super::{
     check_protocol_version,
     confirmation_tag::ConfirmationTag,
@@ -5,15 +7,17 @@ use super::{
     message_processor::{EventOrContent, MessageProcessor, ProcessedMessage, ProvisionalState},
     message_signature::MLSAuthenticatedContent,
     proposal::{AddProposal, Proposal, RemoveProposal},
-    validate_group_info, ExternalEvent, ProposalRef,
+    validate_group_info, ExternalEvent, Member, ProposalRef, Roster,
 };
 use crate::{
+    cipher_suite::CipherSuite,
     client_config::ProposalFilterInit,
     extension::ExternalSendersExt,
     external_client_config::ExternalClientConfig,
     group::{
         Content, GroupError, GroupState, InterimTranscriptHash, MLSMessage, MLSMessagePayload,
     },
+    protocol_version::ProtocolVersion,
     psk::PassThroughPskIdValidator,
     signer::Signer,
     signing_identity::SigningIdentity,
@@ -27,7 +31,7 @@ pub struct ExternalGroup<C> {
 }
 
 impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
-    pub fn join(
+    pub(crate) fn join(
         config: C,
         group_info: MLSMessage,
         tree_data: Option<&[u8]>,
@@ -156,6 +160,36 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     #[inline(always)]
     pub fn group_state(&self) -> &GroupState {
         &self.state
+    }
+
+    #[inline(always)]
+    pub fn group_id(&self) -> &[u8] {
+        &self.group_state().context.group_id
+    }
+
+    #[inline(always)]
+    pub fn current_epoch(&self) -> u64 {
+        self.group_state().context.epoch
+    }
+
+    pub fn protocol_version(&self) -> ProtocolVersion {
+        self.group_state().context.protocol_version
+    }
+
+    pub fn cipher_suite(&self) -> CipherSuite {
+        self.group_state().context.cipher_suite
+    }
+
+    pub fn export_tree(&self) -> Result<Vec<u8>, GroupError> {
+        self.group_state()
+            .public_tree
+            .export_node_data()
+            .tls_serialize_detached()
+            .map_err(Into::into)
+    }
+
+    pub fn roster(&self) -> Roster<impl Iterator<Item = Member> + '_> {
+        self.group_state().roster()
     }
 }
 

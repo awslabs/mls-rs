@@ -1398,6 +1398,10 @@ where
         self.context().cipher_suite
     }
 
+    pub fn roster(&self) -> Roster<impl Iterator<Item = Member> + '_> {
+        self.group_state().roster()
+    }
+
     pub fn equal_group_state(a: &Group<C>, b: &Group<C>) -> bool {
         a.state == b.state && a.key_schedule == b.key_schedule && a.epoch_secrets == b.epoch_secrets
     }
