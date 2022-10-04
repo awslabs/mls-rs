@@ -1,7 +1,7 @@
 use aws_mls::{
     bench_utils::group_functions::{commit_groups, load_test_cases},
     cipher_suite::CipherSuite,
-    client_config::test_utils::TestClientConfig,
+    client::MlsConfig,
     group::Group,
 };
 use criterion::{
@@ -27,10 +27,10 @@ fn commit_setup(c: &mut Criterion) {
 }
 
 // benches a single commit, apply, and receive (process)
-fn bench_group_commit(
+fn bench_group_commit<C: MlsConfig>(
     bench_group: &mut BenchmarkGroup<WallTime>,
     cipher_suite: CipherSuite,
-    mut container: Vec<Vec<Group<TestClientConfig>>>,
+    mut container: Vec<Vec<Group<C>>>,
 ) {
     for groups in &mut container {
         bench_group.bench_with_input(

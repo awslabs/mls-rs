@@ -2,7 +2,11 @@ use ferriscrypt::asym::ec_key::{self, SecretKey};
 
 use super::*;
 use crate::{
-    client_config::{test_utils::*, InMemoryClientConfig, Preferences},
+    client_builder::{
+        test_utils::{TestClientBuilder, TestClientConfig},
+        Preferences,
+    },
+    client_config::ClientConfig,
     extension::RequiredCapabilitiesExt,
     key_package::{KeyPackageGeneration, KeyPackageGenerator},
     provider::identity_validation::BasicIdentityValidator,
@@ -12,7 +16,6 @@ use crate::{
 
 pub const TEST_GROUP: &[u8] = b"group";
 
-#[derive(Debug)]
 pub(crate) struct TestGroup {
     pub group: Group<TestClientConfig>,
 }
@@ -27,8 +30,11 @@ impl TestGroup {
         name: &str,
         preferences: Preferences,
     ) -> (TestGroup, MLSMessage) {
-        self.join_with_custom_config(name, |config| config.with_preferences(preferences))
-            .unwrap()
+        self.join_with_custom_config(name, |mut config| {
+            config.0.settings.preferences = preferences;
+            config
+        })
+        .unwrap()
     }
 
     pub(crate) fn join_with_custom_config<F>(
@@ -57,17 +63,24 @@ impl TestGroup {
         // Apply the commit to the original group
         self.group.apply_pending_commit().unwrap();
 
-        let config = config(test_config(
-            secret_key,
-            new_key_package,
-            Preferences::default(),
-        ));
+        let client_config = config(
+            TestClientBuilder::new_for_test_custom(
+                secret_key,
+                new_key_package,
+                Preferences::default(),
+            )
+            .build_config(),
+        );
 
-        let tree = (!config.preferences().ratchet_tree_extension)
+        let tree = (!client_config.0.settings.preferences.ratchet_tree_extension)
             .then(|| self.group.export_tree().unwrap());
 
         // Group from new member's perspective
-        let new_group = Group::join(welcome.unwrap(), tree.as_ref().map(Vec::as_ref), config)?;
+        let new_group = Group::join(
+            welcome.unwrap(),
+            tree.as_ref().map(Vec::as_ref),
+            client_config,
+        )?;
 
         let new_test_group = TestGroup { group: new_group };
 
@@ -185,33 +198,31 @@ pub(crate) fn test_group_custom(
     let (signing_identity, secret_key) =
         get_test_signing_identity(cipher_suite, b"member".to_vec());
 
-    let mut config = InMemoryClientConfig::default()
-        .with_signing_identity(signing_identity, secret_key)
-        .with_leaf_node_extensions(leaf_extensions)
-        .with_preferences(preferences);
-
-    config.cipher_suites = capabilities
-        .cipher_suites
-        .into_iter()
-        .map(|cs| cs.into_enum().unwrap())
-        .collect();
-
-    config.supported_extensions = capabilities.extensions;
-
-    config.protocol_versions = capabilities
-        .protocol_versions
-        .into_iter()
-        .map(|p| p.into_enum().unwrap())
-        .collect();
-
-    let group = Group::new(
-        config,
-        TEST_GROUP.to_vec(),
-        cipher_suite,
-        protocol_version,
-        group_extensions(),
-    )
-    .unwrap();
+    let group = TestClientBuilder::new_for_test()
+        .single_signing_identity(signing_identity, secret_key)
+        .leaf_node_extensions(leaf_extensions)
+        .preferences(preferences)
+        .cipher_suites(
+            capabilities
+                .cipher_suites
+                .into_iter()
+                .map(|cs| cs.into_enum().unwrap()),
+        )
+        .extension_types(capabilities.extensions)
+        .protocol_versions(
+            capabilities
+                .protocol_versions
+                .into_iter()
+                .map(|p| p.into_enum().unwrap()),
+        )
+        .build()
+        .create_group_with_id(
+            protocol_version,
+            cipher_suite,
+            TEST_GROUP.to_vec(),
+            group_extensions(),
+        )
+        .unwrap();
 
     TestGroup { group }
 }
@@ -235,25 +246,24 @@ pub(crate) fn test_group_custom_config<F>(
     custom: F,
 ) -> TestGroup
 where
-    F: FnOnce(TestClientConfig) -> TestClientConfig,
+    F: FnOnce(TestClientBuilder) -> TestClientBuilder,
 {
     let (signing_identity, secret_key) =
         get_test_signing_identity(cipher_suite, b"member".to_vec());
 
-    let config = InMemoryClientConfig::default()
-        .with_signing_identity(signing_identity, secret_key)
-        .with_preferences(Preferences::default().with_ratchet_tree_extension(true));
+    let client_builder = TestClientBuilder::new_for_test()
+        .signing_identity(signing_identity, secret_key)
+        .preferences(Preferences::default().with_ratchet_tree_extension(true));
 
-    let config = custom(config);
-
-    let group = Group::new(
-        config,
-        TEST_GROUP.to_vec(),
-        cipher_suite,
-        protocol_version,
-        group_extensions(),
-    )
-    .unwrap();
+    let group = custom(client_builder)
+        .build()
+        .create_group_with_id(
+            protocol_version,
+            cipher_suite,
+            TEST_GROUP.to_vec(),
+            group_extensions(),
+        )
+        .unwrap();
 
     TestGroup { group }
 }
@@ -265,7 +275,7 @@ pub(crate) fn test_n_member_group(
 ) -> Vec<TestGroup> {
     let group = test_group(protocol_version, cipher_suite);
 
-    let mut groups: Vec<TestGroup> = vec![group];
+    let mut groups = vec![group];
 
     for i in 1..num_members {
         let (new_group, commit) = groups.get_mut(0).unwrap().join(&format!("name {}", i));
@@ -304,12 +314,12 @@ pub(crate) fn get_test_groups_with_features(
                 format!("member{i}").into_bytes(),
             );
 
-            InMemoryClientConfig::default()
-                .with_supported_extension(999)
-                .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
-                .with_signing_identity(identity, secret_key)
-                .with_leaf_node_extensions(leaf_extensions.clone())
-                .build_client()
+            TestClientBuilder::new_for_test()
+                .extension_type(999)
+                .preferences(Preferences::default().with_ratchet_tree_extension(true))
+                .single_signing_identity(identity, secret_key)
+                .leaf_node_extensions(leaf_extensions.clone())
+                .build()
         })
         .collect::<Vec<_>>();
 

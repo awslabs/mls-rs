@@ -6,7 +6,10 @@ use crate::{
     extension::{ExtensionList, GroupContextExtension, RatchetTreeExt},
     key_package::KeyPackage,
     protocol_version::ProtocolVersion,
-    provider::{keychain::Keychain, psk::PskStoreIdValidator},
+    provider::{
+        keychain::Keychain,
+        psk::{PskStore, PskStoreIdValidator},
+    },
     psk::{ExternalPskId, ResumptionPskSearch},
     signer::Signable,
     tree_kem::{
@@ -277,10 +280,10 @@ where
             prior_epochs: &self.state_repo,
         };
 
-        let psk_secret = crate::psk::psk_secret::<C>(
+        let psk_secret = crate::psk::psk_secret(
             self.state.cipher_suite(),
-            Some(&psk_store),
-            Some(resumption_psk_search),
+            |id| psk_store.psk(id),
+            |id| resumption_psk_search.find(id),
             &provisional_state.psks,
         )?;
 
@@ -409,7 +412,8 @@ pub(crate) mod test_utils {
 mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        client_config::test_utils::TestClientConfig,
+        client_builder::test_utils::TestClientConfig,
+        client_config::ClientConfig,
         extension::RequiredCapabilitiesExt,
         group::{
             proposal::PreSharedKey,
@@ -427,8 +431,8 @@ mod tests {
         test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).group
     }
 
-    fn assert_commit_builder_output(
-        group: Group<TestClientConfig>,
+    fn assert_commit_builder_output<C: ClientConfig>(
+        group: Group<C>,
         commit_message: MLSMessage,
         expected: Vec<Proposal>,
         welcome_message: Option<MLSMessage>,
@@ -691,10 +695,11 @@ mod tests {
         groups[0]
             .group
             .config
+            .0
             .keychain
             .insert(identity.clone(), secret_key);
 
-        groups[0].group.config.keychain.default_identity = Some(identity.clone());
+        groups[0].group.config.0.keychain.default_identity = Some(identity.clone());
         let (commit, _) = groups[0].group.commit(vec![]).unwrap();
 
         // Check that the credential was updated by in the committer's state.

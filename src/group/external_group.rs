@@ -483,7 +483,8 @@ mod tests {
             .clear_cipher_suites()
             .with_cipher_suite(CipherSuite::Curve25519ChaCha20);
 
-        let res = ExternalGroup::join(config, alice.group.group_info_message(true).unwrap(), None);
+        let res = ExternalGroup::join(config, alice.group.group_info_message(true).unwrap(), None)
+            .map(|_| ());
 
         assert_matches!(
             res,
@@ -502,7 +503,7 @@ mod tests {
         let mut group_info = alice.group.group_info_message(true).unwrap();
         group_info.version = MaybeProtocolVersion::from_raw_value(64);
 
-        let res = ExternalGroup::join(config, group_info, None);
+        let res = ExternalGroup::join(config, group_info, None).map(|_| ());
 
         assert_matches!(
             res,

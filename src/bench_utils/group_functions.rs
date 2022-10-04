@@ -1,9 +1,11 @@
 use crate::{
     cipher_suite::CipherSuite,
-    client::test_utils::{get_basic_config, join_group, test_client_with_key_pkg},
-    client_config::{
-        test_utils::TestClientConfig, ClientConfig, InMemoryClientConfig, Preferences,
+    client::test_utils::{get_basic_client_builder, join_group, test_client_with_key_pkg},
+    client_builder::{
+        test_utils::{TestClientBuilder, TestClientConfig},
+        Preferences,
     },
+    client_config::ClientConfig,
     extension::ExtensionList,
     group::{
         framing::{Content, MLSMessage, Sender, WireFormat},
@@ -61,25 +63,29 @@ pub fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
                     )
                     .unwrap();
 
-                    let mut config = InMemoryClientConfig::default();
-
-                    for (signing_identity, secret) in secrets {
-                        config.keychain().insert(signing_identity, secret);
-                    }
-
                     let epochs =
                         serde_json::from_slice::<Vec<PriorEpoch>>(&group_info.epochs).unwrap();
 
                     let group_id = group_info.session.group_id().to_vec();
 
-                    config.group_state_storage =
-                        InMemoryGroupStateStorage::from_benchmark_data(group_info.session, epochs);
+                    let client_builder = secrets.into_iter().fold(
+                        TestClientBuilder::new_for_test(),
+                        |builder, (identity, secret_key)| {
+                            builder.signing_identity(identity, secret_key)
+                        },
+                    );
 
-                    for key_pkg_gen in key_packages {
-                        config.key_package_repo().insert(key_pkg_gen).unwrap();
-                    }
+                    let client_builder = client_builder.group_state_storage(
+                        InMemoryGroupStateStorage::from_benchmark_data(group_info.session, epochs),
+                    );
 
-                    config.build_client().load_group(&group_id).unwrap()
+                    let client_builder = key_packages
+                        .into_iter()
+                        .fold(client_builder, |builder, key_pkg_gen| {
+                            builder.key_package(key_pkg_gen).unwrap()
+                        });
+
+                    client_builder.build().load_group(&group_id).unwrap()
                 })
                 .collect()
         })
@@ -91,13 +97,13 @@ pub fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<TestCli
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     pub const TEST_GROUP: &[u8] = b"group";
 
-    let alice = get_basic_config(cipher_suite, "alice")
-        .with_preferences(
+    let alice = get_basic_client_builder(cipher_suite, "alice")
+        .preferences(
             Preferences::default()
                 .with_ratchet_tree_extension(true)
                 .with_control_encryption(true),
         )
-        .build_client();
+        .build();
 
     let alice_group = alice
         .create_group_with_id(
@@ -174,9 +180,7 @@ fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
     TestCase { info }
 }
 
-pub fn commit_groups(
-    mut container: Vec<Vec<Group<TestClientConfig>>>,
-) -> Vec<Vec<Group<TestClientConfig>>> {
+pub fn commit_groups<C: ClientConfig>(mut container: Vec<Vec<Group<C>>>) -> Vec<Vec<Group<C>>> {
     for value in &mut container {
         commit_group(value);
     }
@@ -184,7 +188,7 @@ pub fn commit_groups(
     container
 }
 
-pub fn commit_group(container: &mut [Group<TestClientConfig>]) {
+pub fn commit_group<C: ClientConfig>(container: &mut [Group<C>]) {
     for committer_index in 0..container.len() {
         let (commit, _) = container[committer_index].commit(Vec::new()).unwrap();
 

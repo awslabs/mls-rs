@@ -1,9 +1,9 @@
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
-    client_config::{MakeProposalFilter, ProposalFilterInit, SimpleError},
+    client_config::{KeepAllProposals, MakeProposalFilter, ProposalFilterInit},
     extension::ExtensionType,
     external_client::ExternalClient,
-    group::proposal::{BoxedProposalFilter, ProposalFilter},
+    group::proposal::ProposalFilter,
     identity::CredentialType,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     provider::{
@@ -64,14 +64,14 @@ pub trait ExternalClientConfig {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct InMemoryExternalClientConfig<C: IdentityValidator> {
     supported_extensions: Vec<ExtensionType>,
     keychain: InMemoryKeychain,
     protocol_versions: Vec<ProtocolVersion>,
     cipher_suites: Vec<CipherSuite>,
     external_signing_keys: HashMap<Vec<u8>, PublicKey>,
-    make_proposal_filter: MakeProposalFilter,
+    make_proposal_filter: KeepAllProposals,
     max_epoch_jitter: Option<u64>,
     identity_validator: C,
 }
@@ -84,7 +84,7 @@ impl<C: IdentityValidator + Clone> InMemoryExternalClientConfig<C> {
             protocol_versions: ProtocolVersion::all().collect(),
             cipher_suites: CipherSuite::all().collect(),
             external_signing_keys: Default::default(),
-            make_proposal_filter: Default::default(),
+            make_proposal_filter: KeepAllProposals,
             max_epoch_jitter: Default::default(),
             identity_validator,
         }
@@ -152,7 +152,7 @@ impl<C: IdentityValidator + Clone> InMemoryExternalClientConfig<C> {
 impl<C: IdentityValidator + Clone> ExternalClientConfig for InMemoryExternalClientConfig<C> {
     type Keychain = InMemoryKeychain;
     type IdentityValidator = C;
-    type ProposalFilter = BoxedProposalFilter<SimpleError>;
+    type ProposalFilter = KeepAllProposals;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
         self.cipher_suites.clone()
@@ -179,7 +179,7 @@ impl<C: IdentityValidator + Clone> ExternalClientConfig for InMemoryExternalClie
     }
 
     fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter {
-        (self.make_proposal_filter.0)(init)
+        self.make_proposal_filter.make(init)
     }
 
     fn max_epoch_jitter(&self) -> Option<u64> {

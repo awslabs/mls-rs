@@ -38,7 +38,7 @@ impl<T: PskStore> ExternalPskIdValidator for PskStoreIdValidator<T> {
 }
 
 #[derive(Debug, Error)]
-pub enum PskStoreIdValidationError<E: std::error::Error> {
+pub enum PskStoreIdValidationError<E> {
     #[error("External PSK ID {0:?} not found")]
     ExternalIdNotFound(ExternalPskId),
     #[error(transparent)]

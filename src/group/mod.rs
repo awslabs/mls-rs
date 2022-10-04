@@ -4,6 +4,7 @@ use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::rand::SecureRng;
 use serde_with::serde_as;
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::ops::Deref;
 use std::option::Option::Some;
 use thiserror::Error;
@@ -12,7 +13,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroizing;
 
 use crate::cipher_suite::CipherSuite;
-use crate::client_config::{ClientConfig, ProposalFilterInit};
+use crate::client_config::{ClientConfig, MakeProposalFilter, ProposalFilterInit};
 use crate::extension::{
     ExtensionError, ExtensionList, ExternalPubExt, GroupContextExtension, LeafNodeExtension,
     RatchetTreeExt,
@@ -20,7 +21,7 @@ use crate::extension::{
 use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
 use crate::protocol_version::ProtocolVersion;
 use crate::provider::keychain::Keychain;
-use crate::provider::psk::PskStoreIdValidator;
+use crate::provider::psk::{PskStore, PskStoreIdValidator};
 use crate::psk::{
     ExternalPskId, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
     ResumptionPSKUsage, ResumptionPsk, ResumptionPskSearch,
@@ -36,7 +37,7 @@ use crate::tree_kem::{math as tree_math, HpkeCiphertext, ValidatedUpdatePath};
 use crate::tree_kem::{Capabilities, TreeKemPrivate, TreeKemPublic};
 
 #[cfg(feature = "benchmark")]
-use crate::client_config::Preferences;
+use crate::client_builder::Preferences;
 
 use ciphertext_processor::*;
 use confirmation_tag::*;
@@ -66,6 +67,7 @@ pub use self::framing::MLSMessage;
 pub use commit::*;
 pub use error::*;
 pub use padding::*;
+pub use proposal_filter::ProposalFilterContext;
 pub(crate) use proposal_ref::ProposalRef;
 pub use roster::*;
 pub use snapshot::*;
@@ -96,7 +98,7 @@ mod message_verifier;
 mod padding;
 pub mod proposal;
 mod proposal_cache;
-mod proposal_filter;
+pub(crate) mod proposal_filter;
 mod proposal_ref;
 mod roster;
 pub(crate) mod snapshot;
@@ -146,7 +148,7 @@ pub(crate) enum ControlEncryptionMode {
 #[derive(Clone, Debug)]
 pub struct Group<C>
 where
-    C: ClientConfig + Clone,
+    C: ClientConfig,
 {
     #[cfg(feature = "benchmark")]
     pub config: C,
@@ -310,14 +312,16 @@ where
         let group_secrets = GroupSecrets::tls_deserialize(&mut &*decrypted_group_secrets)?;
         let psk_store = config.secret_store();
 
-        let psk_secret = crate::psk::psk_secret::<C>(
+        let resumption_psk_search = parent_group.map(|parent| ResumptionPskSearch {
+            group_context: parent.context(),
+            current_epoch: &parent.epoch_secrets,
+            prior_epochs: &parent.state_repo,
+        });
+
+        let psk_secret = crate::psk::psk_secret(
             welcome.cipher_suite,
-            Some(&psk_store),
-            parent_group.map(|parent| ResumptionPskSearch {
-                group_context: parent.context(),
-                current_epoch: &parent.epoch_secrets,
-                prior_epochs: &parent.state_repo,
-            }),
+            |id| psk_store.psk(id),
+            |id| resumption_psk_search.map_or(Ok(None), |s| s.find(id)),
             &group_secrets.psks,
         )?;
 
@@ -766,10 +770,10 @@ where
             prior_epochs: &state_repo,
         };
 
-        let psk_secret = crate::psk::psk_secret::<C>(
+        let psk_secret = crate::psk::psk_secret(
             new_context.cipher_suite,
-            None::<&C::PskStore>,
-            Some(resumption_psk_search),
+            |_| Ok::<_, Infallible>(None),
+            |id| resumption_psk_search.find(id),
             &psks,
         )?;
 
@@ -1437,7 +1441,7 @@ impl<C> MessageProcessor<Event> for Group<C>
 where
     C: ClientConfig + Clone,
 {
-    type ProposalFilter = C::ProposalFilter;
+    type ProposalFilter = <C::MakeProposalFilter as MakeProposalFilter>::Filter;
     type IdentityValidator = C::IdentityValidator;
     type ExternalPskIdValidator = PskStoreIdValidator<C::PskStore>;
 
@@ -1530,10 +1534,10 @@ where
             prior_epochs: &self.state_repo,
         };
 
-        let psk_secret = crate::psk::psk_secret::<C>(
+        let psk_secret = crate::psk::psk_secret(
             self.state.cipher_suite(),
-            Some(&secret_store),
-            Some(resumption_psk_search),
+            |id| secret_store.psk(id),
+            |id| resumption_psk_search.find(id),
             &provisional_state.psks,
         )?;
 
@@ -1650,14 +1654,19 @@ pub(crate) mod test_utils;
 
 #[cfg(test)]
 mod tests {
-    use crate::client_config::test_utils::TestClientConfig;
     use crate::extension::MlsExtension;
     use crate::identity::test_utils::{get_test_basic_credential, get_test_x509_credential};
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use crate::{
         cipher_suite::MaybeCipherSuite,
-        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        client_config::{test_utils::test_config, Preferences},
+        client::{
+            test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+            Client,
+        },
+        client_builder::{
+            test_utils::{TestClientBuilder, TestClientConfig},
+            Preferences,
+        },
         extension::{
             test_utils::TestExtension, Extension, ExternalSendersExt, RequiredCapabilitiesExt,
         },
@@ -1973,12 +1982,14 @@ mod tests {
         let bob_group = Group::join(
             welcome.unwrap(),
             None,
-            test_config(
+            TestClientBuilder::new_for_test_custom(
                 secret_key,
                 bob_key_package,
                 test_group.group.config.preferences(),
-            ),
-        );
+            )
+            .build_config(),
+        )
+        .map(|_| ());
 
         assert_matches!(bob_group, Err(GroupError::RatchetTreeNotFound));
     }
@@ -2122,7 +2133,8 @@ mod tests {
             .unwrap();
 
         let info_msg = MLSMessage::new(protocol_version, MLSMessagePayload::GroupInfo(info));
-        let res = Group::new_external(group.group.config, info_msg, None, None, vec![], vec![]);
+        let res = Group::new_external(group.group.config, info_msg, None, None, vec![], vec![])
+            .map(|_| ());
 
         assert_matches!(res, Err(GroupError::MissingExternalPubExtension));
     }
@@ -2399,10 +2411,7 @@ mod tests {
             .branch(b"subgroup".to_vec(), |p| {
                 if p == bob.group.current_member_signing_identity().unwrap() {
                     Some(
-                        bob.group
-                            .config
-                            .clone()
-                            .build_client()
+                        Client::new(bob.group.config.clone())
                             .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
                             .unwrap(),
                     )
@@ -2426,7 +2435,8 @@ mod tests {
         assert_matches!(
             carol
                 .group
-                .join_subgroup(welcome, Some(&alice_sub_group.export_tree().unwrap())),
+                .join_subgroup(welcome, Some(&alice_sub_group.export_tree().unwrap()))
+                .map(|_| ()),
             Err(_)
         );
 
@@ -2446,7 +2456,11 @@ mod tests {
 
     #[test]
     fn joining_group_fails_if_protocol_version_is_not_supported() {
-        let res = joining_group_fails_if_unsupported(|config| config.clear_protocol_versions());
+        let res = joining_group_fails_if_unsupported(|mut config| {
+            config.0.settings.protocol_versions.clear();
+            config
+        })
+        .map(|_| ());
 
         assert_matches!(
             res,
@@ -2457,7 +2471,11 @@ mod tests {
 
     #[test]
     fn joining_group_fails_if_cipher_suite_is_not_supported() {
-        let res = joining_group_fails_if_unsupported(|config| config.clear_cipher_suites());
+        let res = joining_group_fails_if_unsupported(|mut config| {
+            config.0.settings.cipher_suites.clear();
+            config
+        })
+        .map(|_| ());
 
         assert_matches!(
             res,
@@ -3029,10 +3047,11 @@ mod tests {
         groups[0]
             .group
             .config
+            .0
             .keychain
             .insert(identity.clone(), secret_key);
 
-        groups[0].group.config.keychain.default_identity = Some(identity.clone());
+        groups[0].group.config.0.keychain.default_identity = Some(identity.clone());
 
         let update_proposal = groups[0].group.update_proposal().unwrap();
         let update_message = groups[0].propose(update_proposal);

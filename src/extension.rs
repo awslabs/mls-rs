@@ -152,7 +152,7 @@ impl ExternalSendersExt {
         self.allowed_senders.iter().try_for_each(|id| {
             validator
                 .validate(id, cipher_suite)
-                .map_err(|e| SigningIdentityError::IdentityValidatorError(Box::new(e)))
+                .map_err(|e| SigningIdentityError::IdentityValidatorError(e.into()))
         })
     }
 }
@@ -195,6 +195,15 @@ impl IndexMap {
 impl FromIterator<(ExtensionType, Extension)> for IndexMap {
     fn from_iter<T: IntoIterator<Item = (ExtensionType, Extension)>>(iter: T) -> Self {
         Self(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for IndexMap {
+    type Item = (ExtensionType, Extension);
+    type IntoIter = indexmap::map::IntoIter<ExtensionType, Extension>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -386,6 +395,10 @@ where
 
     pub fn remove(&mut self, ext_type: ExtensionType) {
         self.extensions.shift_remove(&ext_type);
+    }
+
+    pub fn append(&mut self, others: Self) {
+        self.extensions.extend(others.extensions);
     }
 }
 

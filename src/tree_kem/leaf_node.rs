@@ -116,7 +116,7 @@ impl LeafNode {
 
         identity_validator
             .validate(signing_identity, cipher_suite)
-            .map_err(|e| LeafNodeError::IdentityValidatorError(Box::new(e)))
+            .map_err(|e| LeafNodeError::IdentityValidatorError(e.into()))
     }
 
     pub fn generate<S, C>(

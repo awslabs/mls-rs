@@ -79,11 +79,11 @@ pub(crate) fn validate_update_path<C: IdentityValidator>(
 
     let original_identity = identity_validator
         .identity(&original_leaf_node.signing_identity)
-        .map_err(|e| UpdatePathValidationError::CredentialValidationError(Box::new(e)))?;
+        .map_err(|e| UpdatePathValidationError::CredentialValidationError(e.into()))?;
 
     let updated_identity = identity_validator
         .identity(&path.leaf_node.signing_identity)
-        .map_err(|e| UpdatePathValidationError::CredentialValidationError(Box::new(e)))?;
+        .map_err(|e| UpdatePathValidationError::CredentialValidationError(e.into()))?;
 
     (state.external_init.is_some() || original_identity == updated_identity)
         .then_some(())

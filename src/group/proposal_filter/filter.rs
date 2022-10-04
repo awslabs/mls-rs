@@ -1,6 +1,6 @@
 use crate::{
     extension::{ExtensionError, ExtensionType},
-    group::{proposal_filter::ProposalBundle, ProposalType, Sender},
+    group::{proposal_filter::ProposalBundle, BorrowedProposal, ProposalType, Sender},
     key_package::KeyPackageValidationError,
     protocol_version::ProtocolVersion,
     signing_identity::SigningIdentityError,
@@ -35,25 +35,66 @@ pub trait ProposalFilter {
 pub type BoxedProposalFilter<E> = Box<dyn ProposalFilter<Error = E> + Send + Sync>;
 
 macro_rules! delegate_proposal_filter {
-    () => {
-        type Error = <<Self as std::ops::Deref>::Target as ProposalFilter>::Error;
+    ($implementer:ty) => {
+        impl<T: ProposalFilter + ?Sized> ProposalFilter for $implementer {
+            type Error = T::Error;
 
-        fn validate(&self, proposals: &ProposalBundle) -> Result<(), Self::Error> {
-            (**self).validate(proposals)
-        }
+            fn validate(&self, proposals: &ProposalBundle) -> Result<(), Self::Error> {
+                (**self).validate(proposals)
+            }
 
-        fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
-            (**self).filter(proposals)
+            fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
+                (**self).filter(proposals)
+            }
         }
     };
 }
 
-impl<T: ProposalFilter + ?Sized> ProposalFilter for Box<T> {
-    delegate_proposal_filter!();
+delegate_proposal_filter!(Box<T>);
+delegate_proposal_filter!(&T);
+
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct ProposalFilterContext {
+    pub committer: Sender,
+    pub proposer: Sender,
 }
 
-impl<T: ProposalFilter + ?Sized> ProposalFilter for &T {
-    delegate_proposal_filter!();
+pub struct SimpleProposalFilter<F> {
+    pub(crate) committer: Sender,
+    pub(crate) filter: F,
+}
+
+impl<F, E> ProposalFilter for SimpleProposalFilter<F>
+where
+    F: Fn(&ProposalFilterContext, &BorrowedProposal<'_>) -> Result<(), E>,
+    E: std::error::Error + Send + Sync + 'static,
+{
+    type Error = E;
+
+    fn validate(&self, proposals: &ProposalBundle) -> Result<(), Self::Error> {
+        proposals.iter_proposals().try_for_each(|proposal| {
+            let context = ProposalFilterContext {
+                committer: self.committer.clone(),
+                proposer: proposal.sender.clone(),
+            };
+
+            (self.filter)(&context, &proposal.proposal)
+        })
+    }
+
+    fn filter(&self, mut proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
+        proposals.retain(|proposal| {
+            let context = ProposalFilterContext {
+                committer: self.committer.clone(),
+                proposer: proposal.sender.clone(),
+            };
+
+            Ok((self.filter)(&context, &proposal.proposal).map_or(false, |_| true))
+        })?;
+
+        Ok(proposals)
+    }
 }
 
 #[derive(Clone, Debug)]

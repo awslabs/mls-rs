@@ -1,7 +1,7 @@
 use aws_mls::{
     bench_utils::group_functions::{get_snapshot, load_test_cases},
     cipher_suite::CipherSuite,
-    client_config::test_utils::TestClientConfig,
+    client::MlsConfig,
     group::Group,
 };
 use criterion::{
@@ -23,10 +23,10 @@ fn group_setup(c: &mut Criterion) {
 }
 
 // benches JSON serialization of group state
-fn bench_group_snapshot(
+fn bench_group_snapshot<C: MlsConfig>(
     bench_group: &mut BenchmarkGroup<WallTime>,
     cipher_suite: CipherSuite,
-    container: Vec<Vec<Group<TestClientConfig>>>,
+    container: Vec<Vec<Group<C>>>,
 ) {
     for groups in container {
         bench_group.bench_with_input(

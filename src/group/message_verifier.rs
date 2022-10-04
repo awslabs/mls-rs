@@ -201,10 +201,11 @@ fn signing_identity_for_new_member_proposal(
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
-        client_config::{
-            test_utils::{test_config, TestClientConfig},
-            ClientConfig, Preferences,
+        client_builder::{
+            test_utils::{TestClientBuilder, TestClientConfig},
+            Preferences,
         },
+        client_config::ClientConfig,
         extension::{ExtensionList, ExternalSendersExt},
         group::{
             framing::WireFormat,
@@ -269,15 +270,16 @@ mod tests {
             let bob = Group::join(
                 welcome.unwrap(),
                 None,
-                test_config(
+                TestClientBuilder::new_for_test_custom(
                     bob_signing_key,
                     bob_key_pkg,
                     alice.group.config.preferences(),
-                ),
+                )
+                .build_config(),
             )
             .unwrap();
 
-            Self {
+            TestEnv {
                 alice,
                 bob: TestGroup { group: bob },
             }

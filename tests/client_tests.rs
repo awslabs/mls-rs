@@ -1,7 +1,8 @@
 use assert_matches::assert_matches;
 use aws_mls::cipher_suite::{CipherSuite, SignaturePublicKey};
-use aws_mls::client::Client;
-use aws_mls::client_config::{InMemoryClientConfig, Preferences};
+use aws_mls::client::{
+    BaseConfig, Client, ClientBuilder, Preferences, WithIdentityValidator, WithKeychain,
+};
 use aws_mls::extension::ExtensionList;
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, GroupError};
@@ -9,7 +10,7 @@ use aws_mls::identity::SigningIdentity;
 use aws_mls::identity::{BasicCredential, Credential, MlsCredential};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
-use aws_mls::provider::identity_validation::BasicIdentityValidator;
+use aws_mls::provider::{identity_validation::BasicIdentityValidator, keychain::InMemoryKeychain};
 use ferriscrypt::rand::SecureRng;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 
@@ -19,8 +20,8 @@ use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test_configure!(run_in_browser);
 
-// The same method exists in `client_config::test_utils` but is not compiled without the `test` flag.
-type TestClientConfig = InMemoryClientConfig<BasicIdentityValidator>;
+type TestClientConfig =
+    WithIdentityValidator<BasicIdentityValidator, WithKeychain<InMemoryKeychain, BaseConfig>>;
 
 // The same method exists in `credential::test_utils` but is not compiled without the `test` flag.
 pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {
@@ -52,10 +53,11 @@ fn generate_client(
     let signing_identity =
         SigningIdentity::new(credential, SignaturePublicKey::try_from(&key).unwrap());
 
-    InMemoryClientConfig::new(BasicIdentityValidator::new())
-        .with_signing_identity(signing_identity, key)
-        .with_preferences(preferences)
-        .build_client()
+    ClientBuilder::new()
+        .identity_validator(BasicIdentityValidator::new())
+        .single_signing_identity(signing_identity, key)
+        .preferences(preferences)
+        .build()
 }
 
 fn test_create(
@@ -831,10 +833,12 @@ fn get_reinit_client(
     );
     let id2 = SigningIdentity::new(credential, SignaturePublicKey::try_from(&sk2).unwrap());
 
-    InMemoryClientConfig::new(BasicIdentityValidator::new())
-        .with_signing_identity(id1, sk1)
-        .with_signing_identity(id2, sk2)
-        .build_client()
+    ClientBuilder::new()
+        .identity_validator(BasicIdentityValidator::new())
+        .keychain(InMemoryKeychain::default())
+        .signing_identity(id1, sk1)
+        .signing_identity(id2, sk2)
+        .build()
 }
 
 #[test]

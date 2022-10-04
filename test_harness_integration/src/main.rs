@@ -4,13 +4,16 @@
 //! It is based on the Mock client written by Richard Barnes.
 
 use aws_mls::cipher_suite::{CipherSuite, MaybeCipherSuite, SignaturePublicKey};
-use aws_mls::client::Client;
-use aws_mls::client_config::{ClientConfig, InMemoryClientConfig, Preferences};
+use aws_mls::client::{
+    BaseConfig, Client, ClientBuilder, Preferences, WithIdentityValidator, WithKeychain,
+};
 use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, StateUpdate};
 use aws_mls::identity::{BasicCredential, MlsCredential};
-use aws_mls::provider::identity_validation::BasicIdentityValidator;
+use aws_mls::provider::{
+    identity_validation::BasicIdentityValidator, keychain::InMemoryKeychain, psk::InMemoryPskStore,
+};
 
 use aws_mls::identity::SigningIdentity;
 use aws_mls::key_package::KeyPackage;
@@ -101,13 +104,23 @@ impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
     }
 }
 
-type TestClientConfig = InMemoryClientConfig<BasicIdentityValidator>;
+type TestClientConfig =
+    WithIdentityValidator<BasicIdentityValidator, WithKeychain<InMemoryKeychain, BaseConfig>>;
 
 #[derive(Default)]
 pub struct MlsClientImpl {
-    clients: Mutex<Vec<Client<TestClientConfig>>>,
-    groups: Mutex<Vec<Group<TestClientConfig>>>,
-    configs: Mutex<Vec<TestClientConfig>>,
+    clients: Mutex<Vec<ClientDetails>>,
+    groups: Mutex<Vec<GroupDetails>>,
+}
+
+struct ClientDetails {
+    client: Client<TestClientConfig>,
+    psk_store: InMemoryPskStore,
+}
+
+struct GroupDetails {
+    group: Group<TestClientConfig>,
+    psk_store: InMemoryPskStore,
 }
 
 #[tonic::async_trait]
@@ -214,10 +227,14 @@ impl MlsClient for MlsClientImpl {
 
         let signature_key = SignaturePublicKey::try_from(&secret_key).map_err(abort)?;
 
-        let creator = InMemoryClientConfig::default()
-            .with_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
-            .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
-            .build_client();
+        let psk_store = InMemoryPskStore::default();
+
+        let creator = Client::builder()
+            .identity_validator(BasicIdentityValidator::new())
+            .single_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
+            .preferences(Preferences::default().with_ratchet_tree_extension(true))
+            .psk_store(psk_store.clone())
+            .build();
 
         let group = creator
             .create_group_with_id(
@@ -229,9 +246,7 @@ impl MlsClient for MlsClientImpl {
             .map_err(abort)?;
 
         let mut groups = self.groups.lock().unwrap();
-        groups.push(group);
-
-        self.configs.lock().unwrap().push(creator.config);
+        groups.push(GroupDetails { group, psk_store });
 
         Ok(Response::new(CreateGroupResponse {
             state_id: groups.len() as u32,
@@ -259,16 +274,20 @@ impl MlsClient for MlsClientImpl {
 
         let signature_key = SignaturePublicKey::try_from(&secret_key).map_err(abort)?;
 
-        let client = InMemoryClientConfig::default()
-            .with_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
-            .with_preferences(Preferences::default().with_ratchet_tree_extension(true))
-            .build_client();
+        let psk_store = InMemoryPskStore::default();
+
+        let client = ClientBuilder::new()
+            .identity_validator(BasicIdentityValidator::new())
+            .single_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
+            .preferences(Preferences::default().with_ratchet_tree_extension(true))
+            .psk_store(psk_store.clone())
+            .build();
 
         let key_package = client
             .generate_key_package(ProtocolVersion::Mls10, cipher_suite)
             .map_err(abort)?;
 
-        clients.push(client);
+        clients.push(ClientDetails { client, psk_store });
 
         let resp = CreateKeyPackageResponse {
             transaction_id: clients.len() as u32,
@@ -289,16 +308,16 @@ impl MlsClient for MlsClientImpl {
         let welcome_msg = MLSMessage::tls_deserialize(&mut &*request_ref.welcome).map_err(abort)?;
 
         let group = clients[client_index]
+            .client
             .join_group(None, welcome_msg)
             .map_err(abort)?;
 
         let mut groups = self.groups.lock().unwrap();
-        groups.push(group);
 
-        self.configs
-            .lock()
-            .unwrap()
-            .push(clients[client_index].config.clone());
+        groups.push(GroupDetails {
+            group,
+            psk_store: clients[client_index].psk_store.clone(),
+        });
 
         Ok(Response::new(JoinGroupResponse {
             state_id: groups.len() as u32,
@@ -347,6 +366,7 @@ impl MlsClient for MlsClientImpl {
         let ciphertext = groups
             .get_mut(request_ref.state_id as usize - 1)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .group
             .encrypt_application_message(&request_ref.application_data, vec![])
             .and_then(|m| Ok(m.tls_serialize_detached()?))
             .map_err(abort)?;
@@ -367,6 +387,7 @@ impl MlsClient for MlsClientImpl {
         let message = groups
             .get_mut(request_ref.state_id as usize - 1)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .group
             .process_incoming_message(ciphertext)
             .map_err(abort)?;
 
@@ -390,12 +411,12 @@ impl MlsClient for MlsClientImpl {
         let request_ref = request.get_ref();
 
         let _ = self
-            .configs
+            .groups
             .lock()
             .unwrap()
-            .get(request_ref.state_id as usize - 1)
+            .get_mut(request_ref.state_id as usize - 1)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
-            .secret_store()
+            .psk_store
             .insert(
                 ExternalPskId(request_ref.psk_id.clone()),
                 Psk::from(request_ref.psk.clone()),
@@ -411,9 +432,10 @@ impl MlsClient for MlsClientImpl {
         let request_ref = request.get_ref();
         let mut groups = self.groups.lock().unwrap();
 
-        let group = groups
+        let group = &mut groups
             .get_mut(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .group;
 
         let key_package =
             KeyPackage::tls_deserialize(&mut &*request_ref.key_package).map_err(abort)?;
@@ -435,9 +457,10 @@ impl MlsClient for MlsClientImpl {
         let request_ref = request.get_ref();
         let mut groups = self.groups.lock().unwrap();
 
-        let group = groups
+        let group = &mut groups
             .get_mut(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .group;
 
         let proposal_packet = group
             .propose_update(vec![])
@@ -459,11 +482,13 @@ impl MlsClient for MlsClientImpl {
         let removed = groups
             .get(request_ref.removed as usize - 1)
             .ok_or_else(|| Status::new(Aborted, "removed has no group"))?
+            .group
             .current_member_index();
 
-        let group = groups
+        let group = &mut groups
             .get_mut(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .group;
 
         let proposal_packet = group
             .propose_remove(removed, vec![])
@@ -482,9 +507,10 @@ impl MlsClient for MlsClientImpl {
         let request_ref = request.into_inner();
         let mut groups = self.groups.lock().unwrap();
 
-        let group = groups
+        let group = &mut groups
             .get_mut(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .group;
 
         let proposal_packet = group
             .propose_psk(ExternalPskId(request_ref.psk_id), vec![])
@@ -521,9 +547,10 @@ impl MlsClient for MlsClientImpl {
             })
             .collect::<Vec<_>>();
 
-        let group = groups
+        let group = &mut groups
             .get_mut(request_ref.state_id as usize - 1)
-            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .group;
 
         let proposal_packet = group
             .propose_group_context_extensions(ExtensionList::from(extensions), vec![])
@@ -550,6 +577,7 @@ impl MlsClient for MlsClientImpl {
             groups
                 .get_mut(group_index)
                 .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+                .group
                 .process_incoming_message(proposal)
                 .map_err(abort)?;
         }
@@ -559,6 +587,7 @@ impl MlsClient for MlsClientImpl {
         let (commit, welcome) = groups
             .get_mut(group_index)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .group
             .commit(vec![])
             .map_err(abort)?;
 
@@ -588,6 +617,7 @@ impl MlsClient for MlsClientImpl {
             groups
                 .get_mut(group_index)
                 .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+                .group
                 .process_incoming_message(proposal)
                 .map_err(abort)?;
         }
@@ -597,6 +627,7 @@ impl MlsClient for MlsClientImpl {
         let message = groups
             .get_mut(group_index)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .group
             .process_incoming_message(commit)
             .map_err(abort)?;
 
@@ -619,6 +650,7 @@ impl MlsClient for MlsClientImpl {
         let state_update = groups
             .get_mut(group_index)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .group
             .apply_pending_commit()
             .map_err(abort)?;
 

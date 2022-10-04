@@ -173,7 +173,7 @@ impl<'a, C: IdentityValidator> LeafNodeValidator<'a, C> {
         // Verify the credential
         self.identity_validator
             .validate(&leaf_node.signing_identity, self.cipher_suite)
-            .map_err(|e| LeafNodeValidationError::IdentityValidatorError(Box::new(e)))?;
+            .map_err(|e| LeafNodeValidationError::IdentityValidatorError(e.into()))?;
 
         let public_key = leaf_node.signing_identity.public_key(self.cipher_suite)?;
 

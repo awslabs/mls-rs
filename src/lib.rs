@@ -45,10 +45,10 @@ macro_rules! load_test_cases {
     }};
 }
 
-#[macro_use]
 pub mod cipher_suite;
 pub mod client;
-pub mod client_config;
+mod client_builder;
+mod client_config;
 pub mod extension;
 pub mod external_client;
 pub mod external_client_config;
@@ -83,3 +83,9 @@ mod tree_kem;
 pub use ferriscrypt;
 pub use tls_codec;
 pub use x509_cert;
+
+mod private {
+    pub trait Sealed {}
+}
+
+use private::Sealed;

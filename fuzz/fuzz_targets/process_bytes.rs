@@ -1,7 +1,7 @@
 #![no_main]
 use aws_mls::bench_utils::group_functions::create_group;
 use aws_mls::cipher_suite::CipherSuite;
-use aws_mls::client_config::test_utils::TestClientConfig;
+use aws_mls::client::test_utils::TestClientConfig;
 use aws_mls::group::{Group, GroupError, MLSMessage};
 use aws_mls::tls_codec::Deserialize;
 use libfuzzer_sys::fuzz_target;

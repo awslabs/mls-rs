@@ -2,7 +2,7 @@
 
 use aws_mls::bench_utils::group_functions::{create_fuzz_commit_message, create_group};
 use aws_mls::cipher_suite::CipherSuite;
-use aws_mls::client_config::test_utils::TestClientConfig;
+use aws_mls::client::test_utils::TestClientConfig;
 use aws_mls::group::Group;
 use aws_mls::protocol_version::ProtocolVersion;
 use libfuzzer_sys::fuzz_target;

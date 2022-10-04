@@ -93,6 +93,41 @@ impl ProposalBundle {
         res
     }
 
+    pub fn retain<F, E>(&mut self, mut f: F) -> Result<(), E>
+    where
+        F: FnMut(&ProposalInfo<BorrowedProposal<'_>>) -> Result<bool, E>,
+    {
+        self.retain_by_type::<AddProposal, _, _>(|proposal| {
+            f(&proposal.by_ref().map(BorrowedProposal::from))
+        })?;
+
+        self.retain_by_type::<UpdateProposal, _, _>(|proposal| {
+            f(&proposal.by_ref().map(BorrowedProposal::from))
+        })?;
+
+        self.retain_by_type::<RemoveProposal, _, _>(|proposal| {
+            f(&proposal.by_ref().map(BorrowedProposal::from))
+        })?;
+
+        self.retain_by_type::<PreSharedKey, _, _>(|proposal| {
+            f(&proposal.by_ref().map(BorrowedProposal::from))
+        })?;
+
+        self.retain_by_type::<ReInit, _, _>(|proposal| {
+            f(&proposal.by_ref().map(BorrowedProposal::from))
+        })?;
+
+        self.retain_by_type::<ExternalInit, _, _>(|proposal| {
+            f(&proposal.by_ref().map(BorrowedProposal::from))
+        })?;
+
+        self.retain_by_type::<ExtensionList<GroupContextExtension>, _, _>(|proposal| {
+            f(&proposal.by_ref().map(BorrowedProposal::from))
+        })?;
+
+        Ok(())
+    }
+
     pub fn iter_proposals(&self) -> impl Iterator<Item = ProposalInfo<BorrowedProposal<'_>>> {
         self.additions
             .iter()

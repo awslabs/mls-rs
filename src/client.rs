@@ -21,6 +21,11 @@ use ferriscrypt::rand::{SecureRng, SecureRngError};
 use hex::ToHex;
 use thiserror::Error;
 
+pub use crate::client_builder::{
+    BaseConfig, ClientBuilder, Missing, MlsConfig, Preferences, WithGroupStateStorage,
+    WithIdentityValidator, WithKeyPackageRepo, WithKeychain, WithProposalFilter, WithPskStore,
+};
+
 #[derive(Error, Debug)]
 pub enum ClientError {
     #[error(transparent)]
@@ -55,17 +60,25 @@ pub enum ClientError {
     GroupNotFound(String),
 }
 
-#[non_exhaustive]
+/// MLS Client
+///
+/// [`Client::builder`] can be used to instantiate it.
 #[derive(Clone, Debug)]
-pub struct Client<C: ClientConfig> {
-    pub config: C,
+pub struct Client<C> {
+    pub(crate) config: C,
+}
+
+impl Client<()> {
+    pub fn builder() -> ClientBuilder<BaseConfig> {
+        ClientBuilder::new()
+    }
 }
 
 impl<C> Client<C>
 where
     C: ClientConfig + Clone,
 {
-    pub fn new(config: C) -> Self {
+    pub(crate) fn new(config: C) -> Self {
         Client { config }
     }
 
@@ -241,24 +254,27 @@ where
 
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
-
     use super::*;
     use crate::{
-        client_config::test_utils::TestClientConfig, client_config::InMemoryClientConfig,
-        signing_identity::test_utils::get_test_signing_identity,
+        client_config::ClientConfig, signing_identity::test_utils::get_test_signing_identity,
     };
+
+    pub use crate::client_builder::test_utils::{TestClientBuilder, TestClientConfig};
 
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
     pub const TEST_GROUP: &[u8] = b"group";
 
-    pub fn get_basic_config(cipher_suite: CipherSuite, identity: &str) -> TestClientConfig {
+    pub fn get_basic_client_builder(
+        cipher_suite: CipherSuite,
+        identity: &str,
+    ) -> TestClientBuilder {
         let (signing_identity, secret_key) =
             get_test_signing_identity(cipher_suite, identity.as_bytes().to_vec());
 
-        InMemoryClientConfig::default()
-            .with_signing_identity(signing_identity, secret_key)
-            .with_lifetime_duration(10000)
+        TestClientBuilder::new_for_test()
+            .signing_identity(signing_identity, secret_key)
+            .key_package_lifetime(10000)
     }
 
     pub fn test_client_with_key_pkg(
@@ -266,7 +282,7 @@ pub mod test_utils {
         cipher_suite: CipherSuite,
         identity: &str,
     ) -> (Client<TestClientConfig>, KeyPackage) {
-        let client = get_basic_config(cipher_suite, identity).build_client();
+        let client = get_basic_client_builder(cipher_suite, identity).build();
 
         let key_package = client
             .generate_key_package(protocol_version, cipher_suite)
@@ -275,7 +291,10 @@ pub mod test_utils {
         (client, key_package)
     }
 
-    pub fn create_group(client: &Client<TestClientConfig>) -> Group<TestClientConfig> {
+    pub fn create_group<C>(client: &Client<C>) -> Group<C>
+    where
+        C: ClientConfig,
+    {
         client
             .create_group_with_id(
                 TEST_PROTOCOL_VERSION,
@@ -286,14 +305,15 @@ pub mod test_utils {
             .unwrap()
     }
 
-    pub fn join_group<'a, S>(
-        committer: &mut Group<TestClientConfig>,
+    pub fn join_group<'a, C, S>(
+        committer: &mut Group<C>,
         other_groups: S,
         key_package: KeyPackage,
-        client: &Client<TestClientConfig>,
-    ) -> Result<Group<TestClientConfig>, ClientError>
+        client: &Client<C>,
+    ) -> Result<Group<C>, ClientError>
     where
-        S: IntoIterator<Item = &'a mut Group<TestClientConfig>>,
+        C: ClientConfig + 'a,
+        S: IntoIterator<Item = &'a mut Group<C>>,
     {
         let (commit_msg, welcome_msg) = committer
             .commit_builder()
@@ -345,7 +365,7 @@ mod tests {
         {
             println!("Running client keygen for {:?}", cipher_suite);
 
-            let client = get_basic_config(cipher_suite, "foo").build_client();
+            let client = get_basic_client_builder(cipher_suite, "foo").build();
 
             // TODO: Tests around extensions
             let key_package = client
@@ -429,19 +449,22 @@ mod tests {
 
         let mut alice_group =
             test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |c| {
-                c.with_psk(psk_id.clone(), psk.clone())
+                c.psk(psk_id.clone(), psk.clone())
             });
 
         let (mut bob_group, _) = alice_group
-            .join_with_custom_config("bob", |c| c.with_psk(psk_id.clone(), psk.clone()))
+            .join_with_custom_config("bob", |mut c| {
+                c.0.psk_store.insert(psk_id.clone(), psk.clone());
+                c
+            })
             .unwrap();
 
         let group_info_msg = alice_group.group.group_info_message(true).unwrap();
 
         let new_client_id = if do_remove { "bob" } else { "charlie" };
-        let new_client = get_basic_config(TEST_CIPHER_SUITE, new_client_id)
-            .with_psk(psk_id.clone(), psk)
-            .build_client();
+        let new_client = get_basic_client_builder(TEST_CIPHER_SUITE, new_client_id)
+            .psk(psk_id.clone(), psk)
+            .build();
 
         let (mut new_group, external_commit) = new_client.commit_external(
             group_info_msg,
@@ -510,7 +533,7 @@ mod tests {
 
     #[test]
     fn creating_an_external_commit_requires_a_group_info_message() {
-        let alice = get_basic_config(TEST_CIPHER_SUITE, "alice").build_client();
+        let alice = get_basic_client_builder(TEST_CIPHER_SUITE, "alice").build();
 
         let payload = MLSMessagePayload::KeyPackage(
             alice
@@ -519,7 +542,9 @@ mod tests {
         );
 
         let msg = MLSMessage::new(TEST_PROTOCOL_VERSION, payload);
-        let res = alice.commit_external(msg, None, None, vec![], vec![]);
+        let res = alice
+            .commit_external(msg, None, None, vec![], vec![])
+            .map(|_| ());
 
         assert_matches!(res, Err(ClientError::ExpectedGroupInfoMessage));
     }
@@ -534,7 +559,7 @@ mod tests {
 
         let group_info_msg = bob_group.group.group_info_message(true).unwrap();
 
-        let carol = get_basic_config(TEST_CIPHER_SUITE, "carol").build_client();
+        let carol = get_basic_client_builder(TEST_CIPHER_SUITE, "carol").build();
 
         let (_, external_commit) = carol
             .commit_external(

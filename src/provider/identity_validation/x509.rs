@@ -163,7 +163,7 @@ impl<I: X509IdentityExtractor> IdentityValidator for BasicX509Validator<I> {
 
         self.id_extractor
             .identity(&to_certs(&x509_cred.credential)?)
-            .map_err(|e| X509Error::IdentityError(Box::new(e)))
+            .map_err(|e| X509Error::IdentityError(e.into()))
     }
 
     fn valid_successor(
@@ -179,7 +179,7 @@ impl<I: X509IdentityExtractor> IdentityValidator for BasicX509Validator<I> {
 
         self.id_extractor
             .valid_successor(&predecessor_certs, &successor_certs)
-            .map_err(|e| X509Error::IdentityError(Box::new(e)))
+            .map_err(|e| X509Error::IdentityError(e.into()))
     }
 
     fn supported_types(&self) -> Vec<crate::identity::CredentialType> {
