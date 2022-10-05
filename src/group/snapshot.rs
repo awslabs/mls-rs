@@ -18,6 +18,7 @@ use super::{epoch::EpochSecrets, state_repo::GroupStateRepository};
 #[serde_as]
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
 pub struct Snapshot {
+    version: u16,
     state: RawGroupState,
     private_tree: TreeKemPrivate,
     epoch_secrets: EpochSecrets,
@@ -103,6 +104,7 @@ where
             pending_updates: self.pending_updates.clone(),
             pending_commit: self.pending_commit.clone(),
             epoch_secrets: self.epoch_secrets.clone(),
+            version: 1,
         }
     }
 
@@ -159,6 +161,7 @@ pub(crate) mod test_utils {
             key_schedule: get_test_key_schedule(cipher_suite),
             pending_updates: Default::default(),
             pending_commit: None,
+            version: 1,
         }
     }
 }
