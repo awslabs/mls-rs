@@ -43,9 +43,23 @@ where
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct KeyPackageGeneration {
-    pub key_package: KeyPackage,
-    pub init_secret_key: HpkeSecretKey,
-    pub leaf_node_secret_key: HpkeSecretKey,
+    pub(crate) key_package: KeyPackage,
+    pub(crate) init_secret_key: HpkeSecretKey,
+    pub(crate) leaf_node_secret_key: HpkeSecretKey,
+}
+
+impl KeyPackageGeneration {
+    pub fn reference(&self) -> Result<KeyPackageRef, KeyPackageError> {
+        self.key_package.to_reference()
+    }
+
+    pub fn init_secret(&self) -> &[u8] {
+        &self.init_secret_key
+    }
+
+    pub fn leaf_node_secret_key(&self) -> &[u8] {
+        &self.leaf_node_secret_key
+    }
 }
 
 impl<'a, S, C> KeyPackageGenerator<'a, S, C>

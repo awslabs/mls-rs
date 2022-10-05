@@ -1,8 +1,10 @@
-use crate::key_package::{KeyPackageError, KeyPackageGeneration, KeyPackageRef};
+use crate::key_package::{KeyPackageError, KeyPackageRef};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+
+pub use crate::key_package::generator::KeyPackageGeneration;
 
 pub trait KeyPackageRepository {
     type Error: std::error::Error + Send + Sync + 'static;

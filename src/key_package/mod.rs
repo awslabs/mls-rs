@@ -22,7 +22,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 mod validator;
 pub(crate) use validator::*;
 
-mod generator;
+pub(crate) mod generator;
 pub(crate) use generator::*;
 
 #[derive(Error, Debug)]
