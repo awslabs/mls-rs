@@ -4,7 +4,7 @@ use crate::{
 };
 
 use hex::ToHex;
-use std::collections::{hash_map::Entry, HashMap, VecDeque};
+use std::collections::hash_map::Entry;
 use thiserror::Error;
 
 pub use crate::group::epoch::PriorEpoch;
@@ -29,9 +29,7 @@ where
     S: GroupStateStorage,
 {
     pub max_epochs: u64,
-    inserts: VecDeque<PriorEpoch>,
-    updates: HashMap<u64, PriorEpoch>,
-    delete_under: Option<u64>,
+    pending_commit: EpochStorageCommit,
     group_id: Vec<u8>,
     storage: S,
 }
@@ -49,23 +47,24 @@ where
             return Err(GroupStateRepositoryError::NonZeroRetentionRequired);
         }
 
-        let delete_under = storage
-            .max_epoch_id(&group_id)
-            .map_err(|e| GroupStateRepositoryError::StorageError(e.into()))?
-            .and_then(|max| max.checked_sub(max_epoch_retention - 1));
+        let pending_commit = EpochStorageCommit {
+            delete_under: storage
+                .max_epoch_id(&group_id)
+                .map_err(|e| GroupStateRepositoryError::StorageError(e.into()))?
+                .and_then(|max| max.checked_sub(max_epoch_retention - 1)),
+            ..Default::default()
+        };
 
         Ok(GroupStateRepository {
             max_epochs: max_epoch_retention,
-            inserts: Default::default(),
-            updates: Default::default(),
-            delete_under,
             group_id,
             storage,
+            pending_commit,
         })
     }
 
     fn find_max_id(&self) -> Result<Option<u64>, GroupStateRepositoryError> {
-        if let Some(max) = self.inserts.back().map(|e| e.epoch_id()) {
+        if let Some(max) = self.pending_commit.inserts.back().map(|e| e.epoch_id()) {
             Ok(Some(max))
         } else {
             self.storage
@@ -83,13 +82,18 @@ where
         }
 
         // Search the local inserts cache
-        if let Some(min) = self.inserts.front().map(|e| e.epoch_id()) {
+        if let Some(min) = self.pending_commit.inserts.front().map(|e| e.epoch_id()) {
             if epoch_id >= min {
-                return Ok(self.inserts.get((epoch_id - min) as usize).cloned());
+                return Ok(self
+                    .pending_commit
+                    .inserts
+                    .get((epoch_id - min) as usize)
+                    .cloned());
             }
         }
 
-        self.updates
+        self.pending_commit
+            .updates
             .get(&epoch_id)
             .map(|epoch| Ok(epoch.clone()))
             .or_else(|| {
@@ -103,7 +107,8 @@ where
 
     fn epoch_pending_delete(&self, epoch_id: u64) -> bool {
         // Epochs pending deletion should not be found
-        self.delete_under
+        self.pending_commit
+            .delete_under
             .map(|delete_threshold| epoch_id < delete_threshold)
             .unwrap_or(false)
     }
@@ -117,15 +122,18 @@ where
         }
 
         // Search the local inserts cache
-        if let Some(min) = self.inserts.front().map(|e| e.epoch_id()) {
+        if let Some(min) = self.pending_commit.inserts.front().map(|e| e.epoch_id()) {
             if epoch_id >= min {
-                return Ok(self.inserts.get_mut((epoch_id - min) as usize));
+                return Ok(self
+                    .pending_commit
+                    .inserts
+                    .get_mut((epoch_id - min) as usize));
             }
         }
 
         // Look in the cached updates map, and if not found look in disk storage
         // and insert into the updates map for future caching
-        Ok(match self.updates.entry(epoch_id) {
+        Ok(match self.pending_commit.updates.entry(epoch_id) {
             Entry::Vacant(entry) => self
                 .storage
                 .get_epoch_data(&self.group_id, epoch_id)
@@ -154,17 +162,17 @@ where
             }
         }
 
-        self.inserts.push_back(epoch);
+        self.pending_commit.inserts.push_back(epoch);
 
         if epoch_id >= self.max_epochs {
             let min = epoch_id - self.max_epochs;
-            self.delete_under = Some(min + 1);
+            self.pending_commit.delete_under = Some(min + 1);
 
-            if self.inserts.len() > self.max_epochs as usize {
-                self.inserts.pop_front();
+            if self.pending_commit.inserts.len() > self.max_epochs as usize {
+                self.pending_commit.inserts.pop_front();
             }
 
-            self.updates.remove(&min);
+            self.pending_commit.updates.remove(&min);
         }
 
         Ok(())
@@ -174,18 +182,12 @@ where
         &mut self,
         group_snapshot: Snapshot,
     ) -> Result<(), GroupStateRepositoryError> {
-        let epoch_commit = EpochStorageCommit {
-            inserts: self.inserts.iter(),
-            updates: self.updates.values(),
-            delete_under: self.delete_under,
-        };
-
         self.storage
-            .write(&self.group_id, group_snapshot, epoch_commit)
+            .write(&self.group_id, group_snapshot, &self.pending_commit)
             .map_err(|e| GroupStateRepositoryError::StorageError(e.into()))?;
 
-        self.inserts.clear();
-        self.updates.clear();
+        self.pending_commit.inserts.clear();
+        self.pending_commit.updates.clear();
 
         Ok(())
     }
@@ -248,8 +250,12 @@ mod tests {
         test_repo.insert(test_epoch.clone()).unwrap();
 
         // Check the in-memory state
-        assert_eq!(test_repo.inserts.back().unwrap(), &test_epoch);
-        assert!(test_repo.updates.is_empty());
+        assert_eq!(
+            test_repo.pending_commit.inserts.back().unwrap(),
+            &test_epoch
+        );
+
+        assert!(test_repo.pending_commit.updates.is_empty());
         assert!(test_repo.storage.inner.lock().unwrap().is_empty());
 
         // Make sure you can recall an epoch sitting as a pending insert
@@ -263,8 +269,8 @@ mod tests {
         test_repo.write_to_storage(snapshot.clone()).unwrap();
 
         // Make sure the memory cache cleared
-        assert!(test_repo.inserts.is_empty());
-        assert!(test_repo.updates.is_empty());
+        assert!(test_repo.pending_commit.inserts.is_empty());
+        assert!(test_repo.pending_commit.updates.is_empty());
 
         // Make sure the storage was written
         let storage = test_repo.storage.inner.lock().unwrap();
@@ -286,9 +292,12 @@ mod tests {
         test_repo.insert(test_epoch_0).unwrap();
         test_repo.insert(test_epoch_1.clone()).unwrap();
 
-        assert_eq!(test_repo.inserts.back().unwrap(), &test_epoch_1);
-        assert!(test_repo.updates.is_empty());
-        assert_eq!(test_repo.inserts.len(), 1);
+        assert_eq!(
+            test_repo.pending_commit.inserts.back().unwrap(),
+            &test_epoch_1
+        );
+        assert!(test_repo.pending_commit.updates.is_empty());
+        assert_eq!(test_repo.pending_commit.inserts.len(), 1);
         assert!(test_repo.storage.inner.lock().unwrap().is_empty());
 
         test_repo.write_to_storage(test_snapshot(1)).unwrap();
@@ -323,9 +332,12 @@ mod tests {
         let test_epoch_2 = test_epoch(2);
         test_repo.insert(test_epoch_2.clone()).unwrap();
 
-        assert_eq!(test_repo.inserts.back().unwrap(), &test_epoch_2);
-        assert!(test_repo.updates.is_empty());
-        assert_eq!(test_repo.inserts.len(), 1);
+        assert_eq!(
+            test_repo.pending_commit.inserts.back().unwrap(),
+            &test_epoch_2
+        );
+        assert!(test_repo.pending_commit.updates.is_empty());
+        assert_eq!(test_repo.pending_commit.inserts.len(), 1);
 
         test_repo.write_to_storage(test_snapshot(2)).unwrap();
 
@@ -356,10 +368,13 @@ mod tests {
         to_update.secrets.sender_data_secret = SenderDataSecret::from(new_sender_secret);
         let to_update = to_update.clone();
 
-        assert_eq!(test_repo.updates.len(), 1);
-        assert!(test_repo.inserts.is_empty());
+        assert_eq!(test_repo.pending_commit.updates.len(), 1);
+        assert!(test_repo.pending_commit.inserts.is_empty());
 
-        assert_eq!(test_repo.updates.get(&0).unwrap(), &to_update);
+        assert_eq!(
+            test_repo.pending_commit.updates.get(&0).unwrap(),
+            &to_update
+        );
 
         // Make sure you can access an epoch pending update
         let owned = test_repo.get_epoch_owned(0).unwrap();
@@ -369,8 +384,8 @@ mod tests {
         let snapshot = test_snapshot(1);
         test_repo.write_to_storage(snapshot.clone()).unwrap();
 
-        assert!(test_repo.updates.is_empty());
-        assert!(test_repo.inserts.is_empty());
+        assert!(test_repo.pending_commit.updates.is_empty());
+        assert!(test_repo.pending_commit.inserts.is_empty());
 
         // Make sure the storage was written
         let storage = test_repo.storage.inner.lock().unwrap();
@@ -404,8 +419,8 @@ mod tests {
 
         test_repo.write_to_storage(test_snapshot(1)).unwrap();
 
-        assert!(test_repo.inserts.is_empty());
-        assert!(test_repo.updates.is_empty());
+        assert!(test_repo.pending_commit.inserts.is_empty());
+        assert!(test_repo.pending_commit.updates.is_empty());
 
         // Make sure the storage was written
         let storage = test_repo.storage.inner.lock().unwrap();
@@ -526,8 +541,12 @@ mod tests {
         let new_repo =
             GroupStateRepository::new(TEST_GROUP_ID.to_vec(), 3, repo.storage.clone()).unwrap();
 
-        assert_eq!(repo.delete_under, new_repo.delete_under);
-        assert_eq!(new_repo.delete_under.unwrap(), 1);
+        assert_eq!(
+            repo.pending_commit.delete_under,
+            new_repo.pending_commit.delete_under
+        );
+
+        assert_eq!(new_repo.pending_commit.delete_under.unwrap(), 1);
     }
 
     #[test]
@@ -542,7 +561,7 @@ mod tests {
 
         new_repo.write_to_storage(test_snapshot(4)).unwrap();
 
-        assert!(new_repo.delete_under.is_none());
+        assert!(new_repo.pending_commit.delete_under.is_none());
 
         assert_eq!(
             new_repo.storage.export_epoch_data(TEST_GROUP_ID).unwrap()[0].epoch_id(),
@@ -557,7 +576,7 @@ mod tests {
         let mut new_repo =
             GroupStateRepository::new(TEST_GROUP_ID.to_vec(), 3, repo.storage).unwrap();
 
-        assert_eq!(new_repo.delete_under.unwrap(), 2);
+        assert_eq!(new_repo.pending_commit.delete_under.unwrap(), 2);
 
         // Writing to storage should clean up
         new_repo.write_to_storage(test_snapshot(4)).unwrap();

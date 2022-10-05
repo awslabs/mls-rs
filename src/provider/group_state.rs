@@ -8,33 +8,22 @@ pub use crate::group::{snapshot::Snapshot, state_repo::PriorEpoch};
 
 /// A set of changes to apply to a GroupStateStorage implementation. These changes MUST
 /// be made in a single transaction to avoid creating invalid states.
-pub struct EpochStorageCommit<'a, I, U>
-where
-    I: Iterator<Item = &'a PriorEpoch>,
-    U: Iterator<Item = &'a PriorEpoch>,
-{
-    pub(crate) inserts: I,
-    pub(crate) updates: U,
+#[derive(Default, Clone, Debug)]
+pub struct EpochStorageCommit {
+    pub(crate) inserts: VecDeque<PriorEpoch>,
+    pub(crate) updates: HashMap<u64, PriorEpoch>,
     pub(crate) delete_under: Option<u64>,
 }
 
-impl<'a, I, U> EpochStorageCommit<'a, I, U>
-where
-    I: Iterator<Item = &'a PriorEpoch>,
-    U: Iterator<Item = &'a PriorEpoch>,
-{
-    /// Sequential epoch inserts to add to the store
-    pub fn inserts(&self) -> &impl Iterator<Item = &'a PriorEpoch> {
-        &self.inserts
+impl EpochStorageCommit {
+    pub fn inserts(&self) -> impl Iterator<Item = &PriorEpoch> {
+        self.inserts.iter()
     }
 
-    /// Updates to existing epochs accessed by the GroupStateRepository since
-    /// the last write
-    pub fn updates(&self) -> &impl Iterator<Item = &'a PriorEpoch> {
-        &self.updates
+    pub fn updates(&self) -> impl Iterator<Item = &PriorEpoch> {
+        self.updates.values()
     }
 
-    /// Optional request to delete old epoch data under a specific epoch_id
     pub fn delete_under(&self) -> Option<u64> {
         self.delete_under
     }
@@ -54,11 +43,11 @@ pub trait GroupStateStorage {
         epoch_id: u64,
     ) -> Result<Option<PriorEpoch>, Self::Error>;
 
-    fn write<'a, I: Iterator<Item = &'a PriorEpoch>, U: Iterator<Item = &'a PriorEpoch>>(
+    fn write(
         &mut self,
         group_id: &[u8],
         group_snapshot: Snapshot,
-        epoch_commit: EpochStorageCommit<'a, I, U>,
+        epoch_commit: &EpochStorageCommit,
     ) -> Result<(), Self::Error>;
 
     fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error>;
@@ -179,11 +168,11 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
             .cloned())
     }
 
-    fn write<'a, I: Iterator<Item = &'a PriorEpoch>, U: Iterator<Item = &'a PriorEpoch>>(
+    fn write(
         &mut self,
         group_id: &[u8],
         group_snapshot: Snapshot,
-        epoch_commit: EpochStorageCommit<'a, I, U>,
+        epoch_commit: &EpochStorageCommit,
     ) -> Result<(), Self::Error> {
         let mut group_map = self.inner.lock().unwrap();
 
@@ -197,11 +186,11 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
         };
 
         epoch_commit
-            .inserts
+            .inserts()
             .for_each(|e| group_data.insert_epoch(e.clone()));
 
         epoch_commit
-            .updates
+            .updates()
             .for_each(|e| group_data.update_epoch(e.clone()));
 
         if let Some(min_epoch) = epoch_commit.delete_under {
