@@ -50,6 +50,8 @@ pub enum GroupError {
     #[error(transparent)]
     KeyPackageError(#[from] KeyPackageError),
     #[error(transparent)]
+    KeychainError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error(transparent)]
     LeafNodeError(#[from] LeafNodeError),
     #[error(transparent)]
     LeafNodeValidationError(#[from] LeafNodeValidationError),

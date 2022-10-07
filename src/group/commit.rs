@@ -188,6 +188,7 @@ where
                 .config
                 .keychain()
                 .signer(&leaf_node.signing_identity)
+                .map_err(|e| GroupError::KeychainError(e.into()))?
                 .ok_or(GroupError::NoCredentialFound),
             None => self.signer(),
         }?;

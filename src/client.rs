@@ -56,6 +56,8 @@ pub enum ClientError {
     UnsupportedMessageVersion(MaybeProtocolVersion),
     #[error("unable to load group from storage: {0:?}")]
     GroupStorageError(Box<dyn std::error::Error + Send + Sync>),
+    #[error(transparent)]
+    KeychainError(Box<dyn std::error::Error + Send + Sync>),
     #[error("group not found: {0}")]
     GroupNotFound(String),
 }
@@ -91,6 +93,7 @@ where
             .config
             .keychain()
             .default_identity(cipher_suite)
+            .map_err(|e| ClientError::KeychainError(e.into()))?
             .ok_or(ClientError::NoCredentialFound)?;
 
         let key_package_generator = KeyPackageGenerator {
@@ -228,6 +231,7 @@ where
             .config
             .keychain()
             .default_identity(group_context.cipher_suite)
+            .map_err(|e| ClientError::KeychainError(e.into()))?
             .ok_or(ClientError::NoCredentialFound)?;
 
         let message = MLSAuthenticatedContent::new_signed(

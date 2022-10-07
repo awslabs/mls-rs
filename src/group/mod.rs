@@ -588,6 +588,7 @@ where
         self.config
             .keychain()
             .signer(&self.current_user_leaf_node()?.signing_identity)
+            .map_err(|e| GroupError::KeychainError(e.into()))?
             .ok_or(GroupError::SignerNotFound)
     }
 
@@ -604,6 +605,7 @@ where
         let (signing_identity, signer) = config
             .keychain()
             .default_identity(cipher_suite)
+            .map_err(|e| GroupError::KeychainError(e.into()))?
             .ok_or(GroupError::NoCredentialFound)?;
 
         Ok((
