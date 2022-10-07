@@ -11,7 +11,9 @@ use crate::psk::{ExternalPskId, ExternalPskIdValidator, Psk};
 pub trait PskStore {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    fn psk(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error>;
+    fn insert(&mut self, id: ExternalPskId, psk: Psk) -> Result<(), Self::Error>;
+    fn delete(&mut self, id: &ExternalPskId) -> Result<(), Self::Error>;
+    fn get(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +33,7 @@ impl<T: PskStore> ExternalPskIdValidator for PskStoreIdValidator<T> {
 
     fn validate(&self, id: &ExternalPskId) -> Result<(), Self::Error> {
         self.0
-            .psk(id)?
+            .get(id)?
             .map(|_| ())
             .ok_or_else(|| PskStoreIdValidationError::ExternalIdNotFound(id.clone()))
     }
@@ -51,15 +53,33 @@ pub struct InMemoryPskStore {
 }
 
 impl InMemoryPskStore {
-    pub fn insert(&mut self, id: ExternalPskId, psk: Psk) -> Option<Psk> {
-        self.inner.lock().unwrap().insert(id, psk)
+    pub fn insert(&mut self, id: ExternalPskId, psk: Psk) {
+        self.inner.lock().unwrap().insert(id, psk);
+    }
+
+    pub fn get(&self, id: &ExternalPskId) -> Option<Psk> {
+        self.inner.lock().unwrap().get(id).cloned()
+    }
+
+    pub fn delete(&mut self, id: &ExternalPskId) {
+        self.inner.lock().unwrap().remove(id);
     }
 }
 
 impl PskStore for InMemoryPskStore {
     type Error = Infallible;
 
-    fn psk(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error> {
-        Ok(self.inner.lock().unwrap().get(id).cloned())
+    fn get(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error> {
+        Ok(self.get(id))
+    }
+
+    fn delete(&mut self, id: &ExternalPskId) -> Result<(), Self::Error> {
+        self.delete(id);
+        Ok(())
+    }
+
+    fn insert(&mut self, id: ExternalPskId, psk: Psk) -> Result<(), Self::Error> {
+        self.insert(id, psk);
+        Ok(())
     }
 }

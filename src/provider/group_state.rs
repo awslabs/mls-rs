@@ -35,6 +35,8 @@ pub trait GroupStateStorage {
 
     fn stored_groups(&self) -> Result<Vec<Vec<u8>>, Self::Error>;
 
+    fn delete_group(&self, group_id: &[u8]) -> Result<(), Self::Error>;
+
     fn get_snapshot(&self, group_id: &[u8]) -> Result<Option<Snapshot>, Self::Error>;
 
     fn get_epoch_data(
@@ -119,6 +121,7 @@ impl InMemoryGroupStateStorage {
         }
     }
 
+    #[cfg(any(feature = "benchmark", test))]
     pub fn export_epoch_data(&self, group_id: &[u8]) -> Option<Vec<PriorEpoch>> {
         self.inner
             .lock()
@@ -220,5 +223,10 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
 
     fn stored_groups(&self) -> Result<Vec<Vec<u8>>, Self::Error> {
         Ok(self.inner.lock().unwrap().keys().cloned().collect())
+    }
+
+    fn delete_group(&self, group_id: &[u8]) -> Result<(), Self::Error> {
+        self.inner.lock().unwrap().remove(group_id);
+        Ok(())
     }
 }

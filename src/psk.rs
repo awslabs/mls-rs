@@ -491,7 +491,7 @@ mod tests {
 
             psk_secret(
                 cipher_suite,
-                |id| secret_store.psk(id),
+                |id| PskStore::get(&secret_store, id),
                 |_| Ok::<_, Infallible>(None),
                 &ids,
             )

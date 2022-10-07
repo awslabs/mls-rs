@@ -309,7 +309,7 @@ where
 
         let psk_secret = crate::psk::psk_secret(
             welcome.cipher_suite,
-            |id| psk_store.psk(id),
+            |id| psk_store.get(id),
             |id| resumption_psk_search.map_or(Ok(None), |s| s.find(id)),
             &group_secrets.psks,
         )?;
@@ -1527,7 +1527,7 @@ where
 
         let psk_secret = crate::psk::psk_secret(
             self.state.cipher_suite(),
-            |id| secret_store.psk(id),
+            |id| secret_store.get(id),
             |id| resumption_psk_search.find(id),
             &provisional_state.psks,
         )?;

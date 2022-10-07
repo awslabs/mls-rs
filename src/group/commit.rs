@@ -283,7 +283,7 @@ where
 
         let psk_secret = crate::psk::psk_secret(
             self.state.cipher_suite(),
-            |id| psk_store.psk(id),
+            |id| psk_store.get(id),
             |id| resumption_psk_search.find(id),
             &provisional_state.psks,
         )?;
