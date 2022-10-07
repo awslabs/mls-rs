@@ -17,6 +17,7 @@ use crate::{
         proposal::BorrowedProposal, proposal_filter::ProposalFilterContext,
         state_repo::DEFAULT_EPOCH_RETENTION_LIMIT, ControlEncryptionMode, PaddingMode,
     },
+    identity::CredentialType,
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     provider::{
@@ -29,7 +30,7 @@ use crate::{
     psk::{ExternalPskId, Psk},
     signing_identity::SigningIdentity,
     time::MlsTime,
-    tree_kem::Lifetime,
+    tree_kem::{Capabilities, Lifetime},
     Sealed,
 };
 use ferriscrypt::asym::ec_key::SecretKey;
@@ -716,6 +717,22 @@ impl<T: MlsConfig> ClientConfig for T {
 
     fn lifetime(&self) -> Lifetime {
         self.get().lifetime()
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        self.get().capabilities()
+    }
+
+    fn version_supported(&self, version: ProtocolVersion) -> bool {
+        self.get().version_supported(version)
+    }
+
+    fn cipher_suite_supported(&self, cipher_suite: CipherSuite) -> bool {
+        self.get().cipher_suite_supported(cipher_suite)
+    }
+
+    fn supported_credential_types(&self) -> Vec<CredentialType> {
+        self.get().supported_credential_types()
     }
 }
 
