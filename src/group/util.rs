@@ -24,8 +24,8 @@ use super::{
     proposal_cache::{ProposalCache, ProposalSetEffects},
     proposal_filter::ProposalFilter,
     transcript_hash::InterimTranscriptHash,
-    Commit, ConfirmedTranscriptHash, GroupContext, GroupError, GroupInfo, ProposalCacheError,
-    Welcome,
+    Commit, ConfirmedTranscriptHash, EncryptedGroupSecrets, GroupContext, GroupError, GroupInfo,
+    ProposalCacheError, Welcome,
 };
 
 pub(crate) fn process_group_info<C>(
@@ -252,10 +252,10 @@ pub(super) fn check_cipher_suite(
         .ok_or(GroupError::UnsupportedCipherSuite(cipher_suite))
 }
 
-pub(super) fn find_key_package_generation<C>(
+pub(super) fn find_key_package_generation<'a, C>(
     config: &C,
-    welcome_message: &Welcome,
-) -> Result<KeyPackageGeneration, GroupError>
+    welcome_message: &'a Welcome,
+) -> Result<(&'a EncryptedGroupSecrets, KeyPackageGeneration), GroupError>
 where
     C: ClientConfig,
 {
@@ -267,6 +267,7 @@ where
                 .key_package_repo()
                 .get(&secrets.new_member)
                 .transpose()
+                .map(|res| res.map(|key_package_gen| (secrets, key_package_gen)))
         })
         .transpose()
         .map_err(|e| GroupError::KeyPackageRepositoryError(e.into()))?

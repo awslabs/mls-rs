@@ -267,7 +267,8 @@ where
             GroupError::UnexpectedMessageType(vec![WireFormat::Welcome], wire_format)
         })?;
 
-        let key_package_generation = find_key_package_generation(&config, &welcome)?;
+        let (encrypted_group_secrets, key_package_generation) =
+            find_key_package_generation(&config, &welcome)?;
 
         let key_package_version = check_protocol_version(
             &config.supported_protocol_versions(),
@@ -281,18 +282,6 @@ where
                 version: key_package_version,
             });
         }
-
-        // Identify an entry in the secrets array where the KeyPackageRef value corresponds to
-        // one of this client's KeyPackages, using the hash indicated by the cipher_suite field.
-        // If no such field exists, or if the ciphersuite indicated in the KeyPackage does not
-        // match the one in the Welcome message, return an error.
-        let key_package_reference = key_package_generation.key_package.to_reference()?;
-
-        let encrypted_group_secrets = welcome
-            .secrets
-            .iter()
-            .find(|s| s.new_member == key_package_reference)
-            .ok_or(GroupError::WelcomeKeyPackageNotFound)?;
 
         // Decrypt the encrypted_group_secrets using HPKE with the algorithms indicated by the
         // cipher suite and the HPKE private key corresponding to the GroupSecrets. If a
