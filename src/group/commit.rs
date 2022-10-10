@@ -7,7 +7,7 @@ use crate::{
     key_package::KeyPackage,
     protocol_version::ProtocolVersion,
     provider::{
-        keychain::Keychain,
+        keychain::KeychainStorage,
         psk::{PskStore, PskStoreIdValidator},
     },
     psk::{ExternalPskId, ResumptionPskSearch},
@@ -693,14 +693,14 @@ mod tests {
         let mut groups = test_n_member_group(ProtocolVersion::Mls10, cs, 3);
         let (identity, secret_key) = get_test_signing_identity(cs, b"member".to_vec());
 
+        // Add new identity
         groups[0]
             .group
             .config
             .0
             .keychain
-            .insert(identity.clone(), secret_key);
+            .replace_identity(identity.clone(), secret_key);
 
-        groups[0].group.config.0.keychain.default_identity = Some(identity.clone());
         let (commit, _) = groups[0].group.commit(vec![]).unwrap();
 
         // Check that the credential was updated by in the committer's state.

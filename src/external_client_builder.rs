@@ -16,7 +16,7 @@ use crate::{
     protocol_version::ProtocolVersion,
     provider::{
         identity_validation::IdentityValidator,
-        keychain::{InMemoryKeychain, Keychain},
+        keychain::{FirstIdentitySelector, InMemoryKeychain, KeychainStorage},
     },
     tree_kem::Capabilities,
     Sealed,
@@ -79,10 +79,13 @@ pub type BaseConfig = Config<Missing, Missing, KeepAllProposals>;
 /// ```
 /// use aws_mls::{
 ///     external_client::{BaseConfig, ExternalClient, WithIdentityValidator, WithKeychain},
-///     provider::{identity_validation::BasicIdentityValidator, keychain::InMemoryKeychain},
+///     provider::{
+///         identity_validation::BasicIdentityValidator,
+///         keychain::{InMemoryKeychain, FirstIdentitySelector},
+///     },
 /// };
 ///
-/// type MlsClient = ExternalClient<WithKeychain<InMemoryKeychain, WithIdentityValidator<
+/// type MlsClient = ExternalClient<WithKeychain<InMemoryKeychain<FirstIdentitySelector>, WithIdentityValidator<
 ///     BasicIdentityValidator,
 ///     BaseConfig,
 /// >>>;
@@ -205,7 +208,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
     /// Set the keychain to be used by the client.
     pub fn keychain<K>(self, keychain: K) -> ExternalClientBuilder<WithKeychain<K, C>>
     where
-        K: Keychain,
+        K: KeychainStorage,
     {
         let Config(c) = self.0.into_config();
         ExternalClientBuilder(Config(ConfigInner {
@@ -221,7 +224,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         self,
         identity: SigningIdentity,
         key: SecretKey,
-    ) -> ExternalClientBuilder<WithKeychain<InMemoryKeychain, C>> {
+    ) -> ExternalClientBuilder<WithKeychain<InMemoryKeychain<FirstIdentitySelector>, C>> {
         self.keychain({
             let mut keychain = InMemoryKeychain::default();
             keychain.insert(identity, key);
@@ -270,7 +273,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
 
 impl<C: IntoConfig> ExternalClientBuilder<C>
 where
-    C::Keychain: Keychain + Clone,
+    C::Keychain: KeychainStorage + Clone,
     C::IdentityValidator: IdentityValidator + Clone,
     C::MakeProposalFilter: MakeProposalFilter + Clone,
 {
@@ -297,7 +300,7 @@ where
     }
 }
 
-impl<C: IntoConfig<Keychain = InMemoryKeychain>> ExternalClientBuilder<C> {
+impl<C: IntoConfig<Keychain = InMemoryKeychain<FirstIdentitySelector>>> ExternalClientBuilder<C> {
     /// Add an identity to the in-memory keychain.
     pub fn signing_identity(
         self,
@@ -344,7 +347,7 @@ pub type IntoConfigOutput<C> = Config<
 
 impl<K, Iv, Mpf> ExternalClientConfig for ConfigInner<K, Iv, Mpf>
 where
-    K: Keychain + Clone,
+    K: KeychainStorage + Clone,
     Iv: IdentityValidator + Clone,
     Mpf: MakeProposalFilter + Clone,
 {
@@ -395,7 +398,7 @@ impl<K, Iv, Mpf> Sealed for Config<K, Iv, Mpf> {}
 
 impl<K, Iv, Mpf> MlsConfig for Config<K, Iv, Mpf>
 where
-    K: Keychain + Clone,
+    K: KeychainStorage + Clone,
     Iv: IdentityValidator + Clone,
     Mpf: MakeProposalFilter + Clone,
 {
@@ -529,11 +532,16 @@ pub mod test_utils {
         external_client_builder::{
             BaseConfig, ExternalClientBuilder, WithIdentityValidator, WithKeychain,
         },
-        provider::{identity_validation::BasicIdentityValidator, keychain::InMemoryKeychain},
+        provider::{
+            identity_validation::BasicIdentityValidator,
+            keychain::{FirstIdentitySelector, InMemoryKeychain},
+        },
     };
 
-    pub type TestExternalClientConfig =
-        WithIdentityValidator<BasicIdentityValidator, WithKeychain<InMemoryKeychain, BaseConfig>>;
+    pub type TestExternalClientConfig = WithIdentityValidator<
+        BasicIdentityValidator,
+        WithKeychain<InMemoryKeychain<FirstIdentitySelector>, BaseConfig>,
+    >;
 
     pub type TestExternalClientBuilder = ExternalClientBuilder<TestExternalClientConfig>;
 

@@ -13,7 +13,7 @@ use crate::protocol_version::MaybeProtocolVersion;
 use crate::protocol_version::ProtocolVersion;
 use crate::provider::group_state::GroupStateStorage;
 use crate::provider::key_package::KeyPackageRepository;
-use crate::provider::keychain::Keychain;
+use crate::provider::keychain::KeychainStorage;
 use crate::psk::ExternalPskId;
 use crate::signer::SignatureError;
 use crate::tree_kem::leaf_node::LeafNodeError;
@@ -92,7 +92,7 @@ where
         let (identity, signer) = self
             .config
             .keychain()
-            .default_identity(cipher_suite)
+            .get_identity(cipher_suite, None)
             .map_err(|e| ClientError::KeychainError(e.into()))?
             .ok_or(ClientError::NoCredentialFound)?;
 
@@ -230,7 +230,7 @@ where
         let (_, signer) = self
             .config
             .keychain()
-            .default_identity(group_context.cipher_suite)
+            .get_identity(group_context.cipher_suite, None)
             .map_err(|e| ClientError::KeychainError(e.into()))?
             .ok_or(ClientError::NoCredentialFound)?;
 
@@ -385,7 +385,8 @@ mod tests {
             let (expected_credential, _) = client
                 .config
                 .keychain()
-                .default_identity(cipher_suite)
+                .get_identity(cipher_suite, None)
+                .unwrap()
                 .unwrap();
 
             assert_eq!(

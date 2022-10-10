@@ -18,7 +18,7 @@ use crate::{
         Content, GroupError, GroupState, InterimTranscriptHash, MLSMessage, MLSMessagePayload,
     },
     protocol_version::ProtocolVersion,
-    provider::keychain::Keychain,
+    provider::keychain::KeychainStorage,
     psk::PassThroughPskIdValidator,
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
 };
@@ -108,7 +108,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         let (signing_identity, signer) = self
             .config
             .keychain()
-            .default_identity(self.cipher_suite())
+            .get_identity(self.cipher_suite(), None)
             .map_err(|e| GroupError::KeychainError(e.into()))?
             .ok_or(GroupError::NoCredentialFound)?;
 

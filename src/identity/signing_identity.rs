@@ -7,10 +7,14 @@ use crate::{
     identity::Credential,
 };
 
+use super::{CredentialError, MlsCredential};
+
 #[derive(Debug, Error)]
 pub enum SigningIdentityError {
     #[error(transparent)]
     EcKeyError(#[from] EcKeyError),
+    #[error(transparent)]
+    CredentialError(#[from] CredentialError),
     #[error("internal signer error: {0:?}")]
     SignerError(Box<dyn std::error::Error + Send + Sync>),
     #[error("certificate public key mismatch")]
@@ -48,6 +52,14 @@ impl SigningIdentity {
             credential,
             signature_key,
         }
+    }
+
+    pub fn credential<C: MlsCredential>(&self) -> Result<C, CredentialError> {
+        C::from_credential(&self.credential)
+    }
+
+    pub fn public_key_bytes(&self) -> &[u8] {
+        &self.signature_key
     }
 
     pub(crate) fn public_key(

@@ -1,7 +1,7 @@
 use crate::{
     cipher_suite::CipherSuite,
-    identity::SigningIdentity,
-    identity::{CredentialError, CredentialType, CREDENTIAL_TYPE_BASIC},
+    identity::{CredentialType, CREDENTIAL_TYPE_BASIC},
+    identity::{SigningIdentity, SigningIdentityError},
 };
 
 use super::IdentityValidator;
@@ -16,7 +16,7 @@ impl BasicIdentityValidator {
 }
 
 impl IdentityValidator for BasicIdentityValidator {
-    type Error = CredentialError;
+    type Error = SigningIdentityError;
 
     fn validate(
         &self,

@@ -13,7 +13,7 @@ use crate::{
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     provider::{
         group_state::GroupStateStorage, identity_validation::IdentityValidator,
-        key_package::KeyPackageRepository, keychain::Keychain, psk::PskStore,
+        key_package::KeyPackageRepository, keychain::KeychainStorage, psk::PskStore,
     },
     tree_kem::{Capabilities, Lifetime},
 };
@@ -21,7 +21,7 @@ use std::convert::Infallible;
 
 pub trait ClientConfig: Clone {
     type KeyPackageRepository: KeyPackageRepository + Clone;
-    type Keychain: Keychain + Clone;
+    type Keychain: KeychainStorage + Clone;
     type PskStore: PskStore + Clone;
     type GroupStateStorage: GroupStateStorage + Clone;
     type IdentityValidator: IdentityValidator + Clone;

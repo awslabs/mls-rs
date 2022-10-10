@@ -11,6 +11,7 @@ use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, StateUpdate};
 use aws_mls::identity::{BasicCredential, MlsCredential};
+use aws_mls::provider::keychain::FirstIdentitySelector;
 use aws_mls::provider::{
     identity_validation::BasicIdentityValidator, keychain::InMemoryKeychain, psk::InMemoryPskStore,
 };
@@ -104,8 +105,10 @@ impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
     }
 }
 
-type TestClientConfig =
-    WithIdentityValidator<BasicIdentityValidator, WithKeychain<InMemoryKeychain, BaseConfig>>;
+type TestClientConfig = WithIdentityValidator<
+    BasicIdentityValidator,
+    WithKeychain<InMemoryKeychain<FirstIdentitySelector>, BaseConfig>,
+>;
 
 #[derive(Default)]
 pub struct MlsClientImpl {

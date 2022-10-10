@@ -199,7 +199,7 @@ pub(crate) fn test_group_custom(
         get_test_signing_identity(cipher_suite, b"member".to_vec());
 
     let group = TestClientBuilder::new_for_test()
-        .single_signing_identity(signing_identity, secret_key)
+        .test_single_signing_identity(signing_identity, secret_key)
         .leaf_node_extensions(leaf_extensions)
         .preferences(preferences)
         .cipher_suites(
@@ -317,7 +317,7 @@ pub(crate) fn get_test_groups_with_features(
             TestClientBuilder::new_for_test()
                 .extension_type(999)
                 .preferences(Preferences::default().with_ratchet_tree_extension(true))
-                .single_signing_identity(identity, secret_key)
+                .test_single_signing_identity(identity, secret_key)
                 .leaf_node_extensions(leaf_extensions.clone())
                 .build()
         })

@@ -10,6 +10,7 @@ use aws_mls::identity::SigningIdentity;
 use aws_mls::identity::{BasicCredential, Credential, MlsCredential};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
+use aws_mls::provider::keychain::FirstIdentitySelector;
 use aws_mls::provider::{identity_validation::BasicIdentityValidator, keychain::InMemoryKeychain};
 use ferriscrypt::rand::SecureRng;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
@@ -20,8 +21,10 @@ use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test_configure!(run_in_browser);
 
-type TestClientConfig =
-    WithIdentityValidator<BasicIdentityValidator, WithKeychain<InMemoryKeychain, BaseConfig>>;
+type TestClientConfig = WithIdentityValidator<
+    BasicIdentityValidator,
+    WithKeychain<InMemoryKeychain<FirstIdentitySelector>, BaseConfig>,
+>;
 
 // The same method exists in `credential::test_utils` but is not compiled without the `test` flag.
 pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {

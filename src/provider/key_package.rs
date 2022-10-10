@@ -9,7 +9,7 @@ pub use crate::key_package::generator::KeyPackageGeneration;
 pub trait KeyPackageRepository {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    fn delete(&mut self, reference: KeyPackageRef) -> Result<(), Self::Error>;
+    fn delete(&mut self, reference: &KeyPackageRef) -> Result<(), Self::Error>;
     fn insert(&mut self, key_pkg_gen: KeyPackageGeneration) -> Result<(), Self::Error>;
     fn get(&self, reference: &KeyPackageRef) -> Result<Option<KeyPackageGeneration>, Self::Error>;
 }
@@ -54,8 +54,8 @@ impl KeyPackageRepository for InMemoryKeyPackageRepository {
         Ok(self.get(key_pkg))
     }
 
-    fn delete(&mut self, reference: KeyPackageRef) -> Result<(), Self::Error> {
-        (*self).delete(&reference);
+    fn delete(&mut self, reference: &KeyPackageRef) -> Result<(), Self::Error> {
+        (*self).delete(reference);
         Ok(())
     }
 }

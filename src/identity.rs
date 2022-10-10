@@ -12,8 +12,6 @@ pub use signing_identity::*;
 #[derive(Error, Debug)]
 pub enum CredentialError {
     #[error(transparent)]
-    SigningIdentityError(#[from] SigningIdentityError),
-    #[error(transparent)]
     SerializationError(#[from] tls_codec::Error),
     #[error("Unexpected extension type: {0}, expected: {1}")]
     UnexpectedCredentialType(CredentialType, CredentialType),

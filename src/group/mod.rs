@@ -21,7 +21,7 @@ use crate::extension::{
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
 use crate::protocol_version::ProtocolVersion;
-use crate::provider::keychain::Keychain;
+use crate::provider::keychain::KeychainStorage;
 use crate::provider::psk::{PskStore, PskStoreIdValidator};
 use crate::psk::{
     ExternalPskId, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
@@ -163,7 +163,7 @@ where
     pending_commit: Option<CommitGeneration>,
     #[cfg(test)]
     pub(crate) commit_modifiers:
-        CommitModifiers<<<C as ClientConfig>::Keychain as Keychain>::Signer>,
+        CommitModifiers<<<C as ClientConfig>::Keychain as KeychainStorage>::Signer>,
 }
 
 impl<C> Group<C>
@@ -177,7 +177,7 @@ where
         protocol_version: ProtocolVersion,
         group_context_extensions: ExtensionList<GroupContextExtension>,
     ) -> Result<Self, GroupError> {
-        let (leaf_properties, signer) = Group::config_leaf_properties(&config, cipher_suite)?;
+        let (leaf_properties, signer) = Group::config_leaf_properties(&config, cipher_suite, None)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             cipher_suite,
@@ -464,7 +464,7 @@ where
         )?;
 
         let (leaf_properties, signer) =
-            Group::config_leaf_properties(&config, group_context.cipher_suite)?;
+            Group::config_leaf_properties(&config, group_context.cipher_suite, None)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             group_context.cipher_suite,
@@ -573,7 +573,7 @@ where
         self.format_for_wire(auth_content)
     }
 
-    pub(crate) fn signer(&self) -> Result<<C::Keychain as Keychain>::Signer, GroupError> {
+    pub(crate) fn signer(&self) -> Result<<C::Keychain as KeychainStorage>::Signer, GroupError> {
         self.config
             .keychain()
             .signer(&self.current_user_leaf_node()?.signing_identity)
@@ -583,17 +583,22 @@ where
 
     pub(crate) fn current_leaf_properties(
         &self,
-    ) -> Result<(ConfigProperties, <C::Keychain as Keychain>::Signer), GroupError> {
-        Group::config_leaf_properties(&self.config, self.cipher_suite())
+    ) -> Result<(ConfigProperties, <C::Keychain as KeychainStorage>::Signer), GroupError> {
+        Group::config_leaf_properties(
+            &self.config,
+            self.cipher_suite(),
+            self.current_member_signing_identity().ok(),
+        )
     }
 
     pub(crate) fn config_leaf_properties(
         config: &C,
         cipher_suite: CipherSuite,
-    ) -> Result<(ConfigProperties, <C::Keychain as Keychain>::Signer), GroupError> {
+        existing_signing_identity: Option<&SigningIdentity>,
+    ) -> Result<(ConfigProperties, <C::Keychain as KeychainStorage>::Signer), GroupError> {
         let (signing_identity, signer) = config
             .keychain()
-            .default_identity(cipher_suite)
+            .get_identity(cipher_suite, existing_signing_identity)
             .map_err(|e| GroupError::KeychainError(e.into()))?
             .ok_or(GroupError::NoCredentialFound)?;
 
@@ -918,7 +923,7 @@ where
             .ok_or(GroupError::PendingReInitNotFound)?;
 
         let (leaf_properties, new_signer) =
-            Group::config_leaf_properties(&config, reinit.cipher_suite)?;
+            Group::config_leaf_properties(&config, reinit.cipher_suite, None)?;
 
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
             reinit.cipher_suite,
@@ -1718,7 +1723,8 @@ mod tests {
                 group
                     .config
                     .keychain()
-                    .default_identity(cipher_suite)
+                    .get_identity(cipher_suite, None)
+                    .unwrap()
                     .unwrap()
                     .1
                     .to_public()
@@ -3035,14 +3041,13 @@ mod tests {
         let mut groups = test_n_member_group(ProtocolVersion::Mls10, cs, 3);
         let (identity, secret_key) = get_test_signing_identity(cs, b"member".to_vec());
 
+        // Add new identity
         groups[0]
             .group
             .config
             .0
             .keychain
-            .insert(identity.clone(), secret_key);
-
-        groups[0].group.config.0.keychain.default_identity = Some(identity.clone());
+            .replace_identity(identity.clone(), secret_key);
 
         let update_proposal = groups[0].group.update_proposal().unwrap();
         let update_message = groups[0].propose(update_proposal);
