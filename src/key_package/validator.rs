@@ -2,8 +2,8 @@ use ferriscrypt::asym::ec_key::PublicKey;
 use std::collections::HashSet;
 
 use super::*;
+use crate::identity::SigningIdentityError;
 use crate::provider::identity_validation::IdentityValidator;
-use crate::signing_identity::SigningIdentityError;
 use crate::tree_kem::Lifetime;
 use crate::{
     signer::SignatureError,
@@ -151,10 +151,10 @@ impl<'a, C: IdentityValidator> KeyPackageValidator<'a, C> {
 
 #[cfg(test)]
 mod tests {
+    use crate::identity::test_utils::get_test_signing_identity;
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
     use crate::provider::identity_validation::BasicIdentityValidator;
-    use crate::signing_identity::test_utils::get_test_signing_identity;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use assert_matches::assert_matches;
     use ferriscrypt::rand::SecureRng;

@@ -1,8 +1,8 @@
 use super::leaf_node::{LeafNode, LeafNodeSource};
 use super::{Lifetime, LifetimeError};
 use crate::identity::CredentialType;
+use crate::identity::SigningIdentityError;
 use crate::provider::identity_validation::IdentityValidator;
-use crate::signing_identity::SigningIdentityError;
 use crate::{
     cipher_suite::CipherSuite,
     extension::{ExtensionType, RequiredCapabilitiesExt},
@@ -211,9 +211,9 @@ mod tests {
     use super::*;
 
     use crate::extension::{ApplicationIdExt, ExtensionList, MlsExtension};
+    use crate::identity::test_utils::get_test_signing_identity;
     use crate::identity::CREDENTIAL_TYPE_BASIC;
     use crate::provider::identity_validation::BasicIdentityValidator;
-    use crate::signing_identity::test_utils::get_test_signing_identity;
     use crate::tree_kem::leaf_node::test_utils::*;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityValidator;
     use crate::tree_kem::parent_hash::ParentHash;
@@ -526,9 +526,9 @@ pub mod test_utils {
 
     use crate::{
         cipher_suite::CipherSuite,
+        identity::SigningIdentity,
         identity::{CredentialError, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
         provider::identity_validation::IdentityValidator,
-        signing_identity::SigningIdentity,
     };
 
     #[derive(Clone, Debug, Default)]

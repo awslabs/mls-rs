@@ -1,7 +1,7 @@
 use crate::{
     cipher_suite::CipherSuite,
+    identity::SigningIdentity,
     identity::{CredentialError, CredentialType, CREDENTIAL_TYPE_BASIC},
-    signing_identity::SigningIdentity,
 };
 
 use super::IdentityValidator;

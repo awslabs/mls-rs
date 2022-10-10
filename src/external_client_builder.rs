@@ -12,12 +12,12 @@ use crate::{
     external_client_config::ExternalClientConfig,
     group::{proposal::BorrowedProposal, proposal_filter::ProposalFilterContext},
     identity::CredentialType,
+    identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     provider::{
         identity_validation::IdentityValidator,
         keychain::{InMemoryKeychain, Keychain},
     },
-    signing_identity::SigningIdentity,
     tree_kem::Capabilities,
     Sealed,
 };

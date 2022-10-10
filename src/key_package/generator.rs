@@ -1,8 +1,8 @@
 use crate::{
     extension::{KeyPackageExtension, LeafNodeExtension},
+    identity::SigningIdentity,
     provider::identity_validation::IdentityValidator,
     signer::{SignatureError, Signer},
-    signing_identity::SigningIdentity,
     tree_kem::{
         leaf_node::{ConfigProperties, LeafNodeError},
         Capabilities, Lifetime,
@@ -122,10 +122,10 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         extension::{ExtensionList, KeyPackageExtension, LeafNodeExtension, MlsExtension},
+        identity::test_utils::get_test_signing_identity,
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
         protocol_version::ProtocolVersion,
         provider::identity_validation::BasicIdentityValidator,
-        signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{
             leaf_node::{test_utils::get_test_capabilities, LeafNodeError, LeafNodeSource},
             leaf_node_validator::test_utils::FailureIdentityValidator,

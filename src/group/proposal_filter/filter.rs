@@ -1,9 +1,9 @@
 use crate::{
     extension::{ExtensionError, ExtensionType},
     group::{proposal_filter::ProposalBundle, BorrowedProposal, ProposalType, Sender},
+    identity::SigningIdentityError,
     key_package::KeyPackageValidationError,
     protocol_version::ProtocolVersion,
-    signing_identity::SigningIdentityError,
     tree_kem::{
         leaf_node::LeafNodeError, leaf_node_validator::LeafNodeValidationError, node::LeafIndex,
         RatchetTreeError,

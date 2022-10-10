@@ -6,8 +6,8 @@ use crate::{
     cipher_suite::CipherSuite,
     extension::ExtensionList,
     identity::CredentialError,
+    identity::{SigningIdentity, SigningIdentityError},
     signer::{Signable, SignatureError, Signer},
-    signing_identity::{SigningIdentity, SigningIdentityError},
 };
 use ferriscrypt::{
     asym::ec_key::{generate_keypair, EcKeyError, PublicKey, SecretKey},
@@ -298,9 +298,9 @@ pub mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,
         extension::{ApplicationIdExt, MlsExtension},
+        identity::test_utils::get_test_signing_identity,
         identity::CREDENTIAL_TYPE_BASIC,
         provider::identity_validation::BasicIdentityValidator,
-        signing_identity::test_utils::get_test_signing_identity,
     };
 
     use super::*;
@@ -411,8 +411,8 @@ mod tests {
     use super::*;
 
     use crate::cipher_suite::CipherSuite;
+    use crate::identity::test_utils::get_test_signing_identity;
     use crate::provider::identity_validation::BasicIdentityValidator;
-    use crate::signing_identity::test_utils::get_test_signing_identity;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityValidator;
     use assert_matches::assert_matches;
 

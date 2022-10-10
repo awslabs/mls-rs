@@ -8,9 +8,9 @@ use crate::{
     },
     client_config::ClientConfig,
     extension::RequiredCapabilitiesExt,
+    identity::test_utils::get_test_signing_identity,
     key_package::{KeyPackageGeneration, KeyPackageGenerator},
     provider::identity_validation::BasicIdentityValidator,
-    signing_identity::test_utils::get_test_signing_identity,
     tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
 };
 

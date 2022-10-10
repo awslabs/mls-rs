@@ -1,9 +1,9 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::secret_tree::SecretTreeError;
 use crate::group::{GroupContext, MembershipTag, MembershipTagError, SecretTree};
+use crate::identity::SigningIdentityError;
 use crate::psk::{get_epoch_secret, JoinerSecret, Psk, PskSecretError};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
-use crate::signing_identity::SigningIdentityError;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
 use crate::tree_kem::TreeKemPublic;
 use ferriscrypt::cipher::aead::AeadError;

@@ -4,11 +4,11 @@ use crate::extension::{KeyPackageExtension, RequiredCapabilitiesExt};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::HashReference;
 use crate::identity::CredentialError;
+use crate::identity::SigningIdentity;
 use crate::protocol_version::MaybeProtocolVersion;
 use crate::protocol_version::ProtocolVersion;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
-use crate::signing_identity::SigningIdentity;
 use crate::time::MlsTime;
 use crate::tree_kem::leaf_node::LeafNode;
 use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
@@ -163,8 +163,8 @@ pub(crate) mod test_utils {
 
     use super::*;
     use crate::{
+        identity::test_utils::get_test_signing_identity,
         provider::identity_validation::BasicIdentityValidator,
-        signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
     };
 

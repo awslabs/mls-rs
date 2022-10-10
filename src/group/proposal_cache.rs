@@ -414,13 +414,13 @@ mod tests {
             test_utils::get_test_certificate_credential, CREDENTIAL_TYPE_BASIC,
             CREDENTIAL_TYPE_X509,
         },
+        identity::{test_utils::get_test_signing_identity, SigningIdentityError},
         key_package::{
             test_utils::{test_key_package, test_key_package_custom},
             KeyPackageGenerator,
         },
         provider::identity_validation::BasicIdentityValidator,
         psk::PassThroughPskIdValidator,
-        signing_identity::{test_utils::get_test_signing_identity, SigningIdentityError},
         tree_kem::{
             leaf_node::{
                 test_utils::{

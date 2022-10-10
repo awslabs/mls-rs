@@ -421,9 +421,9 @@ mod tests {
             test_utils::{test_group, test_n_member_group},
         },
         identity::test_utils::get_test_basic_credential,
+        identity::test_utils::get_test_signing_identity,
         key_package::test_utils::test_key_package,
         psk::{JustPreSharedKeyID, PreSharedKeyID, Psk},
-        signing_identity::test_utils::get_test_signing_identity,
     };
 
     use super::*;

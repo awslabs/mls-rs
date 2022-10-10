@@ -1,11 +1,13 @@
-use crate::{serde_utils::vec_u8_as_base64::VecAsBase64, signing_identity::SigningIdentityError};
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use serde_with::serde_as;
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-pub use crate::signing_identity::*;
+mod signing_identity;
+
+pub use signing_identity::*;
 
 #[derive(Error, Debug)]
 pub enum CredentialError {
@@ -173,6 +175,7 @@ pub mod test_utils {
     use x509_cert::Certificate;
 
     use crate::provider::identity_validation::get_public_key;
+    pub use signing_identity::test_utils::*;
 
     use super::*;
 

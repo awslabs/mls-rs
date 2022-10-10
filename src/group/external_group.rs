@@ -109,6 +109,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .config
             .keychain()
             .default_identity(self.cipher_suite())
+            .map_err(|e| GroupError::KeychainError(e.into()))?
             .ok_or(GroupError::NoCredentialFound)?;
 
         let sender_index = external_senders_ext
@@ -278,9 +279,9 @@ mod tests {
             test_utils::{test_group, TestGroup},
             Content, ExternalEvent, ExternalGroup, GroupError, MLSMessage, MLSMessagePayload,
         },
+        identity::{test_utils::get_test_signing_identity, SigningIdentity},
         key_package::test_utils::test_key_package,
         protocol_version::{MaybeProtocolVersion, ProtocolVersion},
-        signing_identity::{test_utils::get_test_signing_identity, SigningIdentity},
         tree_kem::node::LeafIndex,
     };
     use assert_matches::assert_matches;

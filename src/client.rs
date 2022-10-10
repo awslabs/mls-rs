@@ -259,9 +259,7 @@ where
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
     use super::*;
-    use crate::{
-        client_config::ClientConfig, signing_identity::test_utils::get_test_signing_identity,
-    };
+    use crate::{client_config::ClientConfig, identity::test_utils::get_test_signing_identity};
 
     pub use crate::client_builder::test_utils::{TestClientBuilder, TestClientConfig};
 

@@ -18,6 +18,7 @@ use crate::{
         state_repo::DEFAULT_EPOCH_RETENTION_LIMIT, ControlEncryptionMode, PaddingMode,
     },
     identity::CredentialType,
+    identity::SigningIdentity,
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     provider::{
@@ -28,7 +29,6 @@ use crate::{
         psk::{InMemoryPskStore, PskStore},
     },
     psk::{ExternalPskId, Psk},
-    signing_identity::SigningIdentity,
     time::MlsTime,
     tree_kem::{Capabilities, Lifetime},
     Sealed,

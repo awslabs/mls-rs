@@ -1,6 +1,4 @@
-use crate::{
-    cipher_suite::CipherSuite, identity::CredentialType, signing_identity::SigningIdentity,
-};
+use crate::{cipher_suite::CipherSuite, identity::CredentialType, identity::SigningIdentity};
 
 mod basic;
 mod x509;

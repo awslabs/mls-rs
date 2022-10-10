@@ -4,8 +4,8 @@ use crate::{
     cipher_suite::{CipherSuite, SignaturePublicKey},
     extension::ExternalSendersExt,
     group::{GroupContext, GroupError, MLSPlaintext, Sender},
+    identity::SigningIdentity,
     signer::Signable,
-    signing_identity::SigningIdentity,
     tree_kem::{node::LeafIndex, TreeKemPublic},
 };
 use ferriscrypt::asym::ec_key::PublicKey;
@@ -215,10 +215,10 @@ mod tests {
             test_utils::{test_group, test_group_custom, test_member, TestGroup},
             Content, Group, GroupError, MLSPlaintext, Sender,
         },
+        identity::test_utils::get_test_signing_identity,
         key_package::KeyPackageGeneration,
         protocol_version::ProtocolVersion,
         signer::{Signable, Signer},
-        signing_identity::test_utils::get_test_signing_identity,
         tree_kem::node::LeafIndex,
     };
     use assert_matches::assert_matches;

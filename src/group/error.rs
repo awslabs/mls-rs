@@ -8,11 +8,11 @@ use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     extension::{ExtensionError, ExtensionList, GroupContextExtension},
     identity::CredentialError,
+    identity::SigningIdentityError,
     key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError},
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     psk::PskSecretError,
     signer::SignatureError,
-    signing_identity::SigningIdentityError,
     tree_kem::{
         leaf_node::LeafNodeError, leaf_node_validator::LeafNodeValidationError,
         path_secret::PathSecretError, tree_validator::TreeValidationError, RatchetTreeError,

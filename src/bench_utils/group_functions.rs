@@ -13,10 +13,10 @@ use crate::{
         state_repo::PriorEpoch,
         Commit, Group, GroupError, Snapshot,
     },
+    identity::SigningIdentity,
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     provider::group_state::{GroupStateStorage, InMemoryGroupStateStorage},
-    signing_identity::SigningIdentity,
     tree_kem::node::LeafIndex,
 };
 use ferriscrypt::asym::ec_key::SecretKey;

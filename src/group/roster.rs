@@ -1,4 +1,4 @@
-use crate::signing_identity::SigningIdentity;
+use crate::identity::SigningIdentity;
 
 use super::*;
 

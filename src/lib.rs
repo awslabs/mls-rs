@@ -63,7 +63,6 @@ pub mod provider;
 pub mod psk;
 mod serde_utils;
 mod signer;
-mod signing_identity;
 mod time;
 
 #[cfg(feature = "benchmark")]

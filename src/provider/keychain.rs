@@ -1,4 +1,4 @@
-use crate::{cipher_suite::CipherSuite, signing_identity::SigningIdentity};
+use crate::{cipher_suite::CipherSuite, identity::SigningIdentity};
 use ferriscrypt::asym::ec_key::SecretKey;
 use std::{
     collections::HashMap,

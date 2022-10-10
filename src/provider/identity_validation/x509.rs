@@ -7,11 +7,11 @@ use thiserror::Error;
 use x509_cert::certificate::Certificate;
 
 use crate::cipher_suite::CipherSuite;
+use crate::identity::SigningIdentity;
 use crate::identity::{
     CertificateData, CredentialError, MlsCredential, X509Credential, CREDENTIAL_TYPE_X509,
 };
 use crate::provider::identity_validation::IdentityValidator;
-use crate::signing_identity::SigningIdentity;
 
 #[derive(Debug, Error)]
 pub enum X509Error {

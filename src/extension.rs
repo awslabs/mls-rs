@@ -1,11 +1,11 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::proposal::ProposalType;
+use crate::identity::SigningIdentityError;
 use crate::provider::identity_validation::IdentityValidator;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
-use crate::signing_identity::SigningIdentityError;
 use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
-use crate::{identity::CredentialType, signing_identity::SigningIdentity};
+use crate::{identity::CredentialType, identity::SigningIdentity};
 use ferriscrypt::hpke::kem::HpkePublicKey;
 use serde_with::serde_as;
 use std::fmt::Debug;
@@ -422,9 +422,7 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        identity::CREDENTIAL_TYPE_BASIC, signing_identity::test_utils::get_test_signing_identity,
-    };
+    use crate::{identity::test_utils::get_test_signing_identity, identity::CREDENTIAL_TYPE_BASIC};
 
     use super::*;
     use assert_matches::assert_matches;

@@ -18,6 +18,7 @@ use crate::extension::{
     ExtensionError, ExtensionList, ExternalPubExt, GroupContextExtension, LeafNodeExtension,
     RatchetTreeExt,
 };
+use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
 use crate::protocol_version::ProtocolVersion;
 use crate::provider::keychain::Keychain;
@@ -28,7 +29,6 @@ use crate::psk::{
 };
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::{Signable, Signer};
-use crate::signing_identity::SigningIdentity;
 use crate::tree_kem::kem::TreeKem;
 use crate::tree_kem::leaf_node::{ConfigProperties, LeafNode};
 use crate::tree_kem::node::LeafIndex;
@@ -1661,11 +1661,11 @@ mod tests {
         extension::{
             test_utils::TestExtension, Extension, ExternalSendersExt, RequiredCapabilitiesExt,
         },
+        identity::test_utils::get_test_signing_identity,
         identity::CREDENTIAL_TYPE_X509,
         key_package::test_utils::{test_key_package, test_key_package_custom},
         protocol_version::MaybeProtocolVersion,
         psk::Psk,
-        signing_identity::test_utils::get_test_signing_identity,
         tree_kem::{
             leaf_node::LeafNodeSource, leaf_node_validator::LeafNodeValidationError, Lifetime,
             RatchetTreeError, TreeIndexError, UpdatePathNode, UpdatePathValidationError,
