@@ -186,7 +186,7 @@ impl CipherSuite {
         Kem::new(self.kem_type())
     }
 
-    pub(crate) fn signature_key_curve(&self) -> Curve {
+    pub fn signature_key_curve(&self) -> Curve {
         match self {
             CipherSuite::Curve25519Aes128 => Curve::Ed25519,
             CipherSuite::P256Aes128 => Curve::P256,
