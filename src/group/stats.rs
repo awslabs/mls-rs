@@ -15,7 +15,7 @@ where
 {
     pub fn group_stats(&self) -> Result<GroupStats, GroupError> {
         Ok(GroupStats {
-            total_leaves: self.roster().member_count(),
+            total_leaves: self.roster().len(),
             current_index: self.current_member_index(),
             direct_path: self.current_direct_path()?,
             epoch: self.current_epoch(),

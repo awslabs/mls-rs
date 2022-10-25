@@ -5,7 +5,7 @@ use crate::{
 use thiserror::Error;
 
 pub use crate::external_client_builder::{
-    BaseConfig, ExternalClientBuilder, Missing, MlsConfig, WithIdentityValidator, WithKeychain,
+    BaseConfig, ExternalClientBuilder, Missing, MlsConfig, WithIdentityProvider, WithKeychain,
     WithProposalFilter,
 };
 

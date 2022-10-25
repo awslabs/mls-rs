@@ -337,7 +337,7 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
-        provider::identity_validation::BasicIdentityValidator,
+        provider::identity::BasicIdentityProvider,
         tree_kem::{node::NodeVec, parent_hash::test_utils::get_test_tree_fig_12},
     };
 
@@ -390,7 +390,7 @@ mod tests {
             let mut tree = TreeKemPublic::import_node_data(
                 cipher_suite.unwrap(),
                 NodeVec::tls_deserialize(&mut &*one_case.tree_data).unwrap(),
-                BasicIdentityValidator,
+                BasicIdentityProvider,
             )
             .unwrap();
 

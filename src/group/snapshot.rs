@@ -5,7 +5,7 @@ use crate::{
         GroupContext, GroupError, GroupState, InterimTranscriptHash, ProposalCache, ProposalRef,
         ReInit, TreeKemPublic,
     },
-    provider::identity_validation::IdentityValidator,
+    provider::identity::IdentityProvider,
     serde_utils::vec_u8_as_base64::VecAsBase64,
     tree_kem::{node::NodeVec, TreeKemPrivate},
 };
@@ -56,9 +56,9 @@ impl RawGroupState {
         }
     }
 
-    fn import<C>(self, identity_validator: C) -> Result<GroupState, GroupError>
+    fn import<C>(self, identity_provider: C) -> Result<GroupState, GroupError>
     where
-        C: IdentityValidator,
+        C: IdentityProvider,
     {
         let context = self.context;
 
@@ -72,7 +72,7 @@ impl RawGroupState {
         let current_tree = TreeKemPublic::import_node_data(
             context.cipher_suite,
             self.tree_data,
-            identity_validator,
+            identity_provider,
         )?;
 
         Ok(GroupState {
@@ -109,7 +109,7 @@ where
     }
 
     pub(crate) fn from_snapshot(config: C, snapshot: Snapshot) -> Result<Self, GroupError> {
-        let identity_validator = config.identity_validator();
+        let identity_provider = config.identity_provider();
 
         let state_repo = GroupStateRepository::new(
             snapshot.state.context.group_id.clone(),
@@ -119,7 +119,7 @@ where
 
         Ok(Group {
             config,
-            state: snapshot.state.import(identity_validator)?,
+            state: snapshot.state.import(identity_provider)?,
             private_tree: snapshot.private_tree,
             key_schedule: snapshot.key_schedule,
             pending_updates: snapshot.pending_updates,

@@ -24,7 +24,7 @@ pub enum SigningIdentityError {
     #[error("signing identity not valid for signer")]
     InvalidSignerPublicKey,
     #[error("credential rejected by custom credential validator")]
-    IdentityValidatorError(#[source] Box<dyn std::error::Error + Sync + Send>),
+    IdentityProviderError(#[source] Box<dyn std::error::Error + Sync + Send>),
 }
 
 #[derive(

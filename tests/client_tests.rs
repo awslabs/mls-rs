@@ -1,7 +1,7 @@
 use assert_matches::assert_matches;
 use aws_mls::cipher_suite::{CipherSuite, SignaturePublicKey};
 use aws_mls::client::{
-    BaseConfig, Client, ClientBuilder, Preferences, WithIdentityValidator, WithKeychain,
+    BaseConfig, Client, ClientBuilder, Preferences, WithIdentityProvider, WithKeychain,
 };
 use aws_mls::extension::ExtensionList;
 use aws_mls::group::MLSMessage;
@@ -11,7 +11,7 @@ use aws_mls::identity::{BasicCredential, Credential, MlsCredential};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::provider::keychain::FirstIdentitySelector;
-use aws_mls::provider::{identity_validation::BasicIdentityValidator, keychain::InMemoryKeychain};
+use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain};
 use ferriscrypt::rand::SecureRng;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 
@@ -21,8 +21,8 @@ use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test_configure!(run_in_browser);
 
-type TestClientConfig = WithIdentityValidator<
-    BasicIdentityValidator,
+type TestClientConfig = WithIdentityProvider<
+    BasicIdentityProvider,
     WithKeychain<InMemoryKeychain<FirstIdentitySelector>, BaseConfig>,
 >;
 
@@ -57,7 +57,7 @@ fn generate_client(
         SigningIdentity::new(credential, SignaturePublicKey::try_from(&key).unwrap());
 
     ClientBuilder::new()
-        .identity_validator(BasicIdentityValidator::new())
+        .identity_provider(BasicIdentityProvider::new())
         .single_signing_identity(signing_identity, key)
         .preferences(preferences)
         .build()
@@ -193,9 +193,10 @@ fn get_test_groups_clients(
 
     assert!(receiver_keys.into_iter().all(|kpg| creator_group
         .roster()
+        .iter()
         .any(|m| m.signing_identity() == kpg.signing_identity())));
 
-    assert!(update.removed.is_empty());
+    assert!(update.roster_update.removed.is_empty());
 
     // Export the tree for receivers
     let tree_data = creator_group.export_tree().unwrap();
@@ -470,8 +471,8 @@ fn test_update_proposals(
 
             assert!(update.active);
             assert_eq!(update.epoch, (i as u64) + 2);
-            assert!(update.added.is_empty());
-            assert!(update.removed.is_empty());
+            assert!(update.roster_update.added.is_empty());
+            assert!(update.roster_update.removed.is_empty());
             assert!(Group::equal_group_state(receiver, &creator_group));
         }
     }
@@ -538,12 +539,13 @@ fn test_remove_proposals(
             };
 
             assert_eq!(update.epoch, epoch_count as u64);
-            assert!(update.added.is_empty());
+            assert!(update.roster_update.added.is_empty());
 
             if expect_inactive {
                 assert!(!update.active)
             } else {
                 assert!(update
+                    .roster_update
                     .removed
                     .iter()
                     .any(|member| member.index() == to_remove_index));
@@ -770,7 +772,7 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
 
     assert!(groups
         .iter()
-        .all(|group| group.roster().member_count() == PARTICIPANT_COUNT));
+        .all(|group| group.roster().len() == PARTICIPANT_COUNT));
 
     for i in 0..groups.len() {
         let payload = (&mut rng)
@@ -837,7 +839,7 @@ fn get_reinit_client(
     let id2 = SigningIdentity::new(credential, SignaturePublicKey::try_from(&sk2).unwrap());
 
     ClientBuilder::new()
-        .identity_validator(BasicIdentityValidator::new())
+        .identity_provider(BasicIdentityProvider::new())
         .keychain(InMemoryKeychain::default())
         .signing_identity(id1, sk1)
         .signing_identity(id2, sk2)
@@ -892,12 +894,12 @@ fn reinit_works() {
 
     // Both process Bob's commit
     let state_update = bob_group.apply_pending_commit().unwrap();
-    assert!(!state_update.active && state_update.reinit.is_some());
+    assert!(!state_update.active && state_update.pending_reinit);
 
     let message = alice_group.process_incoming_message(commit).unwrap();
 
     if let Event::Commit(state_update) = message.event {
-        assert!(!state_update.active && state_update.reinit.is_some());
+        assert!(!state_update.active && state_update.pending_reinit);
     }
 
     // They can't create new epochs anymore

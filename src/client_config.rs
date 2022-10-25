@@ -12,7 +12,7 @@ use crate::{
     identity::CredentialType,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     provider::{
-        group_state::GroupStateStorage, identity_validation::IdentityValidator,
+        group_state::GroupStateStorage, identity::IdentityProvider,
         key_package::KeyPackageRepository, keychain::KeychainStorage, psk::PskStore,
     },
     tree_kem::{Capabilities, Lifetime},
@@ -24,7 +24,7 @@ pub trait ClientConfig: Clone {
     type Keychain: KeychainStorage + Clone;
     type PskStore: PskStore + Clone;
     type GroupStateStorage: GroupStateStorage + Clone;
-    type IdentityValidator: IdentityValidator + Clone;
+    type IdentityProvider: IdentityProvider + Clone;
     type MakeProposalFilter: MakeProposalFilter;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
@@ -42,7 +42,7 @@ pub trait ClientConfig: Clone {
 
     fn group_state_storage(&self) -> Self::GroupStateStorage;
 
-    fn identity_validator(&self) -> Self::IdentityValidator;
+    fn identity_provider(&self) -> Self::IdentityProvider;
     fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension>;
     fn leaf_node_extensions(&self) -> ExtensionList<LeafNodeExtension>;
     fn lifetime(&self) -> Lifetime;
@@ -74,7 +74,7 @@ pub trait ClientConfig: Clone {
     }
 
     fn supported_credential_types(&self) -> Vec<CredentialType> {
-        self.identity_validator().supported_types()
+        self.identity_provider().supported_types()
     }
 }
 

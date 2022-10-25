@@ -1,3 +1,5 @@
+use crate::group::message_processor::RosterUpdate;
+use crate::group::Member;
 use crate::{cipher_suite::CipherSuite, identity::CredentialType, identity::SigningIdentity};
 
 mod basic;
@@ -6,8 +8,9 @@ mod x509;
 pub use self::basic::*;
 pub use self::x509::*;
 
-pub trait IdentityValidator {
+pub trait IdentityProvider {
     type Error: std::error::Error + Send + Sync + 'static;
+    type IdentityEvent;
 
     fn validate(
         &self,
@@ -24,10 +27,17 @@ pub trait IdentityValidator {
     ) -> Result<bool, Self::Error>;
 
     fn supported_types(&self) -> Vec<CredentialType>;
+
+    fn identity_events(
+        &self,
+        update: &RosterUpdate,
+        prior_roster: Vec<Member>,
+    ) -> Result<Vec<Self::IdentityEvent>, Self::Error>;
 }
 
-impl<T: IdentityValidator> IdentityValidator for &T {
+impl<T: IdentityProvider> IdentityProvider for &T {
     type Error = T::Error;
+    type IdentityEvent = T::IdentityEvent;
 
     fn validate(
         &self,
@@ -51,5 +61,13 @@ impl<T: IdentityValidator> IdentityValidator for &T {
 
     fn supported_types(&self) -> Vec<CredentialType> {
         (*self).supported_types()
+    }
+
+    fn identity_events(
+        &self,
+        update: &RosterUpdate,
+        prior_roster: Vec<Member>,
+    ) -> Result<Vec<Self::IdentityEvent>, Self::Error> {
+        (*self).identity_events(update, prior_roster)
     }
 }

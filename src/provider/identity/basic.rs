@@ -1,22 +1,24 @@
 use crate::{
     cipher_suite::CipherSuite,
+    group::Member,
     identity::{CredentialType, CREDENTIAL_TYPE_BASIC},
     identity::{SigningIdentity, SigningIdentityError},
 };
 
-use super::IdentityValidator;
+use super::IdentityProvider;
 
 #[derive(Clone, Debug, Default)]
-pub struct BasicIdentityValidator;
+pub struct BasicIdentityProvider;
 
-impl BasicIdentityValidator {
+impl BasicIdentityProvider {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl IdentityValidator for BasicIdentityValidator {
+impl IdentityProvider for BasicIdentityProvider {
     type Error = SigningIdentityError;
+    type IdentityEvent = ();
 
     fn validate(
         &self,
@@ -44,5 +46,13 @@ impl IdentityValidator for BasicIdentityValidator {
 
     fn supported_types(&self) -> Vec<CredentialType> {
         vec![CREDENTIAL_TYPE_BASIC]
+    }
+
+    fn identity_events(
+        &self,
+        _update: &crate::group::message_processor::RosterUpdate,
+        _prior_roster: Vec<Member>,
+    ) -> Result<Vec<Self::IdentityEvent>, Self::Error> {
+        Ok(vec![])
     }
 }

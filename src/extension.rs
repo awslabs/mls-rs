@@ -1,7 +1,7 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::proposal::ProposalType;
 use crate::identity::SigningIdentityError;
-use crate::provider::identity_validation::IdentityValidator;
+use crate::provider::identity::IdentityProvider;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
@@ -144,7 +144,7 @@ impl ExternalSendersExt {
         Self { allowed_senders }
     }
 
-    pub fn verify_all<C: IdentityValidator>(
+    pub fn verify_all<C: IdentityProvider>(
         &self,
         validator: &C,
         cipher_suite: CipherSuite,
@@ -152,7 +152,7 @@ impl ExternalSendersExt {
         self.allowed_senders.iter().try_for_each(|id| {
             validator
                 .validate(id, cipher_suite)
-                .map_err(|e| SigningIdentityError::IdentityValidatorError(e.into()))
+                .map_err(|e| SigningIdentityError::IdentityProviderError(e.into()))
         })
     }
 }

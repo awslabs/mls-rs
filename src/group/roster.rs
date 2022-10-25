@@ -2,7 +2,7 @@ use crate::identity::SigningIdentity;
 
 use super::*;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Member {
     node: LeafNode,
     index: LeafIndex,
@@ -31,6 +31,12 @@ impl Member {
     }
 }
 
+impl From<&(KeyPackage, LeafIndex)> for Member {
+    fn from(item: &(KeyPackage, LeafIndex)) -> Self {
+        Self::from((item.1, &item.0.leaf_node))
+    }
+}
+
 impl From<(LeafIndex, &LeafNode)> for Member {
     fn from(item: (LeafIndex, &LeafNode)) -> Self {
         Member {
@@ -49,45 +55,11 @@ impl From<&(LeafIndex, LeafNode)> for Member {
     }
 }
 
-pub struct Roster<I>
-where
-    I: Iterator<Item = Member>,
-{
-    inner: I,
-    total_members: u32,
-}
-
-impl<I> Roster<I>
-where
-    I: Iterator<Item = Member>,
-{
-    pub fn into_vec(self) -> Vec<Member> {
-        self.collect()
-    }
-
-    pub fn member_count(&self) -> usize {
-        self.total_members as usize
-    }
-}
-
-impl<I> Iterator for Roster<I>
-where
-    I: Iterator<Item = Member>,
-{
-    type Item = I::Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
-    }
-}
-
 impl GroupState {
-    pub(crate) fn roster(&self) -> Roster<impl Iterator<Item = Member> + '_> {
-        let roster_iter = self.public_tree.non_empty_leaves().map(Member::from);
-
-        Roster {
-            inner: roster_iter,
-            total_members: self.public_tree.occupied_leaf_count(),
-        }
+    pub(crate) fn roster(&self) -> Vec<Member> {
+        self.public_tree
+            .non_empty_leaves()
+            .map(Member::from)
+            .collect()
     }
 }

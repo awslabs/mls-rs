@@ -1,7 +1,7 @@
 use crate::{
     client_config::ProposalFilterInit,
     key_package::KeyPackage,
-    provider::identity_validation::IdentityValidator,
+    provider::identity::IdentityProvider,
     psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
     tree_kem::{
         leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, validate_update_path,
@@ -40,67 +40,29 @@ pub(crate) struct ProvisionalState {
     pub(crate) rejected_proposals: Vec<(ProposalRef, Proposal)>,
 }
 
-#[derive(Clone, Debug)]
-pub struct StateUpdate {
-    pub added: Vec<u32>,
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct RosterUpdate {
+    pub added: Vec<Member>,
     pub removed: Vec<Member>,
-    pub updated: Vec<u32>,
-    pub psks: Vec<JustPreSharedKeyID>,
-    pub reinit: Option<ReInit>,
-    pub external_init: Option<u32>,
+    pub updated: Vec<Member>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct StateUpdate<IE> {
+    pub roster_update: RosterUpdate,
+    pub identity_events: Vec<IE>,
+    pub added_psks: Vec<JustPreSharedKeyID>,
+    pub pending_reinit: bool,
     pub active: bool,
     pub epoch: u64,
     pub rejected_proposals: Vec<(ProposalRef, Proposal)>,
 }
 
-impl From<&ProvisionalState> for StateUpdate {
-    fn from(provisional: &ProvisionalState) -> Self {
-        let added = provisional
-            .added_leaves
-            .iter()
-            .map(|(_, leaf_index)| leaf_index.0)
-            .collect::<Vec<_>>();
-
-        let removed = provisional
-            .removed_leaves
-            .iter()
-            .map(From::from)
-            .collect::<Vec<_>>();
-
-        let external_init_leaf = provisional
-            .external_init
-            .as_ref()
-            .map(|(leaf_index, _)| *leaf_index);
-
-        let psks = provisional
-            .psks
-            .iter()
-            .map(|psk_id| psk_id.key_id.clone())
-            .collect::<Vec<_>>();
-
-        StateUpdate {
-            added,
-            removed,
-            updated: provisional
-                .updated_leaves
-                .iter()
-                .map(|(i, _)| i.0)
-                .collect(),
-            psks,
-            reinit: provisional.reinit.clone(),
-            external_init: external_init_leaf.map(|i| i.0),
-            active: true,
-            epoch: provisional.epoch,
-            rejected_proposals: provisional.rejected_proposals.clone(),
-        }
-    }
-}
-
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum Event {
+pub enum Event<IE> {
     ApplicationMessage(Vec<u8>),
-    Commit(StateUpdate),
+    Commit(StateUpdate<IE>),
     Proposal(Proposal),
 }
 
@@ -113,8 +75,8 @@ pub struct ProcessedMessage<E> {
 
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum ExternalEvent {
-    Commit(StateUpdate),
+pub enum ExternalEvent<IE> {
+    Commit(StateUpdate<IE>),
     Proposal(Proposal),
     Ciphertext(MLSCiphertext),
 }
@@ -129,19 +91,19 @@ impl<E> From<E> for ProcessedMessage<E> {
     }
 }
 
-impl From<StateUpdate> for Event {
-    fn from(update: StateUpdate) -> Self {
+impl<IE> From<StateUpdate<IE>> for Event<IE> {
+    fn from(update: StateUpdate<IE>) -> Self {
         Event::Commit(update)
     }
 }
 
-impl From<StateUpdate> for ExternalEvent {
-    fn from(state_update: StateUpdate) -> Self {
+impl<IE> From<StateUpdate<IE>> for ExternalEvent<IE> {
+    fn from(state_update: StateUpdate<IE>) -> Self {
         ExternalEvent::Commit(state_update)
     }
 }
 
-impl TryFrom<ApplicationData> for ExternalEvent {
+impl<IE> TryFrom<ApplicationData> for ExternalEvent<IE> {
     type Error = GroupError;
 
     fn try_from(_: ApplicationData) -> Result<Self, Self::Error> {
@@ -149,13 +111,13 @@ impl TryFrom<ApplicationData> for ExternalEvent {
     }
 }
 
-impl From<Proposal> for Event {
+impl<IE> From<Proposal> for Event<IE> {
     fn from(proposal: Proposal) -> Self {
         Event::Proposal(proposal)
     }
 }
 
-impl From<Proposal> for ExternalEvent {
+impl<IE> From<Proposal> for ExternalEvent<IE> {
     fn from(proposal: Proposal) -> Self {
         ExternalEvent::Proposal(proposal)
     }
@@ -166,18 +128,19 @@ pub(crate) enum EventOrContent<E> {
     Content(MLSAuthenticatedContent),
 }
 
-pub(crate) trait MessageProcessor<E>
-where
-    E: From<Proposal> + TryFrom<ApplicationData, Error = GroupError> + From<StateUpdate>,
-{
+pub(crate) trait MessageProcessor {
+    type EventType: From<Proposal>
+        + TryFrom<ApplicationData, Error = GroupError>
+        + From<StateUpdate<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>>;
+
     type ProposalFilter: ProposalFilter;
-    type IdentityValidator: IdentityValidator;
+    type IdentityProvider: IdentityProvider;
     type ExternalPskIdValidator: ExternalPskIdValidator;
 
     fn process_incoming_message(
         &mut self,
         message: MLSMessage,
-    ) -> Result<ProcessedMessage<E>, GroupError> {
+    ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
         self.check_metadata(&message)?;
 
         let wire_format = message.wire_format();
@@ -202,7 +165,7 @@ where
     fn process_auth_content(
         &mut self,
         auth_content: MLSAuthenticatedContent,
-    ) -> Result<ProcessedMessage<E>, GroupError> {
+    ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
         let authenticated_data = auth_content.content.authenticated_data.clone();
 
         let sender_index = match auth_content.content.sender {
@@ -211,11 +174,11 @@ where
         };
 
         let event = match auth_content.content.content {
-            Content::Application(data) => E::try_from(data),
-            Content::Commit(_) => self.process_commit(auth_content).map(E::from),
+            Content::Application(data) => Self::EventType::try_from(data),
+            Content::Commit(_) => self.process_commit(auth_content).map(Self::EventType::from),
             Content::Proposal(ref proposal) => self
                 .process_proposal(&auth_content, proposal)
-                .map(|_| E::from(proposal.clone())),
+                .map(|_| Self::EventType::from(proposal.clone())),
         }?;
 
         Ok(ProcessedMessage {
@@ -244,10 +207,60 @@ where
         Ok(())
     }
 
+    fn make_state_update(
+        &self,
+        provisional: &ProvisionalState,
+    ) -> Result<StateUpdate<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>, GroupError>
+    {
+        let added = provisional
+            .added_leaves
+            .iter()
+            .map(Member::from)
+            .collect::<Vec<_>>();
+
+        let removed = provisional
+            .removed_leaves
+            .iter()
+            .map(From::from)
+            .collect::<Vec<_>>();
+
+        let updated = provisional.updated_leaves.iter().map(From::from).collect();
+
+        let psks = provisional
+            .psks
+            .iter()
+            .map(|psk_id| psk_id.key_id.clone())
+            .collect::<Vec<_>>();
+
+        let roster_update = RosterUpdate {
+            added,
+            removed,
+            updated,
+        };
+
+        let identity_events = self
+            .identity_provider()
+            .identity_events(&roster_update, self.group_state().roster())
+            .map_err(|e| GroupError::IdentityProviderError(e.into()))?;
+
+        let update = StateUpdate {
+            roster_update,
+            added_psks: psks,
+            pending_reinit: provisional.reinit.is_some(),
+            active: true,
+            epoch: provisional.epoch,
+            rejected_proposals: provisional.rejected_proposals.clone(),
+            identity_events,
+        };
+
+        Ok(update)
+    }
+
     fn process_commit(
         &mut self,
         auth_content: MLSAuthenticatedContent,
-    ) -> Result<StateUpdate, GroupError> {
+    ) -> Result<StateUpdate<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>, GroupError>
+    {
         let commit = match auth_content.content.content {
             Content::Commit(ref commit) => Ok(commit),
             _ => Err(GroupError::NotCommitContent(
@@ -264,7 +277,7 @@ where
             commit,
             &auth_content.content.sender,
             &group_state.context.extensions,
-            self.identity_validator(),
+            self.identity_provider(),
             &group_state.public_tree,
             self.external_psk_id_validator(),
             self.proposal_filter(ProposalFilterInit::new(auth_content.content.sender.clone())),
@@ -273,7 +286,7 @@ where
         let mut provisional_state = self.calculate_provisional_state(proposal_effects)?;
 
         let sender = commit_sender(&auth_content.content.sender, &provisional_state)?;
-        let mut state_update = StateUpdate::from(&provisional_state);
+        let mut state_update = self.make_state_update(&provisional_state)?;
 
         //Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
@@ -297,7 +310,7 @@ where
             .as_ref()
             .map(|update_path| {
                 validate_update_path(
-                    &self.identity_validator(),
+                    &self.identity_provider(),
                     update_path,
                     &provisional_state,
                     sender,
@@ -351,7 +364,7 @@ where
     fn group_state_mut(&mut self) -> &mut GroupState;
     fn self_index(&self) -> Option<LeafIndex>;
     fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter;
-    fn identity_validator(&self) -> Self::IdentityValidator;
+    fn identity_provider(&self) -> Self::IdentityProvider;
     fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator;
     fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool;
     fn min_epoch_available(&self) -> Option<u64>;
@@ -426,12 +439,12 @@ where
     fn process_ciphertext(
         &mut self,
         cipher_text: MLSCiphertext,
-    ) -> Result<EventOrContent<E>, GroupError>;
+    ) -> Result<EventOrContent<Self::EventType>, GroupError>;
 
     fn verify_plaintext_authentication(
         &self,
         message: MLSPlaintext,
-    ) -> Result<EventOrContent<E>, GroupError>;
+    ) -> Result<EventOrContent<Self::EventType>, GroupError>;
 
     fn calculate_provisional_state(
         &self,
@@ -481,7 +494,7 @@ where
     ) -> Result<Option<(TreeKemPrivate, PathSecret)>, GroupError> {
         provisional_state
             .public_tree
-            .apply_update_path(sender, &update_path, self.identity_validator())
+            .apply_update_path(sender, &update_path, self.identity_provider())
             .map(|_| None)
             .map_err(Into::into)
     }

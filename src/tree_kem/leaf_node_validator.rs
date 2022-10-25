@@ -2,7 +2,7 @@ use super::leaf_node::{LeafNode, LeafNodeSource};
 use super::{Lifetime, LifetimeError};
 use crate::identity::CredentialType;
 use crate::identity::SigningIdentityError;
-use crate::provider::identity_validation::IdentityValidator;
+use crate::provider::identity::IdentityProvider;
 use crate::{
     cipher_suite::CipherSuite,
     extension::{ExtensionType, RequiredCapabilitiesExt},
@@ -51,29 +51,29 @@ pub enum LeafNodeValidationError {
     #[error("capabilities must describe extensions used")]
     ExtensionNotInCapabilities(ExtensionType),
     #[error("credential rejected by custom credential validator")]
-    IdentityValidatorError(#[source] Box<dyn std::error::Error + Sync + Send>),
+    IdentityProviderError(#[source] Box<dyn std::error::Error + Sync + Send>),
 }
 
 #[derive(Clone, Debug)]
 pub struct LeafNodeValidator<'a, C>
 where
-    C: IdentityValidator,
+    C: IdentityProvider,
 {
     cipher_suite: CipherSuite,
-    identity_validator: C,
+    identity_provider: C,
     required_capabilities: Option<&'a RequiredCapabilitiesExt>,
 }
 
-impl<'a, C: IdentityValidator> LeafNodeValidator<'a, C> {
+impl<'a, C: IdentityProvider> LeafNodeValidator<'a, C> {
     pub fn new(
         cipher_suite: CipherSuite,
         required_capabilities: Option<&'a RequiredCapabilitiesExt>,
-        identity_validator: C,
+        identity_provider: C,
     ) -> Self {
         Self {
             cipher_suite,
             required_capabilities,
-            identity_validator,
+            identity_provider,
         }
     }
 
@@ -171,9 +171,9 @@ impl<'a, C: IdentityValidator> LeafNodeValidator<'a, C> {
         self.check_context(leaf_node, &context)?;
 
         // Verify the credential
-        self.identity_validator
+        self.identity_provider
             .validate(&leaf_node.signing_identity, self.cipher_suite)
-            .map_err(|e| LeafNodeValidationError::IdentityValidatorError(e.into()))?;
+            .map_err(|e| LeafNodeValidationError::IdentityProviderError(e.into()))?;
 
         let public_key = leaf_node.signing_identity.public_key(self.cipher_suite)?;
 
@@ -213,9 +213,9 @@ mod tests {
     use crate::extension::{ApplicationIdExt, ExtensionList, MlsExtension};
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::identity::CREDENTIAL_TYPE_BASIC;
-    use crate::provider::identity_validation::BasicIdentityValidator;
+    use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::*;
-    use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityValidator;
+    use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider;
     use crate::tree_kem::parent_hash::ParentHash;
     use crate::tree_kem::Capabilities;
 
@@ -238,7 +238,7 @@ mod tests {
     fn test_basic_add_validation() {
         let (leaf_node, _) = get_test_add_node();
         let test_validator =
-            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityValidator::new());
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityProvider::new());
 
         assert_matches!(
             test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
@@ -250,11 +250,11 @@ mod tests {
     fn test_failed_validation() {
         let (leaf_node, _) = get_test_add_node();
         let fail_test_validator =
-            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, FailureIdentityValidator::new());
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, FailureIdentityProvider::new());
 
         assert_matches!(
             fail_test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
-            Err(LeafNodeValidationError::IdentityValidatorError(_))
+            Err(LeafNodeValidationError::IdentityProviderError(_))
         );
     }
 
@@ -274,7 +274,7 @@ mod tests {
             .unwrap();
 
         let test_validator =
-            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityValidator::new());
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityProvider::new());
         assert_matches!(
             test_validator.check_if_valid(&leaf_node, ValidationContext::Update(group_id)),
             Ok(_)
@@ -298,7 +298,7 @@ mod tests {
             .unwrap();
 
         let test_validator =
-            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityValidator::new());
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityProvider::new());
 
         assert_matches!(
             test_validator.check_if_valid(&leaf_node, ValidationContext::Commit(group_id)),
@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn test_incorrect_context() {
         let test_validator =
-            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityValidator::new());
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityProvider::new());
         let (mut leaf_node, secret) = get_test_add_node();
 
         assert_matches!(
@@ -374,7 +374,7 @@ mod tests {
             leaf_node.signature = SecureRng::gen(leaf_node.signature.len()).unwrap();
 
             let test_validator =
-                LeafNodeValidator::new(cipher_suite, None, BasicIdentityValidator::new());
+                LeafNodeValidator::new(cipher_suite, None, BasicIdentityProvider::new());
 
             assert_matches!(
                 test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
@@ -412,7 +412,7 @@ mod tests {
         );
 
         let test_validator =
-            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityValidator::new());
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityProvider::new());
 
         assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
             Err(LeafNodeValidationError::ExtensionNotInCapabilities(ext)) if ext == ApplicationIdExt::IDENTIFIER);
@@ -423,11 +423,11 @@ mod tests {
         let (leaf_node, _) = get_test_add_node();
 
         let test_validator =
-            LeafNodeValidator::new(CipherSuite::P256Aes128, None, BasicIdentityValidator::new());
+            LeafNodeValidator::new(CipherSuite::P256Aes128, None, BasicIdentityProvider::new());
 
         assert_matches!(
             test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
-            Err(LeafNodeValidationError::IdentityValidatorError(_))
+            Err(LeafNodeValidationError::IdentityProviderError(_))
         );
     }
 
@@ -443,7 +443,7 @@ mod tests {
         let test_validator = LeafNodeValidator::new(
             TEST_CIPHER_SUITE,
             Some(&required_capabilities),
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
         );
 
         assert_matches!(
@@ -464,7 +464,7 @@ mod tests {
         let test_validator = LeafNodeValidator::new(
             TEST_CIPHER_SUITE,
             Some(&required_capabilities),
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
         );
 
         assert_matches!(
@@ -487,7 +487,7 @@ mod tests {
         let test_validator = LeafNodeValidator::new(
             TEST_CIPHER_SUITE,
             Some(&required_capabilities),
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
         );
 
         assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
@@ -499,7 +499,7 @@ mod tests {
     fn test_add_lifetime() {
         let (leaf_node, _) = get_test_add_node();
         let test_validator =
-            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityValidator::new());
+            LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityProvider::new());
 
         let good_lifetime = MlsTime::now();
 
@@ -526,22 +526,25 @@ pub mod test_utils {
 
     use crate::{
         cipher_suite::CipherSuite,
+        group::Member,
         identity::SigningIdentity,
         identity::{CredentialError, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
-        provider::identity_validation::IdentityValidator,
+        provider::identity::IdentityProvider,
     };
 
     #[derive(Clone, Debug, Default)]
-    pub struct FailureIdentityValidator;
+    pub struct FailureIdentityProvider;
 
-    impl FailureIdentityValidator {
+    impl FailureIdentityProvider {
         pub fn new() -> Self {
             Self::default()
         }
     }
 
-    impl IdentityValidator for FailureIdentityValidator {
+    impl IdentityProvider for FailureIdentityProvider {
         type Error = CredentialError;
+        type IdentityEvent = ();
+
         fn validate(
             &self,
             _signing_identity: &SigningIdentity,
@@ -570,6 +573,14 @@ pub mod test_utils {
 
         fn supported_types(&self) -> Vec<crate::identity::CredentialType> {
             vec![CREDENTIAL_TYPE_X509]
+        }
+
+        fn identity_events(
+            &self,
+            _update: &crate::group::RosterUpdate,
+            _prior_roster: Vec<Member>,
+        ) -> Result<Vec<Self::IdentityEvent>, Self::Error> {
+            Ok(vec![])
         }
     }
 }

@@ -4,7 +4,7 @@ use crate::{
         FailInvalidProposal, IgnoreInvalidByRefProposal, ProposalApplier, ProposalBundle,
         ProposalFilter, ProposalFilterError, ProposalInfo, ProposalState,
     },
-    provider::identity_validation::IdentityValidator,
+    provider::identity::IdentityProvider,
     psk::ExternalPskIdValidator,
     tree_kem::leaf_node::LeafNode,
 };
@@ -203,14 +203,14 @@ impl ProposalCache {
         sender: Sender,
         additional_proposals: Vec<Proposal>,
         group_extensions: &ExtensionList<GroupContextExtension>,
-        identity_validator: C,
+        identity_provider: C,
         public_tree: &TreeKemPublic,
         external_leaf: Option<&LeafNode>,
         external_psk_id_validator: P,
         user_filter: F,
     ) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), ProposalCacheError>
     where
-        C: IdentityValidator,
+        C: IdentityProvider,
         F: ProposalFilter,
         P: ExternalPskIdValidator,
     {
@@ -253,7 +253,7 @@ impl ProposalCache {
             group_extensions,
             required_capabilities.as_ref(),
             external_leaf,
-            &identity_validator,
+            &identity_provider,
             external_psk_id_validator,
         );
 
@@ -303,13 +303,13 @@ impl ProposalCache {
         proposal_list: Vec<ProposalOrRef>,
         external_leaf: Option<&LeafNode>,
         group_extensions: &ExtensionList<GroupContextExtension>,
-        identity_validator: C,
+        identity_provider: C,
         public_tree: &TreeKemPublic,
         external_psk_id_validator: P,
         user_filter: F,
     ) -> Result<ProposalSetEffects, ProposalCacheError>
     where
-        C: IdentityValidator,
+        C: IdentityProvider,
         F: ProposalFilter,
         P: ExternalPskIdValidator,
     {
@@ -343,7 +343,7 @@ impl ProposalCache {
             group_extensions,
             required_capabilities.as_ref(),
             external_leaf,
-            &identity_validator,
+            &identity_provider,
             external_psk_id_validator,
         );
 
@@ -419,7 +419,7 @@ mod tests {
             test_utils::{test_key_package, test_key_package_custom},
             KeyPackageGenerator,
         },
-        provider::identity_validation::BasicIdentityValidator,
+        provider::identity::BasicIdentityProvider,
         psk::PassThroughPskIdValidator,
         tree_kem::{
             leaf_node::{
@@ -428,7 +428,7 @@ mod tests {
                 },
                 ConfigProperties, LeafNodeSource,
             },
-            leaf_node_validator::{test_utils::FailureIdentityValidator, LeafNodeValidationError},
+            leaf_node_validator::{test_utils::FailureIdentityProvider, LeafNodeValidationError},
             parent_hash::ParentHash,
             AccumulateBatchResults, Lifetime, RatchetTreeError, TreeIndexError,
         },
@@ -452,14 +452,14 @@ mod tests {
     fn new_tree(name: &str) -> (LeafIndex, TreeKemPublic) {
         let (leaf, secret, _) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, name);
         let (pub_tree, priv_tree) =
-            TreeKemPublic::derive(TEST_CIPHER_SUITE, leaf, secret, BasicIdentityValidator).unwrap();
+            TreeKemPublic::derive(TEST_CIPHER_SUITE, leaf, secret, BasicIdentityProvider).unwrap();
         (priv_tree.self_index, pub_tree)
     }
 
     fn add_member(tree: &mut TreeKemPublic, name: &str) -> LeafIndex {
         tree.add_leaves(
             vec![get_basic_test_node(TEST_CIPHER_SUITE, name)],
-            BasicIdentityValidator,
+            BasicIdentityProvider,
         )
         .unwrap()[0]
     }
@@ -497,7 +497,7 @@ mod tests {
             cipher_suite,
             sender_leaf,
             sender_leaf_secret,
-            BasicIdentityValidator,
+            BasicIdentityProvider,
         )
         .unwrap();
 
@@ -525,7 +525,7 @@ mod tests {
         let test_sender = tree
             .add_leaves(
                 vec![get_basic_test_node(cipher_suite, "charlie")],
-                BasicIdentityValidator,
+                BasicIdentityProvider,
             )
             .unwrap()[0];
 
@@ -536,7 +536,7 @@ mod tests {
                 &[(sender, update_leaf.clone())],
                 &[remove_leaf_index],
                 &[add_package.leaf_node.clone()],
-                BasicIdentityValidator,
+                BasicIdentityProvider,
             )
             .unwrap();
 
@@ -666,7 +666,7 @@ mod tests {
                 Sender::Member(test_sender),
                 vec![],
                 &ExtensionList::new(),
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -708,7 +708,7 @@ mod tests {
                 Sender::Member(test_sender),
                 additional.clone(),
                 &ExtensionList::new(),
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -732,7 +732,7 @@ mod tests {
                 &[],
                 &[],
                 &[additional_key_package.leaf_node.clone()],
-                BasicIdentityValidator,
+                BasicIdentityProvider,
             )
             .unwrap();
 
@@ -758,7 +758,7 @@ mod tests {
             Sender::Member(test_sender()),
             additional,
             &ExtensionList::new(),
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
             &tree,
             None,
             PassThroughPskIdValidator,
@@ -801,7 +801,7 @@ mod tests {
                 Sender::Member(test_sender),
                 vec![],
                 &ExtensionList::new(),
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -831,7 +831,7 @@ mod tests {
                 Sender::Member(test_sender),
                 vec![],
                 &ExtensionList::new(),
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -878,7 +878,7 @@ mod tests {
                 Sender::Member(LeafIndex(2)),
                 Vec::new(),
                 &ExtensionList::new(),
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -927,14 +927,14 @@ mod tests {
             key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "frank"),
         })];
 
-        let identity_validator = BasicIdentityValidator::new();
+        let identity_provider = BasicIdentityProvider::new();
 
         let (proposals, effects) = cache
             .prepare_commit(
                 Sender::Member(test_sender),
                 additional,
                 &ExtensionList::new(),
-                &identity_validator,
+                &identity_provider,
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -949,7 +949,7 @@ mod tests {
                 proposals,
                 None,
                 &ExtensionList::new(),
-                &identity_validator,
+                &identity_provider,
                 &tree,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
@@ -973,7 +973,7 @@ mod tests {
             Sender::Member(alice),
             vec![proposal.clone(), proposal],
             &ExtensionList::new(),
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
             &tree,
             None,
             PassThroughPskIdValidator,
@@ -1010,7 +1010,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
-        let identity_validator = BasicIdentityValidator::new();
+        let identity_provider = BasicIdentityProvider::new();
 
         let res = cache.resolve_for_commit(
             Sender::NewMemberCommit,
@@ -1020,7 +1020,7 @@ mod tests {
             ))],
             None,
             &group.group.context().extensions,
-            identity_validator,
+            identity_provider,
             public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1060,7 +1060,7 @@ mod tests {
             vec![ProposalOrRef::Reference(proposal_ref)],
             Some(&test_node()),
             &group.group.context().extensions,
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
             public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1080,7 +1080,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
-        let identity_validator = BasicIdentityValidator::new();
+        let identity_provider = BasicIdentityProvider::new();
 
         let res = cache.resolve_for_commit(
             Sender::NewMemberCommit,
@@ -1096,7 +1096,7 @@ mod tests {
             .collect(),
             Some(&test_node()),
             &group.group.context().extensions,
-            identity_validator,
+            identity_provider,
             public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1117,7 +1117,7 @@ mod tests {
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
-        let identity_validator = BasicIdentityValidator::new();
+        let identity_provider = BasicIdentityProvider::new();
 
         cache.resolve_for_commit(
             Sender::NewMemberCommit,
@@ -1131,7 +1131,7 @@ mod tests {
             .collect(),
             Some(&test_node()),
             &group.group.context().extensions,
-            identity_validator,
+            identity_provider,
             public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1159,7 +1159,7 @@ mod tests {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
-        let identity_validator = BasicIdentityValidator::new();
+        let identity_provider = BasicIdentityProvider::new();
 
         let test_leaf_nodes = vec![
             get_basic_test_node(TEST_CIPHER_SUITE, "foo"),
@@ -1167,7 +1167,7 @@ mod tests {
         ];
 
         let test_leaf_node_indexes = public_tree
-            .add_leaves(test_leaf_nodes, BasicIdentityValidator)
+            .add_leaves(test_leaf_nodes, BasicIdentityProvider)
             .unwrap();
 
         let proposals = vec![
@@ -1186,7 +1186,7 @@ mod tests {
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
             Some(&test_node()),
             &group_extensions,
-            identity_validator,
+            identity_provider,
             &public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1211,7 +1211,7 @@ mod tests {
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "bar")];
 
         let test_leaf_node_indexes = public_tree
-            .add_leaves(test_leaf_nodes, BasicIdentityValidator)
+            .add_leaves(test_leaf_nodes, BasicIdentityProvider)
             .unwrap();
 
         let proposals = vec![
@@ -1227,7 +1227,7 @@ mod tests {
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
             Some(&test_node()),
             &group_extensions,
-            BasicIdentityValidator,
+            BasicIdentityProvider,
             &public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1248,12 +1248,12 @@ mod tests {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
-        let identity_validator = BasicIdentityValidator::new();
+        let identity_provider = BasicIdentityProvider::new();
 
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo")];
 
         let test_leaf_node_indexes = public_tree
-            .add_leaves(test_leaf_nodes, BasicIdentityValidator)
+            .add_leaves(test_leaf_nodes, BasicIdentityProvider)
             .unwrap();
 
         let proposals = vec![
@@ -1269,7 +1269,7 @@ mod tests {
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
             Some(&test_node()),
             &group_extensions,
-            identity_validator,
+            identity_provider,
             &public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1329,7 +1329,7 @@ mod tests {
         let cache = make_proposal_cache();
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
-        let identity_validator = BasicIdentityValidator::new();
+        let identity_provider = BasicIdentityProvider::new();
 
         let res = cache.resolve_for_commit(
             Sender::NewMemberCommit,
@@ -1337,7 +1337,7 @@ mod tests {
             Vec::new(),
             Some(&test_node()),
             &group.group.context().extensions,
-            identity_validator,
+            identity_provider,
             public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1360,7 +1360,7 @@ mod tests {
                 Sender::Member(test_sender()),
                 vec![],
                 &ExtensionList::new(),
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
                 PassThroughPskIdValidator,
@@ -1387,7 +1387,7 @@ mod tests {
                 Sender::Member(test_sender()),
                 Vec::new(),
                 &ExtensionList::new(),
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
                 PassThroughPskIdValidator,
@@ -1409,14 +1409,14 @@ mod tests {
             TEST_CIPHER_SUITE,
             alice_leaf,
             alice_secret,
-            BasicIdentityValidator,
+            BasicIdentityProvider,
         )
         .unwrap();
 
         let bob = tree
             .add_leaves(
                 vec![get_basic_test_node(TEST_CIPHER_SUITE, "bob")],
-                BasicIdentityValidator,
+                BasicIdentityProvider,
             )
             .unwrap()[0];
 
@@ -1427,7 +1427,7 @@ mod tests {
                 Sender::Member(alice),
                 vec![remove],
                 &ExtensionList::new(),
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -1459,7 +1459,7 @@ mod tests {
                 Sender::Member(alice),
                 vec![psk, add],
                 &ExtensionList::new(),
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -1487,7 +1487,7 @@ mod tests {
                 Sender::Member(alice),
                 vec![reinit],
                 &ExtensionList::new(),
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -1504,7 +1504,7 @@ mod tests {
         sender: Sender,
         receiver: LeafIndex,
         cache: ProposalCache,
-        identity_validator: C,
+        identity_provider: C,
         group_context_extensions: ExtensionList<GroupContextExtension>,
         user_filter: F,
         external_psk_id_validator: P,
@@ -1513,7 +1513,7 @@ mod tests {
     impl<'a>
         CommitReceiver<
             'a,
-            BasicIdentityValidator,
+            BasicIdentityProvider,
             PassThroughProposalFilter<Infallible>,
             PassThroughPskIdValidator,
         >
@@ -1527,7 +1527,7 @@ mod tests {
                 sender: sender.into(),
                 receiver,
                 cache: make_proposal_cache(),
-                identity_validator: BasicIdentityValidator::new(),
+                identity_provider: BasicIdentityProvider::new(),
                 group_context_extensions: Default::default(),
                 user_filter: pass_through_filter(),
                 external_psk_id_validator: PassThroughPskIdValidator,
@@ -1537,20 +1537,20 @@ mod tests {
 
     impl<'a, C, F, P> CommitReceiver<'a, C, F, P>
     where
-        C: IdentityValidator,
+        C: IdentityProvider,
         F: ProposalFilter,
         P: ExternalPskIdValidator,
     {
-        fn with_identity_validator<V>(self, validator: V) -> CommitReceiver<'a, V, F, P>
+        fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, F, P>
         where
-            V: IdentityValidator,
+            V: IdentityProvider,
         {
             CommitReceiver {
                 tree: self.tree,
                 sender: self.sender,
                 receiver: self.receiver,
                 cache: self.cache,
-                identity_validator: validator,
+                identity_provider: validator,
                 group_context_extensions: self.group_context_extensions,
                 user_filter: self.user_filter,
                 external_psk_id_validator: self.external_psk_id_validator,
@@ -1566,7 +1566,7 @@ mod tests {
                 sender: self.sender,
                 receiver: self.receiver,
                 cache: self.cache,
-                identity_validator: self.identity_validator,
+                identity_provider: self.identity_provider,
                 group_context_extensions: self.group_context_extensions,
                 user_filter: f,
                 external_psk_id_validator: self.external_psk_id_validator,
@@ -1582,7 +1582,7 @@ mod tests {
                 sender: self.sender,
                 receiver: self.receiver,
                 cache: self.cache,
-                identity_validator: self.identity_validator,
+                identity_provider: self.identity_provider,
                 group_context_extensions: self.group_context_extensions,
                 user_filter: self.user_filter,
                 external_psk_id_validator: v,
@@ -1615,7 +1615,7 @@ mod tests {
                 proposals.into_iter().map(Into::into).collect(),
                 None,
                 &self.group_context_extensions,
-                &self.identity_validator,
+                &self.identity_provider,
                 self.tree,
                 &self.external_psk_id_validator,
                 &self.user_filter,
@@ -1629,7 +1629,7 @@ mod tests {
         sender: LeafIndex,
         cache: ProposalCache,
         additional_proposals: Vec<Proposal>,
-        identity_validator: C,
+        identity_provider: C,
         user_filter: F,
         external_psk_id_validator: P,
     }
@@ -1637,7 +1637,7 @@ mod tests {
     impl<'a>
         CommitSender<
             'a,
-            BasicIdentityValidator,
+            BasicIdentityProvider,
             PassThroughProposalFilter<Infallible>,
             PassThroughPskIdValidator,
         >
@@ -1648,7 +1648,7 @@ mod tests {
                 sender,
                 cache: make_proposal_cache(),
                 additional_proposals: Vec::new(),
-                identity_validator: BasicIdentityValidator::new(),
+                identity_provider: BasicIdentityProvider::new(),
                 user_filter: pass_through_filter(),
                 external_psk_id_validator: PassThroughPskIdValidator,
             }
@@ -1657,20 +1657,20 @@ mod tests {
 
     impl<'a, C, F, P> CommitSender<'a, C, F, P>
     where
-        C: IdentityValidator,
+        C: IdentityProvider,
         F: ProposalFilter,
         P: ExternalPskIdValidator,
     {
-        fn with_identity_validator<V>(self, validator: V) -> CommitSender<'a, V, F, P>
+        fn with_identity_provider<V>(self, validator: V) -> CommitSender<'a, V, F, P>
         where
-            V: IdentityValidator,
+            V: IdentityProvider,
         {
             CommitSender {
                 tree: self.tree,
                 sender: self.sender,
                 cache: self.cache,
                 additional_proposals: self.additional_proposals,
-                identity_validator: validator,
+                identity_provider: validator,
                 user_filter: self.user_filter,
                 external_psk_id_validator: self.external_psk_id_validator,
             }
@@ -1701,7 +1701,7 @@ mod tests {
                 sender: self.sender,
                 cache: self.cache,
                 additional_proposals: self.additional_proposals,
-                identity_validator: self.identity_validator,
+                identity_provider: self.identity_provider,
                 user_filter: f,
                 external_psk_id_validator: self.external_psk_id_validator,
             }
@@ -1716,7 +1716,7 @@ mod tests {
                 sender: self.sender,
                 cache: self.cache,
                 additional_proposals: self.additional_proposals,
-                identity_validator: self.identity_validator,
+                identity_provider: self.identity_provider,
                 user_filter: self.user_filter,
                 external_psk_id_validator: v,
             }
@@ -1727,7 +1727,7 @@ mod tests {
                 Sender::Member(self.sender),
                 self.additional_proposals.clone(),
                 &ExtensionList::new(),
-                &self.identity_validator,
+                &self.identity_provider,
                 self.tree,
                 None,
                 &self.external_psk_id_validator,
@@ -2620,12 +2620,12 @@ mod tests {
                 properties,
                 &signature_key,
                 Lifetime::years(1).unwrap(),
-                &BasicIdentityValidator::new(),
+                &BasicIdentityProvider::new(),
             )
             .unwrap();
 
             let (pub_tree, priv_tree) =
-                TreeKemPublic::derive(TEST_CIPHER_SUITE, leaf, secret, BasicIdentityValidator)
+                TreeKemPublic::derive(TEST_CIPHER_SUITE, leaf, secret, BasicIdentityProvider)
                     .unwrap();
 
             (priv_tree.self_index, pub_tree)
@@ -2663,7 +2663,7 @@ mod tests {
         let (alice, tree) = new_tree("alice");
 
         let res = CommitReceiver::new(&tree, alice, alice)
-            .with_identity_validator(FailureIdentityValidator::new())
+            .with_identity_provider(FailureIdentityProvider::new())
             .receive([Proposal::GroupContextExtensions(
                 make_external_senders_extension(),
             )]);
@@ -2672,7 +2672,7 @@ mod tests {
             res,
             Err(ProposalCacheError::ProposalFilterError(
                 ProposalFilterError::SigningIdentityError(
-                    SigningIdentityError::IdentityValidatorError(_)
+                    SigningIdentityError::IdentityProviderError(_)
                 )
             ))
         );
@@ -2683,7 +2683,7 @@ mod tests {
         let (alice, tree) = new_tree("alice");
 
         let res = CommitSender::new(&tree, alice)
-            .with_identity_validator(FailureIdentityValidator::new())
+            .with_identity_provider(FailureIdentityProvider::new())
             .with_additional([Proposal::GroupContextExtensions(
                 make_external_senders_extension(),
             )])
@@ -2693,7 +2693,7 @@ mod tests {
             res,
             Err(ProposalCacheError::ProposalFilterError(
                 ProposalFilterError::SigningIdentityError(
-                    SigningIdentityError::IdentityValidatorError(_)
+                    SigningIdentityError::IdentityProviderError(_)
                 )
             ))
         );
@@ -2708,7 +2708,7 @@ mod tests {
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
         let (committed, effects) = CommitSender::new(&tree, alice)
-            .with_identity_validator(FailureIdentityValidator::new())
+            .with_identity_provider(FailureIdentityProvider::new())
             .cache(proposal_ref.clone(), proposal.clone(), alice)
             .send()
             .unwrap();
@@ -2902,7 +2902,7 @@ mod tests {
             TEST_CIPHER_SUITE,
             alice_leaf.clone(),
             alice_secret,
-            BasicIdentityValidator,
+            BasicIdentityProvider,
         )
         .unwrap();
 
@@ -2957,7 +2957,7 @@ mod tests {
             TEST_CIPHER_SUITE,
             alice_leaf.clone(),
             alice_secret,
-            BasicIdentityValidator,
+            BasicIdentityProvider,
         )
         .unwrap();
 
@@ -3008,7 +3008,7 @@ mod tests {
             cipher_suite: TEST_CIPHER_SUITE,
             signing_identity: &signing_identity,
             signing_key: &secret_key,
-            identity_validator: &BasicIdentityValidator::new(),
+            identity_provider: &BasicIdentityProvider::new(),
         };
 
         generator

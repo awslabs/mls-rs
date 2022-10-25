@@ -5,7 +5,7 @@
 
 use aws_mls::cipher_suite::{CipherSuite, MaybeCipherSuite, SignaturePublicKey};
 use aws_mls::client::{
-    BaseConfig, Client, ClientBuilder, Preferences, WithIdentityValidator, WithKeychain,
+    BaseConfig, Client, ClientBuilder, Preferences, WithIdentityProvider, WithKeychain,
 };
 use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::group::MLSMessage;
@@ -13,7 +13,7 @@ use aws_mls::group::{Event, Group, StateUpdate};
 use aws_mls::identity::{BasicCredential, MlsCredential};
 use aws_mls::provider::keychain::FirstIdentitySelector;
 use aws_mls::provider::{
-    identity_validation::BasicIdentityValidator, keychain::InMemoryKeychain, psk::InMemoryPskStore,
+    identity::BasicIdentityProvider, keychain::InMemoryKeychain, psk::InMemoryPskStore,
 };
 
 use aws_mls::identity::SigningIdentity;
@@ -61,25 +61,33 @@ impl TryFrom<i32> for TestVectorType {
     }
 }
 
-impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
+impl<T> TryFrom<(StateUpdate<T>, u32)> for HandleCommitResponse {
     type Error = Status;
 
-    fn try_from((state_update, state_id): (StateUpdate, u32)) -> Result<Self, Self::Error> {
+    fn try_from((state_update, state_id): (StateUpdate<T>, u32)) -> Result<Self, Self::Error> {
         let added = state_update
+            .roster_update
             .added
             .iter()
-            .map(|leaf_index| *leaf_index.deref())
+            .map(|member| member.index())
             .collect();
 
-        let updated = state_update.updated;
+        let updated_indices = state_update
+            .roster_update
+            .updated
+            .iter()
+            .map(|member| member.index())
+            .collect();
 
         let removed_indices = state_update
+            .roster_update
             .removed
             .iter()
             .map(|removed| removed.index())
             .collect();
 
         let removed_leaves = state_update
+            .roster_update
             .removed
             .iter()
             .map(|member| member.leaf_bytes())
@@ -87,7 +95,7 @@ impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
             .map_err(abort)?;
 
         let psks = state_update
-            .psks
+            .added_psks
             .iter()
             .map(|psk_id| psk_id.tls_serialize_detached())
             .collect::<Result<Vec<_>, _>>()
@@ -96,7 +104,7 @@ impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
         Ok(Self {
             state_id,
             added,
-            updated,
+            updated: updated_indices,
             removed_indices,
             removed_leaves,
             psks,
@@ -105,8 +113,8 @@ impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
     }
 }
 
-type TestClientConfig = WithIdentityValidator<
-    BasicIdentityValidator,
+type TestClientConfig = WithIdentityProvider<
+    BasicIdentityProvider,
     WithKeychain<InMemoryKeychain<FirstIdentitySelector>, BaseConfig>,
 >;
 
@@ -233,7 +241,7 @@ impl MlsClient for MlsClientImpl {
         let psk_store = InMemoryPskStore::default();
 
         let creator = Client::builder()
-            .identity_validator(BasicIdentityValidator::new())
+            .identity_provider(BasicIdentityProvider::new())
             .single_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
             .preferences(Preferences::default().with_ratchet_tree_extension(true))
             .psk_store(psk_store.clone())
@@ -280,7 +288,7 @@ impl MlsClient for MlsClientImpl {
         let psk_store = InMemoryPskStore::default();
 
         let client = ClientBuilder::new()
-            .identity_validator(BasicIdentityValidator::new())
+            .identity_provider(BasicIdentityProvider::new())
             .single_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
             .preferences(Preferences::default().with_ratchet_tree_extension(true))
             .psk_store(psk_store.clone())

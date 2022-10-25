@@ -164,7 +164,7 @@ pub(crate) mod test_utils {
     use super::*;
     use crate::{
         identity::test_utils::get_test_signing_identity,
-        provider::identity_validation::BasicIdentityValidator,
+        provider::identity::BasicIdentityProvider,
         tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
     };
 
@@ -176,7 +176,7 @@ pub(crate) mod test_utils {
     ) -> KeyPackage
     where
         F: FnOnce(
-            &mut KeyPackageGenerator<SecretKey, BasicIdentityValidator>,
+            &mut KeyPackageGenerator<SecretKey, BasicIdentityProvider>,
         ) -> KeyPackageGeneration,
     {
         let (signing_identity, secret_key) =
@@ -187,7 +187,7 @@ pub(crate) mod test_utils {
             cipher_suite,
             signing_identity: &signing_identity,
             signing_key: &secret_key,
-            identity_validator: &BasicIdentityValidator::new(),
+            identity_provider: &BasicIdentityProvider::new(),
         };
 
         custom(&mut generator).key_package

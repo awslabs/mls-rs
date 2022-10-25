@@ -1,9 +1,11 @@
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
+use crate::{provider::identity::X509Error, serde_utils::vec_u8_as_base64::VecAsBase64};
+use der::Decode;
 use serde_with::serde_as;
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use x509_cert::Certificate;
 
 mod signing_identity;
 
@@ -117,6 +119,12 @@ impl Deref for CertificateData {
     }
 }
 
+impl CertificateData {
+    pub fn parse(&self) -> Result<Certificate, X509Error> {
+        Certificate::from_der(&self.0).map_err(Into::into)
+    }
+}
+
 #[derive(
     Clone,
     Debug,
@@ -164,6 +172,12 @@ impl CertificateChain {
     pub fn ca(&self) -> Option<&CertificateData> {
         self.0.last()
     }
+
+    pub fn parse(&self) -> Result<Vec<Certificate>, X509Error> {
+        self.iter()
+            .map(|c| c.parse())
+            .collect::<Result<Vec<_>, _>>()
+    }
 }
 
 #[cfg(any(test, feature = "benchmark"))]
@@ -172,7 +186,7 @@ pub mod test_utils {
     use ferriscrypt::asym::ec_key::{self, Curve};
     use x509_cert::Certificate;
 
-    use crate::provider::identity_validation::get_public_key;
+    use crate::provider::identity::get_public_key;
     pub use signing_identity::test_utils::*;
 
     use super::*;

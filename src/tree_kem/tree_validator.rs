@@ -1,7 +1,7 @@
 use crate::{
     cipher_suite::CipherSuite,
     extension::RequiredCapabilitiesExt,
-    provider::identity_validation::IdentityValidator,
+    provider::identity::IdentityProvider,
     tree_kem::{
         leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator},
         RatchetTreeError, TreeKemPublic,
@@ -23,27 +23,27 @@ pub enum TreeValidationError {
 
 pub(crate) struct TreeValidator<'a, C>
 where
-    C: IdentityValidator,
+    C: IdentityProvider,
 {
     expected_tree_hash: &'a [u8],
     leaf_node_validator: LeafNodeValidator<'a, C>,
     group_id: &'a [u8],
 }
 
-impl<'a, C: IdentityValidator> TreeValidator<'a, C> {
+impl<'a, C: IdentityProvider> TreeValidator<'a, C> {
     pub fn new(
         cipher_suite: CipherSuite,
         group_id: &'a [u8],
         tree_hash: &'a [u8],
         required_capabilities: Option<&'a RequiredCapabilitiesExt>,
-        identity_validator: C,
+        identity_provider: C,
     ) -> Self {
         TreeValidator {
             expected_tree_hash: tree_hash,
             leaf_node_validator: LeafNodeValidator::new(
                 cipher_suite,
                 required_capabilities,
-                identity_validator,
+                identity_provider,
             ),
             group_id,
         }
@@ -89,7 +89,7 @@ mod tests {
     use super::*;
     use crate::{
         group::test_utils::get_test_group_context,
-        provider::identity_validation::BasicIdentityValidator,
+        provider::identity::BasicIdentityProvider,
         tree_kem::{
             kem::TreeKem,
             leaf_node::test_utils::{default_properties, get_basic_test_node_sig_key},
@@ -122,7 +122,7 @@ mod tests {
 
         test_tree
             .public
-            .add_leaves(vec![leaf1], BasicIdentityValidator)
+            .add_leaves(vec![leaf1], BasicIdentityProvider)
             .unwrap();
 
         test_tree.public.nodes[1] = Some(Node::Parent(test_parent_node(cipher_suite)));
@@ -136,7 +136,7 @@ mod tests {
                 &[LeafIndex(1)],
                 signers[0],
                 default_properties(test_tree.creator_leaf.signing_identity),
-                BasicIdentityValidator,
+                BasicIdentityProvider,
                 #[cfg(test)]
                 &Default::default(),
             )
@@ -157,7 +157,7 @@ mod tests {
                 b"test_group",
                 &expected_tree_hash,
                 None,
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
             );
 
             validator.validate(&mut test_tree).unwrap();
@@ -175,7 +175,7 @@ mod tests {
                 b"test_group",
                 &expected_tree_hash,
                 None,
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
             );
 
             assert_matches!(
@@ -200,7 +200,7 @@ mod tests {
                 b"test_troup",
                 &expected_tree_hash,
                 None,
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
             );
 
             assert_matches!(
@@ -228,7 +228,7 @@ mod tests {
                 b"test_group",
                 &expected_tree_hash,
                 None,
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
             );
 
             assert_matches!(

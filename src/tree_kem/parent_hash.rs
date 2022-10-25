@@ -297,7 +297,7 @@ pub(crate) mod test_utils {
     use ferriscrypt::asym::ec_key::SecretKey;
 
     use crate::{
-        provider::identity_validation::BasicIdentityValidator,
+        provider::identity::BasicIdentityProvider,
         tree_kem::{leaf_node::test_utils::get_basic_test_node, node::Parent},
     };
 
@@ -336,7 +336,7 @@ pub(crate) mod test_utils {
             .map(|l| get_basic_test_node(cipher_suite, l))
             .to_vec();
 
-        tree.add_leaves(leaves, BasicIdentityValidator).unwrap();
+        tree.add_leaves(leaves, BasicIdentityProvider).unwrap();
 
         tree.nodes[1] = Some(test_parent_node(cipher_suite, vec![]));
         tree.nodes[3] = Some(test_parent_node(cipher_suite, vec![LeafIndex(3)]));
@@ -363,7 +363,7 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::identity_validation::BasicIdentityValidator;
+    use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNodeSource;
     use crate::tree_kem::node::{NodeTypeResolver, NodeVec};
@@ -447,7 +447,7 @@ mod tests {
             .map(|l| get_basic_test_node(cipher_suite, l))
             .to_vec();
 
-        tree.add_leaves(leaves, BasicIdentityValidator).unwrap();
+        tree.add_leaves(leaves, BasicIdentityProvider).unwrap();
 
         tree.nodes[1] = Some(test_parent_node(cipher_suite, vec![]));
         tree.nodes[7] = Some(test_parent_node(cipher_suite, vec![]));
@@ -479,7 +479,7 @@ mod tests {
         .map(|l| get_basic_test_node(cipher_suite, l))
         .to_vec();
 
-        tree.add_leaves(leaves, BasicIdentityValidator).unwrap();
+        tree.add_leaves(leaves, BasicIdentityProvider).unwrap();
 
         for i in [19, 23, 1, 3, 5, 9, 11, 13, 7, 15] {
             tree.nodes[i] = Some(test_parent_node(cipher_suite, vec![]));
@@ -500,7 +500,7 @@ mod tests {
         for leaf_name in ["A", "B", "C"] {
             tree.add_leaves(
                 vec![get_basic_test_node(cipher_suite, leaf_name)],
-                BasicIdentityValidator,
+                BasicIdentityProvider,
             )
             .unwrap();
         }
@@ -549,7 +549,7 @@ mod tests {
             let tree = TreeKemPublic::import_node_data(
                 cipher_suite.unwrap(),
                 NodeVec::tls_deserialize(&mut &*one_case.tree_data).unwrap(),
-                BasicIdentityValidator,
+                BasicIdentityProvider,
             )
             .unwrap();
 

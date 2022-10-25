@@ -2,7 +2,7 @@ use aws_mls::{
     bench_utils::create_empty_tree::{load_test_cases, TestCase},
     cipher_suite::CipherSuite,
     extension::{ExtensionList, LeafNodeExtension},
-    provider::identity_validation::BasicIdentityValidator,
+    provider::identity::BasicIdentityProvider,
     tree_kem::{
         kem::TreeKem,
         leaf_node::{test_utils::get_test_capabilities, ConfigProperties},
@@ -56,7 +56,7 @@ fn bench_encap(
                             excluding,
                             &value.encap_signer,
                             update_leaf_properties,
-                            BasicIdentityValidator,
+                            BasicIdentityProvider,
                         )
                         .unwrap()
                 })

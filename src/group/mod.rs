@@ -21,6 +21,7 @@ use crate::extension::{
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
 use crate::protocol_version::ProtocolVersion;
+use crate::provider::identity::IdentityProvider;
 use crate::provider::keychain::KeychainStorage;
 use crate::provider::psk::{PskStore, PskStoreIdValidator};
 use crate::psk::{
@@ -56,7 +57,9 @@ use transcript_hash::*;
 pub(crate) use self::commit::test_utils::CommitModifiers;
 
 use self::epoch::{EpochSecrets, PriorEpoch, SenderDataSecret};
-pub use self::message_processor::{Event, ExternalEvent, ProcessedMessage, StateUpdate};
+pub use self::message_processor::{
+    Event, ExternalEvent, ProcessedMessage, RosterUpdate, StateUpdate,
+};
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
 use self::state_repo::GroupStateRepository;
 pub use external_group::ExternalGroup;
@@ -184,14 +187,14 @@ where
             leaf_properties,
             &signer,
             config.lifetime(),
-            &config.identity_validator(),
+            &config.identity_provider(),
         )?;
 
         let (mut public_tree, private_tree) = TreeKemPublic::derive(
             cipher_suite,
             leaf_node,
             leaf_node_secret,
-            config.identity_validator(),
+            config.identity_provider(),
         )?;
 
         let tree_hash = public_tree.tree_hash()?;
@@ -334,7 +337,7 @@ where
                 protocol_version,
                 group_info,
                 tree_data,
-                &config.identity_validator(),
+                &config.identity_provider(),
             )?;
 
         // Identify a leaf in the tree array (any even-numbered node) whose leaf_node is identical
@@ -460,7 +463,7 @@ where
             protocol_version,
             group_info,
             tree_data,
-            &config.identity_validator(),
+            &config.identity_provider(),
         )?;
 
         let (leaf_properties, signer) =
@@ -471,7 +474,7 @@ where
             leaf_properties,
             &signer,
             config.lifetime(),
-            &config.identity_validator(),
+            &config.identity_provider(),
         )?;
 
         let (init_secret, kem_output) = InitSecret::encode_for_external(
@@ -707,7 +710,7 @@ where
             new_context.protocol_version,
             new_context.cipher_suite,
             required_capabilities.as_ref(),
-            self.config.identity_validator(),
+            self.config.identity_provider(),
         );
 
         // Generate new leaves for all existing members
@@ -740,12 +743,12 @@ where
             new_context.cipher_suite,
             new_validated_leaf,
             new_leaf_secret,
-            self.config.identity_validator(),
+            self.config.identity_provider(),
         )?;
 
         // Add the generated leaves to new tree
         let added_member_indexes =
-            new_pub_tree.add_leaves(new_members, self.config.identity_validator())?;
+            new_pub_tree.add_leaves(new_members, self.config.identity_provider())?;
 
         new_context.tree_hash = new_pub_tree.tree_hash()?;
 
@@ -856,7 +859,7 @@ where
             leaf_properties,
             &signer,
             self.config.lifetime(),
-            &self.config.identity_validator(),
+            &self.config.identity_provider(),
         )?;
 
         let mut new_context = GroupContext {
@@ -930,7 +933,7 @@ where
             leaf_properties,
             &new_signer,
             config.lifetime(),
-            &config.identity_validator(),
+            &config.identity_provider(),
         )?;
 
         let mut new_context = GroupContext {
@@ -1067,7 +1070,7 @@ where
             self.state.protocol_version(),
             self.state.cipher_suite(),
             None,
-            self.config.identity_validator(),
+            self.config.identity_provider(),
         );
 
         key_package_validator.check_if_valid(&key_package, Default::default())?;
@@ -1295,7 +1298,10 @@ where
         Ok(auth_content)
     }
 
-    pub fn apply_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
+    pub fn apply_pending_commit(
+        &mut self,
+    ) -> Result<StateUpdate<<C::IdentityProvider as IdentityProvider>::IdentityEvent>, GroupError>
+    {
         let pending_commit = self
             .pending_commit
             .clone()
@@ -1318,7 +1324,10 @@ where
     pub fn process_incoming_message(
         &mut self,
         message: MLSMessage,
-    ) -> Result<ProcessedMessage<Event>, GroupError> {
+    ) -> Result<
+        ProcessedMessage<Event<<C::IdentityProvider as IdentityProvider>::IdentityEvent>>,
+        GroupError,
+    > {
         MessageProcessor::process_incoming_message(self, message)
     }
 
@@ -1398,7 +1407,7 @@ where
         self.context().cipher_suite
     }
 
-    pub fn roster(&self) -> Roster<impl Iterator<Item = Member> + '_> {
+    pub fn roster(&self) -> Vec<Member> {
         self.group_state().roster()
     }
 
@@ -1433,13 +1442,14 @@ where
     }
 }
 
-impl<C> MessageProcessor<Event> for Group<C>
+impl<C> MessageProcessor for Group<C>
 where
     C: ClientConfig + Clone,
 {
     type ProposalFilter = <C::MakeProposalFilter as MakeProposalFilter>::Filter;
-    type IdentityValidator = C::IdentityValidator;
+    type IdentityProvider = C::IdentityProvider;
     type ExternalPskIdValidator = PskStoreIdValidator<C::PskStore>;
+    type EventType = Event<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>;
 
     fn self_index(&self) -> Option<LeafIndex> {
         Some(self.private_tree.self_index)
@@ -1448,7 +1458,10 @@ where
     fn process_ciphertext(
         &mut self,
         cipher_text: MLSCiphertext,
-    ) -> Result<EventOrContent<Event>, GroupError> {
+    ) -> Result<
+        EventOrContent<Event<<C::IdentityProvider as IdentityProvider>::IdentityEvent>>,
+        GroupError,
+    > {
         self.decrypt_incoming_ciphertext(cipher_text)
             .map(EventOrContent::Content)
     }
@@ -1456,7 +1469,10 @@ where
     fn verify_plaintext_authentication(
         &self,
         message: MLSPlaintext,
-    ) -> Result<EventOrContent<Event>, GroupError> {
+    ) -> Result<
+        EventOrContent<Event<<C::IdentityProvider as IdentityProvider>::IdentityEvent>>,
+        GroupError,
+    > {
         let auth_content = crate::group::message_verifier::verify_plaintext_authentication(
             message,
             Some(&self.key_schedule),
@@ -1484,7 +1500,7 @@ where
             provisional_state.public_tree.apply_update_path(
                 self.private_tree.self_index,
                 &update_path,
-                self.identity_validator(),
+                self.identity_provider(),
             )?;
 
             Ok(pending.clone())
@@ -1502,7 +1518,7 @@ where
                     .map(|(_, index)| *index)
                     .collect::<Vec<LeafIndex>>(),
                 &mut provisional_state.group_context,
-                self.config.identity_validator(),
+                self.config.identity_provider(),
             )
             .map(|root_secret| (provisional_private_tree, root_secret))
         }?;
@@ -1616,8 +1632,8 @@ where
         self.config.proposal_filter(init)
     }
 
-    fn identity_validator(&self) -> Self::IdentityValidator {
-        self.config.identity_validator()
+    fn identity_provider(&self) -> Self::IdentityProvider {
+        self.config.identity_provider()
     }
 
     fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator {
@@ -2227,11 +2243,10 @@ mod tests {
         );
     }
 
-    fn canonicalize_state_update(update: &mut StateUpdate) {
-        update.added.sort();
-        update.updated.sort();
-
-        update.removed.sort_by_key(|a| a.index());
+    fn canonicalize_state_update<IE>(update: &mut StateUpdate<IE>) {
+        update.roster_update.added.sort_by_key(|a| a.index());
+        update.roster_update.updated.sort_by_key(|a| a.index());
+        update.roster_update.removed.sort_by_key(|a| a.index());
     }
 
     #[test]
@@ -2300,20 +2315,31 @@ mod tests {
         let mut state_update_alice = alice.process_pending_commit().unwrap();
         canonicalize_state_update(&mut state_update_alice);
 
-        assert_eq!(state_update_alice.added, vec![2, 5, 6, 10, 11]);
+        assert_eq!(
+            state_update_alice
+                .roster_update
+                .added
+                .iter()
+                .map(|m| m.index())
+                .collect::<Vec<_>>(),
+            vec![2, 5, 6, 10, 11]
+        );
 
         assert_eq!(
-            state_update_alice.removed,
+            state_update_alice.roster_update.removed,
             vec![2, 5, 6]
                 .into_iter()
                 .map(|i| Member::from((LeafIndex(i), &leaves[i as usize - 2])))
                 .collect::<Vec<_>>()
         );
 
-        assert_eq!(state_update_alice.updated, vec![1]);
+        assert_eq!(
+            state_update_alice.roster_update.updated,
+            vec![alice.group.roster()[1].clone()]
+        );
 
         assert_eq!(
-            state_update_alice.psks,
+            state_update_alice.added_psks,
             (0..5)
                 .map(|i| JustPreSharedKeyID::External(ExternalPskId(vec![i])))
                 .collect::<Vec<_>>()
@@ -2324,10 +2350,19 @@ mod tests {
 
         if let Event::Commit(mut state_update_bob) = payload {
             canonicalize_state_update(&mut state_update_bob);
-            assert_eq!(state_update_alice.added, state_update_bob.added);
-            assert_eq!(state_update_alice.removed, state_update_bob.removed);
-            assert_eq!(state_update_alice.updated, state_update_bob.updated);
-            assert_eq!(state_update_alice.psks, state_update_bob.psks);
+            assert_eq!(
+                state_update_alice.roster_update.added,
+                state_update_bob.roster_update.added
+            );
+            assert_eq!(
+                state_update_alice.roster_update.removed,
+                state_update_bob.roster_update.removed
+            );
+            assert_eq!(
+                state_update_alice.roster_update.updated,
+                state_update_bob.roster_update.updated
+            );
+            assert_eq!(state_update_alice.added_psks, state_update_bob.added_psks);
         }
     }
 
@@ -2596,8 +2631,17 @@ mod tests {
 
         let state_update = alice_group.process_pending_commit().unwrap();
 
-        assert_eq!(state_update.added, vec![1]);
-        assert_eq!(alice_group.group.roster().member_count(), 2);
+        assert_eq!(
+            state_update
+                .roster_update
+                .added
+                .into_iter()
+                .map(|m| m.index())
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+
+        assert_eq!(alice_group.group.roster().len(), 2);
     }
 
     #[test]
@@ -3056,7 +3100,7 @@ mod tests {
 
         // Check that the credential was updated by in the committer's state.
         groups[1].process_pending_commit().unwrap();
-        let new_member = groups[1].group.roster().next().unwrap();
+        let new_member = groups[1].group.roster().first().cloned().unwrap();
 
         assert_eq!(
             new_member.signing_identity().credential,
@@ -3070,7 +3114,7 @@ mod tests {
 
         // Check that the credential was updated in the updater's state.
         groups[0].process_message(commit).unwrap();
-        let new_member = groups[0].group.roster().next().unwrap();
+        let new_member = groups[0].group.roster().first().cloned().unwrap();
 
         assert_eq!(
             new_member.signing_identity().credential,

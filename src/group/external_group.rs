@@ -7,7 +7,7 @@ use super::{
     message_processor::{EventOrContent, MessageProcessor, ProcessedMessage, ProvisionalState},
     message_signature::MLSAuthenticatedContent,
     proposal::{AddProposal, Proposal, RemoveProposal},
-    validate_group_info, ExternalEvent, Member, ProposalRef, Roster,
+    validate_group_info, ExternalEvent, Member, ProposalRef,
 };
 use crate::{
     cipher_suite::CipherSuite,
@@ -18,7 +18,7 @@ use crate::{
         Content, GroupError, GroupState, InterimTranscriptHash, MLSMessage, MLSMessagePayload,
     },
     protocol_version::ProtocolVersion,
-    provider::keychain::KeychainStorage,
+    provider::{identity::IdentityProvider, keychain::KeychainStorage},
     psk::PassThroughPskIdValidator,
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
 };
@@ -50,7 +50,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             protocol_version,
             group_info,
             tree_data,
-            &config.identity_validator(),
+            &config.identity_provider(),
         )?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
@@ -73,7 +73,10 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub fn process_incoming_message(
         &mut self,
         message: MLSMessage,
-    ) -> Result<ProcessedMessage<ExternalEvent>, GroupError> {
+    ) -> Result<
+        ProcessedMessage<ExternalEvent<<C::IdentityProvider as IdentityProvider>::IdentityEvent>>,
+        GroupError,
+    > {
         MessageProcessor::process_incoming_message(self, message)
     }
 
@@ -178,18 +181,19 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .map_err(Into::into)
     }
 
-    pub fn roster(&self) -> Roster<impl Iterator<Item = Member> + '_> {
+    pub fn roster(&self) -> Vec<Member> {
         self.group_state().roster()
     }
 }
 
-impl<C> MessageProcessor<ExternalEvent> for ExternalGroup<C>
+impl<C> MessageProcessor for ExternalGroup<C>
 where
     C: ExternalClientConfig + Clone,
 {
     type ProposalFilter = <C::MakeProposalFilter as MakeProposalFilter>::Filter;
-    type IdentityValidator = C::IdentityValidator;
+    type IdentityProvider = C::IdentityProvider;
     type ExternalPskIdValidator = PassThroughPskIdValidator;
+    type EventType = ExternalEvent<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>;
 
     fn self_index(&self) -> Option<LeafIndex> {
         None
@@ -202,7 +206,7 @@ where
     fn verify_plaintext_authentication(
         &self,
         message: MLSPlaintext,
-    ) -> Result<EventOrContent<ExternalEvent>, GroupError> {
+    ) -> Result<EventOrContent<Self::EventType>, GroupError> {
         let auth_content = crate::group::message_verifier::verify_plaintext_authentication(
             message,
             None,
@@ -216,7 +220,7 @@ where
     fn process_ciphertext(
         &mut self,
         cipher_text: MLSCiphertext,
-    ) -> Result<EventOrContent<ExternalEvent>, GroupError> {
+    ) -> Result<EventOrContent<Self::EventType>, GroupError> {
         Ok(EventOrContent::Event(ExternalEvent::Ciphertext(
             cipher_text,
         )))
@@ -238,8 +242,8 @@ where
         Ok(())
     }
 
-    fn identity_validator(&self) -> Self::IdentityValidator {
-        self.config.identity_validator()
+    fn identity_provider(&self) -> Self::IdentityProvider {
+        self.config.identity_provider()
     }
 
     fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator {
@@ -396,7 +400,10 @@ mod tests {
 
         let commit_result = server.process_incoming_message(commit).unwrap();
 
-        assert_matches!(commit_result.event, ExternalEvent::Commit(state_update) if state_update.added.contains(&LeafIndex(1)));
+        assert_matches!(
+            commit_result.event,
+            ExternalEvent::Commit(state_update) if state_update.roster_update.added.iter().any(|added| added.index() == 1)
+        );
 
         assert_eq!(alice.group.state, server.state);
     }
@@ -412,7 +419,7 @@ mod tests {
             _ => panic!("Expected processed commit"),
         };
 
-        assert_eq!(update.added.len(), 1);
+        assert_eq!(update.roster_update.added.len(), 1);
         assert_eq!(server.state.public_tree.get_leaf_nodes().len(), 2);
 
         assert_eq!(alice.group.state, server.state);

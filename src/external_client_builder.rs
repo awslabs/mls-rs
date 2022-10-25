@@ -15,7 +15,7 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     provider::{
-        identity_validation::IdentityValidator,
+        identity::IdentityProvider,
         keychain::{FirstIdentitySelector, InMemoryKeychain, KeychainStorage},
     },
     tree_kem::Capabilities,
@@ -30,12 +30,12 @@ pub type BaseConfig = Config<Missing, Missing, KeepAllProposals>;
 /// Builder for `ExternalClient`
 ///
 /// This is returned by [`ExternalClient::builder`] and allows to tweak settings the
-/// `ExternalClient` will use. At a minimum, the builder must be told the [`IdentityValidator`] and
-/// [`Keychain`] to use. Other settings have default values. This means that the following methods
+/// `ExternalClient` will use. At a minimum, the builder must be told the [`IdentityProvider`] and
+/// [`KeychainStorage`] to use. Other settings have default values. This means that the following methods
 /// must be called before [`ExternalClientBuilder::build`]:
 ///
-/// - To specify the [`IdentityValidator`]: [`ExternalClientBuilder::identity_validator`]
-/// - To specify the [`Keychain`], one of:
+/// - To specify the [`IdentityProvider`]: [`ExternalClientBuilder::identity_provider`]
+/// - To specify the [`KeychainStorage`], one of:
 ///   - [`ExternalClientBuilder::keychain`]
 ///   - [`ExternalClientBuilder::single_signing_identity`]
 ///
@@ -44,14 +44,14 @@ pub type BaseConfig = Config<Missing, Missing, KeepAllProposals>;
 /// ```
 /// use aws_mls::{
 ///     external_client::ExternalClient,
-///     provider::{identity_validation::BasicIdentityValidator, keychain::InMemoryKeychain},
+///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
 /// };
 ///
 /// let keychain = InMemoryKeychain::default();
 /// // Add code to populate keychain here
 ///
 /// let _client = ExternalClient::builder()
-///     .identity_validator(BasicIdentityValidator::new())
+///     .identity_provider(BasicIdentityProvider::new())
 ///     .keychain(keychain)
 ///     .build();
 /// ```
@@ -64,12 +64,12 @@ pub type BaseConfig = Config<Missing, Missing, KeepAllProposals>;
 /// ```
 /// use aws_mls::{
 ///     external_client::{ExternalClient, MlsConfig},
-///     provider::{identity_validation::BasicIdentityValidator, keychain::InMemoryKeychain},
+///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
 /// };
 ///
 /// fn make_client() -> ExternalClient<impl MlsConfig> {
 ///     ExternalClient::builder()
-///         .identity_validator(BasicIdentityValidator::new())
+///         .identity_provider(BasicIdentityProvider::new())
 ///         .keychain(InMemoryKeychain::default())
 ///         .build()
 /// }
@@ -78,21 +78,21 @@ pub type BaseConfig = Config<Missing, Missing, KeepAllProposals>;
 /// The second option is more verbose and consists in writing the full `ExternalClient` type:
 /// ```
 /// use aws_mls::{
-///     external_client::{BaseConfig, ExternalClient, WithIdentityValidator, WithKeychain},
+///     external_client::{BaseConfig, ExternalClient, WithIdentityProvider, WithKeychain},
 ///     provider::{
-///         identity_validation::BasicIdentityValidator,
+///         identity::BasicIdentityProvider,
 ///         keychain::{InMemoryKeychain, FirstIdentitySelector},
 ///     },
 /// };
 ///
-/// type MlsClient = ExternalClient<WithKeychain<InMemoryKeychain<FirstIdentitySelector>, WithIdentityValidator<
-///     BasicIdentityValidator,
+/// type MlsClient = ExternalClient<WithKeychain<InMemoryKeychain<FirstIdentitySelector>, WithIdentityProvider<
+///     BasicIdentityProvider,
 ///     BaseConfig,
 /// >>>;
 ///
 /// fn make_client_2() -> MlsClient {
 ///     ExternalClient::builder()
-///         .identity_validator(BasicIdentityValidator::new())
+///         .identity_provider(BasicIdentityProvider::new())
 ///         .keychain(InMemoryKeychain::default())
 ///         .build()
 /// }
@@ -112,7 +112,7 @@ impl ExternalClientBuilder<BaseConfig> {
         Self(Config(ConfigInner {
             settings: Default::default(),
             keychain: Missing,
-            identity_validator: Missing,
+            identity_provider: Missing,
             make_proposal_filter: KeepAllProposals,
         }))
     }
@@ -214,7 +214,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         ExternalClientBuilder(Config(ConfigInner {
             settings: c.settings,
             keychain,
-            identity_validator: c.identity_validator,
+            identity_provider: c.identity_provider,
             make_proposal_filter: c.make_proposal_filter,
         }))
     }
@@ -233,18 +233,18 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
     }
 
     /// Set the identity validator to be used by the client.
-    pub fn identity_validator<I>(
+    pub fn identity_provider<I>(
         self,
-        identity_validator: I,
-    ) -> ExternalClientBuilder<WithIdentityValidator<I, C>>
+        identity_provider: I,
+    ) -> ExternalClientBuilder<WithIdentityProvider<I, C>>
     where
-        I: IdentityValidator,
+        I: IdentityProvider,
     {
         let Config(c) = self.0.into_config();
         ExternalClientBuilder(Config(ConfigInner {
             settings: c.settings,
             keychain: c.keychain,
-            identity_validator,
+            identity_provider,
             make_proposal_filter: c.make_proposal_filter,
         }))
     }
@@ -265,7 +265,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         ExternalClientBuilder(Config(ConfigInner {
             settings: c.settings,
             keychain: c.keychain,
-            identity_validator: c.identity_validator,
+            identity_provider: c.identity_provider,
             make_proposal_filter: MakeSimpleProposalFilter(f),
         }))
     }
@@ -274,7 +274,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
 impl<C: IntoConfig> ExternalClientBuilder<C>
 where
     C::Keychain: KeychainStorage + Clone,
-    C::IdentityValidator: IdentityValidator + Clone,
+    C::IdentityProvider: IdentityProvider + Clone,
     C::MakeProposalFilter: MakeProposalFilter + Clone,
 {
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
@@ -321,12 +321,12 @@ pub struct Missing;
 ///
 /// See [`ExternalClientBuilder::keychain`].
 pub type WithKeychain<K, C> =
-    Config<K, <C as IntoConfig>::IdentityValidator, <C as IntoConfig>::MakeProposalFilter>;
+    Config<K, <C as IntoConfig>::IdentityProvider, <C as IntoConfig>::MakeProposalFilter>;
 
 /// Change the identity validator used by a client configuration.
 ///
-/// See [`ExternalClientBuilder::identity_validator`].
-pub type WithIdentityValidator<I, C> =
+/// See [`ExternalClientBuilder::identity_provider`].
+pub type WithIdentityProvider<I, C> =
     Config<<C as IntoConfig>::Keychain, I, <C as IntoConfig>::MakeProposalFilter>;
 
 /// Change the proposal filter used by a client configuration.
@@ -334,25 +334,25 @@ pub type WithIdentityValidator<I, C> =
 /// See [`ExternalClientBuilder::proposal_filter`].
 pub type WithProposalFilter<F, C> = Config<
     <C as IntoConfig>::Keychain,
-    <C as IntoConfig>::IdentityValidator,
+    <C as IntoConfig>::IdentityProvider,
     MakeSimpleProposalFilter<F>,
 >;
 
 /// Helper alias for `Config`.
 pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::Keychain,
-    <C as IntoConfig>::IdentityValidator,
+    <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MakeProposalFilter,
 >;
 
 impl<K, Iv, Mpf> ExternalClientConfig for ConfigInner<K, Iv, Mpf>
 where
     K: KeychainStorage + Clone,
-    Iv: IdentityValidator + Clone,
+    Iv: IdentityProvider + Clone,
     Mpf: MakeProposalFilter + Clone,
 {
     type Keychain = K;
-    type IdentityValidator = Iv;
+    type IdentityProvider = Iv;
     type MakeProposalFilter = Mpf;
 
     fn keychain(&self) -> Self::Keychain {
@@ -371,8 +371,8 @@ where
         self.settings.protocol_versions.clone()
     }
 
-    fn identity_validator(&self) -> Self::IdentityValidator {
-        self.identity_validator.clone()
+    fn identity_provider(&self) -> Self::IdentityProvider {
+        self.identity_provider.clone()
     }
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
@@ -399,7 +399,7 @@ impl<K, Iv, Mpf> Sealed for Config<K, Iv, Mpf> {}
 impl<K, Iv, Mpf> MlsConfig for Config<K, Iv, Mpf>
 where
     K: KeychainStorage + Clone,
-    Iv: IdentityValidator + Clone,
+    Iv: IdentityProvider + Clone,
     Mpf: MakeProposalFilter + Clone,
 {
     type Output = ConfigInner<K, Iv, Mpf>;
@@ -425,7 +425,7 @@ pub trait MlsConfig: Clone + Sealed {
 /// Blanket implementation so that `T: MlsConfig` implies `T: ExternalClientConfig`
 impl<T: MlsConfig> ExternalClientConfig for T {
     type Keychain = <T::Output as ExternalClientConfig>::Keychain;
-    type IdentityValidator = <T::Output as ExternalClientConfig>::IdentityValidator;
+    type IdentityProvider = <T::Output as ExternalClientConfig>::IdentityProvider;
     type MakeProposalFilter = <T::Output as ExternalClientConfig>::MakeProposalFilter;
 
     fn keychain(&self) -> Self::Keychain {
@@ -444,8 +444,8 @@ impl<T: MlsConfig> ExternalClientConfig for T {
         self.get().supported_protocol_versions()
     }
 
-    fn identity_validator(&self) -> Self::IdentityValidator {
-        self.get().identity_validator()
+    fn identity_provider(&self) -> Self::IdentityProvider {
+        self.get().identity_provider()
     }
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
@@ -501,13 +501,13 @@ mod private {
     pub struct ConfigInner<K, Iv, Mpf> {
         pub(crate) settings: Settings,
         pub(crate) keychain: K,
-        pub(crate) identity_validator: Iv,
+        pub(crate) identity_provider: Iv,
         pub(crate) make_proposal_filter: Mpf,
     }
 
     pub trait IntoConfig {
         type Keychain;
-        type IdentityValidator;
+        type IdentityProvider;
         type MakeProposalFilter;
 
         fn into_config(self) -> IntoConfigOutput<Self>;
@@ -515,7 +515,7 @@ mod private {
 
     impl<K, Iv, Mpf> IntoConfig for Config<K, Iv, Mpf> {
         type Keychain = K;
-        type IdentityValidator = Iv;
+        type IdentityProvider = Iv;
         type MakeProposalFilter = Mpf;
 
         fn into_config(self) -> Self {
@@ -530,16 +530,16 @@ use private::{Config, ConfigInner, IntoConfig};
 pub mod test_utils {
     use crate::{
         external_client_builder::{
-            BaseConfig, ExternalClientBuilder, WithIdentityValidator, WithKeychain,
+            BaseConfig, ExternalClientBuilder, WithIdentityProvider, WithKeychain,
         },
         provider::{
-            identity_validation::BasicIdentityValidator,
+            identity::BasicIdentityProvider,
             keychain::{FirstIdentitySelector, InMemoryKeychain},
         },
     };
 
-    pub type TestExternalClientConfig = WithIdentityValidator<
-        BasicIdentityValidator,
+    pub type TestExternalClientConfig = WithIdentityProvider<
+        BasicIdentityProvider,
         WithKeychain<InMemoryKeychain<FirstIdentitySelector>, BaseConfig>,
     >;
 
@@ -548,7 +548,7 @@ pub mod test_utils {
     impl TestExternalClientBuilder {
         pub fn new_for_test() -> Self {
             ExternalClientBuilder::new()
-                .identity_validator(BasicIdentityValidator::new())
+                .identity_provider(BasicIdentityProvider::new())
                 .keychain(InMemoryKeychain::default())
         }
     }

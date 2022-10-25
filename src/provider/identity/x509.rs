@@ -7,11 +7,12 @@ use thiserror::Error;
 use x509_cert::certificate::Certificate;
 
 use crate::cipher_suite::CipherSuite;
+use crate::group::{Member, RosterUpdate};
 use crate::identity::SigningIdentity;
 use crate::identity::{
     CertificateData, CredentialError, MlsCredential, X509Credential, CREDENTIAL_TYPE_X509,
 };
-use crate::provider::identity_validation::IdentityValidator;
+use crate::provider::identity::IdentityProvider;
 
 #[derive(Debug, Error)]
 pub enum X509Error {
@@ -21,6 +22,8 @@ pub enum X509Error {
     EmptyCertificateChain,
     #[error(transparent)]
     EcKeyError(#[from] EcKeyError),
+    #[error(transparent)]
+    DerError(#[from] x509_cert::der::Error),
     #[error("validating a certificate type that is not X.509")]
     NotX509Certificate,
     #[error("signature invalid for parent certificate {0} and child certificate {1}")]
@@ -38,7 +41,7 @@ pub enum X509Error {
     CurveMismatch(Curve, Curve),
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
-    #[error("fetching identity error: {0:?}")]
+    #[error("identity extractor error: {0:?}")]
     IdentityError(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("self-signed certificate provided as chain of length {0} but it must have length 1")]
     SelfSignedWrongLength(usize),
@@ -47,7 +50,7 @@ pub enum X509Error {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct BasicX509Validator<I: X509IdentityExtractor> {
+pub struct BasicX509Provider<I: X509IdentityExtractor> {
     ca_certs: HashSet<Vec<u8>>,
     id_extractor: I,
     allow_self_signed: bool,
@@ -56,6 +59,7 @@ pub struct BasicX509Validator<I: X509IdentityExtractor> {
 
 pub trait X509IdentityExtractor {
     type Error: std::error::Error + Send + Sync + 'static;
+    type IdentityEvent;
 
     fn identity(&self, cert_chain: &[Certificate]) -> Result<Vec<u8>, Self::Error>;
 
@@ -64,9 +68,15 @@ pub trait X509IdentityExtractor {
         predecessor: &[Certificate],
         successor: &[Certificate],
     ) -> Result<bool, Self::Error>;
+
+    fn identity_events(
+        &self,
+        update: &RosterUpdate,
+        prior_roster: Vec<Member>,
+    ) -> Result<Vec<Self::IdentityEvent>, Self::Error>;
 }
 
-impl<I: X509IdentityExtractor> BasicX509Validator<I> {
+impl<I: X509IdentityExtractor> BasicX509Provider<I> {
     pub fn new(ca_certs: Vec<&[u8]>, id_generator: I) -> Result<Self, X509Error> {
         let ca_certs = ca_certs
             .into_iter()
@@ -143,8 +153,9 @@ impl<I: X509IdentityExtractor> BasicX509Validator<I> {
     }
 }
 
-impl<I: X509IdentityExtractor> IdentityValidator for BasicX509Validator<I> {
+impl<IE: X509IdentityExtractor> IdentityProvider for BasicX509Provider<IE> {
     type Error = X509Error;
+    type IdentityEvent = IE::IdentityEvent;
 
     fn validate(
         &self,
@@ -162,7 +173,7 @@ impl<I: X509IdentityExtractor> IdentityValidator for BasicX509Validator<I> {
         let x509_cred = X509Credential::from_credential(&signing_id.credential)?;
 
         self.id_extractor
-            .identity(&to_certs(&x509_cred.credential)?)
+            .identity(&x509_cred.credential.parse()?)
             .map_err(|e| X509Error::IdentityError(e.into()))
     }
 
@@ -172,10 +183,10 @@ impl<I: X509IdentityExtractor> IdentityValidator for BasicX509Validator<I> {
         successor: &SigningIdentity,
     ) -> Result<bool, Self::Error> {
         let predecessor_cred = X509Credential::from_credential(&predecessor.credential)?;
-        let predecessor_certs = to_certs(&predecessor_cred.credential)?;
+        let predecessor_certs = predecessor_cred.credential.parse()?;
 
         let successor_cred = X509Credential::from_credential(&successor.credential)?;
-        let successor_certs = to_certs(&successor_cred.credential)?;
+        let successor_certs = successor_cred.credential.parse()?;
 
         self.id_extractor
             .valid_successor(&predecessor_certs, &successor_certs)
@@ -185,14 +196,16 @@ impl<I: X509IdentityExtractor> IdentityValidator for BasicX509Validator<I> {
     fn supported_types(&self) -> Vec<crate::identity::CredentialType> {
         vec![CREDENTIAL_TYPE_X509]
     }
-}
 
-fn to_certs(chain: &'_ [CertificateData]) -> Result<Vec<Certificate<'_>>, X509Error> {
-    chain
-        .iter()
-        .map(|cert_data| Certificate::from_der(cert_data))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(X509Error::CertificateParseError)
+    fn identity_events(
+        &self,
+        update: &RosterUpdate,
+        prior_roster: Vec<Member>,
+    ) -> Result<Vec<Self::IdentityEvent>, Self::Error> {
+        self.id_extractor
+            .identity_events(update, prior_roster)
+            .map_err(|e| X509Error::IdentityError(e.into()))
+    }
 }
 
 fn verify_cert(verifier: &Certificate, verified: &Certificate) -> Result<(), X509Error> {
@@ -301,6 +314,8 @@ fn validate_self_signed(
 
 #[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
+    use crate::group::{Member, RosterUpdate};
+
     use super::{Certificate, X509Error, X509IdentityExtractor};
 
     #[derive(Clone, Debug)]
@@ -308,6 +323,7 @@ pub(crate) mod test_utils {
 
     impl X509IdentityExtractor for TestIdGenerator {
         type Error = X509Error;
+        type IdentityEvent = ();
 
         fn identity(&self, chain: &[Certificate]) -> Result<Vec<u8>, X509Error> {
             Ok(chain
@@ -342,6 +358,14 @@ pub(crate) mod test_utils {
 
             Ok(id1 == id2)
         }
+
+        fn identity_events(
+            &self,
+            _update: &RosterUpdate,
+            _prior_roster: Vec<Member>,
+        ) -> Result<Vec<Self::IdentityEvent>, Self::Error> {
+            Ok(vec![])
+        }
     }
 }
 
@@ -353,7 +377,7 @@ mod tests {
     };
 
     use super::{
-        get_public_key, test_utils::TestIdGenerator, BasicX509Validator, IdentityValidator,
+        get_public_key, test_utils::TestIdGenerator, BasicX509Provider, IdentityProvider,
         SigningIdentity, X509Error,
     };
     use crate::cipher_suite::CipherSuite;
@@ -370,7 +394,7 @@ mod tests {
         leaf_pk: ec_key::PublicKey,
     ) -> Result<(), X509Error> {
         let ca: Vec<&[u8]> = vec![chain.ca().unwrap()];
-        let validator = BasicX509Validator::new(ca, TestIdGenerator {}).unwrap();
+        let validator = BasicX509Provider::new(ca, TestIdGenerator {}).unwrap();
         let credential = get_test_x509_credential(chain);
 
         let signing_id = SigningIdentity {
@@ -418,7 +442,7 @@ mod tests {
     #[test]
     fn verifying_unknown_ca_fails() {
         let (chain, leaf_pk) = test_chain();
-        let validator = BasicX509Validator::new(vec![], TestIdGenerator {}).unwrap();
+        let validator = BasicX509Provider::new(vec![], TestIdGenerator {}).unwrap();
         let credential = get_test_x509_credential(chain);
 
         let signing_id = SigningIdentity {
@@ -450,7 +474,7 @@ mod tests {
     #[test]
     fn verifying_rsa_fails_gracefully() {
         let rsa_cert_bytes = include_bytes!("../../../test_data/rsa_cert.der").to_vec();
-        let validator = BasicX509Validator::new(vec![&rsa_cert_bytes], TestIdGenerator {});
+        let validator = BasicX509Provider::new(vec![&rsa_cert_bytes], TestIdGenerator {});
         assert_matches!(validator, Err(X509Error::UnsupportedAlgorithm(_)));
     }
 
@@ -465,7 +489,7 @@ mod tests {
         der::Encode::encode_to_vec(&invalid_ca, &mut invalid_ca_bytes).unwrap();
 
         assert_matches!(
-            BasicX509Validator::new(vec![&valid_ca_bytes, &invalid_ca_bytes], TestIdGenerator {}),
+            BasicX509Provider::new(vec![&valid_ca_bytes, &invalid_ca_bytes], TestIdGenerator {}),
             Err(X509Error::InvalidSignature(..))
         );
     }
@@ -485,13 +509,13 @@ mod tests {
 
         let cert_data = curves.into_iter().map(test_cert).collect::<Vec<_>>();
         let certs = cert_data.iter().map(|cert| &cert[..]).collect();
-        BasicX509Validator::new(certs, TestIdGenerator {}).unwrap();
+        BasicX509Provider::new(certs, TestIdGenerator {}).unwrap();
     }
 
     #[test]
     fn empty_chain_is_rejected() {
         let (_, leaf_pk) = test_chain();
-        let validator = BasicX509Validator::new(Vec::new(), TestIdGenerator {}).unwrap();
+        let validator = BasicX509Provider::new(Vec::new(), TestIdGenerator {}).unwrap();
 
         let credential = X509Credential {
             credential: Vec::new().into(),
@@ -515,7 +539,7 @@ mod tests {
     fn verifying_invalid_ciphersuite_fails() {
         let (chain, leaf_pk) = test_chain();
         let validator =
-            BasicX509Validator::new(vec![chain.ca().unwrap()], TestIdGenerator {}).unwrap();
+            BasicX509Provider::new(vec![chain.ca().unwrap()], TestIdGenerator {}).unwrap();
 
         let credential = X509Credential { credential: chain }
             .to_credential()
@@ -534,7 +558,7 @@ mod tests {
 
     #[test]
     fn verifying_self_signed_works() {
-        let mut validator = BasicX509Validator::new(vec![], TestIdGenerator {}).unwrap();
+        let mut validator = BasicX509Provider::new(vec![], TestIdGenerator {}).unwrap();
         validator.allow_self_signed(true);
 
         let bytes = include_bytes!("../../../test_data/cert_chain/id3-ca.der").to_vec();
@@ -564,7 +588,7 @@ mod tests {
 
     #[test]
     fn too_long_self_signed_is_rejected() {
-        let mut validator = BasicX509Validator::new(vec![], TestIdGenerator {}).unwrap();
+        let mut validator = BasicX509Provider::new(vec![], TestIdGenerator {}).unwrap();
         validator.allow_self_signed(true);
 
         let bytes = include_bytes!("../../../test_data/cert_chain/id3-ca.der").to_vec();
@@ -595,7 +619,7 @@ mod tests {
 
     #[test]
     fn too_short_self_signed_is_rejected() {
-        let mut validator = BasicX509Validator::new(vec![], TestIdGenerator {}).unwrap();
+        let mut validator = BasicX509Provider::new(vec![], TestIdGenerator {}).unwrap();
         validator.allow_self_signed(true);
 
         let credential = X509Credential {
@@ -622,7 +646,7 @@ mod tests {
         let (chain, leaf_pk) = test_chain();
 
         let ca: Vec<&[u8]> = vec![chain.ca().unwrap()];
-        let mut validator = BasicX509Validator::new(ca, TestIdGenerator {}).unwrap();
+        let mut validator = BasicX509Provider::new(ca, TestIdGenerator {}).unwrap();
         validator.set_pinned_cert(Some(chain[1].clone()));
 
         // Validation with pinned cert succeeds : validate chain[0..4]

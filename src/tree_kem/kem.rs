@@ -1,5 +1,5 @@
 use crate::group::GroupContext;
-use crate::provider::identity_validation::IdentityValidator;
+use crate::provider::identity::IdentityProvider;
 use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
 use cfg_if::cfg_if;
@@ -52,12 +52,12 @@ impl<'a> TreeKem<'a> {
         excluding: &[LeafIndex],
         signer: &S,
         update_leaf_properties: ConfigProperties,
-        identity_validator: C,
+        identity_provider: C,
         #[cfg(test)] commit_modifiers: &CommitModifiers<S>,
     ) -> Result<EncapGeneration, RatchetTreeError>
     where
         S: Signer,
-        C: IdentityValidator,
+        C: IdentityProvider,
     {
         let num_leaves = self.tree_kem_public.nodes.total_leaf_count();
         let self_index = self.private_key.self_index;
@@ -103,7 +103,7 @@ impl<'a> TreeKem<'a> {
         )?;
 
         self.tree_kem_public
-            .rekey_leaf(self_index, own_leaf_copy.clone(), identity_validator)?;
+            .rekey_leaf(self_index, own_leaf_copy.clone(), identity_provider)?;
 
         #[cfg(test)]
         {
@@ -194,10 +194,10 @@ impl<'a> TreeKem<'a> {
         update_path: &ValidatedUpdatePath,
         added_leaves: &[LeafIndex],
         context: &mut GroupContext,
-        identity_validator: C,
+        identity_provider: C,
     ) -> Result<PathSecret, RatchetTreeError>
     where
-        C: IdentityValidator,
+        C: IdentityProvider,
     {
         // Exclude newly added leaf indexes
         let excluding = added_leaves
@@ -211,11 +211,9 @@ impl<'a> TreeKem<'a> {
             sender_index.into(),
         );
 
-        let filtered_direct_path_co_path = self.tree_kem_public.apply_update_path(
-            sender_index,
-            update_path,
-            identity_validator,
-        )?;
+        let filtered_direct_path_co_path =
+            self.tree_kem_public
+                .apply_update_path(sender_index, update_path, identity_provider)?;
 
         // Update the tree hash to get context for decryption
         context.tree_hash = self.tree_kem_public.tree_hash()?;
@@ -325,7 +323,7 @@ mod tests {
         cipher_suite::CipherSuite,
         extension::{test_utils::TestExtension, ExtensionList, LeafNodeExtension},
         group::test_utils::get_test_group_context,
-        provider::identity_validation::BasicIdentityValidator,
+        provider::identity::BasicIdentityProvider,
         tree_kem::{
             leaf_node::{
                 test_utils::{get_basic_test_node_sig_key, get_test_capabilities},
@@ -447,12 +445,12 @@ mod tests {
             cipher_suite,
             encap_node,
             encap_hpke_secret,
-            BasicIdentityValidator,
+            BasicIdentityProvider,
         )
         .unwrap();
 
         test_tree
-            .add_leaves(leaf_nodes, BasicIdentityValidator)
+            .add_leaves(leaf_nodes, BasicIdentityProvider)
             .unwrap();
 
         // Clone the tree for the first leaf, generate a new key package for that leaf
@@ -472,7 +470,7 @@ mod tests {
                 &[],
                 &encap_signer,
                 update_leaf_properties,
-                BasicIdentityValidator,
+                BasicIdentityProvider,
                 #[cfg(test)]
                 &Default::default(),
             )
@@ -510,7 +508,7 @@ mod tests {
                     &validated_update_path,
                     &[],
                     &mut get_test_group_context(42, cipher_suite),
-                    BasicIdentityValidator,
+                    BasicIdentityProvider,
                 )
                 .unwrap();
 

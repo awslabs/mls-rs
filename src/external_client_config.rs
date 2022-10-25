@@ -4,21 +4,21 @@ use crate::{
     extension::ExtensionType,
     identity::CredentialType,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
-    provider::{identity_validation::IdentityValidator, keychain::KeychainStorage},
+    provider::{identity::IdentityProvider, keychain::KeychainStorage},
     tree_kem::Capabilities,
 };
 use ferriscrypt::asym::ec_key::PublicKey;
 
 pub trait ExternalClientConfig: Clone {
     type Keychain: KeychainStorage + Clone;
-    type IdentityValidator: IdentityValidator + Clone;
+    type IdentityProvider: IdentityProvider + Clone;
     type MakeProposalFilter: MakeProposalFilter;
 
     fn keychain(&self) -> Self::Keychain;
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
-    fn identity_validator(&self) -> Self::IdentityValidator;
+    fn identity_provider(&self) -> Self::IdentityProvider;
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
     fn proposal_filter(
         &self,
@@ -56,6 +56,6 @@ pub trait ExternalClientConfig: Clone {
     }
 
     fn supported_credentials(&self) -> Vec<CredentialType> {
-        self.identity_validator().supported_types()
+        self.identity_provider().supported_types()
     }
 }

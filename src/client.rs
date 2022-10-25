@@ -23,7 +23,7 @@ use thiserror::Error;
 
 pub use crate::client_builder::{
     BaseConfig, ClientBuilder, Missing, MlsConfig, Preferences, WithGroupStateStorage,
-    WithIdentityValidator, WithKeyPackageRepo, WithKeychain, WithProposalFilter, WithPskStore,
+    WithIdentityProvider, WithKeyPackageRepo, WithKeychain, WithProposalFilter, WithPskStore,
 };
 
 #[derive(Error, Debug)]
@@ -101,7 +101,7 @@ where
             cipher_suite,
             signing_key: &signer,
             signing_identity: &identity,
-            identity_validator: &self.config.identity_validator(),
+            identity_provider: &self.config.identity_provider(),
         };
 
         let key_pkg_gen = key_package_generator.generate(
@@ -221,7 +221,7 @@ where
             protocol_version,
             group_info,
             tree_data,
-            self.config.identity_validator(),
+            self.config.identity_provider(),
         )?;
 
         let key_package =
@@ -479,7 +479,7 @@ mod tests {
 
         let num_members = if do_remove { 2 } else { 3 };
 
-        assert_eq!(new_group.roster().member_count(), num_members);
+        assert_eq!(new_group.roster().len(), num_members);
 
         let _ = alice_group
             .group
@@ -491,10 +491,10 @@ mod tests {
             .process_incoming_message(external_commit)
             .unwrap();
 
-        assert!(alice_group.group.roster().member_count() == num_members);
+        assert!(alice_group.group.roster().len() == num_members);
 
         if !do_remove {
-            assert!(bob_group.group.roster().member_count() == num_members);
+            assert!(bob_group.group.roster().len() == num_members);
         } else if let Event::Commit(update) = message.event {
             assert!(!update.active);
         }

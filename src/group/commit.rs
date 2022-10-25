@@ -197,7 +197,7 @@ where
             sender.clone(),
             proposals,
             &self.context().extensions,
-            self.config.identity_validator(),
+            self.config.identity_provider(),
             &self.state.public_tree,
             external_leaf,
             PskStoreIdValidator::from(self.config.secret_store()),
@@ -250,7 +250,7 @@ where
                     .collect::<Vec<LeafIndex>>(),
                 &signer,
                 update_leaf_properties,
-                self.config.identity_validator(),
+                self.config.identity_provider(),
                 #[cfg(test)]
                 &self.commit_modifiers,
             )?;
@@ -705,7 +705,7 @@ mod tests {
 
         // Check that the credential was updated by in the committer's state.
         groups[0].process_pending_commit().unwrap();
-        let new_member = groups[0].group.roster().next().unwrap();
+        let new_member = groups[0].group.roster().first().cloned().unwrap();
 
         assert_eq!(
             new_member.signing_identity().credential,
@@ -719,7 +719,7 @@ mod tests {
 
         // Check that the credential was updated in another member's state.
         groups[1].process_message(commit).unwrap();
-        let new_member = groups[1].group.roster().next().unwrap();
+        let new_member = groups[1].group.roster().first().cloned().unwrap();
 
         assert_eq!(
             new_member.signing_identity().credential,

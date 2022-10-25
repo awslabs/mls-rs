@@ -3,7 +3,7 @@ use std::collections::HashSet;
 
 use super::*;
 use crate::identity::SigningIdentityError;
-use crate::provider::identity_validation::IdentityValidator;
+use crate::provider::identity::IdentityProvider;
 use crate::tree_kem::Lifetime;
 use crate::{
     signer::SignatureError,
@@ -52,18 +52,18 @@ pub enum KeyPackageValidationOptions {
 }
 
 #[derive(Debug)]
-pub struct KeyPackageValidator<'a, C: IdentityValidator> {
+pub struct KeyPackageValidator<'a, C: IdentityProvider> {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     leaf_node_validator: LeafNodeValidator<'a, C>,
 }
 
-impl<'a, C: IdentityValidator> KeyPackageValidator<'a, C> {
+impl<'a, C: IdentityProvider> KeyPackageValidator<'a, C> {
     pub fn new(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
-        identity_validator: C,
+        identity_provider: C,
     ) -> KeyPackageValidator<C> {
         KeyPackageValidator {
             protocol_version,
@@ -71,7 +71,7 @@ impl<'a, C: IdentityValidator> KeyPackageValidator<'a, C> {
             leaf_node_validator: LeafNodeValidator::new(
                 cipher_suite,
                 required_capabilities,
-                identity_validator,
+                identity_provider,
             ),
         }
     }
@@ -154,7 +154,7 @@ mod tests {
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
-    use crate::provider::identity_validation::BasicIdentityValidator;
+    use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use assert_matches::assert_matches;
     use ferriscrypt::rand::SecureRng;
@@ -179,7 +179,7 @@ mod tests {
                 protocol_version,
                 cipher_suite,
                 None,
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
             );
 
             assert_matches!(
@@ -208,7 +208,7 @@ mod tests {
                 protocol_version,
                 cipher_suite,
                 None,
-                BasicIdentityValidator::new(),
+                BasicIdentityProvider::new(),
             );
 
             assert_matches!(
@@ -228,7 +228,7 @@ mod tests {
             version,
             CipherSuite::Curve25519ChaCha20,
             None,
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
         );
 
         assert_matches!(
@@ -256,7 +256,7 @@ mod tests {
                     cipher_suite,
                     signing_identity: &alternate_sining_id,
                     signing_key: &secret,
-                    identity_validator: &BasicIdentityValidator::new(),
+                    identity_provider: &BasicIdentityProvider::new(),
                 };
 
                 new_generator
@@ -288,7 +288,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             None,
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
         );
 
         assert_matches!(
@@ -311,7 +311,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             None,
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
         );
 
         assert_matches!(
@@ -349,7 +349,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             None,
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
         );
 
         assert_matches!(
@@ -370,7 +370,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             None,
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
         );
 
         assert_matches!(
@@ -412,7 +412,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             Some(&required_capabilities),
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
         );
 
         assert_matches!(
@@ -437,7 +437,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             Some(&required_capabilities),
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
         );
 
         assert_matches!(
@@ -471,7 +471,7 @@ mod tests {
             protocol_version,
             cipher_suite,
             None,
-            BasicIdentityValidator::new(),
+            BasicIdentityProvider::new(),
         );
 
         assert_matches!(

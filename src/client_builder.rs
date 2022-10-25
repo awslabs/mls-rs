@@ -26,7 +26,7 @@ use crate::{
     protocol_version::ProtocolVersion,
     provider::{
         group_state::{GroupStateStorage, InMemoryGroupStateStorage},
-        identity_validation::IdentityValidator,
+        identity::IdentityProvider,
         key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
         keychain::{
             FirstIdentitySelector, IdentitySelectionStrategy, InMemoryKeychain, KeychainStorage,
@@ -53,12 +53,12 @@ pub type BaseConfig = Config<
 /// Builder for `Client`
 ///
 /// This is returned by [`Client::builder`] and allows to tweak settings the `Client` will use. At a
-/// minimum, the builder must be told the [`IdentityValidator`] and [`Keychain`] to use. Other
+/// minimum, the builder must be told the [`IdentityProvider`] and [`KeychainStorage`] to use. Other
 /// settings have default values. This means that the following methods must be called before
 /// [`ClientBuilder::build`]:
 ///
-/// - To specify the [`IdentityValidator`]: [`ClientBuilder::identity_validator`]
-/// - To specify the [`Keychain`], one of:
+/// - To specify the [`IdentityProvider`]: [`ClientBuilder::identity_provider`]
+/// - To specify the [`KeychainStorage`], one of:
 ///   - [`ClientBuilder::keychain`]
 ///   - [`ClientBuilder::single_signing_identity`]
 ///
@@ -67,14 +67,14 @@ pub type BaseConfig = Config<
 /// ```
 /// use aws_mls::{
 ///     client::Client,
-///     provider::{identity_validation::BasicIdentityValidator, keychain::InMemoryKeychain},
+///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
 /// };
 ///
 /// let keychain = InMemoryKeychain::default();
 /// // Add code to populate keychain here
 ///
 /// let _client = Client::builder()
-///     .identity_validator(BasicIdentityValidator::new())
+///     .identity_provider(BasicIdentityProvider::new())
 ///     .keychain(keychain)
 ///     .build();
 /// ```
@@ -87,12 +87,12 @@ pub type BaseConfig = Config<
 /// ```
 /// use aws_mls::{
 ///     client::{Client, MlsConfig},
-///     provider::{identity_validation::BasicIdentityValidator, keychain::InMemoryKeychain},
+///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
 /// };
 ///
 /// fn make_client() -> Client<impl MlsConfig> {
 ///     Client::builder()
-///         .identity_validator(BasicIdentityValidator::new())
+///         .identity_provider(BasicIdentityProvider::new())
 ///         .keychain(InMemoryKeychain::default())
 ///         .build()
 /// }
@@ -101,21 +101,21 @@ pub type BaseConfig = Config<
 /// The second option is more verbose and consists in writing the full `Client` type:
 /// ```
 /// use aws_mls::{
-///     client::{BaseConfig, Client, WithIdentityValidator, WithKeychain},
+///     client::{BaseConfig, Client, WithIdentityProvider, WithKeychain},
 ///     provider::{
-///         identity_validation::BasicIdentityValidator,
+///         identity::BasicIdentityProvider,
 ///         keychain::{InMemoryKeychain, FirstIdentitySelector},
 ///     },
 /// };
 ///
-/// type MlsClient = Client<WithKeychain<InMemoryKeychain<FirstIdentitySelector>, WithIdentityValidator<
-///     BasicIdentityValidator,
+/// type MlsClient = Client<WithKeychain<InMemoryKeychain<FirstIdentitySelector>, WithIdentityProvider<
+///     BasicIdentityProvider,
 ///     BaseConfig,
 /// >>>;
 ///
 /// fn make_client_2() -> MlsClient {
 ///     Client::builder()
-///         .identity_validator(BasicIdentityValidator::new())
+///         .identity_provider(BasicIdentityProvider::new())
 ///         .keychain(InMemoryKeychain::default())
 ///         .build()
 /// }
@@ -138,7 +138,7 @@ impl ClientBuilder<BaseConfig> {
             keychain: Missing,
             psk_store: Default::default(),
             group_state_storage: Default::default(),
-            identity_validator: Missing,
+            identity_provider: Missing,
             make_proposal_filter: KeepAllProposals,
         }))
     }
@@ -280,7 +280,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             keychain,
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
-            identity_validator: c.identity_validator,
+            identity_provider: c.identity_provider,
             make_proposal_filter: c.make_proposal_filter,
         }))
     }
@@ -333,7 +333,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             keychain: c.keychain,
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
-            identity_validator: c.identity_validator,
+            identity_provider: c.identity_provider,
             make_proposal_filter: c.make_proposal_filter,
         }))
     }
@@ -352,7 +352,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             keychain: c.keychain,
             psk_store,
             group_state_storage: c.group_state_storage,
-            identity_validator: c.identity_validator,
+            identity_provider: c.identity_provider,
             make_proposal_filter: c.make_proposal_filter,
         }))
     }
@@ -374,18 +374,18 @@ impl<C: IntoConfig> ClientBuilder<C> {
             keychain: c.keychain,
             psk_store: c.psk_store,
             group_state_storage,
-            identity_validator: c.identity_validator,
+            identity_provider: c.identity_provider,
             make_proposal_filter: c.make_proposal_filter,
         }))
     }
 
     /// Set the identity validator to be used by the client.
-    pub fn identity_validator<I>(
+    pub fn identity_provider<I>(
         self,
-        identity_validator: I,
-    ) -> ClientBuilder<WithIdentityValidator<I, C>>
+        identity_provider: I,
+    ) -> ClientBuilder<WithIdentityProvider<I, C>>
     where
-        I: IdentityValidator,
+        I: IdentityProvider,
     {
         let Config(c) = self.0.into_config();
         ClientBuilder(Config(ConfigInner {
@@ -394,7 +394,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             keychain: c.keychain,
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
-            identity_validator,
+            identity_provider,
             make_proposal_filter: c.make_proposal_filter,
         }))
     }
@@ -418,7 +418,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             keychain: c.keychain,
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
-            identity_validator: c.identity_validator,
+            identity_provider: c.identity_provider,
             make_proposal_filter: MakeSimpleProposalFilter(f),
         }))
     }
@@ -430,7 +430,7 @@ where
     C::Keychain: KeychainStorage + Clone,
     C::PskStore: PskStore + Clone,
     C::GroupStateStorage: GroupStateStorage + Clone,
-    C::IdentityValidator: IdentityValidator + Clone,
+    C::IdentityProvider: IdentityProvider + Clone,
     C::MakeProposalFilter: MakeProposalFilter + Clone,
 {
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
@@ -509,7 +509,7 @@ pub type WithKeyPackageRepo<K, C> = Config<
     <C as IntoConfig>::Keychain,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
-    <C as IntoConfig>::IdentityValidator,
+    <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MakeProposalFilter,
 >;
 
@@ -521,7 +521,7 @@ pub type WithKeychain<K, C> = Config<
     K,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
-    <C as IntoConfig>::IdentityValidator,
+    <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MakeProposalFilter,
 >;
 
@@ -533,7 +533,7 @@ pub type WithPskStore<P, C> = Config<
     <C as IntoConfig>::Keychain,
     P,
     <C as IntoConfig>::GroupStateStorage,
-    <C as IntoConfig>::IdentityValidator,
+    <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MakeProposalFilter,
 >;
 
@@ -545,14 +545,14 @@ pub type WithGroupStateStorage<G, C> = Config<
     <C as IntoConfig>::Keychain,
     <C as IntoConfig>::PskStore,
     G,
-    <C as IntoConfig>::IdentityValidator,
+    <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MakeProposalFilter,
 >;
 
 /// Change the identity validator used by a client configuration.
 ///
-/// See [`ClientBuilder::identity_validator`].
-pub type WithIdentityValidator<I, C> = Config<
+/// See [`ClientBuilder::identity_provider`].
+pub type WithIdentityProvider<I, C> = Config<
     <C as IntoConfig>::KeyPackageRepository,
     <C as IntoConfig>::Keychain,
     <C as IntoConfig>::PskStore,
@@ -569,7 +569,7 @@ pub type WithProposalFilter<F, C> = Config<
     <C as IntoConfig>::Keychain,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
-    <C as IntoConfig>::IdentityValidator,
+    <C as IntoConfig>::IdentityProvider,
     MakeSimpleProposalFilter<F>,
 >;
 
@@ -579,7 +579,7 @@ pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::Keychain,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
-    <C as IntoConfig>::IdentityValidator,
+    <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MakeProposalFilter,
 >;
 
@@ -589,14 +589,14 @@ where
     K: KeychainStorage + Clone,
     Ps: PskStore + Clone,
     Gss: GroupStateStorage + Clone,
-    Iv: IdentityValidator + Clone,
+    Iv: IdentityProvider + Clone,
     Mpf: MakeProposalFilter + Clone,
 {
     type KeyPackageRepository = Kpr;
     type Keychain = K;
     type PskStore = Ps;
     type GroupStateStorage = Gss;
-    type IdentityValidator = Iv;
+    type IdentityProvider = Iv;
     type MakeProposalFilter = Mpf;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
@@ -638,8 +638,8 @@ where
         self.group_state_storage.clone()
     }
 
-    fn identity_validator(&self) -> Self::IdentityValidator {
-        self.identity_validator.clone()
+    fn identity_provider(&self) -> Self::IdentityProvider {
+        self.identity_provider.clone()
     }
 
     fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension> {
@@ -667,7 +667,7 @@ where
     K: KeychainStorage + Clone,
     Ps: PskStore + Clone,
     Gss: GroupStateStorage + Clone,
-    Iv: IdentityValidator + Clone,
+    Iv: IdentityProvider + Clone,
     Mpf: MakeProposalFilter + Clone,
 {
     type Output = ConfigInner<Kpr, K, Ps, Gss, Iv, Mpf>;
@@ -694,7 +694,7 @@ impl<T: MlsConfig> ClientConfig for T {
     type Keychain = <T::Output as ClientConfig>::Keychain;
     type PskStore = <T::Output as ClientConfig>::PskStore;
     type GroupStateStorage = <T::Output as ClientConfig>::GroupStateStorage;
-    type IdentityValidator = <T::Output as ClientConfig>::IdentityValidator;
+    type IdentityProvider = <T::Output as ClientConfig>::IdentityProvider;
     type MakeProposalFilter = <T::Output as ClientConfig>::MakeProposalFilter;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
@@ -736,8 +736,8 @@ impl<T: MlsConfig> ClientConfig for T {
         self.get().group_state_storage()
     }
 
-    fn identity_validator(&self) -> Self::IdentityValidator {
-        self.get().identity_validator()
+    fn identity_provider(&self) -> Self::IdentityProvider {
+        self.get().identity_provider()
     }
 
     fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension> {
@@ -872,7 +872,7 @@ mod private {
         pub(crate) keychain: K,
         pub(crate) psk_store: Ps,
         pub(crate) group_state_storage: Gss,
-        pub(crate) identity_validator: Iv,
+        pub(crate) identity_provider: Iv,
         pub(crate) make_proposal_filter: Mpf,
     }
 
@@ -881,7 +881,7 @@ mod private {
         type Keychain;
         type PskStore;
         type GroupStateStorage;
-        type IdentityValidator;
+        type IdentityProvider;
         type MakeProposalFilter;
 
         fn into_config(self) -> IntoConfigOutput<Self>;
@@ -892,7 +892,7 @@ mod private {
         type Keychain = K;
         type PskStore = Ps;
         type GroupStateStorage = Gss;
-        type IdentityValidator = Iv;
+        type IdentityProvider = Iv;
         type MakeProposalFilter = Mpf;
 
         fn into_config(self) -> Self {
@@ -907,12 +907,12 @@ use private::{Config, ConfigInner, IntoConfig};
 pub mod test_utils {
     use crate::{
         client_builder::{
-            BaseConfig, ClientBuilder, Preferences, WithIdentityValidator, WithKeychain,
+            BaseConfig, ClientBuilder, Preferences, WithIdentityProvider, WithKeychain,
         },
         identity::SigningIdentity,
         key_package::KeyPackageGeneration,
         provider::{
-            identity_validation::BasicIdentityValidator,
+            identity::BasicIdentityProvider,
             keychain::{FirstIdentitySelector, IdentitySelectionStrategy, InMemoryKeychain},
         },
     };
@@ -942,8 +942,8 @@ pub mod test_utils {
         }
     }
 
-    pub type TestClientConfig = WithIdentityValidator<
-        BasicIdentityValidator,
+    pub type TestClientConfig = WithIdentityProvider<
+        BasicIdentityProvider,
         WithKeychain<InMemoryKeychain<TestIdentitySelector>, BaseConfig>,
     >;
 
@@ -952,7 +952,7 @@ pub mod test_utils {
     impl TestClientBuilder {
         pub fn new_for_test() -> Self {
             ClientBuilder::new()
-                .identity_validator(BasicIdentityValidator::new())
+                .identity_provider(BasicIdentityProvider::new())
                 .keychain(InMemoryKeychain::new(TestIdentitySelector::new()))
         }
 

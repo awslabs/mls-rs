@@ -10,7 +10,7 @@ use crate::{
     extension::RequiredCapabilitiesExt,
     identity::test_utils::get_test_signing_identity,
     key_package::{KeyPackageGeneration, KeyPackageGenerator},
-    provider::identity_validation::BasicIdentityValidator,
+    provider::identity::BasicIdentityProvider,
     tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
 };
 
@@ -91,11 +91,11 @@ impl TestGroup {
         self.join_with_preferences(name, self.group.config.preferences())
     }
 
-    pub(crate) fn process_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
+    pub(crate) fn process_pending_commit(&mut self) -> Result<StateUpdate<()>, GroupError> {
         self.group.apply_pending_commit()
     }
 
-    pub(crate) fn process_message(&mut self, message: MLSMessage) -> Result<Event, GroupError> {
+    pub(crate) fn process_message(&mut self, message: MLSMessage) -> Result<Event<()>, GroupError> {
         self.group
             .process_incoming_message(message)
             .map(|r| r.event)
@@ -169,7 +169,7 @@ pub(crate) fn test_member(
         cipher_suite,
         signing_identity: &signing_identity,
         signing_key: &signing_key,
-        identity_validator: &BasicIdentityValidator::new(),
+        identity_provider: &BasicIdentityProvider::new(),
     };
 
     let key_package = key_package_generator

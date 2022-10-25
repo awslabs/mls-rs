@@ -129,7 +129,7 @@ mod tests {
 
     use crate::{
         group::test_utils::get_test_group_context,
-        provider::identity_validation::BasicIdentityValidator,
+        provider::identity::BasicIdentityProvider,
         tree_kem::{
             kem::TreeKem,
             leaf_node::test_utils::{
@@ -180,13 +180,13 @@ mod tests {
             cipher_suite,
             alice_leaf,
             alice_hpke_secret,
-            BasicIdentityValidator,
+            BasicIdentityProvider,
         )
         .unwrap();
 
         // Add bob and charlie to the tree
         public_tree
-            .add_leaves(vec![bob_leaf, charlie_leaf], BasicIdentityValidator)
+            .add_leaves(vec![bob_leaf, charlie_leaf], BasicIdentityProvider)
             .unwrap();
 
         // Generate an update path for Alice
@@ -197,7 +197,7 @@ mod tests {
                 &[],
                 &alice_signing,
                 default_properties(alice_identity),
-                BasicIdentityValidator,
+                BasicIdentityProvider,
                 #[cfg(test)]
                 &Default::default(),
             )

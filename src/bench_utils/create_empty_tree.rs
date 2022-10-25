@@ -4,7 +4,7 @@ use crate::ferriscrypt::asym::ec_key::SecretKey;
 use crate::group::{ConfirmedTranscriptHash, GroupContext};
 use crate::identity::SigningIdentity;
 use crate::protocol_version::ProtocolVersion;
-use crate::provider::identity_validation::BasicIdentityValidator;
+use crate::provider::identity::BasicIdentityProvider;
 use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
@@ -60,12 +60,12 @@ pub fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
         cipher_suite,
         encap_node,
         encap_hpke_secret,
-        BasicIdentityValidator,
+        BasicIdentityProvider,
     )
     .unwrap();
 
     test_tree
-        .add_leaves(leaf_nodes, BasicIdentityValidator)
+        .add_leaves(leaf_nodes, BasicIdentityProvider)
         .unwrap();
 
     // Clone the tree for the first leaf, generate a new key package for that leaf
