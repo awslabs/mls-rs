@@ -3,7 +3,7 @@ members = ["test_harness_integration", "fuzz"]
 
 [package]
 name = "aws-mls"
-version = "0.12.0"
+version = "0.13.0"
 authors = ["Tom Leavy <tom@wickr.com>"]
 edition = "2021"
 
