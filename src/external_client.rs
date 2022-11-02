@@ -1,6 +1,6 @@
 use crate::{
     external_client_config::ExternalClientConfig,
-    group::{framing::MLSMessage, ExternalGroup, GroupError},
+    group::{framing::MLSMessage, snapshot::ExternalSnapshot, ExternalGroup, GroupError},
 };
 use thiserror::Error;
 
@@ -39,5 +39,12 @@ where
         tree_data: Option<&[u8]>,
     ) -> Result<ExternalGroup<C>, ExternalClientError> {
         ExternalGroup::join(self.config.clone(), group_info, tree_data).map_err(Into::into)
+    }
+
+    pub fn load_group(
+        &self,
+        snapshot: ExternalSnapshot,
+    ) -> Result<ExternalGroup<C>, ExternalClientError> {
+        ExternalGroup::from_snapshot(self.config.clone(), snapshot).map_err(Into::into)
     }
 }

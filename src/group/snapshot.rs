@@ -1,5 +1,6 @@
 use crate::{
     client_config::ClientConfig,
+    external_client_config::ExternalClientConfig,
     group::{
         key_schedule::KeySchedule, CachedProposal, CommitGeneration, ConfirmationTag, Group,
         GroupContext, GroupError, GroupState, InterimTranscriptHash, ProposalCache, ProposalRef,
@@ -13,7 +14,7 @@ use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use serde_with::serde_as;
 use std::collections::HashMap;
 
-use super::{epoch::EpochSecrets, state_repo::GroupStateRepository};
+use super::{epoch::EpochSecrets, state_repo::GroupStateRepository, ExternalGroup};
 
 #[serde_as]
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
@@ -132,6 +133,34 @@ where
     }
 }
 
+#[serde_as]
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+pub struct ExternalSnapshot {
+    version: u16,
+    state: RawGroupState,
+}
+
+impl<C> ExternalGroup<C>
+where
+    C: ExternalClientConfig + Clone,
+{
+    pub fn snapshot(&self) -> ExternalSnapshot {
+        ExternalSnapshot {
+            state: RawGroupState::export(self.group_state()),
+            version: 1,
+        }
+    }
+
+    pub fn from_snapshot(config: C, snapshot: ExternalSnapshot) -> Result<Self, GroupError> {
+        let identity_provider = config.identity_provider();
+
+        Ok(ExternalGroup {
+            config,
+            state: snapshot.state.import(identity_provider)?,
+        })
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_utils {
     use crate::{
@@ -171,8 +200,9 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         group::{
+            external_group::test_utils::make_external_group,
             test_utils::{test_group, TestGroup},
-            Group,
+            ExternalGroup, Group,
         },
         protocol_version::ProtocolVersion,
     };
@@ -214,5 +244,18 @@ mod tests {
         let _ = group.group.proposal_message(update_proposal, vec![]);
 
         serialize_to_json_test(group)
+    }
+
+    #[test]
+    fn external_group_can_be_serialized_to_json() {
+        let server = make_external_group(&test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE));
+
+        let snapshot = serde_json::to_vec(&server.snapshot()).unwrap();
+        let snapshot_restored = serde_json::from_slice(&snapshot).unwrap();
+
+        let server_restored =
+            ExternalGroup::from_snapshot(server.config.clone(), snapshot_restored).unwrap();
+
+        assert_eq!(server.group_state(), server_restored.group_state());
     }
 }

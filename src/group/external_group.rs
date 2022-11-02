@@ -25,8 +25,8 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct ExternalGroup<C> {
-    config: C,
-    state: GroupState,
+    pub(crate) config: C,
+    pub(crate) state: GroupState,
 }
 
 impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
@@ -184,6 +184,10 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub fn roster(&self) -> Vec<Member> {
         self.group_state().roster()
     }
+
+    pub fn transcript_hash(&self) -> &Vec<u8> {
+        &self.group_state().context.confirmed_transcript_hash
+    }
 }
 
 impl<C> MessageProcessor for ExternalGroup<C>
@@ -270,6 +274,41 @@ where
 }
 
 #[cfg(test)]
+pub(crate) mod test_utils {
+    use crate::{
+        external_client_builder::test_utils::{
+            TestExternalClientBuilder, TestExternalClientConfig,
+        },
+        group::test_utils::TestGroup,
+    };
+
+    use super::ExternalGroup;
+
+    pub(crate) fn make_external_group(
+        group: &TestGroup,
+    ) -> ExternalGroup<TestExternalClientConfig> {
+        make_external_group_with_config(
+            group,
+            TestExternalClientBuilder::new_for_test().build_config(),
+        )
+    }
+
+    pub(crate) fn make_external_group_with_config(
+        group: &TestGroup,
+        config: TestExternalClientConfig,
+    ) -> ExternalGroup<TestExternalClientConfig> {
+        let public_tree = group.group.export_tree().unwrap();
+
+        ExternalGroup::join(
+            config,
+            group.group.group_info_message(true).unwrap(),
+            Some(&public_tree),
+        )
+        .unwrap()
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use crate::{
         cipher_suite::{CipherSuite, MaybeCipherSuite},
@@ -278,6 +317,7 @@ mod tests {
             TestExternalClientBuilder, TestExternalClientConfig,
         },
         group::{
+            external_group::test_utils::make_external_group_with_config,
             proposal::{AddProposal, Proposal, ProposalOrRef, RemoveProposal},
             proposal_ref::ProposalRef,
             test_utils::{test_group, TestGroup},
@@ -290,6 +330,8 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::SecretKey;
+
+    use super::test_utils::make_external_group;
 
     const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
@@ -332,27 +374,6 @@ mod tests {
 
         group.process_pending_commit().unwrap();
         group
-    }
-
-    fn make_external_group(group: &TestGroup) -> ExternalGroup<TestExternalClientConfig> {
-        make_external_group_with_config(
-            group,
-            TestExternalClientBuilder::new_for_test().build_config(),
-        )
-    }
-
-    fn make_external_group_with_config(
-        group: &TestGroup,
-        config: TestExternalClientConfig,
-    ) -> ExternalGroup<TestExternalClientConfig> {
-        let public_tree = group.group.export_tree().unwrap();
-
-        ExternalGroup::join(
-            config,
-            group.group.group_info_message(true).unwrap(),
-            Some(&public_tree),
-        )
-        .unwrap()
     }
 
     #[test]
