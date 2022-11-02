@@ -5,7 +5,7 @@ use crate::{
     psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
     tree_kem::{
         leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, validate_update_path,
-        TreeKemPrivate, TreeKemPublic, ValidatedUpdatePath,
+        TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
     },
 };
 
@@ -210,9 +210,11 @@ pub(crate) trait MessageProcessor {
     fn make_state_update(
         &self,
         provisional: &ProvisionalState,
+        path: Option<&UpdatePath>,
+        sender: LeafIndex,
     ) -> Result<StateUpdate<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>, GroupError>
     {
-        let added = provisional
+        let mut added = provisional
             .added_leaves
             .iter()
             .map(Member::from)
@@ -224,7 +226,19 @@ pub(crate) trait MessageProcessor {
             .map(From::from)
             .collect::<Vec<_>>();
 
-        let updated = provisional.updated_leaves.iter().map(From::from).collect();
+        let mut updated = provisional
+            .updated_leaves
+            .iter()
+            .map(Member::from)
+            .collect::<Vec<_>>();
+
+        if let Some(path) = path {
+            if provisional.external_init.is_some() {
+                added.push((sender, &path.leaf_node).into())
+            } else {
+                updated.push((sender, &path.leaf_node).into())
+            }
+        }
 
         let psks = provisional
             .psks
@@ -286,7 +300,9 @@ pub(crate) trait MessageProcessor {
         let mut provisional_state = self.calculate_provisional_state(proposal_effects)?;
 
         let sender = commit_sender(&auth_content.content.sender, &provisional_state)?;
-        let mut state_update = self.make_state_update(&provisional_state)?;
+
+        let mut state_update =
+            self.make_state_update(&provisional_state, commit.path.as_ref(), sender)?;
 
         //Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.

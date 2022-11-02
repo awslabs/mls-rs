@@ -716,7 +716,7 @@ fn test_processing_message_from_self_returns_error() {
 fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: CipherSuite) {
     let creator = generate_client(cipher_suite, b"alice-0".to_vec(), Default::default());
 
-    let mut creator_group = creator
+    let creator_group = creator
         .create_group_with_id(
             protocol_version,
             cipher_suite,
@@ -724,13 +724,6 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
             ExtensionList::default(),
         )
         .unwrap();
-
-    // An external commit cannot be the first commit in a group as it requires
-    // interim_transcript_hash to be computed from the confirmed_transcript_hash and
-    // confirmation_tag, which is not the case for the initial interim_transcript_hash.
-    creator_group.commit(Vec::new()).unwrap();
-
-    creator_group.apply_pending_commit().unwrap();
 
     const PARTICIPANT_COUNT: usize = 10;
 

@@ -403,11 +403,15 @@ where
     ) -> Result<Self, GroupError> {
         // Use the confirmed transcript hash and confirmation tag to compute the interim transcript
         // hash in the new state.
-        let interim_transcript_hash = InterimTranscriptHash::create(
-            current_tree.cipher_suite,
-            &context.confirmed_transcript_hash,
-            confirmation_tag,
-        )?;
+        let interim_transcript_hash = if context.epoch > 0 {
+            InterimTranscriptHash::create(
+                current_tree.cipher_suite,
+                &context.confirmed_transcript_hash,
+                confirmation_tag,
+            )
+        } else {
+            Ok(InterimTranscriptHash::from(vec![]))
+        }?;
 
         let state_repo = GroupStateRepository::new(
             context.group_id.clone(),
@@ -1666,6 +1670,7 @@ pub(crate) mod test_utils;
 
 #[cfg(test)]
 mod tests {
+    use crate::client::test_utils::get_basic_client_builder;
     use crate::extension::MlsExtension;
     use crate::identity::test_utils::{get_test_basic_credential, get_test_x509_credential};
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
@@ -2334,8 +2339,8 @@ mod tests {
         );
 
         assert_eq!(
-            state_update_alice.roster_update.updated,
-            vec![alice.group.roster()[1].clone()]
+            state_update_alice.roster_update.updated.as_slice(),
+            &alice.group.roster()[0..2]
         );
 
         assert_eq!(
@@ -2364,6 +2369,53 @@ mod tests {
             );
             assert_eq!(state_update_alice.added_psks, state_update_bob.added_psks);
         }
+    }
+
+    #[test]
+    fn state_update_external_commit() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+
+        let bob = get_basic_client_builder(TEST_CIPHER_SUITE, "bob").build();
+
+        let (bob_group, commit) = bob
+            .commit_external(
+                alice_group.group.group_info_message(true).unwrap(),
+                Some(&alice_group.group.export_tree().unwrap()),
+                None,
+                vec![],
+                vec![],
+            )
+            .unwrap();
+
+        let event = alice_group.process_message(commit).unwrap();
+
+        assert_matches!(event, Event::Commit(_));
+
+        if let Event::Commit(update) = event {
+            assert_eq!(
+                update.roster_update.added.as_slice(),
+                &bob_group.roster()[1..2]
+            )
+        }
+    }
+
+    #[test]
+    fn can_join_new_group_externally() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+
+        let bob = get_basic_client_builder(TEST_CIPHER_SUITE, "bob").build();
+
+        let (_, commit) = bob
+            .commit_external(
+                alice_group.group.group_info_message(true).unwrap(),
+                Some(&alice_group.group.export_tree().unwrap()),
+                None,
+                vec![],
+                vec![],
+            )
+            .unwrap();
+
+        alice_group.process_message(commit).unwrap();
     }
 
     #[test]
