@@ -1,5 +1,6 @@
-#![allow(clippy::nonstandard_macro_braces)]
 #![allow(clippy::enum_variant_names)]
+#![allow(clippy::result_large_err)]
+#![allow(clippy::nonstandard_macro_braces)]
 
 #[cfg(all(test, target_arch = "wasm32"))]
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);

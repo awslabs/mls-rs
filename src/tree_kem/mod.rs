@@ -620,7 +620,7 @@ impl TreeKemPublic {
 
                         let r = empty_on_fail(op, |(leaf_index, new_leaf, _, new_identity)| {
                             let r = tree_index
-                                .insert(*leaf_index, *new_leaf, new_identity.clone())
+                                .insert(*leaf_index, new_leaf, new_identity.clone())
                                 .map_err(Into::into);
 
                             if r.is_err() {

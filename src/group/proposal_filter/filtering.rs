@@ -188,7 +188,7 @@ where
         )?;
         let state = ProposalState::new(self.original_tree.clone(), proposals);
 
-        let state = self.apply_proposal_changes(&FailInvalidProposal, state)?;
+        let state = self.apply_proposal_changes(FailInvalidProposal, state)?;
 
         let state = insert_external_leaf(state, external_leaf.clone(), &self.identity_provider)?;
         Ok(state)

@@ -123,6 +123,7 @@ impl<IE> From<Proposal> for ExternalEvent<IE> {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum EventOrContent<E> {
     Event(E),
     Content(MLSAuthenticatedContent),
