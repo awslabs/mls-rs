@@ -71,7 +71,7 @@ pub(crate) fn validate_update_path<C: IdentityProvider>(
 
     leaf_validator.check_if_valid(
         &path.leaf_node,
-        ValidationContext::Commit(&state.group_context.group_id),
+        ValidationContext::Commit((&state.group_context.group_id, *sender)),
     )?;
 
     let existing_leaf = state.public_tree.nodes.borrow_as_leaf(sender)?;
@@ -143,6 +143,7 @@ mod tests {
             .commit(
                 cipher_suite,
                 TEST_GROUP_ID,
+                0,
                 default_properties(leaf_node.signing_identity.clone()),
                 &signer,
                 |_| Ok(ParentHash::empty()),

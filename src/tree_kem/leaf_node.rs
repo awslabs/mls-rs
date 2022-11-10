@@ -148,7 +148,7 @@ impl LeafNode {
             signature: Default::default(),
         };
 
-        leaf_node.sign(signer, &None)?;
+        leaf_node.sign(signer, &LeafNodeSigningContext::default())?;
 
         Ok((leaf_node, secret.try_into()?))
     }
@@ -157,6 +157,7 @@ impl LeafNode {
         &mut self,
         key_pair: (PublicKey, SecretKey),
         group_id: &[u8],
+        leaf_index: u32,
         new_properties: ConfigProperties,
         leaf_node_source: LeafNodeSource,
         signer: &S,
@@ -171,7 +172,7 @@ impl LeafNode {
         self.extensions = new_properties.extensions;
         self.signing_identity = new_properties.signing_identity;
         self.leaf_node_source = leaf_node_source;
-        self.sign(signer, &Some(group_id))?;
+        self.sign(signer, &(group_id, leaf_index).into())?;
 
         Ok(secret.try_into()?)
     }
@@ -180,6 +181,7 @@ impl LeafNode {
         &mut self,
         cipher_suite: CipherSuite,
         group_id: &[u8],
+        leaf_index: u32,
         new_properties: ConfigProperties,
         signer: &S,
     ) -> Result<HpkeSecretKey, LeafNodeError>
@@ -191,6 +193,7 @@ impl LeafNode {
         self.update_keypair(
             keypair,
             group_id,
+            leaf_index,
             new_properties,
             LeafNodeSource::Update,
             signer,
@@ -201,6 +204,7 @@ impl LeafNode {
         &mut self,
         cipher_suite: CipherSuite,
         group_id: &[u8],
+        leaf_index: u32,
         update_leaf_properties: ConfigProperties,
         signer: &S,
         mut parent_hash: impl FnMut(
@@ -219,6 +223,7 @@ impl LeafNode {
         self.update_keypair(
             key_pair,
             group_id,
+            leaf_index,
             update_leaf_properties,
             LeafNodeSource::Commit(parent_hash),
             signer,
@@ -234,6 +239,7 @@ struct LeafNodeTBS<'a> {
     leaf_node_source: &'a LeafNodeSource,
     extensions: &'a ExtensionList<LeafNodeExtension>,
     group_id: Option<&'a [u8]>,
+    leaf_index: Option<u32>,
 }
 
 impl<'a> Size for LeafNodeTBS<'a> {
@@ -246,6 +252,7 @@ impl<'a> Size for LeafNodeTBS<'a> {
             + self
                 .group_id
                 .map_or(0, |group_id| TlsByteSliceU32(group_id).tls_serialized_len())
+            + self.leaf_index.map_or(0, |i| i.tls_serialized_len())
     }
 }
 
@@ -258,16 +265,32 @@ impl<'a> Serialize for LeafNodeTBS<'a> {
             + self.extensions.tls_serialize(writer)?
             + self.group_id.map_or(Ok(0), |group_id| {
                 TlsByteSliceU32(group_id).tls_serialize(writer)
-            })?;
+            })?
+            + self.leaf_index.map_or(Ok(0), |i| i.tls_serialize(writer))?;
 
         Ok(res)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct LeafNodeSigningContext<'a> {
+    pub group_id: Option<&'a [u8]>,
+    pub leaf_index: Option<u32>,
+}
+
+impl<'a> From<(&'a [u8], u32)> for LeafNodeSigningContext<'a> {
+    fn from((group_id, leaf_index): (&'a [u8], u32)) -> Self {
+        Self {
+            group_id: Some(group_id),
+            leaf_index: Some(leaf_index),
+        }
     }
 }
 
 impl<'a> Signable<'a> for LeafNode {
     const SIGN_LABEL: &'static str = "LeafNodeTBS";
 
-    type SigningContext = Option<&'a [u8]>;
+    type SigningContext = LeafNodeSigningContext<'a>;
 
     fn signature(&self) -> &[u8] {
         &self.signature
@@ -283,7 +306,8 @@ impl<'a> Signable<'a> for LeafNode {
             capabilities: &self.capabilities,
             leaf_node_source: &self.leaf_node_source,
             extensions: &self.extensions,
-            group_id: *context,
+            group_id: context.group_id,
+            leaf_index: context.leaf_index,
         }
         .tls_serialize_detached()
     }
@@ -452,7 +476,10 @@ mod tests {
             let curve = cipher_suite.kem_type().curve();
 
             leaf_node
-                .verify(&signing_identity.public_key(cipher_suite).unwrap(), &None)
+                .verify(
+                    &signing_identity.public_key(cipher_suite).unwrap(),
+                    &LeafNodeSigningContext::default(),
+                )
                 .unwrap();
 
             let expected_public = SecretKey::from_bytes(secret_key.as_ref(), curve)
@@ -561,6 +588,7 @@ mod tests {
                 .update(
                     cipher_suite,
                     b"group",
+                    0,
                     default_properties(leaf.signing_identity.clone()),
                     &secret,
                 )
@@ -588,7 +616,7 @@ mod tests {
 
             leaf.verify(
                 &signing_identity.public_key(cipher_suite).unwrap(),
-                &Some(b"group"),
+                &(b"group".as_slice(), 0).into(),
             )
             .unwrap();
         }
@@ -608,7 +636,7 @@ mod tests {
 
         let (mut leaf, _) = get_test_node(cipher_suite, signing_identity, &secret, None, None);
 
-        leaf.update(cipher_suite, b"group", new_properties.clone(), &secret)
+        leaf.update(cipher_suite, b"group", 0, new_properties.clone(), &secret)
             .unwrap();
 
         assert_eq!(leaf.capabilities, new_properties.capabilities);
@@ -632,6 +660,7 @@ mod tests {
                 .commit(
                     cipher_suite,
                     b"group",
+                    0,
                     default_properties(leaf.signing_identity.clone()),
                     &secret,
                     |key| {
@@ -663,7 +692,7 @@ mod tests {
 
             leaf.verify(
                 &signing_identity.public_key(cipher_suite).unwrap(),
-                &Some(b"group"),
+                &(b"group".as_slice(), 0).into(),
             )
             .unwrap();
         }
@@ -680,6 +709,7 @@ mod tests {
         let res = leaf.commit(
             cipher_suite,
             b"group",
+            0,
             default_properties(leaf.signing_identity.clone()),
             &secret,
             |_| Err(String::from("test").into()),
@@ -707,6 +737,7 @@ mod tests {
         leaf.commit(
             cipher_suite,
             b"group",
+            0,
             new_properties.clone(),
             &secret,
             |_| Ok(test_parent_hash.clone()),
@@ -716,5 +747,22 @@ mod tests {
         assert_eq!(leaf.capabilities, new_properties.capabilities);
         assert_eq!(leaf.extensions, new_properties.extensions);
         assert_eq!(leaf.signing_identity, new_properties.signing_identity);
+    }
+
+    #[test]
+    fn context_is_signed() {
+        let cipher_suite = CipherSuite::Curve25519Aes128;
+
+        let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
+        let public = signing_identity.public_key(cipher_suite).unwrap();
+        let (mut leaf, _) = get_test_node(cipher_suite, signing_identity, &secret, None, None);
+
+        leaf.sign(&secret, &(b"foo".as_slice(), 0).into()).unwrap();
+
+        let res = leaf.verify(&public, &(b"foo".as_slice(), 1).into());
+        assert_matches!(res, Err(SignatureError::SignatureValidationFailed(_)));
+
+        let res = leaf.verify(&public, &(b"bar".as_slice(), 0).into());
+        assert_matches!(res, Err(SignatureError::SignatureValidationFailed(_)));
     }
 }

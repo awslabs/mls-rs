@@ -93,6 +93,7 @@ impl<'a> TreeKem<'a> {
         let secret_key = own_leaf_copy.commit(
             self.tree_kem_public.cipher_suite,
             group_id,
+            *self_index,
             update_leaf_properties,
             signer,
             |_| {

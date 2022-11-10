@@ -1098,6 +1098,7 @@ where
         let secret_key = new_leaf_node.update(
             self.state.cipher_suite(),
             self.group_id(),
+            self.current_member_index(),
             new_properties,
             &signer,
         )?;
@@ -2705,7 +2706,7 @@ mod tests {
         groups[0].group.commit_modifiers.modify_leaf =
             |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
                 leaf.leaf_node_source = LeafNodeSource::Update;
-                leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+                leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
             };
 
         let (commit, _) = groups[0].group.commit(vec![]).unwrap();
@@ -2731,7 +2732,7 @@ mod tests {
         groups[0].group.commit_modifiers.modify_leaf =
             |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
                 leaf.public_key = get_test_25519_key(1u8);
-                leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+                leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
             };
 
         let (commit, _) = groups[0].group.commit(vec![]).unwrap();
@@ -2760,7 +2761,7 @@ mod tests {
         groups[1].group.commit_modifiers.modify_leaf =
             |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
                 leaf.public_key = get_test_25519_key(1u8);
-                leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+                leaf.sign(sk, &(TEST_GROUP, 1).into()).unwrap();
             };
 
         let (commit, _) = groups.get_mut(1).unwrap().group.commit(vec![]).unwrap();
@@ -2771,7 +2772,7 @@ mod tests {
         groups[0].group.commit_modifiers.modify_leaf =
             |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
                 leaf.public_key = get_test_25519_key(1u8);
-                leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+                leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
             };
 
         let (commit, _) = groups[0].group.commit(vec![]).unwrap();
@@ -2795,7 +2796,7 @@ mod tests {
         groups[1].group.commit_modifiers.modify_leaf = |leaf: &mut LeafNode, _: &_| {
             let sk = ec_key::SecretKey::from_bytes(&[2u8; 32], ec_key::Curve::Ed25519).unwrap();
             leaf.signing_identity.signature_key = sk.to_public().unwrap().try_into().unwrap();
-            leaf.sign(&sk, &Some(TEST_GROUP)).unwrap();
+            leaf.sign(&sk, &(TEST_GROUP, 1).into()).unwrap();
         };
 
         let (commit, _) = groups.get_mut(1).unwrap().group.commit(vec![]).unwrap();
@@ -2806,7 +2807,7 @@ mod tests {
         groups[0].group.commit_modifiers.modify_leaf = |leaf: &mut LeafNode, _: &_| {
             let sk = ec_key::SecretKey::from_bytes(&[2u8; 32], ec_key::Curve::Ed25519).unwrap();
             leaf.signing_identity.signature_key = sk.to_public().unwrap().try_into().unwrap();
-            leaf.sign(&sk, &Some(TEST_GROUP)).unwrap();
+            leaf.sign(&sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
         let (commit, _) = groups[0].group.commit(vec![]).unwrap();
@@ -2853,7 +2854,7 @@ mod tests {
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
             leaf.capabilities = get_test_capabilities();
-            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+            leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
         let (commit, _) = groups[0].commit(vec![]).unwrap();
@@ -2874,7 +2875,7 @@ mod tests {
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
             leaf.capabilities = get_test_capabilities();
             leaf.extensions = ExtensionList::new();
-            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+            leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
         let (commit, _) = groups[0].commit(vec![]).unwrap();
@@ -2899,7 +2900,7 @@ mod tests {
 
             leaf.extensions = extensions;
             leaf.capabilities.extensions = vec![666, 999];
-            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+            leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
         let (commit, _) = groups[0].commit(vec![]).unwrap();
@@ -2922,7 +2923,7 @@ mod tests {
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
             leaf.capabilities = Capabilities::default();
-            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+            leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
         let (commit, _) = groups[0].commit(vec![]).unwrap();
@@ -2936,7 +2937,8 @@ mod tests {
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
             leaf.signing_identity.credential.credential_type = CREDENTIAL_TYPE_X509;
-            leaf.sign(sk, &Some(b"TEST GROUP")).unwrap();
+            leaf.sign(sk, &(b"TEST GROUP".as_slice(), 0).into())
+                .unwrap();
         };
 
         let (commit, _) = groups[0].commit(vec![]).unwrap();
@@ -2959,7 +2961,8 @@ mod tests {
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
             leaf.capabilities.credentials = vec![2];
-            leaf.sign(sk, &Some(b"TEST GROUP")).unwrap();
+            leaf.sign(sk, &(b"TEST GROUP".as_slice(), 0).into())
+                .unwrap();
         };
 
         let (commit, _) = groups[0].commit(vec![]).unwrap();
@@ -2990,7 +2993,8 @@ mod tests {
 
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
             leaf.capabilities.credentials = vec![2];
-            leaf.sign(sk, &Some(b"TEST GROUP")).unwrap();
+            leaf.sign(sk, &(b"TEST GROUP".as_slice(), 0).into())
+                .unwrap();
         };
 
         let (commit, _) = groups[0].commit(vec![]).unwrap();
@@ -3028,7 +3032,7 @@ mod tests {
         // New leaf for group 0 supports only basic credentials (used by the group) but not X509 used by external sender
         groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
             leaf.capabilities.credentials = vec![1];
-            leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+            leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
         let (commit, _) = groups[0].commit(vec![]).unwrap();
@@ -3053,7 +3057,7 @@ mod tests {
         groups[0].group.commit_modifiers.modify_leaf =
             |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
                 leaf.public_key = get_test_25519_key(1u8);
-                leaf.sign(sk, &Some(TEST_GROUP)).unwrap();
+                leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
             };
 
         let (commit, _) = groups[0].group.commit(vec![]).unwrap();

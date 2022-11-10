@@ -76,7 +76,7 @@ impl<'a, C: IdentityProvider> TreeValidator<'a, C> {
         // For each non-empty leaf node, verify the signature on the LeafNode.
         tree.nodes
             .non_empty_leaves()
-            .try_for_each(|(_, ln)| self.leaf_node_validator.revalidate(ln, self.group_id))
+            .try_for_each(|(li, ln)| self.leaf_node_validator.revalidate(ln, self.group_id, *li))
             .map_err(Into::into)
     }
 }

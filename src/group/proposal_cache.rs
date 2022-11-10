@@ -464,12 +464,13 @@ mod tests {
         .unwrap()[0]
     }
 
-    fn update_leaf_node(name: &str) -> LeafNode {
+    fn update_leaf_node(name: &str, leaf_index: u32) -> LeafNode {
         let (mut leaf, _, signer) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, name);
 
         leaf.update(
             TEST_CIPHER_SUITE,
             TEST_GROUP,
+            leaf_index,
             default_properties(leaf.signing_identity.clone()),
             &signer,
         )
@@ -502,7 +503,7 @@ mod tests {
         .unwrap();
 
         let add_package = test_key_package(protocol_version, cipher_suite, "dave");
-        let update_leaf = update_leaf_node("alice");
+        let update_leaf = update_leaf_node("alice", 0);
 
         let remove_leaf_index = add_member(&mut tree, "carol");
 
@@ -995,6 +996,7 @@ mod tests {
             .commit(
                 TEST_CIPHER_SUITE,
                 TEST_GROUP,
+                0,
                 default_properties(leaf_node.signing_identity.clone()),
                 &signer,
                 |_| Ok(ParentHash::empty()),
@@ -2166,7 +2168,13 @@ mod tests {
 
     fn make_update_proposal(name: &str) -> UpdateProposal {
         UpdateProposal {
-            leaf_node: update_leaf_node(name),
+            leaf_node: update_leaf_node(name, 0),
+        }
+    }
+
+    fn make_update_proposal_custom(name: &str, leaf_index: u32) -> UpdateProposal {
+        UpdateProposal {
+            leaf_node: update_leaf_node(name, leaf_index),
         }
     }
 
@@ -2387,7 +2395,7 @@ mod tests {
         let (alice, mut tree) = new_tree("alice");
         let bob = add_member(&mut tree, "bob");
 
-        let update = Proposal::Update(make_update_proposal("carol"));
+        let update = Proposal::Update(make_update_proposal_custom("carol", 1));
         let update_ref = make_proposal_ref(&update, bob);
 
         let res = CommitReceiver::new(&tree, alice, alice)
@@ -2919,10 +2927,10 @@ mod tests {
             ..alice_leaf
         };
         alice_new_leaf
-            .sign(&alice_signer, &Some(TEST_GROUP))
+            .sign(&alice_signer, &(TEST_GROUP, 0).into())
             .unwrap();
 
-        let bob_new_leaf = update_leaf_node("bob");
+        let bob_new_leaf = update_leaf_node("bob", 1);
 
         let pk1_to_pk2 = Proposal::Update(UpdateProposal {
             leaf_node: alice_new_leaf.clone(),
@@ -2974,7 +2982,7 @@ mod tests {
             ..alice_leaf
         };
         alice_new_leaf
-            .sign(&alice_signer, &Some(TEST_GROUP))
+            .sign(&alice_signer, &(TEST_GROUP, 0).into())
             .unwrap();
 
         let pk1_to_pk2 = Proposal::Update(UpdateProposal {

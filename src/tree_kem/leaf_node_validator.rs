@@ -1,4 +1,4 @@
-use super::leaf_node::{LeafNode, LeafNodeSource};
+use super::leaf_node::{LeafNode, LeafNodeSigningContext, LeafNodeSource};
 use super::{Lifetime, LifetimeError};
 use crate::identity::CredentialType;
 use crate::identity::SigningIdentityError;
@@ -14,16 +14,16 @@ use thiserror::Error;
 
 pub enum ValidationContext<'a> {
     Add(Option<MlsTime>),
-    Update(&'a [u8]),
-    Commit(&'a [u8]),
+    Update((&'a [u8], u32)),
+    Commit((&'a [u8], u32)),
 }
 
 impl<'a> ValidationContext<'a> {
-    fn group_id(&self) -> Option<&[u8]> {
-        match self {
-            ValidationContext::Add(_) => None,
-            ValidationContext::Update(group_id) => Some(group_id),
-            ValidationContext::Commit(group_id) => Some(group_id),
+    fn signing_context(&self) -> LeafNodeSigningContext {
+        match *self {
+            ValidationContext::Add(_) => Default::default(),
+            ValidationContext::Update((group_id, leaf_index)) => (group_id, leaf_index).into(),
+            ValidationContext::Commit((group_id, leaf_index)) => (group_id, leaf_index).into(),
         }
     }
 }
@@ -121,11 +121,12 @@ impl<'a, C: IdentityProvider> LeafNodeValidator<'a, C> {
         &self,
         leaf_node: &LeafNode,
         group_id: &[u8],
+        leaf_index: u32,
     ) -> Result<(), LeafNodeValidationError> {
         let context = match leaf_node.leaf_node_source {
             LeafNodeSource::KeyPackage(_) => ValidationContext::Add(None),
-            LeafNodeSource::Update => ValidationContext::Update(group_id),
-            LeafNodeSource::Commit(_) => ValidationContext::Commit(group_id),
+            LeafNodeSource::Update => ValidationContext::Update((group_id, leaf_index)),
+            LeafNodeSource::Commit(_) => ValidationContext::Commit((group_id, leaf_index)),
         };
 
         self.check_if_valid(leaf_node, context)
@@ -178,7 +179,7 @@ impl<'a, C: IdentityProvider> LeafNodeValidator<'a, C> {
         let public_key = leaf_node.signing_identity.public_key(self.cipher_suite)?;
 
         // Verify that the credential signed the leaf node
-        leaf_node.verify(&public_key, &context.group_id())?;
+        leaf_node.verify(&public_key, &context.signing_context())?;
 
         // If required capabilities are specified, verify the leaf node meets the requirements
         self.validate_required_capabilities(leaf_node)?;
@@ -268,6 +269,7 @@ mod tests {
             .update(
                 TEST_CIPHER_SUITE,
                 group_id,
+                0,
                 default_properties(leaf_node.signing_identity.clone()),
                 &secret,
             )
@@ -276,7 +278,7 @@ mod tests {
         let test_validator =
             LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityProvider::new());
         assert_matches!(
-            test_validator.check_if_valid(&leaf_node, ValidationContext::Update(group_id)),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Update((group_id, 0))),
             Ok(_)
         );
     }
@@ -291,6 +293,7 @@ mod tests {
             .commit(
                 TEST_CIPHER_SUITE,
                 group_id,
+                0,
                 default_properties(leaf_node.signing_identity.clone()),
                 &secret,
                 |_| Ok(ParentHash::from(vec![0u8; 32])),
@@ -301,7 +304,7 @@ mod tests {
             LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityProvider::new());
 
         assert_matches!(
-            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit(group_id)),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit((group_id, 0))),
             Ok(_)
         );
     }
@@ -313,12 +316,12 @@ mod tests {
         let (mut leaf_node, secret) = get_test_add_node();
 
         assert_matches!(
-            test_validator.check_if_valid(&leaf_node, ValidationContext::Update(b"foo")),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Update((b"foo", 0))),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
 
         assert_matches!(
-            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit(b"foo")),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit((b"foo", 0))),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
 
@@ -326,6 +329,7 @@ mod tests {
             .update(
                 TEST_CIPHER_SUITE,
                 b"foo",
+                0,
                 default_properties(leaf_node.signing_identity.clone()),
                 &secret,
             )
@@ -337,7 +341,7 @@ mod tests {
         );
 
         assert_matches!(
-            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit(b"foo")),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit((b"foo", 0))),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
 
@@ -345,6 +349,7 @@ mod tests {
             .commit(
                 TEST_CIPHER_SUITE,
                 b"foo",
+                0,
                 default_properties(leaf_node.signing_identity.clone()),
                 &secret,
                 |_| Ok(ParentHash::from(vec![0u8; 32])),
@@ -357,7 +362,7 @@ mod tests {
         );
 
         assert_matches!(
-            test_validator.check_if_valid(&leaf_node, ValidationContext::Update(b"foo")),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Update((b"foo", 0))),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
     }

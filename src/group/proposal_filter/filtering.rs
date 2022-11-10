@@ -462,10 +462,12 @@ where
         let proposals = &mut state.proposals;
 
         proposals.retain_by_type::<UpdateProposal, _, _>(|p| {
+            let sender_index = leaf_index_of_update_sender(p)?;
+
             let valid = leaf_node_validator
                 .check_if_valid(
                     &p.proposal.leaf_node,
-                    ValidationContext::Update(self.group_id),
+                    ValidationContext::Update((self.group_id, *sender_index)),
                 )
                 .map_err(Into::into);
 
