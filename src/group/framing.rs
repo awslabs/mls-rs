@@ -43,7 +43,7 @@ impl From<&Content> for ContentType {
 #[repr(u8)]
 pub enum Sender {
     #[tls_codec(discriminant = 1)]
-    Member(LeafIndex),
+    Member(u32),
     External(u32),
     NewMemberCommit,
     NewMemberProposal,
@@ -51,6 +51,12 @@ pub enum Sender {
 
 impl From<LeafIndex> for Sender {
     fn from(leaf_index: LeafIndex) -> Self {
+        Sender::Member(*leaf_index)
+    }
+}
+
+impl From<u32> for Sender {
+    fn from(leaf_index: u32) -> Self {
         Sender::Member(leaf_index)
     }
 }
@@ -383,7 +389,7 @@ pub(crate) mod test_utils {
             content: MLSContent {
                 group_id: Vec::new(),
                 epoch: 0,
-                sender: Sender::Member(LeafIndex(1)),
+                sender: Sender::Member(1),
                 authenticated_data: Vec::new(),
                 content: Content::Application(test_content.into()),
             },

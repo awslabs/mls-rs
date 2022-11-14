@@ -99,7 +99,8 @@ impl ProposalSetEffects {
             Proposal::Add(add) => self.adds.push(add.key_package),
             Proposal::Update(update) => {
                 if let Sender::Member(package_to_replace) = item.sender {
-                    self.updates.push((package_to_replace, update.leaf_node))
+                    self.updates
+                        .push((LeafIndex(package_to_replace), update.leaf_node))
                 }
             }
             Proposal::Remove(remove) => self.removes.push(remove.to_remove),
@@ -357,7 +358,7 @@ impl ProposalCache {
 
         let rejected = receiver
             .map(|index| {
-                rejected_proposals(self.proposals.clone(), &proposals, &Sender::Member(index))
+                rejected_proposals(self.proposals.clone(), &proposals, &Sender::Member(*index))
             })
             .unwrap_or_default();
 
@@ -445,8 +446,8 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    fn test_sender() -> LeafIndex {
-        LeafIndex(1)
+    fn test_sender() -> u32 {
+        1
     }
 
     fn new_tree(name: &str) -> (LeafIndex, TreeKemPublic) {
@@ -480,7 +481,7 @@ mod tests {
     }
 
     struct TestProposals {
-        test_sender: LeafIndex,
+        test_sender: u32,
         test_proposals: Vec<MLSAuthenticatedContent>,
         expected_effects: ProposalSetEffects,
         tree: TreeKemPublic,
@@ -523,7 +524,7 @@ mod tests {
 
         let proposals = vec![add, update, remove, extensions];
 
-        let test_sender = tree
+        let test_sender = *tree
             .add_leaves(
                 vec![get_basic_test_node(cipher_suite, "charlie")],
                 BasicIdentityProvider,
@@ -791,11 +792,7 @@ mod tests {
         let update_proposal_ref = make_proposal_ref(&update, LeafIndex(1));
         let mut cache = test_proposal_cache_setup(test_proposals);
 
-        cache.insert(
-            update_proposal_ref.clone(),
-            update,
-            Sender::Member(LeafIndex(1)),
-        );
+        cache.insert(update_proposal_ref.clone(), update, Sender::Member(1));
 
         let (proposals, effects) = cache
             .prepare_commit(
@@ -876,7 +873,7 @@ mod tests {
 
         let (proposals, effects) = cache
             .prepare_commit(
-                Sender::Member(LeafIndex(2)),
+                Sender::Member(2),
                 Vec::new(),
                 &ExtensionList::new(),
                 BasicIdentityProvider::new(),
@@ -903,11 +900,11 @@ mod tests {
         assert!(cache.is_empty());
 
         let test_proposal = Proposal::Remove(RemoveProposal {
-            to_remove: test_sender(),
+            to_remove: LeafIndex(test_sender()),
         });
 
         let proposer = test_sender();
-        let test_proposal_ref = make_proposal_ref(&test_proposal, proposer);
+        let test_proposal_ref = make_proposal_ref(&test_proposal, LeafIndex(proposer));
         cache.insert(test_proposal_ref, test_proposal, Sender::Member(proposer));
 
         assert!(!cache.is_empty())
@@ -946,7 +943,7 @@ mod tests {
         let resolution = cache
             .resolve_for_commit(
                 Sender::Member(test_sender),
-                Some(test_sender),
+                Some(LeafIndex(test_sender)),
                 proposals,
                 None,
                 &ExtensionList::new(),
@@ -971,7 +968,7 @@ mod tests {
         ));
 
         let res = cache.prepare_commit(
-            Sender::Member(alice),
+            Sender::Member(*alice),
             vec![proposal.clone(), proposal],
             &ExtensionList::new(),
             BasicIdentityProvider::new(),
@@ -1381,7 +1378,7 @@ mod tests {
         cache.insert(
             make_proposal_ref(&update, LeafIndex(2)),
             update,
-            Sender::Member(LeafIndex(2)),
+            Sender::Member(2),
         );
 
         let (_, effects) = cache
@@ -1405,7 +1402,7 @@ mod tests {
         let cache = make_proposal_cache();
 
         let (alice_leaf, alice_secret, _) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice");
-        let alice = LeafIndex(0);
+        let alice = 0;
 
         let (mut tree, _) = TreeKemPublic::derive(
             TEST_CIPHER_SUITE,
@@ -1458,7 +1455,7 @@ mod tests {
 
         let (_, effects) = cache
             .prepare_commit(
-                Sender::Member(alice),
+                Sender::Member(*alice),
                 vec![psk, add],
                 &ExtensionList::new(),
                 BasicIdentityProvider::new(),
@@ -1486,7 +1483,7 @@ mod tests {
 
         let (_, effects) = cache
             .prepare_commit(
-                Sender::Member(alice),
+                Sender::Member(*alice),
                 vec![reinit],
                 &ExtensionList::new(),
                 BasicIdentityProvider::new(),
@@ -1726,7 +1723,7 @@ mod tests {
 
         fn send(&self) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), ProposalCacheError> {
             self.cache.prepare_commit(
-                Sender::Member(self.sender),
+                Sender::Member(*self.sender),
                 self.additional_proposals.clone(),
                 &ExtensionList::new(),
                 &self.identity_provider,
@@ -3290,7 +3287,7 @@ mod tests {
         ]);
 
         let sender_is_valid = |sender: &Sender| match sender {
-            Sender::Member(i) => tree.get_leaf_node(*i).is_ok(),
+            Sender::Member(i) => tree.get_leaf_node(LeafIndex(*i)).is_ok(),
             Sender::External(i) => (*i as usize) < external_senders.allowed_senders.len(),
             _ => true,
         };
@@ -3309,8 +3306,8 @@ mod tests {
         ];
 
         let proposers = [
-            Sender::Member(alice),
-            Sender::Member(LeafIndex::new(33)),
+            Sender::Member(*alice),
+            Sender::Member(33),
             Sender::External(0),
             Sender::External(1),
             Sender::NewMemberCommit,
@@ -3322,7 +3319,7 @@ mod tests {
             .cartesian_product(proposals)
             .cartesian_product([false, true])
             .for_each(|((proposer, proposal), by_ref)| {
-                let committer = Sender::Member(alice);
+                let committer = Sender::Member(*alice);
 
                 let receiver = CommitReceiver::new(&tree, committer.clone(), alice)
                     .with_extensions([external_senders.clone()].try_into().unwrap());
@@ -3355,7 +3352,7 @@ mod tests {
                             res,
                             Err(ProposalCacheError::ProposalFilterError(
                                 ProposalFilterError::InvalidMemberProposer(index)
-                            )) if i == index
+                            )) if i == *index
                         ),
                         Sender::External(i) => assert_matches!(
                             res,

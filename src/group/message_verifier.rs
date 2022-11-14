@@ -49,7 +49,7 @@ pub(crate) fn verify_plaintext_authentication(
                 }
             }
 
-            if self_index == Some(*index) {
+            if self_index == Some(LeafIndex(*index)) {
                 return Err(GroupError::CantProcessMessageFromSelf);
             }
         }
@@ -115,9 +115,11 @@ fn signing_identity_for_sender(
     cipher_suite: CipherSuite,
 ) -> Result<PublicKey, GroupError> {
     match sender {
-        Sender::Member(leaf_index) => {
-            signing_identity_for_member(signature_keys_container, *leaf_index, cipher_suite)
-        }
+        Sender::Member(leaf_index) => signing_identity_for_member(
+            signature_keys_container,
+            LeafIndex(*leaf_index),
+            cipher_suite,
+        ),
         Sender::External(external_key_index) => {
             signing_identity_for_external(cipher_suite, *external_key_index, external_signers)
         }

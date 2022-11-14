@@ -574,7 +574,7 @@ where
 
         let auth_content = MLSAuthenticatedContent::new_signed(
             self.context(),
-            Sender::Member(self.private_tree.self_index),
+            Sender::Member(*self.private_tree.self_index),
             Content::Proposal(proposal.clone()),
             &signer,
             self.config.preferences().encryption_mode().into(),
@@ -1267,7 +1267,7 @@ where
 
         let auth_content = MLSAuthenticatedContent::new_signed(
             self.context(),
-            Sender::Member(self.private_tree.self_index),
+            Sender::Member(*self.private_tree.self_index),
             Content::Application(message.to_vec().into()),
             &signer,
             WireFormat::Cipher,
@@ -1345,7 +1345,7 @@ where
         ProcessedMessage<Event<<C::IdentityProvider as IdentityProvider>::IdentityEvent>>,
         GroupError,
     > {
-        MessageProcessor::process_incoming_message(self, message)
+        MessageProcessor::process_incoming_message(self, message, true)
     }
 
     /// The returned `GroupInfo` is suitable for one external commit for the current epoch.
@@ -2597,8 +2597,8 @@ mod tests {
         let received_by_alice = alice_group.group.process_incoming_message(msg).unwrap();
 
         assert_eq!(
-            Some(bob_group.group.current_member_index()),
-            received_by_alice.sender_index
+            Some(Sender::Member(bob_group.group.current_member_index())),
+            received_by_alice.sender
         );
     }
 

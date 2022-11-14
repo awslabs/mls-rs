@@ -17,7 +17,6 @@ use crate::{
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     provider::group_state::{GroupStateStorage, InMemoryGroupStateStorage},
-    tree_kem::node::LeafIndex,
 };
 use ferriscrypt::asym::ec_key::SecretKey;
 
@@ -223,7 +222,7 @@ where
 
     let auth_content = MLSAuthenticatedContent::new_signed(
         &context,
-        Sender::Member(LeafIndex::new(0)),
+        Sender::Member(0),
         Content::Commit(Commit {
             proposals: Vec::new(),
             path: None,

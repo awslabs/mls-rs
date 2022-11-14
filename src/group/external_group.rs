@@ -77,7 +77,18 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         ProcessedMessage<ExternalEvent<<C::IdentityProvider as IdentityProvider>::IdentityEvent>>,
         GroupError,
     > {
-        MessageProcessor::process_incoming_message(self, message)
+        MessageProcessor::process_incoming_message(self, message, self.config.cache_proposals())
+    }
+
+    pub fn insert_proposal(
+        &mut self,
+        proposal: Proposal,
+        proposal_ref: ProposalRef,
+        sender: Sender,
+    ) {
+        self.group_state_mut()
+            .proposals
+            .insert(proposal_ref, proposal, sender)
     }
 
     pub fn propose_add(
@@ -413,7 +424,7 @@ mod tests {
 
         assert_matches!(
             proposal_process.event,
-            ExternalEvent::Proposal(ref p) if p == &add_proposal
+            ExternalEvent::Proposal((ref p, _)) if p == &add_proposal
         );
 
         let (commit, _) = alice.group.commit(vec![]).unwrap();
@@ -679,5 +690,31 @@ mod tests {
         let res = server.process_incoming_message(old_application_msg);
 
         assert_matches!(res, Err(GroupError::InvalidEpoch(1)));
+    }
+
+    #[test]
+    fn proposals_can_be_cached_externally() {
+        let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+
+        let mut server = make_external_group_with_config(
+            &alice,
+            TestExternalClientBuilder::new_for_test()
+                .cache_proposals(false)
+                .build_config(),
+        );
+
+        let proposal = alice.group.propose_update(vec![]).unwrap();
+        let (commit, _) = alice.group.commit(vec![]).unwrap();
+
+        // The server externally caches the `sender`, `proposal` and `proposal_ref` from `processed_msg`
+        let processed_msg = server.process_incoming_message(proposal).unwrap();
+
+        assert_matches!(processed_msg.event, ExternalEvent::Proposal(_));
+
+        if let ExternalEvent::Proposal((proposal, proposal_ref)) = processed_msg.event {
+            let sender = processed_msg.sender.unwrap();
+            server.insert_proposal(proposal, proposal_ref, sender);
+            server.process_incoming_message(commit).unwrap();
+        }
     }
 }

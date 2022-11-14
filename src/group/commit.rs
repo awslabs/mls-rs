@@ -180,7 +180,7 @@ where
         let sender = if is_external {
             Sender::NewMemberCommit
         } else {
-            Sender::Member(self.private_tree.self_index)
+            Sender::Member(*self.private_tree.self_index)
         };
 
         let signer = match external_leaf {

@@ -428,7 +428,7 @@ mod tests {
 
         assert_matches!(
             message.event,
-            Event::Proposal(Proposal::Add(AddProposal { key_package })) if key_package.leaf_node.signing_identity == bob_key_package.leaf_node.signing_identity
+            Event::Proposal((Proposal::Add(AddProposal { key_package }), _)) if key_package.leaf_node.signing_identity == bob_key_package.leaf_node.signing_identity
         );
 
         alice_group.group.commit(vec![]).unwrap();

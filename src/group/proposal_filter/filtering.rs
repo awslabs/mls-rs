@@ -101,7 +101,7 @@ where
     {
         match commit_sender {
             Sender::Member(sender) => {
-                self.apply_proposals_from_member(strategy, *sender, proposals)
+                self.apply_proposals_from_member(strategy, LeafIndex(*sender), proposals)
             }
             Sender::NewMemberCommit => self.apply_proposals_from_new_member(proposals),
             Sender::External(_) | Sender::NewMemberProposal => {
@@ -586,7 +586,7 @@ where
         apply_strategy(
             &strategy,
             p,
-            (p.sender != Sender::Member(commit_sender))
+            (p.sender != Sender::Member(*commit_sender))
                 .then_some(())
                 .ok_or(ProposalFilterError::InvalidCommitSelfUpdate),
         )
@@ -649,7 +649,7 @@ where
         let index = update_index;
         update_index += 1;
         let leaf_index = match p.sender {
-            Sender::Member(i) => i,
+            Sender::Member(i) => LeafIndex(i),
             _ => return Ok(true),
         };
 
@@ -782,7 +782,7 @@ where
             p,
             Err(ProposalFilterError::InvalidProposalTypeForSender {
                 proposal_type: ProposalType::EXTERNAL_INIT,
-                sender: Sender::Member(commit_sender),
+                sender: Sender::Member(*commit_sender),
                 by_ref: p.proposal_ref.is_some(),
             }),
         )
@@ -875,9 +875,9 @@ fn validate_sender(
 ) -> Result<(), ProposalFilterError> {
     match sender {
         &Sender::Member(i) => tree
-            .get_leaf_node(i)
+            .get_leaf_node(LeafIndex(i))
             .map(|_| ())
-            .map_err(|_| ProposalFilterError::InvalidMemberProposer(i)),
+            .map_err(|_| ProposalFilterError::InvalidMemberProposer(LeafIndex(i))),
         &Sender::External(i) => external_senders
             .ok_or(ProposalFilterError::ExternalSenderWithoutExternalSendersExtension)
             .and_then(|ext| {
@@ -1033,7 +1033,7 @@ fn leaf_index_of_update_sender(
     p: &ProposalInfo<UpdateProposal>,
 ) -> Result<LeafIndex, ProposalFilterError> {
     match p.sender {
-        Sender::Member(i) => Ok(i),
+        Sender::Member(i) => Ok(LeafIndex(i)),
         _ => Err(ProposalFilterError::InvalidProposalTypeForSender {
             proposal_type: ProposalType::UPDATE,
             sender: p.sender.clone(),

@@ -108,7 +108,7 @@ where
         auth_content: MLSAuthenticatedContent,
         padding: PaddingMode,
     ) -> Result<MLSCiphertext, CiphertextProcessorError> {
-        if Sender::Member(self.0.self_index()) != auth_content.content.sender {
+        if Sender::Member(*self.0.self_index()) != auth_content.content.sender {
             return Err(CiphertextProcessorError::InvalidSender(
                 auth_content.content.sender,
             ));
@@ -250,7 +250,7 @@ where
             content: MLSContent {
                 group_id: ciphertext.group_id.clone(),
                 epoch: ciphertext.epoch,
-                sender: Sender::Member(sender_data.sender),
+                sender: Sender::Member(*sender_data.sender),
                 authenticated_data: ciphertext.authenticated_data,
                 content: ciphertext_content.content,
             },
@@ -295,7 +295,7 @@ mod test {
 
         let test_content = MLSAuthenticatedContent::new_signed(
             &test_epoch.context,
-            Sender::Member(LeafIndex::new(0)),
+            Sender::Member(0),
             Content::Application(ApplicationData::from(b"test".to_vec())),
             &test_signer,
             WireFormat::Cipher,
@@ -350,7 +350,7 @@ mod test {
     #[test]
     fn test_invalid_sender() {
         let mut test_data = test_data(TEST_CIPHER_SUITE);
-        test_data.content.content.sender = Sender::Member(LeafIndex::new(3));
+        test_data.content.content.sender = Sender::Member(3);
 
         let mut ciphertext_processor = CiphertextProcessor::new(&mut test_data.epoch);
 

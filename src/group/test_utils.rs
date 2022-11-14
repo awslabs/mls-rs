@@ -104,7 +104,7 @@ impl TestGroup {
     pub(crate) fn make_plaintext(&mut self, content: Content) -> MLSMessage {
         let auth_content = MLSAuthenticatedContent::new_signed(
             &self.group.state.context,
-            Sender::Member(self.group.private_tree.self_index),
+            Sender::Member(*self.group.private_tree.self_index),
             content,
             &self.group.signer().unwrap(),
             WireFormat::Plain,

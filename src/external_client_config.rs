@@ -24,6 +24,7 @@ pub trait ExternalClientConfig: Clone {
         &self,
         init: ProposalFilterInit,
     ) -> <Self::MakeProposalFilter as MakeProposalFilter>::Filter;
+    fn cache_proposals(&self) -> bool;
 
     fn max_epoch_jitter(&self) -> Option<u64> {
         None

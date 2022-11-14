@@ -205,6 +205,18 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         ExternalClientBuilder(c)
     }
 
+    /// Specify whether processed proposals should be cached by the external group. In case they
+    /// are not cached by the group, they should be cached externally and inserted using
+    /// `ExternalGroup::insert_proposal` before processing the next commit.
+    pub fn cache_proposals(
+        self,
+        cache_proposals: bool,
+    ) -> ExternalClientBuilder<IntoConfigOutput<C>> {
+        let mut c = self.0.into_config();
+        c.0.settings.cache_proposals = cache_proposals;
+        ExternalClientBuilder(c)
+    }
+
     /// Set the keychain to be used by the client.
     pub fn keychain<K>(self, keychain: K) -> ExternalClientBuilder<WithKeychain<K, C>>
     where
@@ -392,6 +404,10 @@ where
     fn max_epoch_jitter(&self) -> Option<u64> {
         self.settings.max_epoch_jitter
     }
+
+    fn cache_proposals(&self) -> bool {
+        self.settings.cache_proposals
+    }
 }
 
 impl<K, Iv, Mpf> Sealed for Config<K, Iv, Mpf> {}
@@ -478,15 +494,33 @@ impl<T: MlsConfig> ExternalClientConfig for T {
     fn supported_credentials(&self) -> Vec<CredentialType> {
         self.get().supported_credentials()
     }
+
+    fn cache_proposals(&self) -> bool {
+        self.get().cache_proposals()
+    }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct Settings {
     pub(crate) cipher_suites: Vec<CipherSuite>,
     pub(crate) extension_types: Vec<ExtensionType>,
     pub(crate) protocol_versions: Vec<ProtocolVersion>,
     pub(crate) external_signing_keys: HashMap<Vec<u8>, PublicKey>,
     pub(crate) max_epoch_jitter: Option<u64>,
+    pub(crate) cache_proposals: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            cache_proposals: true,
+            cipher_suites: vec![],
+            extension_types: vec![],
+            protocol_versions: vec![],
+            external_signing_keys: Default::default(),
+            max_epoch_jitter: None,
+        }
+    }
 }
 
 /// Definitions meant to be private that are inaccessible outside this crate. They need to be marked

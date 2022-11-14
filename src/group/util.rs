@@ -166,7 +166,7 @@ pub(super) fn commit_sender(
     provisional_state: &ProvisionalState,
 ) -> Result<LeafIndex, GroupError> {
     match sender {
-        Sender::Member(index) => Ok(*index),
+        Sender::Member(index) => Ok(LeafIndex(*index)),
         Sender::External(_) => Err(GroupError::ExternalSenderCannotCommit),
         Sender::NewMemberProposal => Err(GroupError::ExpectedAddProposalForNewMemberProposal),
         Sender::NewMemberCommit => provisional_state

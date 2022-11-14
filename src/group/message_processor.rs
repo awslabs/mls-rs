@@ -63,13 +63,13 @@ pub struct StateUpdate<IE> {
 pub enum Event<IE> {
     ApplicationMessage(Vec<u8>),
     Commit(StateUpdate<IE>),
-    Proposal(Proposal),
+    Proposal((Proposal, ProposalRef)),
 }
 
 #[derive(Clone, Debug)]
 pub struct ProcessedMessage<E> {
     pub event: E,
-    pub sender_index: Option<u32>,
+    pub sender: Option<Sender>,
     pub authenticated_data: Vec<u8>,
 }
 
@@ -77,7 +77,7 @@ pub struct ProcessedMessage<E> {
 #[allow(clippy::large_enum_variant)]
 pub enum ExternalEvent<IE> {
     Commit(StateUpdate<IE>),
-    Proposal(Proposal),
+    Proposal((Proposal, ProposalRef)),
     Ciphertext(MLSCiphertext),
 }
 
@@ -85,7 +85,7 @@ impl<E> From<E> for ProcessedMessage<E> {
     fn from(event: E) -> Self {
         ProcessedMessage {
             event,
-            sender_index: None,
+            sender: None,
             authenticated_data: vec![],
         }
     }
@@ -111,15 +111,15 @@ impl<IE> TryFrom<ApplicationData> for ExternalEvent<IE> {
     }
 }
 
-impl<IE> From<Proposal> for Event<IE> {
-    fn from(proposal: Proposal) -> Self {
-        Event::Proposal(proposal)
+impl<IE> From<(Proposal, ProposalRef)> for Event<IE> {
+    fn from(proposal_and_ref: (Proposal, ProposalRef)) -> Self {
+        Event::Proposal(proposal_and_ref)
     }
 }
 
-impl<IE> From<Proposal> for ExternalEvent<IE> {
-    fn from(proposal: Proposal) -> Self {
-        ExternalEvent::Proposal(proposal)
+impl<IE> From<(Proposal, ProposalRef)> for ExternalEvent<IE> {
+    fn from(proposal_and_ref: (Proposal, ProposalRef)) -> Self {
+        ExternalEvent::Proposal(proposal_and_ref)
     }
 }
 
@@ -130,7 +130,7 @@ pub(crate) enum EventOrContent<E> {
 }
 
 pub(crate) trait MessageProcessor {
-    type EventType: From<Proposal>
+    type EventType: From<(Proposal, ProposalRef)>
         + TryFrom<ApplicationData, Error = GroupError>
         + From<StateUpdate<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>>;
 
@@ -141,6 +141,7 @@ pub(crate) trait MessageProcessor {
     fn process_incoming_message(
         &mut self,
         message: MLSMessage,
+        cache_proposal: bool,
     ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
         self.check_metadata(&message)?;
 
@@ -157,7 +158,9 @@ pub(crate) trait MessageProcessor {
 
         let msg = match event_or_content {
             EventOrContent::Event(event) => ProcessedMessage::from(event),
-            EventOrContent::Content(content) => self.process_auth_content(content)?,
+            EventOrContent::Content(content) => {
+                self.process_auth_content(content, cache_proposal)?
+            }
         };
 
         Ok(msg)
@@ -166,25 +169,23 @@ pub(crate) trait MessageProcessor {
     fn process_auth_content(
         &mut self,
         auth_content: MLSAuthenticatedContent,
+        cache_proposal: bool,
     ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
         let authenticated_data = auth_content.content.authenticated_data.clone();
 
-        let sender_index = match auth_content.content.sender {
-            Sender::Member(index) => Some(index.0),
-            _ => None,
-        };
+        let sender = Some(auth_content.content.sender.clone());
 
         let event = match auth_content.content.content {
             Content::Application(data) => Self::EventType::try_from(data),
             Content::Commit(_) => self.process_commit(auth_content).map(Self::EventType::from),
             Content::Proposal(ref proposal) => self
-                .process_proposal(&auth_content, proposal)
-                .map(|_| Self::EventType::from(proposal.clone())),
+                .process_proposal(&auth_content, proposal, cache_proposal)
+                .map(|p_ref| Self::EventType::from((proposal.clone(), p_ref))),
         }?;
 
         Ok(ProcessedMessage {
             event,
-            sender_index,
+            sender,
             authenticated_data,
         })
     }
@@ -193,19 +194,22 @@ pub(crate) trait MessageProcessor {
         &mut self,
         auth_content: &MLSAuthenticatedContent,
         proposal: &Proposal,
-    ) -> Result<(), GroupError> {
+        cache_proposal: bool,
+    ) -> Result<ProposalRef, GroupError> {
         let group_state = self.group_state_mut();
 
         let proposal_ref =
             ProposalRef::from_content(group_state.context.cipher_suite, auth_content)?;
 
-        group_state.proposals.insert(
-            proposal_ref,
-            proposal.clone(),
-            auth_content.content.sender.clone(),
-        );
+        cache_proposal.then(|| {
+            group_state.proposals.insert(
+                proposal_ref.clone(),
+                proposal.clone(),
+                auth_content.content.sender.clone(),
+            )
+        });
 
-        Ok(())
+        Ok(proposal_ref)
     }
 
     fn make_state_update(
