@@ -116,6 +116,8 @@ where
             snapshot.state.context.group_id.clone(),
             config.preferences().max_epoch_retention,
             config.group_state_storage(),
+            config.key_package_repo(),
+            None,
         )?;
 
         Ok(Group {

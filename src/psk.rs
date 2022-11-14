@@ -6,7 +6,7 @@ use crate::{
         state_repo::{GroupStateRepository, GroupStateRepositoryError},
         GroupContext,
     },
-    provider::group_state::GroupStateStorage,
+    provider::{group_state::GroupStateStorage, key_package::KeyPackageRepository},
     serde_utils::vec_u8_as_base64::VecAsBase64,
 };
 use ferriscrypt::{
@@ -208,16 +208,17 @@ struct PSKLabel<'a> {
     count: u16,
 }
 
-pub(crate) struct ResumptionPskSearch<'a, R>
+pub(crate) struct ResumptionPskSearch<'a, R, K>
 where
     R: GroupStateStorage,
+    K: KeyPackageRepository,
 {
     pub group_context: &'a GroupContext,
     pub current_epoch: &'a EpochSecrets,
-    pub prior_epochs: &'a GroupStateRepository<R>,
+    pub prior_epochs: &'a GroupStateRepository<R, K>,
 }
 
-impl<R: GroupStateStorage> Clone for ResumptionPskSearch<'_, R> {
+impl<R: GroupStateStorage, K: KeyPackageRepository> Clone for ResumptionPskSearch<'_, R, K> {
     fn clone(&self) -> Self {
         Self {
             group_context: self.group_context,
@@ -227,9 +228,9 @@ impl<R: GroupStateStorage> Clone for ResumptionPskSearch<'_, R> {
     }
 }
 
-impl<R: GroupStateStorage> Copy for ResumptionPskSearch<'_, R> {}
+impl<R: GroupStateStorage, K: KeyPackageRepository> Copy for ResumptionPskSearch<'_, R, K> {}
 
-impl<R: GroupStateStorage> ResumptionPskSearch<'_, R> {
+impl<R: GroupStateStorage, K: KeyPackageRepository> ResumptionPskSearch<'_, R, K> {
     pub(crate) fn find(&self, epoch_id: u64) -> Result<Option<Psk>, GroupStateRepositoryError> {
         Ok(if epoch_id == self.group_context.epoch {
             Some(self.current_epoch.resumption_secret.clone())

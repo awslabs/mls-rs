@@ -157,7 +157,7 @@ where
     pub config: C,
     #[cfg(not(feature = "benchmark"))]
     config: C,
-    state_repo: GroupStateRepository<C::GroupStateStorage>,
+    state_repo: GroupStateRepository<C::GroupStateStorage, C::KeyPackageRepository>,
     state: GroupState,
     epoch_secrets: EpochSecrets,
     private_tree: TreeKemPrivate,
@@ -221,6 +221,8 @@ where
             context.group_id.clone(),
             config.preferences().max_epoch_retention,
             config.group_state_storage(),
+            config.key_package_repo(),
+            None,
         )?;
 
         Ok(Self {
@@ -348,6 +350,8 @@ where
             .find_leaf_node(&key_package_generation.key_package.leaf_node)
             .ok_or(GroupError::WelcomeKeyPackageNotFound)?;
 
+        let used_key_package_ref = key_package_generation.reference()?;
+
         let mut private_tree =
             TreeKemPrivate::new_self_leaf(self_index, key_package_generation.leaf_node_secret_key);
 
@@ -389,9 +393,11 @@ where
             key_schedule_result.key_schedule,
             key_schedule_result.epoch_secrets,
             private_tree,
+            Some(used_key_package_ref),
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn join_with(
         config: C,
         confirmation_tag: &ConfirmationTag,
@@ -400,6 +406,7 @@ where
         key_schedule: KeySchedule,
         epoch_secrets: EpochSecrets,
         private_tree: TreeKemPrivate,
+        used_key_package_ref: Option<KeyPackageRef>,
     ) -> Result<Self, GroupError> {
         // Use the confirmed transcript hash and confirmation tag to compute the interim transcript
         // hash in the new state.
@@ -417,6 +424,8 @@ where
             context.group_id.clone(),
             config.preferences().max_epoch_retention,
             config.group_state_storage(),
+            config.key_package_repo(),
+            used_key_package_ref,
         )?;
 
         Ok(Group {
@@ -500,6 +509,7 @@ where
             KeySchedule::new(init_secret),
             epoch_secrets,
             TreeKemPrivate::new_self_leaf(LeafIndex(0), leaf_node_secret),
+            None,
         )?;
 
         let psk_ids = external_psks
@@ -765,6 +775,8 @@ where
             new_context.group_id.clone(),
             self.config.preferences().max_epoch_retention,
             self.config.group_state_storage(),
+            self.config.key_package_repo(),
+            None,
         )?;
 
         let resumption_psk_search = ResumptionPskSearch {
