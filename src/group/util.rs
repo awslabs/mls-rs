@@ -9,6 +9,7 @@ use crate::{
     provider::{identity::IdentityProvider, key_package::KeyPackageRepository},
     psk::ExternalPskIdValidator,
     signer::Signable,
+    time::MlsTime,
     tree_kem::{
         node::{LeafIndex, NodeVec},
         tree_validator::TreeValidator,
@@ -188,6 +189,7 @@ pub(super) fn proposal_effects<C, F, P>(
     public_tree: &TreeKemPublic,
     external_psk_id_validator: P,
     user_filter: F,
+    commit_time: Option<MlsTime>,
 ) -> Result<ProposalSetEffects, ProposalCacheError>
 where
     C: IdentityProvider,
@@ -204,6 +206,7 @@ where
         public_tree,
         external_psk_id_validator,
         user_filter,
+        commit_time,
     )
 }
 

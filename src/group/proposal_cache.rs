@@ -6,6 +6,7 @@ use crate::{
     },
     provider::identity::IdentityProvider,
     psk::ExternalPskIdValidator,
+    time::MlsTime,
     tree_kem::leaf_node::LeafNode,
 };
 
@@ -264,7 +265,12 @@ impl ProposalCache {
             added_indexes,
             removed_leaves,
             external_leaf_index,
-        } = applier.apply_proposals(IgnoreInvalidByRefProposal, &sender, proposals)?;
+        } = applier.apply_proposals(
+            IgnoreInvalidByRefProposal,
+            &sender,
+            proposals,
+            Some(MlsTime::now()),
+        )?;
 
         let rejected = rejected_proposals(self.proposals.clone(), &proposals, &sender);
 
@@ -308,6 +314,7 @@ impl ProposalCache {
         public_tree: &TreeKemPublic,
         external_psk_id_validator: P,
         user_filter: F,
+        commit_time: Option<MlsTime>,
     ) -> Result<ProposalSetEffects, ProposalCacheError>
     where
         C: IdentityProvider,
@@ -354,7 +361,7 @@ impl ProposalCache {
             added_indexes,
             removed_leaves,
             external_leaf_index,
-        } = applier.apply_proposals(FailInvalidProposal, &sender, proposals)?;
+        } = applier.apply_proposals(FailInvalidProposal, &sender, proposals, commit_time)?;
 
         let rejected = receiver
             .map(|index| {
@@ -445,6 +452,40 @@ mod tests {
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
+
+    impl ProposalCache {
+        #[allow(clippy::too_many_arguments)]
+        pub fn resolve_for_commit_default<C, F, P>(
+            &self,
+            sender: Sender,
+            receiver: Option<LeafIndex>,
+            proposal_list: Vec<ProposalOrRef>,
+            external_leaf: Option<&LeafNode>,
+            group_extensions: &ExtensionList<GroupContextExtension>,
+            identity_provider: C,
+            public_tree: &TreeKemPublic,
+            external_psk_id_validator: P,
+            user_filter: F,
+        ) -> Result<ProposalSetEffects, ProposalCacheError>
+        where
+            C: IdentityProvider,
+            F: ProposalFilter,
+            P: ExternalPskIdValidator,
+        {
+            self.resolve_for_commit(
+                sender,
+                receiver,
+                proposal_list,
+                external_leaf,
+                group_extensions,
+                identity_provider,
+                public_tree,
+                external_psk_id_validator,
+                user_filter,
+                None,
+            )
+        }
+    }
 
     fn test_sender() -> u32 {
         1
@@ -941,7 +982,7 @@ mod tests {
             .unwrap();
 
         let resolution = cache
-            .resolve_for_commit(
+            .resolve_for_commit_default(
                 Sender::Member(test_sender),
                 Some(LeafIndex(test_sender)),
                 proposals,
@@ -1011,7 +1052,7 @@ mod tests {
         let public_tree = &group.group.state.public_tree;
         let identity_provider = BasicIdentityProvider::new();
 
-        let res = cache.resolve_for_commit(
+        let res = cache.resolve_for_commit_default(
             Sender::NewMemberCommit,
             None,
             vec![ProposalOrRef::Proposal(Proposal::ExternalInit(
@@ -1053,7 +1094,7 @@ mod tests {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
 
-        let res = cache.resolve_for_commit(
+        let res = cache.resolve_for_commit_default(
             Sender::NewMemberCommit,
             None,
             vec![ProposalOrRef::Reference(proposal_ref)],
@@ -1081,7 +1122,7 @@ mod tests {
         let public_tree = &group.group.state.public_tree;
         let identity_provider = BasicIdentityProvider::new();
 
-        let res = cache.resolve_for_commit(
+        let res = cache.resolve_for_commit_default(
             Sender::NewMemberCommit,
             None,
             [
@@ -1118,7 +1159,7 @@ mod tests {
         let public_tree = &group.group.state.public_tree;
         let identity_provider = BasicIdentityProvider::new();
 
-        cache.resolve_for_commit(
+        cache.resolve_for_commit_default(
             Sender::NewMemberCommit,
             None,
             [
@@ -1179,7 +1220,7 @@ mod tests {
             }),
         ];
 
-        let res = cache.resolve_for_commit(
+        let res = cache.resolve_for_commit_default(
             Sender::NewMemberCommit,
             None,
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
@@ -1220,7 +1261,7 @@ mod tests {
             }),
         ];
 
-        let res = cache.resolve_for_commit(
+        let res = cache.resolve_for_commit_default(
             Sender::NewMemberCommit,
             None,
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
@@ -1262,7 +1303,7 @@ mod tests {
             }),
         ];
 
-        let res = cache.resolve_for_commit(
+        let res = cache.resolve_for_commit_default(
             Sender::NewMemberCommit,
             None,
             proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
@@ -1330,7 +1371,7 @@ mod tests {
         let public_tree = &group.group.state.public_tree;
         let identity_provider = BasicIdentityProvider::new();
 
-        let res = cache.resolve_for_commit(
+        let res = cache.resolve_for_commit_default(
             Sender::NewMemberCommit,
             None,
             Vec::new(),
@@ -1608,7 +1649,7 @@ mod tests {
             I: IntoIterator,
             I::Item: Into<ProposalOrRef>,
         {
-            self.cache.resolve_for_commit(
+            self.cache.resolve_for_commit_default(
                 self.sender.clone(),
                 Some(self.receiver),
                 proposals.into_iter().map(Into::into).collect(),

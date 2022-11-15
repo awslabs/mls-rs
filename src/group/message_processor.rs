@@ -3,6 +3,7 @@ use crate::{
     key_package::KeyPackage,
     provider::identity::IdentityProvider,
     psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
+    time::MlsTime,
     tree_kem::{
         leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, validate_update_path,
         TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
@@ -143,6 +144,15 @@ pub(crate) trait MessageProcessor {
         message: MLSMessage,
         cache_proposal: bool,
     ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
+        self.process_incoming_message_with_time(message, cache_proposal, None)
+    }
+
+    fn process_incoming_message_with_time(
+        &mut self,
+        message: MLSMessage,
+        cache_proposal: bool,
+        time_sent: Option<MlsTime>,
+    ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
         self.check_metadata(&message)?;
 
         let wire_format = message.wire_format();
@@ -159,7 +169,7 @@ pub(crate) trait MessageProcessor {
         let msg = match event_or_content {
             EventOrContent::Event(event) => ProcessedMessage::from(event),
             EventOrContent::Content(content) => {
-                self.process_auth_content(content, cache_proposal)?
+                self.process_auth_content(content, cache_proposal, time_sent)?
             }
         };
 
@@ -170,6 +180,7 @@ pub(crate) trait MessageProcessor {
         &mut self,
         auth_content: MLSAuthenticatedContent,
         cache_proposal: bool,
+        time_sent: Option<MlsTime>,
     ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
         let authenticated_data = auth_content.content.authenticated_data.clone();
 
@@ -177,7 +188,9 @@ pub(crate) trait MessageProcessor {
 
         let event = match auth_content.content.content {
             Content::Application(data) => Self::EventType::try_from(data),
-            Content::Commit(_) => self.process_commit(auth_content).map(Self::EventType::from),
+            Content::Commit(_) => self
+                .process_commit(auth_content, time_sent)
+                .map(Self::EventType::from),
             Content::Proposal(ref proposal) => self
                 .process_proposal(&auth_content, proposal, cache_proposal)
                 .map(|p_ref| Self::EventType::from((proposal.clone(), p_ref))),
@@ -278,6 +291,7 @@ pub(crate) trait MessageProcessor {
     fn process_commit(
         &mut self,
         auth_content: MLSAuthenticatedContent,
+        time_sent: Option<MlsTime>,
     ) -> Result<StateUpdate<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>, GroupError>
     {
         let commit = match auth_content.content.content {
@@ -300,6 +314,7 @@ pub(crate) trait MessageProcessor {
             &group_state.public_tree,
             self.external_psk_id_validator(),
             self.proposal_filter(ProposalFilterInit::new(auth_content.content.sender.clone())),
+            time_sent,
         )?;
 
         let mut provisional_state = self.calculate_provisional_state(proposal_effects)?;

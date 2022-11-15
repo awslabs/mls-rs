@@ -1324,7 +1324,7 @@ where
             .clone()
             .ok_or(GroupError::PendingCommitNotFound)?;
 
-        self.process_commit(pending_commit.content)
+        self.process_commit(pending_commit.content, None)
     }
 
     pub fn clear_pending_commit(&mut self) {
@@ -1683,9 +1683,13 @@ pub(crate) mod test_utils;
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use crate::client::test_utils::get_basic_client_builder;
     use crate::extension::MlsExtension;
     use crate::identity::test_utils::{get_test_basic_credential, get_test_x509_credential};
+    use crate::key_package::KeyPackageValidationError;
+    use crate::time::MlsTime;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use crate::{
         cipher_suite::MaybeCipherSuite,
@@ -3192,6 +3196,39 @@ mod tests {
         assert_eq!(
             new_member.signing_identity().signature_key,
             identity.signature_key
+        );
+    }
+
+    #[test]
+    fn receiving_commit_with_old_adds_fails() {
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 2);
+
+        let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "foobar");
+        let proposal = groups[0].group.propose_add(key_package, vec![]).unwrap();
+        let commit = groups[0].group.commit(vec![]).unwrap().0;
+
+        // 10 years from now
+        let future_time = MlsTime::now().seconds_since_epoch().unwrap() + 10 * 365 * 24 * 3600;
+        let future_time =
+            MlsTime::from_duration_since_epoch(Duration::from_secs(future_time)).unwrap();
+
+        groups[1].group.process_incoming_message(proposal).unwrap();
+        let res =
+            groups[1]
+                .group
+                .process_incoming_message_with_time(commit, true, Some(future_time));
+
+        assert_matches!(
+            res,
+            Err(GroupError::ProposalCacheError(
+                ProposalCacheError::ProposalFilterError(
+                    ProposalFilterError::KeyPackageValidationError(
+                        KeyPackageValidationError::LeafNodeValidationError(
+                            LeafNodeValidationError::InvalidLifetime(_, _)
+                        )
+                    )
+                )
+            ))
         );
     }
 }

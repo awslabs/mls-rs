@@ -10,10 +10,11 @@ use crate::{
         PreSharedKey, ProposalType, ReInit, RemoveProposal, ResumptionPSKUsage, ResumptionPsk,
         Sender, UpdateProposal,
     },
-    key_package::KeyPackageValidator,
+    key_package::{KeyPackageValidationOptions, KeyPackageValidator},
     protocol_version::ProtocolVersion,
     provider::identity::IdentityProvider,
     psk::ExternalPskIdValidator,
+    time::MlsTime,
     tree_kem::{
         leaf_node::LeafNode,
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
@@ -95,15 +96,19 @@ where
         strategy: F,
         commit_sender: &Sender,
         proposals: ProposalBundle,
+        commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
         F: FilterStrategy,
     {
         match commit_sender {
-            Sender::Member(sender) => {
-                self.apply_proposals_from_member(strategy, LeafIndex(*sender), proposals)
-            }
-            Sender::NewMemberCommit => self.apply_proposals_from_new_member(proposals),
+            Sender::Member(sender) => self.apply_proposals_from_member(
+                strategy,
+                LeafIndex(*sender),
+                proposals,
+                commit_time,
+            ),
+            Sender::NewMemberCommit => self.apply_proposals_from_new_member(proposals, commit_time),
             Sender::External(_) | Sender::NewMemberProposal => {
                 Err(ProposalFilterError::ExternalSenderCannotCommit)
             }
@@ -115,6 +120,7 @@ where
         strategy: F,
         commit_sender: LeafIndex,
         proposals: ProposalBundle,
+        commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
         F: FilterStrategy,
@@ -149,13 +155,14 @@ where
         let proposals = filter_out_external_init(&strategy, commit_sender, proposals)?;
 
         let state = ProposalState::new(self.original_tree.clone(), proposals);
-        let state = self.apply_proposal_changes(&strategy, state)?;
+        let state = self.apply_proposal_changes(&strategy, state, commit_time)?;
         Ok(state)
     }
 
     fn apply_proposals_from_new_member(
         &self,
         proposals: ProposalBundle,
+        commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError> {
         let external_leaf = self
             .external_leaf
@@ -188,7 +195,7 @@ where
         )?;
         let state = ProposalState::new(self.original_tree.clone(), proposals);
 
-        let state = self.apply_proposal_changes(FailInvalidProposal, state)?;
+        let state = self.apply_proposal_changes(FailInvalidProposal, state, commit_time)?;
 
         let state = insert_external_leaf(state, external_leaf.clone(), &self.identity_provider)?;
         Ok(state)
@@ -198,6 +205,7 @@ where
         &self,
         strategy: F,
         mut state: ProposalState,
+        commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
         F: FilterStrategy,
@@ -236,12 +244,14 @@ where
                     state,
                     group_context_extensions_proposal,
                     new_required_capabilities,
+                    commit_time,
                 ),
             None => self.apply_tree_changes(
                 strategy,
                 state,
                 self.original_group_extensions,
                 self.original_required_capabilities,
+                commit_time,
             ),
         }
     }
@@ -252,13 +262,19 @@ where
         mut state: ProposalState,
         group_context_extensions_proposal: ProposalInfo<ExtensionList<GroupContextExtension>>,
         new_required_capabilities: Option<RequiredCapabilitiesExt>,
+        commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
         F: FilterStrategy,
         C: IdentityProvider,
     {
-        let mut new_state =
-            self.apply_tree_changes(&strategy, state.clone(), &ExtensionList::new(), None)?;
+        let mut new_state = self.apply_tree_changes(
+            &strategy,
+            state.clone(),
+            &ExtensionList::new(),
+            None,
+            commit_time,
+        )?;
 
         let new_capabilities_supported =
             new_required_capabilities.map_or(Ok(()), |new_required_capabilities| {
@@ -315,6 +331,7 @@ where
                         state,
                         self.original_group_extensions,
                         self.original_required_capabilities,
+                        commit_time,
                     ),
                 }
             }
@@ -327,6 +344,7 @@ where
         state: ProposalState,
         group_extensions_in_use: &ExtensionList<GroupContextExtension>,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
+        commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
         F: FilterStrategy,
@@ -336,6 +354,7 @@ where
             state,
             group_extensions_in_use,
             required_capabilities,
+            commit_time,
         )?;
 
         let mut updates = Vec::new();
@@ -422,6 +441,7 @@ where
         state: ProposalState,
         group_extensions_in_use: &ExtensionList<GroupContextExtension>,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
+        commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
         F: FilterStrategy,
@@ -438,6 +458,7 @@ where
             state,
             group_extensions_in_use,
             required_capabilities,
+            commit_time,
         )?;
 
         Ok(state)
@@ -487,6 +508,7 @@ where
         mut state: ProposalState,
         group_extensions_in_use: &ExtensionList<GroupContextExtension>,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
+        commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
         F: FilterStrategy,
@@ -501,8 +523,12 @@ where
         let proposals = &mut state.proposals;
 
         proposals.retain_by_type::<AddProposal, _, _>(|p| {
+            let options = KeyPackageValidationOptions {
+                apply_lifetime_check: commit_time,
+            };
+
             let valid = package_validator
-                .check_if_valid(&p.proposal.key_package, Default::default())
+                .check_if_valid(&p.proposal.key_package, options)
                 .map_err(Into::into);
 
             let extensions_are_supported = leaf_supports_extensions(

@@ -1,5 +1,4 @@
 use ferriscrypt::asym::ec_key::PublicKey;
-use std::collections::HashSet;
 
 use super::*;
 use crate::identity::SigningIdentityError;
@@ -46,9 +45,9 @@ pub enum KeyPackageValidationError {
     InitLeafKeyEquality,
 }
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
-pub enum KeyPackageValidationOptions {
-    SkipLifetimeCheck,
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, Default)]
+pub struct KeyPackageValidationOptions {
+    pub apply_lifetime_check: Option<MlsTime>,
 }
 
 #[derive(Debug)]
@@ -92,7 +91,7 @@ impl<'a, C: IdentityProvider> KeyPackageValidator<'a, C> {
     pub fn check_if_valid(
         &self,
         package: &KeyPackage,
-        options: HashSet<KeyPackageValidationOptions>,
+        options: KeyPackageValidationOptions,
     ) -> Result<(), KeyPackageValidationError> {
         self.validate_properties(package)?;
 
@@ -135,17 +134,8 @@ impl<'a, C: IdentityProvider> KeyPackageValidator<'a, C> {
         Ok(())
     }
 
-    fn validation_context(
-        &self,
-        options: HashSet<KeyPackageValidationOptions>,
-    ) -> ValidationContext {
-        let time_validation = if options.contains(&KeyPackageValidationOptions::SkipLifetimeCheck) {
-            None
-        } else {
-            Some(MlsTime::now())
-        };
-
-        ValidationContext::Add(time_validation)
+    fn validation_context(&self, options: KeyPackageValidationOptions) -> ValidationContext {
+        ValidationContext::Add(options.apply_lifetime_check)
     }
 }
 
@@ -352,8 +342,12 @@ mod tests {
             BasicIdentityProvider::new(),
         );
 
+        let options = KeyPackageValidationOptions {
+            apply_lifetime_check: Some(MlsTime::now()),
+        };
+
         assert_matches!(
-            validator.check_if_valid(&test_package, Default::default()),
+            validator.check_if_valid(&test_package, options),
             Err(KeyPackageValidationError::LeafNodeValidationError(
                 LeafNodeValidationError::InvalidLifetime(_, _)
             ))
@@ -376,7 +370,9 @@ mod tests {
         assert_matches!(
             validator.check_if_valid(
                 &test_package,
-                [KeyPackageValidationOptions::SkipLifetimeCheck].into(),
+                KeyPackageValidationOptions {
+                    apply_lifetime_check: None
+                },
             ),
             Ok(_)
         );
