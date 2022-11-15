@@ -19,7 +19,13 @@ pub use proposal_filter::{
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct AddProposal {
-    pub key_package: KeyPackage,
+    pub(crate) key_package: KeyPackage,
+}
+
+impl AddProposal {
+    pub fn key_package(&self) -> &KeyPackage {
+        &self.key_package
+    }
 }
 
 #[derive(
@@ -34,7 +40,7 @@ pub struct AddProposal {
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct UpdateProposal {
-    pub leaf_node: LeafNode,
+    pub(crate) leaf_node: LeafNode,
 }
 
 #[derive(
@@ -50,7 +56,13 @@ pub struct UpdateProposal {
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct RemoveProposal {
-    pub to_remove: LeafIndex,
+    pub(crate) to_remove: LeafIndex,
+}
+
+impl RemoveProposal {
+    pub fn to_remove(&self) -> u32 {
+        *self.to_remove
+    }
 }
 
 #[derive(

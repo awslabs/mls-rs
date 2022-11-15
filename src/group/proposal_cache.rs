@@ -2294,7 +2294,7 @@ mod tests {
             res,
             Err(ProposalCacheError::ProposalFilterError(
                 ProposalFilterError::MoreThanOneProposalForLeaf(r)
-            )) if r == bob
+            )) if r == *bob
         );
     }
 
@@ -3352,7 +3352,7 @@ mod tests {
                             res,
                             Err(ProposalCacheError::ProposalFilterError(
                                 ProposalFilterError::InvalidMemberProposer(index)
-                            )) if i == *index
+                            )) if i == index
                         ),
                         Sender::External(i) => assert_matches!(
                             res,

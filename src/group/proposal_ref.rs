@@ -27,7 +27,7 @@ impl Deref for ProposalRef {
 }
 
 impl ProposalRef {
-    pub fn from_content(
+    pub(crate) fn from_content(
         cipher_suite: CipherSuite,
         content: &MLSAuthenticatedContent,
     ) -> Result<Self, tls_codec::Error> {

@@ -71,7 +71,7 @@ pub use commit::*;
 pub use error::*;
 pub use padding::*;
 pub use proposal_filter::ProposalFilterContext;
-pub(crate) use proposal_ref::ProposalRef;
+pub use proposal_ref::ProposalRef;
 pub use roster::*;
 pub use snapshot::*;
 pub use stats::*;

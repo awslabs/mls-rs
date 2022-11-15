@@ -5,8 +5,7 @@ use crate::{
     key_package::KeyPackageValidationError,
     protocol_version::ProtocolVersion,
     tree_kem::{
-        leaf_node::LeafNodeError, leaf_node_validator::LeafNodeValidationError, node::LeafIndex,
-        RatchetTreeError,
+        leaf_node::LeafNodeError, leaf_node_validator::LeafNodeValidationError, RatchetTreeError,
     },
 };
 use std::marker::PhantomData;
@@ -157,7 +156,7 @@ pub enum ProposalFilterError {
         original: ProtocolVersion,
     },
     #[error("More than one proposal applying to leaf {0:?}")]
-    MoreThanOneProposalForLeaf(LeafIndex),
+    MoreThanOneProposalForLeaf(u32),
     #[error("More than one GroupContextExtensions proposal")]
     MoreThanOneGroupContextExtensionsProposal,
     #[error("Invalid {} proposal of type {proposal_type:?} for sender {sender:?}", by_ref_or_value_str(*.by_ref))]
@@ -191,13 +190,13 @@ pub enum ProposalFilterError {
     #[error("Other proposal with ReInit")]
     OtherProposalWithReInit,
     #[error("Removing blank node at index {0:?}")]
-    RemovingBlankNode(LeafIndex),
+    RemovingBlankNode(u32),
     #[error("Unsupported group extension {0}")]
     UnsupportedGroupExtension(ExtensionType),
     #[error(transparent)]
     PskIdValidationError(Box<dyn std::error::Error + Send + Sync>),
     #[error("Invalid index {0:?} for member proposer")]
-    InvalidMemberProposer(LeafIndex),
+    InvalidMemberProposer(u32),
     #[error("Invalid external sender index {0}")]
     InvalidExternalSenderIndex(u32),
     #[error("External sender without External Senders extension")]

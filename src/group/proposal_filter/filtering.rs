@@ -628,7 +628,7 @@ where
             &strategy,
             p,
             indexes.insert(p.proposal.to_remove).then_some(()).ok_or(
-                ProposalFilterError::MoreThanOneProposalForLeaf(p.proposal.to_remove),
+                ProposalFilterError::MoreThanOneProposalForLeaf(*p.proposal.to_remove),
             ),
         )
     })?;
@@ -660,7 +660,7 @@ where
             p,
             (is_last_update && indexes.insert(leaf_index))
                 .then_some(())
-                .ok_or(ProposalFilterError::MoreThanOneProposalForLeaf(leaf_index)),
+                .ok_or(ProposalFilterError::MoreThanOneProposalForLeaf(*leaf_index)),
         )
     })?;
 
@@ -877,7 +877,7 @@ fn validate_sender(
         &Sender::Member(i) => tree
             .get_leaf_node(LeafIndex(i))
             .map(|_| ())
-            .map_err(|_| ProposalFilterError::InvalidMemberProposer(LeafIndex(i))),
+            .map_err(|_| ProposalFilterError::InvalidMemberProposer(i)),
         &Sender::External(i) => external_senders
             .ok_or(ProposalFilterError::ExternalSenderWithoutExternalSendersExtension)
             .and_then(|ext| {

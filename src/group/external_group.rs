@@ -17,6 +17,7 @@ use crate::{
     group::{
         Content, GroupError, GroupState, InterimTranscriptHash, MLSMessage, MLSMessagePayload,
     },
+    key_package::{KeyPackage, KeyPackageValidator},
     protocol_version::ProtocolVersion,
     provider::{identity::IdentityProvider, keychain::KeychainStorage},
     psk::PassThroughPskIdValidator,
@@ -93,18 +94,40 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
     pub fn propose_add(
         &mut self,
-        proposal: AddProposal,
+        key_package: KeyPackage,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
-        self.propose(Proposal::Add(proposal), authenticated_data)
+        // Check that this proposal has a valid lifetime and signature. Required capabilities are
+        // not checked as they may be changed in another proposal in the same commit.
+        let key_package_validator = KeyPackageValidator::new(
+            self.protocol_version(),
+            self.cipher_suite(),
+            None,
+            self.config.identity_provider(),
+        );
+
+        key_package_validator.check_if_valid(&key_package, Default::default())?;
+
+        self.propose(
+            Proposal::Add(AddProposal { key_package }),
+            authenticated_data,
+        )
     }
 
     pub fn propose_remove(
         &mut self,
-        proposal: RemoveProposal,
+        index: u32,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
-        self.propose(Proposal::Remove(proposal), authenticated_data)
+        let to_remove = LeafIndex(index);
+
+        // Verify that this leaf is actually in the tree
+        self.group_state().public_tree.get_leaf_node(to_remove)?;
+
+        self.propose(
+            Proposal::Remove(RemoveProposal { to_remove }),
+            authenticated_data,
+        )
     }
 
     fn propose(
@@ -329,7 +352,7 @@ mod tests {
         },
         group::{
             external_group::test_utils::make_external_group_with_config,
-            proposal::{AddProposal, Proposal, ProposalOrRef, RemoveProposal},
+            proposal::{AddProposal, Proposal, ProposalOrRef},
             proposal_ref::ProposalRef,
             test_utils::{test_group, TestGroup},
             Content, ExternalEvent, ExternalGroup, GroupError, MLSMessage, MLSMessagePayload,
@@ -337,7 +360,6 @@ mod tests {
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
         key_package::test_utils::test_key_package,
         protocol_version::{MaybeProtocolVersion, ProtocolVersion},
-        tree_kem::node::LeafIndex,
     };
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::SecretKey;
@@ -608,23 +630,13 @@ mod tests {
             let charlie_key_package =
                 test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "charlie");
 
-            let add_proposal = AddProposal {
-                key_package: charlie_key_package,
-            };
-
-            ext_group.propose_add(add_proposal, vec![]).unwrap()
+            ext_group.propose_add(charlie_key_package, vec![]).unwrap()
         })
     }
 
     #[test]
     fn external_group_can_propose_remove() {
-        test_external_proposal(|ext_group| {
-            let remove_proposal = RemoveProposal {
-                to_remove: LeafIndex(1),
-            };
-
-            ext_group.propose_remove(remove_proposal, vec![]).unwrap()
-        })
+        test_external_proposal(|ext_group| ext_group.propose_remove(1, vec![]).unwrap())
     }
 
     #[test]
@@ -636,11 +648,7 @@ mod tests {
         let charlie_key_package =
             test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "charlie");
 
-        let add_proposal = AddProposal {
-            key_package: charlie_key_package,
-        };
-
-        let res = server.propose_add(add_proposal, vec![]);
+        let res = server.propose_add(charlie_key_package, vec![]);
 
         assert_matches!(res, Err(GroupError::ExternalProposalsDisabled));
     }
@@ -659,11 +667,7 @@ mod tests {
         let mut server = make_external_group(&alice);
         server.config.0.keychain.insert(server_identity, server_key);
 
-        let remove_proposal = RemoveProposal {
-            to_remove: LeafIndex(1),
-        };
-
-        let res = server.propose_remove(remove_proposal, vec![]);
+        let res = server.propose_remove(1, vec![]);
 
         assert_matches!(res, Err(GroupError::InvalidExternalSigningIdentity));
     }
