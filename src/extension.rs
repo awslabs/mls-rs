@@ -3,6 +3,7 @@ use crate::group::proposal::ProposalType;
 use crate::identity::SigningIdentityError;
 use crate::provider::identity::IdentityProvider;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
+use crate::time::MlsTime;
 use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
 use crate::{identity::CredentialType, identity::SigningIdentity};
@@ -146,12 +147,13 @@ impl ExternalSendersExt {
 
     pub fn verify_all<C: IdentityProvider>(
         &self,
-        validator: &C,
+        provider: &C,
         cipher_suite: CipherSuite,
+        timestamp: Option<MlsTime>,
     ) -> Result<(), SigningIdentityError> {
         self.allowed_senders.iter().try_for_each(|id| {
-            validator
-                .validate(id, cipher_suite)
+            provider
+                .validate(id, cipher_suite, timestamp)
                 .map_err(|e| SigningIdentityError::IdentityProviderError(e.into()))
         })
     }

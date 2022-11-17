@@ -350,6 +350,7 @@ pub(crate) trait MessageProcessor {
                     update_path,
                     &provisional_state,
                     sender,
+                    time_sent,
                 )
             })
             .transpose()?;

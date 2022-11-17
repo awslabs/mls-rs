@@ -2,6 +2,7 @@ use super::{parent_hash::ParentHash, Capabilities, Lifetime};
 use crate::extension::LeafNodeExtension;
 use crate::provider::identity::IdentityProvider;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
+use crate::time::MlsTime;
 use crate::{
     cipher_suite::CipherSuite,
     extension::ExtensionList,
@@ -115,7 +116,7 @@ impl LeafNode {
         }
 
         identity_provider
-            .validate(signing_identity, cipher_suite)
+            .validate(signing_identity, cipher_suite, Some(MlsTime::now()))
             .map_err(|e| LeafNodeError::IdentityProviderError(e.into()))
     }
 

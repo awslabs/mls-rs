@@ -1,5 +1,6 @@
 use crate::group::message_processor::RosterUpdate;
 use crate::group::Member;
+use crate::time::MlsTime;
 use crate::{cipher_suite::CipherSuite, identity::CredentialType, identity::SigningIdentity};
 
 mod basic;
@@ -16,6 +17,7 @@ pub trait IdentityProvider {
         &self,
         signing_identity: &SigningIdentity,
         cipher_suite: CipherSuite,
+        timestamp: Option<MlsTime>,
     ) -> Result<(), Self::Error>;
 
     fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error>;
@@ -43,8 +45,9 @@ impl<T: IdentityProvider> IdentityProvider for &T {
         &self,
         signing_identity: &SigningIdentity,
         cipher_suite: CipherSuite,
+        timestamp: Option<MlsTime>,
     ) -> Result<(), Self::Error> {
-        (*self).validate(signing_identity, cipher_suite)
+        (*self).validate(signing_identity, cipher_suite, timestamp)
     }
 
     fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {

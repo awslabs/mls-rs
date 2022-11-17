@@ -46,7 +46,7 @@ pub struct MlsTime(u64);
 #[cfg(target_arch = "wasm32")]
 impl MlsTime {
     pub fn now() -> Self {
-        Self((date_now() * 1000.0) as u64)
+        Self((date_now() / 1000.0) as u64)
     }
 
     pub fn from_duration_since_epoch(duration: Duration) -> Option<MlsTime> {
@@ -54,6 +54,6 @@ impl MlsTime {
     }
 
     pub fn seconds_since_epoch(&self) -> Result<u64, SystemTimeError> {
-        Ok(Duration::from_micros(self.0).as_secs())
+        Ok(self.0)
     }
 }

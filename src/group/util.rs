@@ -156,7 +156,8 @@ pub(super) fn validate_existing_group<C: IdentityProvider>(
         .extensions
         .get_extension::<ExternalSendersExt>()?
     {
-        ext_senders.verify_all(&identity_provider, group_context.cipher_suite)?;
+        // TODO do joiners verify group against current time??
+        ext_senders.verify_all(&identity_provider, group_context.cipher_suite, None)?;
     }
 
     Ok(())

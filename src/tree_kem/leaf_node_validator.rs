@@ -14,16 +14,24 @@ use thiserror::Error;
 
 pub enum ValidationContext<'a> {
     Add(Option<MlsTime>),
-    Update((&'a [u8], u32)),
-    Commit((&'a [u8], u32)),
+    Update((&'a [u8], u32, Option<MlsTime>)),
+    Commit((&'a [u8], u32, Option<MlsTime>)),
 }
 
 impl<'a> ValidationContext<'a> {
     fn signing_context(&self) -> LeafNodeSigningContext {
         match *self {
             ValidationContext::Add(_) => Default::default(),
-            ValidationContext::Update((group_id, leaf_index)) => (group_id, leaf_index).into(),
-            ValidationContext::Commit((group_id, leaf_index)) => (group_id, leaf_index).into(),
+            ValidationContext::Update((group_id, leaf_index, _)) => (group_id, leaf_index).into(),
+            ValidationContext::Commit((group_id, leaf_index, _)) => (group_id, leaf_index).into(),
+        }
+    }
+
+    fn generation_time(&self) -> Option<MlsTime> {
+        match *self {
+            ValidationContext::Add(t) => t,
+            ValidationContext::Update((_, _, t)) => t,
+            ValidationContext::Commit((_, _, t)) => t,
         }
     }
 }
@@ -125,8 +133,8 @@ impl<'a, C: IdentityProvider> LeafNodeValidator<'a, C> {
     ) -> Result<(), LeafNodeValidationError> {
         let context = match leaf_node.leaf_node_source {
             LeafNodeSource::KeyPackage(_) => ValidationContext::Add(None),
-            LeafNodeSource::Update => ValidationContext::Update((group_id, leaf_index)),
-            LeafNodeSource::Commit(_) => ValidationContext::Commit((group_id, leaf_index)),
+            LeafNodeSource::Update => ValidationContext::Update((group_id, leaf_index, None)),
+            LeafNodeSource::Commit(_) => ValidationContext::Commit((group_id, leaf_index, None)),
         };
 
         self.check_if_valid(leaf_node, context)
@@ -173,7 +181,11 @@ impl<'a, C: IdentityProvider> LeafNodeValidator<'a, C> {
 
         // Verify the credential
         self.identity_provider
-            .validate(&leaf_node.signing_identity, self.cipher_suite)
+            .validate(
+                &leaf_node.signing_identity,
+                self.cipher_suite,
+                context.generation_time(),
+            )
             .map_err(|e| LeafNodeValidationError::IdentityProviderError(e.into()))?;
 
         let public_key = leaf_node.signing_identity.public_key(self.cipher_suite)?;
@@ -278,7 +290,8 @@ mod tests {
         let test_validator =
             LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityProvider::new());
         assert_matches!(
-            test_validator.check_if_valid(&leaf_node, ValidationContext::Update((group_id, 0))),
+            test_validator
+                .check_if_valid(&leaf_node, ValidationContext::Update((group_id, 0, None))),
             Ok(_)
         );
     }
@@ -304,7 +317,8 @@ mod tests {
             LeafNodeValidator::new(TEST_CIPHER_SUITE, None, BasicIdentityProvider::new());
 
         assert_matches!(
-            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit((group_id, 0))),
+            test_validator
+                .check_if_valid(&leaf_node, ValidationContext::Commit((group_id, 0, None))),
             Ok(_)
         );
     }
@@ -316,12 +330,12 @@ mod tests {
         let (mut leaf_node, secret) = get_test_add_node();
 
         assert_matches!(
-            test_validator.check_if_valid(&leaf_node, ValidationContext::Update((b"foo", 0))),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Update((b"foo", 0, None))),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
 
         assert_matches!(
-            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit((b"foo", 0))),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit((b"foo", 0, None))),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
 
@@ -341,7 +355,7 @@ mod tests {
         );
 
         assert_matches!(
-            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit((b"foo", 0))),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Commit((b"foo", 0, None))),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
 
@@ -362,7 +376,7 @@ mod tests {
         );
 
         assert_matches!(
-            test_validator.check_if_valid(&leaf_node, ValidationContext::Update((b"foo", 0))),
+            test_validator.check_if_valid(&leaf_node, ValidationContext::Update((b"foo", 0, None))),
             Err(LeafNodeValidationError::InvalidLeafNodeSource)
         );
     }
@@ -535,6 +549,7 @@ pub mod test_utils {
         identity::SigningIdentity,
         identity::{CredentialError, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
         provider::identity::IdentityProvider,
+        time::MlsTime,
     };
 
     #[derive(Clone, Debug, Default)]
@@ -554,6 +569,7 @@ pub mod test_utils {
             &self,
             _signing_identity: &SigningIdentity,
             _cipher_suite: CipherSuite,
+            _timestamp: Option<MlsTime>,
         ) -> Result<(), Self::Error> {
             Err(CredentialError::UnexpectedCredentialType(
                 CREDENTIAL_TYPE_BASIC,

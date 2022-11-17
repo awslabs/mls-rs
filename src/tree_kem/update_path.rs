@@ -9,8 +9,8 @@ use super::{
     tree_math::TreeMathError,
     HpkeCiphertext,
 };
-use crate::group::message_processor::ProvisionalState;
 use crate::{extension::ExtensionError, provider::identity::IdentityProvider};
+use crate::{group::message_processor::ProvisionalState, time::MlsTime};
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -60,6 +60,7 @@ pub(crate) fn validate_update_path<C: IdentityProvider>(
     path: &UpdatePath,
     state: &ProvisionalState,
     sender: LeafIndex,
+    commit_time: Option<MlsTime>,
 ) -> Result<ValidatedUpdatePath, UpdatePathValidationError> {
     let required_capabilities = state.group_context.extensions.get_extension()?;
 
@@ -71,7 +72,7 @@ pub(crate) fn validate_update_path<C: IdentityProvider>(
 
     leaf_validator.check_if_valid(
         &path.leaf_node,
-        ValidationContext::Commit((&state.group_context.group_id, *sender)),
+        ValidationContext::Commit((&state.group_context.group_id, *sender, commit_time)),
     )?;
 
     let existing_leaf = state.public_tree.nodes.borrow_as_leaf(sender)?;
@@ -199,6 +200,7 @@ mod tests {
             &update_path,
             &test_provisional_state(cipher_suite),
             LeafIndex(0),
+            None,
         )
         .unwrap();
 
@@ -217,6 +219,7 @@ mod tests {
             &update_path,
             &test_provisional_state(cipher_suite),
             LeafIndex(0),
+            None,
         );
 
         assert_matches!(
@@ -235,6 +238,7 @@ mod tests {
             &update_path,
             &test_provisional_state(cipher_suite),
             LeafIndex(0),
+            None,
         );
 
         assert_matches!(
@@ -261,6 +265,7 @@ mod tests {
             &update_path,
             &state,
             LeafIndex(0),
+            None,
         );
 
         assert_matches!(validated, Err(UpdatePathValidationError::SameHpkeKey(_)));

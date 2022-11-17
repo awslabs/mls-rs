@@ -147,6 +147,7 @@ where
             proposals,
             self.cipher_suite,
             &self.identity_provider,
+            commit_time,
         )?;
 
         let proposals = filter_out_extra_group_context_extensions(&strategy, proposals)?;
@@ -451,6 +452,7 @@ where
             state,
             group_extensions_in_use,
             required_capabilities,
+            commit_time,
         )?;
 
         let state = self.validate_new_key_packages(
@@ -470,6 +472,7 @@ where
         mut state: ProposalState,
         group_extensions_in_use: &ExtensionList<GroupContextExtension>,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
+        commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError>
     where
         F: FilterStrategy,
@@ -488,7 +491,7 @@ where
             let valid = leaf_node_validator
                 .check_if_valid(
                     &p.proposal.leaf_node,
-                    ValidationContext::Update((self.group_id, *sender_index)),
+                    ValidationContext::Update((self.group_id, *sender_index, commit_time)),
                 )
                 .map_err(Into::into);
 
@@ -698,6 +701,7 @@ fn filter_out_invalid_group_extensions<F, C>(
     mut proposals: ProposalBundle,
     cipher_suite: CipherSuite,
     identity_provider: C,
+    commit_time: Option<MlsTime>,
 ) -> Result<ProposalBundle, ProposalFilterError>
 where
     F: FilterStrategy,
@@ -711,7 +715,7 @@ where
             .and_then(|extension| {
                 extension.map_or(Ok(()), |extension| {
                     extension
-                        .verify_all(&identity_provider, cipher_suite)
+                        .verify_all(&identity_provider, cipher_suite, commit_time)
                         .map_err(Into::into)
                 })
             });

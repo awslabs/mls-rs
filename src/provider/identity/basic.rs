@@ -3,6 +3,7 @@ use crate::{
     group::Member,
     identity::{CredentialType, CREDENTIAL_TYPE_BASIC},
     identity::{SigningIdentity, SigningIdentityError},
+    time::MlsTime,
 };
 
 use super::IdentityProvider;
@@ -24,6 +25,7 @@ impl IdentityProvider for BasicIdentityProvider {
         &self,
         signing_identity: &SigningIdentity,
         cipher_suite: CipherSuite,
+        _timestamp: Option<MlsTime>,
     ) -> Result<(), Self::Error> {
         // Check that using the public key won't cause errors later
         signing_identity

@@ -13,6 +13,7 @@ use crate::identity::{
     CertificateData, CredentialError, MlsCredential, X509Credential, CREDENTIAL_TYPE_X509,
 };
 use crate::provider::identity::IdentityProvider;
+use crate::time::{MlsTime, SystemTimeError};
 
 #[derive(Debug, Error)]
 pub enum X509Error {
@@ -47,6 +48,10 @@ pub enum X509Error {
     SelfSignedWrongLength(usize),
     #[error("pinned certificate not found in the chain")]
     PinnedCertNotFound,
+    #[error(transparent)]
+    SystemTimeError(#[from] SystemTimeError),
+    #[error("Current (commit) timestamp {0} outside of the validity period of certificate {1}")]
+    ValidityError(u64, String),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -84,7 +89,10 @@ impl<I: X509IdentityExtractor> BasicX509Provider<I> {
                 // Verify the self-signture
                 let cert =
                     Certificate::from_der(cert_data).map_err(X509Error::CertificateParseError)?;
-                verify_cert(&cert, &cert)?;
+
+                // Time is validated when CAs are used
+                verify_cert(&cert, &cert, None)?;
+
                 Ok(hash_cert(cert_data))
             })
             .collect::<Result<_, X509Error>>()?;
@@ -110,6 +118,7 @@ impl<I: X509IdentityExtractor> BasicX509Provider<I> {
         &self,
         signing_identity: &SigningIdentity,
         cipher_suite: CipherSuite,
+        timestamp: Option<MlsTime>,
     ) -> Result<(), X509Error> {
         let x509_cred = X509Credential::from_credential(&signing_identity.credential)?;
         let chain = x509_cred.credential;
@@ -133,6 +142,11 @@ impl<I: X509IdentityExtractor> BasicX509Provider<I> {
             .collect::<Result<Vec<_>, _>>()
             .map_err(X509Error::CertificateParseError)?;
 
+        if let Some(time) = timestamp {
+            let ca = chain.last().ok_or(X509Error::EmptyCertificateChain)?;
+            verify_time(ca, time)?;
+        }
+
         let leaf_pk = get_public_key(&chain[0])?;
 
         if leaf_pk.to_uncompressed_bytes()? != *signing_identity.signature_key {
@@ -149,7 +163,7 @@ impl<I: X509IdentityExtractor> BasicX509Provider<I> {
         chain
             .iter()
             .zip(chain.iter().skip(1))
-            .try_for_each(|(cert1, cert2)| verify_cert(cert2, cert1))
+            .try_for_each(|(cert1, cert2)| verify_cert(cert2, cert1, timestamp))
     }
 }
 
@@ -161,11 +175,12 @@ impl<IE: X509IdentityExtractor> IdentityProvider for BasicX509Provider<IE> {
         &self,
         signing_identity: &SigningIdentity,
         cipher_suite: CipherSuite,
+        timestamp: Option<MlsTime>,
     ) -> Result<(), Self::Error> {
         if !self.allow_self_signed {
-            self.validate_chain(signing_identity, cipher_suite)
+            self.validate_chain(signing_identity, cipher_suite, timestamp)
         } else {
-            validate_self_signed(signing_identity, cipher_suite)
+            validate_self_signed(signing_identity, cipher_suite, timestamp)
         }
     }
 
@@ -208,7 +223,11 @@ impl<IE: X509IdentityExtractor> IdentityProvider for BasicX509Provider<IE> {
     }
 }
 
-fn verify_cert(verifier: &Certificate, verified: &Certificate) -> Result<(), X509Error> {
+fn verify_cert(
+    verifier: &Certificate,
+    verified: &Certificate,
+    current_time: Option<MlsTime>,
+) -> Result<(), X509Error> {
     // Check that we support the signing algorithm
     check_algorithm_supported(verified)?;
 
@@ -231,7 +250,25 @@ fn verify_cert(verifier: &Certificate, verified: &Certificate) -> Result<(), X50
         .then_some(())
         .ok_or_else(|| {
             X509Error::InvalidSignature(format!("{:?}", verifier), format!("{:?}", verified))
-        })
+        })?;
+
+    // Verify properties
+    if let Some(time) = current_time {
+        verify_time(verified, time)?;
+    }
+
+    Ok(())
+}
+
+fn verify_time(cert: &Certificate, time: MlsTime) -> Result<(), X509Error> {
+    let validity = cert.tbs_certificate.validity;
+    let now = time.seconds_since_epoch()?;
+    let not_before = validity.not_before.to_unix_duration().as_secs();
+    let not_after = validity.not_after.to_unix_duration().as_secs();
+
+    (not_before <= now && now <= not_after)
+        .then_some(())
+        .ok_or_else(|| X509Error::ValidityError(now, format!("{:?}", cert)))
 }
 
 fn hash_cert(cert_data: &[u8]) -> Vec<u8> {
@@ -289,6 +326,7 @@ fn check_hash_supported(
 fn validate_self_signed(
     signing_identity: &SigningIdentity,
     cipher_suite: CipherSuite,
+    timestamp: Option<MlsTime>,
 ) -> Result<(), X509Error> {
     let chain = X509Credential::from_credential(&signing_identity.credential)?.credential;
 
@@ -309,7 +347,8 @@ fn validate_self_signed(
             cipher_suite.signature_key_curve(),
         ));
     }
-    verify_cert(&leaf_cert, &leaf_cert)
+
+    verify_cert(&leaf_cert, &leaf_cert, timestamp)
 }
 
 #[cfg(any(test, feature = "benchmark"))]
@@ -371,9 +410,14 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use crate::identity::{
-        test_utils::{get_test_x509_credential, test_cert, test_chain},
-        CertificateChain, CertificateData, MlsCredential, X509Credential,
+    use std::time::Duration;
+
+    use crate::{
+        identity::{
+            test_utils::{get_test_x509_credential, test_cert, test_chain},
+            CertificateChain, CertificateData, MlsCredential, X509Credential,
+        },
+        time::MlsTime,
     };
 
     use super::{
@@ -392,6 +436,7 @@ mod tests {
     pub fn get_validation_result(
         chain: CertificateChain,
         leaf_pk: ec_key::PublicKey,
+        timestamp: Option<MlsTime>,
     ) -> Result<(), X509Error> {
         let ca: Vec<&[u8]> = vec![chain.ca().unwrap()];
         let validator = BasicX509Provider::new(ca, TestIdGenerator {}).unwrap();
@@ -402,13 +447,13 @@ mod tests {
             credential,
         };
 
-        validator.validate(&signing_id, CipherSuite::P256Aes128)
+        validator.validate(&signing_id, CipherSuite::P256Aes128, timestamp)
     }
 
     #[test]
     fn verifying_valid_chain_succeeds() {
         let (chain, leaf_pk) = test_chain();
-        get_validation_result(chain, leaf_pk).unwrap();
+        get_validation_result(chain, leaf_pk, None).unwrap();
     }
 
     #[test]
@@ -419,7 +464,7 @@ mod tests {
         chain.swap(1, 2);
 
         assert_matches!(
-            get_validation_result(chain, leaf_pk),
+            get_validation_result(chain, leaf_pk, None),
             Err(X509Error::InvalidSignature(..))
         );
     }
@@ -434,7 +479,7 @@ mod tests {
         let mismatching_pk = mismatching_sk.to_public().unwrap();
 
         assert_matches!(
-            get_validation_result(chain, mismatching_pk),
+            get_validation_result(chain, mismatching_pk, None),
             Err(X509Error::LeafPublicKeyMismatch)
         );
     }
@@ -451,7 +496,7 @@ mod tests {
         };
 
         assert_matches!(
-            validator.validate(&signing_id, CipherSuite::P256Aes128),
+            validator.validate(&signing_id, CipherSuite::P256Aes128, None),
             Err(X509Error::CaNotFound)
         );
     }
@@ -466,7 +511,7 @@ mod tests {
         );
 
         assert_matches!(
-            get_validation_result(chain, leaf_pk),
+            get_validation_result(chain, leaf_pk, None),
             Err(X509Error::UnsupportedHash(..))
         );
     }
@@ -530,7 +575,7 @@ mod tests {
 
         // The certificate is rejected because empty chain contains no CA.
         assert_matches!(
-            validator.validate(&signing_id, CipherSuite::P256Aes128),
+            validator.validate(&signing_id, CipherSuite::P256Aes128, None),
             Err(X509Error::EmptyCertificateChain)
         );
     }
@@ -551,7 +596,7 @@ mod tests {
         };
 
         assert_matches!(
-            validator.validate(&signing_id, CipherSuite::Curve25519Aes128),
+            validator.validate(&signing_id, CipherSuite::Curve25519Aes128, None),
             Err(X509Error::CurveMismatch(..))
         );
     }
@@ -582,7 +627,7 @@ mod tests {
         };
 
         validator
-            .validate(&signing_id, CipherSuite::P256Aes128)
+            .validate(&signing_id, CipherSuite::P256Aes128, None)
             .unwrap();
     }
 
@@ -612,7 +657,7 @@ mod tests {
         };
 
         assert_matches!(
-            validator.validate(&signing_id, CipherSuite::P256Aes128),
+            validator.validate(&signing_id, CipherSuite::P256Aes128, None),
             Err(X509Error::SelfSignedWrongLength(2))
         );
     }
@@ -636,7 +681,7 @@ mod tests {
         };
 
         assert_matches!(
-            validator.validate(&signing_id, CipherSuite::P256Aes128),
+            validator.validate(&signing_id, CipherSuite::P256Aes128, None),
             Err(X509Error::SelfSignedWrongLength(0))
         );
     }
@@ -656,7 +701,7 @@ mod tests {
         };
 
         validator
-            .validate(&signing_id, CipherSuite::P256Aes128)
+            .validate(&signing_id, CipherSuite::P256Aes128, None)
             .unwrap();
 
         // Validation without pinned cert fails : validate chain[2..4]
@@ -669,8 +714,37 @@ mod tests {
         };
 
         assert_matches!(
-            validator.validate(&signing_id, CipherSuite::P256Aes128),
+            validator.validate(&signing_id, CipherSuite::P256Aes128, None),
             Err(X509Error::PinnedCertNotFound)
+        );
+    }
+
+    #[test]
+    fn using_valid_timestamp_is_accepted() {
+        let (chain, leaf_pk) = test_chain();
+
+        // August 16, 2022
+        let valid_time = MlsTime::from_duration_since_epoch(Duration::from_secs(1660642238));
+
+        get_validation_result(chain, leaf_pk, valid_time).unwrap();
+    }
+
+    #[test]
+    fn using_invalid_timestamp_is_rejected() {
+        let (chain, leaf_pk) = test_chain();
+
+        // August 16, 2023
+        let future_time = MlsTime::from_duration_since_epoch(Duration::from_secs(1692178238));
+        // August 16, 2021
+        let past_time = MlsTime::from_duration_since_epoch(Duration::from_secs(1629106238));
+
+        assert_matches!(
+            get_validation_result(chain.clone(), leaf_pk.clone(), future_time),
+            Err(X509Error::ValidityError(_, _))
+        );
+        assert_matches!(
+            get_validation_result(chain, leaf_pk, past_time),
+            Err(X509Error::ValidityError(_, _))
         );
     }
 }
