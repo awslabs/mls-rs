@@ -503,7 +503,7 @@ mod tests {
         test_repo.write_to_storage(test_snapshot(0)).unwrap();
 
         assert_eq!(
-            test_repo.storage.stored_groups().unwrap(),
+            test_repo.storage.stored_groups(),
             vec![test_epoch_0.context.group_id]
         )
     }

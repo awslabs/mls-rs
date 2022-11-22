@@ -33,8 +33,6 @@ impl EpochStorageCommit {
 pub trait GroupStateStorage {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    fn stored_groups(&self) -> Result<Vec<Vec<u8>>, Self::Error>;
-
     fn delete_group(&self, group_id: &[u8]) -> Result<(), Self::Error>;
 
     fn get_snapshot(&self, group_id: &[u8]) -> Result<Option<Snapshot>, Self::Error>;
@@ -146,6 +144,10 @@ impl InMemoryGroupStateStorage {
 
         storage
     }
+
+    pub fn stored_groups(&self) -> Vec<Vec<u8>> {
+        self.inner.lock().unwrap().keys().cloned().collect()
+    }
 }
 
 impl Default for InMemoryGroupStateStorage {
@@ -219,10 +221,6 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
             .unwrap()
             .get(group_id)
             .map(|v| v.current_snapshot.clone()))
-    }
-
-    fn stored_groups(&self) -> Result<Vec<Vec<u8>>, Self::Error> {
-        Ok(self.inner.lock().unwrap().keys().cloned().collect())
     }
 
     fn delete_group(&self, group_id: &[u8]) -> Result<(), Self::Error> {
