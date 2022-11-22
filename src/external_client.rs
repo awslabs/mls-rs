@@ -5,8 +5,8 @@ use crate::{
 use thiserror::Error;
 
 pub use crate::external_client_builder::{
-    BaseConfig, ExternalClientBuilder, Missing, MlsConfig, WithIdentityProvider, WithKeychain,
-    WithProposalFilter,
+    ExternalBaseConfig, ExternalClientBuilder, Missing, MlsConfig, WithIdentityProvider,
+    WithKeychain, WithProposalFilter,
 };
 
 #[derive(Debug, Error)]
@@ -20,7 +20,7 @@ pub struct ExternalClient<C> {
 }
 
 impl ExternalClient<()> {
-    pub fn builder() -> ExternalClientBuilder<BaseConfig> {
+    pub fn builder() -> ExternalClientBuilder<ExternalBaseConfig> {
         ExternalClientBuilder::new()
     }
 }

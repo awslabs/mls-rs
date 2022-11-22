@@ -25,7 +25,7 @@ use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 use std::collections::HashMap;
 
 /// Base client configuration type when instantiating `ExternalClientBuilder`
-pub type BaseConfig = Config<Missing, Missing, KeepAllProposals>;
+pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals>;
 
 /// Builder for `ExternalClient`
 ///
@@ -78,7 +78,7 @@ pub type BaseConfig = Config<Missing, Missing, KeepAllProposals>;
 /// The second option is more verbose and consists in writing the full `ExternalClient` type:
 /// ```
 /// use aws_mls::{
-///     external_client::{BaseConfig, ExternalClient, WithIdentityProvider, WithKeychain},
+///     external_client::{ExternalBaseConfig, ExternalClient, WithIdentityProvider, WithKeychain},
 ///     provider::{
 ///         identity::BasicIdentityProvider,
 ///         keychain::{InMemoryKeychain, FirstIdentitySelector},
@@ -87,7 +87,7 @@ pub type BaseConfig = Config<Missing, Missing, KeepAllProposals>;
 ///
 /// type MlsClient = ExternalClient<WithKeychain<InMemoryKeychain<FirstIdentitySelector>, WithIdentityProvider<
 ///     BasicIdentityProvider,
-///     BaseConfig,
+///     ExternalBaseConfig,
 /// >>>;
 ///
 /// fn make_client_2() -> MlsClient {
@@ -101,13 +101,13 @@ pub type BaseConfig = Config<Missing, Missing, KeepAllProposals>;
 #[derive(Debug)]
 pub struct ExternalClientBuilder<C>(C);
 
-impl Default for ExternalClientBuilder<BaseConfig> {
+impl Default for ExternalClientBuilder<ExternalBaseConfig> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ExternalClientBuilder<BaseConfig> {
+impl ExternalClientBuilder<ExternalBaseConfig> {
     pub fn new() -> Self {
         Self(Config(ConfigInner {
             settings: Default::default(),
@@ -564,7 +564,7 @@ use private::{Config, ConfigInner, IntoConfig};
 pub mod test_utils {
     use crate::{
         external_client_builder::{
-            BaseConfig, ExternalClientBuilder, WithIdentityProvider, WithKeychain,
+            ExternalBaseConfig, ExternalClientBuilder, WithIdentityProvider, WithKeychain,
         },
         provider::{
             identity::BasicIdentityProvider,
@@ -574,7 +574,7 @@ pub mod test_utils {
 
     pub type TestExternalClientConfig = WithIdentityProvider<
         BasicIdentityProvider,
-        WithKeychain<InMemoryKeychain<FirstIdentitySelector>, BaseConfig>,
+        WithKeychain<InMemoryKeychain<FirstIdentitySelector>, ExternalBaseConfig>,
     >;
 
     pub type TestExternalClientBuilder = ExternalClientBuilder<TestExternalClientConfig>;
