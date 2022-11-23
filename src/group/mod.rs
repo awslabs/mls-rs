@@ -67,6 +67,7 @@ pub(crate) use group_info::GroupInfo;
 pub(crate) use proposal_cache::ProposalCacheError;
 
 pub use self::framing::MLSMessage;
+pub use self::framing::Sender;
 pub use commit::*;
 pub use error::*;
 pub use padding::*;

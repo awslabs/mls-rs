@@ -7,6 +7,8 @@ pub use proposal_filter::{
     ProposalFilterError,
 };
 
+pub use proposal_ref::ProposalRef;
+
 #[derive(
     Clone,
     Debug,
