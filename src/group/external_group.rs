@@ -54,11 +54,15 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             &config.identity_provider(),
         )?;
 
-        let interim_transcript_hash = InterimTranscriptHash::create(
-            group_context.cipher_suite,
-            &group_context.confirmed_transcript_hash,
-            &confirmation_tag,
-        )?;
+        let interim_transcript_hash = if group_context.epoch > 0 {
+            InterimTranscriptHash::create(
+                group_context.cipher_suite,
+                &group_context.confirmed_transcript_hash,
+                &confirmation_tag,
+            )
+        } else {
+            Ok(InterimTranscriptHash::from(vec![]))
+        }?;
 
         Ok(Self {
             config,
@@ -718,6 +722,21 @@ mod tests {
         if let ExternalEvent::Proposal((proposal, proposal_ref)) = processed_msg.event {
             let sender = processed_msg.sender.unwrap();
             server.insert_proposal(proposal, proposal_ref, sender);
+            server.process_incoming_message(commit).unwrap();
+        }
+    }
+
+    #[test]
+    fn external_group_can_observe_since_creation() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let info = alice.group.group_info_message(true).unwrap();
+
+        let config = TestExternalClientBuilder::new_for_test().build_config();
+        let mut server = ExternalGroup::join(config, info, None).unwrap();
+
+        for _ in 0..2 {
+            let commit = alice.group.commit(vec![]).unwrap().0;
+            alice.process_pending_commit().unwrap();
             server.process_incoming_message(commit).unwrap();
         }
     }
