@@ -1,6 +1,12 @@
 use crate::{
+    cipher_suite::CipherSuite,
     external_client_config::ExternalClientConfig,
     group::{framing::MLSMessage, snapshot::ExternalSnapshot, ExternalGroup, GroupError},
+    key_package::{
+        KeyPackage, KeyPackageValidationError, KeyPackageValidationOptions, KeyPackageValidator,
+    },
+    protocol_version::ProtocolVersion,
+    time::MlsTime,
 };
 use thiserror::Error;
 
@@ -13,6 +19,8 @@ pub use crate::external_client_builder::{
 pub enum ExternalClientError {
     #[error(transparent)]
     GroupError(#[from] GroupError),
+    #[error(transparent)]
+    KeyPackageValidationError(#[from] KeyPackageValidationError),
 }
 
 pub struct ExternalClient<C> {
@@ -46,5 +54,27 @@ where
         snapshot: ExternalSnapshot,
     ) -> Result<ExternalGroup<C>, ExternalClientError> {
         ExternalGroup::from_snapshot(self.config.clone(), snapshot).map_err(Into::into)
+    }
+
+    pub fn validate_key_package(
+        &self,
+        package: &KeyPackage,
+        protocol: ProtocolVersion,
+        cipher_suite: CipherSuite,
+    ) -> Result<(), ExternalClientError> {
+        let keypackage_validator = KeyPackageValidator::new(
+            protocol,
+            cipher_suite,
+            None,
+            self.config.identity_provider(),
+        );
+
+        let options = KeyPackageValidationOptions {
+            apply_lifetime_check: Some(MlsTime::now()),
+        };
+
+        keypackage_validator
+            .check_if_valid(package, options)
+            .map_err(Into::into)
     }
 }
