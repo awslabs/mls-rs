@@ -40,7 +40,7 @@ pub enum LeafNodeError {
     SignerError(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("signing identity public key does not match the signer (secret key)")]
     InvalidSignerPublicKey,
-    #[error("credential rejected by custom credential validator")]
+    #[error("credential rejected by custom credential validator {0:?}")]
     IdentityProviderError(#[source] Box<dyn std::error::Error + Sync + Send>),
 }
 

@@ -58,7 +58,7 @@ pub enum LeafNodeValidationError {
     RequiredCredentialNotFound(CredentialType),
     #[error("capabilities must describe extensions used")]
     ExtensionNotInCapabilities(ExtensionType),
-    #[error("credential rejected by custom credential validator")]
+    #[error("credential rejected by custom credential validator {0:?}")]
     IdentityProviderError(#[source] Box<dyn std::error::Error + Sync + Send>),
 }
 

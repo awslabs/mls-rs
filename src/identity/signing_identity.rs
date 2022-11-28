@@ -23,7 +23,7 @@ pub enum SigningIdentityError {
     InvalidSignatureKey(CipherSuite, EcKeyError),
     #[error("signing identity not valid for signer")]
     InvalidSignerPublicKey,
-    #[error("credential rejected by custom credential validator")]
+    #[error("credential rejected by custom credential validator {0:?}")]
     IdentityProviderError(#[source] Box<dyn std::error::Error + Sync + Send>),
 }
 
