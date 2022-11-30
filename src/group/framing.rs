@@ -1,9 +1,6 @@
 use super::proposal::Proposal;
 use super::*;
-use crate::{
-    protocol_version::{MaybeProtocolVersion, ProtocolVersion},
-    tree_kem::leaf_node::LeafNode,
-};
+use crate::protocol_version::{MaybeProtocolVersion, ProtocolVersion};
 use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -294,6 +291,25 @@ impl MLSMessage {
             _ => None,
         }
     }
+
+    pub fn wire_format(&self) -> WireFormat {
+        match self.payload {
+            MLSMessagePayload::Plain(_) => WireFormat::Plain,
+            MLSMessagePayload::Cipher(_) => WireFormat::Cipher,
+            MLSMessagePayload::Welcome(_) => WireFormat::Welcome,
+            MLSMessagePayload::GroupInfo(_) => WireFormat::GroupInfo,
+            MLSMessagePayload::KeyPackage(_) => WireFormat::KeyPackage,
+        }
+    }
+
+    pub fn epoch(&self) -> Option<u64> {
+        match &self.payload {
+            MLSMessagePayload::Plain(p) => Some(p.content.epoch),
+            MLSMessagePayload::Cipher(c) => Some(c.epoch),
+            MLSMessagePayload::GroupInfo(gi) => Some(gi.group_context.epoch),
+            _ => None,
+        }
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -307,30 +323,6 @@ pub(crate) enum MLSMessagePayload {
     Welcome(Welcome),
     GroupInfo(GroupInfo),
     KeyPackage(KeyPackage),
-}
-
-impl MLSMessage {
-    pub fn wire_format(&self) -> WireFormat {
-        match self.payload {
-            MLSMessagePayload::Plain(_) => WireFormat::Plain,
-            MLSMessagePayload::Cipher(_) => WireFormat::Cipher,
-            MLSMessagePayload::Welcome(_) => WireFormat::Welcome,
-            MLSMessagePayload::GroupInfo(_) => WireFormat::GroupInfo,
-            MLSMessagePayload::KeyPackage(_) => WireFormat::KeyPackage,
-        }
-    }
-
-    // TODO: This function should be replaced with a special client for servers parsing
-    // plaintext control messages
-    pub fn commit_sender_update(&self) -> Option<&LeafNode> {
-        match &self.payload {
-            MLSMessagePayload::Plain(m) => match &m.content.content {
-                Content::Commit(commit) => commit.path.as_ref().map(|cp| &cp.leaf_node),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
 }
 
 impl From<MLSPlaintext> for MLSMessagePayload {
