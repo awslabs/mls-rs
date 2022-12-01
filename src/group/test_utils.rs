@@ -76,7 +76,7 @@ impl TestGroup {
             .then(|| self.group.export_tree().unwrap());
 
         // Group from new member's perspective
-        let new_group = Group::join(
+        let (new_group, _) = Group::join(
             welcome.unwrap(),
             tree.as_ref().map(Vec::as_ref),
             client_config,
@@ -352,7 +352,7 @@ pub(crate) fn get_test_groups_with_features(
             group.process_incoming_message(commit.clone()).unwrap();
         }
 
-        groups.push(client.join_group(None, welcome.unwrap()).unwrap());
+        groups.push(client.join_group(None, welcome.unwrap()).unwrap().0);
     });
 
     groups

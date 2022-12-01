@@ -269,7 +269,7 @@ mod tests {
 
             alice.group.apply_pending_commit().unwrap();
 
-            let bob = Group::join(
+            let (bob, _) = Group::join(
                 welcome.unwrap(),
                 None,
                 TestClientBuilder::new_for_test_custom(

@@ -6,7 +6,7 @@ use crate::group::framing::{
 };
 use crate::group::message_signature::MLSAuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
-use crate::group::{process_group_info, Group, GroupError};
+use crate::group::{process_group_info, Group, GroupError, NewMemberInfo};
 use crate::identity::CredentialError;
 use crate::key_package::{KeyPackage, KeyPackageGenerationError, KeyPackageGenerator};
 use crate::protocol_version::MaybeProtocolVersion;
@@ -158,7 +158,7 @@ where
         &self,
         tree_data: Option<&[u8]>,
         welcome_message: MLSMessage,
-    ) -> Result<Group<C>, ClientError> {
+    ) -> Result<(Group<C>, NewMemberInfo), ClientError> {
         Group::join(welcome_message, tree_data, self.config.clone()).map_err(Into::into)
     }
 
@@ -215,14 +215,15 @@ where
             .into_group_info()
             .ok_or(ClientError::ExpectedGroupInfoMessage)?;
 
-        let (group_context, _, _, _) = process_group_info(
+        let group_context = process_group_info(
             &self.config.supported_protocol_versions(),
             &self.config.supported_cipher_suites(),
             protocol_version,
             group_info,
             tree_data,
             self.config.identity_provider(),
-        )?;
+        )?
+        .group_context;
 
         let key_package =
             self.generate_key_package(protocol_version, group_context.cipher_suite)?;
@@ -312,7 +313,7 @@ pub mod test_utils {
         other_groups: S,
         key_package: KeyPackage,
         client: &Client<C>,
-    ) -> Result<Group<C>, ClientError>
+    ) -> Result<(Group<C>, NewMemberInfo), ClientError>
     where
         C: ClientConfig + 'a,
         S: IntoIterator<Item = &'a mut Group<C>>,

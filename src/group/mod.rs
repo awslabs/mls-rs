@@ -15,8 +15,8 @@ use zeroize::Zeroizing;
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, MakeProposalFilter, ProposalFilterInit};
 use crate::extension::{
-    ExtensionError, ExtensionList, ExternalPubExt, GroupContextExtension, LeafNodeExtension,
-    RatchetTreeExt,
+    ExtensionError, ExtensionList, ExternalPubExt, GroupContextExtension, GroupInfoExtension,
+    LeafNodeExtension, RatchetTreeExt,
 };
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
@@ -143,6 +143,11 @@ pub(crate) struct Welcome {
     pub encrypted_group_info: Vec<u8>,
 }
 
+#[derive(Clone, Debug)]
+pub struct NewMemberInfo {
+    pub group_info_extensions: ExtensionList<GroupInfoExtension>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ControlEncryptionMode {
     Plaintext,
@@ -254,7 +259,7 @@ where
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
         config: C,
-    ) -> Result<Self, GroupError> {
+    ) -> Result<(Self, NewMemberInfo), GroupError> {
         Self::from_welcome_message(None, welcome, tree_data, config)
     }
 
@@ -263,7 +268,7 @@ where
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
         config: C,
-    ) -> Result<Self, GroupError> {
+    ) -> Result<(Self, NewMemberInfo), GroupError> {
         let protocol_version =
             check_protocol_version(&config.supported_protocol_versions(), welcome.version)?;
 
@@ -333,21 +338,21 @@ where
         let decrypted_group_info = welcome_secret.decrypt(&welcome.encrypted_group_info)?;
         let group_info = GroupInfo::tls_deserialize(&mut &*decrypted_group_info)?;
 
-        let (group_context, confirmation_tag, public_tree, group_info_signer) =
-            validate_group_info(
-                &config.supported_protocol_versions(),
-                &config.supported_cipher_suites(),
-                protocol_version,
-                group_info,
-                tree_data,
-                &config.identity_provider(),
-            )?;
+        let join_context = validate_group_info(
+            &config.supported_protocol_versions(),
+            &config.supported_cipher_suites(),
+            protocol_version,
+            group_info,
+            tree_data,
+            &config.identity_provider(),
+        )?;
 
         // Identify a leaf in the tree array (any even-numbered node) whose leaf_node is identical
         // to the leaf_node field of the KeyPackage. If no such field exists, return an error. Let
         // index represent the index of this node among the leaves in the tree, namely the index of
         // the node in the tree array divided by two.
-        let self_index = public_tree
+        let self_index = join_context
+            .public_tree
             .find_leaf_node(&key_package_generation.key_package.leaf_node)
             .ok_or(GroupError::WelcomeKeyPackageNotFound)?;
 
@@ -359,38 +364,36 @@ where
         // If the path_secret value is set in the GroupSecrets object
         if let Some(path_secret) = group_secrets.path_secret {
             private_tree.update_secrets(
-                group_context.cipher_suite,
-                group_info_signer,
+                join_context.group_context.cipher_suite,
+                join_context.signer_index,
                 path_secret,
-                &public_tree,
+                &join_context.public_tree,
             )?;
         }
 
         // Use the joiner_secret from the GroupSecrets object to generate the epoch secret and
         // other derived secrets for the current epoch.
         let key_schedule_result = KeySchedule::new_joiner(
-            group_context.cipher_suite,
+            join_context.group_context.cipher_suite,
             &group_secrets.joiner_secret,
-            &group_context,
-            &public_tree,
+            &join_context.group_context,
+            &join_context.public_tree,
             &psk_secret,
         )?;
 
         // Verify the confirmation tag in the GroupInfo using the derived confirmation key and the
         // confirmed_transcript_hash from the GroupInfo.
-        if !confirmation_tag.matches(
+        if !join_context.confirmation_tag.matches(
             &key_schedule_result.confirmation_key,
-            &group_context.confirmed_transcript_hash,
-            &group_context.cipher_suite,
+            &join_context.group_context.confirmed_transcript_hash,
+            &join_context.group_context.cipher_suite,
         )? {
             return Err(GroupError::InvalidConfirmationTag);
         }
 
         Self::join_with(
             config,
-            &confirmation_tag,
-            group_context,
-            public_tree,
+            join_context,
             key_schedule_result.key_schedule,
             key_schedule_result.epoch_secrets,
             private_tree,
@@ -398,44 +401,43 @@ where
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn join_with(
         config: C,
-        confirmation_tag: &ConfirmationTag,
-        context: GroupContext,
-        current_tree: TreeKemPublic,
+        join_context: JoinContext,
         key_schedule: KeySchedule,
         epoch_secrets: EpochSecrets,
         private_tree: TreeKemPrivate,
         used_key_package_ref: Option<KeyPackageRef>,
-    ) -> Result<Self, GroupError> {
+    ) -> Result<(Self, NewMemberInfo), GroupError> {
         // Use the confirmed transcript hash and confirmation tag to compute the interim transcript
         // hash in the new state.
-        let interim_transcript_hash = if context.epoch > 0 {
+        let interim_transcript_hash = if join_context.group_context.epoch > 0 {
             InterimTranscriptHash::create(
-                current_tree.cipher_suite,
-                &context.confirmed_transcript_hash,
-                confirmation_tag,
+                join_context.public_tree.cipher_suite,
+                &join_context.group_context.confirmed_transcript_hash,
+                &join_context.confirmation_tag,
             )
         } else {
             Ok(InterimTranscriptHash::from(vec![]))
         }?;
 
         let state_repo = GroupStateRepository::new(
-            context.group_id.clone(),
+            join_context.group_context.group_id.clone(),
             config.preferences().max_epoch_retention,
             config.group_state_storage(),
             config.key_package_repo(),
             used_key_package_ref,
         )?;
 
-        Ok(Group {
+        let group_info_extensions = join_context.group_info_extensions.clone();
+
+        let group = Group {
             config,
             state: GroupState::new(
-                context,
-                current_tree,
+                join_context.group_context,
+                join_context.public_tree,
                 interim_transcript_hash,
-                confirmation_tag.clone(),
+                join_context.confirmation_tag,
             ),
             private_tree,
             key_schedule,
@@ -445,7 +447,14 @@ where
             commit_modifiers: Default::default(),
             epoch_secrets,
             state_repo,
-        })
+        };
+
+        Ok((
+            group,
+            NewMemberInfo {
+                group_info_extensions,
+            },
+        ))
     }
 
     /// Returns group and external commit message
@@ -471,7 +480,7 @@ where
             .get_extension::<ExternalPubExt>()?
             .ok_or(GroupError::MissingExternalPubExtension)?;
 
-        let (group_context, confirmation_tag, public_tree, _) = validate_group_info(
+        let join_context = validate_group_info(
             &config.supported_protocol_versions(),
             &config.supported_cipher_suites(),
             protocol_version,
@@ -481,10 +490,10 @@ where
         )?;
 
         let (leaf_properties, signer) =
-            Group::config_leaf_properties(&config, group_context.cipher_suite, None)?;
+            Group::config_leaf_properties(&config, join_context.group_context.cipher_suite, None)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
-            group_context.cipher_suite,
+            join_context.group_context.cipher_suite,
             leaf_properties,
             &signer,
             config.lifetime(),
@@ -492,21 +501,19 @@ where
         )?;
 
         let (init_secret, kem_output) = InitSecret::encode_for_external(
-            group_context.cipher_suite,
+            join_context.group_context.cipher_suite,
             &external_pub_ext.external_pub,
         )?;
 
         let epoch_secrets = EpochSecrets {
             resumption_secret: Psk::from(vec![]),
             sender_data_secret: SenderDataSecret::from(vec![]),
-            secret_tree: SecretTree::empty(group_context.cipher_suite),
+            secret_tree: SecretTree::empty(join_context.group_context.cipher_suite),
         };
 
-        let mut group = Self::join_with(
+        let (mut group, _) = Self::join_with(
             config,
-            &confirmation_tag,
-            group_context,
-            public_tree,
+            join_context,
             KeySchedule::new(init_secret),
             epoch_secrets,
             TreeKemPrivate::new_self_leaf(LeafIndex(0), leaf_node_secret),
@@ -534,7 +541,12 @@ where
             }))
             .collect::<Vec<_>>();
 
-        let (commit, _) = group.commit_internal(proposals, Some(&leaf_node), authenticated_data)?;
+        let (commit, _) = group.commit_internal(
+            proposals,
+            Some(&leaf_node),
+            authenticated_data,
+            Default::default(),
+        )?;
 
         group.apply_pending_commit()?;
 
@@ -910,8 +922,8 @@ where
         &self,
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
-    ) -> Result<Group<C>, GroupError> {
-        let subgroup =
+    ) -> Result<(Group<C>, NewMemberInfo), GroupError> {
+        let (subgroup, new_member_info) =
             Self::from_welcome_message(Some(self), welcome, tree_data, self.config.clone())?;
 
         if subgroup.state.protocol_version() != self.state.protocol_version() {
@@ -923,7 +935,7 @@ where
                 subgroup.state.cipher_suite(),
             ))
         } else {
-            Ok(subgroup)
+            Ok((subgroup, new_member_info))
         }
     }
 
@@ -992,14 +1004,14 @@ where
         &self,
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
-    ) -> Result<Group<C>, GroupError> {
+    ) -> Result<(Group<C>, NewMemberInfo), GroupError> {
         let reinit = self
             .state
             .pending_reinit
             .as_ref()
             .ok_or(GroupError::PendingReInitNotFound)?;
 
-        let group =
+        let (group, new_member_info) =
             Self::from_welcome_message(Some(self), welcome, tree_data, self.config.clone())?;
 
         if group.state.protocol_version() != reinit.version {
@@ -1023,7 +1035,7 @@ where
                 reinit.extensions.clone(),
             ))
         } else {
-            Ok(group)
+            Ok((group, new_member_info))
         }
     }
 
@@ -2525,7 +2537,7 @@ mod tests {
 
         let welcome = welcome.unwrap();
 
-        let mut bob_sub_group = bob
+        let (mut bob_sub_group, _) = bob
             .group
             .join_subgroup(
                 welcome.clone(),

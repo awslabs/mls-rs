@@ -3,7 +3,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use crate::{
     cipher_suite::CipherSuite,
     client_config::{ClientConfig, ProposalFilterInit},
-    extension::{ExtensionList, GroupContextExtension, RatchetTreeExt},
+    extension::{ExtensionList, GroupContextExtension, GroupInfoExtension, RatchetTreeExt},
     key_package::KeyPackage,
     protocol_version::ProtocolVersion,
     provider::{
@@ -65,6 +65,7 @@ where
     group: &'a mut Group<C>,
     pub(super) proposals: Vec<Proposal>,
     authenticated_data: Vec<u8>,
+    group_info_extensions: ExtensionList<GroupInfoExtension>,
 }
 
 impl<'a, C> CommitBuilder<'a, C>
@@ -75,6 +76,13 @@ where
         let proposal = self.group.add_proposal(key_package)?;
         self.proposals.push(proposal);
         Ok(self)
+    }
+
+    pub fn set_group_info_ext(self, extensions: ExtensionList<GroupInfoExtension>) -> Self {
+        Self {
+            group_info_extensions: extensions,
+            ..self
+        }
     }
 
     pub fn remove_member(mut self, index: u32) -> Result<Self, GroupError> {
@@ -121,8 +129,11 @@ where
     }
 
     pub fn build(self) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
-        self.group
-            .commit_proposals(self.proposals, self.authenticated_data)
+        self.group.commit_proposals(
+            self.proposals,
+            self.authenticated_data,
+            self.group_info_extensions,
+        )
     }
 }
 
@@ -134,15 +145,16 @@ where
         &mut self,
         proposals: Vec<Proposal>,
         authenticated_data: Vec<u8>,
+        group_info_extensions: ExtensionList<GroupInfoExtension>,
     ) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
-        self.commit_internal(proposals, None, authenticated_data)
+        self.commit_internal(proposals, None, authenticated_data, group_info_extensions)
     }
 
     pub fn commit(
         &mut self,
         authenticated_data: Vec<u8>,
     ) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
-        self.commit_internal(vec![], None, authenticated_data)
+        self.commit_internal(vec![], None, authenticated_data, Default::default())
     }
 
     pub fn commit_builder(&mut self) -> CommitBuilder<C> {
@@ -150,6 +162,7 @@ where
             group: self,
             proposals: Default::default(),
             authenticated_data: Default::default(),
+            group_info_extensions: Default::default(),
         }
     }
 
@@ -159,6 +172,7 @@ where
         proposals: Vec<Proposal>,
         external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
+        group_info_extensions: ExtensionList<GroupInfoExtension>,
     ) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
         if self.pending_commit.is_some() {
             return Err(GroupError::ExistingPendingCommit);
@@ -312,6 +326,7 @@ where
 
         provisional_group_context.confirmed_transcript_hash = confirmed_transcript_hash;
 
+        // Add the ratchet tree extension if necessary
         let mut extensions = ExtensionList::new();
 
         if options.ratchet_tree_extension {
@@ -321,6 +336,9 @@ where
 
             extensions.set_extension(ratchet_tree_ext)?;
         }
+
+        // Add in any user provided extensions
+        extensions.append(group_info_extensions);
 
         let key_schedule_result = KeySchedule::derive(
             &self.key_schedule,
@@ -412,10 +430,10 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::{
-        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_builder::test_utils::TestClientConfig,
         client_config::ClientConfig,
-        extension::RequiredCapabilitiesExt,
+        extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
         group::{
             proposal::PreSharedKey,
             test_utils::{test_group, test_n_member_group},
@@ -504,6 +522,39 @@ mod tests {
             welcome_message,
             1,
         )
+    }
+
+    #[test]
+    fn test_commit_builder_add_with_ext() {
+        let mut group = test_commit_builder_group();
+
+        let (bob_client, bob_key_package) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+
+        let ext = TestExtension { foo: 42 };
+        let mut extension_list = ExtensionList::default();
+        extension_list.set_extension(ext.clone()).unwrap();
+
+        let (_, welcome_message) = group
+            .commit_builder()
+            .add_member(bob_key_package)
+            .unwrap()
+            .set_group_info_ext(extension_list)
+            .build()
+            .unwrap();
+
+        let (_, context) = bob_client
+            .join_group(None, welcome_message.unwrap())
+            .unwrap();
+
+        assert_eq!(
+            context
+                .group_info_extensions
+                .get_extension::<TestExtension>()
+                .unwrap()
+                .unwrap(),
+            ext
+        );
     }
 
     #[test]

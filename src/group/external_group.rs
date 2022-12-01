@@ -45,7 +45,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             GroupError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
         })?;
 
-        let (group_context, confirmation_tag, public_tree, _) = validate_group_info(
+        let join_context = validate_group_info(
             &config.supported_protocol_versions(),
             &config.supported_cipher_suites(),
             protocol_version,
@@ -54,11 +54,11 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             &config.identity_provider(),
         )?;
 
-        let interim_transcript_hash = if group_context.epoch > 0 {
+        let interim_transcript_hash = if join_context.group_context.epoch > 0 {
             InterimTranscriptHash::create(
-                group_context.cipher_suite,
-                &group_context.confirmed_transcript_hash,
-                &confirmation_tag,
+                join_context.group_context.cipher_suite,
+                &join_context.group_context.confirmed_transcript_hash,
+                &join_context.confirmation_tag,
             )
         } else {
             Ok(InterimTranscriptHash::from(vec![]))
@@ -67,10 +67,10 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         Ok(Self {
             config,
             state: GroupState::new(
-                group_context,
-                public_tree,
+                join_context.group_context,
+                join_context.public_tree,
                 interim_transcript_hash,
-                confirmation_tag,
+                join_context.confirmation_tag,
             ),
         })
     }

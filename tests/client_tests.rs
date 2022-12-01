@@ -102,7 +102,7 @@ fn test_create(
     let tree = alice_group.export_tree().unwrap();
 
     // Bob receives the welcome message and joins the group
-    let bob_group = bob.join_group(Some(&tree), welcome.unwrap()).unwrap();
+    let (bob_group, _) = bob.join_group(Some(&tree), welcome.unwrap()).unwrap();
 
     assert!(Group::equal_group_state(&alice_group, &bob_group));
 }
@@ -208,6 +208,7 @@ fn get_test_groups_clients(
             client
                 .join_group(Some(&tree_data), welcome.clone().unwrap())
                 .unwrap()
+                .0
         })
         .collect::<Vec<_>>();
 
@@ -273,6 +274,7 @@ fn add_random_members(
         client
             .join_group(Some(&tree_data), welcome.clone().unwrap())
             .unwrap()
+            .0
     }));
 }
 
@@ -865,7 +867,7 @@ fn reinit_works() {
     alice_group.apply_pending_commit().unwrap();
     let tree = alice_group.export_tree().unwrap();
 
-    let mut bob_group = bob.join_group(Some(&tree), welcome.unwrap()).unwrap();
+    let (mut bob_group, _) = bob.join_group(Some(&tree), welcome.unwrap()).unwrap();
 
     // Alice proposes reinit
     let reinit_proposal_message = alice_group
@@ -911,7 +913,7 @@ fn reinit_works() {
     let welcome = welcome.unwrap();
     let tree = alice_group.export_tree().unwrap();
 
-    let mut bob_group = bob_group.finish_reinit_join(welcome, Some(&tree)).unwrap();
+    let (mut bob_group, _) = bob_group.finish_reinit_join(welcome, Some(&tree)).unwrap();
 
     // They can talk
     let carol = get_reinit_client(suite1, suite2, "carol");

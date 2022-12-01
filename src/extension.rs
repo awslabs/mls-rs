@@ -176,11 +176,21 @@ impl MlsExtension<GroupContextExtension> for ExternalSendersExt {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[non_exhaustive]
 pub struct Extension {
     pub extension_type: ExtensionType,
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
     pub extension_data: Vec<u8>,
+}
+
+impl Extension {
+    pub fn new(extension_type: ExtensionType, extension_data: Vec<u8>) -> Extension {
+        Extension {
+            extension_type,
+            extension_data,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Default, serde::Deserialize, serde::Serialize)]
@@ -379,8 +389,12 @@ where
 
     pub fn set_extension<E: MlsExtension<T>>(&mut self, ext: E) -> Result<(), ExtensionError> {
         let ext = ext.to_extension()?;
-        self.extensions.insert(ext.extension_type, ext);
+        self.set_raw_extension(ext);
         Ok(())
+    }
+
+    pub fn set_raw_extension(&mut self, ext: Extension) {
+        self.extensions.insert(ext.extension_type, ext);
     }
 
     pub fn len(&self) -> usize {
@@ -418,6 +432,10 @@ pub(crate) mod test_utils {
     }
 
     impl MlsExtension<GroupContextExtension> for TestExtension {
+        const IDENTIFIER: crate::extension::ExtensionType = 42;
+    }
+
+    impl MlsExtension<GroupInfoExtension> for TestExtension {
         const IDENTIFIER: crate::extension::ExtensionType = 42;
     }
 }

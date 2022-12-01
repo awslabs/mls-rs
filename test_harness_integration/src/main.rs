@@ -318,7 +318,7 @@ impl MlsClient for MlsClientImpl {
 
         let welcome_msg = MLSMessage::tls_deserialize(&mut &*request_ref.welcome).map_err(abort)?;
 
-        let group = clients[client_index]
+        let (group, _) = clients[client_index]
             .client
             .join_group(None, welcome_msg)
             .map_err(abort)?;
@@ -552,9 +552,8 @@ impl MlsClient for MlsClientImpl {
             .extension_type
             .into_iter()
             .zip(request_ref.extension_data.into_iter())
-            .map(|(extension_type, extension_data)| Extension {
-                extension_type: extension_type as u16,
-                extension_data,
+            .map(|(extension_type, extension_data)| {
+                Extension::new(extension_type as u16, extension_data)
             })
             .collect::<Vec<_>>();
 

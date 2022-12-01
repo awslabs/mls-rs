@@ -3,7 +3,10 @@ use tls_codec::Deserialize;
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     client_config::ClientConfig,
-    extension::{ExtensionList, ExternalSendersExt, GroupContextExtension, RatchetTreeExt},
+    extension::{
+        ExtensionList, ExternalSendersExt, GroupContextExtension, GroupInfoExtension,
+        RatchetTreeExt,
+    },
     key_package::KeyPackageGeneration,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     provider::{identity::IdentityProvider, key_package::KeyPackageRepository},
@@ -29,6 +32,16 @@ use super::{
     ProposalCacheError, Welcome,
 };
 
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub(crate) struct JoinContext {
+    pub group_info_extensions: ExtensionList<GroupInfoExtension>,
+    pub group_context: GroupContext,
+    pub confirmation_tag: ConfirmationTag,
+    pub public_tree: TreeKemPublic,
+    pub signer_index: LeafIndex,
+}
+
 pub(crate) fn process_group_info<C>(
     protocol_versions_allowed: &[ProtocolVersion],
     cipher_suites_allowed: &[CipherSuite],
@@ -36,7 +49,7 @@ pub(crate) fn process_group_info<C>(
     group_info: GroupInfo,
     tree_data: Option<&[u8]>,
     identity_provider: C,
-) -> Result<(GroupContext, ConfirmationTag, TreeKemPublic, LeafIndex), GroupError>
+) -> Result<JoinContext, GroupError>
 where
     C: IdentityProvider,
 {
@@ -70,7 +83,7 @@ where
     )?;
 
     let confirmation_tag = group_info.confirmation_tag;
-    let signer = group_info.signer;
+    let signer_index = group_info.signer;
 
     let group_context = GroupContext {
         protocol_version: group_protocol_version,
@@ -82,7 +95,13 @@ where
         extensions: group_info.group_context.extensions,
     };
 
-    Ok((group_context, confirmation_tag, public_tree, signer))
+    Ok(JoinContext {
+        group_info_extensions: group_info.extensions,
+        group_context,
+        confirmation_tag,
+        public_tree,
+        signer_index,
+    })
 }
 
 pub(super) fn validate_group_info<C: IdentityProvider>(
@@ -92,8 +111,8 @@ pub(super) fn validate_group_info<C: IdentityProvider>(
     group_info: GroupInfo,
     tree_data: Option<&[u8]>,
     identity_provider: &C,
-) -> Result<(GroupContext, ConfirmationTag, TreeKemPublic, LeafIndex), GroupError> {
-    let (group_context, confirmation_tag, mut public_tree, signer) = process_group_info(
+) -> Result<JoinContext, GroupError> {
+    let mut join_context = process_group_info(
         protocol_versions_allowed,
         cipher_suites_allowed,
         msg_protocol_version,
@@ -102,9 +121,13 @@ pub(super) fn validate_group_info<C: IdentityProvider>(
         identity_provider,
     )?;
 
-    validate_existing_group(&mut public_tree, &group_context, identity_provider)?;
+    validate_existing_group(
+        &mut join_context.public_tree,
+        &join_context.group_context,
+        identity_provider,
+    )?;
 
-    Ok((group_context, confirmation_tag, public_tree, signer))
+    Ok(join_context)
 }
 
 pub(super) fn find_tree<C>(

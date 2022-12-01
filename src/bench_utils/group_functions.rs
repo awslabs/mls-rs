@@ -121,7 +121,7 @@ pub fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<TestCli
         let (bob, bob_key_pkg) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, cipher_suite, &format!("bob{n}"));
 
-        let bob_group =
+        let (bob_group, _) =
             join_group(committer_group, other_groups.iter_mut(), bob_key_pkg, &bob).unwrap();
 
         groups.push(bob_group);
