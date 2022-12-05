@@ -85,6 +85,29 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         MessageProcessor::process_incoming_message(self, message, self.config.cache_proposals())
     }
 
+    pub fn insert_proposal_from_message(&mut self, message: MLSMessage) -> Result<(), GroupError> {
+        let ptxt = match message.payload {
+            MLSMessagePayload::Plain(p) => Ok(p),
+            _ => Err(GroupError::UnexpectedMessageType(
+                vec![WireFormat::Plain],
+                message.wire_format(),
+            )),
+        }?;
+
+        let auth_content: MLSAuthenticatedContent = ptxt.into();
+        let proposal_ref = ProposalRef::from_content(self.cipher_suite(), &auth_content)?;
+        let sender = auth_content.content.sender;
+
+        let proposal = match auth_content.content.content {
+            Content::Proposal(p) => Ok(p),
+            content => Err(GroupError::NotProposalContent(content.content_type())),
+        }?;
+
+        self.insert_proposal(proposal, proposal_ref, sender);
+
+        Ok(())
+    }
+
     pub fn insert_proposal(
         &mut self,
         proposal: Proposal,
@@ -714,16 +737,9 @@ mod tests {
         let proposal = alice.group.propose_update(vec![]).unwrap();
         let (commit, _) = alice.group.commit(vec![]).unwrap();
 
-        // The server externally caches the `sender`, `proposal` and `proposal_ref` from `processed_msg`
-        let processed_msg = server.process_incoming_message(proposal).unwrap();
-
-        assert_matches!(processed_msg.event, ExternalEvent::Proposal(_));
-
-        if let ExternalEvent::Proposal((proposal, proposal_ref)) = processed_msg.event {
-            let sender = processed_msg.sender.unwrap();
-            server.insert_proposal(proposal, proposal_ref, sender);
-            server.process_incoming_message(commit).unwrap();
-        }
+        server.process_incoming_message(proposal.clone()).unwrap();
+        server.insert_proposal_from_message(proposal).unwrap();
+        server.process_incoming_message(commit).unwrap();
     }
 
     #[test]

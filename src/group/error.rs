@@ -200,6 +200,8 @@ pub enum GroupError {
     NoCredentialFound,
     #[error("Expected commit message, found: {0:?}")]
     NotCommitContent(ContentType),
+    #[error("Expected proposal message, found: {0:?}")]
+    NotProposalContent(ContentType),
     #[error("signer not found")]
     SignerNotFound,
     #[error("commit already pending")]
