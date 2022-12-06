@@ -449,9 +449,12 @@ mod tests {
     fn external_group_can_process_commit() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let mut server = make_external_group(&alice);
-        let (commit, _) = alice.group.commit(Vec::new()).unwrap();
+        let commit_output = alice.group.commit(Vec::new()).unwrap();
         alice.group.apply_pending_commit().unwrap();
-        server.process_incoming_message(commit).unwrap();
+
+        server
+            .process_incoming_message(commit_output.commit_message)
+            .unwrap();
 
         assert_eq!(alice.group.state, server.state);
     }
@@ -476,10 +479,12 @@ mod tests {
             ExternalEvent::Proposal((ref p, _)) if p == &add_proposal
         );
 
-        let (commit, _) = alice.group.commit(vec![]).unwrap();
+        let commit_output = alice.group.commit(vec![]).unwrap();
         alice.group.apply_pending_commit().unwrap();
 
-        let commit_result = server.process_incoming_message(commit).unwrap();
+        let commit_result = server
+            .process_incoming_message(commit_output.commit_message)
+            .unwrap();
 
         assert_matches!(
             commit_result.event,
@@ -511,15 +516,15 @@ mod tests {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let mut server = make_external_group(&alice);
 
-        let (mut commit, _) = alice.group.commit(vec![]).unwrap();
+        let mut commit_output = alice.group.commit(vec![]).unwrap();
 
-        match commit.payload {
+        match commit_output.commit_message.payload {
             MLSMessagePayload::Plain(ref mut plain) => plain.content.epoch = 0,
             _ => panic!("Unexpected non-plaintext data"),
         };
 
         assert_matches!(
-            server.process_incoming_message(commit),
+            server.process_incoming_message(commit_output.commit_message),
             Err(GroupError::InvalidEpoch(0))
         );
     }
@@ -533,15 +538,15 @@ mod tests {
             TestExternalClientBuilder::new_for_test().build_config(),
         );
 
-        let (mut commit, _) = alice.group.commit(Vec::new()).unwrap();
+        let mut commit_output = alice.group.commit(Vec::new()).unwrap();
 
-        match commit.payload {
+        match commit_output.commit_message.payload {
             MLSMessagePayload::Plain(ref mut plain) => plain.auth.signature = Vec::new().into(),
             _ => panic!("Unexpected non-plaintext data"),
         };
 
         assert_matches!(
-            server.process_incoming_message(commit),
+            server.process_incoming_message(commit_output.commit_message),
             Err(GroupError::InvalidSignature)
         );
     }
@@ -627,9 +632,10 @@ mod tests {
         alice.process_message(external_proposal).unwrap();
 
         // Alice commits the proposal
-        let (commit_data, _) = alice.group.commit(vec![]).unwrap();
+        let commit_output = alice.group.commit(vec![]).unwrap();
 
-        let commit = match commit_data
+        let commit = match commit_output
+            .commit_message
             .clone()
             .into_plaintext()
             .unwrap()
@@ -646,7 +652,10 @@ mod tests {
             .contains(&ProposalOrRef::Reference(proposal_ref)));
 
         alice.process_pending_commit().unwrap();
-        server.process_incoming_message(commit_data).unwrap();
+
+        server
+            .process_incoming_message(commit_output.commit_message)
+            .unwrap();
 
         assert_eq!(alice.group.state, server.state);
     }
@@ -715,8 +724,11 @@ mod tests {
             .encrypt_application_message(&[], vec![])
             .unwrap();
 
-        let (commit, _) = alice.group.commit(vec![]).unwrap();
-        server.process_incoming_message(commit).unwrap();
+        let commit_output = alice.group.commit(vec![]).unwrap();
+
+        server
+            .process_incoming_message(commit_output.commit_message)
+            .unwrap();
 
         let res = server.process_incoming_message(old_application_msg);
 
@@ -735,11 +747,14 @@ mod tests {
         );
 
         let proposal = alice.group.propose_update(vec![]).unwrap();
-        let (commit, _) = alice.group.commit(vec![]).unwrap();
+
+        let commit_output = alice.group.commit(vec![]).unwrap();
 
         server.process_incoming_message(proposal.clone()).unwrap();
         server.insert_proposal_from_message(proposal).unwrap();
-        server.process_incoming_message(commit).unwrap();
+        server
+            .process_incoming_message(commit_output.commit_message)
+            .unwrap();
     }
 
     #[test]
@@ -751,7 +766,7 @@ mod tests {
         let mut server = ExternalGroup::join(config, info, None).unwrap();
 
         for _ in 0..2 {
-            let commit = alice.group.commit(vec![]).unwrap().0;
+            let commit = alice.group.commit(vec![]).unwrap().commit_message;
             alice.process_pending_commit().unwrap();
             server.process_incoming_message(commit).unwrap();
         }

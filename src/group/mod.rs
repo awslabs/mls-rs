@@ -541,7 +541,7 @@ where
             }))
             .collect::<Vec<_>>();
 
-        let (commit, _) = group.commit_internal(
+        let commit_output = group.commit_internal(
             proposals,
             Some(&leaf_node),
             authenticated_data,
@@ -550,7 +550,7 @@ where
 
         group.apply_pending_commit()?;
 
-        Ok((group, commit))
+        Ok((group, commit_output.commit_message))
     }
 
     #[inline(always)]
@@ -1948,10 +1948,10 @@ mod tests {
             proposal_plaintext.content.sender,
         );
 
-        let (commit, _) = bob_group.group.commit(vec![]).unwrap();
+        let commit_output = bob_group.group.commit(vec![]).unwrap();
 
         assert_matches!(
-            commit,
+            commit_output.commit_message,
             MLSMessage {
                 payload: MLSMessagePayload::Plain(
                     MLSPlaintext {
@@ -2018,7 +2018,7 @@ mod tests {
         let (bob_key_package, secret_key) = test_member(protocol_version, cipher_suite, b"bob");
 
         // Add bob to the group
-        let (_, welcome) = test_group
+        let commit_output = test_group
             .group
             .commit_builder()
             .add_member(bob_key_package.key_package.clone())
@@ -2028,7 +2028,7 @@ mod tests {
 
         // Group from Bob's perspective
         let bob_group = Group::join(
-            welcome.unwrap(),
+            commit_output.welcome_message.unwrap(),
             None,
             TestClientBuilder::new_for_test_custom(
                 secret_key,
@@ -2085,7 +2085,7 @@ mod tests {
             .set_group_context_ext(ext_list)
             .unwrap()
             .build()
-            .map(|(commit, _)| commit);
+            .map(|commit_output| commit_output.commit_message);
 
         (test_group, commit)
     }
@@ -2344,7 +2344,7 @@ mod tests {
             commit_builder = commit_builder.add_member(key_package.key_package).unwrap()
         }
 
-        let (commit, _) = commit_builder.build().unwrap();
+        let commit_output = commit_builder.build().unwrap();
 
         // Check that applying pending commit and processing commit yields correct update.
         let mut state_update_alice = alice.process_pending_commit().unwrap();
@@ -2380,7 +2380,7 @@ mod tests {
                 .collect::<Vec<_>>()
         );
 
-        let payload = bob.process_message(commit).unwrap();
+        let payload = bob.process_message(commit_output.commit_message).unwrap();
         assert_matches!(payload, Event::Commit(_));
 
         if let Event::Commit(mut state_update_bob) = payload {
@@ -2453,9 +2453,9 @@ mod tests {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, true);
 
-        let (mut commit, _) = alice_group.group.commit(vec![]).unwrap();
+        let mut commit_output = alice_group.group.commit(vec![]).unwrap();
 
-        let mut plaintext = match commit.payload {
+        let mut plaintext = match commit_output.commit_message.payload {
             MLSMessagePayload::Plain(ref mut plain) => plain,
             _ => panic!("Non plaintext message"),
         };
@@ -2463,7 +2463,7 @@ mod tests {
         plaintext.content.sender = Sender::External(0);
 
         assert_matches!(
-            bob_group.process_message(commit),
+            bob_group.process_message(commit_output.commit_message),
             Err(GroupError::MembershipTagForNonMember)
         );
     }
@@ -2555,9 +2555,11 @@ mod tests {
         );
 
         // Alice and Bob can still talk
-        let (commit, _) = alice_sub_group.commit(vec![]).unwrap();
+        let commit_output = alice_sub_group.commit(vec![]).unwrap();
 
-        bob_sub_group.process_incoming_message(commit).unwrap();
+        bob_sub_group
+            .process_incoming_message(commit_output.commit_message)
+            .unwrap();
     }
 
     fn joining_group_fails_if_unsupported<F>(f: F) -> Result<(TestGroup, MLSMessage), GroupError>
@@ -2738,10 +2740,10 @@ mod tests {
                 leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
             };
 
-        let (commit, _) = groups[0].group.commit(vec![]).unwrap();
+        let commit_output = groups[0].group.commit(vec![]).unwrap();
 
         assert_matches!(
-            groups[2].process_message(commit),
+            groups[2].process_message(commit_output.commit_message),
             Err(GroupError::UpdatePathValidationError(
                 UpdatePathValidationError::LeafNodeValidationError(
                     LeafNodeValidationError::InvalidLeafNodeSource
@@ -2764,15 +2766,17 @@ mod tests {
                 leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
             };
 
-        let (commit, _) = groups[0].group.commit(vec![]).unwrap();
+        let commit_output = groups[0].group.commit(vec![]).unwrap();
         groups[0].process_pending_commit().unwrap();
-        groups[2].process_message(commit).unwrap();
+        groups[2]
+            .process_message(commit_output.commit_message)
+            .unwrap();
 
         // Group 0 tries to use the fixed key againd
-        let (commit, _) = groups[0].group.commit(vec![]).unwrap();
+        let commit_output = groups[0].group.commit(vec![]).unwrap();
 
         assert_matches!(
-            groups[2].process_message(commit),
+            groups[2].process_message(commit_output.commit_message),
             Err(GroupError::UpdatePathValidationError(
                 UpdatePathValidationError::SameHpkeKey(LeafIndex(0))
             ))
@@ -2793,9 +2797,9 @@ mod tests {
                 leaf.sign(sk, &(TEST_GROUP, 1).into()).unwrap();
             };
 
-        let (commit, _) = groups.get_mut(1).unwrap().group.commit(vec![]).unwrap();
+        let commit_output = groups.get_mut(1).unwrap().group.commit(vec![]).unwrap();
 
-        process_commit(&mut groups, commit, 1);
+        process_commit(&mut groups, commit_output.commit_message, 1);
 
         // Group 0 tries to use the fixed key too
         groups[0].group.commit_modifiers.modify_leaf =
@@ -2804,10 +2808,10 @@ mod tests {
                 leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
             };
 
-        let (commit, _) = groups[0].group.commit(vec![]).unwrap();
+        let commit_output = groups[0].group.commit(vec![]).unwrap();
 
         assert_matches!(
-            groups[7].process_message(commit),
+            groups[7].process_message(commit_output.commit_message),
             Err(GroupError::RatchetTreeError(
                 RatchetTreeError::TreeIndexError(TreeIndexError::DuplicateHpkeKey(_))
             ))
@@ -2828,9 +2832,9 @@ mod tests {
             leaf.sign(&sk, &(TEST_GROUP, 1).into()).unwrap();
         };
 
-        let (commit, _) = groups.get_mut(1).unwrap().group.commit(vec![]).unwrap();
+        let commit_output = groups.get_mut(1).unwrap().group.commit(vec![]).unwrap();
 
-        process_commit(&mut groups, commit, 1);
+        process_commit(&mut groups, commit_output.commit_message, 1);
 
         // Group 0 tries to use the fixed key too
         groups[0].group.commit_modifiers.modify_leaf = |leaf: &mut LeafNode, _: &_| {
@@ -2839,10 +2843,10 @@ mod tests {
             leaf.sign(&sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
-        let (commit, _) = groups[0].group.commit(vec![]).unwrap();
+        let commit_output = groups[0].group.commit(vec![]).unwrap();
 
         assert_matches!(
-            groups[7].process_message(commit),
+            groups[7].process_message(commit_output.commit_message),
             Err(GroupError::RatchetTreeError(
                 RatchetTreeError::TreeIndexError(TreeIndexError::DuplicateSignatureKeys(_))
             ))
@@ -2858,10 +2862,10 @@ mod tests {
             leaf.signature[0] ^= 1;
         };
 
-        let (commit, _) = groups[0].group.commit(vec![]).unwrap();
+        let commit_output = groups[0].group.commit(vec![]).unwrap();
 
         assert_matches!(
-            groups[2].process_message(commit),
+            groups[2].process_message(commit_output.commit_message),
             Err(GroupError::UpdatePathValidationError(
                 UpdatePathValidationError::LeafNodeValidationError(
                     LeafNodeValidationError::SignatureError(_)
@@ -2886,8 +2890,10 @@ mod tests {
             leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
-        let (commit, _) = groups[0].commit(vec![]).unwrap();
-        assert!(groups[1].process_incoming_message(commit).is_err());
+        let commit_output = groups[0].commit(vec![]).unwrap();
+        assert!(groups[1]
+            .process_incoming_message(commit_output.commit_message)
+            .is_err());
     }
 
     #[test]
@@ -2907,9 +2913,11 @@ mod tests {
             leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
-        let (commit, _) = groups[0].commit(vec![]).unwrap();
+        let commit_output = groups[0].commit(vec![]).unwrap();
 
-        assert!(groups[1].process_incoming_message(commit).is_err());
+        assert!(groups[1]
+            .process_incoming_message(commit_output.commit_message)
+            .is_err());
     }
 
     #[test]
@@ -2932,8 +2940,10 @@ mod tests {
             leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
-        let (commit, _) = groups[0].commit(vec![]).unwrap();
-        assert!(groups[1].process_incoming_message(commit).is_err());
+        let commit_output = groups[0].commit(vec![]).unwrap();
+        assert!(groups[1]
+            .process_incoming_message(commit_output.commit_message)
+            .is_err());
     }
 
     #[test]
@@ -2955,8 +2965,10 @@ mod tests {
             leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
-        let (commit, _) = groups[0].commit(vec![]).unwrap();
-        assert!(groups[2].process_incoming_message(commit).is_err());
+        let commit_output = groups[0].commit(vec![]).unwrap();
+        assert!(groups[2]
+            .process_incoming_message(commit_output.commit_message)
+            .is_err());
     }
 
     #[test]
@@ -2970,10 +2982,10 @@ mod tests {
                 .unwrap();
         };
 
-        let (commit, _) = groups[0].commit(vec![]).unwrap();
+        let commit_output = groups[0].commit(vec![]).unwrap();
 
         assert_matches!(
-            groups[2].process_incoming_message(commit),
+            groups[2].process_incoming_message(commit_output.commit_message),
             Err(GroupError::RatchetTreeError(
                 RatchetTreeError::TreeIndexError(
                     TreeIndexError::CredentialTypeOfNewLeafIsUnsupported(_)
@@ -2994,10 +3006,10 @@ mod tests {
                 .unwrap();
         };
 
-        let (commit, _) = groups[0].commit(vec![]).unwrap();
+        let commit_output = groups[0].commit(vec![]).unwrap();
 
         assert_matches!(
-            groups[2].process_incoming_message(commit),
+            groups[2].process_incoming_message(commit_output.commit_message),
             Err(GroupError::RatchetTreeError(
                 RatchetTreeError::TreeIndexError(
                     TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(..)
@@ -3026,10 +3038,10 @@ mod tests {
                 .unwrap();
         };
 
-        let (commit, _) = groups[0].commit(vec![]).unwrap();
+        let commit_output = groups[0].commit(vec![]).unwrap();
 
         assert_matches!(
-            groups[2].process_incoming_message(commit),
+            groups[2].process_incoming_message(commit_output.commit_message),
             Err(GroupError::UpdatePathValidationError(
                 UpdatePathValidationError::LeafNodeValidationError(
                     LeafNodeValidationError::RequiredCredentialNotFound(_)
@@ -3064,9 +3076,11 @@ mod tests {
             leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
-        let (commit, _) = groups[0].commit(vec![]).unwrap();
+        let commit_output = groups[0].commit(vec![]).unwrap();
 
-        assert!(groups[2].process_incoming_message(commit).is_err());
+        assert!(groups[2]
+            .process_incoming_message(commit_output.commit_message)
+            .is_err());
     }
 
     /*
@@ -3089,9 +3103,11 @@ mod tests {
                 leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
             };
 
-        let (commit, _) = groups[0].group.commit(vec![]).unwrap();
+        let commit_output = groups[0].group.commit(vec![]).unwrap();
 
-        assert!(groups[7].process_message(commit).is_ok());
+        assert!(groups[7]
+            .process_message(commit_output.commit_message)
+            .is_ok());
     }
 
     #[test]
@@ -3099,7 +3115,7 @@ mod tests {
         let mut groups =
             test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10);
 
-        let (commit, _) = groups[0]
+        let commit_output = groups[0]
             .group
             .commit_builder()
             .remove_member(1)
@@ -3110,7 +3126,9 @@ mod tests {
         groups[0].process_pending_commit().unwrap();
 
         groups.iter_mut().skip(2).for_each(|group| {
-            group.process_message(commit.clone()).unwrap();
+            group
+                .process_message(commit_output.commit_message.clone())
+                .unwrap();
         });
 
         groups[0].group.commit_modifiers.modify_tree = |tree: &mut TreeKemPublic| {
@@ -3125,11 +3143,11 @@ mod tests {
             path
         };
 
-        let (commit, _) = groups[0].group.commit(vec![]).unwrap();
+        let commit_output = groups[0].group.commit(vec![]).unwrap();
 
         // We should get a path validation error, since the path is too long
         assert_matches!(
-            groups[7].process_message(commit),
+            groups[7].process_message(commit_output.commit_message),
             Err(GroupError::UpdatePathValidationError(_))
         );
     }
@@ -3139,7 +3157,7 @@ mod tests {
         let mut groups =
             test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10);
 
-        let (commit, _) = groups[0]
+        let commit_output = groups[0]
             .group
             .commit_builder()
             .remove_member(1)
@@ -3150,7 +3168,9 @@ mod tests {
         groups[0].process_pending_commit().unwrap();
 
         groups.iter_mut().skip(2).for_each(|group| {
-            group.process_message(commit.clone()).unwrap();
+            group
+                .process_message(commit_output.commit_message.clone())
+                .unwrap();
         });
 
         groups[0].group.commit_modifiers.modify_path = |path: Vec<UpdatePathNode>| {
@@ -3159,9 +3179,11 @@ mod tests {
             path
         };
 
-        let (commit, _) = groups[0].group.commit(vec![]).unwrap();
+        let commit_output = groups[0].group.commit(vec![]).unwrap();
 
-        assert!(groups[7].process_message(commit).is_err());
+        assert!(groups[7]
+            .process_message(commit_output.commit_message)
+            .is_err());
     }
 
     #[test]
@@ -3181,7 +3203,7 @@ mod tests {
         let update_proposal = groups[0].group.update_proposal().unwrap();
         let update_message = groups[0].propose(update_proposal);
         groups[1].process_message(update_message).unwrap();
-        let (commit, _) = groups[1].group.commit(vec![]).unwrap();
+        let commit_output = groups[1].group.commit(vec![]).unwrap();
 
         // Check that the credential was updated by in the committer's state.
         groups[1].process_pending_commit().unwrap();
@@ -3198,7 +3220,9 @@ mod tests {
         );
 
         // Check that the credential was updated in the updater's state.
-        groups[0].process_message(commit).unwrap();
+        groups[0]
+            .process_message(commit_output.commit_message)
+            .unwrap();
         let new_member = groups[0].group.roster().first().cloned().unwrap();
 
         assert_eq!(
@@ -3218,7 +3242,7 @@ mod tests {
 
         let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "foobar");
         let proposal = groups[0].group.propose_add(key_package, vec![]).unwrap();
-        let commit = groups[0].group.commit(vec![]).unwrap().0;
+        let commit = groups[0].group.commit(vec![]).unwrap().commit_message;
 
         // 10 years from now
         let future_time = MlsTime::now().seconds_since_epoch().unwrap() + 10 * 365 * 24 * 3600;

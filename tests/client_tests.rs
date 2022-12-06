@@ -89,12 +89,13 @@ fn test_create(
         )
         .unwrap();
 
-    let (_, welcome) = alice_group
+    let welcome = alice_group
         .commit_builder()
         .add_member(bob_key_pkg)
         .unwrap()
         .build()
-        .unwrap();
+        .unwrap()
+        .welcome_message;
 
     // Upon server confirmation, alice applies the commit to her own state
     alice_group.apply_pending_commit().unwrap();
@@ -177,13 +178,14 @@ fn get_test_groups_clients(
 
     // Add the generated clients to the group the creator made
 
-    let (_, welcome) = receiver_keys
+    let welcome = receiver_keys
         .iter()
         .fold(creator_group.commit_builder(), |builder, item| {
             builder.add_member(item.clone()).unwrap()
         })
         .build()
-        .unwrap();
+        .unwrap()
+        .welcome_message;
 
     // Creator can confirm the commit was processed by the server
     let update = creator_group.apply_pending_commit().unwrap();
@@ -258,13 +260,15 @@ fn add_random_members(
         }
     }
 
-    let (commit, welcome) = groups[committer].commit(vec![]).unwrap();
+    let commit_output = groups[committer].commit(vec![]).unwrap();
 
     for (i, group) in groups.iter_mut().enumerate() {
         if i == committer {
             group.apply_pending_commit().unwrap();
         } else {
-            group.process_incoming_message(commit.clone()).unwrap();
+            group
+                .process_incoming_message(commit_output.commit_message.clone())
+                .unwrap();
         }
     }
 
@@ -272,7 +276,10 @@ fn add_random_members(
 
     groups.extend(new_clients.iter().map(|client| {
         client
-            .join_group(Some(&tree_data), welcome.clone().unwrap())
+            .join_group(
+                Some(&tree_data),
+                commit_output.welcome_message.clone().unwrap(),
+            )
             .unwrap()
             .0
     }));
@@ -300,7 +307,7 @@ fn remove_members(
         }
     }
 
-    let (commit, _) = groups[committer].commit(vec![]).unwrap();
+    let commit = groups[committer].commit(vec![]).unwrap().commit_message;
 
     for (i, group) in groups.iter_mut().enumerate() {
         if i == committer {
@@ -375,13 +382,13 @@ fn test_empty_commits(
 
     for i in 0..receiver_groups.len() {
         // Create the commit
-        let (commit, welcome) = receiver_groups[i].commit(vec![]).unwrap();
+        let commit_output = receiver_groups[i].commit(vec![]).unwrap();
 
-        assert!(welcome.is_none());
+        assert!(commit_output.welcome_message.is_none());
 
         // Creator group processes the commit
         creator_group
-            .process_incoming_message(commit.clone())
+            .process_incoming_message(commit_output.commit_message.clone())
             .unwrap();
 
         // Receiver groups process the commit
@@ -390,7 +397,7 @@ fn test_empty_commits(
                 one_receiver.apply_pending_commit().unwrap();
             } else {
                 one_receiver
-                    .process_incoming_message(commit.clone())
+                    .process_incoming_message(commit_output.commit_message.clone())
                     .unwrap();
             }
 
@@ -447,12 +454,12 @@ fn test_update_proposals(
         // Everyone receives the commit
         let committer_index = i + 1;
 
-        let (commit, welcome) = receiver_groups[committer_index].commit(vec![]).unwrap();
+        let commit_output = receiver_groups[committer_index].commit(vec![]).unwrap();
 
-        assert!(welcome.is_none());
+        assert!(commit_output.welcome_message.is_none());
 
         creator_group
-            .process_incoming_message(commit.clone())
+            .process_incoming_message(commit_output.commit_message.clone())
             .unwrap();
 
         for (j, receiver) in receiver_groups.iter_mut().enumerate() {
@@ -460,7 +467,7 @@ fn test_update_proposals(
                 receiver.apply_pending_commit()
             } else {
                 let state_update_message = receiver
-                    .process_incoming_message(commit.clone())
+                    .process_incoming_message(commit_output.commit_message.clone())
                     .unwrap()
                     .event;
 
@@ -515,14 +522,14 @@ fn test_remove_proposals(
         let group_to_remove = receiver_groups.choose(&mut rand::thread_rng()).unwrap();
         let to_remove_index = group_to_remove.current_member_index();
 
-        let (commit, welcome) = creator_group
+        let commit_output = creator_group
             .commit_builder()
             .remove_member(to_remove_index)
             .unwrap()
             .build()
             .unwrap();
 
-        assert!(welcome.is_none());
+        assert!(commit_output.welcome_message.is_none());
 
         // Process the removal in the creator group
         creator_group.apply_pending_commit().unwrap();
@@ -533,7 +540,9 @@ fn test_remove_proposals(
         for one_group in receiver_groups.iter_mut() {
             let expect_inactive = one_group.current_member_index() == to_remove_index;
 
-            let state_update = one_group.process_incoming_message(commit.clone()).unwrap();
+            let state_update = one_group
+                .process_incoming_message(commit_output.commit_message.clone())
+                .unwrap();
 
             let update = match state_update.event {
                 Event::Commit(update) => update,
@@ -642,7 +651,7 @@ fn test_out_of_order_application_messages() {
             .unwrap(),
     );
 
-    let (commit, _) = alice_group.commit(vec![]).unwrap();
+    let commit = alice_group.commit(vec![]).unwrap().commit_message;
 
     alice_group.apply_pending_commit().unwrap();
 
@@ -695,7 +704,7 @@ fn processing_message_from_self_returns_error(
 
     let (mut creator_group, _) = get_test_groups(protocol_version, cipher_suite, 1, preferences);
 
-    let (commit, _) = creator_group.commit(Vec::new()).unwrap();
+    let commit = creator_group.commit(Vec::new()).unwrap().commit_message;
 
     let error = creator_group.process_incoming_message(commit).unwrap_err();
 
@@ -857,12 +866,13 @@ fn reinit_works() {
 
     let kp = bob.generate_key_package(version, suite1).unwrap();
 
-    let (_, welcome) = alice_group
+    let welcome = alice_group
         .commit_builder()
         .add_member(kp)
         .unwrap()
         .build()
-        .unwrap();
+        .unwrap()
+        .welcome_message;
 
     alice_group.apply_pending_commit().unwrap();
     let tree = alice_group.export_tree().unwrap();
@@ -885,7 +895,7 @@ fn reinit_works() {
         .process_incoming_message(reinit_proposal_message)
         .unwrap();
 
-    let (commit, _) = bob_group.commit(vec![]).unwrap();
+    let commit = bob_group.commit(vec![]).unwrap().commit_message;
 
     // Both process Bob's commit
     let state_update = bob_group.apply_pending_commit().unwrap();
@@ -919,7 +929,7 @@ fn reinit_works() {
     let carol = get_reinit_client(suite1, suite2, "carol");
     let kp = carol.generate_key_package(version, suite2).unwrap();
 
-    let (commit, welcome) = alice_group
+    let commit_output = alice_group
         .commit_builder()
         .add_member(kp)
         .unwrap()
@@ -927,8 +937,12 @@ fn reinit_works() {
         .unwrap();
 
     alice_group.apply_pending_commit().unwrap();
-    bob_group.process_incoming_message(commit).unwrap();
+    bob_group
+        .process_incoming_message(commit_output.commit_message)
+        .unwrap();
 
     let tree = alice_group.export_tree().unwrap();
-    carol.join_group(Some(&tree), welcome.unwrap()).unwrap();
+    carol
+        .join_group(Some(&tree), commit_output.welcome_message.unwrap())
+        .unwrap();
 }

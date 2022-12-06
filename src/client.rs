@@ -318,7 +318,7 @@ pub mod test_utils {
         C: ClientConfig + 'a,
         S: IntoIterator<Item = &'a mut Group<C>>,
     {
-        let (commit_msg, welcome_msg) = committer
+        let commit_output = committer
             .commit_builder()
             .add_member(key_package)?
             .build()?;
@@ -326,12 +326,12 @@ pub mod test_utils {
         committer.apply_pending_commit()?;
 
         for group in other_groups {
-            group.process_incoming_message(commit_msg.clone())?;
+            group.process_incoming_message(commit_output.commit_message.clone())?;
         }
 
         client.join_group(
             Some(&committer.export_tree().unwrap()),
-            welcome_msg.unwrap(),
+            commit_output.welcome_message.unwrap(),
         )
     }
 }

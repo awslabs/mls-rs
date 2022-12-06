@@ -594,7 +594,7 @@ impl MlsClient for MlsClientImpl {
 
         // TODO: handle by value
 
-        let (commit, welcome) = groups
+        let commit_output = groups
             .get_mut(group_index)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
             .group
@@ -602,8 +602,12 @@ impl MlsClient for MlsClientImpl {
             .map_err(abort)?;
 
         let resp = CommitResponse {
-            commit: commit.tls_serialize_detached().map_err(abort)?,
-            welcome: welcome
+            commit: commit_output
+                .commit_message
+                .tls_serialize_detached()
+                .map_err(abort)?,
+            welcome: commit_output
+                .welcome_message
                 .map(|w| w.tls_serialize_detached())
                 .transpose()
                 .map_err(abort)?

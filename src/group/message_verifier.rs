@@ -234,7 +234,12 @@ mod tests {
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
     fn make_signed_plaintext(group: &mut Group<TestClientConfig>) -> MLSPlaintext {
-        group.commit(vec![]).unwrap().0.into_plaintext().unwrap()
+        group
+            .commit(vec![])
+            .unwrap()
+            .commit_message
+            .into_plaintext()
+            .unwrap()
     }
 
     struct TestEnv {
@@ -259,7 +264,7 @@ mod tests {
             let (bob_key_pkg, bob_signing_key) =
                 test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
 
-            let (_, welcome) = alice
+            let commit_output = alice
                 .group
                 .commit_builder()
                 .add_member(bob_key_pkg.key_package.clone())
@@ -270,7 +275,7 @@ mod tests {
             alice.group.apply_pending_commit().unwrap();
 
             let (bob, _) = Group::join(
-                welcome.unwrap(),
+                commit_output.welcome_message.unwrap(),
                 None,
                 TestClientBuilder::new_for_test_custom(
                     bob_signing_key,

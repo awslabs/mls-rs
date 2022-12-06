@@ -189,7 +189,10 @@ pub fn commit_groups<C: ClientConfig>(mut container: Vec<Vec<Group<C>>>) -> Vec<
 
 pub fn commit_group<C: ClientConfig>(container: &mut [Group<C>]) {
     for committer_index in 0..container.len() {
-        let (commit, _) = container[committer_index].commit(Vec::new()).unwrap();
+        let commit = container[committer_index]
+            .commit(Vec::new())
+            .unwrap()
+            .commit_message;
 
         for (index, bob) in container.iter_mut().enumerate() {
             if index == committer_index {

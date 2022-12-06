@@ -52,7 +52,7 @@ impl TestGroup {
         );
 
         // Add new member to the group
-        let (commit, welcome) = self
+        let commit_output = self
             .group
             .commit_builder()
             .add_member(new_key_package.key_package.clone())
@@ -77,14 +77,14 @@ impl TestGroup {
 
         // Group from new member's perspective
         let (new_group, _) = Group::join(
-            welcome.unwrap(),
+            commit_output.welcome_message.unwrap(),
             tree.as_ref().map(Vec::as_ref),
             client_config,
         )?;
 
         let new_test_group = TestGroup { group: new_group };
 
-        Ok((new_test_group, commit))
+        Ok((new_test_group, commit_output.commit_message))
     }
 
     pub(crate) fn join(&mut self, name: &str) -> (TestGroup, MLSMessage) {
@@ -339,7 +339,7 @@ pub(crate) fn get_test_groups_with_features(
             .generate_key_package(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128)
             .unwrap();
 
-        let (commit, welcome) = groups[0]
+        let commit_output = groups[0]
             .commit_builder()
             .add_member(key_package)
             .unwrap()
@@ -349,10 +349,17 @@ pub(crate) fn get_test_groups_with_features(
         groups[0].apply_pending_commit().unwrap();
 
         for group in groups.iter_mut().skip(1) {
-            group.process_incoming_message(commit.clone()).unwrap();
+            group
+                .process_incoming_message(commit_output.commit_message.clone())
+                .unwrap();
         }
 
-        groups.push(client.join_group(None, welcome.unwrap()).unwrap().0);
+        groups.push(
+            client
+                .join_group(None, commit_output.welcome_message.unwrap())
+                .unwrap()
+                .0,
+        );
     });
 
     groups

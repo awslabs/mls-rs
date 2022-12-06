@@ -58,6 +58,13 @@ struct CommitOptions {
     pub ratchet_tree_extension: bool,
 }
 
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct CommitOutput {
+    pub commit_message: MLSMessage,
+    pub welcome_message: Option<MLSMessage>,
+}
+
 pub struct CommitBuilder<'a, C>
 where
     C: ClientConfig + Clone,
@@ -128,7 +135,7 @@ where
         }
     }
 
-    pub fn build(self) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
+    pub fn build(self) -> Result<CommitOutput, GroupError> {
         self.group.commit_proposals(
             self.proposals,
             self.authenticated_data,
@@ -146,14 +153,11 @@ where
         proposals: Vec<Proposal>,
         authenticated_data: Vec<u8>,
         group_info_extensions: ExtensionList<GroupInfoExtension>,
-    ) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
+    ) -> Result<CommitOutput, GroupError> {
         self.commit_internal(proposals, None, authenticated_data, group_info_extensions)
     }
 
-    pub fn commit(
-        &mut self,
-        authenticated_data: Vec<u8>,
-    ) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
+    pub fn commit(&mut self, authenticated_data: Vec<u8>) -> Result<CommitOutput, GroupError> {
         self.commit_internal(vec![], None, authenticated_data, Default::default())
     }
 
@@ -173,7 +177,7 @@ where
         external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
         group_info_extensions: ExtensionList<GroupInfoExtension>,
-    ) -> Result<(MLSMessage, Option<MLSMessage>), GroupError> {
+    ) -> Result<CommitOutput, GroupError> {
         if self.pending_commit.is_some() {
             return Err(GroupError::ExistingPendingCommit);
         }
@@ -369,7 +373,7 @@ where
         // Sign the GroupInfo using the member's private signing key
         group_info.sign(&signer, &())?;
 
-        let welcome = self.make_welcome_message(
+        let welcome_message = self.make_welcome_message(
             added_leaves,
             &key_schedule_result.joiner_secret,
             &psk_secret,
@@ -387,7 +391,10 @@ where
 
         self.pending_commit = Some(pending_commit);
 
-        Ok((commit_message, welcome))
+        Ok(CommitOutput {
+            commit_message,
+            welcome_message,
+        })
     }
 }
 
@@ -452,12 +459,11 @@ mod tests {
 
     fn assert_commit_builder_output<C: ClientConfig>(
         group: Group<C>,
-        commit_message: MLSMessage,
+        commit_output: CommitOutput,
         expected: Vec<Proposal>,
-        welcome_message: Option<MLSMessage>,
         welcome_count: usize,
     ) {
-        let plaintext = commit_message.into_plaintext().unwrap();
+        let plaintext = commit_output.commit_message.into_plaintext().unwrap();
 
         let commit_data = match plaintext.content.content {
             Content::Commit(commit) => commit,
@@ -485,7 +491,7 @@ mod tests {
         });
 
         if welcome_count > 0 {
-            let welcome_msg = welcome_message.unwrap();
+            let welcome_msg = commit_output.welcome_message.unwrap();
 
             assert_eq!(
                 welcome_msg.version,
@@ -497,7 +503,7 @@ mod tests {
             assert_eq!(welcome_msg.cipher_suite, group.state.context.cipher_suite);
             assert_eq!(welcome_msg.secrets.len(), welcome_count);
         } else {
-            assert!(welcome_message.is_none());
+            assert!(commit_output.welcome_message.is_none());
         }
     }
 
@@ -506,7 +512,7 @@ mod tests {
         let mut group = test_commit_builder_group();
         let test_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice");
 
-        let (commit_message, welcome_message) = group
+        let commit_output = group
             .commit_builder()
             .add_member(test_key_package.clone())
             .unwrap()
@@ -515,13 +521,7 @@ mod tests {
 
         let expected_add = group.add_proposal(test_key_package).unwrap();
 
-        assert_commit_builder_output(
-            group,
-            commit_message,
-            vec![expected_add],
-            welcome_message,
-            1,
-        )
+        assert_commit_builder_output(group, commit_output, vec![expected_add], 1)
     }
 
     #[test]
@@ -535,13 +535,14 @@ mod tests {
         let mut extension_list = ExtensionList::default();
         extension_list.set_extension(ext.clone()).unwrap();
 
-        let (_, welcome_message) = group
+        let welcome_message = group
             .commit_builder()
             .add_member(bob_key_package)
             .unwrap()
             .set_group_info_ext(extension_list)
             .build()
-            .unwrap();
+            .unwrap()
+            .welcome_message;
 
         let (_, context) = bob_client
             .join_group(None, welcome_message.unwrap())
@@ -571,7 +572,7 @@ mod tests {
 
         group.apply_pending_commit().unwrap();
 
-        let (commit_message, welcome_message) = group
+        let commit_output = group
             .commit_builder()
             .remove_member(1)
             .unwrap()
@@ -580,13 +581,7 @@ mod tests {
 
         let expected_remove = group.remove_proposal(1).unwrap();
 
-        assert_commit_builder_output(
-            group,
-            commit_message,
-            vec![expected_remove],
-            welcome_message,
-            0,
-        );
+        assert_commit_builder_output(group, commit_output, vec![expected_remove], 0);
     }
 
     #[test]
@@ -599,7 +594,7 @@ mod tests {
             .secret_store()
             .insert(test_psk.clone(), Psk::from(vec![]));
 
-        let (commit_message, welcome_message) = group
+        let commit_output = group
             .commit_builder()
             .add_psk(test_psk.clone())
             .unwrap()
@@ -608,13 +603,7 @@ mod tests {
 
         let expected_psk = group.psk_proposal(test_psk).unwrap();
 
-        assert_commit_builder_output(
-            group,
-            commit_message,
-            vec![expected_psk],
-            welcome_message,
-            0,
-        )
+        assert_commit_builder_output(group, commit_output, vec![expected_psk], 0)
     }
 
     #[test]
@@ -625,7 +614,7 @@ mod tests {
             .set_extension(RequiredCapabilitiesExt::default())
             .unwrap();
 
-        let (commit_message, welcome_message) = group
+        let commit_output = group
             .commit_builder()
             .set_group_context_ext(test_ext.clone())
             .unwrap()
@@ -634,13 +623,7 @@ mod tests {
 
         let expected_ext = group.group_context_extensions_proposal(test_ext);
 
-        assert_commit_builder_output(
-            group,
-            commit_message,
-            vec![expected_ext],
-            welcome_message,
-            0,
-        );
+        assert_commit_builder_output(group, commit_output, vec![expected_ext], 0);
     }
 
     #[test]
@@ -655,7 +638,7 @@ mod tests {
             .set_extension(RequiredCapabilitiesExt::default())
             .unwrap();
 
-        let (commit_message, welcome_message) = group
+        let commit_output = group
             .commit_builder()
             .reinit(
                 Some(test_group_id.clone()),
@@ -676,13 +659,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_commit_builder_output(
-            group,
-            commit_message,
-            vec![expected_reinit],
-            welcome_message,
-            0,
-        );
+        assert_commit_builder_output(group, commit_output, vec![expected_reinit], 0);
     }
 
     #[test]
@@ -696,7 +673,7 @@ mod tests {
             group.add_proposal(kp2.clone()).unwrap(),
         ];
 
-        let (commit_message, welcome_message) = group
+        let commit_output = group
             .commit_builder()
             .add_member(kp1)
             .unwrap()
@@ -705,16 +682,16 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_commit_builder_output(group, commit_message, expected_adds, welcome_message, 2);
+        assert_commit_builder_output(group, commit_output, expected_adds, 2);
     }
 
     #[test]
     fn test_commit_builder_empty_commit() {
         let mut group = test_commit_builder_group();
 
-        let (commit_message, welcome_message) = group.commit_builder().build().unwrap();
+        let commit_output = group.commit_builder().build().unwrap();
 
-        assert_commit_builder_output(group, commit_message, vec![], welcome_message, 0);
+        assert_commit_builder_output(group, commit_output, vec![], 0);
     }
 
     #[test]
@@ -722,14 +699,15 @@ mod tests {
         let mut group = test_commit_builder_group();
         let test_data = "test".as_bytes().to_vec();
 
-        let (commit_message, _) = group
+        let commit_output = group
             .commit_builder()
             .authenticated_data(test_data.clone())
             .build()
             .unwrap();
 
         assert_eq!(
-            commit_message
+            commit_output
+                .commit_message
                 .into_plaintext()
                 .unwrap()
                 .content
@@ -752,7 +730,7 @@ mod tests {
             .keychain
             .replace_identity(identity.clone(), secret_key);
 
-        let (commit, _) = groups[0].group.commit(vec![]).unwrap();
+        let commit_output = groups[0].group.commit(vec![]).unwrap();
 
         // Check that the credential was updated by in the committer's state.
         groups[0].process_pending_commit().unwrap();
@@ -769,7 +747,10 @@ mod tests {
         );
 
         // Check that the credential was updated in another member's state.
-        groups[1].process_message(commit).unwrap();
+        groups[1]
+            .process_message(commit_output.commit_message)
+            .unwrap();
+
         let new_member = groups[1].group.roster().first().cloned().unwrap();
 
         assert_eq!(

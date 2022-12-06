@@ -38,10 +38,13 @@ fn bench_group_commit<C: MlsConfig>(
             &groups.len(),
             |b, _| {
                 b.iter(|| {
-                    let (commit, _) = groups[0].commit(Vec::new()).unwrap();
+                    let commit_output = groups[0].commit(Vec::new()).unwrap();
 
                     groups[0].apply_pending_commit().unwrap();
-                    groups[1].process_incoming_message(commit).unwrap();
+
+                    groups[1]
+                        .process_incoming_message(commit_output.commit_message)
+                        .unwrap();
                 })
             },
         );
