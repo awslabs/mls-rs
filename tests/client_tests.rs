@@ -946,11 +946,11 @@ fn reinit_works() {
     // Alice finishes the reinit by creating the new group
     let kp = bob
         .client
-        .generate_key_package(version, suite2, bob.id2)
+        .generate_key_package_message(version, suite2, bob.id2)
         .unwrap();
 
     let (mut alice_group, welcome) = alice_group
-        .finish_reinit_commit(|_| Some(kp.clone()), Some(alice.id2))
+        .finish_reinit_commit(vec![kp], Some(alice.id2))
         .unwrap();
 
     // Alice invited Bob

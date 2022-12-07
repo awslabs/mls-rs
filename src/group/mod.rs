@@ -708,18 +708,17 @@ where
         )))
     }
 
-    fn new_for_resumption<S, F>(
+    fn new_for_resumption<S>(
         &self,
         new_context: &mut GroupContext,
         new_validated_leaf: LeafNode,
         new_leaf_secret: HpkeSecretKey,
         new_signer: &S,
-        mut get_new_key_package: F,
+        new_key_packages: Vec<MLSMessage>,
         resumption_psk_id: JustPreSharedKeyID,
     ) -> Result<(Self, Option<MLSMessage>), GroupError>
     where
         S: Signer,
-        F: FnMut(&SigningIdentity) -> Option<KeyPackage>,
     {
         let required_capabilities = new_context.extensions.get_extension()?;
 
@@ -729,6 +728,21 @@ where
             required_capabilities.as_ref(),
             self.config.identity_provider(),
         );
+
+        let id_provider = self.config.identity_provider();
+
+        let mut new_key_packages = new_key_packages
+            .into_iter()
+            .map(|kp| {
+                let kp = kp.into_key_package().ok_or(GroupError::NotKeyPackage)?;
+
+                let id = id_provider
+                    .identity(kp.signing_identity())
+                    .map_err(|e| GroupError::IdentityProviderError(e.into()))?;
+
+                Ok((id, kp))
+            })
+            .collect::<Result<HashMap<_, _>, GroupError>>()?;
 
         // Generate new leaves for all existing members
         let (new_members, new_key_pkgs) = {
@@ -741,12 +755,17 @@ where
                     if index == self_index {
                         None
                     } else {
-                        get_new_key_package(&leaf_node.signing_identity)
+                        id_provider
+                            .identity(&leaf_node.signing_identity)
+                            .map(|id| new_key_packages.remove(&id))
+                            .map_err(|e| GroupError::IdentityProviderError(e.into()))
+                            .transpose()
                     }
                 })
                 .try_fold(
                     (Vec::new(), Vec::new()),
                     |(mut leaves, mut new_key_pkgs), new_key_pkg| {
+                        let new_key_pkg = new_key_pkg?;
                         key_package_validator.check_if_valid(&new_key_pkg, Default::default())?;
                         let new_leaf = new_key_pkg.leaf_node.clone();
                         leaves.push(new_leaf);
@@ -855,14 +874,12 @@ where
         Ok((new_group, welcome))
     }
 
-    pub fn branch<F>(
+    // TODO investigate if it's worth updating your own signing identity here
+    pub fn branch(
         &self,
         sub_group_id: Vec<u8>,
-        get_new_key_package: F,
-    ) -> Result<(Group<C>, Option<MLSMessage>), GroupError>
-    where
-        F: FnMut(&SigningIdentity) -> Option<KeyPackage>,
-    {
+        new_key_packages: Vec<MLSMessage>,
+    ) -> Result<(Group<C>, Option<MLSMessage>), GroupError> {
         let signer = self.signer()?;
 
         let current_leaf_node = self.current_user_leaf_node()?;
@@ -903,7 +920,7 @@ where
             new_leaf_node,
             new_leaf_secret,
             &signer,
-            get_new_key_package,
+            new_key_packages,
             resumption_psk_id,
         )
     }
@@ -929,15 +946,11 @@ where
         }
     }
 
-    // TODO investigate if it's worth allowing signing identity update here
-    pub fn finish_reinit_commit<F>(
+    pub fn finish_reinit_commit(
         &self,
-        get_new_key_package: F,
+        new_key_packages: Vec<MLSMessage>,
         signing_identity: Option<SigningIdentity>,
-    ) -> Result<(Group<C>, Option<MLSMessage>), GroupError>
-    where
-        F: FnMut(&SigningIdentity) -> Option<KeyPackage>,
-    {
+    ) -> Result<(Group<C>, Option<MLSMessage>), GroupError> {
         let config = self.config.clone();
 
         let reinit = self
@@ -949,13 +962,13 @@ where
         let signing_identity =
             signing_identity.unwrap_or(self.current_member_signing_identity()?.clone());
 
-        let signer = self.signer_for_identity(Some(&signing_identity))?;
+        let new_signer = self.signer_for_identity(Some(&signing_identity))?;
 
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
             reinit.cipher_suite,
             config.leaf_properties(),
             signing_identity,
-            &signer,
+            &new_signer,
             config.lifetime(),
             &config.identity_provider(),
         )?;
@@ -981,8 +994,8 @@ where
             &mut new_context,
             new_leaf_node,
             new_leaf_secret,
-            &signer,
-            get_new_key_package,
+            &new_signer,
+            new_key_packages,
             resumption_psk_id,
         )?;
 
@@ -2536,23 +2549,15 @@ mod tests {
         // Apply the commit that adds carol
         bob.group.process_incoming_message(commit).unwrap();
 
+        let bob_identity = bob.group.config.keychain().export()[0].0.clone();
+
+        let new_key_pkg = Client::new(bob.group.config.clone())
+            .generate_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, bob_identity)
+            .unwrap();
+
         let (mut alice_sub_group, welcome) = alice
             .group
-            .branch(b"subgroup".to_vec(), |p| {
-                if p == bob.group.current_member_signing_identity().unwrap() {
-                    Some(
-                        Client::new(bob.group.config.clone())
-                            .generate_key_package(
-                                TEST_PROTOCOL_VERSION,
-                                TEST_CIPHER_SUITE,
-                                p.clone(),
-                            )
-                            .unwrap(),
-                    )
-                } else {
-                    None
-                }
-            })
+            .branch(b"subgroup".to_vec(), vec![new_key_pkg])
             .unwrap();
 
         let welcome = welcome.unwrap();

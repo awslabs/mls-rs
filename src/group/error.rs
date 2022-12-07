@@ -212,6 +212,8 @@ pub enum GroupError {
     UnexpectedMessageType(Vec<WireFormat>, WireFormat),
     #[error("membership tag on MLSPlaintext for non-member sender")]
     MembershipTagForNonMember,
+    #[error("mls message is not a key package")]
+    NotKeyPackage,
 }
 
 impl From<CiphertextProcessorError> for GroupError {

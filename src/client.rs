@@ -84,6 +84,21 @@ where
         Client { config }
     }
 
+    pub fn generate_key_package_message(
+        &self,
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        signing_identity: SigningIdentity,
+    ) -> Result<MLSMessage, ClientError> {
+        let key_package =
+            self.generate_key_package(protocol_version, cipher_suite, signing_identity)?;
+
+        let key_package_message =
+            MLSMessage::new(protocol_version, MLSMessagePayload::KeyPackage(key_package));
+
+        Ok(key_package_message)
+    }
+
     pub fn generate_key_package(
         &self,
         protocol_version: ProtocolVersion,
