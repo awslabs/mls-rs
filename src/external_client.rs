@@ -3,7 +3,8 @@ use crate::{
     external_client_config::ExternalClientConfig,
     group::{framing::MLSMessage, snapshot::ExternalSnapshot, ExternalGroup, GroupError},
     key_package::{
-        KeyPackage, KeyPackageValidationError, KeyPackageValidationOptions, KeyPackageValidator,
+        KeyPackage, KeyPackageValidationError, KeyPackageValidationOptions,
+        KeyPackageValidationOutput, KeyPackageValidator,
     },
     protocol_version::ProtocolVersion,
     time::MlsTime,
@@ -61,7 +62,7 @@ where
         package: &KeyPackage,
         protocol: ProtocolVersion,
         cipher_suite: CipherSuite,
-    ) -> Result<(), ExternalClientError> {
+    ) -> Result<KeyPackageValidationOutput, ExternalClientError> {
         let keypackage_validator = KeyPackageValidator::new(
             protocol,
             cipher_suite,

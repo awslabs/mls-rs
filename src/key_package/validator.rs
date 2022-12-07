@@ -3,6 +3,7 @@ use ferriscrypt::asym::ec_key::PublicKey;
 use super::*;
 use crate::identity::SigningIdentityError;
 use crate::provider::identity::IdentityProvider;
+use crate::tree_kem::leaf_node::LeafNodeSource;
 use crate::tree_kem::Lifetime;
 use crate::{
     signer::SignatureError,
@@ -57,6 +58,11 @@ pub struct KeyPackageValidator<'a, C: IdentityProvider> {
     leaf_node_validator: LeafNodeValidator<'a, C>,
 }
 
+#[derive(Debug)]
+pub struct KeyPackageValidationOutput {
+    pub expiration_timestamp: u64,
+}
+
 impl<'a, C: IdentityProvider> KeyPackageValidator<'a, C> {
     pub fn new(
         protocol_version: ProtocolVersion,
@@ -92,12 +98,22 @@ impl<'a, C: IdentityProvider> KeyPackageValidator<'a, C> {
         &self,
         package: &KeyPackage,
         options: KeyPackageValidationOptions,
-    ) -> Result<(), KeyPackageValidationError> {
+    ) -> Result<KeyPackageValidationOutput, KeyPackageValidationError> {
         self.validate_properties(package)?;
 
         self.leaf_node_validator
-            .check_if_valid(&package.leaf_node, self.validation_context(options))
-            .map_err(Into::into)
+            .check_if_valid(&package.leaf_node, self.validation_context(options))?;
+
+        let expiration_timestamp =
+            if let LeafNodeSource::KeyPackage(lifetime) = &package.leaf_node.leaf_node_source {
+                lifetime.not_after
+            } else {
+                return Err(KeyPackageValidationError::MissingKeyLifetime);
+            };
+
+        Ok(KeyPackageValidationOutput {
+            expiration_timestamp,
+        })
     }
 
     fn validate_properties(&self, package: &KeyPackage) -> Result<(), KeyPackageValidationError> {
