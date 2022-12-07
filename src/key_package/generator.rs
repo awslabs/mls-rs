@@ -81,7 +81,6 @@ where
         let (public_init, secret_init) = generate_keypair(self.cipher_suite.kem_type().curve())?;
 
         let properties = ConfigProperties {
-            signing_identity: self.signing_identity.clone(),
             capabilities,
             extensions: leaf_node_extensions,
         };
@@ -89,6 +88,7 @@ where
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             self.cipher_suite,
             properties,
+            self.signing_identity.clone(),
             self.signing_key,
             lifetime,
             self.identity_provider,

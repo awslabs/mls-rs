@@ -10,7 +10,6 @@ use aws_mls::identity::SigningIdentity;
 use aws_mls::identity::{BasicCredential, Credential, MlsCredential};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
-use aws_mls::provider::keychain::FirstIdentitySelector;
 use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain};
 use ferriscrypt::rand::SecureRng;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
@@ -21,10 +20,8 @@ use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test_configure!(run_in_browser);
 
-type TestClientConfig = WithIdentityProvider<
-    BasicIdentityProvider,
-    WithKeychain<InMemoryKeychain<FirstIdentitySelector>, BaseConfig>,
->;
+type TestClientConfig =
+    WithIdentityProvider<BasicIdentityProvider, WithKeychain<InMemoryKeychain, BaseConfig>>;
 
 // The same method exists in `credential::test_utils` but is not compiled without the `test` flag.
 pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {
@@ -45,22 +42,24 @@ fn test_params() -> impl Iterator<Item = (ProtocolVersion, CipherSuite, bool)> {
     })
 }
 
-fn generate_client(
-    cipher_suite: CipherSuite,
-    id: Vec<u8>,
-    preferences: Preferences,
-) -> Client<TestClientConfig> {
+struct TestClient {
+    client: Client<TestClientConfig>,
+    identity: SigningIdentity,
+}
+
+fn generate_client(cipher_suite: CipherSuite, id: Vec<u8>, preferences: Preferences) -> TestClient {
     let key = cipher_suite.generate_signing_key().unwrap();
     let credential = get_test_basic_credential(id);
 
-    let signing_identity =
-        SigningIdentity::new(credential, SignaturePublicKey::try_from(&key).unwrap());
+    let identity = SigningIdentity::new(credential, SignaturePublicKey::try_from(&key).unwrap());
 
-    ClientBuilder::new()
+    let client = ClientBuilder::new()
         .identity_provider(BasicIdentityProvider::new())
-        .single_signing_identity(signing_identity, key)
+        .single_signing_identity(identity.clone(), key)
         .preferences(preferences)
-        .build()
+        .build();
+
+    TestClient { client, identity }
 }
 
 fn test_create(
@@ -76,15 +75,18 @@ fn test_create(
     let bob = generate_client(cipher_suite, b"bob".to_vec(), preferences);
 
     let bob_key_pkg = bob
-        .generate_key_package(protocol_version, cipher_suite)
+        .client
+        .generate_key_package(protocol_version, cipher_suite, bob.identity)
         .unwrap();
 
     // Alice creates a group and adds bob
     let mut alice_group = alice
+        .client
         .create_group_with_id(
             protocol_version,
             cipher_suite,
             b"group".to_vec(),
+            alice.identity,
             ExtensionList::default(),
         )
         .unwrap();
@@ -103,7 +105,10 @@ fn test_create(
     let tree = alice_group.export_tree().unwrap();
 
     // Bob receives the welcome message and joins the group
-    let (bob_group, _) = bob.join_group(Some(&tree), welcome.unwrap()).unwrap();
+    let (bob_group, _) = bob
+        .client
+        .join_group(Some(&tree), welcome.unwrap())
+        .unwrap();
 
     assert!(Group::equal_group_state(&alice_group, &bob_group));
 }
@@ -142,16 +147,18 @@ fn get_test_groups_clients(
 ) -> (
     Group<TestClientConfig>,
     Vec<Group<TestClientConfig>>,
-    Vec<Client<TestClientConfig>>,
+    Vec<TestClient>,
 ) {
     // Create the group with Alice as the group initiator
     let creator = generate_client(cipher_suite, b"alice".to_vec(), preferences.clone());
 
     let mut creator_group = creator
+        .client
         .create_group_with_id(
             protocol_version,
             cipher_suite,
             b"group".to_vec(),
+            creator.identity,
             ExtensionList::default(),
         )
         .unwrap();
@@ -171,7 +178,8 @@ fn get_test_groups_clients(
         .iter()
         .map(|client| {
             client
-                .generate_key_package(protocol_version, cipher_suite)
+                .client
+                .generate_key_package(protocol_version, cipher_suite, client.identity.clone())
                 .unwrap()
         })
         .collect::<Vec<KeyPackage>>();
@@ -208,6 +216,7 @@ fn get_test_groups_clients(
         .iter()
         .map(|client| {
             client
+                .client
                 .join_group(Some(&tree_data), welcome.clone().unwrap())
                 .unwrap()
                 .0
@@ -240,7 +249,12 @@ fn add_random_members(
             );
 
             let key_package = new_client
-                .generate_key_package(ProtocolVersion::Mls10, cipher_suite)
+                .client
+                .generate_key_package(
+                    ProtocolVersion::Mls10,
+                    cipher_suite,
+                    new_client.identity.clone(),
+                )
                 .unwrap();
 
             (key_package, new_client)
@@ -276,6 +290,7 @@ fn add_random_members(
 
     groups.extend(new_clients.iter().map(|client| {
         client
+            .client
             .join_group(
                 Some(&tree_data),
                 commit_output.welcome_message.clone().unwrap(),
@@ -728,10 +743,12 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
     let creator = generate_client(cipher_suite, b"alice-0".to_vec(), Default::default());
 
     let creator_group = creator
+        .client
         .create_group_with_id(
             protocol_version,
             cipher_suite,
             b"group".to_vec(),
+            creator.identity,
             ExtensionList::default(),
         )
         .unwrap();
@@ -757,9 +774,11 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
             let group_info = existing_group.group_info_message(true).unwrap();
 
             let (new_group, commit) = client
+                .client
                 .commit_external(
                     group_info,
                     Some(&existing_group.export_tree().unwrap()),
+                    client.identity.clone(),
                     None,
                     vec![],
                     vec![],
@@ -827,27 +846,32 @@ fn test_remove_nonexisting_leaf() {
     assert!(groups[0].propose_remove(5, vec![]).is_err());
 }
 
-fn get_reinit_client(
-    suite1: CipherSuite,
-    suite2: CipherSuite,
-    id: &str,
-) -> Client<TestClientConfig> {
+struct ReinitClientGeneration {
+    client: Client<TestClientConfig>,
+    id1: SigningIdentity,
+    id2: SigningIdentity,
+}
+
+fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite, id: &str) -> ReinitClientGeneration {
     let credential = get_test_basic_credential(id.as_bytes().to_vec());
 
     let sk1 = suite1.generate_signing_key().unwrap();
     let sk2 = suite2.generate_signing_key().unwrap();
+
     let id1 = SigningIdentity::new(
         credential.clone(),
         SignaturePublicKey::try_from(&sk1).unwrap(),
     );
     let id2 = SigningIdentity::new(credential, SignaturePublicKey::try_from(&sk2).unwrap());
 
-    ClientBuilder::new()
+    let client = ClientBuilder::new()
         .identity_provider(BasicIdentityProvider::new())
         .keychain(InMemoryKeychain::default())
-        .signing_identity(id1, sk1)
-        .signing_identity(id2, sk2)
-        .build()
+        .signing_identity(id1.clone(), sk1)
+        .signing_identity(id2.clone(), sk2)
+        .build();
+
+    ReinitClientGeneration { client, id1, id2 }
 }
 
 #[test]
@@ -861,10 +885,14 @@ fn reinit_works() {
     let bob = get_reinit_client(suite1, suite2, "bob");
 
     let mut alice_group = alice
-        .create_group(version, suite1, ExtensionList::new())
+        .client
+        .create_group(version, suite1, alice.id1.clone(), ExtensionList::new())
         .unwrap();
 
-    let kp = bob.generate_key_package(version, suite1).unwrap();
+    let kp = bob
+        .client
+        .generate_key_package(version, suite1, bob.id1)
+        .unwrap();
 
     let welcome = alice_group
         .commit_builder()
@@ -877,7 +905,10 @@ fn reinit_works() {
     alice_group.apply_pending_commit().unwrap();
     let tree = alice_group.export_tree().unwrap();
 
-    let (mut bob_group, _) = bob.join_group(Some(&tree), welcome.unwrap()).unwrap();
+    let (mut bob_group, _) = bob
+        .client
+        .join_group(Some(&tree), welcome.unwrap())
+        .unwrap();
 
     // Alice proposes reinit
     let reinit_proposal_message = alice_group
@@ -913,10 +944,13 @@ fn reinit_works() {
     assert!(bob_group.commit(vec![]).is_err());
 
     // Alice finishes the reinit by creating the new group
-    let kp = bob.generate_key_package(version, suite2).unwrap();
+    let kp = bob
+        .client
+        .generate_key_package(version, suite2, bob.id2)
+        .unwrap();
 
     let (mut alice_group, welcome) = alice_group
-        .finish_reinit_commit(|_| Some(kp.clone()))
+        .finish_reinit_commit(|_| Some(kp.clone()), Some(alice.id2))
         .unwrap();
 
     // Alice invited Bob
@@ -927,7 +961,11 @@ fn reinit_works() {
 
     // They can talk
     let carol = get_reinit_client(suite1, suite2, "carol");
-    let kp = carol.generate_key_package(version, suite2).unwrap();
+
+    let kp = carol
+        .client
+        .generate_key_package(version, suite2, carol.id2)
+        .unwrap();
 
     let commit_output = alice_group
         .commit_builder()
@@ -937,12 +975,15 @@ fn reinit_works() {
         .unwrap();
 
     alice_group.apply_pending_commit().unwrap();
+
     bob_group
         .process_incoming_message(commit_output.commit_message)
         .unwrap();
 
     let tree = alice_group.export_tree().unwrap();
+
     carol
+        .client
         .join_group(Some(&tree), commit_output.welcome_message.unwrap())
         .unwrap();
 }

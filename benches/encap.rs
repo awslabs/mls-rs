@@ -46,16 +46,15 @@ fn bench_encap(
                     let update_leaf_properties = ConfigProperties {
                         capabilities: capabilities.clone().unwrap_or_else(get_test_capabilities),
                         extensions: extensions.clone().unwrap_or_default(),
-                        signing_identity: value.encap_identity.clone(),
                     };
 
                     TreeKem::new(&mut value.encap_tree, &mut value.encap_private_key)
                         .encap(
-                            b"test_group",
                             &mut value.group_context,
                             excluding,
                             &value.encap_signer,
                             update_leaf_properties,
+                            None,
                             BasicIdentityProvider,
                         )
                         .unwrap()

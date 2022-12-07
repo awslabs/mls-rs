@@ -96,7 +96,9 @@ pub fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<TestCli
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     pub const TEST_GROUP: &[u8] = b"group";
 
-    let alice = get_basic_client_builder(cipher_suite, "alice")
+    let (alice, alice_identity) = get_basic_client_builder(cipher_suite, "alice");
+
+    let alice = alice
         .preferences(
             Preferences::default()
                 .with_ratchet_tree_extension(true)
@@ -109,6 +111,7 @@ pub fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<TestCli
             TEST_PROTOCOL_VERSION,
             cipher_suite,
             TEST_GROUP.to_vec(),
+            alice_identity,
             ExtensionList::new(),
         )
         .unwrap();

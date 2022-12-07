@@ -173,8 +173,6 @@ mod tests {
         let (charlie_leaf, charlie_hpke_secret, _charlie_signing) =
             get_basic_test_node_sig_key(cipher_suite, "charlie");
 
-        let alice_identity = alice_leaf.signing_identity.clone();
-
         // Create a new public tree with Alice
         let (mut public_tree, mut alice_private) = TreeKemPublic::derive(
             cipher_suite,
@@ -192,11 +190,11 @@ mod tests {
         // Generate an update path for Alice
         let encap_gen = TreeKem::new(&mut public_tree, &mut alice_private)
             .encap(
-                b"test_group",
                 &mut get_test_group_context(42, cipher_suite),
                 &[],
                 &alice_signing,
-                default_properties(alice_identity),
+                default_properties(),
+                None,
                 BasicIdentityProvider,
                 #[cfg(test)]
                 &Default::default(),

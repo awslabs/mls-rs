@@ -1,10 +1,6 @@
 //! Definitions to build a [`Client`].
 //!
 //! See [`ClientBuilder`].
-
-#[cfg(test)]
-use crate::client_builder::test_utils::TestIdentitySelector;
-
 use crate::{
     cipher_suite::CipherSuite,
     client::Client,
@@ -28,9 +24,7 @@ use crate::{
         group_state::{GroupStateStorage, InMemoryGroupStateStorage},
         identity::IdentityProvider,
         key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
-        keychain::{
-            FirstIdentitySelector, IdentitySelectionStrategy, InMemoryKeychain, KeychainStorage,
-        },
+        keychain::{InMemoryKeychain, KeychainStorage},
         psk::{InMemoryPskStore, PskStore},
     },
     psk::{ExternalPskId, Psk},
@@ -103,15 +97,12 @@ pub type BaseConfig = Config<
 /// use aws_mls::{
 ///     client::{BaseConfig, Client, WithIdentityProvider, WithKeychain},
 ///     provider::{
-///         identity::BasicIdentityProvider,
-///         keychain::{InMemoryKeychain, FirstIdentitySelector},
+///         identity::BasicIdentityProvider, keychain::InMemoryKeychain,
 ///     },
 /// };
 ///
-/// type MlsClient = Client<WithKeychain<InMemoryKeychain<FirstIdentitySelector>, WithIdentityProvider<
-///     BasicIdentityProvider,
-///     BaseConfig,
-/// >>>;
+/// type MlsClient =
+///     Client<WithKeychain<InMemoryKeychain, WithIdentityProvider<BasicIdentityProvider, BaseConfig>>>;
 ///
 /// fn make_client_2() -> MlsClient {
 ///     Client::builder()
@@ -290,8 +281,8 @@ impl<C: IntoConfig> ClientBuilder<C> {
         self,
         identity: SigningIdentity,
         key: SecretKey,
-    ) -> ClientBuilder<WithKeychain<InMemoryKeychain<FirstIdentitySelector>, C>> {
-        self.single_entry_keychain(identity, FirstIdentitySelector, key)
+    ) -> ClientBuilder<WithKeychain<InMemoryKeychain, C>> {
+        self.single_entry_keychain(identity, key)
     }
 
     #[cfg(test)]
@@ -299,21 +290,17 @@ impl<C: IntoConfig> ClientBuilder<C> {
         self,
         identity: SigningIdentity,
         key: SecretKey,
-    ) -> ClientBuilder<WithKeychain<InMemoryKeychain<TestIdentitySelector>, C>> {
-        self.single_entry_keychain(identity, TestIdentitySelector::default(), key)
+    ) -> ClientBuilder<WithKeychain<InMemoryKeychain, C>> {
+        self.single_entry_keychain(identity, key)
     }
 
-    fn single_entry_keychain<IS>(
+    fn single_entry_keychain(
         self,
         identity: SigningIdentity,
-        selection_strategy: IS,
         key: SecretKey,
-    ) -> ClientBuilder<WithKeychain<InMemoryKeychain<IS>, C>>
-    where
-        IS: IdentitySelectionStrategy<SecretKey> + Clone,
-    {
+    ) -> ClientBuilder<WithKeychain<InMemoryKeychain, C>> {
         self.keychain({
-            let mut keychain = InMemoryKeychain::new(selection_strategy);
+            let mut keychain = InMemoryKeychain::new();
             keychain.insert(identity, key);
             keychain
         })
@@ -456,10 +443,9 @@ where
     }
 }
 
-impl<S, C> ClientBuilder<C>
+impl<C> ClientBuilder<C>
 where
-    C: IntoConfig<Keychain = InMemoryKeychain<S>>,
-    S: IdentitySelectionStrategy<SecretKey>,
+    C: IntoConfig<Keychain = InMemoryKeychain>,
 {
     /// Add an identity to the in-memory keychain.
     pub fn signing_identity(
@@ -909,43 +895,13 @@ pub mod test_utils {
         client_builder::{
             BaseConfig, ClientBuilder, Preferences, WithIdentityProvider, WithKeychain,
         },
-        identity::SigningIdentity,
         key_package::KeyPackageGeneration,
-        provider::{
-            identity::BasicIdentityProvider,
-            keychain::{FirstIdentitySelector, IdentitySelectionStrategy, InMemoryKeychain},
-        },
+        provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
     };
     use ferriscrypt::asym::ec_key::SecretKey;
 
-    #[derive(Debug, Clone, Default)]
-    pub struct TestIdentitySelector {
-        pub replacement: Option<(SigningIdentity, SecretKey)>,
-    }
-
-    impl TestIdentitySelector {
-        pub fn new() -> TestIdentitySelector {
-            Default::default()
-        }
-    }
-
-    impl IdentitySelectionStrategy<SecretKey> for TestIdentitySelector {
-        fn select_identity(
-            &self,
-            identities: Vec<(SigningIdentity, SecretKey)>,
-            existing: Option<&SigningIdentity>,
-            cipher_suite: crate::cipher_suite::CipherSuite,
-        ) -> Option<(SigningIdentity, SecretKey)> {
-            self.replacement.clone().or_else(|| {
-                FirstIdentitySelector.select_identity(identities, existing, cipher_suite)
-            })
-        }
-    }
-
-    pub type TestClientConfig = WithIdentityProvider<
-        BasicIdentityProvider,
-        WithKeychain<InMemoryKeychain<TestIdentitySelector>, BaseConfig>,
-    >;
+    pub type TestClientConfig =
+        WithIdentityProvider<BasicIdentityProvider, WithKeychain<InMemoryKeychain, BaseConfig>>;
 
     pub type TestClientBuilder = ClientBuilder<TestClientConfig>;
 
@@ -953,7 +909,7 @@ pub mod test_utils {
         pub fn new_for_test() -> Self {
             ClientBuilder::new()
                 .identity_provider(BasicIdentityProvider::new())
-                .keychain(InMemoryKeychain::new(TestIdentitySelector::new()))
+                .keychain(InMemoryKeychain::new())
         }
 
         pub fn new_for_test_custom(

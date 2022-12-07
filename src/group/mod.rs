@@ -184,13 +184,19 @@ where
         group_id: Vec<u8>,
         cipher_suite: CipherSuite,
         protocol_version: ProtocolVersion,
+        signing_identity: SigningIdentity,
         group_context_extensions: ExtensionList<GroupContextExtension>,
     ) -> Result<Self, GroupError> {
-        let (leaf_properties, signer) = Group::config_leaf_properties(&config, cipher_suite, None)?;
+        let signer = config
+            .keychain()
+            .signer(&signing_identity)
+            .map_err(|e| GroupError::KeychainError(e.into()))?
+            .ok_or(GroupError::SignerNotFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             cipher_suite,
-            leaf_properties,
+            config.leaf_properties(),
+            signing_identity,
             &signer,
             config.lifetime(),
             &config.identity_provider(),
@@ -462,6 +468,7 @@ where
         config: C,
         group_info: MLSMessage,
         tree_data: Option<&[u8]>,
+        signing_identity: SigningIdentity,
         to_remove: Option<u32>,
         external_psks: Vec<ExternalPskId>,
         authenticated_data: Vec<u8>,
@@ -489,12 +496,16 @@ where
             &config.identity_provider(),
         )?;
 
-        let (leaf_properties, signer) =
-            Group::config_leaf_properties(&config, join_context.group_context.cipher_suite, None)?;
+        let signer = config
+            .keychain()
+            .signer(&signing_identity)
+            .map_err(|e| GroupError::KeychainError(e.into()))?
+            .ok_or(GroupError::SignerNotFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             join_context.group_context.cipher_suite,
-            leaf_properties,
+            config.leaf_properties(),
+            signing_identity,
             &signer,
             config.lifetime(),
             &config.identity_provider(),
@@ -546,6 +557,7 @@ where
             Some(&leaf_node),
             authenticated_data,
             Default::default(),
+            None,
         )?;
 
         group.apply_pending_commit()?;
@@ -604,42 +616,20 @@ where
     }
 
     pub(crate) fn signer(&self) -> Result<<C::Keychain as KeychainStorage>::Signer, GroupError> {
+        self.signer_for_identity(None)
+    }
+
+    pub(crate) fn signer_for_identity(
+        &self,
+        signing_identity: Option<&SigningIdentity>,
+    ) -> Result<<C::Keychain as KeychainStorage>::Signer, GroupError> {
+        let signing_identity = signing_identity.unwrap_or(self.current_member_signing_identity()?);
+
         self.config
             .keychain()
-            .signer(&self.current_user_leaf_node()?.signing_identity)
+            .signer(signing_identity)
             .map_err(|e| GroupError::KeychainError(e.into()))?
             .ok_or(GroupError::SignerNotFound)
-    }
-
-    pub(crate) fn current_leaf_properties(
-        &self,
-    ) -> Result<(ConfigProperties, <C::Keychain as KeychainStorage>::Signer), GroupError> {
-        Group::config_leaf_properties(
-            &self.config,
-            self.cipher_suite(),
-            self.current_member_signing_identity().ok(),
-        )
-    }
-
-    pub(crate) fn config_leaf_properties(
-        config: &C,
-        cipher_suite: CipherSuite,
-        existing_signing_identity: Option<&SigningIdentity>,
-    ) -> Result<(ConfigProperties, <C::Keychain as KeychainStorage>::Signer), GroupError> {
-        let (signing_identity, signer) = config
-            .keychain()
-            .get_identity(cipher_suite, existing_signing_identity)
-            .map_err(|e| GroupError::KeychainError(e.into()))?
-            .ok_or(GroupError::NoCredentialFound)?;
-
-        Ok((
-            ConfigProperties {
-                signing_identity,
-                capabilities: config.capabilities(),
-                extensions: config.leaf_node_extensions(),
-            },
-            signer,
-        ))
     }
 
     #[inline(always)]
@@ -878,7 +868,6 @@ where
         let current_leaf_node = self.current_user_leaf_node()?;
 
         let leaf_properties = ConfigProperties {
-            signing_identity: current_leaf_node.signing_identity.clone(),
             capabilities: current_leaf_node.capabilities.clone(),
             extensions: current_leaf_node.extensions.clone(),
         };
@@ -886,6 +875,7 @@ where
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
             self.state.cipher_suite(),
             leaf_properties,
+            current_leaf_node.signing_identity.clone(),
             &signer,
             self.config.lifetime(),
             &self.config.identity_provider(),
@@ -939,9 +929,11 @@ where
         }
     }
 
+    // TODO investigate if it's worth allowing signing identity update here
     pub fn finish_reinit_commit<F>(
         &self,
         get_new_key_package: F,
+        signing_identity: Option<SigningIdentity>,
     ) -> Result<(Group<C>, Option<MLSMessage>), GroupError>
     where
         F: FnMut(&SigningIdentity) -> Option<KeyPackage>,
@@ -954,13 +946,16 @@ where
             .as_ref()
             .ok_or(GroupError::PendingReInitNotFound)?;
 
-        let (leaf_properties, new_signer) =
-            Group::config_leaf_properties(&config, reinit.cipher_suite, None)?;
+        let signing_identity =
+            signing_identity.unwrap_or(self.current_member_signing_identity()?.clone());
+
+        let signer = self.signer_for_identity(Some(&signing_identity))?;
 
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
             reinit.cipher_suite,
-            leaf_properties,
-            &new_signer,
+            config.leaf_properties(),
+            signing_identity,
+            &signer,
             config.lifetime(),
             &config.identity_provider(),
         )?;
@@ -986,7 +981,7 @@ where
             &mut new_context,
             new_leaf_node,
             new_leaf_secret,
-            &new_signer,
+            &signer,
             get_new_key_package,
             resumption_psk_id,
         )?;
@@ -1111,20 +1106,33 @@ where
         &mut self,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
-        let proposal = self.update_proposal()?;
+        let proposal = self.update_proposal(None)?;
         self.proposal_message(proposal, authenticated_data)
     }
 
-    fn update_proposal(&mut self) -> Result<Proposal, GroupError> {
+    pub fn propose_update_with_identity(
+        &mut self,
+        signing_identity: SigningIdentity,
+        authenticated_data: Vec<u8>,
+    ) -> Result<MLSMessage, GroupError> {
+        let proposal = self.update_proposal(Some(signing_identity))?;
+        self.proposal_message(proposal, authenticated_data)
+    }
+
+    fn update_proposal(
+        &mut self,
+        signing_identity: Option<SigningIdentity>,
+    ) -> Result<Proposal, GroupError> {
         // Grab a copy of the current node and update it to have new key material
-        let (new_properties, signer) = self.current_leaf_properties()?;
+        let signer = self.signer_for_identity(signing_identity.as_ref())?;
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
 
         let secret_key = new_leaf_node.update(
             self.state.cipher_suite(),
             self.group_id(),
             self.current_member_index(),
-            new_properties,
+            self.config.leaf_properties(),
+            signing_identity,
             &signer,
         )?;
 
@@ -1767,19 +1775,8 @@ mod tests {
             );
 
             assert_eq!(
-                group.state.public_tree.get_leaf_nodes()[0]
-                    .signing_identity
-                    .public_key(cipher_suite)
-                    .unwrap(),
-                group
-                    .config
-                    .keychain()
-                    .get_identity(cipher_suite, None)
-                    .unwrap()
-                    .unwrap()
-                    .1
-                    .to_public()
-                    .unwrap()
+                group.state.public_tree.get_leaf_nodes()[0].signing_identity,
+                group.config.keychain().export()[0].0
             );
         }
     }
@@ -1842,7 +1839,7 @@ mod tests {
         let existing_leaf = test_group.group.current_user_leaf_node().unwrap().clone();
 
         // Create an update proposal
-        let proposal = test_group.group.update_proposal().unwrap();
+        let proposal = test_group.update_proposal();
 
         let update = match proposal {
             Proposal::Update(update) => update,
@@ -1920,7 +1917,7 @@ mod tests {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(protocol_version, cipher_suite, true);
 
-        let mut proposal = alice_group.group.update_proposal().unwrap();
+        let mut proposal = alice_group.update_proposal();
 
         if let Proposal::Update(ref mut update) = proposal {
             update.leaf_node.signature = SecureRng::gen(32).unwrap();
@@ -2181,8 +2178,23 @@ mod tests {
             .unwrap();
 
         let info_msg = MLSMessage::new(protocol_version, MLSMessagePayload::GroupInfo(info));
-        let res = Group::new_external(group.group.config, info_msg, None, None, vec![], vec![])
-            .map(|_| ());
+
+        let signing_identity = group
+            .group
+            .current_member_signing_identity()
+            .unwrap()
+            .clone();
+
+        let res = Group::new_external(
+            group.group.config,
+            info_msg,
+            None,
+            signing_identity,
+            None,
+            vec![],
+            vec![],
+        )
+        .map(|_| ());
 
         assert_matches!(res, Err(GroupError::MissingExternalPubExtension));
     }
@@ -2405,12 +2417,14 @@ mod tests {
     fn state_update_external_commit() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        let bob = get_basic_client_builder(TEST_CIPHER_SUITE, "bob").build();
+        let (bob, bob_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "bob");
 
         let (bob_group, commit) = bob
+            .build()
             .commit_external(
                 alice_group.group.group_info_message(true).unwrap(),
                 Some(&alice_group.group.export_tree().unwrap()),
+                bob_identity,
                 None,
                 vec![],
                 vec![],
@@ -2433,12 +2447,14 @@ mod tests {
     fn can_join_new_group_externally() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        let bob = get_basic_client_builder(TEST_CIPHER_SUITE, "bob").build();
+        let (bob, bob_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "bob");
 
         let (_, commit) = bob
+            .build()
             .commit_external(
                 alice_group.group.group_info_message(true).unwrap(),
                 Some(&alice_group.group.export_tree().unwrap()),
+                bob_identity,
                 None,
                 vec![],
                 vec![],
@@ -2526,7 +2542,11 @@ mod tests {
                 if p == bob.group.current_member_signing_identity().unwrap() {
                     Some(
                         Client::new(bob.group.config.clone())
-                            .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+                            .generate_key_package(
+                                TEST_PROTOCOL_VERSION,
+                                TEST_CIPHER_SUITE,
+                                p.clone(),
+                            )
                             .unwrap(),
                     )
                 } else {
@@ -3198,11 +3218,14 @@ mod tests {
             .config
             .0
             .keychain
-            .replace_identity(identity.clone(), secret_key);
+            .insert(identity.clone(), secret_key);
 
-        let update_proposal = groups[0].group.update_proposal().unwrap();
-        let update_message = groups[0].propose(update_proposal);
-        groups[1].process_message(update_message).unwrap();
+        let update = groups[0]
+            .group
+            .propose_update_with_identity(identity.clone(), vec![])
+            .unwrap();
+
+        groups[1].process_message(update).unwrap();
         let commit_output = groups[1].group.commit(vec![]).unwrap();
 
         // Check that the credential was updated by in the committer's state.

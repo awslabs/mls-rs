@@ -131,11 +131,11 @@ mod tests {
 
         TreeKem::new(&mut test_tree.public, &mut test_tree.private)
             .encap(
-                b"test_group",
                 &mut get_test_group_context(42, cipher_suite),
                 &[LeafIndex(1)],
                 signers[0],
-                default_properties(test_tree.creator_leaf.signing_identity),
+                default_properties(),
+                None,
                 BasicIdentityProvider,
                 #[cfg(test)]
                 &Default::default(),
@@ -154,7 +154,7 @@ mod tests {
 
             let validator = TreeValidator::new(
                 cipher_suite,
-                b"test_group",
+                b"",
                 &expected_tree_hash,
                 None,
                 BasicIdentityProvider::new(),
@@ -172,7 +172,7 @@ mod tests {
 
             let validator = TreeValidator::new(
                 cipher_suite,
-                b"test_group",
+                b"",
                 &expected_tree_hash,
                 None,
                 BasicIdentityProvider::new(),
@@ -197,7 +197,7 @@ mod tests {
 
             let validator = TreeValidator::new(
                 cipher_suite,
-                b"test_troup",
+                b"",
                 &expected_tree_hash,
                 None,
                 BasicIdentityProvider::new(),
@@ -225,7 +225,7 @@ mod tests {
 
             let validator = TreeValidator::new(
                 cipher_suite,
-                b"test_group",
+                b"",
                 &expected_tree_hash,
                 None,
                 BasicIdentityProvider::new(),

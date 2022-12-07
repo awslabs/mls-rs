@@ -7,7 +7,7 @@ use crate::group::framing::{
 use crate::group::message_signature::MLSAuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
 use crate::group::{process_group_info, Group, GroupError, NewMemberInfo};
-use crate::identity::CredentialError;
+use crate::identity::{CredentialError, SigningIdentity};
 use crate::key_package::{KeyPackage, KeyPackageGenerationError, KeyPackageGenerator};
 use crate::protocol_version::MaybeProtocolVersion;
 use crate::protocol_version::ProtocolVersion;
@@ -38,8 +38,8 @@ pub enum ClientError {
     CredentialError(#[from] CredentialError),
     #[error(transparent)]
     SecureRngError(#[from] SecureRngError),
-    #[error("credential not found for cipher suite")]
-    NoCredentialFound,
+    #[error("signer not found for given identity")]
+    SignerNotFound,
     #[error("the secret key provided does not match the public key in the credential")]
     IncorrectSecretKey,
     #[error(transparent)]
@@ -88,19 +88,20 @@ where
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
+        signing_identity: SigningIdentity,
     ) -> Result<KeyPackage, ClientError> {
-        let (identity, signer) = self
+        let signer = self
             .config
             .keychain()
-            .get_identity(cipher_suite, None)
+            .signer(&signing_identity)
             .map_err(|e| ClientError::KeychainError(e.into()))?
-            .ok_or(ClientError::NoCredentialFound)?;
+            .ok_or(ClientError::SignerNotFound)?;
 
         let key_package_generator = KeyPackageGenerator {
             protocol_version,
             cipher_suite,
             signing_key: &signer,
-            signing_identity: &identity,
+            signing_identity: &signing_identity,
             identity_provider: &self.config.identity_provider(),
         };
 
@@ -124,6 +125,7 @@ where
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         group_id: Vec<u8>,
+        signing_identity: SigningIdentity,
         group_context_extensions: ExtensionList<GroupContextExtension>,
     ) -> Result<Group<C>, ClientError> {
         Group::new(
@@ -131,6 +133,7 @@ where
             group_id,
             cipher_suite,
             protocol_version,
+            signing_identity,
             group_context_extensions,
         )
         .map_err(Into::into)
@@ -140,6 +143,7 @@ where
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
+        signing_identity: SigningIdentity,
         group_context_extensions: ExtensionList<GroupContextExtension>,
     ) -> Result<Group<C>, ClientError> {
         let group_id = SecureRng::gen(cipher_suite.hash_function().digest_size())?;
@@ -148,6 +152,7 @@ where
             protocol_version,
             cipher_suite,
             group_id,
+            signing_identity,
             group_context_extensions,
         )
     }
@@ -167,6 +172,7 @@ where
         &self,
         group_info_msg: MLSMessage,
         tree_data: Option<&[u8]>,
+        signing_identity: SigningIdentity,
         to_remove: Option<u32>,
         external_psks: Vec<ExternalPskId>,
         authenticated_data: Vec<u8>,
@@ -175,6 +181,7 @@ where
             self.config.clone(),
             group_info_msg,
             tree_data,
+            signing_identity,
             to_remove,
             external_psks,
             authenticated_data,
@@ -203,6 +210,7 @@ where
         &self,
         group_info: MLSMessage,
         tree_data: Option<&[u8]>,
+        signing_identity: SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, ClientError> {
         let protocol_version = group_info
@@ -225,15 +233,18 @@ where
         )?
         .group_context;
 
-        let key_package =
-            self.generate_key_package(protocol_version, group_context.cipher_suite)?;
-
-        let (_, signer) = self
+        let signer = self
             .config
             .keychain()
-            .get_identity(group_context.cipher_suite, None)
+            .signer(&signing_identity)
             .map_err(|e| ClientError::KeychainError(e.into()))?
-            .ok_or(ClientError::NoCredentialFound)?;
+            .ok_or(ClientError::SignerNotFound)?;
+
+        let key_package = self.generate_key_package(
+            protocol_version,
+            group_context.cipher_suite,
+            signing_identity,
+        )?;
 
         let message = MLSAuthenticatedContent::new_signed(
             &group_context,
@@ -271,13 +282,15 @@ pub mod test_utils {
     pub fn get_basic_client_builder(
         cipher_suite: CipherSuite,
         identity: &str,
-    ) -> TestClientBuilder {
+    ) -> (TestClientBuilder, SigningIdentity) {
         let (signing_identity, secret_key) =
             get_test_signing_identity(cipher_suite, identity.as_bytes().to_vec());
 
-        TestClientBuilder::new_for_test()
-            .signing_identity(signing_identity, secret_key)
-            .key_package_lifetime(10000)
+        let builder = TestClientBuilder::new_for_test()
+            .signing_identity(signing_identity.clone(), secret_key)
+            .key_package_lifetime(10000);
+
+        (builder, signing_identity)
     }
 
     pub fn test_client_with_key_pkg(
@@ -285,27 +298,14 @@ pub mod test_utils {
         cipher_suite: CipherSuite,
         identity: &str,
     ) -> (Client<TestClientConfig>, KeyPackage) {
-        let client = get_basic_client_builder(cipher_suite, identity).build();
+        let (client, identity) = get_basic_client_builder(cipher_suite, identity);
+        let client = client.build();
 
         let key_package = client
-            .generate_key_package(protocol_version, cipher_suite)
+            .generate_key_package(protocol_version, cipher_suite, identity)
             .unwrap();
 
         (client, key_package)
-    }
-
-    pub fn create_group<C>(client: &Client<C>) -> Group<C>
-    where
-        C: ClientConfig,
-    {
-        client
-            .create_group_with_id(
-                TEST_PROTOCOL_VERSION,
-                TEST_CIPHER_SUITE,
-                TEST_GROUP.to_vec(),
-                ExtensionList::new(),
-            )
-            .unwrap()
     }
 
     pub fn join_group<'a, C, S>(
@@ -368,11 +368,12 @@ mod tests {
         {
             println!("Running client keygen for {:?}", cipher_suite);
 
-            let client = get_basic_client_builder(cipher_suite, "foo").build();
+            let (client, identity) = get_basic_client_builder(cipher_suite, "foo");
+            let client = client.build();
 
             // TODO: Tests around extensions
             let key_package = client
-                .generate_key_package(protocol_version, cipher_suite)
+                .generate_key_package(protocol_version, cipher_suite, identity.clone())
                 .unwrap();
 
             assert_eq!(key_package.version, protocol_version.into());
@@ -383,20 +384,13 @@ mod tests {
                 &get_test_basic_credential(b"foo".to_vec())
             );
 
-            let (expected_credential, _) = client
-                .config
-                .keychain()
-                .get_identity(cipher_suite, None)
-                .unwrap()
-                .unwrap();
-
             assert_eq!(
                 key_package
                     .leaf_node
                     .signing_identity
                     .tls_serialize_detached()
                     .unwrap(),
-                expected_credential.tls_serialize_detached().unwrap()
+                identity.tls_serialize_detached().unwrap()
             );
 
             let client_lifetime = client.config.lifetime();
@@ -411,13 +405,14 @@ mod tests {
     fn new_member_add_proposal_adds_to_group() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        let (bob, bob_key_package) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+        let (bob, bob_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "bob");
 
         let proposal = bob
+            .build()
             .external_add_proposal(
                 alice_group.group.group_info_message(true).unwrap(),
                 Some(&alice_group.group.export_tree().unwrap()),
+                bob_identity.clone(),
                 vec![],
             )
             .unwrap();
@@ -429,7 +424,7 @@ mod tests {
 
         assert_matches!(
             message.event,
-            Event::Proposal((Proposal::Add(AddProposal { key_package }), _)) if key_package.leaf_node.signing_identity == bob_key_package.leaf_node.signing_identity
+            Event::Proposal((Proposal::Add(AddProposal { key_package }), _)) if key_package.leaf_node.signing_identity == bob_identity
         );
 
         alice_group.group.commit(vec![]).unwrap();
@@ -440,7 +435,7 @@ mod tests {
             .group
             .roster()
             .into_iter()
-            .any(|member| member.signing_identity() == &bob_key_package.leaf_node.signing_identity))
+            .any(|member| member.signing_identity() == &bob_identity))
     }
 
     fn join_via_external_commit(do_remove: bool, with_psk: bool) -> Result<(), ClientError> {
@@ -466,13 +461,15 @@ mod tests {
         let group_info_msg = alice_group.group.group_info_message(true).unwrap();
 
         let new_client_id = if do_remove { "bob" } else { "charlie" };
-        let new_client = get_basic_client_builder(TEST_CIPHER_SUITE, new_client_id)
-            .psk(psk_id.clone(), psk)
-            .build();
+        let (new_client, new_client_identity) =
+            get_basic_client_builder(TEST_CIPHER_SUITE, new_client_id);
+
+        let new_client = new_client.psk(psk_id.clone(), psk).build();
 
         let (mut new_group, external_commit) = new_client.commit_external(
             group_info_msg,
             Some(&alice_group.group.export_tree().unwrap()),
+            new_client_identity,
             do_remove.then_some(1),
             if with_psk { vec![psk_id] } else { vec![] },
             vec![],
@@ -537,17 +534,23 @@ mod tests {
 
     #[test]
     fn creating_an_external_commit_requires_a_group_info_message() {
-        let alice = get_basic_client_builder(TEST_CIPHER_SUITE, "alice").build();
+        let (alice, alice_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "alice");
+        let alice = alice.build();
 
         let payload = MLSMessagePayload::KeyPackage(
             alice
-                .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+                .generate_key_package(
+                    TEST_PROTOCOL_VERSION,
+                    TEST_CIPHER_SUITE,
+                    alice_identity.clone(),
+                )
                 .unwrap(),
         );
 
         let msg = MLSMessage::new(TEST_PROTOCOL_VERSION, payload);
+
         let res = alice
-            .commit_external(msg, None, None, vec![], vec![])
+            .commit_external(msg, None, alice_identity, None, vec![], vec![])
             .map(|_| ());
 
         assert_matches!(res, Err(ClientError::ExpectedGroupInfoMessage));
@@ -563,12 +566,14 @@ mod tests {
 
         let group_info_msg = bob_group.group.group_info_message(true).unwrap();
 
-        let carol = get_basic_client_builder(TEST_CIPHER_SUITE, "carol").build();
+        let (carol, carol_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "carol");
 
         let (_, external_commit) = carol
+            .build()
             .commit_external(
                 group_info_msg,
                 Some(&bob_group.group.export_tree().unwrap()),
+                carol_identity,
                 None,
                 vec![],
                 vec![],

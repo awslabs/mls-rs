@@ -1,4 +1,5 @@
 use crate::group::GroupContext;
+use crate::identity::SigningIdentity;
 use crate::provider::identity::IdentityProvider;
 use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
@@ -47,11 +48,11 @@ impl<'a> TreeKem<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn encap<S, C>(
         self,
-        group_id: &[u8],
         context: &mut GroupContext,
         excluding: &[LeafIndex],
         signer: &S,
         update_leaf_properties: ConfigProperties,
+        signing_identity: Option<SigningIdentity>,
         identity_provider: C,
         #[cfg(test)] commit_modifiers: &CommitModifiers<S>,
     ) -> Result<EncapGeneration, RatchetTreeError>
@@ -90,17 +91,18 @@ impl<'a> TreeKem<'a> {
             .borrow_as_leaf(self_index)?
             .clone();
 
+        let parent_hash = self
+            .tree_kem_public
+            .update_parent_hashes(self_index, None)?;
+
         let secret_key = own_leaf_copy.commit(
             self.tree_kem_public.cipher_suite,
-            group_id,
+            &context.group_id,
             *self_index,
             update_leaf_properties,
+            signing_identity,
             signer,
-            |_| {
-                self.tree_kem_public
-                    .update_parent_hashes(self_index, None)
-                    .map_err(Into::into)
-            },
+            parent_hash,
         )?;
 
         self.tree_kem_public
@@ -439,8 +441,6 @@ mod tests {
         let (encap_node, encap_hpke_secret, encap_signer) =
             get_basic_test_node_sig_key(cipher_suite, "encap");
 
-        let signing_identity = encap_node.signing_identity.clone();
-
         // Build a test tree we can clone for all leaf nodes
         let (mut test_tree, mut encap_private_key) = TreeKemPublic::derive(
             cipher_suite,
@@ -460,17 +460,16 @@ mod tests {
         let update_leaf_properties = ConfigProperties {
             capabilities: capabilities.clone().unwrap_or_else(get_test_capabilities),
             extensions: extensions.clone().unwrap_or_default(),
-            signing_identity,
         };
 
         // Perform the encap function
         let encap_gen = TreeKem::new(&mut encap_tree, &mut encap_private_key)
             .encap(
-                b"test_group",
                 &mut get_test_group_context(42, cipher_suite),
                 &[],
                 &encap_signer,
                 update_leaf_properties,
+                None,
                 BasicIdentityProvider,
                 #[cfg(test)]
                 &Default::default(),

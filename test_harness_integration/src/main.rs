@@ -10,15 +10,13 @@ use aws_mls::client::{
 use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, StateUpdate};
+use aws_mls::identity::SigningIdentity;
 use aws_mls::identity::{BasicCredential, MlsCredential};
-use aws_mls::provider::keychain::FirstIdentitySelector;
+use aws_mls::key_package::KeyPackage;
+use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::provider::{
     identity::BasicIdentityProvider, keychain::InMemoryKeychain, psk::InMemoryPskStore,
 };
-
-use aws_mls::identity::SigningIdentity;
-use aws_mls::key_package::KeyPackage;
-use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::psk::{ExternalPskId, Psk};
 use aws_mls::tls_codec::{Deserialize, Serialize};
 
@@ -113,10 +111,8 @@ impl<T> TryFrom<(StateUpdate<T>, u32)> for HandleCommitResponse {
     }
 }
 
-type TestClientConfig = WithIdentityProvider<
-    BasicIdentityProvider,
-    WithKeychain<InMemoryKeychain<FirstIdentitySelector>, BaseConfig>,
->;
+type TestClientConfig =
+    WithIdentityProvider<BasicIdentityProvider, WithKeychain<InMemoryKeychain, BaseConfig>>;
 
 #[derive(Default)]
 pub struct MlsClientImpl {
@@ -237,12 +233,13 @@ impl MlsClient for MlsClientImpl {
         .unwrap();
 
         let signature_key = SignaturePublicKey::try_from(&secret_key).map_err(abort)?;
+        let signing_identity = SigningIdentity::new(credential, signature_key);
 
         let psk_store = InMemoryPskStore::default();
 
         let creator = Client::builder()
             .identity_provider(BasicIdentityProvider::new())
-            .single_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
+            .single_signing_identity(signing_identity.clone(), secret_key)
             .preferences(Preferences::default().with_ratchet_tree_extension(true))
             .psk_store(psk_store.clone())
             .build();
@@ -252,6 +249,7 @@ impl MlsClient for MlsClientImpl {
                 ProtocolVersion::Mls10,
                 cipher_suite,
                 request_ref.group_id,
+                signing_identity,
                 ExtensionList::default(),
             )
             .map_err(abort)?;
@@ -284,18 +282,19 @@ impl MlsClient for MlsClientImpl {
         .unwrap();
 
         let signature_key = SignaturePublicKey::try_from(&secret_key).map_err(abort)?;
+        let signing_identity = SigningIdentity::new(credential, signature_key);
 
         let psk_store = InMemoryPskStore::default();
 
         let client = ClientBuilder::new()
             .identity_provider(BasicIdentityProvider::new())
-            .single_signing_identity(SigningIdentity::new(credential, signature_key), secret_key)
+            .single_signing_identity(signing_identity.clone(), secret_key)
             .preferences(Preferences::default().with_ratchet_tree_extension(true))
             .psk_store(psk_store.clone())
             .build();
 
         let key_package = client
-            .generate_key_package(ProtocolVersion::Mls10, cipher_suite)
+            .generate_key_package(ProtocolVersion::Mls10, cipher_suite, signing_identity)
             .map_err(abort)?;
 
         clients.push(ClientDetails { client, psk_store });

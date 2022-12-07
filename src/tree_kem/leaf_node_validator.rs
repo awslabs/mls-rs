@@ -282,7 +282,9 @@ mod tests {
                 TEST_CIPHER_SUITE,
                 group_id,
                 0,
-                default_properties(leaf_node.signing_identity.clone()),
+                // TODO remove identity from input
+                default_properties(),
+                None,
                 &secret,
             )
             .unwrap();
@@ -307,9 +309,10 @@ mod tests {
                 TEST_CIPHER_SUITE,
                 group_id,
                 0,
-                default_properties(leaf_node.signing_identity.clone()),
+                default_properties(),
+                None,
                 &secret,
-                |_| Ok(ParentHash::from(vec![0u8; 32])),
+                ParentHash::from(vec![0u8; 32]),
             )
             .unwrap();
 
@@ -344,7 +347,8 @@ mod tests {
                 TEST_CIPHER_SUITE,
                 b"foo",
                 0,
-                default_properties(leaf_node.signing_identity.clone()),
+                default_properties(),
+                None,
                 &secret,
             )
             .unwrap();
@@ -364,9 +368,10 @@ mod tests {
                 TEST_CIPHER_SUITE,
                 b"foo",
                 0,
-                default_properties(leaf_node.signing_identity.clone()),
+                default_properties(),
+                None,
                 &secret,
-                |_| Ok(ParentHash::from(vec![0u8; 32])),
+                ParentHash::from(vec![0u8; 32]),
             )
             .unwrap();
 

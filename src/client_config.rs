@@ -15,7 +15,7 @@ use crate::{
         group_state::GroupStateStorage, identity::IdentityProvider,
         key_package::KeyPackageRepository, keychain::KeychainStorage, psk::PskStore,
     },
-    tree_kem::{Capabilities, Lifetime},
+    tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
 };
 use std::convert::Infallible;
 
@@ -75,6 +75,13 @@ pub trait ClientConfig: Clone {
 
     fn supported_credential_types(&self) -> Vec<CredentialType> {
         self.identity_provider().supported_types()
+    }
+
+    fn leaf_properties(&self) -> ConfigProperties {
+        ConfigProperties {
+            capabilities: self.capabilities(),
+            extensions: self.leaf_node_extensions(),
+        }
     }
 }
 

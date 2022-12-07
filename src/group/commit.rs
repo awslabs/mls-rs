@@ -4,12 +4,10 @@ use crate::{
     cipher_suite::CipherSuite,
     client_config::{ClientConfig, ProposalFilterInit},
     extension::{ExtensionList, GroupContextExtension, GroupInfoExtension, RatchetTreeExt},
+    identity::SigningIdentity,
     key_package::KeyPackage,
     protocol_version::ProtocolVersion,
-    provider::{
-        keychain::KeychainStorage,
-        psk::{PskStore, PskStoreIdValidator},
-    },
+    provider::psk::{PskStore, PskStoreIdValidator},
     psk::{ExternalPskId, ResumptionPskSearch},
     signer::Signable,
     tree_kem::{
@@ -73,6 +71,7 @@ where
     pub(super) proposals: Vec<Proposal>,
     authenticated_data: Vec<u8>,
     group_info_extensions: ExtensionList<GroupInfoExtension>,
+    signing_identity: Option<SigningIdentity>,
 }
 
 impl<'a, C> CommitBuilder<'a, C>
@@ -135,11 +134,19 @@ where
         }
     }
 
+    pub fn set_new_signing_identity(self, signing_identity: SigningIdentity) -> Self {
+        Self {
+            signing_identity: Some(signing_identity),
+            ..self
+        }
+    }
+
     pub fn build(self) -> Result<CommitOutput, GroupError> {
         self.group.commit_proposals(
             self.proposals,
             self.authenticated_data,
             self.group_info_extensions,
+            self.signing_identity,
         )
     }
 }
@@ -148,17 +155,25 @@ impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
+    // TODO rename to full_commit?
     fn commit_proposals(
         &mut self,
         proposals: Vec<Proposal>,
         authenticated_data: Vec<u8>,
         group_info_extensions: ExtensionList<GroupInfoExtension>,
+        signing_identity: Option<SigningIdentity>,
     ) -> Result<CommitOutput, GroupError> {
-        self.commit_internal(proposals, None, authenticated_data, group_info_extensions)
+        self.commit_internal(
+            proposals,
+            None,
+            authenticated_data,
+            group_info_extensions,
+            signing_identity,
+        )
     }
 
     pub fn commit(&mut self, authenticated_data: Vec<u8>) -> Result<CommitOutput, GroupError> {
-        self.commit_internal(vec![], None, authenticated_data, Default::default())
+        self.commit_internal(vec![], None, authenticated_data, Default::default(), None)
     }
 
     pub fn commit_builder(&mut self) -> CommitBuilder<C> {
@@ -167,6 +182,7 @@ where
             proposals: Default::default(),
             authenticated_data: Default::default(),
             group_info_extensions: Default::default(),
+            signing_identity: Default::default(),
         }
     }
 
@@ -177,6 +193,7 @@ where
         external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
         group_info_extensions: ExtensionList<GroupInfoExtension>,
+        signing_identity: Option<SigningIdentity>,
     ) -> Result<CommitOutput, GroupError> {
         if self.pending_commit.is_some() {
             return Err(GroupError::ExistingPendingCommit);
@@ -201,13 +218,13 @@ where
             Sender::Member(*self.private_tree.self_index)
         };
 
-        let signer = match external_leaf {
-            Some(leaf_node) => self
-                .config
-                .keychain()
-                .signer(&leaf_node.signing_identity)
-                .map_err(|e| GroupError::KeychainError(e.into()))?
-                .ok_or(GroupError::NoCredentialFound),
+        let new_signer = match external_leaf {
+            Some(leaf_node) => self.signer_for_identity(Some(&leaf_node.signing_identity)),
+            None => self.signer_for_identity(signing_identity.as_ref()),
+        }?;
+
+        let old_signer = match external_leaf {
+            Some(leaf_node) => self.signer_for_identity(Some(&leaf_node.signing_identity)),
             None => self.signer(),
         }?;
 
@@ -253,21 +270,19 @@ where
             // group_id, epoch, tree_hash, and confirmed_transcript_hash values in the initial
             // GroupContext object. The leaf_key_package for this UpdatePath must have a
             // parent_hash extension.
-            let (update_leaf_properties, signer) = self.current_leaf_properties()?;
-
             let encap_gen = TreeKem::new(
                 &mut provisional_state.public_tree,
                 &mut provisional_private_tree,
             )
             .encap(
-                &self.context().group_id,
                 &mut provisional_group_context,
                 &added_leaves
                     .iter()
                     .map(|(_, leaf_index)| *leaf_index)
                     .collect::<Vec<LeafIndex>>(),
-                &signer,
-                update_leaf_properties,
+                &new_signer,
+                self.config.leaf_properties(),
+                signing_identity,
                 self.config.identity_provider(),
                 #[cfg(test)]
                 &self.commit_modifiers,
@@ -315,7 +330,7 @@ where
             self.context(),
             sender,
             Content::Commit(commit),
-            &signer,
+            &old_signer,
             options.encryption_mode.into(),
             authenticated_data,
         )?;
@@ -371,7 +386,7 @@ where
         };
 
         // Sign the GroupInfo using the member's private signing key
-        group_info.sign(&signer, &())?;
+        group_info.sign(&new_signer, &())?;
 
         let welcome_message = self.make_welcome_message(
             added_leaves,
@@ -728,9 +743,14 @@ mod tests {
             .config
             .0
             .keychain
-            .replace_identity(identity.clone(), secret_key);
+            .insert(identity.clone(), secret_key);
 
-        let commit_output = groups[0].group.commit(vec![]).unwrap();
+        let commit_output = groups[0]
+            .group
+            .commit_builder()
+            .set_new_signing_identity(identity.clone())
+            .build()
+            .unwrap();
 
         // Check that the credential was updated by in the committer's state.
         groups[0].process_pending_commit().unwrap();

@@ -145,9 +145,10 @@ mod tests {
                 cipher_suite,
                 TEST_GROUP_ID,
                 0,
-                default_properties(leaf_node.signing_identity.clone()),
+                default_properties(),
+                None,
                 &signer,
-                |_| Ok(ParentHash::empty()),
+                ParentHash::empty(),
             )
             .unwrap();
 

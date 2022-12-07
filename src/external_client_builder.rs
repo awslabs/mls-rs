@@ -16,7 +16,7 @@ use crate::{
     protocol_version::ProtocolVersion,
     provider::{
         identity::IdentityProvider,
-        keychain::{FirstIdentitySelector, InMemoryKeychain, KeychainStorage},
+        keychain::{InMemoryKeychain, KeychainStorage},
     },
     tree_kem::Capabilities,
     Sealed,
@@ -80,12 +80,11 @@ pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals>;
 /// use aws_mls::{
 ///     external_client::{ExternalBaseConfig, ExternalClient, WithIdentityProvider, WithKeychain},
 ///     provider::{
-///         identity::BasicIdentityProvider,
-///         keychain::{InMemoryKeychain, FirstIdentitySelector},
+///         identity::BasicIdentityProvider, keychain::InMemoryKeychain,
 ///     },
 /// };
 ///
-/// type MlsClient = ExternalClient<WithKeychain<InMemoryKeychain<FirstIdentitySelector>, WithIdentityProvider<
+/// type MlsClient = ExternalClient<WithKeychain<InMemoryKeychain, WithIdentityProvider<
 ///     BasicIdentityProvider,
 ///     ExternalBaseConfig,
 /// >>>;
@@ -236,7 +235,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         self,
         identity: SigningIdentity,
         key: SecretKey,
-    ) -> ExternalClientBuilder<WithKeychain<InMemoryKeychain<FirstIdentitySelector>, C>> {
+    ) -> ExternalClientBuilder<WithKeychain<InMemoryKeychain, C>> {
         self.keychain({
             let mut keychain = InMemoryKeychain::default();
             keychain.insert(identity, key);
@@ -312,7 +311,7 @@ where
     }
 }
 
-impl<C: IntoConfig<Keychain = InMemoryKeychain<FirstIdentitySelector>>> ExternalClientBuilder<C> {
+impl<C: IntoConfig<Keychain = InMemoryKeychain>> ExternalClientBuilder<C> {
     /// Add an identity to the in-memory keychain.
     pub fn signing_identity(
         self,
@@ -566,15 +565,12 @@ pub mod test_utils {
         external_client_builder::{
             ExternalBaseConfig, ExternalClientBuilder, WithIdentityProvider, WithKeychain,
         },
-        provider::{
-            identity::BasicIdentityProvider,
-            keychain::{FirstIdentitySelector, InMemoryKeychain},
-        },
+        provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
     };
 
     pub type TestExternalClientConfig = WithIdentityProvider<
         BasicIdentityProvider,
-        WithKeychain<InMemoryKeychain<FirstIdentitySelector>, ExternalBaseConfig>,
+        WithKeychain<InMemoryKeychain, ExternalBaseConfig>,
     >;
 
     pub type TestExternalClientBuilder = ExternalClientBuilder<TestExternalClientConfig>;

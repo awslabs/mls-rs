@@ -513,7 +513,8 @@ mod tests {
             TEST_CIPHER_SUITE,
             TEST_GROUP,
             leaf_index,
-            default_properties(leaf.signing_identity.clone()),
+            default_properties(),
+            None,
             &signer,
         )
         .unwrap();
@@ -1035,9 +1036,10 @@ mod tests {
                 TEST_CIPHER_SUITE,
                 TEST_GROUP,
                 0,
-                default_properties(leaf_node.signing_identity.clone()),
+                default_properties(),
+                None,
                 &signer,
-                |_| Ok(ParentHash::empty()),
+                ParentHash::empty(),
             )
             .unwrap();
 
@@ -2653,7 +2655,6 @@ mod tests {
                 get_test_signing_identity(TEST_CIPHER_SUITE, b"alice".to_vec());
 
             let properties = ConfigProperties {
-                signing_identity,
                 capabilities: Capabilities {
                     extensions: vec![42],
                     ..Capabilities::default()
@@ -2664,6 +2665,7 @@ mod tests {
             let (leaf, secret) = LeafNode::generate(
                 TEST_CIPHER_SUITE,
                 properties,
+                signing_identity,
                 &signature_key,
                 Lifetime::years(1).unwrap(),
                 &BasicIdentityProvider::new(),
