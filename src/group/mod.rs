@@ -21,6 +21,7 @@ use crate::extension::{
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
 use crate::protocol_version::ProtocolVersion;
+use crate::provider::crypto::{CryptoProvider, HpkeCiphertext};
 use crate::provider::identity::IdentityProvider;
 use crate::provider::keychain::KeychainStorage;
 use crate::provider::psk::{PskStore, PskStoreIdValidator};
@@ -34,7 +35,7 @@ use crate::tree_kem::kem::TreeKem;
 use crate::tree_kem::leaf_node::{ConfigProperties, LeafNode};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::PathSecret;
-use crate::tree_kem::{math as tree_math, HpkeCiphertext, ValidatedUpdatePath};
+use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
 use crate::tree_kem::{Capabilities, TreeKemPrivate, TreeKemPublic};
 
 #[cfg(feature = "benchmark")]
@@ -304,16 +305,16 @@ where
         // cipher suite and the HPKE private key corresponding to the GroupSecrets. If a
         // PreSharedKeyID is part of the GroupSecrets and the client is not in possession of
         // the corresponding PSK, return an error
-        let decrypted_group_secrets = welcome.cipher_suite.hpke().open(
-            &encrypted_group_secrets
-                .encrypted_group_secrets
-                .clone()
-                .into(),
-            &key_package_generation.init_secret_key,
-            &[],
-            None,
-            None,
-        )?;
+        let decrypted_group_secrets = config
+            .crypto_provider()
+            .hpke_open(
+                welcome.cipher_suite,
+                &encrypted_group_secrets.encrypted_group_secrets,
+                key_package_generation.init_secret(),
+                &[],
+                None,
+            )
+            .map_err(|e| GroupError::CryptoProviderError(e.into()))?;
 
         let group_secrets = GroupSecrets::tls_deserialize(&mut &*decrypted_group_secrets)?;
         let psk_store = config.secret_store();
@@ -577,7 +578,7 @@ where
 
     #[inline(always)]
     pub fn current_member_index(&self) -> u32 {
-        self.private_tree.self_index.0 as u32
+        self.private_tree.self_index.0
     }
 
     fn current_user_leaf_node(&self) -> Result<&LeafNode, GroupError> {
@@ -1077,17 +1078,21 @@ where
 
         let group_secrets_bytes = Zeroizing::new(group_secrets.tls_serialize_detached()?);
 
-        let encrypted_group_secrets = self.state.cipher_suite().hpke().seal(
-            &key_package.hpke_init_key,
-            &[],
-            None,
-            None,
-            &group_secrets_bytes,
-        )?;
+        let encrypted_group_secrets = self
+            .config
+            .crypto_provider()
+            .hpke_seal(
+                self.state.cipher_suite(),
+                &key_package.hpke_init_key,
+                &[],
+                None,
+                &group_secrets_bytes,
+            )
+            .map_err(|e| GroupError::CryptoProviderError(e.into()))?;
 
         Ok(EncryptedGroupSecrets {
             new_member: key_package.to_reference()?,
-            encrypted_group_secrets: encrypted_group_secrets.into(),
+            encrypted_group_secrets,
         })
     }
 

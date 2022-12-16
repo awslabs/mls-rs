@@ -1,6 +1,7 @@
 use crate::{
     extension::{KeyPackageExtension, LeafNodeExtension},
     identity::SigningIdentity,
+    provider::crypto,
     provider::identity::IdentityProvider,
     signer::{SignatureError, Signer},
     tree_kem::{
@@ -41,10 +42,14 @@ where
     pub identity_provider: &'a C,
 }
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    any(test, feature = "benchmark"),
+    derive(serde::Deserialize, serde::Serialize)
+)]
 pub struct KeyPackageGeneration {
     pub(crate) key_package: KeyPackage,
-    pub(crate) init_secret_key: HpkeSecretKey,
+    init_secret_key: crypto::HpkeSecretKey,
     pub(crate) leaf_node_secret_key: HpkeSecretKey,
 }
 
@@ -53,7 +58,7 @@ impl KeyPackageGeneration {
         self.key_package.to_reference()
     }
 
-    pub fn init_secret(&self) -> &[u8] {
+    pub fn init_secret(&self) -> &crypto::HpkeSecretKey {
         &self.init_secret_key
     }
 
@@ -94,10 +99,14 @@ where
             self.identity_provider,
         )?;
 
+        // TODO generate_keypair should output this type so this shouldn't be necessary
+        let init_public_key = public_init.to_uncompressed_bytes()?.into();
+        let init_secret_key = secret_init.to_bytes()?.into();
+
         let mut package = KeyPackage {
             version: self.protocol_version.into(),
             cipher_suite: self.cipher_suite.into(),
-            hpke_init_key: public_init.try_into()?,
+            hpke_init_key: init_public_key,
             leaf_node,
             extensions: key_package_extensions,
             signature: vec![],
@@ -107,7 +116,7 @@ where
 
         Ok(KeyPackageGeneration {
             key_package: package,
-            init_secret_key: secret_init.try_into()?,
+            init_secret_key,
             leaf_node_secret_key: leaf_node_secret,
         })
     }
@@ -220,8 +229,8 @@ mod tests {
             );
 
             assert_ne!(
-                generated.key_package.hpke_init_key,
-                generated.key_package.leaf_node.public_key
+                generated.key_package.hpke_init_key.as_ref(),
+                generated.key_package.leaf_node.public_key.as_ref()
             );
 
             assert_eq!(generated.key_package.extensions, key_package_ext);

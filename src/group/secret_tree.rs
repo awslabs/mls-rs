@@ -529,7 +529,7 @@ impl SecretKeyRatchet {
         let key = kdf.derive_tree_secret(
             &self.secret,
             "key",
-            self.node_index as u32,
+            self.node_index,
             generation,
             self.cipher_suite.aead_type().key_size(),
         )?;
@@ -537,7 +537,7 @@ impl SecretKeyRatchet {
         let nonce = kdf.derive_tree_secret(
             &self.secret,
             "nonce",
-            self.node_index as u32,
+            self.node_index,
             generation,
             self.cipher_suite.aead_type().nonce_size(),
         )?;
@@ -547,7 +547,7 @@ impl SecretKeyRatchet {
         self.secret = TreeSecret::from(kdf.derive_tree_secret(
             &self.secret,
             "secret",
-            self.node_index as u32,
+            self.node_index,
             generation,
             kdf.extract_size(),
         )?);

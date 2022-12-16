@@ -15,6 +15,7 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     provider::{
+        crypto::{CryptoProvider, FerriscryptCryptoProvider},
         identity::IdentityProvider,
         keychain::{InMemoryKeychain, KeychainStorage},
     },
@@ -25,7 +26,8 @@ use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 use std::collections::HashMap;
 
 /// Base client configuration type when instantiating `ExternalClientBuilder`
-pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals>;
+// TODO replace FerriscryptCryptoProvider by the default provider
+pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, FerriscryptCryptoProvider>;
 
 /// Builder for `ExternalClient`
 ///
@@ -113,6 +115,7 @@ impl ExternalClientBuilder<ExternalBaseConfig> {
             keychain: Missing,
             identity_provider: Missing,
             make_proposal_filter: KeepAllProposals,
+            crypto_provider: Default::default(),
         }))
     }
 }
@@ -227,6 +230,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
             keychain,
             identity_provider: c.identity_provider,
             make_proposal_filter: c.make_proposal_filter,
+            crypto_provider: c.crypto_provider,
         }))
     }
 
@@ -257,6 +261,27 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
             keychain: c.keychain,
             identity_provider,
             make_proposal_filter: c.make_proposal_filter,
+            crypto_provider: c.crypto_provider,
+        }))
+    }
+
+    /// Set the crypto provider to be used by the client.
+    ///
+    // TODO add a comment once we have a default provider
+    pub fn crypto_provider<Cp>(
+        self,
+        crypto_provider: Cp,
+    ) -> ExternalClientBuilder<WithCryptoProvider<Cp, C>>
+    where
+        Cp: CryptoProvider,
+    {
+        let Config(c) = self.0.into_config();
+        ExternalClientBuilder(Config(ConfigInner {
+            settings: c.settings,
+            keychain: c.keychain,
+            identity_provider: c.identity_provider,
+            make_proposal_filter: c.make_proposal_filter,
+            crypto_provider,
         }))
     }
 
@@ -278,6 +303,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
             keychain: c.keychain,
             identity_provider: c.identity_provider,
             make_proposal_filter: MakeSimpleProposalFilter(f),
+            crypto_provider: c.crypto_provider,
         }))
     }
 }
@@ -287,6 +313,7 @@ where
     C::Keychain: KeychainStorage + Clone,
     C::IdentityProvider: IdentityProvider + Clone,
     C::MakeProposalFilter: MakeProposalFilter + Clone,
+    C::CryptoProvider: CryptoProvider + Clone,
 {
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
         let mut c = self.0.into_config();
@@ -331,14 +358,22 @@ pub struct Missing;
 /// Change the keychain used by a client configuration.
 ///
 /// See [`ExternalClientBuilder::keychain`].
-pub type WithKeychain<K, C> =
-    Config<K, <C as IntoConfig>::IdentityProvider, <C as IntoConfig>::MakeProposalFilter>;
+pub type WithKeychain<K, C> = Config<
+    K,
+    <C as IntoConfig>::IdentityProvider,
+    <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::CryptoProvider,
+>;
 
 /// Change the identity validator used by a client configuration.
 ///
 /// See [`ExternalClientBuilder::identity_provider`].
-pub type WithIdentityProvider<I, C> =
-    Config<<C as IntoConfig>::Keychain, I, <C as IntoConfig>::MakeProposalFilter>;
+pub type WithIdentityProvider<I, C> = Config<
+    <C as IntoConfig>::Keychain,
+    I,
+    <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::CryptoProvider,
+>;
 
 /// Change the proposal filter used by a client configuration.
 ///
@@ -347,6 +382,17 @@ pub type WithProposalFilter<F, C> = Config<
     <C as IntoConfig>::Keychain,
     <C as IntoConfig>::IdentityProvider,
     MakeSimpleProposalFilter<F>,
+    <C as IntoConfig>::CryptoProvider,
+>;
+
+/// Change the crypto provider used by a client configuration.
+///
+/// See [`ExternalClientBuilder::crypto_provider`].
+pub type WithCryptoProvider<Cp, C> = Config<
+    <C as IntoConfig>::Keychain,
+    <C as IntoConfig>::IdentityProvider,
+    <C as IntoConfig>::MakeProposalFilter,
+    Cp,
 >;
 
 /// Helper alias for `Config`.
@@ -354,17 +400,20 @@ pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::Keychain,
     <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::CryptoProvider,
 >;
 
-impl<K, Iv, Mpf> ExternalClientConfig for ConfigInner<K, Iv, Mpf>
+impl<K, Ip, Mpf, Cp> ExternalClientConfig for ConfigInner<K, Ip, Mpf, Cp>
 where
     K: KeychainStorage + Clone,
-    Iv: IdentityProvider + Clone,
+    Ip: IdentityProvider + Clone,
     Mpf: MakeProposalFilter + Clone,
+    Cp: CryptoProvider + Clone,
 {
     type Keychain = K;
-    type IdentityProvider = Iv;
+    type IdentityProvider = Ip;
     type MakeProposalFilter = Mpf;
+    type CryptoProvider = Cp;
 
     fn keychain(&self) -> Self::Keychain {
         self.keychain.clone()
@@ -384,6 +433,10 @@ where
 
     fn identity_provider(&self) -> Self::IdentityProvider {
         self.identity_provider.clone()
+    }
+
+    fn crypto_provider(&self) -> Self::CryptoProvider {
+        self.crypto_provider.clone()
     }
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
@@ -409,15 +462,16 @@ where
     }
 }
 
-impl<K, Iv, Mpf> Sealed for Config<K, Iv, Mpf> {}
+impl<K, Ip, Mpf, Cp> Sealed for Config<K, Ip, Mpf, Cp> {}
 
-impl<K, Iv, Mpf> MlsConfig for Config<K, Iv, Mpf>
+impl<K, Ip, Mpf, Cp> MlsConfig for Config<K, Ip, Mpf, Cp>
 where
     K: KeychainStorage + Clone,
-    Iv: IdentityProvider + Clone,
+    Ip: IdentityProvider + Clone,
     Mpf: MakeProposalFilter + Clone,
+    Cp: CryptoProvider + Clone,
 {
-    type Output = ConfigInner<K, Iv, Mpf>;
+    type Output = ConfigInner<K, Ip, Mpf, Cp>;
 
     fn get(&self) -> &Self::Output {
         &self.0
@@ -442,6 +496,7 @@ impl<T: MlsConfig> ExternalClientConfig for T {
     type Keychain = <T::Output as ExternalClientConfig>::Keychain;
     type IdentityProvider = <T::Output as ExternalClientConfig>::IdentityProvider;
     type MakeProposalFilter = <T::Output as ExternalClientConfig>::MakeProposalFilter;
+    type CryptoProvider = <T::Output as ExternalClientConfig>::CryptoProvider;
 
     fn keychain(&self) -> Self::Keychain {
         self.get().keychain()
@@ -461,6 +516,10 @@ impl<T: MlsConfig> ExternalClientConfig for T {
 
     fn identity_provider(&self) -> Self::IdentityProvider {
         self.get().identity_provider()
+    }
+
+    fn crypto_provider(&self) -> Self::CryptoProvider {
+        self.get().crypto_provider()
     }
 
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
@@ -528,28 +587,31 @@ mod private {
     use crate::external_client_builder::{IntoConfigOutput, Settings};
 
     #[derive(Clone, Debug)]
-    pub struct Config<K, Iv, Mpf>(pub(crate) ConfigInner<K, Iv, Mpf>);
+    pub struct Config<K, Ip, Mpf, Cp>(pub(crate) ConfigInner<K, Ip, Mpf, Cp>);
 
     #[derive(Clone, Debug)]
-    pub struct ConfigInner<K, Iv, Mpf> {
+    pub struct ConfigInner<K, Ip, Mpf, Cp> {
         pub(crate) settings: Settings,
         pub(crate) keychain: K,
-        pub(crate) identity_provider: Iv,
+        pub(crate) identity_provider: Ip,
         pub(crate) make_proposal_filter: Mpf,
+        pub(crate) crypto_provider: Cp,
     }
 
     pub trait IntoConfig {
         type Keychain;
         type IdentityProvider;
         type MakeProposalFilter;
+        type CryptoProvider;
 
         fn into_config(self) -> IntoConfigOutput<Self>;
     }
 
-    impl<K, Iv, Mpf> IntoConfig for Config<K, Iv, Mpf> {
+    impl<K, Ip, Mpf, Cp> IntoConfig for Config<K, Ip, Mpf, Cp> {
         type Keychain = K;
-        type IdentityProvider = Iv;
+        type IdentityProvider = Ip;
         type MakeProposalFilter = Mpf;
+        type CryptoProvider = Cp;
 
         fn into_config(self) -> Self {
             self

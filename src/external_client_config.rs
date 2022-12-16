@@ -4,7 +4,7 @@ use crate::{
     extension::ExtensionType,
     identity::CredentialType,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
-    provider::{identity::IdentityProvider, keychain::KeychainStorage},
+    provider::{crypto::CryptoProvider, identity::IdentityProvider, keychain::KeychainStorage},
     tree_kem::Capabilities,
 };
 use ferriscrypt::asym::ec_key::PublicKey;
@@ -13,12 +13,14 @@ pub trait ExternalClientConfig: Clone {
     type Keychain: KeychainStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
     type MakeProposalFilter: MakeProposalFilter;
+    type CryptoProvider: CryptoProvider;
 
     fn keychain(&self) -> Self::Keychain;
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
     fn identity_provider(&self) -> Self::IdentityProvider;
+    fn crypto_provider(&self) -> Self::CryptoProvider;
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey>;
     fn proposal_filter(
         &self,

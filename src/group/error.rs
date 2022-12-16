@@ -54,6 +54,8 @@ pub enum GroupError {
     #[error(transparent)]
     IdentityProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
+    CryptoProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error(transparent)]
     LeafNodeError(#[from] LeafNodeError),
     #[error(transparent)]
     LeafNodeValidationError(#[from] LeafNodeValidationError),

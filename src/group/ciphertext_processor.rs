@@ -74,9 +74,7 @@ where
         let kdf = KeyScheduleKdf::new(self.0.group_context().cipher_suite.kdf_type());
         // Sample the first extract_size bytes of the ciphertext, and if it is shorter, just use
         // the ciphertext itself
-        let ciphertext_sample = ciphertext
-            .get(0..kdf.extract_size() as usize)
-            .unwrap_or(ciphertext);
+        let ciphertext_sample = ciphertext.get(0..kdf.extract_size()).unwrap_or(ciphertext);
 
         // Generate a sender data key and nonce using the sender_data_secret from the current
         // epoch's key schedule

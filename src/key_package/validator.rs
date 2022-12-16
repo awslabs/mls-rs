@@ -143,7 +143,7 @@ impl<'a, C: IdentityProvider> KeyPackageValidator<'a, C> {
         .map_err(|_| KeyPackageValidationError::InvalidInitKey)?;
 
         // Verify that the init key and the leaf node public key are different
-        if package.hpke_init_key == package.leaf_node.public_key {
+        if package.hpke_init_key.as_ref() == package.leaf_node.public_key.as_ref() {
             return Err(KeyPackageValidationError::InitLeafKeyEquality);
         }
 
@@ -310,7 +310,8 @@ mod tests {
 
         let key_package =
             test_init_key_manipulation(cipher_suite, protocol_version, |key_package| {
-                key_package.hpke_init_key = key_package.leaf_node.public_key.clone();
+                key_package.hpke_init_key =
+                    key_package.leaf_node.public_key.as_ref().to_vec().into();
             });
 
         let validator = KeyPackageValidator::new(

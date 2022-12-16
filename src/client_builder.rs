@@ -21,6 +21,7 @@ use crate::{
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     provider::{
+        crypto::{CryptoProvider, FerriscryptCryptoProvider},
         group_state::{GroupStateStorage, InMemoryGroupStateStorage},
         identity::IdentityProvider,
         key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
@@ -42,6 +43,8 @@ pub type BaseConfig = Config<
     InMemoryGroupStateStorage,
     Missing,
     KeepAllProposals,
+    // TODO replace by the final default provider
+    FerriscryptCryptoProvider,
 >;
 
 /// Builder for `Client`
@@ -131,6 +134,7 @@ impl ClientBuilder<BaseConfig> {
             group_state_storage: Default::default(),
             identity_provider: Missing,
             make_proposal_filter: KeepAllProposals,
+            crypto_provider: Default::default(),
         }))
     }
 }
@@ -273,6 +277,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
             make_proposal_filter: c.make_proposal_filter,
+            crypto_provider: c.crypto_provider,
         }))
     }
 
@@ -322,6 +327,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
             make_proposal_filter: c.make_proposal_filter,
+            crypto_provider: c.crypto_provider,
         }))
     }
 
@@ -341,6 +347,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
             make_proposal_filter: c.make_proposal_filter,
+            crypto_provider: c.crypto_provider,
         }))
     }
 
@@ -363,6 +370,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             group_state_storage,
             identity_provider: c.identity_provider,
             make_proposal_filter: c.make_proposal_filter,
+            crypto_provider: c.crypto_provider,
         }))
     }
 
@@ -383,6 +391,30 @@ impl<C: IntoConfig> ClientBuilder<C> {
             group_state_storage: c.group_state_storage,
             identity_provider,
             make_proposal_filter: c.make_proposal_filter,
+            crypto_provider: c.crypto_provider,
+        }))
+    }
+
+    /// Set the crypto provider to be used by the client.
+    ///
+    // TODO add a comment once we have a default provider
+    pub fn crypto_provider<Cp>(
+        self,
+        crypto_provider: Cp,
+    ) -> ClientBuilder<WithCryptoProvider<Cp, C>>
+    where
+        Cp: CryptoProvider,
+    {
+        let Config(c) = self.0.into_config();
+        ClientBuilder(Config(ConfigInner {
+            settings: c.settings,
+            key_package_repo: c.key_package_repo,
+            keychain: c.keychain,
+            psk_store: c.psk_store,
+            group_state_storage: c.group_state_storage,
+            identity_provider: c.identity_provider,
+            make_proposal_filter: c.make_proposal_filter,
+            crypto_provider,
         }))
     }
 
@@ -407,6 +439,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
             make_proposal_filter: MakeSimpleProposalFilter(f),
+            crypto_provider: c.crypto_provider,
         }))
     }
 }
@@ -419,6 +452,7 @@ where
     C::GroupStateStorage: GroupStateStorage + Clone,
     C::IdentityProvider: IdentityProvider + Clone,
     C::MakeProposalFilter: MakeProposalFilter + Clone,
+    C::CryptoProvider: CryptoProvider + Clone,
 {
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
         let mut c = self.0.into_config();
@@ -497,6 +531,7 @@ pub type WithKeyPackageRepo<K, C> = Config<
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::CryptoProvider,
 >;
 
 /// Change the keychain used by a client configuration.
@@ -509,6 +544,7 @@ pub type WithKeychain<K, C> = Config<
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::CryptoProvider,
 >;
 
 /// Change the PSK store used by a client configuration.
@@ -521,6 +557,7 @@ pub type WithPskStore<P, C> = Config<
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::CryptoProvider,
 >;
 
 /// Change the group state storage used by a client configuration.
@@ -533,6 +570,7 @@ pub type WithGroupStateStorage<G, C> = Config<
     G,
     <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::CryptoProvider,
 >;
 
 /// Change the identity validator used by a client configuration.
@@ -545,6 +583,7 @@ pub type WithIdentityProvider<I, C> = Config<
     <C as IntoConfig>::GroupStateStorage,
     I,
     <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::CryptoProvider,
 >;
 
 /// Change the proposal filter used by a client configuration.
@@ -557,6 +596,20 @@ pub type WithProposalFilter<F, C> = Config<
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
     MakeSimpleProposalFilter<F>,
+    <C as IntoConfig>::CryptoProvider,
+>;
+
+/// Change the crypto provider used by a client configuration.
+///
+/// See [`ClientBuilder::crypto_provider`].
+pub type WithCryptoProvider<Cp, C> = Config<
+    <C as IntoConfig>::KeyPackageRepository,
+    <C as IntoConfig>::Keychain,
+    <C as IntoConfig>::PskStore,
+    <C as IntoConfig>::GroupStateStorage,
+    <C as IntoConfig>::IdentityProvider,
+    <C as IntoConfig>::MakeProposalFilter,
+    Cp,
 >;
 
 /// Helper alias for `Config`.
@@ -567,23 +620,26 @@ pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
     <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::CryptoProvider,
 >;
 
-impl<Kpr, K, Ps, Gss, Iv, Mpf> ClientConfig for ConfigInner<Kpr, K, Ps, Gss, Iv, Mpf>
+impl<Kpr, K, Ps, Gss, Ip, Mpf, Cp> ClientConfig for ConfigInner<Kpr, K, Ps, Gss, Ip, Mpf, Cp>
 where
     Kpr: KeyPackageRepository + Clone,
     K: KeychainStorage + Clone,
     Ps: PskStore + Clone,
     Gss: GroupStateStorage + Clone,
-    Iv: IdentityProvider + Clone,
+    Ip: IdentityProvider + Clone,
     Mpf: MakeProposalFilter + Clone,
+    Cp: CryptoProvider + Clone,
 {
     type KeyPackageRepository = Kpr;
     type Keychain = K;
     type PskStore = Ps;
     type GroupStateStorage = Gss;
-    type IdentityProvider = Iv;
+    type IdentityProvider = Ip;
     type MakeProposalFilter = Mpf;
+    type CryptoProvider = Cp;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
         self.settings.cipher_suites.clone()
@@ -628,6 +684,10 @@ where
         self.identity_provider.clone()
     }
 
+    fn crypto_provider(&self) -> Self::CryptoProvider {
+        self.crypto_provider.clone()
+    }
+
     fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension> {
         self.settings.key_package_extensions.clone()
     }
@@ -645,18 +705,19 @@ where
     }
 }
 
-impl<Kpr, K, Ps, Gss, Iv, Mpf> Sealed for Config<Kpr, K, Ps, Gss, Iv, Mpf> {}
+impl<Kpr, K, Ps, Gss, Ip, Mpf, Cp> Sealed for Config<Kpr, K, Ps, Gss, Ip, Mpf, Cp> {}
 
-impl<Kpr, K, Ps, Gss, Iv, Mpf> MlsConfig for Config<Kpr, K, Ps, Gss, Iv, Mpf>
+impl<Kpr, K, Ps, Gss, Ip, Mpf, Cp> MlsConfig for Config<Kpr, K, Ps, Gss, Ip, Mpf, Cp>
 where
     Kpr: KeyPackageRepository + Clone,
     K: KeychainStorage + Clone,
     Ps: PskStore + Clone,
     Gss: GroupStateStorage + Clone,
-    Iv: IdentityProvider + Clone,
+    Ip: IdentityProvider + Clone,
     Mpf: MakeProposalFilter + Clone,
+    Cp: CryptoProvider + Clone,
 {
-    type Output = ConfigInner<Kpr, K, Ps, Gss, Iv, Mpf>;
+    type Output = ConfigInner<Kpr, K, Ps, Gss, Ip, Mpf, Cp>;
 
     fn get(&self) -> &Self::Output {
         &self.0
@@ -682,6 +743,7 @@ impl<T: MlsConfig> ClientConfig for T {
     type GroupStateStorage = <T::Output as ClientConfig>::GroupStateStorage;
     type IdentityProvider = <T::Output as ClientConfig>::IdentityProvider;
     type MakeProposalFilter = <T::Output as ClientConfig>::MakeProposalFilter;
+    type CryptoProvider = <T::Output as ClientConfig>::CryptoProvider;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
         self.get().supported_cipher_suites()
@@ -724,6 +786,10 @@ impl<T: MlsConfig> ClientConfig for T {
 
     fn identity_provider(&self) -> Self::IdentityProvider {
         self.get().identity_provider()
+    }
+
+    fn crypto_provider(&self) -> Self::CryptoProvider {
+        self.get().crypto_provider()
     }
 
     fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension> {
@@ -849,17 +915,20 @@ mod private {
     use crate::client_builder::{IntoConfigOutput, Settings};
 
     #[derive(Clone, Debug)]
-    pub struct Config<Kpr, K, Ps, Gss, Iv, Mpf>(pub(crate) ConfigInner<Kpr, K, Ps, Gss, Iv, Mpf>);
+    pub struct Config<Kpr, K, Ps, Gss, Ip, Mpf, Cp>(
+        pub(crate) ConfigInner<Kpr, K, Ps, Gss, Ip, Mpf, Cp>,
+    );
 
     #[derive(Clone, Debug)]
-    pub struct ConfigInner<Kpr, K, Ps, Gss, Iv, Mpf> {
+    pub struct ConfigInner<Kpr, K, Ps, Gss, Ip, Mpf, Cp> {
         pub(crate) settings: Settings,
         pub(crate) key_package_repo: Kpr,
         pub(crate) keychain: K,
         pub(crate) psk_store: Ps,
         pub(crate) group_state_storage: Gss,
-        pub(crate) identity_provider: Iv,
+        pub(crate) identity_provider: Ip,
         pub(crate) make_proposal_filter: Mpf,
+        pub(crate) crypto_provider: Cp,
     }
 
     pub trait IntoConfig {
@@ -869,17 +938,19 @@ mod private {
         type GroupStateStorage;
         type IdentityProvider;
         type MakeProposalFilter;
+        type CryptoProvider;
 
         fn into_config(self) -> IntoConfigOutput<Self>;
     }
 
-    impl<Kpr, K, Ps, Gss, Iv, Mpf> IntoConfig for Config<Kpr, K, Ps, Gss, Iv, Mpf> {
+    impl<Kpr, K, Ps, Gss, Ip, Mpf, Cp> IntoConfig for Config<Kpr, K, Ps, Gss, Ip, Mpf, Cp> {
         type KeyPackageRepository = Kpr;
         type Keychain = K;
         type PskStore = Ps;
         type GroupStateStorage = Gss;
-        type IdentityProvider = Iv;
+        type IdentityProvider = Ip;
         type MakeProposalFilter = Mpf;
+        type CryptoProvider = Cp;
 
         fn into_config(self) -> Self {
             self

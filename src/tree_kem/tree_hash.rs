@@ -251,9 +251,9 @@ impl TreeKemPublic {
 
         for n in bfs_iter {
             let p = tree_math::parent(n as u32, num_leaves as u32)?;
-            filtered_sets[n as usize] = filtered_sets[p as usize].clone();
+            filtered_sets[n] = filtered_sets[p as usize].clone();
             if self.different_unmerged(*filtered_sets[p as usize].last().unwrap(), p)? {
-                filtered_sets[n as usize].push(p);
+                filtered_sets[n].push(p);
             }
         }
 
@@ -266,7 +266,7 @@ impl TreeKemPublic {
             .by_ref()
             .take(self.nodes.total_leaf_count() as usize)
             .try_for_each(|index| {
-                for a in filtered_sets[index as usize].iter() {
+                for a in filtered_sets[index].iter() {
                     let leaf_index = LeafIndex(index as u32 / 2);
 
                     let filter_leaf = !self.nodes.is_blank(*a)?
@@ -286,14 +286,14 @@ impl TreeKemPublic {
                         self.cipher_suite,
                     )?;
 
-                    hashes[index as usize].insert(*a, hash);
+                    hashes[index].insert(*a, hash);
                 }
                 Ok::<_, RatchetTreeError>(())
             })?;
 
         // Then, compute `hashes[n]` for each internal node `n`, traversing the tree bottom-up.
         for n in bfs_iterator {
-            for a in &filtered_sets[n as usize] {
+            for a in &filtered_sets[n] {
                 let left_hash = hashes[tree_math::left(n as u32)? as usize][a].clone();
                 let right_hash = hashes[tree_math::right(n as u32)? as usize][a].clone();
 
@@ -311,7 +311,7 @@ impl TreeKemPublic {
                     &right_hash,
                 )?;
 
-                hashes[n as usize].insert(*a, hash);
+                hashes[n].insert(*a, hash);
             }
         }
 
@@ -319,7 +319,7 @@ impl TreeKemPublic {
         self.tree_hashes.original.resize(num_leaves * 2 - 1, vec![]);
         for (i, hash) in self.tree_hashes.original.iter_mut().enumerate() {
             let a = filtered_sets[i].last().unwrap();
-            *hash = if self.nodes.is_blank(*a as u32)? {
+            *hash = if self.nodes.is_blank(*a)? {
                 self.tree_hashes.current[i].clone()
             } else {
                 hashes[i][a].clone()

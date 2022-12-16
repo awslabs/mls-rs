@@ -12,7 +12,7 @@ use crate::{
     identity::CredentialType,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     provider::{
-        group_state::GroupStateStorage, identity::IdentityProvider,
+        crypto::CryptoProvider, group_state::GroupStateStorage, identity::IdentityProvider,
         key_package::KeyPackageRepository, keychain::KeychainStorage, psk::PskStore,
     },
     tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
@@ -26,6 +26,7 @@ pub trait ClientConfig: Clone {
     type GroupStateStorage: GroupStateStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
     type MakeProposalFilter: MakeProposalFilter;
+    type CryptoProvider: CryptoProvider;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
@@ -33,16 +34,18 @@ pub trait ClientConfig: Clone {
 
     fn preferences(&self) -> Preferences;
     fn key_package_repo(&self) -> Self::KeyPackageRepository;
+
     fn proposal_filter(
         &self,
         init: ProposalFilterInit,
     ) -> <Self::MakeProposalFilter as MakeProposalFilter>::Filter;
+
     fn keychain(&self) -> Self::Keychain;
     fn secret_store(&self) -> Self::PskStore;
-
     fn group_state_storage(&self) -> Self::GroupStateStorage;
-
     fn identity_provider(&self) -> Self::IdentityProvider;
+    fn crypto_provider(&self) -> Self::CryptoProvider;
+
     fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension>;
     fn leaf_node_extensions(&self) -> ExtensionList<LeafNodeExtension>;
     fn lifetime(&self) -> Lifetime;

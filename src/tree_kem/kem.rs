@@ -1,5 +1,6 @@
 use crate::group::GroupContext;
 use crate::identity::SigningIdentity;
+use crate::provider::crypto::HpkeCiphertext;
 use crate::provider::identity::IdentityProvider;
 use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
@@ -12,7 +13,6 @@ use tls_codec::Serialize;
 
 use super::leaf_node::ConfigProperties;
 use super::node::Node;
-use super::HpkeCiphertext;
 use super::{
     node::{LeafIndex, NodeIndex},
     path_secret::{PathSecret, PathSecretGeneration, PathSecretGenerator},

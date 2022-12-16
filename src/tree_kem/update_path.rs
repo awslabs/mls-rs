@@ -7,9 +7,11 @@ use super::{
     leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator, ValidationContext},
     node::{LeafIndex, NodeVecError},
     tree_math::TreeMathError,
-    HpkeCiphertext,
 };
-use crate::{extension::ExtensionError, provider::identity::IdentityProvider};
+use crate::{
+    extension::ExtensionError,
+    provider::{crypto::HpkeCiphertext, identity::IdentityProvider},
+};
 use crate::{group::message_processor::ProvisionalState, time::MlsTime};
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
