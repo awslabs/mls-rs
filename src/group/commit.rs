@@ -359,7 +359,7 @@ where
         // Add in any user provided extensions
         extensions.append(group_info_extensions);
 
-        let key_schedule_result = KeySchedule::derive(
+        let key_schedule_result = KeySchedule::from_key_schedule(
             &self.key_schedule,
             &commit_secret,
             &provisional_group_context,

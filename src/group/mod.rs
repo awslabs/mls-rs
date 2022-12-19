@@ -220,16 +220,6 @@ where
             group_context_extensions,
         );
 
-        let kdf = Hkdf::from(cipher_suite.kdf_type());
-
-        let key_schedule_result = KeySchedule::derive(
-            &KeySchedule::new(InitSecret::random(&kdf)?),
-            &CommitSecret::empty(cipher_suite),
-            &context,
-            &public_tree,
-            &Psk::from(vec![0; kdf.extract_size()]),
-        )?;
-
         let state_repo = GroupStateRepository::new(
             context.group_id.clone(),
             config.preferences().max_epoch_retention,
@@ -238,14 +228,21 @@ where
             None,
         )?;
 
+        let key_schedule_result =
+            KeySchedule::from_random_epoch_secret(cipher_suite, public_tree.total_leaf_count())?;
+
+        let confirmation_tag = ConfirmationTag::create(
+            &key_schedule_result.confirmation_key,
+            &vec![].into(),
+            &cipher_suite,
+        )?;
+
+        let interim_hash =
+            InterimTranscriptHash::create(cipher_suite, &vec![].into(), &confirmation_tag)?;
+
         Ok(Self {
             config,
-            state: GroupState::new(
-                context,
-                public_tree,
-                InterimTranscriptHash::from(vec![]),
-                ConfirmationTag::empty(&cipher_suite)?,
-            ),
+            state: GroupState::new(context, public_tree, interim_hash, confirmation_tag),
             private_tree,
             key_schedule: key_schedule_result.key_schedule,
             pending_updates: Default::default(),
@@ -380,7 +377,7 @@ where
 
         // Use the joiner_secret from the GroupSecrets object to generate the epoch secret and
         // other derived secrets for the current epoch.
-        let key_schedule_result = KeySchedule::new_joiner(
+        let key_schedule_result = KeySchedule::from_joiner(
             join_context.group_context.cipher_suite,
             &group_secrets.joiner_secret,
             &join_context.group_context,
@@ -418,15 +415,11 @@ where
     ) -> Result<(Self, NewMemberInfo), GroupError> {
         // Use the confirmed transcript hash and confirmation tag to compute the interim transcript
         // hash in the new state.
-        let interim_transcript_hash = if join_context.group_context.epoch > 0 {
-            InterimTranscriptHash::create(
-                join_context.public_tree.cipher_suite,
-                &join_context.group_context.confirmed_transcript_hash,
-                &join_context.confirmation_tag,
-            )
-        } else {
-            Ok(InterimTranscriptHash::from(vec![]))
-        }?;
+        let interim_transcript_hash = InterimTranscriptHash::create(
+            join_context.public_tree.cipher_suite,
+            &join_context.group_context.confirmed_transcript_hash,
+            &join_context.confirmation_tag,
+        )?;
 
         let state_repo = GroupStateRepository::new(
             join_context.group_context.group_id.clone(),
@@ -817,7 +810,7 @@ where
 
         let kdf = Hkdf::from(new_context.cipher_suite.kdf_type());
 
-        let key_schedule_result = KeySchedule::derive(
+        let key_schedule_result = KeySchedule::from_key_schedule(
             &KeySchedule::new(InitSecret::random(&kdf)?),
             &CommitSecret::empty(new_context.cipher_suite),
             new_context,
@@ -1620,7 +1613,7 @@ where
             _ => self.key_schedule.clone(),
         };
 
-        let key_schedule_result = KeySchedule::derive(
+        let key_schedule_result = KeySchedule::from_key_schedule(
             &key_schedule,
             &commit_secret,
             &provisional_state.group_context,

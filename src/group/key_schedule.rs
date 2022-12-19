@@ -179,7 +179,7 @@ impl KeySchedule {
 
     /// Returns the derived epoch as well as the joiner secret required for building welcome
     /// messages
-    pub(crate) fn derive(
+    pub(crate) fn from_key_schedule(
         last_key_schedule: &KeySchedule,
         commit_secret: &CommitSecret,
         context: &GroupContext,
@@ -202,7 +202,7 @@ impl KeySchedule {
             )?
             .into();
 
-        let key_schedule_result = Self::new_joiner(
+        let key_schedule_result = Self::from_joiner(
             cipher_suite,
             &joiner_secret,
             context,
@@ -218,7 +218,7 @@ impl KeySchedule {
         })
     }
 
-    pub(crate) fn new_joiner(
+    pub(crate) fn from_joiner(
         cipher_suite: CipherSuite,
         joiner_secret: &JoinerSecret,
         context: &GroupContext,
@@ -236,22 +236,36 @@ impl KeySchedule {
             kdf.extract_size(),
         )?);
 
-        // Derive secrets from epoch secret
-        let sender_data_secret = kdf.derive_secret(&epoch_secret, "sender data")?;
-        let encryption_secret = kdf.derive_secret(&epoch_secret, "encryption")?;
-        let exporter_secret = kdf.derive_secret(&epoch_secret, "exporter")?;
-        let authentication_secret = kdf.derive_secret(&epoch_secret, "authentication")?;
-        let external_secret = kdf.derive_secret(&epoch_secret, "external")?;
-        let confirmation_key = kdf.derive_secret(&epoch_secret, "confirm")?;
-        let membership_key = kdf.derive_secret(&epoch_secret, "membership")?;
-        let resumption_secret = kdf.derive_secret(&epoch_secret, "resumption")?;
-        let init_secret = InitSecret::from_epoch_secret(&kdf, &epoch_secret)?;
+        Self::from_epoch_secret(cipher_suite, &epoch_secret, public_tree.total_leaf_count())
+    }
 
-        let secret_tree = SecretTree::new(
-            cipher_suite,
-            public_tree.total_leaf_count(),
-            encryption_secret,
-        );
+    pub(crate) fn from_random_epoch_secret(
+        cipher_suite: CipherSuite,
+        secret_tree_size: u32,
+    ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
+        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
+        let epoch_secret = Zeroizing::new(SecureRng::gen(kdf.extract_size())?);
+        Self::from_epoch_secret(cipher_suite, &epoch_secret, secret_tree_size)
+    }
+
+    fn from_epoch_secret(
+        cipher_suite: CipherSuite,
+        epoch_secret: &[u8],
+        secret_tree_size: u32,
+    ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
+        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
+
+        let sender_data_secret = kdf.derive_secret(epoch_secret, "sender data")?;
+        let encryption_secret = kdf.derive_secret(epoch_secret, "encryption")?;
+        let exporter_secret = kdf.derive_secret(epoch_secret, "exporter")?;
+        let authentication_secret = kdf.derive_secret(epoch_secret, "authentication")?;
+        let external_secret = kdf.derive_secret(epoch_secret, "external")?;
+        let confirmation_key = kdf.derive_secret(epoch_secret, "confirm")?;
+        let membership_key = kdf.derive_secret(epoch_secret, "membership")?;
+        let resumption_secret = kdf.derive_secret(epoch_secret, "resumption")?;
+        let init_secret = InitSecret::from_epoch_secret(&kdf, epoch_secret)?;
+
+        let secret_tree = SecretTree::new(cipher_suite, secret_tree_size, encryption_secret);
 
         let epoch_secrets = EpochSecrets {
             resumption_secret: Psk::from(resumption_secret),

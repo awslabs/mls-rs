@@ -55,15 +55,11 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             &config.identity_provider(),
         )?;
 
-        let interim_transcript_hash = if join_context.group_context.epoch > 0 {
-            InterimTranscriptHash::create(
-                join_context.group_context.cipher_suite,
-                &join_context.group_context.confirmed_transcript_hash,
-                &join_context.confirmation_tag,
-            )
-        } else {
-            Ok(InterimTranscriptHash::from(vec![]))
-        }?;
+        let interim_transcript_hash = InterimTranscriptHash::create(
+            join_context.group_context.cipher_suite,
+            &join_context.group_context.confirmed_transcript_hash,
+            &join_context.confirmation_tag,
+        )?;
 
         Ok(Self {
             config,
