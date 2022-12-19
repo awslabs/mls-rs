@@ -1277,7 +1277,7 @@ where
     ) -> Result<MLSCiphertext, GroupError> {
         let preferences = self.config.preferences();
 
-        let mut encryptor = CiphertextProcessor::new(self);
+        let mut encryptor = CiphertextProcessor::new(self, self.config.crypto_provider());
 
         encryptor
             .seal(auth_content, preferences.padding_mode)
@@ -1316,7 +1316,8 @@ where
         let epoch_id = message.epoch;
 
         let auth_content = if epoch_id == self.context().epoch {
-            let content = CiphertextProcessor::new(self).open(message)?;
+            let content =
+                CiphertextProcessor::new(self, self.config.crypto_provider()).open(message)?;
 
             verify_auth_content_signature(
                 SignaturePublicKeysContainer::RatchetTree(&self.state.public_tree),
@@ -1332,7 +1333,8 @@ where
                 .get_epoch_mut(epoch_id)?
                 .ok_or(GroupError::EpochNotFound(epoch_id))?;
 
-            let content = CiphertextProcessor::new(epoch).open(message)?;
+            let content =
+                CiphertextProcessor::new(epoch, self.config.crypto_provider()).open(message)?;
 
             verify_auth_content_signature(
                 SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
@@ -1470,7 +1472,7 @@ where
     }
 }
 
-impl<C> EpochSecretsProvider for Group<C>
+impl<C> GroupStateProvider for Group<C>
 where
     C: ClientConfig + Clone,
 {

@@ -120,4 +120,22 @@ pub trait CryptoProvider {
         cipher_suite: CipherSuite,
         ikm: &[u8],
     ) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error>;
+
+    fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error>;
+
+    fn random_bytes_vec(&self, count: usize) -> Result<Vec<u8>, Self::Error> {
+        let mut vec = vec![0u8; count];
+        self.random_bytes(&mut vec)?;
+
+        Ok(vec)
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use super::FerriscryptCryptoProvider;
+
+    pub(crate) fn test_crypto_provider() -> FerriscryptCryptoProvider {
+        FerriscryptCryptoProvider
+    }
 }

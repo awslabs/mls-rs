@@ -1,77 +1,85 @@
+use self::{
+    message_key::MessageKey,
+    reuse_guard::ReuseGuard,
+    sender_data_key::{MLSSenderData, MLSSenderDataAAD, SenderDataKey},
+};
+
 use super::{
     epoch::EpochSecrets,
     framing::{
         ContentType, MLSCiphertext, MLSCiphertextContent, MLSCiphertextContentAAD, MLSContent,
-        MLSSenderData, MLSSenderDataAAD, Sender, WireFormat,
+        Sender, WireFormat,
     },
     key_schedule::{KeyScheduleKdf, KeyScheduleKdfError},
     message_signature::MLSAuthenticatedContent,
     secret_tree::{KeyType, SecretTreeError},
     GroupContext, PaddingMode,
 };
-use crate::{psk::PskSecretError, tree_kem::node::LeafIndex};
-use ferriscrypt::{
-    cipher::{
-        aead::{AeadError, AeadNonce, Key},
-        NonceError,
-    },
-    kdf::KdfError,
-    rand::{SecureRng, SecureRngError},
-};
+use crate::{provider::crypto::CryptoProvider, psk::PskSecretError, tree_kem::node::LeafIndex};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use zeroize::Zeroizing;
+
+mod message_key;
+mod reuse_guard;
+mod sender_data_key;
 
 #[derive(Error, Debug)]
 pub enum CiphertextProcessorError {
     #[error(transparent)]
     KeyScheduleKdfError(#[from] KeyScheduleKdfError),
     #[error(transparent)]
-    KdfError(#[from] KdfError),
+    CryptoProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
     SecretTreeError(#[from] SecretTreeError),
     #[error(transparent)]
     TlsCodecError(#[from] tls_codec::Error),
     #[error(transparent)]
-    AeadError(#[from] AeadError),
-    #[error(transparent)]
     PskSecretError(#[from] PskSecretError),
-    #[error(transparent)]
-    NonceError(#[from] NonceError),
     #[error("key derivation failure")]
     KeyDerivationFailure,
-    #[error(transparent)]
-    RngError(#[from] SecureRngError),
     #[error("seal is only supported for self created messages")]
     InvalidSender(Sender),
     #[error("message from self can't be processed")]
     CantProcessMessageFromSelf,
 }
 
-pub(crate) trait EpochSecretsProvider {
+pub(crate) trait GroupStateProvider {
     fn group_context(&self) -> &GroupContext;
     fn self_index(&self) -> LeafIndex;
     fn epoch_secrets_mut(&mut self) -> &mut EpochSecrets;
     fn epoch_secrets(&self) -> &EpochSecrets;
 }
 
-pub(crate) struct CiphertextProcessor<'a, T>(&'a mut T)
+pub(crate) struct CiphertextProcessor<'a, GS, CP>
 where
-    T: EpochSecretsProvider;
-
-impl<'a, T> CiphertextProcessor<'a, T>
-where
-    T: EpochSecretsProvider,
+    GS: GroupStateProvider,
+    CP: CryptoProvider,
 {
-    pub fn new(provider: &'a mut T) -> CiphertextProcessor<T> {
-        Self(provider)
+    group_state: &'a mut GS,
+    crypto_provider: CP,
+}
+
+impl<'a, GS, CP> CiphertextProcessor<'a, GS, CP>
+where
+    GS: GroupStateProvider,
+    CP: CryptoProvider,
+{
+    pub fn new(group_state: &'a mut GS, crypto_provider: CP) -> CiphertextProcessor<'a, GS, CP> {
+        Self {
+            group_state,
+            crypto_provider,
+        }
     }
 
-    fn get_sender_data_params(
+    // TODO: Move this into sender_data_key.rs , figure out how to port over KeyScheduleKdf
+    // functionality to be based off of the provider, which will require additional methods like
+    // key_size and nonce_size on the provider
+    fn sender_data_key(
         &self,
         ciphertext: &[u8],
-    ) -> Result<(Key, AeadNonce), CiphertextProcessorError> {
-        let kdf = KeyScheduleKdf::new(self.0.group_context().cipher_suite.kdf_type());
+    ) -> Result<SenderDataKey, CiphertextProcessorError> {
+        let kdf = KeyScheduleKdf::new(self.group_state.group_context().cipher_suite.kdf_type());
         // Sample the first extract_size bytes of the ciphertext, and if it is shorter, just use
         // the ciphertext itself
         let ciphertext_sample = ciphertext.get(0..kdf.extract_size()).unwrap_or(ciphertext);
@@ -79,26 +87,31 @@ where
         // Generate a sender data key and nonce using the sender_data_secret from the current
         // epoch's key schedule
         let sender_data_key = kdf.expand_with_label(
-            &self.0.epoch_secrets().sender_data_secret,
+            &self.group_state.epoch_secrets().sender_data_secret,
             "key",
             ciphertext_sample,
-            self.0.group_context().cipher_suite.aead_type().key_size(),
+            self.group_state
+                .group_context()
+                .cipher_suite
+                .aead_type()
+                .key_size(),
         )?;
 
         let sender_data_nonce = kdf.expand_with_label(
-            &self.0.epoch_secrets().sender_data_secret,
+            &self.group_state.epoch_secrets().sender_data_secret,
             "nonce",
             ciphertext_sample,
-            self.0.group_context().cipher_suite.aead_type().nonce_size(),
+            self.group_state
+                .group_context()
+                .cipher_suite
+                .aead_type()
+                .nonce_size(),
         )?;
 
-        Ok((
-            Key::new(
-                self.0.group_context().cipher_suite.aead_type(),
-                sender_data_key,
-            )?,
-            AeadNonce::new(&sender_data_nonce)?,
-        ))
+        Ok(SenderDataKey {
+            key: sender_data_key,
+            nonce: sender_data_nonce,
+        })
     }
 
     pub fn seal(
@@ -106,7 +119,7 @@ where
         auth_content: MLSAuthenticatedContent,
         padding: PaddingMode,
     ) -> Result<MLSCiphertext, CiphertextProcessorError> {
-        if Sender::Member(*self.0.self_index()) != auth_content.content.sender {
+        if Sender::Member(*self.group_state.self_index()) != auth_content.content.sender {
             return Err(CiphertextProcessorError::InvalidSender(
                 auth_content.content.sender,
             ));
@@ -133,8 +146,8 @@ where
         };
 
         // Generate a 4 byte reuse guard
-        let mut reuse_guard = [0u8; 4];
-        SecureRng::fill(&mut reuse_guard)?;
+        let reuse_guard = ReuseGuard::random(&self.crypto_provider)
+            .map_err(|e| CiphertextProcessorError::CryptoProviderError(e.into()))?;
 
         // Grab an encryption key from the current epoch's key schedule
         let key_type = match &content_type {
@@ -146,48 +159,50 @@ where
 
         // Encrypt the ciphertext content using the encryption key and a nonce that is
         // reuse safe by xor the reuse guard with the first 4 bytes
+        let self_index = self.group_state.self_index();
 
-        let self_index = self.0.self_index();
-
-        let key = self
-            .0
+        let (key_data, generation) = self
+            .group_state
             .epoch_secrets_mut()
             .secret_tree
-            .get_message_key(self_index, key_type, None)?;
+            .next_message_key(self_index, key_type)?;
 
-        let ciphertext = key.encrypt(
-            &ciphertext_content,
-            &aad.tls_serialize_detached()?,
-            &reuse_guard,
-        )?;
+        let ciphertext = MessageKey::new(key_data)
+            .encrypt(
+                &self.crypto_provider,
+                self.group_state.group_context().cipher_suite,
+                &ciphertext_content,
+                &aad.tls_serialize_detached()?,
+                &reuse_guard,
+            )
+            .map_err(|e| CiphertextProcessorError::CryptoProviderError(e.into()))?;
 
         // Construct an mls sender data struct using the plaintext sender info, the generation
         // of the key schedule encryption key, and the reuse guard used to encrypt ciphertext
         let sender_data = MLSSenderData {
             sender: self_index,
-            generation: key.generation,
+            generation,
             reuse_guard,
         };
 
         let sender_data_aad = MLSSenderDataAAD {
-            group_id: self.0.group_context().group_id.clone(),
-            epoch: self.0.group_context().epoch,
+            group_id: self.group_state.group_context().group_id.clone(),
+            epoch: self.group_state.group_context().epoch,
             content_type,
         };
 
         // Encrypt the sender data with the derived sender_key and sender_nonce from the current
         // epoch's key schedule
-        let (sender_key, sender_nonce) = self.get_sender_data_params(&ciphertext)?;
-
-        let encrypted_sender_data = sender_key.encrypt_to_vec(
-            &sender_data.tls_serialize_detached()?,
-            Some(&sender_data_aad.tls_serialize_detached()?),
-            sender_nonce,
+        let encrypted_sender_data = self.sender_data_key(&ciphertext)?.seal(
+            &self.crypto_provider,
+            self.group_state.group_context().cipher_suite,
+            &sender_data,
+            &sender_data_aad,
         )?;
 
         Ok(MLSCiphertext {
-            group_id: self.0.group_context().group_id.clone(),
-            epoch: self.0.group_context().epoch,
+            group_id: self.group_state.group_context().group_id.clone(),
+            epoch: self.group_state.group_context().epoch,
             content_type,
             authenticated_data,
             encrypted_sender_data,
@@ -201,23 +216,20 @@ where
     ) -> Result<MLSAuthenticatedContent, CiphertextProcessorError> {
         // Decrypt the sender data with the derived sender_key and sender_nonce from the message
         // epoch's key schedule
-        let (sender_key, sender_nonce) = self.get_sender_data_params(&ciphertext.ciphertext)?;
-
         let sender_data_aad = MLSSenderDataAAD {
-            group_id: self.0.group_context().group_id.clone(),
-            epoch: self.0.group_context().epoch,
+            group_id: self.group_state.group_context().group_id.clone(),
+            epoch: self.group_state.group_context().epoch,
             content_type: ciphertext.content_type,
         };
 
-        let decrypted_sender = Zeroizing::new(sender_key.decrypt_from_vec(
+        let sender_data = self.sender_data_key(&ciphertext.ciphertext)?.open(
+            &self.crypto_provider,
+            self.group_state.group_context().cipher_suite,
             &ciphertext.encrypted_sender_data,
-            Some(&sender_data_aad.tls_serialize_detached()?),
-            sender_nonce,
-        )?);
+            &sender_data_aad,
+        )?;
 
-        let sender_data = MLSSenderData::tls_deserialize(&mut &**decrypted_sender)?;
-
-        if self.0.self_index() == sender_data.sender {
+        if self.group_state.self_index() == sender_data.sender {
             return Err(CiphertextProcessorError::CantProcessMessageFromSelf);
         }
 
@@ -228,17 +240,25 @@ where
         };
 
         // Decrypt the content of the message using the grabbed key
-        let key = self.0.epoch_secrets_mut().secret_tree.get_message_key(
-            sender_data.sender,
-            key_type,
-            Some(sender_data.generation),
-        )?;
+        let key = self
+            .group_state
+            .epoch_secrets_mut()
+            .secret_tree
+            .message_key_generation(sender_data.sender, key_type, sender_data.generation)?;
 
-        let decrypted_content = Zeroizing::new(key.decrypt(
-            &ciphertext.ciphertext,
-            &MLSCiphertextContentAAD::from(&ciphertext).tls_serialize_detached()?,
-            &sender_data.reuse_guard,
-        )?);
+        let sender = Sender::Member(*sender_data.sender);
+
+        let decrypted_content = Zeroizing::new(
+            MessageKey::new(key)
+                .decrypt(
+                    &self.crypto_provider,
+                    self.group_state.group_context().cipher_suite,
+                    &ciphertext.ciphertext,
+                    &MLSCiphertextContentAAD::from(&ciphertext).tls_serialize_detached()?,
+                    &sender_data.reuse_guard,
+                )
+                .map_err(|e| CiphertextProcessorError::CryptoProviderError(e.into()))?,
+        );
 
         let ciphertext_content = MLSCiphertextContent::tls_deserialize(&mut &**decrypted_content)?;
 
@@ -248,7 +268,7 @@ where
             content: MLSContent {
                 group_id: ciphertext.group_id.clone(),
                 epoch: ciphertext.epoch,
-                sender: Sender::Member(*sender_data.sender),
+                sender,
                 authenticated_data: ciphertext.authenticated_data,
                 content: ciphertext_content.content,
             },
@@ -272,6 +292,7 @@ mod test {
             message_signature::MLSAuthenticatedContent,
             PaddingMode,
         },
+        provider::crypto::{test_utils::test_crypto_provider, CryptoProvider},
         tree_kem::node::LeafIndex,
     };
 
@@ -285,6 +306,12 @@ mod test {
     struct TestData {
         epoch: PriorEpoch,
         content: MLSAuthenticatedContent,
+    }
+
+    fn test_processor(
+        epoch: &mut PriorEpoch,
+    ) -> CiphertextProcessor<'_, PriorEpoch, impl CryptoProvider> {
+        CiphertextProcessor::new(epoch, test_crypto_provider())
     }
 
     fn test_data(cipher_suite: CipherSuite) -> TestData {
@@ -313,7 +340,7 @@ mod test {
             let mut test_data = test_data(cipher_suite);
             let mut receiver_epoch = test_data.epoch.clone();
 
-            let mut ciphertext_processor = CiphertextProcessor::new(&mut test_data.epoch);
+            let mut ciphertext_processor = test_processor(&mut test_data.epoch);
 
             let ciphertext = ciphertext_processor
                 .seal(test_data.content.clone(), PaddingMode::StepFunction)
@@ -321,7 +348,7 @@ mod test {
 
             receiver_epoch.self_index = LeafIndex::new(1);
 
-            let mut receiver_processor = CiphertextProcessor::new(&mut receiver_epoch);
+            let mut receiver_processor = test_processor(&mut receiver_epoch);
 
             let decrypted = receiver_processor.open(ciphertext).unwrap();
 
@@ -332,7 +359,7 @@ mod test {
     #[test]
     fn test_padding_use() {
         let mut test_data = test_data(TEST_CIPHER_SUITE);
-        let mut ciphertext_processor = CiphertextProcessor::new(&mut test_data.epoch);
+        let mut ciphertext_processor = test_processor(&mut test_data.epoch);
 
         let ciphertext_step = ciphertext_processor
             .seal(test_data.content.clone(), PaddingMode::StepFunction)
@@ -350,7 +377,7 @@ mod test {
         let mut test_data = test_data(TEST_CIPHER_SUITE);
         test_data.content.content.sender = Sender::Member(3);
 
-        let mut ciphertext_processor = CiphertextProcessor::new(&mut test_data.epoch);
+        let mut ciphertext_processor = test_processor(&mut test_data.epoch);
 
         let res = ciphertext_processor.seal(test_data.content, PaddingMode::None);
 
@@ -360,7 +387,8 @@ mod test {
     #[test]
     fn test_cant_process_from_self() {
         let mut test_data = test_data(TEST_CIPHER_SUITE);
-        let mut ciphertext_processor = CiphertextProcessor::new(&mut test_data.epoch);
+
+        let mut ciphertext_processor = test_processor(&mut test_data.epoch);
 
         let ciphertext = ciphertext_processor
             .seal(test_data.content, PaddingMode::None)
@@ -378,8 +406,7 @@ mod test {
     fn test_decryption_error() {
         let mut test_data = test_data(TEST_CIPHER_SUITE);
         let mut receiver_epoch = test_data.epoch.clone();
-
-        let mut ciphertext_processor = CiphertextProcessor::new(&mut test_data.epoch);
+        let mut ciphertext_processor = test_processor(&mut test_data.epoch);
 
         let mut ciphertext = ciphertext_processor
             .seal(test_data.content.clone(), PaddingMode::StepFunction)

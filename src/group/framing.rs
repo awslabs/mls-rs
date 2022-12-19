@@ -221,21 +221,6 @@ impl From<&MLSCiphertext> for MLSCiphertextContentAAD {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct MLSSenderData {
-    pub sender: LeafIndex,
-    pub generation: u32,
-    pub reuse_guard: [u8; 4],
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct MLSSenderDataAAD {
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    pub group_id: Vec<u8>,
-    pub epoch: u64,
-    pub content_type: ContentType,
-}
-
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MLSMessage {

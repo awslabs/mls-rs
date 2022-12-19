@@ -10,6 +10,7 @@ use ferriscrypt::{
         AeadId, Hpke, HpkeError, KdfId, KemId,
     },
     kdf::{hkdf::Hkdf, KdfError},
+    rand::{SecureRng, SecureRngError},
 };
 
 use thiserror::Error;
@@ -30,6 +31,8 @@ pub enum FerriscryptCryptoError {
     KdfError(#[from] KdfError),
     #[error(transparent)]
     HpkeError(#[from] HpkeError),
+    #[error(transparent)]
+    SecureRngError(#[from] SecureRngError),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -154,6 +157,10 @@ impl FerriscryptCryptoProvider {
             .derive(ikm)
             .map(|(sk, pk)| (HpkeSecretKey::from(sk), HpkePublicKey::from(pk)))
             .map_err(Into::into)
+    }
+
+    pub fn random_bytes(&self, out: &mut [u8]) -> Result<(), FerriscryptCryptoError> {
+        SecureRng::fill(out).map_err(Into::into)
     }
 
     #[inline(always)]
@@ -307,6 +314,10 @@ impl CryptoProvider for FerriscryptCryptoProvider {
         ikm: &[u8],
     ) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         self.kem_derive(cipher_suite, ikm)
+    }
+
+    fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error> {
+        self.random_bytes(out)
     }
 }
 

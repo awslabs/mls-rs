@@ -10,7 +10,7 @@ use std::ops::Deref;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroize;
 
-use super::ciphertext_processor::EpochSecretsProvider;
+use super::ciphertext_processor::GroupStateProvider;
 
 #[derive(
     Debug,
@@ -40,7 +40,7 @@ impl PriorEpoch {
     }
 }
 
-impl EpochSecretsProvider for PriorEpoch {
+impl GroupStateProvider for PriorEpoch {
     fn group_context(&self) -> &GroupContext {
         &self.context
     }

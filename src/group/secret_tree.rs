@@ -4,8 +4,6 @@ use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, NodeIndex};
-use ferriscrypt::cipher::aead::{AeadError, AeadNonce, Key};
-use ferriscrypt::cipher::NonceError;
 use serde_with::serde_as;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
@@ -21,10 +19,6 @@ pub enum SecretTreeError {
     TreeMathError(#[from] TreeMathError),
     #[error(transparent)]
     KeyScheduleKdfError(#[from] KeyScheduleKdfError),
-    #[error(transparent)]
-    AeadError(#[from] AeadError),
-    #[error(transparent)]
-    NonceError(#[from] NonceError),
     #[error("requested invalid index")]
     InvalidIndex,
     #[error("attempted to consume an already consumed node")]
@@ -213,18 +207,21 @@ pub struct SecretRatchets {
 }
 
 impl SecretRatchets {
-    pub fn get_message_key(
+    pub fn message_key_generation(
         &mut self,
         generation: u32,
         key_type: KeyType,
-    ) -> Result<MessageKey, SecretTreeError> {
+    ) -> Result<MessageKeyData, SecretTreeError> {
         match key_type {
             KeyType::Handshake => self.handshake.get_message_key(generation),
             KeyType::Application => self.application.get_message_key(generation),
         }
     }
 
-    pub fn next_message_key(&mut self, key_type: KeyType) -> Result<MessageKey, SecretTreeError> {
+    pub fn next_message_key(
+        &mut self,
+        key_type: KeyType,
+    ) -> Result<(MessageKeyData, u32), SecretTreeError> {
         match key_type {
             KeyType::Handshake => self.handshake.next_message_key(),
             KeyType::Application => self.application.next_message_key(),
@@ -291,7 +288,7 @@ impl SecretTree {
     }
 
     // Start at the root node and work your way down consuming any intermediates needed
-    fn get_leaf_secret_ratchets(
+    fn leaf_secret_ratchets(
         &mut self,
         leaf_index: LeafIndex,
     ) -> Result<SecretRatchets, SecretTreeError> {
@@ -331,80 +328,35 @@ impl SecretTree {
         })
     }
 
-    pub fn get_message_key(
+    pub fn next_message_key(
         &mut self,
         leaf_index: LeafIndex,
         key_type: KeyType,
-        generation: Option<u32>,
-    ) -> Result<MessageKey, SecretTreeError> {
-        let mut ratchet = self.get_leaf_secret_ratchets(leaf_index)?;
-
-        let message_key = if let Some(generation) = generation {
-            ratchet.get_message_key(generation, key_type)?
-        } else {
-            ratchet.next_message_key(key_type)?
-        };
-
-        self.write_node(leaf_index.into(), Some(SecretTreeNode::Ratchet(ratchet)))?;
-
-        Ok(message_key)
+    ) -> Result<(MessageKeyData, u32), SecretTreeError> {
+        self.message_key(leaf_index, |ratchet| ratchet.next_message_key(key_type))
     }
-}
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct MessageKey {
-    nonce: AeadNonce,
-    key: Key,
-    pub generation: u32,
-}
-
-impl MessageKey {
-    fn from_derived(
-        cipher_suite: CipherSuite,
-        derived_key: DerivedKey,
+    pub fn message_key_generation(
+        &mut self,
+        leaf_index: LeafIndex,
+        key_type: KeyType,
         generation: u32,
-    ) -> Result<MessageKey, SecretTreeError> {
-        let nonce = AeadNonce::try_from(derived_key.nonce.clone())?;
-        let key = Key::new(cipher_suite.aead_type(), derived_key.key.clone())?;
-
-        Ok(MessageKey {
-            nonce,
-            key,
-            generation,
+    ) -> Result<MessageKeyData, SecretTreeError> {
+        self.message_key(leaf_index, |ratchet| {
+            ratchet.message_key_generation(generation, key_type)
         })
     }
 
-    fn reuse_safe_nonce(&self, reuse_guard: &[u8; 4]) -> AeadNonce {
-        let mut data: Vec<u8> = self
-            .nonce
-            .iter()
-            .zip(reuse_guard.iter())
-            .map(|(nonce_byte, &guard_byte)| nonce_byte ^ guard_byte)
-            .collect();
+    fn message_key<T, F>(&mut self, leaf_index: LeafIndex, mut op: F) -> Result<T, SecretTreeError>
+    where
+        F: FnMut(&mut SecretRatchets) -> Result<T, SecretTreeError>,
+    {
+        let mut ratchet = self.leaf_secret_ratchets(leaf_index)?;
+        let res = op(&mut ratchet)?;
 
-        data.append(&mut self.nonce[reuse_guard.len()..self.nonce.len()].to_vec());
+        self.write_node(leaf_index.into(), Some(SecretTreeNode::Ratchet(ratchet)))?;
 
-        AeadNonce::new(&data).unwrap()
-    }
-
-    pub fn encrypt(
-        &self,
-        data: &[u8],
-        aad: &[u8],
-        reuse_guard: &[u8; 4],
-    ) -> Result<Vec<u8>, AeadError> {
-        self.key
-            .encrypt_to_vec(data, Some(aad), self.reuse_safe_nonce(reuse_guard))
-    }
-
-    pub fn decrypt(
-        &self,
-        data: &[u8],
-        aad: &[u8],
-        reuse_guard: &[u8; 4],
-    ) -> Result<Vec<u8>, AeadError> {
-        self.key
-            .decrypt_from_vec(data, Some(aad), self.reuse_safe_nonce(reuse_guard))
+        Ok(res)
     }
 }
 
@@ -428,6 +380,7 @@ impl ToString for KeyType {
     Debug,
     Clone,
     PartialEq,
+    Eq,
     TlsSize,
     TlsSerialize,
     TlsDeserialize,
@@ -436,13 +389,13 @@ impl ToString for KeyType {
     serde::Serialize,
 )]
 #[zeroize(drop)]
-struct DerivedKey {
+pub struct MessageKeyData {
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
-    nonce: Vec<u8>,
+    pub nonce: Vec<u8>,
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
-    key: Vec<u8>,
+    pub key: Vec<u8>,
 }
 
 #[serde_as]
@@ -461,13 +414,13 @@ pub struct SecretKeyRatchet {
     secret: TreeSecret,
     #[tls_codec(with = "crate::tls::DefMap")]
     #[serde_as(as = "Vec<(_,_)>")]
-    history: HashMap<u32, DerivedKey>,
+    history: HashMap<u32, MessageKeyData>,
     node_index: NodeIndex,
     generation: u32,
 }
 
 impl SecretKeyRatchet {
-    pub fn new(
+    fn new(
         cipher_suite: CipherSuite,
         leaf: LeafIndex,
         secret: &[u8],
@@ -489,12 +442,11 @@ impl SecretKeyRatchet {
         })
     }
 
-    pub fn get_message_key(&mut self, generation: u32) -> Result<MessageKey, SecretTreeError> {
+    fn get_message_key(&mut self, generation: u32) -> Result<MessageKeyData, SecretTreeError> {
         if generation < self.generation {
             self.history
                 .remove_entry(&generation)
-                .map(|(gen, dk)| MessageKey::from_derived(self.cipher_suite, dk, gen))
-                .transpose()?
+                .map(|(_, mk)| mk)
                 .ok_or(SecretTreeError::KeyMissing(generation))
         } else {
             let max_generation_allowed = self.generation + MAX_RATCHET_BACK_HISTORY;
@@ -507,21 +459,15 @@ impl SecretKeyRatchet {
             }
 
             while self.generation < generation {
-                let (generation, key) = self.ratchet()?;
-                self.history.insert(generation, key);
+                let (key_data, generation) = self.next_message_key()?;
+                self.history.insert(generation, key_data);
             }
 
-            self.next_message_key()
+            self.next_message_key().map(|r| r.0)
         }
     }
 
-    pub fn next_message_key(&mut self) -> Result<MessageKey, SecretTreeError> {
-        self.ratchet().map(|(generation, derived_key)| {
-            MessageKey::from_derived(self.cipher_suite, derived_key, generation)
-        })?
-    }
-
-    fn ratchet(&mut self) -> Result<(u32, DerivedKey), SecretTreeError> {
+    fn next_message_key(&mut self) -> Result<(MessageKeyData, u32), SecretTreeError> {
         let kdf = KeyScheduleKdf::new(self.cipher_suite.kdf_type());
 
         let generation = self.generation;
@@ -542,7 +488,7 @@ impl SecretKeyRatchet {
             self.cipher_suite.aead_type().nonce_size(),
         )?;
 
-        let key = DerivedKey { nonce, key };
+        let key = MessageKeyData { nonce, key };
 
         self.secret = TreeSecret::from(kdf.derive_tree_secret(
             &self.secret,
@@ -554,7 +500,7 @@ impl SecretKeyRatchet {
 
         self.generation = generation + 1;
 
-        Ok((generation, key))
+        Ok((key, generation))
     }
 }
 
@@ -594,7 +540,7 @@ mod tests {
 
             let mut secrets: Vec<SecretRatchets> = (0..16)
                 .into_iter()
-                .map(|i| test_tree.get_leaf_secret_ratchets(LeafIndex(i)).unwrap())
+                .map(|i| test_tree.leaf_secret_ratchets(LeafIndex(i)).unwrap())
                 .collect();
 
             // Verify the tree is now completely empty
@@ -633,12 +579,12 @@ mod tests {
             )
             .unwrap();
 
-            let app_keys: Vec<MessageKey> = vec![
+            let app_keys: Vec<(MessageKeyData, u32)> = vec![
                 app_ratchet.next_message_key().unwrap(),
                 app_ratchet.next_message_key().unwrap(),
             ];
 
-            let handshake_keys: Vec<MessageKey> = vec![
+            let handshake_keys: Vec<(MessageKeyData, u32)> = vec![
                 handshake_ratchet.next_message_key().unwrap(),
                 handshake_ratchet.next_message_key().unwrap(),
             ];
@@ -678,8 +624,7 @@ mod tests {
                 .get_message_key(ratchet_clone.generation - 1)
                 .unwrap();
 
-            assert_eq!(second_key.generation, ratchet_clone.generation - 1);
-            assert_eq!(clone_2, second_key)
+            assert_eq!(clone_2.0, second_key)
         }
     }
 
@@ -716,7 +661,7 @@ mod tests {
         // Ask for all the keys in order from the original ratchet
         let ordered_keys = (0..=MAX_RATCHET_BACK_HISTORY)
             .map(|i| ratchet.get_message_key(i).unwrap())
-            .collect::<Vec<MessageKey>>();
+            .collect::<Vec<MessageKeyData>>();
 
         // Ask for a key at index MAX_RATCHET_BACK_HISTORY in the clone
         let last_key = ratchet_clone
@@ -728,7 +673,7 @@ mod tests {
         // Get all the other keys
         let back_history_keys = (0..MAX_RATCHET_BACK_HISTORY - 1)
             .map(|i| ratchet_clone.get_message_key(i).unwrap())
-            .collect::<Vec<MessageKey>>();
+            .collect::<Vec<MessageKeyData>>();
 
         assert_eq!(
             back_history_keys,
@@ -758,28 +703,9 @@ mod tests {
     }
 
     #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-    struct KeyData {
-        #[serde(with = "hex::serde")]
-        nonce: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        key: Vec<u8>,
-        generation: u32,
-    }
-
-    impl From<MessageKey> for KeyData {
-        fn from(key: MessageKey) -> Self {
-            KeyData {
-                nonce: key.nonce.to_vec(),
-                key: key.key.as_ref().to_vec(),
-                generation: key.generation,
-            }
-        }
-    }
-
-    #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
     struct Ratchet {
-        application_keys: Vec<KeyData>,
-        handshake_keys: Vec<KeyData>,
+        application_keys: Vec<(MessageKeyData, u32)>,
+        handshake_keys: Vec<(MessageKeyData, u32)>,
     }
 
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -793,16 +719,14 @@ mod tests {
     fn get_ratchet_data(secret_tree: &mut SecretTree) -> Vec<Ratchet> {
         (0..16)
             .map(|index| {
-                let mut ratchets = secret_tree
-                    .get_leaf_secret_ratchets(LeafIndex(index))
-                    .unwrap();
+                let mut ratchets = secret_tree.leaf_secret_ratchets(LeafIndex(index)).unwrap();
 
                 let application_keys = (0..20)
-                    .map(|_| KeyData::from(ratchets.application.next_message_key().unwrap()))
+                    .map(|_| ratchets.handshake.next_message_key().unwrap())
                     .collect();
 
                 let handshake_keys = (0..20)
-                    .map(|_| KeyData::from(ratchets.handshake.next_message_key().unwrap()))
+                    .map(|_| ratchets.handshake.next_message_key().unwrap())
                     .collect();
 
                 Ratchet {
