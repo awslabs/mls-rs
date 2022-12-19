@@ -21,7 +21,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     IntoPrimitive,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[repr(u8)]
+#[repr(u16)]
 pub enum ProtocolVersion {
     #[cfg(test)]
     Reserved = 0,

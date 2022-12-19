@@ -315,7 +315,7 @@ impl MLSMessage {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[repr(u8)]
+#[repr(u16)]
 pub(crate) enum MLSMessagePayload {
     #[tls_codec(discriminant = 1)]
     Plain(MLSPlaintext),
@@ -334,7 +334,7 @@ impl From<MLSPlaintext> for MLSMessagePayload {
 #[derive(
     Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, TlsDeserialize, TlsSerialize, TlsSize,
 )]
-#[repr(u8)]
+#[repr(u16)]
 pub enum WireFormat {
     Plain = 1,
     Cipher,
