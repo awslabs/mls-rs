@@ -6,7 +6,7 @@ env:
   WASM_BINDGEN_TEST_TIMEOUT: 1000
 jobs:
   BuildAndTest:
-    runs-on: [ubuntu-latest] 
+    runs-on: [ubuntu-latest]
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@stable
@@ -16,5 +16,7 @@ jobs:
         ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
     - uses: nanasess/setup-chromedriver@v1
     - uses: jetli/wasm-pack-action@v0.3.0
+      with:
+        version: 'v0.10.3'
     - name: Test (WASM + RustCrypto)
       run: wasm-pack test --headless --chrome --release -- --no-default-features --features="browser"
