@@ -19,7 +19,7 @@ use serde_with::serde_as;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec::Serialize;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use tls_codec_derive::{TlsSerialize, TlsSize};
 use zeroize::{Zeroize, Zeroizing};
 
 use super::epoch::{EpochSecrets, SenderDataSecret};
@@ -330,25 +330,14 @@ const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
     Ord,
     PartialEq,
     PartialOrd,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
     serde::Deserialize,
     serde::Serialize,
     Zeroize,
 )]
 #[zeroize(drop)]
-pub struct InitSecret(
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    #[serde_as(as = "VecAsBase64")]
-    Vec<u8>,
-);
+pub struct InitSecret(#[serde_as(as = "VecAsBase64")] Vec<u8>);
 
 impl InitSecret {
-    pub fn new(init_secret: Vec<u8>) -> Self {
-        InitSecret(init_secret)
-    }
-
     pub fn random(kdf: &Hkdf) -> Result<Self, SecureRngError> {
         SecureRng::gen(kdf.extract_size()).map(InitSecret)
     }
@@ -478,6 +467,12 @@ pub(crate) mod test_utils {
             external_secret: vec![0u8; key_size],
             membership_key: vec![0u8; key_size],
             init_secret: InitSecret::new(vec![0u8; key_size]),
+        }
+    }
+
+    impl InitSecret {
+        pub fn new(init_secret: Vec<u8>) -> Self {
+            InitSecret(init_secret)
         }
     }
 }

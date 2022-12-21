@@ -1,23 +1,13 @@
+use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 use super::*;
 
 #[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-    Eq,
-    PartialEq,
-)]
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct TreeKemPrivate {
     pub self_index: LeafIndex,
-    #[tls_codec(with = "crate::tls::Map::<crate::tls::DefaultSer, crate::tls::ByteVec>")]
     #[serde_as(as = "Vec<(_,_)>")]
     pub secret_keys: HashMap<NodeIndex, HpkeSecretKey>,
 }

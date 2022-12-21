@@ -4,11 +4,11 @@ use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, NodeIndex};
+use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroize;
 
 pub(crate) const MAX_RATCHET_BACK_HISTORY: u32 = 1024;
@@ -31,16 +31,7 @@ pub enum SecretTreeError {
     InvalidFutureGeneration(u32, u32),
 }
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[repr(u8)]
 enum SecretTreeNode {
     Secret(TreeSecret),
@@ -68,21 +59,8 @@ impl SecretTreeNode {
 #[serde_as]
 #[derive(Zeroize)]
 #[zeroize(drop)]
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-)]
-struct TreeSecret(
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    #[serde_as(as = "VecAsBase64")]
-    Vec<u8>,
-);
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+struct TreeSecret(#[serde_as(as = "VecAsBase64")] Vec<u8>);
 
 impl Deref for TreeSecret {
     type Target = Vec<u8>;
@@ -110,20 +88,8 @@ impl From<Vec<u8>> for TreeSecret {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-)]
-struct TreeSecretsVec(
-    #[tls_codec(with = "crate::tls::Vector::<crate::tls::Optional<crate::tls::DefaultSer>>")]
-    Vec<Option<SecretTreeNode>>,
-);
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+struct TreeSecretsVec(Vec<Option<SecretTreeNode>>);
 
 impl Deref for TreeSecretsVec {
     type Target = Vec<Option<SecretTreeNode>>;
@@ -159,16 +125,7 @@ impl TreeSecretsVec {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct SecretTree {
     cipher_suite: CipherSuite,
     known_secrets: TreeSecretsVec,
@@ -185,22 +142,7 @@ impl SecretTree {
     }
 }
 
-#[derive(TlsDeserialize, TlsSerialize, TlsSize)]
-struct TreeContext {
-    node: u32,
-    generation: u32,
-}
-
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct SecretRatchets {
     pub application: SecretKeyRatchet,
     pub handshake: SecretKeyRatchet,
@@ -376,43 +318,20 @@ impl ToString for KeyType {
 }
 
 #[serde_as]
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    TlsSize,
-    TlsSerialize,
-    TlsDeserialize,
-    Zeroize,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Zeroize, serde::Deserialize, serde::Serialize)]
 #[zeroize(drop)]
 pub struct MessageKeyData {
-    #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
     pub nonce: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
     pub key: Vec<u8>,
 }
 
 #[serde_as]
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct SecretKeyRatchet {
     cipher_suite: CipherSuite,
     secret: TreeSecret,
-    #[tls_codec(with = "crate::tls::DefMap")]
     #[serde_as(as = "Vec<(_,_)>")]
     history: HashMap<u32, MessageKeyData>,
     node_index: NodeIndex,

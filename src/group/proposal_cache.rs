@@ -125,25 +125,10 @@ impl ProposalSetEffects {
     }
 }
 
-#[derive(
-    Debug,
-    Clone,
-    TlsSerialize,
-    TlsSize,
-    TlsDeserialize,
-    PartialEq,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct CachedProposal {
     proposal: Proposal,
     sender: Sender,
-}
-
-impl CachedProposal {
-    pub fn new(proposal: Proposal, sender: Sender) -> Self {
-        Self { proposal, sender }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -406,6 +391,13 @@ fn rejected_proposals(
         .filter(|(_, p)| p.sender == *sender)
         .map(|(r, p)| (r, p.proposal))
         .collect()
+}
+
+#[cfg(test)]
+impl CachedProposal {
+    pub fn new(proposal: Proposal, sender: Sender) -> Self {
+        Self { proposal, sender }
+    }
 }
 
 #[cfg(test)]

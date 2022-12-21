@@ -34,16 +34,7 @@ pub(crate) struct Commit {
     pub path: Option<UpdatePath>,
 }
 
-#[derive(
-    Clone,
-    PartialEq,
-    Debug,
-    serde::Serialize,
-    serde::Deserialize,
-    TlsSerialize,
-    TlsDeserialize,
-    TlsSize,
-)]
+#[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct CommitGeneration {
     pub content: MLSAuthenticatedContent,
     pub pending_secrets: Option<(TreeKemPrivate, PathSecret)>,

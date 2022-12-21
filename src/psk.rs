@@ -166,24 +166,9 @@ pub enum ResumptionPSKUsage {
 }
 
 #[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    Zeroize,
-    serde::Serialize,
-    serde::Deserialize,
-    TlsSerialize,
-    TlsDeserialize,
-    TlsSize,
-)]
+#[derive(Clone, Debug, PartialEq, Eq, Zeroize, serde::Serialize, serde::Deserialize)]
 #[zeroize(drop)]
-pub struct Psk(
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    #[serde_as(as = "VecAsBase64")]
-    Vec<u8>,
-);
+pub struct Psk(#[serde_as(as = "VecAsBase64")] Vec<u8>);
 
 impl From<Vec<u8>> for Psk {
     fn from(bytes: Vec<u8>) -> Self {

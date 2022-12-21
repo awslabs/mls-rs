@@ -4,7 +4,7 @@ use crate::{
 
 use super::reuse_guard::ReuseGuard;
 
-#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct MessageKey(MessageKeyData);
 
 impl MessageKey {

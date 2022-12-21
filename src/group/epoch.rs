@@ -7,26 +7,15 @@ use crate::tree_kem::node::LeafIndex;
 use serde_with::serde_as;
 use std::collections::HashMap;
 use std::ops::Deref;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroize;
 
 use super::ciphertext_processor::GroupStateProvider;
 
-#[derive(
-    Debug,
-    Clone,
-    TlsSerialize,
-    TlsSize,
-    TlsDeserialize,
-    serde::Serialize,
-    serde::Deserialize,
-    PartialEq,
-)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct PriorEpoch {
     pub(crate) context: GroupContext,
     pub(crate) self_index: LeafIndex,
     pub(crate) secrets: EpochSecrets,
-    #[tls_codec(with = "crate::tls::DefMap")]
     pub(crate) signature_public_keys: HashMap<LeafIndex, SignaturePublicKey>,
 }
 
@@ -58,16 +47,7 @@ impl GroupStateProvider for PriorEpoch {
     }
 }
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    serde::Serialize,
-    serde::Deserialize,
-    TlsSerialize,
-    TlsSize,
-    TlsDeserialize,
-)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EpochSecrets {
     pub(crate) resumption_secret: Psk,
     pub(crate) sender_data_secret: SenderDataSecret,
@@ -75,23 +55,9 @@ pub(crate) struct EpochSecrets {
 }
 
 #[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Zeroize,
-    serde::Serialize,
-    serde::Deserialize,
-    TlsSerialize,
-    TlsSize,
-    TlsDeserialize,
-)]
+#[derive(Clone, Debug, PartialEq, Zeroize, serde::Serialize, serde::Deserialize)]
 #[zeroize(drop)]
-pub(crate) struct SenderDataSecret(
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    #[serde_as(as = "VecAsBase64")]
-    Vec<u8>,
-);
+pub(crate) struct SenderDataSecret(#[serde_as(as = "VecAsBase64")] Vec<u8>);
 
 impl Deref for SenderDataSecret {
     type Target = Vec<u8>;
