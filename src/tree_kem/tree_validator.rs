@@ -1,3 +1,6 @@
+use std::collections::{HashMap, HashSet};
+
+use crate::tree_kem::math as tree_math;
 use crate::{
     cipher_suite::CipherSuite,
     extension::RequiredCapabilitiesExt,
@@ -9,16 +12,22 @@ use crate::{
 };
 use thiserror::Error;
 
+use super::node::{LeafIndex, NodeIndex, NodeVecError};
+
 #[derive(Debug, Error)]
 pub enum TreeValidationError {
     #[error(transparent)]
     RatchetTreeError(#[from] RatchetTreeError),
+    #[error(transparent)]
+    NodeVecError(#[from] NodeVecError),
     #[error(transparent)]
     LeafNodeValidationError(#[from] LeafNodeValidationError),
     #[error("tree hash mismatch, expected: {0} found: {1}")]
     TreeHashMismatch(String, String),
     #[error("invalid node parent hash found")]
     ParentHashMismatch,
+    #[error("unexpected pattern of unmerged leaves")]
+    UnmergedLeavesMismatch,
 }
 
 pub(crate) struct TreeValidator<'a, C>
@@ -56,6 +65,7 @@ impl<'a, C: IdentityProvider> TreeValidator<'a, C> {
                     .map_err(|_| TreeValidationError::ParentHashMismatch),
             )
             .and(self.validate_leaves(tree))
+            .and(validate_unmerged(tree))
     }
 
     fn validate_tree_hash(&self, tree: &mut TreeKemPublic) -> Result<(), TreeValidationError> {
@@ -81,6 +91,43 @@ impl<'a, C: IdentityProvider> TreeValidator<'a, C> {
     }
 }
 
+fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
+    let mut unmerged_sets: HashMap<u32, HashSet<LeafIndex>> = tree
+        .nodes
+        .non_empty_parents()
+        .map(|(i, n)| (i, HashSet::from_iter(n.unmerged_leaves.iter().cloned())))
+        .collect();
+
+    // For each leaf L, we search for the longest prefix P[1], P[2], ..., P[k] of the direct path of L
+    // such that for each i=1..k, either L is in the unmerged leaves of P[i], or P[i] is blank. We will
+    // then check that L is unmerged at each P[1], ..., P[k] and no other node.
+    for (index, _) in tree.nodes.non_empty_leaves() {
+        let mut n = NodeIndex::from(index);
+
+        while let Ok(parent) = tree_math::parent(n, tree.total_leaf_count()) {
+            if tree.nodes.is_blank(parent)? {
+                n = parent;
+                continue;
+            }
+
+            let parent_node = tree.nodes.borrow_as_parent(parent)?;
+
+            if parent_node.unmerged_leaves.contains(&index) {
+                unmerged_sets.get_mut(&parent).unwrap().remove(&index);
+                n = parent;
+            } else {
+                break;
+            }
+        }
+    }
+
+    unmerged_sets
+        .values()
+        .all(HashSet::is_empty)
+        .then_some(())
+        .ok_or(TreeValidationError::UnmergedLeavesMismatch)
+}
+
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
@@ -92,9 +139,9 @@ mod tests {
         provider::identity::BasicIdentityProvider,
         tree_kem::{
             kem::TreeKem,
-            leaf_node::test_utils::{default_properties, get_basic_test_node_sig_key},
+            leaf_node::test_utils::{default_properties, get_basic_test_node},
             node::{LeafIndex, Node, Parent},
-            parent_hash::ParentHash,
+            parent_hash::{test_utils::get_test_tree_fig_12, ParentHash},
             test_utils::get_test_tree,
         },
     };
@@ -118,22 +165,22 @@ mod tests {
     fn get_valid_tree(cipher_suite: CipherSuite) -> TreeKemPublic {
         let mut test_tree = get_test_tree(cipher_suite);
 
-        let (leaf1, _, leaf1_signer) = get_basic_test_node_sig_key(cipher_suite, "leaf1");
+        let leaf1 = get_basic_test_node(cipher_suite, "leaf1");
+        let leaf2 = get_basic_test_node(cipher_suite, "leaf2");
 
         test_tree
             .public
-            .add_leaves(vec![leaf1], BasicIdentityProvider)
+            .add_leaves(vec![leaf1, leaf2], BasicIdentityProvider)
             .unwrap();
 
         test_tree.public.nodes[1] = Some(Node::Parent(test_parent_node(cipher_suite)));
-
-        let signers = [&test_tree.creator_signing_key, &leaf1_signer];
+        test_tree.public.nodes[3] = Some(Node::Parent(test_parent_node(cipher_suite)));
 
         TreeKem::new(&mut test_tree.public, &mut test_tree.private)
             .encap(
                 &mut get_test_group_context(42, cipher_suite),
-                &[LeafIndex(1)],
-                signers[0],
+                &[LeafIndex(1), LeafIndex(2)],
+                &test_tree.creator_signing_key,
                 default_properties(),
                 None,
                 BasicIdentityProvider,
@@ -236,5 +283,50 @@ mod tests {
                 Err(TreeValidationError::LeafNodeValidationError(_))
             );
         }
+    }
+
+    #[test]
+    fn verify_unmerged_with_correct_tree() {
+        let tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128);
+        validate_unmerged(&tree).unwrap();
+    }
+
+    #[test]
+    fn verify_unmerged_with_blank_leaf() {
+        let mut tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128);
+
+        // Blank leaf D unmerged at nodes 3, 7
+        tree.nodes.blank_node(6).unwrap();
+
+        assert_matches!(
+            validate_unmerged(&tree),
+            Err(TreeValidationError::UnmergedLeavesMismatch)
+        );
+    }
+
+    #[test]
+    fn verify_unmerged_with_broken_path() {
+        let mut tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128);
+
+        // Make D with direct path [3, 7] unmerged at 7 but not 3
+        tree.nodes.borrow_as_parent_mut(3).unwrap().unmerged_leaves = vec![];
+
+        assert_matches!(
+            validate_unmerged(&tree),
+            Err(TreeValidationError::UnmergedLeavesMismatch)
+        );
+    }
+
+    #[test]
+    fn verify_unmerged_with_leaf_outside_tree() {
+        let mut tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128);
+
+        // Add leaf E from the right subtree of the root to unmerged leaves of node 1 on the left
+        tree.nodes.borrow_as_parent_mut(1).unwrap().unmerged_leaves = vec![LeafIndex(4)];
+
+        assert_matches!(
+            validate_unmerged(&tree),
+            Err(TreeValidationError::UnmergedLeavesMismatch)
+        );
     }
 }
