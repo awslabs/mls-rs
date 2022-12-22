@@ -115,9 +115,15 @@ where
             .map_err(|e| ClientError::KeychainError(e.into()))?
             .ok_or(ClientError::SignerNotFound)?;
 
+        let cipher_suite_provider = self
+            .config
+            .crypto_provider()
+            .cipher_suite_provider(cipher_suite)
+            .ok_or_else(|| ClientError::UnsupportedCipherSuite(cipher_suite.into()))?;
+
         let key_package_generator = KeyPackageGenerator {
             protocol_version,
-            cipher_suite,
+            cipher_suite_provider: &cipher_suite_provider,
             signing_key: &signer,
             signing_identity: &signing_identity,
             identity_provider: &self.config.identity_provider(),

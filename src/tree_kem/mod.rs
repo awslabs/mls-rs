@@ -3,7 +3,6 @@ use std::fmt::Display;
 use std::ops::Deref;
 
 use ferriscrypt::asym::ec_key::EcKeyError;
-use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::hpke::HpkeError;
 
 use thiserror::Error;
@@ -20,6 +19,7 @@ use crate::cipher_suite::CipherSuite;
 use crate::extension::ExtensionError;
 use crate::group::key_schedule::KeyScheduleKdfError;
 use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError};
+use crate::provider::crypto::{self, HpkePublicKey, HpkeSecretKey};
 use crate::provider::identity::IdentityProvider;
 use crate::tree_kem::parent_hash::ParentHashError;
 use crate::tree_kem::path_secret::PathSecretError;
@@ -113,6 +113,8 @@ pub enum RatchetTreeError {
     UpdateAndRemoveForSameLeaf(LeafIndex),
     #[error("different identity in update for leaf {0:?}")]
     DifferentIdentityInUpdate(LeafIndex),
+    #[error(transparent)]
+    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 fn credential_validation_error<E>(e: E) -> RatchetTreeError
@@ -275,45 +277,6 @@ impl TreeKemPublic {
         )
     }
 
-    pub fn remove_leaves<C>(
-        &mut self,
-        indexes: Vec<LeafIndex>,
-        identity_provider: C,
-    ) -> Result<Vec<(LeafIndex, LeafNode)>, RatchetTreeError>
-    where
-        C: IdentityProvider,
-    {
-        #[derive(Default)]
-        struct Accumulator {
-            removed: Vec<(LeafIndex, LeafNode)>,
-        }
-
-        impl AccumulateBatchResults for Accumulator {
-            type Output = Vec<(LeafIndex, LeafNode)>;
-
-            fn on_remove(
-                &mut self,
-                _: usize,
-                r: Result<(LeafIndex, LeafNode), RatchetTreeError>,
-            ) -> Result<(), RatchetTreeError> {
-                self.removed.push(r?);
-                Ok(())
-            }
-
-            fn finish(self) -> Result<Self::Output, RatchetTreeError> {
-                Ok(self.removed)
-            }
-        }
-
-        self.batch_edit(
-            Accumulator::default(),
-            &[],
-            &indexes,
-            &[],
-            identity_provider,
-        )
-    }
-
     pub fn rekey_leaf<C>(
         &mut self,
         index: LeafIndex,
@@ -342,45 +305,13 @@ impl TreeKemPublic {
         Ok(())
     }
 
-    pub fn update_leaf<C>(
-        &mut self,
-        index: LeafIndex,
-        leaf_node: LeafNode,
-        identity_provider: C,
-    ) -> Result<(), RatchetTreeError>
-    where
-        C: IdentityProvider,
-    {
-        struct Accumulator;
-
-        impl AccumulateBatchResults for Accumulator {
-            type Output = ();
-
-            fn finish(self) -> Result<Self::Output, RatchetTreeError> {
-                Ok(())
-            }
-        }
-
-        self.batch_edit(
-            Accumulator,
-            &[(index, leaf_node)],
-            &[],
-            &[],
-            identity_provider,
-        )
-    }
-
-    pub fn get_leaf_nodes(&self) -> Vec<&LeafNode> {
-        self.nodes.non_empty_leaves().map(|(_, l)| l).collect()
-    }
-
     pub fn non_empty_leaves(&self) -> impl Iterator<Item = (LeafIndex, &LeafNode)> + '_ {
         self.nodes.non_empty_leaves()
     }
 
     fn update_node(
         &mut self,
-        pub_key: HpkePublicKey,
+        pub_key: crypto::HpkePublicKey,
         index: NodeIndex,
     ) -> Result<(), RatchetTreeError> {
         self.nodes
@@ -777,14 +708,86 @@ impl TreeKemPublic {
     ) -> Result<(), RatchetTreeError> {
         self.update_node(pub_key, index)
     }
+
+    pub fn update_leaf<C>(
+        &mut self,
+        index: LeafIndex,
+        leaf_node: LeafNode,
+        identity_provider: C,
+    ) -> Result<(), RatchetTreeError>
+    where
+        C: IdentityProvider,
+    {
+        struct Accumulator;
+
+        impl AccumulateBatchResults for Accumulator {
+            type Output = ();
+
+            fn finish(self) -> Result<Self::Output, RatchetTreeError> {
+                Ok(())
+            }
+        }
+
+        self.batch_edit(
+            Accumulator,
+            &[(index, leaf_node)],
+            &[],
+            &[],
+            identity_provider,
+        )
+    }
+
+    pub fn remove_leaves<C>(
+        &mut self,
+        indexes: Vec<LeafIndex>,
+        identity_provider: C,
+    ) -> Result<Vec<(LeafIndex, LeafNode)>, RatchetTreeError>
+    where
+        C: IdentityProvider,
+    {
+        #[derive(Default)]
+        struct Accumulator {
+            removed: Vec<(LeafIndex, LeafNode)>,
+        }
+
+        impl AccumulateBatchResults for Accumulator {
+            type Output = Vec<(LeafIndex, LeafNode)>;
+
+            fn on_remove(
+                &mut self,
+                _: usize,
+                r: Result<(LeafIndex, LeafNode), RatchetTreeError>,
+            ) -> Result<(), RatchetTreeError> {
+                self.removed.push(r?);
+                Ok(())
+            }
+
+            fn finish(self) -> Result<Self::Output, RatchetTreeError> {
+                Ok(self.removed)
+            }
+        }
+
+        self.batch_edit(
+            Accumulator::default(),
+            &[],
+            &indexes,
+            &[],
+            identity_provider,
+        )
+    }
+
+    pub fn get_leaf_nodes(&self) -> Vec<&LeafNode> {
+        self.nodes.non_empty_leaves().map(|(_, l)| l).collect()
+    }
 }
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use ferriscrypt::{asym::ec_key::SecretKey, hpke::kem::HpkeSecretKey};
+    use ferriscrypt::asym::ec_key::SecretKey;
 
     use crate::{
-        cipher_suite::CipherSuite, provider::identity::BasicIdentityProvider,
+        cipher_suite::CipherSuite,
+        provider::{crypto::HpkeSecretKey, identity::BasicIdentityProvider},
         tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key,
     };
 

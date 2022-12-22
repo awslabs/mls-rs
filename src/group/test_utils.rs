@@ -1,4 +1,4 @@
-use ferriscrypt::asym::ec_key::{self, SecretKey};
+use ferriscrypt::asym::ec_key::SecretKey;
 
 use super::*;
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
     extension::RequiredCapabilitiesExt,
     identity::test_utils::get_test_signing_identity,
     key_package::{KeyPackageGeneration, KeyPackageGenerator},
-    provider::identity::BasicIdentityProvider,
+    provider::{crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider},
     tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
 };
 
@@ -170,7 +170,7 @@ pub(crate) fn test_member(
 
     let key_package_generator = KeyPackageGenerator {
         protocol_version,
-        cipher_suite,
+        cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
         signing_identity: &signing_identity,
         signing_key: &signing_key,
         identity_provider: &BasicIdentityProvider::new(),
@@ -296,10 +296,7 @@ pub(crate) fn process_commit(groups: &mut [TestGroup], commit: MLSMessage, exclu
 }
 
 pub(crate) fn get_test_25519_key(key_byte: u8) -> HpkePublicKey {
-    ec_key::PublicKey::from_uncompressed_bytes(&[key_byte; 32], ec_key::Curve::Ed25519)
-        .unwrap()
-        .try_into()
-        .unwrap()
+    vec![key_byte; 32].into()
 }
 
 pub(crate) fn get_test_groups_with_features(

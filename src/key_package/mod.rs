@@ -12,7 +12,6 @@ use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
 use crate::time::MlsTime;
 use crate::tree_kem::leaf_node::LeafNode;
-use ferriscrypt::hpke::kem::HpkeSecretKey;
 use ferriscrypt::kdf::KdfError;
 use serde_with::serde_as;
 use std::ops::Deref;
@@ -165,7 +164,10 @@ pub(crate) mod test_utils {
     use super::*;
     use crate::{
         identity::test_utils::get_test_signing_identity,
-        provider::identity::BasicIdentityProvider,
+        provider::{
+            crypto::{test_utils::test_cipher_suite_provider, FerriscryptCipherSuite},
+            identity::BasicIdentityProvider,
+        },
         tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
     };
 
@@ -177,7 +179,7 @@ pub(crate) mod test_utils {
     ) -> KeyPackage
     where
         F: FnOnce(
-            &mut KeyPackageGenerator<SecretKey, BasicIdentityProvider>,
+            &mut KeyPackageGenerator<SecretKey, BasicIdentityProvider, FerriscryptCipherSuite>,
         ) -> KeyPackageGeneration,
     {
         let (signing_identity, secret_key) =
@@ -185,7 +187,7 @@ pub(crate) mod test_utils {
 
         let mut generator = KeyPackageGenerator {
             protocol_version,
-            cipher_suite,
+            cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
             signing_identity: &signing_identity,
             signing_key: &secret_key,
             identity_provider: &BasicIdentityProvider::new(),

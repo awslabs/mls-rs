@@ -19,7 +19,7 @@ pub struct HpkeCiphertext {
     ciphertext: Vec<u8>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize, Hash)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct HpkePublicKey(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
@@ -35,10 +35,17 @@ impl AsRef<[u8]> for HpkePublicKey {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize, Zeroize)]
-#[cfg_attr(
-    any(test, feature = "benchmark"),
-    derive(serde::Deserialize, serde::Serialize)
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    Zeroize,
+    serde::Serialize,
+    serde::Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct HpkeSecretKey(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
@@ -108,7 +115,7 @@ impl Deref for SignatureSecretKey {
 }
 
 pub trait CryptoProvider {
-    type CipherSuiteProvider: CipherSuiteProvider + Clone;
+    type CipherSuiteProvider: CipherSuiteProvider + Clone + Send + Sync;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
 
@@ -164,6 +171,8 @@ pub trait CipherSuiteProvider {
 
     fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error>;
 
+    fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error>;
+
     fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error>;
 
     fn random_bytes_vec(&self, count: usize) -> Result<Vec<u8>, Self::Error> {
@@ -183,13 +192,13 @@ pub trait CipherSuiteProvider {
     ) -> Result<(), Self::Error>;
 }
 
-#[cfg(test)]
-pub(crate) mod test_utils {
+#[cfg(any(test, feature = "benchmark"))]
+pub mod test_utils {
     use crate::cipher_suite::CipherSuite;
 
     use super::{CryptoProvider, FerriscryptCipherSuite, FerriscryptCryptoProvider};
 
-    pub(crate) fn test_cipher_suite_provider(cipher_suite: CipherSuite) -> FerriscryptCipherSuite {
+    pub fn test_cipher_suite_provider(cipher_suite: CipherSuite) -> FerriscryptCipherSuite {
         FerriscryptCryptoProvider::default()
             .cipher_suite_provider(cipher_suite)
             .unwrap()

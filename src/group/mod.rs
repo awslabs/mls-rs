@@ -1,5 +1,4 @@
 use ferriscrypt::hmac::Tag;
-use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use ferriscrypt::kdf::hkdf::Hkdf;
 use ferriscrypt::rand::SecureRng;
 use serde_with::serde_as;
@@ -21,7 +20,9 @@ use crate::extension::{
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
 use crate::protocol_version::ProtocolVersion;
-use crate::provider::crypto::{CipherSuiteProvider, CryptoProvider, HpkeCiphertext};
+use crate::provider::crypto::{
+    CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey,
+};
 use crate::provider::identity::IdentityProvider;
 use crate::provider::keychain::KeychainStorage;
 use crate::provider::psk::{PskStore, PskStoreIdValidator};
@@ -198,7 +199,7 @@ where
             .ok_or(GroupError::SignerNotFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
-            cipher_suite,
+            &cipher_suite_provider,
             config.leaf_properties(),
             signing_identity,
             &signer,
@@ -372,7 +373,7 @@ where
         // If the path_secret value is set in the GroupSecrets object
         if let Some(path_secret) = group_secrets.path_secret {
             private_tree.update_secrets(
-                join_context.group_context.cipher_suite,
+                &cipher_suite_provider,
                 join_context.signer_index,
                 path_secret,
                 &join_context.public_tree,
@@ -509,7 +510,7 @@ where
             .ok_or(GroupError::SignerNotFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
-            join_context.group_context.cipher_suite,
+            &cipher_suite_provider,
             config.leaf_properties(),
             signing_identity,
             &signer,
@@ -901,7 +902,7 @@ where
         };
 
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
-            self.state.cipher_suite(),
+            &self.cipher_suite_provider,
             leaf_properties,
             current_leaf_node.signing_identity.clone(),
             &signer,
@@ -975,8 +976,14 @@ where
 
         let new_signer = self.signer_for_identity(Some(&signing_identity))?;
 
+        let new_cipher_suite = self
+            .config
+            .crypto_provider()
+            .cipher_suite_provider(reinit.cipher_suite)
+            .ok_or_else(|| GroupError::UnsupportedCipherSuite(reinit.cipher_suite.into()))?;
+
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
-            reinit.cipher_suite,
+            &new_cipher_suite,
             config.leaf_properties(),
             signing_identity,
             &new_signer,
@@ -1149,7 +1156,7 @@ where
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
 
         let secret_key = new_leaf_node.update(
-            self.state.cipher_suite(),
+            &self.cipher_suite_provider,
             self.group_id(),
             self.current_member_index(),
             self.config.leaf_properties(),
@@ -1580,6 +1587,7 @@ where
                     .collect::<Vec<LeafIndex>>(),
                 &mut provisional_state.group_context,
                 self.config.identity_provider(),
+                &self.cipher_suite_provider,
             )
             .map(|root_secret| (provisional_private_tree, root_secret))
         }?;
@@ -1595,7 +1603,7 @@ where
         provisional_state: ProvisionalState,
     ) -> Result<(), GroupError> {
         let commit_secret = CommitSecret::from_root_secret(
-            self.state.cipher_suite(),
+            &self.cipher_suite_provider,
             secrets.as_ref().map(|(_, root_secret)| root_secret),
         )?;
 

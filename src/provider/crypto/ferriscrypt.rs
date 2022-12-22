@@ -1,5 +1,5 @@
 use ferriscrypt::{
-    asym::ec_key::{Curve, EcKeyError, PublicKey, SecretKey},
+    asym::ec_key::{generate_keypair, Curve, EcKeyError, PublicKey, SecretKey},
     cipher::{
         aead::{self, Aead, AeadError, AeadNonce},
         NonceError,
@@ -263,6 +263,11 @@ impl FerriscryptCipherSuite {
             .map_err(Into::into)
     }
 
+    fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), FerriscryptCryptoError> {
+        let (pk, sk) = generate_keypair(self.kem.curve())?;
+        Ok((sk.to_bytes()?.into(), pk.to_uncompressed_bytes()?.into()))
+    }
+
     pub fn random_bytes(&self, out: &mut [u8]) -> Result<(), FerriscryptCryptoError> {
         SecureRng::fill(out).map_err(Into::into)
     }
@@ -329,6 +334,10 @@ impl CipherSuiteProvider for FerriscryptCipherSuite {
 
     fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
         self.kem_derive(ikm)
+    }
+
+    fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+        self.kem_generate()
     }
 
     fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error> {

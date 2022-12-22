@@ -1,6 +1,6 @@
 use crate::group::GroupContext;
 use crate::identity::SigningIdentity;
-use crate::provider::crypto::HpkeCiphertext;
+use crate::provider::crypto::{CipherSuiteProvider, HpkeCiphertext};
 use crate::provider::identity::IdentityProvider;
 use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
@@ -46,7 +46,7 @@ impl<'a> TreeKem<'a> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn encap<S, C>(
+    pub fn encap<S, C, P>(
         self,
         context: &mut GroupContext,
         excluding: &[LeafIndex],
@@ -54,16 +54,18 @@ impl<'a> TreeKem<'a> {
         update_leaf_properties: ConfigProperties,
         signing_identity: Option<SigningIdentity>,
         identity_provider: C,
+        cipher_suite_provider: &P,
         #[cfg(test)] commit_modifiers: &CommitModifiers<S>,
     ) -> Result<EncapGeneration, RatchetTreeError>
     where
         S: Signer,
         C: IdentityProvider,
+        P: CipherSuiteProvider + Send + Sync,
     {
         let num_leaves = self.tree_kem_public.nodes.total_leaf_count();
         let self_index = self.private_key.self_index;
         let copath = tree_math::copath(self_index.into(), num_leaves)?;
-        let mut secret_generator = PathSecretGenerator::new(self.tree_kem_public.cipher_suite);
+        let mut secret_generator = PathSecretGenerator::new(cipher_suite_provider);
 
         let path_secrets = copath
             .iter()
@@ -96,7 +98,7 @@ impl<'a> TreeKem<'a> {
             .update_parent_hashes(self_index, None)?;
 
         let secret_key = own_leaf_copy.commit(
-            self.tree_kem_public.cipher_suite,
+            cipher_suite_provider,
             &context.group_id,
             *self_index,
             update_leaf_properties,
@@ -141,7 +143,7 @@ impl<'a> TreeKem<'a> {
             .filter_map(|(copath_index, path_secret)| {
                 path_secret.as_ref().map(|path_secret| {
                     let encrypted_path_secret = encrypt_copath_node_resolution(
-                        self.tree_kem_public,
+                        cipher_suite_provider,
                         path_secret,
                         self.tree_kem_public
                             .nodes
@@ -180,9 +182,7 @@ impl<'a> TreeKem<'a> {
             .rev()
             .cloned()
             .find_map(|secret| secret)
-            .unwrap_or(
-                PathSecretGeneration::random(self.tree_kem_public.cipher_suite)?.path_secret,
-            );
+            .unwrap_or(PathSecretGeneration::random(cipher_suite_provider)?.path_secret);
 
         Ok(EncapGeneration {
             update_path,
@@ -191,16 +191,18 @@ impl<'a> TreeKem<'a> {
         })
     }
 
-    pub fn decap<C>(
+    pub fn decap<IP, CP>(
         self,
         sender_index: LeafIndex,
         update_path: &ValidatedUpdatePath,
         added_leaves: &[LeafIndex],
         context: &mut GroupContext,
-        identity_provider: C,
+        identity_provider: IP,
+        cipher_suite_provider: &CP,
     ) -> Result<PathSecret, RatchetTreeError>
     where
-        C: IdentityProvider,
+        IP: IdentityProvider,
+        CP: CipherSuiteProvider,
     {
         // Exclude newly added leaf indexes
         let excluding = added_leaves
@@ -228,6 +230,7 @@ impl<'a> TreeKem<'a> {
             .find_map(|((direct_path_index, co_path_index), update_path_node)| {
                 if *direct_path_index == lca {
                     decrypt_parent_path_secret(
+                        cipher_suite_provider,
                         self.tree_kem_public,
                         self.private_key,
                         update_path_node,
@@ -244,7 +247,7 @@ impl<'a> TreeKem<'a> {
 
         // Derive the rest of the secrets for the tree and assign to the proper nodes
         let node_secret_gen =
-            PathSecretGenerator::starting_with(self.tree_kem_public.cipher_suite, lca_path_secret);
+            PathSecretGenerator::starting_with(cipher_suite_provider, lca_path_secret);
 
         // Update secrets based on the decrypted path secret in the update
         let root_secret = filtered_direct_path_co_path
@@ -273,25 +276,23 @@ impl<'a> TreeKem<'a> {
     }
 }
 
-fn encrypt_copath_node_resolution(
-    tree_kem_public: &TreeKemPublic,
+fn encrypt_copath_node_resolution<P: CipherSuiteProvider>(
+    cipher_suite_provider: &P,
     path_secret: &PathSecret,
     resolution: Vec<&Node>,
     context: &[u8],
 ) -> Result<Vec<HpkeCiphertext>, RatchetTreeError> {
-    Ok(resolution
+    resolution
         .iter()
         .map(|&copath_node| {
-            tree_kem_public
-                .cipher_suite
-                .hpke()
-                .seal(copath_node.public_key(), context, None, None, path_secret)
-                .map(HpkeCiphertext::from)
+            cipher_suite_provider.hpke_seal(copath_node.public_key(), context, None, path_secret)
         })
-        .collect::<Result<Vec<HpkeCiphertext>, _>>()?)
+        .collect::<Result<Vec<HpkeCiphertext>, _>>()
+        .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
 }
 
-fn decrypt_parent_path_secret(
+fn decrypt_parent_path_secret<P: CipherSuiteProvider>(
+    cipher_suite_provider: &P,
     tree_kem_public: &mut TreeKemPublic,
     private_key: &TreeKemPrivate,
     update_node: &UpdatePathNode,
@@ -309,24 +310,22 @@ fn decrypt_parent_path_secret(
         .ok_or(RatchetTreeError::UpdateErrorNoSecretKey)
         .and_then(|(sk, ct)| {
             // Decrypt the path secret
-            tree_kem_public
-                .cipher_suite
-                .hpke()
-                .open(&ct.clone().into(), sk, context, None, None)
-                .map_err(|_| RatchetTreeError::HPKEDecryptionError)
+            cipher_suite_provider
+                .hpke_open(&ct.clone(), sk, context, None)
+                .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
         })
         .map(PathSecret::from)
 }
 
 #[cfg(test)]
 mod tests {
-    use ferriscrypt::hpke::kem::HpkePublicKey;
-
     use crate::{
         cipher_suite::CipherSuite,
         extension::{test_utils::TestExtension, ExtensionList, LeafNodeExtension},
         group::test_utils::get_test_group_context,
-        provider::identity::BasicIdentityProvider,
+        provider::{
+            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
+        },
         tree_kem::{
             leaf_node::{
                 test_utils::{get_basic_test_node_sig_key, get_test_capabilities},
@@ -406,14 +405,13 @@ mod tests {
                 SecretKey::from_bytes(secret_key.as_ref(), cipher_suite.kem_type().curve())
                     .unwrap();
             assert_eq!(
-                HpkePublicKey::from(
-                    secret_key
-                        .to_public()
-                        .unwrap()
-                        .to_uncompressed_bytes()
-                        .unwrap()
-                ),
-                *public_key
+                *public_key,
+                secret_key
+                    .to_public()
+                    .unwrap()
+                    .to_uncompressed_bytes()
+                    .unwrap()
+                    .into()
             );
         }
     }
@@ -471,6 +469,7 @@ mod tests {
                 update_leaf_properties,
                 None,
                 BasicIdentityProvider,
+                &test_cipher_suite_provider(cipher_suite),
                 #[cfg(test)]
                 &Default::default(),
             )
@@ -509,6 +508,7 @@ mod tests {
                     &[],
                     &mut get_test_group_context(42, cipher_suite),
                     BasicIdentityProvider,
+                    &test_cipher_suite_provider(cipher_suite),
                 )
                 .unwrap();
 

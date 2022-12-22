@@ -275,6 +275,7 @@ where
                 self.config.leaf_properties(),
                 signing_identity,
                 self.config.identity_provider(),
+                &self.cipher_suite_provider,
                 #[cfg(test)]
                 &self.commit_modifiers,
             )?;
@@ -295,7 +296,7 @@ where
         };
 
         let commit_secret =
-            CommitSecret::from_root_secret(self.state.cipher_suite(), root_secret.as_ref())?;
+            CommitSecret::from_root_secret(&self.cipher_suite_provider, root_secret.as_ref())?;
 
         let psk_store = self.config.secret_store();
 

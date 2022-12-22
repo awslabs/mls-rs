@@ -1,11 +1,11 @@
 use crate::cipher_suite::CipherSuite;
+use crate::provider::crypto::HpkePublicKey;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVecError};
 use crate::tree_kem::RatchetTreeError;
 use crate::tree_kem::TreeKemPublic;
-use ferriscrypt::hpke::kem::HpkePublicKey;
 use serde_with::serde_as;
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
@@ -294,10 +294,12 @@ impl TreeKemPublic {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use ferriscrypt::asym::ec_key::SecretKey;
 
     use crate::{
-        provider::identity::BasicIdentityProvider,
+        provider::{
+            crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
+            identity::BasicIdentityProvider,
+        },
         tree_kem::{leaf_node::test_utils::get_basic_test_node, node::Parent},
     };
 
@@ -307,11 +309,8 @@ pub(crate) mod test_utils {
         cipher_suite: CipherSuite,
         unmerged_leaves: Vec<LeafIndex>,
     ) -> Parent {
-        let public_key = SecretKey::generate(cipher_suite.kem_type().curve())
-            .unwrap()
-            .to_public()
-            .unwrap()
-            .try_into()
+        let (_, public_key) = test_cipher_suite_provider(cipher_suite)
+            .kem_generate()
             .unwrap();
 
         Parent {

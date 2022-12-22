@@ -1,5 +1,6 @@
 use super::{parent_hash::ParentHash, Capabilities, Lifetime};
 use crate::extension::LeafNodeExtension;
+use crate::provider::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::provider::identity::IdentityProvider;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::time::MlsTime;
@@ -10,11 +11,7 @@ use crate::{
     identity::{SigningIdentity, SigningIdentityError},
     signer::{Signable, SignatureError, Signer},
 };
-use ferriscrypt::{
-    asym::ec_key::{generate_keypair, EcKeyError},
-    hpke::kem::{HpkePublicKey, HpkeSecretKey},
-    kdf::KdfError,
-};
+use ferriscrypt::{asym::ec_key::EcKeyError, kdf::KdfError};
 use serde_with::serde_as;
 use thiserror::Error;
 use tls_codec::{Serialize, Size, TlsByteSliceU32};
@@ -42,6 +39,8 @@ pub enum LeafNodeError {
     InvalidSignerPublicKey,
     #[error("credential rejected by custom credential validator {0:?}")]
     IdentityProviderError(#[source] Box<dyn std::error::Error + Sync + Send>),
+    #[error(transparent)]
+    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 #[derive(
@@ -119,29 +118,32 @@ impl LeafNode {
             .map_err(|e| LeafNodeError::IdentityProviderError(e.into()))
     }
 
-    pub fn generate<S, C>(
-        cipher_suite: CipherSuite,
+    pub fn generate<S, IP, CP>(
+        cipher_suite_provider: &CP,
         properties: ConfigProperties,
         signing_identity: SigningIdentity,
         signer: &S,
         lifetime: Lifetime,
-        identity_provider: &C,
+        identity_provider: &IP,
     ) -> Result<(Self, HpkeSecretKey), LeafNodeError>
     where
         S: Signer,
-        C: IdentityProvider,
+        IP: IdentityProvider,
+        CP: CipherSuiteProvider,
     {
         LeafNode::check_signing_identity(
             &signing_identity,
             signer,
             identity_provider,
-            cipher_suite,
+            cipher_suite_provider.cipher_suite(),
         )?;
 
-        let (public, secret) = generate_keypair(cipher_suite.kem_type().curve())?;
+        let (secret_key, public_key) = cipher_suite_provider
+            .kem_generate()
+            .map_err(|e| LeafNodeError::CipherSuiteProviderError(e.into()))?;
 
         let mut leaf_node = LeafNode {
-            public_key: public.try_into()?,
+            public_key,
             signing_identity,
             capabilities: properties.capabilities,
             leaf_node_source: LeafNodeSource::KeyPackage(lifetime),
@@ -151,24 +153,23 @@ impl LeafNode {
 
         leaf_node.sign(signer, &LeafNodeSigningContext::default())?;
 
-        Ok((leaf_node, secret.try_into()?))
+        Ok((leaf_node, secret_key))
     }
 
-    pub fn update<S>(
+    pub fn update<S: Signer, P: CipherSuiteProvider>(
         &mut self,
-        cipher_suite: CipherSuite,
+        cipher_suite_provider: &P,
         group_id: &[u8],
         leaf_index: u32,
         new_properties: ConfigProperties,
         signing_identity: Option<SigningIdentity>,
         signer: &S,
-    ) -> Result<HpkeSecretKey, LeafNodeError>
-    where
-        S: Signer,
-    {
-        let (public, secret) = generate_keypair(cipher_suite.kem_type().curve())?;
+    ) -> Result<HpkeSecretKey, LeafNodeError> {
+        let (secret, public) = cipher_suite_provider
+            .kem_generate()
+            .map_err(|e| LeafNodeError::CipherSuiteProviderError(e.into()))?;
 
-        self.public_key = public.try_into()?;
+        self.public_key = public;
         self.capabilities = new_properties.capabilities;
         self.extensions = new_properties.extensions;
         self.leaf_node_source = LeafNodeSource::Update;
@@ -179,26 +180,25 @@ impl LeafNode {
 
         self.sign(signer, &(group_id, leaf_index).into())?;
 
-        secret.try_into().map_err(Into::into)
+        Ok(secret)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn commit<S>(
+    pub fn commit<S: Signer, P: CipherSuiteProvider>(
         &mut self,
-        cipher_suite: CipherSuite,
+        cipher_suite_provider: &P,
         group_id: &[u8],
         leaf_index: u32,
         new_properties: ConfigProperties,
         signing_identity: Option<SigningIdentity>,
         signer: &S,
         parent_hash: ParentHash,
-    ) -> Result<HpkeSecretKey, LeafNodeError>
-    where
-        S: Signer,
-    {
-        let (public, secret) = generate_keypair(cipher_suite.kem_type().curve())?;
+    ) -> Result<HpkeSecretKey, LeafNodeError> {
+        let (secret, public) = cipher_suite_provider
+            .kem_generate()
+            .map_err(|e| LeafNodeError::CipherSuiteProviderError(e.into()))?;
 
-        self.public_key = public.try_into()?;
+        self.public_key = public;
         self.capabilities = new_properties.capabilities;
         self.extensions = new_properties.extensions;
         self.leaf_node_source = LeafNodeSource::Commit(parent_hash);
@@ -209,7 +209,7 @@ impl LeafNode {
 
         self.sign(signer, &(group_id, leaf_index).into())?;
 
-        secret.try_into().map_err(Into::into)
+        Ok(secret)
     }
 }
 
@@ -308,7 +308,9 @@ pub mod test_utils {
         extension::{ApplicationIdExt, MlsExtension},
         identity::test_utils::get_test_signing_identity,
         identity::CREDENTIAL_TYPE_BASIC,
-        provider::identity::BasicIdentityProvider,
+        provider::{
+            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
+        },
     };
 
     use super::*;
@@ -344,7 +346,7 @@ pub mod test_utils {
         };
 
         LeafNode::generate(
-            cipher_suite,
+            &test_cipher_suite_provider(cipher_suite),
             properties,
             signing_identity,
             secret,
@@ -373,7 +375,7 @@ pub mod test_utils {
             get_test_signing_identity(cipher_suite, id.as_bytes().to_vec());
 
         LeafNode::generate(
-            cipher_suite,
+            &test_cipher_suite_provider(cipher_suite),
             default_properties(),
             signing_identity,
             &signature_key,
@@ -420,6 +422,7 @@ mod tests {
 
     use crate::cipher_suite::CipherSuite;
     use crate::identity::test_utils::get_test_signing_identity;
+    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider;
     use assert_matches::assert_matches;
@@ -473,8 +476,8 @@ mod tests {
                 .unwrap();
 
             assert_eq!(
-                HpkePublicKey::try_from(expected_public).unwrap(),
-                leaf_node.public_key
+                leaf_node.public_key,
+                expected_public.to_uncompressed_bytes().unwrap().into()
             );
         }
     }
@@ -494,7 +497,7 @@ mod tests {
         .unwrap();
 
         let res = LeafNode::generate(
-            cipher_suite,
+            &test_cipher_suite_provider(cipher_suite),
             default_properties(),
             test_signing_identity,
             &incorrect_secret,
@@ -513,7 +516,7 @@ mod tests {
             get_test_signing_identity(CipherSuite::P256Aes128, b"foo".to_vec());
 
         let res = LeafNode::generate(
-            cipher_suite,
+            &test_cipher_suite_provider(cipher_suite),
             default_properties(),
             test_signing_identity,
             &signer,
@@ -532,7 +535,7 @@ mod tests {
             get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
         let res = LeafNode::generate(
-            cipher_suite,
+            &test_cipher_suite_provider(cipher_suite),
             default_properties(),
             test_signing_identity,
             &signer,
@@ -574,7 +577,7 @@ mod tests {
 
             let new_secret = leaf
                 .update(
-                    cipher_suite,
+                    &test_cipher_suite_provider(cipher_suite),
                     b"group",
                     0,
                     default_properties(),
@@ -594,8 +597,8 @@ mod tests {
                 .unwrap();
 
             assert_eq!(
-                HpkePublicKey::try_from(expected_public).unwrap(),
-                leaf.public_key
+                leaf.public_key,
+                expected_public.to_uncompressed_bytes().unwrap().into()
             );
 
             assert_eq!(leaf.capabilities, original_leaf.capabilities);
@@ -625,7 +628,7 @@ mod tests {
         let (mut leaf, _) = get_test_node(cipher_suite, signing_identity, &secret, None, None);
 
         leaf.update(
-            cipher_suite,
+            &test_cipher_suite_provider(cipher_suite),
             b"group",
             0,
             new_properties.clone(),
@@ -653,7 +656,7 @@ mod tests {
 
             let new_secret = leaf
                 .commit(
-                    cipher_suite,
+                    &test_cipher_suite_provider(cipher_suite),
                     b"group",
                     0,
                     default_properties(),
@@ -674,8 +677,8 @@ mod tests {
                 .unwrap();
 
             assert_eq!(
-                HpkePublicKey::try_from(expected_public).unwrap(),
-                leaf.public_key
+                leaf.public_key,
+                expected_public.to_uncompressed_bytes().unwrap().into()
             );
 
             assert_eq!(leaf.capabilities, original_leaf.capabilities);
@@ -709,7 +712,7 @@ mod tests {
         let test_parent_hash = ParentHash::from(vec![42u8; 32]);
 
         leaf.commit(
-            cipher_suite,
+            &test_cipher_suite_provider(cipher_suite),
             b"group",
             0,
             new_properties.clone(),

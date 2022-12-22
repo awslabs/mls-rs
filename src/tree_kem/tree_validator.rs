@@ -131,12 +131,15 @@ fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use ferriscrypt::{asym::ec_key::SecretKey, hpke::kem::HpkePublicKey, rand::SecureRng};
+    use ferriscrypt::rand::SecureRng;
 
     use super::*;
     use crate::{
         group::test_utils::get_test_group_context,
-        provider::identity::BasicIdentityProvider,
+        provider::{
+            crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
+            identity::BasicIdentityProvider,
+        },
         tree_kem::{
             kem::TreeKem,
             leaf_node::test_utils::{default_properties, get_basic_test_node},
@@ -150,13 +153,12 @@ mod tests {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     fn test_parent_node(cipher_suite: CipherSuite) -> Parent {
-        let public_key = SecretKey::generate(cipher_suite.kem_type().curve())
-            .unwrap()
-            .to_public()
+        let (_, public_key) = test_cipher_suite_provider(cipher_suite)
+            .kem_generate()
             .unwrap();
 
         Parent {
-            public_key: HpkePublicKey::from(public_key.to_uncompressed_bytes().unwrap()),
+            public_key,
             parent_hash: ParentHash::empty(),
             unmerged_leaves: vec![],
         }
@@ -184,6 +186,7 @@ mod tests {
                 default_properties(),
                 None,
                 BasicIdentityProvider,
+                &test_cipher_suite_provider(cipher_suite),
                 #[cfg(test)]
                 &Default::default(),
             )

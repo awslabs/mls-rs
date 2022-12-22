@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
+use crate::provider::crypto::CipherSuiteProvider;
+
 use super::*;
 
 #[serde_as]
@@ -13,13 +15,6 @@ pub struct TreeKemPrivate {
 }
 
 impl TreeKemPrivate {
-    pub fn new(self_index: LeafIndex) -> Self {
-        TreeKemPrivate {
-            self_index,
-            secret_keys: HashMap::new(),
-        }
-    }
-
     pub fn new_self_leaf(self_index: LeafIndex, leaf_secret: HpkeSecretKey) -> Self {
         TreeKemPrivate {
             self_index,
@@ -27,9 +22,9 @@ impl TreeKemPrivate {
         }
     }
 
-    pub fn update_secrets(
+    pub fn update_secrets<P: CipherSuiteProvider>(
         &mut self,
-        cipher_suite: CipherSuite,
+        cipher_suite_provider: &P,
         signer_index: LeafIndex,
         path_secret: PathSecret,
         public_tree: &TreeKemPublic,
@@ -44,7 +39,8 @@ impl TreeKemPrivate {
         // path secret. The private key MUST be the private key that corresponds to the public
         // key in the node.
 
-        let path_secret_gen = PathSecretGenerator::starting_with(cipher_suite, path_secret);
+        let path_secret_gen =
+            PathSecretGenerator::starting_with(cipher_suite_provider, path_secret);
 
         public_tree
             .nodes
@@ -107,19 +103,30 @@ impl TreeKemPrivate {
 }
 
 #[cfg(test)]
+impl TreeKemPrivate {
+    pub fn new(self_index: LeafIndex) -> Self {
+        TreeKemPrivate {
+            self_index,
+            secret_keys: HashMap::new(),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
     use std::collections::HashSet;
 
     use ferriscrypt::{
         asym::ec_key::{Curve, SecretKey},
-        hpke::kem::HpkeSecretKey,
         rand::SecureRng,
     };
 
     use crate::{
         group::test_utils::get_test_group_context,
-        provider::identity::BasicIdentityProvider,
+        provider::{
+            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
+        },
         tree_kem::{
             kem::TreeKem,
             leaf_node::test_utils::{
@@ -136,16 +143,20 @@ mod tests {
 
     #[test]
     fn test_create_self_leaf() {
-        let secret = HpkeSecretKey::try_from(SecretKey::generate(Curve::Ed25519).unwrap()).unwrap();
+        let secret = SecretKey::generate(Curve::Ed25519)
+            .unwrap()
+            .to_bytes()
+            .unwrap();
+
         let self_index = LeafIndex(42);
 
-        let private_key = TreeKemPrivate::new_self_leaf(self_index, secret.clone());
+        let private_key = TreeKemPrivate::new_self_leaf(self_index, secret.clone().into());
 
         assert_eq!(private_key.self_index, self_index);
         assert_eq!(private_key.secret_keys.len(), 1);
         assert_eq!(
             private_key.secret_keys.get(&self_index.into()).unwrap(),
-            &secret
+            &secret.into()
         )
     }
 
@@ -186,6 +197,7 @@ mod tests {
                 default_properties(),
                 None,
                 BasicIdentityProvider,
+                &test_cipher_suite_provider(cipher_suite),
                 #[cfg(test)]
                 &Default::default(),
             )
@@ -214,7 +226,12 @@ mod tests {
 
         // Add the secrets for Charlie to his private key
         charlie_private
-            .update_secrets(cipher_suite, LeafIndex(0), path_secret, &public_tree)
+            .update_secrets(
+                &test_cipher_suite_provider(cipher_suite),
+                LeafIndex(0),
+                path_secret,
+                &public_tree,
+            )
             .unwrap();
 
         // Determine the private key values that should now match between Alice and Charlie
@@ -256,25 +273,31 @@ mod tests {
             .public_key = HpkePublicKey::from(SecureRng::gen(32).unwrap());
 
         // Add the secrets for Charlie to his private key
-        let res =
-            charlie_private.update_secrets(cipher_suite, LeafIndex(0), path_secret, &public_tree);
+        let res = charlie_private.update_secrets(
+            &test_cipher_suite_provider(cipher_suite),
+            LeafIndex(0),
+            path_secret,
+            &public_tree,
+        );
 
         assert_matches!(res, Err(RatchetTreeError::PubKeyMismatch));
     }
 
     fn setup_direct_path(self_index: LeafIndex, leaf_count: u32) -> TreeKemPrivate {
-        let secret = HpkeSecretKey::try_from(SecretKey::generate(Curve::Ed25519).unwrap()).unwrap();
+        let secret = SecretKey::generate(Curve::Ed25519)
+            .unwrap()
+            .to_bytes()
+            .unwrap();
 
-        let mut private_key = TreeKemPrivate::new_self_leaf(self_index, secret);
+        let mut private_key = TreeKemPrivate::new_self_leaf(self_index, secret.into());
 
         self_index
             .direct_path(leaf_count)
             .unwrap()
             .into_iter()
             .for_each(|i| {
-                let secret =
-                    HpkeSecretKey::try_from(SecretKey::generate(Curve::Ed25519).unwrap()).unwrap();
-                private_key.secret_keys.insert(i, secret);
+                let secret = SecretKey::generate(Curve::Ed25519).unwrap().to_bytes();
+                private_key.secret_keys.insert(i, secret.unwrap().into());
             });
 
         private_key
@@ -285,10 +308,14 @@ mod tests {
         let self_leaf = LeafIndex(42);
         let mut private_key = setup_direct_path(self_leaf, 128);
 
-        let new_secret =
-            HpkeSecretKey::try_from(SecretKey::generate(Curve::Ed25519).unwrap()).unwrap();
+        let new_secret = SecretKey::generate(Curve::Ed25519)
+            .unwrap()
+            .to_bytes()
+            .unwrap();
 
-        private_key.update_leaf(128, new_secret.clone()).unwrap();
+        private_key
+            .update_leaf(128, new_secret.clone().into())
+            .unwrap();
 
         // The update operation should have removed all the other keys in our direct path we
         // previously added
@@ -297,7 +324,7 @@ mod tests {
         // The secret key for our leaf should have been updated accordingly
         assert_eq!(
             private_key.secret_keys.get(&self_leaf.into()).unwrap(),
-            &new_secret
+            &new_secret.into()
         );
     }
 

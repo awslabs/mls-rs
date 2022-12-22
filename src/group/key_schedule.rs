@@ -2,6 +2,7 @@ use crate::cipher_suite::CipherSuite;
 use crate::group::secret_tree::SecretTreeError;
 use crate::group::{GroupContext, MembershipTag, MembershipTagError, SecretTree};
 use crate::identity::SigningIdentityError;
+use crate::provider::crypto::CipherSuiteProvider;
 use crate::psk::{get_epoch_secret, JoinerSecret, Psk, PskSecretError};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
@@ -388,18 +389,18 @@ impl InitSecret {
 pub struct CommitSecret(PathSecret);
 
 impl CommitSecret {
-    pub fn from_root_secret(
-        cipher_suite: CipherSuite,
+    pub fn from_root_secret<P: CipherSuiteProvider>(
+        cipher_suite_provider: &P,
         root_secret: Option<&PathSecret>,
     ) -> Result<Self, PathSecretError> {
         match root_secret {
             Some(root_secret) => {
                 let mut generator =
-                    PathSecretGenerator::starting_from(cipher_suite, root_secret.clone());
+                    PathSecretGenerator::starting_from(cipher_suite_provider, root_secret.clone());
 
                 Ok(CommitSecret(generator.next_secret()?.path_secret))
             }
-            None => Ok(Self::empty(cipher_suite)),
+            None => Ok(Self::empty(cipher_suite_provider.cipher_suite())),
         }
     }
 

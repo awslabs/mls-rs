@@ -160,6 +160,7 @@ mod tests {
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
+    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use assert_matches::assert_matches;
@@ -259,7 +260,7 @@ mod tests {
             test_key_package_custom(protocol_version, cipher_suite, "test", |_| {
                 let new_generator = KeyPackageGenerator {
                     protocol_version,
-                    cipher_suite,
+                    cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
                     signing_identity: &alternate_sining_id,
                     signing_key: &secret,
                     identity_provider: &BasicIdentityProvider::new(),

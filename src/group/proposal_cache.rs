@@ -419,7 +419,10 @@ mod tests {
             test_utils::{test_key_package, test_key_package_custom},
             KeyPackageGenerator,
         },
-        provider::identity::BasicIdentityProvider,
+        provider::{
+            crypto::{self, test_utils::test_cipher_suite_provider},
+            identity::BasicIdentityProvider,
+        },
         psk::PassThroughPskIdValidator,
         tree_kem::{
             leaf_node::{
@@ -502,7 +505,7 @@ mod tests {
         let (mut leaf, _, signer) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, name);
 
         leaf.update(
-            TEST_CIPHER_SUITE,
+            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
             TEST_GROUP,
             leaf_index,
             default_properties(),
@@ -1025,7 +1028,7 @@ mod tests {
 
         leaf_node
             .commit(
-                TEST_CIPHER_SUITE,
+                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
                 TEST_GROUP,
                 0,
                 default_properties(),
@@ -1776,7 +1779,7 @@ mod tests {
         kp
     }
 
-    fn key_package_with_public_key(key: HpkePublicKey) -> KeyPackage {
+    fn key_package_with_public_key(key: crypto::HpkePublicKey) -> KeyPackage {
         test_key_package_custom(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test", |gen| {
             let mut key_package_gen = gen
                 .generate(
@@ -2655,7 +2658,7 @@ mod tests {
             };
 
             let (leaf, secret) = LeafNode::generate(
-                TEST_CIPHER_SUITE,
+                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
                 properties,
                 signing_identity,
                 &signature_key,
@@ -3045,7 +3048,7 @@ mod tests {
 
         let generator = KeyPackageGenerator {
             protocol_version: TEST_PROTOCOL_VERSION,
-            cipher_suite: TEST_CIPHER_SUITE,
+            cipher_suite_provider: &test_cipher_suite_provider(TEST_CIPHER_SUITE),
             signing_identity: &signing_identity,
             signing_key: &secret_key,
             identity_provider: &BasicIdentityProvider::new(),

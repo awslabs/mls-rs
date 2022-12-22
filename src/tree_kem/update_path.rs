@@ -1,4 +1,3 @@
-use ferriscrypt::hpke::kem::HpkePublicKey;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -10,7 +9,10 @@ use super::{
 };
 use crate::{
     extension::ExtensionError,
-    provider::{crypto::HpkeCiphertext, identity::IdentityProvider},
+    provider::{
+        crypto::{HpkeCiphertext, HpkePublicKey},
+        identity::IdentityProvider,
+    },
 };
 use crate::{group::message_processor::ProvisionalState, time::MlsTime};
 
@@ -118,10 +120,11 @@ pub(crate) fn validate_update_path<C: IdentityProvider>(
 mod tests {
     use assert_matches::assert_matches;
 
-    use ferriscrypt::{hpke::kem::HpkePublicKey, rand::SecureRng};
+    use ferriscrypt::rand::SecureRng;
 
     use crate::group::message_processor::ProvisionalState;
     use crate::group::test_utils::get_test_group_context;
+    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::default_properties;
     use crate::tree_kem::node::LeafIndex;
@@ -144,7 +147,7 @@ mod tests {
 
         leaf_node
             .commit(
-                cipher_suite,
+                &test_cipher_suite_provider(cipher_suite),
                 TEST_GROUP_ID,
                 0,
                 default_properties(),
@@ -161,7 +164,7 @@ mod tests {
         .into();
 
         let node = UpdatePathNode {
-            public_key: HpkePublicKey::from(SecureRng::gen(32).unwrap()),
+            public_key: SecureRng::gen(32).unwrap().into(),
             encrypted_path_secret: vec![ciphertext],
         };
 

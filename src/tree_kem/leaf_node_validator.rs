@@ -226,6 +226,7 @@ mod tests {
     use crate::extension::{ApplicationIdExt, ExtensionList, MlsExtension};
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::identity::CREDENTIAL_TYPE_BASIC;
+    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::*;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider;
@@ -279,7 +280,7 @@ mod tests {
 
         leaf_node
             .update(
-                TEST_CIPHER_SUITE,
+                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
                 group_id,
                 0,
                 // TODO remove identity from input
@@ -306,7 +307,7 @@ mod tests {
 
         leaf_node
             .commit(
-                TEST_CIPHER_SUITE,
+                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
                 group_id,
                 0,
                 default_properties(),
@@ -344,7 +345,7 @@ mod tests {
 
         leaf_node
             .update(
-                TEST_CIPHER_SUITE,
+                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
                 b"foo",
                 0,
                 default_properties(),
@@ -365,7 +366,7 @@ mod tests {
 
         leaf_node
             .commit(
-                TEST_CIPHER_SUITE,
+                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
                 b"foo",
                 0,
                 default_properties(),
