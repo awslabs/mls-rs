@@ -3,8 +3,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroize;
 
 use crate::{
-    cipher_suite::CipherSuite, group::framing::ContentType, provider::crypto::CryptoProvider,
-    tree_kem::node::LeafIndex,
+    group::framing::ContentType, provider::crypto::CipherSuiteProvider, tree_kem::node::LeafIndex,
 };
 
 use super::{CiphertextProcessorError, ReuseGuard};
@@ -31,40 +30,36 @@ pub(crate) struct SenderDataKey {
 }
 
 impl SenderDataKey {
-    pub(crate) fn seal<P: CryptoProvider>(
+    pub(crate) fn seal<P: CipherSuiteProvider>(
         &self,
         provider: &P,
-        cipher_suite: CipherSuite,
         sender_data: &MLSSenderData,
         aad: &MLSSenderDataAAD,
     ) -> Result<Vec<u8>, CiphertextProcessorError> {
         provider
             .aead_seal(
-                cipher_suite,
                 &self.key,
                 &sender_data.tls_serialize_detached()?,
                 Some(&aad.tls_serialize_detached()?),
                 &self.nonce,
             )
-            .map_err(|e| CiphertextProcessorError::CryptoProviderError(e.into()))
+            .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))
     }
 
-    pub(crate) fn open<P: CryptoProvider>(
+    pub(crate) fn open<P: CipherSuiteProvider>(
         &self,
         provider: &P,
-        cipher_suite: CipherSuite,
         sender_data: &[u8],
         aad: &MLSSenderDataAAD,
     ) -> Result<MLSSenderData, CiphertextProcessorError> {
         provider
             .aead_open(
-                cipher_suite,
                 &self.key,
                 sender_data,
                 Some(&aad.tls_serialize_detached()?),
                 &self.nonce,
             )
-            .map_err(|e| CiphertextProcessorError::CryptoProviderError(e.into()))
+            .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))
             .and_then(|data| MLSSenderData::tls_deserialize(&mut &*data).map_err(From::from))
     }
 }

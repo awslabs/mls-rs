@@ -1,4 +1,4 @@
-use crate::cipher_suite::CipherSuite;
+use crate::cipher_suite::{CipherSuite, MaybeCipherSuite};
 use crate::client_config::ClientConfig;
 use crate::extension::{ExtensionError, ExtensionList, GroupContextExtension};
 use crate::group::framing::{
@@ -11,6 +11,7 @@ use crate::identity::{CredentialError, SigningIdentity};
 use crate::key_package::{KeyPackage, KeyPackageGenerationError, KeyPackageGenerator};
 use crate::protocol_version::MaybeProtocolVersion;
 use crate::protocol_version::ProtocolVersion;
+use crate::provider::crypto::CryptoProvider;
 use crate::provider::group_state::GroupStateStorage;
 use crate::provider::key_package::KeyPackageRepository;
 use crate::provider::keychain::KeychainStorage;
@@ -54,6 +55,8 @@ pub enum ClientError {
     ExpectedGroupInfoMessage,
     #[error("unsupported message version: {0:?}")]
     UnsupportedMessageVersion(MaybeProtocolVersion),
+    #[error("unsupported cipher suite: {0:?}")]
+    UnsupportedCipherSuite(MaybeCipherSuite),
     #[error("unable to load group from storage: {0:?}")]
     GroupStorageError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
@@ -238,13 +241,21 @@ where
             .into_group_info()
             .ok_or(ClientError::ExpectedGroupInfoMessage)?;
 
+        let cipher_suite_provider = group_info
+            .group_context
+            .cipher_suite
+            .into_enum()
+            .and_then(|cs| self.config.crypto_provider().cipher_suite_provider(cs))
+            .ok_or_else(|| {
+                ClientError::UnsupportedCipherSuite(group_info.group_context.cipher_suite)
+            })?;
+
         let group_context = process_group_info(
-            &self.config.supported_protocol_versions(),
-            &self.config.supported_cipher_suites(),
             protocol_version,
             group_info,
             tree_data,
-            self.config.identity_provider(),
+            &self.config.identity_provider(),
+            &cipher_suite_provider,
         )?
         .group_context;
 

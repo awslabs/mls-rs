@@ -1,5 +1,5 @@
 use assert_matches::assert_matches;
-use aws_mls::cipher_suite::{CipherSuite, SignaturePublicKey};
+use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client::{
     BaseConfig, Client, ClientBuilder, Preferences, WithIdentityProvider, WithKeychain,
 };
@@ -10,6 +10,7 @@ use aws_mls::identity::SigningIdentity;
 use aws_mls::identity::{BasicCredential, Credential, MlsCredential};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
+use aws_mls::provider::crypto::SignaturePublicKey;
 use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain};
 use ferriscrypt::rand::SecureRng;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};

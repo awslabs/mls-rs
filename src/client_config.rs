@@ -1,5 +1,5 @@
 use crate::{
-    cipher_suite::{CipherSuite, MaybeCipherSuite},
+    cipher_suite::MaybeCipherSuite,
     client_builder::Preferences,
     extension::{ExtensionList, ExtensionType, KeyPackageExtension, LeafNodeExtension},
     group::{
@@ -28,7 +28,6 @@ pub trait ClientConfig: Clone {
     type MakeProposalFilter: MakeProposalFilter;
     type CryptoProvider: CryptoProvider;
 
-    fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
 
@@ -58,6 +57,7 @@ pub trait ClientConfig: Clone {
                 .map(MaybeProtocolVersion::from)
                 .collect(),
             cipher_suites: self
+                .crypto_provider()
                 .supported_cipher_suites()
                 .into_iter()
                 .map(MaybeCipherSuite::from)
@@ -70,10 +70,6 @@ pub trait ClientConfig: Clone {
 
     fn version_supported(&self, version: ProtocolVersion) -> bool {
         self.supported_protocol_versions().contains(&version)
-    }
-
-    fn cipher_suite_supported(&self, cipher_suite: CipherSuite) -> bool {
-        self.supported_cipher_suites().contains(&cipher_suite)
     }
 
     fn supported_credential_types(&self) -> Vec<CredentialType> {

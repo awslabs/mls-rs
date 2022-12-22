@@ -151,7 +151,7 @@ pub enum GroupError {
     ProtocolVersionMismatch {
         msg_version: ProtocolVersion,
         wire_format: WireFormat,
-        version: ProtocolVersion,
+        version: MaybeProtocolVersion,
     },
     #[error("Unsupported cipher suite {0:?}")]
     UnsupportedCipherSuite(MaybeCipherSuite),

@@ -2,7 +2,6 @@
 //!
 //! See [`ClientBuilder`].
 use crate::{
-    cipher_suite::CipherSuite,
     client::Client,
     client_config::{
         ClientConfig, KeepAllProposals, MakeProposalFilter, MakeSimpleProposalFilter,
@@ -140,27 +139,6 @@ impl ClientBuilder<BaseConfig> {
 }
 
 impl<C: IntoConfig> ClientBuilder<C> {
-    /// Add a cipher suite to the list of cipher suites supported by the client.
-    ///
-    /// If no cipher suite is explicitly added, the client will support all cipher suites supported
-    /// by this crate.
-    pub fn cipher_suite(self, cipher_suite: CipherSuite) -> ClientBuilder<IntoConfigOutput<C>> {
-        self.cipher_suites(Some(cipher_suite))
-    }
-
-    /// Add multiple cipher suites to the list of cipher suites supported by the client.
-    ///
-    /// If no cipher suite is explicitly added, the client will support all cipher suites supported
-    /// by this crate.
-    pub fn cipher_suites<I>(self, cipher_suites: I) -> ClientBuilder<IntoConfigOutput<C>>
-    where
-        I: IntoIterator<Item = CipherSuite>,
-    {
-        let mut c = self.0.into_config();
-        c.0.settings.cipher_suites.extend(cipher_suites);
-        ClientBuilder(c)
-    }
-
     /// Add an extension type to the list of extension types supported by the client.
     pub fn extension_type(self, type_: ExtensionType) -> ClientBuilder<IntoConfigOutput<C>> {
         self.extension_types(Some(type_))
@@ -457,10 +435,6 @@ where
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
         let mut c = self.0.into_config();
 
-        if c.0.settings.cipher_suites.is_empty() {
-            c.0.settings.cipher_suites = CipherSuite::all().collect();
-        }
-
         if c.0.settings.protocol_versions.is_empty() {
             c.0.settings.protocol_versions = ProtocolVersion::all().collect();
         }
@@ -641,10 +615,6 @@ where
     type MakeProposalFilter = Mpf;
     type CryptoProvider = Cp;
 
-    fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
-        self.settings.cipher_suites.clone()
-    }
-
     fn supported_extensions(&self) -> Vec<ExtensionType> {
         self.settings.extension_types.clone()
     }
@@ -745,10 +715,6 @@ impl<T: MlsConfig> ClientConfig for T {
     type MakeProposalFilter = <T::Output as ClientConfig>::MakeProposalFilter;
     type CryptoProvider = <T::Output as ClientConfig>::CryptoProvider;
 
-    fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
-        self.get().supported_cipher_suites()
-    }
-
     fn supported_extensions(&self) -> Vec<ExtensionType> {
         self.get().supported_extensions()
     }
@@ -812,10 +778,6 @@ impl<T: MlsConfig> ClientConfig for T {
         self.get().version_supported(version)
     }
 
-    fn cipher_suite_supported(&self, cipher_suite: CipherSuite) -> bool {
-        self.get().cipher_suite_supported(cipher_suite)
-    }
-
     fn supported_credential_types(&self) -> Vec<CredentialType> {
         self.get().supported_credential_types()
     }
@@ -823,7 +785,6 @@ impl<T: MlsConfig> ClientConfig for T {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Settings {
-    pub(crate) cipher_suites: Vec<CipherSuite>,
     pub(crate) extension_types: Vec<ExtensionType>,
     pub(crate) protocol_versions: Vec<ProtocolVersion>,
     pub(crate) preferences: Preferences,
@@ -835,7 +796,6 @@ pub(crate) struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            cipher_suites: Default::default(),
             extension_types: Default::default(),
             protocol_versions: Default::default(),
             preferences: Default::default(),

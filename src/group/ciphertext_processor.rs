@@ -15,7 +15,9 @@ use super::{
     secret_tree::{KeyType, SecretTreeError},
     GroupContext, PaddingMode,
 };
-use crate::{provider::crypto::CryptoProvider, psk::PskSecretError, tree_kem::node::LeafIndex};
+use crate::{
+    provider::crypto::CipherSuiteProvider, psk::PskSecretError, tree_kem::node::LeafIndex,
+};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -29,7 +31,7 @@ pub enum CiphertextProcessorError {
     #[error(transparent)]
     KeyScheduleKdfError(#[from] KeyScheduleKdfError),
     #[error(transparent)]
-    CryptoProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
     SecretTreeError(#[from] SecretTreeError),
     #[error(transparent)]
@@ -54,21 +56,24 @@ pub(crate) trait GroupStateProvider {
 pub(crate) struct CiphertextProcessor<'a, GS, CP>
 where
     GS: GroupStateProvider,
-    CP: CryptoProvider,
+    CP: CipherSuiteProvider,
 {
     group_state: &'a mut GS,
-    crypto_provider: CP,
+    cipher_suite_provider: CP,
 }
 
 impl<'a, GS, CP> CiphertextProcessor<'a, GS, CP>
 where
     GS: GroupStateProvider,
-    CP: CryptoProvider,
+    CP: CipherSuiteProvider,
 {
-    pub fn new(group_state: &'a mut GS, crypto_provider: CP) -> CiphertextProcessor<'a, GS, CP> {
+    pub fn new(
+        group_state: &'a mut GS,
+        cipher_suite_provider: CP,
+    ) -> CiphertextProcessor<'a, GS, CP> {
         Self {
             group_state,
-            crypto_provider,
+            cipher_suite_provider,
         }
     }
 
@@ -146,8 +151,8 @@ where
         };
 
         // Generate a 4 byte reuse guard
-        let reuse_guard = ReuseGuard::random(&self.crypto_provider)
-            .map_err(|e| CiphertextProcessorError::CryptoProviderError(e.into()))?;
+        let reuse_guard = ReuseGuard::random(&self.cipher_suite_provider)
+            .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))?;
 
         // Grab an encryption key from the current epoch's key schedule
         let key_type = match &content_type {
@@ -169,13 +174,12 @@ where
 
         let ciphertext = MessageKey::new(key_data)
             .encrypt(
-                &self.crypto_provider,
-                self.group_state.group_context().cipher_suite,
+                &self.cipher_suite_provider,
                 &ciphertext_content,
                 &aad.tls_serialize_detached()?,
                 &reuse_guard,
             )
-            .map_err(|e| CiphertextProcessorError::CryptoProviderError(e.into()))?;
+            .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))?;
 
         // Construct an mls sender data struct using the plaintext sender info, the generation
         // of the key schedule encryption key, and the reuse guard used to encrypt ciphertext
@@ -194,8 +198,7 @@ where
         // Encrypt the sender data with the derived sender_key and sender_nonce from the current
         // epoch's key schedule
         let encrypted_sender_data = self.sender_data_key(&ciphertext)?.seal(
-            &self.crypto_provider,
-            self.group_state.group_context().cipher_suite,
+            &self.cipher_suite_provider,
             &sender_data,
             &sender_data_aad,
         )?;
@@ -223,8 +226,7 @@ where
         };
 
         let sender_data = self.sender_data_key(&ciphertext.ciphertext)?.open(
-            &self.crypto_provider,
-            self.group_state.group_context().cipher_suite,
+            &self.cipher_suite_provider,
             &ciphertext.encrypted_sender_data,
             &sender_data_aad,
         )?;
@@ -251,13 +253,12 @@ where
         let decrypted_content = Zeroizing::new(
             MessageKey::new(key)
                 .decrypt(
-                    &self.crypto_provider,
-                    self.group_state.group_context().cipher_suite,
+                    &self.cipher_suite_provider,
                     &ciphertext.ciphertext,
                     &MLSCiphertextContentAAD::from(&ciphertext).tls_serialize_detached()?,
                     &sender_data.reuse_guard,
                 )
-                .map_err(|e| CiphertextProcessorError::CryptoProviderError(e.into()))?,
+                .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))?,
         );
 
         let ciphertext_content = MLSCiphertextContent::tls_deserialize(&mut &**decrypted_content)?;
@@ -292,7 +293,7 @@ mod test {
             message_signature::MLSAuthenticatedContent,
             PaddingMode,
         },
-        provider::crypto::{test_utils::test_crypto_provider, CryptoProvider},
+        provider::crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
         tree_kem::node::LeafIndex,
     };
 
@@ -310,8 +311,9 @@ mod test {
 
     fn test_processor(
         epoch: &mut PriorEpoch,
-    ) -> CiphertextProcessor<'_, PriorEpoch, impl CryptoProvider> {
-        CiphertextProcessor::new(epoch, test_crypto_provider())
+        cipher_suite: CipherSuite,
+    ) -> CiphertextProcessor<'_, PriorEpoch, impl CipherSuiteProvider> {
+        CiphertextProcessor::new(epoch, test_cipher_suite_provider(cipher_suite))
     }
 
     fn test_data(cipher_suite: CipherSuite) -> TestData {
@@ -340,7 +342,7 @@ mod test {
             let mut test_data = test_data(cipher_suite);
             let mut receiver_epoch = test_data.epoch.clone();
 
-            let mut ciphertext_processor = test_processor(&mut test_data.epoch);
+            let mut ciphertext_processor = test_processor(&mut test_data.epoch, cipher_suite);
 
             let ciphertext = ciphertext_processor
                 .seal(test_data.content.clone(), PaddingMode::StepFunction)
@@ -348,7 +350,7 @@ mod test {
 
             receiver_epoch.self_index = LeafIndex::new(1);
 
-            let mut receiver_processor = test_processor(&mut receiver_epoch);
+            let mut receiver_processor = test_processor(&mut receiver_epoch, cipher_suite);
 
             let decrypted = receiver_processor.open(ciphertext).unwrap();
 
@@ -359,7 +361,7 @@ mod test {
     #[test]
     fn test_padding_use() {
         let mut test_data = test_data(TEST_CIPHER_SUITE);
-        let mut ciphertext_processor = test_processor(&mut test_data.epoch);
+        let mut ciphertext_processor = test_processor(&mut test_data.epoch, TEST_CIPHER_SUITE);
 
         let ciphertext_step = ciphertext_processor
             .seal(test_data.content.clone(), PaddingMode::StepFunction)
@@ -377,7 +379,7 @@ mod test {
         let mut test_data = test_data(TEST_CIPHER_SUITE);
         test_data.content.content.sender = Sender::Member(3);
 
-        let mut ciphertext_processor = test_processor(&mut test_data.epoch);
+        let mut ciphertext_processor = test_processor(&mut test_data.epoch, TEST_CIPHER_SUITE);
 
         let res = ciphertext_processor.seal(test_data.content, PaddingMode::None);
 
@@ -388,7 +390,7 @@ mod test {
     fn test_cant_process_from_self() {
         let mut test_data = test_data(TEST_CIPHER_SUITE);
 
-        let mut ciphertext_processor = test_processor(&mut test_data.epoch);
+        let mut ciphertext_processor = test_processor(&mut test_data.epoch, TEST_CIPHER_SUITE);
 
         let ciphertext = ciphertext_processor
             .seal(test_data.content, PaddingMode::None)
@@ -406,7 +408,7 @@ mod test {
     fn test_decryption_error() {
         let mut test_data = test_data(TEST_CIPHER_SUITE);
         let mut receiver_epoch = test_data.epoch.clone();
-        let mut ciphertext_processor = test_processor(&mut test_data.epoch);
+        let mut ciphertext_processor = test_processor(&mut test_data.epoch, TEST_CIPHER_SUITE);
 
         let mut ciphertext = ciphertext_processor
             .seal(test_data.content.clone(), PaddingMode::StepFunction)

@@ -9,7 +9,11 @@ use crate::{
     },
     key_package::KeyPackageGeneration,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
-    provider::{identity::IdentityProvider, key_package::KeyPackageRepository},
+    provider::{
+        crypto::{CipherSuiteProvider, CryptoProvider},
+        identity::IdentityProvider,
+        key_package::KeyPackageRepository,
+    },
     psk::ExternalPskIdValidator,
     signer::Signable,
     time::MlsTime,
@@ -42,23 +46,20 @@ pub(crate) struct JoinContext {
     pub signer_index: LeafIndex,
 }
 
-pub(crate) fn process_group_info<C>(
-    protocol_versions_allowed: &[ProtocolVersion],
-    cipher_suites_allowed: &[CipherSuite],
+pub(crate) fn process_group_info<I, C>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
     tree_data: Option<&[u8]>,
-    identity_provider: C,
+    identity_provider: &I,
+    cipher_suite_provider: &C,
 ) -> Result<JoinContext, GroupError>
 where
-    C: IdentityProvider,
+    I: IdentityProvider,
+    C: CipherSuiteProvider,
 {
-    let group_protocol_version = check_protocol_version(
-        protocol_versions_allowed,
-        group_info.group_context.protocol_version,
-    )?;
+    let group_protocol_version = group_info.group_context.protocol_version;
 
-    if msg_protocol_version != group_protocol_version {
+    if msg_protocol_version as u16 != group_protocol_version.raw_value() {
         return Err(GroupError::ProtocolVersionMismatch {
             msg_version: msg_protocol_version,
             wire_format: WireFormat::GroupInfo,
@@ -66,8 +67,11 @@ where
         });
     }
 
-    let cipher_suite =
-        check_cipher_suite(cipher_suites_allowed, group_info.group_context.cipher_suite)?;
+    let cipher_suite = cipher_suite_provider.cipher_suite();
+
+    if group_info.group_context.cipher_suite.raw_value() != cipher_suite as u16 {
+        return Err(GroupError::CipherSuiteMismatch);
+    }
 
     let ratchet_tree_ext = group_info.extensions.get_extension::<RatchetTreeExt>()?;
 
@@ -86,7 +90,7 @@ where
     let signer_index = group_info.signer;
 
     let group_context = GroupContext {
-        protocol_version: group_protocol_version,
+        protocol_version: msg_protocol_version,
         cipher_suite,
         group_id: group_info.group_context.group_id,
         epoch: group_info.group_context.epoch,
@@ -104,28 +108,46 @@ where
     })
 }
 
-pub(super) fn validate_group_info<C: IdentityProvider>(
-    protocol_versions_allowed: &[ProtocolVersion],
-    cipher_suites_allowed: &[CipherSuite],
+pub(super) fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
     tree_data: Option<&[u8]>,
-    identity_provider: &C,
+    identity_provider: &I,
+    cipher_suite_provider: &C,
 ) -> Result<JoinContext, GroupError> {
     let mut join_context = process_group_info(
-        protocol_versions_allowed,
-        cipher_suites_allowed,
         msg_protocol_version,
         group_info,
         tree_data,
         identity_provider,
+        cipher_suite_provider,
     )?;
 
-    validate_existing_group(
-        &mut join_context.public_tree,
-        &join_context.group_context,
+    let required_capabilities = join_context.group_context.extensions.get_extension()?;
+
+    // Verify the integrity of the ratchet tree
+    let tree_validator = TreeValidator::new(
+        join_context.group_context.cipher_suite,
+        &join_context.group_context.group_id,
+        &join_context.group_context.tree_hash,
+        required_capabilities.as_ref(),
         identity_provider,
-    )?;
+    );
+
+    tree_validator.validate(&mut join_context.public_tree)?;
+
+    if let Some(ext_senders) = join_context
+        .group_context
+        .extensions
+        .get_extension::<ExternalSendersExt>()?
+    {
+        // TODO do joiners verify group against current time??
+        ext_senders.verify_all(
+            &identity_provider,
+            join_context.group_context.cipher_suite,
+            None,
+        )?;
+    }
 
     Ok(join_context)
 }
@@ -155,35 +177,6 @@ where
             )?)
         }
     }
-}
-
-pub(super) fn validate_existing_group<C: IdentityProvider>(
-    public_tree: &mut TreeKemPublic,
-    group_context: &GroupContext,
-    identity_provider: &C,
-) -> Result<(), GroupError> {
-    let required_capabilities = group_context.extensions.get_extension()?;
-
-    // Verify the integrity of the ratchet tree
-    let tree_validator = TreeValidator::new(
-        group_context.cipher_suite,
-        &group_context.group_id,
-        &group_context.tree_hash,
-        required_capabilities.as_ref(),
-        identity_provider,
-    );
-
-    tree_validator.validate(public_tree)?;
-
-    if let Some(ext_senders) = group_context
-        .extensions
-        .get_extension::<ExternalSendersExt>()?
-    {
-        // TODO do joiners verify group against current time??
-        ext_senders.verify_all(&identity_provider, group_context.cipher_suite, None)?;
-    }
-
-    Ok(())
 }
 
 pub(super) fn commit_sender(
@@ -264,16 +257,6 @@ pub(super) fn check_protocol_version(
         .ok_or(GroupError::UnsupportedProtocolVersion(version))
 }
 
-pub(super) fn check_cipher_suite(
-    allowed: &[CipherSuite],
-    cipher_suite: MaybeCipherSuite,
-) -> Result<CipherSuite, GroupError> {
-    cipher_suite
-        .into_enum()
-        .filter(|cs| allowed.contains(cs))
-        .ok_or(GroupError::UnsupportedCipherSuite(cipher_suite))
-}
-
 pub(super) fn find_key_package_generation<'a, C>(
     config: &C,
     welcome_message: &'a Welcome,
@@ -294,4 +277,29 @@ where
         .transpose()
         .map_err(|e| GroupError::KeyPackageRepositoryError(e.into()))?
         .ok_or(GroupError::KeyPackageNotFound)
+}
+
+pub(super) fn cipher_suite_provider<P>(
+    crypto: P,
+    cipher_suite: CipherSuite,
+) -> Result<P::CipherSuiteProvider, GroupError>
+where
+    P: CryptoProvider,
+{
+    crypto
+        .cipher_suite_provider(cipher_suite)
+        .ok_or(GroupError::UnsupportedCipherSuite(cipher_suite.into()))
+}
+
+pub(super) fn maybe_cipher_suite_provider<P>(
+    crypto: P,
+    cipher_suite: MaybeCipherSuite,
+) -> Result<P::CipherSuiteProvider, GroupError>
+where
+    P: CryptoProvider,
+{
+    cipher_suite
+        .into_enum()
+        .and_then(|cs| crypto.cipher_suite_provider(cs))
+        .ok_or_else(|| GroupError::UnsupportedCipherSuite(cipher_suite))
 }

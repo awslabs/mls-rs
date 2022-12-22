@@ -3,7 +3,6 @@
 //! See [`ExternalClientBuilder`].
 
 use crate::{
-    cipher_suite::CipherSuite,
     client_config::{
         KeepAllProposals, MakeProposalFilter, MakeSimpleProposalFilter, ProposalFilterInit,
     },
@@ -121,30 +120,6 @@ impl ExternalClientBuilder<ExternalBaseConfig> {
 }
 
 impl<C: IntoConfig> ExternalClientBuilder<C> {
-    /// Add a cipher suite to the list of cipher suites supported by the client.
-    ///
-    /// If no cipher suite is explicitly added, the client will support all cipher suites supported
-    /// by this crate.
-    pub fn cipher_suite(
-        self,
-        cipher_suite: CipherSuite,
-    ) -> ExternalClientBuilder<IntoConfigOutput<C>> {
-        self.cipher_suites(Some(cipher_suite))
-    }
-
-    /// Add multiple cipher suites to the list of cipher suites supported by the client.
-    ///
-    /// If no cipher suite is explicitly added, the client will support all cipher suites supported
-    /// by this crate.
-    pub fn cipher_suites<I>(self, cipher_suites: I) -> ExternalClientBuilder<IntoConfigOutput<C>>
-    where
-        I: IntoIterator<Item = CipherSuite>,
-    {
-        let mut c = self.0.into_config();
-        c.0.settings.cipher_suites.extend(cipher_suites);
-        ExternalClientBuilder(c)
-    }
-
     /// Add an extension type to the list of extension types supported by the client.
     pub fn extension_type(
         self,
@@ -318,10 +293,6 @@ where
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
         let mut c = self.0.into_config();
 
-        if c.0.settings.cipher_suites.is_empty() {
-            c.0.settings.cipher_suites = CipherSuite::all().collect();
-        }
-
         if c.0.settings.protocol_versions.is_empty() {
             c.0.settings.protocol_versions = ProtocolVersion::all().collect();
         }
@@ -419,10 +390,6 @@ where
         self.keychain.clone()
     }
 
-    fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
-        self.settings.cipher_suites.clone()
-    }
-
     fn supported_extensions(&self) -> Vec<ExtensionType> {
         self.settings.extension_types.clone()
     }
@@ -502,10 +469,6 @@ impl<T: MlsConfig> ExternalClientConfig for T {
         self.get().keychain()
     }
 
-    fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
-        self.get().supported_cipher_suites()
-    }
-
     fn supported_extensions(&self) -> Vec<ExtensionType> {
         self.get().supported_extensions()
     }
@@ -545,10 +508,6 @@ impl<T: MlsConfig> ExternalClientConfig for T {
         self.get().version_supported(version)
     }
 
-    fn cipher_suite_supported(&self, cipher_suite: CipherSuite) -> bool {
-        self.get().cipher_suite_supported(cipher_suite)
-    }
-
     fn supported_credentials(&self) -> Vec<CredentialType> {
         self.get().supported_credentials()
     }
@@ -560,7 +519,6 @@ impl<T: MlsConfig> ExternalClientConfig for T {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Settings {
-    pub(crate) cipher_suites: Vec<CipherSuite>,
     pub(crate) extension_types: Vec<ExtensionType>,
     pub(crate) protocol_versions: Vec<ProtocolVersion>,
     pub(crate) external_signing_keys: HashMap<Vec<u8>, PublicKey>,
@@ -572,7 +530,6 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             cache_proposals: true,
-            cipher_suites: vec![],
             extension_types: vec![],
             protocol_versions: vec![],
             external_signing_keys: Default::default(),
@@ -624,10 +581,14 @@ use private::{Config, ConfigInner, IntoConfig};
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
     use crate::{
+        cipher_suite::CipherSuite,
         external_client_builder::{
             ExternalBaseConfig, ExternalClientBuilder, WithIdentityProvider, WithKeychain,
         },
-        provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
+        provider::{
+            crypto::FerriscryptCryptoProvider, identity::BasicIdentityProvider,
+            keychain::InMemoryKeychain,
+        },
     };
 
     pub type TestExternalClientConfig = WithIdentityProvider<
@@ -640,6 +601,15 @@ pub mod test_utils {
     impl TestExternalClientBuilder {
         pub fn new_for_test() -> Self {
             ExternalClientBuilder::new()
+                .identity_provider(BasicIdentityProvider::new())
+                .keychain(InMemoryKeychain::default())
+        }
+
+        pub fn new_for_test_disabling_cipher_suite(cipher_suite: CipherSuite) -> Self {
+            ExternalClientBuilder::new()
+                .crypto_provider(FerriscryptCryptoProvider::with_disabled_cipher_suites(
+                    vec![cipher_suite],
+                ))
                 .identity_provider(BasicIdentityProvider::new())
                 .keychain(InMemoryKeychain::default())
         }

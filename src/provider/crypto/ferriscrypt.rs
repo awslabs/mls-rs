@@ -1,4 +1,5 @@
 use ferriscrypt::{
+    asym::ec_key::{Curve, EcKeyError, PublicKey, SecretKey},
     cipher::{
         aead::{self, Aead, AeadError, AeadNonce},
         NonceError,
@@ -7,7 +8,7 @@ use ferriscrypt::{
     hmac::HMacError,
     hpke::{
         kem::{Kem, KemType},
-        AeadId, Hpke, HpkeError, KdfId, KemId,
+        Hpke, HpkeError, KemId,
     },
     kdf::{hkdf::Hkdf, KdfError},
     rand::{SecureRng, SecureRngError},
@@ -17,7 +18,10 @@ use thiserror::Error;
 
 use crate::cipher_suite::CipherSuite;
 
-use super::{CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey};
+use super::{
+    CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey,
+    SignaturePublicKey,
+};
 
 #[derive(Debug, Error)]
 pub enum FerriscryptCryptoError {
@@ -33,156 +37,66 @@ pub enum FerriscryptCryptoError {
     HpkeError(#[from] HpkeError),
     #[error(transparent)]
     SecureRngError(#[from] SecureRngError),
+    #[error(transparent)]
+    EcKeyError(#[from] EcKeyError),
+    #[error("invalid signature")]
+    InvalidSignature,
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct FerriscryptCryptoProvider;
+#[non_exhaustive]
+pub struct FerriscryptCryptoProvider {
+    // Note: This is a temporary pattern since Ferriscrypt will eventually be deleted in favor of a
+    // direct OpenSSL / Rust Crypto provider. We will build enabled cipher suites vs specifically
+    // disabling them in that version
+    pub(crate) disabled_cipher_suites: Vec<CipherSuite>,
+}
 
 impl FerriscryptCryptoProvider {
-    pub fn hash(
-        &self,
-        cipher_suite: CipherSuite,
-        data: &[u8],
-    ) -> Result<Vec<u8>, FerriscryptCryptoError> {
-        Ok(self.hash_function(cipher_suite).digest(data))
+    pub fn new() -> FerriscryptCryptoProvider {
+        FerriscryptCryptoProvider::default()
     }
 
-    pub fn mac(
-        &self,
-        cipher_suite: CipherSuite,
-        key: &[u8],
-        data: &[u8],
-    ) -> Result<Vec<u8>, FerriscryptCryptoError> {
-        let hmac_key = ferriscrypt::hmac::Key::new(key, self.hash_function(cipher_suite))?;
-
-        hmac_key
-            .generate_tag(data)
-            .map(|t| t.to_vec())
-            .map_err(Into::into)
-    }
-
-    pub fn aead_seal(
-        &self,
-        cipher_suite: CipherSuite,
-        key: &[u8],
-        data: &[u8],
-        aad: Option<&[u8]>,
-        nonce: &[u8],
-    ) -> Result<Vec<u8>, FerriscryptCryptoError> {
-        let key = aead::Key::new(self.aead_type(cipher_suite), key.to_vec())?;
-
-        key.encrypt_to_vec(data, aad, AeadNonce::new(nonce)?)
-            .map_err(Into::into)
-    }
-
-    pub fn aead_open(
-        &self,
-        cipher_suite: CipherSuite,
-        key: &[u8],
-        cipher_text: &[u8],
-        aad: Option<&[u8]>,
-        nonce: &[u8],
-    ) -> Result<Vec<u8>, FerriscryptCryptoError> {
-        let key = aead::Key::new(self.aead_type(cipher_suite), key.to_vec())?;
-
-        key.decrypt_from_vec(cipher_text, aad, AeadNonce::new(nonce)?)
-            .map_err(Into::into)
-    }
-
-    pub fn kdf_expand(
-        &self,
-        cipher_suite: CipherSuite,
-        prk: &[u8],
-        info: &[u8],
-        len: usize,
-    ) -> Result<Vec<u8>, FerriscryptCryptoError> {
-        let mut out = vec![0u8; len];
-
-        Hkdf::new(self.hash_function(cipher_suite))
-            .expand(prk, info, &mut out)
-            .map(|_| out)
-            .map_err(Into::into)
-    }
-
-    pub fn kdf_extract(
-        &self,
-        cipher_suite: CipherSuite,
-        salt: &[u8],
-        ikm: &[u8],
-    ) -> Result<Vec<u8>, FerriscryptCryptoError> {
-        Hkdf::new(self.hash_function(cipher_suite))
-            .extract(ikm, salt)
-            .map_err(Into::into)
-    }
-
-    pub fn hpke_seal(
-        &self,
-        cipher_suite: CipherSuite,
-        remote_key: &HpkePublicKey,
-        info: &[u8],
-        aad: Option<&[u8]>,
-        pt: &[u8],
-    ) -> Result<HpkeCiphertext, FerriscryptCryptoError> {
-        let hpke = self.hpke(cipher_suite);
-
-        let remote_key = ferriscrypt::hpke::kem::HpkePublicKey::from(remote_key.0.to_vec());
-
-        hpke.seal(&remote_key, info, None, aad, pt)
-            .map(Into::into)
-            .map_err(Into::into)
-    }
-
-    pub fn hpke_open(
-        &self,
-        cipher_suite: CipherSuite,
-        ciphertext: &HpkeCiphertext,
-        local_secret: &HpkeSecretKey,
-        info: &[u8],
-        aad: Option<&[u8]>,
-    ) -> Result<Vec<u8>, FerriscryptCryptoError> {
-        let hpke = self.hpke(cipher_suite);
-        let ciphertext = ferriscrypt::hpke::HpkeCiphertext::from(ciphertext.clone());
-        let local_secret = ferriscrypt::hpke::kem::HpkeSecretKey::from(local_secret.0.to_vec());
-
-        hpke.open(&ciphertext, &local_secret, info, None, aad)
-            .map_err(Into::into)
-    }
-
-    pub fn kem_derive(
-        &self,
-        cipher_suite: CipherSuite,
-        ikm: &[u8],
-    ) -> Result<(HpkeSecretKey, HpkePublicKey), FerriscryptCryptoError> {
-        Kem::new(self.kem_type(cipher_suite))
-            .derive(ikm)
-            .map(|(sk, pk)| (HpkeSecretKey::from(sk), HpkePublicKey::from(pk)))
-            .map_err(Into::into)
-    }
-
-    pub fn random_bytes(&self, out: &mut [u8]) -> Result<(), FerriscryptCryptoError> {
-        SecureRng::fill(out).map_err(Into::into)
-    }
-
-    #[inline(always)]
-    fn hash_function(&self, cipher_suite: CipherSuite) -> HashFunction {
-        match cipher_suite {
-            CipherSuite::Curve25519Aes128 => HashFunction::Sha256,
-            CipherSuite::P256Aes128 => HashFunction::Sha256,
-            CipherSuite::Curve25519ChaCha20 => HashFunction::Sha256,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448Aes256 => HashFunction::Sha512,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::P521Aes256 => HashFunction::Sha512,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448ChaCha20 => HashFunction::Sha512,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::P384Aes256 => HashFunction::Sha384,
+    pub fn with_disabled_cipher_suites(disabled_cipher_suites: Vec<CipherSuite>) -> Self {
+        Self {
+            disabled_cipher_suites,
         }
     }
+}
 
-    #[inline(always)]
-    fn aead_type(&self, cipher_suite: CipherSuite) -> Aead {
-        match cipher_suite {
+impl CryptoProvider for FerriscryptCryptoProvider {
+    type CipherSuiteProvider = FerriscryptCipherSuite;
+
+    fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
+        CipherSuite::all()
+            .filter(|v| !self.disabled_cipher_suites.contains(v))
+            .collect()
+    }
+
+    fn cipher_suite_provider(
+        &self,
+        cipher_suite: CipherSuite,
+    ) -> Option<Self::CipherSuiteProvider> {
+        if !self.supported_cipher_suites().contains(&cipher_suite) {
+            return None;
+        }
+
+        Some(FerriscryptCipherSuite::new(cipher_suite))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FerriscryptCipherSuite {
+    cipher_suite: CipherSuite,
+    aead: Aead,
+    hash: HashFunction,
+    kem: KemId,
+    signature_key_curve: Curve,
+}
+
+impl FerriscryptCipherSuite {
+    pub fn new(cipher_suite: CipherSuite) -> Self {
+        let aead = match cipher_suite {
             CipherSuite::Curve25519Aes128 => Aead::Aes128Gcm,
             CipherSuite::P256Aes128 => Aead::Aes128Gcm,
             CipherSuite::Curve25519ChaCha20 => Aead::Chacha20Poly1305,
@@ -194,12 +108,23 @@ impl FerriscryptCryptoProvider {
             CipherSuite::Curve448ChaCha20 => Aead::Chacha20Poly1305,
             #[cfg(feature = "openssl_engine")]
             CipherSuite::P384Aes256 => Aead::Aes256Gcm,
-        }
-    }
+        };
 
-    #[inline(always)]
-    fn kem_type(&self, cipher_suite: CipherSuite) -> KemId {
-        match cipher_suite {
+        let hash = match cipher_suite {
+            CipherSuite::Curve25519Aes128 => HashFunction::Sha256,
+            CipherSuite::P256Aes128 => HashFunction::Sha256,
+            CipherSuite::Curve25519ChaCha20 => HashFunction::Sha256,
+            #[cfg(feature = "openssl_engine")]
+            CipherSuite::Curve448Aes256 => HashFunction::Sha512,
+            #[cfg(feature = "openssl_engine")]
+            CipherSuite::P521Aes256 => HashFunction::Sha512,
+            #[cfg(feature = "openssl_engine")]
+            CipherSuite::Curve448ChaCha20 => HashFunction::Sha512,
+            #[cfg(feature = "openssl_engine")]
+            CipherSuite::P384Aes256 => HashFunction::Sha384,
+        };
+
+        let kem_id = match cipher_suite {
             CipherSuite::Curve25519Aes128 => KemId::X25519HkdfSha256,
             CipherSuite::P256Aes128 => KemId::P256HkdfSha256,
             CipherSuite::Curve25519ChaCha20 => KemId::X25519HkdfSha256,
@@ -211,113 +136,232 @@ impl FerriscryptCryptoProvider {
             CipherSuite::Curve448ChaCha20 => KemId::X448HkdfSha512,
             #[cfg(feature = "openssl_engine")]
             CipherSuite::P384Aes256 => KemId::P384HkdfSha384,
+        };
+
+        let signature_key_curve = match cipher_suite {
+            CipherSuite::Curve25519Aes128 => Curve::Ed25519,
+            CipherSuite::P256Aes128 => Curve::P256,
+            CipherSuite::Curve25519ChaCha20 => Curve::Ed25519,
+            #[cfg(feature = "openssl_engine")]
+            CipherSuite::Curve448Aes256 => Curve::Ed448,
+            #[cfg(feature = "openssl_engine")]
+            CipherSuite::P521Aes256 => Curve::P521,
+            #[cfg(feature = "openssl_engine")]
+            CipherSuite::Curve448ChaCha20 => Curve::Ed448,
+            #[cfg(feature = "openssl_engine")]
+            CipherSuite::P384Aes256 => Curve::P384,
+        };
+
+        Self {
+            cipher_suite,
+            aead,
+            hash,
+            kem: kem_id,
+            signature_key_curve,
         }
     }
 
-    #[inline(always)]
-    fn kdf_type(&self, cipher_suite: CipherSuite) -> KdfId {
-        self.kem_type(cipher_suite).kdf()
+    pub fn hash(&self, data: &[u8]) -> Result<Vec<u8>, FerriscryptCryptoError> {
+        Ok(self.hash.digest(data))
+    }
+
+    pub fn mac(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>, FerriscryptCryptoError> {
+        let hmac_key = ferriscrypt::hmac::Key::new(key, self.hash)?;
+
+        hmac_key
+            .generate_tag(data)
+            .map(|t| t.to_vec())
+            .map_err(Into::into)
+    }
+
+    pub fn aead_seal(
+        &self,
+        key: &[u8],
+        data: &[u8],
+        aad: Option<&[u8]>,
+        nonce: &[u8],
+    ) -> Result<Vec<u8>, FerriscryptCryptoError> {
+        let key = aead::Key::new(self.aead, key.to_vec())?;
+
+        key.encrypt_to_vec(data, aad, AeadNonce::new(nonce)?)
+            .map_err(Into::into)
+    }
+
+    pub fn aead_open(
+        &self,
+        key: &[u8],
+        cipher_text: &[u8],
+        aad: Option<&[u8]>,
+        nonce: &[u8],
+    ) -> Result<Vec<u8>, FerriscryptCryptoError> {
+        let key = aead::Key::new(self.aead, key.to_vec())?;
+
+        key.decrypt_from_vec(cipher_text, aad, AeadNonce::new(nonce)?)
+            .map_err(Into::into)
+    }
+
+    pub fn kdf_expand(
+        &self,
+        prk: &[u8],
+        info: &[u8],
+        len: usize,
+    ) -> Result<Vec<u8>, FerriscryptCryptoError> {
+        let mut out = vec![0u8; len];
+
+        Hkdf::new(self.hash)
+            .expand(prk, info, &mut out)
+            .map(|_| out)
+            .map_err(Into::into)
+    }
+
+    pub fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Vec<u8>, FerriscryptCryptoError> {
+        Hkdf::new(self.hash).extract(ikm, salt).map_err(Into::into)
     }
 
     #[inline(always)]
-    fn hpke(&self, cipher_suite: CipherSuite) -> Hpke {
-        Hpke::new(
-            self.kem_type(cipher_suite),
-            self.kdf_type(cipher_suite),
-            AeadId::from(self.aead_type(cipher_suite)),
-        )
+    fn hpke(&self) -> Hpke {
+        Hpke::new(self.kem, self.kem.kdf(), self.aead.into())
+    }
+
+    pub fn hpke_seal(
+        &self,
+        remote_key: &HpkePublicKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+        pt: &[u8],
+    ) -> Result<HpkeCiphertext, FerriscryptCryptoError> {
+        let remote_key = ferriscrypt::hpke::kem::HpkePublicKey::from(remote_key.0.to_vec());
+
+        self.hpke()
+            .seal(&remote_key, info, None, aad, pt)
+            .map(Into::into)
+            .map_err(Into::into)
+    }
+
+    pub fn hpke_open(
+        &self,
+        ciphertext: &HpkeCiphertext,
+        local_secret: &HpkeSecretKey,
+        info: &[u8],
+        aad: Option<&[u8]>,
+    ) -> Result<Vec<u8>, FerriscryptCryptoError> {
+        let ciphertext = ferriscrypt::hpke::HpkeCiphertext::from(ciphertext.clone());
+        let local_secret = ferriscrypt::hpke::kem::HpkeSecretKey::from(local_secret.0.to_vec());
+
+        self.hpke()
+            .open(&ciphertext, &local_secret, info, None, aad)
+            .map_err(Into::into)
+    }
+
+    pub fn kem_derive(
+        &self,
+        ikm: &[u8],
+    ) -> Result<(HpkeSecretKey, HpkePublicKey), FerriscryptCryptoError> {
+        Kem::new(self.kem)
+            .derive(ikm)
+            .map(|(sk, pk)| (HpkeSecretKey::from(sk), HpkePublicKey::from(pk)))
+            .map_err(Into::into)
+    }
+
+    pub fn random_bytes(&self, out: &mut [u8]) -> Result<(), FerriscryptCryptoError> {
+        SecureRng::fill(out).map_err(Into::into)
     }
 }
 
-impl CryptoProvider for FerriscryptCryptoProvider {
+impl CipherSuiteProvider for FerriscryptCipherSuite {
     type Error = FerriscryptCryptoError;
 
-    fn hash(&self, cipher_suite: CipherSuite, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        self.hash(cipher_suite, data)
+    fn hash(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        self.hash(data)
     }
 
-    fn mac(
-        &self,
-        cipher_suite: CipherSuite,
-        key: &[u8],
-        data: &[u8],
-    ) -> Result<Vec<u8>, Self::Error> {
-        self.mac(cipher_suite, key, data)
+    fn mac(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        self.mac(key, data)
     }
 
     fn aead_seal(
         &self,
-        cipher_suite: CipherSuite,
         key: &[u8],
         data: &[u8],
         aad: Option<&[u8]>,
         nonce: &[u8],
     ) -> Result<Vec<u8>, Self::Error> {
-        self.aead_seal(cipher_suite, key, data, aad, nonce)
+        self.aead_seal(key, data, aad, nonce)
     }
 
     fn aead_open(
         &self,
-        cipher_suite: CipherSuite,
         key: &[u8],
         cipher_text: &[u8],
         aad: Option<&[u8]>,
         nonce: &[u8],
     ) -> Result<Vec<u8>, Self::Error> {
-        self.aead_open(cipher_suite, key, cipher_text, aad, nonce)
+        self.aead_open(key, cipher_text, aad, nonce)
     }
 
-    fn kdf_expand(
-        &self,
-        cipher_suite: CipherSuite,
-        prk: &[u8],
-        info: &[u8],
-        len: usize,
-    ) -> Result<Vec<u8>, Self::Error> {
-        self.kdf_expand(cipher_suite, prk, info, len)
+    fn kdf_expand(&self, prk: &[u8], info: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
+        self.kdf_expand(prk, info, len)
     }
 
-    fn kdf_extract(
-        &self,
-        cipher_suite: CipherSuite,
-        salt: &[u8],
-        ikm: &[u8],
-    ) -> Result<Vec<u8>, Self::Error> {
-        self.kdf_extract(cipher_suite, salt, ikm)
+    fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        self.kdf_extract(salt, ikm)
     }
 
     fn hpke_seal(
         &self,
-        cipher_suite: CipherSuite,
         remote_key: &HpkePublicKey,
         info: &[u8],
         aad: Option<&[u8]>,
         pt: &[u8],
     ) -> Result<HpkeCiphertext, Self::Error> {
-        self.hpke_seal(cipher_suite, remote_key, info, aad, pt)
+        self.hpke_seal(remote_key, info, aad, pt)
     }
 
     fn hpke_open(
         &self,
-        cipher_suite: CipherSuite,
         ciphertext: &HpkeCiphertext,
         local_secret: &HpkeSecretKey,
         info: &[u8],
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, Self::Error> {
-        self.hpke_open(cipher_suite, ciphertext, local_secret, info, aad)
+        self.hpke_open(ciphertext, local_secret, info, aad)
     }
 
-    fn kem_derive(
-        &self,
-        cipher_suite: CipherSuite,
-        ikm: &[u8],
-    ) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        self.kem_derive(cipher_suite, ikm)
+    fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
+        self.kem_derive(ikm)
     }
 
     fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error> {
         self.random_bytes(out)
+    }
+
+    fn cipher_suite(&self) -> CipherSuite {
+        self.cipher_suite
+    }
+
+    fn sign(
+        &self,
+        secret_key: &super::SignatureSecretKey,
+        data: &[u8],
+    ) -> Result<Vec<u8>, Self::Error> {
+        let secret_key =
+            SecretKey::from_bytes(secret_key, self.cipher_suite.signature_key_curve())?;
+
+        secret_key.sign(data).map_err(Into::into)
+    }
+
+    fn verify(
+        &self,
+        public_key: &super::SignaturePublicKey,
+        signature: &[u8],
+        data: &[u8],
+    ) -> Result<(), Self::Error> {
+        let public_key = PublicKey::from_uncompressed_bytes(public_key, self.signature_key_curve)?;
+
+        public_key
+            .verify(signature, data)?
+            .then_some(())
+            .ok_or(FerriscryptCryptoError::InvalidSignature)
     }
 }
 
@@ -360,5 +404,21 @@ impl From<ferriscrypt::hpke::kem::HpkeSecretKey> for HpkeSecretKey {
 impl From<HpkeSecretKey> for ferriscrypt::hpke::kem::HpkeSecretKey {
     fn from(key: HpkeSecretKey) -> Self {
         ferriscrypt::hpke::kem::HpkeSecretKey::from(key.0)
+    }
+}
+
+impl TryFrom<PublicKey> for SignaturePublicKey {
+    type Error = EcKeyError;
+
+    fn try_from(pk: PublicKey) -> Result<Self, Self::Error> {
+        Ok(SignaturePublicKey::from(pk.to_uncompressed_bytes()?))
+    }
+}
+
+impl TryFrom<&SecretKey> for SignaturePublicKey {
+    type Error = EcKeyError;
+
+    fn try_from(value: &SecretKey) -> Result<Self, Self::Error> {
+        SignaturePublicKey::try_from(value.to_public()?)
     }
 }

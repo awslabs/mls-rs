@@ -206,12 +206,6 @@ pub(crate) fn test_group_custom(
         .test_single_signing_identity(signing_identity.clone(), secret_key)
         .leaf_node_extensions(leaf_extensions)
         .preferences(preferences)
-        .cipher_suites(
-            capabilities
-                .cipher_suites
-                .into_iter()
-                .map(|cs| cs.into_enum().unwrap()),
-        )
         .extension_types(capabilities.extensions)
         .protocol_versions(
             capabilities

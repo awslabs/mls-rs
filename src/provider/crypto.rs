@@ -1,9 +1,12 @@
 mod ferriscrypt;
 
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
-use zeroize::Zeroize;
+use std::ops::Deref;
 
 use crate::cipher_suite::CipherSuite;
+use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
+use serde_with::serde_as;
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use zeroize::Zeroize;
 
 pub use self::ferriscrypt::*;
 
@@ -52,21 +55,79 @@ impl AsRef<[u8]> for HpkeSecretKey {
     }
 }
 
+#[serde_as]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct SignaturePublicKey(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "VecAsBase64")]
+    Vec<u8>,
+);
+
+impl Deref for SignaturePublicKey {
+    type Target = Vec<u8>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<Vec<u8>> for SignaturePublicKey {
+    fn from(data: Vec<u8>) -> Self {
+        SignaturePublicKey(data)
+    }
+}
+
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Eq, Zeroize, serde::Serialize, serde::Deserialize)]
+pub struct SignatureSecretKey(#[serde_as(as = "VecAsBase64")] Vec<u8>);
+
+impl From<Vec<u8>> for SignatureSecretKey {
+    fn from(data: Vec<u8>) -> Self {
+        Self(data)
+    }
+}
+
+impl Deref for SignatureSecretKey {
+    type Target = Vec<u8>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 pub trait CryptoProvider {
+    type CipherSuiteProvider: CipherSuiteProvider + Clone;
+
+    fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
+
+    fn cipher_suite_provider(&self, cipher_suite: CipherSuite)
+        -> Option<Self::CipherSuiteProvider>;
+}
+
+pub trait CipherSuiteProvider {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    fn hash(&self, cipher_suite: CipherSuite, data: &[u8]) -> Result<Vec<u8>, Self::Error>;
+    // TODO: We will eventually eliminate CipherSuite in favor of just a number for flexibility
+    fn cipher_suite(&self) -> CipherSuite;
 
-    fn mac(
-        &self,
-        cipher_suite: CipherSuite,
-        key: &[u8],
-        data: &[u8],
-    ) -> Result<Vec<u8>, Self::Error>;
+    fn hash(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error>;
+
+    fn mac(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>, Self::Error>;
 
     fn aead_seal(
         &self,
-        cipher_suite: CipherSuite,
         key: &[u8],
         data: &[u8],
         aad: Option<&[u8]>,
@@ -75,31 +136,18 @@ pub trait CryptoProvider {
 
     fn aead_open(
         &self,
-        cipher_suite: CipherSuite,
         key: &[u8],
         cipher_text: &[u8],
         aad: Option<&[u8]>,
         nonce: &[u8],
     ) -> Result<Vec<u8>, Self::Error>;
 
-    fn kdf_expand(
-        &self,
-        cipher_suite: CipherSuite,
-        prk: &[u8],
-        info: &[u8],
-        len: usize,
-    ) -> Result<Vec<u8>, Self::Error>;
+    fn kdf_expand(&self, prk: &[u8], info: &[u8], len: usize) -> Result<Vec<u8>, Self::Error>;
 
-    fn kdf_extract(
-        &self,
-        cipher_suite: CipherSuite,
-        salt: &[u8],
-        ikm: &[u8],
-    ) -> Result<Vec<u8>, Self::Error>;
+    fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Vec<u8>, Self::Error>;
 
     fn hpke_seal(
         &self,
-        cipher_suite: CipherSuite,
         remote_key: &HpkePublicKey,
         info: &[u8],
         aad: Option<&[u8]>,
@@ -108,18 +156,13 @@ pub trait CryptoProvider {
 
     fn hpke_open(
         &self,
-        cipher_suite: CipherSuite,
         ciphertext: &HpkeCiphertext,
         local_secret: &HpkeSecretKey,
         info: &[u8],
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, Self::Error>;
 
-    fn kem_derive(
-        &self,
-        cipher_suite: CipherSuite,
-        ikm: &[u8],
-    ) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error>;
+    fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error>;
 
     fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error>;
 
@@ -129,13 +172,26 @@ pub trait CryptoProvider {
 
         Ok(vec)
     }
+
+    fn sign(&self, secret_key: &SignatureSecretKey, data: &[u8]) -> Result<Vec<u8>, Self::Error>;
+
+    fn verify(
+        &self,
+        public_key: &SignaturePublicKey,
+        signature: &[u8],
+        data: &[u8],
+    ) -> Result<(), Self::Error>;
 }
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use super::FerriscryptCryptoProvider;
+    use crate::cipher_suite::CipherSuite;
 
-    pub(crate) fn test_crypto_provider() -> FerriscryptCryptoProvider {
-        FerriscryptCryptoProvider
+    use super::{CryptoProvider, FerriscryptCipherSuite, FerriscryptCryptoProvider};
+
+    pub(crate) fn test_cipher_suite_provider(cipher_suite: CipherSuite) -> FerriscryptCipherSuite {
+        FerriscryptCryptoProvider::default()
+            .cipher_suite_provider(cipher_suite)
+            .unwrap()
     }
 }

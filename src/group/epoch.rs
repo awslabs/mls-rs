@@ -1,9 +1,8 @@
-use crate::cipher_suite::SignaturePublicKey;
-use crate::group::secret_tree::SecretTree;
 use crate::group::GroupContext;
 use crate::psk::Psk;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::node::LeafIndex;
+use crate::{group::secret_tree::SecretTree, provider::crypto::SignaturePublicKey};
 use serde_with::serde_as;
 use std::collections::HashMap;
 use std::ops::Deref;

@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    cipher_suite::{CipherSuite, SignaturePublicKey},
+    cipher_suite::CipherSuite,
     extension::ExternalSendersExt,
     group::{GroupContext, GroupError, MLSPlaintext, Sender},
     identity::SigningIdentity,
+    provider::crypto::SignaturePublicKey,
     signer::Signable,
     tree_kem::{node::LeafIndex, TreeKemPublic},
 };

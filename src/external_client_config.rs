@@ -1,5 +1,5 @@
 use crate::{
-    cipher_suite::{CipherSuite, MaybeCipherSuite},
+    cipher_suite::MaybeCipherSuite,
     client_config::{MakeProposalFilter, ProposalFilterInit},
     extension::ExtensionType,
     identity::CredentialType,
@@ -16,7 +16,6 @@ pub trait ExternalClientConfig: Clone {
     type CryptoProvider: CryptoProvider;
 
     fn keychain(&self) -> Self::Keychain;
-    fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
     fn identity_provider(&self) -> Self::IdentityProvider;
@@ -40,6 +39,7 @@ pub trait ExternalClientConfig: Clone {
                 .map(MaybeProtocolVersion::from)
                 .collect(),
             cipher_suites: self
+                .crypto_provider()
                 .supported_cipher_suites()
                 .into_iter()
                 .map(MaybeCipherSuite::from)
@@ -52,10 +52,6 @@ pub trait ExternalClientConfig: Clone {
 
     fn version_supported(&self, version: ProtocolVersion) -> bool {
         self.supported_protocol_versions().contains(&version)
-    }
-
-    fn cipher_suite_supported(&self, cipher_suite: CipherSuite) -> bool {
-        self.supported_cipher_suites().contains(&cipher_suite)
     }
 
     fn supported_credentials(&self) -> Vec<CredentialType> {

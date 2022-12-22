@@ -1,6 +1,6 @@
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-use crate::provider::crypto::CryptoProvider;
+use crate::provider::crypto::CipherSuiteProvider;
 
 const REUSE_GUARD_SIZE: usize = 4;
 
@@ -26,7 +26,7 @@ impl AsRef<[u8]> for ReuseGuard {
 }
 
 impl ReuseGuard {
-    pub(crate) fn random<P: CryptoProvider>(provider: &P) -> Result<Self, P::Error> {
+    pub(crate) fn random<P: CipherSuiteProvider>(provider: &P) -> Result<Self, P::Error> {
         let mut data = [0u8; 4];
         provider.random_bytes(&mut data).map(|_| ReuseGuard(data))
     }
@@ -45,16 +45,20 @@ impl ReuseGuard {
 
 #[cfg(test)]
 mod tests {
-    use crate::provider::crypto::{test_utils::test_crypto_provider, CryptoProvider};
+    use crate::{
+        client::test_utils::TEST_CIPHER_SUITE,
+        provider::crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
+    };
 
     use super::{ReuseGuard, REUSE_GUARD_SIZE};
 
     #[test]
     fn test_random_generation() {
-        let test_guard = ReuseGuard::random(&test_crypto_provider()).unwrap();
+        let test_guard =
+            ReuseGuard::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE)).unwrap();
 
         (0..1000).for_each(|_| {
-            let next = ReuseGuard::random(&test_crypto_provider()).unwrap();
+            let next = ReuseGuard::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE)).unwrap();
             assert_ne!(next, test_guard);
         })
     }
@@ -67,7 +71,7 @@ mod tests {
     }
 
     fn generate_reuse_guard_test_cases() -> Vec<TestCase> {
-        let provider = test_crypto_provider();
+        let provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         [16, 32]
             .into_iter()

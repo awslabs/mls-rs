@@ -21,7 +21,7 @@ use crate::extension::{
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
 use crate::protocol_version::ProtocolVersion;
-use crate::provider::crypto::{CryptoProvider, HpkeCiphertext};
+use crate::provider::crypto::{CipherSuiteProvider, CryptoProvider, HpkeCiphertext};
 use crate::provider::identity::IdentityProvider;
 use crate::provider::keychain::KeychainStorage;
 use crate::provider::psk::{PskStore, PskStoreIdValidator};
@@ -155,7 +155,7 @@ pub(crate) enum ControlEncryptionMode {
     Encrypted(PaddingMode),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Group<C>
 where
     C: ClientConfig,
@@ -164,6 +164,7 @@ where
     pub config: C,
     #[cfg(not(feature = "benchmark"))]
     config: C,
+    cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
     state_repo: GroupStateRepository<C::GroupStateStorage, C::KeyPackageRepository>,
     state: GroupState,
     epoch_secrets: EpochSecrets,
@@ -188,6 +189,8 @@ where
         signing_identity: SigningIdentity,
         group_context_extensions: ExtensionList<GroupContextExtension>,
     ) -> Result<Self, GroupError> {
+        let cipher_suite_provider = cipher_suite_provider(config.crypto_provider(), cipher_suite)?;
+
         let signer = config
             .keychain()
             .signer(&signing_identity)
@@ -251,6 +254,7 @@ where
             commit_modifiers: Default::default(),
             epoch_secrets: key_schedule_result.epoch_secrets,
             state_repo,
+            cipher_suite_provider,
         })
     }
 
@@ -282,6 +286,9 @@ where
             GroupError::UnexpectedMessageType(vec![WireFormat::Welcome], wire_format)
         })?;
 
+        let cipher_suite_provider =
+            cipher_suite_provider(config.crypto_provider(), welcome.cipher_suite)?;
+
         let (encrypted_group_secrets, key_package_generation) =
             find_key_package_generation(&config, &welcome)?;
 
@@ -294,7 +301,7 @@ where
             return Err(GroupError::ProtocolVersionMismatch {
                 msg_version: protocol_version,
                 wire_format: WireFormat::KeyPackage,
-                version: key_package_version,
+                version: key_package_version.into(),
             });
         }
 
@@ -302,10 +309,8 @@ where
         // cipher suite and the HPKE private key corresponding to the GroupSecrets. If a
         // PreSharedKeyID is part of the GroupSecrets and the client is not in possession of
         // the corresponding PSK, return an error
-        let decrypted_group_secrets = config
-            .crypto_provider()
+        let decrypted_group_secrets = cipher_suite_provider
             .hpke_open(
-                welcome.cipher_suite,
                 &encrypted_group_secrets.encrypted_group_secrets,
                 key_package_generation.init_secret(),
                 &[],
@@ -343,12 +348,11 @@ where
         let group_info = GroupInfo::tls_deserialize(&mut &*decrypted_group_info)?;
 
         let join_context = validate_group_info(
-            &config.supported_protocol_versions(),
-            &config.supported_cipher_suites(),
             protocol_version,
             group_info,
             tree_data,
             &config.identity_provider(),
+            &cipher_suite_provider,
         )?;
 
         // Identify a leaf in the tree array (any even-numbered node) whose leaf_node is identical
@@ -397,6 +401,7 @@ where
 
         Self::join_with(
             config,
+            cipher_suite_provider,
             join_context,
             key_schedule_result.key_schedule,
             key_schedule_result.epoch_secrets,
@@ -407,6 +412,7 @@ where
 
     fn join_with(
         config: C,
+        cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
         join_context: JoinContext,
         key_schedule: KeySchedule,
         epoch_secrets: EpochSecrets,
@@ -447,6 +453,8 @@ where
             commit_modifiers: Default::default(),
             epoch_secrets,
             state_repo,
+            // TODO: This can be provided by join context
+            cipher_suite_provider,
         };
 
         Ok((
@@ -476,18 +484,22 @@ where
             GroupError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
         })?;
 
+        let cipher_suite_provider = maybe_cipher_suite_provider(
+            config.crypto_provider(),
+            group_info.group_context.cipher_suite,
+        )?;
+
         let external_pub_ext = group_info
             .extensions
             .get_extension::<ExternalPubExt>()?
             .ok_or(GroupError::MissingExternalPubExtension)?;
 
         let join_context = validate_group_info(
-            &config.supported_protocol_versions(),
-            &config.supported_cipher_suites(),
             protocol_version,
             group_info,
             tree_data,
             &config.identity_provider(),
+            &cipher_suite_provider,
         )?;
 
         let signer = config
@@ -518,6 +530,7 @@ where
 
         let (mut group, _) = Self::join_with(
             config,
+            cipher_suite_provider,
             join_context,
             KeySchedule::new(init_secret),
             epoch_secrets,
@@ -716,6 +729,9 @@ where
     {
         let required_capabilities = new_context.extensions.get_extension()?;
 
+        let cipher_suite_provider =
+            cipher_suite_provider(self.config.crypto_provider(), new_context.cipher_suite)?;
+
         let key_package_validator = KeyPackageValidator::new(
             new_context.protocol_version,
             new_context.cipher_suite,
@@ -854,6 +870,7 @@ where
             commit_modifiers: Default::default(),
             epoch_secrets: key_schedule_result.epoch_secrets,
             state_repo,
+            cipher_suite_provider,
         };
 
         let welcome = new_group.make_welcome_message(
@@ -1072,15 +1089,8 @@ where
         let group_secrets_bytes = Zeroizing::new(group_secrets.tls_serialize_detached()?);
 
         let encrypted_group_secrets = self
-            .config
-            .crypto_provider()
-            .hpke_seal(
-                self.state.cipher_suite(),
-                &key_package.hpke_init_key,
-                &[],
-                None,
-                &group_secrets_bytes,
-            )
+            .cipher_suite_provider
+            .hpke_seal(&key_package.hpke_init_key, &[], None, &group_secrets_bytes)
             .map_err(|e| GroupError::CryptoProviderError(e.into()))?;
 
         Ok(EncryptedGroupSecrets {
@@ -1277,7 +1287,7 @@ where
     ) -> Result<MLSCiphertext, GroupError> {
         let preferences = self.config.preferences();
 
-        let mut encryptor = CiphertextProcessor::new(self, self.config.crypto_provider());
+        let mut encryptor = CiphertextProcessor::new(self, self.cipher_suite_provider.clone());
 
         encryptor
             .seal(auth_content, preferences.padding_mode)
@@ -1317,7 +1327,7 @@ where
 
         let auth_content = if epoch_id == self.context().epoch {
             let content =
-                CiphertextProcessor::new(self, self.config.crypto_provider()).open(message)?;
+                CiphertextProcessor::new(self, self.cipher_suite_provider.clone()).open(message)?;
 
             verify_auth_content_signature(
                 SignaturePublicKeysContainer::RatchetTree(&self.state.public_tree),
@@ -1333,8 +1343,8 @@ where
                 .get_epoch_mut(epoch_id)?
                 .ok_or(GroupError::EpochNotFound(epoch_id))?;
 
-            let content =
-                CiphertextProcessor::new(epoch, self.config.crypto_provider()).open(message)?;
+            let content = CiphertextProcessor::new(epoch, self.cipher_suite_provider.clone())
+                .open(message)?;
 
             verify_auth_content_signature(
                 SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
@@ -2613,7 +2623,11 @@ mod tests {
     #[test]
     fn joining_group_fails_if_cipher_suite_is_not_supported() {
         let res = joining_group_fails_if_unsupported(|mut config| {
-            config.0.settings.cipher_suites.clear();
+            config
+                .0
+                .crypto_provider
+                .disabled_cipher_suites
+                .push(TEST_CIPHER_SUITE);
             config
         })
         .map(|_| ());

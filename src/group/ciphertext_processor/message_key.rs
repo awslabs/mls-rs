@@ -1,6 +1,4 @@
-use crate::{
-    cipher_suite::CipherSuite, group::secret_tree::MessageKeyData, provider::crypto::CryptoProvider,
-};
+use crate::{group::secret_tree::MessageKeyData, provider::crypto::CipherSuiteProvider};
 
 use super::reuse_guard::ReuseGuard;
 
@@ -12,16 +10,14 @@ impl MessageKey {
         MessageKey(key)
     }
 
-    pub(crate) fn encrypt<P: CryptoProvider>(
+    pub(crate) fn encrypt<P: CipherSuiteProvider>(
         &self,
         provider: &P,
-        cipher_suite: CipherSuite,
         data: &[u8],
         aad: &[u8],
         reuse_guard: &ReuseGuard,
     ) -> Result<Vec<u8>, P::Error> {
         provider.aead_seal(
-            cipher_suite,
             &self.0.key,
             data,
             Some(aad),
@@ -29,16 +25,14 @@ impl MessageKey {
         )
     }
 
-    pub(crate) fn decrypt<P: CryptoProvider>(
+    pub(crate) fn decrypt<P: CipherSuiteProvider>(
         &self,
         provider: &P,
-        cipher_suite: CipherSuite,
         data: &[u8],
         aad: &[u8],
         reuse_guard: &ReuseGuard,
     ) -> Result<Vec<u8>, P::Error> {
         provider.aead_open(
-            cipher_suite,
             &self.0.key,
             data,
             Some(aad),

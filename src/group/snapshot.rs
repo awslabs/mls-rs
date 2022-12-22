@@ -14,7 +14,9 @@ use ferriscrypt::hpke::kem::{HpkePublicKey, HpkeSecretKey};
 use serde_with::serde_as;
 use std::collections::HashMap;
 
-use super::{epoch::EpochSecrets, state_repo::GroupStateRepository, ExternalGroup};
+use super::{
+    cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository, ExternalGroup,
+};
 
 #[serde_as]
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
@@ -110,6 +112,11 @@ where
     }
 
     pub(crate) fn from_snapshot(config: C, snapshot: Snapshot) -> Result<Self, GroupError> {
+        let cipher_suite_provider = cipher_suite_provider(
+            config.crypto_provider(),
+            snapshot.state.context.cipher_suite,
+        )?;
+
         let identity_provider = config.identity_provider();
 
         let state_repo = GroupStateRepository::new(
@@ -131,6 +138,7 @@ where
             commit_modifiers: Default::default(),
             epoch_secrets: snapshot.epoch_secrets,
             state_repo,
+            cipher_suite_provider,
         })
     }
 }

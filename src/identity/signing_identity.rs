@@ -3,8 +3,7 @@ use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
-    cipher_suite::{CipherSuite, SignaturePublicKey},
-    identity::Credential,
+    cipher_suite::CipherSuite, identity::Credential, provider::crypto::SignaturePublicKey,
 };
 
 use super::{CredentialError, MlsCredential};
@@ -75,8 +74,8 @@ impl SigningIdentity {
 pub(crate) mod test_utils {
     use super::SigningIdentity;
     use crate::{
-        cipher_suite::{CipherSuite, SignaturePublicKey},
-        identity::test_utils::get_test_basic_credential,
+        cipher_suite::CipherSuite, identity::test_utils::get_test_basic_credential,
+        provider::crypto::SignaturePublicKey,
     };
     use ferriscrypt::asym::ec_key::{generate_keypair, SecretKey};
 
@@ -103,10 +102,7 @@ mod tests {
     use assert_matches::assert_matches;
     use ferriscrypt::asym::ec_key::generate_keypair;
 
-    use crate::{
-        cipher_suite::{CipherSuite, SignaturePublicKey},
-        identity::test_utils::get_test_basic_credential,
-    };
+    use crate::{cipher_suite::CipherSuite, identity::test_utils::get_test_basic_credential};
 
     use super::{test_utils::get_test_signing_identity, *};
 

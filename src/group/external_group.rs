@@ -4,6 +4,7 @@ use super::{
     check_protocol_version,
     confirmation_tag::ConfirmationTag,
     framing::{MLSCiphertext, MLSPlaintext, Sender, WireFormat},
+    maybe_cipher_suite_provider,
     message_processor::{EventOrContent, MessageProcessor, ProcessedMessage, ProvisionalState},
     message_signature::MLSAuthenticatedContent,
     proposal::{AddProposal, Proposal, RemoveProposal},
@@ -46,13 +47,17 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             GroupError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
         })?;
 
+        let cipher_suite_provider = maybe_cipher_suite_provider(
+            config.crypto_provider(),
+            group_info.group_context.cipher_suite,
+        )?;
+
         let join_context = validate_group_info(
-            &config.supported_protocol_versions(),
-            &config.supported_cipher_suites(),
             protocol_version,
             group_info,
             tree_data,
             &config.identity_provider(),
+            &cipher_suite_provider,
         )?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
@@ -569,9 +574,10 @@ mod tests {
     fn external_group_will_reject_unsupported_cipher_suites() {
         let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
-        let config = TestExternalClientBuilder::new_for_test()
-            .cipher_suite(CipherSuite::Curve25519ChaCha20)
-            .build_config();
+        let config = TestExternalClientBuilder::new_for_test_disabling_cipher_suite(
+            CipherSuite::Curve25519Aes128,
+        )
+        .build_config();
 
         let res = ExternalGroup::join(config, alice.group.group_info_message(true).unwrap(), None)
             .map(|_| ());
