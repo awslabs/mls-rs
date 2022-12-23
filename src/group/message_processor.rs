@@ -1,7 +1,7 @@
 use crate::{
     client_config::ProposalFilterInit,
     key_package::KeyPackage,
-    provider::identity::IdentityProvider,
+    provider::{crypto::CipherSuiteProvider, identity::IdentityProvider},
     psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
     time::MlsTime,
     tree_kem::{
@@ -137,6 +137,7 @@ pub(crate) trait MessageProcessor {
 
     type ProposalFilter: ProposalFilter;
     type IdentityProvider: IdentityProvider;
+    type CipherSuiteProvider: CipherSuiteProvider;
     type ExternalPskIdValidator: ExternalPskIdValidator;
 
     fn process_incoming_message(
@@ -311,6 +312,7 @@ pub(crate) trait MessageProcessor {
             &auth_content.content.sender,
             &group_state.context.extensions,
             self.identity_provider(),
+            self.cipher_suite_provider(),
             &group_state.public_tree,
             self.external_psk_id_validator(),
             self.proposal_filter(ProposalFilterInit::new(auth_content.content.sender.clone())),
@@ -347,6 +349,7 @@ pub(crate) trait MessageProcessor {
             .map(|update_path| {
                 validate_update_path(
                     &self.identity_provider(),
+                    self.cipher_suite_provider(),
                     update_path,
                     &provisional_state,
                     sender,
@@ -402,6 +405,7 @@ pub(crate) trait MessageProcessor {
     fn self_index(&self) -> Option<LeafIndex>;
     fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter;
     fn identity_provider(&self) -> Self::IdentityProvider;
+    fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider;
     fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator;
     fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool;
     fn min_epoch_available(&self) -> Option<u64>;

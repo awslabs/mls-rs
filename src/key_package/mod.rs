@@ -159,35 +159,32 @@ impl<'a> Signable<'a> for KeyPackage {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use ferriscrypt::asym::ec_key::SecretKey;
-
     use super::*;
     use crate::{
         identity::test_utils::get_test_signing_identity,
         provider::{
-            crypto::{test_utils::test_cipher_suite_provider, FerriscryptCipherSuite},
+            crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
             identity::BasicIdentityProvider,
         },
         tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
     };
 
-    pub(crate) fn test_key_package_custom<F>(
+    pub(crate) fn test_key_package_custom<F, CSP>(
+        cipher_suite_provider: &CSP,
         protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
         id: &str,
         custom: F,
     ) -> KeyPackage
     where
-        F: FnOnce(
-            &mut KeyPackageGenerator<SecretKey, BasicIdentityProvider, FerriscryptCipherSuite>,
-        ) -> KeyPackageGeneration,
+        CSP: CipherSuiteProvider,
+        F: FnOnce(&mut KeyPackageGenerator<BasicIdentityProvider, CSP>) -> KeyPackageGeneration,
     {
         let (signing_identity, secret_key) =
-            get_test_signing_identity(cipher_suite, id.as_bytes().to_vec());
+            get_test_signing_identity(cipher_suite_provider.cipher_suite(), id.as_bytes().to_vec());
 
         let mut generator = KeyPackageGenerator {
             protocol_version,
-            cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
+            cipher_suite_provider,
             signing_identity: &signing_identity,
             signing_key: &secret_key,
             identity_provider: &BasicIdentityProvider::new(),
@@ -201,16 +198,21 @@ pub(crate) mod test_utils {
         cipher_suite: CipherSuite,
         id: &str,
     ) -> KeyPackage {
-        test_key_package_custom(protocol_version, cipher_suite, id, |generator| {
-            generator
-                .generate(
-                    Lifetime::years(1).unwrap(),
-                    get_test_capabilities(),
-                    ExtensionList::default(),
-                    ExtensionList::default(),
-                )
-                .unwrap()
-        })
+        test_key_package_custom(
+            &test_cipher_suite_provider(cipher_suite),
+            protocol_version,
+            id,
+            |generator| {
+                generator
+                    .generate(
+                        Lifetime::years(1).unwrap(),
+                        get_test_capabilities(),
+                        ExtensionList::default(),
+                        ExtensionList::default(),
+                    )
+                    .unwrap()
+            },
+        )
     }
 }
 

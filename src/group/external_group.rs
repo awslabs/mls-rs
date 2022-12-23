@@ -21,14 +21,18 @@ use crate::{
     identity::SigningIdentity,
     key_package::{KeyPackage, KeyPackageValidator},
     protocol_version::ProtocolVersion,
-    provider::{identity::IdentityProvider, keychain::KeychainStorage},
+    provider::{crypto::CryptoProvider, identity::IdentityProvider, keychain::KeychainStorage},
     psk::PassThroughPskIdValidator,
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
 };
 
-#[derive(Clone, Debug)]
-pub struct ExternalGroup<C> {
+#[derive(Clone)]
+pub struct ExternalGroup<C>
+where
+    C: ExternalClientConfig,
+{
     pub(crate) config: C,
+    pub(crate) cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
     pub(crate) state: GroupState,
 }
 
@@ -74,6 +78,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
                 interim_transcript_hash,
                 join_context.confirmation_tag,
             ),
+            cipher_suite_provider,
         })
     }
 
@@ -131,7 +136,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         // not checked as they may be changed in another proposal in the same commit.
         let key_package_validator = KeyPackageValidator::new(
             self.protocol_version(),
-            self.cipher_suite(),
+            &self.cipher_suite_provider,
             None,
             self.config.identity_provider(),
         );
@@ -192,6 +197,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         let sender = Sender::External(sender_index as u32);
 
         let auth_content = MLSAuthenticatedContent::new_signed(
+            &self.cipher_suite_provider,
             &self.state.context,
             sender.clone(),
             Content::Proposal(proposal.clone()),
@@ -266,6 +272,7 @@ where
     type IdentityProvider = C::IdentityProvider;
     type ExternalPskIdValidator = PassThroughPskIdValidator;
     type EventType = ExternalEvent<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>;
+    type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
     fn self_index(&self) -> Option<LeafIndex> {
         None
@@ -280,6 +287,7 @@ where
         message: MLSPlaintext,
     ) -> Result<EventOrContent<Self::EventType>, GroupError> {
         let auth_content = crate::group::message_verifier::verify_plaintext_authentication(
+            &self.cipher_suite_provider,
             message,
             None,
             None,
@@ -339,6 +347,10 @@ where
             .max_epoch_jitter()
             .map(|j| self.state.context.epoch - j)
     }
+
+    fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider {
+        &self.cipher_suite_provider
+    }
 }
 
 #[cfg(test)]
@@ -394,9 +406,9 @@ mod tests {
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
         key_package::test_utils::test_key_package,
         protocol_version::{MaybeProtocolVersion, ProtocolVersion},
+        provider::crypto::SignatureSecretKey,
     };
     use assert_matches::assert_matches;
-    use ferriscrypt::asym::ec_key::SecretKey;
 
     use super::test_utils::make_external_group;
 
@@ -610,7 +622,7 @@ mod tests {
 
     fn setup_extern_proposal_test(
         extern_proposals_allowed: bool,
-    ) -> (SigningIdentity, SecretKey, TestGroup) {
+    ) -> (SigningIdentity, SignatureSecretKey, TestGroup) {
         let (server_identity, server_key) =
             get_test_signing_identity(TEST_CIPHER_SUITE, b"server".to_vec());
 
@@ -634,7 +646,7 @@ mod tests {
             .config
             .0
             .keychain
-            .insert(server_identity.clone(), server_key);
+            .insert(server_identity.clone(), server_key, TEST_CIPHER_SUITE);
 
         // Create an external proposal
         let external_proposal = proposal_creation(&mut server, &server_identity);
@@ -701,7 +713,7 @@ mod tests {
             .config
             .0
             .keychain
-            .insert(signing_id.clone(), secret_key);
+            .insert(signing_id.clone(), secret_key, TEST_CIPHER_SUITE);
 
         let charlie_key_package =
             test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "charlie");
@@ -728,7 +740,7 @@ mod tests {
             .config
             .0
             .keychain
-            .insert(server_identity.clone(), server_key);
+            .insert(server_identity.clone(), server_key, TEST_CIPHER_SUITE);
 
         let res = server.propose_remove(1, &server_identity, vec![]);
 

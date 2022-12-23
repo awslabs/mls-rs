@@ -10,7 +10,7 @@ use aws_mls::identity::SigningIdentity;
 use aws_mls::identity::{BasicCredential, Credential, MlsCredential};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
-use aws_mls::provider::crypto::SignaturePublicKey;
+use aws_mls::provider::crypto::{CryptoProvider, FerriscryptCryptoProvider};
 use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain};
 use ferriscrypt::rand::SecureRng;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
@@ -49,14 +49,19 @@ struct TestClient {
 }
 
 fn generate_client(cipher_suite: CipherSuite, id: Vec<u8>, preferences: Preferences) -> TestClient {
-    let key = cipher_suite.generate_signing_key().unwrap();
+    let cipher_suite_provider = FerriscryptCryptoProvider::new()
+        .cipher_suite_provider(cipher_suite)
+        .unwrap();
+
+    let (secret_key, public_key) = cipher_suite_provider.signature_key_generate().unwrap();
+
     let credential = get_test_basic_credential(id);
 
-    let identity = SigningIdentity::new(credential, SignaturePublicKey::try_from(&key).unwrap());
+    let identity = SigningIdentity::new(credential, public_key);
 
     let client = ClientBuilder::new()
         .identity_provider(BasicIdentityProvider::new())
-        .single_signing_identity(identity.clone(), key)
+        .single_signing_identity(identity.clone(), secret_key, cipher_suite)
         .preferences(preferences)
         .build();
 
@@ -856,20 +861,25 @@ struct ReinitClientGeneration {
 fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite, id: &str) -> ReinitClientGeneration {
     let credential = get_test_basic_credential(id.as_bytes().to_vec());
 
-    let sk1 = suite1.generate_signing_key().unwrap();
-    let sk2 = suite2.generate_signing_key().unwrap();
+    let csp1 = FerriscryptCryptoProvider::new()
+        .cipher_suite_provider(suite1)
+        .unwrap();
 
-    let id1 = SigningIdentity::new(
-        credential.clone(),
-        SignaturePublicKey::try_from(&sk1).unwrap(),
-    );
-    let id2 = SigningIdentity::new(credential, SignaturePublicKey::try_from(&sk2).unwrap());
+    let csp2 = FerriscryptCryptoProvider::new()
+        .cipher_suite_provider(suite2)
+        .unwrap();
+
+    let (sk1, pk1) = csp1.signature_key_generate().unwrap();
+    let (sk2, pk2) = csp2.signature_key_generate().unwrap();
+
+    let id1 = SigningIdentity::new(credential.clone(), pk1);
+    let id2 = SigningIdentity::new(credential, pk2);
 
     let client = ClientBuilder::new()
         .identity_provider(BasicIdentityProvider::new())
         .keychain(InMemoryKeychain::default())
-        .signing_identity(id1.clone(), sk1)
-        .signing_identity(id2.clone(), sk2)
+        .signing_identity(id1.clone(), sk1, suite1)
+        .signing_identity(id2.clone(), sk2, suite2)
         .build();
 
     ReinitClientGeneration { client, id1, id2 }

@@ -2,10 +2,10 @@ use crate::{
     extension::{KeyPackageExtension, LeafNodeExtension},
     identity::SigningIdentity,
     provider::{
-        crypto::{CipherSuiteProvider, HpkeSecretKey},
+        crypto::{CipherSuiteProvider, HpkeSecretKey, SignatureSecretKey},
         identity::IdentityProvider,
     },
-    signer::{SignatureError, Signer},
+    signer::SignatureError,
     tree_kem::{
         leaf_node::{ConfigProperties, LeafNodeError},
         Capabilities, Lifetime,
@@ -34,16 +34,15 @@ pub enum KeyPackageGenerationError {
 }
 
 #[derive(Clone, Debug)]
-pub struct KeyPackageGenerator<'a, S, IP, CP>
+pub struct KeyPackageGenerator<'a, IP, CP>
 where
-    S: Signer,
     IP: IdentityProvider,
     CP: CipherSuiteProvider,
 {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite_provider: &'a CP,
     pub signing_identity: &'a SigningIdentity,
-    pub signing_key: &'a S,
+    pub signing_key: &'a SignatureSecretKey,
     pub identity_provider: &'a IP,
 }
 
@@ -72,14 +71,15 @@ impl KeyPackageGeneration {
     }
 }
 
-impl<'a, S, IP, CP> KeyPackageGenerator<'a, S, IP, CP>
+impl<'a, IP, CP> KeyPackageGenerator<'a, IP, CP>
 where
-    S: Signer,
     IP: IdentityProvider,
     CP: CipherSuiteProvider,
 {
     pub(super) fn sign(&self, package: &mut KeyPackage) -> Result<(), KeyPackageGenerationError> {
-        package.sign(self.signing_key, &()).map_err(Into::into)
+        package
+            .sign(self.cipher_suite_provider, self.signing_key, &())
+            .map_err(Into::into)
     }
 
     pub fn generate(
@@ -135,6 +135,7 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         extension::{ExtensionList, KeyPackageExtension, LeafNodeExtension, MlsExtension},
         identity::test_utils::get_test_signing_identity,
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
@@ -190,6 +191,8 @@ mod tests {
         for (protocol_version, cipher_suite) in
             ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
         {
+            let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
             let (signing_identity, signing_key) =
                 get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
@@ -225,16 +228,6 @@ mod tests {
             assert_eq!(generated.key_package.leaf_node.capabilities, capabilities);
             assert_eq!(generated.key_package.leaf_node.extensions, leaf_node_ext);
             assert_eq!(generated.key_package.extensions, key_package_ext);
-
-            assert_eq!(
-                generated
-                    .key_package
-                    .leaf_node
-                    .signing_identity
-                    .public_key(cipher_suite)
-                    .unwrap(),
-                signing_identity.public_key(cipher_suite).unwrap()
-            );
 
             assert_ne!(
                 generated.key_package.hpke_init_key.as_ref(),
@@ -277,7 +270,7 @@ mod tests {
 
             let validator = KeyPackageValidator::new(
                 protocol_version,
-                cipher_suite,
+                &cipher_suite_provider,
                 None,
                 BasicIdentityProvider::new(),
             );
@@ -290,10 +283,10 @@ mod tests {
 
     #[test]
     fn test_credential_signature_mismatch() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let protocol_version = TEST_PROTOCOL_VERSION;
+        let cipher_suite = TEST_CIPHER_SUITE;
 
-        let signing_key = cipher_suite.generate_signing_key().unwrap();
+        let (_, signing_key) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
         let (signing_identity, _) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
         let test_generator = KeyPackageGenerator {

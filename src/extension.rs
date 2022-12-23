@@ -1,6 +1,5 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::proposal::ProposalType;
-use crate::identity::SigningIdentityError;
 use crate::provider::identity::IdentityProvider;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::time::MlsTime;
@@ -145,17 +144,15 @@ impl ExternalSendersExt {
         Self { allowed_senders }
     }
 
-    pub fn verify_all<C: IdentityProvider>(
+    pub fn verify_all<I: IdentityProvider>(
         &self,
-        provider: &C,
+        provider: &I,
         cipher_suite: CipherSuite,
         timestamp: Option<MlsTime>,
-    ) -> Result<(), SigningIdentityError> {
-        self.allowed_senders.iter().try_for_each(|id| {
-            provider
-                .validate(id, cipher_suite, timestamp)
-                .map_err(|e| SigningIdentityError::IdentityProviderError(e.into()))
-        })
+    ) -> Result<(), I::Error> {
+        self.allowed_senders
+            .iter()
+            .try_for_each(|id| provider.validate(id, cipher_suite, timestamp))
     }
 }
 

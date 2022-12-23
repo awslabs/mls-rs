@@ -14,7 +14,7 @@ use aws_mls::identity::SigningIdentity;
 use aws_mls::identity::{BasicCredential, MlsCredential};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
-use aws_mls::provider::crypto::SignaturePublicKey;
+use aws_mls::provider::crypto::{CryptoProvider, FerriscryptCryptoProvider};
 use aws_mls::provider::{
     identity::BasicIdentityProvider, keychain::InMemoryKeychain, psk::InMemoryPskStore,
 };
@@ -225,7 +225,11 @@ impl MlsClient for MlsClientImpl {
             .into_enum()
             .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
 
-        let secret_key = cipher_suite.generate_signing_key().map_err(abort)?;
+        let provider = FerriscryptCryptoProvider::new()
+            .cipher_suite_provider(cipher_suite)
+            .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
+
+        let (secret_key, public_key) = provider.signature_key_generate().map_err(abort)?;
 
         let credential = BasicCredential {
             credential: b"creator".to_vec(),
@@ -233,14 +237,13 @@ impl MlsClient for MlsClientImpl {
         .to_credential()
         .unwrap();
 
-        let signature_key = SignaturePublicKey::try_from(&secret_key).map_err(abort)?;
-        let signing_identity = SigningIdentity::new(credential, signature_key);
+        let signing_identity = SigningIdentity::new(credential, public_key);
 
         let psk_store = InMemoryPskStore::default();
 
         let creator = Client::builder()
             .identity_provider(BasicIdentityProvider::new())
-            .single_signing_identity(signing_identity.clone(), secret_key)
+            .single_signing_identity(signing_identity.clone(), secret_key, cipher_suite)
             .preferences(Preferences::default().with_ratchet_tree_extension(true))
             .psk_store(psk_store.clone())
             .build();
@@ -274,7 +277,11 @@ impl MlsClient for MlsClientImpl {
             .into_enum()
             .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
 
-        let secret_key = cipher_suite.generate_signing_key().map_err(abort)?;
+        let provider = FerriscryptCryptoProvider::new()
+            .cipher_suite_provider(cipher_suite)
+            .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
+
+        let (secret_key, public_key) = provider.signature_key_generate().map_err(abort)?;
 
         let credential = BasicCredential {
             credential: format!("alice{}", clients.len()).into_bytes(),
@@ -282,14 +289,13 @@ impl MlsClient for MlsClientImpl {
         .to_credential()
         .unwrap();
 
-        let signature_key = SignaturePublicKey::try_from(&secret_key).map_err(abort)?;
-        let signing_identity = SigningIdentity::new(credential, signature_key);
+        let signing_identity = SigningIdentity::new(credential, public_key);
 
         let psk_store = InMemoryPskStore::default();
 
         let client = ClientBuilder::new()
             .identity_provider(BasicIdentityProvider::new())
-            .single_signing_identity(signing_identity.clone(), secret_key)
+            .single_signing_identity(signing_identity.clone(), secret_key, cipher_suite)
             .preferences(Preferences::default().with_ratchet_tree_extension(true))
             .psk_store(psk_store.clone())
             .build();

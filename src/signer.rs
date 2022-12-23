@@ -1,7 +1,8 @@
-use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsSerialize, TlsSize};
+
+use crate::provider::crypto::{CipherSuiteProvider, SignaturePublicKey, SignatureSecretKey};
 
 #[derive(Debug, Clone, TlsSize, TlsSerialize)]
 struct SignContent {
@@ -42,15 +43,16 @@ pub(crate) trait Signable<'a> {
 
     fn write_signature(&mut self, signature: Vec<u8>);
 
-    fn sign<S: Signer>(
+    fn sign<P: CipherSuiteProvider>(
         &mut self,
-        signer: &S,
+        signature_provider: &P,
+        signer: &SignatureSecretKey,
         context: &Self::SigningContext,
     ) -> Result<(), SignatureError> {
         let sign_content = SignContent::new(Self::SIGN_LABEL, self.signable_content(context)?);
 
-        let signature = signer
-            .sign(&sign_content.tls_serialize_detached()?)
+        let signature = signature_provider
+            .sign(signer, &sign_content.tls_serialize_detached()?)
             .map_err(|e| SignatureError::InternalSignerError(e.into()))?;
 
         self.write_signature(signature);
@@ -58,52 +60,33 @@ pub(crate) trait Signable<'a> {
         Ok(())
     }
 
-    fn verify(
+    fn verify<P: CipherSuiteProvider>(
         &self,
-        pub_key: &PublicKey,
+        signature_provider: &P,
+        public_key: &SignaturePublicKey,
         context: &Self::SigningContext,
     ) -> Result<(), SignatureError> {
         let sign_content = SignContent::new(Self::SIGN_LABEL, self.signable_content(context)?);
 
-        let valid_signature = pub_key
-            .verify(self.signature(), &sign_content.tls_serialize_detached()?)
-            .map_err(|e| SignatureError::SignatureValidationFailed(e.into()))?;
-
-        if valid_signature {
-            Ok(())
-        } else {
-            Err(SignatureError::SignatureValidationFailed(
-                "Invalid Signature".into(),
-            ))
-        }
-    }
-}
-
-pub trait Signer {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    fn sign(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error>;
-    fn public_key(&self) -> Result<PublicKey, Self::Error>;
-}
-
-impl Signer for SecretKey {
-    type Error = ferriscrypt::asym::ec_key::EcKeyError;
-
-    fn sign(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        self.sign(data)
-    }
-
-    fn public_key(&self) -> Result<PublicKey, Self::Error> {
-        self.to_public()
+        signature_provider
+            .verify(
+                public_key,
+                self.signature(),
+                &sign_content.tls_serialize_detached()?,
+            )
+            .map_err(|e| SignatureError::SignatureValidationFailed(e.into()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cipher_suite::CipherSuite;
+    use crate::{
+        cipher_suite::CipherSuite, client::test_utils::TEST_CIPHER_SUITE,
+        provider::crypto::test_utils::test_cipher_suite_provider,
+    };
     use assert_matches::assert_matches;
-    use ferriscrypt::{asym::ec_key::SecretKey, rand::SecureRng};
+    use ferriscrypt::rand::SecureRng;
     use num_enum::TryFromPrimitive;
     use tls_codec::{Serialize, TlsByteVecU32};
 
@@ -121,6 +104,8 @@ mod tests {
         signature: Vec<u8>,
         #[serde(with = "hex::serde")]
         signer: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        public: Vec<u8>,
     }
 
     struct TestSignable {
@@ -154,7 +139,10 @@ mod tests {
         let mut test_cases = Vec::new();
 
         for cipher_suite in CipherSuite::all() {
-            let signing_key = cipher_suite.generate_signing_key().unwrap();
+            let provider = test_cipher_suite_provider(cipher_suite);
+
+            let (signer, public) = provider.signature_key_generate().unwrap();
+
             let content = SecureRng::gen(32).unwrap();
             let context = SecureRng::gen(32).unwrap();
 
@@ -163,14 +151,15 @@ mod tests {
                 signature: Vec::new(),
             };
 
-            test_signable.sign(&signing_key, &context).unwrap();
+            test_signable.sign(&provider, &signer, &context).unwrap();
 
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 content,
                 context,
                 signature: test_signable.signature,
-                signer: (*signing_key.to_der().unwrap()).clone(),
+                signer: signer.to_vec(),
+                public: public.to_vec(),
             });
         }
 
@@ -191,7 +180,12 @@ mod tests {
                 continue;
             }
 
-            let signature_key = SecretKey::from_der(&one_case.signer).unwrap();
+            let cipher_suite_provider = test_cipher_suite_provider(
+                CipherSuite::try_from_primitive(one_case.cipher_suite).unwrap(),
+            );
+
+            let signature_key = SignatureSecretKey::from(one_case.signer);
+            let public_key = SignaturePublicKey::from(one_case.public);
 
             // Test signature generation
             let mut test_signable = TestSignable {
@@ -200,11 +194,11 @@ mod tests {
             };
 
             test_signable
-                .sign(&signature_key, &one_case.context)
+                .sign(&cipher_suite_provider, &signature_key, &one_case.context)
                 .unwrap();
 
             test_signable
-                .verify(&signature_key.to_public().unwrap(), &one_case.context)
+                .verify(&cipher_suite_provider, &public_key, &one_case.context)
                 .unwrap();
 
             // Test verifying an existing signature
@@ -214,36 +208,37 @@ mod tests {
             };
 
             test_signable
-                .verify(&signature_key.to_public().unwrap(), &one_case.context)
+                .verify(&cipher_suite_provider, &public_key, &one_case.context)
                 .unwrap();
         }
     }
 
     #[test]
     fn test_invalid_signature() {
-        let correct_key = CipherSuite::Curve25519Aes128
-            .generate_signing_key()
-            .unwrap();
-        let incorrect_key = CipherSuite::Curve25519Aes128
-            .generate_signing_key()
-            .unwrap();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
+        let (correct_secret, _) = cipher_suite_provider.signature_key_generate().unwrap();
+        let (_, incorrect_public) = cipher_suite_provider.signature_key_generate().unwrap();
 
         let mut test_signable = TestSignable {
             content: SecureRng::gen(32).unwrap(),
             signature: vec![],
         };
 
-        test_signable.sign(&correct_key, &vec![]).unwrap();
+        test_signable
+            .sign(&cipher_suite_provider, &correct_secret, &vec![])
+            .unwrap();
 
-        let res = test_signable.verify(&incorrect_key.to_public().unwrap(), &vec![]);
+        let res = test_signable.verify(&cipher_suite_provider, &incorrect_public, &vec![]);
+
         assert_matches!(res, Err(SignatureError::SignatureValidationFailed(_)));
     }
 
     #[test]
     fn test_invalid_context() {
-        let signing_key = CipherSuite::Curve25519Aes128
-            .generate_signing_key()
-            .unwrap();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
+        let (secret, public) = cipher_suite_provider.signature_key_generate().unwrap();
 
         let correct_context = SecureRng::gen(32).unwrap();
         let incorrect_context = SecureRng::gen(32).unwrap();
@@ -253,9 +248,11 @@ mod tests {
             signature: vec![],
         };
 
-        test_signable.sign(&signing_key, &correct_context).unwrap();
+        test_signable
+            .sign(&cipher_suite_provider, &secret, &correct_context)
+            .unwrap();
 
-        let res = test_signable.verify(&signing_key.to_public().unwrap(), &incorrect_context);
+        let res = test_signable.verify(&cipher_suite_provider, &public, &incorrect_context);
         assert_matches!(res, Err(SignatureError::SignatureValidationFailed(_)));
     }
 }

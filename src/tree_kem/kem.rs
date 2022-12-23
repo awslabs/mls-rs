@@ -1,8 +1,7 @@
 use crate::group::GroupContext;
 use crate::identity::SigningIdentity;
-use crate::provider::crypto::{CipherSuiteProvider, HpkeCiphertext};
+use crate::provider::crypto::{CipherSuiteProvider, HpkeCiphertext, SignatureSecretKey};
 use crate::provider::identity::IdentityProvider;
-use crate::signer::Signer;
 use crate::tree_kem::math as tree_math;
 use cfg_if::cfg_if;
 
@@ -46,19 +45,18 @@ impl<'a> TreeKem<'a> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn encap<S, C, P>(
+    pub fn encap<C, P>(
         self,
         context: &mut GroupContext,
         excluding: &[LeafIndex],
-        signer: &S,
+        signer: &SignatureSecretKey,
         update_leaf_properties: ConfigProperties,
         signing_identity: Option<SigningIdentity>,
         identity_provider: C,
         cipher_suite_provider: &P,
-        #[cfg(test)] commit_modifiers: &CommitModifiers<S>,
+        #[cfg(test)] commit_modifiers: &CommitModifiers<P>,
     ) -> Result<EncapGeneration, RatchetTreeError>
     where
-        S: Signer,
         C: IdentityProvider,
         P: CipherSuiteProvider + Send + Sync,
     {
@@ -112,7 +110,7 @@ impl<'a> TreeKem<'a> {
 
         #[cfg(test)]
         {
-            (commit_modifiers.modify_leaf)(&mut own_leaf_copy, signer);
+            (commit_modifiers.modify_leaf)(&mut own_leaf_copy, signer, cipher_suite_provider);
             *self
                 .tree_kem_public
                 .nodes

@@ -297,8 +297,7 @@ pub(crate) mod test_utils {
 
     use crate::{
         provider::{
-            crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
-            identity::BasicIdentityProvider,
+            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
         },
         tree_kem::{leaf_node::test_utils::get_basic_test_node, node::Parent},
     };

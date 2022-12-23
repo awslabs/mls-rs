@@ -3,6 +3,7 @@
 //! See [`ExternalClientBuilder`].
 
 use crate::{
+    cipher_suite::CipherSuite,
     client_config::{
         KeepAllProposals, MakeProposalFilter, MakeSimpleProposalFilter, ProposalFilterInit,
     },
@@ -14,14 +15,14 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     provider::{
-        crypto::{CryptoProvider, FerriscryptCryptoProvider},
+        crypto::{CryptoProvider, FerriscryptCryptoProvider, SignatureSecretKey},
         identity::IdentityProvider,
         keychain::{InMemoryKeychain, KeychainStorage},
     },
     tree_kem::Capabilities,
     Sealed,
 };
-use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
+use ferriscrypt::asym::ec_key::PublicKey;
 use std::collections::HashMap;
 
 /// Base client configuration type when instantiating `ExternalClientBuilder`
@@ -213,11 +214,12 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
     pub fn single_signing_identity(
         self,
         identity: SigningIdentity,
-        key: SecretKey,
+        key: SignatureSecretKey,
+        cipher_suite: CipherSuite,
     ) -> ExternalClientBuilder<WithKeychain<InMemoryKeychain, C>> {
         self.keychain({
             let mut keychain = InMemoryKeychain::default();
-            keychain.insert(identity, key);
+            keychain.insert(identity, key, cipher_suite);
             keychain
         })
     }
@@ -314,10 +316,11 @@ impl<C: IntoConfig<Keychain = InMemoryKeychain>> ExternalClientBuilder<C> {
     pub fn signing_identity(
         self,
         identity: SigningIdentity,
-        secret_key: SecretKey,
+        secret_key: SignatureSecretKey,
+        cipher_suite: CipherSuite,
     ) -> ExternalClientBuilder<IntoConfigOutput<C>> {
         let mut c = self.0.into_config();
-        c.0.keychain.insert(identity, secret_key);
+        c.0.keychain.insert(identity, secret_key, cipher_suite);
         ExternalClientBuilder(c)
     }
 }

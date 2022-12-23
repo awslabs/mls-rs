@@ -783,11 +783,12 @@ impl TreeKemPublic {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use ferriscrypt::asym::ec_key::SecretKey;
-
     use crate::{
         cipher_suite::CipherSuite,
-        provider::{crypto::HpkeSecretKey, identity::BasicIdentityProvider},
+        provider::{
+            crypto::{HpkeSecretKey, SignatureSecretKey},
+            identity::BasicIdentityProvider,
+        },
         tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key,
     };
 
@@ -801,7 +802,7 @@ pub(crate) mod test_utils {
         pub public: TreeKemPublic,
         pub private: TreeKemPrivate,
         pub creator_leaf: LeafNode,
-        pub creator_signing_key: SecretKey,
+        pub creator_signing_key: SignatureSecretKey,
         pub creator_hpke_secret: HpkeSecretKey,
     }
 

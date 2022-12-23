@@ -224,6 +224,7 @@ where
             proposals,
             &self.context().extensions,
             self.config.identity_provider(),
+            &self.cipher_suite_provider,
             &self.state.public_tree,
             external_leaf,
             PskStoreIdValidator::from(self.config.secret_store()),
@@ -319,6 +320,7 @@ where
         };
 
         let mut auth_content = MLSAuthenticatedContent::new_signed(
+            &self.cipher_suite_provider,
             self.context(),
             sender,
             Content::Commit(commit),
@@ -378,7 +380,7 @@ where
         };
 
         // Sign the GroupInfo using the member's private signing key
-        group_info.sign(&new_signer, &())?;
+        group_info.sign(&self.cipher_suite_provider, &new_signer, &())?;
 
         let welcome_message = self.make_welcome_message(
             added_leaves,
@@ -407,33 +409,36 @@ where
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use crate::tree_kem::{leaf_node::LeafNode, TreeKemPublic, UpdatePathNode};
+    use crate::{
+        provider::crypto::SignatureSecretKey,
+        tree_kem::{leaf_node::LeafNode, TreeKemPublic, UpdatePathNode},
+    };
     use core::fmt;
 
-    pub struct CommitModifiers<S> {
-        pub modify_leaf: fn(&mut LeafNode, &S),
+    pub struct CommitModifiers<CP> {
+        pub modify_leaf: fn(&mut LeafNode, &SignatureSecretKey, &CP),
         pub modify_tree: fn(&mut TreeKemPublic),
         pub modify_path: fn(Vec<UpdatePathNode>) -> Vec<UpdatePathNode>,
     }
 
-    impl<S> fmt::Debug for CommitModifiers<S> {
+    impl<CP> fmt::Debug for CommitModifiers<CP> {
         fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
             write!(fmt, "CommitModifiers")
         }
     }
 
-    impl<S> Copy for CommitModifiers<S> {}
+    impl<CP> Copy for CommitModifiers<CP> {}
 
-    impl<S> Clone for CommitModifiers<S> {
+    impl<CP> Clone for CommitModifiers<CP> {
         fn clone(&self) -> Self {
             *self
         }
     }
 
-    impl<S> Default for CommitModifiers<S> {
+    impl<CP> Default for CommitModifiers<CP> {
         fn default() -> Self {
             Self {
-                modify_leaf: |_, _| (),
+                modify_leaf: |_, _, _| (),
                 modify_tree: |_| (),
                 modify_path: |a| a,
             }
@@ -735,7 +740,7 @@ mod tests {
             .config
             .0
             .keychain
-            .insert(identity.clone(), secret_key);
+            .insert(identity.clone(), secret_key, cs);
 
         let commit_output = groups[0]
             .group

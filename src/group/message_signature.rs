@@ -1,7 +1,8 @@
 use super::framing::Content;
 use crate::group::framing::{ContentType, MLSContent, MLSPlaintext, Sender, WireFormat};
 use crate::group::{ConfirmationTag, GroupContext};
-use crate::signer::{Signable, SignatureError, Signer};
+use crate::provider::crypto::{CipherSuiteProvider, SignatureSecretKey};
+use crate::signer::{Signable, SignatureError};
 use std::{
     io::{Read, Write},
     ops::Deref,
@@ -71,11 +72,12 @@ impl MLSAuthenticatedContent {
         }
     }
 
-    pub(crate) fn new_signed<S: Signer>(
+    pub(crate) fn new_signed<P: CipherSuiteProvider>(
+        signature_provider: &P,
         context: &GroupContext,
         sender: Sender,
         content: Content,
-        signer: &S,
+        signer: &SignatureSecretKey,
         wire_format: WireFormat,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSAuthenticatedContent, SignatureError> {
@@ -88,7 +90,7 @@ impl MLSAuthenticatedContent {
         };
 
         // Sign the MLSPlaintext using the current epoch's GroupContext as context.
-        plaintext.sign(signer, &signing_context)?;
+        plaintext.sign(signature_provider, signer, &signing_context)?;
 
         Ok(plaintext)
     }

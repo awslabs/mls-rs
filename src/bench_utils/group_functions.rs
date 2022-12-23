@@ -9,6 +9,7 @@ use crate::{
     extension::ExtensionList,
     group::{
         framing::{Content, MLSMessage, Sender, WireFormat},
+        message_processor::MessageProcessor,
         message_signature::MLSAuthenticatedContent,
         state_repo::PriorEpoch,
         Commit, Group, GroupError, Snapshot,
@@ -16,9 +17,11 @@ use crate::{
     identity::SigningIdentity,
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
-    provider::group_state::{GroupStateStorage, InMemoryGroupStateStorage},
+    provider::{
+        crypto::SignatureSecretKey,
+        group_state::{GroupStateStorage, InMemoryGroupStateStorage},
+    },
 };
-use ferriscrypt::asym::ec_key::SecretKey;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 
@@ -57,9 +60,9 @@ pub fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
                     )
                     .unwrap();
 
-                    let secrets = serde_json::from_slice::<Vec<(SigningIdentity, SecretKey)>>(
-                        &group_info.secrets,
-                    )
+                    let secrets = serde_json::from_slice::<
+                        Vec<(SigningIdentity, SignatureSecretKey)>,
+                    >(&group_info.secrets)
                     .unwrap();
 
                     let epochs =
@@ -70,7 +73,11 @@ pub fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
                     let client_builder = secrets.into_iter().fold(
                         TestClientBuilder::new_for_test(),
                         |builder, (identity, secret_key)| {
-                            builder.signing_identity(identity, secret_key)
+                            builder.signing_identity(
+                                identity,
+                                secret_key,
+                                group_info.session.cipher_suite(),
+                            )
                         },
                     );
 
@@ -227,6 +234,7 @@ where
     };
 
     let auth_content = MLSAuthenticatedContent::new_signed(
+        group.cipher_suite_provider(),
         &context,
         Sender::Member(0),
         Content::Commit(Commit {

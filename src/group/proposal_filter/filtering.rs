@@ -12,7 +12,7 @@ use crate::{
     },
     key_package::{KeyPackageValidationOptions, KeyPackageValidator},
     protocol_version::ProtocolVersion,
-    provider::identity::IdentityProvider,
+    provider::{crypto::CipherSuiteProvider, identity::IdentityProvider},
     psk::ExternalPskIdValidator,
     time::MlsTime,
     tree_kem::{
@@ -49,10 +49,10 @@ impl ProposalState {
 }
 
 #[derive(Debug)]
-pub(crate) struct ProposalApplier<'a, C, P> {
+pub(crate) struct ProposalApplier<'a, C, P, CSP> {
     original_tree: &'a TreeKemPublic,
     protocol_version: ProtocolVersion,
-    cipher_suite: CipherSuite,
+    cipher_suite_provider: &'a CSP,
     group_id: &'a [u8],
     original_group_extensions: &'a ExtensionList<GroupContextExtension>,
     original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
@@ -61,16 +61,17 @@ pub(crate) struct ProposalApplier<'a, C, P> {
     external_psk_id_validator: P,
 }
 
-impl<'a, C, P> ProposalApplier<'a, C, P>
+impl<'a, C, P, CSP> ProposalApplier<'a, C, P, CSP>
 where
     C: IdentityProvider,
     P: ExternalPskIdValidator,
+    CSP: CipherSuiteProvider,
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         original_tree: &'a TreeKemPublic,
         protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
+        cipher_suite_provider: &'a CSP,
         group_id: &'a [u8],
         original_group_extensions: &'a ExtensionList<GroupContextExtension>,
         original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
@@ -81,7 +82,7 @@ where
         Self {
             original_tree,
             protocol_version,
-            cipher_suite,
+            cipher_suite_provider,
             group_id,
             original_group_extensions,
             original_required_capabilities,
@@ -137,7 +138,7 @@ where
         let proposals = filter_out_extra_removal_or_update_for_same_leaf(&strategy, proposals)?;
         let proposals = filter_out_invalid_psks(
             &strategy,
-            self.cipher_suite,
+            self.cipher_suite_provider.cipher_suite(),
             proposals,
             &self.external_psk_id_validator,
         )?;
@@ -145,7 +146,7 @@ where
         let proposals = filter_out_invalid_group_extensions(
             &strategy,
             proposals,
-            self.cipher_suite,
+            self.cipher_suite_provider.cipher_suite(),
             &self.identity_provider,
             commit_time,
         )?;
@@ -190,7 +191,7 @@ where
 
         let proposals = filter_out_invalid_psks(
             FailInvalidProposal,
-            self.cipher_suite,
+            self.cipher_suite_provider.cipher_suite(),
             proposals,
             &self.external_psk_id_validator,
         )?;
@@ -280,7 +281,7 @@ where
         let new_capabilities_supported =
             new_required_capabilities.map_or(Ok(()), |new_required_capabilities| {
                 let leaf_validator = LeafNodeValidator::new(
-                    self.cipher_suite,
+                    self.cipher_suite_provider,
                     Some(&new_required_capabilities),
                     &self.identity_provider,
                 );
@@ -478,7 +479,7 @@ where
         F: FilterStrategy,
     {
         let leaf_node_validator = LeafNodeValidator::new(
-            self.cipher_suite,
+            self.cipher_suite_provider,
             required_capabilities,
             &self.identity_provider,
         );
@@ -518,7 +519,7 @@ where
     {
         let package_validator = KeyPackageValidator::new(
             self.protocol_version,
-            self.cipher_suite,
+            self.cipher_suite_provider,
             required_capabilities,
             &self.identity_provider,
         );
@@ -716,7 +717,7 @@ where
                 extension.map_or(Ok(()), |extension| {
                     extension
                         .verify_all(&identity_provider, cipher_suite, commit_time)
-                        .map_err(Into::into)
+                        .map_err(|e| ProposalFilterError::IdentityProviderError(e.into()))
                 })
             });
 

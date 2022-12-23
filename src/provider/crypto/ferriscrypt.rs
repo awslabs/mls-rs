@@ -20,7 +20,7 @@ use crate::cipher_suite::CipherSuite;
 
 use super::{
     CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey,
-    SignaturePublicKey,
+    SignaturePublicKey, SignatureSecretKey,
 };
 
 #[derive(Debug, Error)]
@@ -263,13 +263,64 @@ impl FerriscryptCipherSuite {
             .map_err(Into::into)
     }
 
-    fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), FerriscryptCryptoError> {
+    pub fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), FerriscryptCryptoError> {
         let (pk, sk) = generate_keypair(self.kem.curve())?;
         Ok((sk.to_bytes()?.into(), pk.to_uncompressed_bytes()?.into()))
     }
 
+    pub fn kem_public_key_validate(
+        &self,
+        key: &HpkePublicKey,
+    ) -> Result<(), FerriscryptCryptoError> {
+        PublicKey::from_uncompressed_bytes(&key.0, self.kem.curve())
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
     pub fn random_bytes(&self, out: &mut [u8]) -> Result<(), FerriscryptCryptoError> {
         SecureRng::fill(out).map_err(Into::into)
+    }
+
+    pub fn signature_key_generate(
+        &self,
+    ) -> Result<(SignatureSecretKey, SignaturePublicKey), FerriscryptCryptoError> {
+        let (pk, sk) = generate_keypair(self.signature_key_curve)?;
+        Ok((sk.to_bytes()?.into(), pk.to_uncompressed_bytes()?.into()))
+    }
+
+    pub fn signature_key_derive_public(
+        &self,
+        secret_key: &SignatureSecretKey,
+    ) -> Result<SignaturePublicKey, FerriscryptCryptoError> {
+        SecretKey::from_bytes(secret_key, self.signature_key_curve)?
+            .to_public()?
+            .to_uncompressed_bytes()
+            .map(SignaturePublicKey)
+            .map_err(Into::into)
+    }
+
+    pub fn sign(
+        &self,
+        secret_key: &super::SignatureSecretKey,
+        data: &[u8],
+    ) -> Result<Vec<u8>, FerriscryptCryptoError> {
+        let secret_key = SecretKey::from_bytes(secret_key, self.signature_key_curve)?;
+
+        secret_key.sign(data).map_err(Into::into)
+    }
+
+    pub fn verify(
+        &self,
+        public_key: &super::SignaturePublicKey,
+        signature: &[u8],
+        data: &[u8],
+    ) -> Result<(), FerriscryptCryptoError> {
+        let public_key = PublicKey::from_uncompressed_bytes(public_key, self.signature_key_curve)?;
+
+        public_key
+            .verify(signature, data)?
+            .then_some(())
+            .ok_or(FerriscryptCryptoError::InvalidSignature)
     }
 }
 
@@ -353,10 +404,7 @@ impl CipherSuiteProvider for FerriscryptCipherSuite {
         secret_key: &super::SignatureSecretKey,
         data: &[u8],
     ) -> Result<Vec<u8>, Self::Error> {
-        let secret_key =
-            SecretKey::from_bytes(secret_key, self.cipher_suite.signature_key_curve())?;
-
-        secret_key.sign(data).map_err(Into::into)
+        self.sign(secret_key, data)
     }
 
     fn verify(
@@ -365,12 +413,24 @@ impl CipherSuiteProvider for FerriscryptCipherSuite {
         signature: &[u8],
         data: &[u8],
     ) -> Result<(), Self::Error> {
-        let public_key = PublicKey::from_uncompressed_bytes(public_key, self.signature_key_curve)?;
+        self.verify(public_key, signature, data)
+    }
 
-        public_key
-            .verify(signature, data)?
-            .then_some(())
-            .ok_or(FerriscryptCryptoError::InvalidSignature)
+    fn signature_key_generate(
+        &self,
+    ) -> Result<(super::SignatureSecretKey, super::SignaturePublicKey), Self::Error> {
+        self.signature_key_generate()
+    }
+
+    fn signature_key_derive_public(
+        &self,
+        secret_key: &super::SignatureSecretKey,
+    ) -> Result<super::SignaturePublicKey, Self::Error> {
+        self.signature_key_derive_public(secret_key)
+    }
+
+    fn kem_public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error> {
+        self.kem_public_key_validate(key)
     }
 }
 

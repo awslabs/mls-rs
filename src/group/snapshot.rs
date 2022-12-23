@@ -1,4 +1,5 @@
 use crate::{
+    cipher_suite::CipherSuite,
     client_config::ClientConfig,
     external_client_config::ExternalClientConfig,
     group::{
@@ -38,6 +39,10 @@ impl Snapshot {
     pub fn group_id(&self) -> &[u8] {
         &self.state.context.group_id
     }
+
+    pub fn cipher_suite(&self) -> CipherSuite {
+        self.state.context.cipher_suite
+    }
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
@@ -70,7 +75,6 @@ impl RawGroupState {
 
         let proposals = ProposalCache::import(
             context.protocol_version,
-            context.cipher_suite,
             context.group_id.clone(),
             self.proposals,
         );
@@ -167,9 +171,15 @@ where
     pub fn from_snapshot(config: C, snapshot: ExternalSnapshot) -> Result<Self, GroupError> {
         let identity_provider = config.identity_provider();
 
+        let cipher_suite_provider = cipher_suite_provider(
+            config.crypto_provider(),
+            snapshot.state.context.cipher_suite,
+        )?;
+
         Ok(ExternalGroup {
             config,
             state: snapshot.state.import(identity_provider)?,
+            cipher_suite_provider,
         })
     }
 }

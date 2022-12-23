@@ -173,6 +173,8 @@ pub trait CipherSuiteProvider {
 
     fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error>;
 
+    fn kem_public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error>;
+
     fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error>;
 
     fn random_bytes_vec(&self, count: usize) -> Result<Vec<u8>, Self::Error> {
@@ -181,6 +183,15 @@ pub trait CipherSuiteProvider {
 
         Ok(vec)
     }
+
+    fn signature_key_generate(
+        &self,
+    ) -> Result<(SignatureSecretKey, SignaturePublicKey), Self::Error>;
+
+    fn signature_key_derive_public(
+        &self,
+        secret_key: &SignatureSecretKey,
+    ) -> Result<SignaturePublicKey, Self::Error>;
 
     fn sign(&self, secret_key: &SignatureSecretKey, data: &[u8]) -> Result<Vec<u8>, Self::Error>;
 

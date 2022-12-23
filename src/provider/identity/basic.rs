@@ -1,8 +1,10 @@
+use std::convert::Infallible;
+
 use crate::{
     cipher_suite::CipherSuite,
     group::Member,
+    identity::SigningIdentity,
     identity::{CredentialType, CREDENTIAL_TYPE_BASIC},
-    identity::{SigningIdentity, SigningIdentityError},
     time::MlsTime,
 };
 
@@ -18,20 +20,18 @@ impl BasicIdentityProvider {
 }
 
 impl IdentityProvider for BasicIdentityProvider {
-    type Error = SigningIdentityError;
+    type Error = Infallible;
     type IdentityEvent = ();
 
     fn validate(
         &self,
-        signing_identity: &SigningIdentity,
-        cipher_suite: CipherSuite,
+        _signing_identity: &SigningIdentity,
+        _cipher_suite: CipherSuite,
         _timestamp: Option<MlsTime>,
     ) -> Result<(), Self::Error> {
-        // Check that using the public key won't cause errors later
-        signing_identity
-            .public_key(cipher_suite)
-            .map(|_| ())
-            .map_err(Into::into)
+        //TODO: Is it actually beneficial to check the key, or does that already happen elsewhere before
+        //this point?
+        Ok(())
     }
 
     fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {

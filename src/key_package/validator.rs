@@ -1,7 +1,5 @@
-use ferriscrypt::asym::ec_key::PublicKey;
-
 use super::*;
-use crate::identity::SigningIdentityError;
+use crate::provider::crypto::CipherSuiteProvider;
 use crate::provider::identity::IdentityProvider;
 use crate::tree_kem::leaf_node::LeafNodeSource;
 use crate::tree_kem::Lifetime;
@@ -26,8 +24,6 @@ pub enum KeyPackageValidationError {
     SignatureError(#[from] SignatureError),
     #[error(transparent)]
     LeafNodeValidationError(#[from] LeafNodeValidationError),
-    #[error(transparent)]
-    SigningIdentityError(#[from] SigningIdentityError),
     #[error("key lifetime not found")]
     MissingKeyLifetime,
     #[error("{0:?} is not within lifetime {1:?}")]
@@ -52,10 +48,10 @@ pub struct KeyPackageValidationOptions {
 }
 
 #[derive(Debug)]
-pub struct KeyPackageValidator<'a, C: IdentityProvider> {
+pub struct KeyPackageValidator<'a, C: IdentityProvider, CSP: CipherSuiteProvider> {
     pub protocol_version: ProtocolVersion,
-    pub cipher_suite: CipherSuite,
-    leaf_node_validator: LeafNodeValidator<'a, C>,
+    pub cipher_suite_provider: &'a CSP,
+    leaf_node_validator: LeafNodeValidator<'a, C, CSP>,
 }
 
 #[derive(Debug)]
@@ -63,18 +59,18 @@ pub struct KeyPackageValidationOutput {
     pub expiration_timestamp: u64,
 }
 
-impl<'a, C: IdentityProvider> KeyPackageValidator<'a, C> {
+impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, C, CSP> {
     pub fn new(
         protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        required_capabilities: Option<&RequiredCapabilitiesExt>,
+        cipher_suite_provider: &'a CSP,
+        required_capabilities: Option<&'a RequiredCapabilitiesExt>,
         identity_provider: C,
-    ) -> KeyPackageValidator<C> {
+    ) -> KeyPackageValidator<'a, C, CSP> {
         KeyPackageValidator {
             protocol_version,
-            cipher_suite,
+            cipher_suite_provider,
             leaf_node_validator: LeafNodeValidator::new(
-                cipher_suite,
+                cipher_suite_provider,
                 required_capabilities,
                 identity_provider,
             ),
@@ -85,10 +81,8 @@ impl<'a, C: IdentityProvider> KeyPackageValidator<'a, C> {
         // Verify that the signature on the KeyPackage is valid using the public key in the contained LeafNode's credential
         package
             .verify(
-                &package
-                    .leaf_node
-                    .signing_identity
-                    .public_key(self.cipher_suite)?,
+                self.cipher_suite_provider,
+                &package.leaf_node.signing_identity.signature_key,
                 &(),
             )
             .map_err(Into::into)
@@ -128,19 +122,17 @@ impl<'a, C: IdentityProvider> KeyPackageValidator<'a, C> {
         }
 
         // Verify that the cipher suite matches
-        if package.cipher_suite != self.cipher_suite.into() {
+        if package.cipher_suite != self.cipher_suite_provider.cipher_suite().into() {
             return Err(KeyPackageValidationError::InvalidCipherSuite(
                 package.cipher_suite,
-                self.cipher_suite,
+                self.cipher_suite_provider.cipher_suite(),
             ));
         }
 
-        // Verify that the public init key is valid
-        PublicKey::from_uncompressed_bytes(
-            package.hpke_init_key.as_ref(),
-            self.cipher_suite.kem_type().curve(),
-        )
-        .map_err(|_| KeyPackageValidationError::InvalidInitKey)?;
+        // Verify that the public init key is a valid format for this cipher suite
+        self.cipher_suite_provider
+            .kem_public_key_validate(&package.hpke_init_key)
+            .map_err(|_| KeyPackageValidationError::InvalidInitKey)?;
 
         // Verify that the init key and the leaf node public key are different
         if package.hpke_init_key.as_ref() == package.leaf_node.public_key.as_ref() {
@@ -157,6 +149,8 @@ impl<'a, C: IdentityProvider> KeyPackageValidator<'a, C> {
 
 #[cfg(test)]
 mod tests {
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::client::test_utils::TEST_PROTOCOL_VERSION;
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
@@ -176,6 +170,8 @@ mod tests {
         for (protocol_version, cipher_suite) in
             ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
         {
+            let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
             let test_package = test_key_package(
                 protocol_version,
                 cipher_suite,
@@ -184,7 +180,7 @@ mod tests {
 
             let validator = KeyPackageValidator::new(
                 protocol_version,
-                cipher_suite,
+                &cipher_suite_provider,
                 None,
                 BasicIdentityProvider::new(),
             );
@@ -210,10 +206,13 @@ mod tests {
         for (protocol_version, cipher_suite) in
             ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
         {
+            let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
             let test_package = invalid_signature_key_package(protocol_version, cipher_suite);
+
             let validator = KeyPackageValidator::new(
                 protocol_version,
-                cipher_suite,
+                &cipher_suite_provider,
                 None,
                 BasicIdentityProvider::new(),
             );
@@ -227,13 +226,16 @@ mod tests {
 
     #[test]
     fn test_invalid_cipher_suite() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let version = ProtocolVersion::Mls10;
+        let cipher_suite = TEST_CIPHER_SUITE;
+        let version = TEST_PROTOCOL_VERSION;
         let test_package = test_key_package(version, cipher_suite, "mallory");
+
+        let invalid_cipher_suite_provider =
+            test_cipher_suite_provider(CipherSuite::Curve25519ChaCha20);
 
         let validator = KeyPackageValidator::new(
             version,
-            CipherSuite::Curve25519ChaCha20,
+            &invalid_cipher_suite_provider,
             None,
             BasicIdentityProvider::new(),
         );
@@ -245,22 +247,23 @@ mod tests {
         );
     }
 
-    fn test_init_key_manipulation<F>(
-        cipher_suite: CipherSuite,
+    fn test_init_key_manipulation<F, CSP>(
+        cipher_suite_provider: &CSP,
         protocol_version: ProtocolVersion,
         mut edit: F,
     ) -> KeyPackage
     where
+        CSP: CipherSuiteProvider,
         F: FnMut(&mut KeyPackage),
     {
         let (alternate_sining_id, secret) =
-            get_test_signing_identity(cipher_suite, b"test".to_vec());
+            get_test_signing_identity(cipher_suite_provider.cipher_suite(), b"test".to_vec());
 
         let mut test_package =
-            test_key_package_custom(protocol_version, cipher_suite, "test", |_| {
+            test_key_package_custom(cipher_suite_provider, protocol_version, "test", |_| {
                 let new_generator = KeyPackageGenerator {
                     protocol_version,
-                    cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
+                    cipher_suite_provider,
                     signing_identity: &alternate_sining_id,
                     signing_key: &secret,
                     identity_provider: &BasicIdentityProvider::new(),
@@ -277,23 +280,27 @@ mod tests {
             });
 
         edit(&mut test_package);
-        test_package.sign(&secret, &()).unwrap();
+
+        test_package
+            .sign(cipher_suite_provider, &secret, &())
+            .unwrap();
+
         test_package
     }
 
     #[test]
     fn test_invalid_init_key() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let protocol_version = ProtocolVersion::Mls10;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let protocol_version = TEST_PROTOCOL_VERSION;
 
         let key_package =
-            test_init_key_manipulation(cipher_suite, protocol_version, |key_package| {
+            test_init_key_manipulation(&cipher_suite_provider, protocol_version, |key_package| {
                 key_package.hpke_init_key = HpkePublicKey::from(vec![42; 128]);
             });
 
         let validator = KeyPackageValidator::new(
             protocol_version,
-            cipher_suite,
+            &cipher_suite_provider,
             None,
             BasicIdentityProvider::new(),
         );
@@ -306,18 +313,18 @@ mod tests {
 
     #[test]
     fn test_matching_init_key() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let protocol_version = ProtocolVersion::Mls10;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let protocol_version = TEST_PROTOCOL_VERSION;
 
         let key_package =
-            test_init_key_manipulation(cipher_suite, protocol_version, |key_package| {
+            test_init_key_manipulation(&cipher_suite_provider, protocol_version, |key_package| {
                 key_package.hpke_init_key =
                     key_package.leaf_node.public_key.as_ref().to_vec().into();
             });
 
         let validator = KeyPackageValidator::new(
             protocol_version,
-            cipher_suite,
+            &cipher_suite_provider,
             None,
             BasicIdentityProvider::new(),
         );
@@ -328,34 +335,43 @@ mod tests {
         );
     }
 
-    fn invalid_expiration_leaf_node(
+    fn invalid_expiration_leaf_node<CSP>(
         protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-    ) -> KeyPackage {
-        test_key_package_custom(protocol_version, cipher_suite, "foo", |generator| {
-            generator
-                .generate(
-                    Lifetime {
-                        not_before: 0,
-                        not_after: 0,
-                    },
-                    get_test_capabilities(),
-                    ExtensionList::default(),
-                    ExtensionList::default(),
-                )
-                .unwrap()
-        })
+        cipher_suite_provider: &CSP,
+    ) -> KeyPackage
+    where
+        CSP: CipherSuiteProvider,
+    {
+        test_key_package_custom(
+            cipher_suite_provider,
+            protocol_version,
+            "foo",
+            |generator| {
+                generator
+                    .generate(
+                        Lifetime {
+                            not_before: 0,
+                            not_after: 0,
+                        },
+                        get_test_capabilities(),
+                        ExtensionList::default(),
+                        ExtensionList::default(),
+                    )
+                    .unwrap()
+            },
+        )
     }
 
     #[test]
     fn test_expired() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let test_package = invalid_expiration_leaf_node(protocol_version, cipher_suite);
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let protocol_version = TEST_PROTOCOL_VERSION;
+
+        let test_package = invalid_expiration_leaf_node(protocol_version, &cipher_suite_provider);
 
         let validator = KeyPackageValidator::new(
             protocol_version,
-            cipher_suite,
+            &cipher_suite_provider,
             None,
             BasicIdentityProvider::new(),
         );
@@ -374,13 +390,14 @@ mod tests {
 
     #[test]
     fn test_skip_expiration_check() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let test_package = invalid_expiration_leaf_node(protocol_version, cipher_suite);
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let protocol_version = TEST_PROTOCOL_VERSION;
+
+        let test_package = invalid_expiration_leaf_node(protocol_version, &cipher_suite_provider);
 
         let validator = KeyPackageValidator::new(
             protocol_version,
-            cipher_suite,
+            &cipher_suite_provider,
             None,
             BasicIdentityProvider::new(),
         );
@@ -398,11 +415,14 @@ mod tests {
 
     #[test]
     fn test_required_capabilities_check() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let protocol_version = TEST_PROTOCOL_VERSION;
 
-        let key_package =
-            test_key_package_custom(protocol_version, cipher_suite, "test", |generator| {
+        let key_package = test_key_package_custom(
+            &cipher_suite_provider,
+            protocol_version,
+            "test",
+            |generator| {
                 let mut capabilities = get_test_capabilities();
                 capabilities.extensions.push(42);
 
@@ -414,7 +434,8 @@ mod tests {
                         ExtensionList::default(),
                     )
                     .unwrap()
-            });
+            },
+        );
 
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![42],
@@ -424,7 +445,7 @@ mod tests {
 
         let validator = KeyPackageValidator::new(
             protocol_version,
-            cipher_suite,
+            &cipher_suite_provider,
             Some(&required_capabilities),
             BasicIdentityProvider::new(),
         );
@@ -437,9 +458,14 @@ mod tests {
 
     #[test]
     fn test_required_capabilities_failure() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let key_package = test_key_package(protocol_version, cipher_suite, "alice");
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let protocol_version = TEST_PROTOCOL_VERSION;
+
+        let key_package = test_key_package(
+            protocol_version,
+            cipher_suite_provider.cipher_suite(),
+            "alice",
+        );
 
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![255],
@@ -449,7 +475,7 @@ mod tests {
 
         let validator = KeyPackageValidator::new(
             protocol_version,
-            cipher_suite,
+            &cipher_suite_provider,
             Some(&required_capabilities),
             BasicIdentityProvider::new(),
         );
@@ -462,11 +488,14 @@ mod tests {
 
     #[test]
     fn test_leaf_node_validation_failure() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let protocol_version = TEST_PROTOCOL_VERSION;
 
-        let key_package =
-            test_key_package_custom(protocol_version, cipher_suite, "foo", |generator| {
+        let key_package = test_key_package_custom(
+            &cipher_suite_provider,
+            protocol_version,
+            "foo",
+            |generator| {
                 let mut package_gen = generator
                     .generate(
                         Lifetime::years(1).unwrap(),
@@ -479,11 +508,12 @@ mod tests {
                 package_gen.key_package.leaf_node.signature = SecureRng::gen(32).unwrap();
                 generator.sign(&mut package_gen.key_package).unwrap();
                 package_gen
-            });
+            },
+        );
 
         let validator = KeyPackageValidator::new(
             protocol_version,
-            cipher_suite,
+            &cipher_suite_provider,
             None,
             BasicIdentityProvider::new(),
         );

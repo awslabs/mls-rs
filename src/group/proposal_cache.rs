@@ -134,20 +134,14 @@ pub struct CachedProposal {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ProposalCache {
     protocol_version: ProtocolVersion,
-    cipher_suite: CipherSuite,
     group_id: Vec<u8>,
     proposals: HashMap<ProposalRef, CachedProposal>,
 }
 
 impl ProposalCache {
-    pub fn new(
-        protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
-        group_id: Vec<u8>,
-    ) -> Self {
+    pub fn new(protocol_version: ProtocolVersion, group_id: Vec<u8>) -> Self {
         Self {
             protocol_version,
-            cipher_suite,
             group_id,
             proposals: Default::default(),
         }
@@ -155,13 +149,11 @@ impl ProposalCache {
 
     pub fn import(
         protocol_version: ProtocolVersion,
-        cipher_suite: CipherSuite,
         group_id: Vec<u8>,
         proposals: HashMap<ProposalRef, CachedProposal>,
     ) -> Self {
         Self {
             protocol_version,
-            cipher_suite,
             group_id,
             proposals,
         }
@@ -185,12 +177,13 @@ impl ProposalCache {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn prepare_commit<C, F, P>(
+    pub fn prepare_commit<C, F, P, CSP>(
         &self,
         sender: Sender,
         additional_proposals: Vec<Proposal>,
         group_extensions: &ExtensionList<GroupContextExtension>,
         identity_provider: C,
+        cipher_suite_provider: &CSP,
         public_tree: &TreeKemPublic,
         external_leaf: Option<&LeafNode>,
         external_psk_id_validator: P,
@@ -200,6 +193,7 @@ impl ProposalCache {
         C: IdentityProvider,
         F: ProposalFilter,
         P: ExternalPskIdValidator,
+        CSP: CipherSuiteProvider,
     {
         let proposals = self
             .proposals
@@ -235,7 +229,7 @@ impl ProposalCache {
         let applier = ProposalApplier::new(
             public_tree,
             self.protocol_version,
-            self.cipher_suite,
+            cipher_suite_provider,
             &self.group_id,
             group_extensions,
             required_capabilities.as_ref(),
@@ -288,7 +282,7 @@ impl ProposalCache {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn resolve_for_commit<C, F, P>(
+    pub fn resolve_for_commit<C, F, P, CSP>(
         &self,
         sender: Sender,
         receiver: Option<LeafIndex>,
@@ -296,6 +290,7 @@ impl ProposalCache {
         external_leaf: Option<&LeafNode>,
         group_extensions: &ExtensionList<GroupContextExtension>,
         identity_provider: C,
+        cipher_suite_provider: &CSP,
         public_tree: &TreeKemPublic,
         external_psk_id_validator: P,
         user_filter: F,
@@ -305,6 +300,7 @@ impl ProposalCache {
         C: IdentityProvider,
         F: ProposalFilter,
         P: ExternalPskIdValidator,
+        CSP: CipherSuiteProvider,
     {
         let proposals = proposal_list.into_iter().try_fold(
             ProposalBundle::default(),
@@ -331,7 +327,7 @@ impl ProposalCache {
         let applier = ProposalApplier::new(
             public_tree,
             self.protocol_version,
-            self.cipher_suite,
+            cipher_suite_provider,
             &self.group_id,
             group_extensions,
             required_capabilities.as_ref(),
@@ -410,17 +406,17 @@ mod tests {
             proposal_filter::proposer_can_propose,
             test_utils::{test_group, TEST_GROUP},
         },
+        identity::test_utils::get_test_signing_identity,
         identity::{
             test_utils::get_test_certificate_credential, CREDENTIAL_TYPE_BASIC,
             CREDENTIAL_TYPE_X509,
         },
-        identity::{test_utils::get_test_signing_identity, SigningIdentityError},
         key_package::{
             test_utils::{test_key_package, test_key_package_custom},
             KeyPackageGenerator,
         },
         provider::{
-            crypto::{self, test_utils::test_cipher_suite_provider},
+            crypto::{self, test_utils::test_cipher_suite_provider, FerriscryptCipherSuite},
             identity::BasicIdentityProvider,
         },
         psk::PassThroughPskIdValidator,
@@ -450,7 +446,7 @@ mod tests {
 
     impl ProposalCache {
         #[allow(clippy::too_many_arguments)]
-        pub fn resolve_for_commit_default<C, F, P>(
+        pub fn resolve_for_commit_default<C, F, P, CSP>(
             &self,
             sender: Sender,
             receiver: Option<LeafIndex>,
@@ -458,6 +454,7 @@ mod tests {
             external_leaf: Option<&LeafNode>,
             group_extensions: &ExtensionList<GroupContextExtension>,
             identity_provider: C,
+            cipher_suite_provider: &CSP,
             public_tree: &TreeKemPublic,
             external_psk_id_validator: P,
             user_filter: F,
@@ -466,6 +463,7 @@ mod tests {
             C: IdentityProvider,
             F: ProposalFilter,
             P: ExternalPskIdValidator,
+            CSP: CipherSuiteProvider,
         {
             self.resolve_for_commit(
                 sender,
@@ -474,6 +472,7 @@ mod tests {
                 external_leaf,
                 group_extensions,
                 identity_provider,
+                cipher_suite_provider,
                 public_tree,
                 external_psk_id_validator,
                 user_filter,
@@ -530,6 +529,7 @@ mod tests {
     ) -> TestProposals {
         let (sender_leaf, sender_leaf_secret, _) =
             get_basic_test_node_sig_key(cipher_suite, "alice");
+
         let sender = LeafIndex(0);
 
         let (mut tree, _) = TreeKemPublic::derive(
@@ -649,11 +649,7 @@ mod tests {
     }
 
     fn make_proposal_cache() -> ProposalCache {
-        ProposalCache::new(
-            TEST_PROTOCOL_VERSION,
-            TEST_CIPHER_SUITE,
-            TEST_GROUP.to_vec(),
-        )
+        ProposalCache::new(TEST_PROTOCOL_VERSION, TEST_GROUP.to_vec())
     }
 
     fn test_proposal_cache_setup(proposals: Vec<MLSAuthenticatedContent>) -> ProposalCache {
@@ -690,6 +686,8 @@ mod tests {
 
     #[test]
     fn test_proposal_cache_commit_all_cached() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
         let TestProposals {
             test_sender,
             test_proposals,
@@ -706,6 +704,7 @@ mod tests {
                 vec![],
                 &ExtensionList::new(),
                 BasicIdentityProvider::new(),
+                &cipher_suite_provider,
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -725,6 +724,8 @@ mod tests {
 
     #[test]
     fn test_proposal_cache_commit_additional() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
         let TestProposals {
             test_sender,
             test_proposals,
@@ -748,6 +749,7 @@ mod tests {
                 additional.clone(),
                 &ExtensionList::new(),
                 BasicIdentityProvider::new(),
+                &cipher_suite_provider,
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -783,6 +785,8 @@ mod tests {
 
     #[test]
     fn test_proposal_cache_update_filter() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
         let TestProposals {
             test_proposals,
             tree,
@@ -798,6 +802,7 @@ mod tests {
             additional,
             &ExtensionList::new(),
             BasicIdentityProvider::new(),
+            &cipher_suite_provider,
             &tree,
             None,
             PassThroughPskIdValidator,
@@ -818,6 +823,8 @@ mod tests {
 
     #[test]
     fn test_proposal_cache_removal_override_update() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
         let TestProposals {
             test_sender,
             test_proposals,
@@ -837,6 +844,7 @@ mod tests {
                 vec![],
                 &ExtensionList::new(),
                 BasicIdentityProvider::new(),
+                &cipher_suite_provider,
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -850,6 +858,8 @@ mod tests {
 
     #[test]
     fn test_proposal_cache_filter_duplicates_insert() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
         let TestProposals {
             test_sender,
             test_proposals,
@@ -867,6 +877,7 @@ mod tests {
                 vec![],
                 &ExtensionList::new(),
                 BasicIdentityProvider::new(),
+                &cipher_suite_provider,
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -886,6 +897,8 @@ mod tests {
 
     #[test]
     fn test_proposal_cache_filter_duplicates_additional() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
         let TestProposals {
             test_proposals,
             expected_effects,
@@ -914,6 +927,7 @@ mod tests {
                 Vec::new(),
                 &ExtensionList::new(),
                 BasicIdentityProvider::new(),
+                &cipher_suite_provider,
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -949,6 +963,8 @@ mod tests {
 
     #[test]
     fn test_proposal_cache_resolve() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
         let TestProposals {
             test_sender,
             test_proposals,
@@ -970,6 +986,7 @@ mod tests {
                 additional,
                 &ExtensionList::new(),
                 &identity_provider,
+                &cipher_suite_provider,
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -985,6 +1002,7 @@ mod tests {
                 None,
                 &ExtensionList::new(),
                 &identity_provider,
+                &cipher_suite_provider,
                 &tree,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
@@ -996,6 +1014,8 @@ mod tests {
 
     #[test]
     fn proposal_cache_filters_duplicate_psk_ids() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
         let (alice, tree) = new_tree("alice");
         let cache = make_proposal_cache();
 
@@ -1009,6 +1029,7 @@ mod tests {
             vec![proposal.clone(), proposal],
             &ExtensionList::new(),
             BasicIdentityProvider::new(),
+            &cipher_suite_provider,
             &tree,
             None,
             PassThroughPskIdValidator,
@@ -1044,6 +1065,8 @@ mod tests {
     #[test]
     fn external_commit_must_have_new_leaf() {
         let cache = make_proposal_cache();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
@@ -1058,6 +1081,7 @@ mod tests {
             None,
             &group.group.context().extensions,
             identity_provider,
+            &cipher_suite_provider,
             public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1074,6 +1098,7 @@ mod tests {
     #[test]
     fn proposal_cache_rejects_proposals_by_ref_for_new_member() {
         let mut cache = make_proposal_cache();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let proposal = {
             let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
@@ -1098,6 +1123,7 @@ mod tests {
             Some(&test_node()),
             &group.group.context().extensions,
             BasicIdentityProvider::new(),
+            &cipher_suite_provider,
             public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1114,6 +1140,7 @@ mod tests {
     #[test]
     fn proposal_cache_rejects_multiple_external_init_proposals_in_commit() {
         let cache = make_proposal_cache();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
@@ -1134,6 +1161,7 @@ mod tests {
             Some(&test_node()),
             &group.group.context().extensions,
             identity_provider,
+            &cipher_suite_provider,
             public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1151,6 +1179,7 @@ mod tests {
         proposal: Proposal,
     ) -> Result<ProposalSetEffects, ProposalCacheError> {
         let cache = make_proposal_cache();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
@@ -1169,6 +1198,7 @@ mod tests {
             Some(&test_node()),
             &group.group.context().extensions,
             identity_provider,
+            &cipher_suite_provider,
             public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1192,6 +1222,7 @@ mod tests {
     #[test]
     fn new_member_cannot_commit_more_than_one_remove_proposal() {
         let cache = make_proposal_cache();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
@@ -1224,6 +1255,7 @@ mod tests {
             Some(&test_node()),
             &group_extensions,
             identity_provider,
+            &cipher_suite_provider,
             &public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1240,6 +1272,7 @@ mod tests {
     #[test]
     fn new_member_remove_proposal_invalid_credential() {
         let cache = make_proposal_cache();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
@@ -1265,6 +1298,7 @@ mod tests {
             Some(&test_node()),
             &group_extensions,
             BasicIdentityProvider,
+            &cipher_suite_provider,
             &public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1281,6 +1315,7 @@ mod tests {
     #[test]
     fn new_member_remove_proposal_valid_credential() {
         let cache = make_proposal_cache();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
@@ -1307,6 +1342,7 @@ mod tests {
             Some(&test_node()),
             &group_extensions,
             identity_provider,
+            &cipher_suite_provider,
             &public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1364,6 +1400,7 @@ mod tests {
     #[test]
     fn new_member_commit_must_contain_an_external_init_proposal() {
         let cache = make_proposal_cache();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
         let identity_provider = BasicIdentityProvider::new();
@@ -1375,6 +1412,7 @@ mod tests {
             Some(&test_node()),
             &group.group.context().extensions,
             identity_provider,
+            &cipher_suite_provider,
             public_tree,
             PassThroughPskIdValidator,
             pass_through_filter(),
@@ -1391,6 +1429,7 @@ mod tests {
     #[test]
     fn test_path_update_required_empty() {
         let cache = make_proposal_cache();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let (_, effects) = cache
             .prepare_commit(
@@ -1398,6 +1437,7 @@ mod tests {
                 vec![],
                 &ExtensionList::new(),
                 BasicIdentityProvider::new(),
+                &cipher_suite_provider,
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
                 PassThroughPskIdValidator,
@@ -1412,6 +1452,7 @@ mod tests {
     fn test_path_update_required_updates() {
         let mut cache = make_proposal_cache();
         let update = Proposal::Update(make_update_proposal("bar"));
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         cache.insert(
             make_proposal_ref(&update, LeafIndex(2)),
@@ -1425,6 +1466,7 @@ mod tests {
                 Vec::new(),
                 &ExtensionList::new(),
                 BasicIdentityProvider::new(),
+                &cipher_suite_provider,
                 &TreeKemPublic::new(TEST_CIPHER_SUITE),
                 None,
                 PassThroughPskIdValidator,
@@ -1438,6 +1480,7 @@ mod tests {
     #[test]
     fn test_path_update_required_removes() {
         let cache = make_proposal_cache();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let (alice_leaf, alice_secret, _) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice");
         let alice = 0;
@@ -1465,6 +1508,7 @@ mod tests {
                 vec![remove],
                 &ExtensionList::new(),
                 BasicIdentityProvider::new(),
+                &cipher_suite_provider,
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -1478,6 +1522,7 @@ mod tests {
     #[test]
     fn test_path_update_not_required() {
         let (alice, tree) = new_tree("alice");
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let cache = make_proposal_cache();
 
         let psk = Proposal::Psk(PreSharedKey {
@@ -1497,6 +1542,7 @@ mod tests {
                 vec![psk, add],
                 &ExtensionList::new(),
                 BasicIdentityProvider::new(),
+                &cipher_suite_provider,
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -1509,6 +1555,7 @@ mod tests {
 
     #[test]
     fn path_update_is_not_required_for_re_init() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let (alice, tree) = new_tree("alice");
         let cache = make_proposal_cache();
 
@@ -1525,6 +1572,7 @@ mod tests {
                 vec![reinit],
                 &ExtensionList::new(),
                 BasicIdentityProvider::new(),
+                &cipher_suite_provider,
                 &tree,
                 None,
                 PassThroughPskIdValidator,
@@ -1536,12 +1584,13 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct CommitReceiver<'a, C, F, P> {
+    struct CommitReceiver<'a, C, F, P, CSP> {
         tree: &'a TreeKemPublic,
         sender: Sender,
         receiver: LeafIndex,
         cache: ProposalCache,
         identity_provider: C,
+        cipher_suite_provider: CSP,
         group_context_extensions: ExtensionList<GroupContextExtension>,
         user_filter: F,
         external_psk_id_validator: P,
@@ -1553,6 +1602,7 @@ mod tests {
             BasicIdentityProvider,
             PassThroughProposalFilter<Infallible>,
             PassThroughPskIdValidator,
+            FerriscryptCipherSuite,
         >
     {
         fn new<S>(tree: &'a TreeKemPublic, sender: S, receiver: LeafIndex) -> Self
@@ -1568,17 +1618,19 @@ mod tests {
                 group_context_extensions: Default::default(),
                 user_filter: pass_through_filter(),
                 external_psk_id_validator: PassThroughPskIdValidator,
+                cipher_suite_provider: test_cipher_suite_provider(TEST_CIPHER_SUITE),
             }
         }
     }
 
-    impl<'a, C, F, P> CommitReceiver<'a, C, F, P>
+    impl<'a, C, F, P, CSP> CommitReceiver<'a, C, F, P, CSP>
     where
         C: IdentityProvider,
         F: ProposalFilter,
         P: ExternalPskIdValidator,
+        CSP: CipherSuiteProvider,
     {
-        fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, F, P>
+        fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, F, P, CSP>
         where
             V: IdentityProvider,
         {
@@ -1591,10 +1643,11 @@ mod tests {
                 group_context_extensions: self.group_context_extensions,
                 user_filter: self.user_filter,
                 external_psk_id_validator: self.external_psk_id_validator,
+                cipher_suite_provider: self.cipher_suite_provider,
             }
         }
 
-        fn with_user_filter<G>(self, f: G) -> CommitReceiver<'a, C, G, P>
+        fn with_user_filter<G>(self, f: G) -> CommitReceiver<'a, C, G, P, CSP>
         where
             G: ProposalFilter,
         {
@@ -1607,10 +1660,11 @@ mod tests {
                 group_context_extensions: self.group_context_extensions,
                 user_filter: f,
                 external_psk_id_validator: self.external_psk_id_validator,
+                cipher_suite_provider: self.cipher_suite_provider,
             }
         }
 
-        fn with_external_psk_id_validator<V>(self, v: V) -> CommitReceiver<'a, C, F, V>
+        fn with_external_psk_id_validator<V>(self, v: V) -> CommitReceiver<'a, C, F, V, CSP>
         where
             V: ExternalPskIdValidator,
         {
@@ -1623,6 +1677,7 @@ mod tests {
                 group_context_extensions: self.group_context_extensions,
                 user_filter: self.user_filter,
                 external_psk_id_validator: v,
+                cipher_suite_provider: self.cipher_suite_provider,
             }
         }
 
@@ -1653,6 +1708,7 @@ mod tests {
                 None,
                 &self.group_context_extensions,
                 &self.identity_provider,
+                &self.cipher_suite_provider,
                 self.tree,
                 &self.external_psk_id_validator,
                 &self.user_filter,
@@ -1661,7 +1717,8 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct CommitSender<'a, C, F, P> {
+    struct CommitSender<'a, C, F, P, CSP> {
+        cipher_suite_provider: CSP,
         tree: &'a TreeKemPublic,
         sender: LeafIndex,
         cache: ProposalCache,
@@ -1677,6 +1734,7 @@ mod tests {
             BasicIdentityProvider,
             PassThroughProposalFilter<Infallible>,
             PassThroughPskIdValidator,
+            FerriscryptCipherSuite,
         >
     {
         fn new(tree: &'a TreeKemPublic, sender: LeafIndex) -> Self {
@@ -1688,26 +1746,29 @@ mod tests {
                 identity_provider: BasicIdentityProvider::new(),
                 user_filter: pass_through_filter(),
                 external_psk_id_validator: PassThroughPskIdValidator,
+                cipher_suite_provider: test_cipher_suite_provider(TEST_CIPHER_SUITE),
             }
         }
     }
 
-    impl<'a, C, F, P> CommitSender<'a, C, F, P>
+    impl<'a, C, F, P, CSP> CommitSender<'a, C, F, P, CSP>
     where
         C: IdentityProvider,
         F: ProposalFilter,
         P: ExternalPskIdValidator,
+        CSP: CipherSuiteProvider,
     {
-        fn with_identity_provider<V>(self, validator: V) -> CommitSender<'a, V, F, P>
+        fn with_identity_provider<V>(self, identity_provider: V) -> CommitSender<'a, V, F, P, CSP>
         where
             V: IdentityProvider,
         {
             CommitSender {
+                identity_provider,
+                cipher_suite_provider: self.cipher_suite_provider,
                 tree: self.tree,
                 sender: self.sender,
                 cache: self.cache,
                 additional_proposals: self.additional_proposals,
-                identity_provider: validator,
                 user_filter: self.user_filter,
                 external_psk_id_validator: self.external_psk_id_validator,
             }
@@ -1729,7 +1790,7 @@ mod tests {
             self
         }
 
-        fn with_user_filter<G>(self, f: G) -> CommitSender<'a, C, G, P>
+        fn with_user_filter<G>(self, f: G) -> CommitSender<'a, C, G, P, CSP>
         where
             G: ProposalFilter,
         {
@@ -1741,10 +1802,11 @@ mod tests {
                 identity_provider: self.identity_provider,
                 user_filter: f,
                 external_psk_id_validator: self.external_psk_id_validator,
+                cipher_suite_provider: self.cipher_suite_provider,
             }
         }
 
-        fn with_external_psk_id_validator<V>(self, v: V) -> CommitSender<'a, C, F, V>
+        fn with_external_psk_id_validator<V>(self, v: V) -> CommitSender<'a, C, F, V, CSP>
         where
             V: ExternalPskIdValidator,
         {
@@ -1756,6 +1818,7 @@ mod tests {
                 identity_provider: self.identity_provider,
                 user_filter: self.user_filter,
                 external_psk_id_validator: v,
+                cipher_suite_provider: self.cipher_suite_provider,
             }
         }
 
@@ -1765,6 +1828,7 @@ mod tests {
                 self.additional_proposals.clone(),
                 &ExtensionList::new(),
                 &self.identity_provider,
+                &self.cipher_suite_provider,
                 self.tree,
                 None,
                 &self.external_psk_id_validator,
@@ -1780,23 +1844,30 @@ mod tests {
     }
 
     fn key_package_with_public_key(key: crypto::HpkePublicKey) -> KeyPackage {
-        test_key_package_custom(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test", |gen| {
-            let mut key_package_gen = gen
-                .generate(
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
-                )
-                .unwrap();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-            key_package_gen.key_package.leaf_node.public_key = key;
-            key_package_gen
-                .key_package
-                .sign(gen.signing_key, &())
-                .unwrap();
-            key_package_gen
-        })
+        test_key_package_custom(
+            &cipher_suite_provider,
+            TEST_PROTOCOL_VERSION,
+            "test",
+            |gen| {
+                let mut key_package_gen = gen
+                    .generate(
+                        Default::default(),
+                        Default::default(),
+                        Default::default(),
+                        Default::default(),
+                    )
+                    .unwrap();
+
+                key_package_gen.key_package.leaf_node.public_key = key;
+                key_package_gen
+                    .key_package
+                    .sign(&cipher_suite_provider, gen.signing_key, &())
+                    .unwrap();
+                key_package_gen
+            },
+        )
     }
 
     #[test]
@@ -2714,9 +2785,7 @@ mod tests {
         assert_matches!(
             res,
             Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::SigningIdentityError(
-                    SigningIdentityError::IdentityProviderError(_)
-                )
+                ProposalFilterError::IdentityProviderError(_)
             ))
         );
     }
@@ -2735,9 +2804,7 @@ mod tests {
         assert_matches!(
             res,
             Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::SigningIdentityError(
-                    SigningIdentityError::IdentityProviderError(_)
-                )
+                ProposalFilterError::IdentityProviderError(_)
             ))
         );
     }
@@ -2961,8 +3028,13 @@ mod tests {
             leaf_node_source: LeafNodeSource::Update,
             ..alice_leaf
         };
+
         alice_new_leaf
-            .sign(&alice_signer, &(TEST_GROUP, 0).into())
+            .sign(
+                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
+                &alice_signer,
+                &(TEST_GROUP, 0).into(),
+            )
             .unwrap();
 
         let bob_new_leaf = update_leaf_node("bob", 1);
@@ -2993,6 +3065,8 @@ mod tests {
 
     #[test]
     fn committing_update_from_pk1_to_pk2_and_removal_of_pk2_works() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
         let (alice_leaf, alice_secret, alice_signer) =
             get_basic_test_node_sig_key(TEST_CIPHER_SUITE, "alice");
 
@@ -3016,8 +3090,13 @@ mod tests {
             leaf_node_source: LeafNodeSource::Update,
             ..alice_leaf
         };
+
         alice_new_leaf
-            .sign(&alice_signer, &(TEST_GROUP, 0).into())
+            .sign(
+                &cipher_suite_provider,
+                &alice_signer,
+                &(TEST_GROUP, 0).into(),
+            )
             .unwrap();
 
         let pk1_to_pk2 = Proposal::Update(UpdateProposal {

@@ -1,7 +1,6 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::secret_tree::SecretTreeError;
 use crate::group::{GroupContext, MembershipTag, MembershipTagError, SecretTree};
-use crate::identity::SigningIdentityError;
 use crate::provider::crypto::CipherSuiteProvider;
 use crate::psk::{get_epoch_secret, JoinerSecret, Psk, PskSecretError};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
@@ -52,8 +51,6 @@ pub enum KeyScheduleError {
     SecureRngError(#[from] SecureRngError),
     #[error(transparent)]
     PskSecretError(#[from] PskSecretError),
-    #[error(transparent)]
-    SigningIdentityError(#[from] SigningIdentityError),
     #[error("key derivation failure")]
     KeyDerivationFailure,
 }

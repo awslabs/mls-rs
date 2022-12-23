@@ -1,7 +1,6 @@
-use ferriscrypt::asym::ec_key::SecretKey;
-
 use super::*;
 use crate::{
+    client::test_utils::TEST_CIPHER_SUITE,
     client_builder::{
         test_utils::{TestClientBuilder, TestClientConfig},
         Preferences,
@@ -107,6 +106,7 @@ impl TestGroup {
 
     pub(crate) fn make_plaintext(&mut self, content: Content) -> MLSMessage {
         let auth_content = MLSAuthenticatedContent::new_signed(
+            &self.group.cipher_suite_provider,
             &self.group.state.context,
             Sender::Member(*self.group.private_tree.self_index),
             content,
@@ -164,7 +164,7 @@ pub(crate) fn test_member(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     identifier: &[u8],
-) -> (KeyPackageGeneration, SecretKey) {
+) -> (KeyPackageGeneration, SignatureSecretKey) {
     let (signing_identity, signing_key) =
         get_test_signing_identity(cipher_suite, identifier.to_vec());
 
@@ -203,7 +203,7 @@ pub(crate) fn test_group_custom(
         get_test_signing_identity(cipher_suite, b"member".to_vec());
 
     let group = TestClientBuilder::new_for_test()
-        .test_single_signing_identity(signing_identity.clone(), secret_key)
+        .test_single_signing_identity(signing_identity.clone(), secret_key, cipher_suite)
         .leaf_node_extensions(leaf_extensions)
         .preferences(preferences)
         .extension_types(capabilities.extensions)
@@ -251,7 +251,7 @@ where
         get_test_signing_identity(cipher_suite, b"member".to_vec());
 
     let client_builder = TestClientBuilder::new_for_test()
-        .signing_identity(signing_identity.clone(), secret_key)
+        .signing_identity(signing_identity.clone(), secret_key, cipher_suite)
         .preferences(Preferences::default().with_ratchet_tree_extension(true));
 
     let group = custom(client_builder)
@@ -306,15 +306,13 @@ pub(crate) fn get_test_groups_with_features(
 ) -> Vec<Group<TestClientConfig>> {
     let clients = (0..n)
         .map(|i| {
-            let (identity, secret_key) = get_test_signing_identity(
-                CipherSuite::Curve25519Aes128,
-                format!("member{i}").into_bytes(),
-            );
+            let (identity, secret_key) =
+                get_test_signing_identity(TEST_CIPHER_SUITE, format!("member{i}").into_bytes());
 
             let client = TestClientBuilder::new_for_test()
                 .extension_type(999)
                 .preferences(Preferences::default().with_ratchet_tree_extension(true))
-                .test_single_signing_identity(identity.clone(), secret_key)
+                .test_single_signing_identity(identity.clone(), secret_key, TEST_CIPHER_SUITE)
                 .leaf_node_extensions(leaf_extensions.clone())
                 .build();
 

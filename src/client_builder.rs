@@ -2,6 +2,7 @@
 //!
 //! See [`ClientBuilder`].
 use crate::{
+    cipher_suite::CipherSuite,
     client::Client,
     client_config::{
         ClientConfig, KeepAllProposals, MakeProposalFilter, MakeSimpleProposalFilter,
@@ -20,7 +21,7 @@ use crate::{
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     provider::{
-        crypto::{CryptoProvider, FerriscryptCryptoProvider},
+        crypto::{CryptoProvider, FerriscryptCryptoProvider, SignatureSecretKey},
         group_state::{GroupStateStorage, InMemoryGroupStateStorage},
         identity::IdentityProvider,
         key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
@@ -32,7 +33,6 @@ use crate::{
     tree_kem::{Capabilities, Lifetime},
     Sealed,
 };
-use ferriscrypt::asym::ec_key::SecretKey;
 
 /// Base client configuration type when instantiating `ClientBuilder`
 pub type BaseConfig = Config<
@@ -263,28 +263,31 @@ impl<C: IntoConfig> ClientBuilder<C> {
     pub fn single_signing_identity(
         self,
         identity: SigningIdentity,
-        key: SecretKey,
+        key: SignatureSecretKey,
+        cipher_suite: CipherSuite,
     ) -> ClientBuilder<WithKeychain<InMemoryKeychain, C>> {
-        self.single_entry_keychain(identity, key)
+        self.single_entry_keychain(identity, key, cipher_suite)
     }
 
     #[cfg(test)]
     pub fn test_single_signing_identity(
         self,
         identity: SigningIdentity,
-        key: SecretKey,
+        key: SignatureSecretKey,
+        cipher_suite: CipherSuite,
     ) -> ClientBuilder<WithKeychain<InMemoryKeychain, C>> {
-        self.single_entry_keychain(identity, key)
+        self.single_entry_keychain(identity, key, cipher_suite)
     }
 
     fn single_entry_keychain(
         self,
         identity: SigningIdentity,
-        key: SecretKey,
+        key: SignatureSecretKey,
+        cipher_suite: CipherSuite,
     ) -> ClientBuilder<WithKeychain<InMemoryKeychain, C>> {
         self.keychain({
             let mut keychain = InMemoryKeychain::new();
-            keychain.insert(identity, key);
+            keychain.insert(identity, key, cipher_suite);
             keychain
         })
     }
@@ -459,10 +462,11 @@ where
     pub fn signing_identity(
         self,
         identity: SigningIdentity,
-        secret_key: SecretKey,
+        secret_key: SignatureSecretKey,
+        cipher_suite: CipherSuite,
     ) -> ClientBuilder<IntoConfigOutput<C>> {
         let mut c = self.0.into_config();
-        c.0.keychain.insert(identity, secret_key);
+        c.0.keychain.insert(identity, secret_key, cipher_suite);
         ClientBuilder(c)
     }
 }
@@ -927,9 +931,10 @@ pub mod test_utils {
             BaseConfig, ClientBuilder, Preferences, WithIdentityProvider, WithKeychain,
         },
         key_package::KeyPackageGeneration,
-        provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
+        provider::{
+            crypto::SignatureSecretKey, identity::BasicIdentityProvider, keychain::InMemoryKeychain,
+        },
     };
-    use ferriscrypt::asym::ec_key::SecretKey;
 
     pub type TestClientConfig =
         WithIdentityProvider<BasicIdentityProvider, WithKeychain<InMemoryKeychain, BaseConfig>>;
@@ -944,7 +949,7 @@ pub mod test_utils {
         }
 
         pub fn new_for_test_custom(
-            secret_key: SecretKey,
+            secret_key: SignatureSecretKey,
             key_package: KeyPackageGeneration,
             preferences: Preferences,
         ) -> Self {
@@ -953,6 +958,7 @@ pub mod test_utils {
                 .signing_identity(
                     key_package.key_package.leaf_node.signing_identity.clone(),
                     secret_key,
+                    key_package.key_package.cipher_suite.into_enum().unwrap(),
                 )
                 .key_package(key_package)
                 .unwrap()

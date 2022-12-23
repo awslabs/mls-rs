@@ -80,9 +80,8 @@ where
     let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
 
     group_info.verify(
-        &sender_key_package
-            .signing_identity
-            .public_key(public_tree.cipher_suite)?,
+        cipher_suite_provider,
+        &sender_key_package.signing_identity.signature_key,
         &(),
     )?;
 
@@ -127,7 +126,7 @@ pub(super) fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
 
     // Verify the integrity of the ratchet tree
     let tree_validator = TreeValidator::new(
-        join_context.group_context.cipher_suite,
+        cipher_suite_provider,
         &join_context.group_context.group_id,
         &join_context.group_context.tree_hash,
         required_capabilities.as_ref(),
@@ -142,11 +141,13 @@ pub(super) fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
         .get_extension::<ExternalSendersExt>()?
     {
         // TODO do joiners verify group against current time??
-        ext_senders.verify_all(
-            &identity_provider,
-            join_context.group_context.cipher_suite,
-            None,
-        )?;
+        ext_senders
+            .verify_all(
+                &identity_provider,
+                join_context.group_context.cipher_suite,
+                None,
+            )
+            .map_err(|e| GroupError::IdentityProviderError(e.into()))?;
     }
 
     Ok(join_context)
@@ -196,13 +197,14 @@ pub(super) fn commit_sender(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn proposal_effects<C, F, P>(
+pub(super) fn proposal_effects<C, F, P, CSP>(
     commit_receiver: Option<LeafIndex>,
     proposals: &ProposalCache,
     commit: &Commit,
     sender: &Sender,
     group_extensions: &ExtensionList<GroupContextExtension>,
     identity_provider: C,
+    cipher_suite_provider: &CSP,
     public_tree: &TreeKemPublic,
     external_psk_id_validator: P,
     user_filter: F,
@@ -212,6 +214,7 @@ where
     C: IdentityProvider,
     F: ProposalFilter,
     P: ExternalPskIdValidator,
+    CSP: CipherSuiteProvider,
 {
     proposals.resolve_for_commit(
         sender.clone(),
@@ -220,6 +223,7 @@ where
         commit.path.as_ref().map(|path| &path.leaf_node),
         group_extensions,
         identity_provider,
+        cipher_suite_provider,
         public_tree,
         external_psk_id_validator,
         user_filter,

@@ -22,6 +22,7 @@ use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
 use crate::protocol_version::ProtocolVersion;
 use crate::provider::crypto::{
     CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey,
+    SignatureSecretKey,
 };
 use crate::provider::identity::IdentityProvider;
 use crate::provider::keychain::KeychainStorage;
@@ -31,7 +32,7 @@ use crate::psk::{
     ResumptionPSKUsage, ResumptionPsk, ResumptionPskSearch,
 };
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
-use crate::signer::{Signable, Signer};
+use crate::signer::Signable;
 use crate::tree_kem::kem::TreeKem;
 use crate::tree_kem::leaf_node::{ConfigProperties, LeafNode};
 use crate::tree_kem::node::LeafIndex;
@@ -175,7 +176,7 @@ where
     pending_commit: Option<CommitGeneration>,
     #[cfg(test)]
     pub(crate) commit_modifiers:
-        CommitModifiers<<<C as ClientConfig>::Keychain as KeychainStorage>::Signer>,
+        CommitModifiers<<C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
 }
 
 impl<C> Group<C>
@@ -454,7 +455,6 @@ where
             commit_modifiers: Default::default(),
             epoch_secrets,
             state_repo,
-            // TODO: This can be provided by join context
             cipher_suite_provider,
         };
 
@@ -606,6 +606,7 @@ where
         let signer = self.signer()?;
 
         let auth_content = MLSAuthenticatedContent::new_signed(
+            &self.cipher_suite_provider,
             self.context(),
             Sender::Member(*self.private_tree.self_index),
             Content::Proposal(proposal.clone()),
@@ -623,14 +624,14 @@ where
         self.format_for_wire(auth_content)
     }
 
-    pub(crate) fn signer(&self) -> Result<<C::Keychain as KeychainStorage>::Signer, GroupError> {
+    pub(crate) fn signer(&self) -> Result<SignatureSecretKey, GroupError> {
         self.signer_for_identity(None)
     }
 
     pub(crate) fn signer_for_identity(
         &self,
         signing_identity: Option<&SigningIdentity>,
-    ) -> Result<<C::Keychain as KeychainStorage>::Signer, GroupError> {
+    ) -> Result<SignatureSecretKey, GroupError> {
         let signing_identity = signing_identity.unwrap_or(self.current_member_signing_identity()?);
 
         self.config
@@ -716,18 +717,15 @@ where
         )))
     }
 
-    fn new_for_resumption<S>(
+    fn new_for_resumption(
         &self,
         new_context: &mut GroupContext,
         new_validated_leaf: LeafNode,
         new_leaf_secret: HpkeSecretKey,
-        new_signer: &S,
+        new_signer: &SignatureSecretKey,
         new_key_packages: Vec<MLSMessage>,
         resumption_psk_id: JustPreSharedKeyID,
-    ) -> Result<(Self, Option<MLSMessage>), GroupError>
-    where
-        S: Signer,
-    {
+    ) -> Result<(Self, Option<MLSMessage>), GroupError> {
         let required_capabilities = new_context.extensions.get_extension()?;
 
         let cipher_suite_provider =
@@ -735,7 +733,7 @@ where
 
         let key_package_validator = KeyPackageValidator::new(
             new_context.protocol_version,
-            new_context.cipher_suite,
+            &cipher_suite_provider,
             required_capabilities.as_ref(),
             self.config.identity_provider(),
         );
@@ -847,7 +845,7 @@ where
             signature: Vec::new(),
         };
 
-        group_info.sign(new_signer, &())?;
+        group_info.sign(&cipher_suite_provider, new_signer, &())?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
             new_context.cipher_suite,
@@ -1120,7 +1118,7 @@ where
         // not checked as they may be changed in another proposal in the same commit.
         let key_package_validator = KeyPackageValidator::new(
             self.state.protocol_version(),
-            self.state.cipher_suite(),
+            &self.cipher_suite_provider,
             None,
             self.config.identity_provider(),
         );
@@ -1315,6 +1313,7 @@ where
         }
 
         let auth_content = MLSAuthenticatedContent::new_signed(
+            &self.cipher_suite_provider,
             self.context(),
             Sender::Member(*self.private_tree.self_index),
             Content::Application(message.to_vec().into()),
@@ -1337,6 +1336,7 @@ where
                 CiphertextProcessor::new(self, self.cipher_suite_provider.clone()).open(message)?;
 
             verify_auth_content_signature(
+                &self.cipher_suite_provider,
                 SignaturePublicKeysContainer::RatchetTree(&self.state.public_tree),
                 self.context(),
                 &content,
@@ -1354,6 +1354,7 @@ where
                 .open(message)?;
 
             verify_auth_content_signature(
+                &self.cipher_suite_provider,
                 SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
                 &epoch.context,
                 &content,
@@ -1432,7 +1433,7 @@ where
             signature: Vec::new(),
         };
 
-        info.sign(&signer, &())?;
+        info.sign(&self.cipher_suite_provider, &signer, &())?;
 
         Ok(MLSMessage::new(
             self.protocol_version(),
@@ -1518,6 +1519,7 @@ where
     type IdentityProvider = C::IdentityProvider;
     type ExternalPskIdValidator = PskStoreIdValidator<C::PskStore>;
     type EventType = Event<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>;
+    type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
     fn self_index(&self) -> Option<LeafIndex> {
         Some(self.private_tree.self_index)
@@ -1541,7 +1543,8 @@ where
         EventOrContent<Event<<C::IdentityProvider as IdentityProvider>::IdentityEvent>>,
         GroupError,
     > {
-        let auth_content = crate::group::message_verifier::verify_plaintext_authentication(
+        let auth_content = verify_plaintext_authentication(
+            &self.cipher_suite_provider,
             message,
             Some(&self.key_schedule),
             Some(self.private_tree.self_index),
@@ -1728,6 +1731,10 @@ where
     fn min_epoch_available(&self) -> Option<u64> {
         None
     }
+
+    fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider {
+        &self.cipher_suite_provider
+    }
 }
 
 #[cfg(test)]
@@ -1776,7 +1783,6 @@ mod tests {
     };
     use assert_matches::assert_matches;
 
-    use ferriscrypt::asym::ec_key;
     use tls_codec::Size;
 
     #[cfg(target_arch = "wasm32")]
@@ -2739,8 +2745,11 @@ mod tests {
 
         alice_group.process_pending_commit().unwrap();
 
-        let test_key_package =
-            test_key_package_custom(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob", |gen| {
+        let test_key_package = test_key_package_custom(
+            &alice_group.group.cipher_suite_provider,
+            TEST_PROTOCOL_VERSION,
+            "bob",
+            |gen| {
                 gen.generate(
                     Lifetime::years(1).unwrap(),
                     get_test_capabilities(),
@@ -2748,7 +2757,8 @@ mod tests {
                     Default::default(),
                 )
                 .unwrap()
-            });
+            },
+        );
 
         alice_group
             .group
@@ -2781,11 +2791,10 @@ mod tests {
         let mut groups =
             test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 3);
 
-        groups[0].group.commit_modifiers.modify_leaf =
-            |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
-                leaf.leaf_node_source = LeafNodeSource::Update;
-                leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
-            };
+        groups[0].group.commit_modifiers.modify_leaf = |leaf, sk, cp| {
+            leaf.leaf_node_source = LeafNodeSource::Update;
+            leaf.sign(cp, sk, &(TEST_GROUP, 0).into()).unwrap();
+        };
 
         let commit_output = groups[0].group.commit(vec![]).unwrap();
 
@@ -2807,11 +2816,10 @@ mod tests {
             test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 3);
 
         // Group 0 starts using fixed key
-        groups[0].group.commit_modifiers.modify_leaf =
-            |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
-                leaf.public_key = get_test_25519_key(1u8);
-                leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
-            };
+        groups[0].group.commit_modifiers.modify_leaf = |leaf, sk, cp| {
+            leaf.public_key = get_test_25519_key(1u8);
+            leaf.sign(cp, sk, &(TEST_GROUP, 0).into()).unwrap();
+        };
 
         let commit_output = groups[0].group.commit(vec![]).unwrap();
         groups[0].process_pending_commit().unwrap();
@@ -2838,22 +2846,20 @@ mod tests {
             test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10);
 
         // Group 1 uses the fixed key
-        groups[1].group.commit_modifiers.modify_leaf =
-            |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
-                leaf.public_key = get_test_25519_key(1u8);
-                leaf.sign(sk, &(TEST_GROUP, 1).into()).unwrap();
-            };
+        groups[1].group.commit_modifiers.modify_leaf = |leaf, sk, cp| {
+            leaf.public_key = get_test_25519_key(1u8);
+            leaf.sign(cp, sk, &(TEST_GROUP, 1).into()).unwrap();
+        };
 
         let commit_output = groups.get_mut(1).unwrap().group.commit(vec![]).unwrap();
 
         process_commit(&mut groups, commit_output.commit_message, 1);
 
         // Group 0 tries to use the fixed key too
-        groups[0].group.commit_modifiers.modify_leaf =
-            |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
-                leaf.public_key = get_test_25519_key(1u8);
-                leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
-            };
+        groups[0].group.commit_modifiers.modify_leaf = |leaf, sk, cp| {
+            leaf.public_key = get_test_25519_key(1u8);
+            leaf.sign(cp, sk, &(TEST_GROUP, 0).into()).unwrap();
+        };
 
         let commit_output = groups[0].group.commit(vec![]).unwrap();
 
@@ -2869,14 +2875,14 @@ mod tests {
     fn commit_leaf_duplicate_signature_key() {
         // RFC 8.3 "Verify that the following fields are unique among the members of the group: `signature_key`"
 
-        let mut groups =
-            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10);
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10);
 
         // Group 1 uses the fixed key
-        groups[1].group.commit_modifiers.modify_leaf = |leaf: &mut LeafNode, _: &_| {
-            let sk = ec_key::SecretKey::from_bytes(&[2u8; 32], ec_key::Curve::Ed25519).unwrap();
-            leaf.signing_identity.signature_key = sk.to_public().unwrap().try_into().unwrap();
-            leaf.sign(&sk, &(TEST_GROUP, 1).into()).unwrap();
+        groups[1].group.commit_modifiers.modify_leaf = |leaf, _, cp| {
+            let sk = SignatureSecretKey::from(vec![2u8; 32]);
+            let pk = cp.signature_key_derive_public(&sk).unwrap();
+            leaf.signing_identity.signature_key = pk;
+            leaf.sign(cp, &sk, &(TEST_GROUP, 1).into()).unwrap();
         };
 
         let commit_output = groups.get_mut(1).unwrap().group.commit(vec![]).unwrap();
@@ -2884,10 +2890,11 @@ mod tests {
         process_commit(&mut groups, commit_output.commit_message, 1);
 
         // Group 0 tries to use the fixed key too
-        groups[0].group.commit_modifiers.modify_leaf = |leaf: &mut LeafNode, _: &_| {
-            let sk = ec_key::SecretKey::from_bytes(&[2u8; 32], ec_key::Curve::Ed25519).unwrap();
-            leaf.signing_identity.signature_key = sk.to_public().unwrap().try_into().unwrap();
-            leaf.sign(&sk, &(TEST_GROUP, 0).into()).unwrap();
+        groups[0].group.commit_modifiers.modify_leaf = |leaf, _, cp| {
+            let sk = SignatureSecretKey::from(vec![2u8; 32]);
+            let pk = cp.signature_key_derive_public(&sk).unwrap();
+            leaf.signing_identity.signature_key = pk;
+            leaf.sign(cp, &sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
         let commit_output = groups[0].group.commit(vec![]).unwrap();
@@ -2905,7 +2912,7 @@ mod tests {
         let mut groups =
             test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 3);
 
-        groups[0].group.commit_modifiers.modify_leaf = |leaf: &mut LeafNode, _: &_| {
+        groups[0].group.commit_modifiers.modify_leaf = |leaf, _, _| {
             leaf.signature[0] ^= 1;
         };
 
@@ -2932,9 +2939,9 @@ mod tests {
         let mut groups =
             get_test_groups_with_features(3, vec![extension].into(), Default::default());
 
-        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+        groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
             leaf.capabilities = get_test_capabilities();
-            leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
+            leaf.sign(cp, sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
         let commit_output = groups[0].commit(vec![]).unwrap();
@@ -2954,10 +2961,10 @@ mod tests {
         let mut groups =
             get_test_groups_with_features(3, Default::default(), vec![extension].into());
 
-        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+        groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
             leaf.capabilities = get_test_capabilities();
             leaf.extensions = ExtensionList::new();
-            leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
+            leaf.sign(cp, sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
         let commit_output = groups[0].commit(vec![]).unwrap();
@@ -2972,7 +2979,7 @@ mod tests {
         // The new leaf of the committer uses an extension unsupported by another leaf
         let mut groups = get_test_groups_with_features(3, Default::default(), Default::default());
 
-        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+        groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
             let extensions = [666, 999]
                 .into_iter()
                 .map(|extension_type| Extension {
@@ -2984,7 +2991,7 @@ mod tests {
 
             leaf.extensions = extensions;
             leaf.capabilities.extensions = vec![666, 999];
-            leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
+            leaf.sign(cp, sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
         let commit_output = groups[0].commit(vec![]).unwrap();
@@ -3007,9 +3014,9 @@ mod tests {
         let extensions = vec![extension.to_extension().unwrap()];
         let mut groups = get_test_groups_with_features(3, extensions.into(), Default::default());
 
-        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+        groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
             leaf.capabilities = Capabilities::default();
-            leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
+            leaf.sign(cp, sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
         let commit_output = groups[0].commit(vec![]).unwrap();
@@ -3023,9 +3030,9 @@ mod tests {
         // The new leaf of the committer has a credential unsupported by another leaf
         let mut groups = get_test_groups_with_features(3, Default::default(), Default::default());
 
-        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+        groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
             leaf.signing_identity.credential.credential_type = CREDENTIAL_TYPE_X509;
-            leaf.sign(sk, &(b"TEST GROUP".as_slice(), 0).into())
+            leaf.sign(cp, sk, &(b"TEST GROUP".as_slice(), 0).into())
                 .unwrap();
         };
 
@@ -3047,9 +3054,9 @@ mod tests {
 
         let mut groups = get_test_groups_with_features(3, Default::default(), Default::default());
 
-        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+        groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
             leaf.capabilities.credentials = vec![2];
-            leaf.sign(sk, &(b"TEST GROUP".as_slice(), 0).into())
+            leaf.sign(cp, sk, &(b"TEST GROUP".as_slice(), 0).into())
                 .unwrap();
         };
 
@@ -3079,9 +3086,9 @@ mod tests {
         let extensions = vec![extension.to_extension().unwrap()];
         let mut groups = get_test_groups_with_features(3, extensions.into(), Default::default());
 
-        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+        groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
             leaf.capabilities.credentials = vec![2];
-            leaf.sign(sk, &(b"TEST GROUP".as_slice(), 0).into())
+            leaf.sign(cp, sk, &(b"TEST GROUP".as_slice(), 0).into())
                 .unwrap();
         };
 
@@ -3118,9 +3125,9 @@ mod tests {
             get_test_groups_with_features(3, vec![ext_senders].into(), Default::default());
 
         // New leaf for group 0 supports only basic credentials (used by the group) but not X509 used by external sender
-        groups[0].commit_modifiers.modify_leaf = |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
+        groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
             leaf.capabilities.credentials = vec![1];
-            leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
+            leaf.sign(cp, sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
         let commit_output = groups[0].commit(vec![]).unwrap();
@@ -3144,11 +3151,10 @@ mod tests {
             tree.do_update_node(get_test_25519_key(1u8), 3).unwrap();
         };
 
-        groups[0].group.commit_modifiers.modify_leaf =
-            |leaf: &mut LeafNode, sk: &ec_key::SecretKey| {
-                leaf.public_key = get_test_25519_key(1u8);
-                leaf.sign(sk, &(TEST_GROUP, 0).into()).unwrap();
-            };
+        groups[0].group.commit_modifiers.modify_leaf = |leaf, sk, cp| {
+            leaf.public_key = get_test_25519_key(1u8);
+            leaf.sign(cp, sk, &(TEST_GROUP, 0).into()).unwrap();
+        };
 
         let commit_output = groups[0].group.commit(vec![]).unwrap();
 
@@ -3235,9 +3241,9 @@ mod tests {
 
     #[test]
     fn update_proposal_can_change_credential() {
-        let cs = CipherSuite::Curve25519Aes128;
-        let mut groups = test_n_member_group(ProtocolVersion::Mls10, cs, 3);
-        let (identity, secret_key) = get_test_signing_identity(cs, b"member".to_vec());
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3);
+        let (identity, secret_key) =
+            get_test_signing_identity(TEST_CIPHER_SUITE, b"member".to_vec());
 
         // Add new identity
         groups[0]
@@ -3245,7 +3251,7 @@ mod tests {
             .config
             .0
             .keychain
-            .insert(identity.clone(), secret_key);
+            .insert(identity.clone(), secret_key, TEST_CIPHER_SUITE);
 
         let update = groups[0]
             .group

@@ -7,6 +7,7 @@ use crate::{
         KeyPackageValidationOutput, KeyPackageValidator,
     },
     protocol_version::ProtocolVersion,
+    provider::crypto::CryptoProvider,
     time::MlsTime,
 };
 use thiserror::Error;
@@ -22,6 +23,8 @@ pub enum ExternalClientError {
     GroupError(#[from] GroupError),
     #[error(transparent)]
     KeyPackageValidationError(#[from] KeyPackageValidationError),
+    #[error("unsupported cipher suite: {0:?}")]
+    UnsupportedCipherSuite(CipherSuite),
 }
 
 pub struct ExternalClient<C> {
@@ -63,9 +66,15 @@ where
         protocol: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> Result<KeyPackageValidationOutput, ExternalClientError> {
+        let cipher_suite_provider = self
+            .config
+            .crypto_provider()
+            .cipher_suite_provider(cipher_suite)
+            .ok_or_else(|| ExternalClientError::UnsupportedCipherSuite(cipher_suite))?;
+
         let keypackage_validator = KeyPackageValidator::new(
             protocol,
-            cipher_suite,
+            &cipher_suite_provider,
             None,
             self.config.identity_provider(),
         );

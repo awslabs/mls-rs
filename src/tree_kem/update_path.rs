@@ -10,7 +10,7 @@ use super::{
 use crate::{
     extension::ExtensionError,
     provider::{
-        crypto::{HpkeCiphertext, HpkePublicKey},
+        crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey},
         identity::IdentityProvider,
     },
 };
@@ -59,8 +59,9 @@ pub struct ValidatedUpdatePath {
     pub nodes: Vec<UpdatePathNode>,
 }
 
-pub(crate) fn validate_update_path<C: IdentityProvider>(
+pub(crate) fn validate_update_path<C: IdentityProvider, CSP: CipherSuiteProvider>(
     identity_provider: &C,
+    cipher_suite_provider: &CSP,
     path: &UpdatePath,
     state: &ProvisionalState,
     sender: LeafIndex,
@@ -69,7 +70,7 @@ pub(crate) fn validate_update_path<C: IdentityProvider>(
     let required_capabilities = state.group_context.extensions.get_extension()?;
 
     let leaf_validator = LeafNodeValidator::new(
-        state.group_context.cipher_suite,
+        cipher_suite_provider,
         required_capabilities.as_ref(),
         identity_provider,
     );
@@ -122,6 +123,7 @@ mod tests {
 
     use ferriscrypt::rand::SecureRng;
 
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::group::message_processor::ProvisionalState;
     use crate::group::test_utils::get_test_group_context;
     use crate::provider::crypto::test_utils::test_cipher_suite_provider;
@@ -198,13 +200,14 @@ mod tests {
 
     #[test]
     fn test_valid_leaf_node() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let update_path = test_update_path(cipher_suite, "creator");
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let update_path = test_update_path(TEST_CIPHER_SUITE, "creator");
 
         let validated = validate_update_path(
             &BasicIdentityProvider::new(),
+            &cipher_suite_provider,
             &update_path,
-            &test_provisional_state(cipher_suite),
+            &test_provisional_state(TEST_CIPHER_SUITE),
             LeafIndex(0),
             None,
         )
@@ -216,14 +219,15 @@ mod tests {
 
     #[test]
     fn test_invalid_key_package() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let mut update_path = test_update_path(cipher_suite, "creator");
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let mut update_path = test_update_path(TEST_CIPHER_SUITE, "creator");
         update_path.leaf_node.signature = SecureRng::gen(32).unwrap();
 
         let validated = validate_update_path(
             &BasicIdentityProvider::new(),
+            &cipher_suite_provider,
             &update_path,
-            &test_provisional_state(cipher_suite),
+            &test_provisional_state(TEST_CIPHER_SUITE),
             LeafIndex(0),
             None,
         );
@@ -236,11 +240,13 @@ mod tests {
 
     #[test]
     fn validating_path_fails_with_different_identity() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let cipher_suite = CipherSuite::Curve25519Aes128;
         let update_path = test_update_path(cipher_suite, "foobar");
 
         let validated = validate_update_path(
             &BasicIdentityProvider::new(),
+            &cipher_suite_provider,
             &update_path,
             &test_provisional_state(cipher_suite),
             LeafIndex(0),
@@ -255,9 +261,9 @@ mod tests {
 
     #[test]
     fn validating_path_fails_with_same_hpke_key() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let update_path = test_update_path(cipher_suite, "creator");
-        let mut state = test_provisional_state(cipher_suite);
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let update_path = test_update_path(TEST_CIPHER_SUITE, "creator");
+        let mut state = test_provisional_state(TEST_CIPHER_SUITE);
 
         state
             .public_tree
@@ -268,6 +274,7 @@ mod tests {
 
         let validated = validate_update_path(
             &BasicIdentityProvider::new(),
+            &cipher_suite_provider,
             &update_path,
             &state,
             LeafIndex(0),

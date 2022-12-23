@@ -317,10 +317,13 @@ mod test {
     }
 
     fn test_data(cipher_suite: CipherSuite) -> TestData {
+        let provider = test_cipher_suite_provider(cipher_suite);
+
         let test_epoch = get_test_epoch(cipher_suite);
-        let test_signer = cipher_suite.generate_signing_key().unwrap();
+        let (test_signer, _) = provider.signature_key_generate().unwrap();
 
         let test_content = MLSAuthenticatedContent::new_signed(
+            &provider,
             &test_epoch.context,
             Sender::Member(0),
             Content::Application(ApplicationData::from(b"test".to_vec())),

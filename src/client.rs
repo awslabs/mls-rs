@@ -279,6 +279,7 @@ where
         )?;
 
         let message = MLSAuthenticatedContent::new_signed(
+            &cipher_suite_provider,
             &group_context,
             Sender::NewMemberProposal,
             Content::Proposal(Proposal::Add(AddProposal { key_package })),
@@ -319,7 +320,7 @@ pub mod test_utils {
             get_test_signing_identity(cipher_suite, identity.as_bytes().to_vec());
 
         let builder = TestClientBuilder::new_for_test()
-            .signing_identity(signing_identity.clone(), secret_key)
+            .signing_identity(signing_identity.clone(), secret_key, cipher_suite)
             .key_package_lifetime(10000);
 
         (builder, signing_identity)

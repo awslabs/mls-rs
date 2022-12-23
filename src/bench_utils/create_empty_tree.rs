@@ -1,9 +1,9 @@
 use crate::cipher_suite::CipherSuite;
 use crate::extension::ExtensionList;
-use crate::ferriscrypt::asym::ec_key::SecretKey;
 use crate::group::{ConfirmedTranscriptHash, GroupContext};
 use crate::identity::SigningIdentity;
 use crate::protocol_version::ProtocolVersion;
+use crate::provider::crypto::SignatureSecretKey;
 use crate::provider::identity::BasicIdentityProvider;
 use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
 use crate::tree_kem::node::LeafIndex;
@@ -16,7 +16,7 @@ pub struct TestCase {
     pub test_tree: TreeKemPublic,
     pub encap_tree: TreeKemPublic,
     pub encap_private_key: TreeKemPrivate,
-    pub encap_signer: SecretKey,
+    pub encap_signer: SignatureSecretKey,
     pub group_context: GroupContext,
     pub encap_identity: SigningIdentity,
 }

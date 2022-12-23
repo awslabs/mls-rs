@@ -1,15 +1,13 @@
 use std::collections::HashMap;
 
 use crate::{
-    cipher_suite::CipherSuite,
     extension::ExternalSendersExt,
     group::{GroupContext, GroupError, MLSPlaintext, Sender},
     identity::SigningIdentity,
-    provider::crypto::SignaturePublicKey,
+    provider::crypto::{CipherSuiteProvider, SignaturePublicKey},
     signer::Signable,
     tree_kem::{node::LeafIndex, TreeKemPublic},
 };
-use ferriscrypt::asym::ec_key::PublicKey;
 
 use super::{
     framing::Content,
@@ -25,7 +23,8 @@ pub(crate) enum SignaturePublicKeysContainer<'a> {
     List(&'a HashMap<LeafIndex, SignaturePublicKey>),
 }
 
-pub(crate) fn verify_plaintext_authentication(
+pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
+    cipher_suite_provider: &P,
     plaintext: MLSPlaintext,
     key_schedule: Option<&KeySchedule>,
     self_index: Option<LeafIndex>,
@@ -64,6 +63,7 @@ pub(crate) fn verify_plaintext_authentication(
     // Verify that the signature on the MLSAuthenticatedContent verifies using the public key
     // from the credential stored at the leaf in the tree indicated by the sender field.
     verify_auth_content_signature(
+        cipher_suite_provider,
         SignaturePublicKeysContainer::RatchetTree(current_tree),
         context,
         &auth_content,
@@ -83,7 +83,8 @@ fn external_signers(context: &GroupContext) -> Vec<SigningIdentity> {
         })
 }
 
-pub(crate) fn verify_auth_content_signature(
+pub(crate) fn verify_auth_content_signature<P: CipherSuiteProvider>(
+    cipher_suite_provider: &P,
     signature_keys_container: SignaturePublicKeysContainer,
     context: &GroupContext,
     auth_content: &MLSAuthenticatedContent,
@@ -94,7 +95,6 @@ pub(crate) fn verify_auth_content_signature(
         &auth_content.content.sender,
         &auth_content.content.content,
         external_signers,
-        context.cipher_suite,
     )?;
 
     let context = MessageSigningContext {
@@ -102,7 +102,7 @@ pub(crate) fn verify_auth_content_signature(
     };
 
     auth_content
-        .verify(&sender_public_key, &context)
+        .verify(cipher_suite_provider, &sender_public_key, &context)
         .map_err(|_| GroupError::InvalidSignature)?;
 
     Ok(())
@@ -113,66 +113,53 @@ fn signing_identity_for_sender(
     sender: &Sender,
     content: &Content,
     external_signers: &[SigningIdentity],
-    cipher_suite: CipherSuite,
-) -> Result<PublicKey, GroupError> {
+) -> Result<SignaturePublicKey, GroupError> {
     match sender {
-        Sender::Member(leaf_index) => signing_identity_for_member(
-            signature_keys_container,
-            LeafIndex(*leaf_index),
-            cipher_suite,
-        ),
+        Sender::Member(leaf_index) => {
+            signing_identity_for_member(signature_keys_container, LeafIndex(*leaf_index))
+        }
         Sender::External(external_key_index) => {
-            signing_identity_for_external(cipher_suite, *external_key_index, external_signers)
+            signing_identity_for_external(*external_key_index, external_signers)
         }
-        Sender::NewMemberCommit => signing_identity_for_new_member_commit(content, cipher_suite),
-        Sender::NewMemberProposal => {
-            signing_identity_for_new_member_proposal(content, cipher_suite)
-        }
+        Sender::NewMemberCommit => signing_identity_for_new_member_commit(content),
+        Sender::NewMemberProposal => signing_identity_for_new_member_proposal(content),
     }
 }
 
 fn signing_identity_for_member(
     signature_keys_container: SignaturePublicKeysContainer,
     leaf_index: LeafIndex,
-    cipher_suite: CipherSuite,
-) -> Result<PublicKey, GroupError> {
+) -> Result<SignaturePublicKey, GroupError> {
     match signature_keys_container {
         SignaturePublicKeysContainer::RatchetTree(tree) => Ok(tree
             .get_leaf_node(leaf_index)?
             .signing_identity
-            .public_key(tree.cipher_suite)?),
+            .signature_key
+            .clone()), // TODO: We can probably get rid of this clone
         SignaturePublicKeysContainer::List(list) => list
             .get(&leaf_index)
             .ok_or(GroupError::LeafNotFound(*leaf_index))
-            .and_then(|sig_key| {
-                PublicKey::from_uncompressed_bytes(sig_key, cipher_suite.signature_key_curve())
-                    .map_err(GroupError::from)
-            }),
+            .cloned(),
     }
 }
 
 fn signing_identity_for_external(
-    cipher_suite: CipherSuite,
     index: u32,
     external_signers: &[SigningIdentity],
-) -> Result<PublicKey, GroupError> {
-    let external_identity = external_signers
+) -> Result<SignaturePublicKey, GroupError> {
+    external_signers
         .get(index as usize)
-        .ok_or(GroupError::UnknownSigningIdentityForExternalSender)?;
-
-    external_identity
-        .public_key(cipher_suite)
-        .map_err(Into::into)
+        .map(|spk| spk.signature_key.clone())
+        .ok_or(GroupError::UnknownSigningIdentityForExternalSender)
 }
 
 fn signing_identity_for_new_member_commit(
     content: &Content,
-    cipher_suite: CipherSuite,
-) -> Result<PublicKey, GroupError> {
+) -> Result<SignaturePublicKey, GroupError> {
     match content {
         Content::Commit(commit) => {
             if let Some(path) = &commit.path {
-                Ok(path.leaf_node.signing_identity.public_key(cipher_suite)?)
+                Ok(path.leaf_node.signing_identity.signature_key.clone())
             } else {
                 Err(GroupError::MissingUpdatePathInExternalCommit)
             }
@@ -183,15 +170,11 @@ fn signing_identity_for_new_member_commit(
 
 fn signing_identity_for_new_member_proposal(
     content: &Content,
-    cipher_suite: CipherSuite,
-) -> Result<PublicKey, GroupError> {
+) -> Result<SignaturePublicKey, GroupError> {
     match content {
         Content::Proposal(proposal) => {
             if let Proposal::Add(AddProposal { key_package }) = proposal {
-                Ok(key_package
-                    .leaf_node
-                    .signing_identity
-                    .public_key(cipher_suite)?)
+                Ok(key_package.leaf_node.signing_identity.signature_key.clone())
             } else {
                 Err(GroupError::ExpectedAddProposalForNewMemberProposal)
             }
@@ -221,7 +204,8 @@ mod tests {
         identity::test_utils::get_test_signing_identity,
         key_package::KeyPackageGeneration,
         protocol_version::ProtocolVersion,
-        signer::{Signable, Signer},
+        provider::crypto::SignatureSecretKey,
+        signer::Signable,
         tree_kem::node::LeafIndex,
     };
     use assert_matches::assert_matches;
@@ -301,6 +285,7 @@ mod tests {
         let message = make_signed_plaintext(&mut env.alice.group);
 
         verify_plaintext_authentication(
+            &env.bob.group.cipher_suite_provider,
             message,
             Some(&env.bob.group.key_schedule),
             None,
@@ -316,6 +301,7 @@ mod tests {
         let message = MLSAuthenticatedContent::from(make_signed_plaintext(&mut env.alice.group));
 
         verify_auth_content_signature(
+            &env.bob.group.cipher_suite_provider,
             super::SignaturePublicKeysContainer::RatchetTree(&env.bob.group.state.public_tree),
             env.bob.group.context(),
             &message,
@@ -342,6 +328,7 @@ mod tests {
             .into();
 
         let res = verify_plaintext_authentication(
+            &env.bob.group.cipher_suite_provider,
             message,
             Some(&env.bob.group.key_schedule),
             None,
@@ -358,6 +345,7 @@ mod tests {
         message.membership_tag = None;
 
         let res = verify_plaintext_authentication(
+            &env.bob.group.cipher_suite_provider,
             message,
             Some(&env.bob.group.key_schedule),
             None,
@@ -374,6 +362,7 @@ mod tests {
         message.membership_tag = Some(MembershipTag::from(b"test".to_vec()));
 
         let res = verify_plaintext_authentication(
+            &env.bob.group.cipher_suite_provider,
             message,
             Some(&env.bob.group.key_schedule),
             None,
@@ -383,17 +372,17 @@ mod tests {
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
 
-    fn test_new_member_proposal<F, S>(
+    fn test_new_member_proposal<F>(
         key_pkg_gen: KeyPackageGeneration,
-        signer: &S,
+        signer: &SignatureSecretKey,
         test_group: &TestGroup,
         mut edit: F,
     ) -> MLSPlaintext
     where
         F: FnMut(&mut MLSAuthenticatedContent),
-        S: Signer,
     {
         let mut content = MLSAuthenticatedContent::new_signed(
+            &test_group.group.cipher_suite_provider,
             test_group.group.context(),
             Sender::NewMemberProposal,
             Content::Proposal(Proposal::Add(AddProposal {
@@ -411,7 +400,13 @@ mod tests {
             group_context: Some(test_group.group.context()),
         };
 
-        content.sign(signer, &signing_context).unwrap();
+        content
+            .sign(
+                &test_group.group.cipher_suite_provider,
+                signer,
+                &signing_context,
+            )
+            .unwrap();
 
         MLSPlaintext {
             content: content.content,
@@ -427,6 +422,7 @@ mod tests {
         let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |_| {});
 
         verify_plaintext_authentication(
+            &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
             None,
@@ -444,6 +440,7 @@ mod tests {
         message.membership_tag = Some(MembershipTag::from(vec![]));
 
         let res = verify_plaintext_authentication(
+            &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
             None,
@@ -465,6 +462,7 @@ mod tests {
         });
 
         let res = verify_plaintext_authentication(
+            &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
             None,
@@ -487,6 +485,7 @@ mod tests {
         });
 
         let res = verify_plaintext_authentication(
+            &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
             None,
@@ -528,6 +527,7 @@ mod tests {
             });
 
         verify_plaintext_authentication(
+            &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
             None,
@@ -548,6 +548,7 @@ mod tests {
             });
 
         let res = verify_plaintext_authentication(
+            &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
             None,
@@ -574,6 +575,7 @@ mod tests {
         message.membership_tag = Some(MembershipTag::from(vec![]));
 
         let res = verify_plaintext_authentication(
+            &test_group.group.cipher_suite_provider,
             message,
             Some(&test_group.group.key_schedule),
             None,
@@ -590,6 +592,7 @@ mod tests {
         let message = make_signed_plaintext(&mut env.alice.group);
 
         let res = verify_plaintext_authentication(
+            &env.alice.group.cipher_suite_provider,
             message,
             Some(&env.alice.group.key_schedule),
             Some(LeafIndex::new(env.alice.group.current_member_index())),

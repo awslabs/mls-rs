@@ -26,11 +26,7 @@ impl GroupState {
         confirmation_tag: ConfirmationTag,
     ) -> Self {
         Self {
-            proposals: ProposalCache::new(
-                context.protocol_version,
-                context.cipher_suite,
-                context.group_id.clone(),
-            ),
+            proposals: ProposalCache::new(context.protocol_version, context.group_id.clone()),
             context,
             public_tree: current_tree,
             interim_transcript_hash,

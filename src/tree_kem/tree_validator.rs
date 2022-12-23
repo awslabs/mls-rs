@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::provider::crypto::CipherSuiteProvider;
 use crate::tree_kem::math as tree_math;
 use crate::{
-    cipher_suite::CipherSuite,
     extension::RequiredCapabilitiesExt,
     provider::identity::IdentityProvider,
     tree_kem::{
@@ -30,18 +30,19 @@ pub enum TreeValidationError {
     UnmergedLeavesMismatch,
 }
 
-pub(crate) struct TreeValidator<'a, C>
+pub(crate) struct TreeValidator<'a, C, CSP>
 where
     C: IdentityProvider,
+    CSP: CipherSuiteProvider,
 {
     expected_tree_hash: &'a [u8],
-    leaf_node_validator: LeafNodeValidator<'a, C>,
+    leaf_node_validator: LeafNodeValidator<'a, C, CSP>,
     group_id: &'a [u8],
 }
 
-impl<'a, C: IdentityProvider> TreeValidator<'a, C> {
+impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP> {
     pub fn new(
-        cipher_suite: CipherSuite,
+        cipher_suite_provider: &'a CSP,
         group_id: &'a [u8],
         tree_hash: &'a [u8],
         required_capabilities: Option<&'a RequiredCapabilitiesExt>,
@@ -50,7 +51,7 @@ impl<'a, C: IdentityProvider> TreeValidator<'a, C> {
         TreeValidator {
             expected_tree_hash: tree_hash,
             leaf_node_validator: LeafNodeValidator::new(
-                cipher_suite,
+                cipher_suite_provider,
                 required_capabilities,
                 identity_provider,
             ),
@@ -135,10 +136,10 @@ mod tests {
 
     use super::*;
     use crate::{
+        cipher_suite::CipherSuite,
         group::test_utils::get_test_group_context,
         provider::{
-            crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
-            identity::BasicIdentityProvider,
+            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
         },
         tree_kem::{
             kem::TreeKem,
@@ -202,8 +203,10 @@ mod tests {
             let mut test_tree = get_valid_tree(cipher_suite);
             let expected_tree_hash = test_tree.tree_hash().unwrap();
 
+            let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
             let validator = TreeValidator::new(
-                cipher_suite,
+                &cipher_suite_provider,
                 b"",
                 &expected_tree_hash,
                 None,
@@ -220,8 +223,10 @@ mod tests {
             let mut test_tree = get_valid_tree(cipher_suite);
             let expected_tree_hash = SecureRng::gen(32).unwrap();
 
+            let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
             let validator = TreeValidator::new(
-                cipher_suite,
+                &cipher_suite_provider,
                 b"",
                 &expected_tree_hash,
                 None,
@@ -245,8 +250,10 @@ mod tests {
 
             let expected_tree_hash = test_tree.tree_hash().unwrap();
 
+            let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
             let validator = TreeValidator::new(
-                cipher_suite,
+                &cipher_suite_provider,
                 b"",
                 &expected_tree_hash,
                 None,
@@ -273,8 +280,10 @@ mod tests {
 
             let expected_tree_hash = test_tree.tree_hash().unwrap();
 
+            let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
             let validator = TreeValidator::new(
-                cipher_suite,
+                &cipher_suite_provider,
                 b"",
                 &expected_tree_hash,
                 None,

@@ -8,7 +8,6 @@ use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     extension::{ExtensionError, ExtensionList, GroupContextExtension},
     identity::CredentialError,
-    identity::SigningIdentityError,
     key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError},
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     psk::PskSecretError,
@@ -95,8 +94,6 @@ pub enum GroupError {
     ProposalCacheError(#[from] ProposalCacheError),
     #[error(transparent)]
     TreeValidationError(#[from] TreeValidationError),
-    #[error(transparent)]
-    SigningIdentityError(#[from] SigningIdentityError),
     #[error("key package not found")]
     KeyPackageNotFound,
     #[error("Cipher suite does not match")]
