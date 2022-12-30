@@ -7,6 +7,7 @@ use ferriscrypt::{
     digest::HashFunction,
     hmac::HMacError,
     hpke::{
+        self,
         kem::{Kem, KemType},
         Hpke, HpkeError, KemId,
     },
@@ -19,7 +20,7 @@ use thiserror::Error;
 use crate::cipher_suite::CipherSuite;
 
 use super::{
-    CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey,
+    CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkeContext, HpkePublicKey, HpkeSecretKey,
     SignaturePublicKey, SignatureSecretKey,
 };
 
@@ -41,6 +42,8 @@ pub enum FerriscryptCryptoError {
     EcKeyError(#[from] EcKeyError),
     #[error("invalid signature")]
     InvalidSignature,
+    #[error(transparent)]
+    TlsCodecError(#[from] tls_codec::Error),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -200,6 +203,14 @@ impl FerriscryptCipherSuite {
             .map_err(Into::into)
     }
 
+    fn aead_key_size(&self) -> usize {
+        self.aead.key_size()
+    }
+
+    fn aead_nonce_size(&self) -> usize {
+        self.aead.nonce_size()
+    }
+
     pub fn kdf_expand(
         &self,
         prk: &[u8],
@@ -216,6 +227,10 @@ impl FerriscryptCipherSuite {
 
     pub fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Vec<u8>, FerriscryptCryptoError> {
         Hkdf::new(self.hash).extract(ikm, salt).map_err(Into::into)
+    }
+
+    pub fn kdf_extract_size(&self) -> usize {
+        Hkdf::new(self.hash).extract_size()
     }
 
     #[inline(always)]
@@ -251,6 +266,28 @@ impl FerriscryptCipherSuite {
         self.hpke()
             .open(&ciphertext, &local_secret, info, None, aad)
             .map_err(Into::into)
+    }
+
+    fn hpke_setup_r(
+        &self,
+        enc: &[u8],
+        local_secret: &HpkeSecretKey,
+        info: &[u8],
+    ) -> Result<hpke::Context, FerriscryptCryptoError> {
+        let local_secret = ferriscrypt::hpke::kem::HpkeSecretKey::from(local_secret.0.to_vec());
+
+        self.hpke()
+            .setup_receiver(enc, &local_secret, info, None)
+            .map_err(Into::into)
+    }
+
+    fn hpke_setup_s(
+        &self,
+        remote_key: &HpkePublicKey,
+        info: &[u8],
+    ) -> Result<(Vec<u8>, hpke::Context), FerriscryptCryptoError> {
+        let remote_key = ferriscrypt::hpke::kem::HpkePublicKey::from(remote_key.0.to_vec());
+        Ok(self.hpke().setup_sender(&remote_key, info, None)?)
     }
 
     pub fn kem_derive(
@@ -326,6 +363,8 @@ impl FerriscryptCipherSuite {
 
 impl CipherSuiteProvider for FerriscryptCipherSuite {
     type Error = FerriscryptCryptoError;
+    // TODO exporter_secret in this struct is not zeroized
+    type HpkeContext = hpke::Context;
 
     fn hash(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
         self.hash(data)
@@ -355,12 +394,24 @@ impl CipherSuiteProvider for FerriscryptCipherSuite {
         self.aead_open(key, cipher_text, aad, nonce)
     }
 
+    fn aead_key_size(&self) -> usize {
+        self.aead_key_size()
+    }
+
+    fn aead_nonce_size(&self) -> usize {
+        self.aead_nonce_size()
+    }
+
     fn kdf_expand(&self, prk: &[u8], info: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
         self.kdf_expand(prk, info, len)
     }
 
     fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Vec<u8>, Self::Error> {
         self.kdf_extract(salt, ikm)
+    }
+
+    fn kdf_extract_size(&self) -> usize {
+        self.kdf_extract_size()
     }
 
     fn hpke_seal(
@@ -381,6 +432,23 @@ impl CipherSuiteProvider for FerriscryptCipherSuite {
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, Self::Error> {
         self.hpke_open(ciphertext, local_secret, info, aad)
+    }
+
+    fn hpke_setup_r(
+        &self,
+        enc: &[u8],
+        local_secret: &HpkeSecretKey,
+        info: &[u8],
+    ) -> Result<Self::HpkeContext, Self::Error> {
+        self.hpke_setup_r(enc, local_secret, info)
+    }
+
+    fn hpke_setup_s(
+        &self,
+        remote_key: &HpkePublicKey,
+        info: &[u8],
+    ) -> Result<(Vec<u8>, Self::HpkeContext), Self::Error> {
+        self.hpke_setup_s(remote_key, info)
     }
 
     fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
@@ -489,5 +557,23 @@ impl TryFrom<&SecretKey> for SignaturePublicKey {
 
     fn try_from(value: &SecretKey) -> Result<Self, Self::Error> {
         SignaturePublicKey::try_from(value.to_public()?)
+    }
+}
+
+impl HpkeContext for hpke::Context {
+    type Error = HpkeError;
+
+    fn open(&mut self, aad: Option<&[u8]>, ciphertext: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        self.open(aad, ciphertext)
+    }
+
+    fn seal(&mut self, aad: Option<&[u8]>, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        self.seal(aad, data)
+    }
+
+    fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
+        let mut buf = vec![0; len];
+        self.export(exporter_context, &mut buf)?;
+        Ok(buf)
     }
 }

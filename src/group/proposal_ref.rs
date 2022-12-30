@@ -42,7 +42,7 @@ impl ProposalRef {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::*;
-    use crate::group::test_utils::TEST_GROUP;
+    use crate::group::test_utils::{random_bytes, TEST_GROUP};
 
     pub fn auth_content_from_proposal<S>(proposal: Proposal, sender: S) -> MLSAuthenticatedContent
     where
@@ -58,7 +58,7 @@ pub(crate) mod test_utils {
                 content: Content::Proposal(proposal),
             },
             auth: MLSContentAuthData {
-                signature: MessageSignature::from(SecureRng::gen(128).unwrap()),
+                signature: MessageSignature::from(random_bytes(128)),
                 confirmation_tag: None,
             },
         }

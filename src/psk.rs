@@ -1,17 +1,15 @@
 use crate::{
-    cipher_suite::CipherSuite,
     group::{
         epoch::EpochSecrets,
-        key_schedule::{KeyScheduleKdf, KeyScheduleKdfError},
+        key_schedule::kdf_expand_with_label,
         state_repo::{GroupStateRepository, GroupStateRepositoryError},
         GroupContext,
     },
-    provider::{group_state::GroupStateStorage, key_package::KeyPackageRepository},
+    provider::{
+        crypto::CipherSuiteProvider, group_state::GroupStateStorage,
+        key_package::KeyPackageRepository,
+    },
     serde_utils::vec_u8_as_base64::VecAsBase64,
-};
-use ferriscrypt::{
-    kdf::KdfError,
-    rand::{SecureRng, SecureRngError},
 };
 use serde_with::serde_as;
 use std::convert::Infallible;
@@ -119,9 +117,11 @@ pub struct PskNonce(
 );
 
 impl PskNonce {
-    pub fn random(cipher_suite: CipherSuite) -> Result<Self, SecureRngError> {
-        Ok(Self(SecureRng::gen(
-            KeyScheduleKdf::new(cipher_suite.kdf_type()).extract_size(),
+    pub fn random<P: CipherSuiteProvider>(
+        cipher_suite_provider: &P,
+    ) -> Result<Self, <P as CipherSuiteProvider>::Error> {
+        Ok(Self(cipher_suite_provider.random_bytes_vec(
+            cipher_suite_provider.kdf_extract_size(),
         )?))
     }
 }
@@ -177,12 +177,8 @@ impl From<Vec<u8>> for Psk {
 }
 
 impl Psk {
-    pub(crate) fn new_zero(cipher_suite: CipherSuite) -> Self {
-        Self(vec![
-            0u8;
-            KeyScheduleKdf::new(cipher_suite.kdf_type())
-                .extract_size()
-        ])
+    pub(crate) fn new_zero(len: usize) -> Self {
+        Self(vec![0u8; len])
     }
 }
 
@@ -227,13 +223,14 @@ impl<R: GroupStateStorage, K: KeyPackageRepository> ResumptionPskSearch<'_, R, K
     }
 }
 
-pub(crate) fn psk_secret<P, PE, R, RE>(
-    cipher_suite: CipherSuite,
+pub(crate) fn psk_secret<CP, P, PE, R, RE>(
+    cipher_suite_provider: &CP,
     mut external_psk_search: P,
     mut resumption_psk_search: R,
     psk_ids: &[PreSharedKeyID],
 ) -> Result<Psk, PskSecretError>
 where
+    CP: CipherSuiteProvider,
     P: FnMut(&ExternalPskId) -> Result<Option<Psk>, PE>,
     PE: Into<Box<dyn std::error::Error + Send + Sync>>,
     R: FnMut(u64) -> Result<Option<Psk>, RE>,
@@ -241,12 +238,10 @@ where
 {
     let len = psk_ids.len();
     let len = u16::try_from(len).map_err(|_| PskSecretError::TooManyPskIds(len))?;
-    let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
 
-    psk_ids
-        .iter()
-        .enumerate()
-        .try_fold(Psk::new_zero(cipher_suite), |psk_secret, (index, id)| {
+    psk_ids.iter().enumerate().try_fold(
+        Psk::new_zero(cipher_suite_provider.kdf_extract_size()),
+        |psk_secret, (index, id)| {
             let index = index as u16;
 
             let psk = match &id.key_id {
@@ -266,20 +261,27 @@ where
                 count: len,
             };
 
-            let label_bytes = label.tls_serialize_detached()?;
-            let psk_extracted = Zeroizing::new(kdf.extract(&vec![0; kdf.extract_size()], &psk.0)?);
+            let psk_extracted = cipher_suite_provider
+                .kdf_extract(&vec![0; cipher_suite_provider.kdf_extract_size()], &psk.0)
+                .map(Zeroizing::new)
+                .map_err(|e| PskSecretError::CipherSuiteProviderError(e.into()))?;
 
-            let psk_input = Zeroizing::new(kdf.expand_with_label(
+            let psk_input = kdf_expand_with_label(
+                cipher_suite_provider,
                 &psk_extracted,
                 "derived psk",
-                &label_bytes,
-                kdf.extract_size(),
-            )?);
+                &label.tls_serialize_detached()?,
+                None,
+            )
+            .map(Zeroizing::new)
+            .map_err(|e| PskSecretError::KeyScheduleError(e.into()))?;
 
-            let psk_secret = Psk(kdf.extract(&psk_input, &psk_secret.0)?);
-
-            Ok(psk_secret)
-        })
+            cipher_suite_provider
+                .kdf_extract(&psk_input, &psk_secret.0)
+                .map(Psk)
+                .map_err(|e| PskSecretError::CipherSuiteProviderError(e.into()))
+        },
+    )
 }
 
 #[derive(Clone, Debug, PartialEq, Zeroize, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -292,13 +294,14 @@ impl From<Vec<u8>> for JoinerSecret {
     }
 }
 
-pub(crate) fn get_epoch_secret(
-    cipher_suite: CipherSuite,
+pub(crate) fn get_pre_epoch_secret<P: CipherSuiteProvider>(
+    cipher_suite_provider: &P,
     psk_secret: &Psk,
     joiner_secret: &JoinerSecret,
 ) -> Result<Vec<u8>, PskSecretError> {
-    let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
-    Ok(kdf.extract(&psk_secret.0, &joiner_secret.0)?)
+    cipher_suite_provider
+        .kdf_extract(&joiner_secret.0, &psk_secret.0)
+        .map_err(|e| PskSecretError::CipherSuiteProviderError(e.into()))
 }
 
 #[derive(Debug, Error)]
@@ -310,19 +313,15 @@ pub enum PskSecretError {
     #[error(transparent)]
     SecretStoreError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
-    KdfError(#[from] KeyScheduleKdfError),
-    #[error(transparent)]
     SerializationError(#[from] tls_codec::Error),
     #[error(transparent)]
     EpochRepositoryError(Box<dyn std::error::Error + Send + Sync>),
     #[error("Epoch {0} not found")]
     EpochNotFound(u64),
-}
-
-impl From<KdfError> for PskSecretError {
-    fn from(e: KdfError) -> Self {
-        PskSecretError::KdfError(e.into())
-    }
+    #[error(transparent)]
+    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error(transparent)]
+    KeyScheduleError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 pub(crate) trait ExternalPskIdValidator {
@@ -354,16 +353,37 @@ impl ExternalPskIdValidator for PassThroughPskIdValidator {
 }
 
 #[cfg(test)]
+mod test_utils {
+    use super::{JoinerSecret, Psk};
+
+    impl From<JoinerSecret> for Vec<u8> {
+        fn from(mut value: JoinerSecret) -> Self {
+            std::mem::take(&mut value.0)
+        }
+    }
+
+    impl From<Psk> for Vec<u8> {
+        fn from(mut value: Psk) -> Self {
+            std::mem::take(&mut value.0)
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
-        provider::psk::{InMemoryPskStore, PskStore},
+        provider::{
+            crypto::{
+                test_utils::test_cipher_suite_provider, CipherSuiteProvider, FerriscryptCipherSuite,
+            },
+            psk::{InMemoryPskStore, PskStore},
+        },
         psk::{
             psk_secret, ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskNonce, PskSecretError,
         },
     };
     use assert_matches::assert_matches;
-    use ferriscrypt::{kdf::hkdf::Hkdf, rand::SecureRng};
     use num_enum::TryFromPrimitive;
     use serde::{Deserialize, Serialize};
     use std::{convert::Infallible, iter};
@@ -373,16 +393,16 @@ mod tests {
 
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
-    fn digest_size(cipher_suite: CipherSuite) -> usize {
-        Hkdf::from(cipher_suite.kdf_type()).extract_size()
-    }
-
-    fn make_external_psk_id(cipher_suite: CipherSuite) -> ExternalPskId {
-        ExternalPskId(SecureRng::gen(digest_size(cipher_suite)).unwrap())
+    fn make_external_psk_id<P: CipherSuiteProvider>(cipher_suite_provider: &P) -> ExternalPskId {
+        ExternalPskId(
+            cipher_suite_provider
+                .random_bytes_vec(cipher_suite_provider.kdf_extract_size())
+                .unwrap(),
+        )
     }
 
     fn make_nonce(cipher_suite: CipherSuite) -> PskNonce {
-        PskNonce::random(cipher_suite).unwrap()
+        PskNonce::random(&test_cipher_suite_provider(cipher_suite)).unwrap()
     }
 
     fn wrap_external_psk_id(cipher_suite: CipherSuite, id: ExternalPskId) -> PreSharedKeyID {
@@ -394,9 +414,9 @@ mod tests {
 
     #[test]
     fn unknown_id_leads_to_error() {
-        let expected_id = make_external_psk_id(TEST_CIPHER_SUITE);
+        let expected_id = make_external_psk_id(&test_cipher_suite_provider(TEST_CIPHER_SUITE));
         let res = psk_secret(
-            TEST_CIPHER_SUITE,
+            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
             |_| Ok::<_, Infallible>(None),
             |_| Ok::<_, Infallible>(None),
             &[wrap_external_psk_id(TEST_CIPHER_SUITE, expected_id.clone())],
@@ -433,11 +453,11 @@ mod tests {
 
     impl TestScenario {
         fn generate() -> Vec<TestScenario> {
-            let make_psk_list = |cs, n| {
+            let make_psk_list = |cs: &FerriscryptCipherSuite, n| {
                 iter::repeat_with(|| PskInfo {
                     id: make_external_psk_id(cs).0,
-                    psk: SecureRng::gen(digest_size(cs)).unwrap(),
-                    nonce: make_nonce(cs).0,
+                    psk: cs.random_bytes_vec(cs.kdf_extract_size()).unwrap(),
+                    nonce: make_nonce(cs.cipher_suite()).0,
                 })
                 .take(n)
                 .collect::<Vec<_>>()
@@ -446,11 +466,11 @@ mod tests {
             CipherSuite::all()
                 .flat_map(|cs| (1..=10).map(move |n| (cs, n)))
                 .map(|(cs, n)| {
-                    let psks = make_psk_list(cs, n);
+                    let psks = make_psk_list(&test_cipher_suite_provider(cs), n);
                     let psk_secret = Self::compute_psk_secret(cs, &psks);
                     TestScenario {
                         cipher_suite: cs as u16,
-                        psks,
+                        psks: psks.to_vec(),
                         psk_secret,
                     }
                 })
@@ -476,7 +496,7 @@ mod tests {
                 .collect::<Vec<_>>();
 
             psk_secret(
-                cipher_suite,
+                &test_cipher_suite_provider(cipher_suite),
                 |id| PskStore::get(&secret_store, id),
                 |_| Ok::<_, Infallible>(None),
                 &ids,

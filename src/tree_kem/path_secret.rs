@@ -1,22 +1,18 @@
-use crate::cipher_suite::CipherSuite;
-use crate::group::key_schedule::{KeyScheduleKdf, KeyScheduleKdfError};
+use crate::group::key_schedule::{kdf_derive_secret, KeyScheduleError};
 use crate::provider::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
-use ferriscrypt::rand::{SecureRng, SecureRngError};
 use serde_with::serde_as;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 #[derive(Error, Debug)]
 pub enum PathSecretError {
     #[error(transparent)]
-    RngError(#[from] SecureRngError),
-    #[error(transparent)]
-    KeyDerivationError(#[from] KeyScheduleKdfError),
-    #[error(transparent)]
     CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error(transparent)]
+    KeyScheduleError(#[from] KeyScheduleError),
 }
 
 #[serde_as]
@@ -54,15 +50,18 @@ impl From<Vec<u8>> for PathSecret {
 }
 
 impl PathSecret {
-    pub fn random(cipher_suite: CipherSuite) -> Result<PathSecret, PathSecretError> {
-        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
-        Ok(PathSecret::from(SecureRng::gen(kdf.extract_size())?))
+    pub fn random<P: CipherSuiteProvider>(
+        cipher_suite_provider: &P,
+    ) -> Result<PathSecret, PathSecretError> {
+        cipher_suite_provider
+            .random_bytes_vec(cipher_suite_provider.kdf_extract_size())
+            .map(Into::into)
+            .map_err(|e| PathSecretError::CipherSuiteProviderError(e.into()))
     }
 
-    pub fn empty(cipher_suite: CipherSuite) -> Self {
-        let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
+    pub fn empty<P: CipherSuiteProvider>(cipher_suite_provider: &P) -> Self {
         // Define commit_secret as the all-zero vector of the same length as a path_secret
-        PathSecret::from(vec![0u8; kdf.extract_size()])
+        PathSecret::from(vec![0u8; cipher_suite_provider.kdf_extract_size()])
     }
 }
 
@@ -70,25 +69,25 @@ impl PathSecret {
 pub struct PathSecretGeneration<'a, P> {
     pub path_secret: PathSecret,
     cipher_suite_provider: &'a P,
-    kdf: KeyScheduleKdf,
 }
 
 impl<'a, P: CipherSuiteProvider> PathSecretGeneration<'a, P> {
     pub fn random(cipher_suite_provider: &'a P) -> Result<Self, PathSecretError> {
-        let kdf = KeyScheduleKdf::new(cipher_suite_provider.cipher_suite().kdf_type());
-
         Ok(Self {
-            path_secret: PathSecret::random(cipher_suite_provider.cipher_suite())?,
+            path_secret: PathSecret::random(cipher_suite_provider)?,
             cipher_suite_provider,
-            kdf,
         })
     }
 
     pub fn to_hpke_key_pair(&self) -> Result<(HpkeSecretKey, HpkePublicKey), PathSecretError> {
-        let leaf_node_secret = self.kdf.derive_secret(&self.path_secret, "node")?;
+        let node_secret = Zeroizing::new(kdf_derive_secret(
+            self.cipher_suite_provider,
+            &self.path_secret,
+            "node",
+        )?);
 
         self.cipher_suite_provider
-            .kem_derive(&leaf_node_secret)
+            .kem_derive(&node_secret)
             .map_err(|e| PathSecretError::CipherSuiteProviderError(e.into()))
     }
 }
@@ -96,18 +95,14 @@ impl<'a, P: CipherSuiteProvider> PathSecretGeneration<'a, P> {
 #[derive(Clone, Debug)]
 pub struct PathSecretGenerator<'a, P> {
     cipher_suite_provider: &'a P,
-    kdf: KeyScheduleKdf,
     last: Option<PathSecret>,
     starting_with: Option<PathSecret>,
 }
 
 impl<'a, P: CipherSuiteProvider> PathSecretGenerator<'a, P> {
     pub fn new(cipher_suite_provider: &'a P) -> Self {
-        let kdf = KeyScheduleKdf::new(cipher_suite_provider.cipher_suite().kdf_type());
-
         Self {
             cipher_suite_provider,
-            kdf,
             last: None,
             starting_with: None,
         }
@@ -131,12 +126,11 @@ impl<'a, P: CipherSuiteProvider> PathSecretGenerator<'a, P> {
         let secret = if let Some(starting_with) = self.starting_with.take() {
             Ok(starting_with)
         } else if let Some(last) = self.last.take() {
-            self.kdf
-                .derive_secret(&last, "path")
+            kdf_derive_secret(self.cipher_suite_provider, &last, "path")
                 .map(PathSecret::from)
-                .map_err(PathSecretError::from)
+                .map_err(|e| PathSecretError::CipherSuiteProviderError(e.into()))
         } else {
-            PathSecret::random(self.cipher_suite_provider.cipher_suite())
+            PathSecret::random(self.cipher_suite_provider)
         }?;
 
         self.last = Some(secret.clone());
@@ -144,7 +138,6 @@ impl<'a, P: CipherSuiteProvider> PathSecretGenerator<'a, P> {
         Ok(PathSecretGeneration {
             path_secret: secret,
             cipher_suite_provider: self.cipher_suite_provider,
-            kdf: self.kdf.clone(),
         })
     }
 }
@@ -159,7 +152,9 @@ impl<'a, P: CipherSuiteProvider> Iterator for PathSecretGenerator<'a, P> {
 
 #[cfg(test)]
 mod tests {
-    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
+    use crate::{
+        cipher_suite::CipherSuite, provider::crypto::test_utils::test_cipher_suite_provider,
+    };
 
     use super::*;
 
@@ -240,8 +235,8 @@ mod tests {
 
     #[test]
     fn test_iterator() {
-        let secret = PathSecret::random(CipherSuite::Curve25519Aes128).unwrap();
         let cs_provider = test_cipher_suite_provider(CipherSuite::Curve25519Aes128);
+        let secret = PathSecret::random(&cs_provider).unwrap();
 
         let mut generator = PathSecretGenerator::starting_with(&cs_provider, secret);
 
@@ -254,8 +249,8 @@ mod tests {
 
     #[test]
     fn test_starting_with() {
-        let secret = PathSecret::random(CipherSuite::Curve25519Aes128).unwrap();
         let cs_provider = test_cipher_suite_provider(CipherSuite::Curve25519Aes128);
+        let secret = PathSecret::random(&cs_provider).unwrap();
 
         let mut generator = PathSecretGenerator::starting_with(&cs_provider, secret.clone());
 
@@ -291,18 +286,22 @@ mod tests {
     #[test]
     fn test_empty_path_secret() {
         for cipher_suite in CipherSuite::all() {
-            let empty = PathSecret::empty(cipher_suite);
-            let kdf = KeyScheduleKdf::new(cipher_suite.kdf_type());
-            assert_eq!(empty, PathSecret::from(vec![0u8; kdf.extract_size()]))
+            let cs_provider = test_cipher_suite_provider(cipher_suite);
+            let empty = PathSecret::empty(&cs_provider);
+            assert_eq!(
+                empty,
+                PathSecret::from(vec![0u8; cs_provider.kdf_extract_size()])
+            )
         }
     }
 
     #[test]
     fn test_random_path_secret() {
-        let initial = PathSecret::random(CipherSuite::P256Aes128).unwrap();
+        let cs_provider = test_cipher_suite_provider(CipherSuite::P256Aes128);
+        let initial = PathSecret::random(&cs_provider).unwrap();
 
         for _ in 0..100 {
-            let next = PathSecret::random(CipherSuite::P256Aes128).unwrap();
+            let next = PathSecret::random(&cs_provider).unwrap();
             assert_ne!(next, initial);
         }
     }

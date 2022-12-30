@@ -19,8 +19,7 @@ struct SignableGroupInfo<'a> {
     group_context: &'a GroupContextWire,
     #[tls_codec(with = "crate::tls::DefRef")]
     extensions: &'a ExtensionList<GroupInfoExtension>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    confirmation_tag: &'a Tag,
+    confirmation_tag: &'a ConfirmationTag,
     signer: LeafIndex,
 }
 

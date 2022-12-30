@@ -91,9 +91,9 @@ impl<'a> TreeKem<'a> {
             .borrow_as_leaf(self_index)?
             .clone();
 
-        let parent_hash = self
-            .tree_kem_public
-            .update_parent_hashes(self_index, None)?;
+        let parent_hash =
+            self.tree_kem_public
+                .update_parent_hashes(self_index, None, cipher_suite_provider)?;
 
         let secret_key = own_leaf_copy.commit(
             cipher_suite_provider,
@@ -214,9 +214,12 @@ impl<'a> TreeKem<'a> {
             sender_index.into(),
         );
 
-        let filtered_direct_path_co_path =
-            self.tree_kem_public
-                .apply_update_path(sender_index, update_path, identity_provider)?;
+        let filtered_direct_path_co_path = self.tree_kem_public.apply_update_path(
+            sender_index,
+            update_path,
+            identity_provider,
+            cipher_suite_provider,
+        )?;
 
         // Update the tree hash to get context for decryption
         context.tree_hash = self.tree_kem_public.tree_hash()?;

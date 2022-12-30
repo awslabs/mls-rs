@@ -77,24 +77,17 @@ pub mod test_utils {
     use super::*;
     use crate::cipher_suite::CipherSuite;
     use crate::group::secret_tree::test_utils::get_test_tree;
-    use crate::group::test_utils::get_test_group_context_with_id;
-    use ferriscrypt::kdf::hkdf::Hkdf;
-    use ferriscrypt::rand::SecureRng;
+    use crate::group::test_utils::{get_test_group_context_with_id, random_bytes};
+    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
 
     pub(crate) fn get_test_epoch_secrets(cipher_suite: CipherSuite) -> EpochSecrets {
-        let secret_tree = get_test_tree(
-            cipher_suite,
-            vec![0_u8; Hkdf::from(cipher_suite.kdf_type()).extract_size()],
-            2,
-        );
+        let cs_provider = test_cipher_suite_provider(cipher_suite);
+
+        let secret_tree = get_test_tree(vec![0_u8; cs_provider.kdf_extract_size()], 2);
 
         EpochSecrets {
-            resumption_secret: SecureRng::gen(cipher_suite.hash_function().digest_size())
-                .unwrap()
-                .into(),
-            sender_data_secret: SecureRng::gen(cipher_suite.hash_function().digest_size())
-                .unwrap()
-                .into(),
+            resumption_secret: random_bytes(cs_provider.kdf_extract_size()).into(),
+            sender_data_secret: random_bytes(cs_provider.kdf_extract_size()).into(),
             secret_tree,
         }
     }

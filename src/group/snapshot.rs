@@ -193,6 +193,7 @@ pub(crate) mod test_utils {
             key_schedule::test_utils::get_test_key_schedule, test_utils::get_test_group_context,
             transcript_hash::InterimTranscriptHash,
         },
+        provider::crypto::test_utils::test_cipher_suite_provider,
         tree_kem::{node::LeafIndex, TreeKemPrivate},
     };
 
@@ -206,7 +207,7 @@ pub(crate) mod test_utils {
                 tree_data: Default::default(),
                 interim_transcript_hash: InterimTranscriptHash::from(vec![]),
                 pending_reinit: None,
-                confirmation_tag: ConfirmationTag::empty(&cipher_suite).unwrap(),
+                confirmation_tag: ConfirmationTag::empty(&test_cipher_suite_provider(cipher_suite)),
             },
             private_tree: TreeKemPrivate::new(LeafIndex(0)),
             epoch_secrets: get_test_epoch_secrets(cipher_suite),

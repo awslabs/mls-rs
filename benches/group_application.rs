@@ -2,14 +2,13 @@ use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client::MlsConfig;
 use aws_mls::group::Group;
 
-use ferriscrypt::rand::SecureRng;
-
 use aws_mls::bench_utils::group_functions::{commit_group, load_test_cases};
 
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
     Throughput,
 };
+use rand::RngCore;
 
 fn application_message_setup(c: &mut Criterion) {
     let mut group_application = c.benchmark_group("group_application_message");
@@ -26,7 +25,8 @@ fn application_message_setup(c: &mut Criterion) {
     // fills the tree by having everyone commit
     commit_group(sessions);
 
-    let bytes = SecureRng::gen(1000000).unwrap();
+    let mut bytes = vec![0; 1000000];
+    rand::thread_rng().fill_bytes(&mut bytes);
 
     bench_application_message(&mut group_application, cipher_suite, sessions, bytes);
 

@@ -12,7 +12,7 @@ use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::provider::crypto::{CryptoProvider, FerriscryptCryptoProvider};
 use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain};
-use ferriscrypt::rand::SecureRng;
+use rand::RngCore;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 
 #[cfg(target_arch = "wasm32")]
@@ -624,7 +624,8 @@ fn test_application_messages(
 
     // Loop through each participant and send application messages
     for i in 0..receiver_groups.len() {
-        let test_message = SecureRng::gen(1024).unwrap();
+        let mut test_message = vec![0; 1024];
+        rand::thread_rng().fill_bytes(&mut test_message);
 
         for _ in 0..message_count {
             // Encrypt the application message

@@ -12,7 +12,6 @@ use crate::{
     identity::SigningIdentity,
     signer::{Signable, SignatureError},
 };
-use ferriscrypt::{asym::ec_key::EcKeyError, kdf::KdfError};
 use serde_with::serde_as;
 use thiserror::Error;
 use tls_codec::{Serialize, Size, TlsByteSliceU32};
@@ -21,15 +20,11 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 #[derive(Debug, Error)]
 pub enum LeafNodeError {
     #[error(transparent)]
-    EcKeyError(#[from] EcKeyError),
-    #[error(transparent)]
     TlsCodecError(#[from] tls_codec::Error),
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
-    #[error(transparent)]
-    KdfError(#[from] KdfError),
     #[error("parent hash error: {0}")]
     ParentHashError(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("internal signer error: {0}")]

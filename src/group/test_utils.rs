@@ -1,3 +1,5 @@
+use rand::RngCore;
+
 use super::*;
 use crate::{
     client::test_utils::TEST_CIPHER_SUITE,
@@ -366,4 +368,10 @@ pub(crate) fn get_test_groups_with_features(
     });
 
     groups
+}
+
+pub fn random_bytes(count: usize) -> Vec<u8> {
+    let mut buf = vec![0; count];
+    rand::thread_rng().fill_bytes(&mut buf);
+    buf
 }

@@ -151,6 +151,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, 
 mod tests {
     use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::client::test_utils::TEST_PROTOCOL_VERSION;
+    use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
@@ -158,7 +159,6 @@ mod tests {
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use assert_matches::assert_matches;
-    use ferriscrypt::rand::SecureRng;
 
     use super::*;
 
@@ -197,7 +197,7 @@ mod tests {
         cipher_suite: CipherSuite,
     ) -> KeyPackage {
         let mut test_package = test_key_package(protocol_version, cipher_suite, "mallory");
-        test_package.signature = SecureRng::gen(32).unwrap();
+        test_package.signature = random_bytes(32);
         test_package
     }
 
@@ -505,7 +505,7 @@ mod tests {
                     )
                     .unwrap();
 
-                package_gen.key_package.leaf_node.signature = SecureRng::gen(32).unwrap();
+                package_gen.key_package.leaf_node.signature = random_bytes(32);
                 generator.sign(&mut package_gen.key_package).unwrap();
                 package_gen
             },

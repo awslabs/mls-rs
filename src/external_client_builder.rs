@@ -15,14 +15,15 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     provider::{
-        crypto::{CryptoProvider, FerriscryptCryptoProvider, SignatureSecretKey},
+        crypto::{
+            CryptoProvider, FerriscryptCryptoProvider, SignaturePublicKey, SignatureSecretKey,
+        },
         identity::IdentityProvider,
         keychain::{InMemoryKeychain, KeychainStorage},
     },
     tree_kem::Capabilities,
     Sealed,
 };
-use ferriscrypt::asym::ec_key::PublicKey;
 use std::collections::HashMap;
 
 /// Base client configuration type when instantiating `ExternalClientBuilder`
@@ -167,7 +168,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
     pub fn external_signing_key(
         self,
         id: Vec<u8>,
-        key: PublicKey,
+        key: SignaturePublicKey,
     ) -> ExternalClientBuilder<IntoConfigOutput<C>> {
         let mut c = self.0.into_config();
         c.0.settings.external_signing_keys.insert(id, key);
@@ -409,7 +410,7 @@ where
         self.crypto_provider.clone()
     }
 
-    fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
+    fn external_signing_key(&self, external_key_id: &[u8]) -> Option<SignaturePublicKey> {
         self.settings
             .external_signing_keys
             .get(external_key_id)
@@ -488,7 +489,7 @@ impl<T: MlsConfig> ExternalClientConfig for T {
         self.get().crypto_provider()
     }
 
-    fn external_signing_key(&self, external_key_id: &[u8]) -> Option<PublicKey> {
+    fn external_signing_key(&self, external_key_id: &[u8]) -> Option<SignaturePublicKey> {
         self.get().external_signing_key(external_key_id)
     }
 
@@ -524,7 +525,7 @@ impl<T: MlsConfig> ExternalClientConfig for T {
 pub(crate) struct Settings {
     pub(crate) extension_types: Vec<ExtensionType>,
     pub(crate) protocol_versions: Vec<ProtocolVersion>,
-    pub(crate) external_signing_keys: HashMap<Vec<u8>, PublicKey>,
+    pub(crate) external_signing_keys: HashMap<Vec<u8>, SignaturePublicKey>,
     pub(crate) max_epoch_jitter: Option<u64>,
     pub(crate) cache_proposals: bool,
 }

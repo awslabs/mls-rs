@@ -308,7 +308,7 @@ where
         };
 
         let psk_secret = crate::psk::psk_secret(
-            self.state.cipher_suite(),
+            &self.cipher_suite_provider,
             |id| psk_store.get(id),
             |id| resumption_psk_search.find(id),
             &provisional_state.psks,
@@ -332,7 +332,7 @@ where
         // Use the signature, the commit_secret and the psk_secret to advance the key schedule and
         // compute the confirmation_tag value in the MLSPlaintext.
         let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
-            self.state.cipher_suite(),
+            self.cipher_suite_provider(),
             &self.state.interim_transcript_hash,
             &auth_content,
         )?;
@@ -357,14 +357,15 @@ where
             &self.key_schedule,
             &commit_secret,
             &provisional_group_context,
-            &self.state.public_tree,
+            self.state.public_tree.total_leaf_count(),
             &psk_secret,
+            &self.cipher_suite_provider,
         )?;
 
         let confirmation_tag = ConfirmationTag::create(
             &key_schedule_result.confirmation_key,
             &provisional_group_context.confirmed_transcript_hash,
-            &self.state.cipher_suite(),
+            &self.cipher_suite_provider,
         )?;
 
         auth_content.auth.confirmation_tag = Some(confirmation_tag.clone());
@@ -604,7 +605,7 @@ mod tests {
         group
             .config
             .secret_store()
-            .insert(test_psk.clone(), Psk::from(vec![]));
+            .insert(test_psk.clone(), Psk::from(vec![1]));
 
         let commit_output = group
             .commit_builder()

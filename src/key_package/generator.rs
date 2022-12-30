@@ -13,7 +13,6 @@ use crate::{
 };
 
 use super::*;
-use ferriscrypt::asym::ec_key::EcKeyError;
 
 #[derive(Debug, Error)]
 pub enum KeyPackageGenerationError {
@@ -21,8 +20,6 @@ pub enum KeyPackageGenerationError {
     SignerError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
-    #[error(transparent)]
-    EcKeyError(#[from] EcKeyError),
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
     #[error(transparent)]

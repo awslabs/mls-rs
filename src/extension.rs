@@ -1,12 +1,12 @@
 use crate::cipher_suite::CipherSuite;
 use crate::group::proposal::ProposalType;
+use crate::provider::crypto::HpkePublicKey;
 use crate::provider::identity::IdentityProvider;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::time::MlsTime;
 use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
 use crate::{identity::CredentialType, identity::SigningIdentity};
-use ferriscrypt::hpke::kem::HpkePublicKey;
 use serde_with::serde_as;
 use std::fmt::Debug;
 use std::io::{Read, Write};
@@ -439,11 +439,13 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use crate::{identity::test_utils::get_test_signing_identity, identity::CREDENTIAL_TYPE_BASIC};
+    use crate::{
+        group::test_utils::random_bytes, identity::test_utils::get_test_signing_identity,
+        identity::CREDENTIAL_TYPE_BASIC,
+    };
 
     use super::*;
     use assert_matches::assert_matches;
-    use ferriscrypt::rand::SecureRng;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -579,7 +581,7 @@ mod tests {
         let mut list = ExtensionList::new();
 
         let lifetime = ApplicationIdExt {
-            identifier: SecureRng::gen(32).unwrap(),
+            identifier: random_bytes(32),
         };
 
         list.set_extension(lifetime).unwrap();

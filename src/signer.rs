@@ -83,10 +83,9 @@ mod tests {
     use super::*;
     use crate::{
         cipher_suite::CipherSuite, client::test_utils::TEST_CIPHER_SUITE,
-        provider::crypto::test_utils::test_cipher_suite_provider,
+        group::test_utils::random_bytes, provider::crypto::test_utils::test_cipher_suite_provider,
     };
     use assert_matches::assert_matches;
-    use ferriscrypt::rand::SecureRng;
     use num_enum::TryFromPrimitive;
     use tls_codec::{Serialize, TlsByteVecU32};
 
@@ -143,8 +142,8 @@ mod tests {
 
             let (signer, public) = provider.signature_key_generate().unwrap();
 
-            let content = SecureRng::gen(32).unwrap();
-            let context = SecureRng::gen(32).unwrap();
+            let content = random_bytes(32);
+            let context = random_bytes(32);
 
             let mut test_signable = TestSignable {
                 content: content.clone(),
@@ -221,7 +220,7 @@ mod tests {
         let (_, incorrect_public) = cipher_suite_provider.signature_key_generate().unwrap();
 
         let mut test_signable = TestSignable {
-            content: SecureRng::gen(32).unwrap(),
+            content: random_bytes(32),
             signature: vec![],
         };
 
@@ -240,11 +239,11 @@ mod tests {
 
         let (secret, public) = cipher_suite_provider.signature_key_generate().unwrap();
 
-        let correct_context = SecureRng::gen(32).unwrap();
-        let incorrect_context = SecureRng::gen(32).unwrap();
+        let correct_context = random_bytes(32);
+        let incorrect_context = random_bytes(32);
 
         let mut test_signable = TestSignable {
-            content: SecureRng::gen(32).unwrap(),
+            content: random_bytes(32),
             signature: vec![],
         };
 

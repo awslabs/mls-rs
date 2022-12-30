@@ -1,9 +1,6 @@
 use crate::maybe::MaybeEnum;
-use ferriscrypt::asym::ec_key::{Curve, EcKeyError, SecretKey};
-use ferriscrypt::cipher::aead::Aead;
+use ferriscrypt::asym::ec_key::Curve;
 use ferriscrypt::digest::HashFunction;
-use ferriscrypt::hpke::kem::Kem;
-use ferriscrypt::hpke::{AeadId, Hpke, KdfId, KemId};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -65,40 +62,6 @@ impl CipherSuite {
     }
 
     #[inline(always)]
-    pub fn aead_type(&self) -> Aead {
-        match self {
-            CipherSuite::Curve25519Aes128 => Aead::Aes128Gcm,
-            CipherSuite::P256Aes128 => Aead::Aes128Gcm,
-            CipherSuite::Curve25519ChaCha20 => Aead::Chacha20Poly1305,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448Aes256 => Aead::Aes256Gcm,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::P521Aes256 => Aead::Aes256Gcm,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448ChaCha20 => Aead::Chacha20Poly1305,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::P384Aes256 => Aead::Aes256Gcm,
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn kem_type(&self) -> KemId {
-        match self {
-            CipherSuite::Curve25519Aes128 => KemId::X25519HkdfSha256,
-            CipherSuite::P256Aes128 => KemId::P256HkdfSha256,
-            CipherSuite::Curve25519ChaCha20 => KemId::X25519HkdfSha256,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448Aes256 => KemId::X448HkdfSha512,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::P521Aes256 => KemId::P521HkdfSha512,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448ChaCha20 => KemId::X448HkdfSha512,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::P384Aes256 => KemId::P384HkdfSha384,
-        }
-    }
-
-    #[inline(always)]
     pub fn hash_function(&self) -> HashFunction {
         match self {
             CipherSuite::Curve25519Aes128 => HashFunction::Sha256,
@@ -113,24 +76,6 @@ impl CipherSuite {
             #[cfg(feature = "openssl_engine")]
             CipherSuite::P384Aes256 => HashFunction::Sha384,
         }
-    }
-
-    #[inline(always)]
-    pub(crate) fn kdf_type(&self) -> KdfId {
-        self.kem_type().kdf()
-    }
-
-    #[inline(always)]
-    pub(crate) fn hpke(&self) -> Hpke {
-        Hpke::new(
-            self.kem_type(),
-            self.kdf_type(),
-            AeadId::from(self.aead_type()),
-        )
-    }
-
-    pub(crate) fn kem(&self) -> Kem {
-        Kem::new(self.kem_type())
     }
 
     pub fn signature_key_curve(&self) -> Curve {
@@ -148,10 +93,28 @@ impl CipherSuite {
             CipherSuite::P384Aes256 => Curve::P384,
         }
     }
-
-    pub fn generate_signing_key(&self) -> Result<SecretKey, EcKeyError> {
-        SecretKey::generate(self.signature_key_curve())
-    }
 }
 
 pub type MaybeCipherSuite = MaybeEnum<CipherSuite>;
+
+#[cfg(test)]
+use ferriscrypt::hpke::KemId;
+
+#[cfg(test)]
+impl CipherSuite {
+    pub(crate) fn kem_type(&self) -> KemId {
+        match self {
+            CipherSuite::Curve25519Aes128 => KemId::X25519HkdfSha256,
+            CipherSuite::P256Aes128 => KemId::P256HkdfSha256,
+            CipherSuite::Curve25519ChaCha20 => KemId::X25519HkdfSha256,
+            #[cfg(feature = "openssl_engine")]
+            CipherSuite::Curve448Aes256 => KemId::X448HkdfSha512,
+            #[cfg(feature = "openssl_engine")]
+            CipherSuite::P521Aes256 => KemId::P521HkdfSha512,
+            #[cfg(feature = "openssl_engine")]
+            CipherSuite::Curve448ChaCha20 => KemId::X448HkdfSha512,
+            #[cfg(feature = "openssl_engine")]
+            CipherSuite::P384Aes256 => KemId::P384HkdfSha384,
+        }
+    }
+}

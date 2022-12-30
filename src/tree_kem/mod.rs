@@ -2,9 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::ops::Deref;
 
-use ferriscrypt::asym::ec_key::EcKeyError;
-use ferriscrypt::hpke::HpkeError;
-
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -17,9 +14,8 @@ use self::tree_utils::build_ascii_tree;
 
 use crate::cipher_suite::CipherSuite;
 use crate::extension::ExtensionError;
-use crate::group::key_schedule::KeyScheduleKdfError;
 use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError};
-use crate::provider::crypto::{self, HpkePublicKey, HpkeSecretKey};
+use crate::provider::crypto::{self, CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::provider::identity::IdentityProvider;
 use crate::tree_kem::parent_hash::ParentHashError;
 use crate::tree_kem::path_secret::PathSecretError;
@@ -59,8 +55,6 @@ pub enum RatchetTreeError {
     #[error(transparent)]
     KeyPackageError(#[from] KeyPackageError),
     #[error(transparent)]
-    EcKeyError(#[from] EcKeyError),
-    #[error(transparent)]
     KeyPackageGeneratorError(#[from] KeyPackageGenerationError),
     #[error(transparent)]
     NodeVecError(#[from] NodeVecError),
@@ -70,10 +64,6 @@ pub enum RatchetTreeError {
     ParentHashError(#[from] ParentHashError),
     #[error(transparent)]
     ExtensionError(#[from] ExtensionError),
-    #[error(transparent)]
-    KeyScheduleKdfError(#[from] KeyScheduleKdfError),
-    #[error(transparent)]
-    HpkeError(#[from] HpkeError),
     #[error(transparent)]
     PathSecretError(#[from] PathSecretError),
     #[error(transparent)]
@@ -323,14 +313,16 @@ impl TreeKemPublic {
             })
     }
 
-    pub(crate) fn apply_update_path<C>(
+    pub(crate) fn apply_update_path<IP, CP>(
         &mut self,
         sender: LeafIndex,
         update_path: &ValidatedUpdatePath,
-        identity_provider: C,
+        identity_provider: IP,
+        cipher_suite_provider: &CP,
     ) -> Result<Vec<(u32, u32)>, RatchetTreeError>
     where
-        C: IdentityProvider,
+        IP: IdentityProvider,
+        CP: CipherSuiteProvider,
     {
         // Install the new leaf node
         let existing_leaf = self.nodes.borrow_as_leaf_mut(sender)?;
@@ -363,7 +355,7 @@ impl TreeKemPublic {
 
         // Verify the parent hash of the new sender leaf node and update the parent hash values
         // in the local tree
-        self.update_parent_hashes(sender, Some(update_path))?;
+        self.update_parent_hashes(sender, Some(update_path), cipher_suite_provider)?;
 
         Ok(filtered_direct_path_co_path)
     }

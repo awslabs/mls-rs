@@ -9,8 +9,6 @@ use std::collections::hash_map::Entry;
 pub enum TreeIndexError {
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
-    #[error(transparent)]
-    EcKeyError(#[from] EcKeyError),
     #[error("credential signature keys must be unique, duplicate key found at index: {0:?}")]
     DuplicateSignatureKeys(LeafIndex),
     #[error("hpke keys must be unique, duplicate key found at index: {0:?}")]

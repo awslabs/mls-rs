@@ -40,7 +40,11 @@ pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     match &auth_content.content.sender {
         Sender::Member(index) => {
             if let Some(key_schedule) = key_schedule {
-                let expected_tag = &key_schedule.get_membership_tag(&auth_content, context)?;
+                let expected_tag = &key_schedule.get_membership_tag(
+                    &auth_content,
+                    context,
+                    cipher_suite_provider,
+                )?;
 
                 let plaintext_tag = tag.as_ref().ok_or(GroupError::InvalidMembershipTag)?;
 
@@ -204,7 +208,7 @@ mod tests {
         identity::test_utils::get_test_signing_identity,
         key_package::KeyPackageGeneration,
         protocol_version::ProtocolVersion,
-        provider::crypto::SignatureSecretKey,
+        provider::crypto::{test_utils::test_cipher_suite_provider, SignatureSecretKey},
         signer::Signable,
         tree_kem::node::LeafIndex,
     };
@@ -323,6 +327,7 @@ mod tests {
             .get_membership_tag(
                 &MLSAuthenticatedContent::from(message.clone()),
                 env.alice.group.context(),
+                &test_cipher_suite_provider(env.alice.group.cipher_suite()),
             )
             .unwrap()
             .into();

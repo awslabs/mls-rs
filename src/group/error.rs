@@ -1,7 +1,3 @@
-use ferriscrypt::{
-    asym::ec_key::EcKeyError, cipher::aead::AeadError, hpke::HpkeError, kdf::KdfError,
-    rand::SecureRngError,
-};
 use thiserror::Error;
 
 use crate::{
@@ -23,7 +19,7 @@ use super::{
     ciphertext_processor::CiphertextProcessorError,
     confirmation_tag::ConfirmationTagError,
     framing::{ContentType, WireFormat},
-    key_schedule::{KeyScheduleError, KeyScheduleKdfError},
+    key_schedule::KeyScheduleError,
     membership_tag::MembershipTagError,
     state_repo::GroupStateRepositoryError,
     transcript_hash::TranscriptHashError,
@@ -38,8 +34,6 @@ pub enum GroupError {
     CiphertextProcessorError(CiphertextProcessorError),
     #[error(transparent)]
     SignerError(Box<dyn std::error::Error>),
-    #[error(transparent)]
-    EcKeyError(#[from] EcKeyError),
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
     #[error(transparent)]
@@ -61,17 +55,9 @@ pub enum GroupError {
     #[error(transparent)]
     MembershipTagError(#[from] MembershipTagError),
     #[error(transparent)]
-    RngError(#[from] SecureRngError),
-    #[error(transparent)]
-    HpkeError(#[from] HpkeError),
-    #[error(transparent)]
     CredentialError(#[from] CredentialError),
     #[error(transparent)]
     ConfirmationTagError(#[from] ConfirmationTagError),
-    #[error(transparent)]
-    KeyScheduleKdfError(#[from] KeyScheduleKdfError),
-    #[error(transparent)]
-    AeadError(#[from] AeadError),
     #[error(transparent)]
     LeafSecretError(#[from] PathSecretError),
     #[error(transparent)]
@@ -80,8 +66,6 @@ pub enum GroupError {
     KeyPackageRepositoryError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     ExtensionError(#[from] ExtensionError),
-    #[error(transparent)]
-    KdfError(#[from] KdfError),
     #[error(transparent)]
     KeyScheduleError(#[from] KeyScheduleError),
     #[error(transparent)]

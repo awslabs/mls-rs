@@ -12,7 +12,6 @@ use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
 use crate::time::MlsTime;
 use crate::tree_kem::leaf_node::LeafNode;
-use ferriscrypt::kdf::KdfError;
 use serde_with::serde_as;
 use std::ops::Deref;
 use thiserror::Error;
@@ -29,8 +28,6 @@ pub(crate) use generator::*;
 pub enum KeyPackageError {
     #[error(transparent)]
     SerializationError(#[from] tls_codec::Error),
-    #[error(transparent)]
-    KdfError(#[from] KdfError),
     #[error("unsupported cipher suite: {0:?}")]
     UnsupportedCipherSuite(MaybeCipherSuite),
 }

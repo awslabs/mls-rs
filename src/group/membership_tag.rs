@@ -1,7 +1,7 @@
 use crate::group::framing::WireFormat;
 use crate::group::message_signature::{MLSContentAuthData, MLSContentTBS};
 use crate::group::GroupContext;
-use ferriscrypt::hmac::{HMacError, Key, Tag};
+use crate::provider::crypto::CipherSuiteProvider;
 use std::{io::Write, ops::Deref};
 use thiserror::Error;
 use tls_codec::{Serialize, Size};
@@ -12,11 +12,11 @@ use super::message_signature::MLSAuthenticatedContent;
 #[derive(Error, Debug)]
 pub enum MembershipTagError {
     #[error(transparent)]
-    HMacError(#[from] HMacError),
-    #[error(transparent)]
     SerializationError(#[from] tls_codec::Error),
     #[error("Membership tags can only be created for the plaintext wire format, found: {0:?}")]
     NonPlainWireFormat(WireFormat),
+    #[error(transparent)]
+    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -54,34 +54,28 @@ impl<'a> MLSContentTBM<'a> {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct MembershipTag(#[tls_codec(with = "crate::tls::ByteVec")] Tag);
+pub struct MembershipTag(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl Deref for MembershipTag {
-    type Target = Tag;
+    type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl From<Tag> for MembershipTag {
-    fn from(m: Tag) -> Self {
+impl From<Vec<u8>> for MembershipTag {
+    fn from(m: Vec<u8>) -> Self {
         Self(m)
     }
 }
 
-#[cfg(test)]
-impl From<Vec<u8>> for MembershipTag {
-    fn from(v: Vec<u8>) -> Self {
-        Self(Tag::from(v))
-    }
-}
-
 impl MembershipTag {
-    pub(crate) fn create(
+    pub(crate) fn create<P: CipherSuiteProvider>(
         authenticated_content: &MLSAuthenticatedContent,
         group_context: &GroupContext,
         membership_key: &[u8],
+        cipher_suite_provider: &P,
     ) -> Result<Self, MembershipTagError> {
         if authenticated_content.wire_format != WireFormat::Plain {
             return Err(MembershipTagError::NonPlainWireFormat(
@@ -93,8 +87,10 @@ impl MembershipTag {
             MLSContentTBM::from_authenticated_content(authenticated_content, group_context);
 
         let serialized_tbm = plaintext_tbm.tls_serialize_detached()?;
-        let hmac_key = Key::new(membership_key, group_context.cipher_suite.hash_function())?;
-        let tag = hmac_key.generate_tag(&serialized_tbm)?;
+
+        let tag = cipher_suite_provider
+            .mac(membership_key, &serialized_tbm)
+            .map_err(|e| MembershipTagError::CipherSuiteProviderError(e.into()))?;
 
         Ok(MembershipTag(tag))
     }
@@ -106,6 +102,7 @@ mod tests {
     use crate::cipher_suite::CipherSuite;
     use crate::group::framing::test_utils::get_test_auth_content;
     use crate::group::test_utils::get_test_group_context;
+    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
 
     use num_enum::TryFromPrimitive;
     #[cfg(target_arch = "wasm32")]
@@ -126,6 +123,7 @@ mod tests {
                 &get_test_auth_content(b"hello".to_vec()),
                 &get_test_group_context(1, cipher_suite),
                 b"membership_key".as_ref(),
+                &test_cipher_suite_provider(cipher_suite),
             )
             .unwrap();
 
@@ -156,6 +154,7 @@ mod tests {
                 &get_test_auth_content(b"hello".to_vec()),
                 &get_test_group_context(1, cipher_suite.unwrap()),
                 b"membership_key".as_ref(),
+                &test_cipher_suite_provider(cipher_suite.unwrap()),
             )
             .unwrap();
 

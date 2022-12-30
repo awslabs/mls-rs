@@ -1,6 +1,3 @@
-use ferriscrypt::hmac::Tag;
-use ferriscrypt::kdf::hkdf::Hkdf;
-use ferriscrypt::rand::SecureRng;
 use serde_with::serde_as;
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -185,7 +182,7 @@ where
 {
     pub(crate) fn new(
         config: C,
-        group_id: Vec<u8>,
+        group_id: Option<Vec<u8>>,
         cipher_suite: CipherSuite,
         protocol_version: ProtocolVersion,
         signing_identity: SigningIdentity,
@@ -217,6 +214,12 @@ where
 
         let tree_hash = public_tree.tree_hash()?;
 
+        let group_id = group_id.unwrap_or(
+            cipher_suite_provider
+                .random_bytes_vec(cipher_suite_provider.kdf_extract_size())
+                .map_err(|e| GroupError::CryptoProviderError(e.into()))?,
+        );
+
         let context = GroupContext::new_group(
             protocol_version,
             cipher_suite,
@@ -233,17 +236,22 @@ where
             None,
         )?;
 
-        let key_schedule_result =
-            KeySchedule::from_random_epoch_secret(cipher_suite, public_tree.total_leaf_count())?;
+        let key_schedule_result = KeySchedule::from_random_epoch_secret(
+            &cipher_suite_provider,
+            public_tree.total_leaf_count(),
+        )?;
 
         let confirmation_tag = ConfirmationTag::create(
             &key_schedule_result.confirmation_key,
             &vec![].into(),
-            &cipher_suite,
+            &cipher_suite_provider,
         )?;
 
-        let interim_hash =
-            InterimTranscriptHash::create(cipher_suite, &vec![].into(), &confirmation_tag)?;
+        let interim_hash = InterimTranscriptHash::create(
+            &cipher_suite_provider,
+            &vec![].into(),
+            &confirmation_tag,
+        )?;
 
         Ok(Self {
             config,
@@ -330,7 +338,7 @@ where
         });
 
         let psk_secret = crate::psk::psk_secret(
-            welcome.cipher_suite,
+            &cipher_suite_provider,
             |id| psk_store.get(id),
             |id| resumption_psk_search.map_or(Ok(None), |s| s.find(id)),
             &group_secrets.psks,
@@ -340,7 +348,7 @@ where
         // the GroupSecrets, derive the welcome_secret and using that the welcome_key and
         // welcome_nonce.
         let welcome_secret = WelcomeSecret::from_joiner_secret(
-            welcome.cipher_suite,
+            &cipher_suite_provider,
             &group_secrets.joiner_secret,
             &psk_secret,
         )?;
@@ -384,10 +392,10 @@ where
         // Use the joiner_secret from the GroupSecrets object to generate the epoch secret and
         // other derived secrets for the current epoch.
         let key_schedule_result = KeySchedule::from_joiner(
-            join_context.group_context.cipher_suite,
+            &cipher_suite_provider,
             &group_secrets.joiner_secret,
             &join_context.group_context,
-            &join_context.public_tree,
+            join_context.public_tree.total_leaf_count(),
             &psk_secret,
         )?;
 
@@ -396,7 +404,7 @@ where
         if !join_context.confirmation_tag.matches(
             &key_schedule_result.confirmation_key,
             &join_context.group_context.confirmed_transcript_hash,
-            &join_context.group_context.cipher_suite,
+            &cipher_suite_provider,
         )? {
             return Err(GroupError::InvalidConfirmationTag);
         }
@@ -424,7 +432,7 @@ where
         // Use the confirmed transcript hash and confirmation tag to compute the interim transcript
         // hash in the new state.
         let interim_transcript_hash = InterimTranscriptHash::create(
-            join_context.public_tree.cipher_suite,
+            &cipher_suite_provider,
             &join_context.group_context.confirmed_transcript_hash,
             &join_context.confirmation_tag,
         )?;
@@ -519,19 +527,19 @@ where
         )?;
 
         let (init_secret, kem_output) = InitSecret::encode_for_external(
-            join_context.group_context.cipher_suite,
+            &cipher_suite_provider,
             &external_pub_ext.external_pub,
         )?;
 
         let epoch_secrets = EpochSecrets {
             resumption_secret: Psk::from(vec![]),
             sender_data_secret: SenderDataSecret::from(vec![]),
-            secret_tree: SecretTree::empty(join_context.group_context.cipher_suite),
+            secret_tree: SecretTree::empty(),
         };
 
         let (mut group, _) = Self::join_with(
             config,
-            cipher_suite_provider,
+            cipher_suite_provider.clone(),
             join_context,
             KeySchedule::new(init_secret),
             epoch_secrets,
@@ -544,7 +552,8 @@ where
             .map(|psk_id| {
                 Ok(PreSharedKeyID {
                     key_id: JustPreSharedKeyID::External(psk_id),
-                    psk_nonce: PskNonce::random(group.state.cipher_suite())?,
+                    psk_nonce: PskNonce::random(&cipher_suite_provider)
+                        .map_err(|e| GroupError::CryptoProviderError(e.into()))?,
                 })
             })
             .collect::<Result<Vec<_>, GroupError>>()?;
@@ -686,7 +695,7 @@ where
         // Encrypt the GroupInfo using the key and nonce derived from the joiner_secret for
         // the new epoch
         let welcome_secret = WelcomeSecret::from_joiner_secret(
-            self.state.cipher_suite(),
+            &self.cipher_suite_provider,
             joiner_secret,
             psk_secret,
         )?;
@@ -799,7 +808,8 @@ where
 
         let psks = vec![PreSharedKeyID {
             key_id: resumption_psk_id,
-            psk_nonce: PskNonce::random(new_context.cipher_suite)?,
+            psk_nonce: PskNonce::random(&self.cipher_suite_provider)
+                .map_err(|e| GroupError::CryptoProviderError(e.into()))?,
         }];
 
         let state_repo = GroupStateRepository::new(
@@ -817,20 +827,19 @@ where
         };
 
         let psk_secret = crate::psk::psk_secret(
-            new_context.cipher_suite,
+            &cipher_suite_provider,
             |_| Ok::<_, Infallible>(None),
             |id| resumption_psk_search.find(id),
             &psks,
         )?;
 
-        let kdf = Hkdf::from(new_context.cipher_suite.kdf_type());
-
         let key_schedule_result = KeySchedule::from_key_schedule(
-            &KeySchedule::new(InitSecret::random(&kdf)?),
-            &CommitSecret::empty(new_context.cipher_suite),
+            &KeySchedule::new(InitSecret::random(&cipher_suite_provider)?),
+            &CommitSecret::empty(&cipher_suite_provider),
             new_context,
-            &new_pub_tree,
+            new_pub_tree.total_leaf_count(),
             &psk_secret,
+            &cipher_suite_provider,
         )?;
 
         let mut group_info = GroupInfo {
@@ -839,7 +848,7 @@ where
             confirmation_tag: ConfirmationTag::create(
                 &key_schedule_result.confirmation_key,
                 &new_context.confirmed_transcript_hash,
-                &new_context.cipher_suite,
+                &cipher_suite_provider,
             )?,
             signer: new_priv_tree.self_index,
             signature: Vec::new(),
@@ -848,7 +857,7 @@ where
         group_info.sign(&cipher_suite_provider, new_signer, &())?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
-            new_context.cipher_suite,
+            self.cipher_suite_provider(),
             &new_context.confirmed_transcript_hash,
             &group_info.confirmation_tag,
         )?;
@@ -859,7 +868,7 @@ where
                 new_context.clone(),
                 new_pub_tree,
                 interim_transcript_hash,
-                ConfirmationTag::empty(&self.state.cipher_suite())?,
+                group_info.confirmation_tag.clone(),
             ),
             private_tree: new_priv_tree,
             key_schedule: key_schedule_result.key_schedule,
@@ -1204,7 +1213,8 @@ where
         Ok(Proposal::Psk(PreSharedKey {
             psk: PreSharedKeyID {
                 key_id: JustPreSharedKeyID::External(psk),
-                psk_nonce: PskNonce::random(self.state.cipher_suite())?,
+                psk_nonce: PskNonce::random(&self.cipher_suite_provider)
+                    .map_err(|e| GroupError::CryptoProviderError(e.into()))?,
             },
         }))
     }
@@ -1228,8 +1238,11 @@ where
         cipher_suite: CipherSuite,
         extensions: ExtensionList<GroupContextExtension>,
     ) -> Result<Proposal, GroupError> {
-        let group_id =
-            group_id.unwrap_or(SecureRng::gen(cipher_suite.hash_function().digest_size())?);
+        let group_id = group_id.unwrap_or(
+            self.cipher_suite_provider
+                .random_bytes_vec(self.cipher_suite_provider.kdf_extract_size())
+                .map_err(|e| GroupError::CryptoProviderError(e.into()))?,
+        );
 
         Ok(Proposal::ReInit(ReInit {
             group_id,
@@ -1274,8 +1287,11 @@ where
     ) -> Result<MLSPlaintext, GroupError> {
         let membership_tag = matches!(auth_content.content.sender, Sender::Member(_))
             .then(|| {
-                self.key_schedule
-                    .get_membership_tag(&auth_content, self.context())
+                self.key_schedule.get_membership_tag(
+                    &auth_content,
+                    self.context(),
+                    &self.cipher_suite_provider,
+                )
             })
             .transpose()?;
 
@@ -1418,10 +1434,12 @@ where
         }
 
         if allow_external_commit {
-            extensions.set_extension(ExternalPubExt {
-                external_pub: self
+            extensions.set_extension({
+                let (_external_secret, external_pub) = self
                     .key_schedule
-                    .get_external_public_key(self.state.cipher_suite())?,
+                    .get_external_key_pair(&self.cipher_suite_provider)?;
+
+                ExternalPubExt { external_pub }
             })?;
         }
 
@@ -1458,7 +1476,7 @@ where
     ) -> Result<Vec<u8>, GroupError> {
         Ok(self
             .key_schedule
-            .export_secret(label, context, len, self.context().cipher_suite)?)
+            .export_secret(label, context, len, &self.cipher_suite_provider)?)
     }
 
     pub fn export_tree(&self) -> Result<Vec<u8>, GroupError> {
@@ -1572,6 +1590,7 @@ where
                 self.private_tree.self_index,
                 &update_path,
                 self.identity_provider(),
+                self.cipher_suite_provider(),
             )?;
 
             Ok(pending.clone())
@@ -1619,7 +1638,7 @@ where
         };
 
         let psk_secret = crate::psk::psk_secret(
-            self.state.cipher_suite(),
+            &self.cipher_suite_provider,
             |id| secret_store.get(id),
             |id| resumption_psk_search.find(id),
             &provisional_state.psks,
@@ -1632,7 +1651,7 @@ where
         let key_schedule = match provisional_state.external_init {
             Some((_, ExternalInit { kem_output })) if self.pending_commit.is_none() => self
                 .key_schedule
-                .derive_for_external(&kem_output, provisional_state.group_context.cipher_suite)?,
+                .derive_for_external(&kem_output, &self.cipher_suite_provider)?,
             _ => self.key_schedule.clone(),
         };
 
@@ -1640,8 +1659,9 @@ where
             &key_schedule,
             &commit_secret,
             &provisional_state.group_context,
-            &provisional_state.public_tree,
+            provisional_state.public_tree.total_leaf_count(),
             &psk_secret,
+            &self.cipher_suite_provider,
         )?;
 
         // Use the confirmation_key for the new epoch to compute the confirmation tag for
@@ -1650,7 +1670,7 @@ where
         let new_confirmation_tag = ConfirmationTag::create(
             &key_schedule_result.confirmation_key,
             &provisional_state.group_context.confirmed_transcript_hash,
-            &provisional_state.group_context.cipher_suite,
+            &self.cipher_suite_provider,
         )?;
 
         if new_confirmation_tag != confirmation_tag {
@@ -1746,8 +1766,10 @@ mod tests {
 
     use crate::client::test_utils::get_basic_client_builder;
     use crate::extension::MlsExtension;
+    use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::{get_test_basic_credential, get_test_x509_credential};
     use crate::key_package::KeyPackageValidationError;
+    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
     use crate::time::MlsTime;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use crate::{
@@ -1924,7 +1946,7 @@ mod tests {
 
         let test_group = test_group(protocol_version, cipher_suite);
         let (mut bob_keys, _) = test_member(protocol_version, cipher_suite, b"bob");
-        bob_keys.key_package.signature = SecureRng::gen(32).unwrap();
+        bob_keys.key_package.signature = random_bytes(32);
 
         let proposal = test_group.group.add_proposal(bob_keys.key_package);
         assert_matches!(proposal, Err(GroupError::KeyPackageValidationError(_)));
@@ -1938,7 +1960,7 @@ mod tests {
         let mut test_group = test_group(protocol_version, cipher_suite);
         let (mut bob_keys, _) = test_member(protocol_version, cipher_suite, b"bob");
 
-        bob_keys.key_package.signature = SecureRng::gen(32).unwrap();
+        bob_keys.key_package.signature = random_bytes(32);
 
         assert_matches!(
             test_group.group.propose_add(bob_keys.key_package, vec![]),
@@ -1957,7 +1979,7 @@ mod tests {
         let mut proposal = alice_group.update_proposal();
 
         if let Proposal::Update(ref mut update) = proposal {
-            update.leaf_node.signature = SecureRng::gen(32).unwrap();
+            update.leaf_node.signature = random_bytes(32);
         } else {
             panic!("Invalid update proposal")
         }
@@ -2182,7 +2204,7 @@ mod tests {
 
         let without_padding = test_group
             .group
-            .encrypt_application_message(&SecureRng::gen(150).unwrap(), vec![])
+            .encrypt_application_message(&random_bytes(150), vec![])
             .unwrap();
 
         let mut test_group = test_group_custom(
@@ -2195,7 +2217,7 @@ mod tests {
 
         let with_padding = test_group
             .group
-            .encrypt_application_message(&SecureRng::gen(150).unwrap(), vec![])
+            .encrypt_application_message(&random_bytes(150), vec![])
             .unwrap();
 
         assert!(with_padding.tls_serialized_len() > without_padding.tls_serialized_len());
@@ -3106,14 +3128,13 @@ mod tests {
 
     #[test]
     fn commit_leaf_not_supporting_credential_used_by_external_sender() {
-        use ferriscrypt::asym::ec_key::generate_keypair;
-
         // The new leaf of the committer doesn't support credential used by an external sender
-        let (ext_sender_pk, _) =
-            generate_keypair(CipherSuite::Curve25519Aes128.signature_key_curve()).unwrap();
+        let (_, ext_sender_pk) = test_cipher_suite_provider(CipherSuite::Curve25519Aes128)
+            .signature_key_generate()
+            .unwrap();
 
         let ext_sender_id = SigningIdentity {
-            signature_key: ext_sender_pk.try_into().unwrap(),
+            signature_key: ext_sender_pk,
             credential: get_test_x509_credential(vec![].into()),
         };
 

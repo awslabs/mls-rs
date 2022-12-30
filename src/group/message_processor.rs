@@ -369,7 +369,7 @@ pub(crate) trait MessageProcessor {
 
         // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
         let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
-            provisional_state.group_context.cipher_suite,
+            self.cipher_suite_provider(),
             &self.group_state().interim_transcript_hash,
             &auth_content,
         )?;
@@ -535,7 +535,12 @@ pub(crate) trait MessageProcessor {
     ) -> Result<Option<(TreeKemPrivate, PathSecret)>, GroupError> {
         provisional_state
             .public_tree
-            .apply_update_path(sender, &update_path, self.identity_provider())
+            .apply_update_path(
+                sender,
+                &update_path,
+                self.identity_provider(),
+                self.cipher_suite_provider(),
+            )
             .map(|_| None)
             .map_err(Into::into)
     }

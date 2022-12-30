@@ -65,7 +65,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         )?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
-            join_context.group_context.cipher_suite,
+            &cipher_suite_provider,
             &join_context.group_context.confirmed_transcript_hash,
             &join_context.confirmation_tag,
         )?;

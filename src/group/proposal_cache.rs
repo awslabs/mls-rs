@@ -434,7 +434,6 @@ mod tests {
     };
 
     use assert_matches::assert_matches;
-    use ferriscrypt::kdf::hkdf::Hkdf;
     use itertools::Itertools;
     use std::convert::Infallible;
 
@@ -1021,7 +1020,7 @@ mod tests {
 
         let proposal = Proposal::Psk(make_external_psk(
             b"ted",
-            PskNonce::random(TEST_CIPHER_SUITE).unwrap(),
+            PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE)).unwrap(),
         ));
 
         let res = cache.prepare_commit(
@@ -1067,7 +1066,7 @@ mod tests {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
         let identity_provider = BasicIdentityProvider::new();
@@ -1101,7 +1100,7 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let proposal = {
-            let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+            let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
             Proposal::ExternalInit(ExternalInit { kem_output })
         };
 
@@ -1141,7 +1140,7 @@ mod tests {
     fn proposal_cache_rejects_multiple_external_init_proposals_in_commit() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-        let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
         let identity_provider = BasicIdentityProvider::new();
@@ -1180,7 +1179,7 @@ mod tests {
     ) -> Result<ProposalSetEffects, ProposalCacheError> {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-        let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let public_tree = &group.group.state.public_tree;
         let identity_provider = BasicIdentityProvider::new();
@@ -1223,7 +1222,7 @@ mod tests {
     fn new_member_cannot_commit_more_than_one_remove_proposal() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-        let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
@@ -1273,7 +1272,7 @@ mod tests {
     fn new_member_remove_proposal_invalid_credential() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-        let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
@@ -1316,7 +1315,7 @@ mod tests {
     fn new_member_remove_proposal_valid_credential() {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-        let kem_output = vec![0; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()];
+        let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         let group_extensions = group.group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
@@ -1528,7 +1527,8 @@ mod tests {
         let psk = Proposal::Psk(PreSharedKey {
             psk: PreSharedKeyID {
                 key_id: JustPreSharedKeyID::External(ExternalPskId(vec![])),
-                psk_nonce: PskNonce::random(TEST_CIPHER_SUITE).unwrap(),
+                psk_nonce: PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                    .unwrap(),
             },
         });
 
@@ -2070,7 +2070,10 @@ mod tests {
     }
 
     fn new_external_psk(id: &[u8]) -> PreSharedKey {
-        make_external_psk(id, PskNonce::random(TEST_CIPHER_SUITE).unwrap())
+        make_external_psk(
+            id,
+            PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE)).unwrap(),
+        )
     }
 
     #[test]
@@ -2086,7 +2089,7 @@ mod tests {
             res,
             Err(ProposalCacheError::ProposalFilterError(
                 ProposalFilterError::InvalidPskNonceLength { expected, found },
-            )) if expected == Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size() && found == invalid_nonce.0.len()
+            )) if expected == test_cipher_suite_provider(TEST_CIPHER_SUITE).kdf_extract_size() && found == invalid_nonce.0.len()
         );
     }
 
@@ -2106,7 +2109,7 @@ mod tests {
             res,
             Err(ProposalCacheError::ProposalFilterError(
                 ProposalFilterError::InvalidPskNonceLength { expected, found },
-            )) if expected == Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size() && found == invalid_nonce.0.len()
+            )) if expected == test_cipher_suite_provider(TEST_CIPHER_SUITE).kdf_extract_size() && found == invalid_nonce.0.len()
         );
     }
 
@@ -2134,7 +2137,8 @@ mod tests {
                     psk_group_id: PskGroupId(TEST_GROUP.to_vec()),
                     psk_epoch: 1,
                 }),
-                psk_nonce: PskNonce::random(TEST_CIPHER_SUITE).unwrap(),
+                psk_nonce: PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                    .unwrap(),
             },
         }
     }
@@ -2883,7 +2887,7 @@ mod tests {
 
     fn make_external_init() -> ExternalInit {
         ExternalInit {
-            kem_output: vec![33; Hkdf::from(TEST_CIPHER_SUITE.kdf_type()).extract_size()],
+            kem_output: vec![33; test_cipher_suite_provider(TEST_CIPHER_SUITE).kdf_extract_size()],
         }
     }
 
@@ -3415,7 +3419,7 @@ mod tests {
             Proposal::Remove(RemoveProposal { to_remove: bob }),
             Proposal::Psk(make_external_psk(
                 b"ted",
-                PskNonce::random(TEST_CIPHER_SUITE).unwrap(),
+                PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE)).unwrap(),
             )),
             Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION)),
             Proposal::ExternalInit(make_external_init()),

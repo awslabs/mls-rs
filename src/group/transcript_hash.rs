@@ -1,5 +1,4 @@
 use super::*;
-use crate::cipher_suite::CipherSuite;
 use std::{
     fmt::{self, Debug},
     ops::Deref,
@@ -12,6 +11,8 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 pub enum TranscriptHashError {
     #[error(transparent)]
     TlsCodecError(#[from] tls_codec::Error),
+    #[error(transparent)]
+    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 #[serde_as]
@@ -53,8 +54,8 @@ impl Debug for ConfirmedTranscriptHash {
 }
 
 impl ConfirmedTranscriptHash {
-    pub(crate) fn create(
-        cipher_suite: CipherSuite,
+    pub(crate) fn create<P: CipherSuiteProvider>(
+        cipher_suite_provider: &P,
         interim_transcript_hash: &InterimTranscriptHash,
         content: &MLSAuthenticatedContent,
     ) -> Result<Self, TranscriptHashError> {
@@ -77,9 +78,10 @@ impl ConfirmedTranscriptHash {
         ]
         .concat();
 
-        let value = cipher_suite.hash_function().digest(&hash_input);
-
-        Ok(Self::from(value))
+        cipher_suite_provider
+            .hash(&hash_input)
+            .map(Into::into)
+            .map_err(|e| TranscriptHashError::CipherSuiteProviderError(e.into()))
     }
 }
 
@@ -114,8 +116,8 @@ impl Debug for InterimTranscriptHash {
 }
 
 impl InterimTranscriptHash {
-    pub fn create(
-        cipher_suite: CipherSuite,
+    pub fn create<P: CipherSuiteProvider>(
+        cipher_suite_provider: &P,
         confirmed: &ConfirmedTranscriptHash,
         confirmation_tag: &ConfirmationTag,
     ) -> Result<Self, TranscriptHashError> {
@@ -126,10 +128,9 @@ impl InterimTranscriptHash {
 
         let input = InterimTranscriptHashInput { confirmation_tag }.tls_serialize_detached()?;
 
-        let value = cipher_suite
-            .hash_function()
-            .digest(&[confirmed.0.deref(), &input].concat());
-
-        Ok(InterimTranscriptHash::from(value))
+        cipher_suite_provider
+            .hash(&[confirmed.0.deref(), &input].concat())
+            .map(Into::into)
+            .map_err(|e| TranscriptHashError::CipherSuiteProviderError(e.into()))
     }
 }

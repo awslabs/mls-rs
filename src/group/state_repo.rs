@@ -217,14 +217,13 @@ where
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use ferriscrypt::rand::SecureRng;
 
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         group::{
             epoch::{test_utils::get_test_epoch_with_id, SenderDataSecret},
             snapshot::test_utils::get_test_snapshot,
-            test_utils::test_member,
+            test_utils::{random_bytes, test_member},
         },
         provider::{
             group_state::InMemoryGroupStateStorage, key_package::InMemoryKeyPackageRepository,
@@ -392,7 +391,7 @@ mod tests {
         let to_update = test_repo.get_epoch_mut(0).unwrap().unwrap();
         assert_eq!(to_update, &test_epoch_0);
 
-        let new_sender_secret = SecureRng::gen(32).unwrap();
+        let new_sender_secret = random_bytes(32);
         to_update.secrets.sender_data_secret = SenderDataSecret::from(new_sender_secret);
         let to_update = to_update.clone();
 
@@ -437,7 +436,7 @@ mod tests {
 
         // Update the stored epoch
         let to_update = test_repo.get_epoch_mut(0).unwrap().unwrap();
-        let new_sender_secret = SecureRng::gen(32).unwrap();
+        let new_sender_secret = random_bytes(32);
         to_update.secrets.sender_data_secret = SenderDataSecret::from(new_sender_secret);
         let to_update = to_update.clone();
 

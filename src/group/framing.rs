@@ -358,6 +358,8 @@ impl MLSContent {
 #[cfg(test)]
 pub(crate) mod test_utils {
 
+    use crate::group::test_utils::random_bytes;
+
     use super::*;
 
     pub(crate) fn get_test_auth_content(test_content: Vec<u8>) -> MLSAuthenticatedContent {
@@ -379,9 +381,9 @@ pub(crate) mod test_utils {
 
     pub(crate) fn get_test_ciphertext_content() -> MLSCiphertextContent {
         MLSCiphertextContent {
-            content: Content::Application(SecureRng::gen(1024).unwrap().into()),
+            content: Content::Application(random_bytes(1024).into()),
             auth: MLSContentAuthData {
-                signature: MessageSignature::from(SecureRng::gen(128).unwrap()),
+                signature: MessageSignature::from(random_bytes(128)),
                 confirmation_tag: None,
             },
             padding: vec![],

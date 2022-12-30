@@ -215,15 +215,14 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use assert_matches::assert_matches;
-    use ferriscrypt::rand::SecureRng;
+    use std::time::Duration;
 
     use super::*;
 
     use crate::cipher_suite::CipherSuite;
     use crate::extension::{ApplicationIdExt, ExtensionList, MlsExtension};
+    use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::identity::CREDENTIAL_TYPE_BASIC;
     use crate::provider::crypto::test_utils::test_cipher_suite_provider;
@@ -410,7 +409,7 @@ mod tests {
             let (mut leaf_node, _) =
                 get_test_node(cipher_suite, signing_identity, &secret, None, None);
 
-            leaf_node.signature = SecureRng::gen(leaf_node.signature.len()).unwrap();
+            leaf_node.signature = random_bytes(leaf_node.signature.len());
 
             let test_validator =
                 LeafNodeValidator::new(&cipher_suite_provider, None, BasicIdentityProvider::new());

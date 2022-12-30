@@ -18,7 +18,6 @@ use crate::provider::keychain::KeychainStorage;
 use crate::psk::ExternalPskId;
 use crate::signer::SignatureError;
 use crate::tree_kem::leaf_node::LeafNodeError;
-use ferriscrypt::rand::{SecureRng, SecureRngError};
 use hex::ToHex;
 use thiserror::Error;
 
@@ -37,8 +36,6 @@ pub enum ClientError {
     GroupError(#[from] GroupError),
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
-    #[error(transparent)]
-    SecureRngError(#[from] SecureRngError),
     #[error("signer not found for given identity")]
     SignerNotFound,
     #[error("the secret key provided does not match the public key in the credential")]
@@ -154,7 +151,7 @@ where
     ) -> Result<Group<C>, ClientError> {
         Group::new(
             self.config.clone(),
-            group_id,
+            Some(group_id),
             cipher_suite,
             protocol_version,
             signing_identity,
@@ -170,15 +167,15 @@ where
         signing_identity: SigningIdentity,
         group_context_extensions: ExtensionList<GroupContextExtension>,
     ) -> Result<Group<C>, ClientError> {
-        let group_id = SecureRng::gen(cipher_suite.hash_function().digest_size())?;
-
-        self.create_group_with_id(
-            protocol_version,
+        Group::new(
+            self.config.clone(),
+            None,
             cipher_suite,
-            group_id,
+            protocol_version,
             signing_identity,
             group_context_extensions,
         )
+        .map_err(Into::into)
     }
 
     /// If `key_package` is specified, key package references listed in the welcome message will not

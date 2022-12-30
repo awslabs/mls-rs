@@ -3,10 +3,12 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroize;
 
 use crate::{
-    group::framing::ContentType, provider::crypto::CipherSuiteProvider, tree_kem::node::LeafIndex,
+    group::{framing::ContentType, key_schedule::kdf_expand_with_label},
+    provider::crypto::CipherSuiteProvider,
+    tree_kem::node::LeafIndex,
 };
 
-use super::{CiphertextProcessorError, ReuseGuard};
+use super::{CiphertextProcessor, CiphertextProcessorError, GroupStateProvider, ReuseGuard};
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 pub(crate) struct MLSSenderData {
@@ -64,4 +66,39 @@ impl SenderDataKey {
     }
 }
 
+impl<'a, GS, CP> CiphertextProcessor<'a, GS, CP>
+where
+    GS: GroupStateProvider,
+    CP: CipherSuiteProvider,
+{
+    pub(super) fn sender_data_key(
+        &self,
+        ciphertext: &[u8],
+    ) -> Result<SenderDataKey, CiphertextProcessorError> {
+        // Sample the first extract_size bytes of the ciphertext, and if it is shorter, just use
+        // the ciphertext itself
+        let extract_size = self.cipher_suite_provider.kdf_extract_size();
+        let ciphertext_sample = ciphertext.get(0..extract_size).unwrap_or(ciphertext);
+
+        // Generate a sender data key and nonce using the sender_data_secret from the current
+        // epoch's key schedule
+        let key = kdf_expand_with_label(
+            &self.cipher_suite_provider,
+            &self.group_state.epoch_secrets().sender_data_secret,
+            "key",
+            ciphertext_sample,
+            Some(self.cipher_suite_provider.aead_key_size()),
+        )?;
+
+        let nonce = kdf_expand_with_label(
+            &self.cipher_suite_provider,
+            &self.group_state.epoch_secrets().sender_data_secret,
+            "nonce",
+            ciphertext_sample,
+            Some(self.cipher_suite_provider.aead_nonce_size()),
+        )?;
+
+        Ok(SenderDataKey { key, nonce })
+    }
+}
 // TODO: Write test vectors

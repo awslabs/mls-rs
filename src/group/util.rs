@@ -133,7 +133,7 @@ pub(super) fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
         identity_provider,
     );
 
-    tree_validator.validate(&mut join_context.public_tree)?;
+    tree_validator.validate(&mut join_context.public_tree, cipher_suite_provider)?;
 
     if let Some(ext_senders) = join_context
         .group_context
@@ -231,13 +231,16 @@ where
     )
 }
 
-pub(super) fn transcript_hashes(
-    cipher_suite: CipherSuite,
+pub(super) fn transcript_hashes<P: CipherSuiteProvider>(
+    cipher_suite_provider: &P,
     prev_interim_transcript_hash: &InterimTranscriptHash,
     content: &MLSAuthenticatedContent,
 ) -> Result<(InterimTranscriptHash, ConfirmedTranscriptHash), GroupError> {
-    let confirmed_transcript_hash =
-        ConfirmedTranscriptHash::create(cipher_suite, prev_interim_transcript_hash, content)?;
+    let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
+        cipher_suite_provider,
+        prev_interim_transcript_hash,
+        content,
+    )?;
 
     let confirmation_tag = content
         .auth
@@ -245,8 +248,11 @@ pub(super) fn transcript_hashes(
         .as_ref()
         .ok_or(GroupError::InvalidConfirmationTag)?;
 
-    let interim_transcript_hash =
-        InterimTranscriptHash::create(cipher_suite, &confirmed_transcript_hash, confirmation_tag)?;
+    let interim_transcript_hash = InterimTranscriptHash::create(
+        cipher_suite_provider,
+        &confirmed_transcript_hash,
+        confirmation_tag,
+    )?;
 
     Ok((interim_transcript_hash, confirmed_transcript_hash))
 }

@@ -117,13 +117,10 @@ mod tests {
     use assert_matches::assert_matches;
     use std::collections::HashSet;
 
-    use ferriscrypt::{
-        asym::ec_key::{Curve, SecretKey},
-        rand::SecureRng,
-    };
+    use ferriscrypt::asym::ec_key::{Curve, SecretKey};
 
     use crate::{
-        group::test_utils::get_test_group_context,
+        group::test_utils::{get_test_group_context, random_bytes},
         provider::{
             crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
         },
@@ -270,7 +267,7 @@ mod tests {
             .nodes
             .borrow_as_parent_mut(tree_math::root(public_tree.total_leaf_count()))
             .unwrap()
-            .public_key = HpkePublicKey::from(SecureRng::gen(32).unwrap());
+            .public_key = random_bytes(32).into();
 
         // Add the secrets for Charlie to his private key
         let res = charlie_private.update_secrets(

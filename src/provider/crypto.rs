@@ -62,6 +62,16 @@ impl AsRef<[u8]> for HpkeSecretKey {
     }
 }
 
+/// Represents the encryption context from RFC9180 (Section 5). Seal and open functions
+/// are stateful, for example, `seal` increments the sequence number and derives a new nonce
+pub trait HpkeContext {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    fn seal(&mut self, aad: Option<&[u8]>, data: &[u8]) -> Result<Vec<u8>, Self::Error>;
+    fn open(&mut self, aad: Option<&[u8]>, ciphertext: &[u8]) -> Result<Vec<u8>, Self::Error>;
+    fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error>;
+}
+
 #[serde_as]
 #[derive(
     Clone,
@@ -125,12 +135,14 @@ pub trait CryptoProvider {
 
 pub trait CipherSuiteProvider {
     type Error: std::error::Error + Send + Sync + 'static;
+    type HpkeContext: HpkeContext + Send + Sync;
 
     // TODO: We will eventually eliminate CipherSuite in favor of just a number for flexibility
     fn cipher_suite(&self) -> CipherSuite;
 
     fn hash(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error>;
 
+    /// As required by the RFC, key length must be equal to `self.kdf_extract_size()`
     fn mac(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>, Self::Error>;
 
     fn aead_seal(
@@ -149,10 +161,17 @@ pub trait CipherSuiteProvider {
         nonce: &[u8],
     ) -> Result<Vec<u8>, Self::Error>;
 
+    fn aead_key_size(&self) -> usize;
+
+    fn aead_nonce_size(&self) -> usize;
+
     fn kdf_expand(&self, prk: &[u8], info: &[u8], len: usize) -> Result<Vec<u8>, Self::Error>;
 
     fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Vec<u8>, Self::Error>;
 
+    fn kdf_extract_size(&self) -> usize;
+
+    /// Corresponds to the one-shot API in base mode in RFC9180
     fn hpke_seal(
         &self,
         remote_key: &HpkePublicKey,
@@ -161,6 +180,7 @@ pub trait CipherSuiteProvider {
         pt: &[u8],
     ) -> Result<HpkeCiphertext, Self::Error>;
 
+    /// Corresponds to the one-shot API in base mode in RFC9180
     fn hpke_open(
         &self,
         ciphertext: &HpkeCiphertext,
@@ -168,6 +188,21 @@ pub trait CipherSuiteProvider {
         info: &[u8],
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, Self::Error>;
+
+    /// Setup sender in the base mode in RFC9180
+    fn hpke_setup_s(
+        &self,
+        remote_key: &HpkePublicKey,
+        info: &[u8],
+    ) -> Result<(Vec<u8>, Self::HpkeContext), Self::Error>;
+
+    /// Setup receiver in the base mode in RFC9180
+    fn hpke_setup_r(
+        &self,
+        enc: &[u8],
+        local_secret: &HpkeSecretKey,
+        info: &[u8],
+    ) -> Result<Self::HpkeContext, Self::Error>;
 
     fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error>;
 
@@ -207,11 +242,22 @@ pub trait CipherSuiteProvider {
 pub mod test_utils {
     use crate::cipher_suite::CipherSuite;
 
-    use super::{CryptoProvider, FerriscryptCipherSuite, FerriscryptCryptoProvider};
+    use super::{
+        CryptoProvider, FerriscryptCipherSuite, FerriscryptCryptoProvider, HpkeCiphertext,
+    };
 
     pub fn test_cipher_suite_provider(cipher_suite: CipherSuite) -> FerriscryptCipherSuite {
         FerriscryptCryptoProvider::default()
             .cipher_suite_provider(cipher_suite)
             .unwrap()
+    }
+
+    impl HpkeCiphertext {
+        pub fn new(kem_output: Vec<u8>, ciphertext: Vec<u8>) -> Self {
+            Self {
+                kem_output,
+                ciphertext,
+            }
+        }
     }
 }

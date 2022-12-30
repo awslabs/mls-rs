@@ -6,9 +6,9 @@ use crate::{
     },
     group::{
         proposal_filter::{Proposable, ProposalBundle, ProposalFilterError, ProposalInfo},
-        AddProposal, BorrowedProposal, ExternalInit, JustPreSharedKeyID, KeyScheduleKdf,
-        PreSharedKey, ProposalType, ReInit, RemoveProposal, ResumptionPSKUsage, ResumptionPsk,
-        Sender, UpdateProposal,
+        AddProposal, BorrowedProposal, ExternalInit, JustPreSharedKeyID, PreSharedKey,
+        ProposalType, ReInit, RemoveProposal, ResumptionPSKUsage, ResumptionPsk, Sender,
+        UpdateProposal,
     },
     key_package::{KeyPackageValidationOptions, KeyPackageValidator},
     protocol_version::ProtocolVersion,
@@ -138,7 +138,7 @@ where
         let proposals = filter_out_extra_removal_or_update_for_same_leaf(&strategy, proposals)?;
         let proposals = filter_out_invalid_psks(
             &strategy,
-            self.cipher_suite_provider.cipher_suite(),
+            self.cipher_suite_provider,
             proposals,
             &self.external_psk_id_validator,
         )?;
@@ -191,7 +191,7 @@ where
 
         let proposals = filter_out_invalid_psks(
             FailInvalidProposal,
-            self.cipher_suite_provider.cipher_suite(),
+            self.cipher_suite_provider,
             proposals,
             &self.external_psk_id_validator,
         )?;
@@ -822,18 +822,19 @@ where
     Ok(proposals)
 }
 
-fn filter_out_invalid_psks<F, P>(
+fn filter_out_invalid_psks<F, P, CP>(
     strategy: F,
-    cipher_suite: CipherSuite,
+    cipher_suite_provider: &CP,
     mut proposals: ProposalBundle,
     external_psk_id_validator: &P,
 ) -> Result<ProposalBundle, ProposalFilterError>
 where
     F: FilterStrategy,
     P: ExternalPskIdValidator,
+    CP: CipherSuiteProvider,
 {
     let mut ids = HashSet::new();
-    let kdf_extract_size = KeyScheduleKdf::new(cipher_suite.kdf_type()).extract_size();
+    let kdf_extract_size = cipher_suite_provider.kdf_extract_size();
 
     proposals.retain_by_type::<PreSharedKey, _, _>(|p| {
         let valid = matches!(

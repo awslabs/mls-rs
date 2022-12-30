@@ -121,12 +121,11 @@ pub(crate) fn validate_update_path<C: IdentityProvider, CSP: CipherSuiteProvider
 mod tests {
     use assert_matches::assert_matches;
 
-    use ferriscrypt::rand::SecureRng;
-
     use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::group::message_processor::ProvisionalState;
-    use crate::group::test_utils::get_test_group_context;
+    use crate::group::test_utils::{get_test_group_context, random_bytes};
     use crate::provider::crypto::test_utils::test_cipher_suite_provider;
+    use crate::provider::crypto::HpkeCiphertext;
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::default_properties;
     use crate::tree_kem::node::LeafIndex;
@@ -159,15 +158,9 @@ mod tests {
             )
             .unwrap();
 
-        let ciphertext = ferriscrypt::hpke::HpkeCiphertext {
-            enc: SecureRng::gen(32).unwrap(),
-            ciphertext: SecureRng::gen(32).unwrap(),
-        }
-        .into();
-
         let node = UpdatePathNode {
-            public_key: SecureRng::gen(32).unwrap().into(),
-            encrypted_path_secret: vec![ciphertext],
+            public_key: random_bytes(32).into(),
+            encrypted_path_secret: vec![HpkeCiphertext::new(random_bytes(32), random_bytes(32))],
         };
 
         UpdatePath {
@@ -221,7 +214,7 @@ mod tests {
     fn test_invalid_key_package() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut update_path = test_update_path(TEST_CIPHER_SUITE, "creator");
-        update_path.leaf_node.signature = SecureRng::gen(32).unwrap();
+        update_path.leaf_node.signature = random_bytes(32);
 
         let validated = validate_update_path(
             &BasicIdentityProvider::new(),

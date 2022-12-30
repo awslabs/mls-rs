@@ -1,7 +1,7 @@
 use self::{
     message_key::MessageKey,
     reuse_guard::ReuseGuard,
-    sender_data_key::{MLSSenderData, MLSSenderDataAAD, SenderDataKey},
+    sender_data_key::{MLSSenderData, MLSSenderDataAAD},
 };
 
 use super::{
@@ -10,7 +10,7 @@ use super::{
         ContentType, MLSCiphertext, MLSCiphertextContent, MLSCiphertextContentAAD, MLSContent,
         Sender, WireFormat,
     },
-    key_schedule::{KeyScheduleKdf, KeyScheduleKdfError},
+    key_schedule::KeyScheduleError,
     message_signature::MLSAuthenticatedContent,
     secret_tree::{KeyType, SecretTreeError},
     GroupContext, PaddingMode,
@@ -29,8 +29,6 @@ mod sender_data_key;
 #[derive(Error, Debug)]
 pub enum CiphertextProcessorError {
     #[error(transparent)]
-    KeyScheduleKdfError(#[from] KeyScheduleKdfError),
-    #[error(transparent)]
     CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
     SecretTreeError(#[from] SecretTreeError),
@@ -44,6 +42,8 @@ pub enum CiphertextProcessorError {
     InvalidSender(Sender),
     #[error("message from self can't be processed")]
     CantProcessMessageFromSelf,
+    #[error(transparent)]
+    KeyScheduleError(#[from] KeyScheduleError),
 }
 
 pub(crate) trait GroupStateProvider {
@@ -75,48 +75,6 @@ where
             group_state,
             cipher_suite_provider,
         }
-    }
-
-    // TODO: Move this into sender_data_key.rs , figure out how to port over KeyScheduleKdf
-    // functionality to be based off of the provider, which will require additional methods like
-    // key_size and nonce_size on the provider
-    fn sender_data_key(
-        &self,
-        ciphertext: &[u8],
-    ) -> Result<SenderDataKey, CiphertextProcessorError> {
-        let kdf = KeyScheduleKdf::new(self.group_state.group_context().cipher_suite.kdf_type());
-        // Sample the first extract_size bytes of the ciphertext, and if it is shorter, just use
-        // the ciphertext itself
-        let ciphertext_sample = ciphertext.get(0..kdf.extract_size()).unwrap_or(ciphertext);
-
-        // Generate a sender data key and nonce using the sender_data_secret from the current
-        // epoch's key schedule
-        let sender_data_key = kdf.expand_with_label(
-            &self.group_state.epoch_secrets().sender_data_secret,
-            "key",
-            ciphertext_sample,
-            self.group_state
-                .group_context()
-                .cipher_suite
-                .aead_type()
-                .key_size(),
-        )?;
-
-        let sender_data_nonce = kdf.expand_with_label(
-            &self.group_state.epoch_secrets().sender_data_secret,
-            "nonce",
-            ciphertext_sample,
-            self.group_state
-                .group_context()
-                .cipher_suite
-                .aead_type()
-                .nonce_size(),
-        )?;
-
-        Ok(SenderDataKey {
-            key: sender_data_key,
-            nonce: sender_data_nonce,
-        })
     }
 
     pub fn seal(
@@ -170,7 +128,7 @@ where
             .group_state
             .epoch_secrets_mut()
             .secret_tree
-            .next_message_key(self_index, key_type)?;
+            .next_message_key(&self.cipher_suite_provider, self_index, key_type)?;
 
         let ciphertext = MessageKey::new(key_data)
             .encrypt(
@@ -246,7 +204,12 @@ where
             .group_state
             .epoch_secrets_mut()
             .secret_tree
-            .message_key_generation(sender_data.sender, key_type, sender_data.generation)?;
+            .message_key_generation(
+                &self.cipher_suite_provider,
+                sender_data.sender,
+                key_type,
+                sender_data.generation,
+            )?;
 
         let sender = Sender::Member(*sender_data.sender);
 
@@ -282,8 +245,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use ferriscrypt::rand::SecureRng;
-
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::TEST_CIPHER_SUITE,
@@ -291,6 +252,7 @@ mod test {
             epoch::{test_utils::get_test_epoch, PriorEpoch},
             framing::{ApplicationData, Content, Sender, WireFormat},
             message_signature::MLSAuthenticatedContent,
+            test_utils::random_bytes,
             PaddingMode,
         },
         provider::crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
@@ -417,7 +379,7 @@ mod test {
             .seal(test_data.content.clone(), PaddingMode::StepFunction)
             .unwrap();
 
-        ciphertext.ciphertext = SecureRng::gen(ciphertext.ciphertext.len()).unwrap();
+        ciphertext.ciphertext = random_bytes(ciphertext.ciphertext.len());
         receiver_epoch.self_index = LeafIndex::new(1);
 
         let res = ciphertext_processor.open(ciphertext);
