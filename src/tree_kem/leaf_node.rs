@@ -429,13 +429,13 @@ mod tests {
 
     use crate::cipher_suite::CipherSuite;
     use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::provider::crypto::test_utils::test_cipher_suite_provider;
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider;
     use assert_matches::assert_matches;
 
-    use ferriscrypt::asym::ec_key::SecretKey;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -469,7 +469,18 @@ mod tests {
                 leaf_node.leaf_node_source
             );
 
-            let curve = cipher_suite.kem_type().curve();
+            let provider = test_cipher_suite_provider(cipher_suite);
+
+            // Verify that the hpke key pair generated will work
+            let test_data = random_bytes(32);
+
+            let sealed = provider
+                .hpke_seal(&leaf_node.public_key, &[], None, &test_data)
+                .unwrap();
+
+            let opened = provider.hpke_open(&sealed, &secret_key, &[], None).unwrap();
+
+            assert_eq!(opened, test_data);
 
             leaf_node
                 .verify(
@@ -478,16 +489,6 @@ mod tests {
                     &LeafNodeSigningContext::default(),
                 )
                 .unwrap();
-
-            let expected_public = SecretKey::from_bytes(secret_key.as_ref(), curve)
-                .unwrap()
-                .to_public()
-                .unwrap();
-
-            assert_eq!(
-                leaf_node.public_key,
-                expected_public.to_uncompressed_bytes().unwrap().into()
-            );
         }
     }
 
@@ -595,18 +596,6 @@ mod tests {
             assert_ne!(new_secret, leaf_secret);
             assert_ne!(original_leaf.public_key, leaf.public_key);
 
-            let curve = cipher_suite.kem_type().curve();
-
-            let expected_public = SecretKey::from_bytes(new_secret.as_ref(), curve)
-                .unwrap()
-                .to_public()
-                .unwrap();
-
-            assert_eq!(
-                leaf.public_key,
-                expected_public.to_uncompressed_bytes().unwrap().into()
-            );
-
             assert_eq!(leaf.capabilities, original_leaf.capabilities);
             assert_eq!(leaf.extensions, original_leaf.extensions);
             assert_eq!(leaf.signing_identity, original_leaf.signing_identity);
@@ -677,18 +666,6 @@ mod tests {
 
             assert_ne!(new_secret, leaf_secret);
             assert_ne!(original_leaf.public_key, leaf.public_key);
-
-            let curve = cipher_suite.kem_type().curve();
-
-            let expected_public = SecretKey::from_bytes(new_secret.as_ref(), curve)
-                .unwrap()
-                .to_public()
-                .unwrap();
-
-            assert_eq!(
-                leaf.public_key,
-                expected_public.to_uncompressed_bytes().unwrap().into()
-            );
 
             assert_eq!(leaf.capabilities, original_leaf.capabilities);
             assert_eq!(leaf.extensions, original_leaf.extensions);

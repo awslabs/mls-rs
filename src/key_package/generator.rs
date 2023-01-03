@@ -127,19 +127,18 @@ where
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use ferriscrypt::asym::ec_key::{PublicKey, SecretKey};
     use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         extension::{ExtensionList, KeyPackageExtension, LeafNodeExtension, MlsExtension},
+        group::test_utils::random_bytes,
         identity::test_utils::get_test_signing_identity,
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
         protocol_version::ProtocolVersion,
         provider::{
-            crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
-            identity::BasicIdentityProvider,
+            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
         },
         tree_kem::{
             leaf_node::{test_utils::get_test_capabilities, LeafNodeError, LeafNodeSource},
@@ -199,7 +198,7 @@ mod tests {
 
             let test_generator = KeyPackageGenerator {
                 protocol_version,
-                cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
+                cipher_suite_provider: &cipher_suite_provider,
                 signing_identity: &signing_identity,
                 signing_key: &signing_key,
                 identity_provider: &BasicIdentityProvider::new(),
@@ -235,35 +234,18 @@ mod tests {
             assert_eq!(generated.key_package.cipher_suite, cipher_suite.into());
             assert_eq!(generated.key_package.version, protocol_version.into());
 
-            let curve = test_generator
-                .cipher_suite_provider
-                .cipher_suite()
-                .kem_type()
-                .curve();
+            // Verify that the hpke key pair generated will work
+            let test_data = random_bytes(32);
 
-            let init_key_public = PublicKey::from_uncompressed_bytes(
-                generated.key_package.hpke_init_key.as_ref(),
-                curve,
-            )
-            .unwrap();
+            let sealed = cipher_suite_provider
+                .hpke_seal(&generated.key_package.hpke_init_key, &[], None, &test_data)
+                .unwrap();
 
-            let init_key_secret =
-                SecretKey::from_bytes(generated.init_secret_key.as_ref(), curve).unwrap();
+            let opened = cipher_suite_provider
+                .hpke_open(&sealed, &generated.init_secret_key, &[], None)
+                .unwrap();
 
-            assert_eq!(init_key_secret.curve(), curve);
-            assert_eq!(init_key_public, init_key_secret.to_public().unwrap());
-
-            let leaf_public = PublicKey::from_uncompressed_bytes(
-                generated.key_package.leaf_node.public_key.as_ref(),
-                curve,
-            )
-            .unwrap();
-
-            let leaf_secret =
-                SecretKey::from_bytes(generated.leaf_node_secret_key.as_ref(), curve).unwrap();
-
-            assert_eq!(leaf_secret.curve(), curve);
-            assert_eq!(leaf_public, leaf_secret.to_public().unwrap());
+            assert_eq!(opened, test_data);
 
             let validator = KeyPackageValidator::new(
                 protocol_version,

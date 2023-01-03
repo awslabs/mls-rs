@@ -323,7 +323,7 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         extension::{test_utils::TestExtension, ExtensionList, LeafNodeExtension},
-        group::test_utils::get_test_group_context,
+        group::test_utils::{get_test_group_context, random_bytes},
         provider::{
             crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
         },
@@ -338,8 +338,6 @@ mod tests {
     };
 
     use super::{tree_math, TreeKem};
-
-    use ferriscrypt::asym::ec_key::SecretKey;
 
     // Verify that the tree is in the correct state after generating an update path
     fn verify_tree_update_path(
@@ -391,10 +389,13 @@ mod tests {
         private_tree: &TreeKemPrivate,
         index: LeafIndex,
     ) {
+        let provider = test_cipher_suite_provider(*cipher_suite);
+
         assert_eq!(private_tree.self_index, index);
         // Make sure we have private values along the direct path, and the public keys match
         for one_index in public_tree.nodes.direct_path(index).unwrap() {
             let secret_key = private_tree.secret_keys.get(&one_index).unwrap();
+
             let public_key = public_tree
                 .nodes
                 .borrow_node(one_index)
@@ -402,18 +403,14 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .public_key();
-            let secret_key =
-                SecretKey::from_bytes(secret_key.as_ref(), cipher_suite.kem_type().curve())
-                    .unwrap();
-            assert_eq!(
-                *public_key,
-                secret_key
-                    .to_public()
-                    .unwrap()
-                    .to_uncompressed_bytes()
-                    .unwrap()
-                    .into()
-            );
+
+            let test_data = random_bytes(32);
+            let sealed = provider
+                .hpke_seal(public_key, &[], None, &test_data)
+                .unwrap();
+
+            let opened = provider.hpke_open(&sealed, secret_key, &[], None).unwrap();
+            assert_eq!(test_data, opened);
         }
     }
 

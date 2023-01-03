@@ -117,9 +117,8 @@ mod tests {
     use assert_matches::assert_matches;
     use std::collections::HashSet;
 
-    use ferriscrypt::asym::ec_key::{Curve, SecretKey};
-
     use crate::{
+        client::test_utils::TEST_CIPHER_SUITE,
         group::test_utils::{get_test_group_context, random_bytes},
         provider::{
             crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
@@ -138,22 +137,27 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
+    fn random_hpke_secret_key() -> HpkeSecretKey {
+        let (secret, _) = test_cipher_suite_provider(TEST_CIPHER_SUITE)
+            .kem_derive(&random_bytes(32))
+            .unwrap();
+
+        secret
+    }
+
     #[test]
     fn test_create_self_leaf() {
-        let secret = SecretKey::generate(Curve::Ed25519)
-            .unwrap()
-            .to_bytes()
-            .unwrap();
+        let secret = random_hpke_secret_key();
 
         let self_index = LeafIndex(42);
 
-        let private_key = TreeKemPrivate::new_self_leaf(self_index, secret.clone().into());
+        let private_key = TreeKemPrivate::new_self_leaf(self_index, secret.clone());
 
         assert_eq!(private_key.self_index, self_index);
         assert_eq!(private_key.secret_keys.len(), 1);
         assert_eq!(
             private_key.secret_keys.get(&self_index.into()).unwrap(),
-            &secret.into()
+            &secret
         )
     }
 
@@ -281,20 +285,17 @@ mod tests {
     }
 
     fn setup_direct_path(self_index: LeafIndex, leaf_count: u32) -> TreeKemPrivate {
-        let secret = SecretKey::generate(Curve::Ed25519)
-            .unwrap()
-            .to_bytes()
-            .unwrap();
+        let secret = random_hpke_secret_key();
 
-        let mut private_key = TreeKemPrivate::new_self_leaf(self_index, secret.into());
+        let mut private_key = TreeKemPrivate::new_self_leaf(self_index, secret);
 
         self_index
             .direct_path(leaf_count)
             .unwrap()
             .into_iter()
             .for_each(|i| {
-                let secret = SecretKey::generate(Curve::Ed25519).unwrap().to_bytes();
-                private_key.secret_keys.insert(i, secret.unwrap().into());
+                let secret = random_hpke_secret_key();
+                private_key.secret_keys.insert(i, secret);
             });
 
         private_key
@@ -305,14 +306,9 @@ mod tests {
         let self_leaf = LeafIndex(42);
         let mut private_key = setup_direct_path(self_leaf, 128);
 
-        let new_secret = SecretKey::generate(Curve::Ed25519)
-            .unwrap()
-            .to_bytes()
-            .unwrap();
+        let new_secret = random_hpke_secret_key();
 
-        private_key
-            .update_leaf(128, new_secret.clone().into())
-            .unwrap();
+        private_key.update_leaf(128, new_secret.clone()).unwrap();
 
         // The update operation should have removed all the other keys in our direct path we
         // previously added
@@ -321,7 +317,7 @@ mod tests {
         // The secret key for our leaf should have been updated accordingly
         assert_eq!(
             private_key.secret_keys.get(&self_leaf.into()).unwrap(),
-            &new_secret.into()
+            &new_secret
         );
     }
 

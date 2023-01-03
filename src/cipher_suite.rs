@@ -96,25 +96,3 @@ impl CipherSuite {
 }
 
 pub type MaybeCipherSuite = MaybeEnum<CipherSuite>;
-
-#[cfg(test)]
-use ferriscrypt::hpke::KemId;
-
-#[cfg(test)]
-impl CipherSuite {
-    pub(crate) fn kem_type(&self) -> KemId {
-        match self {
-            CipherSuite::Curve25519Aes128 => KemId::X25519HkdfSha256,
-            CipherSuite::P256Aes128 => KemId::P256HkdfSha256,
-            CipherSuite::Curve25519ChaCha20 => KemId::X25519HkdfSha256,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448Aes256 => KemId::X448HkdfSha512,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::P521Aes256 => KemId::P521HkdfSha512,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448ChaCha20 => KemId::X448HkdfSha512,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::P384Aes256 => KemId::P384HkdfSha384,
-        }
-    }
-}
