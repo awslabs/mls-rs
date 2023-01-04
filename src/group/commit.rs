@@ -288,11 +288,16 @@ where
             )
         } else {
             // Update the tree hash, since it was not updated by encap.
-            provisional_state
-                .public_tree
-                .update_hashes(&mut vec![provisional_private_tree.self_index], &[])?;
+            provisional_state.public_tree.update_hashes(
+                &mut vec![provisional_private_tree.self_index],
+                &[],
+                &self.cipher_suite_provider,
+            )?;
 
-            provisional_group_context.tree_hash = provisional_state.public_tree.tree_hash()?;
+            provisional_group_context.tree_hash = provisional_state
+                .public_tree
+                .tree_hash(&self.cipher_suite_provider)?;
+
             (None, None, None)
         };
 

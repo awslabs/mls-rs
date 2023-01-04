@@ -1,7 +1,7 @@
 use super::leaf_node::LeafNode;
 use super::node::LeafIndex;
 use super::tree_math::{BfsIterBottomUp, BfsIterTopDown};
-use crate::cipher_suite::CipherSuite;
+use crate::provider::crypto::CipherSuiteProvider;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::Parent;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
@@ -40,27 +40,27 @@ enum TreeHashInput<'a> {
 }
 
 impl TreeHashes {
-    pub fn hash_for_leaf(
+    pub fn hash_for_leaf<P: CipherSuiteProvider>(
         &self,
         node_index: u32,
         leaf_node: Option<&LeafNode>,
-        cipher_suite: CipherSuite,
+        cipher_suite_provider: &P,
     ) -> Result<Vec<u8>, RatchetTreeError> {
         let input = TreeHashInput::Leaf(LeafNodeHashInput {
             node_index,
             leaf_node,
         });
 
-        Ok(cipher_suite
-            .hash_function()
-            .digest(&input.tls_serialize_detached()?))
+        cipher_suite_provider
+            .hash(&input.tls_serialize_detached()?)
+            .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
     }
 
-    pub fn hash_for_parent(
+    pub fn hash_for_parent<P: CipherSuiteProvider>(
         &self,
         node_index: u32,
         parent_node: Option<&Parent>,
-        cipher_suite: CipherSuite,
+        cipher_suite_provider: &P,
         filtered: &[LeafIndex],
         left_hash: &[u8],
         right_hash: &[u8],
@@ -80,30 +80,43 @@ impl TreeHashes {
             right_hash,
         });
 
-        Ok(cipher_suite
-            .hash_function()
-            .digest(&input.tls_serialize_detached()?))
+        cipher_suite_provider
+            .hash(&input.tls_serialize_detached()?)
+            .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
     }
 }
 
 impl TreeKemPublic {
-    pub fn tree_hash(&mut self) -> Result<Vec<u8>, RatchetTreeError> {
-        self.initialize_hashes()?;
+    pub fn tree_hash<P: CipherSuiteProvider>(
+        &mut self,
+        cipher_suite_provider: &P,
+    ) -> Result<Vec<u8>, RatchetTreeError>
+    where
+        P: CipherSuiteProvider,
+    {
+        self.initialize_hashes(cipher_suite_provider)?;
         let root = tree_math::root(self.total_leaf_count());
         Ok(self.tree_hashes.current[root as usize].clone())
     }
 
     // Update hashes after `committer` makes changes to the tree. `path_blank` is the
     // list of leaves whose paths were blanked, i.e. updates and removes.
-    pub fn update_hashes(
+    pub fn update_hashes<P: CipherSuiteProvider>(
         &mut self,
         path_blanked: &mut Vec<LeafIndex>,
         leaves_added: &[LeafIndex],
-    ) -> Result<(), RatchetTreeError> {
-        self.initialize_hashes()?;
+        cipher_suite_provider: &P,
+    ) -> Result<(), RatchetTreeError>
+    where
+        P: CipherSuiteProvider,
+    {
+        self.initialize_hashes(cipher_suite_provider)?;
 
         // Update the current hashes for direct paths of all modified leaves.
-        self.update_current_hashes(path_blanked.iter().chain(leaves_added.iter()))?;
+        self.update_current_hashes(
+            path_blanked.iter().chain(leaves_added.iter()),
+            cipher_suite_provider,
+        )?;
 
         // Update original hashes for the committer and nodes with blanked paths.
         let num_leaves = self.total_leaf_count();
@@ -143,19 +156,23 @@ impl TreeKemPublic {
     }
 
     // Initialize all hashes after creating / importing a tree.
-    fn initialize_hashes(&mut self) -> Result<(), RatchetTreeError> {
+    fn initialize_hashes<P>(&mut self, cipher_suite_provider: &P) -> Result<(), RatchetTreeError>
+    where
+        P: CipherSuiteProvider,
+    {
         if self.tree_hashes.current.is_empty() {
-            self.update_current_hashes(vec![].into_iter())?;
+            self.update_current_hashes(vec![].into_iter(), cipher_suite_provider)?;
             if self.nodes.len() > 1 {
-                self.initialize_original_hashes()?;
+                self.initialize_original_hashes(cipher_suite_provider)?;
             }
         }
         Ok(())
     }
 
-    fn update_current_hashes<'a>(
+    fn update_current_hashes<'a, P: CipherSuiteProvider>(
         &mut self,
         leaf_indices: impl Iterator<Item = &'a LeafIndex>,
+        cipher_suite_provider: &P,
     ) -> Result<(), RatchetTreeError> {
         let num_leaves = self.total_leaf_count();
         let root = tree_math::root(num_leaves);
@@ -181,7 +198,7 @@ impl TreeKemPublic {
             self.tree_hashes.current[n as usize] = self.tree_hashes.hash_for_leaf(
                 n,
                 self.nodes.borrow_as_leaf(LeafIndex(n / 2)).ok(),
-                self.cipher_suite,
+                cipher_suite_provider,
             )?;
 
             if n != root {
@@ -195,7 +212,7 @@ impl TreeKemPublic {
             self.tree_hashes.current[n as usize] = self.tree_hashes.hash_for_parent(
                 n,
                 self.nodes.borrow_as_parent(n).ok(),
-                self.cipher_suite,
+                cipher_suite_provider,
                 &[],
                 &self.tree_hashes.current[tree_math::left(n)? as usize],
                 &self.tree_hashes.current[tree_math::right(n)? as usize],
@@ -238,7 +255,10 @@ impl TreeKemPublic {
                 != self.nodes.borrow_as_parent(descendant)?.unmerged_leaves)
     }
 
-    fn initialize_original_hashes(&mut self) -> Result<(), RatchetTreeError> {
+    fn initialize_original_hashes<P: CipherSuiteProvider>(
+        &mut self,
+        cipher_suite_provider: &P,
+    ) -> Result<(), RatchetTreeError> {
         let num_leaves = self.nodes.total_leaf_count() as usize;
         let root = tree_math::root(num_leaves as u32);
 
@@ -283,7 +303,7 @@ impl TreeKemPublic {
                         } else {
                             self.nodes.borrow_as_leaf(leaf_index).ok()
                         },
-                        self.cipher_suite,
+                        cipher_suite_provider,
                     )?;
 
                     hashes[index].insert(*a, hash);
@@ -305,7 +325,7 @@ impl TreeKemPublic {
                 let hash = self.tree_hashes.hash_for_parent(
                     n as u32,
                     self.nodes.borrow_as_parent(n as u32).ok(),
-                    self.cipher_suite,
+                    cipher_suite_provider,
                     &filtered,
                     &left_hash,
                     &right_hash,
@@ -337,7 +357,9 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
-        provider::identity::BasicIdentityProvider,
+        provider::{
+            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
+        },
         tree_kem::{node::NodeVec, parent_hash::test_utils::get_test_tree_fig_12},
     };
 
@@ -364,7 +386,9 @@ mod tests {
                     TestCase {
                         cipher_suite: cipher_suite as u16,
                         tree_data: tree.export_node_data().tls_serialize_detached().unwrap(),
-                        tree_hash: tree.tree_hash().unwrap(),
+                        tree_hash: tree
+                            .tree_hash(&test_cipher_suite_provider(cipher_suite))
+                            .unwrap(),
                     }
                 })
                 .collect()
@@ -388,13 +412,15 @@ mod tests {
             }
 
             let mut tree = TreeKemPublic::import_node_data(
-                cipher_suite.unwrap(),
                 NodeVec::tls_deserialize(&mut &*one_case.tree_data).unwrap(),
                 BasicIdentityProvider,
             )
             .unwrap();
 
-            let calculated_hash = tree.tree_hash().unwrap();
+            let calculated_hash = tree
+                .tree_hash(&test_cipher_suite_provider(cipher_suite.unwrap()))
+                .unwrap();
+
             assert_eq!(calculated_hash, one_case.tree_hash);
         }
     }

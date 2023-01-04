@@ -226,7 +226,8 @@ mod tests {
             test_utils::{random_bytes, test_member},
         },
         provider::{
-            group_state::InMemoryGroupStateStorage, key_package::InMemoryKeyPackageRepository,
+            crypto::test_utils::test_cipher_suite_provider, group_state::InMemoryGroupStateStorage,
+            key_package::InMemoryKeyPackageRepository,
         },
     };
 
@@ -638,26 +639,26 @@ mod tests {
     fn used_key_package_is_deleted() {
         let key_package_repo = InMemoryKeyPackageRepository::default();
         let key_package = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"member").0;
-        key_package_repo.insert(key_package.clone()).unwrap();
+
+        let key_package_ref = key_package
+            .reference(&test_cipher_suite_provider(TEST_CIPHER_SUITE))
+            .unwrap();
+
+        key_package_repo.insert(key_package_ref.clone(), key_package);
 
         let mut repo = GroupStateRepository::new(
             TEST_GROUP_ID.to_vec(),
             4,
             InMemoryGroupStateStorage::default(),
             key_package_repo,
-            Some(key_package.reference().unwrap()),
+            Some(key_package_ref.clone()),
         )
         .unwrap();
 
-        repo.key_package_repo
-            .get(&key_package.reference().unwrap())
-            .unwrap();
+        repo.key_package_repo.get(&key_package_ref).unwrap();
 
         repo.write_to_storage(test_snapshot(4)).unwrap();
 
-        assert!(repo
-            .key_package_repo
-            .get(&key_package.reference().unwrap())
-            .is_none());
+        assert!(repo.key_package_repo.get(&key_package_ref).is_none());
     }
 }

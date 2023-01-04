@@ -12,7 +12,6 @@ use node::{LeafIndex, NodeIndex, NodeVec, NodeVecError};
 use self::leaf_node::{LeafNode, LeafNodeError};
 use self::tree_utils::build_ascii_tree;
 
-use crate::cipher_suite::CipherSuite;
 use crate::extension::ExtensionError;
 use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError};
 use crate::provider::crypto::{self, CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
@@ -114,9 +113,8 @@ where
     RatchetTreeError::CredentialValidationError(e.into())
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, Default)]
 pub struct TreeKemPublic {
-    pub cipher_suite: CipherSuite,
     index: TreeIndex,
     pub(crate) nodes: NodeVec,
     tree_hashes: TreeHashes,
@@ -124,9 +122,7 @@ pub struct TreeKemPublic {
 
 impl PartialEq for TreeKemPublic {
     fn eq(&self, other: &Self) -> bool {
-        self.cipher_suite == other.cipher_suite
-            && self.index == other.index
-            && self.nodes == other.nodes
+        self.index == other.index && self.nodes == other.nodes
     }
 }
 
@@ -144,17 +140,11 @@ impl SecretPath {
 }
 
 impl TreeKemPublic {
-    pub fn new(cipher_suite: CipherSuite) -> TreeKemPublic {
-        TreeKemPublic {
-            cipher_suite,
-            index: Default::default(),
-            nodes: Default::default(),
-            tree_hashes: Default::default(),
-        }
+    pub fn new() -> TreeKemPublic {
+        Default::default()
     }
 
     pub(crate) fn import_node_data<C>(
-        cipher_suite: CipherSuite,
         nodes: NodeVec,
         identity_provider: C,
     ) -> Result<TreeKemPublic, RatchetTreeError>
@@ -174,7 +164,6 @@ impl TreeKemPublic {
         )?;
 
         let tree = TreeKemPublic {
-            cipher_suite,
             index,
             nodes,
             tree_hashes: Default::default(),
@@ -187,17 +176,18 @@ impl TreeKemPublic {
         self.nodes.clone()
     }
 
-    pub fn derive<C>(
-        cipher_suite: CipherSuite,
+    pub fn derive<I, CP>(
         leaf_node: LeafNode,
         secret_key: HpkeSecretKey,
-        identity_provider: C,
+        identity_provider: I,
+        cipher_suite_provider: &CP,
     ) -> Result<(TreeKemPublic, TreeKemPrivate), RatchetTreeError>
     where
-        C: IdentityProvider,
+        I: IdentityProvider,
+        CP: CipherSuiteProvider,
     {
-        let mut public_tree = TreeKemPublic::new(cipher_suite);
-        public_tree.add_leaves(vec![leaf_node], identity_provider)?;
+        let mut public_tree = TreeKemPublic::new();
+        public_tree.add_leaves(vec![leaf_node], identity_provider, cipher_suite_provider)?;
 
         let private_tree = TreeKemPrivate::new_self_leaf(LeafIndex(0), secret_key);
 
@@ -228,13 +218,15 @@ impl TreeKemPublic {
 
     // Note that a partial failure of this function will leave the tree in a bad state. Modifying a
     // tree should always be done on a clone of the tree, which is how commits are processed
-    pub fn add_leaves<C>(
+    pub fn add_leaves<I, CP>(
         &mut self,
         leaf_nodes: Vec<LeafNode>,
-        identity_provider: C,
+        identity_provider: I,
+        cipher_suite_provider: &CP,
     ) -> Result<Vec<LeafIndex>, RatchetTreeError>
     where
-        C: IdentityProvider,
+        I: IdentityProvider,
+        CP: CipherSuiteProvider,
     {
         #[derive(Default)]
         struct Accumulator {
@@ -264,6 +256,7 @@ impl TreeKemPublic {
             &[],
             &leaf_nodes,
             identity_provider,
+            cipher_suite_provider,
         )
     }
 
@@ -299,7 +292,7 @@ impl TreeKemPublic {
         self.nodes.non_empty_leaves()
     }
 
-    fn update_node(
+    pub(crate) fn update_node(
         &mut self,
         pub_key: crypto::HpkePublicKey,
         index: NodeIndex,
@@ -403,17 +396,19 @@ impl TreeKemPublic {
         Ok(())
     }
 
-    pub fn batch_edit<A, C>(
+    pub fn batch_edit<A, I, CP>(
         &mut self,
         mut accumulator: A,
         updates: &[(LeafIndex, LeafNode)],
         removals: &[LeafIndex],
         additions: &[LeafNode],
-        identity_provider: C,
+        identity_provider: I,
+        cipher_suite_provider: &CP,
     ) -> Result<A::Output, RatchetTreeError>
     where
         A: AccumulateBatchResults,
-        C: IdentityProvider,
+        I: IdentityProvider,
+        CP: CipherSuiteProvider,
     {
         let mut removals = removals.iter().copied().map(Some).collect::<Vec<_>>();
         let tree_index = std::mem::take(&mut self.index);
@@ -633,8 +628,8 @@ impl TreeKemPublic {
             .chain(updates.iter().flatten().map(|&(leaf_index, ..)| leaf_index))
             .collect();
 
-        self.update_hashes(&mut path_blanked, &new_leaf_indexes)
-            .expect("All indexes are valid");
+        self.update_hashes(&mut path_blanked, &new_leaf_indexes, cipher_suite_provider)?;
+
         accumulator.finish()
     }
 }
@@ -693,22 +688,16 @@ pub trait AccumulateBatchResults {
 
 #[cfg(test)]
 impl TreeKemPublic {
-    pub fn do_update_node(
-        &mut self,
-        pub_key: HpkePublicKey,
-        index: NodeIndex,
-    ) -> Result<(), RatchetTreeError> {
-        self.update_node(pub_key, index)
-    }
-
-    pub fn update_leaf<C>(
+    pub fn update_leaf<I, CP>(
         &mut self,
         index: LeafIndex,
         leaf_node: LeafNode,
-        identity_provider: C,
+        identity_provider: I,
+        cipher_suite_provider: &CP,
     ) -> Result<(), RatchetTreeError>
     where
-        C: IdentityProvider,
+        I: IdentityProvider,
+        CP: CipherSuiteProvider,
     {
         struct Accumulator;
 
@@ -726,16 +715,19 @@ impl TreeKemPublic {
             &[],
             &[],
             identity_provider,
+            cipher_suite_provider,
         )
     }
 
-    pub fn remove_leaves<C>(
+    pub fn remove_leaves<I, CP>(
         &mut self,
         indexes: Vec<LeafIndex>,
-        identity_provider: C,
+        identity_provider: I,
+        cipher_suite_provider: &CP,
     ) -> Result<Vec<(LeafIndex, LeafNode)>, RatchetTreeError>
     where
-        C: IdentityProvider,
+        I: IdentityProvider,
+        CP: CipherSuiteProvider,
     {
         #[derive(Default)]
         struct Accumulator {
@@ -765,6 +757,7 @@ impl TreeKemPublic {
             &indexes,
             &[],
             identity_provider,
+            cipher_suite_provider,
         )
     }
 
@@ -778,7 +771,7 @@ pub(crate) mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,
         provider::{
-            crypto::{HpkeSecretKey, SignatureSecretKey},
+            crypto::{test_utils::test_cipher_suite_provider, HpkeSecretKey, SignatureSecretKey},
             identity::BasicIdentityProvider,
         },
         tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key,
@@ -799,14 +792,16 @@ pub(crate) mod test_utils {
     }
 
     pub(crate) fn get_test_tree(cipher_suite: CipherSuite) -> TestTree {
+        let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
         let (creator_leaf, creator_hpke_secret, creator_signing_key) =
             get_basic_test_node_sig_key(cipher_suite, "creator");
 
         let (test_public, test_private) = TreeKemPublic::derive(
-            cipher_suite,
             creator_leaf.clone(),
             creator_hpke_secret.clone(),
             BasicIdentityProvider,
+            &cipher_suite_provider,
         )
         .unwrap();
 
@@ -832,6 +827,8 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::cipher_suite::CipherSuite;
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNode;
@@ -868,19 +865,24 @@ mod tests {
 
     #[test]
     fn test_import_export() {
-        let cipher_suite = CipherSuite::P256Aes128;
-        let mut test_tree = get_test_tree(cipher_suite);
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let additional_key_packages = get_test_leaf_nodes(cipher_suite);
+        let mut test_tree = get_test_tree(TEST_CIPHER_SUITE);
+
+        let additional_key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
 
         test_tree
             .public
-            .add_leaves(additional_key_packages, BasicIdentityProvider)
+            .add_leaves(
+                additional_key_packages,
+                BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .unwrap();
 
         let exported = test_tree.public.export_node_data();
-        let imported =
-            TreeKemPublic::import_node_data(cipher_suite, exported, BasicIdentityProvider).unwrap();
+
+        let imported = TreeKemPublic::import_node_data(exported, BasicIdentityProvider).unwrap();
 
         assert_eq!(test_tree.public.nodes, imported.nodes);
         assert_eq!(test_tree.public.index, imported.index);
@@ -888,12 +890,17 @@ mod tests {
 
     #[test]
     fn test_add_leaf() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let mut tree = TreeKemPublic::new(cipher_suite);
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let mut tree = TreeKemPublic::new();
 
-        let leaf_nodes = get_test_leaf_nodes(cipher_suite);
+        let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+
         let res = tree
-            .add_leaves(leaf_nodes.clone(), BasicIdentityProvider)
+            .add_leaves(
+                leaf_nodes.clone(),
+                BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .unwrap();
 
         // The leaf count should be equal to the number of packages we added
@@ -917,11 +924,13 @@ mod tests {
 
     #[test]
     fn test_get_key_packages() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let mut tree = TreeKemPublic::new(cipher_suite);
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages, BasicIdentityProvider)
+        let mut tree = TreeKemPublic::new();
+
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+
+        tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
             .unwrap();
 
         let key_packages = tree.get_leaf_nodes();
@@ -930,14 +939,20 @@ mod tests {
 
     #[test]
     fn test_add_leaf_duplicate() {
-        let cipher_suite = CipherSuite::P256Aes128;
-        let mut tree = TreeKemPublic::new(cipher_suite);
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages.clone(), BasicIdentityProvider)
-            .unwrap();
+        let mut tree = TreeKemPublic::new();
 
-        let add_res = tree.add_leaves(key_packages, BasicIdentityProvider);
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+
+        tree.add_leaves(
+            key_packages.clone(),
+            BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .unwrap();
+
+        let add_res = tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider);
 
         assert_matches!(
             add_res,
@@ -949,15 +964,26 @@ mod tests {
 
     #[test]
     fn test_add_leaf_empty_leaf() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let mut tree = get_test_tree(cipher_suite).public;
-        let key_packages = get_test_leaf_nodes(cipher_suite);
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        tree.add_leaves([key_packages[0].clone()].to_vec(), BasicIdentityProvider)
-            .unwrap();
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+
+        tree.add_leaves(
+            [key_packages[0].clone()].to_vec(),
+            BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .unwrap();
+
         tree.nodes[0] = None; // Set the original first node to none
-        tree.add_leaves([key_packages[1].clone()].to_vec(), BasicIdentityProvider)
-            .unwrap();
+                              //
+        tree.add_leaves(
+            [key_packages[1].clone()].to_vec(),
+            BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .unwrap();
 
         assert_eq!(tree.nodes[0], key_packages[1].clone().into());
         assert_eq!(tree.nodes[1], None);
@@ -967,13 +993,15 @@ mod tests {
 
     #[test]
     fn test_add_leaf_unmerged() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let mut tree = get_test_tree(cipher_suite).public;
-        let key_packages = get_test_leaf_nodes(cipher_suite);
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
 
         tree.add_leaves(
             [key_packages[0].clone(), key_packages[1].clone()].to_vec(),
             BasicIdentityProvider,
+            &cipher_suite_provider,
         )
         .unwrap();
 
@@ -984,8 +1012,12 @@ mod tests {
         }
         .into();
 
-        tree.add_leaves([key_packages[2].clone()].to_vec(), BasicIdentityProvider)
-            .unwrap();
+        tree.add_leaves(
+            [key_packages[2].clone()].to_vec(),
+            BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .unwrap();
 
         assert_eq!(
             tree.nodes[3].as_parent().unwrap().unmerged_leaves,
@@ -995,13 +1027,14 @@ mod tests {
 
     #[test]
     fn test_update_leaf() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(cipher_suite).public;
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
 
-        let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages, BasicIdentityProvider)
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+
+        tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
             .unwrap();
 
         // Add in parent nodes so we can detect them clearing after update
@@ -1018,12 +1051,13 @@ mod tests {
         let original_size = tree.occupied_leaf_count();
         let original_leaf_index = LeafIndex(1);
 
-        let updated_leaf = get_basic_test_node(cipher_suite, "A");
+        let updated_leaf = get_basic_test_node(TEST_CIPHER_SUITE, "A");
 
         tree.update_leaf(
             original_leaf_index,
             updated_leaf.clone(),
             BasicIdentityProvider,
+            &cipher_suite_provider,
         )
         .unwrap();
 
@@ -1051,18 +1085,25 @@ mod tests {
 
     #[test]
     fn test_update_leaf_not_found() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(cipher_suite).public;
-        let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages, BasicIdentityProvider)
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+
+        tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
             .unwrap();
 
-        let new_key_package = get_basic_test_node(cipher_suite, "new");
+        let new_key_package = get_basic_test_node(TEST_CIPHER_SUITE, "new");
 
         assert_matches!(
-            tree.update_leaf(LeafIndex(128), new_key_package, BasicIdentityProvider),
+            tree.update_leaf(
+                LeafIndex(128),
+                new_key_package,
+                BasicIdentityProvider,
+                &cipher_suite_provider
+            ),
             Err(RatchetTreeError::NodeVecError(
                 NodeVecError::InvalidNodeIndex(256)
             ))
@@ -1071,13 +1112,18 @@ mod tests {
 
     #[test]
     fn test_remove_leaf() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(cipher_suite).public;
-        let key_packages = get_test_leaf_nodes(cipher_suite);
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+
         let indexes = tree
-            .add_leaves(key_packages.clone(), BasicIdentityProvider)
+            .add_leaves(
+                key_packages.clone(),
+                BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .unwrap();
 
         let original_leaf_count = tree.occupied_leaf_count();
@@ -1091,7 +1137,11 @@ mod tests {
             .collect();
 
         let res = tree
-            .remove_leaves(indexes.clone(), BasicIdentityProvider)
+            .remove_leaves(
+                indexes.clone(),
+                BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .unwrap();
 
         assert_eq!(res, expected_result);
@@ -1105,18 +1155,28 @@ mod tests {
 
     #[test]
     fn test_remove_leaf_middle() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(cipher_suite).public;
-        let leaf_nodes = get_test_leaf_nodes(cipher_suite);
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+        let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+
         let to_remove = tree
-            .add_leaves(leaf_nodes.clone(), BasicIdentityProvider)
+            .add_leaves(
+                leaf_nodes.clone(),
+                BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .unwrap()[0];
+
         let original_leaf_count = tree.occupied_leaf_count();
 
         let res = tree
-            .remove_leaves(vec![to_remove], BasicIdentityProvider)
+            .remove_leaves(
+                vec![to_remove],
+                BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .unwrap();
 
         assert_eq!(res, vec![(to_remove, leaf_nodes[0].clone())]);
@@ -1133,12 +1193,14 @@ mod tests {
 
     #[test]
     fn test_create_blanks() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(cipher_suite).public;
-        let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages, BasicIdentityProvider)
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+
+        tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
             .unwrap();
 
         let original_leaf_count = tree.occupied_leaf_count();
@@ -1146,7 +1208,7 @@ mod tests {
         let to_remove = vec![LeafIndex(2)];
 
         // Remove the leaf from the tree
-        tree.remove_leaves(to_remove, BasicIdentityProvider)
+        tree.remove_leaves(to_remove, BasicIdentityProvider, &cipher_suite_provider)
             .unwrap();
 
         // The occupied leaf count should have been reduced by 1
@@ -1166,13 +1228,17 @@ mod tests {
 
     #[test]
     fn test_remove_leaf_failure() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(cipher_suite).public;
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
 
         assert_matches!(
-            tree.remove_leaves(vec![LeafIndex(128)], BasicIdentityProvider),
+            tree.remove_leaves(
+                vec![LeafIndex(128)],
+                BasicIdentityProvider,
+                &cipher_suite_provider
+            ),
             Err(RatchetTreeError::NodeVecError(
                 NodeVecError::InvalidNodeIndex(256)
             ))
@@ -1181,13 +1247,19 @@ mod tests {
 
     #[test]
     fn test_find_leaf_node() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(cipher_suite).public;
-        let leaf_nodes = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(leaf_nodes.clone(), BasicIdentityProvider)
-            .unwrap();
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+
+        let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+
+        tree.add_leaves(
+            leaf_nodes.clone(),
+            BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .unwrap();
 
         // Find each node
         for (i, leaf_node) in leaf_nodes.iter().enumerate() {
@@ -1240,19 +1312,27 @@ mod tests {
 
     #[test]
     fn batch_edit_works() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-        let mut tree = get_test_tree(cipher_suite).public;
-        let leaf_nodes = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(leaf_nodes.clone(), BasicIdentityProvider)
-            .unwrap();
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+
+        let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+
+        tree.add_leaves(
+            leaf_nodes.clone(),
+            BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .unwrap();
 
         let acc = tree
             .batch_edit(
                 BatchAccumulator::default(),
-                &[(LeafIndex(1), get_basic_test_node(cipher_suite, "A"))],
+                &[(LeafIndex(1), get_basic_test_node(TEST_CIPHER_SUITE, "A"))],
                 &[LeafIndex(2)],
-                &[get_basic_test_node(cipher_suite, "D")],
+                &[get_basic_test_node(TEST_CIPHER_SUITE, "D")],
                 BasicIdentityProvider,
+                &cipher_suite_provider,
             )
             .unwrap();
 

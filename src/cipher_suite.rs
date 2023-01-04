@@ -1,6 +1,5 @@
 use crate::maybe::MaybeEnum;
 use ferriscrypt::asym::ec_key::Curve;
-use ferriscrypt::digest::HashFunction;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -59,23 +58,6 @@ impl ToString for CipherSuite {
 impl CipherSuite {
     pub fn all() -> impl Iterator<Item = CipherSuite> {
         enum_iterator::all()
-    }
-
-    #[inline(always)]
-    pub fn hash_function(&self) -> HashFunction {
-        match self {
-            CipherSuite::Curve25519Aes128 => HashFunction::Sha256,
-            CipherSuite::P256Aes128 => HashFunction::Sha256,
-            CipherSuite::Curve25519ChaCha20 => HashFunction::Sha256,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448Aes256 => HashFunction::Sha512,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::P521Aes256 => HashFunction::Sha512,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::Curve448ChaCha20 => HashFunction::Sha512,
-            #[cfg(feature = "openssl_engine")]
-            CipherSuite::P384Aes256 => HashFunction::Sha384,
-        }
     }
 
     pub fn signature_key_curve(&self) -> Curve {

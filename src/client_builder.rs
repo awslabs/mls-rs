@@ -18,7 +18,6 @@ use crate::{
     },
     identity::CredentialType,
     identity::SigningIdentity,
-    key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     provider::{
         crypto::{CryptoProvider, FerriscryptCryptoProvider, SignatureSecretKey},
@@ -480,21 +479,6 @@ impl<C: IntoConfig<PskStore = InMemoryPskStore>> ClientBuilder<C> {
     }
 }
 
-impl<C: IntoConfig<KeyPackageRepository = InMemoryKeyPackageRepository>> ClientBuilder<C> {
-    /// Add a key package to the key package repository.
-    pub fn key_package(
-        self,
-        key_pkg_gen: KeyPackageGeneration,
-    ) -> Result<
-        ClientBuilder<IntoConfigOutput<C>>,
-        <C::KeyPackageRepository as KeyPackageRepository>::Error,
-    > {
-        let c = self.0.into_config();
-        c.0.key_package_repo.insert(key_pkg_gen)?;
-        Ok(ClientBuilder(c))
-    }
-}
-
 /// Marker type for required `ClientBuilder` services that have not been specified yet.
 #[derive(Debug)]
 pub struct Missing;
@@ -927,13 +911,8 @@ use private::{Config, ConfigInner, IntoConfig};
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
     use crate::{
-        client_builder::{
-            BaseConfig, ClientBuilder, Preferences, WithIdentityProvider, WithKeychain,
-        },
-        key_package::KeyPackageGeneration,
-        provider::{
-            crypto::SignatureSecretKey, identity::BasicIdentityProvider, keychain::InMemoryKeychain,
-        },
+        client_builder::{BaseConfig, ClientBuilder, WithIdentityProvider, WithKeychain},
+        provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
     };
 
     pub type TestClientConfig =
@@ -946,22 +925,6 @@ pub mod test_utils {
             ClientBuilder::new()
                 .identity_provider(BasicIdentityProvider::new())
                 .keychain(InMemoryKeychain::new())
-        }
-
-        pub fn new_for_test_custom(
-            secret_key: SignatureSecretKey,
-            key_package: KeyPackageGeneration,
-            preferences: Preferences,
-        ) -> Self {
-            Self::new_for_test()
-                .preferences(preferences)
-                .signing_identity(
-                    key_package.key_package.leaf_node.signing_identity.clone(),
-                    secret_key,
-                    key_package.key_package.cipher_suite.into_enum().unwrap(),
-                )
-                .key_package(key_package)
-                .unwrap()
         }
     }
 }

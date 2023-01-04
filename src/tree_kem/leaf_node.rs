@@ -44,6 +44,7 @@ pub enum LeafNodeError {
     TlsSerialize,
     TlsDeserialize,
     PartialEq,
+    Eq,
     serde::Deserialize,
     serde::Serialize,
 )]

@@ -210,10 +210,9 @@ pub(crate) trait MessageProcessor {
         proposal: &Proposal,
         cache_proposal: bool,
     ) -> Result<ProposalRef, GroupError> {
-        let group_state = self.group_state_mut();
+        let proposal_ref = ProposalRef::from_content(self.cipher_suite_provider(), auth_content)?;
 
-        let proposal_ref =
-            ProposalRef::from_content(group_state.context.cipher_suite, auth_content)?;
+        let group_state = self.group_state_mut();
 
         cache_proposal.then(|| {
             group_state.proposals.insert(
@@ -378,12 +377,16 @@ pub(crate) trait MessageProcessor {
         provisional_state.group_context.confirmed_transcript_hash = confirmed_transcript_hash;
 
         // Update the parent hashes in the new context
-        provisional_state
-            .public_tree
-            .update_hashes(&mut vec![sender], &[])?;
+        provisional_state.public_tree.update_hashes(
+            &mut vec![sender],
+            &[],
+            self.cipher_suite_provider(),
+        )?;
 
         // Update the tree hash in the new context
-        provisional_state.group_context.tree_hash = provisional_state.public_tree.tree_hash()?;
+        provisional_state.group_context.tree_hash = provisional_state
+            .public_tree
+            .tree_hash(self.cipher_suite_provider())?;
 
         if let Some(confirmation_tag) = auth_content.auth.confirmation_tag {
             // Update the key schedule to calculate new private keys

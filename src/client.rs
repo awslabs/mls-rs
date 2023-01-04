@@ -7,6 +7,7 @@ use crate::group::framing::{
 use crate::group::message_signature::MLSAuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
 use crate::group::{process_group_info, Group, GroupError, NewMemberInfo};
+use crate::hash_reference::HashReferenceError;
 use crate::identity::{CredentialError, SigningIdentity};
 use crate::key_package::{KeyPackage, KeyPackageGenerationError, KeyPackageGenerator};
 use crate::protocol_version::MaybeProtocolVersion;
@@ -36,6 +37,8 @@ pub enum ClientError {
     GroupError(#[from] GroupError),
     #[error(transparent)]
     CredentialError(#[from] CredentialError),
+    #[error(transparent)]
+    HashReferenceError(#[from] HashReferenceError),
     #[error("signer not found for given identity")]
     SignerNotFound,
     #[error("the secret key provided does not match the public key in the credential")]
@@ -135,7 +138,10 @@ where
 
         self.config
             .key_package_repo()
-            .insert(key_pkg_gen.clone())
+            .insert(
+                key_pkg_gen.reference(&cipher_suite_provider)?,
+                key_pkg_gen.clone(),
+            )
             .map_err(|e| ClientError::KeyPackageRepoError(e.into()))?;
 
         Ok(key_pkg_gen.key_package)
@@ -482,9 +488,8 @@ mod tests {
             });
 
         let (mut bob_group, _) = alice_group
-            .join_with_custom_config("bob", |mut c| {
+            .join_with_custom_config("bob", |c| {
                 c.0.psk_store.insert(psk_id.clone(), psk.clone());
-                c
             })
             .unwrap();
 

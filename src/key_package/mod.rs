@@ -2,12 +2,12 @@ use crate::cipher_suite::{CipherSuite, MaybeCipherSuite};
 use crate::extension::{ExtensionError, ExtensionList, ExtensionType};
 use crate::extension::{KeyPackageExtension, RequiredCapabilitiesExt};
 use crate::group::proposal::ProposalType;
-use crate::hash_reference::HashReference;
+use crate::hash_reference::{HashReference, HashReferenceError};
 use crate::identity::CredentialError;
 use crate::identity::SigningIdentity;
 use crate::protocol_version::MaybeProtocolVersion;
 use crate::protocol_version::ProtocolVersion;
-use crate::provider::crypto::HpkePublicKey;
+use crate::provider::crypto::{CipherSuiteProvider, HpkePublicKey};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
 use crate::time::MlsTime;
@@ -35,7 +35,14 @@ pub enum KeyPackageError {
 #[serde_as]
 #[non_exhaustive]
 #[derive(
-    Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
+    Clone,
+    Debug,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+    PartialEq,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyPackage {
@@ -52,7 +59,18 @@ pub struct KeyPackage {
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, TlsSerialize, TlsDeserialize, TlsSize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    TlsSerialize,
+    TlsDeserialize,
+    TlsSize,
+    serde::Serialize,
+    serde::Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyPackageRef(HashReference);
@@ -74,12 +92,6 @@ impl ToString for KeyPackageRef {
 impl From<Vec<u8>> for KeyPackageRef {
     fn from(v: Vec<u8>) -> Self {
         Self(HashReference::from(v))
-    }
-}
-
-impl PartialEq for KeyPackage {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_reference().ok() == other.to_reference().ok()
     }
 }
 
@@ -111,17 +123,20 @@ impl KeyPackage {
         &self.leaf_node.signing_identity
     }
 
-    pub fn to_vec(&self) -> Result<Vec<u8>, KeyPackageError> {
-        Ok(self.tls_serialize_detached()?)
-    }
+    pub(crate) fn to_reference<CP: CipherSuiteProvider>(
+        &self,
+        cipher_suite_provider: &CP,
+    ) -> Result<KeyPackageRef, HashReferenceError> {
+        if cipher_suite_provider.cipher_suite() as u16 != self.cipher_suite.raw_value() {
+            return Err(HashReferenceError::InvalidCipherSuite(
+                cipher_suite_provider.cipher_suite(),
+            ));
+        }
 
-    pub fn to_reference(&self) -> Result<KeyPackageRef, KeyPackageError> {
         Ok(KeyPackageRef(HashReference::compute(
             &self.tls_serialize_detached()?,
             b"MLS 1.0 KeyPackage Reference",
-            self.cipher_suite
-                .into_enum()
-                .ok_or(KeyPackageError::UnsupportedCipherSuite(self.cipher_suite))?,
+            cipher_suite_provider,
         )?))
     }
 }
@@ -215,7 +230,10 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
+    use crate::{
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        provider::crypto::test_utils::test_cipher_suite_provider,
+    };
 
     use super::{test_utils::test_key_package, *};
     use assert_matches::assert_matches;
@@ -242,7 +260,9 @@ mod tests {
                 .map(|(i, (protocol_version, cipher_suite))| {
                     let pkg =
                         test_key_package(protocol_version, cipher_suite, &format!("alice{i}"));
-                    let pkg_ref = pkg.to_reference().unwrap();
+                    let pkg_ref = pkg
+                        .to_reference(&test_cipher_suite_provider(cipher_suite))
+                        .unwrap();
                     TestCase {
                         cipher_suite: cipher_suite as u16,
                         input: pkg.tls_serialize_detached().unwrap(),
@@ -262,13 +282,16 @@ mod tests {
         let cases = load_test_cases();
 
         for one_case in cases {
-            if CipherSuite::try_from_primitive(one_case.cipher_suite).is_err() {
+            let Ok(cipher_suite) = CipherSuite::try_from_primitive(one_case.cipher_suite) else {
                 println!("Skipping test for unsupported cipher suite");
                 continue;
-            }
+            };
 
             let key_package = KeyPackage::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
-            let key_package_ref = key_package.to_reference().unwrap();
+
+            let key_package_ref = key_package
+                .to_reference(&test_cipher_suite_provider(cipher_suite))
+                .unwrap();
 
             let expected_out = KeyPackageRef::from(one_case.output);
             assert_eq!(expected_out, key_package_ref);
@@ -277,15 +300,13 @@ mod tests {
 
     #[test]
     fn key_package_ref_fails_invalid_cipher_suite() {
-        let mut key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test");
-
-        let unsupported = MaybeCipherSuite::from_raw_value(255);
-
-        key_package.cipher_suite = unsupported;
+        let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test");
 
         assert_matches!(
-            key_package.to_reference(),
-            Err(KeyPackageError::UnsupportedCipherSuite(_))
+            key_package.to_reference(&test_cipher_suite_provider(CipherSuite::P256Aes128)),
+            Err(HashReferenceError::InvalidCipherSuite(
+                CipherSuite::P256Aes128
+            ))
         )
     }
 }

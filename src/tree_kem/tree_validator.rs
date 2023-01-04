@@ -38,6 +38,7 @@ where
     expected_tree_hash: &'a [u8],
     leaf_node_validator: LeafNodeValidator<'a, C, CSP>,
     group_id: &'a [u8],
+    cipher_suite_provider: &'a CSP,
 }
 
 impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP> {
@@ -56,17 +57,14 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
                 identity_provider,
             ),
             group_id,
+            cipher_suite_provider,
         }
     }
 
-    pub fn validate<P: CipherSuiteProvider>(
-        &self,
-        tree: &mut TreeKemPublic,
-        cipher_suite_provider: &P,
-    ) -> Result<(), TreeValidationError> {
+    pub fn validate(&self, tree: &mut TreeKemPublic) -> Result<(), TreeValidationError> {
         self.validate_tree_hash(tree)
             .and(
-                tree.validate_parent_hashes(cipher_suite_provider)
+                tree.validate_parent_hashes(self.cipher_suite_provider)
                     .map_err(|_| TreeValidationError::ParentHashMismatch),
             )
             .and(self.validate_leaves(tree))
@@ -75,7 +73,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
 
     fn validate_tree_hash(&self, tree: &mut TreeKemPublic) -> Result<(), TreeValidationError> {
         //Verify that the tree hash of the ratchet tree matches the tree_hash field in the GroupInfo.
-        let tree_hash = tree.tree_hash()?;
+        let tree_hash = tree.tree_hash(self.cipher_suite_provider)?;
 
         if tree_hash != self.expected_tree_hash {
             return Err(TreeValidationError::TreeHashMismatch(
@@ -169,6 +167,8 @@ mod tests {
     }
 
     fn get_valid_tree(cipher_suite: CipherSuite) -> TreeKemPublic {
+        let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
         let mut test_tree = get_test_tree(cipher_suite);
 
         let leaf1 = get_basic_test_node(cipher_suite, "leaf1");
@@ -176,7 +176,11 @@ mod tests {
 
         test_tree
             .public
-            .add_leaves(vec![leaf1, leaf2], BasicIdentityProvider)
+            .add_leaves(
+                vec![leaf1, leaf2],
+                BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .unwrap();
 
         test_tree.public.nodes[1] = Some(Node::Parent(test_parent_node(cipher_suite)));
@@ -190,7 +194,7 @@ mod tests {
                 default_properties(),
                 None,
                 BasicIdentityProvider,
-                &test_cipher_suite_provider(cipher_suite),
+                &cipher_suite_provider,
                 #[cfg(test)]
                 &Default::default(),
             )
@@ -203,10 +207,10 @@ mod tests {
     fn test_valid_tree() {
         for cipher_suite in CipherSuite::all() {
             println!("Checking cipher suite: {cipher_suite:?}");
-            let mut test_tree = get_valid_tree(cipher_suite);
-            let expected_tree_hash = test_tree.tree_hash().unwrap();
-
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
+            let mut test_tree = get_valid_tree(cipher_suite);
+            let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).unwrap();
 
             let validator = TreeValidator::new(
                 &cipher_suite_provider,
@@ -216,9 +220,7 @@ mod tests {
                 BasicIdentityProvider::new(),
             );
 
-            validator
-                .validate(&mut test_tree, &cipher_suite_provider)
-                .unwrap();
+            validator.validate(&mut test_tree).unwrap();
         }
     }
 
@@ -239,7 +241,7 @@ mod tests {
             );
 
             assert_matches!(
-                validator.validate(&mut test_tree, &cipher_suite_provider),
+                validator.validate(&mut test_tree),
                 Err(TreeValidationError::TreeHashMismatch(_, _))
             );
         }
@@ -253,9 +255,8 @@ mod tests {
             let parent_node = test_tree.nodes.borrow_as_parent_mut(1).unwrap();
             parent_node.parent_hash = ParentHash::from(random_bytes(32));
 
-            let expected_tree_hash = test_tree.tree_hash().unwrap();
-
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+            let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).unwrap();
 
             let validator = TreeValidator::new(
                 &cipher_suite_provider,
@@ -266,7 +267,7 @@ mod tests {
             );
 
             assert_matches!(
-                validator.validate(&mut test_tree, &cipher_suite_provider),
+                validator.validate(&mut test_tree),
                 Err(TreeValidationError::ParentHashMismatch)
             );
         }
@@ -283,9 +284,8 @@ mod tests {
                 .unwrap()
                 .signature = random_bytes(32);
 
-            let expected_tree_hash = test_tree.tree_hash().unwrap();
-
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+            let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).unwrap();
 
             let validator = TreeValidator::new(
                 &cipher_suite_provider,
@@ -296,7 +296,7 @@ mod tests {
             );
 
             assert_matches!(
-                validator.validate(&mut test_tree, &cipher_suite_provider),
+                validator.validate(&mut test_tree),
                 Err(TreeValidationError::LeafNodeValidationError(_))
             );
         }

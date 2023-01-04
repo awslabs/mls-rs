@@ -41,7 +41,7 @@ struct ParentHashInput<'a> {
 
 #[serde_as]
 #[derive(
-    Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
+    Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize, Eq,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ParentHash(
@@ -178,7 +178,7 @@ impl TreeKemPublic {
         cipher_suite_provider: &P,
     ) -> Result<ParentHash, RatchetTreeError> {
         // First update the relevant original hashes used for parent hash computation.
-        self.update_hashes(&mut vec![index], &[])?;
+        self.update_hashes(&mut vec![index], &[], cipher_suite_provider)?;
 
         let mut changes = HashMap::new();
 
@@ -211,7 +211,7 @@ impl TreeKemPublic {
         }
 
         // Update hashes after changes to the tree.
-        self.update_hashes(&mut vec![index], &[])?;
+        self.update_hashes(&mut vec![index], &[], cipher_suite_provider)?;
 
         Ok(leaf_hash)
     }
@@ -348,13 +348,16 @@ pub(crate) mod test_utils {
 
     // Create figure 12 from MLS RFC
     pub(crate) fn get_test_tree_fig_12(cipher_suite: CipherSuite) -> TreeKemPublic {
-        let mut tree = TreeKemPublic::new(cipher_suite);
+        let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
+        let mut tree = TreeKemPublic::new();
 
         let leaves = ["A", "B", "C", "D", "E", "F", "G"]
             .map(|l| get_basic_test_node(cipher_suite, l))
             .to_vec();
 
-        tree.add_leaves(leaves, BasicIdentityProvider).unwrap();
+        tree.add_leaves(leaves, BasicIdentityProvider, &cipher_suite_provider)
+            .unwrap();
 
         tree.nodes[1] = Some(test_parent_node(cipher_suite, vec![]));
         tree.nodes[3] = Some(test_parent_node(cipher_suite, vec![LeafIndex(3)]));
@@ -371,9 +374,11 @@ pub(crate) mod test_utils {
             vec![LeafIndex(5), LeafIndex(6)],
         ));
 
-        let cs = test_cipher_suite_provider(cipher_suite);
-        tree.update_parent_hashes(LeafIndex(0), None, &cs).unwrap();
-        tree.update_parent_hashes(LeafIndex(4), None, &cs).unwrap();
+        tree.update_parent_hashes(LeafIndex(0), None, &cipher_suite_provider)
+            .unwrap();
+
+        tree.update_parent_hashes(LeafIndex(4), None, &cipher_suite_provider)
+            .unwrap();
 
         tree
     }
@@ -383,6 +388,7 @@ pub(crate) mod test_utils {
 mod tests {
     use super::*;
     use crate::cipher_suite::CipherSuite;
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::provider::crypto::test_utils::test_cipher_suite_provider;
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
@@ -399,11 +405,9 @@ mod tests {
 
     #[test]
     fn test_missing_parent_hash() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let mut test_tree = get_test_tree_fig_12(TEST_CIPHER_SUITE);
 
-        let mut test_tree = get_test_tree_fig_12(cipher_suite);
-
-        let test_key_package = get_basic_test_node(cipher_suite, "foo");
+        let test_key_package = get_basic_test_node(TEST_CIPHER_SUITE, "foo");
 
         let test_update_path = ValidatedUpdatePath {
             leaf_node: test_key_package,
@@ -413,7 +417,7 @@ mod tests {
         let missing_parent_hash_res = test_tree.update_parent_hashes(
             LeafIndex(0),
             Some(&test_update_path),
-            &test_cipher_suite_provider(cipher_suite),
+            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
         );
 
         assert_matches!(
@@ -424,11 +428,9 @@ mod tests {
 
     #[test]
     fn test_parent_hash_mismatch() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let mut test_tree = get_test_tree_fig_12(TEST_CIPHER_SUITE);
 
-        let mut test_tree = get_test_tree_fig_12(cipher_suite);
-
-        let test_key_package = get_basic_test_node(cipher_suite, "foo");
+        let test_key_package = get_basic_test_node(TEST_CIPHER_SUITE, "foo");
 
         let mut test_update_path = ValidatedUpdatePath {
             leaf_node: test_key_package,
@@ -443,7 +445,7 @@ mod tests {
         let invalid_parent_hash_res = test_tree.update_parent_hashes(
             LeafIndex(0),
             Some(&test_update_path),
-            &test_cipher_suite_provider(cipher_suite),
+            &test_cipher_suite_provider(TEST_CIPHER_SUITE),
         );
 
         assert_matches!(
@@ -454,31 +456,30 @@ mod tests {
 
     #[test]
     fn test_parent_hash_invalid() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-
-        let mut test_tree = get_test_tree_fig_12(cipher_suite);
+        let mut test_tree = get_test_tree_fig_12(TEST_CIPHER_SUITE);
         test_tree.nodes[2] = None;
 
-        let res = test_tree.validate_parent_hashes(&test_cipher_suite_provider(cipher_suite));
+        let res = test_tree.validate_parent_hashes(&test_cipher_suite_provider(TEST_CIPHER_SUITE));
         assert_matches!(res, Err(RatchetTreeError::ParentHashMismatch));
     }
 
     #[test]
     fn test_parent_hash_with_blanks() {
-        // Create a tree with 4 blanks: leaves C and D, and their 2 ancestors.
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let mut tree = TreeKemPublic::new(cipher_suite);
+        // Create a tree with 4 blanks: leaves C and D, and their 2 ancestors.
+        let mut tree = TreeKemPublic::new();
 
         let leaves = ["A", "B", "C", "D", "E", "F"]
-            .map(|l| get_basic_test_node(cipher_suite, l))
+            .map(|l| get_basic_test_node(TEST_CIPHER_SUITE, l))
             .to_vec();
 
-        tree.add_leaves(leaves, BasicIdentityProvider).unwrap();
+        tree.add_leaves(leaves, BasicIdentityProvider, &cipher_suite_provider)
+            .unwrap();
 
-        tree.nodes[1] = Some(test_parent_node(cipher_suite, vec![]));
-        tree.nodes[7] = Some(test_parent_node(cipher_suite, vec![]));
-        tree.nodes[9] = Some(test_parent_node(cipher_suite, vec![]));
+        tree.nodes[1] = Some(test_parent_node(TEST_CIPHER_SUITE, vec![]));
+        tree.nodes[7] = Some(test_parent_node(TEST_CIPHER_SUITE, vec![]));
+        tree.nodes[9] = Some(test_parent_node(TEST_CIPHER_SUITE, vec![]));
         tree.nodes[4] = None;
         tree.nodes[6] = None;
 
@@ -488,36 +489,31 @@ mod tests {
                 .borrow_as_leaf_mut(LeafIndex(i))
                 .unwrap()
                 .leaf_node_source = LeafNodeSource::Commit(
-                tree.update_parent_hashes(
-                    LeafIndex(i),
-                    None,
-                    &test_cipher_suite_provider(cipher_suite),
-                )
-                .unwrap(),
+                tree.update_parent_hashes(LeafIndex(i), None, &cipher_suite_provider)
+                    .unwrap(),
             );
         }
 
-        assert!(tree
-            .validate_parent_hashes(&test_cipher_suite_provider(cipher_suite))
-            .is_ok());
+        assert!(tree.validate_parent_hashes(&cipher_suite_provider).is_ok());
     }
 
     #[test]
     fn test_parent_hash_edge() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let mut tree = TreeKemPublic::new(cipher_suite);
+        let mut tree = TreeKemPublic::new();
 
         let leaves = [
             "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13",
         ]
-        .map(|l| get_basic_test_node(cipher_suite, l))
+        .map(|l| get_basic_test_node(TEST_CIPHER_SUITE, l))
         .to_vec();
 
-        tree.add_leaves(leaves, BasicIdentityProvider).unwrap();
+        tree.add_leaves(leaves, BasicIdentityProvider, &cipher_suite_provider)
+            .unwrap();
 
         for i in [19, 23, 1, 3, 5, 9, 11, 13, 7, 15] {
-            tree.nodes[i] = Some(test_parent_node(cipher_suite, vec![]));
+            tree.nodes[i] = Some(test_parent_node(TEST_CIPHER_SUITE, vec![]));
         }
 
         for i in [16, 24] {
@@ -529,26 +525,21 @@ mod tests {
                 .borrow_as_leaf_mut(LeafIndex(i))
                 .unwrap()
                 .leaf_node_source = LeafNodeSource::Commit(
-                tree.update_parent_hashes(
-                    LeafIndex(i),
-                    None,
-                    &test_cipher_suite_provider(cipher_suite),
-                )
-                .unwrap(),
+                tree.update_parent_hashes(LeafIndex(i), None, &cipher_suite_provider)
+                    .unwrap(),
             );
         }
 
         for leaf_name in ["A", "B", "C"] {
             tree.add_leaves(
-                vec![get_basic_test_node(cipher_suite, leaf_name)],
+                vec![get_basic_test_node(TEST_CIPHER_SUITE, leaf_name)],
                 BasicIdentityProvider,
+                &cipher_suite_provider,
             )
             .unwrap();
         }
 
-        assert!(tree
-            .validate_parent_hashes(&test_cipher_suite_provider(cipher_suite))
-            .is_ok());
+        assert!(tree.validate_parent_hashes(&cipher_suite_provider).is_ok());
     }
 
     #[derive(serde::Deserialize, serde::Serialize)]
@@ -592,7 +583,6 @@ mod tests {
             let cs_provider = test_cipher_suite_provider(cipher_suite.unwrap());
 
             let tree = TreeKemPublic::import_node_data(
-                cipher_suite.unwrap(),
                 NodeVec::tls_deserialize(&mut &*one_case.tree_data).unwrap(),
                 BasicIdentityProvider,
             )

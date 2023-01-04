@@ -206,13 +206,13 @@ where
         )?;
 
         let (mut public_tree, private_tree) = TreeKemPublic::derive(
-            cipher_suite,
             leaf_node,
             leaf_node_secret,
             config.identity_provider(),
+            &cipher_suite_provider,
         )?;
 
-        let tree_hash = public_tree.tree_hash()?;
+        let tree_hash = public_tree.tree_hash(&cipher_suite_provider)?;
 
         let group_id = group_id.unwrap_or(
             cipher_suite_provider
@@ -374,7 +374,7 @@ where
             .find_leaf_node(&key_package_generation.key_package.leaf_node)
             .ok_or(GroupError::WelcomeKeyPackageNotFound)?;
 
-        let used_key_package_ref = key_package_generation.reference()?;
+        let used_key_package_ref = key_package_generation.reference(&cipher_suite_provider)?;
 
         let mut private_tree =
             TreeKemPrivate::new_self_leaf(self_index, key_package_generation.leaf_node_secret_key);
@@ -624,7 +624,7 @@ where
             authenticated_data,
         )?;
 
-        let proposal_ref = ProposalRef::from_content(self.state.cipher_suite(), &auth_content)?;
+        let proposal_ref = ProposalRef::from_content(&self.cipher_suite_provider, &auth_content)?;
 
         self.state
             .proposals
@@ -794,21 +794,24 @@ where
         };
 
         let (mut new_pub_tree, new_priv_tree) = TreeKemPublic::derive(
-            new_context.cipher_suite,
             new_validated_leaf,
             new_leaf_secret,
             self.config.identity_provider(),
+            &cipher_suite_provider,
         )?;
 
         // Add the generated leaves to new tree
-        let added_member_indexes =
-            new_pub_tree.add_leaves(new_members, self.config.identity_provider())?;
+        let added_member_indexes = new_pub_tree.add_leaves(
+            new_members,
+            self.config.identity_provider(),
+            &cipher_suite_provider,
+        )?;
 
-        new_context.tree_hash = new_pub_tree.tree_hash()?;
+        new_context.tree_hash = new_pub_tree.tree_hash(&cipher_suite_provider)?;
 
         let psks = vec![PreSharedKeyID {
             key_id: resumption_psk_id,
-            psk_nonce: PskNonce::random(&self.cipher_suite_provider)
+            psk_nonce: PskNonce::random(&cipher_suite_provider)
                 .map_err(|e| GroupError::CryptoProviderError(e.into()))?,
         }];
 
@@ -857,7 +860,7 @@ where
         group_info.sign(&cipher_suite_provider, new_signer, &())?;
 
         let interim_transcript_hash = InterimTranscriptHash::create(
-            self.cipher_suite_provider(),
+            &cipher_suite_provider,
             &new_context.confirmed_transcript_hash,
             &group_info.confirmation_tag,
         )?;
@@ -1108,7 +1111,7 @@ where
             .map_err(|e| GroupError::CryptoProviderError(e.into()))?;
 
         Ok(EncryptedGroupSecrets {
-            new_member: key_package.to_reference()?,
+            new_member: key_package.to_reference(&self.cipher_suite_provider)?,
             encrypted_group_secrets,
         })
     }
@@ -1764,7 +1767,7 @@ pub(crate) mod test_utils;
 mod tests {
     use std::time::Duration;
 
-    use crate::client::test_utils::get_basic_client_builder;
+    use crate::client::test_utils::{get_basic_client_builder, test_client_with_key_pkg};
     use crate::extension::MlsExtension;
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::{get_test_basic_credential, get_test_x509_credential};
@@ -1778,10 +1781,7 @@ mod tests {
             test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
             Client,
         },
-        client_builder::{
-            test_utils::{TestClientBuilder, TestClientConfig},
-            Preferences,
-        },
+        client_builder::{test_utils::TestClientConfig, Preferences},
         extension::{
             test_utils::TestExtension, Extension, ExternalSendersExt, RequiredCapabilitiesExt,
         },
@@ -1842,13 +1842,10 @@ mod tests {
 
     #[test]
     fn test_pending_proposals_application_data() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-
-        let mut test_group = test_group(protocol_version, cipher_suite);
+        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         // Create a proposal
-        let (bob_key_package, _) = test_member(protocol_version, cipher_suite, b"bob");
+        let (bob_key_package, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
 
         let proposal = test_group
             .group
@@ -1877,9 +1874,6 @@ mod tests {
 
     #[test]
     fn test_update_proposals() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-
         let mut new_capabilities = get_test_capabilities();
         new_capabilities.extensions.push(42);
 
@@ -1888,8 +1882,8 @@ mod tests {
         extension_list.set_extension(new_extension).unwrap();
 
         let mut test_group = test_group_custom(
-            protocol_version,
-            cipher_suite,
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
             Some(new_capabilities.clone()),
             Some(extension_list.clone()),
             None,
@@ -1916,10 +1910,7 @@ mod tests {
 
     #[test]
     fn test_invalid_commit_self_update() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-
-        let mut test_group = test_group(protocol_version, cipher_suite);
+        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         // Create an update proposal
         let proposal_msg = test_group.group.propose_update(vec![]).unwrap();
@@ -1941,11 +1932,8 @@ mod tests {
 
     #[test]
     fn test_invalid_add_proposal_bad_key_package() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-
-        let test_group = test_group(protocol_version, cipher_suite);
-        let (mut bob_keys, _) = test_member(protocol_version, cipher_suite, b"bob");
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let (mut bob_keys, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
         bob_keys.key_package.signature = random_bytes(32);
 
         let proposal = test_group.group.add_proposal(bob_keys.key_package);
@@ -1954,11 +1942,8 @@ mod tests {
 
     #[test]
     fn committing_add_proposal_with_bad_key_package_fails() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-
-        let mut test_group = test_group(protocol_version, cipher_suite);
-        let (mut bob_keys, _) = test_member(protocol_version, cipher_suite, b"bob");
+        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let (mut bob_keys, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
 
         bob_keys.key_package.signature = random_bytes(32);
 
@@ -1970,11 +1955,8 @@ mod tests {
 
     #[test]
     fn update_proposal_with_bad_key_package_is_ignored_when_committing() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
-
         let (mut alice_group, mut bob_group) =
-            test_two_member_group(protocol_version, cipher_suite, true);
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true);
 
         let mut proposal = alice_group.update_proposal();
 
@@ -1994,8 +1976,11 @@ mod tests {
             _ => panic!("Unexpected non-plaintext message"),
         };
 
-        let proposal_ref =
-            ProposalRef::from_content(cipher_suite, &proposal_plaintext.clone().into()).unwrap();
+        let proposal_ref = ProposalRef::from_content(
+            &bob_group.group.cipher_suite_provider,
+            &proposal_plaintext.clone().into(),
+        )
+        .unwrap();
 
         // Hack bob's receipt of the proposal
         bob_group.group.state.proposals.insert(
@@ -2050,34 +2035,32 @@ mod tests {
 
     #[test]
     fn test_welcome_processing_exported_tree() {
-        test_two_member_group(ProtocolVersion::Mls10, CipherSuite::P256Aes128, false);
+        test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, false);
     }
 
     #[test]
     fn test_welcome_processing_tree_extension() {
-        test_two_member_group(ProtocolVersion::Mls10, CipherSuite::P256Aes128, true);
+        test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true);
     }
 
     #[test]
     fn test_welcome_processing_missing_tree() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128;
-
         let mut test_group = test_group_custom(
-            protocol_version,
-            cipher_suite,
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
             None,
             None,
             Some(Preferences::default().with_ratchet_tree_extension(false)),
         );
 
-        let (bob_key_package, secret_key) = test_member(protocol_version, cipher_suite, b"bob");
+        let (bob_client, bob_key_package) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
 
         // Add bob to the group
         let commit_output = test_group
             .group
             .commit_builder()
-            .add_member(bob_key_package.key_package.clone())
+            .add_member(bob_key_package)
             .unwrap()
             .build()
             .unwrap();
@@ -2086,12 +2069,7 @@ mod tests {
         let bob_group = Group::join(
             commit_output.welcome_message.unwrap(),
             None,
-            TestClientBuilder::new_for_test_custom(
-                secret_key,
-                bob_key_package,
-                test_group.group.config.preferences(),
-            )
-            .build_config(),
+            bob_client.config,
         )
         .map(|_| ());
 
@@ -2100,7 +2078,7 @@ mod tests {
 
     #[test]
     fn test_group_context_ext_proposal_create() {
-        let test_group = test_group(ProtocolVersion::Mls10, CipherSuite::P256Aes128);
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
 
         let mut extension_list = ExtensionList::new();
         extension_list
@@ -2635,7 +2613,7 @@ mod tests {
 
     fn joining_group_fails_if_unsupported<F>(f: F) -> Result<(TestGroup, MLSMessage), GroupError>
     where
-        F: FnOnce(TestClientConfig) -> TestClientConfig,
+        F: FnMut(&mut TestClientConfig),
     {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
         alice_group.join_with_custom_config("alice", f)
@@ -2643,9 +2621,8 @@ mod tests {
 
     #[test]
     fn joining_group_fails_if_protocol_version_is_not_supported() {
-        let res = joining_group_fails_if_unsupported(|mut config| {
+        let res = joining_group_fails_if_unsupported(|config| {
             config.0.settings.protocol_versions.clear();
-            config
         })
         .map(|_| ());
 
@@ -2658,13 +2635,12 @@ mod tests {
 
     #[test]
     fn joining_group_fails_if_cipher_suite_is_not_supported() {
-        let res = joining_group_fails_if_unsupported(|mut config| {
+        let res = joining_group_fails_if_unsupported(|config| {
             config
                 .0
                 .crypto_provider
                 .disabled_cipher_suites
                 .push(TEST_CIPHER_SUITE);
-            config
         })
         .map(|_| ());
 
@@ -3168,8 +3144,8 @@ mod tests {
             test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10);
 
         groups[0].group.commit_modifiers.modify_tree = |tree: &mut TreeKemPublic| {
-            tree.do_update_node(get_test_25519_key(1u8), 1).unwrap();
-            tree.do_update_node(get_test_25519_key(1u8), 3).unwrap();
+            tree.update_node(get_test_25519_key(1u8), 1).unwrap();
+            tree.update_node(get_test_25519_key(1u8), 3).unwrap();
         };
 
         groups[0].group.commit_modifiers.modify_leaf = |leaf, sk, cp| {
@@ -3206,7 +3182,7 @@ mod tests {
         });
 
         groups[0].group.commit_modifiers.modify_tree = |tree: &mut TreeKemPublic| {
-            tree.do_update_node(get_test_25519_key(1u8), 1).unwrap();
+            tree.update_node(get_test_25519_key(1u8), 1).unwrap();
         };
 
         groups[0].group.commit_modifiers.modify_path = |path: Vec<UpdatePathNode>| {

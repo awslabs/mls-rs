@@ -15,11 +15,12 @@ use crate::{
         Commit, Group, GroupError, Snapshot,
     },
     identity::SigningIdentity,
-    key_package::KeyPackageGeneration,
+    key_package::{KeyPackageGeneration, KeyPackageRef},
     protocol_version::ProtocolVersion,
     provider::{
         crypto::SignatureSecretKey,
         group_state::{GroupStateStorage, InMemoryGroupStateStorage},
+        key_package::InMemoryKeyPackageRepository,
     },
 };
 
@@ -55,9 +56,9 @@ pub fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
             test.info
                 .into_iter()
                 .map(|group_info| {
-                    let key_packages = serde_json::from_slice::<Vec<KeyPackageGeneration>>(
-                        &group_info.key_packages,
-                    )
+                    let key_packages = serde_json::from_slice::<
+                        Vec<(KeyPackageRef, KeyPackageGeneration)>,
+                    >(&group_info.key_packages)
                     .unwrap();
 
                     let secrets = serde_json::from_slice::<
@@ -81,17 +82,17 @@ pub fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
                         },
                     );
 
-                    let client_builder = client_builder.group_state_storage(
-                        InMemoryGroupStateStorage::from_benchmark_data(group_info.session, epochs),
-                    );
-
-                    let client_builder = key_packages
-                        .into_iter()
-                        .fold(client_builder, |builder, key_pkg_gen| {
-                            builder.key_package(key_pkg_gen).unwrap()
-                        });
-
-                    client_builder.build().load_group(&group_id).unwrap()
+                    client_builder
+                        .group_state_storage(InMemoryGroupStateStorage::from_benchmark_data(
+                            group_info.session,
+                            epochs,
+                        ))
+                        .key_package_repo(InMemoryKeyPackageRepository::from_benchmark_data(
+                            key_packages,
+                        ))
+                        .build()
+                        .load_group(&group_id)
+                        .unwrap()
                 })
                 .collect()
         })

@@ -199,7 +199,13 @@ where
 
         let state = self.apply_proposal_changes(FailInvalidProposal, state, commit_time)?;
 
-        let state = insert_external_leaf(state, external_leaf.clone(), &self.identity_provider)?;
+        let state = insert_external_leaf(
+            state,
+            external_leaf.clone(),
+            &self.identity_provider,
+            self.cipher_suite_provider,
+        )?;
+
         Ok(state)
     }
 
@@ -392,6 +398,7 @@ where
             &removals,
             &additions,
             &self.identity_provider,
+            self.cipher_suite_provider,
         )?;
 
         let TreeBatchEditAccumulator {
@@ -1074,15 +1081,21 @@ fn leaf_index_of_update_sender(
     }
 }
 
-fn insert_external_leaf<C>(
+fn insert_external_leaf<I, CP>(
     mut state: ProposalState,
     leaf_node: LeafNode,
-    identity_provider: C,
+    identity_provider: I,
+    cipher_suite_provider: &CP,
 ) -> Result<ProposalState, ProposalFilterError>
 where
-    C: IdentityProvider,
+    I: IdentityProvider,
+    CP: CipherSuiteProvider,
 {
-    let leaf_indexes = state.tree.add_leaves(vec![leaf_node], identity_provider)?;
+    let leaf_indexes =
+        state
+            .tree
+            .add_leaves(vec![leaf_node], identity_provider, cipher_suite_provider)?;
+
     state.external_leaf_index = leaf_indexes.first().copied();
     Ok(state)
 }

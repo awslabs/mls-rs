@@ -3,6 +3,7 @@ use crate::extension::ExtensionList;
 use crate::group::{ConfirmedTranscriptHash, GroupContext};
 use crate::identity::SigningIdentity;
 use crate::protocol_version::ProtocolVersion;
+use crate::provider::crypto::test_utils::test_cipher_suite_provider;
 use crate::provider::crypto::SignatureSecretKey;
 use crate::provider::identity::BasicIdentityProvider;
 use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
@@ -55,17 +56,19 @@ pub fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
 
     let encap_identity = encap_node.signing_identity.clone();
 
+    let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
     // Build a test tree we can clone for all leaf nodes
     let (mut test_tree, encap_private_key) = TreeKemPublic::derive(
-        cipher_suite,
         encap_node,
         encap_hpke_secret,
         BasicIdentityProvider,
+        &cipher_suite_provider,
     )
     .unwrap();
 
     test_tree
-        .add_leaves(leaf_nodes, BasicIdentityProvider)
+        .add_leaves(leaf_nodes, BasicIdentityProvider, &cipher_suite_provider)
         .unwrap();
 
     // Clone the tree for the first leaf, generate a new key package for that leaf
@@ -76,12 +79,11 @@ pub fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
         cipher_suite,
         group_id: b"test_group".to_vec(),
         epoch: 42,
-        tree_hash: vec![0u8; cipher_suite.hash_function().digest_size()],
+        tree_hash: vec![0u8; cipher_suite_provider.kdf_extract_size()],
         confirmed_transcript_hash: ConfirmedTranscriptHash::from(vec![
             0u8;
-            cipher_suite
-                .hash_function()
-                .digest_size()
+            cipher_suite_provider
+                .kdf_extract_size()
         ]),
         extensions: ExtensionList::new(),
     };

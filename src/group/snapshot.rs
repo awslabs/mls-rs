@@ -79,11 +79,7 @@ impl RawGroupState {
             self.proposals,
         );
 
-        let current_tree = TreeKemPublic::import_node_data(
-            context.cipher_suite,
-            self.tree_data,
-            identity_provider,
-        )?;
+        let current_tree = TreeKemPublic::import_node_data(self.tree_data, identity_provider)?;
 
         Ok(GroupState {
             proposals,

@@ -1,5 +1,5 @@
 use super::*;
-use crate::hash_reference::HashReference;
+use crate::hash_reference::{HashReference, HashReferenceError};
 
 #[derive(
     Debug,
@@ -27,14 +27,14 @@ impl Deref for ProposalRef {
 }
 
 impl ProposalRef {
-    pub(crate) fn from_content(
-        cipher_suite: CipherSuite,
+    pub(crate) fn from_content<CS: CipherSuiteProvider>(
+        cipher_suite_provider: &CS,
         content: &MLSAuthenticatedContent,
-    ) -> Result<Self, tls_codec::Error> {
+    ) -> Result<Self, HashReferenceError> {
         Ok(ProposalRef(HashReference::compute(
             &content.tls_serialize_detached()?,
             b"MLS 1.0 Proposal Reference",
-            cipher_suite,
+            cipher_suite_provider,
         )?))
     }
 }
@@ -71,6 +71,7 @@ mod test {
     use super::*;
     use crate::{
         extension::RequiredCapabilitiesExt, key_package::test_utils::test_key_package,
+        provider::crypto::test_utils::test_cipher_suite_provider,
         tree_kem::leaf_node::test_utils::get_basic_test_node,
     };
 
@@ -134,10 +135,12 @@ mod test {
                 sender,
             );
 
+            let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 input: add.tls_serialize_detached().unwrap(),
-                output: ProposalRef::from_content(cipher_suite, &add)
+                output: ProposalRef::from_content(&cipher_suite_provider, &add)
                     .unwrap()
                     .to_vec(),
             });
@@ -145,7 +148,7 @@ mod test {
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 input: update.tls_serialize_detached().unwrap(),
-                output: ProposalRef::from_content(cipher_suite, &update)
+                output: ProposalRef::from_content(&cipher_suite_provider, &update)
                     .unwrap()
                     .to_vec(),
             });
@@ -153,7 +156,7 @@ mod test {
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 input: remove.tls_serialize_detached().unwrap(),
-                output: ProposalRef::from_content(cipher_suite, &remove)
+                output: ProposalRef::from_content(&cipher_suite_provider, &remove)
                     .unwrap()
                     .to_vec(),
             });
@@ -161,7 +164,7 @@ mod test {
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite as u16,
                 input: group_context_ext.tls_serialize_detached().unwrap(),
-                output: ProposalRef::from_content(cipher_suite, &group_context_ext)
+                output: ProposalRef::from_content(&cipher_suite_provider, &group_context_ext)
                     .unwrap()
                     .to_vec(),
             });
@@ -189,8 +192,11 @@ mod test {
             let proposal_content =
                 MLSAuthenticatedContent::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
 
-            let proposal_ref =
-                ProposalRef::from_content(cipher_suite.unwrap(), &proposal_content).unwrap();
+            let proposal_ref = ProposalRef::from_content(
+                &test_cipher_suite_provider(cipher_suite.unwrap()),
+                &proposal_content,
+            )
+            .unwrap();
 
             let expected_out = ProposalRef(HashReference::from(one_case.output));
 

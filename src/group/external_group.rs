@@ -102,7 +102,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         }?;
 
         let auth_content: MLSAuthenticatedContent = ptxt.into();
-        let proposal_ref = ProposalRef::from_content(self.cipher_suite(), &auth_content)?;
+        let proposal_ref = ProposalRef::from_content(&self.cipher_suite_provider, &auth_content)?;
         let sender = auth_content.content.sender;
 
         let proposal = match auth_content.content.content {
@@ -207,7 +207,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         )?;
 
         self.state.proposals.insert(
-            ProposalRef::from_content(self.state.cipher_suite(), &auth_content)?,
+            ProposalRef::from_content(&self.cipher_suite_provider, &auth_content)?,
             proposal,
             sender,
         );
@@ -651,7 +651,9 @@ mod tests {
         // Create an external proposal
         let external_proposal = proposal_creation(&mut server, &server_identity);
         let auth_content = external_proposal.clone().into_plaintext().unwrap().into();
-        let proposal_ref = ProposalRef::from_content(TEST_CIPHER_SUITE, &auth_content).unwrap();
+
+        let proposal_ref =
+            ProposalRef::from_content(&server.cipher_suite_provider, &auth_content).unwrap();
 
         // Alice receives the proposal
         alice.process_message(external_proposal).unwrap();

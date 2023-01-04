@@ -118,6 +118,7 @@ mod tests {
     use std::collections::HashSet;
 
     use crate::{
+        cipher_suite::CipherSuite,
         client::test_utils::TEST_CIPHER_SUITE,
         group::test_utils::{get_test_group_context, random_bytes},
         provider::{
@@ -167,6 +168,8 @@ mod tests {
     fn update_secrets_setup(
         cipher_suite: CipherSuite,
     ) -> (TreeKemPublic, TreeKemPrivate, TreeKemPrivate, PathSecret) {
+        let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
         let (alice_leaf, alice_hpke_secret, alice_signing) =
             get_basic_test_node_sig_key(cipher_suite, "alice");
 
@@ -177,16 +180,20 @@ mod tests {
 
         // Create a new public tree with Alice
         let (mut public_tree, mut alice_private) = TreeKemPublic::derive(
-            cipher_suite,
             alice_leaf,
             alice_hpke_secret,
             BasicIdentityProvider,
+            &cipher_suite_provider,
         )
         .unwrap();
 
         // Add bob and charlie to the tree
         public_tree
-            .add_leaves(vec![bob_leaf, charlie_leaf], BasicIdentityProvider)
+            .add_leaves(
+                vec![bob_leaf, charlie_leaf],
+                BasicIdentityProvider,
+                &cipher_suite_provider,
+            )
             .unwrap();
 
         // Generate an update path for Alice
@@ -198,7 +205,7 @@ mod tests {
                 default_properties(),
                 None,
                 BasicIdentityProvider,
-                &test_cipher_suite_provider(cipher_suite),
+                &cipher_suite_provider,
                 #[cfg(test)]
                 &Default::default(),
             )

@@ -50,13 +50,16 @@ where
 )]
 pub struct KeyPackageGeneration {
     pub(crate) key_package: KeyPackage,
-    init_secret_key: HpkeSecretKey,
+    pub(crate) init_secret_key: HpkeSecretKey,
     pub(crate) leaf_node_secret_key: HpkeSecretKey,
 }
 
 impl KeyPackageGeneration {
-    pub fn reference(&self) -> Result<KeyPackageRef, KeyPackageError> {
-        self.key_package.to_reference()
+    pub(crate) fn reference<CP: CipherSuiteProvider>(
+        &self,
+        cipher_suite_provider: &CP,
+    ) -> Result<KeyPackageRef, HashReferenceError> {
+        self.key_package.to_reference(cipher_suite_provider)
     }
 
     pub fn init_secret(&self) -> &HpkeSecretKey {

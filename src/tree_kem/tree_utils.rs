@@ -69,8 +69,10 @@ pub(crate) fn build_ascii_tree(nodes: &NodeVec) -> String {
 #[cfg(test)]
 mod tests {
     use crate::{
-        cipher_suite::CipherSuite,
-        provider::identity::BasicIdentityProvider,
+        client::test_utils::TEST_CIPHER_SUITE,
+        provider::{
+            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
+        },
         tree_kem::{
             node::Parent,
             parent_hash::ParentHash,
@@ -82,12 +84,13 @@ mod tests {
 
     #[test]
     fn print_fully_populated_tree() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(cipher_suite).public;
-        let key_packages = get_test_leaf_nodes(cipher_suite);
-        tree.add_leaves(key_packages, BasicIdentityProvider)
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+
+        tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
             .unwrap();
 
         let tree_str = concat!(
@@ -105,17 +108,22 @@ mod tests {
 
     #[test]
     fn print_tree_blank_leaves() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(cipher_suite).public;
-        let key_packages = get_test_leaf_nodes(cipher_suite);
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+
         let to_remove = tree
-            .add_leaves(key_packages, BasicIdentityProvider)
+            .add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
             .unwrap()[0];
 
-        tree.remove_leaves(vec![to_remove], BasicIdentityProvider)
-            .unwrap();
+        tree.remove_leaves(
+            vec![to_remove],
+            BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .unwrap();
 
         let tree_str = concat!(
             "Root (3)\n",
@@ -132,15 +140,16 @@ mod tests {
 
     #[test]
     fn print_tree_unmerged_leaves_on_parent() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(cipher_suite).public;
-        let key_packages = get_test_leaf_nodes(cipher_suite);
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
 
         tree.add_leaves(
             [key_packages[0].clone(), key_packages[1].clone()].to_vec(),
             BasicIdentityProvider,
+            &cipher_suite_provider,
         )
         .unwrap();
 
@@ -151,8 +160,12 @@ mod tests {
         }
         .into();
 
-        tree.add_leaves([key_packages[2].clone()].to_vec(), BasicIdentityProvider)
-            .unwrap();
+        tree.add_leaves(
+            [key_packages[2].clone()].to_vec(),
+            BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .unwrap();
 
         let tree_str = concat!(
             "Root (3) unmerged leaves idxs: 3\n",

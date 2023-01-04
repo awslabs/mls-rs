@@ -3,11 +3,22 @@ use std::{
     ops::Deref,
 };
 
-use crate::cipher_suite::CipherSuite;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
+use crate::{cipher_suite::CipherSuite, provider::crypto::CipherSuiteProvider};
 use serde_with::serde_as;
+use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+
+#[derive(Debug, Error)]
+pub enum HashReferenceError {
+    #[error(transparent)]
+    TlsCodecError(#[from] tls_codec::Error),
+    #[error(transparent)]
+    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("cipher suite {0:?} is invalid for calculating hash references of this object")]
+    InvalidCipherSuite(CipherSuite),
+}
 
 #[derive(Debug, TlsSerialize, TlsSize)]
 struct RefHashInput<'a> {
@@ -67,21 +78,30 @@ impl From<Vec<u8>> for HashReference {
 }
 
 impl HashReference {
-    pub fn compute(
+    pub fn compute<P: CipherSuiteProvider>(
         value: &[u8],
         label: &[u8],
-        cipher_suite: CipherSuite,
-    ) -> Result<HashReference, tls_codec::Error> {
+        cipher_suite: &P,
+    ) -> Result<HashReference, HashReferenceError> {
         let input = RefHashInput { label, value };
 
         input
             .tls_serialize_detached()
-            .map(|bytes| HashReference(cipher_suite.hash_function().digest(&bytes)))
+            .map_err(Into::into)
+            .and_then(|bytes| {
+                Ok(HashReference(cipher_suite.hash(&bytes).map_err(|e| {
+                    HashReferenceError::CipherSuiteProviderError(e.into())
+                })?))
+            })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        cipher_suite::CipherSuite, provider::crypto::test_utils::test_cipher_suite_provider,
+    };
+
     use super::*;
     use num_enum::TryFromPrimitive;
     use serde::{Deserialize, Serialize};
@@ -103,8 +123,10 @@ mod tests {
     fn generate_hash_reference_test_cases() -> Vec<TestCase> {
         CipherSuite::all()
             .map(|cipher_suite| {
+                let provider = test_cipher_suite_provider(cipher_suite);
+
                 let input = b"test input";
-                let output = HashReference::compute(input, TEST_LABEL, cipher_suite).unwrap();
+                let output = HashReference::compute(input, TEST_LABEL, &provider).unwrap();
 
                 TestCase {
                     cipher_suite: cipher_suite as u16,
@@ -127,10 +149,12 @@ mod tests {
             let cipher_suite = CipherSuite::try_from_primitive(test_case.cipher_suite);
 
             if let Ok(cipher_suite) = cipher_suite {
-                let output =
-                    HashReference::compute(&test_case.input, TEST_LABEL, cipher_suite).unwrap();
+                let provider = test_cipher_suite_provider(cipher_suite);
 
-                assert_eq!(output.len(), cipher_suite.hash_function().digest_size());
+                let output =
+                    HashReference::compute(&test_case.input, TEST_LABEL, &provider).unwrap();
+
+                assert_eq!(output.len(), provider.kdf_extract_size());
                 assert_eq!(output.as_ref(), &test_case.output);
             } else {
                 println!("Skipping test case for unsupported cipher suite");

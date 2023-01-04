@@ -2,7 +2,7 @@ use rand::RngCore;
 
 use super::*;
 use crate::{
-    client::test_utils::TEST_CIPHER_SUITE,
+    client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE},
     client_builder::{
         test_utils::{TestClientBuilder, TestClientConfig},
         Preferences,
@@ -36,8 +36,7 @@ impl TestGroup {
         preferences: Preferences,
     ) -> (TestGroup, MLSMessage) {
         self.join_with_custom_config(name, |mut config| {
-            config.0.settings.preferences = preferences;
-            config
+            config.0.settings.preferences = preferences.clone();
         })
         .unwrap()
     }
@@ -45,22 +44,22 @@ impl TestGroup {
     pub(crate) fn join_with_custom_config<F>(
         &mut self,
         name: &str,
-        config: F,
+        mut config: F,
     ) -> Result<(TestGroup, MLSMessage), GroupError>
     where
-        F: FnOnce(TestClientConfig) -> TestClientConfig,
+        F: FnMut(&mut TestClientConfig),
     {
-        let (new_key_package, secret_key) = test_member(
+        let (mut new_client, new_key_package) = test_client_with_key_pkg(
             self.group.state.protocol_version(),
             self.group.state.cipher_suite(),
-            name.as_bytes(),
+            name,
         );
 
         // Add new member to the group
         let commit_output = self
             .group
             .commit_builder()
-            .add_member(new_key_package.key_package.clone())
+            .add_member(new_key_package)
             .unwrap()
             .build()
             .unwrap();
@@ -68,23 +67,21 @@ impl TestGroup {
         // Apply the commit to the original group
         self.group.apply_pending_commit().unwrap();
 
-        let client_config = config(
-            TestClientBuilder::new_for_test_custom(
-                secret_key,
-                new_key_package,
-                Preferences::default(),
-            )
-            .build_config(),
-        );
+        config(&mut new_client.config);
 
-        let tree = (!client_config.0.settings.preferences.ratchet_tree_extension)
+        let tree = (!new_client
+            .config
+            .0
+            .settings
+            .preferences
+            .ratchet_tree_extension)
             .then(|| self.group.export_tree().unwrap());
 
         // Group from new member's perspective
         let (new_group, _) = Group::join(
             commit_output.welcome_message.unwrap(),
             tree.as_ref().map(Vec::as_ref),
-            client_config,
+            new_client.config.clone(),
         )?;
 
         let new_test_group = TestGroup { group: new_group };

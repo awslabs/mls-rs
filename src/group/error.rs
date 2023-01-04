@@ -3,6 +3,7 @@ use thiserror::Error;
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     extension::{ExtensionError, ExtensionList, GroupContextExtension},
+    hash_reference::HashReferenceError,
     identity::CredentialError,
     key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError},
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
@@ -78,6 +79,8 @@ pub enum GroupError {
     ProposalCacheError(#[from] ProposalCacheError),
     #[error(transparent)]
     TreeValidationError(#[from] TreeValidationError),
+    #[error(transparent)]
+    HashReferenceError(#[from] HashReferenceError),
     #[error("key package not found")]
     KeyPackageNotFound,
     #[error("Cipher suite does not match")]

@@ -75,7 +75,7 @@ where
 
     let ratchet_tree_ext = group_info.extensions.get_extension::<RatchetTreeExt>()?;
 
-    let public_tree = find_tree(tree_data, cipher_suite, ratchet_tree_ext, identity_provider)?;
+    let public_tree = find_tree(tree_data, ratchet_tree_ext, identity_provider)?;
 
     let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
 
@@ -133,7 +133,7 @@ pub(super) fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
         identity_provider,
     );
 
-    tree_validator.validate(&mut join_context.public_tree, cipher_suite_provider)?;
+    tree_validator.validate(&mut join_context.public_tree)?;
 
     if let Some(ext_senders) = join_context
         .group_context
@@ -155,7 +155,6 @@ pub(super) fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
 
 pub(super) fn find_tree<C>(
     tree_data: Option<&[u8]>,
-    cipher_suite: CipherSuite,
     extension: Option<RatchetTreeExt>,
     identity_provider: C,
 ) -> Result<TreeKemPublic, GroupError>
@@ -164,7 +163,6 @@ where
 {
     match tree_data {
         Some(tree_data) => Ok(TreeKemPublic::import_node_data(
-            cipher_suite,
             NodeVec::tls_deserialize(&mut &*tree_data)?,
             identity_provider,
         )?),
@@ -172,7 +170,6 @@ where
             let tree_extension = extension.ok_or(GroupError::RatchetTreeNotFound)?;
 
             Ok(TreeKemPublic::import_node_data(
-                cipher_suite,
                 tree_extension.tree_data,
                 identity_provider,
             )?)

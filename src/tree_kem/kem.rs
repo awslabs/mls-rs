@@ -124,9 +124,10 @@ impl<'a> TreeKem<'a> {
 
         // Tree modifications are all done so we can update the tree hash and encrypt with the new context
         self.tree_kem_public
-            .update_hashes(&mut vec![self_index], &[])?;
+            .update_hashes(&mut vec![self_index], &[], cipher_suite_provider)?;
 
-        context.tree_hash = self.tree_kem_public.tree_hash()?;
+        context.tree_hash = self.tree_kem_public.tree_hash(cipher_suite_provider)?;
+
         let context_bytes = context.tls_serialize_detached()?;
 
         cfg_if! {
@@ -222,7 +223,8 @@ impl<'a> TreeKem<'a> {
         )?;
 
         // Update the tree hash to get context for decryption
-        context.tree_hash = self.tree_kem_public.tree_hash()?;
+        context.tree_hash = self.tree_kem_public.tree_hash(cipher_suite_provider)?;
+
         let context_bytes = context.tls_serialize_detached()?;
 
         let lca_path_secret = filtered_direct_path_co_path
@@ -420,6 +422,8 @@ mod tests {
         capabilities: Option<Capabilities>,
         extensions: Option<ExtensionList<LeafNodeExtension>>,
     ) {
+        let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+
         // Generate signing keys and key package generations, and private keys for multiple
         // participants in order to set up state
         let (leaf_nodes, mut private_keys): (_, Vec<TreeKemPrivate>) = (1..size)
@@ -439,15 +443,15 @@ mod tests {
 
         // Build a test tree we can clone for all leaf nodes
         let (mut test_tree, mut encap_private_key) = TreeKemPublic::derive(
-            cipher_suite,
             encap_node,
             encap_hpke_secret,
             BasicIdentityProvider,
+            &cipher_suite_provider,
         )
         .unwrap();
 
         test_tree
-            .add_leaves(leaf_nodes, BasicIdentityProvider)
+            .add_leaves(leaf_nodes, BasicIdentityProvider, &cipher_suite_provider)
             .unwrap();
 
         // Clone the tree for the first leaf, generate a new key package for that leaf
@@ -467,7 +471,7 @@ mod tests {
                 update_leaf_properties,
                 None,
                 BasicIdentityProvider,
-                &test_cipher_suite_provider(cipher_suite),
+                &cipher_suite_provider,
                 #[cfg(test)]
                 &Default::default(),
             )
@@ -492,7 +496,7 @@ mod tests {
         };
 
         encap_tree
-            .update_hashes(&mut vec![LeafIndex(0)], &[])
+            .update_hashes(&mut vec![LeafIndex(0)], &[], &cipher_suite_provider)
             .unwrap();
 
         let mut receiver_trees: Vec<TreeKemPublic> = (1..size).map(|_| test_tree.clone()).collect();
@@ -506,11 +510,12 @@ mod tests {
                     &[],
                     &mut get_test_group_context(42, cipher_suite),
                     BasicIdentityProvider,
-                    &test_cipher_suite_provider(cipher_suite),
+                    &cipher_suite_provider,
                 )
                 .unwrap();
 
-            tree.update_hashes(&mut vec![LeafIndex(0)], &[]).unwrap();
+            tree.update_hashes(&mut vec![LeafIndex(0)], &[], &cipher_suite_provider)
+                .unwrap();
 
             assert_eq!(tree, &encap_tree);
         }

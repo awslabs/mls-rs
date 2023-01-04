@@ -173,8 +173,12 @@ mod tests {
         let mut tree = get_test_tree(cipher_suite).public;
         let leaf_nodes = get_test_leaf_nodes(cipher_suite);
 
-        tree.add_leaves(leaf_nodes, BasicIdentityProvider::new())
-            .unwrap();
+        tree.add_leaves(
+            leaf_nodes,
+            BasicIdentityProvider::new(),
+            &test_cipher_suite_provider(cipher_suite),
+        )
+        .unwrap();
 
         ProvisionalState {
             public_tree: tree,

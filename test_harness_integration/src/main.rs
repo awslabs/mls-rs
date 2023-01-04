@@ -308,7 +308,7 @@ impl MlsClient for MlsClientImpl {
 
         let resp = CreateKeyPackageResponse {
             transaction_id: clients.len() as u32,
-            key_package: key_package.to_vec().map_err(abort)?,
+            key_package: key_package.tls_serialize_detached().map_err(abort)?,
         };
 
         Ok(Response::new(resp))
