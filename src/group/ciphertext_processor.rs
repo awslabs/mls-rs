@@ -1,7 +1,7 @@
 use self::{
     message_key::MessageKey,
     reuse_guard::ReuseGuard,
-    sender_data_key::{MLSSenderData, MLSSenderDataAAD},
+    sender_data_key::{MLSSenderData, MLSSenderDataAAD, SenderDataKey},
 };
 
 use super::{
@@ -155,11 +155,13 @@ where
 
         // Encrypt the sender data with the derived sender_key and sender_nonce from the current
         // epoch's key schedule
-        let encrypted_sender_data = self.sender_data_key(&ciphertext)?.seal(
+        let sender_data_key = SenderDataKey::new(
+            &self.group_state.epoch_secrets().sender_data_secret,
+            &ciphertext,
             &self.cipher_suite_provider,
-            &sender_data,
-            &sender_data_aad,
         )?;
+
+        let encrypted_sender_data = sender_data_key.seal(&sender_data, &sender_data_aad)?;
 
         Ok(MLSCiphertext {
             group_id: self.group_state.group_context().group_id.clone(),
@@ -183,11 +185,14 @@ where
             content_type: ciphertext.content_type,
         };
 
-        let sender_data = self.sender_data_key(&ciphertext.ciphertext)?.open(
+        let sender_data_key = SenderDataKey::new(
+            &self.group_state.epoch_secrets().sender_data_secret,
+            &ciphertext.ciphertext,
             &self.cipher_suite_provider,
-            &ciphertext.encrypted_sender_data,
-            &sender_data_aad,
         )?;
+
+        let sender_data =
+            sender_data_key.open(&ciphertext.encrypted_sender_data, &sender_data_aad)?;
 
         if self.group_state.self_index() == sender_data.sender {
             return Err(CiphertextProcessorError::CantProcessMessageFromSelf);

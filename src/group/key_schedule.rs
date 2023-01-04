@@ -278,18 +278,7 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
 const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 
 #[serde_as]
-#[derive(
-    Clone,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-    serde::Deserialize,
-    serde::Serialize,
-    Zeroize,
-)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, Zeroize)]
 #[zeroize(drop)]
 pub struct InitSecret(#[serde_as(as = "VecAsBase64")] Vec<u8>);
 

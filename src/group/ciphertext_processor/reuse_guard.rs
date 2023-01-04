@@ -27,7 +27,7 @@ impl AsRef<[u8]> for ReuseGuard {
 
 impl ReuseGuard {
     pub(crate) fn random<P: CipherSuiteProvider>(provider: &P) -> Result<Self, P::Error> {
-        let mut data = [0u8; 4];
+        let mut data = [0u8; REUSE_GUARD_SIZE];
         provider.random_bytes(&mut data).map(|_| ReuseGuard(data))
     }
 
@@ -40,6 +40,19 @@ impl ReuseGuard {
             .for_each(|(nonce_byte, guard_byte)| *nonce_byte ^= guard_byte);
 
         new_nonce
+    }
+}
+
+#[cfg(test)]
+mod test_utils {
+    use super::{ReuseGuard, REUSE_GUARD_SIZE};
+
+    impl ReuseGuard {
+        pub fn new(guard: Vec<u8>) -> Self {
+            let mut data = [0u8; REUSE_GUARD_SIZE];
+            data.copy_from_slice(&guard);
+            Self(data)
+        }
     }
 }
 
