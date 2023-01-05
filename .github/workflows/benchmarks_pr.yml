@@ -24,8 +24,10 @@ jobs:
           role-to-assume: arn:aws:iam::881928689264:role/Github-Actions-Role
           aws-region: us-east-1
       - name: Copy benchmark files to test data
+        working-directory: aws-mls
         run: |
           aws s3 cp s3://benchmark-wickr-mls/empty_trees.json ./test_data/empty_trees.json
           aws s3 cp s3://benchmark-wickr-mls/group_state.json ./test_data/group_state.json
       - name: Run benchmark
+        working-directory: aws-mls
         run: ( set -o pipefail; cargo bench --features benchmark --bench encap --bench decap --bench group_serialize --bench group_commit --bench group_application --bench secret_tree_serialize -- --output-format bencher | tee output.txt )

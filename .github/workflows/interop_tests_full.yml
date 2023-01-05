@@ -21,7 +21,7 @@ jobs:
         ssh-agent -a $SSH_AUTH_SOCK > /dev/null
         ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
     - name: Start test MLS client
-      working-directory: test_harness_integration 
+      working-directory: aws-mls/test_harness_integration 
       run: cargo run &
     - name: Clone test runner
       uses: actions/checkout@master

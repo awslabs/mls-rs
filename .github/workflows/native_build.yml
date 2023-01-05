@@ -17,13 +17,17 @@ jobs:
         ssh-agent -a $SSH_AUTH_SOCK > /dev/null
         ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
     - name: Rust Fmt
+      working-directory: aws-mls
       run: cargo fmt --all -- --check
     - name: Clippy
+      working-directory: aws-mls
       run: cargo clippy --all-targets --features="benchmark" --workspace -- -D warnings
     - name: Test (OpenSSL Engine)
+      working-directory: aws-mls
       run: cargo test --verbose
     - name: Test (rust crypto engine)
+      working-directory: aws-mls
       run: cargo test --verbose --no-default-features --features="rustcrypto_engine"
     - name: Build (Test Harness Integration)
-      working-directory: ./test_harness_integration
+      working-directory: aws-mls/test_harness_integration
       run: cargo build

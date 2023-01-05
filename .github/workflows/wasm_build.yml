@@ -19,4 +19,5 @@ jobs:
       with:
         version: 'v0.10.3'
     - name: Test (WASM + RustCrypto)
+      working-directory: aws-mls
       run: wasm-pack test --headless --chrome --release -- --no-default-features --features="browser"

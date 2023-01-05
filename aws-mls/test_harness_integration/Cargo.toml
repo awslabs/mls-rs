@@ -3,6 +3,7 @@ name = "harness_client"
 version = "0.1.0"
 authors = ["Marta Mularczyk <mulmarta@amazon.ch>"]
 edition = "2021"
+publish = false
 
 [dependencies]
 aws-mls = { path = "..", features = ["benchmark"]}
