@@ -434,7 +434,6 @@ mod tests {
     };
 
     use assert_matches::assert_matches;
-    use aws_mls_crypto_ferriscrypt::FerriscryptCipherSuite;
     use itertools::Itertools;
     use std::convert::Infallible;
 
@@ -1634,16 +1633,21 @@ mod tests {
         external_psk_id_validator: P,
     }
 
-    impl<'a>
+    impl<'a, CSP>
         CommitReceiver<
             'a,
             BasicIdentityProvider,
             PassThroughProposalFilter<Infallible>,
             PassThroughPskIdValidator,
-            FerriscryptCipherSuite,
+            CSP,
         >
     {
-        fn new<S>(tree: &'a TreeKemPublic, sender: S, receiver: LeafIndex) -> Self
+        fn new<S>(
+            tree: &'a TreeKemPublic,
+            sender: S,
+            receiver: LeafIndex,
+            cipher_suite_provider: CSP,
+        ) -> Self
         where
             S: Into<Sender>,
         {
@@ -1656,7 +1660,7 @@ mod tests {
                 group_context_extensions: Default::default(),
                 user_filter: pass_through_filter(),
                 external_psk_id_validator: PassThroughPskIdValidator,
-                cipher_suite_provider: test_cipher_suite_provider(TEST_CIPHER_SUITE),
+                cipher_suite_provider,
             }
         }
     }
@@ -1766,16 +1770,16 @@ mod tests {
         external_psk_id_validator: P,
     }
 
-    impl<'a>
+    impl<'a, CSP>
         CommitSender<
             'a,
             BasicIdentityProvider,
             PassThroughProposalFilter<Infallible>,
             PassThroughPskIdValidator,
-            FerriscryptCipherSuite,
+            CSP,
         >
     {
-        fn new(tree: &'a TreeKemPublic, sender: LeafIndex) -> Self {
+        fn new(tree: &'a TreeKemPublic, sender: LeafIndex, cipher_suite_provider: CSP) -> Self {
             Self {
                 tree,
                 sender,
@@ -1784,7 +1788,7 @@ mod tests {
                 identity_provider: BasicIdentityProvider::new(),
                 user_filter: pass_through_filter(),
                 external_psk_id_validator: PassThroughPskIdValidator,
-                cipher_suite_provider: test_cipher_suite_provider(TEST_CIPHER_SUITE),
+                cipher_suite_provider,
             }
         }
     }
@@ -1912,7 +1916,13 @@ mod tests {
     fn receiving_add_with_invalid_key_package_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice).receive([Proposal::Add(AddProposal {
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([Proposal::Add(AddProposal {
             key_package: key_package_with_invalid_signature(),
         })]);
 
@@ -1928,7 +1938,7 @@ mod tests {
     fn sending_additional_add_with_invalid_key_package_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::Add(AddProposal {
                 key_package: key_package_with_invalid_signature(),
             })])
@@ -1951,10 +1961,11 @@ mod tests {
         });
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_ref.clone(), proposal.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_ref.clone(), proposal.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
@@ -1964,7 +1975,7 @@ mod tests {
     fn sending_add_with_hpke_key_of_another_member_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::Add(AddProposal {
                 key_package: key_package_with_public_key(
                     tree.get_leaf_node(alice).unwrap().public_key.clone(),
@@ -1992,10 +2003,11 @@ mod tests {
 
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_ref.clone(), proposal.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_ref.clone(), proposal.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
@@ -2011,9 +2023,14 @@ mod tests {
         });
         let proposal_ref = make_proposal_ref(&proposal, bob);
 
-        let res = CommitReceiver::new(&tree, alice, bob)
-            .cache(proposal_ref.clone(), proposal, bob)
-            .receive([proposal_ref]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            bob,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(proposal_ref.clone(), proposal, bob)
+        .receive([proposal_ref]);
 
         assert_matches!(
             res,
@@ -2033,10 +2050,11 @@ mod tests {
         });
         let proposal_ref = make_proposal_ref(&proposal, bob);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_ref, proposal, bob)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_ref, proposal, bob)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
 
@@ -2049,10 +2067,15 @@ mod tests {
     fn receiving_remove_with_invalid_index_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res =
-            CommitReceiver::new(&tree, alice, alice).receive([Proposal::Remove(RemoveProposal {
-                to_remove: LeafIndex(10),
-            })]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([Proposal::Remove(RemoveProposal {
+            to_remove: LeafIndex(10),
+        })]);
 
         assert_matches!(
             res,
@@ -2066,7 +2089,7 @@ mod tests {
     fn sending_additional_remove_with_invalid_index_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::Remove(RemoveProposal {
                 to_remove: LeafIndex(10),
             })])
@@ -2089,10 +2112,11 @@ mod tests {
         });
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_ref.clone(), proposal.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_ref.clone(), proposal.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
@@ -2119,9 +2143,16 @@ mod tests {
         let invalid_nonce = PskNonce(vec![0, 1, 2]);
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice).receive([Proposal::Psk(
-            make_external_psk(b"foo", invalid_nonce.clone()),
-        )]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([Proposal::Psk(make_external_psk(
+            b"foo",
+            invalid_nonce.clone(),
+        ))]);
 
         assert_matches!(
             res,
@@ -2136,7 +2167,7 @@ mod tests {
         let invalid_nonce = PskNonce(vec![0, 1, 2]);
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::Psk(make_external_psk(
                 b"foo",
                 invalid_nonce.clone(),
@@ -2158,10 +2189,11 @@ mod tests {
         let proposal = Proposal::Psk(make_external_psk(b"foo", invalid_nonce));
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_ref.clone(), proposal.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_ref.clone(), proposal.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
@@ -2184,8 +2216,13 @@ mod tests {
     fn receiving_resumption_psk_with_bad_usage_fails(usage: ResumptionPSKUsage) {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice)
-            .receive([Proposal::Psk(make_resumption_psk(usage))]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([Proposal::Psk(make_resumption_psk(usage))]);
 
         assert_matches!(
             res,
@@ -2198,7 +2235,7 @@ mod tests {
     fn sending_additional_resumption_psk_with_bad_usage_fails(usage: ResumptionPSKUsage) {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::Psk(make_resumption_psk(usage))])
             .send();
 
@@ -2215,10 +2252,11 @@ mod tests {
         let proposal = Proposal::Psk(make_resumption_psk(usage));
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_ref.clone(), proposal.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_ref.clone(), proposal.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
@@ -2268,8 +2306,13 @@ mod tests {
         let smaller_protocol_version = ProtocolVersion::Reserved;
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice)
-            .receive([Proposal::ReInit(make_reinit(smaller_protocol_version))]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([Proposal::ReInit(make_reinit(smaller_protocol_version))]);
 
         assert_matches!(
             res,
@@ -2285,7 +2328,7 @@ mod tests {
         let smaller_protocol_version = ProtocolVersion::Reserved;
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::ReInit(make_reinit(smaller_protocol_version))])
             .send();
 
@@ -2305,10 +2348,11 @@ mod tests {
         let proposal = Proposal::ReInit(make_reinit(smaller_protocol_version));
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_ref.clone(), proposal.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_ref.clone(), proposal.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
@@ -2332,9 +2376,14 @@ mod tests {
         let update = Proposal::Update(make_update_proposal("alice"));
         let update_ref = make_proposal_ref(&update, alice);
 
-        let res = CommitReceiver::new(&tree, alice, alice)
-            .cache(update_ref.clone(), update, alice)
-            .receive([update_ref]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(update_ref.clone(), update, alice)
+        .receive([update_ref]);
 
         assert_matches!(
             res,
@@ -2348,7 +2397,7 @@ mod tests {
     fn sending_additional_update_for_committer_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::Update(make_update_proposal("alice"))])
             .send();
 
@@ -2370,10 +2419,11 @@ mod tests {
         let proposal = Proposal::Update(make_update_proposal("alice"));
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_ref.clone(), proposal.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_ref.clone(), proposal.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
@@ -2383,8 +2433,13 @@ mod tests {
     fn receiving_remove_for_committer_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice)
-            .receive([Proposal::Remove(RemoveProposal { to_remove: alice })]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([Proposal::Remove(RemoveProposal { to_remove: alice })]);
 
         assert_matches!(
             res,
@@ -2398,7 +2453,7 @@ mod tests {
     fn sending_additional_remove_for_committer_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::Remove(RemoveProposal { to_remove: alice })])
             .send();
 
@@ -2416,10 +2471,11 @@ mod tests {
         let proposal = Proposal::Remove(RemoveProposal { to_remove: alice });
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_ref.clone(), proposal.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_ref.clone(), proposal.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
@@ -2436,10 +2492,15 @@ mod tests {
         let remove = Proposal::Remove(RemoveProposal { to_remove: bob });
         let remove_ref = make_proposal_ref(&remove, bob);
 
-        let res = CommitReceiver::new(&tree, alice, alice)
-            .cache(update_ref.clone(), update, bob)
-            .cache(remove_ref.clone(), remove, bob)
-            .receive([update_ref, remove_ref]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(update_ref.clone(), update, bob)
+        .cache(remove_ref.clone(), remove, bob)
+        .receive([update_ref, remove_ref]);
 
         assert_matches!(
             res,
@@ -2460,11 +2521,12 @@ mod tests {
         let remove = Proposal::Remove(RemoveProposal { to_remove: bob });
         let remove_ref = make_proposal_ref(&remove, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(update_ref.clone(), update.clone(), alice)
-            .cache(remove_ref.clone(), remove, alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(update_ref.clone(), update.clone(), alice)
+                .cache(remove_ref.clone(), remove, alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, vec![remove_ref.into()]);
         assert_eq!(effects.rejected_proposals, vec![(update_ref, update)]);
@@ -2480,7 +2542,13 @@ mod tests {
     fn receiving_add_proposals_for_same_client_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice).receive([
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([
             Proposal::Add(make_add_proposal()),
             Proposal::Add(make_add_proposal()),
         ]);
@@ -2499,7 +2567,7 @@ mod tests {
     fn sending_additional_add_proposals_for_same_client_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([
                 Proposal::Add(make_add_proposal()),
                 Proposal::Add(make_add_proposal()),
@@ -2526,11 +2594,12 @@ mod tests {
         ];
         let add_refs = adds.clone().map(|p| make_proposal_ref(&p, alice));
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(add_refs[0].clone(), adds[0].clone(), alice)
-            .cache(add_refs[1].clone(), adds[1].clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(add_refs[0].clone(), adds[0].clone(), alice)
+                .cache(add_refs[1].clone(), adds[1].clone(), alice)
+                .send()
+                .unwrap();
 
         assert_matches!(
             (&*committed, &*effects.rejected_proposals),
@@ -2546,9 +2615,14 @@ mod tests {
         let update = Proposal::Update(make_update_proposal_custom("carol", 1));
         let update_ref = make_proposal_ref(&update, bob);
 
-        let res = CommitReceiver::new(&tree, alice, alice)
-            .cache(update_ref.clone(), update, bob)
-            .receive([update_ref]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(update_ref.clone(), update, bob)
+        .receive([update_ref]);
 
         assert_matches!(
             res,
@@ -2568,10 +2642,11 @@ mod tests {
         let update = Proposal::Update(make_update_proposal("carol"));
         let update_ref = make_proposal_ref(&update, bob);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(update_ref, update, bob)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(update_ref, update, bob)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
 
@@ -2585,11 +2660,22 @@ mod tests {
         let (alice, tree) = new_tree("alice");
         let add = Proposal::Add(make_add_proposal());
 
-        let ProposalSetEffects { tree, .. } = CommitReceiver::new(&tree, alice, alice)
-            .receive([add.clone()])
-            .unwrap();
+        let ProposalSetEffects { tree, .. } = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([add.clone()])
+        .unwrap();
 
-        let res = CommitReceiver::new(&tree, alice, alice).receive([add]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([add]);
 
         assert_matches!(
             res,
@@ -2606,11 +2692,16 @@ mod tests {
         let (alice, tree) = new_tree("alice");
         let add = Proposal::Add(make_add_proposal());
 
-        let ProposalSetEffects { tree, .. } = CommitReceiver::new(&tree, alice, alice)
-            .receive([add.clone()])
-            .unwrap();
+        let ProposalSetEffects { tree, .. } = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([add.clone()])
+        .unwrap();
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([add])
             .send();
 
@@ -2629,16 +2720,22 @@ mod tests {
         let (alice, tree) = new_tree("alice");
         let add = Proposal::Add(make_add_proposal());
 
-        let ProposalSetEffects { tree, .. } = CommitReceiver::new(&tree, alice, alice)
-            .receive([add.clone()])
-            .unwrap();
+        let ProposalSetEffects { tree, .. } = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([add.clone()])
+        .unwrap();
 
         let proposal_ref = make_proposal_ref(&add, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_ref.clone(), add.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_ref.clone(), add.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, add)]);
@@ -2649,8 +2746,13 @@ mod tests {
         let (alice, tree) = new_tree("alice");
         let psk_proposal = Proposal::Psk(new_external_psk(b"foo"));
 
-        let res =
-            CommitReceiver::new(&tree, alice, alice).receive([psk_proposal.clone(), psk_proposal]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([psk_proposal.clone(), psk_proposal]);
 
         assert_matches!(
             res,
@@ -2665,7 +2767,7 @@ mod tests {
         let (alice, tree) = new_tree("alice");
         let psk_proposal = Proposal::Psk(new_external_psk(b"foo"));
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([psk_proposal.clone(), psk_proposal])
             .send();
 
@@ -2688,11 +2790,12 @@ mod tests {
             make_proposal_ref(&proposal, bob),
         ];
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_refs[0].clone(), proposal.clone(), alice)
-            .cache(proposal_refs[1].clone(), proposal, bob)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_refs[0].clone(), proposal.clone(), alice)
+                .cache(proposal_refs[1].clone(), proposal, bob)
+                .send()
+                .unwrap();
 
         let committed_ref = match &*committed {
             [ProposalOrRef::Reference(r)] => r.clone(),
@@ -2720,7 +2823,13 @@ mod tests {
     fn receiving_multiple_group_context_extensions_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice).receive([
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([
             Proposal::GroupContextExtensions(ExtensionList::new()),
             Proposal::GroupContextExtensions(ExtensionList::new()),
         ]);
@@ -2737,7 +2846,7 @@ mod tests {
     fn sending_multiple_additional_group_context_extensions_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([
                 Proposal::GroupContextExtensions(ExtensionList::new()),
                 Proposal::GroupContextExtensions(ExtensionList::new()),
@@ -2796,11 +2905,12 @@ mod tests {
 
         let proposal_refs = proposals.clone().map(|p| make_proposal_ref(&p, alice));
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_refs[0].clone(), proposals[0].clone(), alice)
-            .cache(proposal_refs[1].clone(), proposals[1].clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_refs[0].clone(), proposals[0].clone(), alice)
+                .cache(proposal_refs[1].clone(), proposals[1].clone(), alice)
+                .send()
+                .unwrap();
 
         assert_matches!(
             (&*committed, &*effects.rejected_proposals),
@@ -2820,11 +2930,16 @@ mod tests {
     fn receiving_invalid_external_senders_extension_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice)
-            .with_identity_provider(FailureIdentityProvider::new())
-            .receive([Proposal::GroupContextExtensions(
-                make_external_senders_extension(),
-            )]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .with_identity_provider(FailureIdentityProvider::new())
+        .receive([Proposal::GroupContextExtensions(
+            make_external_senders_extension(),
+        )]);
 
         assert_matches!(
             res,
@@ -2838,7 +2953,7 @@ mod tests {
     fn sending_additional_invalid_external_senders_extension_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_identity_provider(FailureIdentityProvider::new())
             .with_additional([Proposal::GroupContextExtensions(
                 make_external_senders_extension(),
@@ -2861,11 +2976,12 @@ mod tests {
 
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .with_identity_provider(FailureIdentityProvider::new())
-            .cache(proposal_ref.clone(), proposal.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .with_identity_provider(FailureIdentityProvider::new())
+                .cache(proposal_ref.clone(), proposal.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
@@ -2875,7 +2991,13 @@ mod tests {
     fn receiving_reinit_with_other_proposals_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice).receive([
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([
             Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION)),
             Proposal::Add(make_add_proposal()),
         ]);
@@ -2892,7 +3014,7 @@ mod tests {
     fn sending_additional_reinit_with_other_proposals_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([
                 Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION)),
                 Proposal::Add(make_add_proposal()),
@@ -2915,11 +3037,12 @@ mod tests {
         let add = Proposal::Add(make_add_proposal());
         let add_ref = make_proposal_ref(&add, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(reinit_ref.clone(), reinit.clone(), alice)
-            .cache(add_ref.clone(), add, alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(reinit_ref.clone(), reinit.clone(), alice)
+                .cache(add_ref.clone(), add, alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, vec![add_ref.into()]);
         assert_eq!(effects.rejected_proposals, vec![(reinit_ref, reinit)]);
@@ -2935,8 +3058,13 @@ mod tests {
     fn receiving_external_init_from_member_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice)
-            .receive([Proposal::ExternalInit(make_external_init())]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([Proposal::ExternalInit(make_external_init())]);
 
         assert_matches!(
             res,
@@ -2954,7 +3082,7 @@ mod tests {
     fn sending_additional_external_init_from_member_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::ExternalInit(make_external_init())])
             .send();
 
@@ -2976,10 +3104,11 @@ mod tests {
         let external_init = Proposal::ExternalInit(make_external_init());
         let external_init_ref = make_proposal_ref(&external_init, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(external_init_ref.clone(), external_init.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(external_init_ref.clone(), external_init.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(
@@ -3000,8 +3129,13 @@ mod tests {
     fn receiving_required_capabilities_not_supported_by_member_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res =
-            CommitReceiver::new(&tree, alice, alice).receive([required_capabilities_proposal(33)]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([required_capabilities_proposal(33)]);
 
         assert_matches!(
             res,
@@ -3017,7 +3151,7 @@ mod tests {
     fn sending_required_capabilities_not_supported_by_member_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([required_capabilities_proposal(33)])
             .send();
 
@@ -3038,10 +3172,11 @@ mod tests {
         let proposal = required_capabilities_proposal(33);
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_ref.clone(), proposal.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_ref.clone(), proposal.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
@@ -3097,11 +3232,16 @@ mod tests {
 
         let pk2_to_pk3_ref = make_proposal_ref(&pk2_to_pk3, bob);
 
-        let effects = CommitReceiver::new(&tree, carol, carol)
-            .cache(pk1_to_pk2_ref.clone(), pk1_to_pk2, alice)
-            .cache(pk2_to_pk3_ref.clone(), pk2_to_pk3, bob)
-            .receive([pk1_to_pk2_ref, pk2_to_pk3_ref])
-            .unwrap();
+        let effects = CommitReceiver::new(
+            &tree,
+            carol,
+            carol,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(pk1_to_pk2_ref.clone(), pk1_to_pk2, alice)
+        .cache(pk2_to_pk3_ref.clone(), pk2_to_pk3, bob)
+        .receive([pk1_to_pk2_ref, pk2_to_pk3_ref])
+        .unwrap();
 
         assert_eq!(
             effects.updates,
@@ -3155,11 +3295,16 @@ mod tests {
 
         let remove_pk2_ref = make_proposal_ref(&remove_pk2, bob);
 
-        let effects = CommitReceiver::new(&tree, carol, carol)
-            .cache(pk1_to_pk2_ref.clone(), pk1_to_pk2, alice)
-            .cache(remove_pk2_ref.clone(), remove_pk2, bob)
-            .receive([pk1_to_pk2_ref, remove_pk2_ref])
-            .unwrap();
+        let effects = CommitReceiver::new(
+            &tree,
+            carol,
+            carol,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .cache(pk1_to_pk2_ref.clone(), pk1_to_pk2, alice)
+        .cache(remove_pk2_ref.clone(), remove_pk2, bob)
+        .receive([pk1_to_pk2_ref, remove_pk2_ref])
+        .unwrap();
 
         assert_eq!(effects.updates, vec![(alice, alice_new_leaf)]);
         assert_eq!(effects.removes, vec![bob]);
@@ -3197,7 +3342,13 @@ mod tests {
     fn receiving_add_with_leaf_not_supporting_credential_type_of_other_leaf_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice).receive([Proposal::Add(AddProposal {
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([Proposal::Add(AddProposal {
             key_package: x509_key_package("bob"),
         })]);
 
@@ -3218,7 +3369,7 @@ mod tests {
     fn sending_additional_add_with_leaf_not_supporting_credential_type_of_other_leaf_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::Add(AddProposal {
                 key_package: x509_key_package("bob"),
             })])
@@ -3247,10 +3398,11 @@ mod tests {
 
         let add_ref = make_proposal_ref(&add, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(add_ref.clone(), add.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(add_ref.clone(), add.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(add_ref, add)]);
@@ -3260,8 +3412,13 @@ mod tests {
     fn receiving_group_extension_unsupported_by_leaf_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice)
-            .receive([Proposal::GroupContextExtensions(make_extension_list(0))]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([Proposal::GroupContextExtensions(make_extension_list(0))]);
 
         assert_matches!(
             res,
@@ -3275,7 +3432,7 @@ mod tests {
     fn sending_additional_group_extension_unsupported_by_leaf_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::GroupContextExtensions(make_extension_list(0))])
             .send();
 
@@ -3294,10 +3451,11 @@ mod tests {
         let proposal = Proposal::GroupContextExtensions(make_extension_list(0));
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .cache(proposal_ref.clone(), proposal.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(proposal_ref.clone(), proposal.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
@@ -3318,9 +3476,14 @@ mod tests {
     fn receiving_external_psk_with_unknown_id_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice)
-            .with_external_psk_id_validator(FailurePskIdValidator)
-            .receive([Proposal::Psk(new_external_psk(b"abc"))]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .with_external_psk_id_validator(FailurePskIdValidator)
+        .receive([Proposal::Psk(new_external_psk(b"abc"))]);
 
         assert_matches!(
             res,
@@ -3334,7 +3497,7 @@ mod tests {
     fn sending_additional_external_psk_with_unknown_id_fails() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_external_psk_id_validator(FailurePskIdValidator)
             .with_additional([Proposal::Psk(new_external_psk(b"abc"))])
             .send();
@@ -3353,11 +3516,12 @@ mod tests {
         let proposal = Proposal::Psk(new_external_psk(b"abc"));
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) = CommitSender::new(&tree, alice)
-            .with_external_psk_id_validator(FailurePskIdValidator)
-            .cache(proposal_ref.clone(), proposal.clone(), alice)
-            .send()
-            .unwrap();
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .with_external_psk_id_validator(FailurePskIdValidator)
+                .cache(proposal_ref.clone(), proposal.clone(), alice)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
@@ -3384,11 +3548,12 @@ mod tests {
 
         let (alice, tree) = new_tree("alice");
 
-        let (committed, _) = CommitSender::new(&tree, alice)
-            .with_additional([Proposal::GroupContextExtensions(Default::default())])
-            .with_user_filter(RemoveGroupContextExtensions)
-            .send()
-            .unwrap();
+        let (committed, _) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .with_additional([Proposal::GroupContextExtensions(Default::default())])
+                .with_user_filter(RemoveGroupContextExtensions)
+                .send()
+                .unwrap();
 
         assert_eq!(committed, Vec::new());
     }
@@ -3411,7 +3576,7 @@ mod tests {
     fn user_defined_filter_can_refuse_to_send_commit() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitSender::new(&tree, alice)
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::GroupContextExtensions(Default::default())])
             .with_user_filter(FailureProposalFilter)
             .send();
@@ -3428,9 +3593,14 @@ mod tests {
     fn user_defined_filter_can_reject_incoming_commit() {
         let (alice, tree) = new_tree("alice");
 
-        let res = CommitReceiver::new(&tree, alice, alice)
-            .with_user_filter(FailureProposalFilter)
-            .receive([Proposal::GroupContextExtensions(Default::default())]);
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .with_user_filter(FailureProposalFilter)
+        .receive([Proposal::GroupContextExtensions(Default::default())]);
 
         assert_matches!(
             res,
@@ -3484,7 +3654,7 @@ mod tests {
             .for_each(|((proposer, proposal), by_ref)| {
                 let committer = Sender::Member(*alice);
 
-                let receiver = CommitReceiver::new(&tree, committer.clone(), alice)
+                let receiver = CommitReceiver::new(&tree, committer.clone(), alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                     .with_extensions([external_senders.clone()].try_into().unwrap());
 
                 let (receiver, proposals, proposer) = if by_ref {

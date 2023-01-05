@@ -41,7 +41,15 @@ struct ParentHashInput<'a> {
 
 #[serde_as]
 #[derive(
-    Clone, Debug, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize, Eq,
+    Clone,
+    Debug,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    serde::Deserialize,
+    serde::Serialize,
+    PartialEq,
+    Eq,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ParentHash(
@@ -61,14 +69,6 @@ impl Deref for ParentHash {
 
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-impl PartialEq for ParentHash {
-    fn eq(&self, other: &Self) -> bool {
-        aws_mls_crypto_ferriscrypt::ferriscrypt::constant_time_eq::constant_time_eq(
-            &self.0, &other.0,
-        )
     }
 }
 

@@ -382,7 +382,6 @@ mod tests {
         },
     };
     use assert_matches::assert_matches;
-    use aws_mls_crypto_ferriscrypt::FerriscryptCipherSuite;
     use num_enum::TryFromPrimitive;
     use serde::{Deserialize, Serialize};
     use std::{convert::Infallible, iter};
@@ -451,21 +450,21 @@ mod tests {
     }
 
     impl TestScenario {
-        fn generate() -> Vec<TestScenario> {
-            let make_psk_list = |cs: &FerriscryptCipherSuite, n| {
-                iter::repeat_with(|| PskInfo {
-                    id: make_external_psk_id(cs).0,
-                    psk: cs.random_bytes_vec(cs.kdf_extract_size()).unwrap(),
-                    nonce: make_nonce(cs.cipher_suite()).0,
-                })
-                .take(n)
-                .collect::<Vec<_>>()
-            };
+        fn make_psk_list<CS: CipherSuiteProvider>(cs: &CS, n: usize) -> Vec<PskInfo> {
+            iter::repeat_with(|| PskInfo {
+                id: make_external_psk_id(cs).0,
+                psk: cs.random_bytes_vec(cs.kdf_extract_size()).unwrap(),
+                nonce: make_nonce(cs.cipher_suite()).0,
+            })
+            .take(n)
+            .collect::<Vec<_>>()
+        }
 
+        fn generate() -> Vec<TestScenario> {
             CipherSuite::all()
                 .flat_map(|cs| (1..=10).map(move |n| (cs, n)))
                 .map(|(cs, n)| {
-                    let psks = make_psk_list(&test_cipher_suite_provider(cs), n);
+                    let psks = Self::make_psk_list(&test_cipher_suite_provider(cs), n);
                     let psk_secret = Self::compute_psk_secret(cs, &psks);
                     TestScenario {
                         cipher_suite: cs as u16,
