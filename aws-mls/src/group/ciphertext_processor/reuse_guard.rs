@@ -58,9 +58,11 @@ mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use aws_mls_core::crypto::CipherSuiteProvider;
+
     use crate::{
         client::test_utils::TEST_CIPHER_SUITE,
-        provider::crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
+        provider::crypto::test_utils::test_cipher_suite_provider,
     };
 
     use super::{ReuseGuard, REUSE_GUARD_SIZE};

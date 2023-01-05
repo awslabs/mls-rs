@@ -1,4 +1,3 @@
-use base64::display::Base64Display;
 use serde::de::{self, Visitor};
 use serde::Deserialize;
 use serde::{Deserializer, Serializer};
@@ -18,10 +17,7 @@ where
             return serializer.serialize_bytes(source.as_ref());
         }
 
-        serializer.collect_str(&Base64Display::with_config(
-            source.as_ref(),
-            base64::STANDARD,
-        ))
+        serializer.collect_str(&base64::encode(source.as_ref()))
     }
 }
 

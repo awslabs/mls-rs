@@ -66,7 +66,9 @@ impl Deref for ParentHash {
 
 impl PartialEq for ParentHash {
     fn eq(&self, other: &Self) -> bool {
-        ferriscrypt::constant_time_eq::constant_time_eq(&self.0, &other.0)
+        aws_mls_crypto_ferriscrypt::ferriscrypt::constant_time_eq::constant_time_eq(
+            &self.0, &other.0,
+        )
     }
 }
 

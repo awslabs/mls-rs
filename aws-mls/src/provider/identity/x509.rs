@@ -1,7 +1,7 @@
+use aws_mls_crypto_ferriscrypt::ferriscrypt::asym::ec_key::{self, Curve, EcKeyError};
+use aws_mls_crypto_ferriscrypt::ferriscrypt::digest::digest;
+use aws_mls_crypto_ferriscrypt::ferriscrypt::digest::HashFunction::Sha256;
 use der::{Decode, Encode};
-use ferriscrypt::asym::ec_key::{self, Curve, EcKeyError};
-use ferriscrypt::digest::digest;
-use ferriscrypt::digest::HashFunction::Sha256;
 use std::collections::HashSet;
 use thiserror::Error;
 use x509_cert::certificate::Certificate;
@@ -153,10 +153,10 @@ impl<I: X509IdentityExtractor> BasicX509Provider<I> {
             return Err(X509Error::LeafPublicKeyMismatch);
         }
 
-        if leaf_pk.curve() != cipher_suite.signature_key_curve() {
+        if leaf_pk.curve() != signature_key_curve(cipher_suite) {
             return Err(X509Error::CurveMismatch(
                 leaf_pk.curve(),
-                cipher_suite.signature_key_curve(),
+                signature_key_curve(cipher_suite),
             ));
         }
 
@@ -164,6 +164,22 @@ impl<I: X509IdentityExtractor> BasicX509Provider<I> {
             .iter()
             .zip(chain.iter().skip(1))
             .try_for_each(|(cert1, cert2)| verify_cert(cert2, cert1, timestamp))
+    }
+}
+
+fn signature_key_curve(cipher_suite: CipherSuite) -> Curve {
+    match cipher_suite {
+        CipherSuite::Curve25519Aes128 => Curve::Ed25519,
+        CipherSuite::P256Aes128 => Curve::P256,
+        CipherSuite::Curve25519ChaCha20 => Curve::Ed25519,
+        #[cfg(feature = "openssl_engine")]
+        CipherSuite::Curve448Aes256 => Curve::Ed448,
+        #[cfg(feature = "openssl_engine")]
+        CipherSuite::P521Aes256 => Curve::P521,
+        #[cfg(feature = "openssl_engine")]
+        CipherSuite::Curve448ChaCha20 => Curve::Ed448,
+        #[cfg(feature = "openssl_engine")]
+        CipherSuite::P384Aes256 => Curve::P384,
     }
 }
 
@@ -341,10 +357,10 @@ fn validate_self_signed(
         return Err(X509Error::LeafPublicKeyMismatch);
     }
 
-    if leaf_pk.curve() != cipher_suite.signature_key_curve() {
+    if leaf_pk.curve() != signature_key_curve(cipher_suite) {
         return Err(X509Error::CurveMismatch(
             leaf_pk.curve(),
-            cipher_suite.signature_key_curve(),
+            signature_key_curve(cipher_suite),
         ));
     }
 
@@ -426,8 +442,9 @@ mod tests {
     };
     use crate::cipher_suite::CipherSuite;
     use assert_matches::assert_matches;
+    use aws_mls_core::crypto::SignaturePublicKey;
+    use aws_mls_crypto_ferriscrypt::ferriscrypt::asym::ec_key::{self, Curve};
     use der::{asn1::UIntRef, Decode};
-    use ferriscrypt::asym::ec_key::{self, Curve};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -491,7 +508,7 @@ mod tests {
         let credential = get_test_x509_credential(chain);
 
         let signing_id = SigningIdentity {
-            signature_key: leaf_pk.try_into().unwrap(),
+            signature_key: SignaturePublicKey::from(leaf_pk.to_uncompressed_bytes().unwrap()),
             credential,
         };
 
@@ -569,7 +586,7 @@ mod tests {
         .unwrap();
 
         let signing_id = SigningIdentity {
-            signature_key: leaf_pk.try_into().unwrap(),
+            signature_key: SignaturePublicKey::from(leaf_pk.to_uncompressed_bytes().unwrap()),
             credential,
         };
 

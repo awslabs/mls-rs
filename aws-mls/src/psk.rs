@@ -374,9 +374,7 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         provider::{
-            crypto::{
-                test_utils::test_cipher_suite_provider, CipherSuiteProvider, FerriscryptCipherSuite,
-            },
+            crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
             psk::{InMemoryPskStore, PskStore},
         },
         psk::{
@@ -384,6 +382,7 @@ mod tests {
         },
     };
     use assert_matches::assert_matches;
+    use aws_mls_crypto_ferriscrypt::FerriscryptCipherSuite;
     use num_enum::TryFromPrimitive;
     use serde::{Deserialize, Serialize};
     use std::{convert::Infallible, iter};

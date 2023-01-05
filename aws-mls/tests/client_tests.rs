@@ -10,8 +10,9 @@ use aws_mls::identity::SigningIdentity;
 use aws_mls::identity::{BasicCredential, Credential, MlsCredential};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
-use aws_mls::provider::crypto::{CryptoProvider, FerriscryptCryptoProvider};
+use aws_mls::provider::crypto::CryptoProvider;
 use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain};
+use aws_mls_crypto_ferriscrypt::FerriscryptCryptoProvider;
 use rand::RngCore;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 

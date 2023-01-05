@@ -182,8 +182,8 @@ impl CertificateChain {
 
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
+    use aws_mls_crypto_ferriscrypt::ferriscrypt::asym::ec_key::{self, Curve};
     use der::Decode;
-    use ferriscrypt::asym::ec_key::{self, Curve};
     use x509_cert::Certificate;
 
     use crate::provider::identity::get_public_key;

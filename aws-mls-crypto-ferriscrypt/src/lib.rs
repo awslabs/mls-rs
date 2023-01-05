@@ -1,3 +1,7 @@
+use std::ops::Deref;
+
+pub use ferriscrypt;
+
 use ferriscrypt::{
     asym::ec_key::{generate_keypair, Curve, EcKeyError, PublicKey, SecretKey},
     cipher::{
@@ -17,11 +21,9 @@ use ferriscrypt::{
 
 use thiserror::Error;
 
-use crate::cipher_suite::CipherSuite;
-
-use super::{
-    CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkeContext, HpkePublicKey, HpkeSecretKey,
-    SignaturePublicKey, SignatureSecretKey,
+use aws_mls_core::crypto::{
+    CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkeContext, HpkePublicKey,
+    HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
 };
 
 #[derive(Debug, Error)]
@@ -42,8 +44,6 @@ pub enum FerriscryptCryptoError {
     EcKeyError(#[from] EcKeyError),
     #[error("invalid signature")]
     InvalidSignature,
-    #[error(transparent)]
-    TlsCodecError(#[from] tls_codec::Error),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -52,7 +52,7 @@ pub struct FerriscryptCryptoProvider {
     // Note: This is a temporary pattern since Ferriscrypt will eventually be deleted in favor of a
     // direct OpenSSL / Rust Crypto provider. We will build enabled cipher suites vs specifically
     // disabling them in that version
-    pub(crate) disabled_cipher_suites: Vec<CipherSuite>,
+    pub disabled_cipher_suites: Vec<CipherSuite>,
 }
 
 impl FerriscryptCryptoProvider {
@@ -245,11 +245,14 @@ impl FerriscryptCipherSuite {
         aad: Option<&[u8]>,
         pt: &[u8],
     ) -> Result<HpkeCiphertext, FerriscryptCryptoError> {
-        let remote_key = ferriscrypt::hpke::kem::HpkePublicKey::from(remote_key.0.to_vec());
+        let remote_key = ferriscrypt::hpke::kem::HpkePublicKey::from(remote_key.to_vec());
 
         self.hpke()
             .seal(&remote_key, info, None, aad, pt)
-            .map(Into::into)
+            .map(|ciphertext| HpkeCiphertext {
+                kem_output: ciphertext.enc,
+                ciphertext: ciphertext.ciphertext,
+            })
             .map_err(Into::into)
     }
 
@@ -260,8 +263,12 @@ impl FerriscryptCipherSuite {
         info: &[u8],
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, FerriscryptCryptoError> {
-        let ciphertext = ferriscrypt::hpke::HpkeCiphertext::from(ciphertext.clone());
-        let local_secret = ferriscrypt::hpke::kem::HpkeSecretKey::from(local_secret.0.to_vec());
+        let ciphertext = ferriscrypt::hpke::HpkeCiphertext {
+            enc: ciphertext.kem_output.clone(),
+            ciphertext: ciphertext.ciphertext.clone(),
+        };
+
+        let local_secret = ferriscrypt::hpke::kem::HpkeSecretKey::from(local_secret.to_vec());
 
         self.hpke()
             .open(&ciphertext, &local_secret, info, None, aad)
@@ -274,7 +281,7 @@ impl FerriscryptCipherSuite {
         local_secret: &HpkeSecretKey,
         info: &[u8],
     ) -> Result<hpke::Context, FerriscryptCryptoError> {
-        let local_secret = ferriscrypt::hpke::kem::HpkeSecretKey::from(local_secret.0.to_vec());
+        let local_secret = ferriscrypt::hpke::kem::HpkeSecretKey::from(local_secret.to_vec());
 
         self.hpke()
             .setup_receiver(enc, &local_secret, info, None)
@@ -286,7 +293,7 @@ impl FerriscryptCipherSuite {
         remote_key: &HpkePublicKey,
         info: &[u8],
     ) -> Result<(Vec<u8>, hpke::Context), FerriscryptCryptoError> {
-        let remote_key = ferriscrypt::hpke::kem::HpkePublicKey::from(remote_key.0.to_vec());
+        let remote_key = ferriscrypt::hpke::kem::HpkePublicKey::from(remote_key.to_vec());
         Ok(self.hpke().setup_sender(&remote_key, info, None)?)
     }
 
@@ -296,7 +303,12 @@ impl FerriscryptCipherSuite {
     ) -> Result<(HpkeSecretKey, HpkePublicKey), FerriscryptCryptoError> {
         Kem::new(self.kem)
             .derive(ikm)
-            .map(|(sk, pk)| (HpkeSecretKey::from(sk), HpkePublicKey::from(pk)))
+            .map(|(sk, pk)| {
+                (
+                    HpkeSecretKey::from(sk.to_vec()),
+                    HpkePublicKey::from(pk.to_vec()),
+                )
+            })
             .map_err(Into::into)
     }
 
@@ -309,7 +321,7 @@ impl FerriscryptCipherSuite {
         &self,
         key: &HpkePublicKey,
     ) -> Result<(), FerriscryptCryptoError> {
-        PublicKey::from_uncompressed_bytes(&key.0, self.kem.curve())
+        PublicKey::from_uncompressed_bytes(key, self.kem.curve())
             .map(|_| ())
             .map_err(Into::into)
     }
@@ -332,13 +344,13 @@ impl FerriscryptCipherSuite {
         SecretKey::from_bytes(secret_key, self.signature_key_curve)?
             .to_public()?
             .to_uncompressed_bytes()
-            .map(SignaturePublicKey)
+            .map(SignaturePublicKey::from)
             .map_err(Into::into)
     }
 
     pub fn sign(
         &self,
-        secret_key: &super::SignatureSecretKey,
+        secret_key: &SignatureSecretKey,
         data: &[u8],
     ) -> Result<Vec<u8>, FerriscryptCryptoError> {
         let secret_key = SecretKey::from_bytes(secret_key, self.signature_key_curve)?;
@@ -348,7 +360,7 @@ impl FerriscryptCipherSuite {
 
     pub fn verify(
         &self,
-        public_key: &super::SignaturePublicKey,
+        public_key: &SignaturePublicKey,
         signature: &[u8],
         data: &[u8],
     ) -> Result<(), FerriscryptCryptoError> {
@@ -364,7 +376,7 @@ impl FerriscryptCipherSuite {
 impl CipherSuiteProvider for FerriscryptCipherSuite {
     type Error = FerriscryptCryptoError;
     // TODO exporter_secret in this struct is not zeroized
-    type HpkeContext = hpke::Context;
+    type HpkeContext = FerriscryptHpkeContext;
 
     fn hash(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
         self.hash(data)
@@ -441,6 +453,7 @@ impl CipherSuiteProvider for FerriscryptCipherSuite {
         info: &[u8],
     ) -> Result<Self::HpkeContext, Self::Error> {
         self.hpke_setup_r(enc, local_secret, info)
+            .map(FerriscryptHpkeContext)
     }
 
     fn hpke_setup_s(
@@ -449,6 +462,7 @@ impl CipherSuiteProvider for FerriscryptCipherSuite {
         info: &[u8],
     ) -> Result<(Vec<u8>, Self::HpkeContext), Self::Error> {
         self.hpke_setup_s(remote_key, info)
+            .map(|(v, c)| (v, FerriscryptHpkeContext(c)))
     }
 
     fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
@@ -467,17 +481,13 @@ impl CipherSuiteProvider for FerriscryptCipherSuite {
         self.cipher_suite
     }
 
-    fn sign(
-        &self,
-        secret_key: &super::SignatureSecretKey,
-        data: &[u8],
-    ) -> Result<Vec<u8>, Self::Error> {
+    fn sign(&self, secret_key: &SignatureSecretKey, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
         self.sign(secret_key, data)
     }
 
     fn verify(
         &self,
-        public_key: &super::SignaturePublicKey,
+        public_key: &SignaturePublicKey,
         signature: &[u8],
         data: &[u8],
     ) -> Result<(), Self::Error> {
@@ -486,14 +496,14 @@ impl CipherSuiteProvider for FerriscryptCipherSuite {
 
     fn signature_key_generate(
         &self,
-    ) -> Result<(super::SignatureSecretKey, super::SignaturePublicKey), Self::Error> {
+    ) -> Result<(SignatureSecretKey, SignaturePublicKey), Self::Error> {
         self.signature_key_generate()
     }
 
     fn signature_key_derive_public(
         &self,
-        secret_key: &super::SignatureSecretKey,
-    ) -> Result<super::SignaturePublicKey, Self::Error> {
+        secret_key: &SignatureSecretKey,
+    ) -> Result<SignaturePublicKey, Self::Error> {
         self.signature_key_derive_public(secret_key)
     }
 
@@ -502,78 +512,30 @@ impl CipherSuiteProvider for FerriscryptCipherSuite {
     }
 }
 
-impl From<ferriscrypt::hpke::HpkeCiphertext> for HpkeCiphertext {
-    fn from(ciphertext: ferriscrypt::hpke::HpkeCiphertext) -> Self {
-        Self {
-            kem_output: ciphertext.enc,
-            ciphertext: ciphertext.ciphertext,
-        }
+pub struct FerriscryptHpkeContext(hpke::Context);
+
+impl Deref for FerriscryptHpkeContext {
+    type Target = hpke::Context;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
-impl From<HpkeCiphertext> for ferriscrypt::hpke::HpkeCiphertext {
-    fn from(ciphertext: HpkeCiphertext) -> Self {
-        Self {
-            enc: ciphertext.kem_output,
-            ciphertext: ciphertext.ciphertext,
-        }
-    }
-}
-
-impl From<ferriscrypt::hpke::kem::HpkePublicKey> for HpkePublicKey {
-    fn from(key: ferriscrypt::hpke::kem::HpkePublicKey) -> Self {
-        HpkePublicKey(key.to_vec())
-    }
-}
-
-impl From<HpkePublicKey> for ferriscrypt::hpke::kem::HpkePublicKey {
-    fn from(key: HpkePublicKey) -> Self {
-        ferriscrypt::hpke::kem::HpkePublicKey::from(key.0)
-    }
-}
-
-impl From<ferriscrypt::hpke::kem::HpkeSecretKey> for HpkeSecretKey {
-    fn from(key: ferriscrypt::hpke::kem::HpkeSecretKey) -> Self {
-        HpkeSecretKey(key.to_vec())
-    }
-}
-
-impl From<HpkeSecretKey> for ferriscrypt::hpke::kem::HpkeSecretKey {
-    fn from(key: HpkeSecretKey) -> Self {
-        ferriscrypt::hpke::kem::HpkeSecretKey::from(key.0)
-    }
-}
-
-impl TryFrom<PublicKey> for SignaturePublicKey {
-    type Error = EcKeyError;
-
-    fn try_from(pk: PublicKey) -> Result<Self, Self::Error> {
-        Ok(SignaturePublicKey::from(pk.to_uncompressed_bytes()?))
-    }
-}
-
-impl TryFrom<&SecretKey> for SignaturePublicKey {
-    type Error = EcKeyError;
-
-    fn try_from(value: &SecretKey) -> Result<Self, Self::Error> {
-        SignaturePublicKey::try_from(value.to_public()?)
-    }
-}
-
-impl HpkeContext for hpke::Context {
+impl HpkeContext for FerriscryptHpkeContext {
     type Error = HpkeError;
 
     fn open(&mut self, aad: Option<&[u8]>, ciphertext: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        self.open(aad, ciphertext)
+        self.0.open(aad, ciphertext)
     }
 
     fn seal(&mut self, aad: Option<&[u8]>, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        self.seal(aad, data)
+        self.0.seal(aad, data)
     }
 
     fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
         let mut buf = vec![0; len];
-        self.export(exporter_context, &mut buf)?;
+        self.0.export(exporter_context, &mut buf)?;
         Ok(buf)
     }
 }

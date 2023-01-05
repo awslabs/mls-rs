@@ -46,7 +46,10 @@ macro_rules! load_test_cases {
     }};
 }
 
-pub mod cipher_suite;
+pub mod cipher_suite {
+    pub use aws_mls_core::crypto::{CipherSuite, MaybeCipherSuite};
+}
+
 pub mod client;
 mod client_builder;
 mod client_config;
@@ -62,26 +65,32 @@ mod maybe;
 pub mod protocol_version;
 pub mod provider;
 pub mod psk;
-mod serde_utils;
 mod signer;
 pub mod time;
+
+mod serde_utils {
+    pub use aws_mls_core::serde::*;
+}
+
+#[cfg(feature = "benchmark")]
+pub mod tls {
+    pub use aws_mls_core::tls::*;
+}
+
+#[cfg(not(feature = "benchmark"))]
+mod tls {
+    pub use aws_mls_core::tls::*;
+}
 
 #[cfg(feature = "benchmark")]
 pub mod bench_utils;
 
 #[cfg(feature = "benchmark")]
-pub mod tls;
-
-#[cfg(feature = "benchmark")]
 pub mod tree_kem;
-
-#[cfg(not(feature = "benchmark"))]
-mod tls;
 
 #[cfg(not(feature = "benchmark"))]
 mod tree_kem;
 
-pub use ferriscrypt;
 pub use tls_codec;
 pub use x509_cert;
 

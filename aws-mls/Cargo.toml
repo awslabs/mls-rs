@@ -6,16 +6,16 @@ edition = "2021"
 
 [features]
 benchmark = ["serde_json"]
-rustcrypto_engine = ["ferriscrypt/rustcrypto_engine"]
-openssl_engine = ["ferriscrypt/openssl_engine"]
-browser = ["ferriscrypt/browser", "wasm-bindgen"]
+rustcrypto_engine = ["aws-mls-crypto-ferriscrypt/rustcrypto_engine"]
+openssl_engine = ["aws-mls-crypto-ferriscrypt/openssl_engine"]
+browser = ["aws-mls-crypto-ferriscrypt/browser", "wasm-bindgen"]
 default = ["openssl_engine", "rayon"]
-arbitrary = ["dep:arbitrary", "ferriscrypt/arbitrary"]
+arbitrary = ["dep:arbitrary", "aws-mls-core/arbitrary"]
 rayon = ["dep:rayon"]
 
 [dependencies]
+aws-mls-core = { path = "../aws-mls-core", default-features = false }
 thiserror = "^1"
-ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", default-features = false, features = ["hpke", "serde"], tag = "0.19.0" }
 tls_codec = "0.2.0"
 tls_codec_derive = "0.2.0"
 hex = { version = "^0.4.3", features = ["serde"] }
@@ -36,6 +36,7 @@ base64 = "0.13.0"
 num_enum = "0.5"
 cfg-if = "^1"
 serde_with = "^2"
+aws-mls-crypto-ferriscrypt = { path = "../aws-mls-crypto-ferriscrypt", default-features = false }
 
 [dev-dependencies]
 assert_matches = "1.5.0"

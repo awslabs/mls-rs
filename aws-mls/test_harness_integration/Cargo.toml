@@ -7,6 +7,7 @@ publish = false
 
 [dependencies]
 aws-mls = { path = "..", features = ["benchmark"]}
+aws-mls-crypto-ferriscrypt = { path = "../../aws-mls-crypto-ferriscrypt" }
 tonic = "0.7"
 prost = "0.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

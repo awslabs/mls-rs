@@ -160,7 +160,10 @@ mod tests {
 
         let node = UpdatePathNode {
             public_key: random_bytes(32).into(),
-            encrypted_path_secret: vec![HpkeCiphertext::new(random_bytes(32), random_bytes(32))],
+            encrypted_path_secret: vec![HpkeCiphertext {
+                kem_output: random_bytes(32),
+                ciphertext: random_bytes(32),
+            }],
         };
 
         UpdatePath {

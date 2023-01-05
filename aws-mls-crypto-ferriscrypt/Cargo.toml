@@ -1,0 +1,16 @@
+[package]
+name = "aws-mls-crypto-ferriscrypt"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+rustcrypto_engine = ["ferriscrypt/rustcrypto_engine"]
+openssl_engine = ["ferriscrypt/openssl_engine", "aws-mls-core/openssl_engine"]
+browser = ["ferriscrypt/browser"]
+default = ["openssl_engine"]
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aws-mls-core = { path = "../aws-mls-core", default-features = false }
+ferriscrypt = { git = "ssh://git@github.com/WickrInc/ferriscrypt.git", default-features = false, features = ["hpke", "serde"], tag = "0.19.0" }
+thiserror = "^1"

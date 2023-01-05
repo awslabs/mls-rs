@@ -47,8 +47,8 @@ impl TreeIndex {
     ) -> Result<(), TreeIndexError> {
         let old_leaf_count = self.credential_signature_key.len();
 
-        let pub_key = leaf_node.signing_identity.signature_key.deref().clone();
-        let credential_entry = self.credential_signature_key.entry(pub_key);
+        let pub_key = leaf_node.signing_identity.signature_key.clone();
+        let credential_entry = self.credential_signature_key.entry(pub_key.to_vec());
 
         if let Entry::Occupied(entry) = credential_entry {
             return Err(TreeIndexError::DuplicateSignatureKeys(*entry.get()));

@@ -15,9 +15,7 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     provider::{
-        crypto::{
-            CryptoProvider, FerriscryptCryptoProvider, SignaturePublicKey, SignatureSecretKey,
-        },
+        crypto::{CryptoProvider, SignaturePublicKey, SignatureSecretKey},
         identity::IdentityProvider,
         keychain::{InMemoryKeychain, KeychainStorage},
     },
@@ -580,19 +578,19 @@ mod private {
     }
 }
 
+use aws_mls_crypto_ferriscrypt::FerriscryptCryptoProvider;
 use private::{Config, ConfigInner, IntoConfig};
 
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
+    use aws_mls_crypto_ferriscrypt::FerriscryptCryptoProvider;
+
     use crate::{
         cipher_suite::CipherSuite,
         external_client_builder::{
             ExternalBaseConfig, ExternalClientBuilder, WithIdentityProvider, WithKeychain,
         },
-        provider::{
-            crypto::FerriscryptCryptoProvider, identity::BasicIdentityProvider,
-            keychain::InMemoryKeychain,
-        },
+        provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
     };
 
     pub type TestExternalClientConfig = WithIdentityProvider<

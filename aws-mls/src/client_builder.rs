@@ -20,7 +20,7 @@ use crate::{
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     provider::{
-        crypto::{CryptoProvider, FerriscryptCryptoProvider, SignatureSecretKey},
+        crypto::{CryptoProvider, SignatureSecretKey},
         group_state::{GroupStateStorage, InMemoryGroupStateStorage},
         identity::IdentityProvider,
         key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
@@ -906,6 +906,7 @@ mod private {
     }
 }
 
+use aws_mls_crypto_ferriscrypt::FerriscryptCryptoProvider;
 use private::{Config, ConfigInner, IntoConfig};
 
 #[cfg(any(test, feature = "benchmark"))]

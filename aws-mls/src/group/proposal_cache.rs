@@ -416,7 +416,7 @@ mod tests {
             KeyPackageGenerator,
         },
         provider::{
-            crypto::{self, test_utils::test_cipher_suite_provider, FerriscryptCipherSuite},
+            crypto::{self, test_utils::test_cipher_suite_provider},
             identity::BasicIdentityProvider,
         },
         psk::PassThroughPskIdValidator,
@@ -434,6 +434,7 @@ mod tests {
     };
 
     use assert_matches::assert_matches;
+    use aws_mls_crypto_ferriscrypt::FerriscryptCipherSuite;
     use itertools::Itertools;
     use std::convert::Infallible;
 

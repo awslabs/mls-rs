@@ -14,13 +14,14 @@ use aws_mls::identity::SigningIdentity;
 use aws_mls::identity::{BasicCredential, MlsCredential};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
-use aws_mls::provider::crypto::{CryptoProvider, FerriscryptCryptoProvider};
+use aws_mls::provider::crypto::CryptoProvider;
 use aws_mls::provider::{
     identity::BasicIdentityProvider, keychain::InMemoryKeychain, psk::InMemoryPskStore,
 };
 use aws_mls::psk::{ExternalPskId, Psk};
 use aws_mls::tls_codec::{Deserialize, Serialize};
 
+use aws_mls_crypto_ferriscrypt::FerriscryptCryptoProvider;
 use clap::Parser;
 use std::convert::TryFrom;
 use std::net::IpAddr;

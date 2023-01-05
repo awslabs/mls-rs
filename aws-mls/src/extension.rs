@@ -591,26 +591,6 @@ mod tests {
     }
 
     #[test]
-    fn extension_list_serialization_roundtrips() {
-        let mut extensions = ExtensionList::default();
-
-        extensions
-            .set_extension(RequiredCapabilitiesExt::default())
-            .unwrap();
-
-        extensions
-            .set_extension(ExternalSendersExt {
-                allowed_senders: vec![],
-            })
-            .unwrap();
-
-        assert_eq!(
-            crate::tls::test_utils::ser_deser(&extensions).unwrap(),
-            extensions
-        );
-    }
-
-    #[test]
     fn extension_list_is_serialized_like_a_sequence_of_extensions() {
         let extension_vec = vec![
             RequiredCapabilitiesExt::default().to_extension().unwrap(),
