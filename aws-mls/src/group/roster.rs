@@ -1,4 +1,4 @@
-use crate::identity::SigningIdentity;
+use aws_mls_core::group::RosterEntry;
 
 use super::*;
 
@@ -28,6 +28,16 @@ impl Member {
     #[cfg(feature = "benchmark")]
     pub fn leaf_bytes(&self) -> Result<Vec<u8>, tls_codec::Error> {
         self.node.tls_serialize_detached()
+    }
+}
+
+impl RosterEntry for Member {
+    fn index(&self) -> u32 {
+        self.index()
+    }
+
+    fn signing_identity(&self) -> &SigningIdentity {
+        self.signing_identity()
     }
 }
 

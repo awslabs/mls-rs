@@ -7,7 +7,7 @@ use aws_mls::extension::ExtensionList;
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, GroupError};
 use aws_mls::identity::SigningIdentity;
-use aws_mls::identity::{BasicCredential, Credential, MlsCredential};
+use aws_mls::identity::{BasicCredential, Credential};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::provider::crypto::CryptoProvider;
@@ -30,7 +30,7 @@ pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {
     BasicCredential {
         credential: identity,
     }
-    .to_credential()
+    .into_credential()
     .unwrap()
 }
 

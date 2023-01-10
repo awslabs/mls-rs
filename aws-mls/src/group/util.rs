@@ -1,3 +1,4 @@
+use aws_mls_core::identity::IdentityProvider;
 use tls_codec::Deserialize;
 
 use crate::{
@@ -11,7 +12,6 @@ use crate::{
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     provider::{
         crypto::{CipherSuiteProvider, CryptoProvider},
-        identity::IdentityProvider,
         key_package::KeyPackageRepository,
     },
     psk::ExternalPskIdValidator,
@@ -142,11 +142,7 @@ pub(super) fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
     {
         // TODO do joiners verify group against current time??
         ext_senders
-            .verify_all(
-                &identity_provider,
-                join_context.group_context.cipher_suite,
-                None,
-            )
+            .verify_all(&identity_provider, None)
             .map_err(|e| GroupError::IdentityProviderError(e.into()))?;
     }
 

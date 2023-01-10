@@ -10,8 +10,8 @@ use aws_mls::client::{
 use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, StateUpdate};
+use aws_mls::identity::BasicCredential;
 use aws_mls::identity::SigningIdentity;
-use aws_mls::identity::{BasicCredential, MlsCredential};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::provider::crypto::CryptoProvider;
@@ -235,7 +235,7 @@ impl MlsClient for MlsClientImpl {
         let credential = BasicCredential {
             credential: b"creator".to_vec(),
         }
-        .to_credential()
+        .into_credential()
         .unwrap();
 
         let signing_identity = SigningIdentity::new(credential, public_key);
@@ -287,7 +287,7 @@ impl MlsClient for MlsClientImpl {
         let credential = BasicCredential {
             credential: format!("alice{}", clients.len()).into_bytes(),
         }
-        .to_credential()
+        .into_credential()
         .unwrap();
 
         let signing_identity = SigningIdentity::new(credential, public_key);

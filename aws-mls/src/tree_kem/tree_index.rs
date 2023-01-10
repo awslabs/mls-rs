@@ -1,5 +1,5 @@
 use super::*;
-use crate::identity::{CredentialError, CredentialType};
+use crate::identity::CredentialType;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use itertools::Itertools;
 use serde_with::serde_as;
@@ -7,15 +7,13 @@ use std::collections::hash_map::Entry;
 
 #[derive(Debug, Error)]
 pub enum TreeIndexError {
-    #[error(transparent)]
-    CredentialError(#[from] CredentialError),
     #[error("credential signature keys must be unique, duplicate key found at index: {0:?}")]
     DuplicateSignatureKeys(LeafIndex),
     #[error("hpke keys must be unique, duplicate key found at index: {0:?}")]
     DuplicateHpkeKey(LeafIndex),
     #[error("identities must be unique, duplicate identity found at index {0:?}")]
     DuplicateIdentity(LeafIndex),
-    #[error("In-use credential type {0} not supported by new leaf at index {1:?}")]
+    #[error("In-use credential type {0:?} not supported by new leaf at index {1:?}")]
     InUseCredentialTypeUnsupportedByNewLeaf(CredentialType, LeafIndex),
     #[error("Not all members support the credential type used by new leaf")]
     CredentialTypeOfNewLeafIsUnsupported(CredentialType),

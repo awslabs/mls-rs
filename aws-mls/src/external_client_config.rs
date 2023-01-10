@@ -1,3 +1,5 @@
+use aws_mls_core::identity::IdentityProvider;
+
 use crate::{
     cipher_suite::MaybeCipherSuite,
     client_config::{MakeProposalFilter, ProposalFilterInit},
@@ -6,7 +8,6 @@ use crate::{
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     provider::{
         crypto::{CryptoProvider, SignaturePublicKey},
-        identity::IdentityProvider,
         keychain::KeychainStorage,
     },
     tree_kem::Capabilities,

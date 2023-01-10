@@ -33,6 +33,9 @@ pub use reference::{DefRef, Ref};
 pub use varint::{VarInt, VarIntOutOfRange};
 pub use vector::{DefVec, Vector};
 
+pub use tls_codec;
+pub use tls_codec_derive;
+
 /// Helper trait to derive [`tls_codec::Size`] when foreign types not implementing `Size` are
 /// involved.
 ///

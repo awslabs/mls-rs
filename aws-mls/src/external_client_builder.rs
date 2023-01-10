@@ -16,7 +16,6 @@ use crate::{
     protocol_version::ProtocolVersion,
     provider::{
         crypto::{CryptoProvider, SignaturePublicKey, SignatureSecretKey},
-        identity::IdentityProvider,
         keychain::{InMemoryKeychain, KeychainStorage},
     },
     tree_kem::Capabilities,
@@ -578,6 +577,7 @@ mod private {
     }
 }
 
+use aws_mls_core::identity::IdentityProvider;
 use aws_mls_crypto_ferriscrypt::FerriscryptCryptoProvider;
 use private::{Config, ConfigInner, IntoConfig};
 

@@ -8,7 +8,7 @@ use crate::group::message_signature::MLSAuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
 use crate::group::{process_group_info, Group, GroupError, NewMemberInfo};
 use crate::hash_reference::HashReferenceError;
-use crate::identity::{CredentialError, SigningIdentity};
+use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageGenerationError, KeyPackageGenerator};
 use crate::protocol_version::MaybeProtocolVersion;
 use crate::protocol_version::ProtocolVersion;
@@ -35,8 +35,6 @@ pub enum ClientError {
     KeyPackageGenerationError(#[from] KeyPackageGenerationError),
     #[error(transparent)]
     GroupError(#[from] GroupError),
-    #[error(transparent)]
-    CredentialError(#[from] CredentialError),
     #[error(transparent)]
     HashReferenceError(#[from] HashReferenceError),
     #[error("signer not found for given identity")]

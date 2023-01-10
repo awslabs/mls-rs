@@ -1,14 +1,15 @@
 use std::convert::Infallible;
 
-use crate::{
-    cipher_suite::CipherSuite,
-    group::Member,
-    identity::SigningIdentity,
-    identity::{CredentialType, CREDENTIAL_TYPE_BASIC},
-    time::MlsTime,
+use aws_mls_core::{
+    group::{RosterEntry, RosterUpdate},
+    identity::IdentityProvider,
 };
 
-use super::IdentityProvider;
+use crate::{
+    identity::SigningIdentity,
+    identity::{BasicCredential, CredentialType},
+    time::MlsTime,
+};
 
 #[derive(Clone, Debug, Default)]
 pub struct BasicIdentityProvider;
@@ -26,7 +27,6 @@ impl IdentityProvider for BasicIdentityProvider {
     fn validate(
         &self,
         _signing_identity: &SigningIdentity,
-        _cipher_suite: CipherSuite,
         _timestamp: Option<MlsTime>,
     ) -> Result<(), Self::Error> {
         //TODO: Is it actually beneficial to check the key, or does that already happen elsewhere before
@@ -47,13 +47,13 @@ impl IdentityProvider for BasicIdentityProvider {
     }
 
     fn supported_types(&self) -> Vec<CredentialType> {
-        vec![CREDENTIAL_TYPE_BASIC]
+        vec![BasicCredential::credential_type()]
     }
 
-    fn identity_events(
+    fn identity_events<T: RosterEntry>(
         &self,
-        _update: &crate::group::message_processor::RosterUpdate,
-        _prior_roster: Vec<Member>,
+        _update: &RosterUpdate<T>,
+        _prior_roster: Vec<T>,
     ) -> Result<Vec<Self::IdentityEvent>, Self::Error> {
         Ok(vec![])
     }

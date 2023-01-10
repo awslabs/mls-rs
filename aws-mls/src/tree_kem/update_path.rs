@@ -1,3 +1,4 @@
+use aws_mls_core::identity::IdentityProvider;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -9,10 +10,7 @@ use super::{
 };
 use crate::{
     extension::ExtensionError,
-    provider::{
-        crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey},
-        identity::IdentityProvider,
-    },
+    provider::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey},
 };
 use crate::{group::message_processor::ProvisionalState, time::MlsTime};
 

@@ -1,7 +1,9 @@
+use aws_mls_core::{group::RosterUpdate, identity::IdentityProvider};
+
 use crate::{
     client_config::ProposalFilterInit,
     key_package::KeyPackage,
-    provider::{crypto::CipherSuiteProvider, identity::IdentityProvider},
+    provider::crypto::CipherSuiteProvider,
     psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
     time::MlsTime,
     tree_kem::{
@@ -42,15 +44,8 @@ pub(crate) struct ProvisionalState {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct RosterUpdate {
-    pub added: Vec<Member>,
-    pub removed: Vec<Member>,
-    pub updated: Vec<Member>,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct StateUpdate<IE> {
-    pub roster_update: RosterUpdate,
+    pub roster_update: RosterUpdate<Member>,
     pub identity_events: Vec<IE>,
     pub added_psks: Vec<JustPreSharedKeyID>,
     pub pending_reinit: bool,

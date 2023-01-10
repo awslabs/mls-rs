@@ -66,7 +66,10 @@ pub mod protocol_version;
 pub mod provider;
 pub mod psk;
 mod signer;
-pub mod time;
+
+pub mod time {
+    pub use aws_mls_core::time::*;
+}
 
 mod serde_utils {
     pub use aws_mls_core::serde::*;

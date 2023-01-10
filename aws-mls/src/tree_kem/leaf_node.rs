@@ -3,15 +3,14 @@ use crate::extension::LeafNodeExtension;
 use crate::provider::crypto::{
     CipherSuiteProvider, HpkePublicKey, HpkeSecretKey, SignatureSecretKey,
 };
-use crate::provider::identity::IdentityProvider;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::time::MlsTime;
 use crate::{
     extension::ExtensionList,
-    identity::CredentialError,
     identity::SigningIdentity,
     signer::{Signable, SignatureError},
 };
+use aws_mls_core::identity::IdentityProvider;
 use serde_with::serde_as;
 use thiserror::Error;
 use tls_codec::{Serialize, Size, TlsByteSliceU32};
@@ -21,8 +20,6 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 pub enum LeafNodeError {
     #[error(transparent)]
     TlsCodecError(#[from] tls_codec::Error),
-    #[error(transparent)]
-    CredentialError(#[from] CredentialError),
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
     #[error("parent hash error: {0}")]
@@ -109,11 +106,7 @@ impl LeafNode {
         }
 
         identity_provider
-            .validate(
-                signing_identity,
-                cipher_suite_provider.cipher_suite(),
-                Some(MlsTime::now()),
-            )
+            .validate(signing_identity, Some(MlsTime::now()))
             .map_err(|e| LeafNodeError::IdentityProviderError(e.into()))
     }
 
@@ -314,8 +307,7 @@ pub mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,
         extension::{ApplicationIdExt, MlsExtension},
-        identity::test_utils::get_test_signing_identity,
-        identity::CREDENTIAL_TYPE_BASIC,
+        identity::{test_utils::get_test_signing_identity, BasicCredential},
         provider::{
             crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
         },
@@ -408,7 +400,7 @@ pub mod test_utils {
 
     pub fn get_test_capabilities() -> Capabilities {
         let mut capabilities = Capabilities {
-            credentials: vec![CREDENTIAL_TYPE_BASIC],
+            credentials: vec![BasicCredential::credential_type()],
             ..Default::default()
         };
         capabilities.extensions.push(ApplicationIdExt::IDENTIFIER);

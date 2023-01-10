@@ -22,7 +22,6 @@ use crate::{
     provider::{
         crypto::{CryptoProvider, SignatureSecretKey},
         group_state::{GroupStateStorage, InMemoryGroupStateStorage},
-        identity::IdentityProvider,
         key_package::{InMemoryKeyPackageRepository, KeyPackageRepository},
         keychain::{InMemoryKeychain, KeychainStorage},
         psk::{InMemoryPskStore, PskStore},
@@ -906,6 +905,7 @@ mod private {
     }
 }
 
+use aws_mls_core::identity::IdentityProvider;
 use aws_mls_crypto_ferriscrypt::FerriscryptCryptoProvider;
 use private::{Config, ConfigInner, IntoConfig};
 

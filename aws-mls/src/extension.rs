@@ -1,12 +1,11 @@
-use crate::cipher_suite::CipherSuite;
 use crate::group::proposal::ProposalType;
 use crate::provider::crypto::HpkePublicKey;
-use crate::provider::identity::IdentityProvider;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::time::MlsTime;
 use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
 use crate::{identity::CredentialType, identity::SigningIdentity};
+use aws_mls_core::identity::IdentityProvider;
 use serde_with::serde_as;
 use std::fmt::Debug;
 use std::io::{Read, Write};
@@ -147,12 +146,11 @@ impl ExternalSendersExt {
     pub fn verify_all<I: IdentityProvider>(
         &self,
         provider: &I,
-        cipher_suite: CipherSuite,
         timestamp: Option<MlsTime>,
     ) -> Result<(), I::Error> {
         self.allowed_senders
             .iter()
-            .try_for_each(|id| provider.validate(id, cipher_suite, timestamp))
+            .try_for_each(|id| provider.validate(id, timestamp))
     }
 }
 
@@ -440,13 +438,14 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::{
-        group::test_utils::random_bytes, identity::test_utils::get_test_signing_identity,
-        identity::CREDENTIAL_TYPE_BASIC,
+        group::test_utils::random_bytes,
+        identity::{test_utils::get_test_signing_identity, BasicCredential},
     };
 
     use super::*;
     use assert_matches::assert_matches;
 
+    use aws_mls_core::crypto::CipherSuite;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -489,7 +488,7 @@ mod tests {
         let ext = RequiredCapabilitiesExt {
             extensions: vec![0u16, 1u16],
             proposals: vec![42.into(), 43.into()],
-            credentials: vec![CREDENTIAL_TYPE_BASIC],
+            credentials: vec![BasicCredential::credential_type()],
         };
 
         let as_extension = ext.to_extension().unwrap();

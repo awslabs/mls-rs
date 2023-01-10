@@ -1,3 +1,5 @@
+use aws_mls_core::identity::IdentityProvider;
+
 use crate::{
     cipher_suite::MaybeCipherSuite,
     client_builder::Preferences,
@@ -12,8 +14,8 @@ use crate::{
     identity::CredentialType,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     provider::{
-        crypto::CryptoProvider, group_state::GroupStateStorage, identity::IdentityProvider,
-        key_package::KeyPackageRepository, keychain::KeychainStorage, psk::PskStore,
+        crypto::CryptoProvider, group_state::GroupStateStorage, key_package::KeyPackageRepository,
+        keychain::KeychainStorage, psk::PskStore,
     },
     tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
 };

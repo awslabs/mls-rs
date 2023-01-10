@@ -4,7 +4,6 @@ use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     extension::{ExtensionError, ExtensionList, GroupContextExtension},
     hash_reference::HashReferenceError,
-    identity::CredentialError,
     key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError},
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     psk::PskSecretError,
@@ -55,8 +54,6 @@ pub enum GroupError {
     LeafNodeValidationError(#[from] LeafNodeValidationError),
     #[error(transparent)]
     MembershipTagError(#[from] MembershipTagError),
-    #[error(transparent)]
-    CredentialError(#[from] CredentialError),
     #[error(transparent)]
     ConfirmationTagError(#[from] ConfirmationTagError),
     #[error(transparent)]

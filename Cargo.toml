@@ -4,6 +4,7 @@ members = [
     "aws-mls",
     "aws-mls-core",
     "aws-mls-crypto-ferriscrypt",
+    "aws-mls-identity-x509",
     "aws-mls/fuzz",
     "aws-mls/test_harness_integration",
     "aws-mls-crypto-openssl"

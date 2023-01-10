@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::ops::Deref;
 
+use aws_mls_core::identity::IdentityProvider;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -15,7 +16,6 @@ use self::tree_utils::build_ascii_tree;
 use crate::extension::ExtensionError;
 use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError};
 use crate::provider::crypto::{self, CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
-use crate::provider::identity::IdentityProvider;
 use crate::tree_kem::parent_hash::ParentHashError;
 use crate::tree_kem::path_secret::PathSecretError;
 use crate::tree_kem::tree_hash::TreeHashes;

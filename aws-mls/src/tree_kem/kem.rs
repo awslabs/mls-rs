@@ -1,8 +1,8 @@
 use crate::group::GroupContext;
 use crate::identity::SigningIdentity;
 use crate::provider::crypto::{CipherSuiteProvider, HpkeCiphertext, SignatureSecretKey};
-use crate::provider::identity::IdentityProvider;
 use crate::tree_kem::math as tree_math;
+use aws_mls_core::identity::IdentityProvider;
 use cfg_if::cfg_if;
 
 #[cfg(feature = "rayon")]

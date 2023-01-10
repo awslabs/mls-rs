@@ -7,14 +7,12 @@ use crate::{
         GroupContext, GroupError, GroupState, InterimTranscriptHash, ProposalCache, ProposalRef,
         ReInit, TreeKemPublic,
     },
-    provider::{
-        crypto::{HpkePublicKey, HpkeSecretKey},
-        identity::IdentityProvider,
-    },
+    provider::crypto::{HpkePublicKey, HpkeSecretKey},
     serde_utils::vec_u8_as_base64::VecAsBase64,
     tree_kem::{node::NodeVec, TreeKemPrivate},
 };
 
+use aws_mls_core::identity::IdentityProvider;
 use serde_with::serde_as;
 use std::collections::HashMap;
 

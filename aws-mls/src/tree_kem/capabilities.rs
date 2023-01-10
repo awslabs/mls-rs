@@ -4,7 +4,7 @@ use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
     extension::ExtensionType,
     group::proposal::ProposalType,
-    identity::{CredentialType, CREDENTIAL_TYPE_X509},
+    identity::{BasicCredential, CredentialType},
     protocol_version::MaybeProtocolVersion,
     protocol_version::ProtocolVersion,
 };
@@ -41,7 +41,7 @@ impl Default for Capabilities {
             cipher_suites: CipherSuite::all().map(MaybeCipherSuite::from).collect(),
             extensions: Default::default(),
             proposals: Default::default(),
-            credentials: vec![CREDENTIAL_TYPE_X509],
+            credentials: vec![BasicCredential::credential_type()],
         }
     }
 }

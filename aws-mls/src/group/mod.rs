@@ -1,3 +1,4 @@
+use aws_mls_core::identity::IdentityProvider;
 use serde_with::serde_as;
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -21,7 +22,6 @@ use crate::provider::crypto::{
     CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey,
     SignatureSecretKey,
 };
-use crate::provider::identity::IdentityProvider;
 use crate::provider::keychain::KeychainStorage;
 use crate::provider::psk::{PskStore, PskStoreIdValidator};
 use crate::psk::{
@@ -57,9 +57,7 @@ use transcript_hash::*;
 pub(crate) use self::commit::test_utils::CommitModifiers;
 
 use self::epoch::{EpochSecrets, PriorEpoch, SenderDataSecret};
-pub use self::message_processor::{
-    Event, ExternalEvent, ProcessedMessage, RosterUpdate, StateUpdate,
-};
+pub use self::message_processor::{Event, ExternalEvent, ProcessedMessage, StateUpdate};
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
 use self::state_repo::GroupStateRepository;
 pub use external_group::ExternalGroup;
@@ -1770,7 +1768,7 @@ mod tests {
     use crate::client::test_utils::{get_basic_client_builder, test_client_with_key_pkg};
     use crate::extension::MlsExtension;
     use crate::group::test_utils::random_bytes;
-    use crate::identity::test_utils::{get_test_basic_credential, get_test_x509_credential};
+    use crate::identity::test_utils::get_test_basic_credential;
     use crate::key_package::KeyPackageValidationError;
     use crate::provider::crypto::test_utils::test_cipher_suite_provider;
     use crate::time::MlsTime;
@@ -1786,7 +1784,6 @@ mod tests {
             test_utils::TestExtension, Extension, ExternalSendersExt, RequiredCapabilitiesExt,
         },
         identity::test_utils::get_test_signing_identity,
-        identity::CREDENTIAL_TYPE_X509,
         key_package::test_utils::{test_key_package, test_key_package_custom},
         protocol_version::MaybeProtocolVersion,
         psk::Psk,
@@ -1805,6 +1802,7 @@ mod tests {
     };
     use assert_matches::assert_matches;
 
+    use aws_mls_core::identity::{Credential, CredentialType};
     use tls_codec::Size;
 
     #[cfg(target_arch = "wasm32")]
@@ -3029,7 +3027,7 @@ mod tests {
         let mut groups = get_test_groups_with_features(3, Default::default(), Default::default());
 
         groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
-            leaf.signing_identity.credential.credential_type = CREDENTIAL_TYPE_X509;
+            leaf.signing_identity.credential.credential_type = CredentialType::new(5);
             leaf.sign(cp, sk, &(b"TEST GROUP".as_slice(), 0).into())
                 .unwrap();
         };
@@ -3053,7 +3051,7 @@ mod tests {
         let mut groups = get_test_groups_with_features(3, Default::default(), Default::default());
 
         groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
-            leaf.capabilities.credentials = vec![2];
+            leaf.capabilities.credentials = vec![2.into()];
             leaf.sign(cp, sk, &(b"TEST GROUP".as_slice(), 0).into())
                 .unwrap();
         };
@@ -3078,14 +3076,14 @@ mod tests {
         let extension = RequiredCapabilitiesExt {
             extensions: vec![],
             proposals: vec![],
-            credentials: vec![1],
+            credentials: vec![1.into()],
         };
 
         let extensions = vec![extension.to_extension().unwrap()];
         let mut groups = get_test_groups_with_features(3, extensions.into(), Default::default());
 
         groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
-            leaf.capabilities.credentials = vec![2];
+            leaf.capabilities.credentials = vec![2.into()];
             leaf.sign(cp, sk, &(b"TEST GROUP".as_slice(), 0).into())
                 .unwrap();
         };
@@ -3111,7 +3109,10 @@ mod tests {
 
         let ext_sender_id = SigningIdentity {
             signature_key: ext_sender_pk,
-            credential: get_test_x509_credential(vec![].into()),
+            credential: Credential {
+                credential_type: 2.into(),
+                credential_data: random_bytes(32),
+            },
         };
 
         let ext_senders = ExternalSendersExt::new(vec![ext_sender_id])
@@ -3123,7 +3124,7 @@ mod tests {
 
         // New leaf for group 0 supports only basic credentials (used by the group) but not X509 used by external sender
         groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
-            leaf.capabilities.credentials = vec![1];
+            leaf.capabilities.credentials = vec![1.into()];
             leaf.sign(cp, sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 

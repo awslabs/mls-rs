@@ -1,3 +1,4 @@
+use aws_mls_core::identity::IdentityProvider;
 use tls_codec::Serialize;
 
 use super::{
@@ -21,7 +22,7 @@ use crate::{
     identity::SigningIdentity,
     key_package::{KeyPackage, KeyPackageValidator},
     protocol_version::ProtocolVersion,
-    provider::{crypto::CryptoProvider, identity::IdentityProvider, keychain::KeychainStorage},
+    provider::{crypto::CryptoProvider, keychain::KeychainStorage},
     psk::PassThroughPskIdValidator,
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
 };

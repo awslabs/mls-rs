@@ -4,7 +4,6 @@ use crate::{
         FailInvalidProposal, IgnoreInvalidByRefProposal, ProposalApplier, ProposalBundle,
         ProposalFilter, ProposalFilterError, ProposalInfo, ProposalState,
     },
-    provider::identity::IdentityProvider,
     psk::ExternalPskIdValidator,
     time::MlsTime,
     tree_kem::leaf_node::LeafNode,
@@ -404,12 +403,11 @@ mod tests {
         extension::{test_utils::TestExtension, ExternalSendersExt, RequiredCapabilitiesExt},
         group::{
             proposal_filter::proposer_can_propose,
-            test_utils::{test_group, TEST_GROUP},
+            test_utils::{random_bytes, test_group, TEST_GROUP},
         },
-        identity::test_utils::get_test_signing_identity,
         identity::{
-            test_utils::get_test_certificate_credential, CREDENTIAL_TYPE_BASIC,
-            CREDENTIAL_TYPE_X509,
+            test_utils::{get_test_signing_identity, INVALID_CREDENTIAL_TYPE},
+            BasicCredential,
         },
         key_package::{
             test_utils::{test_key_package, test_key_package_custom},
@@ -434,6 +432,7 @@ mod tests {
     };
 
     use assert_matches::assert_matches;
+    use aws_mls_core::identity::{Credential, CredentialType};
     use itertools::Itertools;
     use std::convert::Infallible;
 
@@ -3310,11 +3309,14 @@ mod tests {
         assert_eq!(effects.removes, vec![bob]);
     }
 
-    fn x509_key_package(name: &str) -> KeyPackage {
+    fn unsupported_credential_key_package(name: &str) -> KeyPackage {
         let (mut signing_identity, secret_key) =
             get_test_signing_identity(TEST_CIPHER_SUITE, name.as_bytes().to_vec());
 
-        signing_identity.credential = get_test_certificate_credential();
+        signing_identity.credential = Credential {
+            credential_type: CredentialType::new(INVALID_CREDENTIAL_TYPE),
+            credential_data: random_bytes(32),
+        };
 
         let generator = KeyPackageGenerator {
             protocol_version: TEST_PROTOCOL_VERSION,
@@ -3328,7 +3330,7 @@ mod tests {
             .generate(
                 Lifetime::years(1).unwrap(),
                 Capabilities {
-                    credentials: vec![CREDENTIAL_TYPE_X509],
+                    credentials: vec![INVALID_CREDENTIAL_TYPE.into()],
                     ..Default::default()
                 },
                 Default::default(),
@@ -3349,19 +3351,16 @@ mod tests {
             test_cipher_suite_provider(TEST_CIPHER_SUITE),
         )
         .receive([Proposal::Add(AddProposal {
-            key_package: x509_key_package("bob"),
+            key_package: unsupported_credential_key_package("bob"),
         })]);
 
         assert_matches!(
             res,
             Err(ProposalCacheError::ProposalFilterError(
                 ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
-                    TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(
-                        CREDENTIAL_TYPE_BASIC,
-                        _
-                    )
+                    TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(c, _)
                 ))
-            ))
+            )) if c == BasicCredential::credential_type()
         );
     }
 
@@ -3371,7 +3370,7 @@ mod tests {
 
         let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::Add(AddProposal {
-                key_package: x509_key_package("bob"),
+                key_package: unsupported_credential_key_package("bob"),
             })])
             .send();
 
@@ -3380,11 +3379,11 @@ mod tests {
             Err(ProposalCacheError::ProposalFilterError(
                 ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
                     TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(
-                        CREDENTIAL_TYPE_BASIC,
+                        c,
                         _
                     )
                 ))
-            ))
+            )) if c == BasicCredential::credential_type()
         );
     }
 
@@ -3393,7 +3392,7 @@ mod tests {
         let (alice, tree) = new_tree("alice");
 
         let add = Proposal::Add(AddProposal {
-            key_package: x509_key_package("bob"),
+            key_package: unsupported_credential_key_package("bob"),
         });
 
         let add_ref = make_proposal_ref(&add, alice);

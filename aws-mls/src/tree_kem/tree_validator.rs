@@ -4,12 +4,12 @@ use crate::provider::crypto::CipherSuiteProvider;
 use crate::tree_kem::math as tree_math;
 use crate::{
     extension::RequiredCapabilitiesExt,
-    provider::identity::IdentityProvider,
     tree_kem::{
         leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator},
         RatchetTreeError, TreeKemPublic,
     },
 };
+use aws_mls_core::identity::IdentityProvider;
 use thiserror::Error;
 
 use super::node::{LeafIndex, NodeIndex, NodeVecError};

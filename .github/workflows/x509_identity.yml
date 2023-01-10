@@ -1,4 +1,4 @@
-name: Core
+name: X509Identity
 on: [push, pull_request]
 env:
   CARGO_TERM_COLOR: always
@@ -21,14 +21,14 @@ jobs:
         ssh-agent -a $SSH_AUTH_SOCK > /dev/null
         ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
     - name: Rust Fmt
-      working-directory: aws-mls-core
+      working-directory: aws-mls-identity-x509
       run: cargo fmt --all -- --check
     - name: Clippy
-      working-directory: aws-mls-core
+      working-directory: aws-mls-identity-x509
       run: cargo clippy --all-targets -- -D warnings
-    - name: Test (OpenSSL Engine)
-      working-directory: aws-mls-core
+    - name: Test
+      working-directory: aws-mls-identity-x509
       run: cargo test --verbose
     - name: Test (WASM)
-      working-directory: aws-mls-core
+      working-directory: aws-mls-identity-x509
       run: wasm-pack test --headless --chrome --release -- --no-default-features

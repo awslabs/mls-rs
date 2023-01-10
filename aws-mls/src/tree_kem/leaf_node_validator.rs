@@ -2,13 +2,13 @@ use super::leaf_node::{LeafNode, LeafNodeSigningContext, LeafNodeSource};
 use super::{Lifetime, LifetimeError};
 use crate::identity::CredentialType;
 use crate::provider::crypto::CipherSuiteProvider;
-use crate::provider::identity::IdentityProvider;
 use crate::{
     extension::{ExtensionType, RequiredCapabilitiesExt},
     group::proposal::ProposalType,
     signer::{Signable, SignatureError},
     time::MlsTime,
 };
+use aws_mls_core::identity::IdentityProvider;
 use thiserror::Error;
 
 pub enum ValidationContext<'a> {
@@ -179,11 +179,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
 
         // Verify the credential
         self.identity_provider
-            .validate(
-                &leaf_node.signing_identity,
-                self.cipher_suite_provider.cipher_suite(),
-                context.generation_time(),
-            )
+            .validate(&leaf_node.signing_identity, context.generation_time())
             .map_err(|e| LeafNodeValidationError::IdentityProviderError(e.into()))?;
 
         // Verify that the credential signed the leaf node
@@ -223,8 +219,8 @@ mod tests {
     use crate::cipher_suite::CipherSuite;
     use crate::extension::{ApplicationIdExt, ExtensionList, MlsExtension};
     use crate::group::test_utils::random_bytes;
-    use crate::identity::test_utils::get_test_signing_identity;
-    use crate::identity::CREDENTIAL_TYPE_BASIC;
+    use crate::identity::test_utils::{get_test_signing_identity, INVALID_CREDENTIAL_TYPE};
+    use crate::identity::BasicCredential;
     use crate::provider::crypto::test_utils::test_cipher_suite_provider;
     use crate::provider::crypto::SignatureSecretKey;
     use crate::provider::identity::BasicIdentityProvider;
@@ -437,7 +433,7 @@ mod tests {
             .unwrap();
 
         let capabilities = Capabilities {
-            credentials: vec![CREDENTIAL_TYPE_BASIC],
+            credentials: vec![BasicCredential::credential_type()],
             ..Default::default()
         };
 
@@ -524,7 +520,7 @@ mod tests {
     #[test]
     fn test_required_credential() {
         let required_capabilities = RequiredCapabilitiesExt {
-            credentials: vec![42],
+            credentials: vec![INVALID_CREDENTIAL_TYPE.into()],
             ..Default::default()
         };
 
@@ -539,7 +535,7 @@ mod tests {
         );
 
         assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)),
-            Err(LeafNodeValidationError::RequiredCredentialNotFound(ext)) if ext == 42u16
+            Err(LeafNodeValidationError::RequiredCredentialNotFound(ext)) if ext == INVALID_CREDENTIAL_TYPE.into()
         );
     }
 
@@ -573,14 +569,15 @@ mod tests {
 
 #[cfg(test)]
 pub mod test_utils {
+    use aws_mls_core::{
+        group::{RosterEntry, RosterUpdate},
+        identity::IdentityProvider,
+    };
+    use thiserror::Error;
     use tls_codec::Serialize;
 
     use crate::{
-        cipher_suite::CipherSuite,
-        group::Member,
-        identity::SigningIdentity,
-        identity::{CredentialError, CREDENTIAL_TYPE_BASIC, CREDENTIAL_TYPE_X509},
-        provider::identity::IdentityProvider,
+        identity::{BasicCredential, SigningIdentity},
         time::MlsTime,
     };
 
@@ -593,24 +590,24 @@ pub mod test_utils {
         }
     }
 
+    #[derive(Debug, Error)]
+    #[error("test error")]
+    pub struct TestFailureError;
+
     impl IdentityProvider for FailureIdentityProvider {
-        type Error = CredentialError;
+        type Error = TestFailureError;
         type IdentityEvent = ();
 
         fn validate(
             &self,
             _signing_identity: &SigningIdentity,
-            _cipher_suite: CipherSuite,
             _timestamp: Option<MlsTime>,
         ) -> Result<(), Self::Error> {
-            Err(CredentialError::UnexpectedCredentialType(
-                CREDENTIAL_TYPE_BASIC,
-                CREDENTIAL_TYPE_BASIC,
-            ))
+            Err(TestFailureError)
         }
 
         fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
-            Ok(signing_id.credential.tls_serialize_detached()?)
+            Ok(signing_id.credential.tls_serialize_detached().unwrap())
         }
 
         fn valid_successor(
@@ -618,20 +615,17 @@ pub mod test_utils {
             _predecessor: &SigningIdentity,
             _successor: &SigningIdentity,
         ) -> Result<bool, Self::Error> {
-            Err(CredentialError::UnexpectedCredentialType(
-                CREDENTIAL_TYPE_BASIC,
-                CREDENTIAL_TYPE_BASIC,
-            ))
+            Err(TestFailureError)
         }
 
         fn supported_types(&self) -> Vec<crate::identity::CredentialType> {
-            vec![CREDENTIAL_TYPE_X509]
+            vec![BasicCredential::credential_type()]
         }
 
-        fn identity_events(
+        fn identity_events<T: RosterEntry>(
             &self,
-            _update: &crate::group::RosterUpdate,
-            _prior_roster: Vec<Member>,
+            _update: &RosterUpdate<T>,
+            _prior_roster: Vec<T>,
         ) -> Result<Vec<Self::IdentityEvent>, Self::Error> {
             Ok(vec![])
         }

@@ -1,5 +1,6 @@
+use aws_mls_core::identity::IdentityProvider;
+
 use crate::{
-    cipher_suite::CipherSuite,
     extension::{
         is_default_extension, ExtensionList, ExternalSendersExt, GroupContextExtension,
         RequiredCapabilitiesExt,
@@ -12,7 +13,7 @@ use crate::{
     },
     key_package::{KeyPackageValidationOptions, KeyPackageValidator},
     protocol_version::ProtocolVersion,
-    provider::{crypto::CipherSuiteProvider, identity::IdentityProvider},
+    provider::crypto::CipherSuiteProvider,
     psk::ExternalPskIdValidator,
     time::MlsTime,
     tree_kem::{
@@ -146,7 +147,6 @@ where
         let proposals = filter_out_invalid_group_extensions(
             &strategy,
             proposals,
-            self.cipher_suite_provider.cipher_suite(),
             &self.identity_provider,
             commit_time,
         )?;
@@ -707,7 +707,6 @@ where
 fn filter_out_invalid_group_extensions<F, C>(
     strategy: F,
     mut proposals: ProposalBundle,
-    cipher_suite: CipherSuite,
     identity_provider: C,
     commit_time: Option<MlsTime>,
 ) -> Result<ProposalBundle, ProposalFilterError>
@@ -723,7 +722,7 @@ where
             .and_then(|extension| {
                 extension.map_or(Ok(()), |extension| {
                     extension
-                        .verify_all(&identity_provider, cipher_suite, commit_time)
+                        .verify_all(&identity_provider, commit_time)
                         .map_err(|e| ProposalFilterError::IdentityProviderError(e.into()))
                 })
             });

@@ -1,10 +1,9 @@
+use aws_mls_core::identity::IdentityProvider;
+
 use crate::{
     extension::{KeyPackageExtension, LeafNodeExtension},
     identity::SigningIdentity,
-    provider::{
-        crypto::{CipherSuiteProvider, HpkeSecretKey, SignatureSecretKey},
-        identity::IdentityProvider,
-    },
+    provider::crypto::{CipherSuiteProvider, HpkeSecretKey, SignatureSecretKey},
     signer::SignatureError,
     tree_kem::{
         leaf_node::{ConfigProperties, LeafNodeError},
@@ -20,8 +19,6 @@ pub enum KeyPackageGenerationError {
     SignerError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
-    #[error(transparent)]
-    CredentialError(#[from] CredentialError),
     #[error(transparent)]
     KeyPackageError(#[from] KeyPackageError),
     #[error(transparent)]

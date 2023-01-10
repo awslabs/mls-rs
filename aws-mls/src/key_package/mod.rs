@@ -3,7 +3,6 @@ use crate::extension::{ExtensionError, ExtensionList, ExtensionType};
 use crate::extension::{KeyPackageExtension, RequiredCapabilitiesExt};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::{HashReference, HashReferenceError};
-use crate::identity::CredentialError;
 use crate::identity::SigningIdentity;
 use crate::protocol_version::MaybeProtocolVersion;
 use crate::protocol_version::ProtocolVersion;

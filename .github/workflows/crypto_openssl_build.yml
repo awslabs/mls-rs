@@ -1,4 +1,4 @@
-name: Core
+name: CryptoOpenssl
 on: [push, pull_request]
 env:
   CARGO_TERM_COLOR: always
@@ -21,7 +21,7 @@ jobs:
       run: cargo fmt --all -- --check
     - name: Clippy
       working-directory: aws-mls-crypto-openssl
-      run: cargo clippy -- -D warnings
+      run: cargo clippy --all-targets -- -D warnings
     - name: Test (OpenSSL Engine)
       working-directory: aws-mls-crypto-openssl
       run: cargo test --verbose

@@ -1,6 +1,7 @@
+use aws_mls_core::identity::IdentityProvider;
+
 use super::*;
 use crate::provider::crypto::CipherSuiteProvider;
-use crate::provider::identity::IdentityProvider;
 use crate::tree_kem::leaf_node::LeafNodeSource;
 use crate::tree_kem::Lifetime;
 use crate::{
@@ -14,8 +15,6 @@ use crate::{
 pub enum KeyPackageValidationError {
     #[error(transparent)]
     SerializationError(#[from] tls_codec::Error),
-    #[error(transparent)]
-    CredentialError(#[from] CredentialError),
     #[error(transparent)]
     ExtensionError(#[from] ExtensionError),
     #[error(transparent)]
