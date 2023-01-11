@@ -25,7 +25,7 @@ pub trait X509IdentityExtractor {
 }
 
 #[cfg_attr(test, automock(type Error = crate::test_utils::TestError;))]
-pub trait X509Validator {
+pub trait X509CredentialValidator {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn validate_chain(
@@ -58,7 +58,7 @@ pub struct X509IdentityProvider<IE, V, IEP> {
 impl<IE, V, IEP> X509IdentityProvider<IE, V, IEP>
 where
     IE: X509IdentityExtractor,
-    V: X509Validator,
+    V: X509CredentialValidator,
     IEP: IdentityEventProvider,
 {
     pub fn new(identity_extractor: IE, validator: V, event_provider: IEP) -> Self {
@@ -131,7 +131,7 @@ where
 impl<IE, V, IEP> IdentityProvider for X509IdentityProvider<IE, V, IEP>
 where
     IE: X509IdentityExtractor,
-    V: X509Validator,
+    V: X509CredentialValidator,
     IEP: IdentityEventProvider,
 {
     type Error = X509IdentityError;
@@ -183,8 +183,8 @@ mod tests {
             test_certificate_chain, test_signing_identity, test_signing_identity_with_chain,
             TestError,
         },
-        MockIdentityEventProvider, MockX509IdentityExtractor, MockX509Validator, X509IdentityError,
-        X509IdentityProvider,
+        MockIdentityEventProvider, MockX509CredentialValidator, MockX509IdentityExtractor,
+        X509IdentityError, X509IdentityProvider,
     };
 
     use assert_matches::assert_matches;
@@ -194,16 +194,20 @@ mod tests {
 
     fn test_setup<F>(
         mut mock_setup: F,
-    ) -> X509IdentityProvider<MockX509IdentityExtractor, MockX509Validator, MockIdentityEventProvider>
+    ) -> X509IdentityProvider<
+        MockX509IdentityExtractor,
+        MockX509CredentialValidator,
+        MockIdentityEventProvider,
+    >
     where
         F: FnMut(
             &mut MockX509IdentityExtractor,
-            &mut MockX509Validator,
+            &mut MockX509CredentialValidator,
             &mut MockIdentityEventProvider,
         ),
     {
         let mut identity_extractor = MockX509IdentityExtractor::new();
-        let mut validator = MockX509Validator::new();
+        let mut validator = MockX509CredentialValidator::new();
         let mut event_provider = MockIdentityEventProvider::new();
 
         mock_setup(&mut identity_extractor, &mut validator, &mut event_provider);

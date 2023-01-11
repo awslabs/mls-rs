@@ -3,9 +3,14 @@ name = "aws-mls-crypto-openssl"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+x509 = ["aws-mls-identity-x509"]
+default = ["x509"]
+
 [dependencies]
 openssl = { version = "^0.10.40" }
 aws-mls-core = { path = "../aws-mls-core" }
+aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", optional = true }
 thiserror = "^1"
 
 [dev-dependencies]

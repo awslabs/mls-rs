@@ -1,7 +1,12 @@
+pub use openssl;
+
 mod aead;
 mod hpke;
 mod kdf;
 mod mac;
+
+#[cfg(feature = "x509")]
+pub mod x509;
 
 use aead::{Aead, AeadError};
 use hpke::{HpkeError, OpensslHpkeContext};

@@ -7,7 +7,8 @@ use mockall::automock;
 pub trait SubjectParser {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    fn parse_subject(&self, certificate: &DerCertificate) -> Result<String, Self::Error>;
+    /// Returns the subject of `certificate` in DER format
+    fn parse_subject(&self, certificate: &DerCertificate) -> Result<Vec<u8>, Self::Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -32,11 +33,10 @@ where
 
         self.parser
             .parse_subject(cert)
-            .map(|s| s.into_bytes())
             .map_err(|e| X509IdentityError::CertificateParserError(e.into()))
     }
 
-    fn parse_subject(&self, certificate: &DerCertificate) -> Result<String, X509IdentityError> {
+    fn parse_subject(&self, certificate: &DerCertificate) -> Result<Vec<u8>, X509IdentityError> {
         self.parser
             .parse_subject(certificate)
             .map_err(|e| X509IdentityError::CertificateParserError(e.into()))
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn subject_can_be_retrived_as_identity() {
-        let test_subject = "subject".to_string();
+        let test_subject = b"subject".to_vec();
         let cert_chain = test_certificate_chain();
 
         let expected_certificate = cert_chain[1].clone();
@@ -145,7 +145,7 @@ mod tests {
 
         assert_eq!(
             subject_extractor.identity(&cert_chain).unwrap(),
-            test_subject.into_bytes()
+            test_subject
         );
     }
 
@@ -165,13 +165,13 @@ mod tests {
                 .expect_parse_subject()
                 .with(mockall::predicate::eq(predecessor))
                 .times(1)
-                .return_once_st(|_| Ok("subject".to_string()));
+                .return_once_st(|_| Ok(b"subject".to_vec()));
 
             parser
                 .expect_parse_subject()
                 .with(mockall::predicate::eq(successor))
                 .times(1)
-                .return_once_st(|_| Ok("subject".to_string()));
+                .return_once_st(|_| Ok(b"subject".to_vec()));
         });
 
         assert!(subject_extractor
