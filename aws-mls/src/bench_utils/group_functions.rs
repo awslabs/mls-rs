@@ -8,10 +8,10 @@ use crate::{
     client_config::ClientConfig,
     extension::ExtensionList,
     group::{
+        epoch::PriorEpoch,
         framing::{Content, MLSMessage, Sender, WireFormat},
         message_processor::MessageProcessor,
         message_signature::MLSAuthenticatedContent,
-        state_repo::PriorEpoch,
         Commit, Group, GroupError, Snapshot,
     },
     identity::SigningIdentity,
@@ -163,10 +163,7 @@ fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
             let epoch_repo = config.group_state_storage();
             let exported_epochs = epoch_repo.export_epoch_data(session.group_id()).unwrap();
 
-            let group_state = epoch_repo
-                .get_snapshot(session.group_id())
-                .unwrap()
-                .unwrap();
+            let group_state = epoch_repo.state(session.group_id()).unwrap().unwrap();
 
             let epochs = serde_json::to_vec(&exported_epochs).unwrap();
 

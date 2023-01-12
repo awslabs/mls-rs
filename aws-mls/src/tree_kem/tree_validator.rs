@@ -138,7 +138,7 @@ mod tests {
     use super::*;
     use crate::{
         cipher_suite::CipherSuite,
-        group::test_utils::{get_test_group_context, random_bytes},
+        group::test_utils::{get_test_group_context, random_bytes, TEST_GROUP},
         provider::{
             crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
         },
@@ -214,7 +214,7 @@ mod tests {
 
             let validator = TreeValidator::new(
                 &cipher_suite_provider,
-                b"",
+                TEST_GROUP,
                 &expected_tree_hash,
                 None,
                 BasicIdentityProvider::new(),

@@ -1,17 +1,12 @@
 use crate::{
-    group::Snapshot,
+    group::{PriorEpoch, Snapshot},
     key_package::KeyPackageRef,
-    provider::{
-        group_state::{EpochStorageCommit, GroupStateStorage},
-        key_package::KeyPackageRepository,
-    },
+    provider::{group_state::GroupStateStorage, key_package::KeyPackageRepository},
 };
 
 use hex::ToHex;
-use std::collections::hash_map::Entry;
+use std::collections::{hash_map::Entry, HashMap, VecDeque};
 use thiserror::Error;
-
-pub use crate::group::epoch::PriorEpoch;
 
 pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
 
@@ -27,6 +22,15 @@ pub enum GroupStateRepositoryError {
     StorageError(Box<dyn std::error::Error + Sync + Send + 'static>),
     #[error(transparent)]
     KeyPackageRepoError(Box<dyn std::error::Error + Sync + Send + 'static>),
+}
+
+/// A set of changes to apply to a GroupStateStorage implementation. These changes MUST
+/// be made in a single transaction to avoid creating invalid states.
+#[derive(Default, Clone, Debug)]
+struct EpochStorageCommit {
+    pub(crate) inserts: VecDeque<PriorEpoch>,
+    pub(crate) updates: HashMap<u64, PriorEpoch>,
+    pub(crate) delete_under: Option<u64>,
 }
 
 #[derive(Debug, Clone, Error)]
@@ -113,7 +117,7 @@ where
             .map(|epoch| Ok(epoch.clone()))
             .or_else(|| {
                 self.storage
-                    .get_epoch_data(&self.group_id, epoch_id)
+                    .epoch(&self.group_id, epoch_id)
                     .map_err(|e| GroupStateRepositoryError::StorageError(e.into()))
                     .transpose()
             })
@@ -151,7 +155,7 @@ where
         Ok(match self.pending_commit.updates.entry(epoch_id) {
             Entry::Vacant(entry) => self
                 .storage
-                .get_epoch_data(&self.group_id, epoch_id)
+                .epoch(&self.group_id, epoch_id)
                 .map_err(|e| GroupStateRepositoryError::StorageError(e.into()))?
                 .map(|epoch| entry.insert(epoch)),
             Entry::Occupied(entry) => Some(entry.into_mut()),
@@ -197,8 +201,12 @@ where
         &mut self,
         group_snapshot: Snapshot,
     ) -> Result<(), GroupStateRepositoryError> {
+        let inserts = self.pending_commit.inserts.iter().cloned().collect();
+        let updates = self.pending_commit.updates.values().cloned().collect();
+        let delete_under = self.pending_commit.delete_under;
+
         self.storage
-            .write(&self.group_id, group_snapshot, &self.pending_commit)
+            .write(group_snapshot, inserts, updates, delete_under)
             .map_err(|e| GroupStateRepositoryError::StorageError(e.into()))?;
 
         if let Some(ref key_package_ref) = self.pending_key_package_removal {
@@ -223,23 +231,22 @@ mod tests {
         group::{
             epoch::{test_utils::get_test_epoch_with_id, SenderDataSecret},
             snapshot::test_utils::get_test_snapshot,
-            test_utils::{random_bytes, test_member},
+            test_utils::{random_bytes, test_member, TEST_GROUP},
         },
         provider::{
-            crypto::test_utils::test_cipher_suite_provider, group_state::InMemoryGroupStateStorage,
+            crypto::test_utils::test_cipher_suite_provider,
+            group_state::{EpochData, InMemoryGroupStateStorage},
             key_package::InMemoryKeyPackageRepository,
         },
     };
 
     use super::*;
 
-    const TEST_GROUP_ID: &[u8] = b"test";
-
     fn test_group_state_repo(
         retention_limit: u64,
     ) -> GroupStateRepository<InMemoryGroupStateStorage, InMemoryKeyPackageRepository> {
         GroupStateRepository::new(
-            TEST_GROUP_ID.to_vec(),
+            TEST_GROUP.to_vec(),
             retention_limit,
             InMemoryGroupStateStorage::default(),
             InMemoryKeyPackageRepository::default(),
@@ -249,7 +256,7 @@ mod tests {
     }
 
     fn test_epoch(epoch_id: u64) -> PriorEpoch {
-        get_test_epoch_with_id(TEST_GROUP_ID.to_vec(), TEST_CIPHER_SUITE, epoch_id)
+        get_test_epoch_with_id(TEST_GROUP.to_vec(), TEST_CIPHER_SUITE, epoch_id)
     }
 
     fn test_snapshot(epoch_id: u64) -> Snapshot {
@@ -260,7 +267,7 @@ mod tests {
     fn test_zero_max_retention() {
         assert_matches!(
             GroupStateRepository::new(
-                TEST_GROUP_ID.to_vec(),
+                TEST_GROUP.to_vec(),
                 0,
                 InMemoryGroupStateStorage::default(),
                 InMemoryKeyPackageRepository::default(),
@@ -304,11 +311,15 @@ mod tests {
         let storage = test_repo.storage.inner.lock().unwrap();
         assert_eq!(storage.len(), 1);
 
-        let stored = storage.get(TEST_GROUP_ID).unwrap();
+        let stored = storage.get(TEST_GROUP).unwrap();
 
-        assert_eq!(stored.current_snapshot, snapshot);
+        assert_eq!(stored.state_data, bincode::serialize(&snapshot).unwrap());
         assert_eq!(stored.epoch_data.len(), 1);
-        assert_eq!(stored.epoch_data.back().unwrap(), &test_epoch);
+
+        assert_eq!(
+            stored.epoch_data.back().unwrap(),
+            &EpochData::new(test_epoch).unwrap()
+        );
     }
 
     #[test]
@@ -334,10 +345,14 @@ mod tests {
         let storage = test_repo.storage.inner.lock().unwrap();
         assert_eq!(storage.len(), 1);
 
-        let stored = storage.get(TEST_GROUP_ID).unwrap();
+        let stored = storage.get(TEST_GROUP).unwrap();
 
         assert_eq!(stored.epoch_data.len(), 1);
-        assert_eq!(stored.epoch_data.back().unwrap(), &test_epoch_1);
+
+        assert_eq!(
+            stored.epoch_data.back().unwrap(),
+            &EpochData::new(test_epoch_1).unwrap()
+        );
     }
 
     #[test]
@@ -373,10 +388,14 @@ mod tests {
         let storage = test_repo.storage.inner.lock().unwrap();
         assert_eq!(storage.len(), 1);
 
-        let stored = storage.get(TEST_GROUP_ID).unwrap();
+        let stored = storage.get(TEST_GROUP).unwrap();
 
         assert_eq!(stored.epoch_data.len(), 1);
-        assert_eq!(stored.epoch_data.back().unwrap(), &test_epoch_2);
+
+        assert_eq!(
+            stored.epoch_data.back().unwrap(),
+            &EpochData::new(test_epoch_2).unwrap()
+        );
     }
 
     #[test]
@@ -419,11 +438,15 @@ mod tests {
         let storage = test_repo.storage.inner.lock().unwrap();
         assert_eq!(storage.len(), 1);
 
-        let stored = storage.get(TEST_GROUP_ID).unwrap();
+        let stored = storage.get(TEST_GROUP).unwrap();
 
-        assert_eq!(stored.current_snapshot, snapshot);
+        assert_eq!(stored.state_data, bincode::serialize(&snapshot).unwrap());
         assert_eq!(stored.epoch_data.len(), 1);
-        assert_eq!(stored.epoch_data.back().unwrap(), &to_update);
+
+        assert_eq!(
+            stored.epoch_data.back().unwrap(),
+            &EpochData::new(to_update).unwrap()
+        );
     }
 
     #[test]
@@ -454,11 +477,19 @@ mod tests {
         let storage = test_repo.storage.inner.lock().unwrap();
         assert_eq!(storage.len(), 1);
 
-        let stored = storage.get(TEST_GROUP_ID).unwrap();
+        let stored = storage.get(TEST_GROUP).unwrap();
 
         assert_eq!(stored.epoch_data.len(), 2);
-        assert_eq!(stored.epoch_data.front().unwrap(), &to_update);
-        assert_eq!(stored.epoch_data.back().unwrap(), &test_epoch_1);
+
+        assert_eq!(
+            stored.epoch_data.front().unwrap(),
+            &EpochData::new(to_update).unwrap()
+        );
+
+        assert_eq!(
+            stored.epoch_data.back().unwrap(),
+            &EpochData::new(test_epoch_1).unwrap()
+        );
     }
 
     #[test]
@@ -538,7 +569,7 @@ mod tests {
                 .inner
                 .lock()
                 .unwrap()
-                .get(TEST_GROUP_ID)
+                .get(TEST_GROUP)
                 .unwrap()
                 .epoch_data
                 .len(),
@@ -569,7 +600,7 @@ mod tests {
         repo.write_to_storage(test_snapshot(3)).unwrap();
 
         let new_repo = GroupStateRepository::new(
-            TEST_GROUP_ID.to_vec(),
+            TEST_GROUP.to_vec(),
             3,
             repo.storage.clone(),
             repo.key_package_repo.clone(),
@@ -590,7 +621,7 @@ mod tests {
         let repo = existing_storage_setup(3);
 
         let mut new_repo = GroupStateRepository::new(
-            TEST_GROUP_ID.to_vec(),
+            TEST_GROUP.to_vec(),
             5,
             repo.storage,
             repo.key_package_repo,
@@ -606,7 +637,7 @@ mod tests {
         assert!(new_repo.pending_commit.delete_under.is_none());
 
         assert_eq!(
-            new_repo.storage.export_epoch_data(TEST_GROUP_ID).unwrap()[0].epoch_id(),
+            new_repo.storage.export_epoch_data(TEST_GROUP).unwrap()[0].epoch_id(),
             0
         );
     }
@@ -616,7 +647,7 @@ mod tests {
         let repo = existing_storage_setup(5);
 
         let mut new_repo = GroupStateRepository::new(
-            TEST_GROUP_ID.to_vec(),
+            TEST_GROUP.to_vec(),
             3,
             repo.storage,
             repo.key_package_repo,
@@ -630,7 +661,7 @@ mod tests {
         new_repo.write_to_storage(test_snapshot(4)).unwrap();
 
         assert_eq!(
-            new_repo.storage.export_epoch_data(TEST_GROUP_ID).unwrap()[0].epoch_id(),
+            new_repo.storage.export_epoch_data(TEST_GROUP).unwrap()[0].epoch_id(),
             2
         );
     }
@@ -647,7 +678,7 @@ mod tests {
         key_package_repo.insert(key_package_ref.clone(), key_package);
 
         let mut repo = GroupStateRepository::new(
-            TEST_GROUP_ID.to_vec(),
+            TEST_GROUP.to_vec(),
             4,
             InMemoryGroupStateStorage::default(),
             key_package_repo,

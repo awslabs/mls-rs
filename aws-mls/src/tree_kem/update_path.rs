@@ -121,7 +121,7 @@ mod tests {
 
     use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::group::message_processor::ProvisionalState;
-    use crate::group::test_utils::{get_test_group_context, random_bytes};
+    use crate::group::test_utils::{get_test_group_context, random_bytes, TEST_GROUP};
     use crate::provider::crypto::test_utils::test_cipher_suite_provider;
     use crate::provider::crypto::HpkeCiphertext;
     use crate::provider::identity::BasicIdentityProvider;
@@ -139,15 +139,13 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    const TEST_GROUP_ID: &[u8] = &[];
-
     fn test_update_path(cipher_suite: CipherSuite, cred: &str) -> UpdatePath {
         let (mut leaf_node, _, signer) = get_basic_test_node_sig_key(cipher_suite, cred);
 
         leaf_node
             .commit(
                 &test_cipher_suite_provider(cipher_suite),
-                TEST_GROUP_ID,
+                TEST_GROUP,
                 0,
                 default_properties(),
                 None,

@@ -11,7 +11,7 @@ use zeroize::Zeroize;
 use super::ciphertext_processor::GroupStateProvider;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct PriorEpoch {
+pub(crate) struct PriorEpoch {
     pub(crate) context: GroupContext,
     pub(crate) self_index: LeafIndex,
     pub(crate) secrets: EpochSecrets,
@@ -19,11 +19,13 @@ pub struct PriorEpoch {
 }
 
 impl PriorEpoch {
-    pub fn epoch_id(&self) -> u64 {
+    #[inline(always)]
+    pub(crate) fn epoch_id(&self) -> u64 {
         self.context.epoch
     }
 
-    pub fn group_id(&self) -> &[u8] {
+    #[inline(always)]
+    pub(crate) fn group_id(&self) -> &[u8] {
         &self.context.group_id
     }
 }

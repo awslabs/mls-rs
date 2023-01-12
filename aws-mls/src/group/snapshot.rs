@@ -22,7 +22,7 @@ use super::{
 
 #[serde_as]
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
-pub struct Snapshot {
+pub(crate) struct Snapshot {
     version: u16,
     state: RawGroupState,
     private_tree: TreeKemPrivate,
@@ -34,11 +34,11 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    pub fn group_id(&self) -> &[u8] {
+    pub(crate) fn group_id(&self) -> &[u8] {
         &self.state.context.group_id
     }
 
-    pub fn cipher_suite(&self) -> CipherSuite {
+    pub(crate) fn cipher_suite(&self) -> CipherSuite {
         self.state.context.cipher_suite
     }
 }

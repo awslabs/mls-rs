@@ -224,7 +224,7 @@ where
         let snapshot = self
             .config
             .group_state_storage()
-            .get_snapshot(group_id)
+            .state(group_id)
             .map_err(|e| ClientError::GroupStorageError(e.into()))?
             .ok_or_else(|| ClientError::GroupNotFound(group_id.encode_hex_upper()))?;
 
@@ -311,7 +311,6 @@ pub mod test_utils {
 
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
-    pub const TEST_GROUP: &[u8] = b"group";
 
     pub fn get_basic_client_builder(
         cipher_suite: CipherSuite,

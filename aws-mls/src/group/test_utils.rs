@@ -123,7 +123,7 @@ pub(crate) fn get_test_group_context(epoch: u64, cipher_suite: CipherSuite) -> G
     GroupContext {
         protocol_version: ProtocolVersion::Mls10,
         cipher_suite,
-        group_id: Vec::new(),
+        group_id: TEST_GROUP.to_vec(),
         epoch,
         tree_hash: vec![],
         confirmed_transcript_hash: ConfirmedTranscriptHash::from(vec![]),

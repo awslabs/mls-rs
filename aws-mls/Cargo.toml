@@ -37,6 +37,7 @@ num_enum = "0.5"
 cfg-if = "^1"
 serde_with = "^2"
 aws-mls-crypto-ferriscrypt = { path = "../aws-mls-crypto-ferriscrypt", default-features = false }
+bincode = "1"
 
 [dev-dependencies]
 assert_matches = "1.5.0"

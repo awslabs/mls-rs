@@ -1,68 +1,53 @@
 use std::{
     collections::{hash_map::Entry, HashMap, VecDeque},
-    convert::Infallible,
     sync::{Arc, Mutex},
 };
 
-pub use crate::group::{snapshot::Snapshot, state_repo::PriorEpoch};
+pub use aws_mls_core::group::GroupStateStorage;
+use aws_mls_core::group::{EpochRecord, GroupState};
 
-/// A set of changes to apply to a GroupStateStorage implementation. These changes MUST
-/// be made in a single transaction to avoid creating invalid states.
-#[derive(Default, Clone, Debug)]
-pub struct EpochStorageCommit {
-    pub(crate) inserts: VecDeque<PriorEpoch>,
-    pub(crate) updates: HashMap<u64, PriorEpoch>,
-    pub(crate) delete_under: Option<u64>,
-}
+use crate::group::{epoch::PriorEpoch, snapshot::Snapshot};
 
-impl EpochStorageCommit {
-    pub fn inserts(&self) -> impl Iterator<Item = &PriorEpoch> {
-        self.inserts.iter()
-    }
-
-    pub fn updates(&self) -> impl Iterator<Item = &PriorEpoch> {
-        self.updates.values()
-    }
-
-    pub fn delete_under(&self) -> Option<u64> {
-        self.delete_under
+impl EpochRecord for PriorEpoch {
+    fn id(&self) -> u64 {
+        self.epoch_id()
     }
 }
 
-/// Group state storage
-pub trait GroupStateStorage {
-    type Error: std::error::Error + Send + Sync + 'static;
+impl GroupState for Snapshot {
+    fn id(&self) -> Vec<u8> {
+        self.group_id().to_vec()
+    }
+}
 
-    fn delete_group(&self, group_id: &[u8]) -> Result<(), Self::Error>;
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct EpochData {
+    pub(crate) id: u64,
+    pub(crate) data: Vec<u8>,
+}
 
-    fn get_snapshot(&self, group_id: &[u8]) -> Result<Option<Snapshot>, Self::Error>;
-
-    fn get_epoch_data(
-        &self,
-        group_id: &[u8],
-        epoch_id: u64,
-    ) -> Result<Option<PriorEpoch>, Self::Error>;
-
-    fn write(
-        &mut self,
-        group_id: &[u8],
-        group_snapshot: Snapshot,
-        epoch_commit: &EpochStorageCommit,
-    ) -> Result<(), Self::Error>;
-
-    fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error>;
+impl EpochData {
+    pub(crate) fn new<T>(value: T) -> Result<Self, bincode::Error>
+    where
+        T: serde::Serialize + EpochRecord,
+    {
+        Ok(Self {
+            id: value.id(),
+            data: bincode::serialize(&value)?,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct InMemoryGroupData {
-    pub(crate) current_snapshot: Snapshot,
-    pub(crate) epoch_data: VecDeque<PriorEpoch>,
+    pub(crate) state_data: Vec<u8>,
+    pub(crate) epoch_data: VecDeque<EpochData>,
 }
 
 impl InMemoryGroupData {
-    pub fn new(snapshot: Snapshot) -> InMemoryGroupData {
+    pub fn new(state_data: Vec<u8>) -> InMemoryGroupData {
         InMemoryGroupData {
-            current_snapshot: snapshot,
+            state_data,
             epoch_data: Default::default(),
         }
     }
@@ -70,35 +55,35 @@ impl InMemoryGroupData {
     fn get_epoch_data_index(&self, epoch_id: u64) -> Option<u64> {
         self.epoch_data
             .front()
-            .and_then(|e| epoch_id.checked_sub(e.epoch_id()))
+            .and_then(|e| epoch_id.checked_sub(e.id))
     }
 
-    pub fn get_epoch(&self, epoch_id: u64) -> Option<&PriorEpoch> {
+    pub fn get_epoch(&self, epoch_id: u64) -> Option<&EpochData> {
         self.get_epoch_data_index(epoch_id)
             .and_then(|i| self.epoch_data.get(i as usize))
     }
 
-    pub fn get_mut_epoch(&mut self, epoch_id: u64) -> Option<&mut PriorEpoch> {
+    pub fn get_mut_epoch(&mut self, epoch_id: u64) -> Option<&mut EpochData> {
         self.get_epoch_data_index(epoch_id)
             .and_then(|i| self.epoch_data.get_mut(i as usize))
     }
 
-    pub fn insert_epoch(&mut self, epoch: PriorEpoch) {
+    pub fn insert_epoch(&mut self, epoch: EpochData) {
         self.epoch_data.push_back(epoch)
     }
 
     // This function does not fail if an update can't be made. If the epoch
     // is not in the store, then it can no longer be accessed by future
     // get_epoch calls and is no longer relevant.
-    pub fn update_epoch(&mut self, epoch: PriorEpoch) {
-        if let Some(existing_epoch) = self.get_mut_epoch(epoch.epoch_id()) {
+    pub fn update_epoch(&mut self, epoch: EpochData) {
+        if let Some(existing_epoch) = self.get_mut_epoch(epoch.id) {
             *existing_epoch = epoch
         }
     }
 
     pub fn trim_epochs(&mut self, min_epoch: u64) {
         while let Some(min) = self.epoch_data.front() {
-            if min.epoch_id() < min_epoch {
+            if min.id < min_epoch {
                 self.epoch_data.pop_front();
             } else {
                 break;
@@ -120,23 +105,27 @@ impl InMemoryGroupStateStorage {
     }
 
     #[cfg(any(feature = "benchmark", test))]
-    pub fn export_epoch_data(&self, group_id: &[u8]) -> Option<Vec<PriorEpoch>> {
-        self.inner
-            .lock()
-            .unwrap()
-            .get(group_id)
-            .map(|data| Vec::from_iter(data.epoch_data.iter().cloned()))
+    pub(crate) fn export_epoch_data(&self, group_id: &[u8]) -> Option<Vec<PriorEpoch>> {
+        self.inner.lock().unwrap().get(group_id).map(|data| {
+            Vec::from_iter(
+                data.epoch_data
+                    .iter()
+                    .map(|v| bincode::deserialize(&v.data).unwrap()),
+            )
+        })
     }
 
     #[cfg(feature = "benchmark")]
-    pub fn from_benchmark_data(snapshot: Snapshot, epoch_data: Vec<PriorEpoch>) -> Self {
+    pub(crate) fn from_benchmark_data(snapshot: Snapshot, epoch_data: Vec<PriorEpoch>) -> Self {
         let group_id = snapshot.group_id().to_vec();
 
-        let mut group_data = InMemoryGroupData::new(snapshot);
+        let mut group_data = InMemoryGroupData::new(bincode::serialize(&snapshot).unwrap());
 
-        epoch_data
-            .into_iter()
-            .for_each(|epoch_data| group_data.epoch_data.push_back(epoch_data));
+        epoch_data.into_iter().for_each(|epoch| {
+            group_data
+                .epoch_data
+                .push_back(EpochData::new(epoch).unwrap())
+        });
 
         let storage = InMemoryGroupStateStorage::new();
 
@@ -148,6 +137,10 @@ impl InMemoryGroupStateStorage {
     pub fn stored_groups(&self) -> Vec<Vec<u8>> {
         self.inner.lock().unwrap().keys().cloned().collect()
     }
+
+    pub fn delete_group(&self, group_id: &[u8]) {
+        self.inner.lock().unwrap().remove(group_id);
+    }
 }
 
 impl Default for InMemoryGroupStateStorage {
@@ -157,53 +150,7 @@ impl Default for InMemoryGroupStateStorage {
 }
 
 impl GroupStateStorage for InMemoryGroupStateStorage {
-    type Error = Infallible;
-
-    fn get_epoch_data(
-        &self,
-        group_id: &[u8],
-        epoch_id: u64,
-    ) -> Result<Option<PriorEpoch>, Self::Error> {
-        Ok(self
-            .inner
-            .lock()
-            .unwrap()
-            .get(group_id)
-            .and_then(|group_data| group_data.get_epoch(epoch_id))
-            .cloned())
-    }
-
-    fn write(
-        &mut self,
-        group_id: &[u8],
-        group_snapshot: Snapshot,
-        epoch_commit: &EpochStorageCommit,
-    ) -> Result<(), Self::Error> {
-        let mut group_map = self.inner.lock().unwrap();
-
-        let group_data = match group_map.entry(group_id.to_vec()) {
-            Entry::Occupied(entry) => {
-                let data = entry.into_mut();
-                data.current_snapshot = group_snapshot;
-                data
-            }
-            Entry::Vacant(entry) => entry.insert(InMemoryGroupData::new(group_snapshot)),
-        };
-
-        epoch_commit
-            .inserts()
-            .for_each(|e| group_data.insert_epoch(e.clone()));
-
-        epoch_commit
-            .updates()
-            .for_each(|e| group_data.update_epoch(e.clone()));
-
-        if let Some(min_epoch) = epoch_commit.delete_under {
-            group_data.trim_epochs(min_epoch);
-        }
-
-        Ok(())
-    }
+    type Error = bincode::Error;
 
     fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
         Ok(self
@@ -211,20 +158,72 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
             .lock()
             .unwrap()
             .get(group_id)
-            .and_then(|group_data| group_data.epoch_data.back().map(|e| e.epoch_id())))
+            .and_then(|group_data| group_data.epoch_data.back().map(|e| e.id)))
     }
 
-    fn get_snapshot(&self, group_id: &[u8]) -> Result<Option<Snapshot>, Self::Error> {
-        Ok(self
-            .inner
+    fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>
+    where
+        T: aws_mls_core::group::GroupState + serde::de::DeserializeOwned,
+    {
+        self.inner
             .lock()
             .unwrap()
             .get(group_id)
-            .map(|v| v.current_snapshot.clone()))
+            .map(|v| bincode::deserialize(&v.state_data))
+            .transpose()
     }
 
-    fn delete_group(&self, group_id: &[u8]) -> Result<(), Self::Error> {
-        self.inner.lock().unwrap().remove(group_id);
+    fn epoch<T>(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<T>, Self::Error>
+    where
+        T: aws_mls_core::group::EpochRecord + serde::Serialize + serde::de::DeserializeOwned,
+    {
+        self.inner
+            .lock()
+            .unwrap()
+            .get(group_id)
+            .and_then(|group_data| group_data.get_epoch(epoch_id))
+            .map(|v| bincode::deserialize(&v.data))
+            .transpose()
+    }
+
+    fn write<ST, ET>(
+        &mut self,
+        state: ST,
+        epoch_inserts: Vec<ET>,
+        epoch_updates: Vec<ET>,
+        delete_epoch_under: Option<u64>,
+    ) -> Result<(), Self::Error>
+    where
+        ST: GroupState + serde::Serialize + serde::de::DeserializeOwned,
+        ET: EpochRecord + serde::Serialize + serde::de::DeserializeOwned,
+    {
+        let mut group_map = self.inner.lock().unwrap();
+
+        let state_data = bincode::serialize(&state)?;
+
+        let group_data = match group_map.entry(state.id()) {
+            Entry::Occupied(entry) => {
+                let data = entry.into_mut();
+                data.state_data = state_data;
+                data
+            }
+            Entry::Vacant(entry) => entry.insert(InMemoryGroupData::new(state_data)),
+        };
+
+        epoch_inserts.into_iter().try_for_each(|e| {
+            group_data.insert_epoch(EpochData::new(e)?);
+            Ok::<_, bincode::Error>(())
+        })?;
+
+        epoch_updates.into_iter().try_for_each(|e| {
+            group_data.update_epoch(EpochData::new(e)?);
+            Ok::<_, bincode::Error>(())
+        })?;
+
+        if let Some(min_epoch) = delete_epoch_under {
+            group_data.trim_epochs(min_epoch);
+        }
+
         Ok(())
     }
 }
