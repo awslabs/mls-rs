@@ -4,7 +4,7 @@ use aws_mls_core::crypto::{HpkePublicKey, HpkeSecretKey};
 use mockall::automock;
 
 /// A trait that provides the required KEM functions
-#[cfg_attr(feature = "mock", automock(type Error = crate::TestError;))]
+#[cfg_attr(feature = "mock", automock(type Error = crate::mock::TestError;))]
 pub trait KemType {
     type Error: std::error::Error + Send + Sync + 'static;
 

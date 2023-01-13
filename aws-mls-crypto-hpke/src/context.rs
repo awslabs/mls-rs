@@ -98,41 +98,51 @@ pub(super) struct EncryptionContext<AEAD: AeadType> {
 }
 
 impl<AEAD: AeadType> EncryptionContext<AEAD> {
-    pub fn new(base_nonce: Vec<u8>, aead: AEAD, aead_key: Vec<u8>) -> Self {
-        EncryptionContext {
+    pub fn new(base_nonce: Vec<u8>, aead: AEAD, aead_key: Vec<u8>) -> Result<Self, HpkeError> {
+        (base_nonce.len() == aead.nonce_size())
+            .then_some(())
+            .ok_or(HpkeError::IncorrectNonceLen(
+                base_nonce.len(),
+                aead.nonce_size(),
+            ))?;
+
+        (aead_key.len() == aead.key_size())
+            .then_some(())
+            .ok_or(HpkeError::IncorrectKeyLen(aead_key.len(), aead.key_size()))?;
+
+        Ok(EncryptionContext {
             base_nonce,
             seq_number: 0,
             aead,
             aead_key,
-        }
+        })
     }
 }
 
 impl<AEAD: AeadType> EncryptionContext<AEAD> {
     //draft-irtf-cfrg-hpke Section 5.2.  Encryption and Decryption
     fn compute_nonce(&self) -> Vec<u8> {
-        // Extend the sequence number out to the same number of bytes as the base nonce
-        let seq_num_bytes = &self.seq_number.to_be_bytes() as &[u8];
-        let mut seq_bytes = vec![0u8; self.aead.nonce_size() - seq_num_bytes.len()];
-        seq_bytes.extend_from_slice(seq_num_bytes);
+        let mut nonce = self.base_nonce.clone();
 
-        // XOR base nonce with current sequence bytes
-        self.base_nonce
-            .iter()
-            .zip(seq_bytes.iter())
-            .map(|(&a, &b)| a ^ b)
-            .collect()
+        // XOR the sequence number into the last 4 bytes of the nonce
+        nonce
+            .iter_mut()
+            .rev()
+            .zip(self.seq_number.to_le_bytes())
+            .for_each(|(n, s)| *n ^= s);
+
+        nonce
     }
 
     #[inline]
     fn increment_seq(&mut self) -> Result<(), HpkeError> {
         // If the sequence number is going to roll over just throw an error
-        if self.seq_number == u64::MAX {
-            Err(HpkeError::SequenceNumberOverflow)
-        } else {
-            self.seq_number += 1;
-            Ok(())
-        }
+        self.seq_number = self
+            .seq_number
+            .checked_add(1)
+            .ok_or(HpkeError::SequenceNumberOverflow)?;
+
+        Ok(())
     }
 
     pub fn seal(&mut self, aad: Option<&[u8]>, pt: &[u8]) -> Result<Vec<u8>, HpkeError> {
@@ -214,10 +224,7 @@ mod test {
     }
 
     fn context_test_case(test_case: ContextTestCase) {
-        let cipher_suite = match filter_test_case(&test_case.algo) {
-            Some(cipher_suite) => cipher_suite,
-            None => return,
-        };
+        let Some(cipher_suite) =  filter_test_case(&test_case.algo) else { return; };
 
         println!("Testing Context for ciphersuite {:?}", cipher_suite,);
 
@@ -234,7 +241,9 @@ mod test {
 
         // Create HPKE to compute correct suite_id and instantiate HpkeKdf
         let hpke = Hpke::new(kem, kdf, Some(aead.clone()));
-        let encryption_context = EncryptionContext::new(test_case.base_nonce, aead, test_case.key);
+
+        let encryption_context =
+            EncryptionContext::new(test_case.base_nonce, aead, test_case.key).unwrap();
 
         let mut s_context = Context::new(
             Some(encryption_context),

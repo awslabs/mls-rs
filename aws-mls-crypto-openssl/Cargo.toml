@@ -5,7 +5,6 @@ edition = "2021"
 
 [features]
 x509 = ["aws-mls-identity-x509"]
-tests = ["aws-mls-crypto-hpke/tests"]
 default = ["x509"]
 
 [dependencies]

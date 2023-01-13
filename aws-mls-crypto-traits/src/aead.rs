@@ -4,7 +4,7 @@ use mockall::automock;
 pub const AEAD_ID_EXPORT_ONLY: u16 = 0xFFFF;
 
 /// A trait that provides the required AEAD functions
-#[cfg_attr(feature = "mock", automock(type Error = crate::TestError;))]
+#[cfg_attr(feature = "mock", automock(type Error = crate::mock::TestError;))]
 pub trait AeadType {
     type Error: std::error::Error + Send + Sync + 'static;
 

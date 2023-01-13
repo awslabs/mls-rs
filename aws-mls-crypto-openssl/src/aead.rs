@@ -25,7 +25,7 @@ pub struct Aead {
 
 impl Debug for Aead {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("Aead with aead_id {:?}", self.aead_id))
+        write!(f, "Aead with aead_id {:?}", self.aead_id)
     }
 }
 

@@ -23,6 +23,12 @@ pub enum HpkeError {
     /// An invalid PSK was supplied. A PSK MUST have 32 bytes of entropy
     #[error("PSK must be at least 32 bytes in length")]
     InsufficientPskLength,
+    /// An AEAD nonce of incorrect length was supplied.
+    #[error("AEAD nonce of length {0} does not match the expected length {1}")]
+    IncorrectNonceLen(usize, usize),
+    /// An AEAD key of incorrect length was supplied.
+    #[error("AEAD key of length {0} does not match the expected length {1}")]
+    IncorrectKeyLen(usize, usize),
     #[error("Encryption API disabled due to export only AeadId")]
     ExportOnlyMode,
     /// Max sequence number exceeded, currently allowed up to MAX u64
@@ -239,7 +245,8 @@ where
                 Ok(EncryptionContext::new(base_nonce, aead.clone(), key))
             })
             .transpose()
-            .map_err(|e: <KDF as KdfType>::Error| HpkeError::KdfError(e.into()))?;
+            .map_err(|e: <KDF as KdfType>::Error| HpkeError::KdfError(e.into()))?
+            .transpose()?;
 
         let len = self.kdf.extract_size();
 
@@ -330,10 +337,7 @@ mod test {
     }
 
     fn run_test_case(test_case: HpkeTestCase) {
-        let cipher_suite = match filter_test_case(&test_case.algo) {
-            Some(cipher_suite) => cipher_suite,
-            None => return,
-        };
+        let Some(cipher_suite) =  filter_test_case(&test_case.algo) else { return; };
 
         println!("Testing HPKE for ciphersuite {:?}", cipher_suite,);
 

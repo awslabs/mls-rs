@@ -197,7 +197,7 @@ mod test {
 
     #[test]
     fn test_derive_with_sampling() {
-        // Curve P521 does not need sampling.
+        // Curve P521 does need sampling.
         let dhkem = test_dhkem(CipherSuite::P521Aes256);
 
         // Test case from RFC 9180, Section A.6.1, ikmE
@@ -235,10 +235,7 @@ mod test {
     }
 
     fn encap_decap_test_case(test_case: EncapDecapTestCase) {
-        let cipher_suite = match filter_test_case(&test_case.algo) {
-            Some(cipher_suite) => cipher_suite,
-            None => return,
-        };
+        let Some(cipher_suite) =  filter_test_case(&test_case.algo) else { return; };
 
         println!("Testing DHKEM for ciphersuite {:?}", cipher_suite);
 

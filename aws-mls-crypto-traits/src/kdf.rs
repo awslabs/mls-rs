@@ -2,7 +2,7 @@
 use mockall::automock;
 
 /// A trait that provides the required KDF functions
-#[cfg_attr(feature = "mock", automock(type Error = crate::TestError;))]
+#[cfg_attr(feature = "mock", automock(type Error = crate::mock::TestError;))]
 pub trait KdfType {
     type Error: std::error::Error + Send + Sync + 'static;
 

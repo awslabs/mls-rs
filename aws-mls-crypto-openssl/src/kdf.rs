@@ -25,7 +25,7 @@ pub struct Kdf {
 
 impl Debug for Kdf {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("Kdf with kdf_id {:?}", self.kdf_id))
+        write!(f, "Kdf with kdf_id {:?}", self.kdf_id)
     }
 }
 
