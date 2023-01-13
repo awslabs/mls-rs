@@ -6,18 +6,16 @@ use thiserror::Error;
 use aws_mls_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
 
 use crate::ec::{
-    generate_private_key, private_key_ecdh, private_key_from_bytes, private_key_to_bytes,
-    private_key_to_public, pub_key_from_uncompressed, pub_key_to_uncompressed, Curve, EcPrivateKey,
-    EcPublicKey,
+    generate_keypair, private_key_bytes_to_public, private_key_ecdh, private_key_from_bytes,
+    pub_key_from_uncompressed, Curve, EcError, EcPublicKey,
 };
 
 #[derive(Debug, Error)]
 pub enum EcdhKemError {
     #[error(transparent)]
     OpensslError(#[from] openssl::error::ErrorStack),
-    /// Attempted to import a secret key that does not contain valid bytes for its curve
-    #[error("invalid secret key bytes")]
-    InvalidSecretKeyBytes,
+    #[error(transparent)]
+    EcError(#[from] EcError),
 }
 
 /// Kem identifiers for HPKE
@@ -68,15 +66,7 @@ impl Deref for Ecdh {
 
 impl Ecdh {
     pub fn new(cipher_suite: CipherSuite) -> Self {
-        let curve = match cipher_suite {
-            CipherSuite::Curve25519Aes128 | CipherSuite::Curve25519ChaCha20 => Curve::X25519,
-            CipherSuite::P256Aes128 => Curve::P256,
-            CipherSuite::Curve448Aes256 | CipherSuite::Curve448ChaCha20 => Curve::X448,
-            CipherSuite::P384Aes256 => Curve::P384,
-            CipherSuite::P521Aes256 => Curve::P521,
-        };
-
-        Self(curve)
+        Self(Curve::from_ciphersuite(cipher_suite, false))
     }
 }
 
@@ -89,22 +79,18 @@ impl DhType for Ecdh {
         public_key: &HpkePublicKey,
     ) -> Result<Vec<u8>, Self::Error> {
         Ok(private_key_ecdh(
-            &self.to_ec_secret_key(secret_key)?,
+            &private_key_from_bytes(secret_key, self.0)?,
             &self.to_ec_public_key(public_key)?,
         )?)
     }
 
     fn to_public(&self, secret_key: &HpkeSecretKey) -> Result<HpkePublicKey, Self::Error> {
-        let public_key = private_key_to_public(&self.to_ec_secret_key(secret_key)?)?;
-        Ok(pub_key_to_uncompressed(&public_key)?.into())
+        Ok(private_key_bytes_to_public(secret_key, self.0)?.into())
     }
 
     fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        let secret = generate_private_key(self.0)?;
-        let public = private_key_to_public(&secret)?;
-        let secret = private_key_to_bytes(&secret)?.into();
-        let public = pub_key_to_uncompressed(&public)?.into();
-        Ok((secret, public))
+        let key_pair = generate_keypair(self.0)?;
+        Ok((key_pair.secret.into(), key_pair.public.into()))
     }
 
     fn bitmask_for_rejection_sampling(&self) -> Option<u8> {
@@ -123,10 +109,6 @@ impl DhType for Ecdh {
 impl Ecdh {
     fn to_ec_public_key(&self, public_key: &HpkePublicKey) -> Result<EcPublicKey, EcdhKemError> {
         Ok(pub_key_from_uncompressed(public_key, self.0)?)
-    }
-
-    fn to_ec_secret_key(&self, secret_key: &HpkeSecretKey) -> Result<EcPrivateKey, EcdhKemError> {
-        private_key_from_bytes(secret_key, self.0)?.ok_or(EcdhKemError::InvalidSecretKeyBytes)
     }
 }
 

@@ -1,3 +1,6 @@
+use aws_mls_core::crypto::CipherSuite;
+use thiserror::Error;
+
 use openssl::{
     bn::{BigNum, BigNumContext},
     derive::Deriver,
@@ -9,6 +12,15 @@ use openssl::{
 
 pub type EcPublicKey = PKey<Public>;
 pub type EcPrivateKey = PKey<Private>;
+
+#[derive(Debug, Error)]
+pub enum EcError {
+    #[error(transparent)]
+    OpensslError(#[from] openssl::error::ErrorStack),
+    /// Attempted to import a secret key that does not contain valid bytes for its curve
+    #[error("invalid secret key bytes")]
+    InvalidSecretKeyBytes,
+}
 
 /// Elliptic curve types
 #[derive(Clone, Copy, Debug, Eq, enum_iterator::Sequence, PartialEq)]
@@ -46,6 +58,20 @@ impl Curve {
         }
     }
 
+    pub fn from_ciphersuite(cipher_suite: CipherSuite, for_sig: bool) -> Self {
+        match cipher_suite {
+            CipherSuite::P256Aes128 => Curve::P256,
+            CipherSuite::P384Aes256 => Curve::P384,
+            CipherSuite::P521Aes256 => Curve::P521,
+            CipherSuite::Curve25519Aes128 | CipherSuite::Curve25519ChaCha20 if for_sig => {
+                Curve::Ed25519
+            }
+            CipherSuite::Curve25519Aes128 | CipherSuite::Curve25519ChaCha20 => Curve::X25519,
+            CipherSuite::Curve448Aes256 | CipherSuite::Curve448ChaCha20 if for_sig => Curve::Ed448,
+            CipherSuite::Curve448Aes256 | CipherSuite::Curve448ChaCha20 => Curve::X448,
+        }
+    }
+
     #[inline(always)]
     pub(crate) fn curve_bitmask(&self) -> Option<u8> {
         match self {
@@ -74,6 +100,19 @@ fn nist_curve_id(curve: Curve) -> Option<Nid> {
         Curve::P521 => Some(Nid::SECP521R1),
         _ => None,
     }
+}
+
+pub fn generate_keypair(curve: Curve) -> Result<KeyPair, EcError> {
+    let secret = generate_private_key(curve)?;
+    let public = private_key_to_public(&secret)?;
+    let secret = private_key_to_bytes(&secret)?;
+    let public = pub_key_to_uncompressed(&public)?;
+    Ok(KeyPair { public, secret })
+}
+
+pub struct KeyPair {
+    pub public: Vec<u8>,
+    pub secret: Vec<u8>,
 }
 
 fn pub_key_from_uncompressed_nist(bytes: &[u8], nid: Nid) -> Result<EcPublicKey, ErrorStack> {
@@ -188,15 +227,14 @@ fn private_key_from_bytes_non_nist(bytes: &[u8], id: Id) -> Result<EcPrivateKey,
     PKey::private_key_from_raw_bytes(bytes, id)
 }
 
-pub fn private_key_from_bytes(
-    bytes: &[u8],
-    curve: Curve,
-) -> Result<Option<EcPrivateKey>, ErrorStack> {
-    if let Some(nist_id) = nist_curve_id(curve) {
+pub fn private_key_from_bytes(bytes: &[u8], curve: Curve) -> Result<EcPrivateKey, EcError> {
+    let maybe_secret_key = if let Some(nist_id) = nist_curve_id(curve) {
         private_key_from_bytes_nist(bytes, nist_id)
     } else {
         Some(private_key_from_bytes_non_nist(bytes, Id::from(curve))).transpose()
-    }
+    }?;
+
+    maybe_secret_key.ok_or(EcError::InvalidSecretKeyBytes)
 }
 
 pub fn private_key_to_bytes(key: &EcPrivateKey) -> Result<Vec<u8>, ErrorStack> {
@@ -205,6 +243,12 @@ pub fn private_key_to_bytes(key: &EcPrivateKey) -> Result<Vec<u8>, ErrorStack> {
     } else {
         key.raw_private_key()
     }
+}
+
+pub fn private_key_bytes_to_public(secret_key: &[u8], curve: Curve) -> Result<Vec<u8>, EcError> {
+    let secret_key = private_key_from_bytes(secret_key, curve)?;
+    let public_key = private_key_to_public(&secret_key)?;
+    Ok(pub_key_to_uncompressed(&public_key)?)
 }
 
 pub fn private_key_to_public(private_key: &EcPrivateKey) -> Result<EcPublicKey, ErrorStack> {
@@ -224,6 +268,58 @@ pub fn private_key_ecdh(
     let mut ecdh_derive = Deriver::new(private_key)?;
     ecdh_derive.set_peer(remote_public)?;
     ecdh_derive.derive_to_vec().map_err(Into::into)
+}
+
+#[cfg(test)]
+pub mod test_utils {
+    use aws_mls_core::crypto::CipherSuite;
+    use serde::Deserialize;
+
+    use super::Curve;
+
+    #[derive(Deserialize)]
+    pub(crate) struct TestKeys {
+        #[serde(with = "hex::serde")]
+        p256: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        p384: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        p521: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        x25519: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        ed25519: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        x448: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        ed448: Vec<u8>,
+    }
+
+    impl TestKeys {
+        pub(crate) fn get_key(&self, cipher_suite: CipherSuite, for_sig: bool) -> Vec<u8> {
+            let curve = Curve::from_ciphersuite(cipher_suite, for_sig);
+
+            match curve {
+                Curve::P256 => self.p256.clone(),
+                Curve::P384 => self.p384.clone(),
+                Curve::P521 => self.p521.clone(),
+                Curve::X25519 => self.x25519.clone(),
+                Curve::Ed25519 => self.ed25519.clone(),
+                Curve::X448 => self.x448.clone(),
+                Curve::Ed448 => self.ed448.clone(),
+            }
+        }
+    }
+
+    pub(crate) fn get_test_public_keys() -> TestKeys {
+        let test_case_file = include_str!("../test_data/test_public_keys.json");
+        serde_json::from_str(test_case_file).unwrap()
+    }
+
+    pub(crate) fn get_test_secret_keys() -> TestKeys {
+        let test_case_file = include_str!("../test_data/test_private_keys.json");
+        serde_json::from_str(test_case_file).unwrap()
+    }
 }
 
 #[cfg(test)]

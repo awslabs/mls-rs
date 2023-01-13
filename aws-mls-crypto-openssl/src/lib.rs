@@ -1,5 +1,6 @@
 pub mod aead;
 mod ec;
+pub mod ec_signer;
 pub mod ecdh;
 pub mod kdf;
 pub mod mac;
@@ -14,9 +15,11 @@ use aws_mls_crypto_hpke::{
     hpke::{Hpke, HpkeError},
 };
 use aws_mls_crypto_traits::{AeadType, KdfType, KemType};
+use ec_signer::{EcSigner, EcSignerError};
 use ecdh::{Ecdh, KemId};
 use kdf::Kdf;
 use mac::{Hash, HashError};
+use openssl::error::ErrorStack;
 use thiserror::Error;
 
 use aws_mls_core::crypto::{
@@ -34,6 +37,10 @@ pub enum OpensslCryptoError {
     KdfError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
     HashError(#[from] HashError),
+    #[error(transparent)]
+    EcSignerError(#[from] EcSignerError),
+    #[error(transparent)]
+    OpensslError(#[from] ErrorStack),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -91,6 +98,7 @@ where
     kdf: KDF,
     hash: Hash,
     hpke: Hpke<KEM, KDF, AEAD>,
+    ec_signer: EcSigner,
 }
 
 impl<KEM, KDF, AEAD> OpensslCipherSuite<KEM, KDF, AEAD>
@@ -108,41 +116,12 @@ where
             aead,
             hash: Hash::new(cipher_suite),
             hpke,
+            ec_signer: EcSigner::new(cipher_suite),
         }
     }
 
-    pub fn random_bytes(&self, _out: &mut [u8]) -> Result<(), OpensslCryptoError> {
-        Ok(())
-    }
-
-    pub fn signature_key_generate(
-        &self,
-    ) -> Result<(SignatureSecretKey, SignaturePublicKey), OpensslCryptoError> {
-        Ok((vec![].into(), vec![].into()))
-    }
-
-    pub fn signature_key_derive_public(
-        &self,
-        _secret_key: &SignatureSecretKey,
-    ) -> Result<SignaturePublicKey, OpensslCryptoError> {
-        Ok(vec![].into())
-    }
-
-    pub fn sign(
-        &self,
-        _secret_key: &SignatureSecretKey,
-        _data: &[u8],
-    ) -> Result<Vec<u8>, OpensslCryptoError> {
-        Ok(vec![])
-    }
-
-    pub fn verify(
-        &self,
-        _public_key: &SignaturePublicKey,
-        _signature: &[u8],
-        _data: &[u8],
-    ) -> Result<(), OpensslCryptoError> {
-        Ok(())
+    pub fn random_bytes(&self, out: &mut [u8]) -> Result<(), OpensslCryptoError> {
+        Ok(openssl::rand::rand_bytes(out)?)
     }
 }
 
@@ -270,7 +249,7 @@ where
     }
 
     fn sign(&self, secret_key: &SignatureSecretKey, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        self.sign(secret_key, data)
+        Ok(self.ec_signer.sign(secret_key, data)?)
     }
 
     fn verify(
@@ -279,19 +258,19 @@ where
         signature: &[u8],
         data: &[u8],
     ) -> Result<(), Self::Error> {
-        self.verify(public_key, signature, data)
+        Ok(self.ec_signer.verify(public_key, signature, data)?)
     }
 
     fn signature_key_generate(
         &self,
     ) -> Result<(SignatureSecretKey, SignaturePublicKey), Self::Error> {
-        self.signature_key_generate()
+        Ok(self.ec_signer.signature_key_generate()?)
     }
 
     fn signature_key_derive_public(
         &self,
         secret_key: &SignatureSecretKey,
     ) -> Result<SignaturePublicKey, Self::Error> {
-        self.signature_key_derive_public(secret_key)
+        Ok(self.ec_signer.signature_key_derive_public(secret_key)?)
     }
 }
