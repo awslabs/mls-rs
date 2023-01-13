@@ -27,6 +27,12 @@ impl From<Vec<u8>> for HpkePublicKey {
     }
 }
 
+impl From<HpkePublicKey> for Vec<u8> {
+    fn from(data: HpkePublicKey) -> Self {
+        data.0
+    }
+}
+
 impl Deref for HpkePublicKey {
     type Target = [u8];
 

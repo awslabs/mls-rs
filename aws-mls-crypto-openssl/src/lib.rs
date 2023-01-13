@@ -1,16 +1,21 @@
-pub use openssl;
-
-mod aead;
-mod hpke;
-mod kdf;
-mod mac;
+pub mod aead;
+mod ec;
+pub mod ecdh;
+pub mod kdf;
+pub mod mac;
 
 #[cfg(feature = "x509")]
 pub mod x509;
 
-use aead::{Aead, AeadError};
-use hpke::{HpkeError, OpensslHpkeContext};
-use kdf::{Kdf, KdfError};
+use aead::Aead;
+use aws_mls_crypto_hpke::{
+    context::Context,
+    dhkem::DhKem,
+    hpke::{Hpke, HpkeError},
+};
+use aws_mls_crypto_traits::{AeadType, KdfType, KemType};
+use ecdh::{Ecdh, KemId};
+use kdf::Kdf;
 use mac::{Hash, HashError};
 use thiserror::Error;
 
@@ -22,11 +27,11 @@ use aws_mls_core::crypto::{
 #[derive(Debug, Error)]
 pub enum OpensslCryptoError {
     #[error(transparent)]
-    AeadError(#[from] AeadError),
+    AeadError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
     HpkeError(#[from] HpkeError),
     #[error(transparent)]
-    KdfError(#[from] KdfError),
+    KdfError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
     HashError(#[from] HashError),
 }
@@ -50,7 +55,7 @@ impl OpensslCryptoProvider {
 }
 
 impl CryptoProvider for OpensslCryptoProvider {
-    type CipherSuiteProvider = OpensslCipherSuite;
+    type CipherSuiteProvider = OpensslCipherSuite<DhKem<Ecdh, Kdf>, Kdf, Aead>;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite> {
         self.enabled_cipher_suites.clone()
@@ -64,42 +69,46 @@ impl CryptoProvider for OpensslCryptoProvider {
             return None;
         }
 
-        Some(OpensslCipherSuite::new(cipher_suite))
+        let kdf = Kdf::new(cipher_suite);
+        let ecdh = Ecdh::new(cipher_suite);
+        let kem_id = KemId::new(cipher_suite);
+        let kem = DhKem::new(ecdh, kdf.clone(), kem_id as u16, kem_id.n_secret());
+        let aead = Aead::new(cipher_suite);
+
+        Some(OpensslCipherSuite::new(cipher_suite, kem, kdf, aead))
     }
 }
 
-// TODO consider wrapping aead to implement debug
 #[derive(Clone)]
-pub struct OpensslCipherSuite {
+pub struct OpensslCipherSuite<KEM, KDF, AEAD>
+where
+    KEM: KemType + Clone,
+    KDF: KdfType + Clone,
+    AEAD: AeadType + Clone,
+{
     cipher_suite: CipherSuite,
-    aead: Aead,
-    kdf: Kdf,
+    aead: AEAD,
+    kdf: KDF,
     hash: Hash,
+    hpke: Hpke<KEM, KDF, AEAD>,
 }
 
-impl OpensslCipherSuite {
-    pub fn new(cipher_suite: CipherSuite) -> Self {
+impl<KEM, KDF, AEAD> OpensslCipherSuite<KEM, KDF, AEAD>
+where
+    KEM: KemType + Clone,
+    KDF: KdfType + Clone,
+    AEAD: AeadType + Clone,
+{
+    pub fn new(cipher_suite: CipherSuite, kem: KEM, kdf: KDF, aead: AEAD) -> Self {
+        let hpke = Hpke::new(kem, kdf.clone(), Some(aead.clone()));
+
         Self {
             cipher_suite,
-            aead: Aead::new(cipher_suite),
-            kdf: Kdf::new(cipher_suite),
+            kdf,
+            aead,
             hash: Hash::new(cipher_suite),
+            hpke,
         }
-    }
-
-    pub fn kem_derive(
-        &self,
-        _ikm: &[u8],
-    ) -> Result<(HpkeSecretKey, HpkePublicKey), OpensslCryptoError> {
-        Ok((vec![].into(), vec![].into()))
-    }
-
-    pub fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), OpensslCryptoError> {
-        Ok((vec![].into(), vec![].into()))
-    }
-
-    pub fn kem_public_key_validate(&self, _key: &HpkePublicKey) -> Result<(), OpensslCryptoError> {
-        Ok(())
     }
 
     pub fn random_bytes(&self, _out: &mut [u8]) -> Result<(), OpensslCryptoError> {
@@ -137,10 +146,15 @@ impl OpensslCipherSuite {
     }
 }
 
-impl CipherSuiteProvider for OpensslCipherSuite {
+impl<KEM, KDF, AEAD> CipherSuiteProvider for OpensslCipherSuite<KEM, KDF, AEAD>
+where
+    KEM: KemType + Clone,
+    KDF: KdfType + Clone + Send + Sync,
+    AEAD: AeadType + Clone + Send + Sync,
+{
     type Error = OpensslCryptoError;
     // TODO exporter_secret in this struct is not zeroized
-    type HpkeContext = OpensslHpkeContext;
+    type HpkeContext = Context<KDF, AEAD>;
 
     fn hash(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
         Ok(self.hash.hash(data)?)
@@ -157,7 +171,9 @@ impl CipherSuiteProvider for OpensslCipherSuite {
         aad: Option<&[u8]>,
         nonce: &[u8],
     ) -> Result<Vec<u8>, Self::Error> {
-        Ok(self.aead.aead_seal(key, data, aad, nonce)?)
+        self.aead
+            .seal(key, data, aad, nonce)
+            .map_err(|e| OpensslCryptoError::AeadError(e.into()))
     }
 
     fn aead_open(
@@ -167,27 +183,33 @@ impl CipherSuiteProvider for OpensslCipherSuite {
         aad: Option<&[u8]>,
         nonce: &[u8],
     ) -> Result<Vec<u8>, Self::Error> {
-        Ok(self.aead.aead_open(key, cipher_text, aad, nonce)?)
+        self.aead
+            .open(key, cipher_text, aad, nonce)
+            .map_err(|e| OpensslCryptoError::AeadError(e.into()))
     }
 
     fn aead_key_size(&self) -> usize {
-        self.aead.aead_key_size()
+        self.aead.key_size()
     }
 
     fn aead_nonce_size(&self) -> usize {
-        self.aead.aead_nonce_size()
+        self.aead.nonce_size()
     }
 
     fn kdf_expand(&self, prk: &[u8], info: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
-        Ok(self.kdf.kdf_expand(prk, info, len)?)
+        self.kdf
+            .expand(prk, info, len)
+            .map_err(|e| OpensslCryptoError::KdfError(e.into()))
     }
 
     fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        Ok(self.kdf.kdf_extract(salt, ikm)?)
+        self.kdf
+            .extract(salt, ikm)
+            .map_err(|e| OpensslCryptoError::KdfError(e.into()))
     }
 
     fn kdf_extract_size(&self) -> usize {
-        self.kdf.kdf_extract_size()
+        self.kdf.extract_size()
     }
 
     fn hpke_seal(
@@ -197,7 +219,7 @@ impl CipherSuiteProvider for OpensslCipherSuite {
         aad: Option<&[u8]>,
         pt: &[u8],
     ) -> Result<HpkeCiphertext, Self::Error> {
-        Ok(self.hpke_seal(remote_key, info, aad, pt)?)
+        Ok(self.hpke.seal(remote_key, info, None, aad, pt)?)
     }
 
     fn hpke_open(
@@ -207,7 +229,7 @@ impl CipherSuiteProvider for OpensslCipherSuite {
         info: &[u8],
         aad: Option<&[u8]>,
     ) -> Result<Vec<u8>, Self::Error> {
-        Ok(self.hpke_open(ciphertext, local_secret, info, aad)?)
+        Ok(self.hpke.open(ciphertext, local_secret, info, None, aad)?)
     }
 
     fn hpke_setup_r(
@@ -216,7 +238,7 @@ impl CipherSuiteProvider for OpensslCipherSuite {
         local_secret: &HpkeSecretKey,
         info: &[u8],
     ) -> Result<Self::HpkeContext, Self::Error> {
-        Ok(self.hpke_setup_r(enc, local_secret, info)?)
+        Ok(self.hpke.setup_receiver(enc, local_secret, info, None)?)
     }
 
     fn hpke_setup_s(
@@ -224,15 +246,19 @@ impl CipherSuiteProvider for OpensslCipherSuite {
         remote_key: &HpkePublicKey,
         info: &[u8],
     ) -> Result<(Vec<u8>, Self::HpkeContext), Self::Error> {
-        Ok(self.hpke_setup_s(remote_key, info)?)
+        Ok(self.hpke.setup_sender(remote_key, info, None)?)
     }
 
     fn kem_derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        self.kem_derive(ikm)
+        Ok(self.hpke.derive(ikm)?)
     }
 
     fn kem_generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), Self::Error> {
-        self.kem_generate()
+        Ok(self.hpke.generate()?)
+    }
+
+    fn kem_public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error> {
+        Ok(self.hpke.public_key_validate(key)?)
     }
 
     fn random_bytes(&self, out: &mut [u8]) -> Result<(), Self::Error> {
@@ -267,9 +293,5 @@ impl CipherSuiteProvider for OpensslCipherSuite {
         secret_key: &SignatureSecretKey,
     ) -> Result<SignaturePublicKey, Self::Error> {
         self.signature_key_derive_public(secret_key)
-    }
-
-    fn kem_public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error> {
-        self.kem_public_key_validate(key)
     }
 }

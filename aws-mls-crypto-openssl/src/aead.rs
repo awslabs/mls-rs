@@ -1,6 +1,7 @@
-use std::ops::Deref;
+use std::{fmt::Debug, ops::Deref};
 
 use aws_mls_core::crypto::CipherSuite;
+use aws_mls_crypto_traits::AeadType;
 use openssl::symm::{decrypt_aead, encrypt_aead, Cipher};
 use thiserror::Error;
 
@@ -17,32 +18,59 @@ pub enum AeadError {
 pub const TAG_LEN: usize = 16;
 
 #[derive(Clone)]
-pub struct Aead(Cipher);
+pub struct Aead {
+    cipher: Cipher,
+    aead_id: AeadId,
+}
+
+impl Debug for Aead {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("Aead with aead_id {:?}", self.aead_id))
+    }
+}
+
+/// Aead ID as specified in RFC 9180, Table 5.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u16)]
+enum AeadId {
+    /// AES-128-GCM: 16 byte key, 12 byte nonce, 16 byte tag
+    Aes128Gcm = 0x0001,
+    /// AES-256-GCM: 32 byte key, 12 byte nonce, 16 byte tag
+    Aes256Gcm = 0x0002,
+    /// ChaCha20-Poly1305: 32 byte key, 12 byte nonce, 16 byte tag
+    Chacha20Poly1305 = 0x0003,
+}
 
 impl Deref for Aead {
     type Target = Cipher;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.cipher
     }
 }
 
 impl Aead {
     pub fn new(cipher_suite: CipherSuite) -> Self {
-        let cipher = match cipher_suite {
-            CipherSuite::P256Aes128 | CipherSuite::Curve25519Aes128 => Cipher::aes_128_gcm(),
+        let (cipher, aead_id) = match cipher_suite {
+            CipherSuite::P256Aes128 | CipherSuite::Curve25519Aes128 => {
+                (Cipher::aes_128_gcm(), AeadId::Aes128Gcm)
+            }
             CipherSuite::Curve448Aes256 | CipherSuite::P384Aes256 | CipherSuite::P521Aes256 => {
-                Cipher::aes_256_gcm()
+                (Cipher::aes_256_gcm(), AeadId::Aes256Gcm)
             }
             CipherSuite::Curve25519ChaCha20 | CipherSuite::Curve448ChaCha20 => {
-                Cipher::chacha20_poly1305()
+                (Cipher::chacha20_poly1305(), AeadId::Chacha20Poly1305)
             }
         };
 
-        Self(cipher)
+        Self { cipher, aead_id }
     }
+}
 
-    pub fn aead_seal(
+impl AeadType for Aead {
+    type Error = AeadError;
+
+    fn seal(
         &self,
         key: &[u8],
         data: &[u8],
@@ -56,13 +84,13 @@ impl Aead {
         let mut tag = [0u8; TAG_LEN];
         let aad = aad.unwrap_or_default();
 
-        let ciphertext = encrypt_aead(self.0, key, Some(nonce), aad, data, &mut tag)?;
+        let ciphertext = encrypt_aead(self.cipher, key, Some(nonce), aad, data, &mut tag)?;
 
         // Question Is this how this should be done? Or other encodings?
         Ok([&ciphertext, &tag as &[u8]].concat())
     }
 
-    pub fn aead_open(
+    fn open(
         &self,
         key: &[u8],
         ciphertext: &[u8],
@@ -76,22 +104,27 @@ impl Aead {
         let (data, tag) = ciphertext.split_at(ciphertext.len() - TAG_LEN);
         let aad = aad.unwrap_or_default();
 
-        decrypt_aead(self.0, key, Some(nonce), aad, data, tag).map_err(Into::into)
+        decrypt_aead(self.cipher, key, Some(nonce), aad, data, tag).map_err(Into::into)
     }
 
-    pub fn aead_key_size(&self) -> usize {
+    fn key_size(&self) -> usize {
         self.key_len()
     }
 
-    pub fn aead_nonce_size(&self) -> usize {
+    fn nonce_size(&self) -> usize {
         self.iv_len()
             .expect("The ciphersuite's AEAD algorithm must support nonce-based encryption.")
+    }
+
+    fn aead_id(&self) -> u16 {
+        self.aead_id as u16
     }
 }
 
 #[cfg(test)]
 mod test {
     use aws_mls_core::crypto::CipherSuite;
+    use aws_mls_crypto_traits::AeadType;
 
     use crate::aead::TAG_LEN;
 
@@ -134,13 +167,13 @@ mod test {
             let aead = Aead::new(case.ciphersuite);
 
             let ciphertext = aead
-                .aead_seal(&case.key, &case.pt, Some(&case.aad), &case.iv)
+                .seal(&case.key, &case.pt, Some(&case.aad), &case.iv)
                 .unwrap();
 
             assert_eq!(ciphertext, case.ct);
 
             let plaintext = aead
-                .aead_open(&case.key, &ciphertext, Some(&case.aad), &case.iv)
+                .open(&case.key, &ciphertext, Some(&case.aad), &case.iv)
                 .unwrap();
 
             assert_eq!(plaintext, case.pt);
@@ -150,20 +183,20 @@ mod test {
     #[test]
     fn invalid_key() {
         for aead in get_aeads() {
-            let nonce = vec![42u8; aead.aead_nonce_size()];
+            let nonce = vec![42u8; aead.nonce_size()];
             let data = b"top secret";
 
-            let too_short = vec![42u8; aead.aead_key_size() - 1];
+            let too_short = vec![42u8; aead.key_size() - 1];
 
             assert_matches!(
-                aead.aead_seal(&too_short, data, None, &nonce),
+                aead.seal(&too_short, data, None, &nonce),
                 Err(AeadError::OpensslError(_))
             );
 
-            let too_long = vec![42u8; aead.aead_key_size() + 1];
+            let too_long = vec![42u8; aead.key_size() + 1];
 
             assert_matches!(
-                aead.aead_seal(&too_long, data, None, &nonce),
+                aead.seal(&too_long, data, None, &nonce),
                 Err(AeadError::OpensslError(_))
             );
         }
@@ -172,13 +205,13 @@ mod test {
     #[test]
     fn invalid_ciphertext() {
         for aead in get_aeads() {
-            let key = vec![42u8; aead.aead_key_size()];
-            let nonce = vec![42u8; aead.aead_nonce_size()];
+            let key = vec![42u8; aead.key_size()];
+            let nonce = vec![42u8; aead.nonce_size()];
 
             let too_short = [0u8; TAG_LEN];
 
             assert_matches!(
-                aead.aead_open(&key, &too_short, None, &nonce),
+                aead.open(&key, &too_short, None, &nonce),
                 Err(AeadError::InvalidCipherLen(_))
             );
         }
@@ -187,20 +220,18 @@ mod test {
     #[test]
     fn aad_mismatch() {
         for aead in get_aeads() {
-            let key = vec![42u8; aead.aead_key_size()];
-            let nonce = vec![42u8; aead.aead_nonce_size()];
+            let key = vec![42u8; aead.key_size()];
+            let nonce = vec![42u8; aead.nonce_size()];
 
-            let ciphertext = aead
-                .aead_seal(&key, b"message", Some(b"foo"), &nonce)
-                .unwrap();
+            let ciphertext = aead.seal(&key, b"message", Some(b"foo"), &nonce).unwrap();
 
             assert_matches!(
-                aead.aead_open(&key, &ciphertext, Some(b"bar"), &nonce),
+                aead.open(&key, &ciphertext, Some(b"bar"), &nonce),
                 Err(AeadError::OpensslError(_))
             );
 
             assert_matches!(
-                aead.aead_open(&key, &ciphertext, None, &nonce),
+                aead.open(&key, &ciphertext, None, &nonce),
                 Err(AeadError::OpensslError(_))
             );
         }

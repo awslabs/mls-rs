@@ -5,13 +5,17 @@ edition = "2021"
 
 [features]
 x509 = ["aws-mls-identity-x509"]
+tests = ["aws-mls-crypto-hpke/tests"]
 default = ["x509"]
 
 [dependencies]
 openssl = { version = "^0.10.40" }
 aws-mls-core = { path = "../aws-mls-core" }
 aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", optional = true }
+aws-mls-crypto-hpke = { path = "../aws-mls-crypto-hpke" }
+aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits" }
 thiserror = "^1"
+enum-iterator = "1.1.2"
 
 [dev-dependencies]
 hex = { version = "^0.4.3", features = ["serde"] }

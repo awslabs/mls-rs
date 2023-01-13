@@ -1,0 +1,11 @@
+[package]
+name = "aws-mls-crypto-traits"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+mock = ["dep:mockall"]
+
+[dependencies]
+aws-mls-core = { path = "../aws-mls-core" }
+mockall = { version = "^0.11", optional = true }
