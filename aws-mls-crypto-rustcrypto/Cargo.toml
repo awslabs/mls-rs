@@ -1,0 +1,34 @@
+[package]
+name = "aws-mls-crypto-rustcrypto"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aws-mls-core = { path = "../aws-mls-core" }
+aws-mls-crypto-hpke = { path = "../aws-mls-crypto-hpke" }
+aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits" }
+thiserror = "^1"
+enum-iterator = "1.1.2"
+aes-gcm = { version = "^0.9.4", features = ["zeroize"] }
+chacha20poly1305 = { version = "^0.9.0" }
+aead = { version = "^0.4.3", features = ["std"] }
+getrandom = { version = "^0.2.4", features = ["std"] }
+rand_core = { version = "^0.6.3" }
+sha2 = { version = "^0.10.1", features = ["std"] }
+hmac = { version = "^0.12.0", features = ["std", "reset"] }
+hkdf = { version = "^0.12.0", features = ["std"] }
+p256 = { version = "^0.10.1", features = ["std", "ecdh", "ecdsa", "pem"] }
+x25519-dalek = { version = "^1.2.0" }
+ed25519-dalek = { version = "^1.0.1" }
+sec1 = { version = "^0.2.1", features = ["std"] }
+zeroize = { version = "^1.0", features = ["zeroize_derive"] }
+
+[dev-dependencies]
+hex = { version = "^0.4.3", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "^1.0" }
+assert_matches = "1.5.0"
+
+[features]
+default = []
+browser = ["getrandom/js"]
