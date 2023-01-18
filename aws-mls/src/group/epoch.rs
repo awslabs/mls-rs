@@ -76,6 +76,8 @@ impl From<Vec<u8>> for SenderDataSecret {
 
 #[cfg(test)]
 pub mod test_utils {
+    use aws_mls_core::crypto::CipherSuiteProvider;
+
     use super::*;
     use crate::cipher_suite::CipherSuite;
     use crate::group::secret_tree::test_utils::get_test_tree;

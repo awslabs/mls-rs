@@ -222,6 +222,7 @@ mod tests {
     use crate::identity::test_utils::{get_test_signing_identity, INVALID_CREDENTIAL_TYPE};
     use crate::identity::BasicCredential;
     use crate::provider::crypto::test_utils::test_cipher_suite_provider;
+    use crate::provider::crypto::test_utils::TestCryptoProvider;
     use crate::provider::crypto::SignatureSecretKey;
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::*;
@@ -396,7 +397,7 @@ mod tests {
 
     #[test]
     fn test_bad_signature() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
             let (signing_identity, secret) =

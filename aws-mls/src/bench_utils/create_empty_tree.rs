@@ -1,3 +1,5 @@
+use aws_mls_core::crypto::CipherSuiteProvider;
+
 use crate::cipher_suite::CipherSuite;
 use crate::extension::ExtensionList;
 use crate::group::{ConfirmedTranscriptHash, GroupContext};

@@ -1,12 +1,8 @@
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
-    cipher_suite::{CipherSuite, MaybeCipherSuite},
-    extension::ExtensionType,
-    group::proposal::ProposalType,
-    identity::{BasicCredential, CredentialType},
-    protocol_version::MaybeProtocolVersion,
-    protocol_version::ProtocolVersion,
+    cipher_suite::MaybeCipherSuite, extension::ExtensionType, group::proposal::ProposalType,
+    identity::CredentialType, protocol_version::MaybeProtocolVersion,
 };
 
 #[derive(
@@ -34,8 +30,13 @@ pub struct Capabilities {
     pub credentials: Vec<CredentialType>,
 }
 
+#[cfg(any(feature = "benchmark", test))]
 impl Default for Capabilities {
     fn default() -> Self {
+        use crate::cipher_suite::CipherSuite;
+        use crate::identity::BasicCredential;
+        use crate::protocol_version::ProtocolVersion;
+
         Self {
             protocol_versions: vec![MaybeProtocolVersion::from(ProtocolVersion::Mls10)],
             cipher_suites: CipherSuite::all().map(MaybeCipherSuite::from).collect(),

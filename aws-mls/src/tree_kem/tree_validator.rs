@@ -140,7 +140,8 @@ mod tests {
         cipher_suite::CipherSuite,
         group::test_utils::{get_test_group_context, random_bytes, TEST_GROUP},
         provider::{
-            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
+            crypto::test_utils::test_cipher_suite_provider, crypto::test_utils::TestCryptoProvider,
+            identity::BasicIdentityProvider,
         },
         tree_kem::{
             kem::TreeKem,
@@ -205,7 +206,7 @@ mod tests {
 
     #[test]
     fn test_valid_tree() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             println!("Checking cipher suite: {cipher_suite:?}");
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
@@ -226,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_tree_hash_mismatch() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite);
             let expected_tree_hash = random_bytes(32);
 
@@ -249,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_parent_hash_mismatch() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite);
 
             let parent_node = test_tree.nodes.borrow_as_parent_mut(1).unwrap();
@@ -275,7 +276,7 @@ mod tests {
 
     #[test]
     fn test_key_package_validation_failure() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite);
 
             test_tree

@@ -231,12 +231,13 @@ pub(crate) mod test_utils {
 mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        provider::crypto::test_utils::test_cipher_suite_provider,
+        provider::crypto::test_utils::{
+            test_cipher_suite_provider, try_test_cipher_suite_provider,
+        },
     };
 
     use super::{test_utils::test_key_package, *};
     use assert_matches::assert_matches;
-    use num_enum::TryFromPrimitive;
     use tls_codec::Deserialize;
 
     #[cfg(target_arch = "wasm32")]
@@ -281,16 +282,14 @@ mod tests {
         let cases = load_test_cases();
 
         for one_case in cases {
-            let Ok(cipher_suite) = CipherSuite::try_from_primitive(one_case.cipher_suite) else {
+            let Some(provider) = try_test_cipher_suite_provider(one_case.cipher_suite) else {
                 println!("Skipping test for unsupported cipher suite");
                 continue;
             };
 
             let key_package = KeyPackage::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
 
-            let key_package_ref = key_package
-                .to_reference(&test_cipher_suite_provider(cipher_suite))
-                .unwrap();
+            let key_package_ref = key_package.to_reference(&provider).unwrap();
 
             let expected_out = KeyPackageRef::from(one_case.output);
             assert_eq!(expected_out, key_package_ref);

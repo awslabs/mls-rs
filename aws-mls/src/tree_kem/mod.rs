@@ -826,9 +826,8 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use crate::cipher_suite::CipherSuite;
     use crate::client::test_utils::TEST_CIPHER_SUITE;
-    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
+    use crate::provider::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNode;
@@ -846,7 +845,7 @@ mod tests {
 
     #[test]
     pub fn test_derive() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let test_tree = get_test_tree(cipher_suite);
 
             assert_eq!(

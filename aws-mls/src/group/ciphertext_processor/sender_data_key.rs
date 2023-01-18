@@ -103,7 +103,6 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
 #[cfg(test)]
 mod tests {
 
-    use num_enum::TryFromPrimitive;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -113,7 +112,10 @@ mod tests {
             ciphertext_processor::reuse_guard::ReuseGuard, framing::ContentType,
             test_utils::random_bytes,
         },
-        provider::crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
+        provider::crypto::{
+            test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
+            CipherSuiteProvider,
+        },
         tree_kem::node::LeafIndex,
     };
 
@@ -228,12 +230,9 @@ mod tests {
     #[test]
     fn sender_data_key_test_vector() {
         for test_case in load_test_cases() {
-            let cipher_suite = match CipherSuite::try_from_primitive(test_case.cipher_suite) {
-                Ok(cs) => cs,
-                Err(_) => continue,
+            let Some(provider) = try_test_cipher_suite_provider(test_case.cipher_suite) else {
+                continue;
             };
-
-            let provider = test_cipher_suite_provider(cipher_suite);
 
             let sender_data_key = SenderDataKey::new(
                 &test_case.secret.into(),

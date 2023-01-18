@@ -352,13 +352,13 @@ impl TreeKemPublic {
 
 #[cfg(test)]
 mod tests {
-    use num_enum::TryFromPrimitive;
     use tls_codec::Deserialize;
 
     use crate::{
         cipher_suite::CipherSuite,
         provider::{
-            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
+            crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
+            identity::BasicIdentityProvider,
         },
         tree_kem::{node::NodeVec, parent_hash::test_utils::get_test_tree_fig_12},
     };
@@ -404,12 +404,9 @@ mod tests {
         let cases = load_test_cases();
 
         for one_case in cases {
-            let cipher_suite = CipherSuite::try_from_primitive(one_case.cipher_suite);
-
-            if cipher_suite.is_err() {
-                println!("Skipping test for unsupported cipher suite");
+            let Some(cs_provider) = try_test_cipher_suite_provider(one_case.cipher_suite) else {
                 continue;
-            }
+            };
 
             let mut tree = TreeKemPublic::import_node_data(
                 NodeVec::tls_deserialize(&mut &*one_case.tree_data).unwrap(),
@@ -417,9 +414,7 @@ mod tests {
             )
             .unwrap();
 
-            let calculated_hash = tree
-                .tree_hash(&test_cipher_suite_provider(cipher_suite.unwrap()))
-                .unwrap();
+            let calculated_hash = tree.tree_hash(&cs_provider).unwrap();
 
             assert_eq!(calculated_hash, one_case.tree_hash);
         }

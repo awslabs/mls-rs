@@ -10,14 +10,20 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@stable
-    - name: Setup SSH Keys and known_hosts
-      run: |
-        ssh-agent -a $SSH_AUTH_SOCK > /dev/null
-        ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
     - uses: nanasess/setup-chromedriver@v1
     - uses: jetli/wasm-pack-action@v0.3.0
       with:
         version: 'v0.10.3'
-    - name: Test (WASM + RustCrypto)
+    - name: WASM aws-mls-crypto-rustcrypto
+      working-directory: aws-mls-crypto-rustcrypto
+      run: wasm-pack test --headless --chrome --release -- --features="browser"
+    - name: WASM aws-mls
       working-directory: aws-mls
-      run: wasm-pack test --headless --chrome --release -- --no-default-features --features="browser"
+      run: wasm-pack test --headless --chrome --release -- --no-default-features
+    - name: WASM aws-mls-core
+      working-directory: aws-mls-core
+      run: wasm-pack test --headless --chrome --release
+    - name: WASM aws-mls-identity-x509
+      working-directory: aws-mls-identity-x509
+      run: wasm-pack test --headless --chrome --release
+

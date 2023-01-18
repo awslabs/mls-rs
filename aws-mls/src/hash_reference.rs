@@ -99,11 +99,13 @@ impl HashReference {
 #[cfg(test)]
 mod tests {
     use crate::{
-        cipher_suite::CipherSuite, provider::crypto::test_utils::test_cipher_suite_provider,
+        cipher_suite::CipherSuite,
+        provider::crypto::test_utils::{
+            test_cipher_suite_provider, try_test_cipher_suite_provider,
+        },
     };
 
     use super::*;
-    use num_enum::TryFromPrimitive;
     use serde::{Deserialize, Serialize};
 
     #[cfg(target_arch = "wasm32")]
@@ -146,19 +148,14 @@ mod tests {
         let test_cases = load_test_cases();
 
         for test_case in test_cases {
-            let cipher_suite = CipherSuite::try_from_primitive(test_case.cipher_suite);
+            let Some(provider) = try_test_cipher_suite_provider(test_case.cipher_suite) else {
+                continue;
+            };
 
-            if let Ok(cipher_suite) = cipher_suite {
-                let provider = test_cipher_suite_provider(cipher_suite);
+            let output = HashReference::compute(&test_case.input, TEST_LABEL, &provider).unwrap();
 
-                let output =
-                    HashReference::compute(&test_case.input, TEST_LABEL, &provider).unwrap();
-
-                assert_eq!(output.len(), provider.kdf_extract_size());
-                assert_eq!(output.as_ref(), &test_case.output);
-            } else {
-                println!("Skipping test case for unsupported cipher suite");
-            }
+            assert_eq!(output.len(), provider.kdf_extract_size());
+            assert_eq!(output.as_ref(), &test_case.output);
         }
     }
 }

@@ -127,6 +127,7 @@ where
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+    use aws_mls_core::crypto::CipherSuiteProvider;
     use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
     use crate::{
@@ -138,7 +139,8 @@ mod tests {
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
         protocol_version::ProtocolVersion,
         provider::{
-            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
+            crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
+            identity::BasicIdentityProvider,
         },
         tree_kem::{
             leaf_node::{test_utils::get_test_capabilities, LeafNodeError, LeafNodeSource},
@@ -184,9 +186,11 @@ mod tests {
 
     #[test]
     fn test_key_generation() {
-        for (protocol_version, cipher_suite) in
-            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-        {
+        for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
+            TestCryptoProvider::all_supported_cipher_suites()
+                .into_iter()
+                .map(move |cs| (p, cs))
+        }) {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
             let (signing_identity, signing_key) =
@@ -293,9 +297,11 @@ mod tests {
 
     #[test]
     fn test_randomness() {
-        for (protocol_version, cipher_suite) in
-            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-        {
+        for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
+            TestCryptoProvider::all_supported_cipher_suites()
+                .into_iter()
+                .map(move |cs| (p, cs))
+        }) {
             let (signing_identity, signing_key) =
                 get_test_signing_identity(cipher_suite, b"foo".to_vec());
 

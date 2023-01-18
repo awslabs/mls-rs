@@ -476,21 +476,23 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::{
-        cipher_suite::CipherSuite, group::test_utils::random_bytes,
-        provider::crypto::test_utils::test_cipher_suite_provider,
+        cipher_suite::CipherSuite,
+        group::test_utils::random_bytes,
+        provider::crypto::test_utils::{
+            test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
+        },
     };
 
     use super::{test_utils::get_test_tree, *};
 
     use assert_matches::assert_matches;
 
-    use num_enum::TryFromPrimitive;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_secret_tree() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             println!("Running secret tree derivation for {:?}", cipher_suite);
 
             let cs_provider = test_cipher_suite_provider(cipher_suite);
@@ -528,7 +530,7 @@ mod tests {
 
     #[test]
     fn test_secret_key_ratchet() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             println!("Running secret tree ratchet for {:?}", cipher_suite);
 
             let provider = test_cipher_suite_provider(cipher_suite);
@@ -569,7 +571,7 @@ mod tests {
 
     #[test]
     fn test_get_key() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             println!("Running secret tree get key for {:?}", cipher_suite);
 
             let provider = test_cipher_suite_provider(cipher_suite);
@@ -602,7 +604,7 @@ mod tests {
 
     #[test]
     fn test_secret_ratchet() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             println!("Running secret tree secret ratchet {:?}", cipher_suite);
 
             let provider = test_cipher_suite_provider(cipher_suite);
@@ -741,15 +743,12 @@ mod tests {
         let test_cases = load_test_cases();
 
         for case in test_cases {
-            let cipher_suite = CipherSuite::try_from_primitive(case.cipher_suite);
-
-            if cipher_suite.is_err() {
-                println!("Skipping test case due to unsupported cipher suite");
+            let Some(cs_provider) = try_test_cipher_suite_provider(case.cipher_suite) else {
                 continue;
-            }
+            };
 
             let mut secret_tree = SecretTree::new(16, case.encryption_secret);
-            let ratchet_data = get_ratchet_data(&mut secret_tree, cipher_suite.unwrap());
+            let ratchet_data = get_ratchet_data(&mut secret_tree, cs_provider.cipher_suite());
 
             assert_eq!(ratchet_data, case.ratchets);
         }

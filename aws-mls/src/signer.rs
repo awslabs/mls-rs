@@ -82,11 +82,13 @@ pub(crate) trait Signable<'a> {
 mod tests {
     use super::*;
     use crate::{
-        cipher_suite::CipherSuite, client::test_utils::TEST_CIPHER_SUITE,
-        group::test_utils::random_bytes, provider::crypto::test_utils::test_cipher_suite_provider,
+        client::test_utils::TEST_CIPHER_SUITE,
+        group::test_utils::random_bytes,
+        provider::crypto::test_utils::{
+            test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
+        },
     };
     use assert_matches::assert_matches;
-    use num_enum::TryFromPrimitive;
     use tls_codec::{Serialize, TlsByteVecU32};
 
     #[cfg(target_arch = "wasm32")]
@@ -137,7 +139,7 @@ mod tests {
     fn generate_test_cases() -> Vec<TestCase> {
         let mut test_cases = Vec::new();
 
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let provider = test_cipher_suite_provider(cipher_suite);
 
             let (signer, public) = provider.signature_key_generate().unwrap();
@@ -174,14 +176,9 @@ mod tests {
         let cases = load_test_cases();
 
         for one_case in cases {
-            if CipherSuite::try_from_primitive(one_case.cipher_suite).is_err() {
-                println!("Skipping test for unsupported cipher suite");
+            let Some(cipher_suite_provider) = try_test_cipher_suite_provider(one_case.cipher_suite) else {
                 continue;
-            }
-
-            let cipher_suite_provider = test_cipher_suite_provider(
-                CipherSuite::try_from_primitive(one_case.cipher_suite).unwrap(),
-            );
+            };
 
             let signature_key = SignatureSecretKey::from(one_case.signer);
             let public_key = SignaturePublicKey::from(one_case.public);

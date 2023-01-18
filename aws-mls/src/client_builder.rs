@@ -41,7 +41,7 @@ pub type BaseConfig = Config<
     Missing,
     KeepAllProposals,
     // TODO replace by the final default provider
-    FerriscryptCryptoProvider,
+    Missing,
 >;
 
 /// Builder for `Client`
@@ -64,10 +64,13 @@ pub type BaseConfig = Config<
 ///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
 /// };
 ///
+/// use aws_mls_crypto_openssl::OpensslCryptoProvider;
+///
 /// let keychain = InMemoryKeychain::default();
 /// // Add code to populate keychain here
 ///
 /// let _client = Client::builder()
+///     .crypto_provider(OpensslCryptoProvider::default())
 ///     .identity_provider(BasicIdentityProvider::new())
 ///     .keychain(keychain)
 ///     .build();
@@ -84,8 +87,11 @@ pub type BaseConfig = Config<
 ///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
 /// };
 ///
+/// use aws_mls_crypto_openssl::OpensslCryptoProvider;
+///
 /// fn make_client() -> Client<impl MlsConfig> {
 ///     Client::builder()
+///         .crypto_provider(OpensslCryptoProvider::default())
 ///         .identity_provider(BasicIdentityProvider::new())
 ///         .keychain(InMemoryKeychain::default())
 ///         .build()
@@ -95,17 +101,21 @@ pub type BaseConfig = Config<
 /// The second option is more verbose and consists in writing the full `Client` type:
 /// ```
 /// use aws_mls::{
-///     client::{BaseConfig, Client, WithIdentityProvider, WithKeychain},
+///     client::{BaseConfig, Client, WithIdentityProvider, WithKeychain, WithCryptoProvider},
 ///     provider::{
 ///         identity::BasicIdentityProvider, keychain::InMemoryKeychain,
 ///     },
 /// };
 ///
+/// use aws_mls_crypto_openssl::OpensslCryptoProvider;
+///
 /// type MlsClient =
-///     Client<WithKeychain<InMemoryKeychain, WithIdentityProvider<BasicIdentityProvider, BaseConfig>>>;
+///     Client<WithKeychain<InMemoryKeychain, WithIdentityProvider<BasicIdentityProvider,
+///     WithCryptoProvider<OpensslCryptoProvider, BaseConfig>>>>;
 ///
 /// fn make_client_2() -> MlsClient {
 ///     Client::builder()
+///         .crypto_provider(OpensslCryptoProvider::default())
 ///         .identity_provider(BasicIdentityProvider::new())
 ///         .keychain(InMemoryKeychain::default())
 ///         .build()
@@ -131,7 +141,7 @@ impl ClientBuilder<BaseConfig> {
             group_state_storage: Default::default(),
             identity_provider: Missing,
             make_proposal_filter: KeepAllProposals,
-            crypto_provider: Default::default(),
+            crypto_provider: Missing,
         }))
     }
 }
@@ -906,24 +916,31 @@ mod private {
 }
 
 use aws_mls_core::identity::IdentityProvider;
-use aws_mls_crypto_ferriscrypt::FerriscryptCryptoProvider;
 use private::{Config, ConfigInner, IntoConfig};
 
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
     use crate::{
         client_builder::{BaseConfig, ClientBuilder, WithIdentityProvider, WithKeychain},
-        provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
+        provider::{
+            crypto::test_utils::TestCryptoProvider, identity::BasicIdentityProvider,
+            keychain::InMemoryKeychain,
+        },
     };
 
-    pub type TestClientConfig =
-        WithIdentityProvider<BasicIdentityProvider, WithKeychain<InMemoryKeychain, BaseConfig>>;
+    use super::WithCryptoProvider;
+
+    pub type TestClientConfig = WithIdentityProvider<
+        BasicIdentityProvider,
+        WithKeychain<InMemoryKeychain, WithCryptoProvider<TestCryptoProvider, BaseConfig>>,
+    >;
 
     pub type TestClientBuilder = ClientBuilder<TestClientConfig>;
 
     impl TestClientBuilder {
         pub fn new_for_test() -> Self {
             ClientBuilder::new()
+                .crypto_provider(TestCryptoProvider::new())
                 .identity_provider(BasicIdentityProvider::new())
                 .keychain(InMemoryKeychain::new())
         }

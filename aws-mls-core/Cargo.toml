@@ -5,8 +5,6 @@ edition = "2021"
 
 [features]
 arbitrary = ["dep:arbitrary"]
-openssl_engine = []
-default = ["openssl_engine"]
 
 [dependencies]
 tls_codec = "0.2.0"

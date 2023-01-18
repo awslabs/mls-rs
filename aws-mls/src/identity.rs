@@ -42,7 +42,7 @@ impl MlsCredential for BasicCredential {
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
     use aws_mls_core::{
-        crypto::{CipherSuite, SignatureSecretKey},
+        crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},
         identity::{Credential, SigningIdentity},
     };
 

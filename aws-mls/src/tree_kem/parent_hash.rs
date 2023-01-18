@@ -391,7 +391,9 @@ mod tests {
     use super::*;
     use crate::cipher_suite::CipherSuite;
     use crate::client::test_utils::TEST_CIPHER_SUITE;
-    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
+    use crate::provider::crypto::test_utils::{
+        test_cipher_suite_provider, try_test_cipher_suite_provider,
+    };
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNodeSource;
@@ -399,7 +401,6 @@ mod tests {
     use crate::tree_kem::parent_hash::test_utils::{get_test_tree_fig_12, test_parent_node};
     use crate::tree_kem::RatchetTreeError;
     use assert_matches::assert_matches;
-    use num_enum::TryFromPrimitive;
     use tls_codec::Deserialize;
 
     #[cfg(target_arch = "wasm32")]
@@ -575,14 +576,9 @@ mod tests {
         let cases = load_test_cases();
 
         for one_case in cases {
-            let cipher_suite = CipherSuite::try_from_primitive(one_case.cipher_suite);
-
-            if cipher_suite.is_err() {
-                println!("Skipping test for unsupported cipher suite");
+            let Some(cs_provider) = try_test_cipher_suite_provider(one_case.cipher_suite) else {
                 continue;
-            }
-
-            let cs_provider = test_cipher_suite_provider(cipher_suite.unwrap());
+            };
 
             let tree = TreeKemPublic::import_node_data(
                 NodeVec::tls_deserialize(&mut &*one_case.tree_data).unwrap(),

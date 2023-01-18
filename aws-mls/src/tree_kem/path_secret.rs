@@ -153,12 +153,14 @@ impl<'a, P: CipherSuiteProvider> Iterator for PathSecretGenerator<'a, P> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        cipher_suite::CipherSuite, provider::crypto::test_utils::test_cipher_suite_provider,
+        cipher_suite::CipherSuite,
+        provider::crypto::test_utils::{
+            test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
+        },
     };
 
     use super::*;
 
-    use num_enum::TryFromPrimitive;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -198,14 +200,9 @@ mod tests {
         let cases = load_test_cases();
 
         for one_case in cases {
-            let cipher_suite = CipherSuite::try_from_primitive(one_case.cipher_suite);
-
-            if cipher_suite.is_err() {
-                println!("Skipping test for unsupported cipher suite");
+            let Some(cs_provider) = try_test_cipher_suite_provider(one_case.cipher_suite) else {
                 continue;
-            }
-
-            let cs_provider = test_cipher_suite_provider(cipher_suite.unwrap());
+            };
 
             let first_secret = PathSecret::from(hex::decode(&one_case.generations[0]).unwrap());
             let generator = PathSecretGenerator::starting_with(&cs_provider, first_secret);
@@ -285,7 +282,7 @@ mod tests {
 
     #[test]
     fn test_empty_path_secret() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cs_provider = test_cipher_suite_provider(cipher_suite);
             let empty = PathSecret::empty(&cs_provider);
             assert_eq!(

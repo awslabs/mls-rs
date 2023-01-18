@@ -81,16 +81,14 @@ impl ConfirmationTag {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        cipher_suite::CipherSuite, provider::crypto::test_utils::test_cipher_suite_provider,
-    };
+    use crate::provider::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_confirmation_tag_matching() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             println!("Running confirmation tag tests for {:?}", cipher_suite);
 
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);

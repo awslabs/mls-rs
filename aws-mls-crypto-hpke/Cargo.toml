@@ -7,17 +7,26 @@ edition = "2021"
 default = []
 
 [dependencies]
-openssl = { version = "^0.10.40" }
 aws-mls-core = { path = "../aws-mls-core" }
 aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits" }
 thiserror = "^1"
 zeroize = { version = "^1.3", features = ["zeroize_derive"] }
 hex = { version = "^0.4.3", features = ["serde"] }
+cfg-if = "^1"
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"
 mockall = "0.11"
-aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl" }
 aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", features = ["mock"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "^0.2.79" }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { version = "0.3.26", default-features = false }
+aws-mls-crypto-rustcrypto = { path = "../aws-mls-crypto-rustcrypto", features = ["browser"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl"}

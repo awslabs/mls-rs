@@ -16,10 +16,6 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
       with:
         path: mls
-    - name: Setup SSH Keys and known_hosts
-      run: |
-        ssh-agent -a $SSH_AUTH_SOCK > /dev/null
-        ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
     - name: Start test MLS client
       working-directory: aws-mls/test_harness_integration 
       run: cargo run &

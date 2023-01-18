@@ -5,7 +5,8 @@
 
 use aws_mls::cipher_suite::{CipherSuite, MaybeCipherSuite};
 use aws_mls::client::{
-    BaseConfig, Client, ClientBuilder, Preferences, WithIdentityProvider, WithKeychain,
+    BaseConfig, Client, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider,
+    WithKeychain,
 };
 use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::group::MLSMessage;
@@ -14,14 +15,14 @@ use aws_mls::identity::BasicCredential;
 use aws_mls::identity::SigningIdentity;
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
-use aws_mls::provider::crypto::CryptoProvider;
+use aws_mls::provider::crypto::{CipherSuiteProvider, CryptoProvider};
 use aws_mls::provider::{
     identity::BasicIdentityProvider, keychain::InMemoryKeychain, psk::InMemoryPskStore,
 };
 use aws_mls::psk::{ExternalPskId, Psk};
 use aws_mls::tls_codec::{Deserialize, Serialize};
 
-use aws_mls_crypto_ferriscrypt::FerriscryptCryptoProvider;
+use aws_mls_crypto_openssl::OpensslCryptoProvider;
 use clap::Parser;
 use std::convert::TryFrom;
 use std::net::IpAddr;
@@ -113,8 +114,10 @@ impl<T> TryFrom<(StateUpdate<T>, u32)> for HandleCommitResponse {
     }
 }
 
-type TestClientConfig =
-    WithIdentityProvider<BasicIdentityProvider, WithKeychain<InMemoryKeychain, BaseConfig>>;
+type TestClientConfig = WithIdentityProvider<
+    BasicIdentityProvider,
+    WithKeychain<InMemoryKeychain, WithCryptoProvider<OpensslCryptoProvider, BaseConfig>>,
+>;
 
 #[derive(Default)]
 pub struct MlsClientImpl {
@@ -226,7 +229,7 @@ impl MlsClient for MlsClientImpl {
             .into_enum()
             .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
 
-        let provider = FerriscryptCryptoProvider::new()
+        let provider = OpensslCryptoProvider::new()
             .cipher_suite_provider(cipher_suite)
             .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
 
@@ -244,6 +247,7 @@ impl MlsClient for MlsClientImpl {
 
         let creator = Client::builder()
             .identity_provider(BasicIdentityProvider::new())
+            .crypto_provider(OpensslCryptoProvider::default())
             .single_signing_identity(signing_identity.clone(), secret_key, cipher_suite)
             .preferences(Preferences::default().with_ratchet_tree_extension(true))
             .psk_store(psk_store.clone())
@@ -278,7 +282,7 @@ impl MlsClient for MlsClientImpl {
             .into_enum()
             .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
 
-        let provider = FerriscryptCryptoProvider::new()
+        let provider = OpensslCryptoProvider::new()
             .cipher_suite_provider(cipher_suite)
             .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
 
@@ -295,6 +299,7 @@ impl MlsClient for MlsClientImpl {
         let psk_store = InMemoryPskStore::default();
 
         let client = ClientBuilder::new()
+            .crypto_provider(OpensslCryptoProvider::default())
             .identity_provider(BasicIdentityProvider::new())
             .single_signing_identity(signing_identity.clone(), secret_key, cipher_suite)
             .preferences(Preferences::default().with_ratchet_tree_extension(true))

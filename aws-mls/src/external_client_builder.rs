@@ -24,8 +24,7 @@ use crate::{
 use std::collections::HashMap;
 
 /// Base client configuration type when instantiating `ExternalClientBuilder`
-// TODO replace FerriscryptCryptoProvider by the default provider
-pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, FerriscryptCryptoProvider>;
+pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Missing>;
 
 /// Builder for `ExternalClient`
 ///
@@ -47,10 +46,13 @@ pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Ferrisc
 ///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
 /// };
 ///
+/// use aws_mls_crypto_openssl::OpensslCryptoProvider;
+///
 /// let keychain = InMemoryKeychain::default();
 /// // Add code to populate keychain here
 ///
 /// let _client = ExternalClient::builder()
+///     .crypto_provider(OpensslCryptoProvider::default())
 ///     .identity_provider(BasicIdentityProvider::new())
 ///     .keychain(keychain)
 ///     .build();
@@ -67,8 +69,11 @@ pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Ferrisc
 ///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
 /// };
 ///
+/// use aws_mls_crypto_openssl::OpensslCryptoProvider;
+///
 /// fn make_client() -> ExternalClient<impl MlsConfig> {
 ///     ExternalClient::builder()
+///         .crypto_provider(OpensslCryptoProvider::default())
 ///         .identity_provider(BasicIdentityProvider::new())
 ///         .keychain(InMemoryKeychain::default())
 ///         .build()
@@ -78,19 +83,22 @@ pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Ferrisc
 /// The second option is more verbose and consists in writing the full `ExternalClient` type:
 /// ```
 /// use aws_mls::{
-///     external_client::{ExternalBaseConfig, ExternalClient, WithIdentityProvider, WithKeychain},
+///     external_client::{ExternalBaseConfig, ExternalClient, WithIdentityProvider, WithKeychain, WithCryptoProvider},
 ///     provider::{
 ///         identity::BasicIdentityProvider, keychain::InMemoryKeychain,
 ///     },
 /// };
 ///
+/// use aws_mls_crypto_openssl::OpensslCryptoProvider;
+///
 /// type MlsClient = ExternalClient<WithKeychain<InMemoryKeychain, WithIdentityProvider<
 ///     BasicIdentityProvider,
-///     ExternalBaseConfig,
+///     WithCryptoProvider<OpensslCryptoProvider, ExternalBaseConfig>,
 /// >>>;
 ///
 /// fn make_client_2() -> MlsClient {
 ///     ExternalClient::builder()
+///         .crypto_provider(OpensslCryptoProvider::new())
 ///         .identity_provider(BasicIdentityProvider::new())
 ///         .keychain(InMemoryKeychain::default())
 ///         .build()
@@ -113,7 +121,7 @@ impl ExternalClientBuilder<ExternalBaseConfig> {
             keychain: Missing,
             identity_provider: Missing,
             make_proposal_filter: KeepAllProposals,
-            crypto_provider: Default::default(),
+            crypto_provider: Missing,
         }))
     }
 }
@@ -578,24 +586,25 @@ mod private {
 }
 
 use aws_mls_core::identity::IdentityProvider;
-use aws_mls_crypto_ferriscrypt::FerriscryptCryptoProvider;
 use private::{Config, ConfigInner, IntoConfig};
 
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
-    use aws_mls_crypto_ferriscrypt::FerriscryptCryptoProvider;
-
     use crate::{
         cipher_suite::CipherSuite,
         external_client_builder::{
-            ExternalBaseConfig, ExternalClientBuilder, WithIdentityProvider, WithKeychain,
+            ExternalBaseConfig, ExternalClientBuilder, WithCryptoProvider, WithIdentityProvider,
+            WithKeychain,
         },
-        provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
+        provider::{
+            crypto::test_utils::TestCryptoProvider, identity::BasicIdentityProvider,
+            keychain::InMemoryKeychain,
+        },
     };
 
     pub type TestExternalClientConfig = WithIdentityProvider<
         BasicIdentityProvider,
-        WithKeychain<InMemoryKeychain, ExternalBaseConfig>,
+        WithKeychain<InMemoryKeychain, WithCryptoProvider<TestCryptoProvider, ExternalBaseConfig>>,
     >;
 
     pub type TestExternalClientBuilder = ExternalClientBuilder<TestExternalClientConfig>;
@@ -603,15 +612,21 @@ pub mod test_utils {
     impl TestExternalClientBuilder {
         pub fn new_for_test() -> Self {
             ExternalClientBuilder::new()
+                .crypto_provider(TestCryptoProvider::default())
                 .identity_provider(BasicIdentityProvider::new())
                 .keychain(InMemoryKeychain::default())
         }
 
         pub fn new_for_test_disabling_cipher_suite(cipher_suite: CipherSuite) -> Self {
+            let crypto_provider = TestCryptoProvider::with_enabled_cipher_suites(
+                TestCryptoProvider::all_supported_cipher_suites()
+                    .into_iter()
+                    .filter(|cs| cs != &cipher_suite)
+                    .collect(),
+            );
+
             ExternalClientBuilder::new()
-                .crypto_provider(FerriscryptCryptoProvider::with_disabled_cipher_suites(
-                    vec![cipher_suite],
-                ))
+                .crypto_provider(crypto_provider)
                 .identity_provider(BasicIdentityProvider::new())
                 .keychain(InMemoryKeychain::default())
         }

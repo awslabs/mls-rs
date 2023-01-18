@@ -99,12 +99,12 @@ impl MembershipTag {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cipher_suite::CipherSuite;
     use crate::group::framing::test_utils::get_test_auth_content;
     use crate::group::test_utils::get_test_group_context;
-    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
+    use crate::provider::crypto::test_utils::{
+        test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
+    };
 
-    use num_enum::TryFromPrimitive;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -118,7 +118,7 @@ mod tests {
     fn generate_test_cases() -> Vec<TestCase> {
         let mut test_cases = Vec::new();
 
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let tag = MembershipTag::create(
                 &get_test_auth_content(b"hello".to_vec()),
                 &get_test_group_context(1, cipher_suite),
@@ -143,18 +143,15 @@ mod tests {
     #[test]
     fn test_membership_tag() {
         for case in load_test_cases() {
-            let cipher_suite = CipherSuite::try_from_primitive(case.cipher_suite);
-
-            if cipher_suite.is_err() {
-                println!("Skipping test for unsupported cipher suite");
+            let Some(cs_provider) = try_test_cipher_suite_provider(case.cipher_suite) else {
                 continue;
-            }
+            };
 
             let tag = MembershipTag::create(
                 &get_test_auth_content(b"hello".to_vec()),
-                &get_test_group_context(1, cipher_suite.unwrap()),
+                &get_test_group_context(1, cs_provider.cipher_suite()),
                 b"membership_key".as_ref(),
-                &test_cipher_suite_provider(cipher_suite.unwrap()),
+                &test_cipher_suite_provider(cs_provider.cipher_suite()),
             )
             .unwrap();
 

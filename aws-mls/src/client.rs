@@ -23,8 +23,9 @@ use hex::ToHex;
 use thiserror::Error;
 
 pub use crate::client_builder::{
-    BaseConfig, ClientBuilder, Missing, MlsConfig, Preferences, WithGroupStateStorage,
-    WithIdentityProvider, WithKeyPackageRepo, WithKeychain, WithProposalFilter, WithPskStore,
+    BaseConfig, ClientBuilder, Missing, MlsConfig, Preferences, WithCryptoProvider,
+    WithGroupStateStorage, WithIdentityProvider, WithKeyPackageRepo, WithKeychain,
+    WithProposalFilter, WithPskStore,
 };
 
 #[derive(Error, Debug)]
@@ -383,6 +384,7 @@ mod tests {
             Event,
         },
         identity::test_utils::get_test_basic_credential,
+        provider::crypto::test_utils::TestCryptoProvider,
         psk::{ExternalPskId, Psk},
         tree_kem::leaf_node::LeafNodeSource,
     };
@@ -396,9 +398,11 @@ mod tests {
     fn test_keygen() {
         // This is meant to test the inputs to the internal key package generator
         // See KeyPackageGenerator tests for key generation specific tests
-        for (protocol_version, cipher_suite) in
-            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-        {
+        for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
+            TestCryptoProvider::all_supported_cipher_suites()
+                .into_iter()
+                .map(move |cs| (p, cs))
+        }) {
             println!("Running client keygen for {:?}", cipher_suite);
 
             let (client, identity) = get_basic_client_builder(cipher_suite, "foo");

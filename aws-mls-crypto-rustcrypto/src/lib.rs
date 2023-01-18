@@ -40,7 +40,7 @@ pub enum RustCryptoError {
     EcSignerError(#[from] EcSignerError),
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct RustCryptoProvider {
     pub enabled_cipher_suites: Vec<CipherSuite>,
@@ -54,6 +54,22 @@ impl RustCryptoProvider {
     pub fn with_enabled_cipher_suites(enabled_cipher_suites: Vec<CipherSuite>) -> Self {
         Self {
             enabled_cipher_suites,
+        }
+    }
+
+    pub fn all_supported_cipher_suites() -> Vec<CipherSuite> {
+        vec![
+            CipherSuite::P256Aes128,
+            CipherSuite::Curve25519Aes128,
+            CipherSuite::Curve25519ChaCha20,
+        ]
+    }
+}
+
+impl Default for RustCryptoProvider {
+    fn default() -> Self {
+        Self {
+            enabled_cipher_suites: Self::all_supported_cipher_suites(),
         }
     }
 }

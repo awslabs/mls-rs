@@ -322,12 +322,15 @@ fn decrypt_parent_path_secret<P: CipherSuiteProvider>(
 
 #[cfg(test)]
 mod tests {
+    use aws_mls_core::crypto::CipherSuiteProvider;
+
     use crate::{
         cipher_suite::CipherSuite,
         extension::{test_utils::TestExtension, ExtensionList, LeafNodeExtension},
         group::test_utils::{get_test_group_context, random_bytes},
         provider::{
-            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
+            crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
+            identity::BasicIdentityProvider,
         },
         tree_kem::{
             leaf_node::{
@@ -523,7 +526,7 @@ mod tests {
 
     #[test]
     fn test_encap_decap() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             println!("Testing Tree KEM encap / decap for: {cipher_suite:?}");
             encap_decap(cipher_suite, 10, None, None);
         }

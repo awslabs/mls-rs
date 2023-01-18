@@ -374,7 +374,12 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         provider::{
-            crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
+            crypto::{
+                test_utils::{
+                    test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
+                },
+                CipherSuiteProvider,
+            },
             psk::{InMemoryPskStore, PskStore},
         },
         psk::{
@@ -382,7 +387,6 @@ mod tests {
         },
     };
     use assert_matches::assert_matches;
-    use num_enum::TryFromPrimitive;
     use serde::{Deserialize, Serialize};
     use std::{convert::Infallible, iter};
 
@@ -464,8 +468,9 @@ mod tests {
             CipherSuite::all()
                 .flat_map(|cs| (1..=10).map(move |n| (cs, n)))
                 .map(|(cs, n)| {
-                    let psks = Self::make_psk_list(&test_cipher_suite_provider(cs), n);
-                    let psk_secret = Self::compute_psk_secret(cs, &psks);
+                    let provider = test_cipher_suite_provider(cs);
+                    let psks = Self::make_psk_list(&provider, n);
+                    let psk_secret = Self::compute_psk_secret(&provider, &psks);
                     TestScenario {
                         cipher_suite: cs as u16,
                         psks: psks.to_vec(),
@@ -479,7 +484,7 @@ mod tests {
             load_test_cases!(psk_secret, TestScenario::generate)
         }
 
-        fn compute_psk_secret(cipher_suite: CipherSuite, psks: &[PskInfo]) -> Vec<u8> {
+        fn compute_psk_secret<P: CipherSuiteProvider>(provider: &P, psks: &[PskInfo]) -> Vec<u8> {
             let secret_store = psks
                 .iter()
                 .fold(InMemoryPskStore::default(), |mut store, psk| {
@@ -494,7 +499,7 @@ mod tests {
                 .collect::<Vec<_>>();
 
             psk_secret(
-                &test_cipher_suite_provider(cipher_suite),
+                provider,
                 |id| PskStore::get(&secret_store, id),
                 |_| Ok::<_, Infallible>(None),
                 &ids,
@@ -513,10 +518,9 @@ mod tests {
                 .enumerate()
                 .map(|(i, scenario)| (format!("Scenario #{i}"), scenario))
                 .find(|(_, scenario)| {
-                    if let Ok(cipher_suite) = CipherSuite::try_from_primitive(scenario.cipher_suite)
-                    {
+                    if let Some(provider) = try_test_cipher_suite_provider(scenario.cipher_suite) {
                         scenario.psk_secret
-                            != TestScenario::compute_psk_secret(cipher_suite, &scenario.psks)
+                            != TestScenario::compute_psk_secret(&provider, &scenario.psks)
                     } else {
                         false
                     }
@@ -527,12 +531,15 @@ mod tests {
 
     #[test]
     fn random_generation_of_nonces_is_random() {
-        let good = CipherSuite::all().all(|cipher_suite| {
-            let nonce = make_nonce(cipher_suite);
-            iter::repeat_with(|| make_nonce(cipher_suite))
-                .take(1000)
-                .all(|other| other != nonce)
-        });
+        let good = TestCryptoProvider::all_supported_cipher_suites()
+            .into_iter()
+            .all(|cipher_suite| {
+                let nonce = make_nonce(cipher_suite);
+                iter::repeat_with(|| make_nonce(cipher_suite))
+                    .take(1000)
+                    .all(|other| other != nonce)
+            });
+
         assert!(good);
     }
 }

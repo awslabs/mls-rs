@@ -10,3 +10,12 @@ members = [
     "aws-mls-crypto-rustcrypto",
     "aws-mls-crypto-hpke"
 ]
+
+default-members = [
+    "aws-mls",
+    "aws-mls-core",
+    "aws-mls-identity-x509",
+    "aws-mls-crypto-hpke",
+    "aws-mls-crypto-openssl",
+    "aws-mls-crypto-rustcrypto"
+]

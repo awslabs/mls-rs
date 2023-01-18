@@ -1770,7 +1770,7 @@ mod tests {
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_basic_credential;
     use crate::key_package::KeyPackageValidationError;
-    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
+    use crate::provider::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
     use crate::time::MlsTime;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use crate::{
@@ -1810,9 +1810,11 @@ mod tests {
 
     #[test]
     fn test_create_group() {
-        for (protocol_version, cipher_suite) in
-            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-        {
+        for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
+            TestCryptoProvider::all_supported_cipher_suites()
+                .into_iter()
+                .map(move |cs| (p, cs))
+        }) {
             let test_group = test_group(protocol_version, cipher_suite);
             let group = test_group.group;
 
@@ -2637,8 +2639,8 @@ mod tests {
             config
                 .0
                 .crypto_provider
-                .disabled_cipher_suites
-                .push(TEST_CIPHER_SUITE);
+                .enabled_cipher_suites
+                .retain(|&x| x != TEST_CIPHER_SUITE);
         })
         .map(|_| ());
 

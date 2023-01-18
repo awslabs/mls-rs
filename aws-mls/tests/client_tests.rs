@@ -1,7 +1,8 @@
 use assert_matches::assert_matches;
 use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client::{
-    BaseConfig, Client, ClientBuilder, Preferences, WithIdentityProvider, WithKeychain,
+    BaseConfig, Client, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider,
+    WithKeychain,
 };
 use aws_mls::extension::ExtensionList;
 use aws_mls::group::MLSMessage;
@@ -12,7 +13,17 @@ use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::provider::crypto::CryptoProvider;
 use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain};
-use aws_mls_crypto_ferriscrypt::FerriscryptCryptoProvider;
+use aws_mls_core::crypto::CipherSuiteProvider;
+use cfg_if::cfg_if;
+
+cfg_if! {
+    if #[cfg(target_arch = "wasm32")] {
+        pub use aws_mls_crypto_rustcrypto::RustCryptoProvider as TestCryptoProvider;
+    } else {
+        pub use aws_mls_crypto_openssl::OpensslCryptoProvider as TestCryptoProvider;
+    }
+}
+
 use rand::RngCore;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 
@@ -22,8 +33,10 @@ use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test_configure!(run_in_browser);
 
-type TestClientConfig =
-    WithIdentityProvider<BasicIdentityProvider, WithKeychain<InMemoryKeychain, BaseConfig>>;
+type TestClientConfig = WithIdentityProvider<
+    BasicIdentityProvider,
+    WithKeychain<InMemoryKeychain, WithCryptoProvider<TestCryptoProvider, BaseConfig>>,
+>;
 
 // The same method exists in `credential::test_utils` but is not compiled without the `test` flag.
 pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {
@@ -36,11 +49,13 @@ pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {
 
 fn test_params() -> impl Iterator<Item = (ProtocolVersion, CipherSuite, bool)> {
     ProtocolVersion::all().flat_map(|p| {
-        CipherSuite::all().flat_map(move |cs| {
-            [false, true]
-                .into_iter()
-                .map(move |encrypt| (p, cs, encrypt))
-        })
+        TestCryptoProvider::all_supported_cipher_suites()
+            .into_iter()
+            .flat_map(move |cs| {
+                [false, true]
+                    .into_iter()
+                    .map(move |encrypt| (p, cs, encrypt))
+            })
     })
 }
 
@@ -50,7 +65,7 @@ struct TestClient {
 }
 
 fn generate_client(cipher_suite: CipherSuite, id: Vec<u8>, preferences: Preferences) -> TestClient {
-    let cipher_suite_provider = FerriscryptCryptoProvider::new()
+    let cipher_suite_provider = TestCryptoProvider::new()
         .cipher_suite_provider(cipher_suite)
         .unwrap();
 
@@ -61,6 +76,7 @@ fn generate_client(cipher_suite: CipherSuite, id: Vec<u8>, preferences: Preferen
     let identity = SigningIdentity::new(credential, public_key);
 
     let client = ClientBuilder::new()
+        .crypto_provider(TestCryptoProvider::default())
         .identity_provider(BasicIdentityProvider::new())
         .single_signing_identity(identity.clone(), secret_key, cipher_suite)
         .preferences(preferences)
@@ -863,11 +879,11 @@ struct ReinitClientGeneration {
 fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite, id: &str) -> ReinitClientGeneration {
     let credential = get_test_basic_credential(id.as_bytes().to_vec());
 
-    let csp1 = FerriscryptCryptoProvider::new()
+    let csp1 = TestCryptoProvider::new()
         .cipher_suite_provider(suite1)
         .unwrap();
 
-    let csp2 = FerriscryptCryptoProvider::new()
+    let csp2 = TestCryptoProvider::new()
         .cipher_suite_provider(suite2)
         .unwrap();
 
@@ -878,6 +894,7 @@ fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite, id: &str) -> Rein
     let id2 = SigningIdentity::new(credential, pk2);
 
     let client = ClientBuilder::new()
+        .crypto_provider(TestCryptoProvider::default())
         .identity_provider(BasicIdentityProvider::new())
         .keychain(InMemoryKeychain::default())
         .signing_identity(id1.clone(), sk1, suite1)

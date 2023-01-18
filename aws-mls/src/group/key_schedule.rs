@@ -400,6 +400,8 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use aws_mls_core::crypto::CipherSuiteProvider;
+
     use crate::{
         cipher_suite::CipherSuite, provider::crypto::test_utils::test_cipher_suite_provider,
     };
@@ -427,12 +429,12 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use num_enum::TryFromPrimitive;
-
-    use crate::cipher_suite::CipherSuite;
     use crate::group::test_utils::get_test_group_context;
     use crate::group::InitSecret;
-    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
+    use crate::provider::crypto::test_utils::{
+        test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
+    };
+    use aws_mls_core::crypto::CipherSuiteProvider;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -452,7 +454,7 @@ mod tests {
     fn generate_epoch_secret_exporter_test_vector() -> Vec<ExporterTestCase> {
         let mut test_cases = Vec::new();
 
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cs_provider = test_cipher_suite_provider(cipher_suite);
             let key_size = cs_provider.kdf_extract_size();
 
@@ -500,12 +502,11 @@ mod tests {
         let test_cases = load_exporter_test_cases();
 
         for test_case in test_cases {
-            let cipher_suite = match CipherSuite::try_from_primitive(test_case.cipher_suite) {
-                Ok(cs) => cs,
-                Err(_) => continue,
+            let Some(cipher_suite_provider) = try_test_cipher_suite_provider(test_case.cipher_suite) else {
+                continue;
             };
 
-            let key_size = test_cipher_suite_provider(cipher_suite).kdf_extract_size();
+            let key_size = cipher_suite_provider.kdf_extract_size();
 
             let key_schedule = KeySchedule {
                 exporter_secret: test_case.input[0..key_size].to_vec(),
@@ -518,12 +519,7 @@ mod tests {
             let context = &test_case.input[key_size..];
 
             let exported_secret = key_schedule
-                .export_secret(
-                    "test",
-                    context,
-                    key_size,
-                    &test_cipher_suite_provider(cipher_suite),
-                )
+                .export_secret("test", context, key_size, &cipher_suite_provider)
                 .unwrap();
 
             assert_eq!(exported_secret, test_case.output);
@@ -554,7 +550,7 @@ mod tests {
     fn generate_key_schedule_test_vector() -> Vec<KeyScheduleTestCase> {
         let mut test_cases = Vec::new();
 
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cs_provider = test_cipher_suite_provider(cipher_suite);
             let key_size = cs_provider.kdf_extract_size();
 
@@ -598,16 +594,15 @@ mod tests {
         let test_cases = load_key_schedue_test_cases();
 
         for test_case in test_cases {
-            let cipher_suite = match CipherSuite::try_from_primitive(test_case.cipher_suite) {
-                Ok(cs) => cs,
-                Err(_) => continue,
+            let Some(cs_provider) = try_test_cipher_suite_provider(test_case.cipher_suite) else {
+                continue;
             };
 
-            let cs_provider = test_cipher_suite_provider(cipher_suite);
             let key_size = cs_provider.kdf_extract_size();
 
-            let key_schedule = get_test_key_schedule(cipher_suite);
-            let context = get_test_group_context(42, cipher_suite);
+            let key_schedule = get_test_key_schedule(cs_provider.cipher_suite());
+            let context = get_test_group_context(42, cs_provider.cipher_suite());
+
             let psk = vec![0u8; key_size].into();
             let commit = CommitSecret(vec![0u8; key_size].into());
 

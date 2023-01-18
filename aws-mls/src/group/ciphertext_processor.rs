@@ -260,7 +260,10 @@ mod test {
             test_utils::random_bytes,
             PaddingMode,
         },
-        provider::crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
+        provider::crypto::{
+            test_utils::{test_cipher_suite_provider, TestCryptoProvider},
+            CipherSuiteProvider,
+        },
         tree_kem::node::LeafIndex,
     };
 
@@ -308,24 +311,26 @@ mod test {
 
     #[test]
     fn test_encrypt_decrypt() {
-        CipherSuite::all().for_each(|cipher_suite| {
-            let mut test_data = test_data(cipher_suite);
-            let mut receiver_epoch = test_data.epoch.clone();
+        TestCryptoProvider::all_supported_cipher_suites()
+            .into_iter()
+            .for_each(|cipher_suite| {
+                let mut test_data = test_data(cipher_suite);
+                let mut receiver_epoch = test_data.epoch.clone();
 
-            let mut ciphertext_processor = test_processor(&mut test_data.epoch, cipher_suite);
+                let mut ciphertext_processor = test_processor(&mut test_data.epoch, cipher_suite);
 
-            let ciphertext = ciphertext_processor
-                .seal(test_data.content.clone(), PaddingMode::StepFunction)
-                .unwrap();
+                let ciphertext = ciphertext_processor
+                    .seal(test_data.content.clone(), PaddingMode::StepFunction)
+                    .unwrap();
 
-            receiver_epoch.self_index = LeafIndex::new(1);
+                receiver_epoch.self_index = LeafIndex::new(1);
 
-            let mut receiver_processor = test_processor(&mut receiver_epoch, cipher_suite);
+                let mut receiver_processor = test_processor(&mut receiver_epoch, cipher_suite);
 
-            let decrypted = receiver_processor.open(ciphertext).unwrap();
+                let decrypted = receiver_processor.open(ciphertext).unwrap();
 
-            assert_eq!(decrypted, test_data.content);
-        })
+                assert_eq!(decrypted, test_data.content);
+            })
     }
 
     #[test]

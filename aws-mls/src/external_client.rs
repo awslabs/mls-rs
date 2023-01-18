@@ -13,8 +13,8 @@ use crate::{
 use thiserror::Error;
 
 pub use crate::external_client_builder::{
-    ExternalBaseConfig, ExternalClientBuilder, Missing, MlsConfig, WithIdentityProvider,
-    WithKeychain, WithProposalFilter,
+    ExternalBaseConfig, ExternalClientBuilder, Missing, MlsConfig, WithCryptoProvider,
+    WithIdentityProvider, WithKeychain, WithProposalFilter,
 };
 
 #[derive(Debug, Error)]

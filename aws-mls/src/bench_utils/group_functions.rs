@@ -1,3 +1,5 @@
+use aws_mls_core::group::GroupStateStorage;
+
 use crate::{
     cipher_suite::CipherSuite,
     client::test_utils::{get_basic_client_builder, join_group, test_client_with_key_pkg},
@@ -18,8 +20,7 @@ use crate::{
     key_package::{KeyPackageGeneration, KeyPackageRef},
     protocol_version::ProtocolVersion,
     provider::{
-        crypto::SignatureSecretKey,
-        group_state::{GroupStateStorage, InMemoryGroupStateStorage},
+        crypto::SignatureSecretKey, group_state::InMemoryGroupStateStorage,
         key_package::InMemoryKeyPackageRepository,
     },
 };

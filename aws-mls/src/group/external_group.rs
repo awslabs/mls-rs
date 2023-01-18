@@ -407,7 +407,7 @@ mod tests {
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
         key_package::test_utils::test_key_package,
         protocol_version::{MaybeProtocolVersion, ProtocolVersion},
-        provider::crypto::SignatureSecretKey,
+        provider::crypto::{test_utils::TestCryptoProvider, SignatureSecretKey},
     };
     use assert_matches::assert_matches;
 
@@ -459,7 +459,11 @@ mod tests {
     #[test]
     fn external_group_can_be_created() {
         ProtocolVersion::all()
-            .flat_map(|v| CipherSuite::all().map(move |cs| (v, cs)))
+            .flat_map(|v| {
+                TestCryptoProvider::all_supported_cipher_suites()
+                    .into_iter()
+                    .map(move |cs| (v, cs))
+            })
             .for_each(|(v, cs)| {
                 make_external_group(&test_group_with_one_commit(v, cs));
             });

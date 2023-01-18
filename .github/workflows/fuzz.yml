@@ -11,10 +11,6 @@ jobs:
     steps:
         - uses: actions/checkout@v3
         - uses: dtolnay/rust-toolchain@nightly
-        - name: Setup SSH Keys and known_hosts
-          run: |
-            ssh-agent -a $SSH_AUTH_SOCK > /dev/null
-            ssh-add - <<< "${{ secrets.FERRIS_DEPLOY }}"
         - name: Install cargo-fuzz
           run: cargo install cargo-fuzz
         - name: Run Fuzz Targets

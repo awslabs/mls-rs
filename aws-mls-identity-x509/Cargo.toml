@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aws-mls-core = { path = "../aws-mls-core", default-features = false }
+aws-mls-core = { path = "../aws-mls-core" }
 thiserror = "1"
 
 [dev-dependencies]

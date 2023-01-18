@@ -70,12 +70,14 @@ mod test {
     use super::test_utils::auth_content_from_proposal;
     use super::*;
     use crate::{
-        extension::RequiredCapabilitiesExt, key_package::test_utils::test_key_package,
-        provider::crypto::test_utils::test_cipher_suite_provider,
+        extension::RequiredCapabilitiesExt,
+        key_package::test_utils::test_key_package,
+        provider::crypto::test_utils::{
+            test_cipher_suite_provider, try_test_cipher_suite_provider,
+        },
         tree_kem::leaf_node::test_utils::get_basic_test_node,
     };
 
-    use num_enum::TryFromPrimitive;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -182,21 +184,14 @@ mod test {
         let test_cases = load_test_cases();
 
         for one_case in test_cases {
-            let cipher_suite = CipherSuite::try_from_primitive(one_case.cipher_suite);
-
-            if cipher_suite.is_err() {
-                println!("Skipping test case due to unsupported cipher suite");
+            let Some(cs_provider) = try_test_cipher_suite_provider(one_case.cipher_suite) else {
                 continue;
-            }
+            };
 
             let proposal_content =
                 MLSAuthenticatedContent::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
 
-            let proposal_ref = ProposalRef::from_content(
-                &test_cipher_suite_provider(cipher_suite.unwrap()),
-                &proposal_content,
-            )
-            .unwrap();
+            let proposal_ref = ProposalRef::from_content(&cs_provider, &proposal_content).unwrap();
 
             let expected_out = ProposalRef(HashReference::from(one_case.output));
 

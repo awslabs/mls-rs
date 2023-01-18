@@ -43,7 +43,7 @@ pub enum OpensslCryptoError {
     OpensslError(#[from] ErrorStack),
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct OpensslCryptoProvider {
     pub enabled_cipher_suites: Vec<CipherSuite>,
@@ -51,12 +51,24 @@ pub struct OpensslCryptoProvider {
 
 impl OpensslCryptoProvider {
     pub fn new() -> Self {
-        Self::default()
+        Default::default()
     }
 
     pub fn with_enabled_cipher_suites(enabled_cipher_suites: Vec<CipherSuite>) -> Self {
         Self {
             enabled_cipher_suites,
+        }
+    }
+
+    pub fn all_supported_cipher_suites() -> Vec<CipherSuite> {
+        CipherSuite::all().collect()
+    }
+}
+
+impl Default for OpensslCryptoProvider {
+    fn default() -> Self {
+        Self {
+            enabled_cipher_suites: Self::all_supported_cipher_suites(),
         }
     }
 }

@@ -304,12 +304,15 @@ impl<'a> Signable<'a> for LeafNode {
 
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
+    use aws_mls_core::crypto::MaybeCipherSuite;
+
     use crate::{
         cipher_suite::CipherSuite,
         extension::{ApplicationIdExt, MlsExtension},
         identity::{test_utils::get_test_signing_identity, BasicCredential},
         provider::{
-            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
+            crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
+            identity::BasicIdentityProvider,
         },
     };
 
@@ -401,6 +404,10 @@ pub mod test_utils {
     pub fn get_test_capabilities() -> Capabilities {
         let mut capabilities = Capabilities {
             credentials: vec![BasicCredential::credential_type()],
+            cipher_suites: TestCryptoProvider::all_supported_cipher_suites()
+                .into_iter()
+                .map(MaybeCipherSuite::from)
+                .collect(),
             ..Default::default()
         };
         capabilities.extensions.push(ApplicationIdExt::IDENTIFIER);
@@ -425,6 +432,7 @@ mod tests {
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::provider::crypto::test_utils::test_cipher_suite_provider;
+    use crate::provider::crypto::test_utils::TestCryptoProvider;
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider;
     use assert_matches::assert_matches;
@@ -438,7 +446,7 @@ mod tests {
         let extensions = get_test_extensions();
         let lifetime = Lifetime::years(1).unwrap();
 
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let (signing_identity, secret) =
                 get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
@@ -564,7 +572,7 @@ mod tests {
 
     #[test]
     fn test_node_update_no_meta_changes() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
             let (signing_identity, secret) =
@@ -632,7 +640,7 @@ mod tests {
 
     #[test]
     fn test_node_commit_no_meta_changes() {
-        for cipher_suite in CipherSuite::all() {
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
             let (signing_identity, secret) =

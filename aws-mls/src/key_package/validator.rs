@@ -154,7 +154,7 @@ mod tests {
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
-    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
+    use crate::provider::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use assert_matches::assert_matches;
@@ -166,9 +166,11 @@ mod tests {
 
     #[test]
     fn test_standard_validation() {
-        for (protocol_version, cipher_suite) in
-            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-        {
+        for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
+            TestCryptoProvider::all_supported_cipher_suites()
+                .into_iter()
+                .map(move |cs| (p, cs))
+        }) {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
             let test_package = test_key_package(
@@ -202,9 +204,11 @@ mod tests {
 
     #[test]
     fn test_invalid_signature() {
-        for (protocol_version, cipher_suite) in
-            ProtocolVersion::all().flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-        {
+        for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
+            TestCryptoProvider::all_supported_cipher_suites()
+                .into_iter()
+                .map(move |cs| (p, cs))
+        }) {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
             let test_package = invalid_signature_key_package(protocol_version, cipher_suite);
