@@ -49,4 +49,45 @@ impl Hash {
     }
 }
 
-// TODO add tests
+#[cfg(test)]
+mod test {
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct TestCase {
+        pub ciphersuite: CipherSuite,
+        #[serde(with = "hex::serde")]
+        key: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        message: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        tag: Vec<u8>,
+    }
+
+    fn run_test_case(case: &TestCase) {
+        println!(
+            "Running HMAC test case for cipher suite: {:?}",
+            case.ciphersuite
+        );
+
+        // Test Sign
+        let hash = Hash::new(case.ciphersuite);
+        let tag = hash.mac(&case.key, &case.message).unwrap();
+        assert_eq!(&tag, &case.tag);
+
+        // Test different message
+        let different_tag = hash.mac(&case.key, b"different message").unwrap();
+        assert_ne!(&different_tag, &tag)
+    }
+
+    #[test]
+    fn test_hmac_test_vectors() {
+        let test_case_file = include_str!("../test_data/test_hmac.json");
+        let test_cases: Vec<TestCase> = serde_json::from_str(test_case_file).unwrap();
+
+        for case in test_cases {
+            run_test_case(&case);
+        }
+    }
+}
