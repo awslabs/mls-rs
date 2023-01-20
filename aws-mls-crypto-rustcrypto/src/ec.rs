@@ -27,13 +27,10 @@ pub enum EcPrivateKey {
 pub enum EcError {
     #[error(transparent)]
     Sec1ParsingError(#[from] sec1::der::Error),
-    /// Attempted to import a secret key that does not contain valid bytes for its curve
-    #[error("invalid secret key bytes")]
-    InvalidSecretKeyBytes,
     #[error("unsupported curve type")]
     UnsupportedCurve,
     #[error("invalid public key data")]
-    EcKeyInvalidKeyData,
+    EcKeyInvalidKeyData(Box<dyn std::error::Error + Send + Sync>),
     #[error("ec key is not a signature key")]
     EcKeyNotSignature,
     #[error(transparent)]
@@ -125,12 +122,14 @@ impl std::fmt::Debug for EcPrivateKey {
 pub fn pub_key_from_uncompressed(bytes: &[u8], curve: Curve) -> Result<EcPublicKey, EcError> {
     match curve {
         Curve::P256 => {
-            let encoded_point =
-                p256::EncodedPoint::from_bytes(bytes).map_err(|_| EcError::EcKeyInvalidKeyData)?;
+            let encoded_point = p256::EncodedPoint::from_bytes(bytes)
+                .map_err(|e| EcError::EcKeyInvalidKeyData(e.into()))?;
 
             let key_option: Option<p256::PublicKey> =
                 p256::PublicKey::from_encoded_point(&encoded_point).into();
-            let key = key_option.ok_or(EcError::EcKeyInvalidKeyData)?;
+
+            let key = key_option
+                .ok_or_else(|| EcError::EcKeyInvalidKeyData("Failed decoding P256 point".into()))?;
 
             Ok(EcPublicKey::P256(key))
         }
@@ -178,21 +177,18 @@ pub fn generate_private_key(curve: Curve) -> Result<EcPrivateKey, EcError> {
 }
 
 pub fn private_key_from_bytes(bytes: &[u8], curve: Curve) -> Result<EcPrivateKey, EcError> {
-    // TODO why option was used gere?
-    let key = match curve {
+    match curve {
         Curve::P256 => p256::SecretKey::from_be_bytes(bytes)
-            .ok()
+            .map_err(|e| EcError::EcKeyInvalidKeyData(e.into()))
             .map(EcPrivateKey::P256),
         Curve::X25519 => bytes
             .try_into()
-            .ok()
+            .map_err(|e: TryFromSliceError| EcError::EcKeyInvalidKeyData(e.into()))
             .map(|bytes: &[u8; 32]| EcPrivateKey::X25519(x25519_dalek::StaticSecret::from(*bytes))),
         Curve::Ed25519 => ed25519_dalek::SecretKey::from_bytes(bytes)
-            .ok()
+            .map_err(|e| EcError::EcKeyInvalidKeyData(e.into()))
             .map(EcPrivateKey::Ed25519),
-    };
-
-    key.ok_or(EcError::EcKeyInvalidKeyData)
+    }
 }
 
 pub fn private_key_to_bytes(key: &EcPrivateKey) -> Result<Vec<u8>, EcError> {
@@ -301,6 +297,7 @@ pub fn generate_keypair(curve: Curve) -> Result<KeyPair, EcError> {
     Ok(KeyPair { public, secret })
 }
 
+#[derive(Clone, Default, Debug)]
 pub struct KeyPair {
     pub public: Vec<u8>,
     pub secret: Vec<u8>,
@@ -332,7 +329,10 @@ pub mod test_utils {
     impl TestKeys {
         pub(crate) fn get_key(&self, cipher_suite: CipherSuite, for_sig: bool) -> Vec<u8> {
             let curve = Curve::from_ciphersuite(cipher_suite, for_sig).unwrap();
+            self.get_key_from_curve(curve)
+        }
 
+        pub(crate) fn get_key_from_curve(&self, curve: Curve) -> Vec<u8> {
             match curve {
                 Curve::P256 => self.p256.clone(),
                 Curve::X25519 => self.x25519.clone(),
@@ -350,24 +350,143 @@ pub mod test_utils {
         let test_case_file = include_str!("../test_data/test_private_keys.json");
         serde_json::from_str(test_case_file).unwrap()
     }
+
+    impl Curve {
+        pub fn is_curve_25519(&self) -> bool {
+            self == &Curve::X25519 || self == &Curve::Ed25519
+        }
+
+        pub fn byte_equal(self, other: Curve) -> bool {
+            if self == other {
+                return true;
+            }
+
+            if self.is_curve_25519() && other.is_curve_25519() {
+                return true;
+            }
+
+            false
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
 
-    use crate::ec::generate_private_key;
-
-    use super::Curve;
+    use super::{
+        generate_keypair, generate_private_key, private_key_bytes_to_public,
+        private_key_from_bytes, private_key_to_bytes, pub_key_from_uncompressed,
+        pub_key_to_uncompressed,
+        test_utils::{get_test_public_keys, get_test_secret_keys},
+        Curve, EcError,
+    };
 
     #[test]
-    fn private_key_can_be_generated_for_all_curves() {
+    fn private_key_can_be_generated() {
         Curve::all().for_each(|curve| {
-            assert_matches!(
-                generate_private_key(curve),
-                Ok(_),
-                "Failed to generate private key for {curve:?}"
+            let one_key = generate_private_key(curve)
+                .unwrap_or_else(|e| panic!("Failed to generate private key for {curve:?} : {e}"));
+
+            let another_key = generate_private_key(curve)
+                .unwrap_or_else(|e| panic!("Failed to generate private key for {curve:?} : {e}"));
+
+            assert_ne!(
+                private_key_to_bytes(&one_key).unwrap(),
+                private_key_to_bytes(&another_key).unwrap(),
+                "Same key generated twice for {curve:?}"
             );
         });
+    }
+
+    #[test]
+    fn key_pair_can_be_generated() {
+        Curve::all().for_each(|curve| {
+            assert_matches!(
+                generate_keypair(curve),
+                Ok(_),
+                "Failed to generate key pair for {curve:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn private_key_can_be_imported_and_exported() {
+        Curve::all().for_each(|curve| {
+            let key_bytes = get_test_secret_keys().get_key_from_curve(curve);
+
+            let imported_key = private_key_from_bytes(&key_bytes, curve)
+                .unwrap_or_else(|e| panic!("Failed to import private key for {curve:?} : {e}"));
+
+            let exported_bytes = private_key_to_bytes(&imported_key)
+                .unwrap_or_else(|e| panic!("Failed to export private key for {curve:?} : {e}"));
+
+            assert_eq!(exported_bytes, key_bytes);
+        });
+    }
+
+    #[test]
+    fn public_key_can_be_imported_and_exported() {
+        Curve::all().for_each(|curve| {
+            let key_bytes = get_test_public_keys().get_key_from_curve(curve);
+
+            let imported_key = pub_key_from_uncompressed(&key_bytes, curve)
+                .unwrap_or_else(|e| panic!("Failed to import public key for {curve:?} : {e}"));
+
+            let exported_bytes = pub_key_to_uncompressed(&imported_key)
+                .unwrap_or_else(|e| panic!("Failed to export public key for {curve:?} : {e}"));
+
+            assert_eq!(exported_bytes, key_bytes);
+        });
+    }
+
+    #[test]
+    fn secret_to_public() {
+        let test_public_keys = get_test_public_keys();
+        let test_secret_keys = get_test_secret_keys();
+
+        for curve in Curve::all() {
+            let secret_key = test_secret_keys.get_key_from_curve(curve);
+            let public_key = private_key_bytes_to_public(&secret_key, curve).unwrap();
+            assert_eq!(public_key, test_public_keys.get_key_from_curve(curve));
+        }
+    }
+
+    #[test]
+    fn mismatched_curve_import() {
+        for curve in Curve::all() {
+            for other_curve in Curve::all().filter(|c| !c.byte_equal(curve)) {
+                println!(
+                    "Mismatched curve public key import : key curve {:?}, import curve {:?}",
+                    &curve, &other_curve
+                );
+
+                let public_key = get_test_public_keys().get_key_from_curve(curve);
+                let res = pub_key_from_uncompressed(&public_key, other_curve);
+
+                assert!(res.is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn test_order_range_enforcement() {
+        let p256_order =
+            hex::decode("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551")
+                .unwrap();
+
+        // Keys must be <= to order
+        let p256_res = private_key_from_bytes(&p256_order, Curve::P256);
+        assert_matches!(p256_res, Err(EcError::EcKeyInvalidKeyData(_)));
+
+        let nist_curves = [Curve::P256];
+
+        // Keys must not be 0
+        for curve in nist_curves {
+            assert_matches!(
+                private_key_from_bytes(&vec![0u8; curve.secret_key_size()], curve),
+                Err(EcError::EcKeyInvalidKeyData(_))
+            );
+        }
     }
 }
