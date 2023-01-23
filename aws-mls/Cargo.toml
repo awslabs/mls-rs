@@ -27,7 +27,6 @@ debug_tree = "0.4.0"
 arbitrary = { version = "1", features = ["derive"], optional = true }
 # TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
 rayon = { version = "1", optional = true }
-x509-cert = { version = "0.1.0", features = ["std"] }
 base64 = "0.13.0"
 num_enum = "0.5"
 cfg-if = "^1"

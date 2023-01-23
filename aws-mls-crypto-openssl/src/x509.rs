@@ -1,18 +1,32 @@
-use aws_mls_core::{crypto::SignaturePublicKey, time::SystemTimeError};
-use aws_mls_identity_x509::{DerCertificate, SubjectParser, X509CredentialValidator};
+use std::{net::IpAddr, ops::Deref};
+
+use aws_mls_core::{
+    crypto::{SignaturePublicKey, SignatureSecretKey},
+    time::SystemTimeError,
+};
+use aws_mls_identity_x509::{
+    CertificateRequest, DerCertificate, SubjectAltName, SubjectComponent, X509CertificateWriter,
+    X509CredentialValidator,
+};
 use openssl::{
     bn::BigNumContext,
     ec::PointConversionForm,
     error::ErrorStack,
+    hash::MessageDigest,
+    nid::Nid,
     pkey::{PKey, Public},
     stack::Stack,
     x509::{
+        extension::{BasicConstraints, SubjectAlternativeName},
         store::{X509Store, X509StoreBuilder},
         verify::{X509VerifyFlags, X509VerifyParam},
-        X509StoreContext, X509VerifyResult, X509,
+        X509Extension, X509Name, X509NameBuilder, X509ReqBuilder, X509StoreContext,
+        X509VerifyResult, X509v3Context, X509,
     },
 };
 use thiserror::Error;
+
+use crate::ec_signer::{EcSigner, EcSignerError};
 
 #[derive(Debug, Error)]
 pub enum X509Error {
@@ -24,6 +38,8 @@ pub enum X509Error {
     InvalidCertificateData,
     #[error("root ca is not properly self-signed")]
     NonSelfSignedCa,
+    #[error(transparent)]
+    EcSignerError(#[from] EcSignerError),
     #[error(transparent)]
     OpensslError(#[from] ErrorStack),
     #[error(transparent)]
@@ -149,16 +165,228 @@ impl X509CredentialValidator for X509Validator {
     }
 }
 
-struct X509SubjectParser;
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct X509Reader {}
 
-impl SubjectParser for X509SubjectParser {
+impl X509Reader {
+    pub fn new() -> X509Reader {
+        Self {}
+    }
+
+    fn parse_certificate(&self, certificate: &DerCertificate) -> Result<X509, ErrorStack> {
+        X509::from_der(certificate)
+    }
+}
+
+impl aws_mls_identity_x509::X509CertificateReader for X509Reader {
     type Error = X509Error;
 
-    fn parse_subject(&self, certificate: &DerCertificate) -> Result<Vec<u8>, Self::Error> {
-        X509::from_der(certificate)?
+    fn subject_bytes(&self, certificate: &DerCertificate) -> Result<Vec<u8>, Self::Error> {
+        self.parse_certificate(certificate)?
             .subject_name()
             .to_der()
             .map_err(Into::into)
+    }
+
+    fn subject_components(
+        &self,
+        certificate: &DerCertificate,
+    ) -> Result<Vec<aws_mls_identity_x509::SubjectComponent>, Self::Error> {
+        let subject = self.parse_certificate(certificate)?;
+
+        let components = subject
+            .subject_name()
+            .entries()
+            .filter_map(|e| {
+                e.data()
+                    .as_utf8()
+                    .map(|v| v.to_string())
+                    .ok()
+                    .and_then(|data| match e.object().nid() {
+                        Nid::COMMONNAME => Some(SubjectComponent::CommonName(data)),
+                        Nid::SURNAME => Some(SubjectComponent::Surname(data)),
+                        Nid::SERIALNUMBER => Some(SubjectComponent::SerialNumber(data)),
+                        Nid::COUNTRYNAME => Some(SubjectComponent::CountryName(data)),
+                        Nid::LOCALITYNAME => Some(SubjectComponent::Locality(data)),
+                        Nid::STATEORPROVINCENAME => Some(SubjectComponent::State(data)),
+                        Nid::STREETADDRESS => Some(SubjectComponent::StreetAddress(data)),
+                        Nid::ORGANIZATIONNAME => Some(SubjectComponent::OrganizationName(data)),
+                        Nid::ORGANIZATIONALUNITNAME => {
+                            Some(SubjectComponent::OrganizationalUnit(data))
+                        }
+                        Nid::TITLE => Some(SubjectComponent::Title(data)),
+                        Nid::GIVENNAME => Some(SubjectComponent::GivenName(data)),
+                        Nid::PKCS9_EMAILADDRESS => Some(SubjectComponent::EmailAddress(data)),
+                        Nid::USERID => Some(SubjectComponent::UserId(data)),
+                        Nid::DOMAINCOMPONENT => Some(SubjectComponent::DomainComponent(data)),
+                        Nid::INITIALS => Some(SubjectComponent::Initials(data)),
+                        Nid::GENERATIONQUALIFIER => {
+                            Some(SubjectComponent::GenerationQualifier(data))
+                        }
+                        Nid::DISTINGUISHEDNAME => {
+                            Some(SubjectComponent::DistinguishedNameQualifier(data))
+                        }
+                        Nid::PSEUDONYM => Some(SubjectComponent::Pseudonym(data)),
+                        _ => None,
+                    })
+            })
+            .collect();
+
+        Ok(components)
+    }
+
+    fn subject_alt_names(
+        &self,
+        certificate: &DerCertificate,
+    ) -> Result<Vec<aws_mls_identity_x509::SubjectAltName>, Self::Error> {
+        let Some(alt_names) = self.parse_certificate(certificate)?.subject_alt_names() else {
+            return Ok(vec![]);
+        };
+
+        let alt_names = alt_names
+            .iter()
+            .filter_map(|n| {
+                n.email()
+                    .map(|e| SubjectAltName::Email(e.to_string()))
+                    .or_else(|| n.dnsname().map(|d| SubjectAltName::Dns(d.to_string())))
+                    .or_else(|| n.uri().map(|d| SubjectAltName::Uri(d.to_string())))
+                    .or_else(|| {
+                        n.ipaddress()
+                            .and_then(ip_bytes_to_ip_addr)
+                            .map(|v| SubjectAltName::Ip(v.to_string()))
+                    })
+            })
+            .collect();
+
+        Ok(alt_names)
+    }
+}
+
+fn ip_bytes_to_ip_addr(input: &[u8]) -> Option<IpAddr> {
+    TryInto::<[u8; 16]>::try_into(input)
+        .map(IpAddr::from)
+        .or_else(|_| TryInto::<[u8; 4]>::try_into(input).map(IpAddr::from))
+        .ok()
+}
+
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct X509Writer {}
+
+impl X509Writer {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    fn build_x509_name(&self, components: &[SubjectComponent]) -> Result<X509Name, ErrorStack> {
+        let mut builder = X509NameBuilder::new()?;
+
+        components.iter().try_for_each(|c| {
+            let (nid, v) = match c {
+                SubjectComponent::CommonName(cn) => (Nid::COMMONNAME, cn),
+                SubjectComponent::Surname(s) => (Nid::SURNAME, s),
+                SubjectComponent::SerialNumber(s) => (Nid::SERIALNUMBER, s),
+                SubjectComponent::CountryName(c) => (Nid::COUNTRYNAME, c),
+                SubjectComponent::Locality(l) => (Nid::LOCALITYNAME, l),
+                SubjectComponent::State(s) => (Nid::STATEORPROVINCENAME, s),
+                SubjectComponent::StreetAddress(a) => (Nid::STREETADDRESS, a),
+                SubjectComponent::OrganizationName(on) => (Nid::ORGANIZATIONNAME, on),
+                SubjectComponent::OrganizationalUnit(ou) => (Nid::ORGANIZATIONALUNITNAME, ou),
+                SubjectComponent::Title(t) => (Nid::TITLE, t),
+                SubjectComponent::GivenName(gn) => (Nid::GIVENNAME, gn),
+                SubjectComponent::EmailAddress(e) => (Nid::PKCS9_EMAILADDRESS, e),
+                SubjectComponent::UserId(u) => (Nid::USERID, u),
+                SubjectComponent::DomainComponent(dc) => (Nid::DOMAINCOMPONENT, dc),
+                SubjectComponent::Initials(i) => (Nid::INITIALS, i),
+                SubjectComponent::GenerationQualifier(gq) => (Nid::GENERATIONQUALIFIER, gq),
+                SubjectComponent::DistinguishedNameQualifier(dnq) => (Nid::DISTINGUISHEDNAME, dnq),
+                SubjectComponent::Pseudonym(p) => (Nid::PSEUDONYM, p),
+            };
+
+            builder.append_entry_by_nid(nid, v)
+        })?;
+
+        Ok(builder.build())
+    }
+
+    fn build_subject_alt_name(
+        &self,
+        alt_name: &SubjectAltName,
+        context: &X509v3Context<'_>,
+    ) -> Result<X509Extension, ErrorStack> {
+        let mut name = SubjectAlternativeName::new();
+
+        match alt_name {
+            SubjectAltName::Email(e) => name.email(e),
+            SubjectAltName::Uri(u) => name.uri(u),
+            SubjectAltName::Dns(d) => name.dns(d),
+            SubjectAltName::Rid(r) => name.rid(r),
+            SubjectAltName::Ip(i) => name.ip(i),
+            SubjectAltName::DirName(dn) => name.dir_name(dn),
+            SubjectAltName::OtherName(o) => name.other_name(o),
+        }
+        .build(context)
+    }
+}
+
+impl X509CertificateWriter for X509Writer {
+    type Error = X509Error;
+
+    fn build_csr(
+        &self,
+        cipher_suite: aws_mls_core::crypto::CipherSuite,
+        signature_key: Option<SignatureSecretKey>,
+        params: aws_mls_identity_x509::CertificateRequestParameters,
+    ) -> Result<aws_mls_identity_x509::CertificateRequest, Self::Error> {
+        let signer = EcSigner::new(cipher_suite);
+
+        // Generate a new key pair or use the provided one
+        let (secret_key, public_key) = match signature_key {
+            Some(key) => {
+                let public = signer.signature_key_derive_public(&key)?;
+                Ok((key, public))
+            }
+            None => signer.signature_key_generate(),
+        }?;
+
+        // Set pub key and subject
+        let mut builder = X509ReqBuilder::new()?;
+        builder.set_pubkey(signer.pkey_from_public_key(&public_key)?.deref())?;
+        builder.set_subject_name(self.build_x509_name(&params.subject)?.as_ref())?;
+
+        let ext_context = builder.x509v3_context(None);
+
+        // Add subject alt names
+        let mut extensions =
+            params
+                .subject_alt_names
+                .iter()
+                .try_fold(Stack::new()?, |mut stack, san| {
+                    stack.push(self.build_subject_alt_name(san, &ext_context)?)?;
+                    Ok::<_, X509Error>(stack)
+                })?;
+
+        // Set basic constraints if this is a request for a CA
+        if params.is_ca {
+            let basic_constraints = BasicConstraints::new().ca().critical().build()?;
+            extensions.push(basic_constraints)?;
+        }
+
+        builder.add_extensions(&extensions)?;
+
+        let signing_key = signer.pkey_from_secret_key(&secret_key)?;
+
+        // Sign and use MessageDigest::null if we are using ed25519 or ed448
+        builder.sign(
+            &signing_key,
+            signer.message_digest().unwrap_or_else(MessageDigest::null),
+        )?;
+
+        Ok(CertificateRequest {
+            req_data: builder.build().to_der()?,
+            secret_key,
+        })
     }
 }
 
@@ -172,6 +400,14 @@ pub mod test_utils {
 
     pub fn load_another_ca() -> DerCertificate {
         DerCertificate::from(include_bytes!("../test_data/x509/another_ca.der").to_vec())
+    }
+
+    pub fn load_github_leaf() -> DerCertificate {
+        DerCertificate::from(include_bytes!("../test_data/x509/github_leaf.der").to_vec())
+    }
+
+    pub fn load_ip_cert() -> DerCertificate {
+        DerCertificate::from(include_bytes!("../test_data/x509/cert_ip.der").to_vec())
     }
 
     pub fn load_test_cert_chain() -> CertificateChain {
@@ -218,18 +454,31 @@ mod tests {
     use std::time::Duration;
 
     use assert_matches::assert_matches;
-    use aws_mls_core::{crypto::SignaturePublicKey, time::MlsTime};
-    use aws_mls_identity_x509::{CertificateChain, SubjectParser};
-    use openssl::x509::{X509Name, X509};
+    use aws_mls_core::{
+        crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey},
+        time::MlsTime,
+    };
+    use aws_mls_identity_x509::{
+        CertificateChain, CertificateRequestParameters, SubjectAltName, SubjectComponent,
+        X509CertificateReader, X509CertificateWriter,
+    };
+    use openssl::{
+        pkey::PKey,
+        x509::{X509Name, X509Req, X509},
+    };
 
-    use crate::x509::test_utils::{
-        load_another_ca, load_test_invalid_ca_chain, load_test_invalid_chain,
+    use crate::{
+        ec::{private_key_from_bytes, private_key_to_bytes, private_key_to_public, Curve},
+        x509::test_utils::{load_another_ca, load_test_invalid_ca_chain, load_test_invalid_chain},
     };
 
     use super::{
         pub_key_to_uncompressed,
-        test_utils::{load_test_ca, load_test_cert_chain, load_test_system_cert_chain},
-        X509Error, X509SubjectParser, X509Validator,
+        test_utils::{
+            load_github_leaf, load_ip_cert, load_test_ca, load_test_cert_chain,
+            load_test_system_cert_chain,
+        },
+        X509Error, X509Reader, X509Validator, X509Writer,
     };
 
     #[test]
@@ -346,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    fn test_subject_parser() {
+    fn subject_parser_bytes() {
         let test_cert = load_test_ca();
 
         let mut expected_name_builder = X509Name::builder().unwrap();
@@ -358,8 +607,111 @@ mod tests {
         let expected_name = expected_name_builder.build().to_der().unwrap();
 
         assert_eq!(
-            X509SubjectParser.parse_subject(&test_cert).unwrap(),
+            X509Reader::new().subject_bytes(&test_cert).unwrap(),
             expected_name
         );
+    }
+
+    #[test]
+    fn subject_parser_components() {
+        let test_cert = load_github_leaf();
+
+        let expected = vec![
+            SubjectComponent::CountryName(String::from("US")),
+            SubjectComponent::State(String::from("California")),
+            SubjectComponent::Locality(String::from("San Francisco")),
+            SubjectComponent::OrganizationName(String::from("GitHub, Inc.")),
+            SubjectComponent::CommonName(String::from("github.com")),
+        ];
+
+        assert_eq!(
+            X509Reader::new().subject_components(&test_cert).unwrap(),
+            expected
+        )
+    }
+
+    #[test]
+    fn subject_alt_names() {
+        let test_cert = load_github_leaf();
+
+        let expected = vec![
+            SubjectAltName::Dns(String::from("github.com")),
+            SubjectAltName::Dns(String::from("www.github.com")),
+        ];
+
+        assert_eq!(
+            X509Reader::new().subject_alt_names(&test_cert).unwrap(),
+            expected
+        )
+    }
+
+    #[test]
+    fn subject_alt_names_ip() {
+        let test_cert = load_ip_cert();
+
+        let expected = vec![
+            SubjectAltName::Ip(String::from("97.97.97.254")),
+            SubjectAltName::Ip(String::from("97.97.97.253")),
+        ];
+
+        assert_eq!(
+            X509Reader::new().subject_alt_names(&test_cert).unwrap(),
+            expected
+        )
+    }
+
+    fn test_writing_csr(ca: bool) {
+        let writer = X509Writer::new();
+
+        let params = CertificateRequestParameters {
+            subject: vec![
+                SubjectComponent::CommonName("example".to_string()),
+                SubjectComponent::CountryName("US".to_string()),
+            ],
+            subject_alt_names: vec![SubjectAltName::Dns("example.org".to_string())],
+            is_ca: ca,
+        };
+
+        let sig_key = SignatureSecretKey::from(
+            private_key_to_bytes(
+                &PKey::private_key_from_pem(include_bytes!("../test_data/x509/csr_key.pem"))
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let expected_csr = if ca {
+            include_bytes!("../test_data/x509/csr_ca.pem").to_vec()
+        } else {
+            include_bytes!("../test_data/x509/csr.pem").to_vec()
+        };
+
+        let expected_csr = X509Req::from_pem(&expected_csr).unwrap().to_der().unwrap();
+
+        let built_csr = writer
+            .build_csr(CipherSuite::Curve25519Aes128, Some(sig_key), params)
+            .unwrap();
+
+        assert_eq!(expected_csr, built_csr.req_data);
+
+        let built_secret = private_key_from_bytes(&built_csr.secret_key, Curve::Ed25519).unwrap();
+        let expected_public = private_key_to_public(&built_secret).unwrap();
+
+        let public_key = X509Req::from_der(&built_csr.req_data)
+            .unwrap()
+            .public_key()
+            .unwrap();
+
+        assert!(expected_public.public_eq(&public_key));
+    }
+
+    #[test]
+    fn writing_ca_csr() {
+        test_writing_csr(true)
+    }
+
+    #[test]
+    fn writing_csr() {
+        test_writing_csr(false)
     }
 }

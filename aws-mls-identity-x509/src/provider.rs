@@ -36,7 +36,7 @@ pub trait X509CredentialValidator {
 }
 
 #[cfg_attr(test, automock(type Error = crate::test_utils::TestError; type IdentityEvent = ();))]
-pub trait IdentityEventProvider {
+pub trait X509IdentityEventProvider {
     type IdentityEvent;
     type Error: std::error::Error + Send + Sync + 'static;
 
@@ -59,7 +59,7 @@ impl<IE, V, IEP> X509IdentityProvider<IE, V, IEP>
 where
     IE: X509IdentityExtractor,
     V: X509CredentialValidator,
-    IEP: IdentityEventProvider,
+    IEP: X509IdentityEventProvider,
 {
     pub fn new(identity_extractor: IE, validator: V, event_provider: IEP) -> Self {
         Self {
@@ -132,7 +132,7 @@ impl<IE, V, IEP> IdentityProvider for X509IdentityProvider<IE, V, IEP>
 where
     IE: X509IdentityExtractor,
     V: X509CredentialValidator,
-    IEP: IdentityEventProvider,
+    IEP: X509IdentityEventProvider,
 {
     type Error = X509IdentityError;
 
@@ -183,7 +183,7 @@ mod tests {
             test_certificate_chain, test_signing_identity, test_signing_identity_with_chain,
             TestError,
         },
-        MockIdentityEventProvider, MockX509CredentialValidator, MockX509IdentityExtractor,
+        MockX509CredentialValidator, MockX509IdentityEventProvider, MockX509IdentityExtractor,
         X509IdentityError, X509IdentityProvider,
     };
 
@@ -197,18 +197,18 @@ mod tests {
     ) -> X509IdentityProvider<
         MockX509IdentityExtractor,
         MockX509CredentialValidator,
-        MockIdentityEventProvider,
+        MockX509IdentityEventProvider,
     >
     where
         F: FnMut(
             &mut MockX509IdentityExtractor,
             &mut MockX509CredentialValidator,
-            &mut MockIdentityEventProvider,
+            &mut MockX509IdentityEventProvider,
         ),
     {
         let mut identity_extractor = MockX509IdentityExtractor::new();
         let mut validator = MockX509CredentialValidator::new();
-        let mut event_provider = MockIdentityEventProvider::new();
+        let mut event_provider = MockX509IdentityEventProvider::new();
 
         mock_setup(&mut identity_extractor, &mut validator, &mut event_provider);
 

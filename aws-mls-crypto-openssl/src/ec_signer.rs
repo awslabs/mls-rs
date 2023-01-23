@@ -1,7 +1,10 @@
 use std::ops::Deref;
 
 use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
-use openssl::hash::MessageDigest;
+use openssl::{
+    hash::MessageDigest,
+    pkey::{PKey, Private, Public},
+};
 use thiserror::Error;
 
 use crate::ec::{
@@ -49,6 +52,20 @@ impl EcSigner {
         Ok(private_key_bytes_to_public(secret_key, self.0)?.into())
     }
 
+    pub(crate) fn pkey_from_secret_key(
+        &self,
+        key: &SignatureSecretKey,
+    ) -> Result<PKey<Private>, EcSignerError> {
+        private_key_from_bytes(key, self.0).map_err(Into::into)
+    }
+
+    pub(crate) fn pkey_from_public_key(
+        &self,
+        key: &SignaturePublicKey,
+    ) -> Result<PKey<Public>, EcSignerError> {
+        pub_key_from_uncompressed(key, self.0).map_err(Into::into)
+    }
+
     pub fn sign(
         &self,
         secret_key: &SignatureSecretKey,
@@ -83,7 +100,7 @@ impl EcSigner {
             .ok_or(EcSignerError::InvalidSignature)
     }
 
-    fn message_digest(&self) -> Option<MessageDigest> {
+    pub(crate) fn message_digest(&self) -> Option<MessageDigest> {
         match self.0 {
             Curve::P256 => Some(MessageDigest::sha256()),
             Curve::P384 => Some(MessageDigest::sha384()),

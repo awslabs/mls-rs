@@ -1,13 +1,17 @@
 use std::ops::Deref;
 
+mod builder;
 mod error;
 mod identity_extractor;
 mod provider;
+mod traits;
 mod util;
 
+pub use builder::*;
 pub use error::*;
 pub use identity_extractor::*;
 pub use provider::*;
+pub use traits::*;
 
 use aws_mls_core::{
     identity::{Credential, CredentialType, MlsCredential},

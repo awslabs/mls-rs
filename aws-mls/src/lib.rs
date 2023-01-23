@@ -95,7 +95,6 @@ pub mod tree_kem;
 mod tree_kem;
 
 pub use tls_codec;
-pub use x509_cert;
 
 mod private {
     pub trait Sealed {}

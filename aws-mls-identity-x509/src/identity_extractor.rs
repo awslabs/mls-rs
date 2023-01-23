@@ -1,28 +1,17 @@
-use crate::{DerCertificate, X509IdentityError, X509IdentityExtractor};
-
-#[cfg(test)]
-use mockall::automock;
-
-#[cfg_attr(test, automock(type Error = crate::test_utils::TestError;))]
-pub trait SubjectParser {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    /// Returns the subject of `certificate` in DER format
-    fn parse_subject(&self, certificate: &DerCertificate) -> Result<Vec<u8>, Self::Error>;
-}
+use crate::{DerCertificate, X509CertificateReader, X509IdentityError, X509IdentityExtractor};
 
 #[derive(Debug, Clone)]
-pub struct SubjectIdentityExtractor<SP: SubjectParser> {
+pub struct SubjectIdentityExtractor<R: X509CertificateReader> {
     offset: usize,
-    parser: SP,
+    reader: R,
 }
 
-impl<SP> SubjectIdentityExtractor<SP>
+impl<R> SubjectIdentityExtractor<R>
 where
-    SP: SubjectParser,
+    R: X509CertificateReader,
 {
-    pub fn new(offset: usize, parser: SP) -> Self {
-        Self { offset, parser }
+    pub fn new(offset: usize, reader: R) -> Self {
+        Self { offset, reader }
     }
 
     pub fn identity(
@@ -31,14 +20,12 @@ where
     ) -> Result<Vec<u8>, X509IdentityError> {
         let cert = get_certificate(certificate_chain, self.offset)?;
 
-        self.parser
-            .parse_subject(cert)
-            .map_err(|e| X509IdentityError::CertificateParserError(e.into()))
+        self.subject_bytes(cert)
     }
 
-    fn parse_subject(&self, certificate: &DerCertificate) -> Result<Vec<u8>, X509IdentityError> {
-        self.parser
-            .parse_subject(certificate)
+    fn subject_bytes(&self, certificate: &DerCertificate) -> Result<Vec<u8>, X509IdentityError> {
+        self.reader
+            .subject_bytes(certificate)
             .map_err(|e| X509IdentityError::CertificateParserError(e.into()))
     }
 
@@ -50,13 +37,13 @@ where
         let predecessor_cert = get_certificate(predecessor, 0)?;
         let successor_cert = get_certificate(successor, 0)?;
 
-        Ok(self.parse_subject(predecessor_cert)? == self.parse_subject(successor_cert)?)
+        Ok(self.subject_bytes(predecessor_cert)? == self.subject_bytes(successor_cert)?)
     }
 }
 
-impl<SP> X509IdentityExtractor for SubjectIdentityExtractor<SP>
+impl<R> X509IdentityExtractor for SubjectIdentityExtractor<R>
 where
-    SP: SubjectParser,
+    R: X509CertificateReader,
 {
     type Error = X509IdentityError;
 
@@ -88,7 +75,7 @@ fn get_certificate(
 #[cfg(test)]
 mod tests {
     use crate::{
-        test_utils::test_certificate_chain, MockSubjectParser, SubjectIdentityExtractor,
+        test_utils::test_certificate_chain, MockX509CertificateReader, SubjectIdentityExtractor,
         X509IdentityError,
     };
 
@@ -100,24 +87,24 @@ mod tests {
     fn test_setup<F>(
         offset: usize,
         mut mock_setup: F,
-    ) -> SubjectIdentityExtractor<MockSubjectParser>
+    ) -> SubjectIdentityExtractor<MockX509CertificateReader>
     where
-        F: FnMut(&mut MockSubjectParser),
+        F: FnMut(&mut MockX509CertificateReader),
     {
-        let mut subject_parser = MockSubjectParser::new();
+        let mut x509_reader = MockX509CertificateReader::new();
 
-        mock_setup(&mut subject_parser);
+        mock_setup(&mut x509_reader);
 
         SubjectIdentityExtractor {
             offset,
-            parser: subject_parser,
+            reader: x509_reader,
         }
     }
 
     #[test]
     fn invalid_offset_is_rejected() {
         let subject_extractor = test_setup(4, |subject_extractor| {
-            subject_extractor.expect_parse_subject().never();
+            subject_extractor.expect_subject_bytes().never();
         });
 
         assert_matches!(
@@ -137,7 +124,7 @@ mod tests {
             let test_subject = test_subject.clone();
 
             parser
-                .expect_parse_subject()
+                .expect_subject_bytes()
                 .once()
                 .with(mockall::predicate::eq(expected_certificate.clone()))
                 .return_once_st(|_| Ok(test_subject));
@@ -157,18 +144,18 @@ mod tests {
         // Make sure both chains have the same leaf
         successor.0[0] = predecessor[0].clone();
 
-        let subject_extractor = test_setup(1, |parser| {
+        let subject_extractor = test_setup(1, |reader| {
             let predecessor = predecessor[0].clone();
             let successor = successor[0].clone();
 
-            parser
-                .expect_parse_subject()
+            reader
+                .expect_subject_bytes()
                 .with(mockall::predicate::eq(predecessor))
                 .times(1)
                 .return_once_st(|_| Ok(b"subject".to_vec()));
 
-            parser
-                .expect_parse_subject()
+            reader
+                .expect_subject_bytes()
                 .with(mockall::predicate::eq(successor))
                 .times(1)
                 .return_once_st(|_| Ok(b"subject".to_vec()));
