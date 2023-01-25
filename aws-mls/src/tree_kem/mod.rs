@@ -101,6 +101,8 @@ pub enum RatchetTreeError {
     CredentialValidationError(Box<dyn std::error::Error + Send + Sync>),
     #[error("update and remove proposals for same leaf {0:?}")]
     UpdateAndRemoveForSameLeaf(LeafIndex),
+    #[error("multiple removals for leaf {0:?}")]
+    MultipleRemovals(LeafIndex),
     #[error("different identity in update for leaf {0:?}")]
     DifferentIdentityInUpdate(LeafIndex),
     #[error(transparent)]
@@ -449,7 +451,7 @@ impl TreeKemPublic {
                             removed_indexes
                                 .insert(leaf_index)
                                 .then_some(())
-                                .ok_or(NodeVecError::NotLeafNode)?;
+                                .ok_or(RatchetTreeError::MultipleRemovals(leaf_index))?;
 
                             tree_index.remove(leaf, &identity);
                             op.disarm();
