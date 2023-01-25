@@ -7,6 +7,7 @@ use aws_mls::{
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 };
+use futures::executor::block_on;
 
 fn group_setup(c: &mut Criterion) {
     let mut group_serialize = c.benchmark_group("group_serialize");
@@ -15,7 +16,7 @@ fn group_setup(c: &mut Criterion) {
 
     println!("Benchmarking group state serialization for: {cipher_suite:?}");
 
-    let container = load_test_cases();
+    let container = block_on(load_test_cases());
 
     bench_group_snapshot(&mut group_serialize, cipher_suite, container);
 

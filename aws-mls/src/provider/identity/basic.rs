@@ -1,15 +1,14 @@
-use std::convert::Infallible;
-
-use aws_mls_core::{
-    group::{RosterEntry, RosterUpdate},
-    identity::IdentityProvider,
-};
-
 use crate::{
     identity::SigningIdentity,
     identity::{BasicCredential, CredentialType},
     time::MlsTime,
 };
+use async_trait::async_trait;
+use aws_mls_core::{
+    group::{RosterEntry, RosterUpdate},
+    identity::IdentityProvider,
+};
+use std::convert::Infallible;
 
 #[derive(Clone, Debug, Default)]
 pub struct BasicIdentityProvider;
@@ -20,11 +19,12 @@ impl BasicIdentityProvider {
     }
 }
 
+#[async_trait]
 impl IdentityProvider for BasicIdentityProvider {
     type Error = Infallible;
     type IdentityEvent = ();
 
-    fn validate(
+    async fn validate(
         &self,
         _signing_identity: &SigningIdentity,
         _timestamp: Option<MlsTime>,
@@ -34,11 +34,11 @@ impl IdentityProvider for BasicIdentityProvider {
         Ok(())
     }
 
-    fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
+    async fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
         Ok(signing_id.credential.credential_data.clone())
     }
 
-    fn valid_successor(
+    async fn valid_successor(
         &self,
         predecessor: &SigningIdentity,
         successor: &SigningIdentity,
@@ -50,7 +50,7 @@ impl IdentityProvider for BasicIdentityProvider {
         vec![BasicCredential::credential_type()]
     }
 
-    fn identity_events<T: RosterEntry>(
+    async fn identity_events<T: RosterEntry>(
         &self,
         _update: &RosterUpdate<T>,
         _prior_roster: Vec<T>,

@@ -7,6 +7,7 @@ edition = "2021"
 arbitrary = ["dep:arbitrary"]
 
 [dependencies]
+async-trait = "0.1.61"
 tls_codec = "0.2.0"
 tls_codec_derive = "0.2.0"
 serde = { version = "1.0", features = ["derive"] }

@@ -69,8 +69,11 @@ impl<'a, C> CommitBuilder<'a, C>
 where
     C: ClientConfig + Clone,
 {
-    pub fn add_member(mut self, key_package: KeyPackage) -> Result<Self, GroupError> {
-        let proposal = self.group.add_proposal(key_package)?;
+    pub async fn add_member(
+        mut self,
+        key_package: KeyPackage,
+    ) -> Result<CommitBuilder<'a, C>, GroupError> {
+        let proposal = self.group.add_proposal(key_package).await?;
         self.proposals.push(proposal);
         Ok(self)
     }
@@ -132,13 +135,15 @@ where
         }
     }
 
-    pub fn build(self) -> Result<CommitOutput, GroupError> {
-        self.group.commit_proposals(
-            self.proposals,
-            self.authenticated_data,
-            self.group_info_extensions,
-            self.signing_identity,
-        )
+    pub async fn build(self) -> Result<CommitOutput, GroupError> {
+        self.group
+            .commit_proposals(
+                self.proposals,
+                self.authenticated_data,
+                self.group_info_extensions,
+                self.signing_identity,
+            )
+            .await
     }
 }
 
@@ -147,7 +152,7 @@ where
     C: ClientConfig + Clone,
 {
     // TODO rename to full_commit?
-    fn commit_proposals(
+    async fn commit_proposals(
         &mut self,
         proposals: Vec<Proposal>,
         authenticated_data: Vec<u8>,
@@ -161,10 +166,15 @@ where
             group_info_extensions,
             signing_identity,
         )
+        .await
     }
 
-    pub fn commit(&mut self, authenticated_data: Vec<u8>) -> Result<CommitOutput, GroupError> {
+    pub async fn commit(
+        &mut self,
+        authenticated_data: Vec<u8>,
+    ) -> Result<CommitOutput, GroupError> {
         self.commit_internal(vec![], None, authenticated_data, Default::default(), None)
+            .await
     }
 
     pub fn commit_builder(&mut self) -> CommitBuilder<C> {
@@ -178,7 +188,7 @@ where
     }
 
     /// Returns commit and optional `MLSMessage` containing a `Welcome`
-    pub(super) fn commit_internal(
+    pub(super) async fn commit_internal(
         &mut self,
         proposals: Vec<Proposal>,
         external_leaf: Option<&LeafNode>,
@@ -219,18 +229,22 @@ where
             None => self.signer(),
         }?;
 
-        let (commit_proposals, proposal_effects) = self.state.proposals.prepare_commit(
-            sender.clone(),
-            proposals,
-            &self.context().extensions,
-            self.config.identity_provider(),
-            &self.cipher_suite_provider,
-            &self.state.public_tree,
-            external_leaf,
-            PskStoreIdValidator::from(self.config.secret_store()),
-            self.config
-                .proposal_filter(ProposalFilterInit::new(sender.clone())),
-        )?;
+        let (commit_proposals, proposal_effects) = self
+            .state
+            .proposals
+            .prepare_commit(
+                sender.clone(),
+                proposals,
+                &self.context().extensions,
+                self.config.identity_provider(),
+                &self.cipher_suite_provider,
+                &self.state.public_tree,
+                external_leaf,
+                PskStoreIdValidator::from(self.config.secret_store()),
+                self.config
+                    .proposal_filter(ProposalFilterInit::new(sender.clone())),
+            )
+            .await?;
 
         let mut provisional_state = self.calculate_provisional_state(proposal_effects)?;
         let mut provisional_private_tree = self.provisional_private_tree(&provisional_state)?;
@@ -279,7 +293,8 @@ where
                 &self.cipher_suite_provider,
                 #[cfg(test)]
                 &self.commit_modifiers,
-            )?;
+            )
+            .await?;
 
             (
                 Some(encap_gen.update_path),
@@ -471,8 +486,10 @@ mod tests {
 
     use super::*;
 
-    fn test_commit_builder_group() -> Group<TestClientConfig> {
-        test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).group
+    async fn test_commit_builder_group() -> Group<TestClientConfig> {
+        test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .await
+            .group
     }
 
     fn assert_commit_builder_output<C: ClientConfig>(
@@ -525,29 +542,32 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_commit_builder_add() {
-        let mut group = test_commit_builder_group();
-        let test_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice");
+    #[futures_test::test]
+    async fn test_commit_builder_add() {
+        let mut group = test_commit_builder_group().await;
+        let test_key_package =
+            test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
 
         let commit_output = group
             .commit_builder()
             .add_member(test_key_package.clone())
+            .await
             .unwrap()
             .build()
+            .await
             .unwrap();
 
-        let expected_add = group.add_proposal(test_key_package).unwrap();
+        let expected_add = group.add_proposal(test_key_package).await.unwrap();
 
         assert_commit_builder_output(group, commit_output, vec![expected_add], 1)
     }
 
-    #[test]
-    fn test_commit_builder_add_with_ext() {
-        let mut group = test_commit_builder_group();
+    #[futures_test::test]
+    async fn test_commit_builder_add_with_ext() {
+        let mut group = test_commit_builder_group().await;
 
         let (bob_client, bob_key_package) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
         let ext = TestExtension { foo: 42 };
         let mut extension_list = ExtensionList::default();
@@ -556,14 +576,17 @@ mod tests {
         let welcome_message = group
             .commit_builder()
             .add_member(bob_key_package)
+            .await
             .unwrap()
             .set_group_info_ext(extension_list)
             .build()
+            .await
             .unwrap()
             .welcome_message;
 
         let (_, context) = bob_client
             .join_group(None, welcome_message.unwrap())
+            .await
             .unwrap();
 
         assert_eq!(
@@ -576,25 +599,29 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_commit_builder_remove() {
-        let mut group = test_commit_builder_group();
-        let test_key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice");
+    #[futures_test::test]
+    async fn test_commit_builder_remove() {
+        let mut group = test_commit_builder_group().await;
+        let test_key_package =
+            test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
 
         group
             .commit_builder()
             .add_member(test_key_package)
+            .await
             .unwrap()
             .build()
+            .await
             .unwrap();
 
-        group.apply_pending_commit().unwrap();
+        group.apply_pending_commit().await.unwrap();
 
         let commit_output = group
             .commit_builder()
             .remove_member(1)
             .unwrap()
             .build()
+            .await
             .unwrap();
 
         let expected_remove = group.remove_proposal(1).unwrap();
@@ -602,9 +629,9 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![expected_remove], 0);
     }
 
-    #[test]
-    fn test_commit_builder_psk() {
-        let mut group = test_commit_builder_group();
+    #[futures_test::test]
+    async fn test_commit_builder_psk() {
+        let mut group = test_commit_builder_group().await;
         let test_psk = ExternalPskId(vec![1]);
 
         group
@@ -617,6 +644,7 @@ mod tests {
             .add_psk(test_psk.clone())
             .unwrap()
             .build()
+            .await
             .unwrap();
 
         let expected_psk = group.psk_proposal(test_psk).unwrap();
@@ -624,9 +652,9 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![expected_psk], 0)
     }
 
-    #[test]
-    fn test_commit_builder_group_context_ext() {
-        let mut group = test_commit_builder_group();
+    #[futures_test::test]
+    async fn test_commit_builder_group_context_ext() {
+        let mut group = test_commit_builder_group().await;
         let mut test_ext = ExtensionList::default();
         test_ext
             .set_extension(RequiredCapabilitiesExt::default())
@@ -637,6 +665,7 @@ mod tests {
             .set_group_context_ext(test_ext.clone())
             .unwrap()
             .build()
+            .await
             .unwrap();
 
         let expected_ext = group.group_context_extensions_proposal(test_ext);
@@ -644,9 +673,9 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![expected_ext], 0);
     }
 
-    #[test]
-    fn test_commit_builder_reinit() {
-        let mut group = test_commit_builder_group();
+    #[futures_test::test]
+    async fn test_commit_builder_reinit() {
+        let mut group = test_commit_builder_group().await;
         let test_group_id = "foo".as_bytes().to_vec();
         let test_cipher_suite = CipherSuite::Curve25519ChaCha20;
         let test_protocol_version = ProtocolVersion::Mls10;
@@ -666,6 +695,7 @@ mod tests {
             )
             .unwrap()
             .build()
+            .await
             .unwrap();
 
         let expected_reinit = group
@@ -680,47 +710,51 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![expected_reinit], 0);
     }
 
-    #[test]
-    fn test_commit_builder_chaining() {
-        let mut group = test_commit_builder_group();
-        let kp1 = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice");
-        let kp2 = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+    #[futures_test::test]
+    async fn test_commit_builder_chaining() {
+        let mut group = test_commit_builder_group().await;
+        let kp1 = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
+        let kp2 = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
         let expected_adds = vec![
-            group.add_proposal(kp1.clone()).unwrap(),
-            group.add_proposal(kp2.clone()).unwrap(),
+            group.add_proposal(kp1.clone()).await.unwrap(),
+            group.add_proposal(kp2.clone()).await.unwrap(),
         ];
 
         let commit_output = group
             .commit_builder()
             .add_member(kp1)
+            .await
             .unwrap()
             .add_member(kp2)
+            .await
             .unwrap()
             .build()
+            .await
             .unwrap();
 
         assert_commit_builder_output(group, commit_output, expected_adds, 2);
     }
 
-    #[test]
-    fn test_commit_builder_empty_commit() {
-        let mut group = test_commit_builder_group();
+    #[futures_test::test]
+    async fn test_commit_builder_empty_commit() {
+        let mut group = test_commit_builder_group().await;
 
-        let commit_output = group.commit_builder().build().unwrap();
+        let commit_output = group.commit_builder().build().await.unwrap();
 
         assert_commit_builder_output(group, commit_output, vec![], 0);
     }
 
-    #[test]
-    fn test_commit_builder_authenticated_data() {
-        let mut group = test_commit_builder_group();
+    #[futures_test::test]
+    async fn test_commit_builder_authenticated_data() {
+        let mut group = test_commit_builder_group().await;
         let test_data = "test".as_bytes().to_vec();
 
         let commit_output = group
             .commit_builder()
             .authenticated_data(test_data.clone())
             .build()
+            .await
             .unwrap();
 
         assert_eq!(
@@ -734,10 +768,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn commit_can_change_credential() {
+    #[futures_test::test]
+    async fn commit_can_change_credential() {
         let cs = CipherSuite::Curve25519Aes128;
-        let mut groups = test_n_member_group(ProtocolVersion::Mls10, cs, 3);
+        let mut groups = test_n_member_group(ProtocolVersion::Mls10, cs, 3).await;
         let (identity, secret_key) = get_test_signing_identity(cs, b"member".to_vec());
 
         // Add new identity
@@ -753,10 +787,11 @@ mod tests {
             .commit_builder()
             .set_new_signing_identity(identity.clone())
             .build()
+            .await
             .unwrap();
 
         // Check that the credential was updated by in the committer's state.
-        groups[0].process_pending_commit().unwrap();
+        groups[0].process_pending_commit().await.unwrap();
         let new_member = groups[0].group.roster().first().cloned().unwrap();
 
         assert_eq!(
@@ -772,6 +807,7 @@ mod tests {
         // Check that the credential was updated in another member's state.
         groups[1]
             .process_message(commit_output.commit_message)
+            .await
             .unwrap();
 
         let new_member = groups[1].group.roster().first().cloned().unwrap();

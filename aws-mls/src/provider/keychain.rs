@@ -7,7 +7,7 @@ use std::{
 
 use super::crypto::SignatureSecretKey;
 
-pub trait KeychainStorage {
+pub trait KeychainStorage: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn insert(

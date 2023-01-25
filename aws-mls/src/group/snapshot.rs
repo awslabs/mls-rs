@@ -65,7 +65,7 @@ impl RawGroupState {
         }
     }
 
-    fn import<C>(self, identity_provider: C) -> Result<GroupState, GroupError>
+    async fn import<C>(self, identity_provider: &C) -> Result<GroupState, GroupError>
     where
         C: IdentityProvider,
     {
@@ -77,7 +77,8 @@ impl RawGroupState {
             self.proposals,
         );
 
-        let current_tree = TreeKemPublic::import_node_data(self.tree_data, identity_provider)?;
+        let current_tree =
+            TreeKemPublic::import_node_data(self.tree_data, identity_provider).await?;
 
         Ok(GroupState {
             proposals,
@@ -112,7 +113,7 @@ where
         }
     }
 
-    pub(crate) fn from_snapshot(config: C, snapshot: Snapshot) -> Result<Self, GroupError> {
+    pub(crate) async fn from_snapshot(config: C, snapshot: Snapshot) -> Result<Self, GroupError> {
         let cipher_suite_provider = cipher_suite_provider(
             config.crypto_provider(),
             snapshot.state.context.cipher_suite,
@@ -130,7 +131,7 @@ where
 
         Ok(Group {
             config,
-            state: snapshot.state.import(identity_provider)?,
+            state: snapshot.state.import(&identity_provider).await?,
             private_tree: snapshot.private_tree,
             key_schedule: snapshot.key_schedule,
             pending_updates: snapshot.pending_updates,
@@ -162,7 +163,7 @@ where
         }
     }
 
-    pub fn from_snapshot(config: C, snapshot: ExternalSnapshot) -> Result<Self, GroupError> {
+    pub async fn from_snapshot(config: C, snapshot: ExternalSnapshot) -> Result<Self, GroupError> {
         let identity_provider = config.identity_provider();
 
         let cipher_suite_provider = cipher_suite_provider(
@@ -172,7 +173,7 @@ where
 
         Ok(ExternalGroup {
             config,
-            state: snapshot.state.import(identity_provider)?,
+            state: snapshot.state.import(&identity_provider).await?,
             cipher_suite_provider,
         })
     }
@@ -230,30 +231,31 @@ mod tests {
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
-    fn serialize_to_json_test(group: TestGroup) {
+    async fn serialize_to_json_test(group: TestGroup) {
         let snapshot = group.group.snapshot();
         let json = serde_json::to_vec(&snapshot).unwrap();
         let snapshot_restored: Snapshot = serde_json::from_slice(&json).unwrap();
 
         assert_eq!(snapshot, snapshot_restored);
 
-        let group_restored =
-            Group::from_snapshot(group.group.config.clone(), snapshot_restored).unwrap();
+        let group_restored = Group::from_snapshot(group.group.config.clone(), snapshot_restored)
+            .await
+            .unwrap();
 
         assert!(Group::equal_group_state(&group.group, &group_restored));
     }
 
-    #[test]
-    fn snapshot_with_pending_commit_can_be_serialized_to_json() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        group.group.commit(vec![]).unwrap();
+    #[futures_test::test]
+    async fn snapshot_with_pending_commit_can_be_serialized_to_json() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        group.group.commit(vec![]).await.unwrap();
 
-        serialize_to_json_test(group)
+        serialize_to_json_test(group).await
     }
 
-    #[test]
-    fn snapshot_with_pending_updates_can_be_serialized_to_json() {
-        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+    #[futures_test::test]
+    async fn snapshot_with_pending_updates_can_be_serialized_to_json() {
+        let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         // Creating the update proposal will add it to pending updates
         let update_proposal = group.update_proposal();
@@ -261,18 +263,21 @@ mod tests {
         // This will insert the proposal into the internal proposal cache
         let _ = group.group.proposal_message(update_proposal, vec![]);
 
-        serialize_to_json_test(group)
+        serialize_to_json_test(group).await
     }
 
-    #[test]
-    fn external_group_can_be_serialized_to_json() {
-        let server = make_external_group(&test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE));
+    #[futures_test::test]
+    async fn external_group_can_be_serialized_to_json() {
+        let server =
+            make_external_group(&test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await).await;
 
         let snapshot = serde_json::to_vec(&server.snapshot()).unwrap();
         let snapshot_restored = serde_json::from_slice(&snapshot).unwrap();
 
         let server_restored =
-            ExternalGroup::from_snapshot(server.config.clone(), snapshot_restored).unwrap();
+            ExternalGroup::from_snapshot(server.config.clone(), snapshot_restored)
+                .await
+                .unwrap();
 
         assert_eq!(server.group_state(), server_restored.group_state());
     }

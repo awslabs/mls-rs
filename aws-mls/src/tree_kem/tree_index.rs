@@ -159,6 +159,7 @@ mod tests {
         tree_kem::leaf_node::test_utils::{get_basic_test_node, get_test_client_identity},
     };
     use assert_matches::assert_matches;
+    use futures::StreamExt;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -169,17 +170,18 @@ mod tests {
         pub index: LeafIndex,
     }
 
-    fn get_test_data(index: LeafIndex) -> TestData {
+    async fn get_test_data(index: LeafIndex) -> TestData {
         let cipher_suite = CipherSuite::P256Aes128;
-        let leaf_node = get_basic_test_node(cipher_suite, &format!("foo{}", index.0));
+        let leaf_node = get_basic_test_node(cipher_suite, &format!("foo{}", index.0)).await;
 
         TestData { leaf_node, index }
     }
 
-    fn test_setup() -> (Vec<TestData>, TreeIndex) {
-        let test_data = (0..10)
-            .map(|i| get_test_data(LeafIndex(i)))
-            .collect::<Vec<TestData>>();
+    async fn test_setup() -> (Vec<TestData>, TreeIndex) {
+        let test_data = futures::stream::iter(0..10)
+            .then(|i| get_test_data(LeafIndex(i)))
+            .collect::<Vec<TestData>>()
+            .await;
 
         let mut test_index = TreeIndex::new();
 
@@ -196,9 +198,9 @@ mod tests {
         (test_data, test_index)
     }
 
-    #[test]
-    fn test_insert() {
-        let (test_data, test_index) = test_setup();
+    #[futures_test::test]
+    async fn test_insert() {
+        let (test_data, test_index) = test_setup().await;
 
         assert_eq!(test_index.credential_signature_key.len(), test_data.len());
         assert_eq!(test_index.hpke_key.len(), test_data.len());
@@ -218,13 +220,13 @@ mod tests {
         })
     }
 
-    #[test]
-    fn test_insert_duplicate_credential_key() {
-        let (test_data, mut test_index) = test_setup();
+    #[futures_test::test]
+    async fn test_insert_duplicate_credential_key() {
+        let (test_data, mut test_index) = test_setup().await;
 
         let before_error = test_index.clone();
 
-        let mut new_key_package = get_basic_test_node(CipherSuite::P256Aes128, "foo");
+        let mut new_key_package = get_basic_test_node(CipherSuite::P256Aes128, "foo").await;
         new_key_package.signing_identity = test_data[1].leaf_node.signing_identity.clone();
 
         let res = test_index.insert(
@@ -239,13 +241,13 @@ mod tests {
         assert_eq!(before_error, test_index);
     }
 
-    #[test]
-    fn test_insert_duplicate_hpke_key() {
+    #[futures_test::test]
+    async fn test_insert_duplicate_hpke_key() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
-        let (test_data, mut test_index) = test_setup();
+        let (test_data, mut test_index) = test_setup().await;
         let before_error = test_index.clone();
 
-        let mut new_leaf_node = get_basic_test_node(cipher_suite, "foo");
+        let mut new_leaf_node = get_basic_test_node(cipher_suite, "foo").await;
         new_leaf_node.public_key = test_data[1].leaf_node.public_key.clone();
 
         let res = test_index.insert(
@@ -260,9 +262,9 @@ mod tests {
         assert_eq!(before_error, test_index);
     }
 
-    #[test]
-    fn test_remove() {
-        let (test_data, mut test_index) = test_setup();
+    #[futures_test::test]
+    async fn test_remove() {
+        let (test_data, mut test_index) = test_setup().await;
 
         test_index.remove(
             &test_data[1].leaf_node,

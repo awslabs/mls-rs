@@ -352,6 +352,7 @@ impl TreeKemPublic {
 
 #[cfg(test)]
 mod tests {
+    use futures::StreamExt;
     use tls_codec::Deserialize;
 
     use crate::{
@@ -378,10 +379,10 @@ mod tests {
     }
 
     impl TestCase {
-        fn generate() -> Vec<TestCase> {
-            CipherSuite::all()
-                .map(|cipher_suite| {
-                    let mut tree = get_test_tree_fig_12(cipher_suite);
+        async fn generate() -> Vec<TestCase> {
+            futures::stream::iter(CipherSuite::all())
+                .then(|cipher_suite| async move {
+                    let mut tree = get_test_tree_fig_12(cipher_suite).await;
 
                     TestCase {
                         cipher_suite: cipher_suite as u16,
@@ -392,16 +393,17 @@ mod tests {
                     }
                 })
                 .collect()
+                .await
         }
     }
 
-    fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(tree_hash, TestCase::generate)
+    async fn load_test_cases() -> Vec<TestCase> {
+        load_test_cases!(tree_hash, TestCase::generate().await)
     }
 
-    #[test]
-    fn test_tree_hash() {
-        let cases = load_test_cases();
+    #[futures_test::test]
+    async fn test_tree_hash() {
+        let cases = load_test_cases().await;
 
         for one_case in cases {
             let Some(cs_provider) = try_test_cipher_suite_provider(one_case.cipher_suite) else {
@@ -410,8 +412,9 @@ mod tests {
 
             let mut tree = TreeKemPublic::import_node_data(
                 NodeVec::tls_deserialize(&mut &*one_case.tree_data).unwrap(),
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
             )
+            .await
             .unwrap();
 
             let calculated_hash = tree.tree_hash(&cs_provider).unwrap();

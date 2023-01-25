@@ -165,18 +165,18 @@ mod tests {
     // Create a ratchet tree for Alice, Bob and Charlie. Alice generates an update path for
     // Charlie. Return (Public Tree, Charlie's private key, update path, path secret)
     // The ratchet tree returned has leaf indexes as [alice, bob, charlie]
-    fn update_secrets_setup(
+    async fn update_secrets_setup(
         cipher_suite: CipherSuite,
     ) -> (TreeKemPublic, TreeKemPrivate, TreeKemPrivate, PathSecret) {
         let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
         let (alice_leaf, alice_hpke_secret, alice_signing) =
-            get_basic_test_node_sig_key(cipher_suite, "alice");
+            get_basic_test_node_sig_key(cipher_suite, "alice").await;
 
-        let bob_leaf = get_basic_test_node(cipher_suite, "bob");
+        let bob_leaf = get_basic_test_node(cipher_suite, "bob").await;
 
         let (charlie_leaf, charlie_hpke_secret, _charlie_signing) =
-            get_basic_test_node_sig_key(cipher_suite, "charlie");
+            get_basic_test_node_sig_key(cipher_suite, "charlie").await;
 
         // Create a new public tree with Alice
         let (mut public_tree, mut alice_private) = TreeKemPublic::derive(
@@ -185,6 +185,7 @@ mod tests {
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
         // Add bob and charlie to the tree
@@ -194,6 +195,7 @@ mod tests {
                 BasicIdentityProvider,
                 &cipher_suite_provider,
             )
+            .await
             .unwrap();
 
         // Generate an update path for Alice
@@ -209,6 +211,7 @@ mod tests {
                 #[cfg(test)]
                 &Default::default(),
             )
+            .await
             .unwrap();
 
         // Get a path secret from Alice for Charlie
@@ -220,12 +223,12 @@ mod tests {
         (public_tree, charlie_private, alice_private, path_secret)
     }
 
-    #[test]
-    fn test_update_secrets() {
+    #[futures_test::test]
+    async fn test_update_secrets() {
         let cipher_suite = crate::cipher_suite::CipherSuite::Curve25519Aes128;
 
         let (public_tree, mut charlie_private, alice_private, path_secret) =
-            update_secrets_setup(cipher_suite);
+            update_secrets_setup(cipher_suite).await;
 
         let existing_private = charlie_private
             .secret_keys
@@ -266,12 +269,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_update_secrets_key_mismatch() {
+    #[futures_test::test]
+    async fn test_update_secrets_key_mismatch() {
         let cipher_suite = crate::cipher_suite::CipherSuite::Curve25519Aes128;
 
         let (mut public_tree, mut charlie_private, _, path_secret) =
-            update_secrets_setup(cipher_suite);
+            update_secrets_setup(cipher_suite).await;
 
         // Sabotage the public tree
         public_tree

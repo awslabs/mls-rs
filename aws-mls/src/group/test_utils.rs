@@ -30,7 +30,7 @@ impl TestGroup {
         self.group.update_proposal(None).unwrap()
     }
 
-    pub(crate) fn join_with_preferences(
+    pub(crate) async fn join_with_preferences(
         &mut self,
         name: &str,
         preferences: Preferences,
@@ -38,10 +38,11 @@ impl TestGroup {
         self.join_with_custom_config(name, |mut config| {
             config.0.settings.preferences = preferences.clone();
         })
+        .await
         .unwrap()
     }
 
-    pub(crate) fn join_with_custom_config<F>(
+    pub(crate) async fn join_with_custom_config<F>(
         &mut self,
         name: &str,
         mut config: F,
@@ -53,19 +54,22 @@ impl TestGroup {
             self.group.state.protocol_version(),
             self.group.state.cipher_suite(),
             name,
-        );
+        )
+        .await;
 
         // Add new member to the group
         let commit_output = self
             .group
             .commit_builder()
             .add_member(new_key_package)
+            .await
             .unwrap()
             .build()
+            .await
             .unwrap();
 
         // Apply the commit to the original group
-        self.group.apply_pending_commit().unwrap();
+        self.group.apply_pending_commit().await.unwrap();
 
         config(&mut new_client.config);
 
@@ -82,24 +86,30 @@ impl TestGroup {
             commit_output.welcome_message.unwrap(),
             tree.as_ref().map(Vec::as_ref),
             new_client.config.clone(),
-        )?;
+        )
+        .await?;
 
         let new_test_group = TestGroup { group: new_group };
 
         Ok((new_test_group, commit_output.commit_message))
     }
 
-    pub(crate) fn join(&mut self, name: &str) -> (TestGroup, MLSMessage) {
+    pub(crate) async fn join(&mut self, name: &str) -> (TestGroup, MLSMessage) {
         self.join_with_preferences(name, self.group.config.preferences())
+            .await
     }
 
-    pub(crate) fn process_pending_commit(&mut self) -> Result<StateUpdate<()>, GroupError> {
-        self.group.apply_pending_commit()
+    pub(crate) async fn process_pending_commit(&mut self) -> Result<StateUpdate<()>, GroupError> {
+        self.group.apply_pending_commit().await
     }
 
-    pub(crate) fn process_message(&mut self, message: MLSMessage) -> Result<Event<()>, GroupError> {
+    pub(crate) async fn process_message(
+        &mut self,
+        message: MLSMessage,
+    ) -> Result<Event<()>, GroupError> {
         self.group
             .process_incoming_message(message)
+            .await
             .map(|r| r.event)
     }
 
@@ -159,7 +169,7 @@ pub(crate) fn lifetime() -> Lifetime {
     Lifetime::years(1).unwrap()
 }
 
-pub(crate) fn test_member(
+pub(crate) async fn test_member(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     identifier: &[u8],
@@ -182,12 +192,13 @@ pub(crate) fn test_member(
             ExtensionList::default(),
             ExtensionList::default(),
         )
+        .await
         .unwrap();
 
     (key_package, signing_key)
 }
 
-pub(crate) fn test_group_custom(
+pub(crate) async fn test_group_custom(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     capabilities: Option<Capabilities>,
@@ -220,12 +231,13 @@ pub(crate) fn test_group_custom(
             signing_identity,
             group_extensions(),
         )
+        .await
         .unwrap();
 
     TestGroup { group }
 }
 
-pub(crate) fn test_group(
+pub(crate) async fn test_group(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
 ) -> TestGroup {
@@ -236,9 +248,10 @@ pub(crate) fn test_group(
         None,
         Some(Preferences::default().with_ratchet_tree_extension(true)),
     )
+    .await
 }
 
-pub(crate) fn test_group_custom_config<F>(
+pub(crate) async fn test_group_custom_config<F>(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     custom: F,
@@ -262,43 +275,48 @@ where
             signing_identity,
             group_extensions(),
         )
+        .await
         .unwrap();
 
     TestGroup { group }
 }
 
-pub(crate) fn test_n_member_group(
+pub(crate) async fn test_n_member_group(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     num_members: usize,
 ) -> Vec<TestGroup> {
-    let group = test_group(protocol_version, cipher_suite);
+    let group = test_group(protocol_version, cipher_suite).await;
 
     let mut groups = vec![group];
 
     for i in 1..num_members {
-        let (new_group, commit) = groups.get_mut(0).unwrap().join(&format!("name {}", i));
-        process_commit(&mut groups, commit, 0);
+        let (new_group, commit) = groups
+            .get_mut(0)
+            .unwrap()
+            .join(&format!("name {}", i))
+            .await;
+        process_commit(&mut groups, commit, 0).await;
         groups.push(new_group);
     }
 
     groups
 }
 
-pub(crate) fn process_commit(groups: &mut [TestGroup], commit: MLSMessage, excluded: u32) {
-    groups
+pub(crate) async fn process_commit(groups: &mut [TestGroup], commit: MLSMessage, excluded: u32) {
+    for g in groups
         .iter_mut()
         .filter(|g| g.group.current_member_index() != excluded)
-        .for_each(|g| {
-            g.process_message(commit.clone()).unwrap();
-        });
+    {
+        g.process_message(commit.clone()).await.unwrap();
+    }
 }
 
 pub(crate) fn get_test_25519_key(key_byte: u8) -> HpkePublicKey {
     vec![key_byte; 32].into()
 }
 
-pub(crate) fn get_test_groups_with_features(
+pub(crate) async fn get_test_groups_with_features(
     n: usize,
     extensions: ExtensionList<GroupContextExtension>,
     leaf_extensions: ExtensionList<LeafNodeExtension>,
@@ -328,41 +346,47 @@ pub(crate) fn get_test_groups_with_features(
             clients[0].1.clone(),
             extensions,
         )
+        .await
         .unwrap();
 
     let mut groups = vec![group];
 
-    clients.iter().skip(1).for_each(|(client, identity)| {
+    for (client, identity) in clients.iter().skip(1) {
         let key_package = client
             .generate_key_package(
                 ProtocolVersion::Mls10,
                 CipherSuite::Curve25519Aes128,
                 identity.clone(),
             )
+            .await
             .unwrap();
 
         let commit_output = groups[0]
             .commit_builder()
             .add_member(key_package)
+            .await
             .unwrap()
             .build()
+            .await
             .unwrap();
 
-        groups[0].apply_pending_commit().unwrap();
+        groups[0].apply_pending_commit().await.unwrap();
 
         for group in groups.iter_mut().skip(1) {
             group
                 .process_incoming_message(commit_output.commit_message.clone())
+                .await
                 .unwrap();
         }
 
         groups.push(
             client
                 .join_group(None, commit_output.welcome_message.unwrap())
+                .await
                 .unwrap()
                 .0,
         );
-    });
+    }
 
     groups
 }

@@ -219,9 +219,10 @@ mod tests {
     const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
-    fn make_signed_plaintext(group: &mut Group<TestClientConfig>) -> MLSPlaintext {
+    async fn make_signed_plaintext(group: &mut Group<TestClientConfig>) -> MLSPlaintext {
         group
             .commit(vec![])
+            .await
             .unwrap()
             .commit_message
             .into_plaintext()
@@ -234,7 +235,7 @@ mod tests {
     }
 
     impl TestEnv {
-        fn new(encrypt_controls: bool) -> Self {
+        async fn new(encrypt_controls: bool) -> Self {
             let mut alice = test_group_custom(
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
@@ -245,26 +246,30 @@ mod tests {
                         .with_ratchet_tree_extension(true)
                         .with_control_encryption(encrypt_controls),
                 ),
-            );
+            )
+            .await;
 
             let (bob_client, bob_key_pkg) =
-                test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob");
+                test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
             let commit_output = alice
                 .group
                 .commit_builder()
                 .add_member(bob_key_pkg)
+                .await
                 .unwrap()
                 .build()
+                .await
                 .unwrap();
 
-            alice.group.apply_pending_commit().unwrap();
+            alice.group.apply_pending_commit().await.unwrap();
 
             let (bob, _) = Group::join(
                 commit_output.welcome_message.unwrap(),
                 None,
                 bob_client.config,
             )
+            .await
             .unwrap();
 
             TestEnv {
@@ -274,11 +279,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn valid_plaintext_is_verified() {
-        let mut env = TestEnv::new(false);
+    #[futures_test::test]
+    async fn valid_plaintext_is_verified() {
+        let mut env = TestEnv::new(false).await;
 
-        let message = make_signed_plaintext(&mut env.alice.group);
+        let message = make_signed_plaintext(&mut env.alice.group).await;
 
         verify_plaintext_authentication(
             &env.bob.group.cipher_suite_provider,
@@ -290,11 +295,12 @@ mod tests {
         .unwrap();
     }
 
-    #[test]
-    fn valid_auth_content_is_verified() {
-        let mut env = TestEnv::new(false);
+    #[futures_test::test]
+    async fn valid_auth_content_is_verified() {
+        let mut env = TestEnv::new(false).await;
 
-        let message = MLSAuthenticatedContent::from(make_signed_plaintext(&mut env.alice.group));
+        let message =
+            MLSAuthenticatedContent::from(make_signed_plaintext(&mut env.alice.group).await);
 
         verify_auth_content_signature(
             &env.bob.group.cipher_suite_provider,
@@ -306,10 +312,10 @@ mod tests {
         .unwrap();
     }
 
-    #[test]
-    fn invalid_plaintext_is_not_verified() {
-        let mut env = TestEnv::new(false);
-        let mut message = make_signed_plaintext(&mut env.alice.group);
+    #[futures_test::test]
+    async fn invalid_plaintext_is_not_verified() {
+        let mut env = TestEnv::new(false).await;
+        let mut message = make_signed_plaintext(&mut env.alice.group).await;
         message.auth.signature = MessageSignature::from(b"test".to_vec());
 
         message.membership_tag = env
@@ -335,10 +341,10 @@ mod tests {
         assert_matches!(res, Err(GroupError::InvalidSignature));
     }
 
-    #[test]
-    fn plaintext_from_member_requires_membership_tag() {
-        let mut env = TestEnv::new(false);
-        let mut message = make_signed_plaintext(&mut env.alice.group);
+    #[futures_test::test]
+    async fn plaintext_from_member_requires_membership_tag() {
+        let mut env = TestEnv::new(false).await;
+        let mut message = make_signed_plaintext(&mut env.alice.group).await;
         message.membership_tag = None;
 
         let res = verify_plaintext_authentication(
@@ -352,10 +358,10 @@ mod tests {
         assert_matches!(res, Err(GroupError::InvalidMembershipTag));
     }
 
-    #[test]
-    fn plaintext_fails_with_invalid_membership_tag() {
-        let mut env = TestEnv::new(false);
-        let mut message = make_signed_plaintext(&mut env.alice.group);
+    #[futures_test::test]
+    async fn plaintext_fails_with_invalid_membership_tag() {
+        let mut env = TestEnv::new(false).await;
+        let mut message = make_signed_plaintext(&mut env.alice.group).await;
         message.membership_tag = Some(MembershipTag::from(b"test".to_vec()));
 
         let res = verify_plaintext_authentication(
@@ -412,10 +418,11 @@ mod tests {
         }
     }
 
-    #[test]
-    fn valid_proposal_from_new_member_is_verified() {
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+    #[futures_test::test]
+    async fn valid_proposal_from_new_member_is_verified() {
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (key_pkg_gen, signer) =
+            test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
         let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |_| {});
 
         verify_plaintext_authentication(
@@ -428,10 +435,11 @@ mod tests {
         .unwrap();
     }
 
-    #[test]
-    fn proposal_from_new_member_must_not_have_membership_tag() {
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+    #[futures_test::test]
+    async fn proposal_from_new_member_must_not_have_membership_tag() {
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (key_pkg_gen, signer) =
+            test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
 
         let mut message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |_| {});
         message.membership_tag = Some(MembershipTag::from(vec![]));
@@ -447,10 +455,11 @@ mod tests {
         assert_matches!(res, Err(GroupError::MembershipTagForNonMember));
     }
 
-    #[test]
-    fn new_member_proposal_sender_must_be_add_proposal() {
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+    #[futures_test::test]
+    async fn new_member_proposal_sender_must_be_add_proposal() {
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (key_pkg_gen, signer) =
+            test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
 
         let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |mut msg| {
             msg.content.content = Content::Proposal(Proposal::Remove(RemoveProposal {
@@ -472,10 +481,11 @@ mod tests {
         );
     }
 
-    #[test]
-    fn new_member_commit_must_be_external_commit() {
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let (key_pkg_gen, signer) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+    #[futures_test::test]
+    async fn new_member_commit_must_be_external_commit() {
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let (key_pkg_gen, signer) =
+            test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
 
         let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |mut msg| {
             msg.content.sender = Sender::NewMemberCommit;
@@ -492,14 +502,15 @@ mod tests {
         assert_matches!(res, Err(GroupError::ExpectedCommitForNewMemberCommit));
     }
 
-    #[test]
-    fn valid_proposal_from_external_is_verified() {
-        let (bob_key_pkg_gen, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+    #[futures_test::test]
+    async fn valid_proposal_from_external_is_verified() {
+        let (bob_key_pkg_gen, _) =
+            test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
 
         let (ted_signing, ted_secret) =
             get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
 
-        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut extensions = ExtensionList::default();
 
         extensions
@@ -514,9 +525,10 @@ mod tests {
             .set_group_context_ext(extensions)
             .unwrap()
             .build()
+            .await
             .unwrap();
 
-        test_group.group.apply_pending_commit().unwrap();
+        test_group.group.apply_pending_commit().await.unwrap();
 
         let message =
             test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |mut msg| {
@@ -533,11 +545,12 @@ mod tests {
         .unwrap();
     }
 
-    #[test]
-    fn external_proposal_must_be_from_valid_sender() {
-        let (bob_key_pkg_gen, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+    #[futures_test::test]
+    async fn external_proposal_must_be_from_valid_sender() {
+        let (bob_key_pkg_gen, _) =
+            test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
         let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let message =
             test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |mut msg| {
@@ -558,13 +571,14 @@ mod tests {
         );
     }
 
-    #[test]
-    fn proposal_from_external_sender_must_not_have_membership_tag() {
-        let (bob_key_pkg_gen, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob");
+    #[futures_test::test]
+    async fn proposal_from_external_sender_must_not_have_membership_tag() {
+        let (bob_key_pkg_gen, _) =
+            test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
 
         let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
 
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let mut message =
             test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |_| {});
@@ -582,11 +596,11 @@ mod tests {
         assert_matches!(res, Err(GroupError::MembershipTagForNonMember));
     }
 
-    #[test]
-    fn plaintext_from_self_fails_verification() {
-        let mut env = TestEnv::new(false);
+    #[futures_test::test]
+    async fn plaintext_from_self_fails_verification() {
+        let mut env = TestEnv::new(false).await;
 
-        let message = make_signed_plaintext(&mut env.alice.group);
+        let message = make_signed_plaintext(&mut env.alice.group).await;
 
         let res = verify_plaintext_authentication(
             &env.alice.group.cipher_suite_provider,

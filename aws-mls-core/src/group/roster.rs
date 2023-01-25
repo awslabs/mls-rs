@@ -1,6 +1,6 @@
 use crate::identity::SigningIdentity;
 
-pub trait RosterEntry {
+pub trait RosterEntry: Send + Sync {
     fn index(&self) -> u32;
     fn signing_identity(&self) -> &SigningIdentity;
     // TODO: Leaf extensions

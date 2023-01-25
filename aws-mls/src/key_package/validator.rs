@@ -87,7 +87,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, 
             .map_err(Into::into)
     }
 
-    pub fn check_if_valid(
+    pub async fn check_if_valid(
         &self,
         package: &KeyPackage,
         options: KeyPackageValidationOptions,
@@ -95,7 +95,8 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, 
         self.validate_properties(package)?;
 
         self.leaf_node_validator
-            .check_if_valid(&package.leaf_node, self.validation_context(options))?;
+            .check_if_valid(&package.leaf_node, self.validation_context(options))
+            .await?;
 
         let expiration_timestamp =
             if let LeafNodeSource::KeyPackage(lifetime) = &package.leaf_node.leaf_node_source {
@@ -148,6 +149,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, 
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::client::test_utils::TEST_PROTOCOL_VERSION;
     use crate::group::test_utils::random_bytes;
@@ -158,14 +160,13 @@ mod tests {
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use assert_matches::assert_matches;
-
-    use super::*;
+    use futures::FutureExt;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[test]
-    fn test_standard_validation() {
+    #[futures_test::test]
+    async fn test_standard_validation() {
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
             TestCryptoProvider::all_supported_cipher_suites()
                 .into_iter()
@@ -177,7 +178,8 @@ mod tests {
                 protocol_version,
                 cipher_suite,
                 &format!("alice-{protocol_version:?}-{cipher_suite:?}"),
-            );
+            )
+            .await;
 
             let validator = KeyPackageValidator::new(
                 protocol_version,
@@ -187,23 +189,25 @@ mod tests {
             );
 
             assert_matches!(
-                validator.check_if_valid(&test_package, Default::default()),
+                validator
+                    .check_if_valid(&test_package, Default::default())
+                    .await,
                 Ok(_)
             );
         }
     }
 
-    fn invalid_signature_key_package(
+    async fn invalid_signature_key_package(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> KeyPackage {
-        let mut test_package = test_key_package(protocol_version, cipher_suite, "mallory");
+        let mut test_package = test_key_package(protocol_version, cipher_suite, "mallory").await;
         test_package.signature = random_bytes(32);
         test_package
     }
 
-    #[test]
-    fn test_invalid_signature() {
+    #[futures_test::test]
+    async fn test_invalid_signature() {
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
             TestCryptoProvider::all_supported_cipher_suites()
                 .into_iter()
@@ -211,7 +215,7 @@ mod tests {
         }) {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
-            let test_package = invalid_signature_key_package(protocol_version, cipher_suite);
+            let test_package = invalid_signature_key_package(protocol_version, cipher_suite).await;
 
             let validator = KeyPackageValidator::new(
                 protocol_version,
@@ -221,17 +225,19 @@ mod tests {
             );
 
             assert_matches!(
-                validator.check_if_valid(&test_package, Default::default()),
+                validator
+                    .check_if_valid(&test_package, Default::default())
+                    .await,
                 Err(KeyPackageValidationError::SignatureError(_))
             );
         }
     }
 
-    #[test]
-    fn test_invalid_cipher_suite() {
+    #[futures_test::test]
+    async fn test_invalid_cipher_suite() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let version = TEST_PROTOCOL_VERSION;
-        let test_package = test_key_package(version, cipher_suite, "mallory");
+        let test_package = test_key_package(version, cipher_suite, "mallory").await;
 
         let invalid_cipher_suite_provider =
             test_cipher_suite_provider(CipherSuite::Curve25519ChaCha20);
@@ -244,62 +250,80 @@ mod tests {
         );
 
         assert_matches!(
-            validator.check_if_valid(&test_package, Default::default()),
+            validator.check_if_valid(&test_package, Default::default()).await,
             Err(KeyPackageValidationError::InvalidCipherSuite(found, exp))
                 if exp == CipherSuite::Curve25519ChaCha20 && found == cipher_suite.into()
         );
     }
 
-    fn test_init_key_manipulation<F, CSP>(
-        cipher_suite_provider: &CSP,
+    async fn test_init_key_manipulation<F, CSP>(
+        cipher_suite_provider: CSP,
         protocol_version: ProtocolVersion,
         mut edit: F,
     ) -> KeyPackage
     where
-        CSP: CipherSuiteProvider,
+        CSP: CipherSuiteProvider + Clone,
         F: FnMut(&mut KeyPackage),
     {
         let (alternate_sining_id, secret) =
             get_test_signing_identity(cipher_suite_provider.cipher_suite(), b"test".to_vec());
 
-        let mut test_package =
-            test_key_package_custom(cipher_suite_provider, protocol_version, "test", |_| {
-                let new_generator = KeyPackageGenerator {
-                    protocol_version,
-                    cipher_suite_provider,
-                    signing_identity: &alternate_sining_id,
-                    signing_key: &secret,
-                    identity_provider: &BasicIdentityProvider::new(),
-                };
+        let mut test_package = {
+            let cipher_suite_provider = cipher_suite_provider.clone();
+            let signing_key = secret.clone();
 
-                new_generator
-                    .generate(
-                        Lifetime::years(1).unwrap(),
-                        get_test_capabilities(),
-                        ExtensionList::default(),
-                        ExtensionList::default(),
-                    )
-                    .unwrap()
-            });
+            test_key_package_custom(
+                &cipher_suite_provider.clone(),
+                protocol_version,
+                "test",
+                move |_| {
+                    async move {
+                        let new_generator = KeyPackageGenerator {
+                            protocol_version,
+                            cipher_suite_provider: &cipher_suite_provider,
+                            signing_identity: &alternate_sining_id,
+                            signing_key: &signing_key,
+                            identity_provider: &BasicIdentityProvider::new(),
+                        };
+
+                        new_generator
+                            .generate(
+                                Lifetime::years(1).unwrap(),
+                                get_test_capabilities(),
+                                ExtensionList::default(),
+                                ExtensionList::default(),
+                            )
+                            .await
+                            .unwrap()
+                    }
+                    .boxed()
+                },
+            )
+            .await
+        };
 
         edit(&mut test_package);
 
         test_package
-            .sign(cipher_suite_provider, &secret, &())
+            .sign(&cipher_suite_provider, &secret, &())
             .unwrap();
 
         test_package
     }
 
-    #[test]
-    fn test_invalid_init_key() {
+    #[futures_test::test]
+    async fn test_invalid_init_key() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;
 
-        let key_package =
-            test_init_key_manipulation(&cipher_suite_provider, protocol_version, |key_package| {
+        let key_package = test_init_key_manipulation(
+            cipher_suite_provider.clone(),
+            protocol_version,
+            |key_package| {
                 key_package.hpke_init_key = HpkePublicKey::from(vec![42; 128]);
-            });
+            },
+        )
+        .await;
 
         let validator = KeyPackageValidator::new(
             protocol_version,
@@ -309,21 +333,27 @@ mod tests {
         );
 
         assert_matches!(
-            validator.check_if_valid(&key_package, Default::default()),
+            validator
+                .check_if_valid(&key_package, Default::default())
+                .await,
             Err(KeyPackageValidationError::InvalidInitKey)
         );
     }
 
-    #[test]
-    fn test_matching_init_key() {
+    #[futures_test::test]
+    async fn test_matching_init_key() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;
 
-        let key_package =
-            test_init_key_manipulation(&cipher_suite_provider, protocol_version, |key_package| {
+        let key_package = test_init_key_manipulation(
+            cipher_suite_provider.clone(),
+            protocol_version,
+            |key_package| {
                 key_package.hpke_init_key =
                     key_package.leaf_node.public_key.as_ref().to_vec().into();
-            });
+            },
+        )
+        .await;
 
         let validator = KeyPackageValidator::new(
             protocol_version,
@@ -333,12 +363,14 @@ mod tests {
         );
 
         assert_matches!(
-            validator.check_if_valid(&key_package, Default::default()),
+            validator
+                .check_if_valid(&key_package, Default::default())
+                .await,
             Err(KeyPackageValidationError::InitLeafKeyEquality)
         );
     }
 
-    fn invalid_expiration_leaf_node<CSP>(
+    async fn invalid_expiration_leaf_node<CSP>(
         protocol_version: ProtocolVersion,
         cipher_suite_provider: &CSP,
     ) -> KeyPackage
@@ -350,27 +382,33 @@ mod tests {
             protocol_version,
             "foo",
             |generator| {
-                generator
-                    .generate(
-                        Lifetime {
-                            not_before: 0,
-                            not_after: 0,
-                        },
-                        get_test_capabilities(),
-                        ExtensionList::default(),
-                        ExtensionList::default(),
-                    )
-                    .unwrap()
+                async move {
+                    generator
+                        .generate(
+                            Lifetime {
+                                not_before: 0,
+                                not_after: 0,
+                            },
+                            get_test_capabilities(),
+                            ExtensionList::default(),
+                            ExtensionList::default(),
+                        )
+                        .await
+                        .unwrap()
+                }
+                .boxed()
             },
         )
+        .await
     }
 
-    #[test]
-    fn test_expired() {
+    #[futures_test::test]
+    async fn test_expired() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;
 
-        let test_package = invalid_expiration_leaf_node(protocol_version, &cipher_suite_provider);
+        let test_package =
+            invalid_expiration_leaf_node(protocol_version, &cipher_suite_provider).await;
 
         let validator = KeyPackageValidator::new(
             protocol_version,
@@ -384,19 +422,20 @@ mod tests {
         };
 
         assert_matches!(
-            validator.check_if_valid(&test_package, options),
+            validator.check_if_valid(&test_package, options).await,
             Err(KeyPackageValidationError::LeafNodeValidationError(
                 LeafNodeValidationError::InvalidLifetime(_, _)
             ))
         );
     }
 
-    #[test]
-    fn test_skip_expiration_check() {
+    #[futures_test::test]
+    async fn test_skip_expiration_check() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;
 
-        let test_package = invalid_expiration_leaf_node(protocol_version, &cipher_suite_provider);
+        let test_package =
+            invalid_expiration_leaf_node(protocol_version, &cipher_suite_provider).await;
 
         let validator = KeyPackageValidator::new(
             protocol_version,
@@ -406,18 +445,20 @@ mod tests {
         );
 
         assert_matches!(
-            validator.check_if_valid(
-                &test_package,
-                KeyPackageValidationOptions {
-                    apply_lifetime_check: None
-                },
-            ),
+            validator
+                .check_if_valid(
+                    &test_package,
+                    KeyPackageValidationOptions {
+                        apply_lifetime_check: None
+                    },
+                )
+                .await,
             Ok(_)
         );
     }
 
-    #[test]
-    fn test_required_capabilities_check() {
+    #[futures_test::test]
+    async fn test_required_capabilities_check() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;
 
@@ -426,19 +467,24 @@ mod tests {
             protocol_version,
             "test",
             |generator| {
-                let mut capabilities = get_test_capabilities();
-                capabilities.extensions.push(42);
+                async move {
+                    let mut capabilities = get_test_capabilities();
+                    capabilities.extensions.push(42);
 
-                generator
-                    .generate(
-                        Lifetime::years(1).unwrap(),
-                        capabilities,
-                        ExtensionList::default(),
-                        ExtensionList::default(),
-                    )
-                    .unwrap()
+                    generator
+                        .generate(
+                            Lifetime::years(1).unwrap(),
+                            capabilities,
+                            ExtensionList::default(),
+                            ExtensionList::default(),
+                        )
+                        .await
+                        .unwrap()
+                }
+                .boxed()
             },
-        );
+        )
+        .await;
 
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![42],
@@ -454,13 +500,15 @@ mod tests {
         );
 
         assert_matches!(
-            validator.check_if_valid(&key_package, Default::default()),
+            validator
+                .check_if_valid(&key_package, Default::default())
+                .await,
             Ok(_)
         );
     }
 
-    #[test]
-    fn test_required_capabilities_failure() {
+    #[futures_test::test]
+    async fn test_required_capabilities_failure() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;
 
@@ -468,7 +516,8 @@ mod tests {
             protocol_version,
             cipher_suite_provider.cipher_suite(),
             "alice",
-        );
+        )
+        .await;
 
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![255],
@@ -484,13 +533,15 @@ mod tests {
         );
 
         assert_matches!(
-            validator.check_if_valid(&key_package, Default::default()),
+            validator
+                .check_if_valid(&key_package, Default::default())
+                .await,
             Err(KeyPackageValidationError::LeafNodeValidationError(_))
         );
     }
 
-    #[test]
-    fn test_leaf_node_validation_failure() {
+    #[futures_test::test]
+    async fn test_leaf_node_validation_failure() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;
 
@@ -499,20 +550,25 @@ mod tests {
             protocol_version,
             "foo",
             |generator| {
-                let mut package_gen = generator
-                    .generate(
-                        Lifetime::years(1).unwrap(),
-                        get_test_capabilities(),
-                        ExtensionList::default(),
-                        ExtensionList::default(),
-                    )
-                    .unwrap();
+                async move {
+                    let mut package_gen = generator
+                        .generate(
+                            Lifetime::years(1).unwrap(),
+                            get_test_capabilities(),
+                            ExtensionList::default(),
+                            ExtensionList::default(),
+                        )
+                        .await
+                        .unwrap();
 
-                package_gen.key_package.leaf_node.signature = random_bytes(32);
-                generator.sign(&mut package_gen.key_package).unwrap();
-                package_gen
+                    package_gen.key_package.leaf_node.signature = random_bytes(32);
+                    generator.sign(&mut package_gen.key_package).unwrap();
+                    package_gen
+                }
+                .boxed()
             },
-        );
+        )
+        .await;
 
         let validator = KeyPackageValidator::new(
             protocol_version,
@@ -522,7 +578,9 @@ mod tests {
         );
 
         assert_matches!(
-            validator.check_if_valid(&key_package, Default::default()),
+            validator
+                .check_if_valid(&key_package, Default::default())
+                .await,
             Err(KeyPackageValidationError::LeafNodeValidationError(_))
         );
     }

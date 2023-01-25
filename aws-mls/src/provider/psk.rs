@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::psk::{ExternalPskId, ExternalPskIdValidator, Psk};
 
-pub trait PskStore {
+pub trait PskStore: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn insert(&mut self, id: ExternalPskId, psk: Psk) -> Result<(), Self::Error>;

@@ -493,7 +493,7 @@ mod tests {
     fn load_exporter_test_cases() -> Vec<ExporterTestCase> {
         load_test_cases!(
             epoch_secret_exporter_test_vector,
-            generate_epoch_secret_exporter_test_vector
+            generate_epoch_secret_exporter_test_vector()
         )
     }
 
@@ -586,7 +586,10 @@ mod tests {
     }
 
     fn load_key_schedue_test_cases() -> Vec<KeyScheduleTestCase> {
-        load_test_cases!(key_schedule_test_vector, generate_key_schedule_test_vector)
+        load_test_cases!(
+            key_schedule_test_vector,
+            generate_key_schedule_test_vector()
+        )
     }
 
     #[test]

@@ -666,10 +666,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn used_key_package_is_deleted() {
+    #[futures_test::test]
+    async fn used_key_package_is_deleted() {
         let key_package_repo = InMemoryKeyPackageRepository::default();
-        let key_package = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"member").0;
+        let key_package = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"member")
+            .await
+            .0;
 
         let key_package_ref = key_package
             .reference(&test_cipher_suite_provider(TEST_CIPHER_SUITE))

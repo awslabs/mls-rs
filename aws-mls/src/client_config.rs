@@ -1,5 +1,3 @@
-use aws_mls_core::identity::IdentityProvider;
-
 use crate::{
     cipher_suite::MaybeCipherSuite,
     client_builder::Preferences,
@@ -19,16 +17,19 @@ use crate::{
     },
     tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
 };
+use async_trait::async_trait;
+use aws_mls_core::identity::IdentityProvider;
 use std::convert::Infallible;
 
-pub trait ClientConfig: Clone {
+#[async_trait]
+pub trait ClientConfig: Clone + Send + Sync {
     type KeyPackageRepository: KeyPackageRepository + Clone;
     type Keychain: KeychainStorage + Clone;
     type PskStore: PskStore + Clone;
     type GroupStateStorage: GroupStateStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
-    type MakeProposalFilter: MakeProposalFilter;
-    type CryptoProvider: CryptoProvider;
+    type MakeProposalFilter: MakeProposalFilter + Clone;
+    type CryptoProvider: CryptoProvider + Clone;
 
     fn supported_extensions(&self) -> Vec<ExtensionType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
@@ -86,7 +87,7 @@ pub trait ClientConfig: Clone {
     }
 }
 
-pub trait MakeProposalFilter {
+pub trait MakeProposalFilter: Send + Sync {
     type Filter: ProposalFilter;
 
     fn make(&self, init: ProposalFilterInit) -> Self::Filter;
@@ -131,7 +132,7 @@ impl ProposalFilter for KeepAllProposals {
 
 impl<F, E> MakeProposalFilter for MakeSimpleProposalFilter<F>
 where
-    F: Fn(&ProposalFilterContext, &BorrowedProposal<'_>) -> Result<(), E> + Clone,
+    F: Fn(&ProposalFilterContext, &BorrowedProposal<'_>) -> Result<(), E> + Clone + Send + Sync,
     E: std::error::Error + Send + Sync + 'static,
 {
     type Filter = SimpleProposalFilter<F>;

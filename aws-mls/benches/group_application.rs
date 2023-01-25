@@ -5,9 +5,10 @@ use aws_mls::group::Group;
 use aws_mls::bench_utils::group_functions::{commit_group, load_test_cases};
 
 use criterion::{
-    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
-    Throughput,
+    async_executor::FuturesExecutor, criterion_group, criterion_main, measurement::WallTime,
+    BatchSize, BenchmarkGroup, BenchmarkId, Criterion, Throughput,
 };
+use futures::executor::block_on;
 use rand::RngCore;
 
 fn application_message_setup(c: &mut Criterion) {
@@ -18,12 +19,12 @@ fn application_message_setup(c: &mut Criterion) {
     println!("Benchmarking group application message for: {cipher_suite:?}");
 
     // creates group of the desired size
-    let mut container = load_test_cases();
+    let mut container = block_on(load_test_cases());
 
     let sessions = container.iter_mut().next().unwrap();
 
     // fills the tree by having everyone commit
-    commit_group(sessions);
+    block_on(commit_group(sessions));
 
     let mut bytes = vec![0; 1000000];
     rand::thread_rng().fill_bytes(&mut bytes);
@@ -40,6 +41,7 @@ fn bench_application_message<C: MlsConfig>(
     container: &mut [Group<C>],
     bytes: Vec<u8>,
 ) {
+    let bytes = &bytes;
     let mut n = 100;
 
     while n <= 1000000 {
@@ -48,13 +50,17 @@ fn bench_application_message<C: MlsConfig>(
             BenchmarkId::new(format!("{cipher_suite:?}"), n),
             &n,
             |b, _| {
-                b.iter(|| {
-                    let msg = container[0]
-                        .encrypt_application_message(&bytes[..n], vec![])
-                        .unwrap();
+                b.to_async(FuturesExecutor).iter_batched(
+                    || (container[0].clone(), container[1].clone()),
+                    |(mut sender, mut receiver)| async move {
+                        let msg = sender
+                            .encrypt_application_message(&bytes[..n], vec![])
+                            .unwrap();
 
-                    container[1].process_incoming_message(msg).unwrap();
-                })
+                        receiver.process_incoming_message(msg).await.unwrap();
+                    },
+                    BatchSize::SmallInput,
+                )
             },
         );
 

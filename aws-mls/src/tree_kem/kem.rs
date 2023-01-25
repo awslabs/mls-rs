@@ -45,7 +45,7 @@ impl<'a> TreeKem<'a> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn encap<C, P>(
+    pub async fn encap<C, P>(
         self,
         context: &mut GroupContext,
         excluding: &[LeafIndex],
@@ -106,7 +106,8 @@ impl<'a> TreeKem<'a> {
         )?;
 
         self.tree_kem_public
-            .rekey_leaf(self_index, own_leaf_copy.clone(), identity_provider)?;
+            .rekey_leaf(self_index, own_leaf_copy.clone(), identity_provider)
+            .await?;
 
         #[cfg(test)]
         {
@@ -190,7 +191,7 @@ impl<'a> TreeKem<'a> {
         })
     }
 
-    pub fn decap<IP, CP>(
+    pub async fn decap<IP, CP>(
         self,
         sender_index: LeafIndex,
         update_path: &ValidatedUpdatePath,
@@ -215,12 +216,15 @@ impl<'a> TreeKem<'a> {
             sender_index.into(),
         );
 
-        let filtered_direct_path_co_path = self.tree_kem_public.apply_update_path(
-            sender_index,
-            update_path,
-            identity_provider,
-            cipher_suite_provider,
-        )?;
+        let filtered_direct_path_co_path = self
+            .tree_kem_public
+            .apply_update_path(
+                sender_index,
+                update_path,
+                identity_provider,
+                cipher_suite_provider,
+            )
+            .await?;
 
         // Update the tree hash to get context for decryption
         context.tree_hash = self.tree_kem_public.tree_hash(cipher_suite_provider)?;
@@ -322,8 +326,7 @@ fn decrypt_parent_path_secret<P: CipherSuiteProvider>(
 
 #[cfg(test)]
 mod tests {
-    use aws_mls_core::crypto::CipherSuiteProvider;
-
+    use super::{tree_math, TreeKem};
     use crate::{
         cipher_suite::CipherSuite,
         extension::{test_utils::TestExtension, ExtensionList, LeafNodeExtension},
@@ -341,8 +344,8 @@ mod tests {
             Capabilities, TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
         },
     };
-
-    use super::{tree_math, TreeKem};
+    use aws_mls_core::crypto::CipherSuiteProvider;
+    use futures::StreamExt;
 
     // Verify that the tree is in the correct state after generating an update path
     fn verify_tree_update_path(
@@ -419,7 +422,7 @@ mod tests {
         }
     }
 
-    fn encap_decap(
+    async fn encap_decap(
         cipher_suite: CipherSuite,
         size: usize,
         capabilities: Option<Capabilities>,
@@ -429,20 +432,22 @@ mod tests {
 
         // Generate signing keys and key package generations, and private keys for multiple
         // participants in order to set up state
-        let (leaf_nodes, mut private_keys): (_, Vec<TreeKemPrivate>) = (1..size)
-            .map(|index| {
-                let (leaf_node, hpke_secret, _) =
-                    get_basic_test_node_sig_key(cipher_suite, &format!("{}", index));
+        let (leaf_nodes, mut private_keys): (_, Vec<TreeKemPrivate>) =
+            futures::stream::iter(1..size)
+                .then(|index| async move {
+                    let (leaf_node, hpke_secret, _) =
+                        get_basic_test_node_sig_key(cipher_suite, &format!("{}", index)).await;
 
-                let private_key =
-                    TreeKemPrivate::new_self_leaf(LeafIndex(index as u32), hpke_secret);
+                    let private_key =
+                        TreeKemPrivate::new_self_leaf(LeafIndex(index as u32), hpke_secret);
 
-                (leaf_node, private_key)
-            })
-            .unzip();
+                    (leaf_node, private_key)
+                })
+                .unzip()
+                .await;
 
         let (encap_node, encap_hpke_secret, encap_signer) =
-            get_basic_test_node_sig_key(cipher_suite, "encap");
+            get_basic_test_node_sig_key(cipher_suite, "encap").await;
 
         // Build a test tree we can clone for all leaf nodes
         let (mut test_tree, mut encap_private_key) = TreeKemPublic::derive(
@@ -451,10 +456,12 @@ mod tests {
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
         test_tree
             .add_leaves(leaf_nodes, BasicIdentityProvider, &cipher_suite_provider)
+            .await
             .unwrap();
 
         // Clone the tree for the first leaf, generate a new key package for that leaf
@@ -478,6 +485,7 @@ mod tests {
                 #[cfg(test)]
                 &Default::default(),
             )
+            .await
             .unwrap();
 
         // Verify that the state of the tree matches the produced update path
@@ -515,6 +523,7 @@ mod tests {
                     BasicIdentityProvider,
                     &cipher_suite_provider,
                 )
+                .await
                 .unwrap();
 
             tree.update_hashes(&mut vec![LeafIndex(0)], &[], &cipher_suite_provider)
@@ -524,34 +533,34 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_encap_decap() {
+    #[futures_test::test]
+    async fn test_encap_decap() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             println!("Testing Tree KEM encap / decap for: {cipher_suite:?}");
-            encap_decap(cipher_suite, 10, None, None);
+            encap_decap(cipher_suite, 10, None, None).await;
         }
     }
 
-    #[test]
-    fn test_encap_capabilities() {
+    #[futures_test::test]
+    async fn test_encap_capabilities() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
         let mut capabilities = get_test_capabilities();
         capabilities.extensions.push(42);
 
-        encap_decap(cipher_suite, 10, Some(capabilities.clone()), None);
+        encap_decap(cipher_suite, 10, Some(capabilities.clone()), None).await;
     }
 
-    #[test]
-    fn test_encap_extensions() {
+    #[futures_test::test]
+    async fn test_encap_extensions() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
         let mut extensions = ExtensionList::default();
         extensions.set_extension(TestExtension { foo: 10 }).unwrap();
 
-        encap_decap(cipher_suite, 10, None, Some(extensions));
+        encap_decap(cipher_suite, 10, None, Some(extensions)).await;
     }
 
-    #[test]
-    fn test_encap_capabilities_extensions() {
+    #[futures_test::test]
+    async fn test_encap_capabilities_extensions() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
         let mut capabilities = get_test_capabilities();
         capabilities.extensions.push(42);
@@ -559,6 +568,6 @@ mod tests {
         let mut extensions = ExtensionList::default();
         extensions.set_extension(TestExtension { foo: 10 }).unwrap();
 
-        encap_decap(cipher_suite, 10, Some(capabilities), Some(extensions));
+        encap_decap(cipher_suite, 10, Some(capabilities), Some(extensions)).await;
     }
 }

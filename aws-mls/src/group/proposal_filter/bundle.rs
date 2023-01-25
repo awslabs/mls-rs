@@ -65,6 +65,10 @@ impl ProposalBundle {
         self.add(p.proposal, p.sender, p.proposal_ref)
     }
 
+    pub fn remove<T: Proposable>(&mut self, index: usize) {
+        T::remove(self, index);
+    }
+
     pub fn by_type<'a, T: Proposable + 'a>(&'a self) -> impl Iterator<Item = &'a ProposalInfo<T>> {
         T::filter(self).iter()
     }
@@ -302,7 +306,8 @@ pub trait Proposable: Sized {
     const TYPE: ProposalType;
 
     fn filter(bundle: &ProposalBundle) -> &[ProposalInfo<Self>];
-    fn retain<F>(bundle: &mut ProposalBundle, f: F)
+    fn remove(bundle: &mut ProposalBundle, index: usize);
+    fn retain<F>(bundle: &mut ProposalBundle, keep: F)
     where
         F: FnMut(&ProposalInfo<Self>) -> bool;
 }
@@ -316,11 +321,17 @@ macro_rules! impl_proposable {
                 &bundle.$field
             }
 
-            fn retain<F>(bundle: &mut ProposalBundle, f: F)
+            fn remove(bundle: &mut ProposalBundle, index: usize) {
+                if index < bundle.$field.len() {
+                    bundle.$field.remove(index);
+                }
+            }
+
+            fn retain<F>(bundle: &mut ProposalBundle, keep: F)
             where
                 F: FnMut(&ProposalInfo<Self>) -> bool,
             {
-                bundle.$field.retain(f)
+                bundle.$field.retain(keep);
             }
         }
     };

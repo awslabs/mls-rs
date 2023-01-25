@@ -86,14 +86,15 @@ where
         Client { config }
     }
 
-    pub fn generate_key_package_message(
+    pub async fn generate_key_package_message(
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
     ) -> Result<MLSMessage, ClientError> {
-        let key_package =
-            self.generate_key_package(protocol_version, cipher_suite, signing_identity)?;
+        let key_package = self
+            .generate_key_package(protocol_version, cipher_suite, signing_identity)
+            .await?;
 
         let key_package_message =
             MLSMessage::new(protocol_version, MLSMessagePayload::KeyPackage(key_package));
@@ -101,7 +102,7 @@ where
         Ok(key_package_message)
     }
 
-    pub fn generate_key_package(
+    pub async fn generate_key_package(
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -128,12 +129,14 @@ where
             identity_provider: &self.config.identity_provider(),
         };
 
-        let key_pkg_gen = key_package_generator.generate(
-            self.config.lifetime(),
-            self.config.capabilities(),
-            self.config.key_package_extensions(),
-            self.config.leaf_node_extensions(),
-        )?;
+        let key_pkg_gen = key_package_generator
+            .generate(
+                self.config.lifetime(),
+                self.config.capabilities(),
+                self.config.key_package_extensions(),
+                self.config.leaf_node_extensions(),
+            )
+            .await?;
 
         self.config
             .key_package_repo()
@@ -146,7 +149,7 @@ where
         Ok(key_pkg_gen.key_package)
     }
 
-    pub fn create_group_with_id(
+    pub async fn create_group_with_id(
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -162,10 +165,11 @@ where
             signing_identity,
             group_context_extensions,
         )
+        .await
         .map_err(Into::into)
     }
 
-    pub fn create_group(
+    pub async fn create_group(
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
@@ -180,21 +184,24 @@ where
             signing_identity,
             group_context_extensions,
         )
+        .await
         .map_err(Into::into)
     }
 
     /// If `key_package` is specified, key package references listed in the welcome message will not
     /// be used to identify the key package to use.
-    pub fn join_group(
+    pub async fn join_group(
         &self,
         tree_data: Option<&[u8]>,
         welcome_message: MLSMessage,
     ) -> Result<(Group<C>, NewMemberInfo), ClientError> {
-        Group::join(welcome_message, tree_data, self.config.clone()).map_err(Into::into)
+        Group::join(welcome_message, tree_data, self.config.clone())
+            .await
+            .map_err(Into::into)
     }
 
     /// Returns group and commit MLSMessage
-    pub fn commit_external(
+    pub async fn commit_external(
         &self,
         group_info_msg: MLSMessage,
         tree_data: Option<&[u8]>,
@@ -212,6 +219,7 @@ where
             external_psks,
             authenticated_data,
         )
+        .await
         .map_err(|e| {
             if matches!(e, GroupError::UnexpectedMessageType(..)) {
                 ClientError::ExpectedGroupInfoMessage
@@ -221,7 +229,7 @@ where
         })
     }
 
-    pub fn load_group(&self, group_id: &[u8]) -> Result<Group<C>, ClientError> {
+    pub async fn load_group(&self, group_id: &[u8]) -> Result<Group<C>, ClientError> {
         let snapshot = self
             .config
             .group_state_storage()
@@ -229,10 +237,10 @@ where
             .map_err(|e| ClientError::GroupStorageError(e.into()))?
             .ok_or_else(|| ClientError::GroupNotFound(group_id.encode_hex_upper()))?;
 
-        Ok(Group::from_snapshot(self.config.clone(), snapshot)?)
+        Ok(Group::from_snapshot(self.config.clone(), snapshot).await?)
     }
 
-    pub fn external_add_proposal(
+    pub async fn external_add_proposal(
         &self,
         group_info: MLSMessage,
         tree_data: Option<&[u8]>,
@@ -264,7 +272,8 @@ where
             tree_data,
             &self.config.identity_provider(),
             &cipher_suite_provider,
-        )?
+        )
+        .await?
         .group_context;
 
         let signer = self
@@ -274,11 +283,13 @@ where
             .map_err(|e| ClientError::KeychainError(e.into()))?
             .ok_or(ClientError::SignerNotFound)?;
 
-        let key_package = self.generate_key_package(
-            protocol_version,
-            group_context.cipher_suite,
-            signing_identity,
-        )?;
+        let key_package = self
+            .generate_key_package(
+                protocol_version,
+                group_context.cipher_suite,
+                signing_identity,
+            )
+            .await?;
 
         let message = MLSAuthenticatedContent::new_signed(
             &cipher_suite_provider,
@@ -327,7 +338,7 @@ pub mod test_utils {
         (builder, signing_identity)
     }
 
-    pub fn test_client_with_key_pkg(
+    pub async fn test_client_with_key_pkg(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         identity: &str,
@@ -337,12 +348,13 @@ pub mod test_utils {
 
         let key_package = client
             .generate_key_package(protocol_version, cipher_suite, identity)
+            .await
             .unwrap();
 
         (client, key_package)
     }
 
-    pub fn join_group<'a, C, S>(
+    pub async fn join_group<'a, C, S>(
         committer: &mut Group<C>,
         other_groups: S,
         key_package: KeyPackage,
@@ -354,19 +366,25 @@ pub mod test_utils {
     {
         let commit_output = committer
             .commit_builder()
-            .add_member(key_package)?
-            .build()?;
+            .add_member(key_package)
+            .await?
+            .build()
+            .await?;
 
-        committer.apply_pending_commit()?;
+        committer.apply_pending_commit().await?;
 
         for group in other_groups {
-            group.process_incoming_message(commit_output.commit_message.clone())?;
+            group
+                .process_incoming_message(commit_output.commit_message.clone())
+                .await?;
         }
 
-        client.join_group(
-            Some(&committer.export_tree().unwrap()),
-            commit_output.welcome_message.unwrap(),
-        )
+        client
+            .join_group(
+                Some(&committer.export_tree().unwrap()),
+                commit_output.welcome_message.unwrap(),
+            )
+            .await
     }
 }
 
@@ -394,8 +412,8 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[test]
-    fn test_keygen() {
+    #[futures_test::test]
+    async fn test_keygen() {
         // This is meant to test the inputs to the internal key package generator
         // See KeyPackageGenerator tests for key generation specific tests
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
@@ -411,6 +429,7 @@ mod tests {
             // TODO: Tests around extensions
             let key_package = client
                 .generate_key_package(protocol_version, cipher_suite, identity.clone())
+                .await
                 .unwrap();
 
             assert_eq!(key_package.version, protocol_version.into());
@@ -438,9 +457,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn new_member_add_proposal_adds_to_group() {
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+    #[futures_test::test]
+    async fn new_member_add_proposal_adds_to_group() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let (bob, bob_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "bob");
 
@@ -452,11 +471,13 @@ mod tests {
                 bob_identity.clone(),
                 vec![],
             )
+            .await
             .unwrap();
 
         let message = alice_group
             .group
             .process_incoming_message(proposal)
+            .await
             .unwrap();
 
         assert_matches!(
@@ -464,8 +485,8 @@ mod tests {
             Event::Proposal((Proposal::Add(AddProposal { key_package }), _)) if key_package.leaf_node.signing_identity == bob_identity
         );
 
-        alice_group.group.commit(vec![]).unwrap();
-        alice_group.group.apply_pending_commit().unwrap();
+        alice_group.group.commit(vec![]).await.unwrap();
+        alice_group.group.apply_pending_commit().await.unwrap();
 
         // Check that the new member is in the group
         assert!(alice_group
@@ -475,7 +496,7 @@ mod tests {
             .any(|member| member.signing_identity() == &bob_identity))
     }
 
-    fn join_via_external_commit(do_remove: bool, with_psk: bool) -> Result<(), ClientError> {
+    async fn join_via_external_commit(do_remove: bool, with_psk: bool) -> Result<(), ClientError> {
         // An external commit cannot be the first commit in a group as it requires
         // interim_transcript_hash to be computed from the confirmed_transcript_hash and
         // confirmation_tag, which is not the case for the initial interim_transcript_hash.
@@ -486,12 +507,14 @@ mod tests {
         let mut alice_group =
             test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |c| {
                 c.psk(psk_id.clone(), psk.clone())
-            });
+            })
+            .await;
 
         let (mut bob_group, _) = alice_group
             .join_with_custom_config("bob", |c| {
                 c.0.psk_store.insert(psk_id.clone(), psk.clone());
             })
+            .await
             .unwrap();
 
         let group_info_msg = alice_group.group.group_info_message(true).unwrap();
@@ -502,14 +525,16 @@ mod tests {
 
         let new_client = new_client.psk(psk_id.clone(), psk).build();
 
-        let (mut new_group, external_commit) = new_client.commit_external(
-            group_info_msg,
-            Some(&alice_group.group.export_tree().unwrap()),
-            new_client_identity,
-            do_remove.then_some(1),
-            if with_psk { vec![psk_id] } else { vec![] },
-            vec![],
-        )?;
+        let (mut new_group, external_commit) = new_client
+            .commit_external(
+                group_info_msg,
+                Some(&alice_group.group.export_tree().unwrap()),
+                new_client_identity,
+                do_remove.then_some(1),
+                if with_psk { vec![psk_id] } else { vec![] },
+                vec![],
+            )
+            .await?;
 
         let num_members = if do_remove { 2 } else { 3 };
 
@@ -518,11 +543,13 @@ mod tests {
         let _ = alice_group
             .group
             .process_incoming_message(external_commit.clone())
+            .await
             .unwrap();
 
         let message = bob_group
             .group
             .process_incoming_message(external_commit)
+            .await
             .unwrap();
 
         assert!(alice_group.group.roster().len() == num_members);
@@ -540,7 +567,7 @@ mod tests {
             .encrypt_application_message(alice_msg, vec![])
             .unwrap();
 
-        let received = new_group.process_incoming_message(msg).unwrap();
+        let received = new_group.process_incoming_message(msg).await.unwrap();
         assert_matches!(received.event, Event::ApplicationMessage(bytes) if bytes == alice_msg);
 
         let new_msg = b"I'm the new guy";
@@ -549,27 +576,31 @@ mod tests {
             .encrypt_application_message(new_msg, vec![])
             .unwrap();
 
-        let received = alice_group.group.process_incoming_message(msg).unwrap();
+        let received = alice_group
+            .group
+            .process_incoming_message(msg)
+            .await
+            .unwrap();
 
         assert_matches!(received.event, Event::ApplicationMessage(bytes) if bytes == new_msg);
 
         Ok(())
     }
 
-    #[test]
-    fn test_external_commit() {
+    #[futures_test::test]
+    async fn test_external_commit() {
         // New member can join
-        join_via_external_commit(false, false).unwrap();
+        join_via_external_commit(false, false).await.unwrap();
         // New member can remove an old copy of themselves
-        join_via_external_commit(true, false).unwrap();
+        join_via_external_commit(true, false).await.unwrap();
         // New member can inject a PSK
-        join_via_external_commit(false, true).unwrap();
+        join_via_external_commit(false, true).await.unwrap();
         // All works together
-        join_via_external_commit(true, true).unwrap();
+        join_via_external_commit(true, true).await.unwrap();
     }
 
-    #[test]
-    fn creating_an_external_commit_requires_a_group_info_message() {
+    #[futures_test::test]
+    async fn creating_an_external_commit_requires_a_group_info_message() {
         let (alice, alice_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "alice");
         let alice = alice.build();
 
@@ -580,6 +611,7 @@ mod tests {
                     TEST_CIPHER_SUITE,
                     alice_identity.clone(),
                 )
+                .await
                 .unwrap(),
         );
 
@@ -587,18 +619,19 @@ mod tests {
 
         let res = alice
             .commit_external(msg, None, alice_identity, None, vec![], vec![])
+            .await
             .map(|_| ());
 
         assert_matches!(res, Err(ClientError::ExpectedGroupInfoMessage));
     }
 
-    #[test]
-    fn external_commit_with_invalid_group_info_fails() {
-        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
-        let mut bob_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE);
+    #[futures_test::test]
+    async fn external_commit_with_invalid_group_info_fails() {
+        let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+        let mut bob_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        bob_group.group.commit(vec![]).unwrap();
-        bob_group.group.apply_pending_commit().unwrap();
+        bob_group.group.commit(vec![]).await.unwrap();
+        bob_group.group.apply_pending_commit().await.unwrap();
 
         let group_info_msg = bob_group.group.group_info_message(true).unwrap();
 
@@ -614,10 +647,14 @@ mod tests {
                 vec![],
                 vec![],
             )
+            .await
             .unwrap();
 
         // If Carol tries to join Alice's group using the group info from Bob's group, that fails.
-        let res = alice_group.group.process_incoming_message(external_commit);
+        let res = alice_group
+            .group
+            .process_incoming_message(external_commit)
+            .await;
         assert_matches!(res, Err(_));
     }
 }

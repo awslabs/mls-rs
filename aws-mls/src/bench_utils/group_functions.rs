@@ -24,6 +24,7 @@ use crate::{
         key_package::InMemoryKeyPackageRepository,
     },
 };
+use futures::StreamExt;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 
@@ -39,24 +40,22 @@ pub struct TestCase {
     info: Vec<GroupInfo>,
 }
 
-fn generate_test_cases() -> Vec<TestCase> {
+async fn generate_test_cases() -> Vec<TestCase> {
     let cipher_suite = CipherSuite::Curve25519Aes128;
 
-    [10, 50, 100]
-        .into_iter()
-        .map(|length| get_group_states(cipher_suite, length))
+    futures::stream::iter([10, 50, 100])
+        .then(|length| get_group_states(cipher_suite, length))
         .collect()
+        .await
 }
 
-pub fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
-    let tests: Vec<TestCase> = load_test_cases!(group_state, generate_test_cases, to_vec);
+pub async fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
+    let tests: Vec<TestCase> = load_test_cases!(group_state, generate_test_cases().await, to_vec);
 
-    tests
-        .into_iter()
-        .map(|test| {
-            test.info
-                .into_iter()
-                .map(|group_info| {
+    futures::stream::iter(tests)
+        .then(|test| {
+            futures::stream::iter(test.info)
+                .then(|group_info| async move {
                     let key_packages = serde_json::from_slice::<
                         Vec<(KeyPackageRef, KeyPackageGeneration)>,
                     >(&group_info.key_packages)
@@ -93,15 +92,17 @@ pub fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
                         ))
                         .build()
                         .load_group(&group_id)
+                        .await
                         .unwrap()
                 })
                 .collect()
         })
         .collect()
+        .await
 }
 
 // creates group modifying code found in client.rs
-pub fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<TestClientConfig>> {
+pub async fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<TestClientConfig>> {
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     pub const TEST_GROUP: &[u8] = b"group";
 
@@ -123,21 +124,24 @@ pub fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<TestCli
             alice_identity,
             ExtensionList::new(),
         )
+        .await
         .unwrap();
 
     let mut groups = vec![alice_group];
 
-    (0..size - 1).for_each(|n| {
+    for n in 0..size - 1 {
         let (committer_group, other_groups) = groups.split_first_mut().unwrap();
 
         let (bob, bob_key_pkg) =
-            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, cipher_suite, &format!("bob{n}"));
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, cipher_suite, &format!("bob{n}")).await;
 
         let (bob_group, _) =
-            join_group(committer_group, other_groups.iter_mut(), bob_key_pkg, &bob).unwrap();
+            join_group(committer_group, other_groups.iter_mut(), bob_key_pkg, &bob)
+                .await
+                .unwrap();
 
         groups.push(bob_group);
-    });
+    }
 
     groups
 }
@@ -149,8 +153,8 @@ where
     serde_json::to_vec(&group.snapshot())
 }
 
-fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
-    let mut groups = create_group(cipher_suite, size);
+async fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
+    let mut groups = create_group(cipher_suite, size).await;
 
     groups
         .iter_mut()
@@ -188,26 +192,29 @@ fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
     TestCase { info }
 }
 
-pub fn commit_groups<C: ClientConfig>(mut container: Vec<Vec<Group<C>>>) -> Vec<Vec<Group<C>>> {
+pub async fn commit_groups<C: ClientConfig>(
+    mut container: Vec<Vec<Group<C>>>,
+) -> Vec<Vec<Group<C>>> {
     for value in &mut container {
-        commit_group(value);
+        commit_group(value).await;
     }
 
     container
 }
 
-pub fn commit_group<C: ClientConfig>(container: &mut [Group<C>]) {
+pub async fn commit_group<C: ClientConfig>(container: &mut [Group<C>]) {
     for committer_index in 0..container.len() {
         let commit = container[committer_index]
             .commit(Vec::new())
+            .await
             .unwrap()
             .commit_message;
 
         for (index, bob) in container.iter_mut().enumerate() {
             if index == committer_index {
-                bob.apply_pending_commit().unwrap();
+                bob.apply_pending_commit().await.unwrap();
             } else {
-                bob.process_incoming_message(commit.clone()).unwrap();
+                bob.process_incoming_message(commit.clone()).await.unwrap();
             }
         }
     }

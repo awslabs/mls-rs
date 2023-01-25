@@ -735,7 +735,7 @@ mod tests {
     }
 
     fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(secret_tree, generate_secret_tree_test_vectors)
+        load_test_cases!(secret_tree, generate_secret_tree_test_vectors())
     }
 
     #[test]

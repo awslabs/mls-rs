@@ -20,7 +20,7 @@ macro_rules! load_test_cases {
     ($name:ident, $generate:expr, $to_json:ident) => {{
         #[cfg(target_arch = "wasm32")]
         {
-            let _ = $generate;
+            let _ = async { $generate };
             serde_json::from_slice(include_bytes!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/test_data/",
@@ -39,7 +39,7 @@ macro_rules! load_test_cases {
                 ".json"
             );
             if !std::path::Path::new(path).exists() {
-                std::fs::write(path, serde_json::$to_json(&$generate()).unwrap()).unwrap();
+                std::fs::write(path, serde_json::$to_json(&$generate).unwrap()).unwrap();
             }
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
         }

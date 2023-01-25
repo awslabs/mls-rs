@@ -46,7 +46,7 @@ pub(crate) struct JoinContext {
     pub signer_index: LeafIndex,
 }
 
-pub(crate) fn process_group_info<I, C>(
+pub(crate) async fn process_group_info<I, C>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
     tree_data: Option<&[u8]>,
@@ -75,7 +75,7 @@ where
 
     let ratchet_tree_ext = group_info.extensions.get_extension::<RatchetTreeExt>()?;
 
-    let public_tree = find_tree(tree_data, ratchet_tree_ext, identity_provider)?;
+    let public_tree = find_tree(tree_data, ratchet_tree_ext, identity_provider).await?;
 
     let sender_key_package = public_tree.get_leaf_node(group_info.signer)?;
 
@@ -107,7 +107,7 @@ where
     })
 }
 
-pub(super) fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
+pub(super) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
     tree_data: Option<&[u8]>,
@@ -120,7 +120,8 @@ pub(super) fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
         tree_data,
         identity_provider,
         cipher_suite_provider,
-    )?;
+    )
+    .await?;
 
     let required_capabilities = join_context.group_context.extensions.get_extension()?;
 
@@ -133,7 +134,9 @@ pub(super) fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
         identity_provider,
     );
 
-    tree_validator.validate(&mut join_context.public_tree)?;
+    tree_validator
+        .validate(&mut join_context.public_tree)
+        .await?;
 
     if let Some(ext_senders) = join_context
         .group_context
@@ -143,16 +146,17 @@ pub(super) fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
         // TODO do joiners verify group against current time??
         ext_senders
             .verify_all(&identity_provider, None)
+            .await
             .map_err(|e| GroupError::IdentityProviderError(e.into()))?;
     }
 
     Ok(join_context)
 }
 
-pub(super) fn find_tree<C>(
+pub(super) async fn find_tree<C>(
     tree_data: Option<&[u8]>,
     extension: Option<RatchetTreeExt>,
-    identity_provider: C,
+    identity_provider: &C,
 ) -> Result<TreeKemPublic, GroupError>
 where
     C: IdentityProvider,
@@ -161,14 +165,15 @@ where
         Some(tree_data) => Ok(TreeKemPublic::import_node_data(
             NodeVec::tls_deserialize(&mut &*tree_data)?,
             identity_provider,
-        )?),
+        )
+        .await?),
         None => {
             let tree_extension = extension.ok_or(GroupError::RatchetTreeNotFound)?;
 
-            Ok(TreeKemPublic::import_node_data(
-                tree_extension.tree_data,
-                identity_provider,
-            )?)
+            Ok(
+                TreeKemPublic::import_node_data(tree_extension.tree_data, identity_provider)
+                    .await?,
+            )
         }
     }
 }
@@ -190,7 +195,7 @@ pub(super) fn commit_sender(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn proposal_effects<C, F, P, CSP>(
+pub(super) async fn proposal_effects<C, F, P, CSP>(
     commit_receiver: Option<LeafIndex>,
     proposals: &ProposalCache,
     commit: &Commit,
@@ -209,19 +214,21 @@ where
     P: ExternalPskIdValidator,
     CSP: CipherSuiteProvider,
 {
-    proposals.resolve_for_commit(
-        sender.clone(),
-        commit_receiver,
-        commit.proposals.clone(),
-        commit.path.as_ref().map(|path| &path.leaf_node),
-        group_extensions,
-        identity_provider,
-        cipher_suite_provider,
-        public_tree,
-        external_psk_id_validator,
-        user_filter,
-        commit_time,
-    )
+    proposals
+        .resolve_for_commit(
+            sender.clone(),
+            commit_receiver,
+            commit.proposals.clone(),
+            commit.path.as_ref().map(|path| &path.leaf_node),
+            group_extensions,
+            identity_provider,
+            cipher_suite_provider,
+            public_tree,
+            external_psk_id_validator,
+            user_filter,
+            commit_time,
+        )
+        .await
 }
 
 pub(super) fn transcript_hashes<P: CipherSuiteProvider>(

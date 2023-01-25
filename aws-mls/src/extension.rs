@@ -6,6 +6,7 @@ use crate::tls::ReadWithCount;
 use crate::tree_kem::node::NodeVec;
 use crate::{identity::CredentialType, identity::SigningIdentity};
 use aws_mls_core::identity::IdentityProvider;
+use futures::TryStreamExt;
 use serde_with::serde_as;
 use std::fmt::Debug;
 use std::io::{Read, Write};
@@ -143,14 +144,14 @@ impl ExternalSendersExt {
         Self { allowed_senders }
     }
 
-    pub fn verify_all<I: IdentityProvider>(
+    pub async fn verify_all<I: IdentityProvider>(
         &self,
         provider: &I,
         timestamp: Option<MlsTime>,
     ) -> Result<(), I::Error> {
-        self.allowed_senders
-            .iter()
+        futures::stream::iter(self.allowed_senders.iter().map(Ok))
             .try_for_each(|id| provider.validate(id, timestamp))
+            .await
     }
 }
 

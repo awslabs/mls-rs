@@ -1,17 +1,3 @@
-use aws_mls_core::{group::RosterUpdate, identity::IdentityProvider};
-
-use crate::{
-    client_config::ProposalFilterInit,
-    key_package::KeyPackage,
-    provider::crypto::CipherSuiteProvider,
-    psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
-    time::MlsTime,
-    tree_kem::{
-        leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, validate_update_path,
-        TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
-    },
-};
-
 use super::{
     commit_sender,
     confirmation_tag::ConfirmationTag,
@@ -27,6 +13,19 @@ use super::{
     transcript_hash::InterimTranscriptHash,
     transcript_hashes, GroupContext, GroupError, Member, ProposalFilter, ProposalRef,
 };
+use crate::{
+    client_config::ProposalFilterInit,
+    key_package::KeyPackage,
+    provider::crypto::CipherSuiteProvider,
+    psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
+    time::MlsTime,
+    tree_kem::{
+        leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, validate_update_path,
+        TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
+    },
+};
+use async_trait::async_trait;
+use aws_mls_core::{group::RosterUpdate, identity::IdentityProvider};
 
 #[derive(Debug)]
 pub(crate) struct ProvisionalState {
@@ -125,25 +124,28 @@ pub(crate) enum EventOrContent<E> {
     Content(MLSAuthenticatedContent),
 }
 
-pub(crate) trait MessageProcessor {
+#[async_trait]
+pub(crate) trait MessageProcessor: Send + Sync {
     type EventType: From<(Proposal, ProposalRef)>
         + TryFrom<ApplicationData, Error = GroupError>
-        + From<StateUpdate<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>>;
+        + From<StateUpdate<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>>
+        + Send;
 
     type ProposalFilter: ProposalFilter;
     type IdentityProvider: IdentityProvider;
     type CipherSuiteProvider: CipherSuiteProvider;
     type ExternalPskIdValidator: ExternalPskIdValidator;
 
-    fn process_incoming_message(
+    async fn process_incoming_message(
         &mut self,
         message: MLSMessage,
         cache_proposal: bool,
     ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
         self.process_incoming_message_with_time(message, cache_proposal, None)
+            .await
     }
 
-    fn process_incoming_message_with_time(
+    async fn process_incoming_message_with_time(
         &mut self,
         message: MLSMessage,
         cache_proposal: bool,
@@ -165,14 +167,15 @@ pub(crate) trait MessageProcessor {
         let msg = match event_or_content {
             EventOrContent::Event(event) => ProcessedMessage::from(event),
             EventOrContent::Content(content) => {
-                self.process_auth_content(content, cache_proposal, time_sent)?
+                self.process_auth_content(content, cache_proposal, time_sent)
+                    .await?
             }
         };
 
         Ok(msg)
     }
 
-    fn process_auth_content(
+    async fn process_auth_content(
         &mut self,
         auth_content: MLSAuthenticatedContent,
         cache_proposal: bool,
@@ -186,6 +189,7 @@ pub(crate) trait MessageProcessor {
             Content::Application(data) => Self::EventType::try_from(data),
             Content::Commit(_) => self
                 .process_commit(auth_content, time_sent)
+                .await
                 .map(Self::EventType::from),
             Content::Proposal(ref proposal) => self
                 .process_proposal(&auth_content, proposal, cache_proposal)
@@ -220,7 +224,7 @@ pub(crate) trait MessageProcessor {
         Ok(proposal_ref)
     }
 
-    fn make_state_update(
+    async fn make_state_update(
         &self,
         provisional: &ProvisionalState,
         path: Option<&UpdatePath>,
@@ -268,6 +272,7 @@ pub(crate) trait MessageProcessor {
         let identity_events = self
             .identity_provider()
             .identity_events(&roster_update, self.group_state().roster())
+            .await
             .map_err(|e| GroupError::IdentityProviderError(e.into()))?;
 
         let update = StateUpdate {
@@ -283,7 +288,7 @@ pub(crate) trait MessageProcessor {
         Ok(update)
     }
 
-    fn process_commit(
+    async fn process_commit(
         &mut self,
         auth_content: MLSAuthenticatedContent,
         time_sent: Option<MlsTime>,
@@ -311,14 +316,16 @@ pub(crate) trait MessageProcessor {
             self.external_psk_id_validator(),
             self.proposal_filter(ProposalFilterInit::new(auth_content.content.sender.clone())),
             time_sent,
-        )?;
+        )
+        .await?;
 
         let mut provisional_state = self.calculate_provisional_state(proposal_effects)?;
 
         let sender = commit_sender(&auth_content.content.sender, &provisional_state)?;
 
-        let mut state_update =
-            self.make_state_update(&provisional_state, commit.path.as_ref(), sender)?;
+        let mut state_update = self
+            .make_state_update(&provisional_state, commit.path.as_ref(), sender)
+            .await?;
 
         //Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
@@ -337,29 +344,29 @@ pub(crate) trait MessageProcessor {
             return Ok(state_update);
         }
 
-        let update_path = commit
-            .path
-            .as_ref()
-            .map(|update_path| {
-                validate_update_path(
-                    &self.identity_provider(),
-                    self.cipher_suite_provider(),
-                    update_path,
-                    &provisional_state,
-                    sender,
-                    time_sent,
-                )
-            })
-            .transpose()?;
+        let update_path = match commit.path.as_ref() {
+            Some(update_path) => validate_update_path(
+                &self.identity_provider(),
+                self.cipher_suite_provider(),
+                update_path,
+                &provisional_state,
+                sender,
+                time_sent,
+            )
+            .await
+            .map(Some),
+            None => Ok(None),
+        }?;
 
         provisional_state.group_context.epoch = provisional_state.epoch;
 
-        let new_secrets = update_path
-            .and_then(|update_path| {
+        let new_secrets = match update_path {
+            Some(update_path) => {
                 self.apply_update_path(sender, update_path, &mut provisional_state)
-                    .transpose()
-            })
-            .transpose()?;
+                    .await
+            }
+            None => Ok(None),
+        }?;
 
         // Update the new GroupContext's confirmed and interim transcript hashes using the new Commit.
         let (interim_transcript_hash, confirmed_transcript_hash) = transcript_hashes(
@@ -525,7 +532,7 @@ pub(crate) trait MessageProcessor {
         })
     }
 
-    fn apply_update_path(
+    async fn apply_update_path(
         &mut self,
         sender: LeafIndex,
         update_path: ValidatedUpdatePath,
@@ -539,6 +546,7 @@ pub(crate) trait MessageProcessor {
                 self.identity_provider(),
                 self.cipher_suite_provider(),
             )
+            .await
             .map(|_| None)
             .map_err(Into::into)
     }

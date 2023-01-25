@@ -1,12 +1,10 @@
 use aws_mls::bench_utils::group_functions::load_test_cases;
-
+use aws_mls::cipher_suite::CipherSuite;
+use aws_mls::group::secret_tree::SecretTree;
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 };
-
-use aws_mls::group::secret_tree::SecretTree;
-
-use aws_mls::cipher_suite::CipherSuite;
+use futures::executor::block_on;
 
 fn secret_tree_setup(c: &mut Criterion) {
     let mut secret_tree_group = c.benchmark_group("secret_tree_serialize");
@@ -15,7 +13,7 @@ fn secret_tree_setup(c: &mut Criterion) {
 
     println!("Benchmarking secret tree serialization for: {cipher_suite:?}");
 
-    let container = load_test_cases();
+    let container = block_on(load_test_cases());
 
     for groups in container {
         bench_secret_tree_serialize(

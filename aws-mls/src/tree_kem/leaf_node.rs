@@ -87,7 +87,7 @@ pub struct ConfigProperties {
 }
 
 impl LeafNode {
-    fn check_signing_identity<I, CSP>(
+    async fn check_signing_identity<I, CSP>(
         signing_identity: &SigningIdentity,
         signer: &SignatureSecretKey,
         identity_provider: &I,
@@ -107,10 +107,11 @@ impl LeafNode {
 
         identity_provider
             .validate(signing_identity, Some(MlsTime::now()))
+            .await
             .map_err(|e| LeafNodeError::IdentityProviderError(e.into()))
     }
 
-    pub fn generate<IP, CSP>(
+    pub async fn generate<IP, CSP>(
         cipher_suite_provider: &CSP,
         properties: ConfigProperties,
         signing_identity: SigningIdentity,
@@ -127,7 +128,8 @@ impl LeafNode {
             signer,
             identity_provider,
             cipher_suite_provider,
-        )?;
+        )
+        .await?;
 
         let (secret_key, public_key) = cipher_suite_provider
             .kem_generate()
@@ -318,7 +320,7 @@ pub mod test_utils {
 
     use super::*;
 
-    pub fn get_test_node(
+    pub async fn get_test_node(
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
         secret: &SignatureSecretKey,
@@ -333,9 +335,10 @@ pub mod test_utils {
             extensions.unwrap_or_default(),
             Lifetime::years(1).unwrap(),
         )
+        .await
     }
 
-    pub fn get_test_node_with_lifetime(
+    pub async fn get_test_node_with_lifetime(
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
         secret: &SignatureSecretKey,
@@ -356,11 +359,12 @@ pub mod test_utils {
             lifetime,
             &BasicIdentityProvider::new(),
         )
+        .await
         .unwrap()
     }
 
-    pub fn get_basic_test_node(cipher_suite: CipherSuite, id: &str) -> LeafNode {
-        get_basic_test_node_sig_key(cipher_suite, id).0
+    pub async fn get_basic_test_node(cipher_suite: CipherSuite, id: &str) -> LeafNode {
+        get_basic_test_node_sig_key(cipher_suite, id).await.0
     }
 
     pub fn default_properties() -> ConfigProperties {
@@ -370,7 +374,7 @@ pub mod test_utils {
         }
     }
 
-    pub fn get_basic_test_node_sig_key(
+    pub async fn get_basic_test_node_sig_key(
         cipher_suite: CipherSuite,
         id: &str,
     ) -> (LeafNode, HpkeSecretKey, SignatureSecretKey) {
@@ -385,6 +389,7 @@ pub mod test_utils {
             Lifetime::years(1).unwrap(),
             &BasicIdentityProvider::new(),
         )
+        .await
         .map(|(leaf, hpke_secret_key)| (leaf, hpke_secret_key, signature_key))
         .unwrap()
     }
@@ -440,8 +445,8 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[test]
-    fn test_node_generation() {
+    #[futures_test::test]
+    async fn test_node_generation() {
         let capabilities = get_test_capabilities();
         let extensions = get_test_extensions();
         let lifetime = Lifetime::years(1).unwrap();
@@ -457,7 +462,8 @@ mod tests {
                 capabilities.clone(),
                 extensions.clone(),
                 lifetime.clone(),
-            );
+            )
+            .await;
 
             assert_eq!(leaf_node.capabilities, capabilities);
             assert_eq!(leaf_node.extensions, extensions);
@@ -493,8 +499,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_credential_signature_mismatch() {
+    #[futures_test::test]
+    async fn test_credential_signature_mismatch() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let (test_signing_identity, _) =
@@ -509,13 +515,14 @@ mod tests {
             &incorrect_secret,
             Lifetime::years(1).unwrap(),
             &BasicIdentityProvider::new(),
-        );
+        )
+        .await;
 
         assert_matches!(res, Err(LeafNodeError::InvalidSignerPublicKey));
     }
 
-    #[test]
-    fn test_identity_invalid_for_ciphersuite() {
+    #[futures_test::test]
+    async fn test_identity_invalid_for_ciphersuite() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
         let (test_signing_identity, signer) =
@@ -528,13 +535,14 @@ mod tests {
             &signer,
             Lifetime::years(1).unwrap(),
             &BasicIdentityProvider::new(),
-        );
+        )
+        .await;
 
         assert_matches!(res, Err(LeafNodeError::InvalidSignerPublicKey));
     }
 
-    #[test]
-    fn invalid_credential_for_application() {
+    #[futures_test::test]
+    async fn invalid_credential_for_application() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let (test_signing_identity, signer) =
@@ -547,31 +555,32 @@ mod tests {
             &signer,
             Lifetime::years(1).unwrap(),
             &FailureIdentityProvider,
-        );
+        )
+        .await;
 
         assert_matches!(res, Err(LeafNodeError::IdentityProviderError(_)));
     }
 
-    #[test]
-    fn test_node_generation_randomness() {
+    #[futures_test::test]
+    async fn test_node_generation_randomness() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
         let (first_leaf, first_secret) =
-            get_test_node(cipher_suite, signing_identity.clone(), &secret, None, None);
+            get_test_node(cipher_suite, signing_identity.clone(), &secret, None, None).await;
 
         for _ in 0..100 {
             let (next_leaf, next_secret) =
-                get_test_node(cipher_suite, signing_identity.clone(), &secret, None, None);
+                get_test_node(cipher_suite, signing_identity.clone(), &secret, None, None).await;
 
             assert_ne!(first_secret, next_secret);
             assert_ne!(first_leaf.public_key, next_leaf.public_key);
         }
     }
 
-    #[test]
-    fn test_node_update_no_meta_changes() {
+    #[futures_test::test]
+    async fn test_node_update_no_meta_changes() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
@@ -579,7 +588,7 @@ mod tests {
                 get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
             let (mut leaf, leaf_secret) =
-                get_test_node(cipher_suite, signing_identity.clone(), &secret, None, None);
+                get_test_node(cipher_suite, signing_identity.clone(), &secret, None, None).await;
 
             let original_leaf = leaf.clone();
 
@@ -611,8 +620,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_node_update_meta_changes() {
+    #[futures_test::test]
+    async fn test_node_update_meta_changes() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
@@ -622,7 +631,8 @@ mod tests {
             extensions: get_test_extensions(),
         };
 
-        let (mut leaf, _) = get_test_node(cipher_suite, signing_identity, &secret, None, None);
+        let (mut leaf, _) =
+            get_test_node(cipher_suite, signing_identity, &secret, None, None).await;
 
         leaf.update(
             &test_cipher_suite_provider(cipher_suite),
@@ -638,8 +648,8 @@ mod tests {
         assert_eq!(leaf.extensions, new_properties.extensions);
     }
 
-    #[test]
-    fn test_node_commit_no_meta_changes() {
+    #[futures_test::test]
+    async fn test_node_commit_no_meta_changes() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
@@ -647,7 +657,7 @@ mod tests {
                 get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
             let (mut leaf, leaf_secret) =
-                get_test_node(cipher_suite, signing_identity.clone(), &secret, None, None);
+                get_test_node(cipher_suite, signing_identity.clone(), &secret, None, None).await;
 
             let original_leaf = leaf.clone();
 
@@ -682,12 +692,13 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_node_commit_meta_changes() {
+    #[futures_test::test]
+    async fn test_node_commit_meta_changes() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
 
         let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
-        let (mut leaf, _) = get_test_node(cipher_suite, signing_identity, &secret, None, None);
+        let (mut leaf, _) =
+            get_test_node(cipher_suite, signing_identity, &secret, None, None).await;
 
         let new_properties = ConfigProperties {
             capabilities: get_test_capabilities(),
@@ -715,8 +726,8 @@ mod tests {
         assert_eq!(leaf.signing_identity, new_signing_identity);
     }
 
-    #[test]
-    fn context_is_signed() {
+    #[futures_test::test]
+    async fn context_is_signed() {
         let provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let (signing_identity, secret) =
@@ -728,7 +739,8 @@ mod tests {
             &secret,
             None,
             None,
-        );
+        )
+        .await;
 
         leaf.sign(&provider, &secret, &(b"foo".as_slice(), 0).into())
             .unwrap();

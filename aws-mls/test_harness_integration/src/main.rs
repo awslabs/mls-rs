@@ -27,7 +27,7 @@ use clap::Parser;
 use std::convert::TryFrom;
 use std::net::IpAddr;
 use std::ops::Deref;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 use tonic::{transport::Server, Code::Aborted, Request, Response, Status};
 
 use mls_client::mls_client_server::{MlsClient, MlsClientServer};
@@ -261,9 +261,10 @@ impl MlsClient for MlsClientImpl {
                 signing_identity,
                 ExtensionList::default(),
             )
+            .await
             .map_err(abort)?;
 
-        let mut groups = self.groups.lock().unwrap();
+        let mut groups = self.groups.lock().await;
         groups.push(GroupDetails { group, psk_store });
 
         Ok(Response::new(CreateGroupResponse {
@@ -276,7 +277,7 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<CreateKeyPackageRequest>,
     ) -> Result<tonic::Response<CreateKeyPackageResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let mut clients = self.clients.lock().unwrap();
+        let mut clients = self.clients.lock().await;
 
         let cipher_suite = MaybeCipherSuite::from_raw_value(request_ref.cipher_suite as u16)
             .into_enum()
@@ -308,6 +309,7 @@ impl MlsClient for MlsClientImpl {
 
         let key_package = client
             .generate_key_package(ProtocolVersion::Mls10, cipher_suite, signing_identity)
+            .await
             .map_err(abort)?;
 
         clients.push(ClientDetails { client, psk_store });
@@ -325,7 +327,7 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<JoinGroupRequest>,
     ) -> Result<tonic::Response<JoinGroupResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let clients = self.clients.lock().unwrap();
+        let clients = self.clients.lock().await;
         let client_index = request_ref.transaction_id as usize - 1;
 
         let welcome_msg = MLSMessage::tls_deserialize(&mut &*request_ref.welcome).map_err(abort)?;
@@ -333,9 +335,10 @@ impl MlsClient for MlsClientImpl {
         let (group, _) = clients[client_index]
             .client
             .join_group(None, welcome_msg)
+            .await
             .map_err(abort)?;
 
-        let mut groups = self.groups.lock().unwrap();
+        let mut groups = self.groups.lock().await;
 
         groups.push(GroupDetails {
             group,
@@ -384,7 +387,7 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<ProtectRequest>,
     ) -> Result<tonic::Response<ProtectResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let mut groups = self.groups.lock().unwrap();
+        let mut groups = self.groups.lock().await;
 
         let ciphertext = groups
             .get_mut(request_ref.state_id as usize - 1)
@@ -402,7 +405,7 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<UnprotectRequest>,
     ) -> Result<tonic::Response<UnprotectResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let mut groups = self.groups.lock().unwrap();
+        let mut groups = self.groups.lock().await;
 
         let ciphertext =
             MLSMessage::tls_deserialize(&mut &*request_ref.ciphertext).map_err(abort)?;
@@ -412,6 +415,7 @@ impl MlsClient for MlsClientImpl {
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
             .group
             .process_incoming_message(ciphertext)
+            .await
             .map_err(abort)?;
 
         let application_data = match message.event {
@@ -436,7 +440,7 @@ impl MlsClient for MlsClientImpl {
         let _ = self
             .groups
             .lock()
-            .unwrap()
+            .await
             .get_mut(request_ref.state_id as usize - 1)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
             .psk_store
@@ -453,7 +457,7 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<AddProposalRequest>,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let mut groups = self.groups.lock().unwrap();
+        let mut groups = self.groups.lock().await;
 
         let group = &mut groups
             .get_mut(request_ref.state_id as usize - 1)
@@ -465,6 +469,7 @@ impl MlsClient for MlsClientImpl {
 
         let proposal_packet = group
             .propose_add(key_package, vec![])
+            .await
             .and_then(|m| Ok(m.tls_serialize_detached()?))
             .map_err(abort)?;
 
@@ -478,7 +483,7 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<UpdateProposalRequest>,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let mut groups = self.groups.lock().unwrap();
+        let mut groups = self.groups.lock().await;
 
         let group = &mut groups
             .get_mut(request_ref.state_id as usize - 1)
@@ -500,7 +505,7 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<RemoveProposalRequest>,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
         let request_ref = request.get_ref();
-        let mut groups = self.groups.lock().unwrap();
+        let mut groups = self.groups.lock().await;
 
         let removed = groups
             .get(request_ref.removed as usize - 1)
@@ -528,7 +533,7 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<PskProposalRequest>,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
         let request_ref = request.into_inner();
-        let mut groups = self.groups.lock().unwrap();
+        let mut groups = self.groups.lock().await;
 
         let group = &mut groups
             .get_mut(request_ref.state_id as usize - 1)
@@ -558,7 +563,7 @@ impl MlsClient for MlsClientImpl {
         request: tonic::Request<GroupContextExtensionsProposalRequest>,
     ) -> Result<tonic::Response<ProposalResponse>, tonic::Status> {
         let request_ref = request.into_inner();
-        let mut groups = self.groups.lock().unwrap();
+        let mut groups = self.groups.lock().await;
 
         let extensions = request_ref
             .extension_type
@@ -590,7 +595,7 @@ impl MlsClient for MlsClientImpl {
     ) -> Result<tonic::Response<CommitResponse>, tonic::Status> {
         let request_ref = request.get_ref();
         let group_index = request_ref.state_id as usize - 1;
-        let mut groups = self.groups.lock().unwrap();
+        let mut groups = self.groups.lock().await;
 
         for proposal_bytes in &request_ref.by_reference {
             let proposal =
@@ -601,6 +606,7 @@ impl MlsClient for MlsClientImpl {
                 .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
                 .group
                 .process_incoming_message(proposal)
+                .await
                 .map_err(abort)?;
         }
 
@@ -611,6 +617,7 @@ impl MlsClient for MlsClientImpl {
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
             .group
             .commit(vec![])
+            .await
             .map_err(abort)?;
 
         let resp = CommitResponse {
@@ -635,7 +642,7 @@ impl MlsClient for MlsClientImpl {
     ) -> Result<tonic::Response<HandleCommitResponse>, tonic::Status> {
         let request_ref = request.get_ref();
         let group_index = request_ref.state_id as usize - 1;
-        let mut groups = self.groups.lock().unwrap();
+        let mut groups = self.groups.lock().await;
 
         for proposal in &request_ref.proposal {
             let proposal = MLSMessage::tls_deserialize(&mut proposal.deref()).map_err(abort)?;
@@ -645,6 +652,7 @@ impl MlsClient for MlsClientImpl {
                 .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
                 .group
                 .process_incoming_message(proposal)
+                .await
                 .map_err(abort)?;
         }
 
@@ -655,6 +663,7 @@ impl MlsClient for MlsClientImpl {
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
             .group
             .process_incoming_message(commit)
+            .await
             .map_err(abort)?;
 
         match message.event {
@@ -671,13 +680,14 @@ impl MlsClient for MlsClientImpl {
     ) -> Result<tonic::Response<HandleCommitResponse>, tonic::Status> {
         let request_ref = request.get_ref();
         let group_index = request_ref.state_id as usize - 1;
-        let mut groups = self.groups.lock().unwrap();
+        let mut groups = self.groups.lock().await;
 
         let state_update = groups
             .get_mut(group_index)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
             .group
             .apply_pending_commit()
+            .await
             .map_err(abort)?;
 
         Ok(Response::new(

@@ -82,15 +82,16 @@ mod tests {
 
     use super::build_ascii_tree;
 
-    #[test]
-    fn print_fully_populated_tree() {
+    #[futures_test::test]
+    async fn print_fully_populated_tree() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
-        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+            .await
             .unwrap();
 
         let tree_str = concat!(
@@ -106,16 +107,17 @@ mod tests {
         assert_eq!(tree_str, build_ascii_tree(&tree.nodes));
     }
 
-    #[test]
-    fn print_tree_blank_leaves() {
+    #[futures_test::test]
+    async fn print_tree_blank_leaves() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
-        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         let to_remove = tree
             .add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+            .await
             .unwrap()[0];
 
         tree.remove_leaves(
@@ -123,6 +125,7 @@ mod tests {
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
         let tree_str = concat!(
@@ -138,19 +141,20 @@ mod tests {
         assert_eq!(tree_str, build_ascii_tree(&tree.nodes));
     }
 
-    #[test]
-    fn print_tree_unmerged_leaves_on_parent() {
+    #[futures_test::test]
+    async fn print_tree_unmerged_leaves_on_parent() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
-        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         tree.add_leaves(
             [key_packages[0].clone(), key_packages[1].clone()].to_vec(),
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
         tree.nodes[3] = Parent {
@@ -165,6 +169,7 @@ mod tests {
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
         let tree_str = concat!(

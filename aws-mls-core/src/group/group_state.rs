@@ -7,7 +7,7 @@ pub trait EpochRecord {
 }
 
 /// Group state storage
-pub trait GroupStateStorage {
+pub trait GroupStateStorage: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>

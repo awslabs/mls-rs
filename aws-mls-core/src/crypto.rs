@@ -144,8 +144,8 @@ impl Deref for SignatureSecretKey {
     }
 }
 
-pub trait CryptoProvider {
-    type CipherSuiteProvider: CipherSuiteProvider + Clone + Send + Sync;
+pub trait CryptoProvider: Send + Sync {
+    type CipherSuiteProvider: CipherSuiteProvider + Clone;
 
     fn supported_cipher_suites(&self) -> Vec<CipherSuite>;
 
@@ -153,7 +153,7 @@ pub trait CryptoProvider {
         -> Option<Self::CipherSuiteProvider>;
 }
 
-pub trait CipherSuiteProvider {
+pub trait CipherSuiteProvider: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
     type HpkeContext: HpkeContext + Send + Sync;
 

@@ -57,7 +57,7 @@ pub struct ValidatedUpdatePath {
     pub nodes: Vec<UpdatePathNode>,
 }
 
-pub(crate) fn validate_update_path<C: IdentityProvider, CSP: CipherSuiteProvider>(
+pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuiteProvider>(
     identity_provider: &C,
     cipher_suite_provider: &CSP,
     path: &UpdatePath,
@@ -73,20 +73,24 @@ pub(crate) fn validate_update_path<C: IdentityProvider, CSP: CipherSuiteProvider
         identity_provider,
     );
 
-    leaf_validator.check_if_valid(
-        &path.leaf_node,
-        ValidationContext::Commit((&state.group_context.group_id, *sender, commit_time)),
-    )?;
+    leaf_validator
+        .check_if_valid(
+            &path.leaf_node,
+            ValidationContext::Commit((&state.group_context.group_id, *sender, commit_time)),
+        )
+        .await?;
 
     let existing_leaf = state.public_tree.nodes.borrow_as_leaf(sender)?;
     let original_leaf_node = existing_leaf.clone();
 
     let original_identity = identity_provider
         .identity(&original_leaf_node.signing_identity)
+        .await
         .map_err(|e| UpdatePathValidationError::CredentialValidationError(e.into()))?;
 
     let updated_identity = identity_provider
         .identity(&path.leaf_node.signing_identity)
+        .await
         .map_err(|e| UpdatePathValidationError::CredentialValidationError(e.into()))?;
 
     (state.external_init.is_some() || original_identity == updated_identity)
@@ -139,8 +143,8 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    fn test_update_path(cipher_suite: CipherSuite, cred: &str) -> UpdatePath {
-        let (mut leaf_node, _, signer) = get_basic_test_node_sig_key(cipher_suite, cred);
+    async fn test_update_path(cipher_suite: CipherSuite, cred: &str) -> UpdatePath {
+        let (mut leaf_node, _, signer) = get_basic_test_node_sig_key(cipher_suite, cred).await;
 
         leaf_node
             .commit(
@@ -168,15 +172,16 @@ mod tests {
         }
     }
 
-    fn test_provisional_state(cipher_suite: CipherSuite) -> ProvisionalState {
-        let mut tree = get_test_tree(cipher_suite).public;
-        let leaf_nodes = get_test_leaf_nodes(cipher_suite);
+    async fn test_provisional_state(cipher_suite: CipherSuite) -> ProvisionalState {
+        let mut tree = get_test_tree(cipher_suite).await.public;
+        let leaf_nodes = get_test_leaf_nodes(cipher_suite).await;
 
         tree.add_leaves(
             leaf_nodes,
             BasicIdentityProvider::new(),
             &test_cipher_suite_provider(cipher_suite),
         )
+        .await
         .unwrap();
 
         ProvisionalState {
@@ -194,39 +199,41 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_valid_leaf_node() {
+    #[futures_test::test]
+    async fn test_valid_leaf_node() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-        let update_path = test_update_path(TEST_CIPHER_SUITE, "creator");
+        let update_path = test_update_path(TEST_CIPHER_SUITE, "creator").await;
 
         let validated = validate_update_path(
             &BasicIdentityProvider::new(),
             &cipher_suite_provider,
             &update_path,
-            &test_provisional_state(TEST_CIPHER_SUITE),
+            &test_provisional_state(TEST_CIPHER_SUITE).await,
             LeafIndex(0),
             None,
         )
+        .await
         .unwrap();
 
         assert_eq!(validated.nodes, update_path.nodes);
         assert_eq!(validated.leaf_node, update_path.leaf_node);
     }
 
-    #[test]
-    fn test_invalid_key_package() {
+    #[futures_test::test]
+    async fn test_invalid_key_package() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-        let mut update_path = test_update_path(TEST_CIPHER_SUITE, "creator");
+        let mut update_path = test_update_path(TEST_CIPHER_SUITE, "creator").await;
         update_path.leaf_node.signature = random_bytes(32);
 
         let validated = validate_update_path(
             &BasicIdentityProvider::new(),
             &cipher_suite_provider,
             &update_path,
-            &test_provisional_state(TEST_CIPHER_SUITE),
+            &test_provisional_state(TEST_CIPHER_SUITE).await,
             LeafIndex(0),
             None,
-        );
+        )
+        .await;
 
         assert_matches!(
             validated,
@@ -234,20 +241,21 @@ mod tests {
         );
     }
 
-    #[test]
-    fn validating_path_fails_with_different_identity() {
+    #[futures_test::test]
+    async fn validating_path_fails_with_different_identity() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let cipher_suite = CipherSuite::Curve25519Aes128;
-        let update_path = test_update_path(cipher_suite, "foobar");
+        let update_path = test_update_path(cipher_suite, "foobar").await;
 
         let validated = validate_update_path(
             &BasicIdentityProvider::new(),
             &cipher_suite_provider,
             &update_path,
-            &test_provisional_state(cipher_suite),
+            &test_provisional_state(cipher_suite).await,
             LeafIndex(0),
             None,
-        );
+        )
+        .await;
 
         assert_matches!(
             validated,
@@ -255,11 +263,11 @@ mod tests {
         );
     }
 
-    #[test]
-    fn validating_path_fails_with_same_hpke_key() {
+    #[futures_test::test]
+    async fn validating_path_fails_with_same_hpke_key() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-        let update_path = test_update_path(TEST_CIPHER_SUITE, "creator");
-        let mut state = test_provisional_state(TEST_CIPHER_SUITE);
+        let update_path = test_update_path(TEST_CIPHER_SUITE, "creator").await;
+        let mut state = test_provisional_state(TEST_CIPHER_SUITE).await;
 
         state
             .public_tree
@@ -275,7 +283,8 @@ mod tests {
             &state,
             LeafIndex(0),
             None,
-        );
+        )
+        .await;
 
         assert_matches!(validated, Err(UpdatePathValidationError::SameHpkeKey(_)));
     }

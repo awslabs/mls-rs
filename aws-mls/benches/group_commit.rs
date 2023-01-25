@@ -5,8 +5,10 @@ use aws_mls::{
     group::Group,
 };
 use criterion::{
-    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
+    async_executor::FuturesExecutor, criterion_group, criterion_main, measurement::WallTime,
+    BatchSize, BenchmarkGroup, BenchmarkId, Criterion,
 };
+use futures::executor::block_on;
 
 fn commit_setup(c: &mut Criterion) {
     let mut group_commit = c.benchmark_group("group_commit");
@@ -15,11 +17,12 @@ fn commit_setup(c: &mut Criterion) {
 
     println!("Benchmarking group commit for: {cipher_suite:?}");
 
-    // creates groups of the desired sizes
-    let mut container = load_test_cases();
-
-    // fills the tree by having everyone commit
-    container = commit_groups(container);
+    let container = block_on(async {
+        // creates groups of the desired sizes
+        let container = load_test_cases().await;
+        // fills the tree by having everyone commit
+        commit_groups(container).await
+    });
 
     bench_group_commit(&mut group_commit, cipher_suite, container);
 
@@ -37,15 +40,20 @@ fn bench_group_commit<C: MlsConfig>(
             BenchmarkId::new(format!("{cipher_suite:?}"), groups.len()),
             &groups.len(),
             |b, _| {
-                b.iter(|| {
-                    let commit_output = groups[0].commit(Vec::new()).unwrap();
+                b.to_async(FuturesExecutor).iter_batched(
+                    || (groups[0].clone(), groups[1].clone()),
+                    |(mut sender, mut receiver)| async move {
+                        let commit_output = sender.commit(Vec::new()).await.unwrap();
 
-                    groups[0].apply_pending_commit().unwrap();
+                        sender.apply_pending_commit().await.unwrap();
 
-                    groups[1]
-                        .process_incoming_message(commit_output.commit_message)
-                        .unwrap();
-                })
+                        receiver
+                            .process_incoming_message(commit_output.commit_message)
+                            .await
+                            .unwrap();
+                    },
+                    BatchSize::SmallInput,
+                )
             },
         );
     }

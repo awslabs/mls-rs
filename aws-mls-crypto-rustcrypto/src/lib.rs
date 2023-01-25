@@ -145,7 +145,7 @@ where
 
 impl<KEM, KDF, AEAD> CipherSuiteProvider for RustCryptoCipherSuite<KEM, KDF, AEAD>
 where
-    KEM: KemType + Clone,
+    KEM: KemType + Clone + Send + Sync,
     KDF: KdfType + Clone + Send + Sync,
     AEAD: AeadType + Clone + Send + Sync,
 {

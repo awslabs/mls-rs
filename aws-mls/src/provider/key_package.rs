@@ -6,7 +6,7 @@ use std::{
 
 pub use crate::key_package::generator::KeyPackageGeneration;
 
-pub trait KeyPackageRepository {
+pub trait KeyPackageRepository: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn delete(&mut self, reference: &KeyPackageRef) -> Result<(), Self::Error>;

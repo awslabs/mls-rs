@@ -63,7 +63,7 @@ mod tests {
     fn load_test_cases() -> Vec<TestCase> {
         load_test_cases!(
             message_padding_test_vector,
-            generate_message_padding_test_vector
+            generate_message_padding_test_vector()
         )
     }
 

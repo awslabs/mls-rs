@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use aws_mls_core::identity::IdentityProvider;
 
 use crate::{
@@ -13,7 +14,8 @@ use crate::{
     tree_kem::Capabilities,
 };
 
-pub trait ExternalClientConfig: Clone {
+#[async_trait]
+pub trait ExternalClientConfig: Clone + Send + Sync {
     type Keychain: KeychainStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
     type MakeProposalFilter: MakeProposalFilter;

@@ -1,6 +1,7 @@
 //! Definitions to build a [`Client`].
 //!
 //! See [`ClientBuilder`].
+
 use crate::{
     cipher_suite::CipherSuite,
     client::Client,
@@ -31,6 +32,7 @@ use crate::{
     tree_kem::{Capabilities, Lifetime},
     Sealed,
 };
+use async_trait::async_trait;
 
 /// Base client configuration type when instantiating `ClientBuilder`
 pub type BaseConfig = Config<
@@ -694,7 +696,7 @@ where
 /// Helper trait to allow consuming crates to easily write a client type as `Client<impl MlsConfig>`
 ///
 /// It is not meant to be implemented by consuming crates. `T: MlsConfig` implies `T: ClientConfig`.
-pub trait MlsConfig: Clone + Sealed {
+pub trait MlsConfig: Clone + Send + Sync + Sealed {
     #[doc(hidden)]
     type Output: ClientConfig;
 
@@ -703,6 +705,7 @@ pub trait MlsConfig: Clone + Sealed {
 }
 
 /// Blanket implementation so that `T: MlsConfig` implies `T: ClientConfig`
+#[async_trait]
 impl<T: MlsConfig> ClientConfig for T {
     type KeyPackageRepository = <T::Output as ClientConfig>::KeyPackageRepository;
     type Keychain = <T::Output as ClientConfig>::Keychain;

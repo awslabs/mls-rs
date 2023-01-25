@@ -73,7 +73,7 @@ fn generate_test_cases() -> SerializableTestData {
 }
 
 fn load_test_cases() -> SerializableTestData {
-    load_test_cases!(test_file_name, generate_test_cases)
+    load_test_cases!(test_file_name, generate_test_cases())
 }
 ```
 

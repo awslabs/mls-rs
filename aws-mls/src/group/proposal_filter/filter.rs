@@ -10,7 +10,7 @@ use crate::{
 use std::marker::PhantomData;
 use thiserror::Error;
 
-pub trait ProposalFilter {
+pub trait ProposalFilter: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// This is called to validate a received commit. It should report any error making the commit
@@ -65,7 +65,7 @@ pub struct SimpleProposalFilter<F> {
 
 impl<F, E> ProposalFilter for SimpleProposalFilter<F>
 where
-    F: Fn(&ProposalFilterContext, &BorrowedProposal<'_>) -> Result<(), E>,
+    F: Fn(&ProposalFilterContext, &BorrowedProposal<'_>) -> Result<(), E> + Send + Sync,
     E: std::error::Error + Send + Sync + 'static,
 {
     type Error = E;

@@ -223,7 +223,7 @@ mod tests {
     fn load_test_cases() -> Vec<TestCase> {
         load_test_cases!(
             sender_data_key_test_vector,
-            generate_sender_data_key_test_vector
+            generate_sender_data_key_test_vector()
         )
     }
 

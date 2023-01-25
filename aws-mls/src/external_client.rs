@@ -45,22 +45,26 @@ where
         Self { config }
     }
 
-    pub fn observe_group(
+    pub async fn observe_group(
         &self,
         group_info: MLSMessage,
         tree_data: Option<&[u8]>,
     ) -> Result<ExternalGroup<C>, ExternalClientError> {
-        ExternalGroup::join(self.config.clone(), group_info, tree_data).map_err(Into::into)
+        ExternalGroup::join(self.config.clone(), group_info, tree_data)
+            .await
+            .map_err(Into::into)
     }
 
-    pub fn load_group(
+    pub async fn load_group(
         &self,
         snapshot: ExternalSnapshot,
     ) -> Result<ExternalGroup<C>, ExternalClientError> {
-        ExternalGroup::from_snapshot(self.config.clone(), snapshot).map_err(Into::into)
+        ExternalGroup::from_snapshot(self.config.clone(), snapshot)
+            .await
+            .map_err(Into::into)
     }
 
-    pub fn validate_key_package(
+    pub async fn validate_key_package(
         &self,
         package: &KeyPackage,
         protocol: ProtocolVersion,
@@ -85,6 +89,7 @@ where
 
         keypackage_validator
             .check_if_valid(package, options)
+            .await
             .map_err(Into::into)
     }
 }

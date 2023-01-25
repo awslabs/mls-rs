@@ -3,6 +3,7 @@ use std::fmt::Display;
 use std::ops::Deref;
 
 use aws_mls_core::identity::IdentityProvider;
+use futures::TryStreamExt;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -144,24 +145,27 @@ impl TreeKemPublic {
         Default::default()
     }
 
-    pub(crate) fn import_node_data<C>(
+    pub(crate) async fn import_node_data<C>(
         nodes: NodeVec,
-        identity_provider: C,
+        identity_provider: &C,
     ) -> Result<TreeKemPublic, RatchetTreeError>
     where
         C: IdentityProvider,
     {
-        let index = nodes.non_empty_leaves().try_fold(
-            TreeIndex::new(),
-            |mut tree_index, (leaf_index, leaf)| {
-                let identity = identity_provider
-                    .identity(&leaf.signing_identity)
-                    .map_err(credential_validation_error)?;
+        let index = futures::stream::iter(nodes.non_empty_leaves().map(Ok))
+            .try_fold(
+                TreeIndex::new(),
+                |mut tree_index, (leaf_index, leaf)| async move {
+                    let identity = identity_provider
+                        .identity(&leaf.signing_identity)
+                        .await
+                        .map_err(credential_validation_error)?;
 
-                tree_index.insert(leaf_index, leaf, identity)?;
-                Ok::<_, RatchetTreeError>(tree_index)
-            },
-        )?;
+                    tree_index.insert(leaf_index, leaf, identity)?;
+                    Ok::<_, RatchetTreeError>(tree_index)
+                },
+            )
+            .await?;
 
         let tree = TreeKemPublic {
             index,
@@ -176,7 +180,7 @@ impl TreeKemPublic {
         self.nodes.clone()
     }
 
-    pub fn derive<I, CP>(
+    pub async fn derive<I, CP>(
         leaf_node: LeafNode,
         secret_key: HpkeSecretKey,
         identity_provider: I,
@@ -187,7 +191,9 @@ impl TreeKemPublic {
         CP: CipherSuiteProvider,
     {
         let mut public_tree = TreeKemPublic::new();
-        public_tree.add_leaves(vec![leaf_node], identity_provider, cipher_suite_provider)?;
+        public_tree
+            .add_leaves(vec![leaf_node], identity_provider, cipher_suite_provider)
+            .await?;
 
         let private_tree = TreeKemPrivate::new_self_leaf(LeafIndex(0), secret_key);
 
@@ -218,7 +224,7 @@ impl TreeKemPublic {
 
     // Note that a partial failure of this function will leave the tree in a bad state. Modifying a
     // tree should always be done on a clone of the tree, which is how commits are processed
-    pub fn add_leaves<I, CP>(
+    pub async fn add_leaves<I, CP>(
         &mut self,
         leaf_nodes: Vec<LeafNode>,
         identity_provider: I,
@@ -258,9 +264,10 @@ impl TreeKemPublic {
             identity_provider,
             cipher_suite_provider,
         )
+        .await
     }
 
-    pub fn rekey_leaf<C>(
+    pub async fn rekey_leaf<C>(
         &mut self,
         index: LeafIndex,
         leaf_node: LeafNode,
@@ -274,10 +281,12 @@ impl TreeKemPublic {
 
         let existing_identity = identity_provider
             .identity(&existing_leaf.signing_identity)
+            .await
             .map_err(credential_validation_error)?;
 
         let new_identity = identity_provider
             .identity(&leaf_node.signing_identity)
+            .await
             .map_err(credential_validation_error)?;
 
         // Update the cache
@@ -306,7 +315,7 @@ impl TreeKemPublic {
             })
     }
 
-    pub(crate) fn apply_update_path<IP, CP>(
+    pub(crate) async fn apply_update_path<IP, CP>(
         &mut self,
         sender: LeafIndex,
         update_path: &ValidatedUpdatePath,
@@ -323,10 +332,12 @@ impl TreeKemPublic {
 
         let original_identity = identity_provider
             .identity(&original_leaf_node.signing_identity)
+            .await
             .map_err(credential_validation_error)?;
 
         let updated_identity = identity_provider
             .identity(&update_path.leaf_node.signing_identity)
+            .await
             .map_err(credential_validation_error)?;
 
         *existing_leaf = update_path.leaf_node.clone();
@@ -396,7 +407,7 @@ impl TreeKemPublic {
         Ok(())
     }
 
-    pub fn batch_edit<A, I, CP>(
+    pub async fn batch_edit<A, I, CP>(
         &mut self,
         mut accumulator: A,
         updates: &[(LeafIndex, LeafNode)],
@@ -410,73 +421,91 @@ impl TreeKemPublic {
         I: IdentityProvider,
         CP: CipherSuiteProvider,
     {
+        let identity_provider = &identity_provider;
         let mut removals = removals.iter().copied().map(Some).collect::<Vec<_>>();
         let tree_index = std::mem::take(&mut self.index);
         let mut removed_indexes = HashSet::<LeafIndex>::new();
 
         // Remove about-to-be-removed leaves from tree index.
-        let new_tree_index =
-            removals
-                .iter_mut()
-                .enumerate()
-                .try_fold(tree_index, |mut tree_index, (i, op)| {
-                    let r = empty_on_fail(op, |&leaf_index| {
-                        let leaf = self.nodes.borrow_as_leaf(leaf_index)?;
+        let (new_tree_index, ..) = futures::stream::iter(removals.iter_mut().enumerate().map(Ok))
+            .try_fold(
+                (
+                    tree_index,
+                    &mut removed_indexes,
+                    &mut accumulator,
+                    &mut *self,
+                ),
+                |(mut tree_index, removed_indexes, accumulator, self_), (i, op)| async move {
+                    let r = async {
+                        if let Some(leaf_index) = *op {
+                            let mut op = EmptyOnDrop::new(op);
+                            let leaf = self_.nodes.borrow_as_leaf(leaf_index)?;
 
-                        let identity = identity_provider
-                            .identity(&leaf.signing_identity)
-                            .map_err(credential_validation_error)?;
+                            let identity = identity_provider
+                                .identity(&leaf.signing_identity)
+                                .await
+                                .map_err(credential_validation_error)?;
 
-                        removed_indexes
-                            .insert(leaf_index)
-                            .then_some(())
-                            .ok_or(NodeVecError::NotLeafNode)?;
+                            removed_indexes
+                                .insert(leaf_index)
+                                .then_some(())
+                                .ok_or(NodeVecError::NotLeafNode)?;
 
-                        tree_index.remove(leaf, &identity);
+                            tree_index.remove(leaf, &identity);
+                            op.disarm();
+                        }
                         Ok(())
-                    });
+                    }
+                    .await;
 
                     r.or_else(|e| accumulator.on_remove(i, Err(e)))
-                        .map(|_| tree_index)
-                })?;
+                        .map(|_| (tree_index, removed_indexes, accumulator, self_))
+                },
+            )
+            .await?;
 
         // Verify updates have valid indexes and old and new leaves have the same identity.
-        let mut updates = updates.iter().enumerate().try_fold(
-            Vec::new(),
-            |mut updates, (i, (leaf_index, new_leaf))| {
-                let r = if removed_indexes.contains(leaf_index) {
-                    Err(RatchetTreeError::UpdateAndRemoveForSameLeaf(*leaf_index))
-                } else {
-                    self.nodes
-                        .borrow_as_leaf(*leaf_index)
-                        .map_err(Into::into)
-                        .and_then(|old_leaf| {
-                            let old_identity = identity_provider
-                                .identity(&old_leaf.signing_identity)
-                                .map_err(credential_validation_error)?;
+        let (mut updates, ..) = futures::stream::iter(updates.iter().enumerate().map(Ok))
+            .try_fold((Vec::new(), &mut accumulator, &mut *self), {
+                let removed_indexes = &removed_indexes;
+                move |(mut updates, accumulator, self_), (i, (leaf_index, new_leaf))| async move {
+                    let r = async {
+                        (!removed_indexes.contains(leaf_index))
+                            .then_some(())
+                            .ok_or(RatchetTreeError::UpdateAndRemoveForSameLeaf(*leaf_index))?;
 
-                            let new_identity = identity_provider
-                                .identity(&new_leaf.signing_identity)
-                                .map_err(credential_validation_error)?;
+                        let old_leaf = self_.nodes.borrow_as_leaf(*leaf_index)?;
+                        let old_identity = identity_provider
+                            .identity(&old_leaf.signing_identity)
+                            .await
+                            .map_err(credential_validation_error)?;
 
-                            (old_identity == new_identity)
-                                .then_some((*leaf_index, new_leaf, old_identity, new_identity))
-                                .ok_or(RatchetTreeError::DifferentIdentityInUpdate(*leaf_index))
-                        })
-                };
+                        let new_identity = identity_provider
+                            .identity(&new_leaf.signing_identity)
+                            .await
+                            .map_err(credential_validation_error)?;
 
-                match r {
-                    Ok(update) => {
-                        updates.push(Some(update));
-                        Ok(updates)
+                        (old_identity == new_identity)
+                            .then_some((*leaf_index, new_leaf, old_identity, new_identity))
+                            .ok_or(RatchetTreeError::DifferentIdentityInUpdate(*leaf_index))
                     }
-                    Err(e) => {
-                        updates.push(None);
-                        accumulator.on_update(i, Err(e)).map(|()| updates)
+                    .await;
+
+                    match r {
+                        Ok(update) => {
+                            updates.push(Some(update));
+                            Ok((updates, accumulator, self_))
+                        }
+                        Err(e) => {
+                            updates.push(None);
+                            accumulator
+                                .on_update(i, Err(e))
+                                .map(|()| (updates, accumulator, self_))
+                        }
                     }
                 }
-            },
-        )?;
+            })
+            .await?;
 
         let mut tree_index = loop {
             let tree_index = new_tree_index.clone();
@@ -581,36 +610,52 @@ impl TreeKemPublic {
                 accumulator.on_remove(i, Ok((leaf_index, leaf)))
             })?;
 
-        let (new_leaf_indexes, _) = additions.iter().enumerate().try_fold(
-            (Vec::new(), LeafIndex(0)),
-            |(mut leaf_indexes, start), (i, leaf)| {
-                let leaf_index = self.nodes.insert_leaf(start, leaf.clone());
+        let (new_leaf_indexes, ..) = futures::stream::iter(additions.iter().enumerate().map(Ok))
+            .try_fold(
+                (
+                    Vec::new(),
+                    LeafIndex(0),
+                    &mut tree_index,
+                    &mut accumulator,
+                    &mut *self,
+                ),
+                |(mut leaf_indexes, start, tree_index, accumulator, self_), (i, leaf)| async move {
+                    let leaf_index = self_.nodes.insert_leaf(start, leaf.clone());
 
-                let r = identity_provider
-                    .identity(&leaf.signing_identity)
-                    .map_err(credential_validation_error)
-                    .and_then(|identity| {
-                        tree_index
-                            .insert(leaf_index, leaf, identity)
-                            .map(|_| leaf_index)
-                            .map_err(Into::into)
-                    });
+                    let r = identity_provider
+                        .identity(&leaf.signing_identity)
+                        .await
+                        .map_err(credential_validation_error)
+                        .and_then(|identity| {
+                            tree_index
+                                .insert(leaf_index, leaf, identity)
+                                .map(|_| leaf_index)
+                                .map_err(Into::into)
+                        });
 
-                let failed = r.is_err();
-                accumulator.on_add(i, r)?;
+                    let failed = r.is_err();
+                    accumulator.on_add(i, r)?;
 
-                if failed {
-                    // Revert insertion in the tree.
-                    self.nodes
-                        .blank_leaf_node(leaf_index)
-                        .expect("Index points to a leaf");
-                } else {
-                    leaf_indexes.push(leaf_index);
-                }
+                    if failed {
+                        // Revert insertion in the tree.
+                        self_
+                            .nodes
+                            .blank_leaf_node(leaf_index)
+                            .expect("Index points to a leaf");
+                    } else {
+                        leaf_indexes.push(leaf_index);
+                    }
 
-                Ok::<_, RatchetTreeError>((leaf_indexes, leaf_index))
-            },
-        )?;
+                    Ok::<_, RatchetTreeError>((
+                        leaf_indexes,
+                        leaf_index,
+                        tree_index,
+                        accumulator,
+                        self_,
+                    ))
+                },
+            )
+            .await?;
 
         self.nodes.trim();
 
@@ -638,15 +683,34 @@ fn empty_on_fail<T, F>(opt: &mut Option<T>, f: F) -> Result<(), RatchetTreeError
 where
     F: FnOnce(&T) -> Result<(), RatchetTreeError>,
 {
-    match &*opt {
-        Some(x) => match f(x) {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                *opt = None;
-                Err(e)
-            }
-        },
-        None => Ok(()),
+    let mut opt = EmptyOnDrop::new(opt);
+    if let Some(x) = &*opt.value {
+        f(x)?;
+    }
+    opt.disarm();
+    Ok(())
+}
+
+struct EmptyOnDrop<'a, T> {
+    armed: bool,
+    value: &'a mut Option<T>,
+}
+
+impl<'a, T> EmptyOnDrop<'a, T> {
+    fn new(value: &'a mut Option<T>) -> Self {
+        Self { armed: true, value }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl<T> Drop for EmptyOnDrop<'_, T> {
+    fn drop(&mut self) {
+        if self.armed {
+            *self.value = None;
+        }
     }
 }
 
@@ -688,7 +752,7 @@ pub trait AccumulateBatchResults {
 
 #[cfg(test)]
 impl TreeKemPublic {
-    pub fn update_leaf<I, CP>(
+    pub async fn update_leaf<I, CP>(
         &mut self,
         index: LeafIndex,
         leaf_node: LeafNode,
@@ -717,9 +781,10 @@ impl TreeKemPublic {
             identity_provider,
             cipher_suite_provider,
         )
+        .await
     }
 
-    pub fn remove_leaves<I, CP>(
+    pub async fn remove_leaves<I, CP>(
         &mut self,
         indexes: Vec<LeafIndex>,
         identity_provider: I,
@@ -759,6 +824,7 @@ impl TreeKemPublic {
             identity_provider,
             cipher_suite_provider,
         )
+        .await
     }
 
     pub fn get_leaf_nodes(&self) -> Vec<&LeafNode> {
@@ -791,11 +857,11 @@ pub(crate) mod test_utils {
         pub creator_hpke_secret: HpkeSecretKey,
     }
 
-    pub(crate) fn get_test_tree(cipher_suite: CipherSuite) -> TestTree {
+    pub(crate) async fn get_test_tree(cipher_suite: CipherSuite) -> TestTree {
         let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
         let (creator_leaf, creator_hpke_secret, creator_signing_key) =
-            get_basic_test_node_sig_key(cipher_suite, "creator");
+            get_basic_test_node_sig_key(cipher_suite, "creator").await;
 
         let (test_public, test_private) = TreeKemPublic::derive(
             creator_leaf.clone(),
@@ -803,6 +869,7 @@ pub(crate) mod test_utils {
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
         TestTree {
@@ -814,11 +881,11 @@ pub(crate) mod test_utils {
         }
     }
 
-    pub fn get_test_leaf_nodes(cipher_suite: CipherSuite) -> Vec<LeafNode> {
+    pub async fn get_test_leaf_nodes(cipher_suite: CipherSuite) -> Vec<LeafNode> {
         [
-            get_basic_test_node(cipher_suite, "A"),
-            get_basic_test_node(cipher_suite, "B"),
-            get_basic_test_node(cipher_suite, "C"),
+            get_basic_test_node(cipher_suite, "A").await,
+            get_basic_test_node(cipher_suite, "B").await,
+            get_basic_test_node(cipher_suite, "C").await,
         ]
         .to_vec()
     }
@@ -843,10 +910,10 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[test]
-    pub fn test_derive() {
+    #[futures_test::test]
+    async fn test_derive() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            let test_tree = get_test_tree(cipher_suite);
+            let test_tree = get_test_tree(cipher_suite).await;
 
             assert_eq!(
                 test_tree.public.nodes[0],
@@ -862,13 +929,13 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_import_export() {
+    #[futures_test::test]
+    async fn test_import_export() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let mut test_tree = get_test_tree(TEST_CIPHER_SUITE);
+        let mut test_tree = get_test_tree(TEST_CIPHER_SUITE).await;
 
-        let additional_key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let additional_key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         test_tree
             .public
@@ -877,22 +944,25 @@ mod tests {
                 BasicIdentityProvider,
                 &cipher_suite_provider,
             )
+            .await
             .unwrap();
 
         let exported = test_tree.public.export_node_data();
 
-        let imported = TreeKemPublic::import_node_data(exported, BasicIdentityProvider).unwrap();
+        let imported = TreeKemPublic::import_node_data(exported, &BasicIdentityProvider)
+            .await
+            .unwrap();
 
         assert_eq!(test_tree.public.nodes, imported.nodes);
         assert_eq!(test_tree.public.index, imported.index);
     }
 
-    #[test]
-    fn test_add_leaf() {
+    #[futures_test::test]
+    async fn test_add_leaf() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = TreeKemPublic::new();
 
-        let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         let res = tree
             .add_leaves(
@@ -900,6 +970,7 @@ mod tests {
                 BasicIdentityProvider,
                 &cipher_suite_provider,
             )
+            .await
             .unwrap();
 
         // The leaf count should be equal to the number of packages we added
@@ -921,37 +992,41 @@ mod tests {
         assert_eq!(tree.nodes[4], leaf_nodes[2].clone().into());
     }
 
-    #[test]
-    fn test_get_key_packages() {
+    #[futures_test::test]
+    async fn test_get_key_packages() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let mut tree = TreeKemPublic::new();
 
-        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+            .await
             .unwrap();
 
         let key_packages = tree.get_leaf_nodes();
         assert_eq!(key_packages, key_packages.to_owned());
     }
 
-    #[test]
-    fn test_add_leaf_duplicate() {
+    #[futures_test::test]
+    async fn test_add_leaf_duplicate() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let mut tree = TreeKemPublic::new();
 
-        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         tree.add_leaves(
             key_packages.clone(),
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
-        let add_res = tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider);
+        let add_res = tree
+            .add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+            .await;
 
         assert_matches!(
             add_res,
@@ -961,18 +1036,19 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_add_leaf_empty_leaf() {
+    #[futures_test::test]
+    async fn test_add_leaf_empty_leaf() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
-        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         tree.add_leaves(
             [key_packages[0].clone()].to_vec(),
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
         tree.nodes[0] = None; // Set the original first node to none
@@ -982,6 +1058,7 @@ mod tests {
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
         assert_eq!(tree.nodes[0], key_packages[1].clone().into());
@@ -990,18 +1067,19 @@ mod tests {
         assert_eq!(tree.nodes.len(), 3)
     }
 
-    #[test]
-    fn test_add_leaf_unmerged() {
+    #[futures_test::test]
+    async fn test_add_leaf_unmerged() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
-        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         tree.add_leaves(
             [key_packages[0].clone(), key_packages[1].clone()].to_vec(),
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
         tree.nodes[3] = Parent {
@@ -1016,6 +1094,7 @@ mod tests {
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
         assert_eq!(
@@ -1024,16 +1103,17 @@ mod tests {
         )
     }
 
-    #[test]
-    fn test_update_leaf() {
+    #[futures_test::test]
+    async fn test_update_leaf() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
 
-        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+            .await
             .unwrap();
 
         // Add in parent nodes so we can detect them clearing after update
@@ -1050,7 +1130,7 @@ mod tests {
         let original_size = tree.occupied_leaf_count();
         let original_leaf_index = LeafIndex(1);
 
-        let updated_leaf = get_basic_test_node(TEST_CIPHER_SUITE, "A");
+        let updated_leaf = get_basic_test_node(TEST_CIPHER_SUITE, "A").await;
 
         tree.update_leaf(
             original_leaf_index,
@@ -1058,6 +1138,7 @@ mod tests {
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
         // The tree should not have grown due to an update
@@ -1082,19 +1163,20 @@ mod tests {
             });
     }
 
-    #[test]
-    fn test_update_leaf_not_found() {
+    #[futures_test::test]
+    async fn test_update_leaf_not_found() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
 
-        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+            .await
             .unwrap();
 
-        let new_key_package = get_basic_test_node(TEST_CIPHER_SUITE, "new");
+        let new_key_package = get_basic_test_node(TEST_CIPHER_SUITE, "new").await;
 
         assert_matches!(
             tree.update_leaf(
@@ -1102,20 +1184,21 @@ mod tests {
                 new_key_package,
                 BasicIdentityProvider,
                 &cipher_suite_provider
-            ),
+            )
+            .await,
             Err(RatchetTreeError::NodeVecError(
                 NodeVecError::InvalidNodeIndex(256)
             ))
         );
     }
 
-    #[test]
-    fn test_remove_leaf() {
+    #[futures_test::test]
+    async fn test_remove_leaf() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
-        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         let indexes = tree
             .add_leaves(
@@ -1123,6 +1206,7 @@ mod tests {
                 BasicIdentityProvider,
                 &cipher_suite_provider,
             )
+            .await
             .unwrap();
 
         let original_leaf_count = tree.occupied_leaf_count();
@@ -1141,6 +1225,7 @@ mod tests {
                 BasicIdentityProvider,
                 &cipher_suite_provider,
             )
+            .await
             .unwrap();
 
         assert_eq!(res, expected_result);
@@ -1152,13 +1237,13 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_remove_leaf_middle() {
+    #[futures_test::test]
+    async fn test_remove_leaf_middle() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
-        let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
+        let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         let to_remove = tree
             .add_leaves(
@@ -1166,6 +1251,7 @@ mod tests {
                 BasicIdentityProvider,
                 &cipher_suite_provider,
             )
+            .await
             .unwrap()[0];
 
         let original_leaf_count = tree.occupied_leaf_count();
@@ -1176,6 +1262,7 @@ mod tests {
                 BasicIdentityProvider,
                 &cipher_suite_provider,
             )
+            .await
             .unwrap();
 
         assert_eq!(res, vec![(to_remove, leaf_nodes[0].clone())]);
@@ -1190,16 +1277,17 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_create_blanks() {
+    #[futures_test::test]
+    async fn test_create_blanks() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
 
-        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+            .await
             .unwrap();
 
         let original_leaf_count = tree.occupied_leaf_count();
@@ -1208,6 +1296,7 @@ mod tests {
 
         // Remove the leaf from the tree
         tree.remove_leaves(to_remove, BasicIdentityProvider, &cipher_suite_provider)
+            .await
             .unwrap();
 
         // The occupied leaf count should have been reduced by 1
@@ -1225,39 +1314,41 @@ mod tests {
         assert_eq!(removed_location, &None);
     }
 
-    #[test]
-    fn test_remove_leaf_failure() {
+    #[futures_test::test]
+    async fn test_remove_leaf_failure() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
 
         assert_matches!(
             tree.remove_leaves(
                 vec![LeafIndex(128)],
                 BasicIdentityProvider,
                 &cipher_suite_provider
-            ),
+            )
+            .await,
             Err(RatchetTreeError::NodeVecError(
                 NodeVecError::InvalidNodeIndex(256)
             ))
         );
     }
 
-    #[test]
-    fn test_find_leaf_node() {
+    #[futures_test::test]
+    async fn test_find_leaf_node() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         // Create a tree
-        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
 
-        let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         tree.add_leaves(
             leaf_nodes.clone(),
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
         // Find each node
@@ -1309,30 +1400,35 @@ mod tests {
         }
     }
 
-    #[test]
-    fn batch_edit_works() {
+    #[futures_test::test]
+    async fn batch_edit_works() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let mut tree = get_test_tree(TEST_CIPHER_SUITE).public;
+        let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
 
-        let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE);
+        let leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         tree.add_leaves(
             leaf_nodes.clone(),
             BasicIdentityProvider,
             &cipher_suite_provider,
         )
+        .await
         .unwrap();
 
         let acc = tree
             .batch_edit(
                 BatchAccumulator::default(),
-                &[(LeafIndex(1), get_basic_test_node(TEST_CIPHER_SUITE, "A"))],
+                &[(
+                    LeafIndex(1),
+                    get_basic_test_node(TEST_CIPHER_SUITE, "A").await,
+                )],
                 &[LeafIndex(2)],
-                &[get_basic_test_node(TEST_CIPHER_SUITE, "D")],
+                &[get_basic_test_node(TEST_CIPHER_SUITE, "D").await],
                 BasicIdentityProvider,
                 &cipher_suite_provider,
             )
+            .await
             .unwrap();
 
         assert_eq!(acc.additions, [LeafIndex(2)]);

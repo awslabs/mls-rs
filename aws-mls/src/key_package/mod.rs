@@ -179,8 +179,9 @@ pub(crate) mod test_utils {
         },
         tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
     };
+    use futures::{future::BoxFuture, FutureExt};
 
-    pub(crate) fn test_key_package_custom<F, CSP>(
+    pub(crate) async fn test_key_package_custom<F, CSP>(
         cipher_suite_provider: &CSP,
         protocol_version: ProtocolVersion,
         id: &str,
@@ -188,12 +189,14 @@ pub(crate) mod test_utils {
     ) -> KeyPackage
     where
         CSP: CipherSuiteProvider,
-        F: FnOnce(&mut KeyPackageGenerator<BasicIdentityProvider, CSP>) -> KeyPackageGeneration,
+        F: FnOnce(
+            KeyPackageGenerator<'_, BasicIdentityProvider, CSP>,
+        ) -> BoxFuture<'_, KeyPackageGeneration>,
     {
         let (signing_identity, secret_key) =
             get_test_signing_identity(cipher_suite_provider.cipher_suite(), id.as_bytes().to_vec());
 
-        let mut generator = KeyPackageGenerator {
+        let generator = KeyPackageGenerator {
             protocol_version,
             cipher_suite_provider,
             signing_identity: &signing_identity,
@@ -201,10 +204,10 @@ pub(crate) mod test_utils {
             identity_provider: &BasicIdentityProvider::new(),
         };
 
-        custom(&mut generator).key_package
+        custom(generator).await.key_package
     }
 
-    pub(crate) fn test_key_package(
+    pub(crate) async fn test_key_package(
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         id: &str,
@@ -214,16 +217,21 @@ pub(crate) mod test_utils {
             protocol_version,
             id,
             |generator| {
-                generator
-                    .generate(
-                        Lifetime::years(1).unwrap(),
-                        get_test_capabilities(),
-                        ExtensionList::default(),
-                        ExtensionList::default(),
-                    )
-                    .unwrap()
+                async move {
+                    generator
+                        .generate(
+                            Lifetime::years(1).unwrap(),
+                            get_test_capabilities(),
+                            ExtensionList::default(),
+                            ExtensionList::default(),
+                        )
+                        .await
+                        .unwrap()
+                }
+                .boxed()
             },
         )
+        .await
     }
 }
 
@@ -238,6 +246,7 @@ mod tests {
 
     use super::{test_utils::test_key_package, *};
     use assert_matches::assert_matches;
+    use futures::StreamExt;
     use tls_codec::Deserialize;
 
     #[cfg(target_arch = "wasm32")]
@@ -253,33 +262,36 @@ mod tests {
     }
 
     impl TestCase {
-        fn generate() -> Vec<TestCase> {
-            ProtocolVersion::all()
-                .flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
-                .enumerate()
-                .map(|(i, (protocol_version, cipher_suite))| {
-                    let pkg =
-                        test_key_package(protocol_version, cipher_suite, &format!("alice{i}"));
-                    let pkg_ref = pkg
-                        .to_reference(&test_cipher_suite_provider(cipher_suite))
-                        .unwrap();
-                    TestCase {
-                        cipher_suite: cipher_suite as u16,
-                        input: pkg.tls_serialize_detached().unwrap(),
-                        output: pkg_ref.to_vec(),
-                    }
-                })
-                .collect()
+        async fn generate() -> Vec<TestCase> {
+            futures::stream::iter(
+                ProtocolVersion::all()
+                    .flat_map(|p| CipherSuite::all().map(move |cs| (p, cs)))
+                    .enumerate(),
+            )
+            .then(|(i, (protocol_version, cipher_suite))| async move {
+                let pkg =
+                    test_key_package(protocol_version, cipher_suite, &format!("alice{i}")).await;
+                let pkg_ref = pkg
+                    .to_reference(&test_cipher_suite_provider(cipher_suite))
+                    .unwrap();
+                TestCase {
+                    cipher_suite: cipher_suite as u16,
+                    input: pkg.tls_serialize_detached().unwrap(),
+                    output: pkg_ref.to_vec(),
+                }
+            })
+            .collect()
+            .await
         }
     }
 
-    fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(key_package_ref, TestCase::generate)
+    async fn load_test_cases() -> Vec<TestCase> {
+        load_test_cases!(key_package_ref, TestCase::generate().await)
     }
 
-    #[test]
-    fn test_key_package_ref() {
-        let cases = load_test_cases();
+    #[futures_test::test]
+    async fn test_key_package_ref() {
+        let cases = load_test_cases().await;
 
         for one_case in cases {
             let Some(provider) = try_test_cipher_suite_provider(one_case.cipher_suite) else {
@@ -296,9 +308,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn key_package_ref_fails_invalid_cipher_suite() {
-        let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test");
+    #[futures_test::test]
+    async fn key_package_ref_fails_invalid_cipher_suite() {
+        let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test").await;
 
         assert_matches!(
             key_package.to_reference(&test_cipher_suite_provider(CipherSuite::P256Aes128)),

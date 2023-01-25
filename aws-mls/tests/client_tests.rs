@@ -24,6 +24,7 @@ cfg_if! {
     }
 }
 
+use futures::StreamExt;
 use rand::RngCore;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 
@@ -85,7 +86,7 @@ fn generate_client(cipher_suite: CipherSuite, id: Vec<u8>, preferences: Preferen
     TestClient { client, identity }
 }
 
-fn test_create(
+async fn test_create(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     preferences: Preferences,
@@ -100,6 +101,7 @@ fn test_create(
     let bob_key_pkg = bob
         .client
         .generate_key_package(protocol_version, cipher_suite, bob.identity)
+        .await
         .unwrap();
 
     // Alice creates a group and adds bob
@@ -112,18 +114,21 @@ fn test_create(
             alice.identity,
             ExtensionList::default(),
         )
+        .await
         .unwrap();
 
     let welcome = alice_group
         .commit_builder()
         .add_member(bob_key_pkg)
+        .await
         .unwrap()
         .build()
+        .await
         .unwrap()
         .welcome_message;
 
     // Upon server confirmation, alice applies the commit to her own state
-    alice_group.apply_pending_commit().unwrap();
+    alice_group.apply_pending_commit().await.unwrap();
 
     let tree = alice_group.export_tree().unwrap();
 
@@ -131,23 +136,24 @@ fn test_create(
     let (bob_group, _) = bob
         .client
         .join_group(Some(&tree), welcome.unwrap())
+        .await
         .unwrap();
 
     assert!(Group::equal_group_state(&alice_group, &bob_group));
 }
 
-#[test]
-fn test_create_group() {
-    test_params().for_each(|(protocol_version, cs, encrypt_controls)| {
+#[futures_test::test]
+async fn test_create_group() {
+    for (protocol_version, cs, encrypt_controls) in test_params() {
         let preferences = Preferences::default()
             .with_control_encryption(encrypt_controls)
             .with_ratchet_tree_extension(false);
 
-        test_create(protocol_version, cs, preferences);
-    });
+        test_create(protocol_version, cs, preferences).await;
+    }
 }
 
-fn get_test_groups(
+async fn get_test_groups(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     num_participants: usize,
@@ -158,11 +164,12 @@ fn get_test_groups(
         cipher_suite,
         num_participants,
         preferences,
-    );
+    )
+    .await;
     (creator_group, receiver_groups)
 }
 
-fn get_test_groups_clients(
+async fn get_test_groups_clients(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     num_participants: usize,
@@ -184,6 +191,7 @@ fn get_test_groups_clients(
             creator.identity,
             ExtensionList::default(),
         )
+        .await
         .unwrap();
 
     // Generate random clients that will be members of the group
@@ -197,29 +205,31 @@ fn get_test_groups_clients(
         })
         .collect::<Vec<_>>();
 
-    let receiver_keys = receiver_clients
-        .iter()
-        .map(|client| {
+    let receiver_keys = futures::stream::iter(&receiver_clients)
+        .then(|client| async {
             client
                 .client
                 .generate_key_package(protocol_version, cipher_suite, client.identity.clone())
+                .await
                 .unwrap()
         })
-        .collect::<Vec<KeyPackage>>();
+        .collect::<Vec<KeyPackage>>()
+        .await;
 
     // Add the generated clients to the group the creator made
 
-    let welcome = receiver_keys
-        .iter()
-        .fold(creator_group.commit_builder(), |builder, item| {
-            builder.add_member(item.clone()).unwrap()
+    let welcome = futures::stream::iter(&receiver_keys)
+        .fold(creator_group.commit_builder(), |builder, item| async move {
+            builder.add_member(item.clone()).await.unwrap()
         })
+        .await
         .build()
+        .await
         .unwrap()
         .welcome_message;
 
     // Creator can confirm the commit was processed by the server
-    let update = creator_group.apply_pending_commit().unwrap();
+    let update = creator_group.apply_pending_commit().await.unwrap();
 
     assert!(update.active);
     assert_eq!(update.epoch, 1);
@@ -235,16 +245,17 @@ fn get_test_groups_clients(
     let tree_data = creator_group.export_tree().unwrap();
 
     // All the receivers will be able to join the group
-    let receiver_groups = receiver_clients
-        .iter()
-        .map(|client| {
+    let receiver_groups = futures::stream::iter(&receiver_clients)
+        .then(|client| async {
             client
                 .client
                 .join_group(Some(&tree_data), welcome.clone().unwrap())
+                .await
                 .unwrap()
                 .0
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+        .await;
 
     for one_receiver in &receiver_groups {
         assert!(Group::equal_group_state(&creator_group, one_receiver));
@@ -253,7 +264,7 @@ fn get_test_groups_clients(
     (creator_group, receiver_groups, receiver_clients)
 }
 
-fn add_random_members(
+async fn add_random_members(
     first_id: usize,
     num_added: usize,
     sender: usize,
@@ -262,68 +273,80 @@ fn add_random_members(
     cipher_suite: CipherSuite,
     preferences: Preferences,
 ) {
-    let (key_packages, new_clients): (Vec<_>, Vec<_>) = (0..num_added)
-        .map(|i| {
-            let id = first_id + i;
-            let new_client = generate_client(
-                cipher_suite,
-                format!("dave-{id}").into(),
-                preferences.clone(),
-            );
+    let (key_packages, new_clients): (Vec<_>, Vec<_>) = futures::stream::iter(0..num_added)
+        .then(|i| {
+            let preferences = preferences.clone();
+            async move {
+                let id = first_id + i;
+                let new_client =
+                    generate_client(cipher_suite, format!("dave-{id}").into(), preferences);
 
-            let key_package = new_client
-                .client
-                .generate_key_package(
-                    ProtocolVersion::Mls10,
-                    cipher_suite,
-                    new_client.identity.clone(),
-                )
-                .unwrap();
+                let key_package = new_client
+                    .client
+                    .generate_key_package(
+                        ProtocolVersion::Mls10,
+                        cipher_suite,
+                        new_client.identity.clone(),
+                    )
+                    .await
+                    .unwrap();
 
-            (key_package, new_client)
+                (key_package, new_client)
+            }
         })
-        .unzip();
+        .unzip()
+        .await;
 
-    let add_proposals: Vec<MLSMessage> = key_packages
-        .into_iter()
-        .map(|kp| groups[sender].propose_add(kp, vec![]).unwrap())
-        .collect();
+    let add_proposals: Vec<MLSMessage> = futures::stream::iter(key_packages)
+        .fold(
+            (&mut groups[sender], Vec::new()),
+            |(group, mut acc), kp| async {
+                acc.push(group.propose_add(kp, vec![]).await.unwrap());
+                (group, acc)
+            },
+        )
+        .await
+        .1;
 
     for (i, group) in groups.iter_mut().enumerate() {
         if i != sender {
-            add_proposals.iter().for_each(|p| {
-                group.process_incoming_message(p.clone()).unwrap();
-            })
+            for p in &add_proposals {
+                group.process_incoming_message(p.clone()).await.unwrap();
+            }
         }
     }
 
-    let commit_output = groups[committer].commit(vec![]).unwrap();
+    let commit_output = groups[committer].commit(vec![]).await.unwrap();
 
     for (i, group) in groups.iter_mut().enumerate() {
         if i == committer {
-            group.apply_pending_commit().unwrap();
+            group.apply_pending_commit().await.unwrap();
         } else {
             group
                 .process_incoming_message(commit_output.commit_message.clone())
+                .await
                 .unwrap();
         }
     }
 
     let tree_data = groups[committer].export_tree().unwrap();
 
-    groups.extend(new_clients.iter().map(|client| {
-        client
-            .client
-            .join_group(
-                Some(&tree_data),
-                commit_output.welcome_message.clone().unwrap(),
-            )
-            .unwrap()
-            .0
-    }));
+    for client in &new_clients {
+        groups.push(
+            client
+                .client
+                .join_group(
+                    Some(&tree_data),
+                    commit_output.welcome_message.clone().unwrap(),
+                )
+                .await
+                .unwrap()
+                .0,
+        );
+    }
 }
 
-fn remove_members(
+async fn remove_members(
     removed_members: Vec<usize>,
     sender: usize,
     committer: usize,
@@ -339,19 +362,26 @@ fn remove_members(
 
     for (i, group) in groups.iter_mut().enumerate() {
         if i != sender {
-            remove_proposals.iter().for_each(|p| {
-                group.process_incoming_message(p.clone()).unwrap();
-            })
+            for p in &remove_proposals {
+                group.process_incoming_message(p.clone()).await.unwrap();
+            }
         }
     }
 
-    let commit = groups[committer].commit(vec![]).unwrap().commit_message;
+    let commit = groups[committer]
+        .commit(vec![])
+        .await
+        .unwrap()
+        .commit_message;
 
     for (i, group) in groups.iter_mut().enumerate() {
         if i == committer {
-            group.apply_pending_commit().unwrap();
+            group.apply_pending_commit().await.unwrap();
         } else {
-            group.process_incoming_message(commit.clone()).unwrap();
+            group
+                .process_incoming_message(commit.clone())
+                .await
+                .unwrap();
         }
     }
 
@@ -362,8 +392,8 @@ fn remove_members(
     });
 }
 
-#[test]
-fn test_many_commits() {
+#[futures_test::test]
+async fn test_many_commits() {
     let cipher_suite = CipherSuite::Curve25519Aes128;
     let preferences = Preferences::default();
 
@@ -372,7 +402,8 @@ fn test_many_commits() {
         cipher_suite,
         10,
         preferences.clone(),
-    );
+    )
+    .await;
 
     groups.push(creator_group);
     let mut rng = rand::rngs::StdRng::from_seed([42; 32]);
@@ -383,7 +414,7 @@ fn test_many_commits() {
         let num_removed = rng.gen_range(0..groups.len());
         let mut members = (0..groups.len()).choose_multiple(&mut rng, num_removed + 1);
         let sender = members.pop().unwrap();
-        remove_members(members, sender, sender, &mut groups);
+        remove_members(members, sender, sender, &mut groups).await;
 
         let num_added = rng.gen_range(2..12);
         let sender = rng.gen_range(0..groups.len());
@@ -396,13 +427,14 @@ fn test_many_commits() {
             &mut groups,
             cipher_suite,
             preferences.clone(),
-        );
+        )
+        .await;
 
         random_member_first_index += num_added;
     }
 }
 
-fn test_empty_commits(
+async fn test_empty_commits(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     participants: usize,
@@ -414,28 +446,30 @@ fn test_empty_commits(
     );
 
     let (mut creator_group, mut receiver_groups) =
-        get_test_groups(protocol_version, cipher_suite, participants, preferences);
+        get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
 
     // Loop through each participant and send a path update
 
     for i in 0..receiver_groups.len() {
         // Create the commit
-        let commit_output = receiver_groups[i].commit(vec![]).unwrap();
+        let commit_output = receiver_groups[i].commit(vec![]).await.unwrap();
 
         assert!(commit_output.welcome_message.is_none());
 
         // Creator group processes the commit
         creator_group
             .process_incoming_message(commit_output.commit_message.clone())
+            .await
             .unwrap();
 
         // Receiver groups process the commit
         for (j, one_receiver) in receiver_groups.iter_mut().enumerate() {
             if i == j {
-                one_receiver.apply_pending_commit().unwrap();
+                one_receiver.apply_pending_commit().await.unwrap();
             } else {
                 one_receiver
                     .process_incoming_message(commit_output.commit_message.clone())
+                    .await
                     .unwrap();
             }
 
@@ -444,9 +478,9 @@ fn test_empty_commits(
     }
 }
 
-#[test]
-fn test_group_path_updates() {
-    test_params().for_each(|(protocol_version, cs, encrypt_controls)| {
+#[futures_test::test]
+async fn test_group_path_updates() {
+    for (protocol_version, cs, encrypt_controls) in test_params() {
         test_empty_commits(
             protocol_version,
             cs,
@@ -454,11 +488,12 @@ fn test_group_path_updates() {
             Preferences::default()
                 .with_control_encryption(encrypt_controls)
                 .with_ratchet_tree_extension(false),
-        );
-    });
+        )
+        .await;
+    }
 }
 
-fn test_update_proposals(
+async fn test_update_proposals(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     participants: usize,
@@ -470,7 +505,7 @@ fn test_update_proposals(
     );
 
     let (mut creator_group, mut receiver_groups) =
-        get_test_groups(protocol_version, cipher_suite, participants, preferences);
+        get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
 
     // Create an update from the ith member, have the ith + 1 member commit it
     for i in 0..receiver_groups.len() - 1 {
@@ -479,33 +514,39 @@ fn test_update_proposals(
         // Everyone should process the proposal
         creator_group
             .process_incoming_message(update_proposal_msg.clone())
+            .await
             .unwrap();
 
-        (0..receiver_groups.len()).for_each(|j| {
+        for (j, g) in receiver_groups.iter_mut().enumerate() {
             if i != j {
-                receiver_groups[j]
-                    .process_incoming_message(update_proposal_msg.clone())
+                g.process_incoming_message(update_proposal_msg.clone())
+                    .await
                     .unwrap();
             }
-        });
+        }
 
         // Everyone receives the commit
         let committer_index = i + 1;
 
-        let commit_output = receiver_groups[committer_index].commit(vec![]).unwrap();
+        let commit_output = receiver_groups[committer_index]
+            .commit(vec![])
+            .await
+            .unwrap();
 
         assert!(commit_output.welcome_message.is_none());
 
         creator_group
             .process_incoming_message(commit_output.commit_message.clone())
+            .await
             .unwrap();
 
         for (j, receiver) in receiver_groups.iter_mut().enumerate() {
             let update = if j == committer_index {
-                receiver.apply_pending_commit()
+                receiver.apply_pending_commit().await
             } else {
                 let state_update_message = receiver
                     .process_incoming_message(commit_output.commit_message.clone())
+                    .await
                     .unwrap()
                     .event;
 
@@ -525,9 +566,9 @@ fn test_update_proposals(
     }
 }
 
-#[test]
-fn test_group_update_proposals() {
-    test_params().for_each(|(protocol_version, cs, encrypt_controls)| {
+#[futures_test::test]
+async fn test_group_update_proposals() {
+    for (protocol_version, cs, encrypt_controls) in test_params() {
         test_update_proposals(
             protocol_version,
             cs,
@@ -535,11 +576,12 @@ fn test_group_update_proposals() {
             Preferences::default()
                 .with_control_encryption(encrypt_controls)
                 .with_ratchet_tree_extension(false),
-        );
-    });
+        )
+        .await;
+    }
 }
 
-fn test_remove_proposals(
+async fn test_remove_proposals(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     participants: usize,
@@ -551,7 +593,7 @@ fn test_remove_proposals(
     );
 
     let (mut creator_group, mut receiver_groups) =
-        get_test_groups(protocol_version, cipher_suite, participants, preferences);
+        get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
 
     let mut epoch_count = 1;
 
@@ -565,12 +607,13 @@ fn test_remove_proposals(
             .remove_member(to_remove_index)
             .unwrap()
             .build()
+            .await
             .unwrap();
 
         assert!(commit_output.welcome_message.is_none());
 
         // Process the removal in the creator group
-        creator_group.apply_pending_commit().unwrap();
+        creator_group.apply_pending_commit().await.unwrap();
 
         epoch_count += 1;
 
@@ -580,6 +623,7 @@ fn test_remove_proposals(
 
             let state_update = one_group
                 .process_incoming_message(commit_output.commit_message.clone())
+                .await
                 .unwrap();
 
             let update = match state_update.event {
@@ -610,9 +654,9 @@ fn test_remove_proposals(
     }
 }
 
-#[test]
-fn test_group_remove_proposals() {
-    test_params().for_each(|(protocol_version, cs, encrypt_controls)| {
+#[futures_test::test]
+async fn test_group_remove_proposals() {
+    for (protocol_version, cs, encrypt_controls) in test_params() {
         test_remove_proposals(
             protocol_version,
             cs,
@@ -620,11 +664,12 @@ fn test_group_remove_proposals() {
             Preferences::default()
                 .with_control_encryption(encrypt_controls)
                 .with_ratchet_tree_extension(false),
-        );
-    });
+        )
+        .await;
+    }
 }
 
-fn test_application_messages(
+async fn test_application_messages(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     participants: usize,
@@ -637,7 +682,7 @@ fn test_application_messages(
     );
 
     let (mut creator_group, mut receiver_groups) =
-        get_test_groups(protocol_version, cipher_suite, participants, preferences);
+        get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
 
     // Loop through each participant and send application messages
     for i in 0..receiver_groups.len() {
@@ -653,30 +698,33 @@ fn test_application_messages(
             // Creator receives the application message
             creator_group
                 .process_incoming_message(ciphertext.clone())
+                .await
                 .unwrap();
 
             // Everyone else receives the application message
-            (0..receiver_groups.len()).for_each(|j| {
+            for (j, g) in receiver_groups.iter_mut().enumerate() {
                 if i != j {
-                    let decrypted = receiver_groups[j]
+                    let decrypted = g
                         .process_incoming_message(ciphertext.clone())
+                        .await
                         .unwrap();
 
                     assert_matches!(decrypted.event, Event::ApplicationMessage(m) if m == test_message);
                 }
-            });
+            }
         }
     }
 }
 
-#[test]
-fn test_out_of_order_application_messages() {
+#[futures_test::test]
+async fn test_out_of_order_application_messages() {
     let (mut alice_group, mut receiver_groups) = get_test_groups(
         ProtocolVersion::Mls10,
         CipherSuite::Curve25519Aes128,
         1,
         Preferences::default(),
-    );
+    )
+    .await;
 
     let bob_group = receiver_groups.get_mut(0).unwrap();
 
@@ -690,11 +738,11 @@ fn test_out_of_order_application_messages() {
             .unwrap(),
     );
 
-    let commit = alice_group.commit(vec![]).unwrap().commit_message;
+    let commit = alice_group.commit(vec![]).await.unwrap().commit_message;
 
-    alice_group.apply_pending_commit().unwrap();
+    alice_group.apply_pending_commit().await.unwrap();
 
-    bob_group.process_incoming_message(commit).unwrap();
+    bob_group.process_incoming_message(commit).await.unwrap();
 
     ciphertexts.push(
         alice_group
@@ -710,15 +758,15 @@ fn test_out_of_order_application_messages() {
 
     for i in [3, 2, 1, 0] {
         assert_matches!(
-            bob_group.process_incoming_message(ciphertexts[i].clone()).unwrap().event,
+            bob_group.process_incoming_message(ciphertexts[i].clone()).await.unwrap().event,
             Event::ApplicationMessage(m) if m == [i as u8]
         );
     }
 }
 
-#[test]
-fn test_group_application_messages() {
-    test_params().for_each(|(protocol_version, cs, encrypt_controls)| {
+#[futures_test::test]
+async fn test_group_application_messages() {
+    for (protocol_version, cs, encrypt_controls) in test_params() {
         test_application_messages(
             protocol_version,
             cs,
@@ -727,11 +775,12 @@ fn test_group_application_messages() {
             Preferences::default()
                 .with_control_encryption(encrypt_controls)
                 .with_ratchet_tree_extension(false),
-        );
-    });
+        )
+        .await;
+    }
 }
 
-fn processing_message_from_self_returns_error(
+async fn processing_message_from_self_returns_error(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     preferences: Preferences,
@@ -741,29 +790,38 @@ fn processing_message_from_self_returns_error(
         cipher_suite, preferences,
     );
 
-    let (mut creator_group, _) = get_test_groups(protocol_version, cipher_suite, 1, preferences);
+    let (mut creator_group, _) =
+        get_test_groups(protocol_version, cipher_suite, 1, preferences).await;
 
-    let commit = creator_group.commit(Vec::new()).unwrap().commit_message;
+    let commit = creator_group
+        .commit(Vec::new())
+        .await
+        .unwrap()
+        .commit_message;
 
-    let error = creator_group.process_incoming_message(commit).unwrap_err();
+    let error = creator_group
+        .process_incoming_message(commit)
+        .await
+        .unwrap_err();
 
     assert_matches!(error, GroupError::CantProcessMessageFromSelf);
 }
 
-#[test]
-fn test_processing_message_from_self_returns_error() {
-    test_params().for_each(|(protocol_version, cs, encrypt_controls)| {
+#[futures_test::test]
+async fn test_processing_message_from_self_returns_error() {
+    for (protocol_version, cs, encrypt_controls) in test_params() {
         processing_message_from_self_returns_error(
             protocol_version,
             cs,
             Preferences::default()
                 .with_control_encryption(encrypt_controls)
                 .with_ratchet_tree_extension(false),
-        );
-    });
+        )
+        .await;
+    }
 }
 
-fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: CipherSuite) {
+async fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: CipherSuite) {
     let creator = generate_client(cipher_suite, b"alice-0".to_vec(), Default::default());
 
     let creator_group = creator
@@ -775,6 +833,7 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
             creator.identity,
             ExtensionList::default(),
         )
+        .await
         .unwrap();
 
     const PARTICIPANT_COUNT: usize = 10;
@@ -789,12 +848,9 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
         })
         .collect::<Vec<_>>();
 
-    let mut rng = rand::thread_rng();
-
-    let mut groups = others
-        .iter()
-        .fold(vec![creator_group], |mut groups, client| {
-            let existing_group = groups.choose_mut(&mut rng).unwrap();
+    let mut groups = futures::stream::iter(&others)
+        .fold(vec![creator_group], |mut groups, client| async move {
+            let existing_group = groups.choose_mut(&mut rand::thread_rng()).unwrap();
             let group_info = existing_group.group_info_message(true).unwrap();
 
             let (new_group, commit) = client
@@ -807,64 +863,68 @@ fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: Cipher
                     vec![],
                     vec![],
                 )
+                .await
                 .unwrap();
 
-            groups.iter_mut().for_each(|group| {
-                group.process_incoming_message(commit.clone()).unwrap();
-            });
+            for group in groups.iter_mut() {
+                group
+                    .process_incoming_message(commit.clone())
+                    .await
+                    .unwrap();
+            }
 
             groups.push(new_group);
             groups
-        });
+        })
+        .await;
 
     assert!(groups
         .iter()
         .all(|group| group.roster().len() == PARTICIPANT_COUNT));
 
     for i in 0..groups.len() {
-        let payload = (&mut rng)
+        let payload = rand::thread_rng()
             .sample_iter(rand::distributions::Standard)
             .take(256)
             .collect::<Vec<_>>();
         let message = groups[i]
             .encrypt_application_message(&payload, Vec::new())
             .unwrap();
-        groups
-            .iter_mut()
-            .enumerate()
-            .filter(|&(j, _)| i != j)
-            .all(|(_, group)| {
-                let processed = group.process_incoming_message(message.clone()).unwrap();
-                matches!(processed.event, Event::ApplicationMessage(bytes) if bytes == payload)
-            });
+        for (_, group) in groups.iter_mut().enumerate().filter(|&(j, _)| i != j) {
+            let processed = group
+                .process_incoming_message(message.clone())
+                .await
+                .unwrap();
+            assert_matches!(processed.event, Event::ApplicationMessage(bytes) if bytes == payload);
+        }
     }
 }
 
-#[test]
-fn test_external_commits() {
-    test_params()
-        .filter(|&(_, _, encrypted)| !encrypted)
-        .for_each(|(protocol_version, cipher_suite, _)| {
-            external_commits_work(protocol_version, cipher_suite);
-        });
+#[futures_test::test]
+async fn test_external_commits() {
+    for (protocol_version, cipher_suite, _) in test_params().filter(|&(_, _, encrypted)| !encrypted)
+    {
+        external_commits_work(protocol_version, cipher_suite).await;
+    }
 }
 
-#[test]
-fn test_remove_nonexisting_leaf() {
+#[futures_test::test]
+async fn test_remove_nonexisting_leaf() {
     let (_, mut groups) = get_test_groups(
         ProtocolVersion::Mls10,
         CipherSuite::Curve25519Aes128,
         10,
         Preferences::default(),
-    );
+    )
+    .await;
 
     groups[0].propose_remove(5, vec![]).unwrap();
 
     // Leaf index out of bounds
     assert!(groups[0].propose_remove(13, vec![]).is_err());
 
-    groups[0].commit(vec![]).unwrap();
-    groups[0].apply_pending_commit().unwrap();
+    groups[0].commit(vec![]).await.unwrap();
+    groups[0].apply_pending_commit().await.unwrap();
 
     // Removing blank leaf causes error
     assert!(groups[0].propose_remove(5, vec![]).is_err());
@@ -904,8 +964,8 @@ fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite, id: &str) -> Rein
     ReinitClientGeneration { client, id1, id2 }
 }
 
-#[test]
-fn reinit_works() {
+#[futures_test::test]
+async fn reinit_works() {
     let suite1 = CipherSuite::Curve25519Aes128;
     let suite2 = CipherSuite::P256Aes128;
     let version = ProtocolVersion::Mls10;
@@ -917,27 +977,32 @@ fn reinit_works() {
     let mut alice_group = alice
         .client
         .create_group(version, suite1, alice.id1.clone(), ExtensionList::new())
+        .await
         .unwrap();
 
     let kp = bob
         .client
         .generate_key_package(version, suite1, bob.id1)
+        .await
         .unwrap();
 
     let welcome = alice_group
         .commit_builder()
         .add_member(kp)
+        .await
         .unwrap()
         .build()
+        .await
         .unwrap()
         .welcome_message;
 
-    alice_group.apply_pending_commit().unwrap();
+    alice_group.apply_pending_commit().await.unwrap();
     let tree = alice_group.export_tree().unwrap();
 
     let (mut bob_group, _) = bob
         .client
         .join_group(Some(&tree), welcome.unwrap())
+        .await
         .unwrap();
 
     // Alice proposes reinit
@@ -954,40 +1019,46 @@ fn reinit_works() {
     // Bob commits the reinit
     bob_group
         .process_incoming_message(reinit_proposal_message)
+        .await
         .unwrap();
 
-    let commit = bob_group.commit(vec![]).unwrap().commit_message;
+    let commit = bob_group.commit(vec![]).await.unwrap().commit_message;
 
     // Both process Bob's commit
-    let state_update = bob_group.apply_pending_commit().unwrap();
+    let state_update = bob_group.apply_pending_commit().await.unwrap();
     assert!(!state_update.active && state_update.pending_reinit);
 
-    let message = alice_group.process_incoming_message(commit).unwrap();
+    let message = alice_group.process_incoming_message(commit).await.unwrap();
 
     if let Event::Commit(state_update) = message.event {
         assert!(!state_update.active && state_update.pending_reinit);
     }
 
     // They can't create new epochs anymore
-    assert!(alice_group.commit(vec![]).is_err());
+    assert!(alice_group.commit(vec![]).await.is_err());
 
-    assert!(bob_group.commit(vec![]).is_err());
+    assert!(bob_group.commit(vec![]).await.is_err());
 
     // Alice finishes the reinit by creating the new group
     let kp = bob
         .client
         .generate_key_package_message(version, suite2, bob.id2)
+        .await
         .unwrap();
 
     let (mut alice_group, welcome) = alice_group
         .finish_reinit_commit(vec![kp], Some(alice.id2))
+        .await
         .unwrap();
 
     // Alice invited Bob
     let welcome = welcome.unwrap();
     let tree = alice_group.export_tree().unwrap();
 
-    let (mut bob_group, _) = bob_group.finish_reinit_join(welcome, Some(&tree)).unwrap();
+    let (mut bob_group, _) = bob_group
+        .finish_reinit_join(welcome, Some(&tree))
+        .await
+        .unwrap();
 
     // They can talk
     let carol = get_reinit_client(suite1, suite2, "carol");
@@ -995,19 +1066,23 @@ fn reinit_works() {
     let kp = carol
         .client
         .generate_key_package(version, suite2, carol.id2)
+        .await
         .unwrap();
 
     let commit_output = alice_group
         .commit_builder()
         .add_member(kp)
+        .await
         .unwrap()
         .build()
+        .await
         .unwrap();
 
-    alice_group.apply_pending_commit().unwrap();
+    alice_group.apply_pending_commit().await.unwrap();
 
     bob_group
         .process_incoming_message(commit_output.commit_message)
+        .await
         .unwrap();
 
     let tree = alice_group.export_tree().unwrap();
@@ -1015,5 +1090,6 @@ fn reinit_works() {
     carol
         .client
         .join_group(Some(&tree), commit_output.welcome_message.unwrap())
+        .await
         .unwrap();
 }

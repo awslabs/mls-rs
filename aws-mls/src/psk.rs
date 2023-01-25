@@ -324,7 +324,7 @@ pub enum PskSecretError {
     KeyScheduleError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
-pub(crate) trait ExternalPskIdValidator {
+pub(crate) trait ExternalPskIdValidator: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn validate(&self, psk_id: &ExternalPskId) -> Result<(), Self::Error>;
@@ -481,7 +481,7 @@ mod tests {
         }
 
         fn load() -> Vec<TestScenario> {
-            load_test_cases!(psk_secret, TestScenario::generate)
+            load_test_cases!(psk_secret, TestScenario::generate())
         }
 
         fn compute_psk_secret<P: CipherSuiteProvider>(provider: &P, psks: &[PskInfo]) -> Vec<u8> {

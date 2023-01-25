@@ -12,8 +12,10 @@ use aws_mls::{
     },
 };
 use criterion::{
-    criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
+    async_executor::FuturesExecutor, criterion_group, criterion_main, measurement::WallTime,
+    BatchSize, BenchmarkGroup, BenchmarkId, Criterion,
 };
+use futures::executor::block_on;
 use std::collections::HashMap;
 
 fn decap_setup(c: &mut Criterion) {
@@ -23,7 +25,7 @@ fn decap_setup(c: &mut Criterion) {
 
     println!("Benchmarking decap for: {cipher_suite:?}");
 
-    let trees = load_test_cases();
+    let trees = block_on(load_test_cases());
 
     // Run Decap Benchmark
     bench_decap(&mut decap_group, cipher_suite, trees, &[], None, None);
@@ -46,8 +48,8 @@ fn bench_decap(
             extensions: extensions.clone().unwrap_or_default(),
         };
 
-        let encap_gen = TreeKem::new(&mut value.encap_tree, &mut value.encap_private_key)
-            .encap(
+        let encap_gen = block_on(
+            TreeKem::new(&mut value.encap_tree, &mut value.encap_private_key).encap(
                 &mut value.group_context,
                 &[],
                 &value.encap_signer,
@@ -55,35 +57,47 @@ fn bench_decap(
                 None,
                 BasicIdentityProvider,
                 &test_cipher_suite_provider(cipher_suite),
-            )
-            .unwrap();
+            ),
+        )
+        .unwrap();
 
         // Apply the update path to the rest of the leaf nodes using the decap function
-        let validated_update_path = ValidatedUpdatePath {
+        let validated_update_path = &ValidatedUpdatePath {
             leaf_node: encap_gen.update_path.leaf_node,
             nodes: encap_gen.update_path.nodes,
         };
 
         // Create one receiver tree so decap is run once
-        let mut receiver_tree = value.test_tree.clone();
-        let mut private_keys = value.private_keys;
+        let receiver_tree = value.test_tree.clone();
+        let private_keys = value.private_keys;
 
         bench_group.bench_with_input(
             BenchmarkId::new(format!("{cipher_suite:?}"), key),
             &key,
             |b, _| {
-                b.iter(|| {
-                    TreeKem::new(&mut receiver_tree, &mut private_keys[0])
-                        .decap(
-                            LeafIndex::new(0),
-                            &validated_update_path,
-                            added_leaves,
-                            &mut value.group_context,
-                            BasicIdentityProvider,
-                            &test_cipher_suite_provider(cipher_suite),
+                b.to_async(FuturesExecutor).iter_batched(
+                    || {
+                        (
+                            receiver_tree.clone(),
+                            private_keys[0].clone(),
+                            value.group_context.clone(),
                         )
-                        .unwrap();
-                })
+                    },
+                    |(mut receiver_tree, mut private_key, mut group_context)| async move {
+                        TreeKem::new(&mut receiver_tree, &mut private_key)
+                            .decap(
+                                LeafIndex::new(0),
+                                validated_update_path,
+                                added_leaves,
+                                &mut group_context,
+                                BasicIdentityProvider,
+                                &test_cipher_suite_provider(cipher_suite),
+                            )
+                            .await
+                            .unwrap();
+                    },
+                    BatchSize::SmallInput,
+                )
             },
         );
     }

@@ -192,7 +192,7 @@ mod tests {
     }
 
     fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(path_secret, TestCase::generate)
+        load_test_cases!(path_secret, TestCase::generate())
     }
 
     #[test]

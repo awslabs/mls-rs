@@ -140,7 +140,7 @@ mod tests {
     }
 
     fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(hash_reference, generate_hash_reference_test_cases)
+        load_test_cases!(hash_reference, generate_hash_reference_test_cases())
     }
 
     #[test]

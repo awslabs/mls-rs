@@ -139,7 +139,7 @@ where
 
 impl<KEM, KDF, AEAD> CipherSuiteProvider for OpensslCipherSuite<KEM, KDF, AEAD>
 where
-    KEM: KemType + Clone,
+    KEM: KemType + Clone + Send + Sync,
     KDF: KdfType + Clone + Send + Sync,
     AEAD: AeadType + Clone + Send + Sync,
 {

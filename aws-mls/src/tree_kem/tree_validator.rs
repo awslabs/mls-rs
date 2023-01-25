@@ -10,6 +10,7 @@ use crate::{
     },
 };
 use aws_mls_core::identity::IdentityProvider;
+use futures::TryStreamExt;
 use thiserror::Error;
 
 use super::node::{LeafIndex, NodeIndex, NodeVecError};
@@ -61,14 +62,12 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
         }
     }
 
-    pub fn validate(&self, tree: &mut TreeKemPublic) -> Result<(), TreeValidationError> {
-        self.validate_tree_hash(tree)
-            .and(
-                tree.validate_parent_hashes(self.cipher_suite_provider)
-                    .map_err(|_| TreeValidationError::ParentHashMismatch),
-            )
-            .and(self.validate_leaves(tree))
-            .and(validate_unmerged(tree))
+    pub async fn validate(&self, tree: &mut TreeKemPublic) -> Result<(), TreeValidationError> {
+        self.validate_tree_hash(tree)?;
+        tree.validate_parent_hashes(self.cipher_suite_provider)
+            .map_err(|_| TreeValidationError::ParentHashMismatch)?;
+        self.validate_leaves(tree).await?;
+        validate_unmerged(tree)
     }
 
     fn validate_tree_hash(&self, tree: &mut TreeKemPublic) -> Result<(), TreeValidationError> {
@@ -85,11 +84,11 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
         Ok(())
     }
 
-    fn validate_leaves(&self, tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
+    async fn validate_leaves(&self, tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
         // For each non-empty leaf node, verify the signature on the LeafNode.
-        tree.nodes
-            .non_empty_leaves()
+        futures::stream::iter(tree.nodes.non_empty_leaves().map(Ok))
             .try_for_each(|(li, ln)| self.leaf_node_validator.revalidate(ln, self.group_id, *li))
+            .await
             .map_err(Into::into)
     }
 }
@@ -167,13 +166,13 @@ mod tests {
         }
     }
 
-    fn get_valid_tree(cipher_suite: CipherSuite) -> TreeKemPublic {
+    async fn get_valid_tree(cipher_suite: CipherSuite) -> TreeKemPublic {
         let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
-        let mut test_tree = get_test_tree(cipher_suite);
+        let mut test_tree = get_test_tree(cipher_suite).await;
 
-        let leaf1 = get_basic_test_node(cipher_suite, "leaf1");
-        let leaf2 = get_basic_test_node(cipher_suite, "leaf2");
+        let leaf1 = get_basic_test_node(cipher_suite, "leaf1").await;
+        let leaf2 = get_basic_test_node(cipher_suite, "leaf2").await;
 
         test_tree
             .public
@@ -182,6 +181,7 @@ mod tests {
                 BasicIdentityProvider,
                 &cipher_suite_provider,
             )
+            .await
             .unwrap();
 
         test_tree.public.nodes[1] = Some(Node::Parent(test_parent_node(cipher_suite)));
@@ -199,18 +199,19 @@ mod tests {
                 #[cfg(test)]
                 &Default::default(),
             )
+            .await
             .unwrap();
 
         test_tree.public
     }
 
-    #[test]
-    fn test_valid_tree() {
+    #[futures_test::test]
+    async fn test_valid_tree() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             println!("Checking cipher suite: {cipher_suite:?}");
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
-            let mut test_tree = get_valid_tree(cipher_suite);
+            let mut test_tree = get_valid_tree(cipher_suite).await;
             let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).unwrap();
 
             let validator = TreeValidator::new(
@@ -221,14 +222,14 @@ mod tests {
                 BasicIdentityProvider::new(),
             );
 
-            validator.validate(&mut test_tree).unwrap();
+            validator.validate(&mut test_tree).await.unwrap();
         }
     }
 
-    #[test]
-    fn test_tree_hash_mismatch() {
+    #[futures_test::test]
+    async fn test_tree_hash_mismatch() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            let mut test_tree = get_valid_tree(cipher_suite);
+            let mut test_tree = get_valid_tree(cipher_suite).await;
             let expected_tree_hash = random_bytes(32);
 
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
@@ -242,16 +243,16 @@ mod tests {
             );
 
             assert_matches!(
-                validator.validate(&mut test_tree),
+                validator.validate(&mut test_tree).await,
                 Err(TreeValidationError::TreeHashMismatch(_, _))
             );
         }
     }
 
-    #[test]
-    fn test_parent_hash_mismatch() {
+    #[futures_test::test]
+    async fn test_parent_hash_mismatch() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            let mut test_tree = get_valid_tree(cipher_suite);
+            let mut test_tree = get_valid_tree(cipher_suite).await;
 
             let parent_node = test_tree.nodes.borrow_as_parent_mut(1).unwrap();
             parent_node.parent_hash = ParentHash::from(random_bytes(32));
@@ -268,16 +269,16 @@ mod tests {
             );
 
             assert_matches!(
-                validator.validate(&mut test_tree),
+                validator.validate(&mut test_tree).await,
                 Err(TreeValidationError::ParentHashMismatch)
             );
         }
     }
 
-    #[test]
-    fn test_key_package_validation_failure() {
+    #[futures_test::test]
+    async fn test_key_package_validation_failure() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            let mut test_tree = get_valid_tree(cipher_suite);
+            let mut test_tree = get_valid_tree(cipher_suite).await;
 
             test_tree
                 .nodes
@@ -297,21 +298,21 @@ mod tests {
             );
 
             assert_matches!(
-                validator.validate(&mut test_tree),
+                validator.validate(&mut test_tree).await,
                 Err(TreeValidationError::LeafNodeValidationError(_))
             );
         }
     }
 
-    #[test]
-    fn verify_unmerged_with_correct_tree() {
-        let tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128);
+    #[futures_test::test]
+    async fn verify_unmerged_with_correct_tree() {
+        let tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128).await;
         validate_unmerged(&tree).unwrap();
     }
 
-    #[test]
-    fn verify_unmerged_with_blank_leaf() {
-        let mut tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128);
+    #[futures_test::test]
+    async fn verify_unmerged_with_blank_leaf() {
+        let mut tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128).await;
 
         // Blank leaf D unmerged at nodes 3, 7
         tree.nodes.blank_node(6).unwrap();
@@ -322,9 +323,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn verify_unmerged_with_broken_path() {
-        let mut tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128);
+    #[futures_test::test]
+    async fn verify_unmerged_with_broken_path() {
+        let mut tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128).await;
 
         // Make D with direct path [3, 7] unmerged at 7 but not 3
         tree.nodes.borrow_as_parent_mut(3).unwrap().unmerged_leaves = vec![];
@@ -335,9 +336,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn verify_unmerged_with_leaf_outside_tree() {
-        let mut tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128);
+    #[futures_test::test]
+    async fn verify_unmerged_with_leaf_outside_tree() {
+        let mut tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128).await;
 
         // Add leaf E from the right subtree of the root to unmerged leaves of node 1 on the left
         tree.nodes.borrow_as_parent_mut(1).unwrap().unmerged_leaves = vec![LeafIndex(4)];

@@ -7,8 +7,7 @@ use once_cell::sync::Lazy;
 
 static GLOBAL_DATA: Lazy<Vec<Group<TestClientConfig>>> = Lazy::new(|| {
     let cipher_suite = CipherSuite::Curve25519Aes128;
-
-    create_group(cipher_suite, 2)
+    futures::executor::block_on(create_group(cipher_suite, 2))
 });
 
 #[derive(Clone, Debug)]

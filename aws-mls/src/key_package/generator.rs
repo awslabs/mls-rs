@@ -79,7 +79,7 @@ where
             .map_err(Into::into)
     }
 
-    pub fn generate(
+    pub async fn generate(
         &self,
         lifetime: Lifetime,
         capabilities: Capabilities,
@@ -103,7 +103,8 @@ where
             self.signing_key,
             lifetime,
             self.identity_provider,
-        )?;
+        )
+        .await?;
 
         let mut package = KeyPackage {
             version: self.protocol_version.into(),
@@ -184,8 +185,8 @@ mod tests {
         Lifetime::years(1).unwrap()
     }
 
-    #[test]
-    fn test_key_generation() {
+    #[futures_test::test]
+    async fn test_key_generation() {
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
             TestCryptoProvider::all_supported_cipher_suites()
                 .into_iter()
@@ -220,6 +221,7 @@ mod tests {
                     key_package_ext.clone(),
                     leaf_node_ext.clone(),
                 )
+                .await
                 .unwrap();
 
             assert_matches!(generated.key_package.leaf_node.leaf_node_source,
@@ -260,12 +262,13 @@ mod tests {
 
             validator
                 .check_if_valid(&generated.key_package, Default::default())
+                .await
                 .unwrap();
         }
     }
 
-    #[test]
-    fn test_credential_signature_mismatch() {
+    #[futures_test::test]
+    async fn test_credential_signature_mismatch() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
 
@@ -280,12 +283,14 @@ mod tests {
             identity_provider: &BasicIdentityProvider::new(),
         };
 
-        let generated = test_generator.generate(
-            test_lifetime(),
-            get_test_capabilities(),
-            ExtensionList::default(),
-            ExtensionList::default(),
-        );
+        let generated = test_generator
+            .generate(
+                test_lifetime(),
+                get_test_capabilities(),
+                ExtensionList::default(),
+                ExtensionList::default(),
+            )
+            .await;
 
         assert_matches!(
             generated,
@@ -295,8 +300,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_randomness() {
+    #[futures_test::test]
+    async fn test_randomness() {
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
             TestCryptoProvider::all_supported_cipher_suites()
                 .into_iter()
@@ -320,9 +325,10 @@ mod tests {
                     ExtensionList::default(),
                     ExtensionList::default(),
                 )
+                .await
                 .unwrap();
 
-            (0..100).for_each(|_| {
+            for _ in 0..100 {
                 let next_key_package = test_generator
                     .generate(
                         test_lifetime(),
@@ -330,6 +336,7 @@ mod tests {
                         ExtensionList::default(),
                         ExtensionList::default(),
                     )
+                    .await
                     .unwrap();
 
                 assert_ne!(
@@ -341,12 +348,12 @@ mod tests {
                     first_key_package.key_package.leaf_node.public_key,
                     next_key_package.key_package.leaf_node.public_key
                 );
-            })
+            }
         }
     }
 
-    #[test]
-    fn test_failure_when_credential_is_not_valid() {
+    #[futures_test::test]
+    async fn test_failure_when_credential_is_not_valid() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
         let (signing_identity, signing_key) =
             get_test_signing_identity(cipher_suite, b"test".to_vec());
@@ -360,12 +367,14 @@ mod tests {
         };
 
         assert_matches!(
-            test_generator.generate(
-                test_lifetime(),
-                get_test_capabilities(),
-                ExtensionList::default(),
-                ExtensionList::default()
-            ),
+            test_generator
+                .generate(
+                    test_lifetime(),
+                    get_test_capabilities(),
+                    ExtensionList::default(),
+                    ExtensionList::default()
+                )
+                .await,
             Err(KeyPackageGenerationError::LeafNodeError(
                 LeafNodeError::IdentityProviderError(_)
             ))

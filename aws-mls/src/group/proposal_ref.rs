@@ -103,7 +103,7 @@ mod test {
         output: Vec<u8>,
     }
 
-    fn generate_proposal_test_cases() -> Vec<TestCase> {
+    async fn generate_proposal_test_cases() -> Vec<TestCase> {
         let mut test_cases = Vec::new();
 
         for (protocol_version, cipher_suite) in
@@ -113,14 +113,14 @@ mod test {
 
             let add = auth_content_from_proposal(
                 Proposal::Add(AddProposal {
-                    key_package: test_key_package(protocol_version, cipher_suite, "alice"),
+                    key_package: test_key_package(protocol_version, cipher_suite, "alice").await,
                 }),
                 sender,
             );
 
             let update = auth_content_from_proposal(
                 Proposal::Update(UpdateProposal {
-                    leaf_node: get_basic_test_node(cipher_suite, "foo"),
+                    leaf_node: get_basic_test_node(cipher_suite, "foo").await,
                 }),
                 sender,
             );
@@ -175,13 +175,13 @@ mod test {
         test_cases
     }
 
-    fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(proposal_ref, generate_proposal_test_cases)
+    async fn load_test_cases() -> Vec<TestCase> {
+        load_test_cases!(proposal_ref, generate_proposal_test_cases().await)
     }
 
-    #[test]
-    fn test_proposal_ref() {
-        let test_cases = load_test_cases();
+    #[futures_test::test]
+    async fn test_proposal_ref() {
+        let test_cases = load_test_cases().await;
 
         for one_case in test_cases {
             let Some(cs_provider) = try_test_cipher_suite_provider(one_case.cipher_suite) else {

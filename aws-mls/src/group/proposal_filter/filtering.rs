@@ -1,5 +1,3 @@
-use aws_mls_core::identity::IdentityProvider;
-
 use crate::{
     extension::{
         is_default_extension, ExtensionList, ExternalSendersExt, GroupContextExtension,
@@ -23,10 +21,9 @@ use crate::{
         AccumulateBatchResults, RatchetTreeError, TreeKemPublic,
     },
 };
-use std::{
-    collections::{HashMap, HashSet},
-    convert::Infallible,
-};
+use aws_mls_core::identity::IdentityProvider;
+use futures::TryStreamExt;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[derive(Clone, Debug)]
 pub(crate) struct ProposalState {
@@ -93,7 +90,7 @@ where
         }
     }
 
-    pub(crate) fn apply_proposals<F>(
+    pub(crate) async fn apply_proposals<F>(
         &self,
         strategy: F,
         commit_sender: &Sender,
@@ -104,20 +101,26 @@ where
         F: FilterStrategy,
     {
         match commit_sender {
-            Sender::Member(sender) => self.apply_proposals_from_member(
-                strategy,
-                LeafIndex(*sender),
-                proposals,
-                commit_time,
-            ),
-            Sender::NewMemberCommit => self.apply_proposals_from_new_member(proposals, commit_time),
+            Sender::Member(sender) => {
+                self.apply_proposals_from_member(
+                    strategy,
+                    LeafIndex(*sender),
+                    proposals,
+                    commit_time,
+                )
+                .await
+            }
+            Sender::NewMemberCommit => {
+                self.apply_proposals_from_new_member(proposals, commit_time)
+                    .await
+            }
             Sender::External(_) | Sender::NewMemberProposal => {
                 Err(ProposalFilterError::ExternalSenderCannotCommit)
             }
         }
     }
 
-    fn apply_proposals_from_member<F>(
+    async fn apply_proposals_from_member<F>(
         &self,
         strategy: F,
         commit_sender: LeafIndex,
@@ -149,7 +152,8 @@ where
             proposals,
             &self.identity_provider,
             commit_time,
-        )?;
+        )
+        .await?;
 
         let proposals = filter_out_extra_group_context_extensions(&strategy, proposals)?;
         let proposals = filter_out_invalid_reinit(&strategy, proposals, self.protocol_version)?;
@@ -157,11 +161,13 @@ where
         let proposals = filter_out_external_init(&strategy, commit_sender, proposals)?;
 
         let state = ProposalState::new(self.original_tree.clone(), proposals);
-        let state = self.apply_proposal_changes(&strategy, state, commit_time)?;
+        let state = self
+            .apply_proposal_changes(&strategy, state, commit_time)
+            .await?;
         Ok(state)
     }
 
-    fn apply_proposals_from_new_member(
+    async fn apply_proposals_from_new_member(
         &self,
         proposals: ProposalBundle,
         commit_time: Option<MlsTime>,
@@ -177,7 +183,8 @@ where
             external_leaf,
             self.original_tree,
             &self.identity_provider,
-        )?;
+        )
+        .await?;
 
         ensure_proposals_in_external_commit_are_allowed(&proposals)?;
         ensure_no_proposal_by_ref(&proposals)?;
@@ -197,19 +204,22 @@ where
         )?;
         let state = ProposalState::new(self.original_tree.clone(), proposals);
 
-        let state = self.apply_proposal_changes(FailInvalidProposal, state, commit_time)?;
+        let state = self
+            .apply_proposal_changes(FailInvalidProposal, state, commit_time)
+            .await?;
 
         let state = insert_external_leaf(
             state,
             external_leaf.clone(),
             &self.identity_provider,
             self.cipher_suite_provider,
-        )?;
+        )
+        .await?;
 
         Ok(state)
     }
 
-    fn apply_proposal_changes<F>(
+    async fn apply_proposal_changes<F>(
         &self,
         strategy: F,
         mut state: ProposalState,
@@ -246,25 +256,30 @@ where
         }
 
         match extensions_proposal_and_capabilities {
-            Some((group_context_extensions_proposal, new_required_capabilities)) => self
-                .apply_proposals_with_new_capabilities(
+            Some((group_context_extensions_proposal, new_required_capabilities)) => {
+                self.apply_proposals_with_new_capabilities(
                     strategy,
                     state,
                     group_context_extensions_proposal,
                     new_required_capabilities,
                     commit_time,
-                ),
-            None => self.apply_tree_changes(
-                strategy,
-                state,
-                self.original_group_extensions,
-                self.original_required_capabilities,
-                commit_time,
-            ),
+                )
+                .await
+            }
+            None => {
+                self.apply_tree_changes(
+                    strategy,
+                    state,
+                    self.original_group_extensions,
+                    self.original_required_capabilities,
+                    commit_time,
+                )
+                .await
+            }
         }
     }
 
-    fn apply_proposals_with_new_capabilities<F>(
+    async fn apply_proposals_with_new_capabilities<F>(
         &self,
         strategy: F,
         mut state: ProposalState,
@@ -276,13 +291,15 @@ where
         F: FilterStrategy,
         C: IdentityProvider,
     {
-        let mut new_state = self.apply_tree_changes(
-            &strategy,
-            state.clone(),
-            &ExtensionList::new(),
-            None,
-            commit_time,
-        )?;
+        let mut new_state = self
+            .apply_tree_changes(
+                &strategy,
+                state.clone(),
+                &ExtensionList::new(),
+                None,
+                commit_time,
+            )
+            .await?;
 
         let new_capabilities_supported =
             new_required_capabilities.map_or(Ok(()), |new_required_capabilities| {
@@ -334,19 +351,22 @@ where
                 ) {
                     (false, ..) => Err(e),
                     (true, None, true) => Ok(new_state),
-                    (true, ..) => self.apply_tree_changes(
-                        &strategy,
-                        state,
-                        self.original_group_extensions,
-                        self.original_required_capabilities,
-                        commit_time,
-                    ),
+                    (true, ..) => {
+                        self.apply_tree_changes(
+                            &strategy,
+                            state,
+                            self.original_group_extensions,
+                            self.original_required_capabilities,
+                            commit_time,
+                        )
+                        .await
+                    }
                 }
             }
         }
     }
 
-    fn apply_tree_changes<F>(
+    async fn apply_tree_changes<F>(
         &self,
         strategy: F,
         state: ProposalState,
@@ -357,13 +377,15 @@ where
     where
         F: FilterStrategy,
     {
-        let mut state = self.validate_new_nodes(
-            &strategy,
-            state,
-            group_extensions_in_use,
-            required_capabilities,
-            commit_time,
-        )?;
+        let mut state = self
+            .validate_new_nodes(
+                &strategy,
+                state,
+                group_extensions_in_use,
+                required_capabilities,
+                commit_time,
+            )
+            .await?;
 
         let mut updates = Vec::new();
         state
@@ -392,14 +414,17 @@ where
 
         let accumulator = TreeBatchEditAccumulator::new(&strategy, &state.proposals);
 
-        let accumulator = state.tree.batch_edit(
-            accumulator,
-            &updates,
-            &removals,
-            &additions,
-            &self.identity_provider,
-            self.cipher_suite_provider,
-        )?;
+        let accumulator = state
+            .tree
+            .batch_edit(
+                accumulator,
+                &updates,
+                &removals,
+                &additions,
+                &self.identity_provider,
+                self.cipher_suite_provider,
+            )
+            .await?;
 
         let TreeBatchEditAccumulator {
             strategy: _,
@@ -414,37 +439,28 @@ where
         state.added_indexes = new_leaf_indexes;
         state.removed_leaves = removed_leaves;
 
-        let mut i = 0;
-        let _ = state
-            .proposals
-            .retain_by_type::<AddProposal, _, Infallible>(|_| {
-                let keep = !invalid_additions.contains(&i);
-                i += 1;
-                Ok(keep)
-            });
+        invalid_additions
+            .iter()
+            .rev()
+            .copied()
+            .for_each(|i| state.proposals.remove::<AddProposal>(i));
 
-        let mut i = 0;
-        let _ = state
-            .proposals
-            .retain_by_type::<RemoveProposal, _, Infallible>(|_| {
-                let keep = !invalid_removals.contains(&i);
-                i += 1;
-                Ok(keep)
-            });
+        invalid_removals
+            .iter()
+            .rev()
+            .copied()
+            .for_each(|i| state.proposals.remove::<RemoveProposal>(i));
 
-        let mut i = 0;
-        let _ = state
-            .proposals
-            .retain_by_type::<UpdateProposal, _, Infallible>(|_| {
-                let keep = !invalid_updates.contains(&i);
-                i += 1;
-                Ok(keep)
-            });
+        invalid_updates
+            .iter()
+            .rev()
+            .copied()
+            .for_each(|i| state.proposals.remove::<UpdateProposal>(i));
 
         Ok(state)
     }
 
-    fn validate_new_nodes<F>(
+    async fn validate_new_nodes<F>(
         &self,
         strategy: F,
         state: ProposalState,
@@ -455,26 +471,30 @@ where
     where
         F: FilterStrategy,
     {
-        let state = self.validate_new_update_nodes(
-            &strategy,
-            state,
-            group_extensions_in_use,
-            required_capabilities,
-            commit_time,
-        )?;
+        let state = self
+            .validate_new_update_nodes(
+                &strategy,
+                state,
+                group_extensions_in_use,
+                required_capabilities,
+                commit_time,
+            )
+            .await?;
 
-        let state = self.validate_new_key_packages(
-            &strategy,
-            state,
-            group_extensions_in_use,
-            required_capabilities,
-            commit_time,
-        )?;
+        let state = self
+            .validate_new_key_packages(
+                &strategy,
+                state,
+                group_extensions_in_use,
+                required_capabilities,
+                commit_time,
+            )
+            .await?;
 
         Ok(state)
     }
 
-    fn validate_new_update_nodes<F>(
+    async fn validate_new_update_nodes<F>(
         &self,
         strategy: F,
         mut state: ProposalState,
@@ -485,35 +505,46 @@ where
     where
         F: FilterStrategy,
     {
-        let leaf_node_validator = LeafNodeValidator::new(
+        let leaf_node_validator = &LeafNodeValidator::new(
             self.cipher_suite_provider,
             required_capabilities,
             &self.identity_provider,
         );
 
+        let strategy = &strategy;
         let proposals = &mut state.proposals;
 
-        proposals.retain_by_type::<UpdateProposal, _, _>(|p| {
-            let sender_index = leaf_index_of_update_sender(p)?;
+        let bad_update_indices =
+            futures::stream::iter(proposals.by_type::<UpdateProposal>().enumerate().map(Ok))
+                .try_filter_map(|(i, p)| async move {
+                    let sender_index = leaf_index_of_update_sender(p)?;
 
-            let valid = leaf_node_validator
-                .check_if_valid(
-                    &p.proposal.leaf_node,
-                    ValidationContext::Update((self.group_id, *sender_index, commit_time)),
-                )
-                .map_err(Into::into);
+                    let valid = leaf_node_validator
+                        .check_if_valid(
+                            &p.proposal.leaf_node,
+                            ValidationContext::Update((self.group_id, *sender_index, commit_time)),
+                        )
+                        .await
+                        .map_err(Into::into);
 
-            let extensions_are_supported =
-                leaf_supports_extensions(&p.proposal.leaf_node, group_extensions_in_use);
+                    let extensions_are_supported =
+                        leaf_supports_extensions(&p.proposal.leaf_node, group_extensions_in_use);
 
-            let res = valid.and(extensions_are_supported);
-            apply_strategy(&strategy, p, res)
-        })?;
+                    let res = valid.and(extensions_are_supported);
+                    apply_strategy(strategy, p, res).map(|keep| (!keep).then_some(i))
+                })
+                .try_collect::<Vec<_>>()
+                .await?;
+
+        bad_update_indices
+            .into_iter()
+            .rev()
+            .for_each(|i| proposals.remove::<UpdateProposal>(i));
 
         Ok(state)
     }
 
-    fn validate_new_key_packages<F>(
+    async fn validate_new_key_packages<F>(
         &self,
         strategy: F,
         mut state: ProposalState,
@@ -524,32 +555,43 @@ where
     where
         F: FilterStrategy,
     {
-        let package_validator = KeyPackageValidator::new(
+        let package_validator = &KeyPackageValidator::new(
             self.protocol_version,
             self.cipher_suite_provider,
             required_capabilities,
             &self.identity_provider,
         );
 
+        let strategy = &strategy;
         let proposals = &mut state.proposals;
 
-        proposals.retain_by_type::<AddProposal, _, _>(|p| {
-            let options = KeyPackageValidationOptions {
-                apply_lifetime_check: commit_time,
-            };
+        let bad_add_indices =
+            futures::stream::iter(proposals.by_type::<AddProposal>().enumerate().map(Ok))
+                .try_filter_map(|(i, p)| async move {
+                    let options = KeyPackageValidationOptions {
+                        apply_lifetime_check: commit_time,
+                    };
 
-            let valid = package_validator
-                .check_if_valid(&p.proposal.key_package, options)
-                .map_err(Into::into);
+                    let valid = package_validator
+                        .check_if_valid(&p.proposal.key_package, options)
+                        .await
+                        .map_err(Into::into);
 
-            let extensions_are_supported = leaf_supports_extensions(
-                &p.proposal.key_package.leaf_node,
-                group_extensions_in_use,
-            );
+                    let extensions_are_supported = leaf_supports_extensions(
+                        &p.proposal.key_package.leaf_node,
+                        group_extensions_in_use,
+                    );
 
-            let res = valid.and(extensions_are_supported);
-            apply_strategy(&strategy, p, res)
-        })?;
+                    let res = valid.and(extensions_are_supported);
+                    apply_strategy(strategy, p, res).map(|keep| (!keep).then_some(i))
+                })
+                .try_collect::<Vec<_>>()
+                .await?;
+
+        bad_add_indices
+            .into_iter()
+            .rev()
+            .for_each(|i| proposals.remove::<AddProposal>(i));
 
         Ok(state)
     }
@@ -704,7 +746,7 @@ where
     Ok(proposals)
 }
 
-fn filter_out_invalid_group_extensions<F, C>(
+async fn filter_out_invalid_group_extensions<F, C>(
     strategy: F,
     mut proposals: ProposalBundle,
     identity_provider: C,
@@ -714,21 +756,38 @@ where
     F: FilterStrategy,
     C: IdentityProvider,
 {
-    proposals.retain_by_type::<ExtensionList<GroupContextExtension>, _, _>(|p| {
-        let res = p
+    let strategy = &strategy;
+    let identity_provider = &identity_provider;
+
+    let bad_indices = futures::stream::iter(
+        proposals
+            .by_type::<ExtensionList<GroupContextExtension>>()
+            .enumerate()
+            .map(Ok),
+    )
+    .try_filter_map(|(i, p)| async move {
+        let res = match p
             .proposal
             .get_extension::<ExternalSendersExt>()
             .map_err(Into::into)
-            .and_then(|extension| {
-                extension.map_or(Ok(()), |extension| {
-                    extension
-                        .verify_all(&identity_provider, commit_time)
-                        .map_err(|e| ProposalFilterError::IdentityProviderError(e.into()))
-                })
-            });
+        {
+            Ok(None) => Ok(()),
+            Ok(Some(extension)) => extension
+                .verify_all(&identity_provider, commit_time)
+                .await
+                .map_err(|e| ProposalFilterError::IdentityProviderError(e.into())),
+            Err(e) => Err(e),
+        };
 
-        apply_strategy(&strategy, p, res)
-    })?;
+        apply_strategy(strategy, p, res).map(|keep| (!keep).then_some(i))
+    })
+    .try_collect::<Vec<_>>()
+    .await?;
+
+    bad_indices
+        .into_iter()
+        .rev()
+        .for_each(|i| proposals.remove::<ExtensionList<GroupContextExtension>>(i));
 
     Ok(proposals)
 }
@@ -1020,7 +1079,7 @@ fn ensure_proposals_in_external_commit_are_allowed(
     }
 }
 
-fn ensure_at_most_one_removal_for_self<C>(
+async fn ensure_at_most_one_removal_for_self<C>(
     proposals: &ProposalBundle,
     external_leaf: &LeafNode,
     tree: &TreeKemPublic,
@@ -1034,13 +1093,14 @@ where
     match (removals.next(), removals.next()) {
         (Some(removal), None) => {
             ensure_removal_is_for_self(&removal.proposal, external_leaf, tree, identity_provider)
+                .await
         }
         (Some(_), Some(_)) => Err(ProposalFilterError::ExternalCommitWithMoreThanOneRemove),
         (None, _) => Ok(()),
     }
 }
 
-fn ensure_removal_is_for_self<C>(
+async fn ensure_removal_is_for_self<C>(
     removal: &RemoveProposal,
     external_leaf: &LeafNode,
     tree: &TreeKemPublic,
@@ -1053,6 +1113,7 @@ where
 
     identity_provider
         .valid_successor(existing_signing_id, &external_leaf.signing_identity)
+        .await
         .map_err(|e| RatchetTreeError::CredentialValidationError(e.into()))?
         .then_some(())
         .ok_or(ProposalFilterError::ExternalCommitRemovesOtherIdentity)
@@ -1080,7 +1141,7 @@ fn leaf_index_of_update_sender(
     }
 }
 
-fn insert_external_leaf<I, CP>(
+async fn insert_external_leaf<I, CP>(
     mut state: ProposalState,
     leaf_node: LeafNode,
     identity_provider: I,
@@ -1090,10 +1151,10 @@ where
     I: IdentityProvider,
     CP: CipherSuiteProvider,
 {
-    let leaf_indexes =
-        state
-            .tree
-            .add_leaves(vec![leaf_node], identity_provider, cipher_suite_provider)?;
+    let leaf_indexes = state
+        .tree
+        .add_leaves(vec![leaf_node], identity_provider, cipher_suite_provider)
+        .await?;
 
     state.external_leaf_index = leaf_indexes.first().copied();
     Ok(state)
@@ -1104,9 +1165,9 @@ struct TreeBatchEditAccumulator<'a, F> {
     proposals: &'a ProposalBundle,
     new_leaf_indexes: Vec<LeafIndex>,
     removed_leaves: Vec<(LeafIndex, LeafNode)>,
-    invalid_additions: HashSet<usize>,
-    invalid_removals: HashSet<usize>,
-    invalid_updates: HashSet<usize>,
+    invalid_additions: BTreeSet<usize>,
+    invalid_removals: BTreeSet<usize>,
+    invalid_updates: BTreeSet<usize>,
 }
 
 impl<'a, F: FilterStrategy> TreeBatchEditAccumulator<'a, F> {
