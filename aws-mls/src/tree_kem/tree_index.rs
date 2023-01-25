@@ -111,6 +111,10 @@ impl TreeIndex {
         Ok(())
     }
 
+    pub(crate) fn get_leaf_index_with_identity(&self, identity: &[u8]) -> Option<LeafIndex> {
+        self.identities.get(identity).copied()
+    }
+
     pub fn remove(&mut self, leaf_node: &LeafNode, identity: &[u8]) {
         let existed = self.identities.remove(identity).is_some();
         let pub_key = leaf_node.signing_identity.signature_key.deref();

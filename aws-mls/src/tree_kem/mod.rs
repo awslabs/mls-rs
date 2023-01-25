@@ -178,6 +178,10 @@ impl TreeKemPublic {
         Ok(tree)
     }
 
+    pub(crate) fn get_leaf_node_with_identity(&self, identity: &[u8]) -> Option<LeafIndex> {
+        self.index.get_leaf_index_with_identity(identity)
+    }
+
     pub(crate) fn export_node_data(&self) -> NodeVec {
         self.nodes.clone()
     }

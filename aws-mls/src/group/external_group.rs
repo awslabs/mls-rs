@@ -267,6 +267,27 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub fn transcript_hash(&self) -> &Vec<u8> {
         &self.group_state().context.confirmed_transcript_hash
     }
+
+    pub async fn get_member_with_identity(
+        &self,
+        identity_id: &SigningIdentity,
+    ) -> Result<Member, GroupError> {
+        let identity = self
+            .identity_provider()
+            .identity(identity_id)
+            .await
+            .map_err(|error| GroupError::IdentityProviderError(error.into()))?;
+
+        let index = self
+            .group_state()
+            .public_tree
+            .get_leaf_node_with_identity(&identity)
+            .ok_or(GroupError::MemberNotFound)?;
+
+        let node = self.group_state().public_tree.get_leaf_node(index)?;
+
+        Ok(Member::from((index, node)))
+    }
 }
 
 impl<C> MessageProcessor for ExternalGroup<C>

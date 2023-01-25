@@ -197,6 +197,8 @@ pub enum GroupError {
     MembershipTagForNonMember,
     #[error("mls message is not a key package")]
     NotKeyPackage,
+    #[error("No member found for given identity id.")]
+    MemberNotFound,
 }
 
 impl From<CiphertextProcessorError> for GroupError {
