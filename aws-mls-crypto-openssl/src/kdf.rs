@@ -68,7 +68,7 @@ impl KdfType for Kdf {
 
     /// # Warning
     /// The length of info can *not* exceed 1024 bytes when using the OpenSSL Engine due to underlying
-    /// restrictions in OpenSSL. This function will throw an [EngineError](KdfError::EngineError)
+    /// restrictions in OpenSSL. This function will throw an [OpensslError](KdfError::OpensslError)
     /// in the event info is > 1024 bytes.
     fn expand(&self, prk: &[u8], info: &[u8], len: usize) -> Result<Vec<u8>, KdfError> {
         if prk.len() < self.extract_size() {

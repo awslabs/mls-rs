@@ -1,11 +1,11 @@
-use aws_mls_core::crypto::HpkeContext;
+use aws_mls_core::crypto::{HpkeContextR, HpkeContextS};
 use aws_mls_crypto_traits::{AeadType, KdfType};
 
 use crate::{hpke::HpkeError, kdf::HpkeKdf};
 
 /// A type representing an HPKE context
 #[derive(Debug, Clone)]
-pub struct Context<KDF: KdfType, AEAD: AeadType> {
+pub(super) struct Context<KDF: KdfType, AEAD: AeadType> {
     exporter_secret: Vec<u8>,
     encryption_context: Option<EncryptionContext<AEAD>>,
     kdf: HpkeKdf<KDF>,
@@ -24,48 +24,60 @@ impl<KDF: KdfType, AEAD: AeadType> Context<KDF, AEAD> {
             kdf,
         }
     }
-
-    #[cfg(test)]
-    pub fn exporter_secret(&self) -> &[u8] {
-        &self.exporter_secret
-    }
-
-    #[cfg(test)]
-    pub fn base_nonce(&self) -> Option<&[u8]> {
-        self.encryption_context
-            .as_ref()
-            .map(|c| c.base_nonce.as_slice())
-    }
-
-    #[cfg(test)]
-    pub fn aead_key(&self) -> Option<&[u8]> {
-        self.encryption_context
-            .as_ref()
-            .map(|c| c.aead_key.as_slice())
-    }
 }
 
-impl<KDF: KdfType, AEAD: AeadType> HpkeContext for Context<KDF, AEAD> {
-    type Error = HpkeError;
-
-    /// Encrypt `data` using the cipher key of the context with optional `aad`.
-    /// This function will internally increment the sequence number.
-    ///
-    /// # Errors
-    ///
-    /// Returns [SequenceNumberOverflow](HpkeError::SequenceNumberOverflow)
-    /// in the event that the sequence number overflows. The sequence number is a u64 and starts
-    /// at 0.
-    fn seal(&mut self, aad: Option<&[u8]>, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
+impl<KDF: KdfType, AEAD: AeadType> Context<KDF, AEAD> {
+    fn seal(&mut self, aad: Option<&[u8]>, data: &[u8]) -> Result<Vec<u8>, HpkeError> {
         self.encryption_context
             .as_mut()
             .ok_or(HpkeError::ExportOnlyMode)?
             .seal(aad, data)
     }
 
-    /// Decrypt `ciphertext` using the cipher key of the context with optional `aad`.
-    /// This function will internally increment the sequence number.
+    fn open(&mut self, aad: Option<&[u8]>, ciphertext: &[u8]) -> Result<Vec<u8>, HpkeError> {
+        self.encryption_context
+            .as_mut()
+            .ok_or(HpkeError::ExportOnlyMode)?
+            .open(aad, ciphertext)
+    }
+
+    fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, HpkeError> {
+        self.kdf
+            .labeled_expand(&self.exporter_secret, b"sec", exporter_context, len)
+            .map_err(|e| HpkeError::KdfError(e.into()))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ContextS<KDF: KdfType, AEAD: AeadType>(pub(super) Context<KDF, AEAD>);
+
+impl<KDF: KdfType, AEAD: AeadType> HpkeContextS for ContextS<KDF, AEAD> {
+    type Error = HpkeError;
+
+    fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
+        self.0.export(exporter_context, len)
+    }
+
+    /// # Errors
     ///
+    /// Returns [SequenceNumberOverflow](HpkeError::SequenceNumberOverflow)
+    /// in the event that the sequence number overflows. The sequence number is a u64 and starts
+    /// at 0.
+    fn seal(&mut self, aad: Option<&[u8]>, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
+        self.0.seal(aad, data)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ContextR<KDF: KdfType, AEAD: AeadType>(pub(super) Context<KDF, AEAD>);
+
+impl<KDF: KdfType, AEAD: AeadType> HpkeContextR for ContextR<KDF, AEAD> {
+    type Error = HpkeError;
+
+    fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
+        self.0.export(exporter_context, len)
+    }
+
     /// # Errors
     ///
     /// Returns [SequenceNumberOverflow](HpkeError::SequenceNumberOverflow)
@@ -75,17 +87,7 @@ impl<KDF: KdfType, AEAD: AeadType> HpkeContext for Context<KDF, AEAD> {
     /// Returns [AeadError](HpkeError::AeadError) if decryption fails due to either an invalid
     /// `aad` value, or incorrect cipher key.
     fn open(&mut self, aad: Option<&[u8]>, ciphertext: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        self.encryption_context
-            .as_mut()
-            .ok_or(HpkeError::ExportOnlyMode)?
-            .open(aad, ciphertext)
-    }
-
-    /// Export secret from encryption context.
-    fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
-        self.kdf
-            .labeled_expand(&self.exporter_secret, b"sec", exporter_context, len)
-            .map_err(|e| HpkeError::KdfError(e.into()))
+        self.0.open(aad, ciphertext)
     }
 }
 
@@ -169,9 +171,26 @@ impl<AEAD: AeadType> EncryptionContext<AEAD> {
 }
 
 #[cfg(test)]
-mod test {
+impl<KDF: KdfType, AEAD: AeadType> Context<KDF, AEAD> {
+    pub fn exporter_secret(&self) -> &[u8] {
+        &self.exporter_secret
+    }
 
-    use aws_mls_core::crypto::HpkeContext;
+    pub fn base_nonce(&self) -> Option<&[u8]> {
+        self.encryption_context
+            .as_ref()
+            .map(|c| c.base_nonce.as_slice())
+    }
+
+    pub fn aead_key(&self) -> Option<&[u8]> {
+        self.encryption_context
+            .as_ref()
+            .map(|c| c.aead_key.as_slice())
+    }
+}
+
+#[cfg(test)]
+mod test {
     use aws_mls_crypto_openssl::{aead::Aead, ecdh::*, kdf::Kdf};
     use serde::Deserialize;
 

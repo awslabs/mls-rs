@@ -1,6 +1,8 @@
 use std::fmt::Debug;
 
-use aws_mls_core::crypto::{HpkeCiphertext, HpkeContext, HpkePublicKey, HpkeSecretKey};
+use aws_mls_core::crypto::{
+    HpkeCiphertext, HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey,
+};
 
 use aws_mls_crypto_traits::{AeadType, KdfType, KemType, AEAD_ID_EXPORT_ONLY};
 
@@ -8,7 +10,7 @@ use thiserror::Error;
 use zeroize::Zeroizing;
 
 use crate::{
-    context::{Context, EncryptionContext},
+    context::{Context, ContextR, ContextS, EncryptionContext},
     kdf::HpkeKdf,
 };
 
@@ -137,7 +139,7 @@ where
         remote_key: &HpkePublicKey,
         info: &[u8],
         psk: Option<Psk>,
-    ) -> Result<(Vec<u8>, Context<KDF, AEAD>), HpkeError> {
+    ) -> Result<(Vec<u8>, ContextS<KDF, AEAD>), HpkeError> {
         let mode = self.base_mode(&psk);
 
         let kem_res = self
@@ -147,7 +149,7 @@ where
 
         let ctx = self.key_schedule(mode, kem_res.shared_secret(), info, psk)?;
 
-        Ok((kem_res.enc().to_owned(), ctx))
+        Ok((kem_res.enc().to_owned(), ContextS(ctx)))
     }
 
     /// Set up an HPKE context by receiving an `enc` value from the output of
@@ -161,7 +163,7 @@ where
         local_secret: &HpkeSecretKey,
         info: &[u8],
         psk: Option<Psk>,
-    ) -> Result<Context<KDF, AEAD>, HpkeError> {
+    ) -> Result<ContextR<KDF, AEAD>, HpkeError> {
         let mode = self.base_mode(&psk);
 
         let shared_secret = self
@@ -170,6 +172,7 @@ where
             .map_err(|e| HpkeError::KemError(e.into()))?;
 
         self.key_schedule(mode, &shared_secret, info, psk)
+            .map(ContextR)
     }
 
     pub fn derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), HpkeError> {
@@ -291,7 +294,7 @@ where
 mod test {
 
     use assert_matches::assert_matches;
-    use aws_mls_core::crypto::{CipherSuite, HpkeContext};
+    use aws_mls_core::crypto::{CipherSuite, HpkeContextR, HpkeContextS};
     use aws_mls_crypto_openssl::{aead::Aead, ecdh::*, kdf::Kdf};
     use serde::Deserialize;
 
@@ -354,17 +357,25 @@ mod test {
             .unwrap();
 
         assert_eq!(enc, test_case.enc);
-        assert_eq!(context.exporter_secret(), &test_case.exporter_secret);
-        assert_eq!(context.base_nonce(), Some(test_case.base_nonce.as_slice()));
-        assert_eq!(context.aead_key(), Some(test_case.key.as_slice()));
+        assert_eq!(context.0.exporter_secret(), &test_case.exporter_secret);
+        assert_eq!(context.0.aead_key(), Some(test_case.key.as_slice()));
+
+        assert_eq!(
+            context.0.base_nonce(),
+            Some(test_case.base_nonce.as_slice())
+        );
 
         let context = hpke
             .setup_receiver(&enc, &test_case.sk_rm.into(), &test_case.info, psk)
             .unwrap();
 
-        assert_eq!(context.exporter_secret(), &test_case.exporter_secret);
-        assert_eq!(context.base_nonce(), Some(test_case.base_nonce.as_slice()));
-        assert_eq!(context.aead_key(), Some(test_case.key.as_slice()));
+        assert_eq!(context.0.exporter_secret(), &test_case.exporter_secret);
+        assert_eq!(context.0.aead_key(), Some(test_case.key.as_slice()));
+
+        assert_eq!(
+            context.0.base_nonce(),
+            Some(test_case.base_nonce.as_slice())
+        );
     }
 
     #[test]

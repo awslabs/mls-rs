@@ -7,7 +7,7 @@ pub mod mac;
 
 use crate::aead::Aead;
 use aws_mls_crypto_hpke::{
-    context::Context,
+    context::{ContextR, ContextS},
     dhkem::DhKem,
     hpke::{Hpke, HpkeError},
 };
@@ -151,7 +151,8 @@ where
 {
     type Error = RustCryptoError;
     // TODO exporter_secret in this struct is not zeroized
-    type HpkeContext = Context<KDF, AEAD>;
+    type HpkeContextR = ContextR<KDF, AEAD>;
+    type HpkeContextS = ContextS<KDF, AEAD>;
 
     fn hash(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error> {
         Ok(self.hash.hash(data))
@@ -234,7 +235,7 @@ where
         enc: &[u8],
         local_secret: &HpkeSecretKey,
         info: &[u8],
-    ) -> Result<Self::HpkeContext, Self::Error> {
+    ) -> Result<Self::HpkeContextR, Self::Error> {
         Ok(self.hpke.setup_receiver(enc, local_secret, info, None)?)
     }
 
@@ -242,7 +243,7 @@ where
         &self,
         remote_key: &HpkePublicKey,
         info: &[u8],
-    ) -> Result<(Vec<u8>, Self::HpkeContext), Self::Error> {
+    ) -> Result<(Vec<u8>, Self::HpkeContextS), Self::Error> {
         Ok(self.hpke.setup_sender(remote_key, info, None)?)
     }
 
