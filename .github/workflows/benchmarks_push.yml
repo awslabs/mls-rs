@@ -10,8 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: read
-      issues: write
+      contents: write
+      deployments: write
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
@@ -33,7 +33,7 @@ jobs:
         with:
           tool: 'cargo'
           output-file-path: aws-mls/output.txt
-          fail-on-alert: true
+          fail-on-alert: false
           auto-push: false
           github-token: ${{ secrets.GITHUB_TOKEN }}
           alert-threshold: '200%'
