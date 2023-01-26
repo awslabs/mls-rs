@@ -1,9 +1,9 @@
 use crate::{
-    CertificateRequest, CertificateRequestParameters, DerCertificate, SubjectAltName,
-    SubjectComponent,
+    CertificateGeneration, CertificateIssuer, CertificateParameters, CertificateRequest,
+    DerCertificate, SubjectAltName, SubjectComponent,
 };
 
-use aws_mls_core::crypto::{CipherSuite, SignatureSecretKey};
+use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
 #[cfg(test)]
 use mockall::automock;
 
@@ -15,8 +15,16 @@ pub trait X509CertificateWriter {
         &self,
         cipher_suite: CipherSuite,
         signer: Option<SignatureSecretKey>,
-        params: CertificateRequestParameters,
+        params: CertificateParameters,
     ) -> Result<CertificateRequest, Self::Error>;
+
+    fn build_cert_chain(
+        &self,
+        subject_cipher_suite: CipherSuite,
+        issuer: &CertificateIssuer,
+        subject_pubkey: Option<SignaturePublicKey>,
+        subject_params: CertificateParameters,
+    ) -> Result<CertificateGeneration, Self::Error>;
 }
 
 #[cfg_attr(test, automock(type Error = crate::test_utils::TestError;))]

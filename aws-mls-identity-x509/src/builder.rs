@@ -1,6 +1,6 @@
-use aws_mls_core::crypto::{CipherSuite, SignatureSecretKey};
+use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
 
-use crate::X509CertificateWriter;
+use crate::{CertificateChain, X509CertificateWriter};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SubjectAltName {
@@ -35,18 +35,29 @@ pub enum SubjectComponent {
     Pseudonym(String),
 }
 
-#[derive(Debug, Clone)]
-pub struct CertificateRequestBuilder {
-    cipher_suite: CipherSuite,
-    signature_key: Option<SignatureSecretKey>,
-    params: CertificateRequestParameters,
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CertificateIssuer {
+    pub signing_key: SignatureSecretKey,
+    pub cipher_suite: CipherSuite,
+    pub chain: CertificateChain,
+    pub lifetime: u64,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct CertificateRequestParameters {
-    pub subject: Vec<SubjectComponent>,
-    pub subject_alt_names: Vec<SubjectAltName>,
-    pub is_ca: bool,
+impl CertificateIssuer {
+    pub fn new(
+        signing_key: SignatureSecretKey,
+        cipher_suite: CipherSuite,
+        chain: CertificateChain,
+        lifetime: u64,
+    ) -> CertificateIssuer {
+        Self {
+            signing_key,
+            cipher_suite,
+            chain,
+            lifetime,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,40 +66,81 @@ pub struct CertificateRequest {
     pub secret_key: SignatureSecretKey,
 }
 
-impl CertificateRequestBuilder {
+impl CertificateRequest {
+    // TODO: When Keychain is moved into core, we should have a method that processes the response,
+    // validates it against the request, and stores the resulting secret key + SigningIdentity for further use
+}
+
+pub struct CertificateGeneration {
+    pub chain: CertificateChain,
+    pub secret_key: Option<SignatureSecretKey>,
+}
+
+impl CertificateGeneration {
+    // TODO: When Keychain is moved into core, we should have a method that stores this value there
+}
+
+#[derive(Debug, Clone)]
+pub struct CertificateBuilder {
+    subject_cipher_suite: CipherSuite,
+    subject_params: CertificateParameters,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CertificateParameters {
+    pub subject: Vec<SubjectComponent>,
+    pub subject_alt_names: Vec<SubjectAltName>,
+    pub is_ca: bool,
+}
+
+impl CertificateBuilder {
     pub fn new(cipher_suite: CipherSuite) -> Self {
         Self {
-            cipher_suite,
-            params: Default::default(),
-            signature_key: None,
+            subject_cipher_suite: cipher_suite,
+            subject_params: Default::default(),
         }
     }
 
     pub fn with_subject_component(mut self, component: SubjectComponent) -> Self {
-        self.params.subject.push(component);
+        self.subject_params.subject.push(component);
         self
     }
 
     pub fn with_subject_alt_name(mut self, alt_name: SubjectAltName) -> Self {
-        self.params.subject_alt_names.push(alt_name);
+        self.subject_params.subject_alt_names.push(alt_name);
         self
     }
 
     pub fn set_ca_flag(self) -> Self {
         Self {
-            params: CertificateRequestParameters {
+            subject_params: CertificateParameters {
                 is_ca: true,
-                ..self.params
+                ..self.subject_params
             },
             ..self
         }
     }
 
-    pub fn build<B: X509CertificateWriter>(
+    pub fn build_cert_chain<B: X509CertificateWriter>(
         self,
+        issuer: &CertificateIssuer,
+        subject_public: Option<SignaturePublicKey>,
+        x509_writer: &B,
+    ) -> Result<CertificateGeneration, B::Error> {
+        x509_writer.build_cert_chain(
+            self.subject_cipher_suite,
+            issuer,
+            subject_public,
+            self.subject_params,
+        )
+    }
+
+    pub fn build_csr<B: X509CertificateWriter>(
+        self,
+        signer: Option<SignatureSecretKey>,
         x509_writer: &B,
     ) -> Result<CertificateRequest, B::Error> {
-        x509_writer.build_csr(self.cipher_suite, self.signature_key, self.params)
+        x509_writer.build_csr(self.subject_cipher_suite, signer, self.subject_params)
     }
 }
 
@@ -116,8 +168,8 @@ mod tests {
     use aws_mls_core::crypto::CipherSuite;
 
     use crate::{
-        builder::test_utils::test_subject_components, CertificateRequest,
-        CertificateRequestBuilder, CertificateRequestParameters, MockX509CertificateWriter,
+        builder::test_utils::test_subject_components, CertificateBuilder, CertificateParameters,
+        CertificateRequest, MockX509CertificateWriter,
     };
 
     use super::test_utils::test_subject_alt_names;
@@ -126,14 +178,14 @@ mod tests {
 
     #[test]
     fn requests_leaf_by_default() {
-        let builder = CertificateRequestBuilder::new(TEST_CIPHER_SUITE);
-        assert!(!builder.params.is_ca)
+        let builder = CertificateBuilder::new(TEST_CIPHER_SUITE);
+        assert!(!builder.subject_params.is_ca)
     }
 
     #[test]
     fn can_request_ca() {
-        let builder = CertificateRequestBuilder::new(TEST_CIPHER_SUITE).set_ca_flag();
-        assert!(builder.params.is_ca);
+        let builder = CertificateBuilder::new(TEST_CIPHER_SUITE).set_ca_flag();
+        assert!(builder.subject_params.is_ca);
     }
 
     #[test]
@@ -141,12 +193,12 @@ mod tests {
         let test_components = test_subject_components();
 
         let builder = test_components.iter().fold(
-            CertificateRequestBuilder::new(TEST_CIPHER_SUITE),
+            CertificateBuilder::new(TEST_CIPHER_SUITE),
             |builder, value| builder.with_subject_component(value.clone()),
         );
 
-        assert_eq!(builder.params.subject, test_components);
-        assert!(builder.params.subject_alt_names.is_empty());
+        assert_eq!(builder.subject_params.subject, test_components);
+        assert!(builder.subject_params.subject_alt_names.is_empty());
     }
 
     #[test]
@@ -154,17 +206,17 @@ mod tests {
         let test_components = test_subject_alt_names();
 
         let builder = test_components.iter().fold(
-            CertificateRequestBuilder::new(TEST_CIPHER_SUITE),
+            CertificateBuilder::new(TEST_CIPHER_SUITE),
             |builder, value| builder.with_subject_alt_name(value.clone()),
         );
 
-        assert_eq!(builder.params.subject_alt_names, test_components);
-        assert!(builder.params.subject.is_empty());
+        assert_eq!(builder.subject_params.subject_alt_names, test_components);
+        assert!(builder.subject_params.subject.is_empty());
     }
 
     #[test]
     fn build_via_a_writer() {
-        let expected_params = CertificateRequestParameters {
+        let expected_params = CertificateParameters {
             subject: test_subject_components(),
             subject_alt_names: test_subject_alt_names(),
             is_ca: true,
@@ -189,7 +241,7 @@ mod tests {
             )
             .return_once_st(|_, _, _| Ok(mock_request));
 
-        let builder = CertificateRequestBuilder::new(TEST_CIPHER_SUITE).set_ca_flag();
+        let builder = CertificateBuilder::new(TEST_CIPHER_SUITE).set_ca_flag();
 
         let builder = expected_params
             .subject
@@ -205,6 +257,6 @@ mod tests {
                 builder.with_subject_alt_name(value.clone())
             });
 
-        assert_eq!(builder.build(&writer).unwrap(), expected_request);
+        assert_eq!(builder.build_csr(None, &writer).unwrap(), expected_request);
     }
 }
