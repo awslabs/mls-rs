@@ -342,7 +342,7 @@ mod test {
     fn run_test_case(test_case: HpkeTestCase) {
         let Some(cipher_suite) =  filter_test_case(&test_case.algo) else { return; };
 
-        println!("Testing HPKE for ciphersuite {:?}", cipher_suite,);
+        println!("Testing HPKE for ciphersuite {cipher_suite:?}",);
 
         let psk = (test_case.algo.mode == ModeId::Psk as u8).then_some(Psk {
             id: &test_case.psk_id,

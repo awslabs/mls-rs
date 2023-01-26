@@ -112,6 +112,7 @@ where
             .config
             .keychain()
             .signer(&signing_identity)
+            .await
             .map_err(|e| ClientError::KeychainError(e.into()))?
             .ok_or(ClientError::SignerNotFound)?;
 
@@ -280,6 +281,7 @@ where
             .config
             .keychain()
             .signer(&signing_identity)
+            .await
             .map_err(|e| ClientError::KeychainError(e.into()))?
             .ok_or(ClientError::SignerNotFound)?;
 
@@ -421,7 +423,7 @@ mod tests {
                 .into_iter()
                 .map(move |cs| (p, cs))
         }) {
-            println!("Running client keygen for {:?}", cipher_suite);
+            println!("Running client keygen for {cipher_suite:?}");
 
             let (client, identity) = get_basic_client_builder(cipher_suite, "foo");
             let client = client.build();
@@ -466,7 +468,7 @@ mod tests {
         let proposal = bob
             .build()
             .external_add_proposal(
-                alice_group.group.group_info_message(true).unwrap(),
+                alice_group.group.group_info_message(true).await.unwrap(),
                 Some(&alice_group.group.export_tree().unwrap()),
                 bob_identity.clone(),
                 vec![],
@@ -517,7 +519,7 @@ mod tests {
             .await
             .unwrap();
 
-        let group_info_msg = alice_group.group.group_info_message(true).unwrap();
+        let group_info_msg = alice_group.group.group_info_message(true).await.unwrap();
 
         let new_client_id = if do_remove { "bob" } else { "charlie" };
         let (new_client, new_client_identity) =
@@ -565,6 +567,7 @@ mod tests {
         let msg = alice_group
             .group
             .encrypt_application_message(alice_msg, vec![])
+            .await
             .unwrap();
 
         let received = new_group.process_incoming_message(msg).await.unwrap();
@@ -574,6 +577,7 @@ mod tests {
 
         let msg = new_group
             .encrypt_application_message(new_msg, vec![])
+            .await
             .unwrap();
 
         let received = alice_group
@@ -633,7 +637,7 @@ mod tests {
         bob_group.group.commit(vec![]).await.unwrap();
         bob_group.group.apply_pending_commit().await.unwrap();
 
-        let group_info_msg = bob_group.group.group_info_message(true).unwrap();
+        let group_info_msg = bob_group.group.group_info_message(true).await.unwrap();
 
         let (carol, carol_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "carol");
 

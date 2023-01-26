@@ -348,31 +348,22 @@ async fn add_random_members(
 
 async fn remove_members(
     removed_members: Vec<usize>,
-    sender: usize,
     committer: usize,
     groups: &mut Vec<Group<TestClientConfig>>,
 ) {
-    let remove_proposals: Vec<MLSMessage> = removed_members
+    let remove_indexes = removed_members
         .iter()
-        .map(|removed| {
-            let to_remove = groups[*removed].group_stats().unwrap().current_index;
-            groups[sender].propose_remove(to_remove, vec![]).unwrap()
-        })
-        .collect();
+        .map(|removed| groups[*removed].group_stats().unwrap().current_index)
+        .collect::<Vec<u32>>();
 
-    for (i, group) in groups.iter_mut().enumerate() {
-        if i != sender {
-            for p in &remove_proposals {
-                group.process_incoming_message(p.clone()).await.unwrap();
-            }
-        }
-    }
+    let commit_builder = futures::stream::iter(remove_indexes)
+        .fold(
+            groups[committer].commit_builder(),
+            |builder, index| async move { builder.remove_member(index).unwrap() },
+        )
+        .await;
 
-    let commit = groups[committer]
-        .commit(vec![])
-        .await
-        .unwrap()
-        .commit_message;
+    let commit = commit_builder.build().await.unwrap().commit_message;
 
     for (i, group) in groups.iter_mut().enumerate() {
         if i == committer {
@@ -410,11 +401,11 @@ async fn test_many_commits() {
 
     let mut random_member_first_index = 0;
     for i in 0..100 {
-        println!("running step {}", i);
+        println!("running step {i}");
         let num_removed = rng.gen_range(0..groups.len());
         let mut members = (0..groups.len()).choose_multiple(&mut rng, num_removed + 1);
         let sender = members.pop().unwrap();
-        remove_members(members, sender, sender, &mut groups).await;
+        remove_members(members, sender, &mut groups).await;
 
         let num_added = rng.gen_range(2..12);
         let sender = rng.gen_range(0..groups.len());
@@ -441,8 +432,7 @@ async fn test_empty_commits(
     preferences: Preferences,
 ) {
     println!(
-        "Testing empty commits for cipher suite: {:?}, participants: {}, {:?}",
-        cipher_suite, participants, preferences,
+        "Testing empty commits for cipher suite: {cipher_suite:?}, participants: {participants}, {preferences:?}",
     );
 
     let (mut creator_group, mut receiver_groups) =
@@ -500,8 +490,7 @@ async fn test_update_proposals(
     preferences: Preferences,
 ) {
     println!(
-        "Testing update proposals for cipher suite: {:?}, participants: {}, {:?}",
-        cipher_suite, participants, preferences,
+        "Testing update proposals for cipher suite: {cipher_suite:?}, participants: {participants}, {preferences:?}",
     );
 
     let (mut creator_group, mut receiver_groups) =
@@ -509,7 +498,7 @@ async fn test_update_proposals(
 
     // Create an update from the ith member, have the ith + 1 member commit it
     for i in 0..receiver_groups.len() - 1 {
-        let update_proposal_msg = receiver_groups[i].propose_update(vec![]).unwrap();
+        let update_proposal_msg = receiver_groups[i].propose_update(vec![]).await.unwrap();
 
         // Everyone should process the proposal
         creator_group
@@ -588,8 +577,7 @@ async fn test_remove_proposals(
     preferences: Preferences,
 ) {
     println!(
-        "Testing remove proposals for cipher suite: {:?}, participants: {}, {:?}",
-        cipher_suite, participants, preferences,
+        "Testing remove proposals for cipher suite: {cipher_suite:?}, participants: {participants}, {preferences:?}",
     );
 
     let (mut creator_group, mut receiver_groups) =
@@ -677,8 +665,7 @@ async fn test_application_messages(
     preferences: Preferences,
 ) {
     println!(
-        "Testing application messages for cipher suite: {:?} {:?}, participants: {}, message count: {}, {:?}",
-        protocol_version, cipher_suite, participants, message_count, preferences,
+        "Testing application messages for cipher suite: {protocol_version:?} {cipher_suite:?}, participants: {participants}, message count: {message_count}, {preferences:?}",
     );
 
     let (mut creator_group, mut receiver_groups) =
@@ -693,6 +680,7 @@ async fn test_application_messages(
             // Encrypt the application message
             let ciphertext = receiver_groups[i]
                 .encrypt_application_message(&test_message, vec![])
+                .await
                 .unwrap();
 
             // Creator receives the application message
@@ -730,11 +718,13 @@ async fn test_out_of_order_application_messages() {
 
     let mut ciphertexts = vec![alice_group
         .encrypt_application_message(&[0], vec![])
+        .await
         .unwrap()];
 
     ciphertexts.push(
         alice_group
             .encrypt_application_message(&[1], vec![])
+            .await
             .unwrap(),
     );
 
@@ -747,12 +737,14 @@ async fn test_out_of_order_application_messages() {
     ciphertexts.push(
         alice_group
             .encrypt_application_message(&[2], vec![])
+            .await
             .unwrap(),
     );
 
     ciphertexts.push(
         alice_group
             .encrypt_application_message(&[3], vec![])
+            .await
             .unwrap(),
     );
 
@@ -786,8 +778,7 @@ async fn processing_message_from_self_returns_error(
     preferences: Preferences,
 ) {
     println!(
-        "Verifying that processing one's own message returns an error for cipher suite: {:?}, {:?}",
-        cipher_suite, preferences,
+        "Verifying that processing one's own message returns an error for cipher suite: {cipher_suite:?}, {preferences:?}",
     );
 
     let (mut creator_group, _) =
@@ -851,7 +842,7 @@ async fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: 
     let mut groups = futures::stream::iter(&others)
         .fold(vec![creator_group], |mut groups, client| async move {
             let existing_group = groups.choose_mut(&mut rand::thread_rng()).unwrap();
-            let group_info = existing_group.group_info_message(true).unwrap();
+            let group_info = existing_group.group_info_message(true).await.unwrap();
 
             let (new_group, commit) = client
                 .client
@@ -889,6 +880,7 @@ async fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: 
             .collect::<Vec<_>>();
         let message = groups[i]
             .encrypt_application_message(&payload, Vec::new())
+            .await
             .unwrap();
         for (_, group) in groups.iter_mut().enumerate().filter(|&(j, _)| i != j) {
             let processed = group
@@ -918,16 +910,16 @@ async fn test_remove_nonexisting_leaf() {
     )
     .await;
 
-    groups[0].propose_remove(5, vec![]).unwrap();
+    groups[0].propose_remove(5, vec![]).await.unwrap();
 
     // Leaf index out of bounds
-    assert!(groups[0].propose_remove(13, vec![]).is_err());
+    assert!(groups[0].propose_remove(13, vec![]).await.is_err());
 
     groups[0].commit(vec![]).await.unwrap();
     groups[0].apply_pending_commit().await.unwrap();
 
     // Removing blank leaf causes error
-    assert!(groups[0].propose_remove(5, vec![]).is_err());
+    assert!(groups[0].propose_remove(5, vec![]).await.is_err());
 }
 
 struct ReinitClientGeneration {
@@ -1014,6 +1006,7 @@ async fn reinit_works() {
             ExtensionList::default(),
             vec![],
         )
+        .await
         .unwrap();
 
     // Bob commits the reinit

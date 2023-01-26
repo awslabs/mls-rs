@@ -11,6 +11,7 @@ pub trait AeadType {
     /// AEAD Id, as specified in RFC 9180, Section 5.1 and Table 5.
     fn aead_id(&self) -> u16;
 
+    #[allow(clippy::needless_lifetimes)]
     fn seal<'a>(
         &self,
         key: &[u8],
@@ -19,6 +20,7 @@ pub trait AeadType {
         nonce: &[u8],
     ) -> Result<Vec<u8>, Self::Error>;
 
+    #[allow(clippy::needless_lifetimes)]
     fn open<'a>(
         &self,
         key: &[u8],

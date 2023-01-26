@@ -2907,7 +2907,7 @@ mod tests {
 
         let committed_ref = match &*committed {
             [ProposalOrRef::Reference(r)] => r.clone(),
-            _ => panic!("Expected single proposal reference in {:?}", committed),
+            _ => panic!("Expected single proposal reference in {committed:?}"),
         };
 
         assert!(proposal_refs.contains(&committed_ref));

@@ -1,4 +1,5 @@
 use crate::{cipher_suite::CipherSuite, identity::SigningIdentity};
+use async_trait::async_trait;
 use indexmap::IndexMap;
 use std::{
     convert::Infallible,
@@ -7,26 +8,7 @@ use std::{
 
 use super::crypto::SignatureSecretKey;
 
-pub trait KeychainStorage: Send + Sync {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    fn insert(
-        &mut self,
-        identity: SigningIdentity,
-        signer: SignatureSecretKey,
-        cipher_suite: CipherSuite,
-    ) -> Result<(), Self::Error>;
-
-    fn delete(&mut self, identity: &SigningIdentity) -> Result<(), Self::Error>;
-
-    fn get_identities(
-        &self,
-        cipher_suite: CipherSuite,
-    ) -> Result<Vec<(SigningIdentity, SignatureSecretKey)>, Self::Error>;
-
-    fn signer(&self, identity: &SigningIdentity)
-        -> Result<Option<SignatureSecretKey>, Self::Error>;
-}
+pub use aws_mls_core::keychain::KeychainStorage;
 
 #[derive(Clone, Debug, Default)]
 pub struct InMemoryKeychain {
@@ -89,17 +71,18 @@ impl InMemoryKeychain {
     }
 }
 
+#[async_trait]
 impl KeychainStorage for InMemoryKeychain {
     type Error = Infallible;
 
-    fn signer(
+    async fn signer(
         &self,
         identity: &SigningIdentity,
     ) -> Result<Option<SignatureSecretKey>, Self::Error> {
         Ok(self.signer(identity))
     }
 
-    fn insert(
+    async fn insert(
         &mut self,
         identity: SigningIdentity,
         signer: SignatureSecretKey,
@@ -109,12 +92,12 @@ impl KeychainStorage for InMemoryKeychain {
         Ok(())
     }
 
-    fn delete(&mut self, identity: &SigningIdentity) -> Result<(), Self::Error> {
+    async fn delete(&mut self, identity: &SigningIdentity) -> Result<(), Self::Error> {
         self.delete(identity);
         Ok(())
     }
 
-    fn get_identities(
+    async fn get_identities(
         &self,
         cipher_suite: CipherSuite,
     ) -> Result<Vec<(SigningIdentity, SignatureSecretKey)>, Self::Error> {

@@ -45,7 +45,7 @@ pub async fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
     let (leaf_nodes, private_keys): (_, Vec<TreeKemPrivate>) = futures::stream::iter(1..size)
         .then(|index| async move {
             let (leaf_node, hpke_secret, _) =
-                get_basic_test_node_sig_key(cipher_suite, &format!("{}", index)).await;
+                get_basic_test_node_sig_key(cipher_suite, &format!("{index}")).await;
 
             let private_key =
                 TreeKemPrivate::new_self_leaf(LeafIndex::new(index as u32), hpke_secret);

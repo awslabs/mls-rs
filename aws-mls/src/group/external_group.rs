@@ -153,9 +153,10 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             signing_identity,
             authenticated_data,
         )
+        .await
     }
 
-    pub fn propose_remove(
+    pub async fn propose_remove(
         &mut self,
         index: u32,
         signing_identity: &SigningIdentity,
@@ -171,9 +172,10 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             signing_identity,
             authenticated_data,
         )
+        .await
     }
 
-    fn propose(
+    async fn propose(
         &mut self,
         proposal: Proposal,
         signing_identity: &SigningIdentity,
@@ -190,6 +192,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .config
             .keychain()
             .signer(signing_identity)
+            .await
             .map_err(|e| GroupError::KeychainError(e.into()))?
             .ok_or(GroupError::SignerNotFound)?;
 
@@ -408,7 +411,7 @@ pub(crate) mod test_utils {
 
         ExternalGroup::join(
             config,
-            group.group.group_info_message(true).unwrap(),
+            group.group.group_info_message(true).await.unwrap(),
             Some(&public_tree),
         )
         .await
@@ -522,7 +525,7 @@ mod tests {
             key_package: bob_key_package,
         });
 
-        let packet = alice.propose(add_proposal.clone());
+        let packet = alice.propose(add_proposal.clone()).await;
 
         let proposal_process = server.process_incoming_message(packet).await.unwrap();
 
@@ -613,7 +616,10 @@ mod tests {
     async fn external_group_rejects_unencrypted_application_message() {
         let mut alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut server = make_external_group(&alice).await;
-        let plaintext = alice.make_plaintext(Content::Application(b"hello".to_vec().into()));
+
+        let plaintext = alice
+            .make_plaintext(Content::Application(b"hello".to_vec().into()))
+            .await;
 
         assert_matches!(
             server.process_incoming_message(plaintext).await,
@@ -630,9 +636,13 @@ mod tests {
         )
         .build_config();
 
-        let res = ExternalGroup::join(config, alice.group.group_info_message(true).unwrap(), None)
-            .await
-            .map(|_| ());
+        let res = ExternalGroup::join(
+            config,
+            alice.group.group_info_message(true).await.unwrap(),
+            None,
+        )
+        .await
+        .map(|_| ());
 
         assert_matches!(
             res,
@@ -648,7 +658,7 @@ mod tests {
 
         let config = TestExternalClientBuilder::new_for_test().build_config();
 
-        let mut group_info = alice.group.group_info_message(true).unwrap();
+        let mut group_info = alice.group.group_info_message(true).await.unwrap();
         group_info.version = MaybeProtocolVersion::from_raw_value(64);
 
         let res = ExternalGroup::join(config, group_info, None)
@@ -754,7 +764,13 @@ mod tests {
     #[futures_test::test]
     async fn external_group_can_propose_remove() {
         test_external_proposal(|ext_group, ext_identity| {
-            async move { ext_group.propose_remove(1, ext_identity, vec![]).unwrap() }.boxed()
+            async move {
+                ext_group
+                    .propose_remove(1, ext_identity, vec![])
+                    .await
+                    .unwrap()
+            }
+            .boxed()
         })
         .await
     }
@@ -800,7 +816,7 @@ mod tests {
             .keychain
             .insert(server_identity.clone(), server_key, TEST_CIPHER_SUITE);
 
-        let res = server.propose_remove(1, &server_identity, vec![]);
+        let res = server.propose_remove(1, &server_identity, vec![]).await;
 
         assert_matches!(res, Err(GroupError::InvalidExternalSigningIdentity));
     }
@@ -820,6 +836,7 @@ mod tests {
         let old_application_msg = alice
             .group
             .encrypt_application_message(&[], vec![])
+            .await
             .unwrap();
 
         let commit_output = alice.group.commit(vec![]).await.unwrap();
@@ -846,7 +863,7 @@ mod tests {
         )
         .await;
 
-        let proposal = alice.group.propose_update(vec![]).unwrap();
+        let proposal = alice.group.propose_update(vec![]).await.unwrap();
 
         let commit_output = alice.group.commit(vec![]).await.unwrap();
 
@@ -864,7 +881,7 @@ mod tests {
     #[futures_test::test]
     async fn external_group_can_observe_since_creation() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let info = alice.group.group_info_message(true).unwrap();
+        let info = alice.group.group_info_message(true).await.unwrap();
 
         let config = TestExternalClientBuilder::new_for_test().build_config();
         let mut server = ExternalGroup::join(config, info, None).await.unwrap();

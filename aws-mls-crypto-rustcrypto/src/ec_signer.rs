@@ -101,7 +101,7 @@ mod test {
     }
 
     fn test_signature(cipher_suite: CipherSuite) {
-        println!("Testing signatures for cipher suite: {:?}", cipher_suite);
+        println!("Testing signatures for cipher suite: {cipher_suite:?}");
 
         let public_key = get_test_public_keys().get_key(cipher_suite, true).into();
         let secret_key = get_test_secret_keys().get_key(cipher_suite, true);

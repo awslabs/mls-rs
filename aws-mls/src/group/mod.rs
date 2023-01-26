@@ -194,6 +194,7 @@ where
         let signer = config
             .keychain()
             .signer(&signing_identity)
+            .await
             .map_err(|e| GroupError::KeychainError(e.into()))?
             .ok_or(GroupError::SignerNotFound)?;
 
@@ -519,6 +520,7 @@ where
         let signer = config
             .keychain()
             .signer(&signing_identity)
+            .await
             .map_err(|e| GroupError::KeychainError(e.into()))?
             .ok_or(GroupError::SignerNotFound)?;
 
@@ -615,12 +617,12 @@ where
         self.current_user_leaf_node().map(|ln| &ln.signing_identity)
     }
 
-    fn proposal_message(
+    async fn proposal_message(
         &mut self,
         proposal: Proposal,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
-        let signer = self.signer()?;
+        let signer = self.signer().await?;
 
         let auth_content = MLSAuthenticatedContent::new_signed(
             &self.cipher_suite_provider,
@@ -641,11 +643,11 @@ where
         self.format_for_wire(auth_content)
     }
 
-    pub(crate) fn signer(&self) -> Result<SignatureSecretKey, GroupError> {
-        self.signer_for_identity(None)
+    pub(crate) async fn signer(&self) -> Result<SignatureSecretKey, GroupError> {
+        self.signer_for_identity(None).await
     }
 
-    pub(crate) fn signer_for_identity(
+    pub(crate) async fn signer_for_identity(
         &self,
         signing_identity: Option<&SigningIdentity>,
     ) -> Result<SignatureSecretKey, GroupError> {
@@ -654,6 +656,7 @@ where
         self.config
             .keychain()
             .signer(signing_identity)
+            .await
             .map_err(|e| GroupError::KeychainError(e.into()))?
             .ok_or(GroupError::SignerNotFound)
     }
@@ -914,7 +917,7 @@ where
         sub_group_id: Vec<u8>,
         new_key_packages: Vec<MLSMessage>,
     ) -> Result<(Group<C>, Option<MLSMessage>), GroupError> {
-        let signer = self.signer()?;
+        let signer = self.signer().await?;
 
         let current_leaf_node = self.current_user_leaf_node()?;
 
@@ -998,7 +1001,7 @@ where
         let signing_identity =
             signing_identity.unwrap_or(self.current_member_signing_identity()?.clone());
 
-        let new_signer = self.signer_for_identity(Some(&signing_identity))?;
+        let new_signer = self.signer_for_identity(Some(&signing_identity)).await?;
 
         let new_cipher_suite = self
             .config
@@ -1139,7 +1142,7 @@ where
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
         let proposal = self.add_proposal(key_package).await?;
-        self.proposal_message(proposal, authenticated_data)
+        self.proposal_message(proposal, authenticated_data).await
     }
 
     async fn add_proposal(&self, key_package: KeyPackage) -> Result<Proposal, GroupError> {
@@ -1159,29 +1162,29 @@ where
         Ok(Proposal::Add(AddProposal { key_package }))
     }
 
-    pub fn propose_update(
+    pub async fn propose_update(
         &mut self,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
-        let proposal = self.update_proposal(None)?;
-        self.proposal_message(proposal, authenticated_data)
+        let proposal = self.update_proposal(None).await?;
+        self.proposal_message(proposal, authenticated_data).await
     }
 
-    pub fn propose_update_with_identity(
+    pub async fn propose_update_with_identity(
         &mut self,
         signing_identity: SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
-        let proposal = self.update_proposal(Some(signing_identity))?;
-        self.proposal_message(proposal, authenticated_data)
+        let proposal = self.update_proposal(Some(signing_identity)).await?;
+        self.proposal_message(proposal, authenticated_data).await
     }
 
-    fn update_proposal(
+    async fn update_proposal(
         &mut self,
         signing_identity: Option<SigningIdentity>,
     ) -> Result<Proposal, GroupError> {
         // Grab a copy of the current node and update it to have new key material
-        let signer = self.signer_for_identity(signing_identity.as_ref())?;
+        let signer = self.signer_for_identity(signing_identity.as_ref()).await?;
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
 
         let secret_key = new_leaf_node.update(
@@ -1202,13 +1205,13 @@ where
         }))
     }
 
-    pub fn propose_remove(
+    pub async fn propose_remove(
         &mut self,
         index: u32,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
         let proposal = self.remove_proposal(index)?;
-        self.proposal_message(proposal, authenticated_data)
+        self.proposal_message(proposal, authenticated_data).await
     }
 
     fn remove_proposal(&self, index: u32) -> Result<Proposal, GroupError> {
@@ -1222,13 +1225,13 @@ where
         }))
     }
 
-    pub fn propose_psk(
+    pub async fn propose_psk(
         &mut self,
         psk: ExternalPskId,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
         let proposal = self.psk_proposal(psk)?;
-        self.proposal_message(proposal, authenticated_data)
+        self.proposal_message(proposal, authenticated_data).await
     }
 
     fn psk_proposal(&self, psk: ExternalPskId) -> Result<Proposal, GroupError> {
@@ -1241,7 +1244,7 @@ where
         }))
     }
 
-    pub fn propose_reinit(
+    pub async fn propose_reinit(
         &mut self,
         group_id: Option<Vec<u8>>,
         version: ProtocolVersion,
@@ -1250,7 +1253,7 @@ where
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
         let proposal = self.reinit_proposal(group_id, version, cipher_suite, extensions)?;
-        self.proposal_message(proposal, authenticated_data)
+        self.proposal_message(proposal, authenticated_data).await
     }
 
     fn reinit_proposal(
@@ -1274,13 +1277,13 @@ where
         }))
     }
 
-    pub fn propose_group_context_extensions(
+    pub async fn propose_group_context_extensions(
         &mut self,
         extensions: ExtensionList<GroupContextExtension>,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
         let proposal = self.group_context_extensions_proposal(extensions);
-        self.proposal_message(proposal, authenticated_data)
+        self.proposal_message(proposal, authenticated_data).await
     }
 
     fn group_context_extensions_proposal(
@@ -1337,12 +1340,12 @@ where
             .map_err(Into::into)
     }
 
-    pub fn encrypt_application_message(
+    pub async fn encrypt_application_message(
         &mut self,
         message: &[u8],
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
-        let signer = self.signer()?;
+        let signer = self.signer().await?;
 
         // A group member that has observed one or more proposals within an epoch MUST send a Commit message
         // before sending application data
@@ -1439,11 +1442,11 @@ where
     }
 
     /// The returned `GroupInfo` is suitable for one external commit for the current epoch.
-    pub fn group_info_message(
+    pub async fn group_info_message(
         &self,
         allow_external_commit: bool,
     ) -> Result<MLSMessage, GroupError> {
-        let signer = self.signer()?;
+        let signer = self.signer().await?;
 
         let mut extensions = ExtensionList::new();
 
@@ -1881,12 +1884,17 @@ mod tests {
             .await
             .unwrap();
 
-        test_group.group.proposal_message(proposal, vec![]).unwrap();
+        test_group
+            .group
+            .proposal_message(proposal, vec![])
+            .await
+            .unwrap();
 
         // We should not be able to send application messages until a commit happens
         let res = test_group
             .group
-            .encrypt_application_message(b"test", vec![]);
+            .encrypt_application_message(b"test", vec![])
+            .await;
 
         assert_matches!(res, Err(GroupError::CommitRequired));
 
@@ -1898,6 +1906,7 @@ mod tests {
         assert!(test_group
             .group
             .encrypt_application_message(b"test", vec![])
+            .await
             .is_ok());
     }
 
@@ -1922,7 +1931,7 @@ mod tests {
         let existing_leaf = test_group.group.current_user_leaf_node().unwrap().clone();
 
         // Create an update proposal
-        let proposal = test_group.update_proposal();
+        let proposal = test_group.update_proposal().await;
 
         let update = match proposal {
             Proposal::Update(update) => update,
@@ -1943,7 +1952,7 @@ mod tests {
         let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         // Create an update proposal
-        let proposal_msg = test_group.group.propose_update(vec![]).unwrap();
+        let proposal_msg = test_group.group.propose_update(vec![]).await.unwrap();
 
         let proposal = match proposal_msg.into_plaintext().unwrap().content.content {
             Content::Proposal(p) => p,
@@ -1991,7 +2000,7 @@ mod tests {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
 
-        let mut proposal = alice_group.update_proposal();
+        let mut proposal = alice_group.update_proposal().await;
 
         if let Proposal::Update(ref mut update) = proposal {
             update.leaf_node.signature = random_bytes(32);
@@ -2002,6 +2011,7 @@ mod tests {
         let proposal_message = alice_group
             .group
             .proposal_message(proposal.clone(), vec![])
+            .await
             .unwrap();
 
         let proposal_plaintext = match proposal_message.payload {
@@ -2225,6 +2235,7 @@ mod tests {
         let without_padding = test_group
             .group
             .encrypt_application_message(&random_bytes(150), vec![])
+            .await
             .unwrap();
 
         let mut test_group = test_group_custom(
@@ -2239,6 +2250,7 @@ mod tests {
         let with_padding = test_group
             .group
             .encrypt_application_message(&random_bytes(150), vec![])
+            .await
             .unwrap();
 
         assert!(with_padding.tls_serialized_len() > without_padding.tls_serialized_len());
@@ -2253,6 +2265,7 @@ mod tests {
         let info = group
             .group
             .group_info_message(false)
+            .await
             .unwrap()
             .into_group_info()
             .unwrap();
@@ -2370,7 +2383,10 @@ mod tests {
         let cipher_suite = CipherSuite::P256Aes128;
         let mut alice = test_group(protocol_version, cipher_suite).await;
         let (mut bob, _) = alice.join("bob").await;
-        let message = alice.make_plaintext(Content::Application(b"hello".to_vec().into()));
+
+        let message = alice
+            .make_plaintext(Content::Application(b"hello".to_vec().into()))
+            .await;
 
         assert_matches!(
             bob.group.process_incoming_message(message).await,
@@ -2402,7 +2418,7 @@ mod tests {
 
         // Create many proposals, make Alice commit them
 
-        let update_message = bob.group.propose_update(vec![]).unwrap();
+        let update_message = bob.group.propose_update(vec![]).await.unwrap();
 
         alice.process_message(update_message).await.unwrap();
 
@@ -2517,7 +2533,7 @@ mod tests {
         let (bob_group, commit) = bob
             .build()
             .commit_external(
-                alice_group.group.group_info_message(true).unwrap(),
+                alice_group.group.group_info_message(true).await.unwrap(),
                 Some(&alice_group.group.export_tree().unwrap()),
                 bob_identity,
                 None,
@@ -2548,7 +2564,7 @@ mod tests {
         let (_, commit) = bob
             .build()
             .commit_external(
-                alice_group.group.group_info_message(true).unwrap(),
+                alice_group.group.group_info_message(true).await.unwrap(),
                 Some(&alice_group.group.export_tree().unwrap()),
                 bob_identity,
                 None,
@@ -2739,6 +2755,7 @@ mod tests {
         let msg = bob_group
             .group
             .encrypt_application_message(bob_msg, vec![])
+            .await
             .unwrap();
 
         let received_by_alice = alice_group
@@ -2772,6 +2789,7 @@ mod tests {
         let message = alice_group
             .group
             .encrypt_application_message(b"foobar", Vec::new())
+            .await
             .unwrap();
 
         let received_message = bob_group
@@ -3394,6 +3412,7 @@ mod tests {
         let update = groups[0]
             .group
             .propose_update_with_identity(identity.clone(), vec![])
+            .await
             .unwrap();
 
         groups[1].process_message(update).await.unwrap();

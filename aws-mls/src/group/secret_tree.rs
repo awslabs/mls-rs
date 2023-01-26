@@ -493,7 +493,7 @@ mod tests {
     #[test]
     fn test_secret_tree() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            println!("Running secret tree derivation for {:?}", cipher_suite);
+            println!("Running secret tree derivation for {cipher_suite:?}");
 
             let cs_provider = test_cipher_suite_provider(cipher_suite);
 
@@ -531,7 +531,7 @@ mod tests {
     #[test]
     fn test_secret_key_ratchet() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            println!("Running secret tree ratchet for {:?}", cipher_suite);
+            println!("Running secret tree ratchet for {cipher_suite:?}");
 
             let provider = test_cipher_suite_provider(cipher_suite);
 
@@ -572,7 +572,7 @@ mod tests {
     #[test]
     fn test_get_key() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            println!("Running secret tree get key for {:?}", cipher_suite);
+            println!("Running secret tree get key for {cipher_suite:?}");
 
             let provider = test_cipher_suite_provider(cipher_suite);
 
@@ -605,7 +605,7 @@ mod tests {
     #[test]
     fn test_secret_ratchet() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            println!("Running secret tree secret ratchet {:?}", cipher_suite);
+            println!("Running secret tree secret ratchet {cipher_suite:?}");
 
             let provider = test_cipher_suite_provider(cipher_suite);
 

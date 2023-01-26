@@ -245,7 +245,7 @@ mod test {
     fn context_test_case(test_case: ContextTestCase) {
         let Some(cipher_suite) =  filter_test_case(&test_case.algo) else { return; };
 
-        println!("Testing Context for ciphersuite {:?}", cipher_suite,);
+        println!("Testing Context for ciphersuite {cipher_suite:?}");
 
         let kdf = Kdf::new(cipher_suite);
         let aead = Aead::new(cipher_suite);

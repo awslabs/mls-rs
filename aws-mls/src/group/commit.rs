@@ -220,13 +220,19 @@ where
         };
 
         let new_signer = match external_leaf {
-            Some(leaf_node) => self.signer_for_identity(Some(&leaf_node.signing_identity)),
-            None => self.signer_for_identity(signing_identity.as_ref()),
+            Some(leaf_node) => {
+                self.signer_for_identity(Some(&leaf_node.signing_identity))
+                    .await
+            }
+            None => self.signer_for_identity(signing_identity.as_ref()).await,
         }?;
 
         let old_signer = match external_leaf {
-            Some(leaf_node) => self.signer_for_identity(Some(&leaf_node.signing_identity)),
-            None => self.signer(),
+            Some(leaf_node) => {
+                self.signer_for_identity(Some(&leaf_node.signing_identity))
+                    .await
+            }
+            None => self.signer().await,
         }?;
 
         let (commit_proposals, proposal_effects) = self

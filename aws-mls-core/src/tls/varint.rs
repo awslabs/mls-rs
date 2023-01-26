@@ -90,7 +90,7 @@ impl Deserialize for VarInt {
         let first = u8::tls_deserialize(bytes)?;
         let prefix = first >> 6;
         let count = (prefix < 3).then_some(1 << prefix).ok_or_else(|| {
-            tls_codec::Error::DecodingError(format!("Invalid VarInt prefix {}", prefix))
+            tls_codec::Error::DecodingError(format!("Invalid VarInt prefix {prefix}"))
         })?;
         let n = (1..count).try_fold(u32::from(first & 0x3f), |n, _| {
             u8::tls_deserialize(bytes).map(|b| n << 8 | u32::from(b))
@@ -120,7 +120,7 @@ fn count_bytes_to_encode_int(n: VarInt) -> LengthEncoding {
         0..=6 => LengthEncoding::One,
         7..=14 => LengthEncoding::Two,
         15..=30 => LengthEncoding::Four,
-        _ => panic!("Such a large VarInt cannot be instantiated ({})", n),
+        _ => panic!("Such a large VarInt cannot be instantiated ({n})"),
     }
 }
 

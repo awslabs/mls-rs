@@ -436,7 +436,7 @@ mod tests {
             futures::stream::iter(1..size)
                 .then(|index| async move {
                     let (leaf_node, hpke_secret, _) =
-                        get_basic_test_node_sig_key(cipher_suite, &format!("{}", index)).await;
+                        get_basic_test_node_sig_key(cipher_suite, &format!("{index}")).await;
 
                     let private_key =
                         TreeKemPrivate::new_self_leaf(LeafIndex(index as u32), hpke_secret);

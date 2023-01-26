@@ -220,7 +220,7 @@ pub async fn commit_group<C: ClientConfig>(container: &mut [Group<C>]) {
     }
 }
 
-pub fn create_fuzz_commit_message<C>(
+pub async fn create_fuzz_commit_message<C>(
     group_id: Vec<u8>,
     epoch: u64,
     authenticated_data: Vec<u8>,
@@ -247,7 +247,7 @@ where
             proposals: Vec::new(),
             path: None,
         }),
-        &group.signer()?,
+        &group.signer().await?,
         wire_format,
         authenticated_data,
     )?;

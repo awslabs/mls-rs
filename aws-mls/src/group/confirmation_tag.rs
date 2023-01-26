@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn test_confirmation_tag_matching() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            println!("Running confirmation tag tests for {:?}", cipher_suite);
+            println!("Running confirmation tag tests for {cipher_suite:?}");
 
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 

@@ -14,20 +14,20 @@ pub(crate) fn build_tree(
 ) -> Result<(), NodeVecError> {
     // Leaf Node
     if nodes.is_leaf(idx) {
-        let mut leaf_tag = format!("Leaf ({})", idx);
+        let mut leaf_tag = format!("Leaf ({idx})");
 
         if nodes.is_blank(idx)? {
-            leaf_tag = format!("Blank Leaf ({})", idx);
+            leaf_tag = format!("Blank Leaf ({idx})");
         }
         tree.add_leaf(&leaf_tag);
         return Ok(());
     }
 
     // Parent Leaf
-    let mut parent_tag = format!("Parent ({})", idx);
+    let mut parent_tag = format!("Parent ({idx})");
 
     if root(nodes.total_leaf_count()) == idx {
-        parent_tag = format!("Root ({})", idx);
+        parent_tag = format!("Root ({idx})");
     }
 
     // Add unmerged leaves indexes

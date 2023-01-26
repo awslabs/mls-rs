@@ -55,6 +55,7 @@ fn bench_application_message<C: MlsConfig>(
                     |(mut sender, mut receiver)| async move {
                         let msg = sender
                             .encrypt_application_message(&bytes[..n], vec![])
+                            .await
                             .unwrap();
 
                         receiver.process_incoming_message(msg).await.unwrap();

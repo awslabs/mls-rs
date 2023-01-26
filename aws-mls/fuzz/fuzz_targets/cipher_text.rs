@@ -21,7 +21,13 @@ static GROUP_DATA: Lazy<Mutex<Vec<Group<TestClientConfig>>>> = Lazy::new(|| {
 fuzz_target!(|data: (Vec<u8>, u64, Vec<u8>)| {
     let mut groups = GROUP_DATA.lock().unwrap();
 
-    let message = create_fuzz_commit_message(data.0, data.1, data.2, &mut groups[0]).unwrap();
+    let message = block_on(create_fuzz_commit_message(
+        data.0,
+        data.1,
+        data.2,
+        &mut groups[0],
+    ))
+    .unwrap();
 
     let _ = block_on(groups[1].process_incoming_message(message));
 });

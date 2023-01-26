@@ -258,10 +258,10 @@ mod tests {
         let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         // Creating the update proposal will add it to pending updates
-        let update_proposal = group.update_proposal();
+        let update_proposal = group.update_proposal().await;
 
         // This will insert the proposal into the internal proposal cache
-        let _ = group.group.proposal_message(update_proposal, vec![]);
+        let _ = group.group.proposal_message(update_proposal, vec![]).await;
 
         serialize_to_json_test(group).await
     }

@@ -15,7 +15,7 @@ struct SignContent {
 impl SignContent {
     pub fn new(label: &str, content: Vec<u8>) -> Self {
         Self {
-            label: format!("MLS 1.0 {}", label).into_bytes(),
+            label: format!("MLS 1.0 {label}").into_bytes(),
             content,
         }
     }

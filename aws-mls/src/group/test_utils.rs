@@ -22,12 +22,12 @@ pub(crate) struct TestGroup {
 }
 
 impl TestGroup {
-    pub(crate) fn propose(&mut self, proposal: Proposal) -> MLSMessage {
-        self.group.proposal_message(proposal, vec![]).unwrap()
+    pub(crate) async fn propose(&mut self, proposal: Proposal) -> MLSMessage {
+        self.group.proposal_message(proposal, vec![]).await.unwrap()
     }
 
-    pub(crate) fn update_proposal(&mut self) -> Proposal {
-        self.group.update_proposal(None).unwrap()
+    pub(crate) async fn update_proposal(&mut self) -> Proposal {
+        self.group.update_proposal(None).await.unwrap()
     }
 
     pub(crate) async fn join_with_preferences(
@@ -113,13 +113,13 @@ impl TestGroup {
             .map(|r| r.event)
     }
 
-    pub(crate) fn make_plaintext(&mut self, content: Content) -> MLSMessage {
+    pub(crate) async fn make_plaintext(&mut self, content: Content) -> MLSMessage {
         let auth_content = MLSAuthenticatedContent::new_signed(
             &self.group.cipher_suite_provider,
             &self.group.state.context,
             Sender::Member(*self.group.private_tree.self_index),
             content,
-            &self.group.signer().unwrap(),
+            &self.group.signer().await.unwrap(),
             WireFormat::Plain,
             Vec::new(),
         )
@@ -291,11 +291,7 @@ pub(crate) async fn test_n_member_group(
     let mut groups = vec![group];
 
     for i in 1..num_members {
-        let (new_group, commit) = groups
-            .get_mut(0)
-            .unwrap()
-            .join(&format!("name {}", i))
-            .await;
+        let (new_group, commit) = groups.get_mut(0).unwrap().join(&format!("name {i}")).await;
         process_commit(&mut groups, commit, 0).await;
         groups.push(new_group);
     }

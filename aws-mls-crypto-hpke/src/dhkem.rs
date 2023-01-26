@@ -237,7 +237,7 @@ mod test {
     fn encap_decap_test_case(test_case: EncapDecapTestCase) {
         let Some(cipher_suite) =  filter_test_case(&test_case.algo) else { return; };
 
-        println!("Testing DHKEM for ciphersuite {:?}", cipher_suite);
+        println!("Testing DHKEM for ciphersuite {cipher_suite:?}");
 
         let mut dhkem = test_dhkem(cipher_suite);
         dhkem.set_test_data(test_case.ikm_e);

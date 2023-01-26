@@ -177,7 +177,7 @@ impl MlsClient for MlsClientImpl {
                 ));
             }
         };
-        println!("{} test vector request", type_msg);
+        println!("{type_msg} test vector request");
 
         let response = GenerateTestVectorResponse {
             test_vector: TEST_VECTOR.to_vec(),
@@ -207,7 +207,7 @@ impl MlsClient for MlsClientImpl {
                 ));
             }
         };
-        println!("{} test vector request", type_msg);
+        println!("{type_msg} test vector request");
 
         if obj.test_vector != TEST_VECTOR {
             return Err(tonic::Status::new(
@@ -394,6 +394,7 @@ impl MlsClient for MlsClientImpl {
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
             .group
             .encrypt_application_message(&request_ref.application_data, vec![])
+            .await
             .and_then(|m| Ok(m.tls_serialize_detached()?))
             .map_err(abort)?;
 
@@ -492,6 +493,7 @@ impl MlsClient for MlsClientImpl {
 
         let proposal_packet = group
             .propose_update(vec![])
+            .await
             .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;
 
@@ -520,6 +522,7 @@ impl MlsClient for MlsClientImpl {
 
         let proposal_packet = group
             .propose_remove(removed, vec![])
+            .await
             .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;
 
@@ -542,6 +545,7 @@ impl MlsClient for MlsClientImpl {
 
         let proposal_packet = group
             .propose_psk(ExternalPskId(request_ref.psk_id), vec![])
+            .await
             .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;
 
@@ -581,6 +585,7 @@ impl MlsClient for MlsClientImpl {
 
         let proposal_packet = group
             .propose_group_context_extensions(ExtensionList::from(extensions), vec![])
+            .await
             .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;
 

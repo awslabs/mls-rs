@@ -3,6 +3,7 @@ use aws_mls::bench_utils::group_functions::create_group;
 use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client::test_utils::TestClientConfig;
 use aws_mls::group::Group;
+use futures::executor::block_on;
 use libfuzzer_sys::fuzz_target;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
@@ -14,5 +15,5 @@ static GROUP_DATA: Lazy<Mutex<Vec<Group<TestClientConfig>>>> = Lazy::new(|| {
 });
 
 fuzz_target!(|data: (&[u8], Vec<u8>)| {
-    let _ = GROUP_DATA.lock().unwrap()[1].encrypt_application_message(data.0, data.1);
+    let _ = block_on(GROUP_DATA.lock().unwrap()[1].encrypt_application_message(data.0, data.1));
 });

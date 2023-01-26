@@ -4,6 +4,7 @@ wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 pub mod crypto;
 pub mod group;
 pub mod identity;
+pub mod keychain;
 pub mod maybe;
 pub mod serde;
 pub mod time;
