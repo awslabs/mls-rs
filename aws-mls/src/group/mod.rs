@@ -1441,6 +1441,18 @@ where
         MessageProcessor::process_incoming_message(self, message, true).await
     }
 
+    pub fn get_member_with_identity(&self, identity: &[u8]) -> Result<Member, GroupError> {
+        let index = self
+            .state
+            .public_tree
+            .get_leaf_node_with_identity(identity)
+            .ok_or(GroupError::MemberNotFound)?;
+
+        let node = self.state.public_tree.get_leaf_node(index)?;
+
+        Ok(Member::from((index, node)))
+    }
+
     /// The returned `GroupInfo` is suitable for one external commit for the current epoch.
     pub async fn group_info_message(
         &self,
