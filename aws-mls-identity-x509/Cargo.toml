@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 async-trait = "0.1.61"
-aws-mls-core = { path = "../aws-mls-core" }
+aws-mls-core = { path = "../aws-mls-core", version = "*" }
 thiserror = "1"
 
 [dev-dependencies]

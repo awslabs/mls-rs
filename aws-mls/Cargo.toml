@@ -12,7 +12,7 @@ rayon = ["dep:rayon"]
 
 [dependencies]
 async-trait = "0.1.61"
-aws-mls-core = { path = "../aws-mls-core" }
+aws-mls-core = { path = "../aws-mls-core", version = "*" }
 thiserror = "^1"
 tls_codec = "0.2.0"
 tls_codec_derive = "0.2.0"
@@ -34,7 +34,7 @@ num_enum = "0.5"
 cfg-if = "^1"
 serde_with = "^2"
 bincode = "1"
-aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", optional = true }
+aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", optional = true, version = "*" }
 
 [dev-dependencies]
 assert_matches = "1.5.0"
@@ -48,10 +48,10 @@ wasm-bindgen = { version = "^0.2.79" }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { version = "0.3.26", default-features = false }
-aws-mls-crypto-rustcrypto = { path = "../aws-mls-crypto-rustcrypto", features = ["browser"] }
+aws-mls-crypto-rustcrypto = { path = "../aws-mls-crypto-rustcrypto", features = ["browser"], version = "*" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl"}
+aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", version = "*"}
 
 
 [[bench]]

@@ -14,10 +14,10 @@ clap = { version = "3", features = ["derive"] }
 thiserror = "1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-aws-mls-crypto-rustcrypto = { path = "../../aws-mls-crypto-rustcrypto", features = ["browser"] }
+aws-mls-crypto-rustcrypto = { path = "../../aws-mls-crypto-rustcrypto", features = ["browser"], version = "*" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-aws-mls-crypto-openssl = { path = "../../aws-mls-crypto-openssl"}
+aws-mls-crypto-openssl = { path = "../../aws-mls-crypto-openssl", version = "*"}
 
 [build-dependencies]
 tonic-build = "0.7"

@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-aws-mls-core = { path = "../aws-mls-core" }
-aws-mls-crypto-hpke = { path = "../aws-mls-crypto-hpke" }
-aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits" }
+aws-mls-core = { path = "../aws-mls-core", version = "*" }
+aws-mls-crypto-hpke = { path = "../aws-mls-crypto-hpke", version = "*" }
+aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", version = "*" }
 thiserror = "^1"
 enum-iterator = "1.1.2"
 aes-gcm = { version = "^0.9.4", features = ["zeroize"] }
