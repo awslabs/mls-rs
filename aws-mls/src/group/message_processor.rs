@@ -397,7 +397,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 interim_transcript_hash,
                 confirmation_tag,
                 provisional_state,
-            )?;
+            )
+            .await?;
 
             Ok(state_update)
         } else {
@@ -551,7 +552,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             .map_err(Into::into)
     }
 
-    fn update_key_schedule(
+    async fn update_key_schedule(
         &mut self,
         secrets: Option<(TreeKemPrivate, PathSecret)>,
         interim_transcript_hash: InterimTranscriptHash,

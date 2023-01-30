@@ -15,9 +15,7 @@ use super::{
     secret_tree::{KeyType, SecretTreeError},
     GroupContext, PaddingMode,
 };
-use crate::{
-    provider::crypto::CipherSuiteProvider, psk::PskSecretError, tree_kem::node::LeafIndex,
-};
+use crate::{provider::crypto::CipherSuiteProvider, psk::PskError, tree_kem::node::LeafIndex};
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -35,7 +33,7 @@ pub enum CiphertextProcessorError {
     #[error(transparent)]
     TlsCodecError(#[from] tls_codec::Error),
     #[error(transparent)]
-    PskSecretError(#[from] PskSecretError),
+    PskSecretError(#[from] PskError),
     #[error("key derivation failure")]
     KeyDerivationFailure,
     #[error("seal is only supported for self created messages")]

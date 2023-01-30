@@ -3,7 +3,6 @@ use aws_mls_core::identity::IdentityProvider;
 use futures::{StreamExt, TryStreamExt};
 use serde_with::serde_as;
 use std::collections::HashMap;
-use std::convert::Infallible;
 use std::future::ready;
 use std::ops::Deref;
 use std::option::Option::Some;
@@ -26,10 +25,12 @@ use crate::provider::crypto::{
     SignatureSecretKey,
 };
 use crate::provider::keychain::KeychainStorage;
-use crate::provider::psk::{PskStore, PskStoreIdValidator};
+use crate::provider::psk::PskStoreIdValidator;
+use crate::psk::resolver::PskResolver;
+use crate::psk::secret::{PskSecret, PskSecretInput};
 use crate::psk::{
-    ExternalPskId, JoinerSecret, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
-    ResumptionPSKUsage, ResumptionPsk, ResumptionPskSearch,
+    ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
+    ResumptionPSKUsage, ResumptionPsk,
 };
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
@@ -335,18 +336,18 @@ where
         let group_secrets = GroupSecrets::tls_deserialize(&mut &*decrypted_group_secrets)?;
         let psk_store = config.secret_store();
 
-        let resumption_psk_search = parent_group.map(|parent| ResumptionPskSearch {
-            group_context: parent.context(),
-            current_epoch: &parent.epoch_secrets,
-            prior_epochs: &parent.state_repo,
-        });
-
-        let psk_secret = crate::psk::psk_secret(
-            &cipher_suite_provider,
-            |id| psk_store.get(id),
-            |id| resumption_psk_search.map_or(Ok(None), |s| s.find(id)),
-            &group_secrets.psks,
-        )?;
+        let psk_secret = if let Some(parent_group) = parent_group {
+            PskResolver {
+                group_context: parent_group.context(),
+                current_epoch: &parent_group.epoch_secrets,
+                prior_epochs: &parent_group.state_repo,
+                psk_store: &psk_store,
+            }
+            .resolve_to_secret(&group_secrets.psks, &cipher_suite_provider)
+            .await?
+        } else {
+            PskSecret::new(&cipher_suite_provider)
+        };
 
         // From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
         // the GroupSecrets, derive the welcome_secret and using that the welcome_key and
@@ -698,7 +699,7 @@ where
         &self,
         new_members: Vec<(KeyPackage, LeafIndex)>,
         joiner_secret: &JoinerSecret,
-        psk_secret: &Psk,
+        psk_secret: &PskSecret,
         path_secrets: Option<&Vec<Option<PathSecret>>>,
         psks: Vec<PreSharedKeyID>,
         group_info: &GroupInfo,
@@ -830,26 +831,15 @@ where
                 .map_err(|e| GroupError::CryptoProviderError(e.into()))?,
         }];
 
-        let state_repo = GroupStateRepository::new(
-            new_context.group_id.clone(),
-            self.config.preferences().max_epoch_retention,
-            self.config.group_state_storage(),
-            self.config.key_package_repo(),
-            None,
-        )?;
+        let psk_input = psks
+            .iter()
+            .map(|id| PskSecretInput {
+                id: id.clone(),
+                psk: self.epoch_secrets.resumption_secret.clone(),
+            })
+            .collect::<Vec<_>>();
 
-        let resumption_psk_search = ResumptionPskSearch {
-            group_context: self.context(),
-            current_epoch: &self.epoch_secrets,
-            prior_epochs: &state_repo,
-        };
-
-        let psk_secret = crate::psk::psk_secret(
-            &cipher_suite_provider,
-            |_| Ok::<_, Infallible>(None),
-            |id| resumption_psk_search.find(id),
-            &psks,
-        )?;
+        let psk_secret = PskSecret::calculate(&psk_input, &cipher_suite_provider)?;
 
         let key_schedule_result = KeySchedule::from_key_schedule(
             &KeySchedule::new(InitSecret::random(&cipher_suite_provider)?),
@@ -878,6 +868,14 @@ where
             &cipher_suite_provider,
             &new_context.confirmed_transcript_hash,
             &group_info.confirmation_tag,
+        )?;
+
+        let state_repo = GroupStateRepository::new(
+            new_context.group_id.clone(),
+            self.config.preferences().max_epoch_retention,
+            self.config.group_state_storage(),
+            self.config.key_package_repo(),
+            None,
         )?;
 
         let new_group = Group {
@@ -1659,7 +1657,7 @@ where
         Ok(Some(secrets))
     }
 
-    fn update_key_schedule(
+    async fn update_key_schedule(
         &mut self,
         secrets: Option<(TreeKemPrivate, PathSecret)>,
         interim_transcript_hash: InterimTranscriptHash,
@@ -1673,18 +1671,14 @@ where
 
         let secret_store = self.config.secret_store();
 
-        let resumption_psk_search = ResumptionPskSearch {
+        let psk_secret = PskResolver {
             group_context: self.context(),
             current_epoch: &self.epoch_secrets,
             prior_epochs: &self.state_repo,
-        };
-
-        let psk_secret = crate::psk::psk_secret(
-            &self.cipher_suite_provider,
-            |id| secret_store.get(id),
-            |id| resumption_psk_search.find(id),
-            &provisional_state.psks,
-        )?;
+            psk_store: &secret_store,
+        }
+        .resolve_to_secret(&provisional_state.psks, &self.cipher_suite_provider)
+        .await?;
 
         // Use the commit_secret, the psk_secret, the provisional GroupContext, and the init secret
         // from the previous epoch (or from the external init) to compute the epoch secret and

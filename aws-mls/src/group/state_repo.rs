@@ -4,6 +4,7 @@ use crate::{
     provider::{group_state::GroupStateStorage, key_package::KeyPackageRepository},
 };
 
+use aws_mls_core::psk::Psk;
 use hex::ToHex;
 use std::collections::{hash_map::Entry, HashMap, VecDeque};
 use thiserror::Error;
@@ -92,10 +93,10 @@ where
         }
     }
 
-    pub fn get_epoch_owned(
+    pub fn resumption_secret(
         &self,
         epoch_id: u64,
-    ) -> Result<Option<PriorEpoch>, GroupStateRepositoryError> {
+    ) -> Result<Option<Psk>, GroupStateRepositoryError> {
         if self.epoch_pending_delete(epoch_id) {
             return Ok(None);
         }
@@ -107,21 +108,20 @@ where
                     .pending_commit
                     .inserts
                     .get((epoch_id - min) as usize)
-                    .cloned());
+                    .map(|e| e.secrets.resumption_secret.clone()));
             }
         }
 
-        self.pending_commit
-            .updates
-            .get(&epoch_id)
-            .map(|epoch| Ok(epoch.clone()))
-            .or_else(|| {
-                self.storage
-                    .epoch(&self.group_id, epoch_id)
-                    .map_err(|e| GroupStateRepositoryError::StorageError(e.into()))
-                    .transpose()
-            })
-            .transpose()
+        // Search the local updates cache
+        if let Some(pending) = self.pending_commit.updates.get(&epoch_id) {
+            return Ok(Some(pending.secrets.resumption_secret.clone()));
+        }
+
+        // Search the stored cache
+        self.storage
+            .epoch::<PriorEpoch>(&self.group_id, epoch_id)
+            .map_err(|e| GroupStateRepositoryError::StorageError(e.into()))
+            .map(|e| e.map(|e| e.secrets.resumption_secret))
     }
 
     fn epoch_pending_delete(&self, epoch_id: u64) -> bool {
@@ -294,10 +294,15 @@ mod tests {
         assert!(test_repo.storage.inner.lock().unwrap().is_empty());
 
         // Make sure you can recall an epoch sitting as a pending insert
-        let mut owned = test_repo.get_epoch_owned(0).unwrap();
-        let borrowed = test_repo.get_epoch_mut(0).unwrap();
-        assert_eq!(borrowed, owned.as_mut());
-        assert_eq!(borrowed.unwrap(), &test_epoch);
+        let resumption = test_repo.resumption_secret(0).unwrap();
+        let prior_epoch = test_repo.get_epoch_mut(0).unwrap().cloned();
+
+        assert_eq!(
+            prior_epoch.clone().unwrap().secrets.resumption_secret,
+            resumption.unwrap()
+        );
+
+        assert_eq!(prior_epoch.unwrap(), test_epoch);
 
         // Write to the storage
         let snapshot = test_snapshot(test_epoch.epoch_id());
@@ -424,8 +429,8 @@ mod tests {
         );
 
         // Make sure you can access an epoch pending update
-        let owned = test_repo.get_epoch_owned(0).unwrap();
-        assert_eq!(owned.as_ref(), Some(&to_update));
+        let owned = test_repo.resumption_secret(0).unwrap();
+        assert_eq!(owned.as_ref(), Some(&to_update.secrets.resumption_secret));
 
         // Write the update to storage
         let snapshot = test_snapshot(1);
@@ -507,7 +512,6 @@ mod tests {
 
         epochs.into_iter().for_each(|mut e| {
             assert_eq!(test_repo.get_epoch_mut(e.epoch_id()).unwrap(), Some(&mut e));
-            assert_eq!(test_repo.get_epoch_owned(e.epoch_id()).unwrap(), Some(e));
         })
     }
 
@@ -521,7 +525,7 @@ mod tests {
         test_repo.insert(test_epoch_1).unwrap();
 
         assert!(test_repo.get_epoch_mut(0).unwrap().is_none());
-        assert!(test_repo.get_epoch_owned(0).unwrap().is_none());
+        assert!(test_repo.resumption_secret(0).unwrap().is_none());
     }
 
     #[test]

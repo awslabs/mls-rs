@@ -4,17 +4,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use async_trait::async_trait;
 use thiserror::Error;
 
 use crate::psk::{ExternalPskId, ExternalPskIdValidator, Psk};
 
-pub trait PskStore: Send + Sync {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    fn insert(&mut self, id: ExternalPskId, psk: Psk) -> Result<(), Self::Error>;
-    fn delete(&mut self, id: &ExternalPskId) -> Result<(), Self::Error>;
-    fn get(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error>;
-}
+pub use aws_mls_core::psk::PskStore;
 
 #[derive(Debug, Clone)]
 pub(crate) struct PskStoreIdValidator<T>(T);
@@ -28,12 +23,14 @@ where
     }
 }
 
+#[async_trait]
 impl<T: PskStore> ExternalPskIdValidator for PskStoreIdValidator<T> {
     type Error = PskStoreIdValidationError<T::Error>;
 
-    fn validate(&self, id: &ExternalPskId) -> Result<(), Self::Error> {
+    async fn validate(&self, id: &ExternalPskId) -> Result<(), Self::Error> {
         self.0
-            .get(id)?
+            .get(id)
+            .await?
             .map(|_| ())
             .ok_or_else(|| PskStoreIdValidationError::ExternalIdNotFound(id.clone()))
     }
@@ -66,19 +63,20 @@ impl InMemoryPskStore {
     }
 }
 
+#[async_trait]
 impl PskStore for InMemoryPskStore {
     type Error = Infallible;
 
-    fn get(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error> {
+    async fn get(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error> {
         Ok(self.get(id))
     }
 
-    fn delete(&mut self, id: &ExternalPskId) -> Result<(), Self::Error> {
+    async fn delete(&mut self, id: &ExternalPskId) -> Result<(), Self::Error> {
         self.delete(id);
         Ok(())
     }
 
-    fn insert(&mut self, id: ExternalPskId, psk: Psk) -> Result<(), Self::Error> {
+    async fn insert(&mut self, id: ExternalPskId, psk: Psk) -> Result<(), Self::Error> {
         self.insert(id, psk);
         Ok(())
     }

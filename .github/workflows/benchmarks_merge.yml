@@ -2,7 +2,7 @@ name: Benchmarks on Merge
 on:
   push:
     branches:
-      - master
+      - main
 env:
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
 jobs:

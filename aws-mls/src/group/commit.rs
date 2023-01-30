@@ -7,8 +7,8 @@ use crate::{
     identity::SigningIdentity,
     key_package::KeyPackage,
     protocol_version::ProtocolVersion,
-    provider::psk::{PskStore, PskStoreIdValidator},
-    psk::{ExternalPskId, ResumptionPskSearch},
+    provider::psk::PskStoreIdValidator,
+    psk::{resolver::PskResolver, ExternalPskId},
     signer::Signable,
     tree_kem::{
         kem::TreeKem, leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret,
@@ -327,18 +327,14 @@ where
 
         let psk_store = self.config.secret_store();
 
-        let resumption_psk_search = ResumptionPskSearch {
+        let psk_secret = PskResolver {
             group_context: self.context(),
             current_epoch: &self.epoch_secrets,
             prior_epochs: &self.state_repo,
-        };
-
-        let psk_secret = crate::psk::psk_secret(
-            &self.cipher_suite_provider,
-            |id| psk_store.get(id),
-            |id| resumption_psk_search.find(id),
-            &provisional_state.psks,
-        )?;
+            psk_store: &psk_store,
+        }
+        .resolve_to_secret(&provisional_state.psks, &self.cipher_suite_provider)
+        .await?;
 
         let commit = Commit {
             proposals: commit_proposals,

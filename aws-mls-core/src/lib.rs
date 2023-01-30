@@ -6,6 +6,7 @@ pub mod group;
 pub mod identity;
 pub mod keychain;
 pub mod maybe;
+pub mod psk;
 pub mod serde;
 pub mod time;
 pub mod tls;

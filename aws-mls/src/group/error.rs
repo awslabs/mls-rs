@@ -6,7 +6,7 @@ use crate::{
     hash_reference::HashReferenceError,
     key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError},
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
-    psk::PskSecretError,
+    psk::PskError,
     signer::SignatureError,
     tree_kem::{
         leaf_node::LeafNodeError, leaf_node_validator::LeafNodeValidationError,
@@ -119,7 +119,7 @@ pub enum GroupError {
     #[error("Only members can update")]
     OnlyMembersCanUpdate,
     #[error(transparent)]
-    PskSecretError(#[from] PskSecretError),
+    PskSecretError(#[from] PskError),
     #[error("Subgroup uses a different protocol version: {0:?}")]
     SubgroupWithDifferentProtocolVersion(ProtocolVersion),
     #[error("Subgroup uses a different cipher suite: {0:?}")]

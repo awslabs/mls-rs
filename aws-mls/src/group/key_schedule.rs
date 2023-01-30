@@ -1,12 +1,13 @@
 use crate::group::secret_tree::SecretTreeError;
 use crate::group::{GroupContext, MembershipTag, MembershipTagError, SecretTree};
-use crate::psk::{get_pre_epoch_secret, JoinerSecret, Psk, PskSecretError};
+use crate::psk::secret::PskSecret;
+use crate::psk::{Psk, PskError};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
 use serde_with::serde_as;
 use thiserror::Error;
 use tls_codec::Serialize;
-use tls_codec_derive::{TlsSerialize, TlsSize};
+use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::provider::crypto::{
@@ -23,7 +24,7 @@ pub enum KeyScheduleError {
     #[error(transparent)]
     TlsCodecError(#[from] tls_codec::Error),
     #[error(transparent)]
-    PskSecretError(#[from] PskSecretError),
+    PskSecretError(#[from] PskError),
     #[error("key derivation failure")]
     KeyDerivationFailure,
     #[error(transparent)]
@@ -75,7 +76,7 @@ impl KeySchedule {
         commit_secret: &CommitSecret,
         context: &GroupContext,
         secret_tree_size: u32,
-        psk_secret: &Psk,
+        psk_secret: &PskSecret,
         cipher_suite_provider: &P,
     ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
         let joiner_seed = cipher_suite_provider
@@ -114,7 +115,7 @@ impl KeySchedule {
         joiner_secret: &JoinerSecret,
         context: &GroupContext,
         secret_tree_size: u32,
-        psk_secret: &Psk,
+        psk_secret: &PskSecret,
     ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
         let epoch_seed = get_pre_epoch_secret(cipher_suite_provider, psk_secret, joiner_secret)?;
         let context = context.tls_serialize_detached()?;
@@ -256,6 +257,26 @@ pub(crate) fn kdf_derive_secret<P: CipherSuiteProvider>(
     kdf_expand_with_label(cipher_suite_provider, secret, label, &[], None)
 }
 
+#[derive(Clone, Debug, PartialEq, Zeroize, TlsDeserialize, TlsSerialize, TlsSize)]
+#[zeroize(drop)]
+pub(crate) struct JoinerSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+
+impl From<Vec<u8>> for JoinerSecret {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self(bytes)
+    }
+}
+
+pub(crate) fn get_pre_epoch_secret<P: CipherSuiteProvider>(
+    cipher_suite_provider: &P,
+    psk_secret: &PskSecret,
+    joiner_secret: &JoinerSecret,
+) -> Result<Vec<u8>, PskError> {
+    cipher_suite_provider
+        .kdf_extract(&joiner_secret.0, psk_secret)
+        .map_err(|e| PskError::CipherSuiteProviderError(e.into()))
+}
+
 struct SecretsProducer<'a, P: CipherSuiteProvider> {
     cipher_suite_provider: &'a P,
     epoch_secret: &'a [u8],
@@ -360,7 +381,7 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
     pub(crate) fn from_joiner_secret(
         cipher_suite: &'a P,
         joiner_secret: &JoinerSecret,
-        psk_secret: &Psk,
+        psk_secret: &PskSecret,
     ) -> Result<Self, KeyScheduleError> {
         let epoch_seed = Zeroizing::new(get_pre_epoch_secret(
             cipher_suite,
@@ -409,7 +430,13 @@ pub(crate) mod test_utils {
         cipher_suite::CipherSuite, provider::crypto::test_utils::test_cipher_suite_provider,
     };
 
-    use super::{InitSecret, KeySchedule};
+    use super::{InitSecret, JoinerSecret, KeySchedule};
+
+    impl From<JoinerSecret> for Vec<u8> {
+        fn from(mut value: JoinerSecret) -> Self {
+            std::mem::take(&mut value.0)
+        }
+    }
 
     pub(crate) fn get_test_key_schedule(cipher_suite: CipherSuite) -> KeySchedule {
         let key_size = test_cipher_suite_provider(cipher_suite).kdf_extract_size();
@@ -578,7 +605,7 @@ mod tests {
                 exporter: key_schedule.key_schedule.exporter_secret.clone(),
                 confirm: key_schedule.confirmation_key,
                 membership: key_schedule.key_schedule.membership_key.clone(),
-                resumption: key_schedule.epoch_secrets.resumption_secret.into(),
+                resumption: key_schedule.epoch_secrets.resumption_secret.to_vec(),
                 authentication: key_schedule.key_schedule.authentication_secret.clone(),
                 sender_data: (*key_schedule.epoch_secrets.sender_data_secret).to_vec(),
                 encryption: key_schedule.epoch_secrets.secret_tree.get_root_secret(),
@@ -647,7 +674,7 @@ mod tests {
                 key_schedule.key_schedule.membership_key
             );
 
-            let expected: Vec<u8> = key_schedule.epoch_secrets.resumption_secret.into();
+            let expected: Vec<u8> = key_schedule.epoch_secrets.resumption_secret.to_vec();
             assert_eq!(test_case.resumption, expected);
 
             assert_eq!(

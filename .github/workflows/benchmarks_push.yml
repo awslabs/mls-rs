@@ -2,7 +2,7 @@ name: Benchmarks on Push
 on:
   push:
     branches-ignore:
-      - 'master'
+      - 'main'
 env:
   SSH_AUTH_SOCK: /tmp/ssh_agent.sock
 jobs:

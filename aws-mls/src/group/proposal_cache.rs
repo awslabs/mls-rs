@@ -3600,10 +3600,11 @@ mod tests {
     #[derive(Debug)]
     struct FailurePskIdValidator;
 
+    #[async_trait]
     impl ExternalPskIdValidator for FailurePskIdValidator {
         type Error = std::io::Error;
 
-        fn validate(&self, _: &ExternalPskId) -> Result<(), Self::Error> {
+        async fn validate(&self, _: &ExternalPskId) -> Result<(), Self::Error> {
             Err(std::io::ErrorKind::InvalidData.into())
         }
     }

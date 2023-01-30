@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use aws_mls_core::identity::IdentityProvider;
 use tls_codec::Serialize;
 
@@ -293,6 +294,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     }
 }
 
+#[async_trait]
 impl<C> MessageProcessor for ExternalGroup<C>
 where
     C: ExternalClientConfig + Clone,
@@ -335,7 +337,7 @@ where
         )))
     }
 
-    fn update_key_schedule(
+    async fn update_key_schedule(
         &mut self,
         _secrets: Option<(TreeKemPrivate, PathSecret)>,
         interim_transcript_hash: InterimTranscriptHash,

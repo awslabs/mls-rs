@@ -12,7 +12,7 @@ use crate::{
     key_package::{KeyPackageValidationOptions, KeyPackageValidator},
     protocol_version::ProtocolVersion,
     provider::crypto::CipherSuiteProvider,
-    psk::ExternalPskIdValidator,
+    psk::{ExternalPskIdValidator, PreSharedKeyID},
     time::MlsTime,
     tree_kem::{
         leaf_node::LeafNode,
@@ -140,12 +140,14 @@ where
         let proposals = filter_out_update_for_committer(&strategy, commit_sender, proposals)?;
         let proposals = filter_out_removal_of_committer(&strategy, commit_sender, proposals)?;
         let proposals = filter_out_extra_removal_or_update_for_same_leaf(&strategy, proposals)?;
+
         let proposals = filter_out_invalid_psks(
             &strategy,
             self.cipher_suite_provider,
             proposals,
             &self.external_psk_id_validator,
-        )?;
+        )
+        .await?;
 
         let proposals = filter_out_invalid_group_extensions(
             &strategy,
@@ -201,7 +203,9 @@ where
             self.cipher_suite_provider,
             proposals,
             &self.external_psk_id_validator,
-        )?;
+        )
+        .await?;
+
         let state = ProposalState::new(self.original_tree.clone(), proposals);
 
         let state = self
@@ -887,7 +891,7 @@ where
     Ok(proposals)
 }
 
-fn filter_out_invalid_psks<F, P, CP>(
+async fn filter_out_invalid_psks<F, P, CP>(
     strategy: F,
     cipher_suite_provider: &CP,
     mut proposals: ProposalBundle,
@@ -898,45 +902,66 @@ where
     P: ExternalPskIdValidator,
     CP: CipherSuiteProvider,
 {
-    let mut ids = HashSet::new();
     let kdf_extract_size = cipher_suite_provider.kdf_extract_size();
+    let strategy = &strategy;
 
-    proposals.retain_by_type::<PreSharedKey, _, _>(|p| {
-        let valid = matches!(
-            p.proposal.psk.key_id,
-            JustPreSharedKeyID::External(_)
-                | JustPreSharedKeyID::Resumption(ResumptionPsk {
-                    usage: ResumptionPSKUsage::Application,
-                    ..
+    #[derive(Default)]
+    struct ValidationState {
+        ids_seen: HashSet<PreSharedKeyID>,
+        bad_indices: Vec<usize>,
+    }
+
+    let state = futures::stream::iter(proposals.by_type::<PreSharedKey>().enumerate().map(Ok))
+        .try_fold(ValidationState::default(), |mut state, (i, p)| async move {
+            let valid = matches!(
+                p.proposal.psk.key_id,
+                JustPreSharedKeyID::External(_)
+                    | JustPreSharedKeyID::Resumption(ResumptionPsk {
+                        usage: ResumptionPSKUsage::Application,
+                        ..
+                    })
+            );
+
+            let nonce_length = p.proposal.psk.psk_nonce.0.len();
+            let nonce_valid = nonce_length == kdf_extract_size;
+            let is_new_id = state.ids_seen.insert(p.proposal.psk.clone());
+
+            let external_id_is_valid = match &p.proposal.psk.key_id {
+                JustPreSharedKeyID::External(id) => external_psk_id_validator
+                    .validate(id)
+                    .await
+                    .map_err(|e| ProposalFilterError::PskIdValidationError(e.into())),
+                JustPreSharedKeyID::Resumption(_) => Ok(()),
+            };
+
+            let res = if !valid {
+                Err(ProposalFilterError::InvalidTypeOrUsageInPreSharedKeyProposal)
+            } else if !nonce_valid {
+                Err(ProposalFilterError::InvalidPskNonceLength {
+                    expected: kdf_extract_size,
+                    found: nonce_length,
                 })
-        );
+            } else if !is_new_id {
+                Err(ProposalFilterError::DuplicatePskIds)
+            } else {
+                external_id_is_valid
+            };
 
-        let nonce_length = p.proposal.psk.psk_nonce.0.len();
-        let nonce_valid = nonce_length == kdf_extract_size;
-        let is_new_id = ids.insert(p.proposal.psk.clone());
+            let is_invalid_index = apply_strategy(strategy, p, res)?;
 
-        let external_id_is_valid = match &p.proposal.psk.key_id {
-            JustPreSharedKeyID::External(id) => external_psk_id_validator
-                .validate(id)
-                .map_err(|e| ProposalFilterError::PskIdValidationError(e.into())),
-            JustPreSharedKeyID::Resumption(_) => Ok(()),
-        };
+            if !is_invalid_index {
+                state.bad_indices.push(i)
+            }
 
-        let res = if !valid {
-            Err(ProposalFilterError::InvalidTypeOrUsageInPreSharedKeyProposal)
-        } else if !nonce_valid {
-            Err(ProposalFilterError::InvalidPskNonceLength {
-                expected: kdf_extract_size,
-                found: nonce_length,
-            })
-        } else if !is_new_id {
-            Err(ProposalFilterError::DuplicatePskIds)
-        } else {
-            external_id_is_valid
-        };
+            Ok::<_, ProposalFilterError>(state)
+        })
+        .await?;
 
-        apply_strategy(&strategy, p, res)
-    })?;
+    state
+        .bad_indices
+        .into_iter()
+        .rev()
+        .for_each(|i| proposals.remove::<PreSharedKey>(i));
 
     Ok(proposals)
 }
