@@ -1,9 +1,9 @@
 use aws_mls_core::identity::IdentityProvider;
+use futures::StreamExt;
 use tls_codec::Deserialize;
 
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
-    client_config::ClientConfig,
     extension::{
         ExtensionList, ExternalSendersExt, GroupContextExtension, GroupInfoExtension,
         RatchetTreeExt,
@@ -33,7 +33,7 @@ use super::{
     proposal_filter::ProposalFilter,
     transcript_hash::InterimTranscriptHash,
     Commit, ConfirmedTranscriptHash, EncryptedGroupSecrets, GroupContext, GroupError, GroupInfo,
-    ProposalCacheError, Welcome,
+    ProposalCacheError,
 };
 
 #[derive(Clone, Debug)]
@@ -267,25 +267,32 @@ pub(super) fn check_protocol_version(
         .ok_or(GroupError::UnsupportedProtocolVersion(version))
 }
 
-pub(super) fn find_key_package_generation<'a, C>(
-    config: &C,
-    welcome_message: &'a Welcome,
-) -> Result<(&'a EncryptedGroupSecrets, KeyPackageGeneration), GroupError>
-where
-    C: ClientConfig,
-{
-    welcome_message
-        .secrets
-        .iter()
-        .find_map(|secrets| {
-            config
-                .key_package_repo()
-                .get(&secrets.new_member)
-                .transpose()
-                .map(|res| res.map(|key_package_gen| (secrets, key_package_gen)))
+pub(super) async fn find_key_package_generation<'a, K: KeyPackageRepository>(
+    key_package_repo: &K,
+    secrets: &'a [EncryptedGroupSecrets],
+) -> Result<(&'a EncryptedGroupSecrets, KeyPackageGeneration), GroupError> {
+    futures::stream::iter(secrets.iter())
+        .filter_map(|secrets| {
+            Box::pin(async move {
+                key_package_repo
+                    .get(&secrets.new_member)
+                    .await
+                    .map_err(|e| GroupError::KeyPackageRepositoryError(e.into()))
+                    .and_then(|maybe_data| {
+                        if let Some(data) = maybe_data {
+                            KeyPackageGeneration::from_storage(secrets.new_member.to_vec(), data)
+                                .map(|kpg| Some((secrets, kpg)))
+                                .map_err(GroupError::from)
+                        } else {
+                            Ok::<_, GroupError>(None)
+                        }
+                    })
+                    .transpose()
+            })
         })
-        .transpose()
-        .map_err(|e| GroupError::KeyPackageRepositoryError(e.into()))?
+        .next()
+        .await
+        .transpose()?
         .ok_or(GroupError::KeyPackageNotFound)
 }
 

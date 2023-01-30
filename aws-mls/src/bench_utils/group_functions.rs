@@ -1,4 +1,4 @@
-use aws_mls_core::group::GroupStateStorage;
+use aws_mls_core::{group::GroupStateStorage, key_package::KeyPackageData};
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -17,7 +17,6 @@ use crate::{
         Commit, Group, GroupError, Snapshot,
     },
     identity::SigningIdentity,
-    key_package::{KeyPackageGeneration, KeyPackageRef},
     protocol_version::ProtocolVersion,
     provider::{
         crypto::SignatureSecretKey, group_state::InMemoryGroupStateStorage,
@@ -56,9 +55,9 @@ pub async fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
         .then(|test| {
             futures::stream::iter(test.info)
                 .then(|group_info| async move {
-                    let key_packages = serde_json::from_slice::<
-                        Vec<(KeyPackageRef, KeyPackageGeneration)>,
-                    >(&group_info.key_packages)
+                    let key_packages = serde_json::from_slice::<Vec<(Vec<u8>, KeyPackageData)>>(
+                        &group_info.key_packages,
+                    )
                     .unwrap();
 
                     let secrets = serde_json::from_slice::<
@@ -156,9 +155,9 @@ where
 async fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
     let mut groups = create_group(cipher_suite, size).await;
 
-    groups
-        .iter_mut()
-        .for_each(|group| group.write_to_storage().unwrap());
+    futures::stream::iter(groups.iter_mut())
+        .for_each(|group| async { group.write_to_storage().await.unwrap() })
+        .await;
 
     let info = groups
         .into_iter()

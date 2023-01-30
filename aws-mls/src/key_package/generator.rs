@@ -1,17 +1,21 @@
-use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::{identity::IdentityProvider, key_package::KeyPackageData};
+use thiserror::Error;
+use tls_codec::{Deserialize, Serialize};
 
 use crate::{
-    extension::{KeyPackageExtension, LeafNodeExtension},
+    extension::{ExtensionList, KeyPackageExtension, LeafNodeExtension},
+    hash_reference::HashReferenceError,
     identity::SigningIdentity,
+    protocol_version::ProtocolVersion,
     provider::crypto::{CipherSuiteProvider, HpkeSecretKey, SignatureSecretKey},
-    signer::SignatureError,
+    signer::{Signable, SignatureError},
     tree_kem::{
-        leaf_node::{ConfigProperties, LeafNodeError},
+        leaf_node::{ConfigProperties, LeafNode, LeafNodeError},
         Capabilities, Lifetime,
     },
 };
 
-use super::*;
+use super::{KeyPackage, KeyPackageError, KeyPackageRef};
 
 #[derive(Debug, Error)]
 pub enum KeyPackageGenerationError {
@@ -25,6 +29,10 @@ pub enum KeyPackageGenerationError {
     LeafNodeError(#[from] LeafNodeError),
     #[error(transparent)]
     CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error(transparent)]
+    TlsCodecError(#[from] tls_codec::Error),
+    #[error(transparent)]
+    HashReferenceError(#[from] HashReferenceError),
 }
 
 #[derive(Clone, Debug)]
@@ -46,25 +54,35 @@ where
     derive(serde::Deserialize, serde::Serialize)
 )]
 pub struct KeyPackageGeneration {
+    pub(crate) reference: KeyPackageRef,
     pub(crate) key_package: KeyPackage,
     pub(crate) init_secret_key: HpkeSecretKey,
     pub(crate) leaf_node_secret_key: HpkeSecretKey,
 }
 
 impl KeyPackageGeneration {
-    pub(crate) fn reference<CP: CipherSuiteProvider>(
-        &self,
-        cipher_suite_provider: &CP,
-    ) -> Result<KeyPackageRef, HashReferenceError> {
-        self.key_package.to_reference(cipher_suite_provider)
+    pub fn to_storage(&self) -> Result<(Vec<u8>, KeyPackageData), KeyPackageGenerationError> {
+        let id = self.reference.to_vec();
+
+        let data = KeyPackageData::new(
+            self.key_package.tls_serialize_detached()?,
+            self.init_secret_key.clone(),
+            self.leaf_node_secret_key.clone(),
+        );
+
+        Ok((id, data))
     }
 
-    pub fn init_secret(&self) -> &HpkeSecretKey {
-        &self.init_secret_key
-    }
-
-    pub fn leaf_node_secret_key(&self) -> &[u8] {
-        self.leaf_node_secret_key.as_ref()
+    pub fn from_storage(
+        id: Vec<u8>,
+        data: KeyPackageData,
+    ) -> Result<Self, KeyPackageGenerationError> {
+        Ok(KeyPackageGeneration {
+            reference: KeyPackageRef::from(id),
+            key_package: KeyPackage::tls_deserialize(&mut &*data.pkg)?,
+            init_secret_key: data.init_key,
+            leaf_node_secret_key: data.leaf_node_key,
+        })
     }
 }
 
@@ -117,10 +135,13 @@ where
 
         self.sign(&mut package)?;
 
+        let reference = package.to_reference(self.cipher_suite_provider)?;
+
         Ok(KeyPackageGeneration {
             key_package: package,
             init_secret_key,
             leaf_node_secret_key: leaf_node_secret,
+            reference,
         })
     }
 }

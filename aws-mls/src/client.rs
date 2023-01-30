@@ -139,12 +139,12 @@ where
             )
             .await?;
 
+        let (id, key_package_data) = key_pkg_gen.to_storage()?;
+
         self.config
             .key_package_repo()
-            .insert(
-                key_pkg_gen.reference(&cipher_suite_provider)?,
-                key_pkg_gen.clone(),
-            )
+            .insert(id, key_package_data)
+            .await
             .map_err(|e| ClientError::KeyPackageRepoError(e.into()))?;
 
         Ok(key_pkg_gen.key_package)

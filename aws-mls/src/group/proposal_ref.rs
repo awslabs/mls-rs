@@ -19,7 +19,7 @@ use crate::hash_reference::{HashReference, HashReferenceError};
 pub struct ProposalRef(HashReference);
 
 impl Deref for ProposalRef {
-    type Target = Vec<u8>;
+    type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
         &self.0

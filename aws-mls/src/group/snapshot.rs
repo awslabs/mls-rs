@@ -95,9 +95,10 @@ impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
-    pub fn write_to_storage(&mut self) -> Result<(), GroupError> {
+    pub async fn write_to_storage(&mut self) -> Result<(), GroupError> {
         self.state_repo
             .write_to_storage(self.snapshot())
+            .await
             .map_err(Into::into)
     }
 

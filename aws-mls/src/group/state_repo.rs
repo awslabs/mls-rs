@@ -197,7 +197,7 @@ where
         Ok(())
     }
 
-    pub fn write_to_storage(
+    pub async fn write_to_storage(
         &mut self,
         group_snapshot: Snapshot,
     ) -> Result<(), GroupStateRepositoryError> {
@@ -212,6 +212,7 @@ where
         if let Some(ref key_package_ref) = self.pending_key_package_removal {
             self.key_package_repo
                 .delete(key_package_ref)
+                .await
                 .map_err(|e| GroupStateRepositoryError::KeyPackageRepoError(e.into()))?;
         }
 
@@ -234,7 +235,6 @@ mod tests {
             test_utils::{random_bytes, test_member, TEST_GROUP},
         },
         provider::{
-            crypto::test_utils::test_cipher_suite_provider,
             group_state::{EpochData, InMemoryGroupStateStorage},
             key_package::InMemoryKeyPackageRepository,
         },
@@ -277,8 +277,8 @@ mod tests {
         )
     }
 
-    #[test]
-    fn test_epoch_inserts() {
+    #[futures_test::test]
+    async fn test_epoch_inserts() {
         let mut test_repo = test_group_state_repo(1);
         let test_epoch = test_epoch(0);
 
@@ -306,7 +306,7 @@ mod tests {
 
         // Write to the storage
         let snapshot = test_snapshot(test_epoch.epoch_id());
-        test_repo.write_to_storage(snapshot.clone()).unwrap();
+        test_repo.write_to_storage(snapshot.clone()).await.unwrap();
 
         // Make sure the memory cache cleared
         assert!(test_repo.pending_commit.inserts.is_empty());
@@ -327,8 +327,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_epoch_insert_over_limit() {
+    #[futures_test::test]
+    async fn test_epoch_insert_over_limit() {
         let mut test_repo = test_group_state_repo(1);
         let test_epoch_0 = test_epoch(0);
         let test_epoch_1 = test_epoch(1);
@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(test_repo.pending_commit.inserts.len(), 1);
         assert!(test_repo.storage.inner.lock().unwrap().is_empty());
 
-        test_repo.write_to_storage(test_snapshot(1)).unwrap();
+        test_repo.write_to_storage(test_snapshot(1)).await.unwrap();
 
         // Make sure the storage was written
         let storage = test_repo.storage.inner.lock().unwrap();
@@ -360,14 +360,14 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_epoch_insert_over_limit_with_update() {
+    #[futures_test::test]
+    async fn test_epoch_insert_over_limit_with_update() {
         let mut test_repo = test_group_state_repo(1);
         let test_epoch_0 = test_epoch(0);
         test_repo.insert(test_epoch_0).unwrap();
 
         // Write epoch 0 to storage
-        test_repo.write_to_storage(test_snapshot(0)).unwrap();
+        test_repo.write_to_storage(test_snapshot(0)).await.unwrap();
 
         // Pull epoch 0 back into memory
         test_repo.get_epoch_mut(0).unwrap().unwrap();
@@ -387,7 +387,7 @@ mod tests {
         assert!(test_repo.pending_commit.updates.is_empty());
         assert_eq!(test_repo.pending_commit.inserts.len(), 1);
 
-        test_repo.write_to_storage(test_snapshot(2)).unwrap();
+        test_repo.write_to_storage(test_snapshot(2)).await.unwrap();
 
         // Make sure the storage was written
         let storage = test_repo.storage.inner.lock().unwrap();
@@ -403,14 +403,14 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_updates() {
+    #[futures_test::test]
+    async fn test_updates() {
         let mut test_repo = test_group_state_repo(2);
         let test_epoch_0 = test_epoch(0);
 
         test_repo.insert(test_epoch_0.clone()).unwrap();
 
-        test_repo.write_to_storage(test_snapshot(0)).unwrap();
+        test_repo.write_to_storage(test_snapshot(0)).await.unwrap();
 
         // Update the stored epoch
         let to_update = test_repo.get_epoch_mut(0).unwrap().unwrap();
@@ -434,7 +434,7 @@ mod tests {
 
         // Write the update to storage
         let snapshot = test_snapshot(1);
-        test_repo.write_to_storage(snapshot.clone()).unwrap();
+        test_repo.write_to_storage(snapshot.clone()).await.unwrap();
 
         assert!(test_repo.pending_commit.updates.is_empty());
         assert!(test_repo.pending_commit.inserts.is_empty());
@@ -454,14 +454,14 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_insert_and_update() {
+    #[futures_test::test]
+    async fn test_insert_and_update() {
         let mut test_repo = test_group_state_repo(2);
         let test_epoch_0 = test_epoch(0);
 
         test_repo.insert(test_epoch_0).unwrap();
 
-        test_repo.write_to_storage(test_snapshot(0)).unwrap();
+        test_repo.write_to_storage(test_snapshot(0)).await.unwrap();
 
         // Update the stored epoch
         let to_update = test_repo.get_epoch_mut(0).unwrap().unwrap();
@@ -473,7 +473,7 @@ mod tests {
         let test_epoch_1 = test_epoch(1);
         test_repo.insert(test_epoch_1.clone()).unwrap();
 
-        test_repo.write_to_storage(test_snapshot(1)).unwrap();
+        test_repo.write_to_storage(test_snapshot(1)).await.unwrap();
 
         assert!(test_repo.pending_commit.inserts.is_empty());
         assert!(test_repo.pending_commit.updates.is_empty());
@@ -497,8 +497,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_many_epochs_in_storage() {
+    #[futures_test::test]
+    async fn test_many_epochs_in_storage() {
         let epochs = (0..10).map(test_epoch).collect::<Vec<_>>();
 
         let mut test_repo = test_group_state_repo(10);
@@ -508,7 +508,7 @@ mod tests {
             .cloned()
             .for_each(|e| test_repo.insert(e).unwrap());
 
-        test_repo.write_to_storage(test_snapshot(9)).unwrap();
+        test_repo.write_to_storage(test_snapshot(9)).await.unwrap();
 
         epochs.into_iter().for_each(|mut e| {
             assert_eq!(test_repo.get_epoch_mut(e.epoch_id()).unwrap(), Some(&mut e));
@@ -528,14 +528,14 @@ mod tests {
         assert!(test_repo.resumption_secret(0).unwrap().is_none());
     }
 
-    #[test]
-    fn test_stored_groups_list() {
+    #[futures_test::test]
+    async fn test_stored_groups_list() {
         let mut test_repo = test_group_state_repo(2);
         let test_epoch_0 = test_epoch(0);
 
         test_repo.insert(test_epoch_0.clone()).unwrap();
 
-        test_repo.write_to_storage(test_snapshot(0)).unwrap();
+        test_repo.write_to_storage(test_snapshot(0)).await.unwrap();
 
         assert_eq!(
             test_repo.storage.stored_groups(),
@@ -543,14 +543,14 @@ mod tests {
         )
     }
 
-    #[test]
-    fn reducing_retention_limit_takes_effect_on_epoch_access() {
+    #[futures_test::test]
+    async fn reducing_retention_limit_takes_effect_on_epoch_access() {
         let mut repo = test_group_state_repo(1);
 
         repo.insert(test_epoch(0)).unwrap();
         repo.insert(test_epoch(1)).unwrap();
 
-        repo.write_to_storage(test_snapshot(0)).unwrap();
+        repo.write_to_storage(test_snapshot(0)).await.unwrap();
 
         let mut repo = GroupStateRepository {
             storage: repo.storage,
@@ -560,13 +560,13 @@ mod tests {
         assert!(repo.get_epoch_mut(0).unwrap().is_none());
     }
 
-    #[test]
-    fn in_memory_storage_obeys_retention_limit_after_saving() {
+    #[futures_test::test]
+    async fn in_memory_storage_obeys_retention_limit_after_saving() {
         let mut repo = test_group_state_repo(1);
         repo.insert(test_epoch(0)).unwrap();
-        repo.write_to_storage(test_snapshot(0)).unwrap();
+        repo.write_to_storage(test_snapshot(0)).await.unwrap();
         repo.insert(test_epoch(1)).unwrap();
-        repo.write_to_storage(test_snapshot(1)).unwrap();
+        repo.write_to_storage(test_snapshot(1)).await.unwrap();
 
         assert_eq!(
             repo.storage
@@ -581,7 +581,7 @@ mod tests {
         );
     }
 
-    fn existing_storage_setup(
+    async fn existing_storage_setup(
         count: u64,
     ) -> GroupStateRepository<InMemoryGroupStateStorage, InMemoryKeyPackageRepository> {
         // fill the repo to capacity
@@ -592,16 +592,16 @@ mod tests {
             .map(test_epoch)
             .for_each(|e| repo.insert(e).unwrap());
 
-        repo.write_to_storage(test_snapshot(2)).unwrap();
+        repo.write_to_storage(test_snapshot(2)).await.unwrap();
 
         repo
     }
 
-    #[test]
-    fn existing_storage_can_be_imported_with_delete_under() {
-        let mut repo = existing_storage_setup(3);
+    #[futures_test::test]
+    async fn existing_storage_can_be_imported_with_delete_under() {
+        let mut repo = existing_storage_setup(3).await;
         repo.insert(test_epoch(3)).unwrap();
-        repo.write_to_storage(test_snapshot(3)).unwrap();
+        repo.write_to_storage(test_snapshot(3)).await.unwrap();
 
         let new_repo = GroupStateRepository::new(
             TEST_GROUP.to_vec(),
@@ -620,9 +620,9 @@ mod tests {
         assert_eq!(new_repo.pending_commit.delete_under.unwrap(), 1);
     }
 
-    #[test]
-    fn existing_storage_can_have_larger_epoch_count() {
-        let repo = existing_storage_setup(3);
+    #[futures_test::test]
+    async fn existing_storage_can_have_larger_epoch_count() {
+        let repo = existing_storage_setup(3).await;
 
         let mut new_repo = GroupStateRepository::new(
             TEST_GROUP.to_vec(),
@@ -636,7 +636,7 @@ mod tests {
         new_repo.insert(test_epoch(3)).unwrap();
         new_repo.insert(test_epoch(4)).unwrap();
 
-        new_repo.write_to_storage(test_snapshot(4)).unwrap();
+        new_repo.write_to_storage(test_snapshot(4)).await.unwrap();
 
         assert!(new_repo.pending_commit.delete_under.is_none());
 
@@ -646,9 +646,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn existing_storage_can_have_smaller_epoch_count() {
-        let repo = existing_storage_setup(5);
+    #[futures_test::test]
+    async fn existing_storage_can_have_smaller_epoch_count() {
+        let repo = existing_storage_setup(5).await;
 
         let mut new_repo = GroupStateRepository::new(
             TEST_GROUP.to_vec(),
@@ -662,7 +662,7 @@ mod tests {
         assert_eq!(new_repo.pending_commit.delete_under.unwrap(), 2);
 
         // Writing to storage should clean up
-        new_repo.write_to_storage(test_snapshot(4)).unwrap();
+        new_repo.write_to_storage(test_snapshot(4)).await.unwrap();
 
         assert_eq!(
             new_repo.storage.export_epoch_data(TEST_GROUP).unwrap()[0].epoch_id(),
@@ -673,29 +673,28 @@ mod tests {
     #[futures_test::test]
     async fn used_key_package_is_deleted() {
         let key_package_repo = InMemoryKeyPackageRepository::default();
+
         let key_package = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"member")
             .await
             .0;
 
-        let key_package_ref = key_package
-            .reference(&test_cipher_suite_provider(TEST_CIPHER_SUITE))
-            .unwrap();
+        let (id, data) = key_package.to_storage().unwrap();
 
-        key_package_repo.insert(key_package_ref.clone(), key_package);
+        key_package_repo.insert(id, data);
 
         let mut repo = GroupStateRepository::new(
             TEST_GROUP.to_vec(),
             4,
             InMemoryGroupStateStorage::default(),
             key_package_repo,
-            Some(key_package_ref.clone()),
+            Some(key_package.reference.clone()),
         )
         .unwrap();
 
-        repo.key_package_repo.get(&key_package_ref).unwrap();
+        repo.key_package_repo.get(&key_package.reference).unwrap();
 
-        repo.write_to_storage(test_snapshot(4)).unwrap();
+        repo.write_to_storage(test_snapshot(4)).await.unwrap();
 
-        assert!(repo.key_package_repo.get(&key_package_ref).is_none());
+        assert!(repo.key_package_repo.get(&key_package.reference).is_none());
     }
 }

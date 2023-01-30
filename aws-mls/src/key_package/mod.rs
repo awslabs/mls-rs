@@ -75,7 +75,7 @@ pub struct KeyPackage {
 pub struct KeyPackageRef(HashReference);
 
 impl Deref for KeyPackageRef {
-    type Target = Vec<u8>;
+    type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
         &self.0

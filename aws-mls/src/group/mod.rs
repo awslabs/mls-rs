@@ -305,7 +305,7 @@ where
             cipher_suite_provider(config.crypto_provider(), welcome.cipher_suite)?;
 
         let (encrypted_group_secrets, key_package_generation) =
-            find_key_package_generation(&config, &welcome)?;
+            find_key_package_generation(&config.key_package_repo(), &welcome.secrets).await?;
 
         let key_package_version = check_protocol_version(
             &config.supported_protocol_versions(),
@@ -327,7 +327,7 @@ where
         let decrypted_group_secrets = cipher_suite_provider
             .hpke_open(
                 &encrypted_group_secrets.encrypted_group_secrets,
-                key_package_generation.init_secret(),
+                &key_package_generation.init_secret_key,
                 &[],
                 None,
             )
@@ -380,7 +380,7 @@ where
             .find_leaf_node(&key_package_generation.key_package.leaf_node)
             .ok_or(GroupError::WelcomeKeyPackageNotFound)?;
 
-        let used_key_package_ref = key_package_generation.reference(&cipher_suite_provider)?;
+        let used_key_package_ref = key_package_generation.reference;
 
         let mut private_tree =
             TreeKemPrivate::new_self_leaf(self_index, key_package_generation.leaf_node_secret_key);
