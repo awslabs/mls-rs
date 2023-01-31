@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use async_trait::async_trait;
 pub use aws_mls_core::group::GroupStateStorage;
 use aws_mls_core::group::{EpochRecord, GroupState};
 
@@ -149,10 +150,11 @@ impl Default for InMemoryGroupStateStorage {
     }
 }
 
+#[async_trait]
 impl GroupStateStorage for InMemoryGroupStateStorage {
     type Error = bincode::Error;
 
-    fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
+    async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
         Ok(self
             .inner
             .lock()
@@ -161,7 +163,7 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
             .and_then(|group_data| group_data.epoch_data.back().map(|e| e.id)))
     }
 
-    fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>
+    async fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>
     where
         T: aws_mls_core::group::GroupState + serde::de::DeserializeOwned,
     {
@@ -173,7 +175,7 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
             .transpose()
     }
 
-    fn epoch<T>(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<T>, Self::Error>
+    async fn epoch<T>(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<T>, Self::Error>
     where
         T: aws_mls_core::group::EpochRecord + serde::Serialize + serde::de::DeserializeOwned,
     {
@@ -186,7 +188,7 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
             .transpose()
     }
 
-    fn write<ST, ET>(
+    async fn write<ST, ET>(
         &mut self,
         state: ST,
         epoch_inserts: Vec<ET>,
@@ -194,8 +196,8 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
         delete_epoch_under: Option<u64>,
     ) -> Result<(), Self::Error>
     where
-        ST: GroupState + serde::Serialize + serde::de::DeserializeOwned,
-        ET: EpochRecord + serde::Serialize + serde::de::DeserializeOwned,
+        ST: GroupState + serde::Serialize + serde::de::DeserializeOwned + Send + Sync,
+        ET: EpochRecord + serde::Serialize + serde::de::DeserializeOwned + Send + Sync,
     {
         let mut group_map = self.inner.lock().unwrap();
 

@@ -239,7 +239,8 @@ where
             config.group_state_storage(),
             config.key_package_repo(),
             None,
-        )?;
+        )
+        .await?;
 
         let key_schedule_result = KeySchedule::from_random_epoch_secret(
             &cipher_suite_provider,
@@ -424,9 +425,10 @@ where
             private_tree,
             Some(used_key_package_ref),
         )
+        .await
     }
 
-    fn join_with(
+    async fn join_with(
         config: C,
         cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
         join_context: JoinContext,
@@ -449,7 +451,8 @@ where
             config.group_state_storage(),
             config.key_package_repo(),
             used_key_package_ref,
-        )?;
+        )
+        .await?;
 
         let group_info_extensions = join_context.group_info_extensions.clone();
 
@@ -554,7 +557,8 @@ where
             epoch_secrets,
             TreeKemPrivate::new_self_leaf(LeafIndex(0), leaf_node_secret),
             None,
-        )?;
+        )
+        .await?;
 
         let psk_ids = external_psks
             .into_iter()
@@ -876,7 +880,8 @@ where
             self.config.group_state_storage(),
             self.config.key_package_repo(),
             None,
-        )?;
+        )
+        .await?;
 
         let new_group = Group {
             config: self.config.clone(),
@@ -1364,7 +1369,7 @@ where
         self.format_for_wire(auth_content)
     }
 
-    fn decrypt_incoming_ciphertext(
+    async fn decrypt_incoming_ciphertext(
         &mut self,
         message: MLSCiphertext,
     ) -> Result<MLSAuthenticatedContent, GroupError> {
@@ -1386,7 +1391,8 @@ where
         } else {
             let epoch = self
                 .state_repo
-                .get_epoch_mut(epoch_id)?
+                .get_epoch_mut(epoch_id)
+                .await?
                 .ok_or(GroupError::EpochNotFound(epoch_id))?;
 
             let content = CiphertextProcessor::new(epoch, self.cipher_suite_provider.clone())
@@ -1579,7 +1585,7 @@ where
         Some(self.private_tree.self_index)
     }
 
-    fn process_ciphertext(
+    async fn process_ciphertext(
         &mut self,
         cipher_text: MLSCiphertext,
     ) -> Result<
@@ -1587,6 +1593,7 @@ where
         GroupError,
     > {
         self.decrypt_incoming_ciphertext(cipher_text)
+            .await
             .map(EventOrContent::Content)
     }
 
@@ -1727,7 +1734,7 @@ where
             signature_public_keys,
         };
 
-        self.state_repo.insert(past_epoch)?;
+        self.state_repo.insert(past_epoch).await?;
 
         self.epoch_secrets = key_schedule_result.epoch_secrets;
 

@@ -159,15 +159,14 @@ async fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
         .for_each(|group| async { group.write_to_storage().await.unwrap() })
         .await;
 
-    let info = groups
-        .into_iter()
-        .map(|session| {
+    let info = futures::stream::iter(groups.into_iter())
+        .then(|session| async move {
             let config = &session.config;
 
             let epoch_repo = config.group_state_storage();
             let exported_epochs = epoch_repo.export_epoch_data(session.group_id()).unwrap();
 
-            let group_state = epoch_repo.state(session.group_id()).unwrap().unwrap();
+            let group_state = epoch_repo.state(session.group_id()).await.unwrap().unwrap();
 
             let epochs = serde_json::to_vec(&exported_epochs).unwrap();
 
@@ -186,7 +185,8 @@ async fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
                 secrets,
             }
         })
-        .collect();
+        .collect()
+        .await;
 
     TestCase { info }
 }

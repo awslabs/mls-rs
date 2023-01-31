@@ -41,7 +41,7 @@ impl<GS: GroupStateStorage, K: KeyPackageRepository, PS: PskStore> Clone
 }
 
 impl<GS: GroupStateStorage, K: KeyPackageRepository, PS: PskStore> PskResolver<'_, GS, K, PS> {
-    fn resolve_resumption(
+    async fn resolve_resumption(
         &self,
         id: &PreSharedKeyID,
         epoch_id: u64,
@@ -49,7 +49,7 @@ impl<GS: GroupStateStorage, K: KeyPackageRepository, PS: PskStore> PskResolver<'
         if epoch_id == self.group_context.epoch {
             Some(self.current_epoch.resumption_secret.clone())
         } else {
-            self.prior_epochs.resumption_secret(epoch_id)?
+            self.prior_epochs.resumption_secret(epoch_id).await?
         }
         .ok_or(PskError::EpochNotFound(epoch_id))
         .map(|psk| PskSecretInput {
@@ -82,7 +82,7 @@ impl<GS: GroupStateStorage, K: KeyPackageRepository, PS: PskStore> PskResolver<'
                         self.resolve_external(id, external).await
                     }
                     JustPreSharedKeyID::Resumption(resumption) => {
-                        self.resolve_resumption(id, resumption.psk_epoch)
+                        self.resolve_resumption(id, resumption.psk_epoch).await
                     }
                 }
             })

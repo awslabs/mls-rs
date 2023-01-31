@@ -157,7 +157,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         let event_or_content = match message.payload {
             MLSMessagePayload::Plain(plaintext) => self.verify_plaintext_authentication(plaintext),
-            MLSMessagePayload::Cipher(cipher_text) => self.process_ciphertext(cipher_text),
+            MLSMessagePayload::Cipher(cipher_text) => self.process_ciphertext(cipher_text).await,
             _ => Err(GroupError::UnexpectedMessageType(
                 vec![WireFormat::Plain, WireFormat::Cipher],
                 wire_format,
@@ -483,7 +483,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         Ok(())
     }
 
-    fn process_ciphertext(
+    async fn process_ciphertext(
         &mut self,
         cipher_text: MLSCiphertext,
     ) -> Result<EventOrContent<Self::EventType>, GroupError>;

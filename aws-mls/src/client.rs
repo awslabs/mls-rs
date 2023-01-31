@@ -235,6 +235,7 @@ where
             .config
             .group_state_storage()
             .state(group_id)
+            .await
             .map_err(|e| ClientError::GroupStorageError(e.into()))?
             .ok_or_else(|| ClientError::GroupNotFound(group_id.encode_hex_upper()))?;
 

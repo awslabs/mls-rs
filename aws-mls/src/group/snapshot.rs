@@ -1,5 +1,4 @@
 use crate::{
-    cipher_suite::CipherSuite,
     client_config::ClientConfig,
     external_client_config::ExternalClientConfig,
     group::{
@@ -20,6 +19,9 @@ use super::{
     cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository, ExternalGroup,
 };
 
+#[cfg(feature = "benchmark")]
+use crate::cipher_suite::CipherSuite;
+
 #[serde_as]
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
 pub(crate) struct Snapshot {
@@ -38,6 +40,7 @@ impl Snapshot {
         &self.state.context.group_id
     }
 
+    #[cfg(feature = "benchmark")]
     pub(crate) fn cipher_suite(&self) -> CipherSuite {
         self.state.context.cipher_suite
     }
@@ -128,7 +131,8 @@ where
             config.group_state_storage(),
             config.key_package_repo(),
             None,
-        )?;
+        )
+        .await?;
 
         Ok(Group {
             config,

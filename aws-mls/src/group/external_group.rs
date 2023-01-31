@@ -328,7 +328,7 @@ where
         Ok(EventOrContent::Content(auth_content))
     }
 
-    fn process_ciphertext(
+    async fn process_ciphertext(
         &mut self,
         cipher_text: MLSCiphertext,
     ) -> Result<EventOrContent<Self::EventType>, GroupError> {
