@@ -1,6 +1,9 @@
 use std::ops::Deref;
 
-use aws_mls_core::crypto::CipherSuite;
+use aws_mls_core::crypto::{
+    CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256, CURVE448_CHACHA,
+    P256_AES128, P384_AES256, P521_AES256,
+};
 use openssl::{
     hash::{hash, MessageDigest},
     pkey::PKey,
@@ -12,6 +15,8 @@ use thiserror::Error;
 pub enum HashError {
     #[error(transparent)]
     OpensslError(#[from] openssl::error::ErrorStack),
+    #[error("unsupported cipher suite")]
+    UnsupportedCipherSuite,
 }
 
 #[derive(Clone)]
@@ -26,16 +31,15 @@ impl Deref for Hash {
 }
 
 impl Hash {
-    pub fn new(cipher_suite: CipherSuite) -> Self {
+    pub fn new(cipher_suite: CipherSuite) -> Result<Self, HashError> {
         let md = match cipher_suite {
-            CipherSuite::Curve25519Aes128
-            | CipherSuite::P256Aes128
-            | CipherSuite::Curve25519ChaCha20 => MessageDigest::sha256(),
-            CipherSuite::P384Aes256 => MessageDigest::sha384(),
-            _ => MessageDigest::sha512(),
-        };
+            CURVE25519_AES128 | P256_AES128 | CURVE25519_CHACHA => Ok(MessageDigest::sha256()),
+            P384_AES256 => Ok(MessageDigest::sha384()),
+            CURVE448_CHACHA | CURVE448_AES256 | P521_AES256 => Ok(MessageDigest::sha512()),
+            _ => Err(HashError::UnsupportedCipherSuite),
+        }?;
 
-        Self(md)
+        Ok(Self(md))
     }
 
     pub fn hash(&self, data: &[u8]) -> Result<Vec<u8>, HashError> {
@@ -72,7 +76,7 @@ mod test {
         );
 
         // Test Sign
-        let hash = Hash::new(case.ciphersuite);
+        let hash = Hash::new(case.ciphersuite).unwrap();
         let tag = hash.mac(&case.key, &case.message).unwrap();
         assert_eq!(&tag, &case.tag);
 

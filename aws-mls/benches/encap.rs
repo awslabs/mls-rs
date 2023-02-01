@@ -10,6 +10,7 @@ use aws_mls::{
         Capabilities,
     },
 };
+use aws_mls_core::crypto::CURVE25519_AES128;
 use criterion::{
     async_executor::FuturesExecutor, criterion_group, criterion_main, measurement::WallTime,
     BatchSize, BenchmarkGroup, BenchmarkId, Criterion,
@@ -20,7 +21,7 @@ use std::collections::HashMap;
 fn encap_setup(c: &mut Criterion) {
     let mut encap_group = c.benchmark_group("encap");
 
-    let cipher_suite = CipherSuite::Curve25519Aes128;
+    let cipher_suite = CURVE25519_AES128;
 
     println!("Benchmarking encap for: {cipher_suite:?}");
 

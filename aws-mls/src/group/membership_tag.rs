@@ -128,7 +128,7 @@ mod tests {
             .unwrap();
 
             test_cases.push(TestCase {
-                cipher_suite: cipher_suite as u16,
+                cipher_suite: cipher_suite.into(),
                 tag: tag.to_vec(),
             });
         }

@@ -3,10 +3,9 @@ use aws_mls_core::identity::IdentityProvider;
 use tls_codec::Serialize;
 
 use super::{
-    check_protocol_version,
+    check_protocol_version, cipher_suite_provider,
     confirmation_tag::ConfirmationTag,
     framing::{MLSCiphertext, MLSPlaintext, Sender, WireFormat},
-    maybe_cipher_suite_provider,
     message_processor::{EventOrContent, MessageProcessor, ProcessedMessage, ProvisionalState},
     message_signature::MLSAuthenticatedContent,
     proposal::{AddProposal, Proposal, RemoveProposal},
@@ -53,7 +52,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             GroupError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
         })?;
 
-        let cipher_suite_provider = maybe_cipher_suite_provider(
+        let cipher_suite_provider = cipher_suite_provider(
             config.crypto_provider(),
             group_info.group_context.cipher_suite,
         )?;
@@ -425,7 +424,8 @@ pub(crate) mod test_utils {
 mod tests {
     use super::test_utils::make_external_group;
     use crate::{
-        cipher_suite::{CipherSuite, MaybeCipherSuite},
+        cipher_suite::CipherSuite,
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         extension::{ExtensionList, ExternalSendersExt},
         external_client_builder::test_utils::{
             TestExternalClientBuilder, TestExternalClientConfig,
@@ -444,9 +444,6 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use futures::{future::BoxFuture, FutureExt};
-
-    const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
-    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
     async fn test_group_with_one_commit(v: ProtocolVersion, cs: CipherSuite) -> TestGroup {
         let mut group = test_group(v, cs).await;
@@ -633,10 +630,9 @@ mod tests {
     async fn external_group_will_reject_unsupported_cipher_suites() {
         let alice = test_group_with_one_commit(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        let config = TestExternalClientBuilder::new_for_test_disabling_cipher_suite(
-            CipherSuite::Curve25519Aes128,
-        )
-        .build_config();
+        let config =
+            TestExternalClientBuilder::new_for_test_disabling_cipher_suite(TEST_CIPHER_SUITE)
+                .build_config();
 
         let res = ExternalGroup::join(
             config,
@@ -648,9 +644,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(GroupError::UnsupportedCipherSuite(cs)) if cs == MaybeCipherSuite::from(
-                CipherSuite::Curve25519Aes128
-            )
+            Err(GroupError::UnsupportedCipherSuite(TEST_CIPHER_SUITE))
         );
     }
 

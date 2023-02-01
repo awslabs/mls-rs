@@ -3,7 +3,10 @@ use std::ops::Deref;
 use aws_mls_crypto_traits::DhType;
 use thiserror::Error;
 
-use aws_mls_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
+use aws_mls_core::crypto::{
+    CipherSuite, HpkePublicKey, HpkeSecretKey, CURVE25519_AES128, CURVE25519_CHACHA,
+    CURVE448_AES256, CURVE448_CHACHA, P256_AES128, P384_AES256, P521_AES256,
+};
 
 use crate::ec::{
     generate_keypair, private_key_bytes_to_public, private_key_ecdh, private_key_from_bytes,
@@ -16,6 +19,8 @@ pub enum EcdhKemError {
     OpensslError(#[from] openssl::error::ErrorStack),
     #[error(transparent)]
     EcError(#[from] EcError),
+    #[error("unsupported cipher suite")]
+    UnsupportedCipherSuite,
 }
 
 /// Kem identifiers for HPKE
@@ -30,15 +35,14 @@ pub enum KemId {
 }
 
 impl KemId {
-    pub fn new(cipher_suite: CipherSuite) -> Self {
+    pub fn new(cipher_suite: CipherSuite) -> Result<Self, EcdhKemError> {
         match cipher_suite {
-            CipherSuite::Curve25519Aes128 | CipherSuite::Curve25519ChaCha20 => {
-                KemId::DhKemX25519Sha256
-            }
-            CipherSuite::P256Aes128 => KemId::DhKemP256Sha256,
-            CipherSuite::Curve448Aes256 | CipherSuite::Curve448ChaCha20 => KemId::DhKemX448Sha512,
-            CipherSuite::P384Aes256 => KemId::DhKemP384Sha384,
-            CipherSuite::P521Aes256 => KemId::DhKemP521Sha512,
+            CURVE25519_AES128 | CURVE25519_CHACHA => Ok(KemId::DhKemX25519Sha256),
+            P256_AES128 => Ok(KemId::DhKemP256Sha256),
+            CURVE448_AES256 | CURVE448_CHACHA => Ok(KemId::DhKemX448Sha512),
+            P384_AES256 => Ok(KemId::DhKemP384Sha384),
+            P521_AES256 => Ok(KemId::DhKemP521Sha512),
+            _ => Err(EcdhKemError::UnsupportedCipherSuite),
         }
     }
 
@@ -65,8 +69,10 @@ impl Deref for Ecdh {
 }
 
 impl Ecdh {
-    pub fn new(cipher_suite: CipherSuite) -> Self {
-        Self(Curve::from_ciphersuite(cipher_suite, false))
+    pub fn new(cipher_suite: CipherSuite) -> Result<Self, EcdhKemError> {
+        Curve::from_ciphersuite(cipher_suite, false)
+            .map(Self)
+            .map_err(Into::into)
     }
 }
 
@@ -114,7 +120,10 @@ impl Ecdh {
 
 #[cfg(test)]
 mod test {
-    use aws_mls_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
+    use aws_mls_core::crypto::{
+        CipherSuite, HpkePublicKey, HpkeSecretKey, CURVE25519_AES128, CURVE448_AES256, P256_AES128,
+        P384_AES256, P521_AES256,
+    };
     use aws_mls_crypto_traits::DhType;
     use serde::Deserialize;
 
@@ -122,14 +131,14 @@ mod test {
 
     fn get_ecdhs() -> Vec<Ecdh> {
         [
-            CipherSuite::P256Aes128,
-            CipherSuite::P384Aes256,
-            CipherSuite::P521Aes256,
-            CipherSuite::Curve25519Aes128,
-            CipherSuite::Curve448Aes256,
+            P256_AES128,
+            P384_AES256,
+            P521_AES256,
+            CURVE25519_AES128,
+            CURVE448_AES256,
         ]
         .into_iter()
-        .map(Ecdh::new)
+        .map(|v| Ecdh::new(v).unwrap())
         .collect()
     }
 
@@ -154,7 +163,7 @@ mod test {
             test_case.ciphersuite
         );
 
-        let ecdh = Ecdh::new(test_case.ciphersuite);
+        let ecdh = Ecdh::new(test_case.ciphersuite).unwrap();
 
         // Import the keys into their structures
         let alice_pub: HpkePublicKey = test_case.alice_pub.into();

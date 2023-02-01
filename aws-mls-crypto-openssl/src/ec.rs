@@ -1,4 +1,7 @@
-use aws_mls_core::crypto::CipherSuite;
+use aws_mls_core::crypto::{
+    CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256, CURVE448_CHACHA,
+    P256_AES128, P384_AES256, P521_AES256,
+};
 use thiserror::Error;
 
 use openssl::{
@@ -20,6 +23,8 @@ pub enum EcError {
     /// Attempted to import a secret key that does not contain valid bytes for its curve
     #[error("invalid secret key bytes")]
     InvalidSecretKeyBytes,
+    #[error("unsupported cipher suite")]
+    UnsupportedCipherSuite,
 }
 
 /// Elliptic curve types
@@ -58,17 +63,16 @@ impl Curve {
         }
     }
 
-    pub fn from_ciphersuite(cipher_suite: CipherSuite, for_sig: bool) -> Self {
+    pub fn from_ciphersuite(cipher_suite: CipherSuite, for_sig: bool) -> Result<Self, EcError> {
         match cipher_suite {
-            CipherSuite::P256Aes128 => Curve::P256,
-            CipherSuite::P384Aes256 => Curve::P384,
-            CipherSuite::P521Aes256 => Curve::P521,
-            CipherSuite::Curve25519Aes128 | CipherSuite::Curve25519ChaCha20 if for_sig => {
-                Curve::Ed25519
-            }
-            CipherSuite::Curve25519Aes128 | CipherSuite::Curve25519ChaCha20 => Curve::X25519,
-            CipherSuite::Curve448Aes256 | CipherSuite::Curve448ChaCha20 if for_sig => Curve::Ed448,
-            CipherSuite::Curve448Aes256 | CipherSuite::Curve448ChaCha20 => Curve::X448,
+            P256_AES128 => Ok(Curve::P256),
+            P384_AES256 => Ok(Curve::P384),
+            P521_AES256 => Ok(Curve::P521),
+            CURVE25519_AES128 | CURVE25519_CHACHA if for_sig => Ok(Curve::Ed25519),
+            CURVE25519_AES128 | CURVE25519_CHACHA => Ok(Curve::X25519),
+            CURVE448_AES256 | CURVE448_CHACHA if for_sig => Ok(Curve::Ed448),
+            CURVE448_AES256 | CURVE448_CHACHA => Ok(Curve::X448),
+            _ => Err(EcError::UnsupportedCipherSuite),
         }
     }
 
@@ -299,7 +303,7 @@ pub mod test_utils {
 
     impl TestKeys {
         pub(crate) fn get_key(&self, cipher_suite: CipherSuite, for_sig: bool) -> Vec<u8> {
-            let curve = Curve::from_ciphersuite(cipher_suite, for_sig);
+            let curve = Curve::from_ciphersuite(cipher_suite, for_sig).unwrap();
             self.get_key_from_curve(curve)
         }
 

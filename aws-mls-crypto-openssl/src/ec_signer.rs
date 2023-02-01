@@ -34,8 +34,10 @@ impl Deref for EcSigner {
 }
 
 impl EcSigner {
-    pub fn new(cipher_suite: CipherSuite) -> Self {
-        Self(Curve::from_ciphersuite(cipher_suite, true))
+    pub fn new(cipher_suite: CipherSuite) -> Result<Self, EcSignerError> {
+        Curve::from_ciphersuite(cipher_suite, true)
+            .map(Self)
+            .map_err(Into::into)
     }
 
     pub fn signature_key_generate(
@@ -132,7 +134,7 @@ mod test {
 
         let public_key = get_test_public_keys().get_key(cipher_suite, true).into();
         let secret_key = get_test_secret_keys().get_key(cipher_suite, true);
-        let ec_signer = EcSigner::new(cipher_suite);
+        let ec_signer = EcSigner::new(cipher_suite).unwrap();
 
         assert_eq!(ec_signer.secret_key_size(), secret_key.len());
 

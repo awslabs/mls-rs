@@ -2,7 +2,7 @@ use serde_with::serde_as;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
-    cipher_suite::{CipherSuite, MaybeCipherSuite},
+    cipher_suite::CipherSuite,
     extension::ExtensionList,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     serde_utils::vec_u8_as_base64::VecAsBase64,
@@ -60,7 +60,7 @@ impl GroupContext {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct GroupContextWire {
     pub protocol_version: MaybeProtocolVersion,
-    pub cipher_suite: MaybeCipherSuite,
+    pub cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
@@ -74,7 +74,7 @@ impl From<GroupContext> for GroupContextWire {
     fn from(context: GroupContext) -> Self {
         Self {
             protocol_version: context.protocol_version.into(),
-            cipher_suite: context.cipher_suite.into(),
+            cipher_suite: context.cipher_suite,
             group_id: context.group_id,
             epoch: context.epoch,
             tree_hash: context.tree_hash,

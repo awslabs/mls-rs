@@ -32,7 +32,7 @@ pub enum KeyPackageValidationError {
     #[error("required proposal not found")]
     RequiredProposalNotFound(ProposalType),
     #[error("found cipher suite {0:?} expected {1:?}")]
-    InvalidCipherSuite(MaybeCipherSuite, CipherSuite),
+    InvalidCipherSuite(CipherSuite, CipherSuite),
     #[error("found protocol version {0:?} expected {1:?}")]
     InvalidProtocolVersion(MaybeProtocolVersion, ProtocolVersion),
     #[error("init key is not valid for cipher suite")]
@@ -122,7 +122,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, 
         }
 
         // Verify that the cipher suite matches
-        if package.cipher_suite != self.cipher_suite_provider.cipher_suite().into() {
+        if package.cipher_suite != self.cipher_suite_provider.cipher_suite() {
             return Err(KeyPackageValidationError::InvalidCipherSuite(
                 package.cipher_suite,
                 self.cipher_suite_provider.cipher_suite(),
@@ -160,6 +160,7 @@ mod tests {
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use assert_matches::assert_matches;
+    use aws_mls_core::crypto::CURVE25519_CHACHA;
     use futures::FutureExt;
 
     #[cfg(target_arch = "wasm32")]
@@ -239,8 +240,7 @@ mod tests {
         let version = TEST_PROTOCOL_VERSION;
         let test_package = test_key_package(version, cipher_suite, "mallory").await;
 
-        let invalid_cipher_suite_provider =
-            test_cipher_suite_provider(CipherSuite::Curve25519ChaCha20);
+        let invalid_cipher_suite_provider = test_cipher_suite_provider(CURVE25519_CHACHA);
 
         let validator = KeyPackageValidator::new(
             version,
@@ -250,9 +250,13 @@ mod tests {
         );
 
         assert_matches!(
-            validator.check_if_valid(&test_package, Default::default()).await,
-            Err(KeyPackageValidationError::InvalidCipherSuite(found, exp))
-                if exp == CipherSuite::Curve25519ChaCha20 && found == cipher_suite.into()
+            validator
+                .check_if_valid(&test_package, Default::default())
+                .await,
+            Err(KeyPackageValidationError::InvalidCipherSuite(
+                TEST_CIPHER_SUITE,
+                CURVE25519_CHACHA
+            ))
         );
     }
 

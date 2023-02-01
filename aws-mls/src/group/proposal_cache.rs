@@ -404,6 +404,7 @@ mod tests {
     use super::proposal_ref::test_utils::auth_content_from_proposal;
     use super::*;
     use crate::{
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         extension::{test_utils::TestExtension, ExternalSendersExt, RequiredCapabilitiesExt},
         group::{
             proposal_filter::proposer_can_propose,
@@ -443,9 +444,6 @@ mod tests {
     use futures::FutureExt;
     use itertools::Itertools;
     use std::convert::Infallible;
-
-    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::P256Aes128;
-    const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -1625,7 +1623,7 @@ mod tests {
         });
 
         let add = Proposal::Add(AddProposal {
-            key_package: test_key_package(ProtocolVersion::Mls10, TEST_CIPHER_SUITE, "bob").await,
+            key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await,
         });
 
         let (_, effects) = cache
@@ -1654,7 +1652,7 @@ mod tests {
 
         let reinit = Proposal::ReInit(ReInit {
             group_id: vec![],
-            version: ProtocolVersion::Mls10,
+            version: TEST_PROTOCOL_VERSION,
             cipher_suite: TEST_CIPHER_SUITE,
             extensions: Default::default(),
         });

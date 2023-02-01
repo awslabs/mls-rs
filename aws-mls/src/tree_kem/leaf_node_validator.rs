@@ -213,11 +213,12 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+    use aws_mls_core::crypto::P256_AES128;
     use std::time::Duration;
 
     use super::*;
 
-    use crate::cipher_suite::CipherSuite;
+    use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::extension::test_utils::TestExtension;
     use crate::extension::ExtensionList;
     use crate::group::test_utils::random_bytes;
@@ -234,8 +235,6 @@ mod tests {
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
-
-    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
     async fn get_test_add_node() -> (LeafNode, SignatureSecretKey) {
         let (signing_identity, secret) =
@@ -476,7 +475,7 @@ mod tests {
 
     #[futures_test::test]
     async fn test_cipher_suite_mismatch() {
-        let cipher_suite_provider = test_cipher_suite_provider(CipherSuite::P256Aes128);
+        let cipher_suite_provider = test_cipher_suite_provider(P256_AES128);
 
         let (leaf_node, _) = get_test_add_node().await;
 

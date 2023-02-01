@@ -1,10 +1,10 @@
 use aws_mls_core::crypto::CipherSuiteProvider;
 
 use crate::cipher_suite::CipherSuite;
+use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
 use crate::extension::ExtensionList;
 use crate::group::{ConfirmedTranscriptHash, GroupContext};
 use crate::identity::SigningIdentity;
-use crate::protocol_version::ProtocolVersion;
 use crate::provider::crypto::test_utils::test_cipher_suite_provider;
 use crate::provider::crypto::SignatureSecretKey;
 use crate::provider::identity::BasicIdentityProvider;
@@ -26,7 +26,7 @@ pub struct TestCase {
 }
 
 async fn generate_test_cases() -> HashMap<usize, TestCase> {
-    let cipher_suite = CipherSuite::Curve25519Aes128;
+    let cipher_suite = TEST_CIPHER_SUITE;
 
     futures::stream::iter([100, 1000, 10000])
         .then(|length| async move { (length, create_stage(cipher_suite, length).await) })
@@ -81,7 +81,7 @@ pub async fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
     let encap_tree = test_tree.clone();
 
     let group_context = GroupContext {
-        protocol_version: ProtocolVersion::Mls10,
+        protocol_version: TEST_PROTOCOL_VERSION,
         cipher_suite,
         group_id: b"test_group".to_vec(),
         epoch: 42,

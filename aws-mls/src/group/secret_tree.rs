@@ -477,6 +477,7 @@ pub(crate) mod test_utils {
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
+        client::test_utils::TEST_CIPHER_SUITE,
         group::test_utils::random_bytes,
         provider::crypto::test_utils::{
             test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
@@ -626,7 +627,7 @@ mod tests {
 
     #[test]
     fn test_out_of_order_keys() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
         let provider = test_cipher_suite_provider(cipher_suite);
 
         let mut ratchet =
@@ -660,7 +661,7 @@ mod tests {
 
     #[test]
     fn test_too_out_of_order() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
         let provider = test_cipher_suite_provider(cipher_suite);
 
         let mut ratchet =
@@ -726,7 +727,7 @@ mod tests {
                 let mut secret_tree = SecretTree::new(16, encryption_secret.clone());
 
                 TestCase {
-                    cipher_suite: cipher_suite as u16,
+                    cipher_suite: cipher_suite.into(),
                     encryption_secret,
                     ratchets: get_ratchet_data(&mut secret_tree, cipher_suite),
                 }

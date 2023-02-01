@@ -131,7 +131,7 @@ mod tests {
                 let output = HashReference::compute(input, TEST_LABEL, &provider).unwrap();
 
                 TestCase {
-                    cipher_suite: cipher_suite as u16,
+                    cipher_suite: cipher_suite.into(),
                     input: input.to_vec(),
                     output: output.to_vec(),
                 }

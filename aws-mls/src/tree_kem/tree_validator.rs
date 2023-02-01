@@ -137,6 +137,7 @@ mod tests {
     use super::*;
     use crate::{
         cipher_suite::CipherSuite,
+        client::test_utils::TEST_CIPHER_SUITE,
         group::test_utils::{get_test_group_context, random_bytes, TEST_GROUP},
         provider::{
             crypto::test_utils::test_cipher_suite_provider, crypto::test_utils::TestCryptoProvider,
@@ -306,13 +307,13 @@ mod tests {
 
     #[futures_test::test]
     async fn verify_unmerged_with_correct_tree() {
-        let tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128).await;
+        let tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
         validate_unmerged(&tree).unwrap();
     }
 
     #[futures_test::test]
     async fn verify_unmerged_with_blank_leaf() {
-        let mut tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128).await;
+        let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 
         // Blank leaf D unmerged at nodes 3, 7
         tree.nodes.blank_node(6).unwrap();
@@ -325,7 +326,7 @@ mod tests {
 
     #[futures_test::test]
     async fn verify_unmerged_with_broken_path() {
-        let mut tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128).await;
+        let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 
         // Make D with direct path [3, 7] unmerged at 7 but not 3
         tree.nodes.borrow_as_parent_mut(3).unwrap().unmerged_leaves = vec![];
@@ -338,7 +339,7 @@ mod tests {
 
     #[futures_test::test]
     async fn verify_unmerged_with_leaf_outside_tree() {
-        let mut tree = get_test_tree_fig_12(CipherSuite::Curve25519Aes128).await;
+        let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 
         // Add leaf E from the right subtree of the root to unmerged leaves of node 1 on the left
         tree.nodes.borrow_as_parent_mut(1).unwrap().unmerged_leaves = vec![LeafIndex(4)];

@@ -47,7 +47,7 @@ macro_rules! load_test_cases {
 }
 
 pub mod cipher_suite {
-    pub use aws_mls_core::crypto::{CipherSuite, MaybeCipherSuite};
+    pub use aws_mls_core::crypto::CipherSuite;
 }
 
 pub mod client;

@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use aws_mls_core::identity::IdentityProvider;
 
 use crate::{
-    cipher_suite::MaybeCipherSuite,
     client_config::{MakeProposalFilter, ProposalFilterInit},
     extension::ExtensionType,
     identity::CredentialType,
@@ -44,12 +43,7 @@ pub trait ExternalClientConfig: Clone + Send + Sync {
                 .into_iter()
                 .map(MaybeProtocolVersion::from)
                 .collect(),
-            cipher_suites: self
-                .crypto_provider()
-                .supported_cipher_suites()
-                .into_iter()
-                .map(MaybeCipherSuite::from)
-                .collect(),
+            cipher_suites: self.crypto_provider().supported_cipher_suites(),
             extensions: self.supported_extensions(),
             proposals: vec![], // TODO: Support registering custom proposals here
             credentials: self.supported_credentials(),

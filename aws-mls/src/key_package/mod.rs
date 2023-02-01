@@ -1,4 +1,4 @@
-use crate::cipher_suite::{CipherSuite, MaybeCipherSuite};
+use crate::cipher_suite::CipherSuite;
 use crate::extension::RequiredCapabilitiesExt;
 use crate::extension::{ExtensionError, ExtensionList, ExtensionType};
 use crate::group::proposal::ProposalType;
@@ -28,7 +28,7 @@ pub enum KeyPackageError {
     #[error(transparent)]
     SerializationError(#[from] tls_codec::Error),
     #[error("unsupported cipher suite: {0:?}")]
-    UnsupportedCipherSuite(MaybeCipherSuite),
+    UnsupportedCipherSuite(CipherSuite),
 }
 
 #[serde_as]
@@ -46,7 +46,7 @@ pub enum KeyPackageError {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyPackage {
     pub(crate) version: MaybeProtocolVersion,
-    pub(crate) cipher_suite: MaybeCipherSuite,
+    pub(crate) cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
     pub(crate) hpke_init_key: HpkePublicKey,
@@ -97,7 +97,7 @@ impl From<Vec<u8>> for KeyPackageRef {
 #[derive(TlsSerialize, TlsSize)]
 struct KeyPackageData<'a> {
     pub version: MaybeProtocolVersion,
-    pub cipher_suite: MaybeCipherSuite,
+    pub cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub hpke_init_key: &'a HpkePublicKey,
     pub leaf_node: &'a LeafNode,
@@ -110,7 +110,7 @@ impl KeyPackage {
         self.version
     }
 
-    pub fn cipher_suite(&self) -> MaybeCipherSuite {
+    pub fn cipher_suite(&self) -> CipherSuite {
         self.cipher_suite
     }
 
@@ -126,7 +126,7 @@ impl KeyPackage {
         &self,
         cipher_suite_provider: &CP,
     ) -> Result<KeyPackageRef, HashReferenceError> {
-        if cipher_suite_provider.cipher_suite() as u16 != self.cipher_suite.raw_value() {
+        if cipher_suite_provider.cipher_suite() != self.cipher_suite {
             return Err(HashReferenceError::InvalidCipherSuite(
                 cipher_suite_provider.cipher_suite(),
             ));
@@ -246,6 +246,7 @@ mod tests {
 
     use super::{test_utils::test_key_package, *};
     use assert_matches::assert_matches;
+    use aws_mls_core::crypto::P256_AES128;
     use futures::StreamExt;
     use tls_codec::Deserialize;
 
@@ -275,7 +276,7 @@ mod tests {
                     .to_reference(&test_cipher_suite_provider(cipher_suite))
                     .unwrap();
                 TestCase {
-                    cipher_suite: cipher_suite as u16,
+                    cipher_suite: cipher_suite.into(),
                     input: pkg.tls_serialize_detached().unwrap(),
                     output: pkg_ref.to_vec(),
                 }
@@ -313,10 +314,8 @@ mod tests {
         let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test").await;
 
         assert_matches!(
-            key_package.to_reference(&test_cipher_suite_provider(CipherSuite::P256Aes128)),
-            Err(HashReferenceError::InvalidCipherSuite(
-                CipherSuite::P256Aes128
-            ))
+            key_package.to_reference(&test_cipher_suite_provider(P256_AES128)),
+            Err(HashReferenceError::InvalidCipherSuite(P256_AES128))
         )
     }
 }

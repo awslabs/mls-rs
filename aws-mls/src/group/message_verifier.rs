@@ -190,8 +190,7 @@ fn signing_identity_for_new_member_proposal(
 #[cfg(test)]
 mod tests {
     use crate::{
-        cipher_suite::CipherSuite,
-        client::test_utils::test_client_with_key_pkg,
+        client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_builder::{test_utils::TestClientConfig, Preferences},
         extension::{ExtensionList, ExternalSendersExt},
         group::{
@@ -204,7 +203,6 @@ mod tests {
         },
         identity::test_utils::get_test_signing_identity,
         key_package::KeyPackageGeneration,
-        protocol_version::ProtocolVersion,
         provider::crypto::{test_utils::test_cipher_suite_provider, SignatureSecretKey},
         signer::Signable,
         tree_kem::node::LeafIndex,
@@ -215,9 +213,6 @@ mod tests {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use super::{verify_auth_content_signature, verify_plaintext_authentication};
-
-    const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
-    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
     async fn make_signed_plaintext(group: &mut Group<TestClientConfig>) -> MLSPlaintext {
         group

@@ -329,6 +329,7 @@ mod tests {
     use super::{tree_math, TreeKem};
     use crate::{
         cipher_suite::CipherSuite,
+        client::test_utils::TEST_CIPHER_SUITE,
         extension::{test_utils::TestExtension, ExtensionList},
         group::test_utils::{get_test_group_context, random_bytes},
         provider::{
@@ -543,7 +544,7 @@ mod tests {
 
     #[futures_test::test]
     async fn test_encap_capabilities() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
         let mut capabilities = get_test_capabilities();
         capabilities.extensions.push(42.into());
 
@@ -552,7 +553,7 @@ mod tests {
 
     #[futures_test::test]
     async fn test_encap_extensions() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
         let mut extensions = ExtensionList::default();
         extensions.set_from(TestExtension { foo: 10 }).unwrap();
 
@@ -561,7 +562,7 @@ mod tests {
 
     #[futures_test::test]
     async fn test_encap_capabilities_extensions() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
         let mut capabilities = get_test_capabilities();
         capabilities.extensions.push(42.into());
 

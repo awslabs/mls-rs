@@ -126,7 +126,7 @@ where
 
         let mut package = KeyPackage {
             version: self.protocol_version.into(),
-            cipher_suite: self.cipher_suite_provider.cipher_suite().into(),
+            cipher_suite: self.cipher_suite_provider.cipher_suite(),
             hpke_init_key: public_init,
             leaf_node,
             extensions: key_package_extensions,
@@ -152,7 +152,6 @@ mod tests {
     use aws_mls_core::crypto::CipherSuiteProvider;
 
     use crate::{
-        cipher_suite::CipherSuite,
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         extension::{test_utils::TestExtension, ExtensionList},
         group::test_utils::random_bytes,
@@ -243,7 +242,7 @@ mod tests {
             );
 
             assert_eq!(generated.key_package.extensions, key_package_ext);
-            assert_eq!(generated.key_package.cipher_suite, cipher_suite.into());
+            assert_eq!(generated.key_package.cipher_suite, cipher_suite);
             assert_eq!(generated.key_package.version, protocol_version.into());
 
             // Verify that the hpke key pair generated will work
@@ -360,12 +359,12 @@ mod tests {
 
     #[futures_test::test]
     async fn test_failure_when_credential_is_not_valid() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
         let (signing_identity, signing_key) =
             get_test_signing_identity(cipher_suite, b"test".to_vec());
 
         let test_generator = KeyPackageGenerator {
-            protocol_version: ProtocolVersion::Mls10,
+            protocol_version: TEST_PROTOCOL_VERSION,
             cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
             signing_identity: &signing_identity,
             signing_key: &signing_key,

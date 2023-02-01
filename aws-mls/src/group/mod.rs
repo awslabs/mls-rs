@@ -499,7 +499,7 @@ where
             GroupError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
         })?;
 
-        let cipher_suite_provider = maybe_cipher_suite_provider(
+        let cipher_suite_provider = cipher_suite_provider(
             config.crypto_provider(),
             group_info.group_context.cipher_suite,
         )?;
@@ -1007,7 +1007,7 @@ where
             .config
             .crypto_provider()
             .cipher_suite_provider(reinit.cipher_suite)
-            .ok_or_else(|| GroupError::UnsupportedCipherSuite(reinit.cipher_suite.into()))?;
+            .ok_or_else(|| GroupError::UnsupportedCipherSuite(reinit.cipher_suite))?;
 
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
             &new_cipher_suite,
@@ -1809,7 +1809,6 @@ mod tests {
     use crate::time::MlsTime;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use crate::{
-        cipher_suite::MaybeCipherSuite,
         client::{
             test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
             Client,
@@ -2154,8 +2153,8 @@ mod tests {
     async fn group_context_extension_proposal_test(
         ext_list: ExtensionList,
     ) -> (TestGroup, Result<MLSMessage, GroupError>) {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128;
+        let protocol_version = TEST_PROTOCOL_VERSION;
+        let cipher_suite = TEST_CIPHER_SUITE;
 
         let mut capabilities = get_test_capabilities();
         capabilities.extensions.push(42.into());
@@ -2227,8 +2226,8 @@ mod tests {
 
     #[futures_test::test]
     async fn test_group_encrypt_plaintext_padding() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128;
+        let protocol_version = TEST_PROTOCOL_VERSION;
+        let cipher_suite = TEST_CIPHER_SUITE;
 
         let mut test_group = test_group_custom(
             protocol_version,
@@ -2265,8 +2264,8 @@ mod tests {
 
     #[futures_test::test]
     async fn external_commit_requires_external_pub_extension() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128;
+        let protocol_version = TEST_PROTOCOL_VERSION;
+        let cipher_suite = TEST_CIPHER_SUITE;
         let group = test_group(protocol_version, cipher_suite).await;
 
         let info = group
@@ -2302,8 +2301,8 @@ mod tests {
 
     #[futures_test::test]
     async fn test_path_update_preference() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128;
+        let protocol_version = TEST_PROTOCOL_VERSION;
+        let cipher_suite = TEST_CIPHER_SUITE;
 
         let mut test_group = test_group_custom(
             protocol_version,
@@ -2362,8 +2361,8 @@ mod tests {
 
     #[futures_test::test]
     async fn test_path_update_preference_override() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128;
+        let protocol_version = TEST_PROTOCOL_VERSION;
+        let cipher_suite = TEST_CIPHER_SUITE;
 
         let mut test_group = test_group_custom(
             protocol_version,
@@ -2386,8 +2385,9 @@ mod tests {
 
     #[futures_test::test]
     async fn group_rejects_unencrypted_application_message() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::P256Aes128;
+        let protocol_version = TEST_PROTOCOL_VERSION;
+        let cipher_suite = TEST_CIPHER_SUITE;
+
         let mut alice = test_group(protocol_version, cipher_suite).await;
         let (mut bob, _) = alice.join("bob").await;
 
@@ -2409,8 +2409,8 @@ mod tests {
 
     #[futures_test::test]
     async fn test_state_update() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let protocol_version = TEST_PROTOCOL_VERSION;
+        let cipher_suite = TEST_CIPHER_SUITE;
 
         // Create a group with 10 members
         let mut alice = test_group(protocol_version, cipher_suite).await;
@@ -2587,8 +2587,7 @@ mod tests {
     #[futures_test::test]
     async fn test_membership_tag_from_non_member() {
         let (mut alice_group, mut bob_group) =
-            test_two_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, true)
-                .await;
+            test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
 
         let mut commit_output = alice_group.group.commit(vec![]).await.unwrap();
 
@@ -2609,8 +2608,8 @@ mod tests {
 
     #[futures_test::test]
     async fn test_partial_commits() {
-        let protocol_version = ProtocolVersion::Mls10;
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let protocol_version = TEST_PROTOCOL_VERSION;
+        let cipher_suite = TEST_CIPHER_SUITE;
 
         // Create a group with 3 members
         let mut alice = test_group(protocol_version, cipher_suite).await;
@@ -2637,7 +2636,7 @@ mod tests {
 
     #[futures_test::test]
     async fn old_hpke_secrets_are_removed() {
-        let mut alice = test_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128).await;
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         alice.join("bob").await;
         alice.join("charlie").await;
 
@@ -2657,7 +2656,7 @@ mod tests {
 
     #[futures_test::test]
     async fn only_selected_members_of_the_original_group_can_join_subgroup() {
-        let mut alice = test_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128).await;
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob, _) = alice.join("bob").await;
         let (carol, commit) = alice.join("carol").await;
 
@@ -2746,9 +2745,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(GroupError::UnsupportedCipherSuite(cs)) if cs == MaybeCipherSuite::from(
-                TEST_CIPHER_SUITE
-            )
+            Err(GroupError::UnsupportedCipherSuite(TEST_CIPHER_SUITE))
         );
     }
 
@@ -2904,8 +2901,7 @@ mod tests {
     #[futures_test::test]
     async fn commit_leaf_wrong_source() {
         // RFC, 13.4.2. "The leaf_node_source field MUST be set to commit."
-        let mut groups =
-            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 3).await;
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
 
         groups[0].group.commit_modifiers.modify_leaf = |leaf, sk, cp| {
             leaf.leaf_node_source = LeafNodeSource::Update;
@@ -2930,8 +2926,7 @@ mod tests {
     async fn commit_leaf_same_hpke_key() {
         // RFC 13.4.2. "Verify that the encryption_key value in the LeafNode is different from the committer's current leaf node"
 
-        let mut groups =
-            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 3).await;
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
 
         // Group 0 starts using fixed key
         groups[0].group.commit_modifiers.modify_leaf = |leaf, sk, cp| {
@@ -2963,8 +2958,7 @@ mod tests {
     async fn commit_leaf_duplicate_hpke_key() {
         // RFC 8.3 "Verify that the following fields are unique among the members of the group: `encryption_key`"
 
-        let mut groups =
-            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10).await;
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
         // Group 1 uses the fixed key
         groups[1].group.commit_modifiers.modify_leaf = |leaf, sk, cp| {
@@ -3046,8 +3040,7 @@ mod tests {
 
     #[futures_test::test]
     async fn commit_leaf_incorrect_signature() {
-        let mut groups =
-            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 3).await;
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
 
         groups[0].group.commit_modifiers.modify_leaf = |leaf, _, _| {
             leaf.signature[0] ^= 1;
@@ -3250,7 +3243,7 @@ mod tests {
     #[futures_test::test]
     async fn commit_leaf_not_supporting_credential_used_by_external_sender() {
         // The new leaf of the committer doesn't support credential used by an external sender
-        let (_, ext_sender_pk) = test_cipher_suite_provider(CipherSuite::Curve25519Aes128)
+        let (_, ext_sender_pk) = test_cipher_suite_provider(TEST_CIPHER_SUITE)
             .signature_key_generate()
             .unwrap();
 
@@ -3289,8 +3282,7 @@ mod tests {
 
     #[futures_test::test]
     async fn committing_degenerate_path_succeeds() {
-        let mut groups =
-            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10).await;
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
         groups[0].group.commit_modifiers.modify_tree = |tree: &mut TreeKemPublic| {
             tree.update_node(get_test_25519_key(1u8), 1).unwrap();
@@ -3312,8 +3304,7 @@ mod tests {
 
     #[futures_test::test]
     async fn inserting_key_in_filtered_node_fails() {
-        let mut groups =
-            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10).await;
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
         let commit_output = groups[0]
             .group
@@ -3358,8 +3349,7 @@ mod tests {
 
     #[futures_test::test]
     async fn commit_with_too_short_path_fails() {
-        let mut groups =
-            test_n_member_group(ProtocolVersion::Mls10, CipherSuite::Curve25519Aes128, 10).await;
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
         let commit_output = groups[0]
             .group

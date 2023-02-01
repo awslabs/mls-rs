@@ -3,7 +3,7 @@ use futures::StreamExt;
 use tls_codec::Deserialize;
 
 use crate::{
-    cipher_suite::{CipherSuite, MaybeCipherSuite},
+    cipher_suite::CipherSuite,
     extension::{ExtensionList, ExternalSendersExt, RatchetTreeExt},
     key_package::KeyPackageGeneration,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
@@ -66,7 +66,7 @@ where
 
     let cipher_suite = cipher_suite_provider.cipher_suite();
 
-    if group_info.group_context.cipher_suite.raw_value() != cipher_suite as u16 {
+    if group_info.group_context.cipher_suite != cipher_suite {
         return Err(GroupError::CipherSuiteMismatch);
     }
 
@@ -302,18 +302,5 @@ where
 {
     crypto
         .cipher_suite_provider(cipher_suite)
-        .ok_or(GroupError::UnsupportedCipherSuite(cipher_suite.into()))
-}
-
-pub(super) fn maybe_cipher_suite_provider<P>(
-    crypto: P,
-    cipher_suite: MaybeCipherSuite,
-) -> Result<P::CipherSuiteProvider, GroupError>
-where
-    P: CryptoProvider,
-{
-    cipher_suite
-        .into_enum()
-        .and_then(|cs| crypto.cipher_suite_provider(cs))
-        .ok_or_else(|| GroupError::UnsupportedCipherSuite(cipher_suite))
+        .ok_or(GroupError::UnsupportedCipherSuite(cipher_suite))
 }

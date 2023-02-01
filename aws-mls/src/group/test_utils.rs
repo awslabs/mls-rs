@@ -2,7 +2,7 @@ use rand::RngCore;
 
 use super::*;
 use crate::{
-    client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE},
+    client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
     client_builder::{
         test_utils::{TestClientBuilder, TestClientConfig},
         Preferences,
@@ -131,7 +131,7 @@ impl TestGroup {
 
 pub(crate) fn get_test_group_context(epoch: u64, cipher_suite: CipherSuite) -> GroupContext {
     GroupContext {
-        protocol_version: ProtocolVersion::Mls10,
+        protocol_version: TEST_PROTOCOL_VERSION,
         cipher_suite,
         group_id: TEST_GROUP.to_vec(),
         epoch,
@@ -147,7 +147,7 @@ pub(crate) fn get_test_group_context_with_id(
     cipher_suite: CipherSuite,
 ) -> GroupContext {
     GroupContext {
-        protocol_version: ProtocolVersion::Mls10,
+        protocol_version: TEST_PROTOCOL_VERSION,
         cipher_suite,
         group_id,
         epoch,
@@ -336,8 +336,8 @@ pub(crate) async fn get_test_groups_with_features(
     let group = clients[0]
         .0
         .create_group_with_id(
-            ProtocolVersion::Mls10,
-            CipherSuite::Curve25519Aes128,
+            TEST_PROTOCOL_VERSION,
+            TEST_CIPHER_SUITE,
             b"TEST GROUP".to_vec(),
             clients[0].1.clone(),
             extensions,
@@ -349,11 +349,7 @@ pub(crate) async fn get_test_groups_with_features(
 
     for (client, identity) in clients.iter().skip(1) {
         let key_package = client
-            .generate_key_package(
-                ProtocolVersion::Mls10,
-                CipherSuite::Curve25519Aes128,
-                identity.clone(),
-            )
+            .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, identity.clone())
             .await
             .unwrap();
 

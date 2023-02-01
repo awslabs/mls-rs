@@ -4,6 +4,7 @@ use aws_mls::{
     client::MlsConfig,
     group::Group,
 };
+use aws_mls_core::crypto::CURVE25519_AES128;
 use criterion::{
     async_executor::FuturesExecutor, criterion_group, criterion_main, measurement::WallTime,
     BatchSize, BenchmarkGroup, BenchmarkId, Criterion,
@@ -13,7 +14,7 @@ use futures::executor::block_on;
 fn commit_setup(c: &mut Criterion) {
     let mut group_commit = c.benchmark_group("group_commit");
 
-    let cipher_suite = CipherSuite::Curve25519Aes128;
+    let cipher_suite = CURVE25519_AES128;
 
     println!("Benchmarking group commit for: {cipher_suite:?}");
 

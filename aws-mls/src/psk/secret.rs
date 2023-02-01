@@ -152,7 +152,7 @@ mod tests {
                     let psks = Self::make_psk_list(&provider, n);
                     let psk_secret = Self::compute_psk_secret(&provider, psks.clone());
                     TestScenario {
-                        cipher_suite: cs as u16,
+                        cipher_suite: cs.into(),
                         psks: psks.to_vec(),
                         psk_secret: psk_secret.to_vec(),
                     }

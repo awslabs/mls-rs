@@ -511,7 +511,7 @@ mod tests {
                 .unwrap();
 
             test_cases.push(ExporterTestCase {
-                cipher_suite: cipher_suite as u16,
+                cipher_suite: cipher_suite.into(),
                 input: test_case_input,
                 output: exported_secret,
             });
@@ -600,7 +600,7 @@ mod tests {
             .unwrap();
 
             test_cases.push(KeyScheduleTestCase {
-                cipher_suite: cipher_suite as u16,
+                cipher_suite: cipher_suite.into(),
                 joiner: key_schedule.joiner_secret.into(),
                 exporter: key_schedule.key_schedule.exporter_secret.clone(),
                 confirm: key_schedule.confirmation_key,

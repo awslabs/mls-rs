@@ -88,13 +88,13 @@ impl CryptoProvider for OpensslCryptoProvider {
             return None;
         }
 
-        let kdf = Kdf::new(cipher_suite);
-        let ecdh = Ecdh::new(cipher_suite);
-        let kem_id = KemId::new(cipher_suite);
+        let kdf = Kdf::new(cipher_suite).ok()?;
+        let ecdh = Ecdh::new(cipher_suite).ok()?;
+        let kem_id = KemId::new(cipher_suite).ok()?;
         let kem = DhKem::new(ecdh, kdf.clone(), kem_id as u16, kem_id.n_secret());
-        let aead = Aead::new(cipher_suite);
+        let aead = Aead::new(cipher_suite).ok()?;
 
-        Some(OpensslCipherSuite::new(cipher_suite, kem, kdf, aead))
+        OpensslCipherSuite::new(cipher_suite, kem, kdf, aead).ok()
     }
 }
 
@@ -119,17 +119,22 @@ where
     KDF: KdfType + Clone,
     AEAD: AeadType + Clone,
 {
-    pub fn new(cipher_suite: CipherSuite, kem: KEM, kdf: KDF, aead: AEAD) -> Self {
+    pub fn new(
+        cipher_suite: CipherSuite,
+        kem: KEM,
+        kdf: KDF,
+        aead: AEAD,
+    ) -> Result<Self, OpensslCryptoError> {
         let hpke = Hpke::new(kem, kdf.clone(), Some(aead.clone()));
 
-        Self {
+        Ok(Self {
             cipher_suite,
             kdf,
             aead,
-            hash: Hash::new(cipher_suite),
+            hash: Hash::new(cipher_suite)?,
             hpke,
-            ec_signer: EcSigner::new(cipher_suite),
-        }
+            ec_signer: EcSigner::new(cipher_suite)?,
+        })
     }
 
     pub fn random_bytes(&self, out: &mut [u8]) -> Result<(), OpensslCryptoError> {

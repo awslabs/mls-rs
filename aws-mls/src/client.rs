@@ -1,4 +1,4 @@
-use crate::cipher_suite::{CipherSuite, MaybeCipherSuite};
+use crate::cipher_suite::CipherSuite;
 use crate::client_config::ClientConfig;
 use crate::extension::{ExtensionError, ExtensionList};
 use crate::group::framing::{
@@ -55,7 +55,7 @@ pub enum ClientError {
     #[error("unsupported message version: {0:?}")]
     UnsupportedMessageVersion(MaybeProtocolVersion),
     #[error("unsupported cipher suite: {0:?}")]
-    UnsupportedCipherSuite(MaybeCipherSuite),
+    UnsupportedCipherSuite(CipherSuite),
     #[error("unable to load group from storage: {0:?}")]
     GroupStorageError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
@@ -120,7 +120,7 @@ where
             .config
             .crypto_provider()
             .cipher_suite_provider(cipher_suite)
-            .ok_or_else(|| ClientError::UnsupportedCipherSuite(cipher_suite.into()))?;
+            .ok_or_else(|| ClientError::UnsupportedCipherSuite(cipher_suite))?;
 
         let key_package_generator = KeyPackageGenerator {
             protocol_version,
@@ -259,11 +259,10 @@ where
             .into_group_info()
             .ok_or(ClientError::ExpectedGroupInfoMessage)?;
 
-        let cipher_suite_provider = group_info
-            .group_context
-            .cipher_suite
-            .into_enum()
-            .and_then(|cs| self.config.crypto_provider().cipher_suite_provider(cs))
+        let cipher_suite_provider = self
+            .config
+            .crypto_provider()
+            .cipher_suite_provider(group_info.group_context.cipher_suite)
             .ok_or_else(|| {
                 ClientError::UnsupportedCipherSuite(group_info.group_context.cipher_suite)
             })?;
@@ -319,13 +318,15 @@ where
 
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
+    use aws_mls_core::crypto::CURVE25519_AES128;
+
     use super::*;
     use crate::{client_config::ClientConfig, identity::test_utils::get_test_signing_identity};
 
     pub use crate::client_builder::test_utils::{TestClientBuilder, TestClientConfig};
 
     pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
-    pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
+    pub const TEST_CIPHER_SUITE: CipherSuite = CURVE25519_AES128;
 
     pub fn get_basic_client_builder(
         cipher_suite: CipherSuite,
@@ -436,7 +437,7 @@ mod tests {
                 .unwrap();
 
             assert_eq!(key_package.version, protocol_version.into());
-            assert_eq!(key_package.cipher_suite, cipher_suite.into());
+            assert_eq!(key_package.cipher_suite, cipher_suite);
 
             assert_eq!(
                 &key_package.leaf_node.signing_identity.credential,

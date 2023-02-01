@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::{
-    cipher_suite::{CipherSuite, MaybeCipherSuite},
+    cipher_suite::CipherSuite,
     extension::{ExtensionError, ExtensionList},
     hash_reference::HashReferenceError,
     key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError},
@@ -135,7 +135,7 @@ pub enum GroupError {
         version: MaybeProtocolVersion,
     },
     #[error("Unsupported cipher suite {0:?}")]
-    UnsupportedCipherSuite(MaybeCipherSuite),
+    UnsupportedCipherSuite(CipherSuite),
     #[error("Signing key of external sender is unknown")]
     UnknownSigningIdentityForExternalSender,
     #[error("External proposals are disabled for this group")]

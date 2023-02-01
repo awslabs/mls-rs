@@ -1,6 +1,7 @@
 use aws_mls::bench_utils::group_functions::load_test_cases;
 use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::group::secret_tree::SecretTree;
+use aws_mls_core::crypto::CURVE25519_AES128;
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 };
@@ -9,7 +10,7 @@ use futures::executor::block_on;
 fn secret_tree_setup(c: &mut Criterion) {
     let mut secret_tree_group = c.benchmark_group("secret_tree_serialize");
 
-    let cipher_suite = CipherSuite::Curve25519Aes128;
+    let cipher_suite = CURVE25519_AES128;
 
     println!("Benchmarking secret tree serialization for: {cipher_suite:?}");
 

@@ -165,7 +165,7 @@ pub mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use aws_mls_core::crypto::CipherSuite;
+    use aws_mls_core::crypto::{CipherSuite, CURVE25519_AES128};
 
     use crate::{
         builder::test_utils::test_subject_components, CertificateBuilder, CertificateParameters,
@@ -174,7 +174,7 @@ mod tests {
 
     use super::test_utils::test_subject_alt_names;
 
-    const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
+    const TEST_CIPHER_SUITE: CipherSuite = CURVE25519_AES128;
 
     #[test]
     fn requests_leaf_by_default() {

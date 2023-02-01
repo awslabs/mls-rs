@@ -225,7 +225,7 @@ mod tests {
 
     #[futures_test::test]
     async fn test_update_secrets() {
-        let cipher_suite = crate::cipher_suite::CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
 
         let (public_tree, mut charlie_private, alice_private, path_secret) =
             update_secrets_setup(cipher_suite).await;
@@ -271,7 +271,7 @@ mod tests {
 
     #[futures_test::test]
     async fn test_update_secrets_key_mismatch() {
-        let cipher_suite = crate::cipher_suite::CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
 
         let (mut public_tree, mut charlie_private, _, path_secret) =
             update_secrets_setup(cipher_suite).await;

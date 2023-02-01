@@ -159,7 +159,7 @@ struct CredentialTypeCounters {
 mod tests {
     use super::*;
     use crate::{
-        cipher_suite::CipherSuite,
+        client::test_utils::TEST_CIPHER_SUITE,
         tree_kem::leaf_node::test_utils::{get_basic_test_node, get_test_client_identity},
     };
     use assert_matches::assert_matches;
@@ -175,7 +175,7 @@ mod tests {
     }
 
     async fn get_test_data(index: LeafIndex) -> TestData {
-        let cipher_suite = CipherSuite::P256Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
         let leaf_node = get_basic_test_node(cipher_suite, &format!("foo{}", index.0)).await;
 
         TestData { leaf_node, index }
@@ -230,7 +230,7 @@ mod tests {
 
         let before_error = test_index.clone();
 
-        let mut new_key_package = get_basic_test_node(CipherSuite::P256Aes128, "foo").await;
+        let mut new_key_package = get_basic_test_node(TEST_CIPHER_SUITE, "foo").await;
         new_key_package.signing_identity = test_data[1].leaf_node.signing_identity.clone();
 
         let res = test_index.insert(
@@ -247,7 +247,7 @@ mod tests {
 
     #[futures_test::test]
     async fn test_insert_duplicate_hpke_key() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
         let (test_data, mut test_index) = test_setup().await;
         let before_error = test_index.clone();
 

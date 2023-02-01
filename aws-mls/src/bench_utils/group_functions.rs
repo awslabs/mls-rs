@@ -2,7 +2,10 @@ use aws_mls_core::{group::GroupStateStorage, key_package::KeyPackageData};
 
 use crate::{
     cipher_suite::CipherSuite,
-    client::test_utils::{get_basic_client_builder, join_group, test_client_with_key_pkg},
+    client::test_utils::{
+        get_basic_client_builder, join_group, test_client_with_key_pkg, TEST_CIPHER_SUITE,
+        TEST_PROTOCOL_VERSION,
+    },
     client_builder::{
         test_utils::{TestClientBuilder, TestClientConfig},
         Preferences,
@@ -17,7 +20,6 @@ use crate::{
         Commit, Group, GroupError, Snapshot,
     },
     identity::SigningIdentity,
-    protocol_version::ProtocolVersion,
     provider::{
         crypto::SignatureSecretKey, group_state::InMemoryGroupStateStorage,
         key_package::InMemoryKeyPackageRepository,
@@ -40,7 +42,7 @@ pub struct TestCase {
 }
 
 async fn generate_test_cases() -> Vec<TestCase> {
-    let cipher_suite = CipherSuite::Curve25519Aes128;
+    let cipher_suite = TEST_CIPHER_SUITE;
 
     futures::stream::iter([10, 50, 100])
         .then(|length| get_group_states(cipher_suite, length))
@@ -102,7 +104,6 @@ pub async fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
 
 // creates group modifying code found in client.rs
 pub async fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<TestClientConfig>> {
-    pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
     pub const TEST_GROUP: &[u8] = b"group";
 
     let (alice, alice_identity) = get_basic_client_builder(cipher_suite, "alice");

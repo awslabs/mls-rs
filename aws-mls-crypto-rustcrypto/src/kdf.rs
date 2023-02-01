@@ -1,6 +1,9 @@
 use std::fmt::Debug;
 
-use aws_mls_core::crypto::CipherSuite;
+use aws_mls_core::crypto::{
+    CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256, CURVE448_CHACHA,
+    P256_AES128, P384_AES256, P521_AES256,
+};
 use aws_mls_crypto_traits::KdfType;
 use hkdf::{InvalidLength, InvalidPrkLength, SimpleHkdf};
 use sha2::{Sha256, Sha384, Sha512};
@@ -14,6 +17,8 @@ pub enum KdfError {
     InvalidLength(#[from] InvalidLength),
     #[error("the provided length of the key {0} is shorter than the minimum length {1}")]
     TooShortKey(usize, usize),
+    #[error("unsupported cipher suite")]
+    UnsupportedCipherSuite,
 }
 
 /// Aead KDF as specified in RFC 9180, Table 3.
@@ -26,13 +31,12 @@ pub enum Kdf {
 }
 
 impl Kdf {
-    pub fn new(cipher_suite: CipherSuite) -> Self {
+    pub fn new(cipher_suite: CipherSuite) -> Result<Self, KdfError> {
         match cipher_suite {
-            CipherSuite::Curve25519Aes128
-            | CipherSuite::P256Aes128
-            | CipherSuite::Curve25519ChaCha20 => Kdf::HkdfSha256,
-            CipherSuite::P384Aes256 => Kdf::HkdfSha384,
-            _ => Kdf::HkdfSha512,
+            CURVE25519_AES128 | P256_AES128 | CURVE25519_CHACHA => Ok(Kdf::HkdfSha256),
+            P384_AES256 => Ok(Kdf::HkdfSha384),
+            CURVE448_CHACHA | CURVE448_AES256 | P521_AES256 => Ok(Kdf::HkdfSha512),
+            _ => Err(KdfError::UnsupportedCipherSuite),
         }
     }
 }
@@ -86,7 +90,7 @@ impl KdfType for Kdf {
 #[cfg(test)]
 mod test {
     use assert_matches::assert_matches;
-    use aws_mls_core::crypto::CipherSuite;
+    use aws_mls_core::crypto::{CipherSuite, CURVE25519_AES128};
     use aws_mls_crypto_traits::KdfType;
     use serde::Deserialize;
 
@@ -114,7 +118,7 @@ mod test {
             case.ciphersuite
         );
 
-        let kdf = Kdf::new(case.ciphersuite);
+        let kdf = Kdf::new(case.ciphersuite).unwrap();
 
         let extracted = kdf.extract(&case.salt, &case.ikm).unwrap();
         assert_eq!(extracted, case.prk);
@@ -136,26 +140,26 @@ mod test {
 
     #[test]
     fn no_key() {
-        let kdf = Kdf::new(CipherSuite::Curve25519Aes128);
+        let kdf = Kdf::new(CURVE25519_AES128).unwrap();
         assert!(kdf.extract(b"key", &[]).is_err());
     }
 
     #[test]
     fn no_salt() {
-        let kdf = Kdf::new(CipherSuite::Curve25519Aes128);
+        let kdf = Kdf::new(CURVE25519_AES128).unwrap();
         assert!(kdf.extract(&[], b"key").is_ok());
     }
 
     #[test]
     fn no_info() {
-        let kdf = Kdf::new(CipherSuite::Curve25519Aes128);
+        let kdf = Kdf::new(CURVE25519_AES128).unwrap();
         let key = vec![0u8; kdf.extract_size()];
         assert!(kdf.expand(&key, &[], 42).is_ok());
     }
 
     #[test]
     fn test_short_key() {
-        let kdf = Kdf::new(CipherSuite::Curve25519Aes128);
+        let kdf = Kdf::new(CURVE25519_AES128).unwrap();
         let key = vec![0u8; kdf.extract_size() - 1];
 
         assert_matches!(kdf.expand(&key, &[], 42), Err(KdfError::TooShortKey(_, _)));

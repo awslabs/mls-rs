@@ -247,12 +247,12 @@ mod test {
 
         println!("Testing Context for ciphersuite {cipher_suite:?}");
 
-        let kdf = Kdf::new(cipher_suite);
-        let aead = Aead::new(cipher_suite);
-        let kem_id = KemId::new(cipher_suite);
+        let kdf = Kdf::new(cipher_suite).unwrap();
+        let aead = Aead::new(cipher_suite).unwrap();
+        let kem_id = KemId::new(cipher_suite).unwrap();
 
         let kem = DhKem::new(
-            Ecdh::new(cipher_suite),
+            Ecdh::new(cipher_suite).unwrap(),
             kdf.clone(),
             kem_id as u16,
             kem_id.n_secret(),

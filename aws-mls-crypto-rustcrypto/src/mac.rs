@@ -1,4 +1,7 @@
-use aws_mls_core::crypto::CipherSuite;
+use aws_mls_core::crypto::{
+    CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256, CURVE448_CHACHA,
+    P256_AES128, P384_AES256, P521_AES256,
+};
 use hmac::{
     digest::{crypto_common::BlockSizeUser, FixedOutputReset},
     Mac, SimpleHmac,
@@ -10,6 +13,8 @@ use thiserror::Error;
 pub enum HashError {
     #[error(transparent)]
     InvalidHmacLength(#[from] hmac::digest::InvalidLength),
+    #[error("unsupported cipher suite")]
+    UnsupportedCipherSuite,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -21,13 +26,12 @@ pub enum Hash {
 }
 
 impl Hash {
-    pub fn new(cipher_suite: CipherSuite) -> Self {
+    pub fn new(cipher_suite: CipherSuite) -> Result<Self, HashError> {
         match cipher_suite {
-            CipherSuite::Curve25519Aes128
-            | CipherSuite::P256Aes128
-            | CipherSuite::Curve25519ChaCha20 => Hash::Sha256,
-            CipherSuite::P384Aes256 => Hash::Sha384,
-            _ => Hash::Sha512,
+            CURVE25519_AES128 | P256_AES128 | CURVE25519_CHACHA => Ok(Hash::Sha256),
+            P384_AES256 => Ok(Hash::Sha384),
+            CURVE448_AES256 | CURVE448_CHACHA | P521_AES256 => Ok(Hash::Sha512),
+            _ => Err(HashError::UnsupportedCipherSuite),
         }
     }
 
@@ -80,7 +84,7 @@ mod test {
         );
 
         // Test Sign
-        let hash = Hash::new(case.ciphersuite);
+        let hash = Hash::new(case.ciphersuite).unwrap();
         let tag = hash.mac(&case.key, &case.message).unwrap();
         assert_eq!(&tag, &case.tag);
 

@@ -13,7 +13,7 @@ use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::provider::crypto::CryptoProvider;
 use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain};
-use aws_mls_core::crypto::CipherSuiteProvider;
+use aws_mls_core::crypto::{CipherSuiteProvider, CURVE25519_AES128, P256_AES128};
 use cfg_if::cfg_if;
 
 cfg_if! {
@@ -385,7 +385,7 @@ async fn remove_members(
 
 #[futures_test::test]
 async fn test_many_commits() {
-    let cipher_suite = CipherSuite::Curve25519Aes128;
+    let cipher_suite = CURVE25519_AES128;
     let preferences = Preferences::default();
 
     let (creator_group, mut groups) = get_test_groups(
@@ -708,7 +708,7 @@ async fn test_application_messages(
 async fn test_out_of_order_application_messages() {
     let (mut alice_group, mut receiver_groups) = get_test_groups(
         ProtocolVersion::Mls10,
-        CipherSuite::Curve25519Aes128,
+        CURVE25519_AES128,
         1,
         Preferences::default(),
     )
@@ -904,7 +904,7 @@ async fn test_external_commits() {
 async fn test_remove_nonexisting_leaf() {
     let (_, mut groups) = get_test_groups(
         ProtocolVersion::Mls10,
-        CipherSuite::Curve25519Aes128,
+        CURVE25519_AES128,
         10,
         Preferences::default(),
     )
@@ -958,8 +958,8 @@ fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite, id: &str) -> Rein
 
 #[futures_test::test]
 async fn reinit_works() {
-    let suite1 = CipherSuite::Curve25519Aes128;
-    let suite2 = CipherSuite::P256Aes128;
+    let suite1 = CURVE25519_AES128;
+    let suite2 = P256_AES128;
     let version = ProtocolVersion::Mls10;
 
     // Create a group with 2 parties

@@ -244,7 +244,7 @@ mod tests {
     #[futures_test::test]
     async fn validating_path_fails_with_different_identity() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
         let update_path = test_update_path(cipher_suite, "foobar").await;
 
         let validated = validate_update_path(

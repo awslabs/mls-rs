@@ -1,5 +1,5 @@
-use crate::maybe::MaybeEnum;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
+use std::ops::Deref;
+
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(
@@ -7,32 +7,48 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     Copy,
     Clone,
     Eq,
-    enum_iterator::Sequence,
     PartialEq,
     TlsDeserialize,
     TlsSerialize,
     TlsSize,
     serde::Deserialize,
     serde::Serialize,
-    TryFromPrimitive,
-    IntoPrimitive,
+    PartialOrd,
+    Ord,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[repr(u16)]
-pub enum CipherSuite {
-    Curve25519Aes128 = 0x0001,
-    P256Aes128 = 0x0002,
-    Curve25519ChaCha20 = 0x0003,
-    Curve448Aes256 = 0x0004,
-    P521Aes256 = 0x0005,
-    Curve448ChaCha20 = 0x0006,
-    P384Aes256 = 0x0007,
-}
+pub struct CipherSuite(u16);
 
-impl CipherSuite {
-    pub fn all() -> impl Iterator<Item = CipherSuite> {
-        enum_iterator::all()
+impl From<u16> for CipherSuite {
+    fn from(value: u16) -> Self {
+        CipherSuite(value)
     }
 }
 
-pub type MaybeCipherSuite = MaybeEnum<CipherSuite>;
+impl From<CipherSuite> for u16 {
+    fn from(val: CipherSuite) -> Self {
+        val.0
+    }
+}
+
+impl Deref for CipherSuite {
+    type Target = u16;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub const CURVE25519_AES128: CipherSuite = CipherSuite(1);
+pub const P256_AES128: CipherSuite = CipherSuite(2);
+pub const CURVE25519_CHACHA: CipherSuite = CipherSuite(3);
+pub const CURVE448_AES256: CipherSuite = CipherSuite(4);
+pub const P521_AES256: CipherSuite = CipherSuite(5);
+pub const CURVE448_CHACHA: CipherSuite = CipherSuite(6);
+pub const P384_AES256: CipherSuite = CipherSuite(7);
+
+impl CipherSuite {
+    pub fn all() -> impl Iterator<Item = CipherSuite> {
+        (1..=7).map(CipherSuite)
+    }
+}

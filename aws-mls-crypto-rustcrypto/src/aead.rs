@@ -3,7 +3,10 @@ extern crate aead as rc_aead;
 use std::fmt::Debug;
 
 use aes_gcm::{Aes128Gcm, Aes256Gcm};
-use aws_mls_core::crypto::CipherSuite;
+use aws_mls_core::crypto::{
+    CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256, CURVE448_CHACHA,
+    P256_AES128, P384_AES256, P521_AES256,
+};
 use aws_mls_crypto_traits::AeadType;
 use chacha20poly1305::ChaCha20Poly1305;
 use rc_aead::{generic_array::GenericArray, NewAead, Payload};
@@ -19,6 +22,8 @@ pub enum AeadError {
     EmptyPlaintext,
     #[error("AEAD key of invalid length {0}. Expected length {1}")]
     InvalidKeyLen(usize, usize),
+    #[error("unsupported cipher suite")]
+    UnsupportedCipherSuite,
 }
 
 pub const TAG_LEN: usize = 16;
@@ -37,15 +42,12 @@ pub enum Aead {
 }
 
 impl Aead {
-    pub fn new(cipher_suite: CipherSuite) -> Self {
+    pub fn new(cipher_suite: CipherSuite) -> Result<Self, AeadError> {
         match cipher_suite {
-            CipherSuite::P256Aes128 | CipherSuite::Curve25519Aes128 => Aead::Aes128Gcm,
-            CipherSuite::Curve448Aes256 | CipherSuite::P384Aes256 | CipherSuite::P521Aes256 => {
-                Aead::Aes256Gcm
-            }
-            CipherSuite::Curve25519ChaCha20 | CipherSuite::Curve448ChaCha20 => {
-                Aead::Chacha20Poly1305
-            }
+            P256_AES128 | CURVE25519_AES128 => Ok(Aead::Aes128Gcm),
+            CURVE448_AES256 | P384_AES256 | P521_AES256 => Ok(Aead::Aes256Gcm),
+            CURVE25519_CHACHA | CURVE448_CHACHA => Ok(Aead::Chacha20Poly1305),
+            _ => Err(AeadError::UnsupportedCipherSuite),
         }
     }
 }
@@ -163,7 +165,9 @@ fn decrypt_aead_trait(
 
 #[cfg(test)]
 mod test {
-    use aws_mls_core::crypto::CipherSuite;
+    use aws_mls_core::crypto::{
+        CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256,
+    };
     use aws_mls_crypto_traits::AeadType;
 
     use crate::aead::TAG_LEN;
@@ -173,14 +177,10 @@ mod test {
     use assert_matches::assert_matches;
 
     fn get_aeads() -> Vec<Aead> {
-        [
-            CipherSuite::Curve25519Aes128,
-            CipherSuite::Curve25519ChaCha20,
-            CipherSuite::Curve448Aes256,
-        ]
-        .into_iter()
-        .map(Aead::new)
-        .collect()
+        [CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256]
+            .into_iter()
+            .map(|cs| Aead::new(cs).unwrap())
+            .collect()
     }
 
     #[derive(serde::Deserialize)]
@@ -204,7 +204,7 @@ mod test {
         let test_cases: Vec<TestCase> = serde_json::from_str(test_case_file).unwrap();
 
         for case in test_cases {
-            let aead = Aead::new(case.ciphersuite);
+            let aead = Aead::new(case.ciphersuite).unwrap();
 
             let ciphertext = aead
                 .seal(&case.key, &case.pt, Some(&case.aad), &case.iv)

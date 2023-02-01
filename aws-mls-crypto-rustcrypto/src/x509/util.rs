@@ -1,4 +1,4 @@
-use aws_mls_core::crypto::CipherSuite;
+use aws_mls_core::crypto::{CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, P256_AES128};
 use aws_mls_identity_x509::{
     CertificateParameters, SubjectAltName as MlsSubjectAltName, SubjectComponent,
 };
@@ -44,8 +44,8 @@ pub(super) fn object_id_for_ciphersuite(
     cipher_suite: CipherSuite,
 ) -> Result<ObjectIdentifier, X509Error> {
     match cipher_suite {
-        CipherSuite::P256Aes128 => Ok(ECDSA_WITH_SHA_256),
-        CipherSuite::Curve25519Aes128 | CipherSuite::Curve25519ChaCha20 => Ok(ED25519_OID),
+        P256_AES128 => Ok(ECDSA_WITH_SHA_256),
+        CURVE25519_AES128 | CURVE25519_CHACHA => Ok(ED25519_OID),
         _ => Err(X509Error::InvalidSigningKey(cipher_suite)),
     }
 }

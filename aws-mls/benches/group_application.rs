@@ -4,6 +4,7 @@ use aws_mls::group::Group;
 
 use aws_mls::bench_utils::group_functions::{commit_group, load_test_cases};
 
+use aws_mls_core::crypto::CURVE25519_AES128;
 use criterion::{
     async_executor::FuturesExecutor, criterion_group, criterion_main, measurement::WallTime,
     BatchSize, BenchmarkGroup, BenchmarkId, Criterion, Throughput,
@@ -14,7 +15,7 @@ use rand::RngCore;
 fn application_message_setup(c: &mut Criterion) {
     let mut group_application = c.benchmark_group("group_application_message");
 
-    let cipher_suite = CipherSuite::Curve25519Aes128;
+    let cipher_suite = CURVE25519_AES128;
 
     println!("Benchmarking group application message for: {cipher_suite:?}");
 

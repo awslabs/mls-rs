@@ -155,7 +155,7 @@ mod tests {
             test_signable.sign(&provider, &signer, &context).unwrap();
 
             test_cases.push(TestCase {
-                cipher_suite: cipher_suite as u16,
+                cipher_suite: cipher_suite.into(),
                 content,
                 context,
                 signature: test_signable.signature,

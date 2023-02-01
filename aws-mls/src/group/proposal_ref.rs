@@ -140,7 +140,7 @@ mod test {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
             test_cases.push(TestCase {
-                cipher_suite: cipher_suite as u16,
+                cipher_suite: cipher_suite.into(),
                 input: add.tls_serialize_detached().unwrap(),
                 output: ProposalRef::from_content(&cipher_suite_provider, &add)
                     .unwrap()
@@ -148,7 +148,7 @@ mod test {
             });
 
             test_cases.push(TestCase {
-                cipher_suite: cipher_suite as u16,
+                cipher_suite: cipher_suite.into(),
                 input: update.tls_serialize_detached().unwrap(),
                 output: ProposalRef::from_content(&cipher_suite_provider, &update)
                     .unwrap()
@@ -156,7 +156,7 @@ mod test {
             });
 
             test_cases.push(TestCase {
-                cipher_suite: cipher_suite as u16,
+                cipher_suite: cipher_suite.into(),
                 input: remove.tls_serialize_detached().unwrap(),
                 output: ProposalRef::from_content(&cipher_suite_provider, &remove)
                     .unwrap()
@@ -164,7 +164,7 @@ mod test {
             });
 
             test_cases.push(TestCase {
-                cipher_suite: cipher_suite as u16,
+                cipher_suite: cipher_suite.into(),
                 input: group_context_ext.tls_serialize_detached().unwrap(),
                 output: ProposalRef::from_content(&cipher_suite_provider, &group_context_ext)
                     .unwrap()

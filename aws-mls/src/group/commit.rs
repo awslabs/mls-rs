@@ -468,6 +468,8 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use aws_mls_core::crypto::CURVE25519_CHACHA;
+
     use crate::{
         client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_builder::test_utils::TestClientConfig,
@@ -676,8 +678,8 @@ mod tests {
     async fn test_commit_builder_reinit() {
         let mut group = test_commit_builder_group().await;
         let test_group_id = "foo".as_bytes().to_vec();
-        let test_cipher_suite = CipherSuite::Curve25519ChaCha20;
-        let test_protocol_version = ProtocolVersion::Mls10;
+        let test_cipher_suite = CURVE25519_CHACHA;
+        let test_protocol_version = TEST_PROTOCOL_VERSION;
         let mut test_ext = ExtensionList::default();
 
         test_ext
@@ -769,8 +771,8 @@ mod tests {
 
     #[futures_test::test]
     async fn commit_can_change_credential() {
-        let cs = CipherSuite::Curve25519Aes128;
-        let mut groups = test_n_member_group(ProtocolVersion::Mls10, cs, 3).await;
+        let cs = TEST_CIPHER_SUITE;
+        let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, cs, 3).await;
         let (identity, secret_key) = get_test_signing_identity(cs, b"member".to_vec());
 
         // Add new identity

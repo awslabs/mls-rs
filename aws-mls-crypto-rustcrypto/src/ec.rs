@@ -3,7 +3,7 @@
 
 use std::array::TryFromSliceError;
 
-use aws_mls_core::crypto::CipherSuite;
+use aws_mls_core::crypto::{CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, P256_AES128};
 use p256::ecdsa::signature::{Signer, Verifier};
 use p256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use rand_core::{OsRng, RngCore};
@@ -71,11 +71,9 @@ impl Curve {
 
     pub fn from_ciphersuite(cipher_suite: CipherSuite, for_sig: bool) -> Result<Self, EcError> {
         match cipher_suite {
-            CipherSuite::P256Aes128 => Ok(Curve::P256),
-            CipherSuite::Curve25519Aes128 | CipherSuite::Curve25519ChaCha20 if for_sig => {
-                Ok(Curve::Ed25519)
-            }
-            CipherSuite::Curve25519Aes128 | CipherSuite::Curve25519ChaCha20 => Ok(Curve::X25519),
+            P256_AES128 => Ok(Curve::P256),
+            CURVE25519_AES128 | CURVE25519_CHACHA if for_sig => Ok(Curve::Ed25519),
+            CURVE25519_AES128 | CURVE25519_CHACHA => Ok(Curve::X25519),
             _ => Err(EcError::UnsupportedCurve),
         }
     }

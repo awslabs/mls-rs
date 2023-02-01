@@ -27,7 +27,7 @@ use thiserror::Error;
 
 use aws_mls_core::crypto::{
     CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey,
-    SignaturePublicKey, SignatureSecretKey,
+    SignaturePublicKey, SignatureSecretKey, CURVE25519_AES128, CURVE25519_CHACHA, P256_AES128,
 };
 
 #[derive(Debug, Error)]
@@ -64,11 +64,7 @@ impl RustCryptoProvider {
     }
 
     pub fn all_supported_cipher_suites() -> Vec<CipherSuite> {
-        vec![
-            CipherSuite::P256Aes128,
-            CipherSuite::Curve25519Aes128,
-            CipherSuite::Curve25519ChaCha20,
-        ]
+        vec![P256_AES128, CURVE25519_AES128, CURVE25519_CHACHA]
     }
 }
 
@@ -95,11 +91,11 @@ impl CryptoProvider for RustCryptoProvider {
             return None;
         }
 
-        let kdf = Kdf::new(cipher_suite);
+        let kdf = Kdf::new(cipher_suite).ok()?;
         let ecdh = Ecdh::new(cipher_suite).ok()?;
         let kem_id = KemId::new(cipher_suite).ok()?;
         let kem = DhKem::new(ecdh, kdf, kem_id as u16, kem_id.n_secret());
-        let aead = Aead::new(cipher_suite);
+        let aead = Aead::new(cipher_suite).ok()?;
 
         RustCryptoCipherSuite::new(cipher_suite, kem, kdf, aead).ok()
     }
@@ -138,7 +134,7 @@ where
             cipher_suite,
             kdf,
             aead,
-            hash: Hash::new(cipher_suite),
+            hash: Hash::new(cipher_suite)?,
             hpke,
             ec_signer: EcSigner::new(cipher_suite)?,
         })

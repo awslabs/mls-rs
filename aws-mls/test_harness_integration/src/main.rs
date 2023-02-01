@@ -3,7 +3,7 @@
 //!
 //! It is based on the Mock client written by Richard Barnes.
 
-use aws_mls::cipher_suite::{CipherSuite, MaybeCipherSuite};
+use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client::{
     BaseConfig, Client, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider,
     WithKeychain,
@@ -149,7 +149,7 @@ impl MlsClient for MlsClientImpl {
         _request: tonic::Request<SupportedCiphersuitesRequest>,
     ) -> Result<tonic::Response<SupportedCiphersuitesResponse>, tonic::Status> {
         let response = SupportedCiphersuitesResponse {
-            ciphersuites: CipherSuite::all().map(|cs| cs as u32).collect(),
+            ciphersuites: CipherSuite::all().map(|cs| u16::from(cs) as u32).collect(),
         };
 
         Ok(Response::new(response))
@@ -225,9 +225,7 @@ impl MlsClient for MlsClientImpl {
     ) -> Result<tonic::Response<CreateGroupResponse>, tonic::Status> {
         let request_ref = request.into_inner();
 
-        let cipher_suite = MaybeCipherSuite::from_raw_value(request_ref.cipher_suite as u16)
-            .into_enum()
-            .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
+        let cipher_suite = CipherSuite::from(request_ref.cipher_suite as u16);
 
         let provider = OpensslCryptoProvider::new()
             .cipher_suite_provider(cipher_suite)
@@ -279,9 +277,7 @@ impl MlsClient for MlsClientImpl {
         let request_ref = request.get_ref();
         let mut clients = self.clients.lock().await;
 
-        let cipher_suite = MaybeCipherSuite::from_raw_value(request_ref.cipher_suite as u16)
-            .into_enum()
-            .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
+        let cipher_suite = CipherSuite::from(request_ref.cipher_suite as u16);
 
         let provider = OpensslCryptoProvider::new()
             .cipher_suite_provider(cipher_suite)

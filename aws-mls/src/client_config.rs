@@ -1,5 +1,4 @@
 use crate::{
-    cipher_suite::MaybeCipherSuite,
     client_builder::Preferences,
     extension::{ExtensionList, ExtensionType},
     group::{
@@ -59,12 +58,7 @@ pub trait ClientConfig: Clone + Send + Sync {
                 .into_iter()
                 .map(MaybeProtocolVersion::from)
                 .collect(),
-            cipher_suites: self
-                .crypto_provider()
-                .supported_cipher_suites()
-                .into_iter()
-                .map(MaybeCipherSuite::from)
-                .collect(),
+            cipher_suites: self.crypto_provider().supported_cipher_suites(),
             extensions: self.supported_extensions(),
             proposals: vec![], // TODO: Support registering custom proposals here
             credentials: self.supported_credential_types(),

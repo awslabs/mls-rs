@@ -222,19 +222,15 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::{
-        cipher_suite::CipherSuite,
+        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         group::{
             external_group::test_utils::make_external_group,
             test_utils::{test_group, TestGroup},
             ExternalGroup, Group,
         },
-        protocol_version::ProtocolVersion,
     };
 
     use super::Snapshot;
-
-    pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
-    pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::Curve25519Aes128;
 
     async fn serialize_to_json_test(group: TestGroup) {
         let snapshot = group.group.snapshot();

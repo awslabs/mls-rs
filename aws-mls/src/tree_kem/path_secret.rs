@@ -154,6 +154,7 @@ impl<'a, P: CipherSuiteProvider> Iterator for PathSecretGenerator<'a, P> {
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
+        client::test_utils::TEST_CIPHER_SUITE,
         provider::crypto::test_utils::{
             test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
         },
@@ -161,6 +162,7 @@ mod tests {
 
     use super::*;
 
+    use aws_mls_core::crypto::P256_AES128;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -183,7 +185,7 @@ mod tests {
                         .collect();
 
                     TestCase {
-                        cipher_suite: cipher_suite as u16,
+                        cipher_suite: cipher_suite.into(),
                         generations,
                     }
                 })
@@ -218,7 +220,7 @@ mod tests {
 
     #[test]
     fn test_first_path_is_random() {
-        let cs_provider = test_cipher_suite_provider(CipherSuite::Curve25519Aes128);
+        let cs_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let mut generator = PathSecretGenerator::new(&cs_provider);
         let first_secret = generator.next_secret().unwrap();
@@ -232,7 +234,7 @@ mod tests {
 
     #[test]
     fn test_iterator() {
-        let cs_provider = test_cipher_suite_provider(CipherSuite::Curve25519Aes128);
+        let cs_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let secret = PathSecret::random(&cs_provider).unwrap();
 
         let mut generator = PathSecretGenerator::starting_with(&cs_provider, secret);
@@ -246,7 +248,7 @@ mod tests {
 
     #[test]
     fn test_starting_with() {
-        let cs_provider = test_cipher_suite_provider(CipherSuite::Curve25519Aes128);
+        let cs_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let secret = PathSecret::random(&cs_provider).unwrap();
 
         let mut generator = PathSecretGenerator::starting_with(&cs_provider, secret.clone());
@@ -256,7 +258,7 @@ mod tests {
 
         assert_eq!(
             first_secret.cipher_suite_provider.cipher_suite(),
-            CipherSuite::Curve25519Aes128
+            TEST_CIPHER_SUITE
         );
         assert_eq!(secret, first_secret.path_secret);
         assert_ne!(first_secret.path_secret, second_secret.path_secret);
@@ -264,7 +266,7 @@ mod tests {
 
     #[test]
     fn test_starting_from() {
-        let cs_provider = test_cipher_suite_provider(CipherSuite::Curve25519Aes128);
+        let cs_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let mut generator = PathSecretGenerator::new(&cs_provider);
 
@@ -294,7 +296,7 @@ mod tests {
 
     #[test]
     fn test_random_path_secret() {
-        let cs_provider = test_cipher_suite_provider(CipherSuite::P256Aes128);
+        let cs_provider = test_cipher_suite_provider(P256_AES128);
         let initial = PathSecret::random(&cs_provider).unwrap();
 
         for _ in 0..100 {
@@ -305,7 +307,7 @@ mod tests {
 
     #[test]
     fn test_random_path_secret_generation() {
-        let cs_provider = test_cipher_suite_provider(CipherSuite::Curve25519Aes128);
+        let cs_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
         let initial = PathSecretGeneration::random(&cs_provider).unwrap();
 

@@ -305,8 +305,6 @@ impl<'a> Signable<'a> for LeafNode {
 
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
-    use aws_mls_core::crypto::MaybeCipherSuite;
-
     use crate::{
         cipher_suite::CipherSuite,
         extension::ApplicationIdExt,
@@ -408,10 +406,7 @@ pub mod test_utils {
     pub fn get_test_capabilities() -> Capabilities {
         Capabilities {
             credentials: vec![BasicCredential::credential_type()],
-            cipher_suites: TestCryptoProvider::all_supported_cipher_suites()
-                .into_iter()
-                .map(MaybeCipherSuite::from)
-                .collect(),
+            cipher_suites: TestCryptoProvider::all_supported_cipher_suites(),
             ..Default::default()
         }
     }
@@ -429,7 +424,6 @@ mod tests {
     use super::test_utils::*;
     use super::*;
 
-    use crate::cipher_suite::CipherSuite;
     use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_signing_identity;
@@ -439,6 +433,7 @@ mod tests {
     use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider;
     use assert_matches::assert_matches;
 
+    use aws_mls_core::crypto::P256_AES128;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -523,7 +518,7 @@ mod tests {
         let cipher_suite = TEST_CIPHER_SUITE;
 
         let (test_signing_identity, signer) =
-            get_test_signing_identity(CipherSuite::P256Aes128, b"foo".to_vec());
+            get_test_signing_identity(P256_AES128, b"foo".to_vec());
 
         let res = LeafNode::generate(
             &test_cipher_suite_provider(cipher_suite),
@@ -540,7 +535,7 @@ mod tests {
 
     #[futures_test::test]
     async fn invalid_credential_for_application() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
 
         let (test_signing_identity, signer) =
             get_test_signing_identity(cipher_suite, b"foo".to_vec());
@@ -560,7 +555,7 @@ mod tests {
 
     #[futures_test::test]
     async fn test_node_generation_randomness() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
 
         let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
@@ -619,7 +614,7 @@ mod tests {
 
     #[futures_test::test]
     async fn test_node_update_meta_changes() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
 
         let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
 
@@ -691,7 +686,7 @@ mod tests {
 
     #[futures_test::test]
     async fn test_node_commit_meta_changes() {
-        let cipher_suite = CipherSuite::Curve25519Aes128;
+        let cipher_suite = TEST_CIPHER_SUITE;
 
         let (signing_identity, secret) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
         let (mut leaf, _) =

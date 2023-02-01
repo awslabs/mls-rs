@@ -567,7 +567,7 @@ mod tests {
                     let tree = get_test_tree_fig_12(cipher_suite).await;
 
                     TestCase {
-                        cipher_suite: cipher_suite as u16,
+                        cipher_suite: cipher_suite.into(),
                         tree_data: tree.export_node_data().tls_serialize_detached().unwrap(),
                     }
                 })
