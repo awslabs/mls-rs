@@ -5,6 +5,12 @@ pub mod ecdh;
 pub mod kdf;
 pub mod mac;
 
+#[cfg(feature = "x509")]
+pub mod x509;
+
+#[cfg(feature = "x509")]
+mod ec_for_x509;
+
 use crate::aead::Aead;
 use aws_mls_crypto_hpke::{
     context::{ContextR, ContextS},

@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 aws-mls-core = { path = "../aws-mls-core", version = "*" }
 aws-mls-crypto-hpke = { path = "../aws-mls-crypto-hpke", version = "*" }
+aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", optional = true, version = "*" }
 aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", version = "*" }
 thiserror = "^1"
 enum-iterator = "1.1.2"
@@ -22,6 +23,10 @@ x25519-dalek = { version = "^1.2.0" }
 ed25519-dalek = { version = "^1.0.1" }
 sec1 = { version = "^0.2.1", features = ["std"] }
 zeroize = { version = "^1.0", features = ["zeroize_derive"] }
+x509-cert = { version = "^0.1", optional = true, features = ["std"] }
+spki = { version = "^0.6", optional = true, features = ["std", "alloc"] }
+sha1 = { version = "^0.10.5", optional = true, features = ["std"] }
+const-oid = { version = "^0.9", optional = true, features = ["std"] }
 
 [dev-dependencies]
 hex = { version = "^0.4.3", features = ["serde"] }
@@ -30,5 +35,6 @@ serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"
 
 [features]
-default = []
+x509 = ["aws-mls-identity-x509", "x509-cert", "spki", "sha1", "const-oid"]
+default = ["x509"]
 browser = ["getrandom/js"]
