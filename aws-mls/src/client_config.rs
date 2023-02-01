@@ -1,7 +1,7 @@
 use crate::{
     cipher_suite::MaybeCipherSuite,
     client_builder::Preferences,
-    extension::{ExtensionList, ExtensionType, KeyPackageExtension, LeafNodeExtension},
+    extension::{ExtensionList, ExtensionType},
     group::{
         framing::Sender,
         proposal::BorrowedProposal,
@@ -48,8 +48,8 @@ pub trait ClientConfig: Clone + Send + Sync {
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn crypto_provider(&self) -> Self::CryptoProvider;
 
-    fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension>;
-    fn leaf_node_extensions(&self) -> ExtensionList<LeafNodeExtension>;
+    fn key_package_extensions(&self) -> ExtensionList;
+    fn leaf_node_extensions(&self) -> ExtensionList;
     fn lifetime(&self) -> Lifetime;
 
     fn capabilities(&self) -> Capabilities {

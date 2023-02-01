@@ -1,7 +1,7 @@
 use aws_mls::{
     bench_utils::create_empty_tree::{load_test_cases, TestCase},
     cipher_suite::CipherSuite,
-    extension::{ExtensionList, LeafNodeExtension},
+    extension::ExtensionList,
     provider::{crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider},
     tree_kem::{
         kem::TreeKem,
@@ -39,7 +39,7 @@ fn bench_decap(
     map: HashMap<usize, TestCase>,
     added_leaves: &[LeafIndex],
     capabilities: Option<Capabilities>,
-    extensions: Option<ExtensionList<LeafNodeExtension>>,
+    extensions: Option<ExtensionList>,
 ) {
     for (key, mut value) in map {
         // Perform the encap function

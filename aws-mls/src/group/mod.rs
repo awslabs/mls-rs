@@ -13,10 +13,7 @@ use zeroize::Zeroizing;
 
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, MakeProposalFilter, ProposalFilterInit};
-use crate::extension::{
-    ExtensionError, ExtensionList, ExternalPubExt, GroupContextExtension, GroupInfoExtension,
-    LeafNodeExtension, RatchetTreeExt,
-};
+use crate::extension::{ExtensionError, ExtensionList, ExternalPubExt, RatchetTreeExt};
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
 use crate::protocol_version::ProtocolVersion;
@@ -147,7 +144,7 @@ pub(crate) struct Welcome {
 
 #[derive(Clone, Debug)]
 pub struct NewMemberInfo {
-    pub group_info_extensions: ExtensionList<GroupInfoExtension>,
+    pub group_info_extensions: ExtensionList,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -188,7 +185,7 @@ where
         cipher_suite: CipherSuite,
         protocol_version: ProtocolVersion,
         signing_identity: SigningIdentity,
-        group_context_extensions: ExtensionList<GroupContextExtension>,
+        group_context_extensions: ExtensionList,
     ) -> Result<Self, GroupError> {
         let cipher_suite_provider = cipher_suite_provider(config.crypto_provider(), cipher_suite)?;
 
@@ -509,7 +506,7 @@ where
 
         let external_pub_ext = group_info
             .extensions
-            .get_extension::<ExternalPubExt>()?
+            .get_as::<ExternalPubExt>()?
             .ok_or(GroupError::MissingExternalPubExtension)?;
 
         let join_context = validate_group_info(
@@ -751,7 +748,7 @@ where
         new_key_packages: Vec<MLSMessage>,
         resumption_psk_id: JustPreSharedKeyID,
     ) -> Result<(Self, Option<MLSMessage>), GroupError> {
-        let required_capabilities = new_context.extensions.get_extension()?;
+        let required_capabilities = new_context.extensions.get_as()?;
 
         let cipher_suite_provider =
             cipher_suite_provider(self.config.crypto_provider(), new_context.cipher_suite)?;
@@ -1252,7 +1249,7 @@ where
         group_id: Option<Vec<u8>>,
         version: ProtocolVersion,
         cipher_suite: CipherSuite,
-        extensions: ExtensionList<GroupContextExtension>,
+        extensions: ExtensionList,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
         let proposal = self.reinit_proposal(group_id, version, cipher_suite, extensions)?;
@@ -1264,7 +1261,7 @@ where
         group_id: Option<Vec<u8>>,
         version: ProtocolVersion,
         cipher_suite: CipherSuite,
-        extensions: ExtensionList<GroupContextExtension>,
+        extensions: ExtensionList,
     ) -> Result<Proposal, GroupError> {
         let group_id = group_id.unwrap_or(
             self.cipher_suite_provider
@@ -1282,17 +1279,14 @@ where
 
     pub async fn propose_group_context_extensions(
         &mut self,
-        extensions: ExtensionList<GroupContextExtension>,
+        extensions: ExtensionList,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
         let proposal = self.group_context_extensions_proposal(extensions);
         self.proposal_message(proposal, authenticated_data).await
     }
 
-    fn group_context_extensions_proposal(
-        &self,
-        extensions: ExtensionList<GroupContextExtension>,
-    ) -> Proposal {
+    fn group_context_extensions_proposal(&self, extensions: ExtensionList) -> Proposal {
         Proposal::GroupContextExtensions(extensions)
     }
 
@@ -1469,13 +1463,13 @@ where
         let preferences = self.config.preferences();
 
         if preferences.ratchet_tree_extension {
-            extensions.set_extension(RatchetTreeExt {
+            extensions.set_from(RatchetTreeExt {
                 tree_data: self.state.public_tree.nodes.clone(),
             })?;
         }
 
         if allow_external_commit {
-            extensions.set_extension({
+            extensions.set_from({
                 let (_external_secret, external_pub) = self
                     .key_schedule
                     .get_external_key_pair(&self.cipher_suite_provider)?;
@@ -1808,7 +1802,6 @@ mod tests {
     use std::time::Duration;
 
     use crate::client::test_utils::{get_basic_client_builder, test_client_with_key_pkg};
-    use crate::extension::MlsExtension;
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_basic_credential;
     use crate::key_package::KeyPackageValidationError;
@@ -1844,6 +1837,7 @@ mod tests {
     };
     use assert_matches::assert_matches;
 
+    use aws_mls_core::extension::MlsExtension;
     use aws_mls_core::identity::{Credential, CredentialType};
     use futures::FutureExt;
     use tls_codec::Size;
@@ -1926,11 +1920,11 @@ mod tests {
     #[futures_test::test]
     async fn test_update_proposals() {
         let mut new_capabilities = get_test_capabilities();
-        new_capabilities.extensions.push(42);
+        new_capabilities.extensions.push(42.into());
 
         let new_extension = TestExtension { foo: 10 };
         let mut extension_list = ExtensionList::default();
-        extension_list.set_extension(new_extension).unwrap();
+        extension_list.set_from(new_extension).unwrap();
 
         let mut test_group = test_group_custom(
             TEST_PROTOCOL_VERSION,
@@ -2143,8 +2137,8 @@ mod tests {
 
         let mut extension_list = ExtensionList::new();
         extension_list
-            .set_extension(RequiredCapabilitiesExt {
-                extensions: vec![42],
+            .set_from(RequiredCapabilitiesExt {
+                extensions: vec![42.into()],
                 proposals: vec![],
                 credentials: vec![],
             })
@@ -2158,13 +2152,13 @@ mod tests {
     }
 
     async fn group_context_extension_proposal_test(
-        ext_list: ExtensionList<GroupContextExtension>,
+        ext_list: ExtensionList,
     ) -> (TestGroup, Result<MLSMessage, GroupError>) {
         let protocol_version = ProtocolVersion::Mls10;
         let cipher_suite = CipherSuite::P256Aes128;
 
         let mut capabilities = get_test_capabilities();
-        capabilities.extensions.push(42);
+        capabilities.extensions.push(42.into());
 
         let mut test_group = test_group_custom(
             protocol_version,
@@ -2191,8 +2185,8 @@ mod tests {
     async fn test_group_context_ext_proposal_commit() {
         let mut extension_list = ExtensionList::new();
         extension_list
-            .set_extension(RequiredCapabilitiesExt {
-                extensions: vec![42],
+            .set_from(RequiredCapabilitiesExt {
+                extensions: vec![42.into()],
                 proposals: vec![],
                 credentials: vec![],
             })
@@ -2210,8 +2204,8 @@ mod tests {
     async fn test_group_context_ext_proposal_invalid() {
         let mut extension_list = ExtensionList::new();
         extension_list
-            .set_extension(RequiredCapabilitiesExt {
-                extensions: vec![999],
+            .set_from(RequiredCapabilitiesExt {
+                extensions: vec![999.into()],
                 proposals: vec![],
                 credentials: vec![],
             })
@@ -2224,10 +2218,10 @@ mod tests {
             Err(GroupError::ProposalCacheError(
                 ProposalCacheError::ProposalFilterError(
                     ProposalFilterError::LeafNodeValidationError(
-                        LeafNodeValidationError::RequiredExtensionNotFound(999)
+                        LeafNodeValidationError::RequiredExtensionNotFound(a)
                     )
                 )
-            ))
+            )) if a == 999.into()
         );
     }
 
@@ -2829,7 +2823,7 @@ mod tests {
     #[futures_test::test]
     async fn removing_requirements_allows_to_add() {
         let mut capabilities = get_test_capabilities();
-        capabilities.extensions = vec![17];
+        capabilities.extensions = vec![17.into()];
 
         let mut alice_group = test_group_custom(
             TEST_PROTOCOL_VERSION,
@@ -2844,10 +2838,12 @@ mod tests {
             .group
             .commit_builder()
             .set_group_context_ext(
-                [RequiredCapabilitiesExt {
-                    extensions: vec![17],
+                vec![RequiredCapabilitiesExt {
+                    extensions: vec![17.into()],
                     ..Default::default()
-                }]
+                }
+                .into_extension()
+                .unwrap()]
                 .try_into()
                 .unwrap(),
             )
@@ -3074,10 +3070,7 @@ mod tests {
     #[futures_test::test]
     async fn commit_leaf_not_supporting_used_context_extension() {
         // The new leaf of the committer doesn't support an extension set in group context
-        let extension = Extension {
-            extension_type: 999,
-            extension_data: vec![],
-        };
+        let extension = Extension::new(999.into(), vec![]);
 
         let mut groups =
             get_test_groups_with_features(3, vec![extension].into(), Default::default()).await;
@@ -3097,10 +3090,7 @@ mod tests {
     #[futures_test::test]
     async fn commit_leaf_not_supporting_used_leaf_extension() {
         // The new leaf of the committer doesn't support an extension set in another leaf
-        let extension = Extension {
-            extension_type: 999,
-            extension_data: vec![],
-        };
+        let extension = Extension::new(999.into(), vec![]);
 
         let mut groups =
             get_test_groups_with_features(3, Default::default(), vec![extension].into()).await;
@@ -3128,15 +3118,12 @@ mod tests {
         groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
             let extensions = [666, 999]
                 .into_iter()
-                .map(|extension_type| Extension {
-                    extension_type,
-                    extension_data: vec![],
-                })
+                .map(|extension_type| Extension::new(extension_type.into(), vec![]))
                 .collect::<Vec<_>>()
                 .into();
 
             leaf.extensions = extensions;
-            leaf.capabilities.extensions = vec![666, 999];
+            leaf.capabilities.extensions = vec![666.into(), 999.into()];
             leaf.sign(cp, sk, &(TEST_GROUP, 0).into()).unwrap();
         };
 
@@ -3150,15 +3137,14 @@ mod tests {
     #[futures_test::test]
     async fn commit_leaf_not_supporting_required_extension() {
         // The new leaf of the committer doesn't support an extension required by group context
-        use crate::extension::MlsExtension;
 
         let extension = RequiredCapabilitiesExt {
-            extensions: vec![999],
+            extensions: vec![999.into()],
             proposals: vec![],
             credentials: vec![],
         };
 
-        let extensions = vec![extension.to_extension().unwrap()];
+        let extensions = vec![extension.into_extension().unwrap()];
         let mut groups =
             get_test_groups_with_features(3, extensions.into(), Default::default()).await;
 
@@ -3230,7 +3216,6 @@ mod tests {
     #[futures_test::test]
     async fn commit_leaf_not_supporting_required_credential() {
         // The new leaf of the committer doesn't support a credentia required by group context
-        use crate::extension::MlsExtension;
 
         let extension = RequiredCapabilitiesExt {
             extensions: vec![],
@@ -3238,7 +3223,7 @@ mod tests {
             credentials: vec![1.into()],
         };
 
-        let extensions = vec![extension.to_extension().unwrap()];
+        let extensions = vec![extension.into_extension().unwrap()];
         let mut groups =
             get_test_groups_with_features(3, extensions.into(), Default::default()).await;
 
@@ -3278,7 +3263,7 @@ mod tests {
         };
 
         let ext_senders = ExternalSendersExt::new(vec![ext_sender_id])
-            .to_extension()
+            .into_extension()
             .unwrap();
 
         let mut groups =

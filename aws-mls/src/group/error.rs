@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
-    extension::{ExtensionError, ExtensionList, GroupContextExtension},
+    extension::{ExtensionError, ExtensionList},
     hash_reference::HashReferenceError,
     key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError},
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
@@ -173,10 +173,7 @@ pub enum GroupError {
     #[error("The versions in the welcome message {0:?} and in the reinit {1:?} do not match.")]
     ReInitVersionMismatch(ProtocolVersion, ProtocolVersion),
     #[error("The extensions in the welcome message {0:?} and in the reinit {1:?} do not match.")]
-    ReInitExtensionsMismatch(
-        ExtensionList<GroupContextExtension>,
-        ExtensionList<GroupContextExtension>,
-    ),
+    ReInitExtensionsMismatch(ExtensionList, ExtensionList),
     #[error("The group ids in the welcome message {0:?} and in the reinit {1:?} do not match.")]
     ReInitIdMismatch(Vec<u8>, Vec<u8>),
     #[error("No credential found for given ciphersuite.")]

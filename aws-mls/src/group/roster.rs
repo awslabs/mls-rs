@@ -21,7 +21,7 @@ impl Member {
         &self.node.capabilities
     }
 
-    pub fn extensions(&self) -> &ExtensionList<LeafNodeExtension> {
+    pub fn extensions(&self) -> &ExtensionList {
         &self.node.extensions
     }
 

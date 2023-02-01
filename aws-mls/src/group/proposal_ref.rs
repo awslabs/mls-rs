@@ -81,15 +81,15 @@ mod test {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    fn get_test_extension_list() -> ExtensionList<GroupContextExtension> {
+    fn get_test_extension_list() -> ExtensionList {
         let test_extension = RequiredCapabilitiesExt {
-            extensions: vec![42],
+            extensions: vec![42.into()],
             proposals: Default::default(),
             credentials: vec![],
         };
 
         let mut extension_list = ExtensionList::new();
-        extension_list.set_extension(test_extension).unwrap();
+        extension_list.set_from(test_extension).unwrap();
 
         extension_list
     }

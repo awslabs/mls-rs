@@ -27,7 +27,7 @@ pub(crate) struct ProposalSetEffects {
     pub adds: Vec<KeyPackage>,
     pub updates: Vec<(LeafIndex, LeafNode)>,
     pub removes: Vec<LeafIndex>,
-    pub group_context_ext: Option<ExtensionList<GroupContextExtension>>,
+    pub group_context_ext: Option<ExtensionList>,
     pub psks: Vec<PreSharedKeyID>,
     pub reinit: Option<ReInit>,
     pub external_init: Option<(LeafIndex, ExternalInit)>,
@@ -180,7 +180,7 @@ impl ProposalCache {
         &self,
         sender: Sender,
         additional_proposals: Vec<Proposal>,
-        group_extensions: &ExtensionList<GroupContextExtension>,
+        group_extensions: &ExtensionList,
         identity_provider: C,
         cipher_suite_provider: &CSP,
         public_tree: &TreeKemPublic,
@@ -222,7 +222,7 @@ impl ProposalCache {
             .map_err(ProposalFilterError::user_defined)?;
 
         let required_capabilities = group_extensions
-            .get_extension()
+            .get_as()
             .map_err(ProposalCacheError::InvalidRequiredCapabilities)?;
 
         let applier = ProposalApplier::new(
@@ -289,7 +289,7 @@ impl ProposalCache {
         receiver: Option<LeafIndex>,
         proposal_list: Vec<ProposalOrRef>,
         external_leaf: Option<&LeafNode>,
-        group_extensions: &ExtensionList<GroupContextExtension>,
+        group_extensions: &ExtensionList,
         identity_provider: C,
         cipher_suite_provider: &CSP,
         public_tree: &TreeKemPublic,
@@ -322,7 +322,7 @@ impl ProposalCache {
             .map_err(ProposalFilterError::user_defined)?;
 
         let required_capabilities = group_extensions
-            .get_extension()
+            .get_as()
             .map_err(ProposalCacheError::InvalidRequiredCapabilities)?;
 
         let applier = ProposalApplier::new(
@@ -436,7 +436,10 @@ mod tests {
     };
 
     use assert_matches::assert_matches;
-    use aws_mls_core::identity::{Credential, CredentialType};
+    use aws_mls_core::{
+        extension::MlsExtension,
+        identity::{Credential, CredentialType},
+    };
     use futures::FutureExt;
     use itertools::Itertools;
     use std::convert::Infallible;
@@ -455,7 +458,7 @@ mod tests {
             receiver: Option<LeafIndex>,
             proposal_list: Vec<ProposalOrRef>,
             external_leaf: Option<&LeafNode>,
-            group_extensions: &ExtensionList<GroupContextExtension>,
+            group_extensions: &ExtensionList,
             identity_provider: C,
             cipher_suite_provider: &CSP,
             public_tree: &TreeKemPublic,
@@ -1682,7 +1685,7 @@ mod tests {
         cache: ProposalCache,
         identity_provider: C,
         cipher_suite_provider: CSP,
-        group_context_extensions: ExtensionList<GroupContextExtension>,
+        group_context_extensions: ExtensionList,
         user_filter: F,
         external_psk_id_validator: P,
     }
@@ -1777,7 +1780,7 @@ mod tests {
             }
         }
 
-        fn with_extensions(self, extensions: ExtensionList<GroupContextExtension>) -> Self {
+        fn with_extensions(self, extensions: ExtensionList) -> Self {
             Self {
                 group_context_extensions: extensions,
                 ..self
@@ -2971,8 +2974,10 @@ mod tests {
         );
     }
 
-    fn make_extension_list(foo: u8) -> ExtensionList<GroupContextExtension> {
-        [TestExtension { foo }].try_into().unwrap()
+    fn make_extension_list(foo: u8) -> ExtensionList {
+        [TestExtension { foo }.into_extension().unwrap()]
+            .try_into()
+            .unwrap()
     }
 
     #[futures_test::test]
@@ -2985,7 +2990,7 @@ mod tests {
 
             let properties = ConfigProperties {
                 capabilities: Capabilities {
-                    extensions: vec![42],
+                    extensions: vec![42.into()],
                     ..Capabilities::default()
                 },
                 extensions: Default::default(),
@@ -3031,12 +3036,13 @@ mod tests {
         );
     }
 
-    fn make_external_senders_extension() -> ExtensionList<GroupContextExtension> {
+    fn make_external_senders_extension() -> ExtensionList {
         [ExternalSendersExt::new(vec![
             get_test_signing_identity(TEST_CIPHER_SUITE, b"alice".to_vec()).0,
-        ])]
-        .try_into()
-        .unwrap()
+        ])
+        .into_extension()
+        .unwrap()]
+        .into()
     }
 
     #[futures_test::test]
@@ -3241,10 +3247,13 @@ mod tests {
 
     fn required_capabilities_proposal(extension: u16) -> Proposal {
         let required_capabilities = RequiredCapabilitiesExt {
-            extensions: vec![extension],
+            extensions: vec![extension.into()],
             ..Default::default()
         };
-        Proposal::GroupContextExtensions([required_capabilities].try_into().unwrap())
+
+        Proposal::GroupContextExtensions(Into::<ExtensionList>::into([required_capabilities
+            .into_extension()
+            .unwrap()]))
     }
 
     #[futures_test::test]
@@ -3264,9 +3273,9 @@ mod tests {
             res,
             Err(ProposalCacheError::ProposalFilterError(
                 ProposalFilterError::LeafNodeValidationError(
-                    LeafNodeValidationError::RequiredExtensionNotFound(33)
+                    LeafNodeValidationError::RequiredExtensionNotFound(v)
                 )
-            ))
+            )) if v == 33.into()
         );
     }
 
@@ -3283,9 +3292,9 @@ mod tests {
             res,
             Err(ProposalCacheError::ProposalFilterError(
                 ProposalFilterError::LeafNodeValidationError(
-                    LeafNodeValidationError::RequiredExtensionNotFound(33)
+                    LeafNodeValidationError::RequiredExtensionNotFound(v)
                 )
-            ))
+            )) if v == 33.into()
         );
     }
 
@@ -3557,8 +3566,8 @@ mod tests {
         assert_matches!(
             res,
             Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::UnsupportedGroupExtension(42)
-            ))
+                ProposalFilterError::UnsupportedGroupExtension(v)
+            )) if v == 42.into()
         );
     }
 
@@ -3574,8 +3583,8 @@ mod tests {
         assert_matches!(
             res,
             Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::UnsupportedGroupExtension(42)
-            ))
+                ProposalFilterError::UnsupportedGroupExtension(v)
+            )) if v == 42.into()
         );
     }
 
@@ -3795,13 +3804,16 @@ mod tests {
         {
             let committer = Sender::Member(*alice);
 
+            let extensions: ExtensionList =
+                [external_senders.clone().into_extension().unwrap()].into();
+
             let receiver = CommitReceiver::new(
                 &tree,
                 committer.clone(),
                 alice,
                 test_cipher_suite_provider(TEST_CIPHER_SUITE),
             )
-            .with_extensions([external_senders.clone()].try_into().unwrap());
+            .with_extensions(extensions);
 
             let (receiver, proposals, proposer) = if by_ref {
                 let proposal_ref = make_proposal_ref(proposal, proposer.clone());

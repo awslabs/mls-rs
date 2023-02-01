@@ -101,7 +101,7 @@ pub struct ReInit {
     pub group_id: Vec<u8>,
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
-    pub extensions: ExtensionList<GroupContextExtension>,
+    pub extensions: ExtensionList,
 }
 
 #[serde_as]
@@ -189,7 +189,7 @@ pub enum Proposal {
     Psk(PreSharedKey),
     ReInit(ReInit),
     ExternalInit(ExternalInit),
-    GroupContextExtensions(ExtensionList<GroupContextExtension>),
+    GroupContextExtensions(ExtensionList),
 }
 
 impl Proposal {
@@ -214,7 +214,7 @@ pub enum BorrowedProposal<'a> {
     Psk(&'a PreSharedKey),
     ReInit(&'a ReInit),
     ExternalInit(&'a ExternalInit),
-    GroupContextExtensions(&'a ExtensionList<GroupContextExtension>),
+    GroupContextExtensions(&'a ExtensionList),
 }
 
 impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
@@ -267,8 +267,8 @@ impl<'a> From<&'a ExternalInit> for BorrowedProposal<'a> {
     }
 }
 
-impl<'a> From<&'a ExtensionList<GroupContextExtension>> for BorrowedProposal<'a> {
-    fn from(p: &'a ExtensionList<GroupContextExtension>) -> Self {
+impl<'a> From<&'a ExtensionList> for BorrowedProposal<'a> {
+    fn from(p: &'a ExtensionList) -> Self {
         Self::GroupContextExtensions(p)
     }
 }

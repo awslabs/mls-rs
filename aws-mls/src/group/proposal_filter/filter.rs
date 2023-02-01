@@ -188,7 +188,7 @@ pub enum ProposalFilterError {
     OtherProposalWithReInit,
     #[error("Removing blank node at index {0:?}")]
     RemovingBlankNode(u32),
-    #[error("Unsupported group extension {0}")]
+    #[error("Unsupported group extension {0:?}")]
     UnsupportedGroupExtension(ExtensionType),
     #[error(transparent)]
     PskIdValidationError(Box<dyn std::error::Error + Send + Sync>),

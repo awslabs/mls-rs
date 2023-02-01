@@ -186,7 +186,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .state
             .context
             .extensions
-            .get_extension::<ExternalSendersExt>()?
+            .get_as::<ExternalSendersExt>()?
             .ok_or(GroupError::ExternalProposalsDisabled)?;
 
         let signer = self
@@ -475,7 +475,7 @@ mod tests {
             let mut ext_list = ExtensionList::new();
 
             ext_list
-                .set_extension(ExternalSendersExt {
+                .set_from(ExternalSendersExt {
                     allowed_senders: vec![ext_signer],
                 })
                 .unwrap();

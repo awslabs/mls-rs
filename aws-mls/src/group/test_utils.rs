@@ -157,11 +157,11 @@ pub(crate) fn get_test_group_context_with_id(
     }
 }
 
-pub(crate) fn group_extensions() -> ExtensionList<GroupContextExtension> {
+pub(crate) fn group_extensions() -> ExtensionList {
     let required_capabilities = RequiredCapabilitiesExt::default();
 
     let mut extensions = ExtensionList::new();
-    extensions.set_extension(required_capabilities).unwrap();
+    extensions.set_from(required_capabilities).unwrap();
     extensions
 }
 
@@ -202,7 +202,7 @@ pub(crate) async fn test_group_custom(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     capabilities: Option<Capabilities>,
-    leaf_extensions: Option<ExtensionList<LeafNodeExtension>>,
+    leaf_extensions: Option<ExtensionList>,
     preferences: Option<Preferences>,
 ) -> TestGroup {
     let capabilities = capabilities.unwrap_or_default();
@@ -314,8 +314,8 @@ pub(crate) fn get_test_25519_key(key_byte: u8) -> HpkePublicKey {
 
 pub(crate) async fn get_test_groups_with_features(
     n: usize,
-    extensions: ExtensionList<GroupContextExtension>,
-    leaf_extensions: ExtensionList<LeafNodeExtension>,
+    extensions: ExtensionList,
+    leaf_extensions: ExtensionList,
 ) -> Vec<Group<TestClientConfig>> {
     let clients = (0..n)
         .map(|i| {
@@ -323,7 +323,7 @@ pub(crate) async fn get_test_groups_with_features(
                 get_test_signing_identity(TEST_CIPHER_SUITE, format!("member{i}").into_bytes());
 
             let client = TestClientBuilder::new_for_test()
-                .extension_type(999)
+                .extension_type(999.into())
                 .preferences(Preferences::default().with_ratchet_tree_extension(true))
                 .test_single_signing_identity(identity.clone(), secret_key, TEST_CIPHER_SUITE)
                 .leaf_node_extensions(leaf_extensions.clone())

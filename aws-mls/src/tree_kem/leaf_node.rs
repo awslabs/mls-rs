@@ -1,5 +1,4 @@
 use super::{parent_hash::ParentHash, Capabilities, Lifetime};
-use crate::extension::LeafNodeExtension;
 use crate::provider::crypto::{
     CipherSuiteProvider, HpkePublicKey, HpkeSecretKey, SignatureSecretKey,
 };
@@ -74,7 +73,7 @@ pub struct LeafNode {
     pub signing_identity: SigningIdentity,
     pub capabilities: Capabilities,
     pub leaf_node_source: LeafNodeSource,
-    pub extensions: ExtensionList<LeafNodeExtension>,
+    pub extensions: ExtensionList,
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
     pub signature: Vec<u8>,
@@ -83,7 +82,7 @@ pub struct LeafNode {
 #[derive(Clone, Debug)]
 pub struct ConfigProperties {
     pub capabilities: Capabilities,
-    pub extensions: ExtensionList<LeafNodeExtension>,
+    pub extensions: ExtensionList,
 }
 
 impl LeafNode {
@@ -224,7 +223,7 @@ struct LeafNodeTBS<'a> {
     signing_identity: &'a SigningIdentity,
     capabilities: &'a Capabilities,
     leaf_node_source: &'a LeafNodeSource,
-    extensions: &'a ExtensionList<LeafNodeExtension>,
+    extensions: &'a ExtensionList,
     group_id: Option<&'a [u8]>,
     leaf_index: Option<u32>,
 }
@@ -310,7 +309,7 @@ pub mod test_utils {
 
     use crate::{
         cipher_suite::CipherSuite,
-        extension::{ApplicationIdExt, MlsExtension},
+        extension::ApplicationIdExt,
         identity::{test_utils::get_test_signing_identity, BasicCredential},
         provider::{
             crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
@@ -325,7 +324,7 @@ pub mod test_utils {
         signing_identity: SigningIdentity,
         secret: &SignatureSecretKey,
         capabilities: Option<Capabilities>,
-        extensions: Option<ExtensionList<LeafNodeExtension>>,
+        extensions: Option<ExtensionList>,
     ) -> (LeafNode, HpkeSecretKey) {
         get_test_node_with_lifetime(
             cipher_suite,
@@ -343,7 +342,7 @@ pub mod test_utils {
         signing_identity: SigningIdentity,
         secret: &SignatureSecretKey,
         capabilities: Capabilities,
-        extensions: ExtensionList<LeafNodeExtension>,
+        extensions: ExtensionList,
         lifetime: Lifetime,
     ) -> (LeafNode, HpkeSecretKey) {
         let properties = ConfigProperties {
@@ -394,11 +393,11 @@ pub mod test_utils {
         .unwrap()
     }
 
-    pub fn get_test_extensions() -> ExtensionList<LeafNodeExtension> {
+    pub fn get_test_extensions() -> ExtensionList {
         let mut extension_list = ExtensionList::new();
 
         extension_list
-            .set_extension(ApplicationIdExt {
+            .set_from(ApplicationIdExt {
                 identifier: b"identifier".to_vec(),
             })
             .unwrap();
@@ -407,16 +406,14 @@ pub mod test_utils {
     }
 
     pub fn get_test_capabilities() -> Capabilities {
-        let mut capabilities = Capabilities {
+        Capabilities {
             credentials: vec![BasicCredential::credential_type()],
             cipher_suites: TestCryptoProvider::all_supported_cipher_suites()
                 .into_iter()
                 .map(MaybeCipherSuite::from)
                 .collect(),
             ..Default::default()
-        };
-        capabilities.extensions.push(ApplicationIdExt::IDENTIFIER);
-        capabilities
+        }
     }
 
     pub fn get_test_client_identity(leaf: &LeafNode) -> Vec<u8> {

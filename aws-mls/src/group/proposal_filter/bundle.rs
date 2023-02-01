@@ -1,5 +1,5 @@
 use crate::{
-    extension::{ExtensionList, GroupContextExtension},
+    extension::ExtensionList,
     group::{
         AddProposal, BorrowedProposal, ExternalInit, PreSharedKey, Proposal, ProposalOrRef,
         ProposalRef, ProposalType, ReInit, RemoveProposal, Sender, UpdateProposal,
@@ -15,7 +15,7 @@ pub struct ProposalBundle {
     psks: Vec<ProposalInfo<PreSharedKey>>,
     reinitializations: Vec<ProposalInfo<ReInit>>,
     external_initializations: Vec<ProposalInfo<ExternalInit>>,
-    group_context_extensions: Vec<ProposalInfo<ExtensionList<GroupContextExtension>>>,
+    group_context_extensions: Vec<ProposalInfo<ExtensionList>>,
 }
 
 impl ProposalBundle {
@@ -125,7 +125,7 @@ impl ProposalBundle {
             f(&proposal.by_ref().map(BorrowedProposal::from))
         })?;
 
-        self.retain_by_type::<ExtensionList<GroupContextExtension>, _, _>(|proposal| {
+        self.retain_by_type::<ExtensionList, _, _>(|proposal| {
             f(&proposal.by_ref().map(BorrowedProposal::from))
         })?;
 
@@ -201,9 +201,7 @@ impl ProposalBundle {
         })
     }
 
-    pub fn group_context_extensions_proposal(
-        &self,
-    ) -> Option<&ProposalInfo<ExtensionList<GroupContextExtension>>> {
+    pub fn group_context_extensions_proposal(&self) -> Option<&ProposalInfo<ExtensionList>> {
         self.group_context_extensions.first()
     }
 
@@ -344,7 +342,7 @@ impl_proposable!(PreSharedKey, PSK, psks);
 impl_proposable!(ReInit, RE_INIT, reinitializations);
 impl_proposable!(ExternalInit, EXTERNAL_INIT, external_initializations);
 impl_proposable!(
-    ExtensionList<GroupContextExtension>,
+    ExtensionList,
     GROUP_CONTEXT_EXTENSIONS,
     group_context_extensions
 );

@@ -3,7 +3,7 @@ use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 
 use crate::{
-    extension::{ExtensionList, KeyPackageExtension, LeafNodeExtension},
+    extension::ExtensionList,
     hash_reference::HashReferenceError,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
@@ -101,8 +101,8 @@ where
         &self,
         lifetime: Lifetime,
         capabilities: Capabilities,
-        key_package_extensions: ExtensionList<KeyPackageExtension>,
-        leaf_node_extensions: ExtensionList<LeafNodeExtension>,
+        key_package_extensions: ExtensionList,
+        leaf_node_extensions: ExtensionList,
     ) -> Result<KeyPackageGeneration, KeyPackageGenerationError> {
         let (init_secret_key, public_init) = self
             .cipher_suite_provider
@@ -150,12 +150,11 @@ where
 mod tests {
     use assert_matches::assert_matches;
     use aws_mls_core::crypto::CipherSuiteProvider;
-    use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        extension::{ExtensionList, KeyPackageExtension, LeafNodeExtension, MlsExtension},
+        extension::{test_utils::TestExtension, ExtensionList},
         group::test_utils::random_bytes,
         identity::test_utils::get_test_signing_identity,
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
@@ -176,29 +175,15 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[derive(Debug, PartialEq, TlsSize, TlsSerialize, TlsDeserialize)]
-    struct TestKpExt(u32);
-
-    impl MlsExtension<KeyPackageExtension> for TestKpExt {
-        const IDENTIFIER: crate::extension::ExtensionType = 42;
-    }
-
-    #[derive(Debug, PartialEq, TlsSize, TlsSerialize, TlsDeserialize)]
-    struct TestLnExt(u32);
-
-    impl MlsExtension<LeafNodeExtension> for TestLnExt {
-        const IDENTIFIER: crate::extension::ExtensionType = 43;
-    }
-
-    fn test_key_package_ext(val: u32) -> ExtensionList<KeyPackageExtension> {
+    fn test_key_package_ext(val: u8) -> ExtensionList {
         let mut ext_list = ExtensionList::new();
-        ext_list.set_extension(TestKpExt(val)).unwrap();
+        ext_list.set_from(TestExtension::from(val)).unwrap();
         ext_list
     }
 
-    fn test_leaf_node_ext(val: u32) -> ExtensionList<LeafNodeExtension> {
+    fn test_leaf_node_ext(val: u8) -> ExtensionList {
         let mut ext_list = ExtensionList::new();
-        ext_list.set_extension(TestLnExt(val)).unwrap();
+        ext_list.set_from(TestExtension::from(val)).unwrap();
         ext_list
     }
 
@@ -231,9 +216,9 @@ mod tests {
             };
 
             let mut capabilities = get_test_capabilities();
-            capabilities.extensions.push(42);
-            capabilities.extensions.push(43);
-            capabilities.extensions.push(32);
+            capabilities.extensions.push(42.into());
+            capabilities.extensions.push(43.into());
+            capabilities.extensions.push(32.into());
 
             let generated = test_generator
                 .generate(

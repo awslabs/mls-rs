@@ -1,6 +1,6 @@
 use crate::cipher_suite::{CipherSuite, MaybeCipherSuite};
 use crate::client_config::ClientConfig;
-use crate::extension::{ExtensionError, ExtensionList, GroupContextExtension};
+use crate::extension::{ExtensionError, ExtensionList};
 use crate::group::framing::{
     Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender, WireFormat,
 };
@@ -156,7 +156,7 @@ where
         cipher_suite: CipherSuite,
         group_id: Vec<u8>,
         signing_identity: SigningIdentity,
-        group_context_extensions: ExtensionList<GroupContextExtension>,
+        group_context_extensions: ExtensionList,
     ) -> Result<Group<C>, ClientError> {
         Group::new(
             self.config.clone(),
@@ -175,7 +175,7 @@ where
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
-        group_context_extensions: ExtensionList<GroupContextExtension>,
+        group_context_extensions: ExtensionList,
     ) -> Result<Group<C>, ClientError> {
         Group::new(
             self.config.clone(),

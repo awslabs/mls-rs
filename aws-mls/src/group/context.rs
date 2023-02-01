@@ -3,7 +3,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
-    extension::{ExtensionList, GroupContextExtension},
+    extension::ExtensionList,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     serde_utils::vec_u8_as_base64::VecAsBase64,
 };
@@ -33,7 +33,7 @@ pub struct GroupContext {
     #[serde_as(as = "VecAsBase64")]
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,
-    pub extensions: ExtensionList<GroupContextExtension>,
+    pub extensions: ExtensionList,
 }
 
 impl GroupContext {
@@ -42,7 +42,7 @@ impl GroupContext {
         cipher_suite: CipherSuite,
         group_id: Vec<u8>,
         tree_hash: Vec<u8>,
-        extensions: ExtensionList<GroupContextExtension>,
+        extensions: ExtensionList,
     ) -> Self {
         GroupContext {
             protocol_version,
@@ -67,7 +67,7 @@ pub(crate) struct GroupContextWire {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,
-    pub extensions: ExtensionList<GroupContextExtension>,
+    pub extensions: ExtensionList,
 }
 
 impl From<GroupContext> for GroupContextWire {

@@ -574,7 +574,7 @@ impl MlsClient for MlsClientImpl {
             .into_iter()
             .zip(request_ref.extension_data.into_iter())
             .map(|(extension_type, extension_data)| {
-                Extension::new(extension_type as u16, extension_data)
+                Extension::new((extension_type as u16).into(), extension_data)
             })
             .collect::<Vec<_>>();
 

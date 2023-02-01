@@ -1,7 +1,7 @@
 use aws_mls::{
     bench_utils::create_empty_tree::{load_test_cases, TestCase},
     cipher_suite::CipherSuite,
-    extension::{ExtensionList, LeafNodeExtension},
+    extension::ExtensionList,
     provider::{crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider},
     tree_kem::{
         kem::TreeKem,
@@ -35,7 +35,7 @@ fn bench_encap(
     bench_group: &mut BenchmarkGroup<WallTime>,
     excluding: &[LeafIndex],
     capabilities: Option<Capabilities>,
-    extensions: Option<ExtensionList<LeafNodeExtension>>,
+    extensions: Option<ExtensionList>,
     cipher_suite: CipherSuite,
     map: HashMap<usize, TestCase>,
 ) {

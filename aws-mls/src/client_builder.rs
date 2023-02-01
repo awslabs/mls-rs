@@ -9,10 +9,7 @@ use crate::{
         ClientConfig, KeepAllProposals, MakeProposalFilter, MakeSimpleProposalFilter,
         ProposalFilterInit,
     },
-    extension::{
-        ExtensionError, ExtensionList, ExtensionType, KeyPackageExtension, LeafNodeExtension,
-        MlsExtension,
-    },
+    extension::{ExtensionError, ExtensionList, ExtensionType, MlsExtension},
     group::{
         proposal::BorrowedProposal, proposal_filter::ProposalFilterContext,
         state_repo::DEFAULT_EPOCH_RETENTION_LIMIT, ControlEncryptionMode, PaddingMode,
@@ -198,13 +195,11 @@ impl<C: IntoConfig> ClientBuilder<C> {
         extension: T,
     ) -> Result<ClientBuilder<IntoConfigOutput<C>>, ExtensionError>
     where
-        T: MlsExtension<KeyPackageExtension>,
+        T: MlsExtension,
         Self: Sized,
     {
         let mut c = self.0.into_config();
-        c.0.settings
-            .key_package_extensions
-            .set_extension(extension)?;
+        c.0.settings.key_package_extensions.set_from(extension)?;
         Ok(ClientBuilder(c))
     }
 
@@ -212,7 +207,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
     /// client.
     pub fn key_package_extensions(
         self,
-        extensions: ExtensionList<KeyPackageExtension>,
+        extensions: ExtensionList,
     ) -> ClientBuilder<IntoConfigOutput<C>> {
         let mut c = self.0.into_config();
         c.0.settings.key_package_extensions.append(extensions);
@@ -225,11 +220,11 @@ impl<C: IntoConfig> ClientBuilder<C> {
         extension: T,
     ) -> Result<ClientBuilder<IntoConfigOutput<C>>, ExtensionError>
     where
-        T: MlsExtension<LeafNodeExtension>,
+        T: MlsExtension,
         Self: Sized,
     {
         let mut c = self.0.into_config();
-        c.0.settings.leaf_node_extensions.set_extension(extension)?;
+        c.0.settings.leaf_node_extensions.set_from(extension)?;
         Ok(ClientBuilder(c))
     }
 
@@ -237,7 +232,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
     /// client.
     pub fn leaf_node_extensions(
         self,
-        extensions: ExtensionList<LeafNodeExtension>,
+        extensions: ExtensionList,
     ) -> ClientBuilder<IntoConfigOutput<C>> {
         let mut c = self.0.into_config();
         c.0.settings.leaf_node_extensions.append(extensions);
@@ -657,11 +652,11 @@ where
         self.crypto_provider.clone()
     }
 
-    fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension> {
+    fn key_package_extensions(&self) -> ExtensionList {
         self.settings.key_package_extensions.clone()
     }
 
-    fn leaf_node_extensions(&self) -> ExtensionList<LeafNodeExtension> {
+    fn leaf_node_extensions(&self) -> ExtensionList {
         self.settings.leaf_node_extensions.clone()
     }
 
@@ -758,11 +753,11 @@ impl<T: MlsConfig> ClientConfig for T {
         self.get().crypto_provider()
     }
 
-    fn key_package_extensions(&self) -> ExtensionList<KeyPackageExtension> {
+    fn key_package_extensions(&self) -> ExtensionList {
         self.get().key_package_extensions()
     }
 
-    fn leaf_node_extensions(&self) -> ExtensionList<LeafNodeExtension> {
+    fn leaf_node_extensions(&self) -> ExtensionList {
         self.get().leaf_node_extensions()
     }
 
@@ -788,8 +783,8 @@ pub(crate) struct Settings {
     pub(crate) extension_types: Vec<ExtensionType>,
     pub(crate) protocol_versions: Vec<ProtocolVersion>,
     pub(crate) preferences: Preferences,
-    pub(crate) key_package_extensions: ExtensionList<KeyPackageExtension>,
-    pub(crate) leaf_node_extensions: ExtensionList<LeafNodeExtension>,
+    pub(crate) key_package_extensions: ExtensionList,
+    pub(crate) leaf_node_extensions: ExtensionList,
     pub(crate) lifetime_in_s: u64,
 }
 

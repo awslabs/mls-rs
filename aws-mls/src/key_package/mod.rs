@@ -1,6 +1,6 @@
 use crate::cipher_suite::{CipherSuite, MaybeCipherSuite};
+use crate::extension::RequiredCapabilitiesExt;
 use crate::extension::{ExtensionError, ExtensionList, ExtensionType};
-use crate::extension::{KeyPackageExtension, RequiredCapabilitiesExt};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::{HashReference, HashReferenceError};
 use crate::identity::SigningIdentity;
@@ -51,7 +51,7 @@ pub struct KeyPackage {
     #[serde_as(as = "VecAsBase64")]
     pub(crate) hpke_init_key: HpkePublicKey,
     pub(crate) leaf_node: LeafNode,
-    pub(crate) extensions: ExtensionList<KeyPackageExtension>,
+    pub(crate) extensions: ExtensionList,
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
     pub(crate) signature: Vec<u8>,
@@ -102,7 +102,7 @@ struct KeyPackageData<'a> {
     pub hpke_init_key: &'a HpkePublicKey,
     pub leaf_node: &'a LeafNode,
     #[tls_codec(with = "crate::tls::DefRef")]
-    pub extensions: &'a ExtensionList<KeyPackageExtension>,
+    pub extensions: &'a ExtensionList,
 }
 
 impl KeyPackage {
@@ -114,7 +114,7 @@ impl KeyPackage {
         self.cipher_suite
     }
 
-    pub fn extensions(&self) -> &ExtensionList<KeyPackageExtension> {
+    pub fn extensions(&self) -> &ExtensionList {
         &self.extensions
     }
 

@@ -80,7 +80,7 @@ pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
 fn external_signers(context: &GroupContext) -> Vec<SigningIdentity> {
     context
         .extensions
-        .get_extension::<ExternalSendersExt>()
+        .get_as::<ExternalSendersExt>()
         .unwrap_or(None)
         .map_or(vec![], |extern_senders_ext| {
             extern_senders_ext.allowed_senders
@@ -514,7 +514,7 @@ mod tests {
         let mut extensions = ExtensionList::default();
 
         extensions
-            .set_extension(ExternalSendersExt {
+            .set_from(ExternalSendersExt {
                 allowed_senders: vec![ted_signing],
             })
             .unwrap();

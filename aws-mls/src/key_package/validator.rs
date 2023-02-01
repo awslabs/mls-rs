@@ -469,7 +469,7 @@ mod tests {
             |generator| {
                 async move {
                     let mut capabilities = get_test_capabilities();
-                    capabilities.extensions.push(42);
+                    capabilities.extensions.push(42.into());
 
                     generator
                         .generate(
@@ -487,7 +487,7 @@ mod tests {
         .await;
 
         let required_capabilities = RequiredCapabilitiesExt {
-            extensions: vec![42],
+            extensions: vec![42.into()],
             proposals: vec![],
             credentials: vec![],
         };
@@ -520,7 +520,7 @@ mod tests {
         .await;
 
         let required_capabilities = RequiredCapabilitiesExt {
-            extensions: vec![255],
+            extensions: vec![255.into()],
             proposals: vec![],
             credentials: vec![],
         };

@@ -218,7 +218,8 @@ mod tests {
     use super::*;
 
     use crate::cipher_suite::CipherSuite;
-    use crate::extension::{ApplicationIdExt, ExtensionList, MlsExtension};
+    use crate::extension::test_utils::TestExtension;
+    use crate::extension::ExtensionList;
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::{get_test_signing_identity, INVALID_CREDENTIAL_TYPE};
     use crate::identity::BasicCredential;
@@ -448,11 +449,7 @@ mod tests {
 
         let mut extensions = ExtensionList::new();
 
-        extensions
-            .set_extension(ApplicationIdExt {
-                identifier: b"foo".to_vec(),
-            })
-            .unwrap();
+        extensions.set_from(TestExtension::from(0)).unwrap();
 
         let capabilities = Capabilities {
             credentials: vec![BasicCredential::credential_type()],
@@ -474,7 +471,7 @@ mod tests {
             LeafNodeValidator::new(&cipher_suite_provider, None, BasicIdentityProvider::new());
 
         assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)).await,
-            Err(LeafNodeValidationError::ExtensionNotInCapabilities(ext)) if ext == ApplicationIdExt::IDENTIFIER);
+            Err(LeafNodeValidationError::ExtensionNotInCapabilities(ext)) if ext == 42.into());
     }
 
     #[futures_test::test]
@@ -497,7 +494,7 @@ mod tests {
     #[futures_test::test]
     async fn test_required_extension() {
         let required_capabilities = RequiredCapabilitiesExt {
-            extensions: vec![42u16],
+            extensions: vec![43.into()],
             ..Default::default()
         };
 
@@ -515,7 +512,7 @@ mod tests {
             test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Add(None))
                 .await,
-            Err(LeafNodeValidationError::RequiredExtensionNotFound(42))
+            Err(LeafNodeValidationError::RequiredExtensionNotFound(v)) if v == 43.into()
         );
     }
 

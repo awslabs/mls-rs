@@ -1,8 +1,5 @@
 use crate::{
-    extension::{
-        is_default_extension, ExtensionList, ExternalSendersExt, GroupContextExtension,
-        RequiredCapabilitiesExt,
-    },
+    extension::{ExtensionList, ExternalSendersExt, RequiredCapabilitiesExt},
     group::{
         proposal_filter::{Proposable, ProposalBundle, ProposalFilterError, ProposalInfo},
         AddProposal, BorrowedProposal, ExternalInit, JustPreSharedKeyID, PreSharedKey,
@@ -52,7 +49,7 @@ pub(crate) struct ProposalApplier<'a, C, P, CSP> {
     protocol_version: ProtocolVersion,
     cipher_suite_provider: &'a CSP,
     group_id: &'a [u8],
-    original_group_extensions: &'a ExtensionList<GroupContextExtension>,
+    original_group_extensions: &'a ExtensionList,
     original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
     external_leaf: Option<&'a LeafNode>,
     identity_provider: C,
@@ -71,7 +68,7 @@ where
         protocol_version: ProtocolVersion,
         cipher_suite_provider: &'a CSP,
         group_id: &'a [u8],
-        original_group_extensions: &'a ExtensionList<GroupContextExtension>,
+        original_group_extensions: &'a ExtensionList,
         original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
         external_leaf: Option<&'a LeafNode>,
         identity_provider: C,
@@ -236,12 +233,8 @@ where
             .proposals
             .group_context_extensions_proposal()
             .cloned()
-            .and_then(|p| {
-                match p
-                    .proposal
-                    .get_extension()
-                    .map_err(ProposalFilterError::from)
-                {
+            .and_then(
+                |p| match p.proposal.get_as().map_err(ProposalFilterError::from) {
                     Ok(capabilities) => Some(Ok((p, capabilities))),
                     Err(e) => {
                         if strategy.ignore(&p.by_ref().map(Into::into)) {
@@ -250,8 +243,8 @@ where
                             Some(Err(e))
                         }
                     }
-                }
-            })
+                },
+            )
             .transpose()?;
 
         // If the extensions proposal is ignored, remove it from the list of proposals.
@@ -287,7 +280,7 @@ where
         &self,
         strategy: F,
         mut state: ProposalState,
-        group_context_extensions_proposal: ProposalInfo<ExtensionList<GroupContextExtension>>,
+        group_context_extensions_proposal: ProposalInfo<ExtensionList>,
         new_required_capabilities: Option<RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError>
@@ -324,7 +317,7 @@ where
             .proposal
             .iter()
             .map(|extension| extension.extension_type)
-            .filter(|&ext_type| !is_default_extension(ext_type))
+            .filter(|&ext_type| !ext_type.is_default())
             .find(|ext_type| {
                 !new_state
                     .tree
@@ -374,7 +367,7 @@ where
         &self,
         strategy: F,
         state: ProposalState,
-        group_extensions_in_use: &ExtensionList<GroupContextExtension>,
+        group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError>
@@ -468,7 +461,7 @@ where
         &self,
         strategy: F,
         state: ProposalState,
-        group_extensions_in_use: &ExtensionList<GroupContextExtension>,
+        group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError>
@@ -502,7 +495,7 @@ where
         &self,
         strategy: F,
         mut state: ProposalState,
-        group_extensions_in_use: &ExtensionList<GroupContextExtension>,
+        group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError>
@@ -552,7 +545,7 @@ where
         &self,
         strategy: F,
         mut state: ProposalState,
-        group_extensions_in_use: &ExtensionList<GroupContextExtension>,
+        group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
     ) -> Result<ProposalState, ProposalFilterError>
@@ -603,12 +596,12 @@ where
 
 fn leaf_supports_extensions(
     leaf: &LeafNode,
-    extensions: &ExtensionList<GroupContextExtension>,
+    extensions: &ExtensionList,
 ) -> Result<(), ProposalFilterError> {
     extensions
         .iter()
         .map(|ext| ext.extension_type)
-        .filter(|&ext_type| !is_default_extension(ext_type))
+        .filter(|&ext_type| !ext_type.is_default())
         .find(|ext_type| !leaf.capabilities.extensions.contains(ext_type))
         .map_or(Ok(()), |ext_type| {
             Err(ProposalFilterError::UnsupportedGroupExtension(ext_type))
@@ -763,35 +756,31 @@ where
     let strategy = &strategy;
     let identity_provider = &identity_provider;
 
-    let bad_indices = futures::stream::iter(
-        proposals
-            .by_type::<ExtensionList<GroupContextExtension>>()
-            .enumerate()
-            .map(Ok),
-    )
-    .try_filter_map(|(i, p)| async move {
-        let res = match p
-            .proposal
-            .get_extension::<ExternalSendersExt>()
-            .map_err(Into::into)
-        {
-            Ok(None) => Ok(()),
-            Ok(Some(extension)) => extension
-                .verify_all(&identity_provider, commit_time)
-                .await
-                .map_err(|e| ProposalFilterError::IdentityProviderError(e.into())),
-            Err(e) => Err(e),
-        };
+    let bad_indices =
+        futures::stream::iter(proposals.by_type::<ExtensionList>().enumerate().map(Ok))
+            .try_filter_map(|(i, p)| async move {
+                let res = match p
+                    .proposal
+                    .get_as::<ExternalSendersExt>()
+                    .map_err(Into::into)
+                {
+                    Ok(None) => Ok(()),
+                    Ok(Some(extension)) => extension
+                        .verify_all(&identity_provider, commit_time)
+                        .await
+                        .map_err(|e| ProposalFilterError::IdentityProviderError(e.into())),
+                    Err(e) => Err(e),
+                };
 
-        apply_strategy(strategy, p, res).map(|keep| (!keep).then_some(i))
-    })
-    .try_collect::<Vec<_>>()
-    .await?;
+                apply_strategy(strategy, p, res).map(|keep| (!keep).then_some(i))
+            })
+            .try_collect::<Vec<_>>()
+            .await?;
 
     bad_indices
         .into_iter()
         .rev()
-        .for_each(|i| proposals.remove::<ExtensionList<GroupContextExtension>>(i));
+        .for_each(|i| proposals.remove::<ExtensionList>(i));
 
     Ok(proposals)
 }
@@ -805,7 +794,7 @@ where
 {
     let mut found = false;
 
-    proposals.retain_by_type::<ExtensionList<GroupContextExtension>, _, _>(|p| {
+    proposals.retain_by_type::<ExtensionList, _, _>(|p| {
         apply_strategy(
             &strategy,
             p,
@@ -1052,13 +1041,13 @@ pub(crate) fn proposer_can_propose(
 fn filter_out_invalid_proposers<F>(
     strategy: F,
     tree: &TreeKemPublic,
-    group_context_extensions: &ExtensionList<GroupContextExtension>,
+    group_context_extensions: &ExtensionList,
     mut proposals: ProposalBundle,
 ) -> Result<ProposalBundle, ProposalFilterError>
 where
     F: FilterStrategy,
 {
-    let external_senders = group_context_extensions.get_extension().ok().flatten();
+    let external_senders = group_context_extensions.get_as().ok().flatten();
     let external_senders = external_senders.as_ref();
 
     validate_proposer::<AddProposal, _>(&strategy, tree, external_senders, &mut proposals)?;
@@ -1067,13 +1056,7 @@ where
     validate_proposer::<PreSharedKey, _>(&strategy, tree, external_senders, &mut proposals)?;
     validate_proposer::<ReInit, _>(&strategy, tree, external_senders, &mut proposals)?;
     validate_proposer::<ExternalInit, _>(&strategy, tree, external_senders, &mut proposals)?;
-
-    validate_proposer::<ExtensionList<GroupContextExtension>, _>(
-        &strategy,
-        tree,
-        external_senders,
-        &mut proposals,
-    )?;
+    validate_proposer::<ExtensionList, _>(&strategy, tree, external_senders, &mut proposals)?;
 
     Ok(proposals)
 }

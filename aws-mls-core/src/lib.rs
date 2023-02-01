@@ -2,6 +2,7 @@
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
 pub mod crypto;
+pub mod extension;
 pub mod group;
 pub mod identity;
 pub mod key_package;

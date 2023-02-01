@@ -4,10 +4,7 @@ use tls_codec::Deserialize;
 
 use crate::{
     cipher_suite::{CipherSuite, MaybeCipherSuite},
-    extension::{
-        ExtensionList, ExternalSendersExt, GroupContextExtension, GroupInfoExtension,
-        RatchetTreeExt,
-    },
+    extension::{ExtensionList, ExternalSendersExt, RatchetTreeExt},
     key_package::KeyPackageGeneration,
     protocol_version::{MaybeProtocolVersion, ProtocolVersion},
     provider::{
@@ -39,7 +36,7 @@ use super::{
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub(crate) struct JoinContext {
-    pub group_info_extensions: ExtensionList<GroupInfoExtension>,
+    pub group_info_extensions: ExtensionList,
     pub group_context: GroupContext,
     pub confirmation_tag: ConfirmationTag,
     pub public_tree: TreeKemPublic,
@@ -73,7 +70,7 @@ where
         return Err(GroupError::CipherSuiteMismatch);
     }
 
-    let ratchet_tree_ext = group_info.extensions.get_extension::<RatchetTreeExt>()?;
+    let ratchet_tree_ext = group_info.extensions.get_as::<RatchetTreeExt>()?;
 
     let public_tree = find_tree(tree_data, ratchet_tree_ext, identity_provider).await?;
 
@@ -123,7 +120,7 @@ pub(super) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
     )
     .await?;
 
-    let required_capabilities = join_context.group_context.extensions.get_extension()?;
+    let required_capabilities = join_context.group_context.extensions.get_as()?;
 
     // Verify the integrity of the ratchet tree
     let tree_validator = TreeValidator::new(
@@ -141,7 +138,7 @@ pub(super) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
     if let Some(ext_senders) = join_context
         .group_context
         .extensions
-        .get_extension::<ExternalSendersExt>()?
+        .get_as::<ExternalSendersExt>()?
     {
         // TODO do joiners verify group against current time??
         ext_senders
@@ -200,7 +197,7 @@ pub(super) async fn proposal_effects<C, F, P, CSP>(
     proposals: &ProposalCache,
     commit: &Commit,
     sender: &Sender,
-    group_extensions: &ExtensionList<GroupContextExtension>,
+    group_extensions: &ExtensionList,
     identity_provider: C,
     cipher_suite_provider: &CSP,
     public_tree: &TreeKemPublic,

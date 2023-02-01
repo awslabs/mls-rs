@@ -329,7 +329,7 @@ mod tests {
     use super::{tree_math, TreeKem};
     use crate::{
         cipher_suite::CipherSuite,
-        extension::{test_utils::TestExtension, ExtensionList, LeafNodeExtension},
+        extension::{test_utils::TestExtension, ExtensionList},
         group::test_utils::{get_test_group_context, random_bytes},
         provider::{
             crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
@@ -353,7 +353,7 @@ mod tests {
         update_path: &UpdatePath,
         index: LeafIndex,
         capabilities: Option<Capabilities>,
-        extensions: Option<ExtensionList<LeafNodeExtension>>,
+        extensions: Option<ExtensionList>,
     ) {
         // Make sure the update path is based on the direct path of the sender
         let direct_path = tree.nodes.direct_path(index).unwrap();
@@ -426,7 +426,7 @@ mod tests {
         cipher_suite: CipherSuite,
         size: usize,
         capabilities: Option<Capabilities>,
-        extensions: Option<ExtensionList<LeafNodeExtension>>,
+        extensions: Option<ExtensionList>,
     ) {
         let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
@@ -545,7 +545,7 @@ mod tests {
     async fn test_encap_capabilities() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
         let mut capabilities = get_test_capabilities();
-        capabilities.extensions.push(42);
+        capabilities.extensions.push(42.into());
 
         encap_decap(cipher_suite, 10, Some(capabilities.clone()), None).await;
     }
@@ -554,7 +554,7 @@ mod tests {
     async fn test_encap_extensions() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
         let mut extensions = ExtensionList::default();
-        extensions.set_extension(TestExtension { foo: 10 }).unwrap();
+        extensions.set_from(TestExtension { foo: 10 }).unwrap();
 
         encap_decap(cipher_suite, 10, None, Some(extensions)).await;
     }
@@ -563,10 +563,10 @@ mod tests {
     async fn test_encap_capabilities_extensions() {
         let cipher_suite = CipherSuite::Curve25519Aes128;
         let mut capabilities = get_test_capabilities();
-        capabilities.extensions.push(42);
+        capabilities.extensions.push(42.into());
 
         let mut extensions = ExtensionList::default();
-        extensions.set_extension(TestExtension { foo: 10 }).unwrap();
+        extensions.set_from(TestExtension { foo: 10 }).unwrap();
 
         encap_decap(cipher_suite, 10, Some(capabilities), Some(extensions)).await;
     }

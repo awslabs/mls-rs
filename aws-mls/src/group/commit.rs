@@ -3,7 +3,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use crate::{
     cipher_suite::CipherSuite,
     client_config::{ClientConfig, ProposalFilterInit},
-    extension::{ExtensionList, GroupContextExtension, GroupInfoExtension, RatchetTreeExt},
+    extension::{ExtensionList, RatchetTreeExt},
     identity::SigningIdentity,
     key_package::KeyPackage,
     protocol_version::ProtocolVersion,
@@ -61,7 +61,7 @@ where
     group: &'a mut Group<C>,
     pub(super) proposals: Vec<Proposal>,
     authenticated_data: Vec<u8>,
-    group_info_extensions: ExtensionList<GroupInfoExtension>,
+    group_info_extensions: ExtensionList,
     signing_identity: Option<SigningIdentity>,
 }
 
@@ -78,7 +78,7 @@ where
         Ok(self)
     }
 
-    pub fn set_group_info_ext(self, extensions: ExtensionList<GroupInfoExtension>) -> Self {
+    pub fn set_group_info_ext(self, extensions: ExtensionList) -> Self {
         Self {
             group_info_extensions: extensions,
             ..self
@@ -91,10 +91,7 @@ where
         Ok(self)
     }
 
-    pub fn set_group_context_ext(
-        mut self,
-        extensions: ExtensionList<GroupContextExtension>,
-    ) -> Result<Self, GroupError> {
+    pub fn set_group_context_ext(mut self, extensions: ExtensionList) -> Result<Self, GroupError> {
         let proposal = self.group.group_context_extensions_proposal(extensions);
         self.proposals.push(proposal);
         Ok(self)
@@ -111,7 +108,7 @@ where
         group_id: Option<Vec<u8>>,
         version: ProtocolVersion,
         cipher_suite: CipherSuite,
-        extensions: ExtensionList<GroupContextExtension>,
+        extensions: ExtensionList,
     ) -> Result<Self, GroupError> {
         let proposal = self
             .group
@@ -156,7 +153,7 @@ where
         &mut self,
         proposals: Vec<Proposal>,
         authenticated_data: Vec<u8>,
-        group_info_extensions: ExtensionList<GroupInfoExtension>,
+        group_info_extensions: ExtensionList,
         signing_identity: Option<SigningIdentity>,
     ) -> Result<CommitOutput, GroupError> {
         self.commit_internal(
@@ -193,7 +190,7 @@ where
         proposals: Vec<Proposal>,
         external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
-        group_info_extensions: ExtensionList<GroupInfoExtension>,
+        group_info_extensions: ExtensionList,
         signing_identity: Option<SigningIdentity>,
     ) -> Result<CommitOutput, GroupError> {
         if self.pending_commit.is_some() {
@@ -369,7 +366,7 @@ where
                 tree_data: provisional_state.public_tree.export_node_data(),
             };
 
-            extensions.set_extension(ratchet_tree_ext)?;
+            extensions.set_from(ratchet_tree_ext)?;
         }
 
         // Add in any user provided extensions
@@ -573,7 +570,7 @@ mod tests {
 
         let ext = TestExtension { foo: 42 };
         let mut extension_list = ExtensionList::default();
-        extension_list.set_extension(ext.clone()).unwrap();
+        extension_list.set_from(ext.clone()).unwrap();
 
         let welcome_message = group
             .commit_builder()
@@ -594,7 +591,7 @@ mod tests {
         assert_eq!(
             context
                 .group_info_extensions
-                .get_extension::<TestExtension>()
+                .get_as::<TestExtension>()
                 .unwrap()
                 .unwrap(),
             ext
@@ -659,7 +656,7 @@ mod tests {
         let mut group = test_commit_builder_group().await;
         let mut test_ext = ExtensionList::default();
         test_ext
-            .set_extension(RequiredCapabilitiesExt::default())
+            .set_from(RequiredCapabilitiesExt::default())
             .unwrap();
 
         let commit_output = group
@@ -684,7 +681,7 @@ mod tests {
         let mut test_ext = ExtensionList::default();
 
         test_ext
-            .set_extension(RequiredCapabilitiesExt::default())
+            .set_from(RequiredCapabilitiesExt::default())
             .unwrap();
 
         let commit_output = group
