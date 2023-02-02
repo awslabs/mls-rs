@@ -10,7 +10,6 @@ use crate::group::{process_group_info, Group, GroupError, NewMemberInfo};
 use crate::hash_reference::HashReferenceError;
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageGenerationError, KeyPackageGenerator};
-use crate::protocol_version::MaybeProtocolVersion;
 use crate::protocol_version::ProtocolVersion;
 use crate::provider::crypto::CryptoProvider;
 use crate::provider::group_state::GroupStateStorage;
@@ -52,8 +51,8 @@ pub enum ClientError {
     LeafNodeError(#[from] LeafNodeError),
     #[error("expected group info message")]
     ExpectedGroupInfoMessage,
-    #[error("unsupported message version: {0:?}")]
-    UnsupportedMessageVersion(MaybeProtocolVersion),
+    #[error("unsupported message protocol version: {0:?}")]
+    UnsupportedMessageVersion(ProtocolVersion),
     #[error("unsupported cipher suite: {0:?}")]
     UnsupportedCipherSuite(CipherSuite),
     #[error("unable to load group from storage: {0:?}")]
@@ -249,11 +248,11 @@ where
         signing_identity: SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, ClientError> {
-        let protocol_version = group_info
-            .version
-            .into_enum()
-            .filter(|&version| self.config.version_supported(version))
-            .ok_or(ClientError::UnsupportedMessageVersion(group_info.version))?;
+        let protocol_version = group_info.version;
+
+        if !self.config.version_supported(protocol_version) {
+            return Err(ClientError::UnsupportedMessageVersion(group_info.version));
+        }
 
         let group_info = group_info
             .into_group_info()
@@ -310,7 +309,7 @@ where
         };
 
         Ok(MLSMessage {
-            version: MaybeProtocolVersion::from(protocol_version),
+            version: protocol_version,
             payload: MLSMessagePayload::Plain(plaintext),
         })
     }
@@ -321,11 +320,14 @@ pub mod test_utils {
     use aws_mls_core::crypto::CURVE25519_AES128;
 
     use super::*;
-    use crate::{client_config::ClientConfig, identity::test_utils::get_test_signing_identity};
+    use crate::{
+        client_config::ClientConfig, identity::test_utils::get_test_signing_identity,
+        protocol_version::MLS_10,
+    };
 
     pub use crate::client_builder::test_utils::{TestClientBuilder, TestClientConfig};
 
-    pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::Mls10;
+    pub const TEST_PROTOCOL_VERSION: ProtocolVersion = MLS_10;
     pub const TEST_CIPHER_SUITE: CipherSuite = CURVE25519_AES128;
 
     pub fn get_basic_client_builder(
@@ -436,7 +438,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(key_package.version, protocol_version.into());
+            assert_eq!(key_package.version, protocol_version);
             assert_eq!(key_package.cipher_suite, cipher_suite);
 
             assert_eq!(

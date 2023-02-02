@@ -392,7 +392,7 @@ where
         // Construct a GroupInfo reflecting the new state
         // Group ID, epoch, tree, and confirmed transcript hash from the new state
         let mut group_info = GroupInfo {
-            group_context: provisional_group_context.clone().into(),
+            group_context: provisional_group_context,
             extensions,
             confirmation_tag, // The confirmation_tag from the MLSPlaintext object
             signer: provisional_private_tree.self_index,
@@ -529,10 +529,7 @@ mod tests {
         if welcome_count > 0 {
             let welcome_msg = commit_output.welcome_message.unwrap();
 
-            assert_eq!(
-                welcome_msg.version,
-                group.state.context.protocol_version.into()
-            );
+            assert_eq!(welcome_msg.version, group.state.context.protocol_version);
 
             let welcome_msg = welcome_msg.into_welcome().unwrap();
 

@@ -1,6 +1,6 @@
 use super::proposal::Proposal;
 use super::*;
-use crate::protocol_version::{MaybeProtocolVersion, ProtocolVersion};
+use crate::protocol_version::ProtocolVersion;
 use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -224,17 +224,14 @@ impl From<&MLSCiphertext> for MLSCiphertextContentAAD {
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct MLSMessage {
-    pub(crate) version: MaybeProtocolVersion,
+    pub(crate) version: ProtocolVersion,
     pub(crate) payload: MLSMessagePayload,
 }
 
 #[allow(dead_code)]
 impl MLSMessage {
     pub(crate) fn new(version: ProtocolVersion, payload: MLSMessagePayload) -> MLSMessage {
-        Self {
-            version: version.into(),
-            payload,
-        }
+        Self { version, payload }
     }
 
     #[inline(always)]

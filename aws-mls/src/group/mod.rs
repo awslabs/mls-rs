@@ -290,8 +290,11 @@ where
         tree_data: Option<&[u8]>,
         config: C,
     ) -> Result<(Self, NewMemberInfo), GroupError> {
-        let protocol_version =
-            check_protocol_version(&config.supported_protocol_versions(), welcome.version)?;
+        let protocol_version = welcome.version;
+
+        if !config.version_supported(protocol_version) {
+            return Err(GroupError::UnsupportedProtocolVersion(protocol_version));
+        }
 
         let wire_format = welcome.wire_format();
 
@@ -305,16 +308,13 @@ where
         let (encrypted_group_secrets, key_package_generation) =
             find_key_package_generation(&config.key_package_repo(), &welcome.secrets).await?;
 
-        let key_package_version = check_protocol_version(
-            &config.supported_protocol_versions(),
-            key_package_generation.key_package.version,
-        )?;
+        let key_package_version = key_package_generation.key_package.version;
 
         if key_package_version != protocol_version {
             return Err(GroupError::ProtocolVersionMismatch {
                 msg_version: protocol_version,
                 wire_format: WireFormat::KeyPackage,
-                version: key_package_version.into(),
+                version: key_package_version,
             });
         }
 
@@ -490,8 +490,11 @@ where
         external_psks: Vec<ExternalPskId>,
         authenticated_data: Vec<u8>,
     ) -> Result<(Self, MLSMessage), GroupError> {
-        let protocol_version =
-            check_protocol_version(&config.supported_protocol_versions(), group_info.version)?;
+        let protocol_version = group_info.version;
+
+        if !config.version_supported(protocol_version) {
+            return Err(GroupError::UnsupportedProtocolVersion(protocol_version));
+        }
 
         let wire_format = group_info.wire_format();
 
@@ -852,7 +855,7 @@ where
         )?;
 
         let mut group_info = GroupInfo {
-            group_context: new_context.clone().into(),
+            group_context: new_context.clone(),
             extensions: ExtensionList::new(),
             confirmation_tag: ConfirmationTag::create(
                 &key_schedule_result.confirmation_key,
@@ -1479,7 +1482,7 @@ where
         }
 
         let mut info = GroupInfo {
-            group_context: self.context().clone().into(),
+            group_context: self.context().clone(),
             extensions,
             confirmation_tag: self.state.confirmation_tag.clone(),
             signer: self.private_tree.self_index,
@@ -1819,7 +1822,6 @@ mod tests {
         },
         identity::test_utils::get_test_signing_identity,
         key_package::test_utils::{test_key_package, test_key_package_custom},
-        protocol_version::MaybeProtocolVersion,
         psk::Psk,
         tree_kem::{
             leaf_node::LeafNodeSource, leaf_node_validator::LeafNodeValidationError, Lifetime,
@@ -2727,7 +2729,7 @@ mod tests {
         assert_matches!(
             res,
             Err(GroupError::UnsupportedProtocolVersion(v)) if v ==
-                MaybeProtocolVersion::from(TEST_PROTOCOL_VERSION)
+                TEST_PROTOCOL_VERSION
         );
     }
 

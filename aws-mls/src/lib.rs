@@ -61,7 +61,6 @@ pub mod group;
 mod hash_reference;
 pub mod identity;
 pub mod key_package;
-mod maybe;
 pub mod protocol_version;
 pub mod provider;
 pub mod psk;

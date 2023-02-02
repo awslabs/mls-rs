@@ -419,13 +419,12 @@ pub(crate) trait MessageProcessor: Send + Sync {
     fn check_metadata(&self, message: &MLSMessage) -> Result<(), GroupError> {
         let context = &self.group_state().context;
 
-        message
-            .version
-            .into_enum()
-            .filter(|&v| v == context.protocol_version)
-            .ok_or({
-                GroupError::InvalidProtocolVersion(context.protocol_version, message.version)
-            })?;
+        if message.version != context.protocol_version {
+            return Err(GroupError::InvalidProtocolVersion(
+                context.protocol_version,
+                message.version,
+            ));
+        }
 
         if let Some((group_id, epoch, content_type, wire_format)) = match &message.payload {
             MLSMessagePayload::Plain(plaintext) => Some((

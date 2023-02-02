@@ -6,7 +6,7 @@ use crate::{
     cipher_suite::CipherSuite,
     extension::{ExtensionList, ExternalSendersExt, RatchetTreeExt},
     key_package::KeyPackageGeneration,
-    protocol_version::{MaybeProtocolVersion, ProtocolVersion},
+    protocol_version::ProtocolVersion,
     provider::{
         crypto::{CipherSuiteProvider, CryptoProvider},
         key_package::KeyPackageRepository,
@@ -56,7 +56,7 @@ where
 {
     let group_protocol_version = group_info.group_context.protocol_version;
 
-    if msg_protocol_version as u16 != group_protocol_version.raw_value() {
+    if msg_protocol_version != group_protocol_version {
         return Err(GroupError::ProtocolVersionMismatch {
             msg_version: msg_protocol_version,
             wire_format: WireFormat::GroupInfo,
@@ -252,16 +252,6 @@ pub(super) fn transcript_hashes<P: CipherSuiteProvider>(
     )?;
 
     Ok((interim_transcript_hash, confirmed_transcript_hash))
-}
-
-pub(super) fn check_protocol_version(
-    allowed: &[ProtocolVersion],
-    version: MaybeProtocolVersion,
-) -> Result<ProtocolVersion, GroupError> {
-    version
-        .into_enum()
-        .filter(|v| allowed.contains(v))
-        .ok_or(GroupError::UnsupportedProtocolVersion(version))
 }
 
 pub(super) async fn find_key_package_generation<'a, K: KeyPackageRepository>(

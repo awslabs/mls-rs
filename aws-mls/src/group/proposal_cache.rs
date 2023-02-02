@@ -2387,7 +2387,7 @@ mod tests {
 
     #[futures_test::test]
     async fn receiving_reinit_downgrading_version_fails() {
-        let smaller_protocol_version = ProtocolVersion::Reserved;
+        let smaller_protocol_version = ProtocolVersion::from(0);
         let (alice, tree) = new_tree("alice").await;
 
         let res = CommitReceiver::new(
@@ -2410,7 +2410,7 @@ mod tests {
 
     #[futures_test::test]
     async fn sending_additional_reinit_downgrading_version_fails() {
-        let smaller_protocol_version = ProtocolVersion::Reserved;
+        let smaller_protocol_version = ProtocolVersion::from(0);
         let (alice, tree) = new_tree("alice").await;
 
         let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
@@ -2429,7 +2429,7 @@ mod tests {
 
     #[futures_test::test]
     async fn sending_reinit_downgrading_version_filters_it_out() {
-        let smaller_protocol_version = ProtocolVersion::Reserved;
+        let smaller_protocol_version = ProtocolVersion::from(0);
         let (alice, tree) = new_tree("alice").await;
         let proposal = Proposal::ReInit(make_reinit(smaller_protocol_version));
         let proposal_ref = make_proposal_ref(&proposal, alice);

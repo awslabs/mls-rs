@@ -3,7 +3,7 @@ use aws_mls_core::identity::IdentityProvider;
 use tls_codec::Serialize;
 
 use super::{
-    check_protocol_version, cipher_suite_provider,
+    cipher_suite_provider,
     confirmation_tag::ConfirmationTag,
     framing::{MLSCiphertext, MLSPlaintext, Sender, WireFormat},
     message_processor::{EventOrContent, MessageProcessor, ProcessedMessage, ProvisionalState},
@@ -44,9 +44,11 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         tree_data: Option<&[u8]>,
     ) -> Result<Self, GroupError> {
         let wire_format = group_info.wire_format();
+        let protocol_version = group_info.version;
 
-        let protocol_version =
-            check_protocol_version(&config.supported_protocol_versions(), group_info.version)?;
+        if !config.version_supported(protocol_version) {
+            return Err(GroupError::UnsupportedProtocolVersion(protocol_version));
+        }
 
         let group_info = group_info.into_group_info().ok_or_else(|| {
             GroupError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
@@ -439,7 +441,7 @@ mod tests {
         },
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
         key_package::test_utils::test_key_package,
-        protocol_version::{MaybeProtocolVersion, ProtocolVersion},
+        protocol_version::ProtocolVersion,
         provider::crypto::{test_utils::TestCryptoProvider, SignatureSecretKey},
     };
     use assert_matches::assert_matches;
@@ -655,7 +657,7 @@ mod tests {
         let config = TestExternalClientBuilder::new_for_test().build_config();
 
         let mut group_info = alice.group.group_info_message(true).await.unwrap();
-        group_info.version = MaybeProtocolVersion::from_raw_value(64);
+        group_info.version = ProtocolVersion::from(64);
 
         let res = ExternalGroup::join(config, group_info, None)
             .await
@@ -664,7 +666,7 @@ mod tests {
         assert_matches!(
             res,
             Err(GroupError::UnsupportedProtocolVersion(v)) if v ==
-                MaybeProtocolVersion::from_raw_value(64)
+                ProtocolVersion::from(64)
         );
     }
 

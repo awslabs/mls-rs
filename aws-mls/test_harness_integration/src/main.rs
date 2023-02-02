@@ -14,7 +14,7 @@ use aws_mls::group::{Event, Group, StateUpdate};
 use aws_mls::identity::BasicCredential;
 use aws_mls::identity::SigningIdentity;
 use aws_mls::key_package::KeyPackage;
-use aws_mls::protocol_version::ProtocolVersion;
+use aws_mls::protocol_version::MLS_10;
 use aws_mls::provider::crypto::{CipherSuiteProvider, CryptoProvider};
 use aws_mls::provider::{
     identity::BasicIdentityProvider, keychain::InMemoryKeychain, psk::InMemoryPskStore,
@@ -253,7 +253,7 @@ impl MlsClient for MlsClientImpl {
 
         let group = creator
             .create_group_with_id(
-                ProtocolVersion::Mls10,
+                MLS_10,
                 cipher_suite,
                 request_ref.group_id,
                 signing_identity,
@@ -304,7 +304,7 @@ impl MlsClient for MlsClientImpl {
             .build();
 
         let key_package = client
-            .generate_key_package(ProtocolVersion::Mls10, cipher_suite, signing_identity)
+            .generate_key_package(MLS_10, cipher_suite, signing_identity)
             .await
             .map_err(abort)?;
 

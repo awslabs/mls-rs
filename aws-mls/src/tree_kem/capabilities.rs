@@ -3,7 +3,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
     extension::ExtensionType, group::proposal::ProposalType, identity::CredentialType,
-    protocol_version::MaybeProtocolVersion,
+    protocol_version::ProtocolVersion,
 };
 
 #[derive(
@@ -20,7 +20,7 @@ use crate::{
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Capabilities {
     #[tls_codec(with = "crate::tls::DefVec")]
-    pub protocol_versions: Vec<MaybeProtocolVersion>,
+    pub protocol_versions: Vec<ProtocolVersion>,
     #[tls_codec(with = "crate::tls::DefVec")]
     pub cipher_suites: Vec<CipherSuite>,
     #[tls_codec(with = "crate::tls::DefVec")]
@@ -35,10 +35,10 @@ pub struct Capabilities {
 impl Default for Capabilities {
     fn default() -> Self {
         use crate::identity::BasicCredential;
-        use crate::protocol_version::ProtocolVersion;
+        use crate::protocol_version::MLS_10;
 
         Self {
-            protocol_versions: vec![MaybeProtocolVersion::from(ProtocolVersion::Mls10)],
+            protocol_versions: vec![MLS_10],
             cipher_suites: CipherSuite::all().collect(),
             extensions: Default::default(),
             proposals: Default::default(),

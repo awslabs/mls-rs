@@ -217,12 +217,7 @@ pub(crate) async fn test_group_custom(
         .leaf_node_extensions(leaf_extensions)
         .preferences(preferences)
         .extension_types(capabilities.extensions)
-        .protocol_versions(
-            capabilities
-                .protocol_versions
-                .into_iter()
-                .map(|p| p.into_enum().unwrap()),
-        )
+        .protocol_versions(capabilities.protocol_versions)
         .build()
         .create_group_with_id(
             protocol_version,

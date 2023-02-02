@@ -3,7 +3,7 @@ use super::*;
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct GroupInfo {
-    pub group_context: GroupContextWire,
+    pub group_context: GroupContext,
     pub extensions: ExtensionList,
     pub confirmation_tag: ConfirmationTag,
     pub signer: LeafIndex,
@@ -14,7 +14,7 @@ pub(crate) struct GroupInfo {
 #[derive(TlsSerialize, TlsSize)]
 struct SignableGroupInfo<'a> {
     #[tls_codec(with = "crate::tls::DefRef")]
-    group_context: &'a GroupContextWire,
+    group_context: &'a GroupContext,
     #[tls_codec(with = "crate::tls::DefRef")]
     extensions: &'a ExtensionList,
     confirmation_tag: &'a ConfirmationTag,

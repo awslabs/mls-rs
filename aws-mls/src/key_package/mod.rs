@@ -4,7 +4,6 @@ use crate::extension::{ExtensionError, ExtensionList, ExtensionType};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::{HashReference, HashReferenceError};
 use crate::identity::SigningIdentity;
-use crate::protocol_version::MaybeProtocolVersion;
 use crate::protocol_version::ProtocolVersion;
 use crate::provider::crypto::{CipherSuiteProvider, HpkePublicKey};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
@@ -45,7 +44,7 @@ pub enum KeyPackageError {
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyPackage {
-    pub(crate) version: MaybeProtocolVersion,
+    pub(crate) version: ProtocolVersion,
     pub(crate) cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
@@ -96,7 +95,7 @@ impl From<Vec<u8>> for KeyPackageRef {
 
 #[derive(TlsSerialize, TlsSize)]
 struct KeyPackageData<'a> {
-    pub version: MaybeProtocolVersion,
+    pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub hpke_init_key: &'a HpkePublicKey,
@@ -106,7 +105,7 @@ struct KeyPackageData<'a> {
 }
 
 impl KeyPackage {
-    pub fn version(&self) -> MaybeProtocolVersion {
+    pub fn version(&self) -> ProtocolVersion {
         self.version
     }
 

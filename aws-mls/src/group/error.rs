@@ -5,7 +5,7 @@ use crate::{
     extension::{ExtensionError, ExtensionList},
     hash_reference::HashReferenceError,
     key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError},
-    protocol_version::{MaybeProtocolVersion, ProtocolVersion},
+    protocol_version::ProtocolVersion,
     psk::PskError,
     signer::SignatureError,
     tree_kem::{
@@ -125,14 +125,14 @@ pub enum GroupError {
     #[error("Subgroup uses a different cipher suite: {0:?}")]
     SubgroupWithDifferentCipherSuite(CipherSuite),
     #[error("Unsupported protocol version {0:?}")]
-    UnsupportedProtocolVersion(MaybeProtocolVersion),
+    UnsupportedProtocolVersion(ProtocolVersion),
     #[error(
         "message protocol version {msg_version:?} does not match version {version:?} in {wire_format:?}"
     )]
     ProtocolVersionMismatch {
         msg_version: ProtocolVersion,
         wire_format: WireFormat,
-        version: MaybeProtocolVersion,
+        version: ProtocolVersion,
     },
     #[error("Unsupported cipher suite {0:?}")]
     UnsupportedCipherSuite(CipherSuite),
@@ -149,7 +149,7 @@ pub enum GroupError {
     #[error("Epoch {0} not found")]
     EpochNotFound(u64),
     #[error("expected protocol version {0:?}, found version {1:?}")]
-    InvalidProtocolVersion(ProtocolVersion, MaybeProtocolVersion),
+    InvalidProtocolVersion(ProtocolVersion, ProtocolVersion),
     #[error("unexpected group ID {0:?}")]
     InvalidGroupId(Vec<u8>),
     #[error("Unencrypted application message")]

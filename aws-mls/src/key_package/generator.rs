@@ -125,7 +125,7 @@ where
         .await?;
 
         let mut package = KeyPackage {
-            version: self.protocol_version.into(),
+            version: self.protocol_version,
             cipher_suite: self.cipher_suite_provider.cipher_suite(),
             hpke_init_key: public_init,
             leaf_node,
@@ -243,7 +243,7 @@ mod tests {
 
             assert_eq!(generated.key_package.extensions, key_package_ext);
             assert_eq!(generated.key_package.cipher_suite, cipher_suite);
-            assert_eq!(generated.key_package.version, protocol_version.into());
+            assert_eq!(generated.key_package.version, protocol_version);
 
             // Verify that the hpke key pair generated will work
             let test_data = random_bytes(32);

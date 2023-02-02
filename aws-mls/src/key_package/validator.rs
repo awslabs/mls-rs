@@ -34,7 +34,7 @@ pub enum KeyPackageValidationError {
     #[error("found cipher suite {0:?} expected {1:?}")]
     InvalidCipherSuite(CipherSuite, CipherSuite),
     #[error("found protocol version {0:?} expected {1:?}")]
-    InvalidProtocolVersion(MaybeProtocolVersion, ProtocolVersion),
+    InvalidProtocolVersion(ProtocolVersion, ProtocolVersion),
     #[error("init key is not valid for cipher suite")]
     InvalidInitKey,
     #[error("init key can not be equal to leaf node public key")]
@@ -114,7 +114,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, 
         self.check_signature(package)?;
 
         // Verify that the protocol version matches
-        if package.version != self.protocol_version.into() {
+        if package.version != self.protocol_version {
             return Err(KeyPackageValidationError::InvalidProtocolVersion(
                 package.version,
                 self.protocol_version,

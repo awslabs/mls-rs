@@ -1,5 +1,5 @@
-use crate::maybe::MaybeEnum;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
+use std::ops::Deref;
+
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(
@@ -8,7 +8,6 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     Copy,
     Eq,
     Hash,
-    enum_iterator::Sequence,
     Ord,
     PartialEq,
     PartialOrd,
@@ -17,27 +16,34 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     TlsSize,
     serde::Deserialize,
     serde::Serialize,
-    TryFromPrimitive,
-    IntoPrimitive,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-#[repr(u16)]
-pub enum ProtocolVersion {
-    #[cfg(test)]
-    Reserved = 0,
-    Mls10 = 1,
-}
+pub struct ProtocolVersion(u16);
 
-impl ProtocolVersion {
-    pub fn all() -> impl Iterator<Item = ProtocolVersion> {
-        cfg_if::cfg_if! {
-            if #[cfg(test)] {
-                enum_iterator::all().filter(|&p| p != ProtocolVersion::Reserved)
-            } else {
-                enum_iterator::all()
-            }
-        }
+impl From<u16> for ProtocolVersion {
+    fn from(value: u16) -> Self {
+        ProtocolVersion(value)
     }
 }
 
-pub(crate) type MaybeProtocolVersion = MaybeEnum<ProtocolVersion>;
+impl From<ProtocolVersion> for u16 {
+    fn from(value: ProtocolVersion) -> Self {
+        value.0
+    }
+}
+
+impl Deref for ProtocolVersion {
+    type Target = u16;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub const MLS_10: ProtocolVersion = ProtocolVersion(1);
+
+impl ProtocolVersion {
+    pub fn all() -> impl Iterator<Item = ProtocolVersion> {
+        [MLS_10].into_iter()
+    }
+}

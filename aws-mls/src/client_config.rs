@@ -9,7 +9,7 @@ use crate::{
         },
     },
     identity::CredentialType,
-    protocol_version::{MaybeProtocolVersion, ProtocolVersion},
+    protocol_version::ProtocolVersion,
     provider::{
         crypto::CryptoProvider, group_state::GroupStateStorage, key_package::KeyPackageRepository,
         keychain::KeychainStorage, psk::PskStore,
@@ -53,11 +53,7 @@ pub trait ClientConfig: Clone + Send + Sync {
 
     fn capabilities(&self) -> Capabilities {
         Capabilities {
-            protocol_versions: self
-                .supported_protocol_versions()
-                .into_iter()
-                .map(MaybeProtocolVersion::from)
-                .collect(),
+            protocol_versions: self.supported_protocol_versions(),
             cipher_suites: self.crypto_provider().supported_cipher_suites(),
             extensions: self.supported_extensions(),
             proposals: vec![], // TODO: Support registering custom proposals here
