@@ -7,6 +7,8 @@ use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::{Zeroize, Zeroizing};
 
+use super::hpke_encryption::HpkeEncryptable;
+
 #[derive(Error, Debug)]
 pub enum PathSecretError {
     #[error(transparent)]
@@ -63,6 +65,10 @@ impl PathSecret {
         // Define commit_secret as the all-zero vector of the same length as a path_secret
         PathSecret::from(vec![0u8; cipher_suite_provider.kdf_extract_size()])
     }
+}
+
+impl HpkeEncryptable for PathSecret {
+    const ENCRYPT_LABEL: &'static str = "UpdatePathNode";
 }
 
 #[derive(Clone, Debug)]

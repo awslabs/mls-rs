@@ -9,7 +9,6 @@ use std::option::Option::Some;
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
-use zeroize::Zeroizing;
 
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, MakeProposalFilter, ProposalFilterInit};
@@ -31,6 +30,7 @@ use crate::psk::{
 };
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
+use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
 use crate::tree_kem::leaf_node::{ConfigProperties, LeafNode};
 use crate::tree_kem::node::LeafIndex;
@@ -123,6 +123,10 @@ struct GroupSecrets {
     path_secret: Option<PathSecret>,
     #[tls_codec(with = "crate::tls::DefVec")]
     psks: Vec<PreSharedKeyID>,
+}
+
+impl HpkeEncryptable for GroupSecrets {
+    const ENCRYPT_LABEL: &'static str = "Welcome";
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -322,16 +326,13 @@ where
         // cipher suite and the HPKE private key corresponding to the GroupSecrets. If a
         // PreSharedKeyID is part of the GroupSecrets and the client is not in possession of
         // the corresponding PSK, return an error
-        let decrypted_group_secrets = cipher_suite_provider
-            .hpke_open(
-                &encrypted_group_secrets.encrypted_group_secrets,
-                &key_package_generation.init_secret_key,
-                &[],
-                None,
-            )
-            .map_err(|e| GroupError::CryptoProviderError(e.into()))?;
+        let group_secrets = GroupSecrets::decrypt(
+            &cipher_suite_provider,
+            &key_package_generation.init_secret_key,
+            &welcome.encrypted_group_info,
+            &encrypted_group_secrets.encrypted_group_secrets,
+        )?;
 
-        let group_secrets = GroupSecrets::tls_deserialize(&mut &*decrypted_group_secrets)?;
         let psk_store = config.secret_store();
 
         let psk_secret = if let Some(parent_group) = parent_group {
@@ -728,6 +729,7 @@ where
                     joiner_secret,
                     path_secrets,
                     psks.clone(),
+                    &encrypted_group_info,
                 )
             })
             .collect::<Result<Vec<EncryptedGroupSecrets>, GroupError>>()?;
@@ -1105,6 +1107,7 @@ where
         joiner_secret: &JoinerSecret,
         path_secrets: Option<&Vec<Option<PathSecret>>>,
         psks: Vec<PreSharedKeyID>,
+        encrypted_group_info: &[u8],
     ) -> Result<EncryptedGroupSecrets, GroupError> {
         let path_secret = path_secrets
             .map(|secrets| {
@@ -1126,12 +1129,11 @@ where
             psks,
         };
 
-        let group_secrets_bytes = Zeroizing::new(group_secrets.tls_serialize_detached()?);
-
-        let encrypted_group_secrets = self
-            .cipher_suite_provider
-            .hpke_seal(&key_package.hpke_init_key, &[], None, &group_secrets_bytes)
-            .map_err(|e| GroupError::CryptoProviderError(e.into()))?;
+        let encrypted_group_secrets = group_secrets.encrypt(
+            &self.cipher_suite_provider,
+            &key_package.hpke_init_key,
+            encrypted_group_info,
+        )?;
 
         Ok(EncryptedGroupSecrets {
             new_member: key_package.to_reference(&self.cipher_suite_provider)?,

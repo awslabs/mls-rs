@@ -9,9 +9,9 @@ use crate::{
     psk::PskError,
     signer::SignatureError,
     tree_kem::{
-        leaf_node::LeafNodeError, leaf_node_validator::LeafNodeValidationError,
-        path_secret::PathSecretError, tree_validator::TreeValidationError, RatchetTreeError,
-        UpdatePathValidationError,
+        hpke_encryption::HpkeEncryptionError, leaf_node::LeafNodeError,
+        leaf_node_validator::LeafNodeValidationError, path_secret::PathSecretError,
+        tree_validator::TreeValidationError, RatchetTreeError, UpdatePathValidationError,
     },
 };
 
@@ -196,6 +196,8 @@ pub enum GroupError {
     NotKeyPackage,
     #[error("No member found for given identity id.")]
     MemberNotFound,
+    #[error(transparent)]
+    HpkeEncryptionError(#[from] HpkeEncryptionError),
 }
 
 impl From<CiphertextProcessorError> for GroupError {

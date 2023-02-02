@@ -11,6 +11,7 @@ use math as tree_math;
 use math::TreeMathError;
 use node::{LeafIndex, NodeIndex, NodeVec, NodeVecError};
 
+use self::hpke_encryption::HpkeEncryptionError;
 use self::leaf_node::{LeafNode, LeafNodeError};
 use self::tree_utils::build_ascii_tree;
 
@@ -24,6 +25,7 @@ use crate::tree_kem::tree_hash::TreeHashes;
 pub use tree_index::TreeIndexError;
 
 mod capabilities;
+pub(crate) mod hpke_encryption;
 mod lifetime;
 pub(crate) mod math;
 pub mod node;
@@ -107,6 +109,8 @@ pub enum RatchetTreeError {
     DifferentIdentityInUpdate(LeafIndex),
     #[error(transparent)]
     CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error(transparent)]
+    HpkeEncryptionError(#[from] HpkeEncryptionError),
 }
 
 fn credential_validation_error<E>(e: E) -> RatchetTreeError

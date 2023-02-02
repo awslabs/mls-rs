@@ -10,6 +10,7 @@ use rayon::prelude::*;
 
 use tls_codec::Serialize;
 
+use super::hpke_encryption::HpkeEncryptable;
 use super::leaf_node::ConfigProperties;
 use super::node::Node;
 use super::{
@@ -292,7 +293,7 @@ fn encrypt_copath_node_resolution<P: CipherSuiteProvider>(
     resolution
         .iter()
         .map(|&copath_node| {
-            cipher_suite_provider.hpke_seal(copath_node.public_key(), context, None, path_secret)
+            path_secret.encrypt(cipher_suite_provider, copath_node.public_key(), context)
         })
         .collect::<Result<Vec<HpkeCiphertext>, _>>()
         .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
@@ -315,13 +316,7 @@ fn decrypt_parent_path_secret<P: CipherSuiteProvider>(
         .zip(update_node.encrypted_path_secret.iter())
         .find_map(|(i, ct)| private_key.secret_keys.get(i).map(|sk| (sk, ct)))
         .ok_or(RatchetTreeError::UpdateErrorNoSecretKey)
-        .and_then(|(sk, ct)| {
-            // Decrypt the path secret
-            cipher_suite_provider
-                .hpke_open(&ct.clone(), sk, context, None)
-                .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
-        })
-        .map(PathSecret::from)
+        .and_then(|(sk, ct)| Ok(PathSecret::decrypt(cipher_suite_provider, sk, context, ct)?))
 }
 
 #[cfg(test)]
