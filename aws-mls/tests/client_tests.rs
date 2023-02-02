@@ -12,7 +12,7 @@ use aws_mls::identity::{BasicCredential, Credential};
 use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::{ProtocolVersion, MLS_10};
 use aws_mls::provider::crypto::CryptoProvider;
-use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain};
+use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage};
 use aws_mls_core::crypto::{CipherSuiteProvider, CURVE25519_AES128, P256_AES128};
 use cfg_if::cfg_if;
 
@@ -36,7 +36,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 
 type TestClientConfig = WithIdentityProvider<
     BasicIdentityProvider,
-    WithKeychain<InMemoryKeychain, WithCryptoProvider<TestCryptoProvider, BaseConfig>>,
+    WithKeychain<InMemoryKeychainStorage, WithCryptoProvider<TestCryptoProvider, BaseConfig>>,
 >;
 
 // The same method exists in `credential::test_utils` but is not compiled without the `test` flag.
@@ -929,7 +929,7 @@ fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite, id: &str) -> Rein
     let client = ClientBuilder::new()
         .crypto_provider(TestCryptoProvider::default())
         .identity_provider(BasicIdentityProvider::new())
-        .keychain(InMemoryKeychain::default())
+        .keychain(InMemoryKeychainStorage::default())
         .signing_identity(id1.clone(), sk1, suite1)
         .signing_identity(id2.clone(), sk2, suite2)
         .build();

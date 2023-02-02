@@ -25,7 +25,7 @@ impl KeyPackageData {
 }
 
 #[async_trait]
-pub trait KeyPackageRepository: Send + Sync {
+pub trait KeyPackageStorage: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
 
     async fn delete(&mut self, id: &[u8]) -> Result<(), Self::Error>;

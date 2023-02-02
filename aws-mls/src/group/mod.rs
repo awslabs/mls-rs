@@ -25,7 +25,7 @@ use crate::provider::psk::PskStoreIdValidator;
 use crate::psk::resolver::PskResolver;
 use crate::psk::secret::{PskSecret, PskSecretInput};
 use crate::psk::{
-    ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, Psk, PskGroupId, PskNonce,
+    ExternalPskId, JustPreSharedKeyID, PreSharedKey, PreSharedKeyID, PskGroupId, PskNonce,
     ResumptionPSKUsage, ResumptionPsk,
 };
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
@@ -35,8 +35,9 @@ use crate::tree_kem::kem::TreeKem;
 use crate::tree_kem::leaf_node::{ConfigProperties, LeafNode};
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::PathSecret;
+pub use crate::tree_kem::Capabilities;
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
-use crate::tree_kem::{Capabilities, TreeKemPrivate, TreeKemPublic};
+use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 
 #[cfg(feature = "benchmark")]
 use crate::client_builder::Preferences;
@@ -75,6 +76,7 @@ pub use proposal_ref::ProposalRef;
 pub use roster::*;
 pub use snapshot::*;
 pub use stats::*;
+
 pub(crate) use transcript_hash::ConfirmedTranscriptHash;
 pub(crate) use util::*;
 
@@ -545,7 +547,7 @@ where
         )?;
 
         let epoch_secrets = EpochSecrets {
-            resumption_secret: Psk::from(vec![]),
+            resumption_secret: PreSharedKey::from(vec![]),
             sender_data_secret: SenderDataSecret::from(vec![]),
             secret_tree: SecretTree::empty(),
         };
@@ -574,7 +576,7 @@ where
 
         let proposals = psk_ids
             .into_iter()
-            .map(|psk| Proposal::Psk(PreSharedKey { psk }))
+            .map(|psk| Proposal::Psk(PreSharedKeyProposal { psk }))
             .chain([Proposal::ExternalInit(ExternalInit { kem_output })])
             .chain(to_remove.map(|r| {
                 Proposal::Remove(RemoveProposal {
@@ -1240,7 +1242,7 @@ where
     }
 
     fn psk_proposal(&self, psk: ExternalPskId) -> Result<Proposal, GroupError> {
-        Ok(Proposal::Psk(PreSharedKey {
+        Ok(Proposal::Psk(PreSharedKeyProposal {
             psk: PreSharedKeyID {
                 key_id: JustPreSharedKeyID::External(psk),
                 psk_nonce: PskNonce::random(&self.cipher_suite_provider)
@@ -1274,7 +1276,7 @@ where
                 .map_err(|e| GroupError::CryptoProviderError(e.into()))?,
         );
 
-        Ok(Proposal::ReInit(ReInit {
+        Ok(Proposal::ReInit(ReInitProposal {
             group_id,
             version,
             cipher_suite,
@@ -1824,7 +1826,7 @@ mod tests {
         },
         identity::test_utils::get_test_signing_identity,
         key_package::test_utils::{test_key_package, test_key_package_custom},
-        psk::Psk,
+        psk::PreSharedKey,
         tree_kem::{
             leaf_node::LeafNodeSource, leaf_node_validator::LeafNodeValidationError, Lifetime,
             RatchetTreeError, TreeIndexError, UpdatePathNode, UpdatePathValidationError,
@@ -2435,18 +2437,18 @@ mod tests {
 
         let external_psk_ids: Vec<ExternalPskId> = (0..5)
             .map(|i| {
-                let external_id = ExternalPskId(vec![i]);
+                let external_id = ExternalPskId::new(vec![i]);
 
                 alice
                     .group
                     .config
                     .secret_store()
-                    .insert(ExternalPskId(vec![i]), Psk::from(vec![i]));
+                    .insert(ExternalPskId::new(vec![i]), PreSharedKey::from(vec![i]));
 
                 bob.group
                     .config
                     .secret_store()
-                    .insert(ExternalPskId(vec![i]), Psk::from(vec![i]));
+                    .insert(ExternalPskId::new(vec![i]), PreSharedKey::from(vec![i]));
 
                 external_id
             })
@@ -2507,7 +2509,7 @@ mod tests {
         assert_eq!(
             state_update_alice.added_psks,
             (0..5)
-                .map(|i| JustPreSharedKeyID::External(ExternalPskId(vec![i])))
+                .map(|i| JustPreSharedKeyID::External(ExternalPskId::new(vec![i])))
                 .collect::<Vec<_>>()
         );
 

@@ -1,13 +1,13 @@
 use aws_mls_core::{
     crypto::CipherSuiteProvider,
     group::GroupStateStorage,
-    psk::{ExternalPskId, PskStore},
+    psk::{ExternalPskId, PreSharedKeyStorage},
 };
 use futures::{StreamExt, TryStreamExt};
 
 use crate::{
     group::{epoch::EpochSecrets, state_repo::GroupStateRepository, GroupContext},
-    provider::key_package::KeyPackageRepository,
+    provider::key_package::KeyPackageStorage,
 };
 
 use super::{
@@ -18,8 +18,8 @@ use super::{
 pub(crate) struct PskResolver<'a, GS, K, PS>
 where
     GS: GroupStateStorage,
-    PS: PskStore,
-    K: KeyPackageRepository,
+    PS: PreSharedKeyStorage,
+    K: KeyPackageStorage,
 {
     pub group_context: &'a GroupContext,
     pub current_epoch: &'a EpochSecrets,
@@ -27,7 +27,7 @@ where
     pub psk_store: &'a PS,
 }
 
-impl<GS: GroupStateStorage, K: KeyPackageRepository, PS: PskStore> Clone
+impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage> Clone
     for PskResolver<'_, GS, K, PS>
 {
     fn clone(&self) -> Self {
@@ -40,7 +40,9 @@ impl<GS: GroupStateStorage, K: KeyPackageRepository, PS: PskStore> Clone
     }
 }
 
-impl<GS: GroupStateStorage, K: KeyPackageRepository, PS: PskStore> PskResolver<'_, GS, K, PS> {
+impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
+    PskResolver<'_, GS, K, PS>
+{
     async fn resolve_resumption(
         &self,
         id: &PreSharedKeyID,

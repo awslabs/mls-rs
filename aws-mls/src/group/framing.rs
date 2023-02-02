@@ -292,6 +292,14 @@ impl MLSMessage {
             _ => None,
         }
     }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, tls_codec::Error> {
+        Self::tls_deserialize(&mut &*bytes)
+    }
+
+    pub fn to_bytes(&self) -> Result<Vec<u8>, tls_codec::Error> {
+        self.tls_serialize_detached()
+    }
 }
 
 #[allow(clippy::large_enum_variant)]

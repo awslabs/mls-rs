@@ -11,7 +11,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 pub(crate) mod resolver;
 pub(crate) mod secret;
 
-pub use aws_mls_core::psk::{ExternalPskId, Psk};
+pub use aws_mls_core::psk::{ExternalPskId, PreSharedKey};
 
 #[derive(
     Clone,
@@ -211,7 +211,7 @@ pub(crate) mod test_utils {
     pub(crate) fn make_external_psk_id<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
     ) -> ExternalPskId {
-        ExternalPskId(
+        ExternalPskId::new(
             cipher_suite_provider
                 .random_bytes_vec(cipher_suite_provider.kdf_extract_size())
                 .unwrap(),

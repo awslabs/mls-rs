@@ -5,14 +5,14 @@ use std::{
 };
 
 use async_trait::async_trait;
-pub use aws_mls_core::key_package::{KeyPackageData, KeyPackageRepository};
+pub use aws_mls_core::key_package::{KeyPackageData, KeyPackageStorage};
 
 #[derive(Clone, Default, Debug)]
-pub struct InMemoryKeyPackageRepository {
+pub struct InMemoryKeyPackageStorage {
     inner: Arc<Mutex<HashMap<Vec<u8>, KeyPackageData>>>,
 }
 
-impl InMemoryKeyPackageRepository {
+impl InMemoryKeyPackageStorage {
     pub fn insert(&self, id: Vec<u8>, pkg: KeyPackageData) {
         self.inner.lock().unwrap().insert(id, pkg);
     }
@@ -40,7 +40,7 @@ impl InMemoryKeyPackageRepository {
 }
 
 #[async_trait]
-impl KeyPackageRepository for InMemoryKeyPackageRepository {
+impl KeyPackageStorage for InMemoryKeyPackageStorage {
     type Error = Infallible;
 
     async fn delete(&mut self, id: &[u8]) -> Result<(), Self::Error> {

@@ -16,7 +16,7 @@ use crate::{
     protocol_version::ProtocolVersion,
     provider::{
         crypto::{CryptoProvider, SignaturePublicKey, SignatureSecretKey},
-        keychain::{InMemoryKeychain, KeychainStorage},
+        keychain::{InMemoryKeychainStorage, KeychainStorage},
     },
     tree_kem::Capabilities,
     Sealed,
@@ -44,12 +44,12 @@ pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Missing
 /// ```
 /// use aws_mls::{
 ///     external_client::ExternalClient,
-///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
+///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage},
 /// };
 ///
 /// use aws_mls_crypto_openssl::OpensslCryptoProvider;
 ///
-/// let keychain = InMemoryKeychain::default();
+/// let keychain = InMemoryKeychainStorage::default();
 /// // Add code to populate keychain here
 ///
 /// let _client = ExternalClient::builder()
@@ -67,7 +67,7 @@ pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Missing
 /// ```
 /// use aws_mls::{
 ///     external_client::{ExternalClient, MlsConfig},
-///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychain},
+///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage},
 /// };
 ///
 /// use aws_mls_crypto_openssl::OpensslCryptoProvider;
@@ -76,7 +76,7 @@ pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Missing
 ///     ExternalClient::builder()
 ///         .crypto_provider(OpensslCryptoProvider::default())
 ///         .identity_provider(BasicIdentityProvider::new())
-///         .keychain(InMemoryKeychain::default())
+///         .keychain(InMemoryKeychainStorage::default())
 ///         .build()
 /// }
 ///```
@@ -86,13 +86,13 @@ pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Missing
 /// use aws_mls::{
 ///     external_client::{ExternalBaseConfig, ExternalClient, WithIdentityProvider, WithKeychain, WithCryptoProvider},
 ///     provider::{
-///         identity::BasicIdentityProvider, keychain::InMemoryKeychain,
+///         identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage,
 ///     },
 /// };
 ///
 /// use aws_mls_crypto_openssl::OpensslCryptoProvider;
 ///
-/// type MlsClient = ExternalClient<WithKeychain<InMemoryKeychain, WithIdentityProvider<
+/// type MlsClient = ExternalClient<WithKeychain<InMemoryKeychainStorage, WithIdentityProvider<
 ///     BasicIdentityProvider,
 ///     WithCryptoProvider<OpensslCryptoProvider, ExternalBaseConfig>,
 /// >>>;
@@ -101,7 +101,7 @@ pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Missing
 ///     ExternalClient::builder()
 ///         .crypto_provider(OpensslCryptoProvider::new())
 ///         .identity_provider(BasicIdentityProvider::new())
-///         .keychain(InMemoryKeychain::default())
+///         .keychain(InMemoryKeychainStorage::default())
 ///         .build()
 /// }
 ///
@@ -223,9 +223,9 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
         identity: SigningIdentity,
         key: SignatureSecretKey,
         cipher_suite: CipherSuite,
-    ) -> ExternalClientBuilder<WithKeychain<InMemoryKeychain, C>> {
+    ) -> ExternalClientBuilder<WithKeychain<InMemoryKeychainStorage, C>> {
         self.keychain({
-            let mut keychain = InMemoryKeychain::default();
+            let mut keychain = InMemoryKeychainStorage::default();
             keychain.insert(identity, key, cipher_suite);
             keychain
         })
@@ -318,7 +318,7 @@ where
     }
 }
 
-impl<C: IntoConfig<Keychain = InMemoryKeychain>> ExternalClientBuilder<C> {
+impl<C: IntoConfig<Keychain = InMemoryKeychainStorage>> ExternalClientBuilder<C> {
     /// Add an identity to the in-memory keychain.
     pub fn signing_identity(
         self,
@@ -600,13 +600,16 @@ pub mod test_utils {
         },
         provider::{
             crypto::test_utils::TestCryptoProvider, identity::BasicIdentityProvider,
-            keychain::InMemoryKeychain,
+            keychain::InMemoryKeychainStorage,
         },
     };
 
     pub type TestExternalClientConfig = WithIdentityProvider<
         BasicIdentityProvider,
-        WithKeychain<InMemoryKeychain, WithCryptoProvider<TestCryptoProvider, ExternalBaseConfig>>,
+        WithKeychain<
+            InMemoryKeychainStorage,
+            WithCryptoProvider<TestCryptoProvider, ExternalBaseConfig>,
+        >,
     >;
 
     pub type TestExternalClientBuilder = ExternalClientBuilder<TestExternalClientConfig>;
@@ -616,7 +619,7 @@ pub mod test_utils {
             ExternalClientBuilder::new()
                 .crypto_provider(TestCryptoProvider::default())
                 .identity_provider(BasicIdentityProvider::new())
-                .keychain(InMemoryKeychain::default())
+                .keychain(InMemoryKeychainStorage::default())
         }
 
         pub fn new_for_test_disabling_cipher_suite(cipher_suite: CipherSuite) -> Self {
@@ -630,7 +633,7 @@ pub mod test_utils {
             ExternalClientBuilder::new()
                 .crypto_provider(crypto_provider)
                 .identity_provider(BasicIdentityProvider::new())
-                .keychain(InMemoryKeychain::default())
+                .keychain(InMemoryKeychainStorage::default())
         }
     }
 }

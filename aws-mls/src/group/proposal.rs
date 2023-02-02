@@ -79,7 +79,7 @@ impl RemoveProposal {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct PreSharedKey {
+pub struct PreSharedKeyProposal {
     pub psk: PreSharedKeyID,
 }
 
@@ -95,7 +95,7 @@ pub struct PreSharedKey {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ReInit {
+pub struct ReInitProposal {
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
     pub group_id: Vec<u8>,
@@ -186,8 +186,8 @@ pub enum Proposal {
     Add(AddProposal),
     Update(UpdateProposal),
     Remove(RemoveProposal),
-    Psk(PreSharedKey),
-    ReInit(ReInit),
+    Psk(PreSharedKeyProposal),
+    ReInit(ReInitProposal),
     ExternalInit(ExternalInit),
     GroupContextExtensions(ExtensionList),
 }
@@ -211,8 +211,8 @@ pub enum BorrowedProposal<'a> {
     Add(&'a AddProposal),
     Update(&'a UpdateProposal),
     Remove(&'a RemoveProposal),
-    Psk(&'a PreSharedKey),
-    ReInit(&'a ReInit),
+    Psk(&'a PreSharedKeyProposal),
+    ReInit(&'a ReInitProposal),
     ExternalInit(&'a ExternalInit),
     GroupContextExtensions(&'a ExtensionList),
 }
@@ -249,14 +249,14 @@ impl<'a> From<&'a RemoveProposal> for BorrowedProposal<'a> {
     }
 }
 
-impl<'a> From<&'a PreSharedKey> for BorrowedProposal<'a> {
-    fn from(p: &'a PreSharedKey) -> Self {
+impl<'a> From<&'a PreSharedKeyProposal> for BorrowedProposal<'a> {
+    fn from(p: &'a PreSharedKeyProposal) -> Self {
         Self::Psk(p)
     }
 }
 
-impl<'a> From<&'a ReInit> for BorrowedProposal<'a> {
-    fn from(p: &'a ReInit) -> Self {
+impl<'a> From<&'a ReInitProposal> for BorrowedProposal<'a> {
+    fn from(p: &'a ReInitProposal) -> Self {
         Self::ReInit(p)
     }
 }

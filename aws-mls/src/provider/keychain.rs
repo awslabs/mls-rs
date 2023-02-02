@@ -11,13 +11,13 @@ use super::crypto::SignatureSecretKey;
 pub use aws_mls_core::keychain::KeychainStorage;
 
 #[derive(Clone, Debug, Default)]
-pub struct InMemoryKeychain {
+pub struct InMemoryKeychainStorage {
     secret_keys: Arc<Mutex<IndexMap<SigningIdentity, (CipherSuite, SignatureSecretKey)>>>,
 }
 
-impl InMemoryKeychain {
-    pub fn new() -> InMemoryKeychain {
-        InMemoryKeychain {
+impl InMemoryKeychainStorage {
+    pub fn new() -> InMemoryKeychainStorage {
+        InMemoryKeychainStorage {
             secret_keys: Default::default(),
         }
     }
@@ -72,7 +72,7 @@ impl InMemoryKeychain {
 }
 
 #[async_trait]
-impl KeychainStorage for InMemoryKeychain {
+impl KeychainStorage for InMemoryKeychainStorage {
     type Error = Infallible;
 
     async fn signer(

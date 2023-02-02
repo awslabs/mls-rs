@@ -331,11 +331,9 @@ where
 
     async fn process_ciphertext(
         &mut self,
-        cipher_text: MLSCiphertext,
+        _cipher_text: MLSCiphertext,
     ) -> Result<EventOrContent<Self::EventType>, GroupError> {
-        Ok(EventOrContent::Event(ExternalEvent::Ciphertext(
-            cipher_text,
-        )))
+        Ok(EventOrContent::Event(ExternalEvent::Ciphertext))
     }
 
     async fn update_key_schedule(

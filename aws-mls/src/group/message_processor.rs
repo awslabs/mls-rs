@@ -6,7 +6,7 @@ use super::{
         MLSPlaintext, Sender, WireFormat,
     },
     message_signature::MLSAuthenticatedContent,
-    proposal::{ExternalInit, Proposal, ReInit},
+    proposal::{ExternalInit, Proposal, ReInitProposal},
     proposal_cache::ProposalSetEffects,
     proposal_effects,
     state::GroupState,
@@ -37,7 +37,7 @@ pub(crate) struct ProvisionalState {
     pub(crate) epoch: u64,
     pub(crate) path_update_required: bool,
     pub(crate) psks: Vec<PreSharedKeyID>,
-    pub(crate) reinit: Option<ReInit>,
+    pub(crate) reinit: Option<ReInitProposal>,
     pub(crate) external_init: Option<(LeafIndex, ExternalInit)>,
     pub(crate) rejected_proposals: Vec<(ProposalRef, Proposal)>,
 }
@@ -73,7 +73,7 @@ pub struct ProcessedMessage<E> {
 pub enum ExternalEvent<IE> {
     Commit(StateUpdate<IE>),
     Proposal((Proposal, ProposalRef)),
-    Ciphertext(MLSCiphertext),
+    Ciphertext,
 }
 
 impl<E> From<E> for ProcessedMessage<E> {

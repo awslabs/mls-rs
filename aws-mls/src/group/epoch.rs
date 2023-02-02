@@ -1,5 +1,5 @@
 use crate::group::GroupContext;
-use crate::psk::Psk;
+use crate::psk::PreSharedKey;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::node::LeafIndex;
 use crate::{group::secret_tree::SecretTree, provider::crypto::SignaturePublicKey};
@@ -50,7 +50,7 @@ impl GroupStateProvider for PriorEpoch {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EpochSecrets {
-    pub(crate) resumption_secret: Psk,
+    pub(crate) resumption_secret: PreSharedKey,
     pub(crate) sender_data_secret: SenderDataSecret,
     pub(crate) secret_tree: SecretTree,
 }

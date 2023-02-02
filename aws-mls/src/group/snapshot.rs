@@ -4,7 +4,7 @@ use crate::{
     group::{
         key_schedule::KeySchedule, CachedProposal, CommitGeneration, ConfirmationTag, Group,
         GroupContext, GroupError, GroupState, InterimTranscriptHash, ProposalCache, ProposalRef,
-        ReInit, TreeKemPublic,
+        ReInitProposal, TreeKemPublic,
     },
     provider::crypto::{HpkePublicKey, HpkeSecretKey},
     serde_utils::vec_u8_as_base64::VecAsBase64,
@@ -52,7 +52,7 @@ struct RawGroupState {
     proposals: HashMap<ProposalRef, CachedProposal>,
     tree_data: NodeVec,
     interim_transcript_hash: InterimTranscriptHash,
-    pending_reinit: Option<ReInit>,
+    pending_reinit: Option<ReInitProposal>,
     confirmation_tag: ConfirmationTag,
 }
 

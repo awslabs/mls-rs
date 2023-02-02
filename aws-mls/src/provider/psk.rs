@@ -7,16 +7,16 @@ use std::{
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::psk::{ExternalPskId, ExternalPskIdValidator, Psk};
+use crate::psk::{ExternalPskId, ExternalPskIdValidator, PreSharedKey};
 
-pub use aws_mls_core::psk::PskStore;
+pub use aws_mls_core::psk::PreSharedKeyStorage;
 
 #[derive(Debug, Clone)]
 pub(crate) struct PskStoreIdValidator<T>(T);
 
 impl<T> From<T> for PskStoreIdValidator<T>
 where
-    T: PskStore,
+    T: PreSharedKeyStorage,
 {
     fn from(store: T) -> Self {
         PskStoreIdValidator(store)
@@ -24,7 +24,7 @@ where
 }
 
 #[async_trait]
-impl<T: PskStore> ExternalPskIdValidator for PskStoreIdValidator<T> {
+impl<T: PreSharedKeyStorage> ExternalPskIdValidator for PskStoreIdValidator<T> {
     type Error = PskStoreIdValidationError<T::Error>;
 
     async fn validate(&self, id: &ExternalPskId) -> Result<(), Self::Error> {
@@ -37,7 +37,7 @@ impl<T: PskStore> ExternalPskIdValidator for PskStoreIdValidator<T> {
 }
 
 #[derive(Debug, Error)]
-pub enum PskStoreIdValidationError<E> {
+pub(crate) enum PskStoreIdValidationError<E> {
     #[error("External PSK ID {0:?} not found")]
     ExternalIdNotFound(ExternalPskId),
     #[error(transparent)]
@@ -45,16 +45,16 @@ pub enum PskStoreIdValidationError<E> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct InMemoryPskStore {
-    inner: Arc<Mutex<HashMap<ExternalPskId, Psk>>>,
+pub struct InMemoryPreSharedKeyStorage {
+    inner: Arc<Mutex<HashMap<ExternalPskId, PreSharedKey>>>,
 }
 
-impl InMemoryPskStore {
-    pub fn insert(&mut self, id: ExternalPskId, psk: Psk) {
+impl InMemoryPreSharedKeyStorage {
+    pub fn insert(&mut self, id: ExternalPskId, psk: PreSharedKey) {
         self.inner.lock().unwrap().insert(id, psk);
     }
 
-    pub fn get(&self, id: &ExternalPskId) -> Option<Psk> {
+    pub fn get(&self, id: &ExternalPskId) -> Option<PreSharedKey> {
         self.inner.lock().unwrap().get(id).cloned()
     }
 
@@ -64,10 +64,10 @@ impl InMemoryPskStore {
 }
 
 #[async_trait]
-impl PskStore for InMemoryPskStore {
+impl PreSharedKeyStorage for InMemoryPreSharedKeyStorage {
     type Error = Infallible;
 
-    async fn get(&self, id: &ExternalPskId) -> Result<Option<Psk>, Self::Error> {
+    async fn get(&self, id: &ExternalPskId) -> Result<Option<PreSharedKey>, Self::Error> {
         Ok(self.get(id))
     }
 
@@ -76,7 +76,7 @@ impl PskStore for InMemoryPskStore {
         Ok(())
     }
 
-    async fn insert(&mut self, id: ExternalPskId, psk: Psk) -> Result<(), Self::Error> {
+    async fn insert(&mut self, id: ExternalPskId, psk: PreSharedKey) -> Result<(), Self::Error> {
         self.insert(id, psk);
         Ok(())
     }

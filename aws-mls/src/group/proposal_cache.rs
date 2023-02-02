@@ -29,7 +29,7 @@ pub(crate) struct ProposalSetEffects {
     pub removes: Vec<LeafIndex>,
     pub group_context_ext: Option<ExtensionList>,
     pub psks: Vec<PreSharedKeyID>,
-    pub reinit: Option<ReInit>,
+    pub reinit: Option<ReInitProposal>,
     pub external_init: Option<(LeafIndex, ExternalInit)>,
     pub rejected_proposals: Vec<(ProposalRef, Proposal)>,
 }
@@ -105,7 +105,7 @@ impl ProposalSetEffects {
             }
             Proposal::Remove(remove) => self.removes.push(remove.to_remove),
             Proposal::GroupContextExtensions(list) => self.group_context_ext = Some(list),
-            Proposal::Psk(PreSharedKey { psk }) => {
+            Proposal::Psk(PreSharedKeyProposal { psk }) => {
                 self.psks.push(psk);
             }
             Proposal::ReInit(reinit) => {
@@ -1461,7 +1461,7 @@ mod tests {
 
     #[futures_test::test]
     async fn new_member_cannot_commit_reinit_proposal() {
-        let res = new_member_commits_proposal(Proposal::ReInit(ReInit {
+        let res = new_member_commits_proposal(Proposal::ReInit(ReInitProposal {
             group_id: b"foo".to_vec(),
             version: TEST_PROTOCOL_VERSION,
             cipher_suite: TEST_CIPHER_SUITE,
@@ -1614,9 +1614,9 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let cache = make_proposal_cache();
 
-        let psk = Proposal::Psk(PreSharedKey {
+        let psk = Proposal::Psk(PreSharedKeyProposal {
             psk: PreSharedKeyID {
-                key_id: JustPreSharedKeyID::External(ExternalPskId(vec![])),
+                key_id: JustPreSharedKeyID::External(ExternalPskId::new(vec![])),
                 psk_nonce: PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE))
                     .unwrap(),
             },
@@ -1650,7 +1650,7 @@ mod tests {
         let (alice, tree) = new_tree("alice").await;
         let cache = make_proposal_cache();
 
-        let reinit = Proposal::ReInit(ReInit {
+        let reinit = Proposal::ReInit(ReInitProposal {
             group_id: vec![],
             version: TEST_PROTOCOL_VERSION,
             cipher_suite: TEST_CIPHER_SUITE,
@@ -2200,16 +2200,16 @@ mod tests {
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
     }
 
-    fn make_external_psk(id: &[u8], nonce: PskNonce) -> PreSharedKey {
-        PreSharedKey {
+    fn make_external_psk(id: &[u8], nonce: PskNonce) -> PreSharedKeyProposal {
+        PreSharedKeyProposal {
             psk: PreSharedKeyID {
-                key_id: JustPreSharedKeyID::External(ExternalPskId(id.to_vec())),
+                key_id: JustPreSharedKeyID::External(ExternalPskId::new(id.to_vec())),
                 psk_nonce: nonce,
             },
         }
     }
 
-    fn new_external_psk(id: &[u8]) -> PreSharedKey {
+    fn new_external_psk(id: &[u8]) -> PreSharedKeyProposal {
         make_external_psk(
             id,
             PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE)).unwrap(),
@@ -2280,8 +2280,8 @@ mod tests {
         assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
     }
 
-    fn make_resumption_psk(usage: ResumptionPSKUsage) -> PreSharedKey {
-        PreSharedKey {
+    fn make_resumption_psk(usage: ResumptionPSKUsage) -> PreSharedKeyProposal {
+        PreSharedKeyProposal {
             psk: PreSharedKeyID {
                 key_id: JustPreSharedKeyID::Resumption(ResumptionPsk {
                     usage,
@@ -2376,8 +2376,8 @@ mod tests {
         sending_resumption_psk_with_bad_usage_filters_it_out(ResumptionPSKUsage::Branch).await;
     }
 
-    fn make_reinit(version: ProtocolVersion) -> ReInit {
-        ReInit {
+    fn make_reinit(version: ProtocolVersion) -> ReInitProposal {
+        ReInitProposal {
             group_id: TEST_GROUP.to_vec(),
             version,
             cipher_suite: TEST_CIPHER_SUITE,

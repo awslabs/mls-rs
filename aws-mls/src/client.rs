@@ -13,7 +13,7 @@ use crate::key_package::{KeyPackage, KeyPackageGenerationError, KeyPackageGenera
 use crate::protocol_version::ProtocolVersion;
 use crate::provider::crypto::CryptoProvider;
 use crate::provider::group_state::GroupStateStorage;
-use crate::provider::key_package::KeyPackageRepository;
+use crate::provider::key_package::KeyPackageStorage;
 use crate::provider::keychain::KeychainStorage;
 use crate::psk::ExternalPskId;
 use crate::signer::SignatureError;
@@ -409,7 +409,7 @@ mod tests {
         },
         identity::test_utils::get_test_basic_credential,
         provider::crypto::test_utils::TestCryptoProvider,
-        psk::{ExternalPskId, Psk},
+        psk::{ExternalPskId, PreSharedKey},
         tree_kem::leaf_node::LeafNodeSource,
     };
     use assert_matches::assert_matches;
@@ -507,8 +507,8 @@ mod tests {
         // interim_transcript_hash to be computed from the confirmed_transcript_hash and
         // confirmation_tag, which is not the case for the initial interim_transcript_hash.
 
-        let psk_id = ExternalPskId(b"psk id".to_vec());
-        let psk = Psk::from(b"psk".to_vec());
+        let psk = PreSharedKey::from(b"psk".to_vec());
+        let psk_id = ExternalPskId::new(b"psk id".to_vec());
 
         let mut alice_group =
             test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |c| {

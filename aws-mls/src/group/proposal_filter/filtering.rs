@@ -2,8 +2,8 @@ use crate::{
     extension::{ExtensionList, ExternalSendersExt, RequiredCapabilitiesExt},
     group::{
         proposal_filter::{Proposable, ProposalBundle, ProposalFilterError, ProposalInfo},
-        AddProposal, BorrowedProposal, ExternalInit, JustPreSharedKeyID, PreSharedKey,
-        ProposalType, ReInit, RemoveProposal, ResumptionPSKUsage, ResumptionPsk, Sender,
+        AddProposal, BorrowedProposal, ExternalInit, JustPreSharedKeyID, PreSharedKeyProposal,
+        ProposalType, ReInitProposal, RemoveProposal, ResumptionPSKUsage, ResumptionPsk, Sender,
         UpdateProposal,
     },
     key_package::{KeyPackageValidationOptions, KeyPackageValidator},
@@ -815,7 +815,7 @@ fn filter_out_invalid_reinit<F>(
 where
     F: FilterStrategy,
 {
-    proposals.retain_by_type::<ReInit, _, _>(|p| {
+    proposals.retain_by_type::<ReInitProposal, _, _>(|p| {
         apply_strategy(
             &strategy,
             p,
@@ -844,7 +844,7 @@ where
 
     let mut found = false;
 
-    proposals.retain_by_type::<ReInit, _, _>(|p| {
+    proposals.retain_by_type::<ReInitProposal, _, _>(|p| {
         apply_strategy(
             &strategy,
             p,
@@ -900,57 +900,62 @@ where
         bad_indices: Vec<usize>,
     }
 
-    let state = futures::stream::iter(proposals.by_type::<PreSharedKey>().enumerate().map(Ok))
-        .try_fold(ValidationState::default(), |mut state, (i, p)| async move {
-            let valid = matches!(
-                p.proposal.psk.key_id,
-                JustPreSharedKeyID::External(_)
-                    | JustPreSharedKeyID::Resumption(ResumptionPsk {
-                        usage: ResumptionPSKUsage::Application,
-                        ..
-                    })
-            );
-
-            let nonce_length = p.proposal.psk.psk_nonce.0.len();
-            let nonce_valid = nonce_length == kdf_extract_size;
-            let is_new_id = state.ids_seen.insert(p.proposal.psk.clone());
-
-            let external_id_is_valid = match &p.proposal.psk.key_id {
-                JustPreSharedKeyID::External(id) => external_psk_id_validator
-                    .validate(id)
-                    .await
-                    .map_err(|e| ProposalFilterError::PskIdValidationError(e.into())),
-                JustPreSharedKeyID::Resumption(_) => Ok(()),
-            };
-
-            let res = if !valid {
-                Err(ProposalFilterError::InvalidTypeOrUsageInPreSharedKeyProposal)
-            } else if !nonce_valid {
-                Err(ProposalFilterError::InvalidPskNonceLength {
-                    expected: kdf_extract_size,
-                    found: nonce_length,
+    let state = futures::stream::iter(
+        proposals
+            .by_type::<PreSharedKeyProposal>()
+            .enumerate()
+            .map(Ok),
+    )
+    .try_fold(ValidationState::default(), |mut state, (i, p)| async move {
+        let valid = matches!(
+            p.proposal.psk.key_id,
+            JustPreSharedKeyID::External(_)
+                | JustPreSharedKeyID::Resumption(ResumptionPsk {
+                    usage: ResumptionPSKUsage::Application,
+                    ..
                 })
-            } else if !is_new_id {
-                Err(ProposalFilterError::DuplicatePskIds)
-            } else {
-                external_id_is_valid
-            };
+        );
 
-            let is_invalid_index = apply_strategy(strategy, p, res)?;
+        let nonce_length = p.proposal.psk.psk_nonce.0.len();
+        let nonce_valid = nonce_length == kdf_extract_size;
+        let is_new_id = state.ids_seen.insert(p.proposal.psk.clone());
 
-            if !is_invalid_index {
-                state.bad_indices.push(i)
-            }
+        let external_id_is_valid = match &p.proposal.psk.key_id {
+            JustPreSharedKeyID::External(id) => external_psk_id_validator
+                .validate(id)
+                .await
+                .map_err(|e| ProposalFilterError::PskIdValidationError(e.into())),
+            JustPreSharedKeyID::Resumption(_) => Ok(()),
+        };
 
-            Ok::<_, ProposalFilterError>(state)
-        })
-        .await?;
+        let res = if !valid {
+            Err(ProposalFilterError::InvalidTypeOrUsageInPreSharedKeyProposal)
+        } else if !nonce_valid {
+            Err(ProposalFilterError::InvalidPskNonceLength {
+                expected: kdf_extract_size,
+                found: nonce_length,
+            })
+        } else if !is_new_id {
+            Err(ProposalFilterError::DuplicatePskIds)
+        } else {
+            external_id_is_valid
+        };
+
+        let is_invalid_index = apply_strategy(strategy, p, res)?;
+
+        if !is_invalid_index {
+            state.bad_indices.push(i)
+        }
+
+        Ok::<_, ProposalFilterError>(state)
+    })
+    .await?;
 
     state
         .bad_indices
         .into_iter()
         .rev()
-        .for_each(|i| proposals.remove::<PreSharedKey>(i));
+        .for_each(|i| proposals.remove::<PreSharedKeyProposal>(i));
 
     Ok(proposals)
 }
@@ -1053,8 +1058,13 @@ where
     validate_proposer::<AddProposal, _>(&strategy, tree, external_senders, &mut proposals)?;
     validate_proposer::<UpdateProposal, _>(&strategy, tree, external_senders, &mut proposals)?;
     validate_proposer::<RemoveProposal, _>(&strategy, tree, external_senders, &mut proposals)?;
-    validate_proposer::<PreSharedKey, _>(&strategy, tree, external_senders, &mut proposals)?;
-    validate_proposer::<ReInit, _>(&strategy, tree, external_senders, &mut proposals)?;
+    validate_proposer::<PreSharedKeyProposal, _>(
+        &strategy,
+        tree,
+        external_senders,
+        &mut proposals,
+    )?;
+    validate_proposer::<ReInitProposal, _>(&strategy, tree, external_senders, &mut proposals)?;
     validate_proposer::<ExternalInit, _>(&strategy, tree, external_senders, &mut proposals)?;
     validate_proposer::<ExtensionList, _>(&strategy, tree, external_senders, &mut proposals)?;
 

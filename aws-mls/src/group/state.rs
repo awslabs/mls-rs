@@ -1,5 +1,6 @@
 use super::{
-    confirmation_tag::ConfirmationTag, proposal::ReInit, transcript_hash::InterimTranscriptHash,
+    confirmation_tag::ConfirmationTag, proposal::ReInitProposal,
+    transcript_hash::InterimTranscriptHash,
 };
 use crate::{
     cipher_suite::CipherSuite,
@@ -14,7 +15,7 @@ pub struct GroupState {
     pub(crate) context: GroupContext,
     pub(crate) public_tree: TreeKemPublic,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
-    pub(crate) pending_reinit: Option<ReInit>,
+    pub(crate) pending_reinit: Option<ReInitProposal>,
     pub(crate) confirmation_tag: ConfirmationTag,
 }
 

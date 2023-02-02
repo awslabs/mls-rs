@@ -11,8 +11,8 @@ use crate::{
     identity::CredentialType,
     protocol_version::ProtocolVersion,
     provider::{
-        crypto::CryptoProvider, group_state::GroupStateStorage, key_package::KeyPackageRepository,
-        keychain::KeychainStorage, psk::PskStore,
+        crypto::CryptoProvider, group_state::GroupStateStorage, key_package::KeyPackageStorage,
+        keychain::KeychainStorage, psk::PreSharedKeyStorage,
     },
     tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
 };
@@ -22,9 +22,9 @@ use std::convert::Infallible;
 
 #[async_trait]
 pub trait ClientConfig: Clone + Send + Sync {
-    type KeyPackageRepository: KeyPackageRepository + Clone;
+    type KeyPackageRepository: KeyPackageStorage + Clone;
     type Keychain: KeychainStorage + Clone;
-    type PskStore: PskStore + Clone;
+    type PskStore: PreSharedKeyStorage + Clone;
     type GroupStateStorage: GroupStateStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
     type MakeProposalFilter: MakeProposalFilter + Clone;

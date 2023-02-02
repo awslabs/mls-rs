@@ -1,8 +1,8 @@
 use crate::{
     extension::ExtensionList,
     group::{
-        AddProposal, BorrowedProposal, ExternalInit, PreSharedKey, Proposal, ProposalOrRef,
-        ProposalRef, ProposalType, ReInit, RemoveProposal, Sender, UpdateProposal,
+        AddProposal, BorrowedProposal, ExternalInit, PreSharedKeyProposal, Proposal, ProposalOrRef,
+        ProposalRef, ProposalType, ReInitProposal, RemoveProposal, Sender, UpdateProposal,
     },
 };
 use std::marker::PhantomData;
@@ -12,8 +12,8 @@ pub struct ProposalBundle {
     additions: Vec<ProposalInfo<AddProposal>>,
     updates: Vec<ProposalInfo<UpdateProposal>>,
     removals: Vec<ProposalInfo<RemoveProposal>>,
-    psks: Vec<ProposalInfo<PreSharedKey>>,
-    reinitializations: Vec<ProposalInfo<ReInit>>,
+    psks: Vec<ProposalInfo<PreSharedKeyProposal>>,
+    reinitializations: Vec<ProposalInfo<ReInitProposal>>,
     external_initializations: Vec<ProposalInfo<ExternalInit>>,
     group_context_extensions: Vec<ProposalInfo<ExtensionList>>,
 }
@@ -113,11 +113,11 @@ impl ProposalBundle {
             f(&proposal.by_ref().map(BorrowedProposal::from))
         })?;
 
-        self.retain_by_type::<PreSharedKey, _, _>(|proposal| {
+        self.retain_by_type::<PreSharedKeyProposal, _, _>(|proposal| {
             f(&proposal.by_ref().map(BorrowedProposal::from))
         })?;
 
-        self.retain_by_type::<ReInit, _, _>(|proposal| {
+        self.retain_by_type::<ReInitProposal, _, _>(|proposal| {
             f(&proposal.by_ref().map(BorrowedProposal::from))
         })?;
 
@@ -338,8 +338,8 @@ macro_rules! impl_proposable {
 impl_proposable!(AddProposal, ADD, additions);
 impl_proposable!(UpdateProposal, UPDATE, updates);
 impl_proposable!(RemoveProposal, REMOVE, removals);
-impl_proposable!(PreSharedKey, PSK, psks);
-impl_proposable!(ReInit, RE_INIT, reinitializations);
+impl_proposable!(PreSharedKeyProposal, PSK, psks);
+impl_proposable!(ReInitProposal, RE_INIT, reinitializations);
 impl_proposable!(ExternalInit, EXTERNAL_INIT, external_initializations);
 impl_proposable!(
     ExtensionList,

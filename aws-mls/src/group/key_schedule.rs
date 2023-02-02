@@ -1,7 +1,7 @@
 use crate::group::secret_tree::SecretTreeError;
 use crate::group::{GroupContext, MembershipTag, MembershipTagError, SecretTree};
 use crate::psk::secret::PskSecret;
-use crate::psk::{Psk, PskError};
+use crate::psk::{PreSharedKey, PskError};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
 use serde_with::serde_as;
@@ -148,7 +148,7 @@ impl KeySchedule {
         let secrets_producer = SecretsProducer::new(cipher_suite_provider, epoch_secret);
 
         let epoch_secrets = EpochSecrets {
-            resumption_secret: Psk::from(secrets_producer.derive("resumption")?),
+            resumption_secret: PreSharedKey::from(secrets_producer.derive("resumption")?),
             sender_data_secret: SenderDataSecret::from(secrets_producer.derive("sender data")?),
             secret_tree: SecretTree::new(secret_tree_size, secrets_producer.derive("encryption")?),
         };

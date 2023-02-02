@@ -22,7 +22,7 @@ use crate::{
     identity::SigningIdentity,
     provider::{
         crypto::SignatureSecretKey, group_state::InMemoryGroupStateStorage,
-        key_package::InMemoryKeyPackageRepository,
+        key_package::InMemoryKeyPackageStorage,
     },
 };
 use futures::StreamExt;
@@ -88,7 +88,7 @@ pub async fn load_test_cases() -> Vec<Vec<Group<TestClientConfig>>> {
                             group_info.session,
                             epochs,
                         ))
-                        .key_package_repo(InMemoryKeyPackageRepository::from_benchmark_data(
+                        .key_package_repo(InMemoryKeyPackageStorage::from_benchmark_data(
                             key_packages,
                         ))
                         .build()

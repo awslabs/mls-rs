@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use aws_mls_core::{crypto::CipherSuiteProvider, psk::Psk};
+use aws_mls_core::{crypto::CipherSuiteProvider, psk::PreSharedKey};
 use tls_codec::Serialize;
 use zeroize::Zeroize;
 
@@ -10,7 +10,7 @@ use super::{PSKLabel, PreSharedKeyID, PskError};
 
 pub struct PskSecretInput {
     pub id: PreSharedKeyID,
-    pub psk: Psk,
+    pub psk: PreSharedKey,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Zeroize)]
@@ -114,7 +114,7 @@ mod tests {
     impl From<PskInfo> for PskSecretInput {
         fn from(info: PskInfo) -> Self {
             let id = PreSharedKeyID {
-                key_id: JustPreSharedKeyID::External(ExternalPskId(info.id)),
+                key_id: JustPreSharedKeyID::External(ExternalPskId::new(info.id)),
                 psk_nonce: PskNonce(info.nonce),
             };
 
@@ -136,7 +136,7 @@ mod tests {
     impl TestScenario {
         fn make_psk_list<CS: CipherSuiteProvider>(cs: &CS, n: usize) -> Vec<PskInfo> {
             iter::repeat_with(|| PskInfo {
-                id: make_external_psk_id(cs).0,
+                id: make_external_psk_id(cs).to_vec(),
                 psk: cs.random_bytes_vec(cs.kdf_extract_size()).unwrap(),
                 nonce: make_nonce(cs.cipher_suite()).0,
             })

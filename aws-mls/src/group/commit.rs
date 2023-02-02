@@ -476,13 +476,13 @@ mod tests {
         client_config::ClientConfig,
         extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
         group::{
-            proposal::PreSharedKey,
+            proposal::PreSharedKeyProposal,
             test_utils::{test_group, test_n_member_group},
         },
         identity::test_utils::get_test_basic_credential,
         identity::test_utils::get_test_signing_identity,
         key_package::test_utils::test_key_package,
-        psk::{JustPreSharedKeyID, PreSharedKeyID, Psk},
+        psk::{JustPreSharedKeyID, PreSharedKey, PreSharedKeyID},
     };
 
     use super::*;
@@ -515,10 +515,10 @@ mod tests {
             };
 
             if let Some(psk_id) = match &proposal {
-                Proposal::Psk(PreSharedKey { psk: PreSharedKeyID { key_id: JustPreSharedKeyID::External(psk_id), .. },}) => Some(psk_id),
+                Proposal::Psk(PreSharedKeyProposal { psk: PreSharedKeyID { key_id: JustPreSharedKeyID::External(psk_id), .. },}) => Some(psk_id),
                 _ => None,
             } {
-                let found = expected.iter().any(|item| matches!(item, Proposal::Psk(PreSharedKey { psk: PreSharedKeyID { key_id: JustPreSharedKeyID::External(id), .. }}) if id == psk_id));
+                let found = expected.iter().any(|item| matches!(item, Proposal::Psk(PreSharedKeyProposal { psk: PreSharedKeyID { key_id: JustPreSharedKeyID::External(id), .. }}) if id == psk_id));
 
                 assert!(found)
             } else {
@@ -630,12 +630,12 @@ mod tests {
     #[futures_test::test]
     async fn test_commit_builder_psk() {
         let mut group = test_commit_builder_group().await;
-        let test_psk = ExternalPskId(vec![1]);
+        let test_psk = ExternalPskId::new(vec![1]);
 
         group
             .config
             .secret_store()
-            .insert(test_psk.clone(), Psk::from(vec![1]));
+            .insert(test_psk.clone(), PreSharedKey::from(vec![1]));
 
         let commit_output = group
             .commit_builder()

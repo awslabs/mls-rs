@@ -1,10 +1,10 @@
 use crate::{
     group::{PriorEpoch, Snapshot},
     key_package::KeyPackageRef,
-    provider::{group_state::GroupStateStorage, key_package::KeyPackageRepository},
+    provider::{group_state::GroupStateStorage, key_package::KeyPackageStorage},
 };
 
-use aws_mls_core::psk::Psk;
+use aws_mls_core::psk::PreSharedKey;
 use hex::ToHex;
 use std::collections::{hash_map::Entry, HashMap, VecDeque};
 use thiserror::Error;
@@ -38,7 +38,7 @@ struct EpochStorageCommit {
 pub(crate) struct GroupStateRepository<S, K>
 where
     S: GroupStateStorage,
-    K: KeyPackageRepository,
+    K: KeyPackageStorage,
 {
     pub max_epochs: u64,
     pending_commit: EpochStorageCommit,
@@ -51,7 +51,7 @@ where
 impl<S, K> GroupStateRepository<S, K>
 where
     S: GroupStateStorage,
-    K: KeyPackageRepository,
+    K: KeyPackageStorage,
 {
     pub async fn new(
         group_id: Vec<u8>,
@@ -98,7 +98,7 @@ where
     pub async fn resumption_secret(
         &self,
         epoch_id: u64,
-    ) -> Result<Option<Psk>, GroupStateRepositoryError> {
+    ) -> Result<Option<PreSharedKey>, GroupStateRepositoryError> {
         if self.epoch_pending_delete(epoch_id) {
             return Ok(None);
         }
@@ -241,7 +241,7 @@ mod tests {
         },
         provider::{
             group_state::{EpochData, InMemoryGroupStateStorage},
-            key_package::InMemoryKeyPackageRepository,
+            key_package::InMemoryKeyPackageStorage,
         },
     };
 
@@ -249,12 +249,12 @@ mod tests {
 
     async fn test_group_state_repo(
         retention_limit: u64,
-    ) -> GroupStateRepository<InMemoryGroupStateStorage, InMemoryKeyPackageRepository> {
+    ) -> GroupStateRepository<InMemoryGroupStateStorage, InMemoryKeyPackageStorage> {
         GroupStateRepository::new(
             TEST_GROUP.to_vec(),
             retention_limit,
             InMemoryGroupStateStorage::default(),
-            InMemoryKeyPackageRepository::default(),
+            InMemoryKeyPackageStorage::default(),
             None,
         )
         .await
@@ -276,7 +276,7 @@ mod tests {
                 TEST_GROUP.to_vec(),
                 0,
                 InMemoryGroupStateStorage::default(),
-                InMemoryKeyPackageRepository::default(),
+                InMemoryKeyPackageStorage::default(),
                 None,
             )
             .await,
@@ -594,7 +594,7 @@ mod tests {
 
     async fn existing_storage_setup(
         count: u64,
-    ) -> GroupStateRepository<InMemoryGroupStateStorage, InMemoryKeyPackageRepository> {
+    ) -> GroupStateRepository<InMemoryGroupStateStorage, InMemoryKeyPackageStorage> {
         // fill the repo to capacity
         let mut repo = test_group_state_repo(count).await;
 
@@ -685,7 +685,7 @@ mod tests {
 
     #[futures_test::test]
     async fn used_key_package_is_deleted() {
-        let key_package_repo = InMemoryKeyPackageRepository::default();
+        let key_package_repo = InMemoryKeyPackageStorage::default();
 
         let key_package = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"member")
             .await

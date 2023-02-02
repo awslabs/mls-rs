@@ -17,9 +17,10 @@ use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::MLS_10;
 use aws_mls::provider::crypto::{CipherSuiteProvider, CryptoProvider};
 use aws_mls::provider::{
-    identity::BasicIdentityProvider, keychain::InMemoryKeychain, psk::InMemoryPskStore,
+    identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage,
+    psk::InMemoryPreSharedKeyStorage,
 };
-use aws_mls::psk::{ExternalPskId, Psk};
+use aws_mls::psk::{ExternalPskId, PreSharedKey};
 use aws_mls::tls_codec::{Deserialize, Serialize};
 
 use aws_mls_crypto_openssl::OpensslCryptoProvider;
@@ -116,7 +117,7 @@ impl<T> TryFrom<(StateUpdate<T>, u32)> for HandleCommitResponse {
 
 type TestClientConfig = WithIdentityProvider<
     BasicIdentityProvider,
-    WithKeychain<InMemoryKeychain, WithCryptoProvider<OpensslCryptoProvider, BaseConfig>>,
+    WithKeychain<InMemoryKeychainStorage, WithCryptoProvider<OpensslCryptoProvider, BaseConfig>>,
 >;
 
 #[derive(Default)]
@@ -127,12 +128,12 @@ pub struct MlsClientImpl {
 
 struct ClientDetails {
     client: Client<TestClientConfig>,
-    psk_store: InMemoryPskStore,
+    psk_store: InMemoryPreSharedKeyStorage,
 }
 
 struct GroupDetails {
     group: Group<TestClientConfig>,
-    psk_store: InMemoryPskStore,
+    psk_store: InMemoryPreSharedKeyStorage,
 }
 
 #[tonic::async_trait]
@@ -241,7 +242,7 @@ impl MlsClient for MlsClientImpl {
 
         let signing_identity = SigningIdentity::new(credential, public_key);
 
-        let psk_store = InMemoryPskStore::default();
+        let psk_store = InMemoryPreSharedKeyStorage::default();
 
         let creator = Client::builder()
             .identity_provider(BasicIdentityProvider::new())
@@ -293,7 +294,7 @@ impl MlsClient for MlsClientImpl {
 
         let signing_identity = SigningIdentity::new(credential, public_key);
 
-        let psk_store = InMemoryPskStore::default();
+        let psk_store = InMemoryPreSharedKeyStorage::default();
 
         let client = ClientBuilder::new()
             .crypto_provider(OpensslCryptoProvider::default())
@@ -442,8 +443,8 @@ impl MlsClient for MlsClientImpl {
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
             .psk_store
             .insert(
-                ExternalPskId(request_ref.psk_id.clone()),
-                Psk::from(request_ref.psk.clone()),
+                ExternalPskId::new(request_ref.psk_id.clone()),
+                PreSharedKey::from(request_ref.psk.clone()),
             );
 
         Ok(Response::new(StorePskResponse::default()))
@@ -540,7 +541,7 @@ impl MlsClient for MlsClientImpl {
             .group;
 
         let proposal_packet = group
-            .propose_psk(ExternalPskId(request_ref.psk_id), vec![])
+            .propose_psk(ExternalPskId::new(request_ref.psk_id), vec![])
             .await
             .and_then(|p| Ok(p.tls_serialize_detached()?))
             .map_err(abort)?;

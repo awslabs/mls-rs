@@ -9,7 +9,7 @@ use crate::{
     protocol_version::ProtocolVersion,
     provider::{
         crypto::{CipherSuiteProvider, CryptoProvider},
-        key_package::KeyPackageRepository,
+        key_package::KeyPackageStorage,
     },
     psk::ExternalPskIdValidator,
     signer::Signable,
@@ -254,7 +254,7 @@ pub(super) fn transcript_hashes<P: CipherSuiteProvider>(
     Ok((interim_transcript_hash, confirmed_transcript_hash))
 }
 
-pub(super) async fn find_key_package_generation<'a, K: KeyPackageRepository>(
+pub(super) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
     key_package_repo: &K,
     secrets: &'a [EncryptedGroupSecrets],
 ) -> Result<(&'a EncryptedGroupSecrets, KeyPackageGeneration), GroupError> {
