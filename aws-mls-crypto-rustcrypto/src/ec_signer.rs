@@ -35,6 +35,10 @@ impl EcSigner {
         Ok(Self(Curve::from_ciphersuite(cipher_suite, true)?))
     }
 
+    pub fn new_from_curve(curve: Curve) -> Self {
+        Self(curve)
+    }
+
     pub fn signature_key_generate(
         &self,
     ) -> Result<(SignatureSecretKey, SignaturePublicKey), EcSignerError> {

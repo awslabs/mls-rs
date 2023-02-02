@@ -9,6 +9,7 @@ use spki::{
     der::{
         asn1::PrintableStringRef,
         oid::db::{rfc3280, rfc4519, rfc5912::ECDSA_WITH_SHA_256},
+        Tag, Tagged,
     },
     ObjectIdentifier,
 };
@@ -17,8 +18,8 @@ use x509_cert::{
     attr::{Attribute, AttributeTypeAndValue, Attributes},
     ext::{
         pkix::{
-            name::GeneralName, AuthorityKeyIdentifier, BasicConstraints, KeyUsage, KeyUsages,
-            SubjectKeyIdentifier,
+            name::{GeneralName, GeneralNames},
+            AuthorityKeyIdentifier, BasicConstraints, KeyUsage, KeyUsages, SubjectKeyIdentifier,
         },
         Extension,
     },
@@ -200,6 +201,32 @@ impl<'a> PartialEq<Extension<'a>> for OwnedExtension {
     }
 }
 
+pub fn general_names_to_alt_names(
+    names: &GeneralNames,
+) -> Result<Vec<MlsSubjectAltName>, X509Error> {
+    names
+        .iter()
+        .map(|name| match name {
+            GeneralName::UniformResourceIdentifier(u) => Ok(MlsSubjectAltName::Uri(u.to_string())),
+            GeneralName::DnsName(d) => Ok(MlsSubjectAltName::Dns(d.to_string())),
+            GeneralName::RegisteredId(r) => Ok(MlsSubjectAltName::Rid(r.to_string())),
+            GeneralName::Rfc822Name(e) => Ok(MlsSubjectAltName::Email(e.to_string())),
+            GeneralName::IpAddress(i) => match i.as_bytes().len() {
+                4 => {
+                    let octets: [u8; 4] = i.as_bytes().try_into().unwrap();
+                    Ok(MlsSubjectAltName::Ip(IpAddr::from(octets).to_string()))
+                }
+                16 => {
+                    let octets: [u8; 16] = i.as_bytes().try_into().unwrap();
+                    Ok(MlsSubjectAltName::Ip(IpAddr::from(octets).to_string()))
+                }
+                _ => Err(X509Error::IncorrectIpOctets(i.as_bytes().len())),
+            },
+            _ => Err(X509Error::CannotParseAltName(format!("{name:?}"))),
+        })
+        .collect()
+}
+
 pub(crate) fn build_x509_name(components: &[SubjectComponent]) -> Result<RdnSequence, X509Error> {
     let attributes = components
         .iter()
@@ -242,6 +269,52 @@ pub(crate) fn build_x509_name(components: &[SubjectComponent]) -> Result<RdnSequ
     Ok(attributes.into())
 }
 
+pub(super) fn parse_x509_name(rdns: &RdnSequence) -> Result<Vec<SubjectComponent>, X509Error> {
+    rdns.0
+        .iter()
+        .map(|rdn| {
+            let type_and_value = rdn.0.get(0).unwrap();
+
+            let value = match type_and_value.value.tag() {
+                Tag::PrintableString => type_and_value.value.printable_string()?.to_string(),
+                Tag::Ia5String => type_and_value.value.ia5_string()?.to_string(),
+                Tag::Utf8String => type_and_value.value.utf8_string()?.to_string(),
+                _ => {
+                    return Err(X509Error::UnexpectedComponentType(
+                        type_and_value.value.tag(),
+                    ))
+                }
+            };
+
+            match type_and_value.oid {
+                rfc4519::COMMON_NAME => Ok(SubjectComponent::CommonName(value)),
+                rfc4519::SURNAME => Ok(SubjectComponent::Surname(value)),
+                rfc4519::COUNTRY_NAME => Ok(SubjectComponent::CountryName(value)),
+                rfc4519::LOCALITY_NAME => Ok(SubjectComponent::Locality(value)),
+                rfc4519::ST => Ok(SubjectComponent::State(value)),
+                rfc4519::STREET => Ok(SubjectComponent::StreetAddress(value)),
+                rfc4519::ORGANIZATION_NAME => Ok(SubjectComponent::OrganizationName(value)),
+                rfc4519::ORGANIZATIONAL_UNIT => Ok(SubjectComponent::OrganizationalUnit(value)),
+                rfc4519::TITLE => Ok(SubjectComponent::Title(value)),
+                rfc4519::GIVEN_NAME => Ok(SubjectComponent::GivenName(value)),
+                rfc4519::USER_ID => Ok(SubjectComponent::UserId(value)),
+                rfc4519::DOMAIN_COMPONENT => Ok(SubjectComponent::DomainComponent(value)),
+                rfc4519::INITIALS => Ok(SubjectComponent::Initials(value)),
+                rfc4519::GENERATION_QUALIFIER => Ok(SubjectComponent::GenerationQualifier(value)),
+                rfc4519::DISTINGUISHED_NAME => {
+                    Ok(SubjectComponent::DistinguishedNameQualifier(value))
+                }
+                rfc3280::EMAIL => Ok(SubjectComponent::EmailAddress(value)),
+                rfc3280::PSEUDONYM => Ok(SubjectComponent::Pseudonym(value)),
+                rfc4519::SERIAL_NUMBER => Ok(SubjectComponent::SerialNumber(value)),
+                _ => Err(X509Error::UnsupportedSubjectComponentOid(
+                    type_and_value.oid,
+                )),
+            }
+        })
+        .collect()
+}
+
 pub(super) fn common_extensions(
     subject_params: &CertificateParameters,
 ) -> Result<Vec<OwnedExtension>, X509Error> {
@@ -261,4 +334,56 @@ pub(super) fn common_extensions(
     }
 
     Ok(extensions)
+}
+
+#[cfg(test)]
+pub mod test_utils {
+    use aws_mls_identity_x509::{CertificateChain, DerCertificate};
+
+    pub fn load_test_ca() -> DerCertificate {
+        DerCertificate::from(include_bytes!("../../test_data/x509/ca.der").to_vec())
+    }
+
+    pub fn load_test_cert_chain() -> CertificateChain {
+        let entry0 = include_bytes!("../../test_data/x509/leaf.der").to_vec();
+        let entry1 = include_bytes!("../../test_data/x509/intermediate.der").to_vec();
+        let entry2 = include_bytes!("../../test_data/x509/ca.der").to_vec();
+
+        CertificateChain::from_iter(
+            [entry0, entry1, entry2]
+                .into_iter()
+                .map(DerCertificate::from),
+        )
+    }
+
+    pub fn load_test_invalid_chain() -> CertificateChain {
+        let entry0 = include_bytes!("../../test_data/x509/leaf.der").to_vec();
+        let entry1 = include_bytes!("../../test_data/x509/ca.der").to_vec();
+
+        CertificateChain::from_iter([entry0, entry1].into_iter().map(DerCertificate::from))
+    }
+
+    pub fn load_test_invalid_ca_chain() -> CertificateChain {
+        let entry0 = include_bytes!("../../test_data/x509/leaf.der").to_vec();
+        let entry1 = include_bytes!("../../test_data/x509/intermediate.der").to_vec();
+        let entry2 = include_bytes!("../../test_data/x509/another_ca.der").to_vec();
+
+        CertificateChain::from_iter(
+            [entry0, entry1, entry2]
+                .into_iter()
+                .map(DerCertificate::from),
+        )
+    }
+
+    pub fn load_another_ca() -> DerCertificate {
+        DerCertificate::from(include_bytes!("../../test_data/x509/another_ca.der").to_vec())
+    }
+
+    pub fn load_github_leaf() -> DerCertificate {
+        DerCertificate::from(include_bytes!("../../test_data/x509/github_leaf.der").to_vec())
+    }
+
+    pub fn load_ip_cert() -> DerCertificate {
+        DerCertificate::from(include_bytes!("../../test_data/x509/cert_ip.der").to_vec())
+    }
 }

@@ -8,6 +8,7 @@ use thiserror::Error;
 use crate::ec::EcPublicKey;
 pub const X25519_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.110");
 pub const ED25519_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.112");
+pub const P256_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
 
 #[derive(Debug, Error)]
 pub enum EcX509Error {
