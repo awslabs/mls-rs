@@ -7,7 +7,6 @@ use serde_with::serde_as;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
-use tls_codec::Serialize;
 use zeroize::Zeroize;
 
 use super::key_schedule::kdf_expand_with_label;
@@ -260,16 +259,10 @@ impl SecretTree {
         Ok(SecretRatchets {
             application: SecretKeyRatchet::new(
                 cipher_suite_provider,
-                leaf_index,
                 &secret,
                 KeyType::Application,
             )?,
-            handshake: SecretKeyRatchet::new(
-                cipher_suite_provider,
-                leaf_index,
-                &secret,
-                KeyType::Handshake,
-            )?,
+            handshake: SecretKeyRatchet::new(cipher_suite_provider, &secret, KeyType::Handshake)?,
         })
     }
 
@@ -346,14 +339,12 @@ pub struct SecretKeyRatchet {
     secret: TreeSecret,
     #[serde_as(as = "Vec<(_,_)>")]
     history: HashMap<u32, MessageKeyData>,
-    node_index: NodeIndex,
     generation: u32,
 }
 
 impl SecretKeyRatchet {
     fn new<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
-        leaf: LeafIndex,
         secret: &[u8],
         key_type: KeyType,
     ) -> Result<Self, SecretTreeError> {
@@ -368,7 +359,6 @@ impl SecretKeyRatchet {
 
         Ok(Self {
             secret: TreeSecret::from(secret),
-            node_index: leaf.into(),
             generation: 0,
             history: Default::default(),
         })
@@ -443,7 +433,7 @@ impl SecretKeyRatchet {
             cipher_suite_provider,
             self.secret.as_ref(),
             label,
-            &(self.node_index, self.generation).tls_serialize_detached()?,
+            &self.generation.to_be_bytes(),
             Some(len),
         )
         .map_err(|e| SecretTreeError::CipherSuiteProviderError(e.into()))
@@ -538,7 +528,6 @@ mod tests {
 
             let mut app_ratchet = SecretKeyRatchet::new(
                 &provider,
-                LeafIndex(42),
                 &vec![0u8; provider.kdf_extract_size()],
                 KeyType::Application,
             )
@@ -546,7 +535,6 @@ mod tests {
 
             let mut handshake_ratchet = SecretKeyRatchet::new(
                 &provider,
-                LeafIndex(42),
                 &vec![0u8; provider.kdf_extract_size()],
                 KeyType::Handshake,
             )
@@ -579,7 +567,6 @@ mod tests {
 
             let mut ratchet = SecretKeyRatchet::new(
                 &test_cipher_suite_provider(cipher_suite),
-                LeafIndex(42),
                 &vec![0u8; provider.kdf_extract_size()],
                 KeyType::Application,
             )
@@ -612,7 +599,6 @@ mod tests {
 
             let mut ratchet = SecretKeyRatchet::new(
                 &provider,
-                LeafIndex(42),
                 &vec![0u8; provider.kdf_extract_size()],
                 KeyType::Application,
             )
@@ -630,10 +616,7 @@ mod tests {
         let cipher_suite = TEST_CIPHER_SUITE;
         let provider = test_cipher_suite_provider(cipher_suite);
 
-        let mut ratchet =
-            SecretKeyRatchet::new(&provider, LeafIndex(42), &[0u8; 32], KeyType::Handshake)
-                .unwrap();
-
+        let mut ratchet = SecretKeyRatchet::new(&provider, &[0u8; 32], KeyType::Handshake).unwrap();
         let mut ratchet_clone = ratchet.clone();
 
         // Ask for all the keys in order from the original ratchet
@@ -664,9 +647,7 @@ mod tests {
         let cipher_suite = TEST_CIPHER_SUITE;
         let provider = test_cipher_suite_provider(cipher_suite);
 
-        let mut ratchet =
-            SecretKeyRatchet::new(&provider, LeafIndex(42), &[0u8; 32], KeyType::Handshake)
-                .unwrap();
+        let mut ratchet = SecretKeyRatchet::new(&provider, &[0u8; 32], KeyType::Handshake).unwrap();
 
         let res = ratchet.get_message_key(&provider, MAX_RATCHET_BACK_HISTORY + 1);
         let invalid_generation = MAX_RATCHET_BACK_HISTORY + 1;

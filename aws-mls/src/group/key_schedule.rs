@@ -242,7 +242,7 @@ pub(crate) fn kdf_expand_with_label<P: CipherSuiteProvider>(
 ) -> Result<Vec<u8>, KeyScheduleError> {
     let extract_size = cipher_suite_provider.kdf_extract_size();
     let len = len.unwrap_or(extract_size);
-    let label = Label::new(extract_size as u16, label, context);
+    let label = Label::new(len as u16, label, context);
 
     cipher_suite_provider
         .kdf_expand(secret, &label.tls_serialize_detached()?, len)

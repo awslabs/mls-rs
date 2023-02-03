@@ -1,359 +1,359 @@
 [
   {
     "cipher_suite": 1,
-    "secret": "468591fcecae67836686f057f7c90ffa4bfbf95cf1d30bf9d0cbee963d552d73",
-    "ciphertext_bytes": "056719042341dea51062a54a90bf3874dd213372636d9f51eb6a82",
-    "expected_key": "d85662bd36dd2eeee5d2aa2ca5a95920",
-    "expected_nonce": "60a9f5c59d2dc67a2b0d8328",
+    "secret": "bff70d572e76b30986bb8459eecb94bb2960f31837dde307e8bf1881dfc1c5b3",
+    "ciphertext_bytes": "9cce05734cc80d50aa812caf515cf5881d7009f4836589166b3d79",
+    "expected_key": "8d87803ae31fc91c027386529dcd1dc3",
+    "expected_nonce": "87e26333ed04adfed1cb1c88",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "69d20ef1"
+      "reuse_guard": "26f6154a"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "aafe16ebfcfa0bf1172c7b8b0c816d3585952739bd401cbf31df015e"
+    "expected_ciphertext": "d3924516554064c477b4109441a80cc4ffa1b001ff81343a7d64aebf"
   },
   {
     "cipher_suite": 1,
-    "secret": "468591fcecae67836686f057f7c90ffa4bfbf95cf1d30bf9d0cbee963d552d73",
-    "ciphertext_bytes": "07675ab3428e16975ba81fd5c1fea1b88fd7d6acbcbeceb37e8cd2fdeb5fbc00",
-    "expected_key": "5e7b205e9c76825dc64557d256fdd60e",
-    "expected_nonce": "be262d5ef6e409b8bf160f52",
+    "secret": "bff70d572e76b30986bb8459eecb94bb2960f31837dde307e8bf1881dfc1c5b3",
+    "ciphertext_bytes": "a561f99739b2df72a4753deecbed342c114789169f051d3e5326ce1fa5aec473",
+    "expected_key": "0d1a4106df1f246e53c26962dd732b8c",
+    "expected_nonce": "3dcb0f91cc5f785c6dcbaf7e",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "69d20ef1"
+      "reuse_guard": "26f6154a"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "aa8bae8915fd841e3d2b47f8381937bb1643b48b6132dede96f6e858"
+    "expected_ciphertext": "2ca82ec936d1d1f379ff9d8858d3ed732e7aa204e4a17e1e040f0832"
   },
   {
     "cipher_suite": 1,
-    "secret": "468591fcecae67836686f057f7c90ffa4bfbf95cf1d30bf9d0cbee963d552d73",
-    "ciphertext_bytes": "d23ad2ee1a34df72cd966d256b35b1a5d0ebae1726e812b8fbcdccedb05b8c9b9622d61188",
-    "expected_key": "aa89c41ef012f825e0e99bfc49364034",
-    "expected_nonce": "4a6619641f7834e3a1fd71dd",
+    "secret": "bff70d572e76b30986bb8459eecb94bb2960f31837dde307e8bf1881dfc1c5b3",
+    "ciphertext_bytes": "f902608cb34cf81fa9d3b8a0f52fddb83801a0c664a1f28e3c3242ce5cd68888bcca49f7fe",
+    "expected_key": "fbe3c70bdb831051594113a7632efcdd",
+    "expected_nonce": "61b61f582e75dddc018b30c1",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "69d20ef1"
+      "reuse_guard": "26f6154a"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "f2ab5faa1c79fc8a673de6136298f7724a6a3c5518e9e11f18cb2530"
+    "expected_ciphertext": "ed816485e4a01610564639bd770c8476a49c219339a475daca38334e"
   },
   {
     "cipher_suite": 2,
-    "secret": "0cbbc354e1a019b4c4652bb20c6b67f504ae17a410778a709c835842eb9daff6",
-    "ciphertext_bytes": "6af846f073be920097cbaa264ebcf38f7355f56bffdf743df364b2",
-    "expected_key": "5e34a90462094aece3c6f5b029144700",
-    "expected_nonce": "9d0e9658839956d901496360",
+    "secret": "2ee6e1bb6372345b18bc2c13699345d8bec0d0776d63caa3b24e4edfb170a48a",
+    "ciphertext_bytes": "74d2fdf6d2d0472d74f2662018b3d832ebb31d1eafea9f74e01449",
+    "expected_key": "d141e52f3e298130383e47355ada241c",
+    "expected_nonce": "702861fcab515bc544a252bd",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "8648285d"
+      "reuse_guard": "9c98f1da"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "4d738711101193801aef221bea18c75da3545e5bc9cec1832a5b9873"
+    "expected_ciphertext": "cf8785345520bb228bf1fc3018bf60bde28bc54a1c165dbbc5f41a2c"
   },
   {
     "cipher_suite": 2,
-    "secret": "0cbbc354e1a019b4c4652bb20c6b67f504ae17a410778a709c835842eb9daff6",
-    "ciphertext_bytes": "71f0ddf6c7802fb868f10115a41f019471449275f8d7b501ada4ec2ac35e0257",
-    "expected_key": "106eed20a891d846c05906fdc882fe12",
-    "expected_nonce": "85e56903dea781972370f775",
+    "secret": "2ee6e1bb6372345b18bc2c13699345d8bec0d0776d63caa3b24e4edfb170a48a",
+    "ciphertext_bytes": "3edfd5f5ed82224c83f24afc3cae0a522c4d5c774901b714251fac541493d62e",
+    "expected_key": "d75a08a527f3a7a3346a659734855122",
+    "expected_nonce": "5fd4942905bb5e80724ffd4e",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "8648285d"
+      "reuse_guard": "9c98f1da"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "d55f60c89f843ecb6b811e2c2d7b585fac3ef128f7c136617c1c023b"
+    "expected_ciphertext": "2bf4641e28edec42784fa15fcf2670ec1fbdd5ad03ad95a4ca96df4b"
   },
   {
     "cipher_suite": 2,
-    "secret": "0cbbc354e1a019b4c4652bb20c6b67f504ae17a410778a709c835842eb9daff6",
-    "ciphertext_bytes": "414e2d1f07fcd9e29cca1130b5599e99db2827acc437cba8a137f07f74709fb6499353efdc",
-    "expected_key": "01c23fbbec393ece2f18ba1876e293c5",
-    "expected_nonce": "83ba6888c440c8e45d541d77",
+    "secret": "2ee6e1bb6372345b18bc2c13699345d8bec0d0776d63caa3b24e4edfb170a48a",
+    "ciphertext_bytes": "201a641313b8f3ed8329d4e049ff6a540b6a9fa79b9ff306dc105da0b001eea76f0cee8942",
+    "expected_key": "ffa2acdaa23e7754cc897d03ef676b95",
+    "expected_nonce": "e3ba810e85fe4197718ef7da",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "8648285d"
+      "reuse_guard": "9c98f1da"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "62393f248a5c782c9b7c2ebf72f6e6fabfcab987dffe00b8445f68dc"
+    "expected_ciphertext": "98ec19152b209087c59bf0b7a62b0ec8aeaed120a2288ee30822498c"
   },
   {
     "cipher_suite": 3,
-    "secret": "6d6775f6feffea8d0e1e23b3b135f2af8b9b2f34634affac93bac481470995a9",
-    "ciphertext_bytes": "a65131280190639d59d6b844ac718ed4728d68993132ae6402ace8",
-    "expected_key": "3cce01fceb9d2884850cfe4ac560c177e91ad9be8173ee4286c91692e8ac4b76",
-    "expected_nonce": "cc84c61a1f3c237004ed48be",
+    "secret": "adc1ce63a4bc30e171ef8ec4dc9e76fd48982ff26d0e96259a90d0ee253a88a7",
+    "ciphertext_bytes": "68954fb24ecbdf814c4b7368e3edba32a97d59d203381cce7801b1",
+    "expected_key": "2f24ed005c7e1357425fa7b13749650bc3df77d2570069831e6d817c10e882d6",
+    "expected_nonce": "398204a00ecb04f76fa14d7e",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "9e00e7d4"
+      "reuse_guard": "6d3cc5ff"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "6e637bb6cf437fcb0890139fb71fac8a4ffcc2595c11bc34543a0e2e"
+    "expected_ciphertext": "ba9e1557af4ecca39dd72b650beaf1c0b714bb1dad3e0a996ac3b7cb"
   },
   {
     "cipher_suite": 3,
-    "secret": "6d6775f6feffea8d0e1e23b3b135f2af8b9b2f34634affac93bac481470995a9",
-    "ciphertext_bytes": "e72f12e7aec9cf5ac5b799813f587a7155fa0ca9e12092419833bdce69966bca",
-    "expected_key": "bb01ce7d787d973cd790b9e30e2c07d2f30c3feecd23ecdefe4c3f2b606e80f9",
-    "expected_nonce": "697b842a7eeea8085fe36087",
+    "secret": "adc1ce63a4bc30e171ef8ec4dc9e76fd48982ff26d0e96259a90d0ee253a88a7",
+    "ciphertext_bytes": "0762a6989446c39819510529014dccf309d5d4a480373e45f28701c7b5791fcc",
+    "expected_key": "15c0c417ef8b39b994a618a3392e5e8d992263e5cf5c22f4abf8fd72809f2949",
+    "expected_nonce": "0695f6e569d42ccddafac415",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "9e00e7d4"
+      "reuse_guard": "6d3cc5ff"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "af801e746a611f7e74adb1539a1f5832276138ea62937b1219e089d7"
+    "expected_ciphertext": "2bebfa3a849f5840e5f6e50959bd3f25826c6442d0087ba1c230865e"
   },
   {
     "cipher_suite": 3,
-    "secret": "6d6775f6feffea8d0e1e23b3b135f2af8b9b2f34634affac93bac481470995a9",
-    "ciphertext_bytes": "9120ef1611c06eb1ebb1c052872400b9804e26030a03dd107fbdb93b7330ee7cf0f236bee4",
-    "expected_key": "65d89b1859c69a64de4fc21d79705dd1d7a5a0e9bc9b61aca0725a575c86615f",
-    "expected_nonce": "b5461ee5465f9ed6a3bfa31c",
+    "secret": "adc1ce63a4bc30e171ef8ec4dc9e76fd48982ff26d0e96259a90d0ee253a88a7",
+    "ciphertext_bytes": "f3b5337b1bd183abdffe50274105675c5632553b537514a0456e330c427f22b845bd9aeccf",
+    "expected_key": "6c659123b15d139528d53100fce2c7a7e9279aed965742728fd4f04df32bb8ba",
+    "expected_nonce": "488e41bf7a4bd6d39ea71c74",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "9e00e7d4"
+      "reuse_guard": "6d3cc5ff"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "b28b104b6bc3bcf23fa66ad48f3aac3cf2e8976472eccbae30a8725f"
+    "expected_ciphertext": "8fdc16f320f013bfb3e742ce9a7ea459e15aa7c458e7e1b77a7d1c13"
   },
   {
     "cipher_suite": 4,
-    "secret": "853fa673a1d06c958ded1870d915db844409f20b71ce5226755cbb132fd1acc57d2b0400b0e006e4b0961f655593570f8f87bb89268fa2aef3476f01cce010df",
-    "ciphertext_bytes": "dd5515f1ee99be13802a15002aa666dab5a2f84b23081030e28340ce6b6c97cc20df907e6552f4ef6ab5fb238afd566f5b456969f365c104fb2e4f",
-    "expected_key": "5a13bf46a1dc9b688c1cefbce48057b3be916407f3dcda2288641d6d79e340c6",
-    "expected_nonce": "67b9b4256c59854781fc6b36",
+    "secret": "73edbd8913845fe50d25c68b48a679740627833f010091e5f702108b1e281189ad38dc0fa8260b97f452a2c36374fba99f30e61348e3e1fff663a814f14b547e",
+    "ciphertext_bytes": "b0b9ecc069be71087608e3b049a924f6ba0cba8d02ac46672479d9eb0ad76a0dc55a803025365266cbfca9854b7d7c2160fc762b265e10d0c81fbb",
+    "expected_key": "0b2531bc5e1242a3abb0074701f0166d177b57078db1fa158bf25574d3d13ece",
+    "expected_nonce": "c69e35909070111183369210",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "e002ec4c"
+      "reuse_guard": "cd0b1e8e"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "d74f96390dfd730fa8cddc991184e15cbf562585bc3536c9061d8f3e"
+    "expected_ciphertext": "e029155c826e4baa12d6ec584508a3435c0c991325c61e79a794d363"
   },
   {
     "cipher_suite": 4,
-    "secret": "853fa673a1d06c958ded1870d915db844409f20b71ce5226755cbb132fd1acc57d2b0400b0e006e4b0961f655593570f8f87bb89268fa2aef3476f01cce010df",
-    "ciphertext_bytes": "4101a1a51fe1296bcb83e15cfcefd64bbcdbb699d7e678302955a470b753be58d2ae2743d9d9e20ea3bf7de1d16e36cb533eeeaa2f94c0219c123436c97177a5",
-    "expected_key": "45aa827d67f7e7761fd7dd2d7d4d8f3fc59e1a526e9d2a0d6e3d85e8890f339e",
-    "expected_nonce": "3a5e03f165cbd623bce4ebfc",
+    "secret": "73edbd8913845fe50d25c68b48a679740627833f010091e5f702108b1e281189ad38dc0fa8260b97f452a2c36374fba99f30e61348e3e1fff663a814f14b547e",
+    "ciphertext_bytes": "f1b256f201b9842cc9d1fe7ec4320865526359682b95dc5ee8dd583b58ab4fab9e3e6a79d6b735c47d885e8df232d0d967a0e6596c449b961f47c18758cea21f",
+    "expected_key": "879ad7b2875ad252b563b1303f14f7cef9306309c030051c83220446ae850c25",
+    "expected_nonce": "8477a69e41c291b36abf240e",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "e002ec4c"
+      "reuse_guard": "cd0b1e8e"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "739db842f429a3fb0bda8320aa0ec9bb80423d85860bb3bfedc10bef"
+    "expected_ciphertext": "79e94fa3abef70f4819ecc196355dde1babc88700f65db3a970e7f22"
   },
   {
     "cipher_suite": 4,
-    "secret": "853fa673a1d06c958ded1870d915db844409f20b71ce5226755cbb132fd1acc57d2b0400b0e006e4b0961f655593570f8f87bb89268fa2aef3476f01cce010df",
-    "ciphertext_bytes": "f33df5029c919bc0f0c95c9a53083c44d3960f8c5b1380c53e17cc93b4d6c47f8faa957a7e5565dc946d801df08e6d52d57d9aff7d7709d9a01f64d409a2647c17f1c6f418",
-    "expected_key": "f28cbe1b8d5e42afb12f7bf0ee0140b87b1bf21495279ca4ea57623d5e9b660d",
-    "expected_nonce": "d3a6dfb67212db084631a8a7",
+    "secret": "73edbd8913845fe50d25c68b48a679740627833f010091e5f702108b1e281189ad38dc0fa8260b97f452a2c36374fba99f30e61348e3e1fff663a814f14b547e",
+    "ciphertext_bytes": "d13cd5e0c345449b3ad3eadeb9d7ba42e6860453b90bc0e994cc1c08f1fcae1de2f27208884976df5ae2f128cc9cf1c0ce915e3505ab8b937d723f2ae099f05c76ffcf7b2c",
+    "expected_key": "e5e73836c078d7a4139d5a9da8a54b35b26360d2201299e90d38483afcc801f2",
+    "expected_nonce": "9147cac457919de5f2905e9e",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "e002ec4c"
+      "reuse_guard": "cd0b1e8e"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "c95a56ebff509b4afe6ba7231e24465133cda315490f0803dfca9f4f"
+    "expected_ciphertext": "73fb598b85f6118b34b73e22636bfaa741fc43e44784928db85e0e1d"
   },
   {
     "cipher_suite": 5,
-    "secret": "70979e47e97c26c3ddf4cf1027fa8a0b44431b3dff6ecfeaf67414e278d2c90f91c84f32d3283e1f1be2475dd11bdda090fdacfcfdb8e49bc0f633c00e9135ec",
-    "ciphertext_bytes": "aac2ca9abdb2661942eb6e5628051e68a0d10ce736d59dda9ece6af1b105be8e25f236537743ae9bf495e5531c2bddf0558164638656916a924719",
-    "expected_key": "ae0fef3b63d642e71e684ee77d43f3d7bc4966989b2edfcfff64dea573a908f9",
-    "expected_nonce": "6ab642e84d4fb61392cd74f9",
+    "secret": "e75147190b91e0b60df568886d89f2668576d11a4acb30d16a8595aca513cd1bae05f38f8d443cff97a8e26704ed90dbf9462f82d2da3740001f8df980d2eebc",
+    "ciphertext_bytes": "66e0c1f3716a071fa1e28d93a1bf089ed0099806d423b739d66193d878dfa62d448afa3d47b5eec653badc648954bbf8aeb321a150f3a20dbbc046",
+    "expected_key": "b30b0d760ab0b7f2a0a5ae2d2601c11aa6706e76e5fee555205d90bda40916b8",
+    "expected_nonce": "13ea2dafb6446ad4a440c7e6",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "37b6bb8f"
+      "reuse_guard": "38c2be6b"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "498ff7f34db0f9f9fa30f98fb1b00d989f170301d1ed1e14ad5c495e"
+    "expected_ciphertext": "1d8921a0b5ee14bc68eeb9096e36062ad6c728f280777af8239d03f3"
   },
   {
     "cipher_suite": 5,
-    "secret": "70979e47e97c26c3ddf4cf1027fa8a0b44431b3dff6ecfeaf67414e278d2c90f91c84f32d3283e1f1be2475dd11bdda090fdacfcfdb8e49bc0f633c00e9135ec",
-    "ciphertext_bytes": "c0d93d2ee156a40eb3d4fb371721916a55a832c9b9a611c290efa82db516cf3d0219c054ed33d8dc394e38373a28a8fe9d6d1c50057e20e3a40d8e41e8ad5b1f",
-    "expected_key": "8d7efc1bf2954760db00a893abbd6b8f0ed205b1cb62b9ce88da3bedf2a3cc52",
-    "expected_nonce": "38746e76ec0d721731bc8380",
+    "secret": "e75147190b91e0b60df568886d89f2668576d11a4acb30d16a8595aca513cd1bae05f38f8d443cff97a8e26704ed90dbf9462f82d2da3740001f8df980d2eebc",
+    "ciphertext_bytes": "277b8662ca64ab727fec80688d81faf5c357a6023100b10ad295841b244c80d1dbf48557a456d87c6039fbb8443fcc13279c7808bcac1076abb02b4b1b5f68de",
+    "expected_key": "b227c4f4892b4a67b1a20a411ae2277b430fbeaec08733491e694cc60d8ccb25",
+    "expected_nonce": "714b9c35b2c2b388dcb426cc",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "37b6bb8f"
+      "reuse_guard": "38c2be6b"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "bf91b4c384ff9c517820c11aa3c3e8d3bc45a336b2ea771effd9cf47"
+    "expected_ciphertext": "8e4670af79616c9874313514e6124d6c8267b0f3b6332e299545e5a4"
   },
   {
     "cipher_suite": 5,
-    "secret": "70979e47e97c26c3ddf4cf1027fa8a0b44431b3dff6ecfeaf67414e278d2c90f91c84f32d3283e1f1be2475dd11bdda090fdacfcfdb8e49bc0f633c00e9135ec",
-    "ciphertext_bytes": "f1fc4bcf617710a0bddc5f861df5efba2bc07e3c501c7c26cd26a134340168e57b241898db23a02da4b8f4228fca1da70cd4de800f5664ee79dcf96417dc798877813ed36e",
-    "expected_key": "842f48bb8e742af45d88e4dc777ca2d3842fe466eb6ac14853c1f0c1649a26ee",
-    "expected_nonce": "62052026ff1e8f0c3c5692e6",
+    "secret": "e75147190b91e0b60df568886d89f2668576d11a4acb30d16a8595aca513cd1bae05f38f8d443cff97a8e26704ed90dbf9462f82d2da3740001f8df980d2eebc",
+    "ciphertext_bytes": "4f4d279b9cd4067f2f5b5efa59c3c3cfaa8394879b9b38e9d74454e4fa7a5e36402f6a89dd0877c85f56781a35cac0bab0c7f93073d0ab016c81131630632e9fc2690071e2",
+    "expected_key": "c9b25d66c257e04f76c3a996894cfae9c830ee393329e3b0e6e94387cd00306a",
+    "expected_nonce": "ba1642e3ccb56b937016ad66",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "37b6bb8f"
+      "reuse_guard": "38c2be6b"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "092821e1c13fc2564d2cfcdd6bc262849735625421d776f138b80cd9"
+    "expected_ciphertext": "e0e783ed6ad2935ed932acfa73973ff93a28c223229d4322f688501a"
   },
   {
     "cipher_suite": 6,
-    "secret": "3b4c95fcd8b2fc8b6b5952c8ef4638636654b76a76f8712eb8b39f6955f79cffe8a3ce9c0962e148d661bc06e7e78cf83d9bdbbb57911de26b7ae2a8b20e5312",
-    "ciphertext_bytes": "4d0db80aa632421aa2e633806968731f2ed5978a84f7c882252b5cf1264babfac883b68239e960784ccc824e9fbc8d50bb69150dee03de6b2fc5c1",
-    "expected_key": "a0cc80bb693ebca2ec36cb3d0c395f344b765b839006608d52473e9aa6a39790",
-    "expected_nonce": "8833c7dc5ffe96048669345f",
+    "secret": "7c65265cbe60ee08368246a2e6a1d2ceb515a4d278da34a82366d16c525487e17f0dcf94a61272611d133945a9f10fb8495524124f3f14293cac2b9d1eff7a43",
+    "ciphertext_bytes": "f0456d86557b8b4d111697bba9fb7637f094506f4c7396bc0b1c30d4aa93bf432abc4a028683f4399d745cdc37081db06d134cefb3d361c37bb1df",
+    "expected_key": "54cdedf72c8d3b38c7ae1094f68e6416d2f82f4bca91b5e0741b57a226bb34c1",
+    "expected_nonce": "daa2a956601cbf1486c1723a",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "c0c2b374"
+      "reuse_guard": "435735b3"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "747478eeec7ad534d7356cc73c76504f244b52901d0c889a3d821d71"
+    "expected_ciphertext": "e602ea47f6b7b4fe93e713300f648f988832fb7e67e3b4abeb3fda8f"
   },
   {
     "cipher_suite": 6,
-    "secret": "3b4c95fcd8b2fc8b6b5952c8ef4638636654b76a76f8712eb8b39f6955f79cffe8a3ce9c0962e148d661bc06e7e78cf83d9bdbbb57911de26b7ae2a8b20e5312",
-    "ciphertext_bytes": "c6683c8303333890515f2919b55c09f7cda7e19b482b8a6cf20e8998fd8d63dad9849c8c6396652875cd8705d48fa57d49902eda1a5e71609bbfdb79ec1da8bb",
-    "expected_key": "7d61e82845737e7a98e981bfaf9898d1186954095c8a2c933607fc53fc30959b",
-    "expected_nonce": "b090c677ba38cd52d3da46af",
+    "secret": "7c65265cbe60ee08368246a2e6a1d2ceb515a4d278da34a82366d16c525487e17f0dcf94a61272611d133945a9f10fb8495524124f3f14293cac2b9d1eff7a43",
+    "ciphertext_bytes": "af256ffc693ebbc4fb0ea6d4d07daa262bb567499ca4b249e32fd7091889d47f61fe68d86cd9433f4763937d7e39dafda62c7889166d8fa8869a2860857a88b3",
+    "expected_key": "50544bb9bd16898b86399aa6634442231ae8ceb818f2aa755408f124fa4bc1af",
+    "expected_nonce": "ebaf93e17007296d7841c12c",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "c0c2b374"
+      "reuse_guard": "435735b3"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "99e0690f36df53d54d978bb543008740b38096165d3e372b982986b9"
+    "expected_ciphertext": "4a229a50f195ca86ac45268fff2198bd9264b7906ab9481862f6bb4a"
   },
   {
     "cipher_suite": 6,
-    "secret": "3b4c95fcd8b2fc8b6b5952c8ef4638636654b76a76f8712eb8b39f6955f79cffe8a3ce9c0962e148d661bc06e7e78cf83d9bdbbb57911de26b7ae2a8b20e5312",
-    "ciphertext_bytes": "25ba853b25a4844b7defd6d8e8ac71b43e163e9101ccfec081140a580ed81839834150568ee2445911fc19a2794107a9aabd15c61a424902bc5bb231f381630721414074af",
-    "expected_key": "b2972e5155402e3d1578ac70960b0cbc4f5b2f76959b961460888f97c8083f90",
-    "expected_nonce": "5ea8e74f21b1363d688dc0aa",
+    "secret": "7c65265cbe60ee08368246a2e6a1d2ceb515a4d278da34a82366d16c525487e17f0dcf94a61272611d133945a9f10fb8495524124f3f14293cac2b9d1eff7a43",
+    "ciphertext_bytes": "081626e017264ed22ecaa82b3864607022ba51ea0e5e2dad89d0f0e0c7edbeb0b19912c60854cbb5cb7098a6481373ba33dbcd4661c81b4103722b5a5b98b503bea385e38e",
+    "expected_key": "b23f513a22d04d33f97306c557ca16f0d45ec47bfa8aaf560f4514512a158d95",
+    "expected_nonce": "af42734adb2ed117c01c2133",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "c0c2b374"
+      "reuse_guard": "435735b3"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "ca621de6c38323e70ebc7e1652b1339367e295173bd43d63624ce986"
+    "expected_ciphertext": "cfb715618c3e43267f48163a4e3ef85e78a8ca27ebfd21dd006e45a4"
   },
   {
     "cipher_suite": 7,
-    "secret": "df2aa0aa5dfb4a03be24215e1cd706ceeb655e96f09f6e7596bbacdb84c07f554d6c64ec121ff037361c610b53d34d4c",
-    "ciphertext_bytes": "3a71615c8af6acf976784f7226d3c561458235cac736ca35ab54b418d8a34892698c31b318b06d41698e8a",
-    "expected_key": "c172c6f727bbdda4b9641813a991f13c5a77736573146470ad2aa38d4e0956c5",
-    "expected_nonce": "7f63a9c7ac3c440794ec8b4e",
+    "secret": "be0a3627d31ba6cff2807e78a17b4ae5d9ff27ffa95f47a6d944716eb8d8b43434ffc9079f21494ee41311897d4862a8",
+    "ciphertext_bytes": "a8602b9188f7973999dab19df5c70f83d72e6809c4e7ed35a46fd6023a4703e1650898f05366a1b10c087c",
+    "expected_key": "5c62e16c94a39eb0b3772488424966bce026bfbf8292bbd002294a3b1385b071",
+    "expected_nonce": "c790d41db10f8181f03a18cd",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "56690086"
+      "reuse_guard": "e16fe8da"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "a02a2028f985ce2f8f5a5c5ac12caf5d012ce151b80bbe71196fd117"
+    "expected_ciphertext": "d5f382930eb2ec428653ddb9103d5cf71fde7c26e765feae56fff5b6"
   },
   {
     "cipher_suite": 7,
-    "secret": "df2aa0aa5dfb4a03be24215e1cd706ceeb655e96f09f6e7596bbacdb84c07f554d6c64ec121ff037361c610b53d34d4c",
-    "ciphertext_bytes": "de0008794852fdf305341b767d35307dfa6d3cc2aa7f516aa948d9c5e62985b9932e4f6c9ba163572210bcb01bdbb438",
-    "expected_key": "ced61a924b1cd4b7abee116556625a65ad91dc236ad646356314e621ded2af80",
-    "expected_nonce": "e70a9fd363091e53d69483c2",
+    "secret": "be0a3627d31ba6cff2807e78a17b4ae5d9ff27ffa95f47a6d944716eb8d8b43434ffc9079f21494ee41311897d4862a8",
+    "ciphertext_bytes": "4ada8e7e67f49707f15106bc919b32f046efd66d8243d3df5f5fcafcad2030586cf1ee8a43418c92dd02f600be174230",
+    "expected_key": "bee0e13ae4002a49d1eac21e70389c4d52cbbf1296c3693d05cc36a5f68de939",
+    "expected_nonce": "5999d5063c111cc62be906a3",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "56690086"
+      "reuse_guard": "e16fe8da"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "71eb6d76f187bc7ac257b063d78ad41ece34742c9440979168fae798"
+    "expected_ciphertext": "6b0a80cdd1a6ac6208bf70aebe48d10c7d531e25d66fde59dd17bc8c"
   },
   {
     "cipher_suite": 7,
-    "secret": "df2aa0aa5dfb4a03be24215e1cd706ceeb655e96f09f6e7596bbacdb84c07f554d6c64ec121ff037361c610b53d34d4c",
-    "ciphertext_bytes": "084f36572ded02be091c7f0bbaa7e2cf78e082e55f7b7199eff9416b2135a75eb6c028dc346b5b8b2ee235db45ea60acd43c4a6ea5",
-    "expected_key": "e5845bca8f89606aaf9b4fbf76530a1bc67131439292158e03569bcd6a290d7d",
-    "expected_nonce": "01d6a50cd369f43a343263b2",
+    "secret": "be0a3627d31ba6cff2807e78a17b4ae5d9ff27ffa95f47a6d944716eb8d8b43434ffc9079f21494ee41311897d4862a8",
+    "ciphertext_bytes": "6c9ab26f5a3c945c196f73a429678ca5f02d5188fe02005e66001e05116032ba2e5bd28ac614b811a77e45afb98e2cc5d09a011c63",
+    "expected_key": "c5346bd2e8222a91c7d1f2dc41cb21f5419b2d25f61591cbb365bc7c6fe76dd7",
+    "expected_nonce": "87eaa13e5b0029fedf134b81",
     "sender_data": {
       "sender": 0,
       "generation": 13,
-      "reuse_guard": "56690086"
+      "reuse_guard": "e16fe8da"
     },
     "sender_data_aad": {
       "epoch": 42,
       "group_id": "67726f7570"
     },
-    "expected_ciphertext": "d21b572bc70f22ad4de3d78235345fd9dea5ce03791d25f6a35a3efa"
+    "expected_ciphertext": "826de19af42b7fa1cf9054d078fba8b2e862e93f74cda564c953b18d"
   }
 ]
