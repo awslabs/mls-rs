@@ -22,7 +22,7 @@ use super::{
     key_schedule::{CommitSecret, KeySchedule},
     message_processor::MessageProcessor,
     message_signature::MLSAuthenticatedContent,
-    proposal::{Proposal, ProposalOrRef},
+    proposal::{CustomProposal, Proposal, ProposalOrRef},
     ConfirmedTranscriptHash, ControlEncryptionMode, Group, GroupError, GroupInfo,
 };
 
@@ -116,6 +116,11 @@ where
 
         self.proposals.push(proposal);
         Ok(self)
+    }
+
+    pub fn custom_proposal(mut self, proposal: CustomProposal) -> Self {
+        self.proposals.push(Proposal::Custom(proposal));
+        self
     }
 
     pub fn authenticated_data(self, authenticated_data: Vec<u8>) -> Self {
@@ -476,8 +481,8 @@ mod tests {
         client_config::ClientConfig,
         extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
         group::{
-            proposal::PreSharedKeyProposal,
-            test_utils::{test_group, test_n_member_group},
+            proposal::{PreSharedKeyProposal, ProposalType},
+            test_utils::{test_group_custom_config, test_n_member_group},
         },
         identity::test_utils::get_test_basic_credential,
         identity::test_utils::get_test_signing_identity,
@@ -488,9 +493,11 @@ mod tests {
     use super::*;
 
     async fn test_commit_builder_group() -> Group<TestClientConfig> {
-        test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
-            .await
-            .group
+        test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+            b.custom_proposal_type(ProposalType::from(42))
+        })
+        .await
+        .group
     }
 
     fn assert_commit_builder_output<C: ClientConfig>(
@@ -706,6 +713,22 @@ mod tests {
             .unwrap();
 
         assert_commit_builder_output(group, commit_output, vec![expected_reinit], 0);
+    }
+
+    #[futures_test::test]
+    async fn test_commit_builder_custom_proposal() {
+        let mut group = test_commit_builder_group().await;
+
+        let proposal = CustomProposal::new(42.into(), vec![0, 1]);
+
+        let commit_output = group
+            .commit_builder()
+            .custom_proposal(proposal.clone())
+            .build()
+            .await
+            .unwrap();
+
+        assert_commit_builder_output(group, commit_output, vec![Proposal::Custom(proposal)], 0);
     }
 
     #[futures_test::test]

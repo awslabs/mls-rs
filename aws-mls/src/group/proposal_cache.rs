@@ -31,6 +31,7 @@ pub(crate) struct ProposalSetEffects {
     pub psks: Vec<PreSharedKeyID>,
     pub reinit: Option<ReInitProposal>,
     pub external_init: Option<(LeafIndex, ExternalInit)>,
+    pub custom_proposals: Vec<CustomProposal>,
     pub rejected_proposals: Vec<(ProposalRef, Proposal)>,
 }
 
@@ -55,6 +56,7 @@ impl ProposalSetEffects {
             reinit: None,
             external_init: None,
             rejected_proposals,
+            custom_proposals: Vec::new(),
         };
 
         proposals
@@ -118,6 +120,7 @@ impl ProposalSetEffects {
                     ))?;
                 self.external_init = Some((new_member_leaf_index, external_init));
             }
+            Proposal::Custom(custom) => self.custom_proposals.push(custom),
         };
 
         Ok(self)
@@ -617,6 +620,7 @@ mod tests {
             reinit: None,
             external_init: None,
             rejected_proposals: Vec::new(),
+            custom_proposals: Vec::new(),
         };
 
         let plaintext = proposals
@@ -3546,6 +3550,78 @@ mod tests {
 
         assert_eq!(committed, Vec::new());
         assert_eq!(effects.rejected_proposals, vec![(add_ref, add)]);
+    }
+
+    #[futures_test::test]
+    async fn sending_custom_proposal_with_member_not_supporting_proposal_type_fails() {
+        let (alice, tree) = new_tree("alice").await;
+
+        let custom_proposal = Proposal::Custom(CustomProposal {
+            proposal_type: ProposalType::new(42),
+            data: vec![],
+        });
+
+        let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+            .with_additional([custom_proposal.clone()])
+            .send()
+            .await;
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(
+                ProposalFilterError::UnsupportedCustomProposal(c)
+            )) if c == custom_proposal.proposal_type()
+        );
+    }
+
+    #[futures_test::test]
+    async fn sending_custom_proposal_with_member_not_supporting_filters_it_out() {
+        let (alice, tree) = new_tree("alice").await;
+
+        let custom_proposal = Proposal::Custom(CustomProposal {
+            proposal_type: ProposalType::new(42),
+            data: vec![],
+        });
+
+        let custom_ref = make_proposal_ref(&custom_proposal, alice);
+
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .cache(custom_ref.clone(), custom_proposal.clone(), alice)
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(committed, Vec::new());
+        assert_eq!(
+            effects.rejected_proposals,
+            vec![(custom_ref, custom_proposal)]
+        );
+    }
+
+    #[futures_test::test]
+    async fn receiving_custom_proposal_with_member_not_supporting_fails() {
+        let (alice, tree) = new_tree("alice").await;
+
+        let custom_proposal = Proposal::Custom(CustomProposal {
+            proposal_type: ProposalType::new(42),
+            data: vec![],
+        });
+
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .receive([custom_proposal.clone()])
+        .await;
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalFilterError(ProposalFilterError::UnsupportedCustomProposal(c)
+            )) if c == custom_proposal.proposal_type()
+        );
     }
 
     #[futures_test::test]

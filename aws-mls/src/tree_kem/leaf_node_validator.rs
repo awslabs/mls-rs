@@ -536,9 +536,7 @@ mod tests {
             test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Add(None))
                 .await,
-            Err(LeafNodeValidationError::RequiredProposalNotFound(
-                ProposalType(42)
-            ))
+            Err(LeafNodeValidationError::RequiredProposalNotFound(p)) if p == ProposalType::new(42)
         );
     }
 

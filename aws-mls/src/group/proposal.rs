@@ -2,6 +2,7 @@ use super::*;
 use crate::{psk::PreSharedKeyID, tree_kem::leaf_node::LeafNode};
 use std::fmt::{self, Debug};
 
+use aws_mls_core::tls::ByteVec;
 pub use proposal_filter::{
     BoxedProposalFilter, PassThroughProposalFilter, ProposalBundle, ProposalFilter,
     ProposalFilterError,
@@ -123,6 +124,23 @@ pub struct ExternalInit {
     pub kem_output: Vec<u8>,
 }
 
+#[serde_as]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+pub struct CustomProposal {
+    pub proposal_type: ProposalType,
+    pub data: Vec<u8>,
+}
+
+impl CustomProposal {
+    pub fn new(proposal_type: ProposalType, data: Vec<u8>) -> Self {
+        Self {
+            proposal_type,
+            data,
+        }
+    }
+}
+
 #[derive(
     Clone,
     Copy,
@@ -136,7 +154,33 @@ pub struct ExternalInit {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ProposalType(pub u16);
+pub struct ProposalType(u16);
+
+impl ProposalType {
+    pub fn new(value: u16) -> ProposalType {
+        ProposalType(value)
+    }
+}
+
+impl From<ProposalType> for u16 {
+    fn from(value: ProposalType) -> Self {
+        value.0
+    }
+}
+
+impl From<u16> for ProposalType {
+    fn from(value: u16) -> Self {
+        ProposalType(value)
+    }
+}
+
+impl Deref for ProposalType {
+    type Target = u16;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 impl ProposalType {
     pub const ADD: ProposalType = ProposalType(1);
@@ -146,12 +190,6 @@ impl ProposalType {
     pub const RE_INIT: ProposalType = ProposalType(5);
     pub const EXTERNAL_INIT: ProposalType = ProposalType(6);
     pub const GROUP_CONTEXT_EXTENSIONS: ProposalType = ProposalType(7);
-}
-
-impl From<u16> for ProposalType {
-    fn from(n: u16) -> Self {
-        Self(n)
-    }
 }
 
 impl Debug for ProposalType {
@@ -169,20 +207,10 @@ impl Debug for ProposalType {
     }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u16)]
 pub enum Proposal {
-    #[tls_codec(discriminant = 1)]
     Add(AddProposal),
     Update(UpdateProposal),
     Remove(RemoveProposal),
@@ -190,6 +218,70 @@ pub enum Proposal {
     ReInit(ReInitProposal),
     ExternalInit(ExternalInit),
     GroupContextExtensions(ExtensionList),
+    Custom(CustomProposal),
+}
+
+impl tls_codec::Size for Proposal {
+    fn tls_serialized_len(&self) -> usize {
+        let inner_len = match self {
+            Proposal::Add(p) => p.tls_serialized_len(),
+            Proposal::Update(p) => p.tls_serialized_len(),
+            Proposal::Remove(p) => p.tls_serialized_len(),
+            Proposal::Psk(p) => p.tls_serialized_len(),
+            Proposal::ReInit(p) => p.tls_serialized_len(),
+            Proposal::ExternalInit(p) => p.tls_serialized_len(),
+            Proposal::GroupContextExtensions(p) => p.tls_serialized_len(),
+            Proposal::Custom(p) => ByteVec::tls_serialized_len(&p.data),
+        };
+
+        self.proposal_type().tls_serialized_len() + inner_len
+    }
+}
+
+impl tls_codec::Serialize for Proposal {
+    fn tls_serialize<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
+        let type_len = self.proposal_type().tls_serialize(writer)?;
+
+        let inner_len = match self {
+            Proposal::Add(p) => p.tls_serialize(writer),
+            Proposal::Update(p) => p.tls_serialize(writer),
+            Proposal::Remove(p) => p.tls_serialize(writer),
+            Proposal::Psk(p) => p.tls_serialize(writer),
+            Proposal::ReInit(p) => p.tls_serialize(writer),
+            Proposal::ExternalInit(p) => p.tls_serialize(writer),
+            Proposal::GroupContextExtensions(p) => p.tls_serialize(writer),
+            Proposal::Custom(p) => ByteVec::tls_serialize(&p.data, writer),
+        }?;
+
+        Ok(type_len + inner_len)
+    }
+}
+
+impl tls_codec::Deserialize for Proposal {
+    fn tls_deserialize<R: std::io::Read>(bytes: &mut R) -> Result<Self, tls_codec::Error>
+    where
+        Self: Sized,
+    {
+        let proposal_type = ProposalType::tls_deserialize(bytes)?;
+
+        Ok(match proposal_type {
+            ProposalType::ADD => Proposal::Add(AddProposal::tls_deserialize(bytes)?),
+            ProposalType::UPDATE => Proposal::Update(UpdateProposal::tls_deserialize(bytes)?),
+            ProposalType::REMOVE => Proposal::Remove(RemoveProposal::tls_deserialize(bytes)?),
+            ProposalType::PSK => Proposal::Psk(PreSharedKeyProposal::tls_deserialize(bytes)?),
+            ProposalType::RE_INIT => Proposal::ReInit(ReInitProposal::tls_deserialize(bytes)?),
+            ProposalType::EXTERNAL_INIT => {
+                Proposal::ExternalInit(ExternalInit::tls_deserialize(bytes)?)
+            }
+            ProposalType::GROUP_CONTEXT_EXTENSIONS => {
+                Proposal::GroupContextExtensions(ExtensionList::tls_deserialize(bytes)?)
+            }
+            custom => Proposal::Custom(CustomProposal {
+                proposal_type: custom,
+                data: ByteVec::tls_deserialize(bytes)?,
+            }),
+        })
+    }
 }
 
 impl Proposal {
@@ -202,6 +294,7 @@ impl Proposal {
             Proposal::ReInit(_) => ProposalType::RE_INIT,
             Proposal::ExternalInit(_) => ProposalType::EXTERNAL_INIT,
             Proposal::GroupContextExtensions(_) => ProposalType::GROUP_CONTEXT_EXTENSIONS,
+            Proposal::Custom(c) => c.proposal_type,
         }
     }
 }
@@ -215,6 +308,7 @@ pub enum BorrowedProposal<'a> {
     ReInit(&'a ReInitProposal),
     ExternalInit(&'a ExternalInit),
     GroupContextExtensions(&'a ExtensionList),
+    CustomProposal(&'a CustomProposal),
 }
 
 impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
@@ -227,6 +321,7 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
             Proposal::ReInit(p) => BorrowedProposal::ReInit(p),
             Proposal::ExternalInit(p) => BorrowedProposal::ExternalInit(p),
             Proposal::GroupContextExtensions(p) => BorrowedProposal::GroupContextExtensions(p),
+            Proposal::Custom(p) => BorrowedProposal::CustomProposal(p),
         }
     }
 }
@@ -270,6 +365,12 @@ impl<'a> From<&'a ExternalInit> for BorrowedProposal<'a> {
 impl<'a> From<&'a ExtensionList> for BorrowedProposal<'a> {
     fn from(p: &'a ExtensionList) -> Self {
         Self::GroupContextExtensions(p)
+    }
+}
+
+impl<'a> From<&'a CustomProposal> for BorrowedProposal<'a> {
+    fn from(p: &'a CustomProposal) -> Self {
+        Self::CustomProposal(p)
     }
 }
 

@@ -190,6 +190,8 @@ pub enum ProposalFilterError {
     RemovingBlankNode(u32),
     #[error("Unsupported group extension {0:?}")]
     UnsupportedGroupExtension(ExtensionType),
+    #[error("Unsupported custom proposal type {0:?}")]
+    UnsupportedCustomProposal(ProposalType),
     #[error(transparent)]
     PskIdValidationError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]

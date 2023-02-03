@@ -1,8 +1,11 @@
+use itertools::Itertools;
+
 use crate::{
     extension::ExtensionList,
     group::{
-        AddProposal, BorrowedProposal, ExternalInit, PreSharedKeyProposal, Proposal, ProposalOrRef,
-        ProposalRef, ProposalType, ReInitProposal, RemoveProposal, Sender, UpdateProposal,
+        proposal::CustomProposal, AddProposal, BorrowedProposal, ExternalInit,
+        PreSharedKeyProposal, Proposal, ProposalOrRef, ProposalRef, ProposalType, ReInitProposal,
+        RemoveProposal, Sender, UpdateProposal,
     },
 };
 use std::marker::PhantomData;
@@ -16,6 +19,7 @@ pub struct ProposalBundle {
     reinitializations: Vec<ProposalInfo<ReInitProposal>>,
     external_initializations: Vec<ProposalInfo<ExternalInit>>,
     group_context_extensions: Vec<ProposalInfo<ExtensionList>>,
+    custom_proposals: Vec<ProposalInfo<CustomProposal>>,
 }
 
 impl ProposalBundle {
@@ -58,6 +62,11 @@ impl ProposalBundle {
                     proposal_ref,
                 })
             }
+            Proposal::Custom(proposal) => self.custom_proposals.push(ProposalInfo {
+                proposal,
+                sender,
+                proposal_ref,
+            }),
         }
     }
 
@@ -85,6 +94,25 @@ impl ProposalBundle {
         let mut res = Ok(());
 
         T::retain(self, |p| match f(p) {
+            Ok(keep) => keep,
+            Err(e) => {
+                if res.is_ok() {
+                    res = Err(e);
+                }
+                false
+            }
+        });
+
+        res
+    }
+
+    pub fn retain_custom<F, E>(&mut self, mut f: F) -> Result<(), E>
+    where
+        F: FnMut(&ProposalInfo<CustomProposal>) -> Result<bool, E>,
+    {
+        let mut res = Ok(());
+
+        self.custom_proposals.retain(|p| match f(p) {
             Ok(keep) => keep,
             Err(e) => {
                 if res.is_ok() {
@@ -166,6 +194,11 @@ impl ProposalBundle {
                     .iter()
                     .map(|p| p.by_ref().map(BorrowedProposal::GroupContextExtensions)),
             )
+            .chain(
+                self.custom_proposals
+                    .iter()
+                    .map(|p| p.by_ref().map(BorrowedProposal::CustomProposal)),
+            )
     }
 
     pub fn into_proposals(self) -> impl Iterator<Item = ProposalInfo<Proposal>> {
@@ -190,6 +223,11 @@ impl ProposalBundle {
                     .into_iter()
                     .map(|p| p.map(Proposal::GroupContextExtensions)),
             )
+            .chain(
+                self.custom_proposals
+                    .into_iter()
+                    .map(|p| p.map(Proposal::Custom)),
+            )
     }
 
     pub(crate) fn into_proposals_or_refs(self) -> impl Iterator<Item = ProposalOrRef> {
@@ -209,6 +247,13 @@ impl ProposalBundle {
         self.group_context_extensions.clear();
     }
 
+    pub fn custom_proposal_types(&self) -> impl Iterator<Item = ProposalType> + '_ {
+        self.custom_proposals
+            .iter()
+            .map(|v| v.proposal.proposal_type)
+            .unique()
+    }
+
     pub fn proposal_types(&self) -> impl Iterator<Item = ProposalType> + '_ {
         (!self.additions.is_empty())
             .then_some(ProposalType::ADD)
@@ -224,6 +269,7 @@ impl ProposalBundle {
                 (!self.group_context_extensions.is_empty())
                     .then_some(ProposalType::GROUP_CONTEXT_EXTENSIONS),
             )
+            .chain(self.custom_proposal_types())
     }
 }
 

@@ -16,6 +16,7 @@ use self::leaf_node::{LeafNode, LeafNodeError};
 use self::tree_utils::build_ascii_tree;
 
 use crate::extension::ExtensionError;
+use crate::group::proposal::ProposalType;
 use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError};
 use crate::provider::crypto::{self, CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::tree_kem::parent_hash::ParentHashError;
@@ -230,6 +231,10 @@ impl TreeKemPublic {
                 None
             }
         })
+    }
+
+    pub fn can_support_proposal(&self, proposal_type: ProposalType) -> bool {
+        self.index.count_supporting_proposal(proposal_type) as u32 == self.occupied_leaf_count()
     }
 
     // Note that a partial failure of this function will leave the tree in a bad state. Modifying a
@@ -904,6 +909,7 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::group::proposal::ProposalType;
     use crate::provider::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
@@ -1444,5 +1450,36 @@ mod tests {
         assert_eq!(acc.additions, [LeafIndex(2)]);
         assert_eq!(acc.removals, [(LeafIndex(2), leaf_nodes[1].clone())]);
         assert_eq!(acc.updates, [LeafIndex(1)]);
+    }
+
+    #[futures_test::test]
+    async fn custom_proposal_support() {
+        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let mut tree = TreeKemPublic::new();
+
+        let test_proposal_type = ProposalType::from(42);
+
+        let mut leaf_nodes = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
+
+        leaf_nodes
+            .iter_mut()
+            .for_each(|n| n.capabilities.proposals.push(test_proposal_type));
+
+        tree.add_leaves(leaf_nodes, BasicIdentityProvider, &cipher_suite_provider)
+            .await
+            .unwrap();
+
+        assert!(tree.can_support_proposal(test_proposal_type));
+        assert!(!tree.can_support_proposal(ProposalType::from(43)));
+
+        tree.add_leaves(
+            vec![get_basic_test_node(TEST_CIPHER_SUITE, "another").await],
+            BasicIdentityProvider,
+            &cipher_suite_provider,
+        )
+        .await
+        .unwrap();
+
+        assert!(!tree.can_support_proposal(test_proposal_type));
     }
 }

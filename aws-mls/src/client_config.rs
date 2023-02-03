@@ -3,7 +3,7 @@ use crate::{
     extension::{ExtensionList, ExtensionType},
     group::{
         framing::Sender,
-        proposal::BorrowedProposal,
+        proposal::{BorrowedProposal, ProposalType},
         proposal_filter::{
             ProposalBundle, ProposalFilter, ProposalFilterContext, SimpleProposalFilter,
         },
@@ -31,6 +31,7 @@ pub trait ClientConfig: Clone + Send + Sync {
     type CryptoProvider: CryptoProvider + Clone;
 
     fn supported_extensions(&self) -> Vec<ExtensionType>;
+    fn supported_custom_proposals(&self) -> Vec<ProposalType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
 
     fn preferences(&self) -> Preferences;
@@ -56,7 +57,7 @@ pub trait ClientConfig: Clone + Send + Sync {
             protocol_versions: self.supported_protocol_versions(),
             cipher_suites: self.crypto_provider().supported_cipher_suites(),
             extensions: self.supported_extensions(),
-            proposals: vec![], // TODO: Support registering custom proposals here
+            proposals: self.supported_custom_proposals(),
             credentials: self.supported_credential_types(),
         }
     }

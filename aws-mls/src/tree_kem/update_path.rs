@@ -196,6 +196,7 @@ mod tests {
             reinit: None,
             external_init: None,
             rejected_proposals: vec![],
+            custom_proposals: vec![],
         }
     }
 

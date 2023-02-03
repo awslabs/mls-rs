@@ -6,7 +6,7 @@ use super::{
         MLSPlaintext, Sender, WireFormat,
     },
     message_signature::MLSAuthenticatedContent,
-    proposal::{ExternalInit, Proposal, ReInitProposal},
+    proposal::{CustomProposal, ExternalInit, Proposal, ReInitProposal},
     proposal_cache::ProposalSetEffects,
     proposal_effects,
     state::GroupState,
@@ -39,6 +39,7 @@ pub(crate) struct ProvisionalState {
     pub(crate) psks: Vec<PreSharedKeyID>,
     pub(crate) reinit: Option<ReInitProposal>,
     pub(crate) external_init: Option<(LeafIndex, ExternalInit)>,
+    pub(crate) custom_proposals: Vec<CustomProposal>,
     pub(crate) rejected_proposals: Vec<(ProposalRef, Proposal)>,
 }
 
@@ -50,6 +51,7 @@ pub struct StateUpdate<IE> {
     pub pending_reinit: bool,
     pub active: bool,
     pub epoch: u64,
+    pub custom_proposals: Vec<CustomProposal>,
     pub rejected_proposals: Vec<(ProposalRef, Proposal)>,
 }
 
@@ -277,12 +279,13 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         let update = StateUpdate {
             roster_update,
+            identity_events,
             added_psks: psks,
             pending_reinit: provisional.reinit.is_some(),
             active: true,
             epoch: provisional.epoch,
+            custom_proposals: provisional.custom_proposals.clone(),
             rejected_proposals: provisional.rejected_proposals.clone(),
-            identity_events,
         };
 
         Ok(update)
@@ -528,6 +531,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             psks: proposals.psks,
             reinit: proposals.reinit,
             external_init: proposals.external_init,
+            custom_proposals: proposals.custom_proposals,
             rejected_proposals: proposals.rejected_proposals,
         })
     }

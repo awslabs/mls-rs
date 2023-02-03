@@ -349,8 +349,22 @@ pub mod test_utils {
         cipher_suite: CipherSuite,
         identity: &str,
     ) -> (Client<TestClientConfig>, KeyPackage) {
+        test_client_with_key_pkg_custom(protocol_version, cipher_suite, identity, |_| {}).await
+    }
+
+    pub async fn test_client_with_key_pkg_custom<F>(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        identity: &str,
+        mut config: F,
+    ) -> (Client<TestClientConfig>, KeyPackage)
+    where
+        F: FnMut(&mut TestClientConfig),
+    {
         let (client, identity) = get_basic_client_builder(cipher_suite, identity);
-        let client = client.build();
+        let mut client = client.build();
+
+        config(&mut client.config);
 
         let key_package = client
             .generate_key_package(protocol_version, cipher_suite, identity)
@@ -517,7 +531,7 @@ mod tests {
             .await;
 
         let (mut bob_group, _) = alice_group
-            .join_with_custom_config("bob", |c| {
+            .join_with_custom_config("bob", false, |c| {
                 c.0.psk_store.insert(psk_id.clone(), psk.clone());
             })
             .await

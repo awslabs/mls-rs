@@ -1,4 +1,5 @@
 use super::*;
+use crate::group::proposal::ProposalType;
 use crate::identity::CredentialType;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use itertools::Itertools;
@@ -29,7 +30,9 @@ pub struct TreeIndex {
     #[serde_as(as = "HashMap<VecAsBase64, _>")]
     identities: HashMap<Vec<u8>, LeafIndex>,
     #[serde_as(as = "Vec<(_,_)>")]
-    credential_type_counters: HashMap<CredentialType, CredentialTypeCounters>,
+    credential_type_counters: HashMap<CredentialType, TypeCounter>,
+    #[serde_as(as = "Vec<(_,_)>")]
+    proposal_type_counter: HashMap<ProposalType, usize>,
 }
 
 impl TreeIndex {
@@ -91,6 +94,7 @@ impl TreeIndex {
 
         cred_type_counters.used += 1;
 
+        // Credential type counter updates
         leaf_node
             .capabilities
             .credentials
@@ -102,6 +106,17 @@ impl TreeIndex {
                     .entry(cred_type)
                     .or_default()
                     .supported += 1;
+            });
+
+        // Proposal type counter update
+        leaf_node
+            .capabilities
+            .proposals
+            .iter()
+            .copied()
+            .unique()
+            .for_each(|proposal_type| {
+                *self.proposal_type_counter.entry(proposal_type).or_default() += 1;
             });
 
         identity_entry.or_insert(index);
@@ -125,6 +140,7 @@ impl TreeIndex {
             return;
         }
 
+        // Decrement credential type counters
         let leaf_cred_type = leaf_node.signing_identity.credential.credential_type;
 
         if let Some(counters) = self.credential_type_counters.get_mut(&leaf_cred_type) {
@@ -141,6 +157,25 @@ impl TreeIndex {
                     counters.supported -= 1;
                 }
             });
+
+        // Decrement proposal type counters
+        leaf_node
+            .capabilities
+            .proposals
+            .iter()
+            .unique()
+            .for_each(|proposal_type| {
+                if let Some(supported) = self.proposal_type_counter.get_mut(proposal_type) {
+                    *supported -= 1;
+                }
+            })
+    }
+
+    pub fn count_supporting_proposal(&self, proposal_type: ProposalType) -> usize {
+        self.proposal_type_counter
+            .get(&proposal_type)
+            .copied()
+            .unwrap_or_default()
     }
 
     #[cfg(test)]
@@ -150,7 +185,7 @@ impl TreeIndex {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
-struct CredentialTypeCounters {
+struct TypeCounter {
     supported: usize,
     used: usize,
 }
@@ -296,5 +331,53 @@ mod tests {
                 .get(test_data[1].leaf_node.public_key.as_ref()),
             None
         );
+    }
+
+    #[futures_test::test]
+    async fn custom_proposals() {
+        let test_proposal_id = ProposalType::new(42);
+        let other_proposal_id = ProposalType::new(45);
+
+        let mut test_data_1 = get_test_data(LeafIndex(0)).await;
+
+        test_data_1
+            .leaf_node
+            .capabilities
+            .proposals
+            .push(test_proposal_id);
+
+        let mut test_data_2 = get_test_data(LeafIndex(1)).await;
+
+        test_data_2
+            .leaf_node
+            .capabilities
+            .proposals
+            .push(test_proposal_id);
+
+        test_data_2
+            .leaf_node
+            .capabilities
+            .proposals
+            .push(other_proposal_id);
+
+        let mut test_index = TreeIndex::new();
+
+        test_index
+            .insert(test_data_1.index, &test_data_1.leaf_node, vec![0])
+            .unwrap();
+
+        assert_eq!(test_index.count_supporting_proposal(test_proposal_id), 1);
+
+        test_index
+            .insert(test_data_2.index, &test_data_2.leaf_node, vec![1])
+            .unwrap();
+
+        assert_eq!(test_index.count_supporting_proposal(test_proposal_id), 2);
+        assert_eq!(test_index.count_supporting_proposal(other_proposal_id), 1);
+
+        test_index.remove(&test_data_2.leaf_node, &[1]);
+
+        assert_eq!(test_index.count_supporting_proposal(test_proposal_id), 1);
+        assert_eq!(test_index.count_supporting_proposal(other_proposal_id), 0);
     }
 }

@@ -2,7 +2,10 @@ use rand::RngCore;
 
 use super::*;
 use crate::{
-    client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+    client::test_utils::{
+        test_client_with_key_pkg, test_client_with_key_pkg_custom, TEST_CIPHER_SUITE,
+        TEST_PROTOCOL_VERSION,
+    },
     client_builder::{
         test_utils::{TestClientBuilder, TestClientConfig},
         Preferences,
@@ -35,7 +38,7 @@ impl TestGroup {
         name: &str,
         preferences: Preferences,
     ) -> (TestGroup, MLSMessage) {
-        self.join_with_custom_config(name, |mut config| {
+        self.join_with_custom_config(name, false, |mut config| {
             config.0.settings.preferences = preferences.clone();
         })
         .await
@@ -45,17 +48,28 @@ impl TestGroup {
     pub(crate) async fn join_with_custom_config<F>(
         &mut self,
         name: &str,
+        custom_kp: bool,
         mut config: F,
     ) -> Result<(TestGroup, MLSMessage), GroupError>
     where
         F: FnMut(&mut TestClientConfig),
     {
-        let (mut new_client, new_key_package) = test_client_with_key_pkg(
-            self.group.state.protocol_version(),
-            self.group.state.cipher_suite(),
-            name,
-        )
-        .await;
+        let (mut new_client, new_key_package) = if custom_kp {
+            test_client_with_key_pkg_custom(
+                self.group.state.protocol_version(),
+                self.group.state.cipher_suite(),
+                name,
+                &mut config,
+            )
+            .await
+        } else {
+            test_client_with_key_pkg(
+                self.group.state.protocol_version(),
+                self.group.state.cipher_suite(),
+                name,
+            )
+            .await
+        };
 
         // Add new member to the group
         let commit_output = self

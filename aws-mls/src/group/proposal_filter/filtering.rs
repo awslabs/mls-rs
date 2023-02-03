@@ -20,6 +20,7 @@ use crate::{
 };
 use aws_mls_core::identity::IdentityProvider;
 use futures::TryStreamExt;
+use itertools::Itertools;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[derive(Clone, Debug)]
@@ -97,10 +98,10 @@ where
     where
         F: FilterStrategy,
     {
-        match commit_sender {
+        let state = match commit_sender {
             Sender::Member(sender) => {
                 self.apply_proposals_from_member(
-                    strategy,
+                    &strategy,
                     LeafIndex(*sender),
                     proposals,
                     commit_time,
@@ -114,7 +115,9 @@ where
             Sender::External(_) | Sender::NewMemberProposal => {
                 Err(ProposalFilterError::ExternalSenderCannotCommit)
             }
-        }
+        }?;
+
+        filter_out_unsupported_custom_proposals(state, strategy)
     }
 
     async fn apply_proposals_from_member<F>(
@@ -1175,6 +1178,35 @@ where
         .await?;
 
     state.external_leaf_index = leaf_indexes.first().copied();
+    Ok(state)
+}
+
+fn filter_out_unsupported_custom_proposals<F>(
+    mut state: ProposalState,
+    strategy: F,
+) -> Result<ProposalState, ProposalFilterError>
+where
+    F: FilterStrategy,
+{
+    let unsupported_types = state
+        .proposals
+        .custom_proposal_types()
+        .filter(|t| state.tree.can_support_proposal(*t))
+        .collect_vec();
+
+    state.proposals.retain_custom(|p| {
+        apply_strategy(
+            &strategy,
+            p,
+            unsupported_types
+                .contains(&p.proposal.proposal_type)
+                .then_some(())
+                .ok_or(ProposalFilterError::UnsupportedCustomProposal(
+                    p.proposal.proposal_type,
+                )),
+        )
+    })?;
+
     Ok(state)
 }
 

@@ -11,8 +11,10 @@ use crate::{
     },
     extension::{ExtensionError, ExtensionList, ExtensionType, MlsExtension},
     group::{
-        proposal::BorrowedProposal, proposal_filter::ProposalFilterContext,
-        state_repo::DEFAULT_EPOCH_RETENTION_LIMIT, ControlEncryptionMode, PaddingMode,
+        proposal::{BorrowedProposal, ProposalType},
+        proposal_filter::ProposalFilterContext,
+        state_repo::DEFAULT_EPOCH_RETENTION_LIMIT,
+        ControlEncryptionMode, PaddingMode,
     },
     identity::CredentialType,
     identity::SigningIdentity,
@@ -158,6 +160,21 @@ impl<C: IntoConfig> ClientBuilder<C> {
     {
         let mut c = self.0.into_config();
         c.0.settings.extension_types.extend(types);
+        ClientBuilder(c)
+    }
+
+    /// Add a custom proposal type to the list of proposals types supported by the client.
+    pub fn custom_proposal_type(self, type_: ProposalType) -> ClientBuilder<IntoConfigOutput<C>> {
+        self.custom_proposal_types(Some(type_))
+    }
+
+    /// Add multiple custom proposal types to the list of proposal types supported by the client.
+    pub fn custom_proposal_types<I>(self, types: I) -> ClientBuilder<IntoConfigOutput<C>>
+    where
+        I: IntoIterator<Item = ProposalType>,
+    {
+        let mut c = self.0.into_config();
+        c.0.settings.custom_proposal_types.extend(types);
         ClientBuilder(c)
     }
 
@@ -671,6 +688,10 @@ where
             not_after: now_timestamp + self.settings.lifetime_in_s,
         }
     }
+
+    fn supported_custom_proposals(&self) -> Vec<crate::group::proposal::ProposalType> {
+        self.settings.custom_proposal_types.clone()
+    }
 }
 
 impl<Kpr, K, Ps, Gss, Ip, Mpf, Cp> Sealed for Config<Kpr, K, Ps, Gss, Ip, Mpf, Cp> {}
@@ -716,6 +737,10 @@ impl<T: MlsConfig> ClientConfig for T {
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
         self.get().supported_extensions()
+    }
+
+    fn supported_custom_proposals(&self) -> Vec<ProposalType> {
+        self.get().supported_custom_proposals()
     }
 
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion> {
@@ -786,6 +811,7 @@ impl<T: MlsConfig> ClientConfig for T {
 pub(crate) struct Settings {
     pub(crate) extension_types: Vec<ExtensionType>,
     pub(crate) protocol_versions: Vec<ProtocolVersion>,
+    pub(crate) custom_proposal_types: Vec<ProposalType>,
     pub(crate) preferences: Preferences,
     pub(crate) key_package_extensions: ExtensionList,
     pub(crate) leaf_node_extensions: ExtensionList,
@@ -801,6 +827,7 @@ impl Default for Settings {
             key_package_extensions: Default::default(),
             leaf_node_extensions: Default::default(),
             lifetime_in_s: 365 * 24 * 3600,
+            custom_proposal_types: Default::default(),
         }
     }
 }

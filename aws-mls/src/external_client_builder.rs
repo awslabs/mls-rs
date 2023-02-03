@@ -10,7 +10,10 @@ use crate::{
     extension::ExtensionType,
     external_client::ExternalClient,
     external_client_config::ExternalClientConfig,
-    group::{proposal::BorrowedProposal, proposal_filter::ProposalFilterContext},
+    group::{
+        proposal::{BorrowedProposal, ProposalType},
+        proposal_filter::ProposalFilterContext,
+    },
     identity::CredentialType,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
@@ -143,6 +146,24 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
     {
         let mut c = self.0.into_config();
         c.0.settings.extension_types.extend(types);
+        ExternalClientBuilder(c)
+    }
+
+    /// Add a custom proposal type to the list of proposals types supported by the client.
+    pub fn custom_proposal_type(
+        self,
+        type_: ProposalType,
+    ) -> ExternalClientBuilder<IntoConfigOutput<C>> {
+        self.custom_proposal_types(Some(type_))
+    }
+
+    /// Add multiple custom proposal types to the list of proposal types supported by the client.
+    pub fn custom_proposal_types<I>(self, types: I) -> ExternalClientBuilder<IntoConfigOutput<C>>
+    where
+        I: IntoIterator<Item = ProposalType>,
+    {
+        let mut c = self.0.into_config();
+        c.0.settings.custom_proposal_types.extend(types);
         ExternalClientBuilder(c)
     }
 
@@ -437,6 +458,10 @@ where
     fn cache_proposals(&self) -> bool {
         self.settings.cache_proposals
     }
+
+    fn supported_custom_proposals(&self) -> Vec<ProposalType> {
+        self.settings.custom_proposal_types.clone()
+    }
 }
 
 impl<K, Ip, Mpf, Cp> Sealed for Config<K, Ip, Mpf, Cp> {}
@@ -488,6 +513,10 @@ impl<T: MlsConfig> ExternalClientConfig for T {
         self.get().supported_protocol_versions()
     }
 
+    fn supported_custom_proposals(&self) -> Vec<ProposalType> {
+        self.get().supported_custom_proposals()
+    }
+
     fn identity_provider(&self) -> Self::IdentityProvider {
         self.get().identity_provider()
     }
@@ -507,6 +536,10 @@ impl<T: MlsConfig> ExternalClientConfig for T {
         self.get().proposal_filter(init)
     }
 
+    fn cache_proposals(&self) -> bool {
+        self.get().cache_proposals()
+    }
+
     fn max_epoch_jitter(&self) -> Option<u64> {
         self.get().max_epoch_jitter()
     }
@@ -522,15 +555,12 @@ impl<T: MlsConfig> ExternalClientConfig for T {
     fn supported_credentials(&self) -> Vec<CredentialType> {
         self.get().supported_credentials()
     }
-
-    fn cache_proposals(&self) -> bool {
-        self.get().cache_proposals()
-    }
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct Settings {
     pub(crate) extension_types: Vec<ExtensionType>,
+    pub(crate) custom_proposal_types: Vec<ProposalType>,
     pub(crate) protocol_versions: Vec<ProtocolVersion>,
     pub(crate) external_signing_keys: HashMap<Vec<u8>, SignaturePublicKey>,
     pub(crate) max_epoch_jitter: Option<u64>,
@@ -545,6 +575,7 @@ impl Default for Settings {
             protocol_versions: vec![],
             external_signing_keys: Default::default(),
             max_epoch_jitter: None,
+            custom_proposal_types: vec![],
         }
     }
 }

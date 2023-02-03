@@ -4,6 +4,7 @@ use aws_mls_core::identity::IdentityProvider;
 use crate::{
     client_config::{MakeProposalFilter, ProposalFilterInit},
     extension::ExtensionType,
+    group::proposal::ProposalType,
     identity::CredentialType,
     protocol_version::ProtocolVersion,
     provider::{
@@ -22,6 +23,7 @@ pub trait ExternalClientConfig: Clone + Send + Sync {
 
     fn keychain(&self) -> Self::Keychain;
     fn supported_extensions(&self) -> Vec<ExtensionType>;
+    fn supported_custom_proposals(&self) -> Vec<ProposalType>;
     fn supported_protocol_versions(&self) -> Vec<ProtocolVersion>;
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn crypto_provider(&self) -> Self::CryptoProvider;
@@ -41,7 +43,7 @@ pub trait ExternalClientConfig: Clone + Send + Sync {
             protocol_versions: self.supported_protocol_versions(),
             cipher_suites: self.crypto_provider().supported_cipher_suites(),
             extensions: self.supported_extensions(),
-            proposals: vec![], // TODO: Support registering custom proposals here
+            proposals: self.supported_custom_proposals(),
             credentials: self.supported_credentials(),
         }
     }

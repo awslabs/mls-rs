@@ -1297,6 +1297,15 @@ where
         Proposal::GroupContextExtensions(extensions)
     }
 
+    pub async fn propose_custom(
+        &mut self,
+        proposal: CustomProposal,
+        authenticated_data: Vec<u8>,
+    ) -> Result<MLSMessage, GroupError> {
+        self.proposal_message(Proposal::Custom(proposal), authenticated_data)
+            .await
+    }
+
     pub(crate) fn format_for_wire(
         &mut self,
         content: MLSAuthenticatedContent,
@@ -1833,6 +1842,7 @@ mod tests {
         },
     };
 
+    use super::test_utils::test_group_custom_config;
     use super::{
         test_utils::{
             get_test_25519_key, get_test_groups_with_features, group_extensions, process_commit,
@@ -2719,7 +2729,7 @@ mod tests {
         F: FnMut(&mut TestClientConfig),
     {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        alice_group.join_with_custom_config("alice", f).await
+        alice_group.join_with_custom_config("alice", false, f).await
     }
 
     #[futures_test::test]
@@ -3484,5 +3494,71 @@ mod tests {
                 )
             ))
         );
+    }
+
+    async fn custom_proposal_setup() -> (TestGroup, TestGroup) {
+        let mut alice = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+            b.custom_proposal_type(ProposalType::new(42))
+        })
+        .await;
+
+        let (bob, _) = alice
+            .join_with_custom_config("bob", true, |c| {
+                c.0.settings
+                    .custom_proposal_types
+                    .push(ProposalType::new(42))
+            })
+            .await
+            .unwrap();
+
+        (alice, bob)
+    }
+
+    #[futures_test::test]
+    async fn custom_proposal_by_value() {
+        let (mut alice, mut bob) = custom_proposal_setup().await;
+
+        let custom_proposal = CustomProposal {
+            proposal_type: ProposalType::new(42),
+            data: vec![0, 1, 2],
+        };
+
+        let commit = alice
+            .group
+            .commit_builder()
+            .custom_proposal(custom_proposal.clone())
+            .build()
+            .await
+            .unwrap()
+            .commit_message;
+
+        let res = bob.group.process_incoming_message(commit).await.unwrap();
+
+        assert_matches!(res.event, Event::Commit(commit) if commit.custom_proposals == vec![custom_proposal])
+    }
+
+    #[futures_test::test]
+    async fn custom_proposal_by_reference() {
+        let (mut alice, mut bob) = custom_proposal_setup().await;
+
+        let custom_proposal = CustomProposal {
+            proposal_type: ProposalType::new(42),
+            data: vec![0, 1, 2],
+        };
+
+        let proposal = alice
+            .group
+            .propose_custom(custom_proposal.clone(), vec![])
+            .await
+            .unwrap();
+
+        let recv_prop = bob.group.process_incoming_message(proposal).await.unwrap();
+
+        assert_matches!(recv_prop.event, Event::Proposal((Proposal::Custom(c), _)) if c == custom_proposal);
+
+        let commit = bob.group.commit(vec![]).await.unwrap().commit_message;
+        let res = alice.group.process_incoming_message(commit).await.unwrap();
+
+        assert_matches!(res.event, Event::Commit(commit) if commit.custom_proposals == vec![custom_proposal])
     }
 }
