@@ -1,4 +1,7 @@
-use crate::{DerCertificate, X509CertificateReader, X509IdentityError, X509IdentityExtractor};
+use crate::{
+    DerCertificate, SubjectComponent, X509CertificateReader, X509IdentityError,
+    X509IdentityExtractor,
+};
 
 #[derive(Debug, Clone)]
 pub struct SubjectIdentityExtractor<R: X509CertificateReader> {
@@ -14,11 +17,30 @@ where
         Self { offset, reader }
     }
 
+    fn extract_common_name(
+        &self,
+        certificate: &DerCertificate,
+    ) -> Result<Option<SubjectComponent>, X509IdentityError> {
+        Ok(self
+            .reader
+            .subject_components(certificate)
+            .map_err(|err| X509IdentityError::IdentityExtractorError(err.into()))?
+            .iter()
+            .find(|component| matches!(component, SubjectComponent::CommonName(_)))
+            .cloned())
+    }
+
     pub fn identity(
         &self,
         certificate_chain: &crate::CertificateChain,
     ) -> Result<Vec<u8>, X509IdentityError> {
         let cert = get_certificate(certificate_chain, self.offset)?;
+
+        let common_name_value = self.extract_common_name(cert)?;
+
+        if let Some(SubjectComponent::CommonName(common_name)) = common_name_value {
+            return Ok(common_name.as_bytes().to_vec());
+        }
 
         self.subject_bytes(cert)
     }
@@ -36,6 +58,16 @@ where
     ) -> Result<bool, X509IdentityError> {
         let predecessor_cert = get_certificate(predecessor, 0)?;
         let successor_cert = get_certificate(successor, 0)?;
+
+        let predecessor_common_name = self.extract_common_name(predecessor_cert)?;
+
+        let successor_common_name = self.extract_common_name(successor_cert)?;
+
+        if let (Some(pre_common_name), Some(succ_common_name)) =
+            (predecessor_common_name, successor_common_name)
+        {
+            return Ok(pre_common_name == succ_common_name);
+        }
 
         Ok(self.subject_bytes(predecessor_cert)? == self.subject_bytes(successor_cert)?)
     }
@@ -75,8 +107,8 @@ fn get_certificate(
 #[cfg(test)]
 mod tests {
     use crate::{
-        test_utils::test_certificate_chain, MockX509CertificateReader, SubjectIdentityExtractor,
-        X509IdentityError,
+        test_utils::test_certificate_chain, MockX509CertificateReader, SubjectComponent,
+        SubjectIdentityExtractor, X509IdentityError,
     };
 
     use assert_matches::assert_matches;
@@ -114,7 +146,35 @@ mod tests {
     }
 
     #[test]
-    fn subject_can_be_retrived_as_identity() {
+    fn common_name_can_be_retrived_as_identity() {
+        let test_subject = b"test_name".to_vec();
+        let cert_chain = test_certificate_chain();
+
+        let expected_certificate = cert_chain[1].clone();
+
+        let subject_extractor = test_setup(1, |parser| {
+            parser.expect_subject_bytes().never();
+
+            parser
+                .expect_subject_components()
+                .with(mockall::predicate::eq(expected_certificate.clone()))
+                .times(1)
+                .return_once_st(|_| {
+                    Ok(vec![
+                        SubjectComponent::CommonName("test_name".to_string()),
+                        SubjectComponent::CountryName("US".to_string()),
+                    ])
+                });
+        });
+
+        assert_eq!(
+            subject_extractor.identity(&cert_chain).unwrap(),
+            test_subject
+        );
+    }
+
+    #[test]
+    fn subject_can_be_retrived_as_identity_if_no_common_name() {
         let test_subject = b"subject".to_vec();
         let cert_chain = test_certificate_chain();
 
@@ -128,6 +188,12 @@ mod tests {
                 .once()
                 .with(mockall::predicate::eq(expected_certificate.clone()))
                 .return_once_st(|_| Ok(test_subject));
+
+            parser
+                .expect_subject_components()
+                .with(mockall::predicate::eq(expected_certificate.clone()))
+                .times(1)
+                .return_once_st(|_| Ok(vec![SubjectComponent::CountryName("US".to_string())]));
         });
 
         assert_eq!(
@@ -137,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn valid_successor() {
+    fn valid_successor_matching_common_name() {
         let predecessor = test_certificate_chain();
         let mut successor = test_certificate_chain();
 
@@ -147,6 +213,108 @@ mod tests {
         let subject_extractor = test_setup(1, |reader| {
             let predecessor = predecessor[0].clone();
             let successor = successor[0].clone();
+
+            reader
+                .expect_subject_components()
+                .with(mockall::predicate::eq(successor))
+                .times(1)
+                .return_once_st(|_| {
+                    Ok(vec![SubjectComponent::CommonName("test_name".to_string())])
+                });
+
+            reader
+                .expect_subject_components()
+                .with(mockall::predicate::eq(predecessor))
+                .times(1)
+                .return_once_st(|_| {
+                    Ok(vec![SubjectComponent::CommonName("test_name".to_string())])
+                });
+
+            reader.expect_subject_bytes().never();
+
+            reader.expect_subject_bytes().never();
+        });
+
+        assert!(subject_extractor
+            .valid_successor(&predecessor, &successor)
+            .unwrap());
+    }
+
+    #[test]
+    fn invalid_successor_different_common_name() {
+        let predecessor = test_certificate_chain();
+        let mut successor = test_certificate_chain();
+
+        // Make sure both chains have the same leaf
+        successor.0[0] = predecessor[0].clone();
+
+        let subject_extractor = test_setup(1, |reader| {
+            let predecessor = predecessor[0].clone();
+            let successor = successor[0].clone();
+
+            reader
+                .expect_subject_components()
+                .with(mockall::predicate::eq(successor))
+                .times(1)
+                .return_once_st(|_| {
+                    Ok(vec![
+                        SubjectComponent::CommonName("test_name_copy".to_string()),
+                        SubjectComponent::CountryName("US".to_string()),
+                    ])
+                });
+
+            reader
+                .expect_subject_components()
+                .with(mockall::predicate::eq(predecessor))
+                .times(1)
+                .return_once_st(|_| {
+                    Ok(vec![
+                        SubjectComponent::CommonName("test_name".to_string()),
+                        SubjectComponent::CountryName("US".to_string()),
+                    ])
+                });
+
+            reader.expect_subject_bytes().never();
+
+            reader.expect_subject_bytes().never();
+        });
+
+        assert!(
+            !subject_extractor
+                .valid_successor(&predecessor, &successor)
+                .unwrap(),
+            "Successor chain cert with different CommonName passed check!"
+        );
+    }
+
+    #[test]
+    fn valid_successor_no_common_name() {
+        let predecessor = test_certificate_chain();
+        let mut successor = test_certificate_chain();
+
+        // Make sure both chains have the same leaf
+        successor.0[0] = predecessor[0].clone();
+
+        let subject_extractor = test_setup(1, |reader| {
+            let predecessor = predecessor[0].clone();
+            let successor = successor[0].clone();
+
+            reader
+                .expect_subject_components()
+                .with(mockall::predicate::eq(successor.clone()))
+                .times(1)
+                .return_once_st(|_| Ok(vec![SubjectComponent::CountryName("US".to_string())]));
+
+            reader
+                .expect_subject_components()
+                .with(mockall::predicate::eq(predecessor.clone()))
+                .times(1)
+                .return_once_st(|_| {
+                    Ok(vec![
+                        SubjectComponent::CommonName("test_name".to_string()),
+                        SubjectComponent::CountryName("US".to_string()),
+                    ])
+                });
 
             reader
                 .expect_subject_bytes()
@@ -164,5 +332,50 @@ mod tests {
         assert!(subject_extractor
             .valid_successor(&predecessor, &successor)
             .unwrap());
+    }
+
+    #[test]
+    fn invalid_successor_no_common_name() {
+        let predecessor = test_certificate_chain();
+        let mut successor = test_certificate_chain();
+
+        // Make sure both chains have the same leaf
+        successor.0[0] = predecessor[0].clone();
+
+        let subject_extractor = test_setup(1, |reader| {
+            let predecessor = predecessor[0].clone();
+            let successor = successor[0].clone();
+
+            reader
+                .expect_subject_bytes()
+                .with(mockall::predicate::eq(predecessor.clone()))
+                .times(1)
+                .return_once_st(|_| Ok(b"subject_copy".to_vec()));
+
+            reader
+                .expect_subject_bytes()
+                .with(mockall::predicate::eq(successor.clone()))
+                .times(1)
+                .return_once_st(|_| Ok(b"subject".to_vec()));
+
+            reader
+                .expect_subject_components()
+                .with(mockall::predicate::eq(successor))
+                .times(1)
+                .return_once_st(|_| Ok(vec![SubjectComponent::CountryName("US".to_string())]));
+
+            reader
+                .expect_subject_components()
+                .with(mockall::predicate::eq(predecessor))
+                .times(1)
+                .return_once_st(|_| Ok(vec![SubjectComponent::CountryName("US".to_string())]));
+        });
+
+        assert!(
+            !subject_extractor
+                .valid_successor(&predecessor, &successor)
+                .unwrap(),
+            "Successor cert chain with different subjects passed valid check!"
+        );
     }
 }
