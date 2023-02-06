@@ -5,8 +5,10 @@ pub mod test_utils {
     use async_trait::async_trait;
     use aws_mls_core::{
         crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},
-        group::{RosterEntry, RosterUpdate},
-        identity::{Credential, CredentialType, IdentityProvider, SigningIdentity},
+        group::RosterUpdate,
+        identity::{
+            Credential, CredentialType, IdentityProvider, IdentityWarning, SigningIdentity,
+        },
         time::MlsTime,
     };
     use thiserror::Error;
@@ -72,7 +74,6 @@ pub mod test_utils {
     #[async_trait]
     impl IdentityProvider for BasicWithCustomProvider {
         type Error = BasicWithCustomProviderError;
-        type IdentityEvent = ();
 
         async fn validate(
             &self,
@@ -106,11 +107,10 @@ pub mod test_utils {
             ]
         }
 
-        async fn identity_events<T: RosterEntry>(
+        async fn identity_events(
             &self,
-            _update: &RosterUpdate<T>,
-            _prior_roster: Vec<T>,
-        ) -> Result<Vec<Self::IdentityEvent>, Self::Error> {
+            _update: &RosterUpdate,
+        ) -> Result<Vec<IdentityWarning>, Self::Error> {
             Ok(vec![])
         }
     }

@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 arbitrary = ["dep:arbitrary"]
+benchmark = []
 
 [dependencies]
 async-trait = "0.1.61"
@@ -18,6 +19,7 @@ base64 = "0.20.0"
 thiserror = "^1"
 enum-iterator = "1.1.3"
 num_enum = "0.5"
+indexmap = { version = "1.8.0", features = ["serde"] }
 
 [dev-dependencies]
 assert_matches = "1.5.0"

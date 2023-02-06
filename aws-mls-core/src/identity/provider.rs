@@ -1,15 +1,17 @@
-use crate::{
-    group::{RosterEntry, RosterUpdate},
-    time::MlsTime,
-};
+use crate::{group::RosterUpdate, time::MlsTime};
 use async_trait::async_trait;
 
 use super::{CredentialType, SigningIdentity};
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct IdentityWarning {
+    member_index: u32,
+    code: u64,
+}
+
 #[async_trait]
 pub trait IdentityProvider: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
-    type IdentityEvent: Send;
 
     async fn validate(
         &self,
@@ -27,11 +29,10 @@ pub trait IdentityProvider: Send + Sync {
 
     fn supported_types(&self) -> Vec<CredentialType>;
 
-    async fn identity_events<T: RosterEntry + 'static>(
+    async fn identity_events(
         &self,
-        update: &RosterUpdate<T>,
-        prior_roster: Vec<T>,
-    ) -> Result<Vec<Self::IdentityEvent>, Self::Error>
+        update: &RosterUpdate,
+    ) -> Result<Vec<IdentityWarning>, Self::Error>
     where
         Self: Sized;
 }
@@ -39,7 +40,6 @@ pub trait IdentityProvider: Send + Sync {
 #[async_trait]
 impl<T: IdentityProvider> IdentityProvider for &T {
     type Error = T::Error;
-    type IdentityEvent = T::IdentityEvent;
 
     async fn validate(
         &self,
@@ -65,14 +65,13 @@ impl<T: IdentityProvider> IdentityProvider for &T {
         (*self).supported_types()
     }
 
-    async fn identity_events<R: RosterEntry + 'static>(
+    async fn identity_events(
         &self,
-        update: &RosterUpdate<R>,
-        prior_roster: Vec<R>,
-    ) -> Result<Vec<Self::IdentityEvent>, Self::Error>
+        update: &RosterUpdate,
+    ) -> Result<Vec<IdentityWarning>, Self::Error>
     where
         Self: Sized,
     {
-        (*self).identity_events(update, prior_roster).await
+        (*self).identity_events(update).await
     }
 }

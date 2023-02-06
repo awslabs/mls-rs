@@ -1422,10 +1422,7 @@ where
         Ok(auth_content)
     }
 
-    pub async fn apply_pending_commit(
-        &mut self,
-    ) -> Result<StateUpdate<<C::IdentityProvider as IdentityProvider>::IdentityEvent>, GroupError>
-    {
+    pub async fn apply_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
         let pending_commit = self
             .pending_commit
             .clone()
@@ -1448,10 +1445,7 @@ where
     pub async fn process_incoming_message(
         &mut self,
         message: MLSMessage,
-    ) -> Result<
-        ProcessedMessage<Event<<C::IdentityProvider as IdentityProvider>::IdentityEvent>>,
-        GroupError,
-    > {
+    ) -> Result<ProcessedMessage<Event>, GroupError> {
         MessageProcessor::process_incoming_message(self, message, true).await
     }
 
@@ -1464,7 +1458,7 @@ where
 
         let node = self.state.public_tree.get_leaf_node(index)?;
 
-        Ok(Member::from((index, node)))
+        Ok(member_from_leaf_node(node, index))
     }
 
     /// The returned `GroupInfo` is suitable for one external commit for the current epoch.
@@ -1588,7 +1582,7 @@ where
     type ProposalFilter = <C::MakeProposalFilter as MakeProposalFilter>::Filter;
     type IdentityProvider = C::IdentityProvider;
     type ExternalPskIdValidator = PskStoreIdValidator<C::PskStore>;
-    type EventType = Event<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>;
+    type EventType = Event;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
     fn self_index(&self) -> Option<LeafIndex> {
@@ -1598,10 +1592,7 @@ where
     async fn process_ciphertext(
         &mut self,
         cipher_text: MLSCiphertext,
-    ) -> Result<
-        EventOrContent<Event<<C::IdentityProvider as IdentityProvider>::IdentityEvent>>,
-        GroupError,
-    > {
+    ) -> Result<EventOrContent<Self::EventType>, GroupError> {
         self.decrypt_incoming_ciphertext(cipher_text)
             .await
             .map(EventOrContent::Content)
@@ -1610,10 +1601,7 @@ where
     fn verify_plaintext_authentication(
         &self,
         message: MLSPlaintext,
-    ) -> Result<
-        EventOrContent<Event<<C::IdentityProvider as IdentityProvider>::IdentityEvent>>,
-        GroupError,
-    > {
+    ) -> Result<EventOrContent<Self::EventType>, GroupError> {
         let auth_content = verify_plaintext_authentication(
             &self.cipher_suite_provider,
             message,
@@ -2417,7 +2405,7 @@ mod tests {
         );
     }
 
-    fn canonicalize_state_update<IE>(update: &mut StateUpdate<IE>) {
+    fn canonicalize_state_update(update: &mut StateUpdate) {
         update.roster_update.added.sort_by_key(|a| a.index());
         update.roster_update.updated.sort_by_key(|a| a.index());
         update.roster_update.removed.sort_by_key(|a| a.index());
@@ -2507,7 +2495,7 @@ mod tests {
             state_update_alice.roster_update.removed,
             vec![2, 5, 6]
                 .into_iter()
-                .map(|i| Member::from((LeafIndex(i), &leaves[i as usize - 2])))
+                .map(|i| member_from_leaf_node(&leaves[i as usize - 2], LeafIndex(i)))
                 .collect::<Vec<_>>()
         );
 

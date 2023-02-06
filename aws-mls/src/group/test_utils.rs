@@ -113,14 +113,14 @@ impl TestGroup {
             .await
     }
 
-    pub(crate) async fn process_pending_commit(&mut self) -> Result<StateUpdate<()>, GroupError> {
+    pub(crate) async fn process_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
         self.group.apply_pending_commit().await
     }
 
     pub(crate) async fn process_message(
         &mut self,
         message: MLSMessage,
-    ) -> Result<Event<()>, GroupError> {
+    ) -> Result<Event, GroupError> {
         self.group
             .process_incoming_message(message)
             .await

@@ -5,13 +5,14 @@ use super::{
         ApplicationData, Content, ContentType, MLSCiphertext, MLSMessage, MLSMessagePayload,
         MLSPlaintext, Sender, WireFormat,
     },
+    member_from_key_package, member_from_leaf_node,
     message_signature::MLSAuthenticatedContent,
     proposal::{CustomProposal, ExternalInit, Proposal, ReInitProposal},
     proposal_cache::ProposalSetEffects,
     proposal_effects,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
-    transcript_hashes, GroupContext, GroupError, Member, ProposalFilter, ProposalRef,
+    transcript_hashes, GroupContext, GroupError, ProposalFilter, ProposalRef,
 };
 use crate::{
     client_config::ProposalFilterInit,
@@ -25,7 +26,10 @@ use crate::{
     },
 };
 use async_trait::async_trait;
-use aws_mls_core::{group::RosterUpdate, identity::IdentityProvider};
+use aws_mls_core::{
+    group::RosterUpdate,
+    identity::{IdentityProvider, IdentityWarning},
+};
 
 #[derive(Debug)]
 pub(crate) struct ProvisionalState {
@@ -44,9 +48,9 @@ pub(crate) struct ProvisionalState {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct StateUpdate<IE> {
-    pub roster_update: RosterUpdate<Member>,
-    pub identity_events: Vec<IE>,
+pub struct StateUpdate {
+    pub roster_update: RosterUpdate,
+    pub identity_events: Vec<IdentityWarning>,
     pub added_psks: Vec<JustPreSharedKeyID>,
     pub pending_reinit: bool,
     pub active: bool,
@@ -57,9 +61,9 @@ pub struct StateUpdate<IE> {
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-pub enum Event<IE> {
+pub enum Event {
     ApplicationMessage(Vec<u8>),
-    Commit(StateUpdate<IE>),
+    Commit(StateUpdate),
     Proposal((Proposal, ProposalRef)),
 }
 
@@ -72,8 +76,8 @@ pub struct ProcessedMessage<E> {
 
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum ExternalEvent<IE> {
-    Commit(StateUpdate<IE>),
+pub enum ExternalEvent {
+    Commit(StateUpdate),
     Proposal((Proposal, ProposalRef)),
     Ciphertext,
 }
@@ -88,19 +92,19 @@ impl<E> From<E> for ProcessedMessage<E> {
     }
 }
 
-impl<IE> From<StateUpdate<IE>> for Event<IE> {
-    fn from(update: StateUpdate<IE>) -> Self {
+impl From<StateUpdate> for Event {
+    fn from(update: StateUpdate) -> Self {
         Event::Commit(update)
     }
 }
 
-impl<IE> From<StateUpdate<IE>> for ExternalEvent<IE> {
-    fn from(state_update: StateUpdate<IE>) -> Self {
+impl From<StateUpdate> for ExternalEvent {
+    fn from(state_update: StateUpdate) -> Self {
         ExternalEvent::Commit(state_update)
     }
 }
 
-impl<IE> TryFrom<ApplicationData> for ExternalEvent<IE> {
+impl TryFrom<ApplicationData> for ExternalEvent {
     type Error = GroupError;
 
     fn try_from(_: ApplicationData) -> Result<Self, Self::Error> {
@@ -108,13 +112,13 @@ impl<IE> TryFrom<ApplicationData> for ExternalEvent<IE> {
     }
 }
 
-impl<IE> From<(Proposal, ProposalRef)> for Event<IE> {
+impl From<(Proposal, ProposalRef)> for Event {
     fn from(proposal_and_ref: (Proposal, ProposalRef)) -> Self {
         Event::Proposal(proposal_and_ref)
     }
 }
 
-impl<IE> From<(Proposal, ProposalRef)> for ExternalEvent<IE> {
+impl From<(Proposal, ProposalRef)> for ExternalEvent {
     fn from(proposal_and_ref: (Proposal, ProposalRef)) -> Self {
         ExternalEvent::Proposal(proposal_and_ref)
     }
@@ -130,7 +134,7 @@ pub(crate) enum EventOrContent<E> {
 pub(crate) trait MessageProcessor: Send + Sync {
     type EventType: From<(Proposal, ProposalRef)>
         + TryFrom<ApplicationData, Error = GroupError>
-        + From<StateUpdate<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>>
+        + From<StateUpdate>
         + Send;
 
     type ProposalFilter: ProposalFilter;
@@ -231,31 +235,30 @@ pub(crate) trait MessageProcessor: Send + Sync {
         provisional: &ProvisionalState,
         path: Option<&UpdatePath>,
         sender: LeafIndex,
-    ) -> Result<StateUpdate<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>, GroupError>
-    {
+    ) -> Result<StateUpdate, GroupError> {
         let mut added = provisional
             .added_leaves
             .iter()
-            .map(Member::from)
+            .map(|(kp, index)| member_from_key_package(kp, *index))
             .collect::<Vec<_>>();
 
         let removed = provisional
             .removed_leaves
             .iter()
-            .map(From::from)
+            .map(|(index, node)| member_from_leaf_node(node, *index))
             .collect::<Vec<_>>();
 
         let mut updated = provisional
             .updated_leaves
             .iter()
-            .map(Member::from)
+            .map(|(index, node)| member_from_leaf_node(node, *index))
             .collect::<Vec<_>>();
 
         if let Some(path) = path {
             if provisional.external_init.is_some() {
-                added.push((sender, &path.leaf_node).into())
+                added.push(member_from_leaf_node(&path.leaf_node, sender))
             } else {
-                updated.push((sender, &path.leaf_node).into())
+                updated.push(member_from_leaf_node(&path.leaf_node, sender))
             }
         }
 
@@ -273,7 +276,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         let identity_events = self
             .identity_provider()
-            .identity_events(&roster_update, self.group_state().roster())
+            .identity_events(&roster_update)
             .await
             .map_err(|e| GroupError::IdentityProviderError(e.into()))?;
 
@@ -295,8 +298,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         &mut self,
         auth_content: MLSAuthenticatedContent,
         time_sent: Option<MlsTime>,
-    ) -> Result<StateUpdate<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>, GroupError>
-    {
+    ) -> Result<StateUpdate, GroupError> {
         let commit = match auth_content.content.content {
             Content::Commit(ref commit) => Ok(commit),
             _ => Err(GroupError::NotCommitContent(

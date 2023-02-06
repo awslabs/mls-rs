@@ -5,7 +5,7 @@ authors = ["Tom Leavy <tom@wickr.com>"]
 edition = "2021"
 
 [features]
-benchmark = ["serde_json", "aws-mls-crypto-openssl"]
+benchmark = ["serde_json", "aws-mls-crypto-openssl", "aws-mls-core/benchmark"]
 default = ["rayon"]
 arbitrary = ["dep:arbitrary", "aws-mls-core/arbitrary"]
 rayon = ["dep:rayon"]

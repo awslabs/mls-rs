@@ -69,7 +69,7 @@ impl From<Vec<u8>> for ApplicationData {
     }
 }
 
-impl<T> TryFrom<ApplicationData> for Event<T> {
+impl TryFrom<ApplicationData> for Event {
     type Error = GroupError;
 
     fn try_from(data: ApplicationData) -> Result<Self, Self::Error> {

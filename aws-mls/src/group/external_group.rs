@@ -6,6 +6,7 @@ use super::{
     cipher_suite_provider,
     confirmation_tag::ConfirmationTag,
     framing::{MLSCiphertext, MLSPlaintext, Sender, WireFormat},
+    member_from_leaf_node,
     message_processor::{EventOrContent, MessageProcessor, ProcessedMessage, ProvisionalState},
     message_signature::MLSAuthenticatedContent,
     proposal::{AddProposal, Proposal, RemoveProposal},
@@ -89,10 +90,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub async fn process_incoming_message(
         &mut self,
         message: MLSMessage,
-    ) -> Result<
-        ProcessedMessage<ExternalEvent<<C::IdentityProvider as IdentityProvider>::IdentityEvent>>,
-        GroupError,
-    > {
+    ) -> Result<ProcessedMessage<ExternalEvent>, GroupError> {
         MessageProcessor::process_incoming_message(self, message, self.config.cache_proposals())
             .await
     }
@@ -291,7 +289,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
         let node = self.group_state().public_tree.get_leaf_node(index)?;
 
-        Ok(Member::from((index, node)))
+        Ok(member_from_leaf_node(node, index))
     }
 }
 
@@ -303,7 +301,7 @@ where
     type ProposalFilter = <C::MakeProposalFilter as MakeProposalFilter>::Filter;
     type IdentityProvider = C::IdentityProvider;
     type ExternalPskIdValidator = PassThroughPskIdValidator;
-    type EventType = ExternalEvent<<Self::IdentityProvider as IdentityProvider>::IdentityEvent>;
+    type EventType = ExternalEvent;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
     fn self_index(&self) -> Option<LeafIndex> {

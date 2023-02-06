@@ -63,10 +63,10 @@ impl TryFrom<i32> for TestVectorType {
     }
 }
 
-impl<T> TryFrom<(StateUpdate<T>, u32)> for HandleCommitResponse {
+impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
     type Error = Status;
 
-    fn try_from((state_update, state_id): (StateUpdate<T>, u32)) -> Result<Self, Self::Error> {
+    fn try_from((state_update, state_id): (StateUpdate, u32)) -> Result<Self, Self::Error> {
         let added = state_update
             .roster_update
             .added
@@ -92,9 +92,8 @@ impl<T> TryFrom<(StateUpdate<T>, u32)> for HandleCommitResponse {
             .roster_update
             .removed
             .iter()
-            .map(|member| member.leaf_bytes())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(abort)?;
+            .map(|member| member.leaf_bytes().to_vec())
+            .collect::<Vec<_>>();
 
         let psks = state_update
             .added_psks

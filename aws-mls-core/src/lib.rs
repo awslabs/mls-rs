@@ -7,6 +7,7 @@ pub mod group;
 pub mod identity;
 pub mod key_package;
 pub mod keychain;
+pub mod protocol_version;
 pub mod psk;
 pub mod serde;
 pub mod time;

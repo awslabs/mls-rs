@@ -1,6 +1,6 @@
 use super::*;
 use crate::{psk::PreSharedKeyID, tree_kem::leaf_node::LeafNode};
-use std::fmt::{self, Debug};
+use std::fmt::Debug;
 
 use aws_mls_core::tls::ByteVec;
 pub use proposal_filter::{
@@ -9,6 +9,8 @@ pub use proposal_filter::{
 };
 
 pub use proposal_ref::ProposalRef;
+
+pub use aws_mls_core::group::ProposalType;
 
 #[derive(
     Clone,
@@ -146,76 +148,6 @@ impl CustomProposal {
 
     pub fn data(&self) -> &[u8] {
         &self.data
-    }
-}
-
-#[derive(
-    Clone,
-    Copy,
-    Eq,
-    Hash,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ProposalType(u16);
-
-impl ProposalType {
-    pub fn new(value: u16) -> ProposalType {
-        ProposalType(value)
-    }
-
-    pub fn raw_value(&self) -> u16 {
-        self.0
-    }
-}
-
-impl From<ProposalType> for u16 {
-    fn from(value: ProposalType) -> Self {
-        value.0
-    }
-}
-
-impl From<u16> for ProposalType {
-    fn from(value: u16) -> Self {
-        ProposalType(value)
-    }
-}
-
-impl Deref for ProposalType {
-    type Target = u16;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl ProposalType {
-    pub const ADD: ProposalType = ProposalType(1);
-    pub const UPDATE: ProposalType = ProposalType(2);
-    pub const REMOVE: ProposalType = ProposalType(3);
-    pub const PSK: ProposalType = ProposalType(4);
-    pub const RE_INIT: ProposalType = ProposalType(5);
-    pub const EXTERNAL_INIT: ProposalType = ProposalType(6);
-    pub const GROUP_CONTEXT_EXTENSIONS: ProposalType = ProposalType(7);
-}
-
-impl Debug for ProposalType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Self::ADD => f.write_str("Add"),
-            Self::UPDATE => f.write_str("Update"),
-            Self::REMOVE => f.write_str("Remove"),
-            Self::PSK => f.write_str("Psk"),
-            Self::RE_INIT => f.write_str("ReInit"),
-            Self::EXTERNAL_INIT => f.write_str("ExternalInit"),
-            Self::GROUP_CONTEXT_EXTENSIONS => f.write_str("GroupContextExtensions"),
-            _ => write!(f, "ProposalType({})", self.0),
-        }
     }
 }
 

@@ -2,7 +2,7 @@ use crate::{util::credential_to_chain, CertificateChain, X509IdentityError};
 use async_trait::async_trait;
 use aws_mls_core::{
     crypto::SignaturePublicKey,
-    identity::{CredentialType, IdentityProvider},
+    identity::{CredentialType, IdentityProvider, IdentityWarning},
     time::MlsTime,
 };
 
@@ -33,16 +33,14 @@ pub trait X509CredentialValidator {
     ) -> Result<SignaturePublicKey, Self::Error>;
 }
 
-#[cfg_attr(test, automock(type Error = crate::test_utils::TestError; type IdentityEvent = ();))]
+#[cfg_attr(test, automock(type Error = crate::test_utils::TestError;))]
 pub trait X509IdentityEventProvider {
-    type IdentityEvent: Send;
     type Error: std::error::Error + Send + Sync + 'static;
 
-    fn identity_events<T: aws_mls_core::group::RosterEntry + 'static>(
+    fn identity_events(
         &self,
-        update: &aws_mls_core::group::RosterUpdate<T>,
-        prior_roster: Vec<T>,
-    ) -> Result<Vec<Self::IdentityEvent>, Self::Error>;
+        update: &aws_mls_core::group::RosterUpdate,
+    ) -> Result<Vec<IdentityWarning>, Self::Error>;
 }
 
 #[derive(Debug)]
@@ -112,16 +110,12 @@ where
         vec![CredentialType::X509]
     }
 
-    pub fn identity_events<T>(
+    pub fn identity_events(
         &self,
-        update: &aws_mls_core::group::RosterUpdate<T>,
-        prior_roster: Vec<T>,
-    ) -> Result<Vec<IEP::IdentityEvent>, X509IdentityError>
-    where
-        T: aws_mls_core::group::RosterEntry + 'static,
-    {
+        update: &aws_mls_core::group::RosterUpdate,
+    ) -> Result<Vec<IdentityWarning>, X509IdentityError> {
         self.event_provider
-            .identity_events(update, prior_roster)
+            .identity_events(update)
             .map_err(|e| X509IdentityError::IdentityEventProviderError(e.into()))
     }
 }
@@ -134,7 +128,6 @@ where
     IEP: X509IdentityEventProvider + Send + Sync,
 {
     type Error = X509IdentityError;
-    type IdentityEvent = IEP::IdentityEvent;
 
     async fn validate(
         &self,
@@ -163,12 +156,11 @@ where
         self.supported_types()
     }
 
-    async fn identity_events<T: aws_mls_core::group::RosterEntry + 'static>(
+    async fn identity_events(
         &self,
-        update: &aws_mls_core::group::RosterUpdate<T>,
-        prior_roster: Vec<T>,
-    ) -> Result<Vec<Self::IdentityEvent>, Self::Error> {
-        self.identity_events(update, prior_roster)
+        update: &aws_mls_core::group::RosterUpdate,
+    ) -> Result<Vec<IdentityWarning>, Self::Error> {
+        self.identity_events(update)
     }
 }
 

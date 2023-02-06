@@ -1,66 +1,29 @@
-use aws_mls_core::group::RosterEntry;
-
 use super::*;
+use cfg_if::cfg_if;
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Member {
-    node: LeafNode,
-    index: LeafIndex,
+pub use aws_mls_core::group::Member;
+
+pub(crate) fn member_from_key_package(key_package: &KeyPackage, index: LeafIndex) -> Member {
+    member_from_leaf_node(&key_package.leaf_node, index)
 }
 
-impl Member {
-    pub fn index(&self) -> u32 {
-        self.index.0
-    }
-
-    pub fn signing_identity(&self) -> &SigningIdentity {
-        &self.node.signing_identity
-    }
-
-    pub fn capabilities(&self) -> &Capabilities {
-        &self.node.capabilities
-    }
-
-    pub fn extensions(&self) -> &ExtensionList {
-        &self.node.extensions
-    }
-
-    #[cfg(feature = "benchmark")]
-    pub fn leaf_bytes(&self) -> Result<Vec<u8>, tls_codec::Error> {
-        self.node.tls_serialize_detached()
-    }
-}
-
-impl RosterEntry for Member {
-    fn index(&self) -> u32 {
-        self.index()
-    }
-
-    fn signing_identity(&self) -> &SigningIdentity {
-        self.signing_identity()
-    }
-}
-
-impl From<&(KeyPackage, LeafIndex)> for Member {
-    fn from(item: &(KeyPackage, LeafIndex)) -> Self {
-        Self::from((item.1, &item.0.leaf_node))
-    }
-}
-
-impl From<(LeafIndex, &LeafNode)> for Member {
-    fn from(item: (LeafIndex, &LeafNode)) -> Self {
-        Member {
-            node: item.1.clone(),
-            index: item.0,
-        }
-    }
-}
-
-impl From<&(LeafIndex, LeafNode)> for Member {
-    fn from(item: &(LeafIndex, LeafNode)) -> Self {
-        Member {
-            node: item.1.clone(),
-            index: item.0,
+pub(crate) fn member_from_leaf_node(leaf_node: &LeafNode, leaf_index: LeafIndex) -> Member {
+    cfg_if! {
+        if #[cfg(feature = "benchmark")] {
+            Member::new(
+                *leaf_index,
+                leaf_node.signing_identity.clone(),
+                leaf_node.capabilities.clone(),
+                leaf_node.extensions.clone(),
+                leaf_node.tls_serialize_detached().unwrap()
+            )
+        } else {
+            Member::new(
+                *leaf_index,
+                leaf_node.signing_identity.clone(),
+                leaf_node.capabilities.clone(),
+                leaf_node.extensions.clone(),
+            )
         }
     }
 }
@@ -69,7 +32,7 @@ impl GroupState {
     pub(crate) fn roster(&self) -> Vec<Member> {
         self.public_tree
             .non_empty_leaves()
-            .map(Member::from)
+            .map(|(index, node)| member_from_leaf_node(node, index))
             .collect()
     }
 }

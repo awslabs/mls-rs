@@ -5,8 +5,8 @@ use crate::{
 };
 use async_trait::async_trait;
 use aws_mls_core::{
-    group::{RosterEntry, RosterUpdate},
-    identity::IdentityProvider,
+    group::RosterUpdate,
+    identity::{IdentityProvider, IdentityWarning},
 };
 use thiserror::Error;
 
@@ -47,7 +47,6 @@ fn resolve_basic_identity(
 #[async_trait]
 impl IdentityProvider for BasicIdentityProvider {
     type Error = BasicCredentialError;
-    type IdentityEvent = ();
 
     async fn validate(
         &self,
@@ -75,11 +74,10 @@ impl IdentityProvider for BasicIdentityProvider {
         vec![BasicCredential::credential_type()]
     }
 
-    async fn identity_events<T: RosterEntry>(
+    async fn identity_events(
         &self,
-        _update: &RosterUpdate<T>,
-        _prior_roster: Vec<T>,
-    ) -> Result<Vec<Self::IdentityEvent>, Self::Error> {
+        _update: &RosterUpdate,
+    ) -> Result<Vec<IdentityWarning>, Self::Error> {
         Ok(vec![])
     }
 }
