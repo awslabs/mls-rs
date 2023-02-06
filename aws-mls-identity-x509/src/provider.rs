@@ -1,6 +1,4 @@
-use crate::{
-    util::credential_to_chain, CertificateChain, X509IdentityError, CERTIFICATE_CREDENTIAL_ID,
-};
+use crate::{util::credential_to_chain, CertificateChain, X509IdentityError};
 use async_trait::async_trait;
 use aws_mls_core::{
     crypto::SignaturePublicKey,
@@ -111,7 +109,7 @@ where
     }
 
     pub fn supported_types(&self) -> Vec<aws_mls_core::identity::CredentialType> {
-        vec![CredentialType::new(CERTIFICATE_CREDENTIAL_ID)]
+        vec![CredentialType::X509]
     }
 
     pub fn identity_events<T>(

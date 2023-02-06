@@ -951,6 +951,7 @@ use private::{Config, ConfigInner, IntoConfig};
 pub mod test_utils {
     use crate::{
         client_builder::{BaseConfig, ClientBuilder, WithIdentityProvider, WithKeychain},
+        identity::test_utils::BasicWithCustomProvider,
         provider::{
             crypto::test_utils::TestCryptoProvider, identity::BasicIdentityProvider,
             keychain::InMemoryKeychainStorage,
@@ -960,7 +961,7 @@ pub mod test_utils {
     use super::WithCryptoProvider;
 
     pub type TestClientConfig = WithIdentityProvider<
-        BasicIdentityProvider,
+        BasicWithCustomProvider,
         WithKeychain<InMemoryKeychainStorage, WithCryptoProvider<TestCryptoProvider, BaseConfig>>,
     >;
 
@@ -970,7 +971,7 @@ pub mod test_utils {
         pub fn new_for_test() -> Self {
             ClientBuilder::new()
                 .crypto_provider(TestCryptoProvider::new())
-                .identity_provider(BasicIdentityProvider::new())
+                .identity_provider(BasicWithCustomProvider::new(BasicIdentityProvider::new()))
                 .keychain(InMemoryKeychainStorage::new())
         }
     }

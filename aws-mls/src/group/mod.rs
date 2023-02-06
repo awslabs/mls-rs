@@ -1853,7 +1853,7 @@ mod tests {
     use assert_matches::assert_matches;
 
     use aws_mls_core::extension::MlsExtension;
-    use aws_mls_core::identity::{Credential, CredentialType};
+    use aws_mls_core::identity::{CertificateChain, Credential, CredentialType, CustomCredential};
     use futures::FutureExt;
     use tls_codec::Size;
 
@@ -3175,8 +3175,21 @@ mod tests {
         let mut groups =
             get_test_groups_with_features(3, Default::default(), Default::default()).await;
 
+        for group in groups.iter_mut() {
+            group.config.0.identity_provider.allow_any_custom = true;
+        }
+
         groups[0].commit_modifiers.modify_leaf = |leaf, sk, cp| {
-            leaf.signing_identity.credential.credential_type = CredentialType::new(5);
+            leaf.signing_identity.credential = Credential::Custom(CustomCredential::new(
+                CredentialType::new(43),
+                leaf.signing_identity
+                    .credential
+                    .as_basic()
+                    .unwrap()
+                    .identifier()
+                    .to_vec(),
+            ));
+
             leaf.sign(cp, sk, &(b"TEST GROUP".as_slice(), 0).into())
                 .unwrap();
         };
@@ -3265,10 +3278,7 @@ mod tests {
 
         let ext_sender_id = SigningIdentity {
             signature_key: ext_sender_pk,
-            credential: Credential {
-                credential_type: 2.into(),
-                credential_data: random_bytes(32),
-            },
+            credential: Credential::X509(CertificateChain::from(vec![random_bytes(32)])),
         };
 
         let ext_senders = ExternalSendersExt::new(vec![ext_sender_id])
@@ -3518,10 +3528,7 @@ mod tests {
     async fn custom_proposal_by_value() {
         let (mut alice, mut bob) = custom_proposal_setup().await;
 
-        let custom_proposal = CustomProposal {
-            proposal_type: ProposalType::new(42),
-            data: vec![0, 1, 2],
-        };
+        let custom_proposal = CustomProposal::new(ProposalType::new(42), vec![0, 1, 2]);
 
         let commit = alice
             .group
@@ -3541,10 +3548,7 @@ mod tests {
     async fn custom_proposal_by_reference() {
         let (mut alice, mut bob) = custom_proposal_setup().await;
 
-        let custom_proposal = CustomProposal {
-            proposal_type: ProposalType::new(42),
-            data: vec![0, 1, 2],
-        };
+        let custom_proposal = CustomProposal::new(ProposalType::new(42), vec![0, 1, 2]);
 
         let proposal = alice
             .group

@@ -414,7 +414,7 @@ mod tests {
             test_utils::{random_bytes, test_group, TEST_GROUP},
         },
         identity::{
-            test_utils::{get_test_signing_identity, INVALID_CREDENTIAL_TYPE},
+            test_utils::{get_test_signing_identity, BasicWithCustomProvider},
             BasicCredential,
         },
         key_package::{
@@ -442,7 +442,7 @@ mod tests {
     use assert_matches::assert_matches;
     use aws_mls_core::{
         extension::MlsExtension,
-        identity::{Credential, CredentialType},
+        identity::{Credential, CredentialType, CustomCredential},
     };
     use futures::FutureExt;
     use itertools::Itertools;
@@ -1695,7 +1695,7 @@ mod tests {
     impl<'a, CSP>
         CommitReceiver<
             'a,
-            BasicIdentityProvider,
+            BasicWithCustomProvider,
             PassThroughProposalFilter<Infallible>,
             PassThroughPskIdValidator,
             CSP,
@@ -1715,7 +1715,7 @@ mod tests {
                 sender: sender.into(),
                 receiver,
                 cache: make_proposal_cache(),
-                identity_provider: BasicIdentityProvider::new(),
+                identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider::new()),
                 group_context_extensions: Default::default(),
                 user_filter: pass_through_filter(),
                 external_psk_id_validator: PassThroughPskIdValidator,
@@ -1834,7 +1834,7 @@ mod tests {
     impl<'a, CSP>
         CommitSender<
             'a,
-            BasicIdentityProvider,
+            BasicWithCustomProvider,
             PassThroughProposalFilter<Infallible>,
             PassThroughPskIdValidator,
             CSP,
@@ -1846,7 +1846,7 @@ mod tests {
                 sender,
                 cache: make_proposal_cache(),
                 additional_proposals: Vec::new(),
-                identity_provider: BasicIdentityProvider::new(),
+                identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider::new()),
                 user_filter: pass_through_filter(),
                 external_psk_id_validator: PassThroughPskIdValidator,
                 cipher_suite_provider,
@@ -3454,10 +3454,10 @@ mod tests {
         let (mut signing_identity, secret_key) =
             get_test_signing_identity(TEST_CIPHER_SUITE, name.as_bytes().to_vec());
 
-        signing_identity.credential = Credential {
-            credential_type: CredentialType::new(INVALID_CREDENTIAL_TYPE),
-            credential_data: random_bytes(32),
-        };
+        signing_identity.credential = Credential::Custom(CustomCredential::new(
+            CredentialType::new(BasicWithCustomProvider::CUSTOM_CREDENTIAL_TYPE),
+            random_bytes(32),
+        ));
 
         let generator = KeyPackageGenerator {
             protocol_version: TEST_PROTOCOL_VERSION,
@@ -3471,7 +3471,7 @@ mod tests {
             .generate(
                 Lifetime::years(1).unwrap(),
                 Capabilities {
-                    credentials: vec![INVALID_CREDENTIAL_TYPE.into()],
+                    credentials: vec![42.into()],
                     ..Default::default()
                 },
                 Default::default(),
@@ -3556,10 +3556,7 @@ mod tests {
     async fn sending_custom_proposal_with_member_not_supporting_proposal_type_fails() {
         let (alice, tree) = new_tree("alice").await;
 
-        let custom_proposal = Proposal::Custom(CustomProposal {
-            proposal_type: ProposalType::new(42),
-            data: vec![],
-        });
+        let custom_proposal = Proposal::Custom(CustomProposal::new(ProposalType::new(42), vec![]));
 
         let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([custom_proposal.clone()])
@@ -3578,10 +3575,7 @@ mod tests {
     async fn sending_custom_proposal_with_member_not_supporting_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
 
-        let custom_proposal = Proposal::Custom(CustomProposal {
-            proposal_type: ProposalType::new(42),
-            data: vec![],
-        });
+        let custom_proposal = Proposal::Custom(CustomProposal::new(ProposalType::new(42), vec![]));
 
         let custom_ref = make_proposal_ref(&custom_proposal, alice);
 
@@ -3603,10 +3597,7 @@ mod tests {
     async fn receiving_custom_proposal_with_member_not_supporting_fails() {
         let (alice, tree) = new_tree("alice").await;
 
-        let custom_proposal = Proposal::Custom(CustomProposal {
-            proposal_type: ProposalType::new(42),
-            data: vec![],
-        });
+        let custom_proposal = Proposal::Custom(CustomProposal::new(ProposalType::new(42), vec![]));
 
         let res = CommitReceiver::new(
             &tree,

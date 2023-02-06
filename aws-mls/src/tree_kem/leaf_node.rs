@@ -305,10 +305,15 @@ impl<'a> Signable<'a> for LeafNode {
 
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
+    use aws_mls_core::identity::CredentialType;
+
     use crate::{
         cipher_suite::CipherSuite,
         extension::ApplicationIdExt,
-        identity::{test_utils::get_test_signing_identity, BasicCredential},
+        identity::{
+            test_utils::{get_test_signing_identity, BasicWithCustomProvider},
+            BasicCredential,
+        },
         provider::{
             crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
             identity::BasicIdentityProvider,
@@ -405,7 +410,10 @@ pub mod test_utils {
 
     pub fn get_test_capabilities() -> Capabilities {
         Capabilities {
-            credentials: vec![BasicCredential::credential_type()],
+            credentials: vec![
+                BasicCredential::credential_type(),
+                CredentialType::from(BasicWithCustomProvider::CUSTOM_CREDENTIAL_TYPE),
+            ],
             cipher_suites: TestCryptoProvider::all_supported_cipher_suites(),
             ..Default::default()
         }

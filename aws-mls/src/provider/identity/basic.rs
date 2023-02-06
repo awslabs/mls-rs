@@ -8,7 +8,23 @@ use aws_mls_core::{
     group::{RosterEntry, RosterUpdate},
     identity::IdentityProvider,
 };
-use std::convert::Infallible;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+#[error("unsupported credential type found: {0:?}")]
+pub struct BasicCredentialError(CredentialType);
+
+impl From<CredentialType> for BasicCredentialError {
+    fn from(value: CredentialType) -> Self {
+        BasicCredentialError(value)
+    }
+}
+
+impl BasicCredentialError {
+    pub fn credential_type(&self) -> CredentialType {
+        self.0
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct BasicIdentityProvider;
@@ -19,9 +35,18 @@ impl BasicIdentityProvider {
     }
 }
 
+fn resolve_basic_identity(
+    signing_id: &SigningIdentity,
+) -> Result<&BasicCredential, BasicCredentialError> {
+    signing_id
+        .credential
+        .as_basic()
+        .ok_or_else(|| BasicCredentialError(signing_id.credential.credential_type()))
+}
+
 #[async_trait]
 impl IdentityProvider for BasicIdentityProvider {
-    type Error = Infallible;
+    type Error = BasicCredentialError;
     type IdentityEvent = ();
 
     async fn validate(
@@ -35,7 +60,7 @@ impl IdentityProvider for BasicIdentityProvider {
     }
 
     async fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
-        Ok(signing_id.credential.credential_data.clone())
+        resolve_basic_identity(signing_id).map(|b| b.identifier().to_vec())
     }
 
     async fn valid_successor(
@@ -43,7 +68,7 @@ impl IdentityProvider for BasicIdentityProvider {
         predecessor: &SigningIdentity,
         successor: &SigningIdentity,
     ) -> Result<bool, Self::Error> {
-        Ok(predecessor.credential.credential_data == successor.credential.credential_data)
+        Ok(resolve_basic_identity(predecessor)? == resolve_basic_identity(successor)?)
     }
 
     fn supported_types(&self) -> Vec<CredentialType> {

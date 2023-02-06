@@ -208,7 +208,7 @@ mod tests {
         let mut successor = test_certificate_chain();
 
         // Make sure both chains have the same leaf
-        successor.0[0] = predecessor[0].clone();
+        successor[0] = predecessor[0].clone();
 
         let subject_extractor = test_setup(1, |reader| {
             let predecessor = predecessor[0].clone();
@@ -246,7 +246,7 @@ mod tests {
         let mut successor = test_certificate_chain();
 
         // Make sure both chains have the same leaf
-        successor.0[0] = predecessor[0].clone();
+        successor[0] = predecessor[0].clone();
 
         let subject_extractor = test_setup(1, |reader| {
             let predecessor = predecessor[0].clone();
@@ -293,7 +293,7 @@ mod tests {
         let mut successor = test_certificate_chain();
 
         // Make sure both chains have the same leaf
-        successor.0[0] = predecessor[0].clone();
+        successor[0] = predecessor[0].clone();
 
         let subject_extractor = test_setup(1, |reader| {
             let predecessor = predecessor[0].clone();
@@ -340,7 +340,7 @@ mod tests {
         let mut successor = test_certificate_chain();
 
         // Make sure both chains have the same leaf
-        successor.0[0] = predecessor[0].clone();
+        successor[0] = predecessor[0].clone();
 
         let subject_extractor = test_setup(1, |reader| {
             let predecessor = predecessor[0].clone();

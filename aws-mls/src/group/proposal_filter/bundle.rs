@@ -250,7 +250,7 @@ impl ProposalBundle {
     pub fn custom_proposal_types(&self) -> impl Iterator<Item = ProposalType> + '_ {
         self.custom_proposals
             .iter()
-            .map(|v| v.proposal.proposal_type)
+            .map(|v| v.proposal.proposal_type())
             .unique()
     }
 

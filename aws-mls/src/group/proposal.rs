@@ -128,8 +128,8 @@ pub struct ExternalInit {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct CustomProposal {
-    pub proposal_type: ProposalType,
-    pub data: Vec<u8>,
+    proposal_type: ProposalType,
+    data: Vec<u8>,
 }
 
 impl CustomProposal {
@@ -138,6 +138,14 @@ impl CustomProposal {
             proposal_type,
             data,
         }
+    }
+
+    pub fn proposal_type(&self) -> ProposalType {
+        self.proposal_type
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
     }
 }
 
@@ -159,6 +167,10 @@ pub struct ProposalType(u16);
 impl ProposalType {
     pub fn new(value: u16) -> ProposalType {
         ProposalType(value)
+    }
+
+    pub fn raw_value(&self) -> u16 {
+        self.0
     }
 }
 
@@ -250,7 +262,15 @@ impl tls_codec::Serialize for Proposal {
             Proposal::ReInit(p) => p.tls_serialize(writer),
             Proposal::ExternalInit(p) => p.tls_serialize(writer),
             Proposal::GroupContextExtensions(p) => p.tls_serialize(writer),
-            Proposal::Custom(p) => ByteVec::tls_serialize(&p.data, writer),
+
+            Proposal::Custom(p) => {
+                if p.proposal_type.raw_value() <= 7 {
+                    return Err(tls_codec::Error::EncodingError(
+                        "custom proposal types can not be set to defined values of 0-7".to_string(),
+                    ));
+                }
+                ByteVec::tls_serialize(&p.data, writer)
+            }
         }?;
 
         Ok(type_len + inner_len)

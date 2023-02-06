@@ -234,11 +234,7 @@ impl MlsClient for MlsClientImpl {
 
         let (secret_key, public_key) = provider.signature_key_generate().map_err(abort)?;
 
-        let credential = BasicCredential {
-            credential: b"creator".to_vec(),
-        }
-        .into_credential()
-        .unwrap();
+        let credential = BasicCredential::new(b"creator".to_vec()).into_credential();
 
         let signing_identity = SigningIdentity::new(credential, public_key);
 
@@ -286,11 +282,8 @@ impl MlsClient for MlsClientImpl {
 
         let (secret_key, public_key) = provider.signature_key_generate().map_err(abort)?;
 
-        let credential = BasicCredential {
-            credential: format!("alice{}", clients.len()).into_bytes(),
-        }
-        .into_credential()
-        .unwrap();
+        let credential =
+            BasicCredential::new(format!("alice{}", clients.len()).into_bytes()).into_credential();
 
         let signing_identity = SigningIdentity::new(credential, public_key);
 

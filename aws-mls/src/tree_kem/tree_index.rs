@@ -79,7 +79,7 @@ impl TreeIndex {
             ));
         }
 
-        let new_leaf_cred_type = leaf_node.signing_identity.credential.credential_type;
+        let new_leaf_cred_type = leaf_node.signing_identity.credential.credential_type();
 
         let cred_type_counters = self
             .credential_type_counters
@@ -141,7 +141,7 @@ impl TreeIndex {
         }
 
         // Decrement credential type counters
-        let leaf_cred_type = leaf_node.signing_identity.credential.credential_type;
+        let leaf_cred_type = leaf_node.signing_identity.credential.credential_type();
 
         if let Some(counters) = self.credential_type_counters.get_mut(&leaf_cred_type) {
             counters.used -= 1;

@@ -41,11 +41,7 @@ type TestClientConfig = WithIdentityProvider<
 
 // The same method exists in `credential::test_utils` but is not compiled without the `test` flag.
 pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {
-    BasicCredential {
-        credential: identity,
-    }
-    .into_credential()
-    .unwrap()
+    BasicCredential::new(identity).into_credential()
 }
 
 fn test_params() -> impl Iterator<Item = (ProtocolVersion, CipherSuite, bool)> {

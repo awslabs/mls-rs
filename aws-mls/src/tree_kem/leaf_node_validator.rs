@@ -222,7 +222,7 @@ mod tests {
     use crate::extension::test_utils::TestExtension;
     use crate::extension::ExtensionList;
     use crate::group::test_utils::random_bytes;
-    use crate::identity::test_utils::{get_test_signing_identity, INVALID_CREDENTIAL_TYPE};
+    use crate::identity::test_utils::get_test_signing_identity;
     use crate::identity::BasicCredential;
     use crate::provider::crypto::test_utils::test_cipher_suite_provider;
     use crate::provider::crypto::test_utils::TestCryptoProvider;
@@ -543,7 +543,7 @@ mod tests {
     #[futures_test::test]
     async fn test_required_credential() {
         let required_capabilities = RequiredCapabilitiesExt {
-            credentials: vec![INVALID_CREDENTIAL_TYPE.into()],
+            credentials: vec![0.into()],
             ..Default::default()
         };
 
@@ -558,7 +558,7 @@ mod tests {
         );
 
         assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)).await,
-            Err(LeafNodeValidationError::RequiredCredentialNotFound(ext)) if ext == INVALID_CREDENTIAL_TYPE.into()
+            Err(LeafNodeValidationError::RequiredCredentialNotFound(ext)) if ext == 0.into()
         );
     }
 

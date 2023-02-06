@@ -1199,11 +1199,11 @@ where
             &strategy,
             p,
             unsupported_types
-                .contains(&p.proposal.proposal_type)
+                .contains(&p.proposal.proposal_type())
                 .then_some(())
-                .ok_or(ProposalFilterError::UnsupportedCustomProposal(
-                    p.proposal.proposal_type,
-                )),
+                .ok_or_else(|| {
+                    ProposalFilterError::UnsupportedCustomProposal(p.proposal.proposal_type())
+                }),
         )
     })?;
 
