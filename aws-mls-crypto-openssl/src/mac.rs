@@ -1,9 +1,6 @@
 use std::ops::Deref;
 
-use aws_mls_core::crypto::{
-    CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256, CURVE448_CHACHA,
-    P256_AES128, P384_AES256, P521_AES256,
-};
+use aws_mls_core::crypto::CipherSuite;
 use openssl::{
     hash::{hash, MessageDigest},
     pkey::PKey,
@@ -33,9 +30,13 @@ impl Deref for Hash {
 impl Hash {
     pub fn new(cipher_suite: CipherSuite) -> Result<Self, HashError> {
         let md = match cipher_suite {
-            CURVE25519_AES128 | P256_AES128 | CURVE25519_CHACHA => Ok(MessageDigest::sha256()),
-            P384_AES256 => Ok(MessageDigest::sha384()),
-            CURVE448_CHACHA | CURVE448_AES256 | P521_AES256 => Ok(MessageDigest::sha512()),
+            CipherSuite::CURVE25519_AES128
+            | CipherSuite::P256_AES128
+            | CipherSuite::CURVE25519_CHACHA => Ok(MessageDigest::sha256()),
+            CipherSuite::P384_AES256 => Ok(MessageDigest::sha384()),
+            CipherSuite::CURVE448_CHACHA
+            | CipherSuite::CURVE448_AES256
+            | CipherSuite::P521_AES256 => Ok(MessageDigest::sha512()),
             _ => Err(HashError::UnsupportedCipherSuite),
         }?;
 

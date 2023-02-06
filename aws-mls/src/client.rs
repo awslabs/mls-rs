@@ -317,18 +317,13 @@ where
 
 #[cfg(any(test, feature = "benchmark"))]
 pub mod test_utils {
-    use aws_mls_core::crypto::CURVE25519_AES128;
-
     use super::*;
-    use crate::{
-        client_config::ClientConfig, identity::test_utils::get_test_signing_identity,
-        protocol_version::MLS_10,
-    };
+    use crate::{client_config::ClientConfig, identity::test_utils::get_test_signing_identity};
 
     pub use crate::client_builder::test_utils::{TestClientBuilder, TestClientConfig};
 
-    pub const TEST_PROTOCOL_VERSION: ProtocolVersion = MLS_10;
-    pub const TEST_CIPHER_SUITE: CipherSuite = CURVE25519_AES128;
+    pub const TEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::MLS_10;
+    pub const TEST_CIPHER_SUITE: CipherSuite = CipherSuite::CURVE25519_AES128;
 
     pub fn get_basic_client_builder(
         cipher_suite: CipherSuite,

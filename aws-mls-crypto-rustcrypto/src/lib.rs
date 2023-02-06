@@ -27,7 +27,7 @@ use thiserror::Error;
 
 use aws_mls_core::crypto::{
     CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey,
-    SignaturePublicKey, SignatureSecretKey, CURVE25519_AES128, CURVE25519_CHACHA, P256_AES128,
+    SignaturePublicKey, SignatureSecretKey,
 };
 
 #[derive(Debug, Error)]
@@ -64,7 +64,11 @@ impl RustCryptoProvider {
     }
 
     pub fn all_supported_cipher_suites() -> Vec<CipherSuite> {
-        vec![P256_AES128, CURVE25519_AES128, CURVE25519_CHACHA]
+        vec![
+            CipherSuite::P256_AES128,
+            CipherSuite::CURVE25519_AES128,
+            CipherSuite::CURVE25519_CHACHA,
+        ]
     }
 }
 

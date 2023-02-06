@@ -231,7 +231,7 @@ pub mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use aws_mls_core::crypto::{CipherSuite, CURVE25519_AES128, P256_AES128};
+    use aws_mls_core::crypto::CipherSuite;
 
     use aws_mls_identity_x509::{
         CertificateIssuer, CertificateParameters, DerCertificate, SubjectAltName, SubjectComponent,
@@ -286,7 +286,7 @@ mod tests {
         };
 
         let built_csr = writer
-            .build_csr(CURVE25519_AES128, Some(subject_seckey), params)
+            .build_csr(CipherSuite::CURVE25519_AES128, Some(subject_seckey), params)
             .unwrap();
 
         assert_eq!(expected_csr, built_csr.req_data);
@@ -379,7 +379,7 @@ mod tests {
         let writer = X509Writer::new();
         let issuer = get_test_root_ca();
         let params = CertificateParameters::default();
-        let ciphersuite = P256_AES128;
+        let ciphersuite = CipherSuite::P256_AES128;
 
         let crt = writer
             .build_cert_chain(ciphersuite, &issuer, None, params.clone())
@@ -416,7 +416,7 @@ mod tests {
 
         CertificateIssuer::new(
             ca_key.to_vec().into(),
-            CURVE25519_AES128,
+            CipherSuite::CURVE25519_AES128,
             vec![ca_cert].into(),
             lifetime,
         )
@@ -424,9 +424,9 @@ mod tests {
 
     fn get_subject_ciphersuite(ca: bool) -> CipherSuite {
         if ca {
-            P256_AES128
+            CipherSuite::P256_AES128
         } else {
-            CURVE25519_AES128
+            CipherSuite::CURVE25519_AES128
         }
     }
 }

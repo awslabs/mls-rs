@@ -3,10 +3,7 @@ use std::ops::Deref;
 use aws_mls_crypto_traits::DhType;
 use thiserror::Error;
 
-use aws_mls_core::crypto::{
-    CipherSuite, HpkePublicKey, HpkeSecretKey, CURVE25519_AES128, CURVE25519_CHACHA,
-    CURVE448_AES256, CURVE448_CHACHA, P256_AES128, P384_AES256, P521_AES256,
-};
+use aws_mls_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
 
 use crate::ec::{
     generate_keypair, private_key_bytes_to_public, private_key_ecdh, private_key_from_bytes,
@@ -37,11 +34,15 @@ pub enum KemId {
 impl KemId {
     pub fn new(cipher_suite: CipherSuite) -> Result<Self, EcdhKemError> {
         match cipher_suite {
-            CURVE25519_AES128 | CURVE25519_CHACHA => Ok(KemId::DhKemX25519Sha256),
-            P256_AES128 => Ok(KemId::DhKemP256Sha256),
-            CURVE448_AES256 | CURVE448_CHACHA => Ok(KemId::DhKemX448Sha512),
-            P384_AES256 => Ok(KemId::DhKemP384Sha384),
-            P521_AES256 => Ok(KemId::DhKemP521Sha512),
+            CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA => {
+                Ok(KemId::DhKemX25519Sha256)
+            }
+            CipherSuite::P256_AES128 => Ok(KemId::DhKemP256Sha256),
+            CipherSuite::CURVE448_AES256 | CipherSuite::CURVE448_CHACHA => {
+                Ok(KemId::DhKemX448Sha512)
+            }
+            CipherSuite::P384_AES256 => Ok(KemId::DhKemP384Sha384),
+            CipherSuite::P521_AES256 => Ok(KemId::DhKemP521Sha512),
             _ => Err(EcdhKemError::UnsupportedCipherSuite),
         }
     }
@@ -120,10 +121,7 @@ impl Ecdh {
 
 #[cfg(test)]
 mod test {
-    use aws_mls_core::crypto::{
-        CipherSuite, HpkePublicKey, HpkeSecretKey, CURVE25519_AES128, CURVE448_AES256, P256_AES128,
-        P384_AES256, P521_AES256,
-    };
+    use aws_mls_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
     use aws_mls_crypto_traits::DhType;
     use serde::Deserialize;
 
@@ -131,11 +129,11 @@ mod test {
 
     fn get_ecdhs() -> Vec<Ecdh> {
         [
-            P256_AES128,
-            P384_AES256,
-            P521_AES256,
-            CURVE25519_AES128,
-            CURVE448_AES256,
+            CipherSuite::P256_AES128,
+            CipherSuite::P384_AES256,
+            CipherSuite::P521_AES256,
+            CipherSuite::CURVE25519_AES128,
+            CipherSuite::CURVE448_AES256,
         ]
         .into_iter()
         .map(|v| Ecdh::new(v).unwrap())

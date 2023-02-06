@@ -1,7 +1,4 @@
-use aws_mls_core::crypto::{
-    CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256, CURVE448_CHACHA,
-    P256_AES128, P384_AES256, P521_AES256,
-};
+use aws_mls_core::crypto::CipherSuite;
 use thiserror::Error;
 
 use openssl::{
@@ -65,13 +62,17 @@ impl Curve {
 
     pub fn from_ciphersuite(cipher_suite: CipherSuite, for_sig: bool) -> Result<Self, EcError> {
         match cipher_suite {
-            P256_AES128 => Ok(Curve::P256),
-            P384_AES256 => Ok(Curve::P384),
-            P521_AES256 => Ok(Curve::P521),
-            CURVE25519_AES128 | CURVE25519_CHACHA if for_sig => Ok(Curve::Ed25519),
-            CURVE25519_AES128 | CURVE25519_CHACHA => Ok(Curve::X25519),
-            CURVE448_AES256 | CURVE448_CHACHA if for_sig => Ok(Curve::Ed448),
-            CURVE448_AES256 | CURVE448_CHACHA => Ok(Curve::X448),
+            CipherSuite::P256_AES128 => Ok(Curve::P256),
+            CipherSuite::P384_AES256 => Ok(Curve::P384),
+            CipherSuite::P521_AES256 => Ok(Curve::P521),
+            CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA if for_sig => {
+                Ok(Curve::Ed25519)
+            }
+            CipherSuite::CURVE25519_AES128 | CipherSuite::CURVE25519_CHACHA => Ok(Curve::X25519),
+            CipherSuite::CURVE448_AES256 | CipherSuite::CURVE448_CHACHA if for_sig => {
+                Ok(Curve::Ed448)
+            }
+            CipherSuite::CURVE448_AES256 | CipherSuite::CURVE448_CHACHA => Ok(Curve::X448),
             _ => Err(EcError::UnsupportedCipherSuite),
         }
     }

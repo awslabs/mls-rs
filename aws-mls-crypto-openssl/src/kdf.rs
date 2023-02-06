@@ -1,9 +1,6 @@
 use std::{fmt::Debug, ops::Deref};
 
-use aws_mls_core::crypto::{
-    CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256, CURVE448_CHACHA,
-    P256_AES128, P384_AES256, P521_AES256,
-};
+use aws_mls_core::crypto::CipherSuite;
 use aws_mls_crypto_traits::KdfType;
 use openssl::{
     md::{Md, MdRef},
@@ -54,13 +51,13 @@ impl Deref for Kdf {
 impl Kdf {
     pub fn new(cipher_suite: CipherSuite) -> Result<Self, KdfError> {
         let (message_digest, kdf_id) = match cipher_suite {
-            CURVE25519_AES128 | P256_AES128 | CURVE25519_CHACHA => {
-                Ok((Md::sha256(), KdfId::HkdfSha256))
-            }
-            P384_AES256 => Ok((Md::sha384(), KdfId::HkdfSha384)),
-            P521_AES256 | CURVE448_AES256 | CURVE448_CHACHA => {
-                Ok((Md::sha512(), KdfId::HkdfSha512))
-            }
+            CipherSuite::CURVE25519_AES128
+            | CipherSuite::P256_AES128
+            | CipherSuite::CURVE25519_CHACHA => Ok((Md::sha256(), KdfId::HkdfSha256)),
+            CipherSuite::P384_AES256 => Ok((Md::sha384(), KdfId::HkdfSha384)),
+            CipherSuite::P521_AES256
+            | CipherSuite::CURVE448_AES256
+            | CipherSuite::CURVE448_CHACHA => Ok((Md::sha512(), KdfId::HkdfSha512)),
             _ => Err(KdfError::UnsupportedCipherSuite),
         }?;
 
@@ -128,7 +125,7 @@ impl Kdf {
 #[cfg(test)]
 mod test {
     use assert_matches::assert_matches;
-    use aws_mls_core::crypto::{CipherSuite, CURVE25519_AES128};
+    use aws_mls_core::crypto::CipherSuite;
     use aws_mls_crypto_traits::KdfType;
     use serde::Deserialize;
 
@@ -178,26 +175,26 @@ mod test {
 
     #[test]
     fn no_key() {
-        let kdf = Kdf::new(CURVE25519_AES128).unwrap();
+        let kdf = Kdf::new(CipherSuite::CURVE25519_AES128).unwrap();
         assert!(kdf.extract(b"key", &[]).is_err());
     }
 
     #[test]
     fn no_salt() {
-        let kdf = Kdf::new(CURVE25519_AES128).unwrap();
+        let kdf = Kdf::new(CipherSuite::CURVE25519_AES128).unwrap();
         assert!(kdf.extract(&[], b"key").is_ok());
     }
 
     #[test]
     fn no_info() {
-        let kdf = Kdf::new(CURVE25519_AES128).unwrap();
+        let kdf = Kdf::new(CipherSuite::CURVE25519_AES128).unwrap();
         let key = vec![0u8; kdf.extract_size()];
         assert!(kdf.expand(&key, &[], 42).is_ok());
     }
 
     #[test]
     fn test_short_key() {
-        let kdf = Kdf::new(CURVE25519_AES128).unwrap();
+        let kdf = Kdf::new(CipherSuite::CURVE25519_AES128).unwrap();
         let key = vec![0u8; kdf.extract_size() - 1];
 
         assert_matches!(kdf.expand(&key, &[], 42), Err(KdfError::TooShortKey(_, _)));

@@ -3,10 +3,7 @@ extern crate aead as rc_aead;
 use std::fmt::Debug;
 
 use aes_gcm::{Aes128Gcm, Aes256Gcm};
-use aws_mls_core::crypto::{
-    CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256, CURVE448_CHACHA,
-    P256_AES128, P384_AES256, P521_AES256,
-};
+use aws_mls_core::crypto::CipherSuite;
 use aws_mls_crypto_traits::AeadType;
 use chacha20poly1305::ChaCha20Poly1305;
 use rc_aead::{generic_array::GenericArray, NewAead, Payload};
@@ -44,9 +41,13 @@ pub enum Aead {
 impl Aead {
     pub fn new(cipher_suite: CipherSuite) -> Result<Self, AeadError> {
         match cipher_suite {
-            P256_AES128 | CURVE25519_AES128 => Ok(Aead::Aes128Gcm),
-            CURVE448_AES256 | P384_AES256 | P521_AES256 => Ok(Aead::Aes256Gcm),
-            CURVE25519_CHACHA | CURVE448_CHACHA => Ok(Aead::Chacha20Poly1305),
+            CipherSuite::P256_AES128 | CipherSuite::CURVE25519_AES128 => Ok(Aead::Aes128Gcm),
+            CipherSuite::CURVE448_AES256 | CipherSuite::P384_AES256 | CipherSuite::P521_AES256 => {
+                Ok(Aead::Aes256Gcm)
+            }
+            CipherSuite::CURVE25519_CHACHA | CipherSuite::CURVE448_CHACHA => {
+                Ok(Aead::Chacha20Poly1305)
+            }
             _ => Err(AeadError::UnsupportedCipherSuite),
         }
     }
@@ -165,9 +166,7 @@ fn decrypt_aead_trait(
 
 #[cfg(test)]
 mod test {
-    use aws_mls_core::crypto::{
-        CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256,
-    };
+    use aws_mls_core::crypto::CipherSuite;
     use aws_mls_crypto_traits::AeadType;
 
     use crate::aead::TAG_LEN;
@@ -177,10 +176,14 @@ mod test {
     use assert_matches::assert_matches;
 
     fn get_aeads() -> Vec<Aead> {
-        [CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256]
-            .into_iter()
-            .map(|cs| Aead::new(cs).unwrap())
-            .collect()
+        [
+            CipherSuite::CURVE25519_AES128,
+            CipherSuite::CURVE25519_CHACHA,
+            CipherSuite::CURVE448_AES256,
+        ]
+        .into_iter()
+        .map(|cs| Aead::new(cs).unwrap())
+        .collect()
     }
 
     #[derive(serde::Deserialize)]

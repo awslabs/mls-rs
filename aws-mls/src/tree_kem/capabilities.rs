@@ -35,10 +35,9 @@ pub struct Capabilities {
 impl Default for Capabilities {
     fn default() -> Self {
         use crate::identity::BasicCredential;
-        use crate::protocol_version::MLS_10;
 
         Self {
-            protocol_versions: vec![MLS_10],
+            protocol_versions: vec![ProtocolVersion::MLS_10],
             cipher_suites: CipherSuite::all().collect(),
             extensions: Default::default(),
             proposals: Default::default(),

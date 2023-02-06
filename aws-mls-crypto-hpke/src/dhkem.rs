@@ -173,7 +173,7 @@ impl<DH: DhType, KDF: KdfType> DhKem<DH, KDF> {
 
 #[cfg(test)]
 mod test {
-    use aws_mls_core::crypto::{CURVE25519_AES128, P521_AES256};
+    use aws_mls_core::crypto::CipherSuite;
     use aws_mls_crypto_traits::KemType;
     use serde::Deserialize;
 
@@ -182,7 +182,7 @@ mod test {
     #[test]
     fn test_derive_no_sampling() {
         // Curve 25519 does not need sampling.
-        let dhkem = test_dhkem(CURVE25519_AES128);
+        let dhkem = test_dhkem(CipherSuite::CURVE25519_AES128);
 
         // Test case from RFC 9180, Section A.1.1, ikmE
         let ikm = "7268600d403fce431561aef583ee1613527cff655c1343f29812e66706df3234";
@@ -198,7 +198,7 @@ mod test {
     #[test]
     fn test_derive_with_sampling() {
         // Curve P521 does need sampling.
-        let dhkem = test_dhkem(P521_AES256);
+        let dhkem = test_dhkem(CipherSuite::P521_AES256);
 
         // Test case from RFC 9180, Section A.6.1, ikmE
         let ikm = "7f06ab8215105fc46aceeb2e3dc5028b44364f960426eb0d8e4026c2f8b5d7e7a986688f1591abf5ab753c357a5d6f0440414b4ed4ede71317772ac98d9239f70904";

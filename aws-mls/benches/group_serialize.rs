@@ -4,7 +4,6 @@ use aws_mls::{
     client::MlsConfig,
     group::Group,
 };
-use aws_mls_core::crypto::CURVE25519_AES128;
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 };
@@ -13,7 +12,7 @@ use futures::executor::block_on;
 fn group_setup(c: &mut Criterion) {
     let mut group_serialize = c.benchmark_group("group_serialize");
 
-    let cipher_suite = CURVE25519_AES128;
+    let cipher_suite = CipherSuite::CURVE25519_AES128;
 
     println!("Benchmarking group state serialization for: {cipher_suite:?}");
 

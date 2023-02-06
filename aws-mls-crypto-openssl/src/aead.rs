@@ -1,9 +1,6 @@
 use std::{fmt::Debug, ops::Deref};
 
-use aws_mls_core::crypto::{
-    CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256, CURVE448_CHACHA,
-    P256_AES128, P384_AES256, P521_AES256,
-};
+use aws_mls_core::crypto::CipherSuite;
 use aws_mls_crypto_traits::AeadType;
 use openssl::symm::{decrypt_aead, encrypt_aead, Cipher};
 use thiserror::Error;
@@ -57,11 +54,13 @@ impl Deref for Aead {
 impl Aead {
     pub fn new(cipher_suite: CipherSuite) -> Result<Self, AeadError> {
         let (cipher, aead_id) = match cipher_suite {
-            P256_AES128 | CURVE25519_AES128 => Ok((Cipher::aes_128_gcm(), AeadId::Aes128Gcm)),
-            CURVE448_AES256 | P384_AES256 | P521_AES256 => {
+            CipherSuite::P256_AES128 | CipherSuite::CURVE25519_AES128 => {
+                Ok((Cipher::aes_128_gcm(), AeadId::Aes128Gcm))
+            }
+            CipherSuite::CURVE448_AES256 | CipherSuite::P384_AES256 | CipherSuite::P521_AES256 => {
                 Ok((Cipher::aes_256_gcm(), AeadId::Aes256Gcm))
             }
-            CURVE25519_CHACHA | CURVE448_CHACHA => {
+            CipherSuite::CURVE25519_CHACHA | CipherSuite::CURVE448_CHACHA => {
                 Ok((Cipher::chacha20_poly1305(), AeadId::Chacha20Poly1305))
             }
             _ => Err(AeadError::UnsupportedCipherSuite),
@@ -127,9 +126,7 @@ impl AeadType for Aead {
 
 #[cfg(test)]
 mod test {
-    use aws_mls_core::crypto::{
-        CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256,
-    };
+    use aws_mls_core::crypto::CipherSuite;
     use aws_mls_crypto_traits::AeadType;
 
     use crate::aead::TAG_LEN;
@@ -139,10 +136,14 @@ mod test {
     use assert_matches::assert_matches;
 
     fn get_aeads() -> Vec<Aead> {
-        [CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256]
-            .into_iter()
-            .map(|v| Aead::new(v).unwrap())
-            .collect()
+        [
+            CipherSuite::CURVE25519_AES128,
+            CipherSuite::CURVE25519_CHACHA,
+            CipherSuite::CURVE448_AES256,
+        ]
+        .into_iter()
+        .map(|v| Aead::new(v).unwrap())
+        .collect()
     }
 
     #[derive(serde::Deserialize)]

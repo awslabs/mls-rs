@@ -40,10 +40,18 @@ impl Deref for ProtocolVersion {
     }
 }
 
-pub const MLS_10: ProtocolVersion = ProtocolVersion(1);
-
 impl ProtocolVersion {
+    pub const MLS_10: ProtocolVersion = ProtocolVersion(1);
+
+    pub fn new(value: u16) -> ProtocolVersion {
+        ProtocolVersion(value)
+    }
+
+    pub fn raw_value(&self) -> u16 {
+        self.0
+    }
+
     pub fn all() -> impl Iterator<Item = ProtocolVersion> {
-        [MLS_10].into_iter()
+        [Self::MLS_10].into_iter()
     }
 }

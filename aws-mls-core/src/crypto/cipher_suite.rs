@@ -39,15 +39,23 @@ impl Deref for CipherSuite {
     }
 }
 
-pub const CURVE25519_AES128: CipherSuite = CipherSuite(1);
-pub const P256_AES128: CipherSuite = CipherSuite(2);
-pub const CURVE25519_CHACHA: CipherSuite = CipherSuite(3);
-pub const CURVE448_AES256: CipherSuite = CipherSuite(4);
-pub const P521_AES256: CipherSuite = CipherSuite(5);
-pub const CURVE448_CHACHA: CipherSuite = CipherSuite(6);
-pub const P384_AES256: CipherSuite = CipherSuite(7);
-
 impl CipherSuite {
+    pub const CURVE25519_AES128: CipherSuite = CipherSuite(1);
+    pub const P256_AES128: CipherSuite = CipherSuite(2);
+    pub const CURVE25519_CHACHA: CipherSuite = CipherSuite(3);
+    pub const CURVE448_AES256: CipherSuite = CipherSuite(4);
+    pub const P521_AES256: CipherSuite = CipherSuite(5);
+    pub const CURVE448_CHACHA: CipherSuite = CipherSuite(6);
+    pub const P384_AES256: CipherSuite = CipherSuite(7);
+
+    pub fn new(value: u16) -> CipherSuite {
+        CipherSuite(value)
+    }
+
+    pub fn raw_value(&self) -> u16 {
+        self.0
+    }
+
     pub fn all() -> impl Iterator<Item = CipherSuite> {
         (1..=7).map(CipherSuite)
     }

@@ -160,7 +160,6 @@ mod tests {
     use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use assert_matches::assert_matches;
-    use aws_mls_core::crypto::CURVE25519_CHACHA;
     use futures::FutureExt;
 
     #[cfg(target_arch = "wasm32")]
@@ -240,7 +239,8 @@ mod tests {
         let version = TEST_PROTOCOL_VERSION;
         let test_package = test_key_package(version, cipher_suite, "mallory").await;
 
-        let invalid_cipher_suite_provider = test_cipher_suite_provider(CURVE25519_CHACHA);
+        let invalid_cipher_suite_provider =
+            test_cipher_suite_provider(CipherSuite::CURVE25519_CHACHA);
 
         let validator = KeyPackageValidator::new(
             version,
@@ -255,7 +255,7 @@ mod tests {
                 .await,
             Err(KeyPackageValidationError::InvalidCipherSuite(
                 TEST_CIPHER_SUITE,
-                CURVE25519_CHACHA
+                CipherSuite::CURVE25519_CHACHA
             ))
         );
     }

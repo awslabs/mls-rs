@@ -168,7 +168,6 @@ mod tests {
 
     use super::*;
 
-    use aws_mls_core::crypto::P256_AES128;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -302,7 +301,7 @@ mod tests {
 
     #[test]
     fn test_random_path_secret() {
-        let cs_provider = test_cipher_suite_provider(P256_AES128);
+        let cs_provider = test_cipher_suite_provider(CipherSuite::P256_AES128);
         let initial = PathSecret::random(&cs_provider).unwrap();
 
         for _ in 0..100 {

@@ -245,7 +245,6 @@ mod tests {
 
     use super::{test_utils::test_key_package, *};
     use assert_matches::assert_matches;
-    use aws_mls_core::crypto::P256_AES128;
     use futures::StreamExt;
     use tls_codec::Deserialize;
 
@@ -313,8 +312,10 @@ mod tests {
         let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test").await;
 
         assert_matches!(
-            key_package.to_reference(&test_cipher_suite_provider(P256_AES128)),
-            Err(HashReferenceError::InvalidCipherSuite(P256_AES128))
+            key_package.to_reference(&test_cipher_suite_provider(CipherSuite::P256_AES128)),
+            Err(HashReferenceError::InvalidCipherSuite(
+                CipherSuite::P256_AES128
+            ))
         )
     }
 }

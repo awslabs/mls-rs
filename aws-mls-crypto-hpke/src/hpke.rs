@@ -294,7 +294,7 @@ where
 mod test {
 
     use assert_matches::assert_matches;
-    use aws_mls_core::crypto::{CipherSuite, HpkeContextR, HpkeContextS, CURVE25519_AES128};
+    use aws_mls_core::crypto::{CipherSuite, HpkeContextR, HpkeContextS};
     use aws_mls_crypto_openssl::{aead::Aead, ecdh::*, kdf::Kdf};
     use serde::Deserialize;
 
@@ -380,7 +380,7 @@ mod test {
 
     #[test]
     fn test_invalid_psk() {
-        let hpke = test_hpke(CURVE25519_AES128, false);
+        let hpke = test_hpke(CipherSuite::CURVE25519_AES128, false);
         let remote_pub = hpke.generate().unwrap().1;
 
         let basic_res = hpke.setup_sender(&remote_pub, &[], Some(Psk::default()));
@@ -390,7 +390,7 @@ mod test {
 
     #[test]
     fn test_encrypt_api_disabled() {
-        let hpke = test_hpke(CURVE25519_AES128, true);
+        let hpke = test_hpke(CipherSuite::CURVE25519_AES128, true);
         let (secret, remote_pub) = hpke.generate().unwrap();
 
         let (enc, mut sender_ctx) = hpke.setup_sender(&remote_pub, &[], None).unwrap();

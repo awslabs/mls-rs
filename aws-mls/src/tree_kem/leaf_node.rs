@@ -433,7 +433,7 @@ mod tests {
     use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider;
     use assert_matches::assert_matches;
 
-    use aws_mls_core::crypto::P256_AES128;
+    use aws_mls_core::crypto::CipherSuite;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -518,7 +518,7 @@ mod tests {
         let cipher_suite = TEST_CIPHER_SUITE;
 
         let (test_signing_identity, signer) =
-            get_test_signing_identity(P256_AES128, b"foo".to_vec());
+            get_test_signing_identity(CipherSuite::P256_AES128, b"foo".to_vec());
 
         let res = LeafNode::generate(
             &test_cipher_suite_provider(cipher_suite),

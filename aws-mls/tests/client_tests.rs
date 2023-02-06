@@ -10,10 +10,10 @@ use aws_mls::group::{Event, Group, GroupError};
 use aws_mls::identity::SigningIdentity;
 use aws_mls::identity::{BasicCredential, Credential};
 use aws_mls::key_package::KeyPackage;
-use aws_mls::protocol_version::{ProtocolVersion, MLS_10};
+use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::provider::crypto::CryptoProvider;
 use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage};
-use aws_mls_core::crypto::{CipherSuiteProvider, CURVE25519_AES128, P256_AES128};
+use aws_mls_core::crypto::CipherSuiteProvider;
 use cfg_if::cfg_if;
 
 cfg_if! {
@@ -283,7 +283,11 @@ async fn add_random_members(
 
                 let key_package = new_client
                     .client
-                    .generate_key_package(MLS_10, cipher_suite, new_client.identity.clone())
+                    .generate_key_package(
+                        ProtocolVersion::MLS_10,
+                        cipher_suite,
+                        new_client.identity.clone(),
+                    )
                     .await
                     .unwrap();
 
@@ -381,11 +385,16 @@ async fn remove_members(
 
 #[futures_test::test]
 async fn test_many_commits() {
-    let cipher_suite = CURVE25519_AES128;
+    let cipher_suite = CipherSuite::CURVE25519_AES128;
     let preferences = Preferences::default();
 
-    let (creator_group, mut groups) =
-        get_test_groups(MLS_10, cipher_suite, 10, preferences.clone()).await;
+    let (creator_group, mut groups) = get_test_groups(
+        ProtocolVersion::MLS_10,
+        cipher_suite,
+        10,
+        preferences.clone(),
+    )
+    .await;
 
     groups.push(creator_group);
     let mut rng = rand::rngs::StdRng::from_seed([42; 32]);
@@ -697,8 +706,13 @@ async fn test_application_messages(
 
 #[futures_test::test]
 async fn test_out_of_order_application_messages() {
-    let (mut alice_group, mut receiver_groups) =
-        get_test_groups(MLS_10, CURVE25519_AES128, 1, Preferences::default()).await;
+    let (mut alice_group, mut receiver_groups) = get_test_groups(
+        ProtocolVersion::MLS_10,
+        CipherSuite::CURVE25519_AES128,
+        1,
+        Preferences::default(),
+    )
+    .await;
 
     let bob_group = receiver_groups.get_mut(0).unwrap();
 
@@ -888,8 +902,13 @@ async fn test_external_commits() {
 
 #[futures_test::test]
 async fn test_remove_nonexisting_leaf() {
-    let (_, mut groups) =
-        get_test_groups(MLS_10, CURVE25519_AES128, 10, Preferences::default()).await;
+    let (_, mut groups) = get_test_groups(
+        ProtocolVersion::MLS_10,
+        CipherSuite::CURVE25519_AES128,
+        10,
+        Preferences::default(),
+    )
+    .await;
 
     groups[0].propose_remove(5, vec![]).await.unwrap();
 
@@ -939,9 +958,9 @@ fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite, id: &str) -> Rein
 
 #[futures_test::test]
 async fn reinit_works() {
-    let suite1 = CURVE25519_AES128;
-    let suite2 = P256_AES128;
-    let version = MLS_10;
+    let suite1 = CipherSuite::CURVE25519_AES128;
+    let suite2 = CipherSuite::P256_AES128;
+    let version = ProtocolVersion::MLS_10;
 
     // Create a group with 2 parties
     let alice = get_reinit_client(suite1, suite2, "alice");
@@ -980,7 +999,13 @@ async fn reinit_works() {
 
     // Alice proposes reinit
     let reinit_proposal_message = alice_group
-        .propose_reinit(None, MLS_10, suite2, ExtensionList::default(), vec![])
+        .propose_reinit(
+            None,
+            ProtocolVersion::MLS_10,
+            suite2,
+            ExtensionList::default(),
+            vec![],
+        )
         .await
         .unwrap();
 

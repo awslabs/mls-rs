@@ -1,7 +1,4 @@
-use aws_mls_core::crypto::{
-    CipherSuite, CURVE25519_AES128, CURVE25519_CHACHA, CURVE448_AES256, CURVE448_CHACHA,
-    P256_AES128, P384_AES256, P521_AES256,
-};
+use aws_mls_core::crypto::CipherSuite;
 use hmac::{
     digest::{crypto_common::BlockSizeUser, FixedOutputReset},
     Mac, SimpleHmac,
@@ -28,9 +25,13 @@ pub enum Hash {
 impl Hash {
     pub fn new(cipher_suite: CipherSuite) -> Result<Self, HashError> {
         match cipher_suite {
-            CURVE25519_AES128 | P256_AES128 | CURVE25519_CHACHA => Ok(Hash::Sha256),
-            P384_AES256 => Ok(Hash::Sha384),
-            CURVE448_AES256 | CURVE448_CHACHA | P521_AES256 => Ok(Hash::Sha512),
+            CipherSuite::CURVE25519_AES128
+            | CipherSuite::P256_AES128
+            | CipherSuite::CURVE25519_CHACHA => Ok(Hash::Sha256),
+            CipherSuite::P384_AES256 => Ok(Hash::Sha384),
+            CipherSuite::CURVE448_AES256
+            | CipherSuite::CURVE448_CHACHA
+            | CipherSuite::P521_AES256 => Ok(Hash::Sha512),
             _ => Err(HashError::UnsupportedCipherSuite),
         }
     }

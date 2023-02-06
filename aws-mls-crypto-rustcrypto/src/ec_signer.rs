@@ -88,7 +88,7 @@ impl EcSigner {
 #[cfg(test)]
 mod test {
     use assert_matches::assert_matches;
-    use aws_mls_core::crypto::{CipherSuite, CURVE25519_AES128, P256_AES128};
+    use aws_mls_core::crypto::CipherSuite;
 
     use crate::{
         ec::test_utils::{get_test_public_keys, get_test_secret_keys},
@@ -99,7 +99,7 @@ mod test {
 
     #[test]
     fn test_signatures() {
-        [CURVE25519_AES128, P256_AES128]
+        [CipherSuite::CURVE25519_AES128, CipherSuite::P256_AES128]
             .into_iter()
             .for_each(test_signature);
     }

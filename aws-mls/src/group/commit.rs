@@ -473,8 +473,6 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use aws_mls_core::crypto::CURVE25519_CHACHA;
-
     use crate::{
         client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_builder::test_utils::TestClientConfig,
@@ -682,7 +680,7 @@ mod tests {
     async fn test_commit_builder_reinit() {
         let mut group = test_commit_builder_group().await;
         let test_group_id = "foo".as_bytes().to_vec();
-        let test_cipher_suite = CURVE25519_CHACHA;
+        let test_cipher_suite = CipherSuite::CURVE25519_CHACHA;
         let test_protocol_version = TEST_PROTOCOL_VERSION;
         let mut test_ext = ExtensionList::default();
 

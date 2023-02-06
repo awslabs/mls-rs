@@ -647,10 +647,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use aws_mls_core::{
-        crypto::{
-            CipherSuite, SignaturePublicKey, SignatureSecretKey, CURVE25519_AES128,
-            CURVE448_AES256, P256_AES128,
-        },
+        crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey},
         time::MlsTime,
     };
     use aws_mls_identity_x509::{
@@ -888,7 +885,7 @@ mod tests {
         let expected_csr = X509Req::from_pem(&expected_csr).unwrap().to_der().unwrap();
 
         let built_csr = writer
-            .build_csr(CURVE25519_AES128, Some(subject_seckey), params)
+            .build_csr(CipherSuite::CURVE25519_AES128, Some(subject_seckey), params)
             .unwrap();
 
         assert_eq!(expected_csr, built_csr.req_data);
@@ -909,7 +906,7 @@ mod tests {
         let writer = X509Writer::new();
         let issuer = get_test_root_ca();
         let params = CertificateParameters::default();
-        let ciphersuite = CURVE448_AES256;
+        let ciphersuite = CipherSuite::CURVE448_AES256;
 
         let crt = writer
             .build_cert_chain(ciphersuite, &issuer, None, params.clone())
@@ -997,7 +994,12 @@ mod tests {
 
         let lifetime = 100 * 365 * 24 * 3600;
 
-        CertificateIssuer::new(ca_key, CURVE25519_AES128, vec![ca_cert].into(), lifetime)
+        CertificateIssuer::new(
+            ca_key,
+            CipherSuite::CURVE25519_AES128,
+            vec![ca_cert].into(),
+            lifetime,
+        )
     }
 
     fn ec_key_from_pem(pem_bytes: &[u8]) -> SignatureSecretKey {
@@ -1007,9 +1009,9 @@ mod tests {
 
     fn get_subject_ciphersuite(ca: bool) -> CipherSuite {
         if ca {
-            P256_AES128
+            CipherSuite::P256_AES128
         } else {
-            CURVE25519_AES128
+            CipherSuite::CURVE25519_AES128
         }
     }
 
