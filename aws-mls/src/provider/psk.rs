@@ -7,7 +7,9 @@ use std::{
 use async_trait::async_trait;
 use thiserror::Error;
 
-use crate::psk::{ExternalPskId, ExternalPskIdValidator, PreSharedKey};
+use crate::psk::ExternalPskIdValidator;
+
+pub use crate::psk::{ExternalPskId, PreSharedKey};
 
 pub use aws_mls_core::psk::PreSharedKeyStorage;
 

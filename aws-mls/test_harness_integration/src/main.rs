@@ -17,10 +17,10 @@ use aws_mls::key_package::KeyPackage;
 use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::provider::crypto::{CipherSuiteProvider, CryptoProvider};
 use aws_mls::provider::{
-    identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage,
-    psk::InMemoryPreSharedKeyStorage,
+    identity::BasicIdentityProvider,
+    keychain::InMemoryKeychainStorage,
+    psk::{ExternalPskId, InMemoryPreSharedKeyStorage, PreSharedKey},
 };
-use aws_mls::psk::{ExternalPskId, PreSharedKey};
 use aws_mls::tls_codec::{Deserialize, Serialize};
 
 use aws_mls_crypto_openssl::OpensslCryptoProvider;

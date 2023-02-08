@@ -28,8 +28,20 @@ pub struct AddProposal {
 }
 
 impl AddProposal {
-    pub fn key_package(&self) -> &KeyPackage {
-        &self.key_package
+    pub fn signing_identity(&self) -> &SigningIdentity {
+        self.key_package.signing_identity()
+    }
+
+    pub fn capabilities(&self) -> &Capabilities {
+        &self.key_package.leaf_node.capabilities
+    }
+
+    pub fn key_package_extensions(&self) -> &ExtensionList {
+        self.key_package.extensions()
+    }
+
+    pub fn leaf_node_extensions(&self) -> &ExtensionList {
+        &self.key_package.leaf_node.extensions
     }
 }
 
@@ -46,6 +58,20 @@ impl AddProposal {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct UpdateProposal {
     pub(crate) leaf_node: LeafNode,
+}
+
+impl UpdateProposal {
+    pub fn signing_identity(&self) -> &SigningIdentity {
+        &self.leaf_node.signing_identity
+    }
+
+    pub fn capabilities(&self) -> &Capabilities {
+        &self.leaf_node.capabilities
+    }
+
+    pub fn leaf_node_extensions(&self) -> &ExtensionList {
+        &self.leaf_node.extensions
+    }
 }
 
 #[derive(
@@ -83,7 +109,18 @@ impl RemoveProposal {
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct PreSharedKeyProposal {
-    pub psk: PreSharedKeyID,
+    pub(crate) psk: PreSharedKeyID,
+}
+
+impl PreSharedKeyProposal {
+    /// MLS requires the PSK type for PreSharedKeyProposal to be of type `External`.
+    /// Returns `None` in the condition that the underlying psk is not external.
+    pub fn external_psk_id(&self) -> Option<&ExternalPskId> {
+        match self.psk.key_id {
+            JustPreSharedKeyID::External(ref ext) => Some(ext),
+            JustPreSharedKeyID::Resumption(_) => None,
+        }
+    }
 }
 
 #[serde_as]
@@ -101,10 +138,28 @@ pub struct PreSharedKeyProposal {
 pub struct ReInitProposal {
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
-    pub group_id: Vec<u8>,
-    pub version: ProtocolVersion,
-    pub cipher_suite: CipherSuite,
-    pub extensions: ExtensionList,
+    pub(crate) group_id: Vec<u8>,
+    pub(crate) version: ProtocolVersion,
+    pub(crate) cipher_suite: CipherSuite,
+    pub(crate) extensions: ExtensionList,
+}
+
+impl ReInitProposal {
+    pub fn group_id(&self) -> &[u8] {
+        &self.group_id
+    }
+
+    pub fn new_version(&self) -> ProtocolVersion {
+        self.version
+    }
+
+    pub fn new_cipher_suite(&self) -> CipherSuite {
+        self.cipher_suite
+    }
+
+    pub fn new_group_context_extensions(&self) -> &ExtensionList {
+        &self.extensions
+    }
 }
 
 #[serde_as]
@@ -123,7 +178,7 @@ pub struct ReInitProposal {
 pub struct ExternalInit {
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
-    pub kem_output: Vec<u8>,
+    pub(crate) kem_output: Vec<u8>,
 }
 
 #[serde_as]

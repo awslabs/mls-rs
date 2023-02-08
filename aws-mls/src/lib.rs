@@ -63,7 +63,7 @@ pub mod identity;
 pub mod key_package;
 pub mod protocol_version;
 pub mod provider;
-pub mod psk;
+mod psk;
 mod signer;
 
 pub mod time {
