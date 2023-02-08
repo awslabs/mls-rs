@@ -3,7 +3,6 @@
 //!
 //! It is based on the Mock client written by Richard Barnes.
 
-use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::client::{
     BaseConfig, Client, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider,
     WithKeychain,
@@ -14,7 +13,6 @@ use aws_mls::group::{Event, Group, StateUpdate};
 use aws_mls::identity::BasicCredential;
 use aws_mls::identity::SigningIdentity;
 use aws_mls::key_package::KeyPackage;
-use aws_mls::protocol_version::ProtocolVersion;
 use aws_mls::provider::crypto::{CipherSuiteProvider, CryptoProvider};
 use aws_mls::provider::{
     identity::BasicIdentityProvider,
@@ -22,6 +20,8 @@ use aws_mls::provider::{
     psk::{ExternalPskId, InMemoryPreSharedKeyStorage, PreSharedKey},
 };
 use aws_mls::tls_codec::{Deserialize, Serialize};
+use aws_mls::CipherSuite;
+use aws_mls::ProtocolVersion;
 
 use aws_mls_crypto_openssl::OpensslCryptoProvider;
 use clap::Parser;

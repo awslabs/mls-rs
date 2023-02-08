@@ -18,6 +18,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// Wrapper type representing a protocol version identifier.
 pub struct ProtocolVersion(u16);
 
 impl From<u16> for ProtocolVersion {
@@ -41,16 +42,20 @@ impl Deref for ProtocolVersion {
 }
 
 impl ProtocolVersion {
+    /// MLS version 1.0
     pub const MLS_10: ProtocolVersion = ProtocolVersion(1);
 
+    /// Protocol version from a raw value, useful for testing.
     pub fn new(value: u16) -> ProtocolVersion {
         ProtocolVersion(value)
     }
 
+    /// Raw numerical wrapped value.
     pub fn raw_value(&self) -> u16 {
         self.0
     }
 
+    /// An iterator over all of the defined MLS versions.
     pub fn all() -> impl Iterator<Item = ProtocolVersion> {
         [Self::MLS_10].into_iter()
     }

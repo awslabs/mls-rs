@@ -1,6 +1,5 @@
 use aws_mls::{
     bench_utils::create_empty_tree::{load_test_cases, TestCase},
-    cipher_suite::CipherSuite,
     extension::ExtensionList,
     provider::{crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider},
     tree_kem::{
@@ -10,6 +9,7 @@ use aws_mls::{
         update_path::ValidatedUpdatePath,
         Capabilities,
     },
+    CipherSuite,
 };
 use criterion::{
     async_executor::FuturesExecutor, criterion_group, criterion_main, measurement::WallTime,

@@ -1,8 +1,8 @@
 use aws_mls::{
     bench_utils::group_functions::{commit_groups, load_test_cases},
-    cipher_suite::CipherSuite,
     client::MlsConfig,
     group::Group,
+    CipherSuite,
 };
 use criterion::{
     async_executor::FuturesExecutor, criterion_group, criterion_main, measurement::WallTime,

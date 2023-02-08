@@ -11,82 +11,57 @@
 
 <!-- cargo-sync-readme start -->
 
-An implementation of the [Messaging Layer Security](https://messaginglayersecurity.rocks) standard,
-based on Draft 12 of the RFC. Cryptographic operations are supported by [Ferriscrypt](https://github.com/WickrInc/ferriscrypt).
+An implementation of the [IETF Messaging Layer Security](https://messaginglayersecurity.rocks)
+end-to-end encryption (E2EE) protocol.
 
-## Supported Ciphersuites
+## What is MLS?
 
+MLS is a new IETF end-to-end encryption standard that is designed to
+provide transport agnostic, asynchronous, and highly performant
+communication between a group of clients.
 
-* `MLS10_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`
-* `MLS10_128_DHKEMP256_AES128GCM_SHA256_P256`
-* `MLS10_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519`
-* `MLS10_256_DHKEMX448_AES256GCM_SHA512_Ed448`
-* `MLS10_256_DHKEMP521_AES256GCM_SHA512_P521`
-* `MLS10_256_DHKEMX448_CHACHA20POLY1305_SHA512_Ed448`
+## MLS Protocol Features
 
+* Multi-party E2EE [group evolution](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-cryptographic-state-and-evo)
+via a propose-then-commit mechanism.
+* Asynchronous by design with pre-computed [key packages](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-key-packages),
+allowing members to be added to a group while offline.
+* Customizable credential system with built in support for X.509 certificates.
+* [Extension system](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-extensions)
+allowing for application specific data to be negotiated via the protocol.
+* Strong forward secrecy and post compromise security.
+* Crypto agility via support for multiple [ciphersuites](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-mls-ciphersuites).
+* Pre-shared key support.
+* Subgroup branching.
+* Group reinitialization (ex: protocol version upgrade).
 
-## Supported Extensions
+## Crate Features
 
+* Easy to use client interface that manages multiple MLS identities and groups.
+* 100% RFC conformance with support for all default credential, proposal,
+  and extension types.
+* Async API with async trait based extension points.
+* Configurable storage for key packages, secrets and group state
+  via provider traits along with default "in memory" implementations.
+* Support for custom user created proposal, and extension types.
+* Ability to create user defined credentials with custom validation
+  routines that can bridge to existing credential schemes.
+* OpenSSL and Rust Crypto based ciphersuite implementations.
+* Crypto agility with support for user defined ciphersuites.
+* High test coverage including security focused tests and
+  pre-computed test vectors.
+* Fuzz testing suite.
+* Benchmarks for core functionality.
 
-* `capabilities`
-* `lifetime`
-* `external_key_id`
-* `parent_hash`
-* **TODO**: `ratchet_tree`
-
-
-## Supported Proposal Types
-
-* `add`
-* `update`
-* `remove`
-* `psk`
-* *TODO*: `reinit`
-* *TODO*: `external_init`
-* *TODO*: `app_ack`
-* *TODO*: `group_context_extensions`
-
-## Supported Credential Types
-
-* `basic`
-* `x509`
 
 <!-- cargo-sync-readme end -->
-
-## Writing tests
-
-Test helper definitions shared across multiple modules should be defined in a `test_utils` module.
-
-Test modules should contain the following to ensure the tests run in WASM:
-
-```rust
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen_test::wasm_bindgen_test as test;
-```
-
-If test data files are needed, they should be placed in the `test_data` directory and the following
-functions should be defined to generate and load them:
-
-```rust
-fn generate_test_cases() -> SerializableTestData {
-    // ...
-}
-
-fn load_test_cases() -> SerializableTestData {
-    load_test_cases!(test_file_name, generate_test_cases())
-}
-```
-
-The above macro call generates code that behaves as follows:
-- When targeting WASM, the data files are baked into the test executables.
-- When targeting non-WASM, the data files are generated if they do not exist and loaded at runtime.
 
 ## License
 
 This software is distributed under the [Apache License, version 2.0](https://www.apache.org/licenses/LICENSE-2.0.html)
 
 ```
-   Copyright 2022 Wickr, Inc.
+   Copyright 2023 Wickr, Inc.
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.

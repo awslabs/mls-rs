@@ -1,6 +1,6 @@
 use aws_mls::bench_utils::group_functions::load_test_cases;
-use aws_mls::cipher_suite::CipherSuite;
 use aws_mls::group::secret_tree::SecretTree;
+use aws_mls::CipherSuite;
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,
 };
