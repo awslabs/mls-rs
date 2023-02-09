@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use indexmap::IndexMap;
 use tls_codec::{Deserialize, Serialize, Size};
 
-use crate::tls::ReadWithCount;
+use crate::tls::{ReadWithCount, VarInt};
 
 use super::{Extension, ExtensionError, ExtensionType, MlsExtension};
 
@@ -31,36 +31,48 @@ impl From<IndexMap<ExtensionType, Extension>> for ExtensionList {
 
 impl Size for ExtensionList {
     fn tls_serialized_len(&self) -> usize {
-        (self.len() as u32).tls_serialized_len()
-            + self
-                .iter()
-                .map(|ext| ext.tls_serialized_len())
-                .sum::<usize>()
+        let len = self
+            .iter()
+            .map(|ext| ext.tls_serialized_len())
+            .sum::<usize>();
+
+        let header_len = VarInt::try_from(len)
+            .expect("Extension list has too many bytes to be serialized")
+            .tls_serialized_len();
+
+        header_len + len
     }
 }
 
 impl Serialize for ExtensionList {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
-        let len = self
-            .iter()
-            .map(|ext| ext.tls_serialized_len())
-            .sum::<usize>() as u32;
-        self.iter()
-            .try_fold(len.tls_serialize(writer)?, |acc, ext| {
-                Ok(acc + ext.tls_serialize(writer)?)
-            })
+        let mut buffer = Vec::new();
+
+        let len = self.iter().try_fold(0, |acc, x| {
+            Ok::<_, tls_codec::Error>(acc + x.tls_serialize(&mut buffer)?)
+        })?;
+
+        let len = VarInt::try_from(len).map_err(|_| tls_codec::Error::InvalidVectorLength)?;
+        let written = len.tls_serialize(writer)?;
+        writer.write_all(&buffer)?;
+
+        Ok(written + buffer.len())
     }
 }
 
 impl Deserialize for ExtensionList {
     fn tls_deserialize<R: Read>(reader: &mut R) -> Result<Self, tls_codec::Error> {
-        let len = u32::tls_deserialize(reader)? as usize;
+        let len: usize = VarInt::tls_deserialize(reader)?
+            .try_into()
+            .map_err(|_| tls_codec::Error::InvalidVectorLength)?;
+
         let reader = &mut ReadWithCount::new(reader);
         let mut items = IndexMap::new();
 
         while reader.bytes_read() < len {
             let ext = Extension::tls_deserialize(reader)?;
             let ext_type = ext.extension_type;
+
             if items.insert(ext_type, ext).is_some() {
                 return Err(tls_codec::Error::DecodingError(format!(
                     "Extension list has duplicate extension of type {ext_type:?}"

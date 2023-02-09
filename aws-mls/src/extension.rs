@@ -279,6 +279,9 @@ mod tests {
         assert!(!list.has_extension(42.into()));
     }
 
+    #[derive(TlsSerialize, TlsSize)]
+    struct ExtensionsVec(#[tls_codec(with = "crate::tls::DefVec")] Vec<Extension>);
+
     #[test]
     fn extension_list_is_serialized_like_a_sequence_of_extensions() {
         let extension_vec = vec![
@@ -293,7 +296,7 @@ mod tests {
         let extension_list: ExtensionList = ExtensionList::from(extension_vec.clone());
 
         assert_eq!(
-            tls_codec::TlsSliceU32(&extension_vec)
+            ExtensionsVec(extension_vec)
                 .tls_serialize_detached()
                 .unwrap(),
             extension_list.tls_serialize_detached().unwrap(),
@@ -302,14 +305,12 @@ mod tests {
 
     #[test]
     fn deserializing_extension_list_fails_on_duplicate_extension() {
-        let extensions = vec![
+        let extensions = ExtensionsVec(vec![
             RequiredCapabilitiesExt::default().into_extension().unwrap(),
             RequiredCapabilitiesExt::default().into_extension().unwrap(),
-        ];
+        ]);
 
-        let serialized_extensions = tls_codec::TlsSliceU32(&extensions)
-            .tls_serialize_detached()
-            .unwrap();
+        let serialized_extensions = extensions.tls_serialize_detached().unwrap();
 
         assert_matches!(
             ExtensionList::tls_deserialize(&mut &*serialized_extensions),

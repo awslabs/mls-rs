@@ -81,6 +81,7 @@ impl TryFrom<ApplicationData> for Event {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub(crate) enum Content {
+    #[tls_codec(discriminant = 1)]
     Application(ApplicationData),
     Proposal(Proposal),
     Commit(Commit),
