@@ -5,7 +5,6 @@ use crate::{
     client_config::{ClientConfig, ProposalFilterInit},
     extension::{ExtensionList, RatchetTreeExt},
     identity::SigningIdentity,
-    key_package::KeyPackage,
     protocol_version::ProtocolVersion,
     provider::psk::PskStoreIdValidator,
     psk::{resolver::PskResolver, ExternalPskId},
@@ -69,11 +68,11 @@ impl<'a, C> CommitBuilder<'a, C>
 where
     C: ClientConfig + Clone,
 {
-    pub async fn add_member(
+    pub fn add_member(
         mut self,
-        key_package: KeyPackage,
+        key_package: MLSMessage,
     ) -> Result<CommitBuilder<'a, C>, GroupError> {
-        let proposal = self.group.add_proposal(key_package).await?;
+        let proposal = self.group.add_proposal(key_package)?;
         self.proposals.push(proposal);
         Ok(self)
     }
@@ -484,7 +483,7 @@ mod tests {
         },
         identity::test_utils::get_test_basic_credential,
         identity::test_utils::get_test_signing_identity,
-        key_package::test_utils::test_key_package,
+        key_package::test_utils::test_key_package_message,
         psk::{JustPreSharedKeyID, PreSharedKey, PreSharedKeyID},
     };
 
@@ -548,19 +547,19 @@ mod tests {
     #[futures_test::test]
     async fn test_commit_builder_add() {
         let mut group = test_commit_builder_group().await;
+
         let test_key_package =
-            test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
+            test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
 
         let commit_output = group
             .commit_builder()
             .add_member(test_key_package.clone())
-            .await
             .unwrap()
             .build()
             .await
             .unwrap();
 
-        let expected_add = group.add_proposal(test_key_package).await.unwrap();
+        let expected_add = group.add_proposal(test_key_package).unwrap();
 
         assert_commit_builder_output(group, commit_output, vec![expected_add], 1)
     }
@@ -579,7 +578,6 @@ mod tests {
         let welcome_message = group
             .commit_builder()
             .add_member(bob_key_package)
-            .await
             .unwrap()
             .set_group_info_ext(extension_list)
             .build()
@@ -606,12 +604,11 @@ mod tests {
     async fn test_commit_builder_remove() {
         let mut group = test_commit_builder_group().await;
         let test_key_package =
-            test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
+            test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
 
         group
             .commit_builder()
             .add_member(test_key_package)
-            .await
             .unwrap()
             .build()
             .await
@@ -732,21 +729,19 @@ mod tests {
     #[futures_test::test]
     async fn test_commit_builder_chaining() {
         let mut group = test_commit_builder_group().await;
-        let kp1 = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
-        let kp2 = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+        let kp1 = test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "alice").await;
+        let kp2 = test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
 
         let expected_adds = vec![
-            group.add_proposal(kp1.clone()).await.unwrap(),
-            group.add_proposal(kp2.clone()).await.unwrap(),
+            group.add_proposal(kp1.clone()).unwrap(),
+            group.add_proposal(kp2.clone()).unwrap(),
         ];
 
         let commit_output = group
             .commit_builder()
             .add_member(kp1)
-            .await
             .unwrap()
             .add_member(kp2)
-            .await
             .unwrap()
             .build()
             .await

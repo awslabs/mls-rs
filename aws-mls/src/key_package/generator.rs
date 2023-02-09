@@ -4,6 +4,7 @@ use tls_codec::{Deserialize, Serialize};
 
 use crate::{
     extension::ExtensionList,
+    group::{framing::MLSMessagePayload, MLSMessage},
     hash_reference::HashReferenceError,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
@@ -83,6 +84,13 @@ impl KeyPackageGeneration {
             init_secret_key: data.init_key,
             leaf_node_secret_key: data.leaf_node_key,
         })
+    }
+
+    pub fn key_package_message(&self) -> MLSMessage {
+        MLSMessage::new(
+            self.key_package.version(),
+            MLSMessagePayload::KeyPackage(self.key_package.clone()),
+        )
     }
 }
 

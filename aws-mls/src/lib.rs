@@ -101,8 +101,8 @@ mod protocol_version {
 
 pub use protocol_version::ProtocolVersion;
 
-pub mod client;
-mod client_builder;
+mod client;
+pub mod client_builder;
 mod client_config;
 pub mod extension;
 pub mod external_client;
@@ -111,10 +111,17 @@ mod external_client_config;
 pub mod group;
 mod hash_reference;
 pub mod identity;
-pub mod key_package;
+mod key_package;
 pub mod provider;
 mod psk;
 mod signer;
+
+pub use crate::client::Client;
+
+/// Error types
+pub mod error {
+    pub use crate::client::ClientError;
+}
 
 pub mod time {
     pub use aws_mls_core::time::*;

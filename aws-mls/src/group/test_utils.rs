@@ -76,7 +76,6 @@ impl TestGroup {
             .group
             .commit_builder()
             .add_member(new_key_package)
-            .await
             .unwrap()
             .build()
             .await
@@ -358,14 +357,17 @@ pub(crate) async fn get_test_groups_with_features(
 
     for (client, identity) in clients.iter().skip(1) {
         let key_package = client
-            .generate_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, identity.clone())
+            .generate_key_package_message(
+                TEST_PROTOCOL_VERSION,
+                TEST_CIPHER_SUITE,
+                identity.clone(),
+            )
             .await
             .unwrap();
 
         let commit_output = groups[0]
             .commit_builder()
             .add_member(key_package)
-            .await
             .unwrap()
             .build()
             .await

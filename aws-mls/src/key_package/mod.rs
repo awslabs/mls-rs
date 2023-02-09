@@ -171,6 +171,7 @@ impl<'a> Signable<'a> for KeyPackage {
 pub(crate) mod test_utils {
     use super::*;
     use crate::{
+        group::{framing::MLSMessagePayload, MLSMessage},
         identity::test_utils::get_test_signing_identity,
         provider::{
             crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
@@ -231,6 +232,19 @@ pub(crate) mod test_utils {
             },
         )
         .await
+    }
+
+    pub(crate) async fn test_key_package_message(
+        protocol_version: ProtocolVersion,
+        cipher_suite: CipherSuite,
+        id: &str,
+    ) -> MLSMessage {
+        MLSMessage::new(
+            protocol_version,
+            MLSMessagePayload::KeyPackage(
+                test_key_package(protocol_version, cipher_suite, id).await,
+            ),
+        )
     }
 }
 

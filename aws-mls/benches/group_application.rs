@@ -1,4 +1,4 @@
-use aws_mls::client::MlsConfig;
+use aws_mls::client_builder::MlsConfig;
 use aws_mls::group::Group;
 use aws_mls::CipherSuite;
 

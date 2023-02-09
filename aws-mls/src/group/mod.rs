@@ -1145,28 +1145,21 @@ where
 
     pub async fn propose_add(
         &mut self,
-        key_package: KeyPackage,
+        key_package: MLSMessage,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
-        let proposal = self.add_proposal(key_package).await?;
+        let proposal = self.add_proposal(key_package)?;
         self.proposal_message(proposal, authenticated_data).await
     }
 
-    async fn add_proposal(&self, key_package: KeyPackage) -> Result<Proposal, GroupError> {
-        // Check that this proposal has a valid lifetime and signature. Required capabilities are
-        // not checked as they may be changed in another proposal in the same commit.
-        let key_package_validator = KeyPackageValidator::new(
-            self.state.protocol_version(),
-            &self.cipher_suite_provider,
-            None,
-            self.config.identity_provider(),
-        );
+    fn add_proposal(&self, key_package: MLSMessage) -> Result<Proposal, GroupError> {
+        let wire_format = key_package.wire_format();
 
-        key_package_validator
-            .check_if_valid(&key_package, Default::default())
-            .await?;
-
-        Ok(Proposal::Add(AddProposal { key_package }))
+        Ok(Proposal::Add(AddProposal {
+            key_package: key_package.into_key_package().ok_or_else(|| {
+                GroupError::UnexpectedMessageType(vec![WireFormat::KeyPackage], wire_format)
+            })?,
+        }))
     }
 
     pub async fn propose_update(
@@ -1808,6 +1801,7 @@ mod tests {
     use crate::client::test_utils::{get_basic_client_builder, test_client_with_key_pkg};
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_basic_credential;
+    use crate::key_package::test_utils::test_key_package_message;
     use crate::key_package::KeyPackageValidationError;
     use crate::provider::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
     use crate::time::MlsTime;
@@ -1822,7 +1816,7 @@ mod tests {
             test_utils::TestExtension, Extension, ExternalSendersExt, RequiredCapabilitiesExt,
         },
         identity::test_utils::get_test_signing_identity,
-        key_package::test_utils::{test_key_package, test_key_package_custom},
+        key_package::test_utils::test_key_package_custom,
         psk::PreSharedKey,
         tree_kem::{
             leaf_node::LeafNodeSource, leaf_node_validator::LeafNodeValidationError, Lifetime,
@@ -1890,8 +1884,7 @@ mod tests {
 
         let proposal = test_group
             .group
-            .add_proposal(bob_key_package.key_package)
-            .await
+            .add_proposal(bob_key_package.key_package_message())
             .unwrap();
 
         test_group
@@ -1976,32 +1969,6 @@ mod tests {
         assert_matches!(
             &*state_update.rejected_proposals,
             [(_, p)] if *p == proposal
-        );
-    }
-
-    #[futures_test::test]
-    async fn test_invalid_add_proposal_bad_key_package() {
-        let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let (mut bob_keys, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
-        bob_keys.key_package.signature = random_bytes(32);
-
-        let proposal = test_group.group.add_proposal(bob_keys.key_package).await;
-        assert_matches!(proposal, Err(GroupError::KeyPackageValidationError(_)));
-    }
-
-    #[futures_test::test]
-    async fn committing_add_proposal_with_bad_key_package_fails() {
-        let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let (mut bob_keys, _) = test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
-
-        bob_keys.key_package.signature = random_bytes(32);
-
-        assert_matches!(
-            test_group
-                .group
-                .propose_add(bob_keys.key_package, vec![])
-                .await,
-            Err(GroupError::KeyPackageValidationError(_))
         );
     }
 
@@ -2116,7 +2083,6 @@ mod tests {
             .group
             .commit_builder()
             .add_member(bob_key_package)
-            .await
             .unwrap()
             .build()
             .await
@@ -2317,13 +2283,13 @@ mod tests {
         )
         .await;
 
-        let test_key_package = test_key_package(protocol_version, cipher_suite, "alice").await;
+        let test_key_package =
+            test_key_package_message(protocol_version, cipher_suite, "alice").await;
 
         test_group
             .group
             .commit_builder()
             .add_member(test_key_package.clone())
-            .await
             .unwrap()
             .build()
             .await
@@ -2349,7 +2315,6 @@ mod tests {
             .group
             .commit_builder()
             .add_member(test_key_package)
-            .await
             .unwrap()
             .build()
             .await
@@ -2469,9 +2434,9 @@ mod tests {
                 format!("dave{i}").as_bytes(),
             )
             .await;
+
             commit_builder = commit_builder
-                .add_member(key_package.key_package)
-                .await
+                .add_member(key_package.key_package_message())
                 .unwrap()
         }
 
@@ -2875,11 +2840,15 @@ mod tests {
         )
         .await;
 
+        let test_key_package = MLSMessage::new(
+            TEST_PROTOCOL_VERSION,
+            MLSMessagePayload::KeyPackage(test_key_package),
+        );
+
         alice_group
             .group
             .commit_builder()
             .add_member(test_key_package)
-            .await
             .unwrap()
             .set_group_context_ext(Default::default())
             .unwrap()
@@ -3457,12 +3426,14 @@ mod tests {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 2).await;
 
         let key_package =
-            test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "foobar").await;
+            test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "foobar").await;
+
         let proposal = groups[0]
             .group
             .propose_add(key_package, vec![])
             .await
             .unwrap();
+
         let commit = groups[0].group.commit(vec![]).await.unwrap().commit_message;
 
         // 10 years from now

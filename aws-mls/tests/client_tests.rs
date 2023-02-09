@@ -1,17 +1,16 @@
 use assert_matches::assert_matches;
-use aws_mls::client::{
-    BaseConfig, Client, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider,
-    WithKeychain,
+use aws_mls::client_builder::{
+    BaseConfig, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider, WithKeychain,
 };
 use aws_mls::extension::ExtensionList;
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, GroupError};
 use aws_mls::identity::SigningIdentity;
 use aws_mls::identity::{BasicCredential, Credential};
-use aws_mls::key_package::KeyPackage;
 use aws_mls::provider::crypto::CryptoProvider;
 use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage};
 use aws_mls::CipherSuite;
+use aws_mls::Client;
 use aws_mls::ProtocolVersion;
 use aws_mls_core::crypto::CipherSuiteProvider;
 use cfg_if::cfg_if;
@@ -96,7 +95,7 @@ async fn test_create(
 
     let bob_key_pkg = bob
         .client
-        .generate_key_package(protocol_version, cipher_suite, bob.identity)
+        .generate_key_package_message(protocol_version, cipher_suite, bob.identity)
         .await
         .unwrap();
 
@@ -116,7 +115,6 @@ async fn test_create(
     let welcome = alice_group
         .commit_builder()
         .add_member(bob_key_pkg)
-        .await
         .unwrap()
         .build()
         .await
@@ -205,18 +203,22 @@ async fn get_test_groups_clients(
         .then(|client| async {
             client
                 .client
-                .generate_key_package(protocol_version, cipher_suite, client.identity.clone())
+                .generate_key_package_message(
+                    protocol_version,
+                    cipher_suite,
+                    client.identity.clone(),
+                )
                 .await
                 .unwrap()
         })
-        .collect::<Vec<KeyPackage>>()
+        .collect::<Vec<MLSMessage>>()
         .await;
 
     // Add the generated clients to the group the creator made
 
     let welcome = futures::stream::iter(&receiver_keys)
         .fold(creator_group.commit_builder(), |builder, item| async move {
-            builder.add_member(item.clone()).await.unwrap()
+            builder.add_member(item.clone()).unwrap()
         })
         .await
         .build()
@@ -230,10 +232,9 @@ async fn get_test_groups_clients(
     assert!(update.active);
     assert_eq!(update.epoch, 1);
 
-    assert!(receiver_keys.into_iter().all(|kpg| creator_group
-        .roster()
-        .iter()
-        .any(|m| m.signing_identity() == kpg.signing_identity())));
+    assert!(receiver_clients.iter().all(|client| creator_group
+        .get_member_with_identity(client.identity.credential.as_basic().unwrap().identifier())
+        .is_ok()));
 
     assert!(update.roster_update.removed.is_empty());
 
@@ -279,7 +280,7 @@ async fn add_random_members(
 
                 let key_package = new_client
                     .client
-                    .generate_key_package(
+                    .generate_key_package_message(
                         ProtocolVersion::MLS_10,
                         cipher_suite,
                         new_client.identity.clone(),
@@ -970,14 +971,13 @@ async fn reinit_works() {
 
     let kp = bob
         .client
-        .generate_key_package(version, suite1, bob.id1)
+        .generate_key_package_message(version, suite1, bob.id1)
         .await
         .unwrap();
 
     let welcome = alice_group
         .commit_builder()
         .add_member(kp)
-        .await
         .unwrap()
         .build()
         .await
@@ -1054,14 +1054,13 @@ async fn reinit_works() {
 
     let kp = carol
         .client
-        .generate_key_package(version, suite2, carol.id2)
+        .generate_key_package_message(version, suite2, carol.id2)
         .await
         .unwrap();
 
     let commit_output = alice_group
         .commit_builder()
         .add_member(kp)
-        .await
         .unwrap()
         .build()
         .await

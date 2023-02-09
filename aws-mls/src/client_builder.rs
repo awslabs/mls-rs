@@ -61,7 +61,7 @@ pub type BaseConfig = Config<
 ///
 /// ```
 /// use aws_mls::{
-///     client::Client,
+///     Client,
 ///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage},
 /// };
 ///
@@ -84,7 +84,8 @@ pub type BaseConfig = Config<
 /// The first option uses `impl MlsConfig`:
 /// ```
 /// use aws_mls::{
-///     client::{Client, MlsConfig},
+///     Client,
+///     client_builder::MlsConfig,
 ///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage},
 /// };
 ///
@@ -102,7 +103,8 @@ pub type BaseConfig = Config<
 /// The second option is more verbose and consists in writing the full `Client` type:
 /// ```
 /// use aws_mls::{
-///     client::{BaseConfig, Client, WithIdentityProvider, WithKeychain, WithCryptoProvider},
+///     Client,
+///     client_builder::{BaseConfig, WithIdentityProvider, WithKeychain, WithCryptoProvider},
 ///     provider::{
 ///         identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage,
 ///     },

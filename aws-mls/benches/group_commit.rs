@@ -1,6 +1,6 @@
 use aws_mls::{
     bench_utils::group_functions::{commit_groups, load_test_cases},
-    client::MlsConfig,
+    client_builder::MlsConfig,
     group::Group,
     CipherSuite,
 };

@@ -1,4 +1,5 @@
 use crate::cipher_suite::CipherSuite;
+use crate::client_builder::{BaseConfig, ClientBuilder};
 use crate::client_config::ClientConfig;
 use crate::extension::{ExtensionError, ExtensionList};
 use crate::group::framing::{
@@ -9,7 +10,7 @@ use crate::group::proposal::{AddProposal, Proposal};
 use crate::group::{process_group_info, Group, GroupError, NewMemberInfo};
 use crate::hash_reference::HashReferenceError;
 use crate::identity::SigningIdentity;
-use crate::key_package::{KeyPackage, KeyPackageGenerationError, KeyPackageGenerator};
+use crate::key_package::{KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator};
 use crate::protocol_version::ProtocolVersion;
 use crate::provider::crypto::CryptoProvider;
 use crate::provider::group_state::GroupStateStorage;
@@ -20,12 +21,6 @@ use crate::signer::SignatureError;
 use crate::tree_kem::leaf_node::LeafNodeError;
 use hex::ToHex;
 use thiserror::Error;
-
-pub use crate::client_builder::{
-    BaseConfig, ClientBuilder, Missing, MlsConfig, Preferences, WithCryptoProvider,
-    WithGroupStateStorage, WithIdentityProvider, WithKeyPackageRepo, WithKeychain,
-    WithProposalFilter, WithPskStore,
-};
 
 #[derive(Error, Debug)]
 pub enum ClientError {
@@ -63,15 +58,22 @@ pub enum ClientError {
     GroupNotFound(String),
 }
 
-/// MLS Client
+/// MLS client used to create key packages and manage groups
 ///
 /// [`Client::builder`] can be used to instantiate it.
+///
+/// Clients are able to support multiple protocol versions, ciphersuites
+/// and underlying identities used to join groups and generate key packages.
+/// Applications may decide to create one or many clients depending on their
+/// specific needs.
 #[derive(Clone, Debug)]
 pub struct Client<C> {
     pub(crate) config: C,
 }
 
 impl Client<()> {
+    /// Returns a [ClientBuilder](crate::client_builder::ClientBuilder)
+    /// used to configure client preferences and providers.
     pub fn builder() -> ClientBuilder<BaseConfig> {
         ClientBuilder::new()
     }
@@ -85,6 +87,23 @@ where
         Client { config }
     }
 
+    /// Creates a new key package message that can be used to to add this
+    /// client to a [Group](crate::group::Group). Each call to this function
+    /// will produce a unique value that is signed by `signing_identity`.
+    ///
+    /// The [KeychainStorage](crate::provider::keychain::KeychainStorage) used to configure
+    /// the client will be searched for a secret key matching `signing_identity`
+    /// in order to generate a signature.
+    ///
+    /// The secret keys for the resulting key package message will be stored in
+    /// the [KeyPackageStorage](crate::provider::key_package::KeyPackageStorage)
+    /// that was used to configure the client and will
+    /// automatically be erased when this key package is used to
+    /// [join a group](Client::join_group).
+    ///
+    /// # Warning
+    ///
+    /// A key package message may only be used once.
     pub async fn generate_key_package_message(
         &self,
         protocol_version: ProtocolVersion,
@@ -95,18 +114,15 @@ where
             .generate_key_package(protocol_version, cipher_suite, signing_identity)
             .await?;
 
-        let key_package_message =
-            MLSMessage::new(protocol_version, MLSMessagePayload::KeyPackage(key_package));
-
-        Ok(key_package_message)
+        Ok(key_package.key_package_message())
     }
 
-    pub async fn generate_key_package(
+    async fn generate_key_package(
         &self,
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
-    ) -> Result<KeyPackage, ClientError> {
+    ) -> Result<KeyPackageGeneration, ClientError> {
         let signer = self
             .config
             .keychain()
@@ -146,9 +162,20 @@ where
             .await
             .map_err(|e| ClientError::KeyPackageRepoError(e.into()))?;
 
-        Ok(key_pkg_gen.key_package)
+        Ok(key_pkg_gen)
     }
 
+    /// Create a group with a specific group_id.
+    ///
+    /// This function behaves the same way as
+    /// [create_group](Client::create_group) except that it
+    /// specifies a specific unique group identifier to be used.
+    ///
+    /// # Warning
+    ///
+    /// It is recommended to use [create_group](Client::create_group)
+    /// instead of this function because it guarantees that group_id values
+    /// are globally unique.
     pub async fn create_group_with_id(
         &self,
         protocol_version: ProtocolVersion,
@@ -169,6 +196,15 @@ where
         .map_err(Into::into)
     }
 
+    /// Create a MLS group.
+    ///
+    /// The `cipher_suite` provided must be supported by the
+    /// [CipherSuiteProvider](crate::provider::crypto::CipherSuiteProvider)
+    /// that was used to build the client.
+    ///
+    /// The [KeychainStorage](crate::provider::keychain::KeychainStorage) used to configure
+    /// the client will be searched for a secret key matching `signing_identity`
+    /// that will be used to sign messages sent to this group.
     pub async fn create_group(
         &self,
         protocol_version: ProtocolVersion,
@@ -188,8 +224,15 @@ where
         .map_err(Into::into)
     }
 
-    /// If `key_package` is specified, key package references listed in the welcome message will not
-    /// be used to identify the key package to use.
+    /// Join a MLS group via a welcome message created by a
+    /// [Commit](crate::group::CommitOutput).
+    ///
+    /// `tree_data` is required to be provided out of band if the client that
+    /// created `welcome_message` did not have the
+    /// [ratchet tree extension preference](crate::client_builder::Preferences::ratchet_tree_extension)
+    /// enabled at the time the welcome message was created. `tree_data` can
+    /// be exported from a group using the
+    /// [export tree function](crate::group::Group::export_tree).
     pub async fn join_group(
         &self,
         tree_data: Option<&[u8]>,
@@ -200,7 +243,42 @@ where
             .map_err(Into::into)
     }
 
-    /// Returns group and commit MLSMessage
+    /// 0-RTT add to an existing [group](crate::group::Group)
+    ///
+    /// External commits allow for immediate entry into a
+    /// [group](crate::group::Group), even if all of the group members
+    /// are currently offline and unable to process messages. Sending an
+    /// external commit is only allowed for groups that have provided
+    /// a public `group_info_message` containing an
+    /// [ExternalPubExt](crate::extension::ExternalPubExt), which can be
+    /// generated by an existing group member using the
+    /// [group_info_message](crate::group::Group::group_info_message)
+    /// function.
+    ///
+    /// `tree_data` may be provided following the same rules as [Client::join_group]
+    ///
+    /// The [KeychainStorage](crate::provider::keychain::KeychainStorage) used to configure
+    /// the client will be searched for a secret key matching `signing_identity`
+    /// that will be used to sign messages sent to this group.
+    ///
+    /// If PSKs are provided in `external_psks`, the
+    /// [PreSharedKeyStorage](crate::provider::psk::PreSharedKeyStorage)
+    /// used to configure the client will be searched to resolve their values.
+    ///
+    /// `to_remove` may be used to remove an existing member provided that the
+    /// identity of the existing group member at that [index](crate::group::Member::index)
+    /// is a [valid successor](crate::provider::identity::IdentityProvider::valid_successor)
+    /// of `signing_identity` as defined by the
+    /// [IdentityProvider](crate::provider::identity::IdentityProvider) that this client
+    /// was configured with.
+    ///
+    /// # Warning
+    ///
+    /// Only one external commit can be performed against a given group info.
+    /// There may also be security trade-offs to this approach.
+    ///
+    // TODO: Add a comment about forward secrecy and a pointer to the future
+    // book chapter on this topic
     pub async fn commit_external(
         &self,
         group_info_msg: MLSMessage,
@@ -229,6 +307,9 @@ where
         })
     }
 
+    /// Load an existing group state into this client using the
+    /// [GroupStateStorage](crate::provider::group_state::GroupStateStorage) that
+    /// this client was configured to use.
     pub async fn load_group(&self, group_id: &[u8]) -> Result<Group<C>, ClientError> {
         let snapshot = self
             .config
@@ -241,6 +322,15 @@ where
         Ok(Group::from_snapshot(self.config.clone(), snapshot).await?)
     }
 
+    /// Request to join an existing [group](crate::group::Group).
+    ///
+    /// The [KeychainStorage](crate::provider::keychain::KeychainStorage) used to configure
+    /// the client will be searched for a secret key matching `signing_identity`
+    /// that will be used to sign this external add request.
+    ///
+    /// An existing group member will need to perform a
+    /// [commit](crate::group::Group::commit) to complete the add and the resulting
+    /// welcome message can be used by [join_group](Client::join_group).
     pub async fn external_add_proposal(
         &self,
         group_info: MLSMessage,
@@ -290,7 +380,8 @@ where
                 group_context.cipher_suite,
                 signing_identity,
             )
-            .await?;
+            .await?
+            .key_package;
 
         let message = MLSAuthenticatedContent::new_signed(
             &cipher_suite_provider,
@@ -343,7 +434,7 @@ pub mod test_utils {
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         identity: &str,
-    ) -> (Client<TestClientConfig>, KeyPackage) {
+    ) -> (Client<TestClientConfig>, MLSMessage) {
         test_client_with_key_pkg_custom(protocol_version, cipher_suite, identity, |_| {}).await
     }
 
@@ -352,7 +443,7 @@ pub mod test_utils {
         cipher_suite: CipherSuite,
         identity: &str,
         mut config: F,
-    ) -> (Client<TestClientConfig>, KeyPackage)
+    ) -> (Client<TestClientConfig>, MLSMessage)
     where
         F: FnMut(&mut TestClientConfig),
     {
@@ -362,7 +453,7 @@ pub mod test_utils {
         config(&mut client.config);
 
         let key_package = client
-            .generate_key_package(protocol_version, cipher_suite, identity)
+            .generate_key_package_message(protocol_version, cipher_suite, identity)
             .await
             .unwrap();
 
@@ -372,7 +463,7 @@ pub mod test_utils {
     pub async fn join_group<'a, C, S>(
         committer: &mut Group<C>,
         other_groups: S,
-        key_package: KeyPackage,
+        key_package: MLSMessage,
         client: &Client<C>,
     ) -> Result<(Group<C>, NewMemberInfo), ClientError>
     where
@@ -381,8 +472,7 @@ pub mod test_utils {
     {
         let commit_output = committer
             .commit_builder()
-            .add_member(key_package)
-            .await?
+            .add_member(key_package)?
             .build()
             .await?;
 
@@ -443,11 +533,14 @@ mod tests {
 
             // TODO: Tests around extensions
             let key_package = client
-                .generate_key_package(protocol_version, cipher_suite, identity.clone())
+                .generate_key_package_message(protocol_version, cipher_suite, identity.clone())
                 .await
                 .unwrap();
 
             assert_eq!(key_package.version, protocol_version);
+
+            let key_package = key_package.into_key_package().unwrap();
+
             assert_eq!(key_package.cipher_suite, cipher_suite);
 
             assert_eq!(
@@ -621,18 +714,14 @@ mod tests {
         let (alice, alice_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "alice");
         let alice = alice.build();
 
-        let payload = MLSMessagePayload::KeyPackage(
-            alice
-                .generate_key_package(
-                    TEST_PROTOCOL_VERSION,
-                    TEST_CIPHER_SUITE,
-                    alice_identity.clone(),
-                )
-                .await
-                .unwrap(),
-        );
-
-        let msg = MLSMessage::new(TEST_PROTOCOL_VERSION, payload);
+        let msg = alice
+            .generate_key_package_message(
+                TEST_PROTOCOL_VERSION,
+                TEST_CIPHER_SUITE,
+                alice_identity.clone(),
+            )
+            .await
+            .unwrap();
 
         let res = alice
             .commit_external(msg, None, alice_identity, None, vec![], vec![])

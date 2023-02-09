@@ -436,7 +436,7 @@ mod tests {
             Content, ExternalEvent, ExternalGroup, GroupError, MLSMessage, MLSMessagePayload,
         },
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
-        key_package::test_utils::test_key_package,
+        key_package::test_utils::{test_key_package, test_key_package_message},
         protocol_version::ProtocolVersion,
         provider::crypto::{test_utils::TestCryptoProvider, SignatureSecretKey},
     };
@@ -457,13 +457,12 @@ mod tests {
     ) -> TestGroup {
         let mut group = test_group_with_one_commit(v, cs).await;
 
-        let bob_key_package = test_key_package(v, cs, "bob").await;
+        let bob_key_package = test_key_package_message(v, cs, "bob").await;
 
         let mut commit_builder = group
             .group
             .commit_builder()
             .add_member(bob_key_package)
-            .await
             .unwrap();
 
         if let Some(ext_signer) = ext_identity {

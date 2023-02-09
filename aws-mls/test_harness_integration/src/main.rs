@@ -3,16 +3,14 @@
 //!
 //! It is based on the Mock client written by Richard Barnes.
 
-use aws_mls::client::{
-    BaseConfig, Client, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider,
-    WithKeychain,
+use aws_mls::client_builder::{
+    BaseConfig, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider, WithKeychain,
 };
 use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, StateUpdate};
 use aws_mls::identity::BasicCredential;
 use aws_mls::identity::SigningIdentity;
-use aws_mls::key_package::KeyPackage;
 use aws_mls::provider::crypto::{CipherSuiteProvider, CryptoProvider};
 use aws_mls::provider::{
     identity::BasicIdentityProvider,
@@ -21,6 +19,7 @@ use aws_mls::provider::{
 };
 use aws_mls::tls_codec::{Deserialize, Serialize};
 use aws_mls::CipherSuite;
+use aws_mls::Client;
 use aws_mls::ProtocolVersion;
 
 use aws_mls_crypto_openssl::OpensslCryptoProvider;
@@ -297,7 +296,7 @@ impl MlsClient for MlsClientImpl {
             .build();
 
         let key_package = client
-            .generate_key_package(ProtocolVersion::MLS_10, cipher_suite, signing_identity)
+            .generate_key_package_message(ProtocolVersion::MLS_10, cipher_suite, signing_identity)
             .await
             .map_err(abort)?;
 
@@ -305,7 +304,7 @@ impl MlsClient for MlsClientImpl {
 
         let resp = CreateKeyPackageResponse {
             transaction_id: clients.len() as u32,
-            key_package: key_package.tls_serialize_detached().map_err(abort)?,
+            key_package: key_package.to_bytes().map_err(abort)?,
         };
 
         Ok(Response::new(resp))
@@ -454,8 +453,7 @@ impl MlsClient for MlsClientImpl {
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
             .group;
 
-        let key_package =
-            KeyPackage::tls_deserialize(&mut &*request_ref.key_package).map_err(abort)?;
+        let key_package = MLSMessage::from_bytes(&request_ref.key_package).map_err(abort)?;
 
         let proposal_packet = group
             .propose_add(key_package, vec![])

@@ -251,7 +251,6 @@ mod tests {
                 .group
                 .commit_builder()
                 .add_member(bob_key_pkg)
-                .await
                 .unwrap()
                 .build()
                 .await
