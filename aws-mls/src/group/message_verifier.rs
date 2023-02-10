@@ -103,6 +103,7 @@ pub(crate) fn verify_auth_content_signature<P: CipherSuiteProvider>(
 
     let context = MessageSigningContext {
         group_context: Some(context),
+        protocol_version: context.protocol_version,
     };
 
     auth_content
@@ -396,6 +397,7 @@ mod tests {
 
         let signing_context = MessageSigningContext {
             group_context: Some(test_group.group.context()),
+            protocol_version: test_group.group.protocol_version(),
         };
 
         content

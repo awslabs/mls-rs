@@ -3,6 +3,7 @@ use crate::group::framing::{ContentType, MLSContent, MLSPlaintext, Sender, WireF
 use crate::group::{ConfirmationTag, GroupContext};
 use crate::provider::crypto::{CipherSuiteProvider, SignatureSecretKey};
 use crate::signer::{Signable, SignatureError};
+use aws_mls_core::protocol_version::ProtocolVersion;
 use std::{
     io::{Read, Write},
     ops::Deref,
@@ -87,6 +88,7 @@ impl MLSAuthenticatedContent {
 
         let signing_context = MessageSigningContext {
             group_context: Some(context),
+            protocol_version: context.protocol_version,
         };
 
         // Sign the MLSPlaintext using the current epoch's GroupContext as context.
@@ -155,6 +157,7 @@ impl<'de> serde::Deserialize<'de> for MLSAuthenticatedContent {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct MLSContentTBS<'a> {
+    pub(crate) protocol_version: ProtocolVersion,
     pub(crate) wire_format: WireFormat,
     pub(crate) content: &'a MLSContent,
     pub(crate) context: Option<&'a GroupContext>,
@@ -162,7 +165,8 @@ pub(crate) struct MLSContentTBS<'a> {
 
 impl<'a> Size for MLSContentTBS<'a> {
     fn tls_serialized_len(&self) -> usize {
-        self.wire_format.tls_serialized_len()
+        self.protocol_version.tls_serialized_len()
+            + self.wire_format.tls_serialized_len()
             + self.content.tls_serialized_len()
             + self
                 .context
@@ -173,7 +177,8 @@ impl<'a> Size for MLSContentTBS<'a> {
 
 impl<'a> Serialize for MLSContentTBS<'a> {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
-        Ok(self.wire_format.tls_serialize(writer)?
+        Ok(self.protocol_version.tls_serialize(writer)?
+            + self.wire_format.tls_serialize(writer)?
             + self.content.tls_serialize(writer)?
             + self
                 .context
@@ -187,8 +192,10 @@ impl<'a> MLSContentTBS<'a> {
     pub(crate) fn from_authenticated_content(
         auth_content: &'a MLSAuthenticatedContent,
         group_context: Option<&'a GroupContext>,
+        protocol_version: ProtocolVersion,
     ) -> Self {
         MLSContentTBS {
+            protocol_version,
             wire_format: auth_content.wire_format,
             content: &auth_content.content,
             context: match auth_content.content.sender {
@@ -202,10 +209,11 @@ impl<'a> MLSContentTBS<'a> {
 #[derive(Debug)]
 pub(crate) struct MessageSigningContext<'a> {
     pub group_context: Option<&'a GroupContext>,
+    pub protocol_version: ProtocolVersion,
 }
 
 impl<'a> Signable<'a> for MLSAuthenticatedContent {
-    const SIGN_LABEL: &'static str = "MLSContentTBS";
+    const SIGN_LABEL: &'static str = "FramedContentTBS";
 
     type SigningContext = MessageSigningContext<'a>;
 
@@ -217,8 +225,12 @@ impl<'a> Signable<'a> for MLSAuthenticatedContent {
         &self,
         context: &MessageSigningContext,
     ) -> Result<Vec<u8>, tls_codec::Error> {
-        MLSContentTBS::from_authenticated_content(self, context.group_context)
-            .tls_serialize_detached()
+        MLSContentTBS::from_authenticated_content(
+            self,
+            context.group_context,
+            context.protocol_version,
+        )
+        .tls_serialize_detached()
     }
 
     fn write_signature(&mut self, signature: Vec<u8>) {

@@ -46,6 +46,7 @@ impl<'a> MLSContentTBM<'a> {
             content_tbs: MLSContentTBS::from_authenticated_content(
                 auth_content,
                 Some(group_context),
+                group_context.protocol_version,
             ),
             auth: &auth_content.auth,
         }

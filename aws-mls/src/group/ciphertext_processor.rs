@@ -17,7 +17,7 @@ use super::{
 };
 use crate::{provider::crypto::CipherSuiteProvider, psk::PskError, tree_kem::node::LeafIndex};
 use thiserror::Error;
-use tls_codec::{Deserialize, Serialize};
+use tls_codec::Serialize;
 use zeroize::Zeroizing;
 
 mod message_key;
@@ -230,7 +230,10 @@ where
                 .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))?,
         );
 
-        let ciphertext_content = MLSCiphertextContent::tls_deserialize(&mut &**decrypted_content)?;
+        let ciphertext_content = MLSCiphertextContent::tls_deserialize(
+            &mut &**decrypted_content,
+            ciphertext.content_type,
+        )?;
 
         // Build the MLS plaintext object and process it
         let auth_content = MLSAuthenticatedContent {

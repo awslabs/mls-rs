@@ -10,9 +10,9 @@ use zeroize::Zeroize;
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum ContentType {
-    Application,
-    Proposal,
-    Commit,
+    Application = 1,
+    Proposal = 2,
+    Commit = 3,
 }
 
 impl From<&Content> for ContentType {
@@ -150,23 +150,43 @@ pub(crate) struct MLSCiphertextContent {
 
 impl Size for MLSCiphertextContent {
     fn tls_serialized_len(&self) -> usize {
+        let content_len_without_type = match &self.content {
+            Content::Application(c) => c.tls_serialized_len(),
+            Content::Proposal(c) => c.tls_serialized_len(),
+            Content::Commit(c) => c.tls_serialized_len(),
+        };
+
         // Padding has arbitrary size
-        self.content.tls_serialized_len() + self.auth.tls_serialized_len() + self.padding.len()
+        content_len_without_type + self.auth.tls_serialized_len() + self.padding.len()
     }
 }
 
 impl Serialize for MLSCiphertextContent {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
+        let len = match &self.content {
+            Content::Application(c) => c.tls_serialize(writer),
+            Content::Proposal(c) => c.tls_serialize(writer),
+            Content::Commit(c) => c.tls_serialize(writer),
+        }?;
+
         // Padding has arbitrary size
-        Ok(self.content.tls_serialize(writer)?
-            + self.auth.tls_serialize(writer)?
-            + writer.write(&self.padding)?)
+        Ok(len + self.auth.tls_serialize(writer)? + writer.write(&self.padding)?)
     }
 }
 
-impl Deserialize for MLSCiphertextContent {
-    fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
-        let content = Content::tls_deserialize(bytes)?;
+impl MLSCiphertextContent {
+    pub(crate) fn tls_deserialize<R: Read>(
+        bytes: &mut R,
+        content_type: ContentType,
+    ) -> Result<Self, tls_codec::Error> {
+        let content = match content_type {
+            ContentType::Application => {
+                Content::Application(ApplicationData::tls_deserialize(bytes)?)
+            }
+            ContentType::Proposal => Content::Proposal(Proposal::tls_deserialize(bytes)?),
+            ContentType::Commit => Content::Commit(Commit::tls_deserialize(bytes)?),
+        };
+
         let auth = MLSContentAuthData::tls_deserialize(bytes, content.content_type())?;
 
         let mut padding = Vec::new();
@@ -395,6 +415,12 @@ pub(crate) mod test_utils {
             padding: vec![],
         }
     }
+
+    impl AsRef<[u8]> for ApplicationData {
+        fn as_ref(&self) -> &[u8] {
+            &self.0
+        }
+    }
 }
 
 #[cfg(test)]
@@ -411,7 +437,11 @@ mod tests {
         ciphertext_content.padding = vec![0u8; 128];
 
         let encoded = ciphertext_content.tls_serialize_detached().unwrap();
-        let decoded = MLSCiphertextContent::tls_deserialize(&mut &*encoded).unwrap();
+        let decoded = MLSCiphertextContent::tls_deserialize(
+            &mut &*encoded,
+            (&ciphertext_content.content).into(),
+        )
+        .unwrap();
 
         assert_eq!(ciphertext_content, decoded);
     }
@@ -422,7 +452,10 @@ mod tests {
         ciphertext_content.padding = vec![1u8; 128];
 
         let encoded = ciphertext_content.tls_serialize_detached().unwrap();
-        let decoded = MLSCiphertextContent::tls_deserialize(&mut &*encoded);
+        let decoded = MLSCiphertextContent::tls_deserialize(
+            &mut &*encoded,
+            (&ciphertext_content.content).into(),
+        );
 
         assert_matches!(decoded, Err(tls_codec::Error::DecodingError(e)) if e == "non-zero padding bytes discovered");
     }
