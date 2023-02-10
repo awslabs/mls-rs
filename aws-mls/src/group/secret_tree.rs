@@ -442,9 +442,11 @@ impl SecretKeyRatchet {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use crate::tree_kem;
+    use aws_mls_core::crypto::CipherSuiteProvider;
 
-    use super::SecretTree;
+    use crate::{provider::crypto::test_utils::try_test_cipher_suite_provider, tree_kem};
+
+    use super::{KeyType, SecretKeyRatchet, SecretTree};
 
     pub(crate) fn get_test_tree(secret: Vec<u8>, leaf_count: u32) -> SecretTree {
         SecretTree::new(leaf_count, secret)
@@ -461,6 +463,48 @@ pub(crate) mod test_utils {
                 .to_vec()
         }
     }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    pub struct RatchetInteropTestCase {
+        #[serde(with = "hex::serde")]
+        secret: Vec<u8>,
+        label: String,
+        generation: u32,
+        length: usize,
+        #[serde(with = "hex::serde")]
+        out: Vec<u8>,
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    pub struct InteropTestCase {
+        cipher_suite: u16,
+        derive_tree_secret: RatchetInteropTestCase,
+    }
+
+    #[test]
+    fn test_basic_crypto_test_vectors() {
+        let test_cases: Vec<InteropTestCase> =
+            load_test_cases!(basic_crypto, Vec::<InteropTestCase>::new());
+
+        test_cases.into_iter().for_each(|test_case| {
+            if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {
+                test_case.derive_tree_secret.verify(&cs)
+            }
+        })
+    }
+
+    impl RatchetInteropTestCase {
+        pub fn verify<P: CipherSuiteProvider>(&self, cs: &P) {
+            let mut ratchet =
+                SecretKeyRatchet::new(cs, &self.secret, KeyType::Application).unwrap();
+
+            ratchet.secret = self.secret.clone().into();
+            ratchet.generation = self.generation;
+            let computed = ratchet.derive_secret(cs, &self.label, self.length).unwrap();
+
+            assert_eq!(&computed, &self.out);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -468,7 +512,7 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::TEST_CIPHER_SUITE,
-        group::test_utils::random_bytes,
+        group::{ciphertext_processor::InteropSenderData, test_utils::random_bytes},
         provider::crypto::test_utils::{
             test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
         },
@@ -734,5 +778,132 @@ mod tests {
 
             assert_eq!(ratchet_data, case.ratchets);
         }
+    }
+
+    #[test]
+    fn interop_test_vector() {
+        // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/secret-tree.json
+        let test_cases = load_interop_test_cases();
+
+        for case in test_cases {
+            let Some(cs) = try_test_cipher_suite_provider(case.cipher_suite) else {
+                continue;
+            };
+
+            case.sender_data.verify(&cs);
+
+            let mut tree = SecretTree::new(case.leaves.len() as u32, case.encryption_secret);
+
+            for (index, leaves) in case.leaves.iter().enumerate() {
+                for leaf in leaves.iter() {
+                    let key = tree
+                        .message_key_generation(
+                            &cs,
+                            LeafIndex(index as u32),
+                            KeyType::Application,
+                            leaf.generation,
+                        )
+                        .unwrap();
+
+                    assert_eq!(key.key, leaf.application_key);
+                    assert_eq!(key.nonce, leaf.application_nonce);
+
+                    let key = tree
+                        .message_key_generation(
+                            &cs,
+                            LeafIndex(index as u32),
+                            KeyType::Handshake,
+                            leaf.generation,
+                        )
+                        .unwrap();
+
+                    assert_eq!(key.key, leaf.handshake_key);
+                    assert_eq!(key.nonce, leaf.handshake_nonce);
+                }
+            }
+        }
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    struct InteropTestCase {
+        cipher_suite: u16,
+        #[serde(with = "hex::serde")]
+        encryption_secret: Vec<u8>,
+        sender_data: InteropSenderData,
+        leaves: Vec<Vec<InteropLeaf>>,
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    struct InteropLeaf {
+        generation: u32,
+        #[serde(with = "hex::serde")]
+        application_key: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        application_nonce: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        handshake_key: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        handshake_nonce: Vec<u8>,
+    }
+
+    fn load_interop_test_cases() -> Vec<InteropTestCase> {
+        load_test_cases!(secret_tree_interop, generate_interop_test_vectors())
+    }
+
+    fn generate_interop_test_vectors() -> Vec<InteropTestCase> {
+        let mut test_cases = vec![];
+
+        for cs in CipherSuite::all() {
+            let Some(cs) = try_test_cipher_suite_provider(*cs) else {
+                continue;
+            };
+
+            let gens = [0, 15];
+            let tree_sizes = [1, 8, 32];
+
+            for n_leaves in tree_sizes {
+                let encryption_secret = cs.random_bytes_vec(cs.kdf_extract_size()).unwrap();
+
+                let mut tree = SecretTree::new(n_leaves, encryption_secret.clone());
+
+                let leaves = (0..n_leaves)
+                    .into_iter()
+                    .map(|leaf| {
+                        gens.into_iter()
+                            .map(|gen| {
+                                let index = LeafIndex(leaf);
+
+                                let handshake_key = tree
+                                    .message_key_generation(&cs, index, KeyType::Handshake, gen)
+                                    .unwrap();
+
+                                let app_key = tree
+                                    .message_key_generation(&cs, index, KeyType::Application, gen)
+                                    .unwrap();
+
+                                InteropLeaf {
+                                    generation: gen,
+                                    application_key: app_key.key.clone(),
+                                    application_nonce: app_key.nonce.clone(),
+                                    handshake_key: handshake_key.key.clone(),
+                                    handshake_nonce: handshake_key.nonce.clone(),
+                                }
+                            })
+                            .collect()
+                    })
+                    .collect();
+
+                let case = InteropTestCase {
+                    cipher_suite: *cs.cipher_suite(),
+                    encryption_secret,
+                    sender_data: InteropSenderData::new(&cs),
+                    leaves,
+                };
+
+                test_cases.push(case);
+            }
+        }
+
+        test_cases
     }
 }

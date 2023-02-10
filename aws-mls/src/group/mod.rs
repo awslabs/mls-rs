@@ -59,6 +59,9 @@ use transcript_hash::*;
 #[cfg(test)]
 pub(crate) use self::commit::test_utils::CommitModifiers;
 
+#[cfg(test)]
+pub use self::framing::MLSCiphertext;
+
 use self::epoch::{EpochSecrets, PriorEpoch, SenderDataSecret};
 pub use self::message_processor::{Event, ExternalEvent, ProcessedMessage, StateUpdate};
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};

@@ -101,6 +101,48 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
 }
 
 #[cfg(test)]
+pub mod test_utils {
+    use aws_mls_core::crypto::CipherSuiteProvider;
+
+    use super::SenderDataKey;
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    pub struct InteropSenderData {
+        #[serde(with = "hex::serde")]
+        pub sender_data_secret: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        pub ciphertext: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        pub key: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        pub nonce: Vec<u8>,
+    }
+
+    impl InteropSenderData {
+        pub(crate) fn new<P: CipherSuiteProvider>(cs: &P) -> Self {
+            let secret = cs.random_bytes_vec(cs.kdf_extract_size()).unwrap().into();
+            let ciphertext = cs.random_bytes_vec(77).unwrap();
+            let key = SenderDataKey::new(&secret, &ciphertext, cs).unwrap();
+            let secret = (*secret).clone();
+
+            Self {
+                ciphertext,
+                key: key.key,
+                nonce: key.nonce,
+                sender_data_secret: secret,
+            }
+        }
+
+        pub fn verify<P: CipherSuiteProvider>(&self, cs: &P) {
+            let secret = self.sender_data_secret.clone().into();
+            let key = SenderDataKey::new(&secret, &self.ciphertext, cs).unwrap();
+            assert_eq!(key.key, self.key, "sender data key mismatch");
+            assert_eq!(key.nonce, self.nonce, "sender data nonce mismatch");
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
 
     #[cfg(target_arch = "wasm32")]

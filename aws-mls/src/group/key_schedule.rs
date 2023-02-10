@@ -459,6 +459,7 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use crate::group::key_schedule::{kdf_derive_secret, kdf_expand_with_label};
     use crate::group::test_utils::get_test_group_context;
     use crate::group::InitSecret;
     use crate::provider::crypto::test_utils::{
@@ -682,5 +683,64 @@ mod tests {
                 key_schedule.key_schedule.authentication_secret
             );
         }
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    struct ExpandWithLabelTestCase {
+        #[serde(with = "hex::serde")]
+        secret: Vec<u8>,
+        label: String,
+        #[serde(with = "hex::serde")]
+        context: Vec<u8>,
+        length: usize,
+        #[serde(with = "hex::serde")]
+        out: Vec<u8>,
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    struct DeriveSecretTestCase {
+        #[serde(with = "hex::serde")]
+        secret: Vec<u8>,
+        label: String,
+        #[serde(with = "hex::serde")]
+        out: Vec<u8>,
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    pub struct InteropTestCase {
+        cipher_suite: u16,
+        expand_with_label: ExpandWithLabelTestCase,
+        derive_secret: DeriveSecretTestCase,
+    }
+
+    #[test]
+    fn test_basic_crypto_test_vectors() {
+        // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/crypto-basics.json
+        let test_cases: Vec<InteropTestCase> =
+            load_test_cases!(basic_crypto, Vec::<InteropTestCase>::new());
+
+        test_cases.into_iter().for_each(|test_case| {
+            if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {
+                let test_exp = &test_case.expand_with_label;
+
+                let computed = kdf_expand_with_label(
+                    &cs,
+                    &test_exp.secret,
+                    &test_exp.label,
+                    &test_exp.context,
+                    Some(test_exp.length),
+                )
+                .unwrap();
+
+                assert_eq!(&computed, &test_exp.out);
+
+                let test_derive = &test_case.derive_secret;
+
+                let computed =
+                    kdf_derive_secret(&cs, &test_derive.secret, &test_derive.label).unwrap();
+
+                assert_eq!(&computed, &test_derive.out);
+            }
+        })
     }
 }

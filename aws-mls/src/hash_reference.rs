@@ -112,50 +112,57 @@ mod tests {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[derive(Debug, Deserialize, Serialize)]
-    struct TestCase {
-        cipher_suite: u16,
+    struct HashRefTestCase {
+        label: String,
         #[serde(with = "hex::serde")]
-        input: Vec<u8>,
+        value: Vec<u8>,
         #[serde(with = "hex::serde")]
-        output: Vec<u8>,
+        out: Vec<u8>,
     }
 
-    const TEST_LABEL: &[u8] = b"test label";
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    pub struct InteropTestCase {
+        cipher_suite: u16,
+        ref_hash: HashRefTestCase,
+    }
 
-    fn generate_hash_reference_test_cases() -> Vec<TestCase> {
+    fn generate_hash_reference_test_cases() -> Vec<InteropTestCase> {
         CipherSuite::all()
             .map(|cipher_suite| {
                 let provider = test_cipher_suite_provider(cipher_suite);
 
                 let input = b"test input";
-                let output = HashReference::compute(input, TEST_LABEL, &provider).unwrap();
+                let label = "test label";
 
-                TestCase {
+                let output = HashReference::compute(input, label.as_bytes(), &provider).unwrap();
+
+                let ref_hash = HashRefTestCase {
+                    label: label.to_string(),
+                    value: input.to_vec(),
+                    out: output.to_vec(),
+                };
+
+                InteropTestCase {
                     cipher_suite: cipher_suite.into(),
-                    input: input.to_vec(),
-                    output: output.to_vec(),
+                    ref_hash,
                 }
             })
             .collect()
     }
 
-    fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(hash_reference, generate_hash_reference_test_cases())
-    }
-
     #[test]
-    fn test_hash_reference_construction() {
-        let test_cases = load_test_cases();
+    fn test_basic_crypto_test_vectors() {
+        // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/crypto-basics.json
+        let test_cases: Vec<InteropTestCase> =
+            load_test_cases!(basic_crypto, generate_hash_reference_test_cases());
 
-        for test_case in test_cases {
-            let Some(provider) = try_test_cipher_suite_provider(test_case.cipher_suite) else {
-                continue;
-            };
-
-            let output = HashReference::compute(&test_case.input, TEST_LABEL, &provider).unwrap();
-
-            assert_eq!(output.len(), provider.kdf_extract_size());
-            assert_eq!(output.as_ref(), &test_case.output);
-        }
+        test_cases.into_iter().for_each(|test_case| {
+            if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {
+                let label = test_case.ref_hash.label.as_bytes();
+                let value = &test_case.ref_hash.value;
+                let computed = HashReference::compute(value, label, &cs).unwrap();
+                assert_eq!(&*computed, &test_case.ref_hash.out);
+            }
+        })
     }
 }

@@ -87,7 +87,7 @@ pub mod test_utils {
     pub(crate) fn get_test_epoch_secrets(cipher_suite: CipherSuite) -> EpochSecrets {
         let cs_provider = test_cipher_suite_provider(cipher_suite);
 
-        let secret_tree = get_test_tree(vec![0_u8; cs_provider.kdf_extract_size()], 2);
+        let secret_tree = get_test_tree(random_bytes(cs_provider.kdf_extract_size()), 2);
 
         EpochSecrets {
             resumption_secret: random_bytes(cs_provider.kdf_extract_size()).into(),

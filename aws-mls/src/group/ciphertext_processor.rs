@@ -24,6 +24,9 @@ mod message_key;
 mod reuse_guard;
 mod sender_data_key;
 
+#[cfg(test)]
+pub use sender_data_key::test_utils::*;
+
 #[derive(Error, Debug)]
 pub enum CiphertextProcessorError {
     #[error(transparent)]

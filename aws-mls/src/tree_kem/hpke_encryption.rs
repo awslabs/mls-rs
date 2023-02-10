@@ -60,3 +60,95 @@ pub(crate) trait HpkeEncryptable: Serialize + Deserialize + Sized {
         Ok(Self::tls_deserialize(&mut &*plaintext)?)
     }
 }
+
+#[cfg(test)]
+pub mod test_utils {
+    use std::io::{Read, Write};
+
+    use aws_mls_core::crypto::{CipherSuiteProvider, HpkeCiphertext};
+    use tls_codec::{Deserialize, Serialize, Size};
+
+    use crate::provider::crypto::test_utils::try_test_cipher_suite_provider;
+
+    use super::HpkeEncryptable;
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    pub struct HpkeInteropTestCase {
+        #[serde(with = "hex::serde", rename = "priv")]
+        secret: Vec<u8>,
+        #[serde(with = "hex::serde", rename = "pub")]
+        public: Vec<u8>,
+        label: String,
+        #[serde(with = "hex::serde")]
+        context: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        plaintext: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        kem_output: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        ciphertext: Vec<u8>,
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    pub struct InteropTestCase {
+        cipher_suite: u16,
+        encrypt_with_label: HpkeInteropTestCase,
+    }
+
+    #[test]
+    fn test_basic_crypto_test_vectors() {
+        // The test vector can be found here https://github.com/mlswg/mls-implementations/blob/main/test-vectors/crypto-basics.json
+        let test_cases: Vec<InteropTestCase> =
+            load_test_cases!(basic_crypto, Vec::<InteropTestCase>::new());
+
+        test_cases.into_iter().for_each(|test_case| {
+            if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {
+                test_case.encrypt_with_label.verify(&cs)
+            }
+        })
+    }
+
+    #[derive(Clone, Debug)]
+    struct TestEncryptable(Vec<u8>);
+
+    impl HpkeEncryptable for TestEncryptable {
+        const ENCRYPT_LABEL: &'static str = "EncryptWithLabel";
+    }
+
+    impl Size for TestEncryptable {
+        fn tls_serialized_len(&self) -> usize {
+            self.0.len()
+        }
+    }
+
+    impl Serialize for TestEncryptable {
+        fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
+            writer.write_all(&self.0)?;
+            Ok(self.0.len())
+        }
+    }
+
+    impl Deserialize for TestEncryptable {
+        fn tls_deserialize<R: Read>(reader: &mut R) -> Result<Self, tls_codec::Error> {
+            let mut buf = vec![];
+            reader.read_to_end(&mut buf)?;
+            Ok(Self(buf))
+        }
+    }
+
+    impl HpkeInteropTestCase {
+        pub fn verify<P: CipherSuiteProvider>(&self, cs: &P) {
+            let secret = self.secret.clone().into();
+
+            let ciphertext = HpkeCiphertext {
+                kem_output: self.kem_output.clone(),
+                ciphertext: self.ciphertext.clone(),
+            };
+
+            let computed_plaintext =
+                TestEncryptable::decrypt(cs, &secret, &self.context, &ciphertext).unwrap();
+
+            assert_eq!(&computed_plaintext.0, &self.plaintext)
+        }
+    }
+}

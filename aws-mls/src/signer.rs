@@ -79,8 +79,87 @@ pub(crate) trait Signable<'a> {
 }
 
 #[cfg(test)]
+pub mod test_utils {
+    use aws_mls_core::crypto::CipherSuiteProvider;
+
+    use crate::provider::crypto::test_utils::try_test_cipher_suite_provider;
+
+    use super::Signable;
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    pub struct SignatureInteropTestCase {
+        #[serde(with = "hex::serde", rename = "priv")]
+        secret: Vec<u8>,
+        #[serde(with = "hex::serde", rename = "pub")]
+        public: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        content: Vec<u8>,
+        label: String,
+        #[serde(with = "hex::serde")]
+        signature: Vec<u8>,
+    }
+
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
+    pub struct InteropTestCase {
+        cipher_suite: u16,
+        sign_with_label: SignatureInteropTestCase,
+    }
+
+    #[test]
+    fn test_basic_crypto_test_vectors() {
+        let test_cases: Vec<InteropTestCase> =
+            load_test_cases!(basic_crypto, Vec::<InteropTestCase>::new());
+
+        test_cases.into_iter().for_each(|test_case| {
+            if let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) {
+                test_case.sign_with_label.verify(&cs)
+            }
+        })
+    }
+
+    pub struct TestSignable {
+        pub content: Vec<u8>,
+        pub signature: Vec<u8>,
+    }
+
+    impl<'a> Signable<'a> for TestSignable {
+        const SIGN_LABEL: &'static str = "SignWithLabel";
+
+        type SigningContext = Vec<u8>;
+
+        fn signature(&self) -> &[u8] {
+            &self.signature
+        }
+
+        fn signable_content(
+            &self,
+            context: &Self::SigningContext,
+        ) -> Result<Vec<u8>, tls_codec::Error> {
+            Ok([context.as_slice(), self.content.as_slice()].concat())
+        }
+
+        fn write_signature(&mut self, signature: Vec<u8>) {
+            self.signature = signature
+        }
+    }
+
+    impl SignatureInteropTestCase {
+        pub fn verify<P: CipherSuiteProvider>(&self, cs: &P) {
+            let public = self.public.clone().into(); //SignaturePublicKey::tls_deserialize(&mut &*self.public).unwrap();
+
+            let signable = TestSignable {
+                content: self.content.clone(),
+                signature: self.signature.clone(),
+            };
+
+            signable.verify(cs, &public, &vec![]).unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{test_utils::TestSignable, *};
     use crate::{
         client::test_utils::TEST_CIPHER_SUITE,
         group::test_utils::random_bytes,
@@ -89,7 +168,6 @@ mod tests {
         },
     };
     use assert_matches::assert_matches;
-    use tls_codec::{Serialize, TlsByteVecU32};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -107,33 +185,6 @@ mod tests {
         signer: Vec<u8>,
         #[serde(with = "hex::serde")]
         public: Vec<u8>,
-    }
-
-    struct TestSignable {
-        content: Vec<u8>,
-        signature: Vec<u8>,
-    }
-
-    impl<'a> Signable<'a> for TestSignable {
-        const SIGN_LABEL: &'static str = "TestLabel";
-
-        type SigningContext = Vec<u8>;
-
-        fn signature(&self) -> &[u8] {
-            &self.signature
-        }
-
-        fn signable_content(
-            &self,
-            context: &Self::SigningContext,
-        ) -> Result<Vec<u8>, tls_codec::Error> {
-            let data = [context.as_slice(), self.content.as_slice()].concat();
-            TlsByteVecU32::new(data).tls_serialize_detached()
-        }
-
-        fn write_signature(&mut self, signature: Vec<u8>) {
-            self.signature = signature
-        }
     }
 
     fn generate_test_cases() -> Vec<TestCase> {
