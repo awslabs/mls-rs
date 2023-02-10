@@ -571,7 +571,7 @@ impl X509CertificateWriter for X509Writer {
 }
 
 #[cfg(test)]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use aws_mls_identity_x509::{CertificateChain, DerCertificate};
 
     use super::X509Writer;

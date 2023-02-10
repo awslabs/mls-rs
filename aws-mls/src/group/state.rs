@@ -20,7 +20,7 @@ pub struct GroupState {
 }
 
 impl GroupState {
-    pub(super) fn new(
+    pub(crate) fn new(
         context: GroupContext,
         current_tree: TreeKemPublic,
         interim_transcript_hash: InterimTranscriptHash,
@@ -37,12 +37,12 @@ impl GroupState {
     }
 
     #[inline(always)]
-    pub(super) fn cipher_suite(&self) -> CipherSuite {
+    pub(crate) fn cipher_suite(&self) -> CipherSuite {
         self.context.cipher_suite
     }
 
     #[inline(always)]
-    pub(super) fn protocol_version(&self) -> ProtocolVersion {
+    pub(crate) fn protocol_version(&self) -> ProtocolVersion {
         self.context.protocol_version
     }
 }

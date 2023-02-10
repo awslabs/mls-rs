@@ -4,7 +4,7 @@ pub use aws_mls_core::crypto::{
 };
 
 #[cfg(any(test, feature = "benchmark"))]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use aws_mls_core::crypto::CryptoProvider;
     use cfg_if::cfg_if;
 
@@ -26,6 +26,7 @@ pub mod test_utils {
             .unwrap()
     }
 
+    #[allow(unused)]
     pub fn try_test_cipher_suite_provider(
         cipher_suite: u16,
     ) -> Option<<TestCryptoProvider as CryptoProvider>::CipherSuiteProvider> {

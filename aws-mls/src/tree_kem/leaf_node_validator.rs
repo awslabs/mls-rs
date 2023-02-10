@@ -595,7 +595,7 @@ mod tests {
 }
 
 #[cfg(test)]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use async_trait::async_trait;
     use aws_mls_core::{
         group::RosterUpdate,

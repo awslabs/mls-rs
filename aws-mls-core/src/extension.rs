@@ -124,7 +124,7 @@ pub trait MlsExtension: Sized {
     /// Error type of the underlying serializer that can convert this type into a `Vec<u8>`.
     type SerializationError: std::error::Error + Send + Sync + 'static;
 
-    /// Error type of the underlying deserializer that can convert a Vec<u8> into this type.
+    /// Error type of the underlying deserializer that can convert a `Vec<u8>` into this type.
     type DeserializationError: std::error::Error + Send + Sync + 'static;
 
     /// Extension type value that this type represents.
@@ -160,7 +160,7 @@ pub trait MlsExtension: Sized {
 }
 
 /// Convenience trait for custom extension types that use
-/// [tls_codec](self::tls_codec) as an underlying serialization mechanism
+/// [tls_codec](crate::tls_codec) as an underlying serialization mechanism
 pub trait TlsCodecExtension:
     tls_codec::Serialize + tls_codec::Deserialize + tls_codec::Size
 {

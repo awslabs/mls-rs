@@ -1,6 +1,5 @@
 use crate::{
     client_config::ClientConfig,
-    external_client_config::ExternalClientConfig,
     group::{
         key_schedule::KeySchedule, CachedProposal, CommitGeneration, ConfirmationTag, Group,
         GroupContext, GroupError, GroupState, InterimTranscriptHash, ProposalCache, ProposalRef,
@@ -15,9 +14,7 @@ use aws_mls_core::identity::IdentityProvider;
 use serde_with::serde_as;
 use std::collections::HashMap;
 
-use super::{
-    cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository, ExternalGroup,
-};
+use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository};
 
 #[cfg(feature = "benchmark")]
 use crate::cipher_suite::CipherSuite;
@@ -47,17 +44,17 @@ impl Snapshot {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
-struct RawGroupState {
-    context: GroupContext,
-    proposals: HashMap<ProposalRef, CachedProposal>,
-    tree_data: NodeVec,
-    interim_transcript_hash: InterimTranscriptHash,
-    pending_reinit: Option<ReInitProposal>,
-    confirmation_tag: ConfirmationTag,
+pub(crate) struct RawGroupState {
+    pub(crate) context: GroupContext,
+    pub(crate) proposals: HashMap<ProposalRef, CachedProposal>,
+    pub(crate) tree_data: NodeVec,
+    pub(crate) interim_transcript_hash: InterimTranscriptHash,
+    pub(crate) pending_reinit: Option<ReInitProposal>,
+    pub(crate) confirmation_tag: ConfirmationTag,
 }
 
 impl RawGroupState {
-    fn export(state: &GroupState) -> Self {
+    pub(crate) fn export(state: &GroupState) -> Self {
         Self {
             context: state.context.clone(),
             proposals: state.proposals.proposals().clone(),
@@ -68,7 +65,7 @@ impl RawGroupState {
         }
     }
 
-    async fn import<C>(self, identity_provider: &C) -> Result<GroupState, GroupError>
+    pub(crate) async fn import<C>(self, identity_provider: &C) -> Result<GroupState, GroupError>
     where
         C: IdentityProvider,
     {
@@ -150,40 +147,6 @@ where
     }
 }
 
-#[serde_as]
-#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
-pub struct ExternalSnapshot {
-    version: u16,
-    state: RawGroupState,
-}
-
-impl<C> ExternalGroup<C>
-where
-    C: ExternalClientConfig + Clone,
-{
-    pub fn snapshot(&self) -> ExternalSnapshot {
-        ExternalSnapshot {
-            state: RawGroupState::export(self.group_state()),
-            version: 1,
-        }
-    }
-
-    pub async fn from_snapshot(config: C, snapshot: ExternalSnapshot) -> Result<Self, GroupError> {
-        let identity_provider = config.identity_provider();
-
-        let cipher_suite_provider = cipher_suite_provider(
-            config.crypto_provider(),
-            snapshot.state.context.cipher_suite,
-        )?;
-
-        Ok(ExternalGroup {
-            config,
-            state: snapshot.state.import(&identity_provider).await?,
-            cipher_suite_provider,
-        })
-    }
-}
-
 #[cfg(test)]
 pub(crate) mod test_utils {
     use crate::{
@@ -224,9 +187,8 @@ mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         group::{
-            external_group::test_utils::make_external_group,
             test_utils::{test_group, TestGroup},
-            ExternalGroup, Group,
+            Group,
         },
     };
 
@@ -265,21 +227,5 @@ mod tests {
         let _ = group.group.proposal_message(update_proposal, vec![]).await;
 
         serialize_to_json_test(group).await
-    }
-
-    #[futures_test::test]
-    async fn external_group_can_be_serialized_to_json() {
-        let server =
-            make_external_group(&test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await).await;
-
-        let snapshot = serde_json::to_vec(&server.snapshot()).unwrap();
-        let snapshot_restored = serde_json::from_slice(&snapshot).unwrap();
-
-        let server_restored =
-            ExternalGroup::from_snapshot(server.config.clone(), snapshot_restored)
-                .await
-                .unwrap();
-
-        assert_eq!(server.group_state(), server_restored.group_state());
     }
 }

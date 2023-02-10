@@ -1,5 +1,5 @@
 use crate::{
-    group::{PriorEpoch, Snapshot},
+    group::PriorEpoch,
     key_package::KeyPackageRef,
     provider::{group_state::GroupStateStorage, key_package::KeyPackageStorage},
 };
@@ -8,6 +8,8 @@ use aws_mls_core::psk::PreSharedKey;
 use hex::ToHex;
 use std::collections::{hash_map::Entry, HashMap, VecDeque};
 use thiserror::Error;
+
+use super::snapshot::Snapshot;
 
 pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
 

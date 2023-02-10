@@ -8,8 +8,7 @@ use crate::{
         KeepAllProposals, MakeProposalFilter, MakeSimpleProposalFilter, ProposalFilterInit,
     },
     extension::ExtensionType,
-    external_client::ExternalClient,
-    external_client_config::ExternalClientConfig,
+    external_client::{ExternalClient, ExternalClientConfig},
     group::{
         proposal::{BorrowedProposal, ProposalType},
         proposal_filter::ProposalFilterContext,
@@ -584,7 +583,7 @@ impl Default for Settings {
 /// Definitions meant to be private that are inaccessible outside this crate. They need to be marked
 /// `pub` because they appear in public definitions.
 mod private {
-    use crate::external_client_builder::{IntoConfigOutput, Settings};
+    use super::{IntoConfigOutput, Settings};
 
     #[derive(Clone, Debug)]
     pub struct Config<K, Ip, Mpf, Cp>(pub(crate) ConfigInner<K, Ip, Mpf, Cp>);
@@ -623,17 +622,18 @@ use aws_mls_core::identity::IdentityProvider;
 use private::{Config, ConfigInner, IntoConfig};
 
 #[cfg(any(test, feature = "benchmark"))]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,
-        external_client_builder::{
-            ExternalBaseConfig, ExternalClientBuilder, WithCryptoProvider, WithIdentityProvider,
-            WithKeychain,
-        },
         provider::{
             crypto::test_utils::TestCryptoProvider, identity::BasicIdentityProvider,
             keychain::InMemoryKeychainStorage,
         },
+    };
+
+    use super::{
+        ExternalBaseConfig, ExternalClientBuilder, WithCryptoProvider, WithIdentityProvider,
+        WithKeychain,
     };
 
     pub type TestExternalClientConfig = WithIdentityProvider<

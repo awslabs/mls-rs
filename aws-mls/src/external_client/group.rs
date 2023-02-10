@@ -1,33 +1,52 @@
 use async_trait::async_trait;
-use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::{group::Member, identity::IdentityProvider};
+use serde_with::serde_as;
 use tls_codec::Serialize;
 
-use super::{
-    cipher_suite_provider,
-    confirmation_tag::ConfirmationTag,
-    framing::{MLSCiphertext, MLSPlaintext, Sender, WireFormat},
-    member_from_leaf_node,
-    message_processor::{EventOrContent, MessageProcessor, ProcessedMessage, ProvisionalState},
-    message_signature::MLSAuthenticatedContent,
-    proposal::{AddProposal, Proposal, RemoveProposal},
-    validate_group_info, ExternalEvent, Member, ProposalRef,
-};
 use crate::{
     cipher_suite::CipherSuite,
     client_config::{MakeProposalFilter, ProposalFilterInit},
     extension::ExternalSendersExt,
-    external_client_config::ExternalClientConfig,
+    external_client::ExternalClientConfig,
     group::{
-        Content, GroupError, GroupState, InterimTranscriptHash, MLSMessage, MLSMessagePayload,
+        cipher_suite_provider,
+        confirmation_tag::ConfirmationTag,
+        framing::{
+            ApplicationData, Content, MLSCiphertext, MLSMessagePayload, MLSPlaintext, WireFormat,
+        },
+        member_from_leaf_node,
+        message_processor::{EventOrContent, MessageProcessor, ProvisionalState},
+        message_signature::MLSAuthenticatedContent,
+        proposal::{AddProposal, Proposal, RemoveProposal},
+        snapshot::RawGroupState,
+        state::GroupState,
+        transcript_hash::InterimTranscriptHash,
+        validate_group_info, GroupError, MLSMessage, ProcessedMessage, ProposalRef, Sender,
+        StateUpdate,
     },
     identity::SigningIdentity,
-    key_package::{KeyPackage, KeyPackageValidator},
+    key_package::KeyPackageValidator,
     protocol_version::ProtocolVersion,
     provider::{crypto::CryptoProvider, keychain::KeychainStorage},
     psk::PassThroughPskIdValidator,
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
 };
 
+/// The result of processing an [ExternalGroup](ExternalGroup) message using
+/// [process_incoming_message](ExternalGroup::process_incoming_message)
+#[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
+pub enum ExternalEvent {
+    /// State update as the result of a successful commit.
+    Commit(StateUpdate),
+    /// Received proposal and its unique identifier.
+    Proposal((Proposal, ProposalRef)),
+    /// Encrypted message that can not be processed.
+    Ciphertext,
+}
+
+/// A handle to an observed group that can track plaintext control messages
+/// and the resulting group state.
 #[derive(Clone)]
 pub struct ExternalGroup<C>
 where
@@ -87,6 +106,25 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         })
     }
 
+    /// Process a message that was sent to the group.
+    ///
+    /// * Proposals will be stored in the group state and processed by the
+    /// same rules as a standard group.
+    ///
+    /// * Commits will result in the same outcome as a standard group.
+    /// However, the integrity of the resulting group state can only be partially
+    /// verified, since the external group does have access to the group
+    /// secrets required to do a complete check.
+    ///
+    /// * Application messages are always encrypted so they result in a no-op
+    /// that returns [ExternalEvent::Ciphertext](ExternalEvent::Ciphertext)
+    ///
+    /// # Warning
+    ///
+    /// Processing an encrypted commit or proposal message has the same result
+    /// as processing an encrypted application message. Proper tracking of
+    /// the group state requires that all proposal and commit messages are
+    /// readable.
     pub async fn process_incoming_message(
         &mut self,
         message: MLSMessage,
@@ -95,6 +133,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .await
     }
 
+    /// Replay a proposal message into the group skipping all validation steps.
     pub fn insert_proposal_from_message(&mut self, message: MLSMessage) -> Result<(), GroupError> {
         let ptxt = match message.payload {
             MLSMessagePayload::Plain(p) => Ok(p),
@@ -118,6 +157,8 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         Ok(())
     }
 
+    /// Force insert a proposal directly into the internal state of the group
+    /// with no validation.
     pub fn insert_proposal(
         &mut self,
         proposal: Proposal,
@@ -129,12 +170,26 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .insert(proposal_ref, proposal, sender)
     }
 
+    /// Create an external proposal to request that a group add a new member
+    ///
+    /// # Warning
+    ///
+    /// In order for this function to result in a successful addition of the
+    /// new member, the group needs to have `signing_identity` as an entry
+    /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
+    /// as part of its group context extensions.
     pub async fn propose_add(
         &mut self,
-        key_package: KeyPackage,
+        key_package: MLSMessage,
         signing_identity: &SigningIdentity,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, GroupError> {
+        let wire_format = key_package.wire_format();
+
+        let key_package = key_package.into_key_package().ok_or_else(|| {
+            GroupError::UnexpectedMessageType(vec![WireFormat::KeyPackage], wire_format)
+        })?;
+
         // Check that this proposal has a valid lifetime and signature. Required capabilities are
         // not checked as they may be changed in another proposal in the same commit.
         let key_package_validator = KeyPackageValidator::new(
@@ -156,6 +211,14 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         .await
     }
 
+    /// Create an external proposal to request that a group remove an existing member
+    ///
+    /// # Warning
+    ///
+    /// In order for this function to result in a successful removal of the
+    /// existing member, the group needs to have `signing_identity` as an entry
+    /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
+    /// as part of its group context extensions.
     pub async fn propose_remove(
         &mut self,
         index: u32,
@@ -233,28 +296,35 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     }
 
     #[inline(always)]
-    pub fn group_state(&self) -> &GroupState {
+    pub(crate) fn group_state(&self) -> &GroupState {
         &self.state
     }
 
+    /// Get the unique identifier of this group.
     #[inline(always)]
     pub fn group_id(&self) -> &[u8] {
         &self.group_state().context.group_id
     }
 
+    /// Get the current epoch number of the group's state.
     #[inline(always)]
     pub fn current_epoch(&self) -> u64 {
         self.group_state().context.epoch
     }
 
+    /// Get the current protocol version in use by the group.
+    #[inline(always)]
     pub fn protocol_version(&self) -> ProtocolVersion {
         self.group_state().context.protocol_version
     }
 
+    /// Get the current ciphersuite in use by the group.
+    #[inline(always)]
     pub fn cipher_suite(&self) -> CipherSuite {
         self.group_state().context.cipher_suite
     }
 
+    /// Export the current ratchet tree used within the group.
     pub fn export_tree(&self) -> Result<Vec<u8>, GroupError> {
         self.group_state()
             .public_tree
@@ -263,14 +333,25 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .map_err(Into::into)
     }
 
+    /// Get the current roster of the group.
+    #[inline(always)]
     pub fn roster(&self) -> Vec<Member> {
         self.group_state().roster()
     }
 
+    /// Get the
+    /// [transcript hash](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-transcript-hashes)
+    /// for the current epoch that the group is in.
+    #[inline(always)]
     pub fn transcript_hash(&self) -> &Vec<u8> {
         &self.group_state().context.confirmed_transcript_hash
     }
 
+    /// Find a member based on their identity.
+    ///
+    /// Identities are matched based on the
+    /// [IdentityProvider](crate::provider::identity::IdentityProvider)
+    /// that this group was configured with.
     pub async fn get_member_with_identity(
         &self,
         identity_id: &SigningIdentity,
@@ -381,12 +462,69 @@ where
     }
 }
 
+/// Serializable snapshot of an [ExternalGroup](ExternalGroup) state.
+#[serde_as]
+#[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
+pub struct ExternalSnapshot {
+    version: u16,
+    state: RawGroupState,
+}
+
+impl<C> ExternalGroup<C>
+where
+    C: ExternalClientConfig + Clone,
+{
+    /// Create a snapshot of this group's current internal state.
+    pub fn snapshot(&self) -> ExternalSnapshot {
+        ExternalSnapshot {
+            state: RawGroupState::export(self.group_state()),
+            version: 1,
+        }
+    }
+
+    pub(crate) async fn from_snapshot(
+        config: C,
+        snapshot: ExternalSnapshot,
+    ) -> Result<Self, GroupError> {
+        let identity_provider = config.identity_provider();
+
+        let cipher_suite_provider = cipher_suite_provider(
+            config.crypto_provider(),
+            snapshot.state.context.cipher_suite,
+        )?;
+
+        Ok(ExternalGroup {
+            config,
+            state: snapshot.state.import(&identity_provider).await?,
+            cipher_suite_provider,
+        })
+    }
+}
+
+impl From<StateUpdate> for ExternalEvent {
+    fn from(state_update: StateUpdate) -> Self {
+        ExternalEvent::Commit(state_update)
+    }
+}
+
+impl TryFrom<ApplicationData> for ExternalEvent {
+    type Error = GroupError;
+
+    fn try_from(_: ApplicationData) -> Result<Self, Self::Error> {
+        Err(GroupError::UnencryptedApplicationMessage)
+    }
+}
+
+impl From<(Proposal, ProposalRef)> for ExternalEvent {
+    fn from(proposal_and_ref: (Proposal, ProposalRef)) -> Self {
+        ExternalEvent::Proposal(proposal_and_ref)
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_utils {
     use crate::{
-        external_client_builder::test_utils::{
-            TestExternalClientBuilder, TestExternalClientConfig,
-        },
+        external_client::tests_utils::{TestExternalClientBuilder, TestExternalClientConfig},
         group::test_utils::TestGroup,
     };
 
@@ -425,15 +563,17 @@ mod tests {
         cipher_suite::CipherSuite,
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         extension::ExternalSendersExt,
-        external_client_builder::test_utils::{
-            TestExternalClientBuilder, TestExternalClientConfig,
+        external_client::{
+            group::test_utils::make_external_group_with_config,
+            tests_utils::{TestExternalClientBuilder, TestExternalClientConfig},
+            ExternalEvent, ExternalGroup,
         },
         group::{
-            external_group::test_utils::make_external_group_with_config,
+            framing::{Content, MLSMessagePayload},
             proposal::{AddProposal, Proposal, ProposalOrRef},
             proposal_ref::ProposalRef,
             test_utils::{test_group, TestGroup},
-            Content, ExternalEvent, ExternalGroup, GroupError, MLSMessage, MLSMessagePayload,
+            GroupError, MLSMessage,
         },
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
         key_package::test_utils::{test_key_package, test_key_package_message},
@@ -743,7 +883,8 @@ mod tests {
         test_external_proposal(|ext_group, ext_identity| {
             async move {
                 let charlie_key_package =
-                    test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "charlie").await;
+                    test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "charlie")
+                        .await;
 
                 ext_group
                     .propose_add(charlie_key_package, ext_identity, vec![])
@@ -781,7 +922,7 @@ mod tests {
             .insert(signing_id.clone(), secret_key, TEST_CIPHER_SUITE);
 
         let charlie_key_package =
-            test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "charlie").await;
+            test_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "charlie").await;
 
         let res = server
             .propose_add(charlie_key_package, &signing_id, vec![])
@@ -885,5 +1026,21 @@ mod tests {
             alice.process_pending_commit().await.unwrap();
             server.process_incoming_message(commit).await.unwrap();
         }
+    }
+
+    #[futures_test::test]
+    async fn external_group_can_be_serialized_to_json() {
+        let server =
+            make_external_group(&test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await).await;
+
+        let snapshot = serde_json::to_vec(&server.snapshot()).unwrap();
+        let snapshot_restored = serde_json::from_slice(&snapshot).unwrap();
+
+        let server_restored =
+            ExternalGroup::from_snapshot(server.config.clone(), snapshot_restored)
+                .await
+                .unwrap();
+
+        assert_eq!(server.group_state(), server_restored.group_state());
     }
 }

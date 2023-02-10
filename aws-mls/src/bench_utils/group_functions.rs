@@ -1,4 +1,5 @@
 use aws_mls_core::{group::GroupStateStorage, key_package::KeyPackageData};
+use aws_mls_crypto_openssl::OpensslCryptoProvider;
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -7,8 +8,8 @@ use crate::{
         TEST_PROTOCOL_VERSION,
     },
     client_builder::{
-        test_utils::{TestClientBuilder, TestClientConfig},
-        Preferences,
+        test_utils::TestClientBuilder, BaseConfig, Preferences, WithCryptoProvider,
+        WithIdentityProvider, WithKeychain,
     },
     client_config::ClientConfig,
     group::{
@@ -16,16 +17,22 @@ use crate::{
         framing::{Content, MLSMessage, Sender, WireFormat},
         message_processor::MessageProcessor,
         message_signature::MLSAuthenticatedContent,
-        Commit, Group, GroupError, Snapshot,
+        snapshot::Snapshot,
+        Commit, Group, GroupError,
     },
-    identity::SigningIdentity,
+    identity::{test_utils::BasicWithCustomProvider, SigningIdentity},
     provider::{
         crypto::SignatureSecretKey, group_state::InMemoryGroupStateStorage,
-        key_package::InMemoryKeyPackageStorage,
+        key_package::InMemoryKeyPackageStorage, keychain::InMemoryKeychainStorage,
     },
     ExtensionList,
 };
 use futures::StreamExt;
+
+pub type TestClientConfig = WithIdentityProvider<
+    BasicWithCustomProvider,
+    WithKeychain<InMemoryKeychainStorage, WithCryptoProvider<OpensslCryptoProvider, BaseConfig>>,
+>;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 

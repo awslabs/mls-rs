@@ -101,7 +101,7 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
 }
 
 #[cfg(test)]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use aws_mls_core::crypto::CipherSuiteProvider;
 
     use super::SenderDataKey;

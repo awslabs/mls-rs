@@ -9,6 +9,7 @@ benchmark = ["serde_json", "aws-mls-crypto-openssl", "aws-mls-core/benchmark"]
 default = ["rayon"]
 arbitrary = ["dep:arbitrary", "aws-mls-core/arbitrary"]
 rayon = ["dep:rayon"]
+external_client = []
 
 [dependencies]
 async-trait = "0.1.61"

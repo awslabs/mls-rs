@@ -79,7 +79,7 @@ pub(crate) trait Signable<'a> {
 }
 
 #[cfg(test)]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use aws_mls_core::crypto::CipherSuiteProvider;
 
     use crate::provider::crypto::test_utils::try_test_cipher_suite_provider;

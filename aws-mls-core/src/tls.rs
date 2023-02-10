@@ -19,7 +19,7 @@ mod optional;
 mod read_with_count;
 mod reference;
 #[cfg(test)]
-pub mod test_utils;
+pub(crate) mod test_utils;
 mod varint;
 mod vector;
 

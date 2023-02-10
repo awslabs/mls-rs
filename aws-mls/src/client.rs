@@ -9,7 +9,9 @@ use crate::group::proposal::{AddProposal, Proposal};
 use crate::group::{process_group_info, Group, GroupError, NewMemberInfo};
 use crate::hash_reference::HashReferenceError;
 use crate::identity::SigningIdentity;
-use crate::key_package::{KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator};
+use crate::key_package::{
+    KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageValidationError,
+};
 use crate::protocol_version::ProtocolVersion;
 use crate::provider::crypto::CryptoProvider;
 use crate::provider::group_state::GroupStateStorage;
@@ -44,6 +46,8 @@ pub enum ClientError {
     KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     LeafNodeError(#[from] LeafNodeError),
+    #[error(transparent)]
+    KeyPackageValidationError(#[from] KeyPackageValidationError),
     #[error("expected group info message")]
     ExpectedGroupInfoMessage,
     #[error("unsupported message protocol version: {0:?}")]
@@ -407,7 +411,7 @@ where
 }
 
 #[cfg(any(test, feature = "benchmark"))]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use super::*;
     use crate::{client_config::ClientConfig, identity::test_utils::get_test_signing_identity};
 

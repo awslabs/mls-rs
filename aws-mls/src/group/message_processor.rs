@@ -74,14 +74,6 @@ pub struct ProcessedMessage<E> {
     pub authenticated_data: Vec<u8>,
 }
 
-#[derive(Clone, Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum ExternalEvent {
-    Commit(StateUpdate),
-    Proposal((Proposal, ProposalRef)),
-    Ciphertext,
-}
-
 impl<E> From<E> for ProcessedMessage<E> {
     fn from(event: E) -> Self {
         ProcessedMessage {
@@ -98,29 +90,9 @@ impl From<StateUpdate> for Event {
     }
 }
 
-impl From<StateUpdate> for ExternalEvent {
-    fn from(state_update: StateUpdate) -> Self {
-        ExternalEvent::Commit(state_update)
-    }
-}
-
-impl TryFrom<ApplicationData> for ExternalEvent {
-    type Error = GroupError;
-
-    fn try_from(_: ApplicationData) -> Result<Self, Self::Error> {
-        Err(GroupError::UnencryptedApplicationMessage)
-    }
-}
-
 impl From<(Proposal, ProposalRef)> for Event {
     fn from(proposal_and_ref: (Proposal, ProposalRef)) -> Self {
         Event::Proposal(proposal_and_ref)
-    }
-}
-
-impl From<(Proposal, ProposalRef)> for ExternalEvent {
-    fn from(proposal_and_ref: (Proposal, ProposalRef)) -> Self {
-        ExternalEvent::Proposal(proposal_and_ref)
     }
 }
 

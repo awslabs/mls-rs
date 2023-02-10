@@ -14,7 +14,7 @@ pub use traits::*;
 pub use aws_mls_core::identity::{CertificateChain, DerCertificate};
 
 #[cfg(test)]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use aws_mls_core::{crypto::SignaturePublicKey, identity::SigningIdentity};
     use rand::{thread_rng, Rng};
 

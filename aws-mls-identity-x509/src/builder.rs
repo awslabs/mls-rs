@@ -145,7 +145,7 @@ impl CertificateBuilder {
 }
 
 #[cfg(test)]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use crate::{SubjectAltName, SubjectComponent};
 
     pub fn test_subject_components() -> Vec<SubjectComponent> {

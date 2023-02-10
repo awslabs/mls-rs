@@ -1,15 +1,14 @@
 use aws_mls::{
     bench_utils::create_empty_tree::{load_test_cases, TestCase},
-    provider::{crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider},
+    provider::identity::BasicIdentityProvider,
     tree_kem::{
-        kem::TreeKem,
-        leaf_node::{test_utils::get_test_capabilities, ConfigProperties},
-        node::LeafIndex,
-        update_path::ValidatedUpdatePath,
-        Capabilities,
+        kem::TreeKem, leaf_node::ConfigProperties, node::LeafIndex,
+        update_path::ValidatedUpdatePath, Capabilities,
     },
     CipherSuite, ExtensionList,
 };
+use aws_mls_core::crypto::CryptoProvider;
+use aws_mls_crypto_openssl::OpensslCryptoProvider;
 use criterion::{
     async_executor::FuturesExecutor, criterion_group, criterion_main, measurement::WallTime,
     BatchSize, BenchmarkGroup, BenchmarkId, Criterion,
@@ -43,7 +42,7 @@ fn bench_decap(
     for (key, mut value) in map {
         // Perform the encap function
         let update_leaf_properties = ConfigProperties {
-            capabilities: capabilities.clone().unwrap_or_else(get_test_capabilities),
+            capabilities: capabilities.clone().unwrap_or_default(),
             extensions: extensions.clone().unwrap_or_default(),
         };
 
@@ -55,7 +54,9 @@ fn bench_decap(
                 update_leaf_properties,
                 None,
                 BasicIdentityProvider,
-                &test_cipher_suite_provider(cipher_suite),
+                &OpensslCryptoProvider::new()
+                    .cipher_suite_provider(cipher_suite)
+                    .unwrap(),
             ),
         )
         .unwrap();
@@ -90,7 +91,9 @@ fn bench_decap(
                                 added_leaves,
                                 &mut group_context,
                                 BasicIdentityProvider,
-                                &test_cipher_suite_provider(cipher_suite),
+                                &OpensslCryptoProvider::new()
+                                    .cipher_suite_provider(cipher_suite)
+                                    .unwrap(),
                             )
                             .await
                             .unwrap();

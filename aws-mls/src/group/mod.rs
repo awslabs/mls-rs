@@ -63,10 +63,9 @@ pub(crate) use self::commit::test_utils::CommitModifiers;
 pub use self::framing::MLSCiphertext;
 
 use self::epoch::{EpochSecrets, PriorEpoch, SenderDataSecret};
-pub use self::message_processor::{Event, ExternalEvent, ProcessedMessage, StateUpdate};
+pub use self::message_processor::{Event, ProcessedMessage, StateUpdate};
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
 use self::state_repo::GroupStateRepository;
-pub use external_group::ExternalGroup;
 pub(crate) use group_info::GroupInfo;
 pub(crate) use proposal_cache::ProposalCacheError;
 
@@ -78,7 +77,6 @@ pub use padding::*;
 pub use proposal_filter::ProposalFilterContext;
 pub use proposal_ref::ProposalRef;
 pub use roster::*;
-pub use snapshot::*;
 pub use stats::*;
 
 pub(crate) use transcript_hash::ConfirmedTranscriptHash;
@@ -92,32 +90,32 @@ pub(crate) use context::*;
 
 mod ciphertext_processor;
 mod commit;
-mod confirmation_tag;
+pub(crate) mod confirmation_tag;
 mod context;
 pub(crate) mod epoch;
 mod error;
-mod external_group;
 pub(crate) mod framing;
 mod group_info;
 pub(crate) mod key_schedule;
 mod membership_tag;
 pub(crate) mod message_processor;
 pub(crate) mod message_signature;
-mod message_verifier;
+pub(crate) mod message_verifier;
 mod padding;
 pub mod proposal;
 mod proposal_cache;
 pub(crate) mod proposal_filter;
-mod proposal_ref;
+pub(crate) mod proposal_ref;
 mod roster;
 pub(crate) mod snapshot;
-mod state;
+pub(crate) mod state;
 pub(crate) mod state_repo;
 mod stats;
-mod transcript_hash;
+pub(crate) mod transcript_hash;
 mod util;
 
 #[cfg(feature = "benchmark")]
+#[doc(hidden)]
 pub mod secret_tree;
 
 #[cfg(not(feature = "benchmark"))]
@@ -174,7 +172,7 @@ where
     config: C,
     cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
     state_repo: GroupStateRepository<C::GroupStateStorage, C::KeyPackageRepository>,
-    state: GroupState,
+    pub(crate) state: GroupState,
     epoch_secrets: EpochSecrets,
     private_tree: TreeKemPrivate,
     key_schedule: KeySchedule,

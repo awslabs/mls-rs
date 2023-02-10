@@ -1,7 +1,7 @@
 pub use aws_mls_core::identity::*;
 
 #[cfg(any(test, feature = "benchmark"))]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use async_trait::async_trait;
     use aws_mls_core::{
         crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},

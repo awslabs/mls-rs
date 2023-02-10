@@ -62,7 +62,7 @@ pub(crate) trait HpkeEncryptable: Serialize + Deserialize + Sized {
 }
 
 #[cfg(test)]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use std::io::{Read, Write};
 
     use aws_mls_core::crypto::{CipherSuiteProvider, HpkeCiphertext};

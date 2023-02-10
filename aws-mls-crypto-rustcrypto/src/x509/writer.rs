@@ -214,7 +214,7 @@ impl X509CertificateWriter for X509Writer {
 }
 
 #[cfg(test)]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use super::X509Writer;
     use std::time::Duration;
 

@@ -310,7 +310,7 @@ pub fn private_key_bytes_to_public(secret_key: &[u8], curve: Curve) -> Result<Ve
 }
 
 #[cfg(test)]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use aws_mls_core::crypto::CipherSuite;
     use serde::Deserialize;
 

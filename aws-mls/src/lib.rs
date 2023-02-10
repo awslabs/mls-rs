@@ -106,9 +106,10 @@ pub mod client_builder;
 mod client_config;
 /// Extension utilities and built-in extension types.
 pub mod extension;
+/// Tools to observe groups without being a member, useful
+/// for server implementations.
+#[cfg(feature = "external_client")]
 pub mod external_client;
-mod external_client_builder;
-mod external_client_config;
 pub mod group;
 mod hash_reference;
 pub mod identity;
@@ -136,6 +137,7 @@ mod serde_utils {
 }
 
 #[cfg(feature = "benchmark")]
+#[doc(hidden)]
 pub mod tls {
     pub use aws_mls_core::tls::*;
 }
@@ -146,9 +148,11 @@ mod tls {
 }
 
 #[cfg(feature = "benchmark")]
+#[doc(hidden)]
 pub mod bench_utils;
 
 #[cfg(feature = "benchmark")]
+#[doc(hidden)]
 pub mod tree_kem;
 
 #[cfg(not(feature = "benchmark"))]

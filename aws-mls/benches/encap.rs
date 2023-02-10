@@ -1,14 +1,11 @@
 use aws_mls::{
     bench_utils::create_empty_tree::{load_test_cases, TestCase},
-    provider::{crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider},
-    tree_kem::{
-        kem::TreeKem,
-        leaf_node::{test_utils::get_test_capabilities, ConfigProperties},
-        node::LeafIndex,
-        Capabilities,
-    },
+    provider::identity::BasicIdentityProvider,
+    tree_kem::{kem::TreeKem, leaf_node::ConfigProperties, node::LeafIndex, Capabilities},
     CipherSuite, ExtensionList,
 };
+use aws_mls_core::crypto::CryptoProvider;
+use aws_mls_crypto_openssl::OpensslCryptoProvider;
 use criterion::{
     async_executor::FuturesExecutor, criterion_group, criterion_main, measurement::WallTime,
     BatchSize, BenchmarkGroup, BenchmarkId, Criterion,
@@ -50,9 +47,7 @@ fn bench_encap(
                             value.encap_private_key.clone(),
                             value.group_context.clone(),
                             ConfigProperties {
-                                capabilities: capabilities
-                                    .clone()
-                                    .unwrap_or_else(get_test_capabilities),
+                                capabilities: capabilities.clone().unwrap_or_default(),
                                 extensions: extensions.clone().unwrap_or_default(),
                             },
                         )
@@ -71,7 +66,9 @@ fn bench_encap(
                                 update_leaf_properties,
                                 None,
                                 BasicIdentityProvider,
-                                &test_cipher_suite_provider(cipher_suite),
+                                &OpensslCryptoProvider::new()
+                                    .cipher_suite_provider(cipher_suite)
+                                    .unwrap(),
                             )
                             .await
                             .unwrap()

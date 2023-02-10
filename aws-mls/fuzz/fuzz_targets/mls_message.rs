@@ -1,6 +1,5 @@
 #![no_main]
-use aws_mls::bench_utils::group_functions::create_group;
-use aws_mls::client_builder::test_utils::TestClientConfig;
+use aws_mls::bench_utils::group_functions::{create_group, TestClientConfig};
 use aws_mls::group::{Group, MLSMessage};
 use aws_mls::CipherSuite;
 use futures::executor::block_on;

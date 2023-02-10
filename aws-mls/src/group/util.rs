@@ -105,7 +105,7 @@ where
     })
 }
 
-pub(super) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
+pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvider>(
     msg_protocol_version: ProtocolVersion,
     group_info: GroupInfo,
     tree_data: Option<&[u8]>,
@@ -151,7 +151,7 @@ pub(super) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
     Ok(join_context)
 }
 
-pub(super) async fn find_tree<C>(
+pub(crate) async fn find_tree<C>(
     tree_data: Option<&[u8]>,
     extension: Option<RatchetTreeExt>,
     identity_provider: &C,
@@ -176,7 +176,7 @@ where
     }
 }
 
-pub(super) fn commit_sender(
+pub(crate) fn commit_sender(
     sender: &Sender,
     provisional_state: &ProvisionalState,
 ) -> Result<LeafIndex, GroupError> {
@@ -193,7 +193,7 @@ pub(super) fn commit_sender(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn proposal_effects<C, F, P, CSP>(
+pub(crate) async fn proposal_effects<C, F, P, CSP>(
     commit_receiver: Option<LeafIndex>,
     proposals: &ProposalCache,
     commit: &Commit,
@@ -255,7 +255,7 @@ pub(super) fn transcript_hashes<P: CipherSuiteProvider>(
     Ok((interim_transcript_hash, confirmed_transcript_hash))
 }
 
-pub(super) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
+pub(crate) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
     key_package_repo: &K,
     secrets: &'a [EncryptedGroupSecrets],
 ) -> Result<(&'a EncryptedGroupSecrets, KeyPackageGeneration), GroupError> {
@@ -284,7 +284,7 @@ pub(super) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
         .ok_or(GroupError::KeyPackageNotFound)
 }
 
-pub(super) fn cipher_suite_provider<P>(
+pub(crate) fn cipher_suite_provider<P>(
     crypto: P,
     cipher_suite: CipherSuite,
 ) -> Result<P::CipherSuiteProvider, GroupError>

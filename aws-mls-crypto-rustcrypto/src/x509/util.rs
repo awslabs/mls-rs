@@ -337,7 +337,7 @@ pub(super) fn common_extensions(
 }
 
 #[cfg(test)]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use aws_mls_identity_x509::{CertificateChain, DerCertificate};
 
     pub fn load_test_ca() -> DerCertificate {

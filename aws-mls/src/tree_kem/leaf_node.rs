@@ -304,7 +304,7 @@ impl<'a> Signable<'a> for LeafNode {
 }
 
 #[cfg(any(test, feature = "benchmark"))]
-pub mod test_utils {
+pub(crate) mod test_utils {
     use aws_mls_core::identity::CredentialType;
 
     use crate::{
@@ -322,6 +322,7 @@ pub mod test_utils {
 
     use super::*;
 
+    #[allow(unused)]
     pub async fn get_test_node(
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
@@ -365,6 +366,7 @@ pub mod test_utils {
         .unwrap()
     }
 
+    #[allow(unused)]
     pub async fn get_basic_test_node(cipher_suite: CipherSuite, id: &str) -> LeafNode {
         get_basic_test_node_sig_key(cipher_suite, id).await.0
     }
@@ -396,6 +398,7 @@ pub mod test_utils {
         .unwrap()
     }
 
+    #[allow(unused)]
     pub fn get_test_extensions() -> ExtensionList {
         let mut extension_list = ExtensionList::new();
 
@@ -419,6 +422,7 @@ pub mod test_utils {
         }
     }
 
+    #[allow(unused)]
     pub fn get_test_client_identity(leaf: &LeafNode) -> Vec<u8> {
         leaf.signing_identity
             .credential
