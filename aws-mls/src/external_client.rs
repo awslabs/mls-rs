@@ -1,10 +1,8 @@
 use crate::{
     cipher_suite::CipherSuite,
     client::ClientError,
-    group::framing::MLSMessage,
-    key_package::{
-        KeyPackage, KeyPackageValidationOptions, KeyPackageValidationOutput, KeyPackageValidator,
-    },
+    group::framing::{MLSMessage, MLSMessagePayload},
+    key_package::{KeyPackageValidationOptions, KeyPackageValidationOutput, KeyPackageValidator},
     protocol_version::ProtocolVersion,
     provider::crypto::CryptoProvider,
     time::MlsTime,
@@ -87,10 +85,15 @@ where
     /// Utility function to validate key packages
     pub async fn validate_key_package(
         &self,
-        package: &KeyPackage,
+        package: &MLSMessage,
         protocol: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> Result<KeyPackageValidationOutput, ClientError> {
+        let package = match package.payload {
+            MLSMessagePayload::KeyPackage(ref key_package) => Ok(key_package),
+            _ => Err(ClientError::ExpectedKeyPackageMessage),
+        }?;
+
         let cipher_suite_provider = self
             .config
             .crypto_provider()

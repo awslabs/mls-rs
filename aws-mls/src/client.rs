@@ -50,6 +50,8 @@ pub enum ClientError {
     KeyPackageValidationError(#[from] KeyPackageValidationError),
     #[error("expected group info message")]
     ExpectedGroupInfoMessage,
+    #[error("expected key package message")]
+    ExpectedKeyPackageMessage,
     #[error("unsupported message protocol version: {0:?}")]
     UnsupportedMessageVersion(ProtocolVersion),
     #[error("unsupported cipher suite: {0:?}")]
