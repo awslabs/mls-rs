@@ -34,18 +34,18 @@ impl ExtensionType {
     pub const EXTERNAL_SENDERS: ExtensionType = ExtensionType(5);
 
     /// Extension type from a raw value
-    pub fn new(raw_value: u16) -> Self {
+    pub const fn new(raw_value: u16) -> Self {
         ExtensionType(raw_value)
     }
 
     /// Raw numerical wrapped value.
-    pub fn raw_value(&self) -> u16 {
+    pub const fn raw_value(&self) -> u16 {
         self.0
     }
 
     /// Determines if this extension type is required to be implemented
     /// by the MLS RFC.
-    pub fn is_default(&self) -> bool {
+    pub const fn is_default(&self) -> bool {
         self.0 <= 5
     }
 }

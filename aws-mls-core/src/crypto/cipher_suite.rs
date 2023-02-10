@@ -74,12 +74,12 @@ impl CipherSuite {
     pub const P384_AES256: CipherSuite = CipherSuite(7);
 
     /// Ciphersuite from a raw value.
-    pub fn new(value: u16) -> CipherSuite {
+    pub const fn new(value: u16) -> CipherSuite {
         CipherSuite(value)
     }
 
     /// Raw numerical value wrapped value.
-    pub fn raw_value(&self) -> u16 {
+    pub const fn raw_value(&self) -> u16 {
         self.0
     }
 

@@ -19,11 +19,11 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 pub struct ProposalType(u16);
 
 impl ProposalType {
-    pub fn new(value: u16) -> ProposalType {
+    pub const fn new(value: u16) -> ProposalType {
         ProposalType(value)
     }
 
-    pub fn raw_value(&self) -> u16 {
+    pub const fn raw_value(&self) -> u16 {
         self.0
     }
 }

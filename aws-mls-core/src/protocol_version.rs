@@ -46,12 +46,12 @@ impl ProtocolVersion {
     pub const MLS_10: ProtocolVersion = ProtocolVersion(1);
 
     /// Protocol version from a raw value, useful for testing.
-    pub fn new(value: u16) -> ProtocolVersion {
+    pub const fn new(value: u16) -> ProtocolVersion {
         ProtocolVersion(value)
     }
 
     /// Raw numerical wrapped value.
-    pub fn raw_value(&self) -> u16 {
+    pub const fn raw_value(&self) -> u16 {
         self.0
     }
 

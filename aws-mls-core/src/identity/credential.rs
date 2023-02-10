@@ -27,11 +27,11 @@ impl CredentialType {
     pub const BASIC: CredentialType = CredentialType(1);
     pub const X509: CredentialType = CredentialType(2);
 
-    pub fn new(raw_value: u16) -> Self {
+    pub const fn new(raw_value: u16) -> Self {
         CredentialType(raw_value)
     }
 
-    pub fn raw_value(&self) -> u16 {
+    pub const fn raw_value(&self) -> u16 {
         self.0
     }
 }
