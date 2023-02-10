@@ -45,13 +45,14 @@ pub type BaseConfig = Config<
     Missing,
 >;
 
-/// Builder for `Client`
+/// Builder for [`Client`]
 ///
 /// This is returned by [`Client::builder`] and allows to tweak settings the `Client` will use. At a
-/// minimum, the builder must be told the [`IdentityProvider`] and [`KeychainStorage`] to use. Other
-/// settings have default values. This means that the following methods must be called before
-/// [`ClientBuilder::build`]:
+/// minimum, the builder must be told the [`CryptoProvider`], [`IdentityProvider`] and
+/// [`KeychainStorage`] to use. Other settings have default values. This means that the following
+/// methods must be called before [`ClientBuilder::build`]:
 ///
+/// - To specify the [`CryptoProvider`]: [`ClientBuilder::crypto_provider`]
 /// - To specify the [`IdentityProvider`]: [`ClientBuilder::identity_provider`]
 /// - To specify the [`KeychainStorage`], one of:
 ///   - [`ClientBuilder::keychain`]

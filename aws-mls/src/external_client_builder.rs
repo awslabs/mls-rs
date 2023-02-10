@@ -30,13 +30,14 @@ use std::collections::HashMap;
 /// Base client configuration type when instantiating `ExternalClientBuilder`
 pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Missing>;
 
-/// Builder for `ExternalClient`
+/// Builder for [`ExternalClient`]
 ///
 /// This is returned by [`ExternalClient::builder`] and allows to tweak settings the
-/// `ExternalClient` will use. At a minimum, the builder must be told the [`IdentityProvider`] and
-/// [`KeychainStorage`] to use. Other settings have default values. This means that the following methods
-/// must be called before [`ExternalClientBuilder::build`]:
+/// `ExternalClient` will use. At a minimum, the builder must be told the [`CryptoProvider`],
+/// [`IdentityProvider`] and [`KeychainStorage`] to use. Other settings have default values. This
+/// means that the following methods must be called before [`ExternalClientBuilder::build`]:
 ///
+/// - To specify the [`CryptoProvider`]: [`ExternalClientBuilder::crypto_provider`]
 /// - To specify the [`IdentityProvider`]: [`ExternalClientBuilder::identity_provider`]
 /// - To specify the [`KeychainStorage`], one of:
 ///   - [`ExternalClientBuilder::keychain`]
