@@ -3,7 +3,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use crate::{
     cipher_suite::CipherSuite,
     client_config::{ClientConfig, ProposalFilterInit},
-    extension::{ExtensionList, RatchetTreeExt},
+    extension::RatchetTreeExt,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
     provider::psk::PskStoreIdValidator,
@@ -13,6 +13,7 @@ use crate::{
         kem::TreeKem, leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret,
         TreeKemPrivate, UpdatePath,
     },
+    ExtensionList,
 };
 
 use super::{

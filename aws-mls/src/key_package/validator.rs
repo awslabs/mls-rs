@@ -1,3 +1,4 @@
+use aws_mls_core::extension::ExtensionError;
 use aws_mls_core::identity::IdentityProvider;
 
 use super::*;

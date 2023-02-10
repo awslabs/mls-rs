@@ -2,7 +2,6 @@ use assert_matches::assert_matches;
 use aws_mls::client_builder::{
     BaseConfig, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider, WithKeychain,
 };
-use aws_mls::extension::ExtensionList;
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, GroupError};
 use aws_mls::identity::SigningIdentity;
@@ -11,6 +10,7 @@ use aws_mls::provider::crypto::CryptoProvider;
 use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage};
 use aws_mls::CipherSuite;
 use aws_mls::Client;
+use aws_mls::ExtensionList;
 use aws_mls::ProtocolVersion;
 use aws_mls_core::crypto::CipherSuiteProvider;
 use cfg_if::cfg_if;

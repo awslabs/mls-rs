@@ -198,10 +198,10 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
             if !leaf_node
                 .capabilities
                 .extensions
-                .contains(&one_ext.extension_type)
+                .contains(&one_ext.extension_type())
             {
                 return Err(LeafNodeValidationError::ExtensionNotInCapabilities(
-                    one_ext.extension_type,
+                    one_ext.extension_type(),
                 ));
             }
         }
@@ -220,7 +220,6 @@ mod tests {
 
     use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::extension::test_utils::TestExtension;
-    use crate::extension::ExtensionList;
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::identity::BasicCredential;
@@ -232,6 +231,7 @@ mod tests {
     use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider;
     use crate::tree_kem::parent_hash::ParentHash;
     use crate::tree_kem::Capabilities;
+    use crate::ExtensionList;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;

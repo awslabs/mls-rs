@@ -1,7 +1,6 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_builder::{BaseConfig, ClientBuilder};
 use crate::client_config::ClientConfig;
-use crate::extension::{ExtensionError, ExtensionList};
 use crate::group::framing::{
     Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender, WireFormat,
 };
@@ -19,6 +18,7 @@ use crate::provider::keychain::KeychainStorage;
 use crate::psk::ExternalPskId;
 use crate::signer::SignatureError;
 use crate::tree_kem::leaf_node::LeafNodeError;
+use aws_mls_core::extension::{ExtensionError, ExtensionList};
 use hex::ToHex;
 use thiserror::Error;
 

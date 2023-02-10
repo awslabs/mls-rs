@@ -6,7 +6,6 @@
 use aws_mls::client_builder::{
     BaseConfig, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider, WithKeychain,
 };
-use aws_mls::extension::{Extension, ExtensionList};
 use aws_mls::group::MLSMessage;
 use aws_mls::group::{Event, Group, StateUpdate};
 use aws_mls::identity::BasicCredential;
@@ -21,6 +20,7 @@ use aws_mls::tls_codec::{Deserialize, Serialize};
 use aws_mls::CipherSuite;
 use aws_mls::Client;
 use aws_mls::ProtocolVersion;
+use aws_mls::{Extension, ExtensionList};
 
 use aws_mls_crypto_openssl::OpensslCryptoProvider;
 use clap::Parser;

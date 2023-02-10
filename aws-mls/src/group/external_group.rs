@@ -424,7 +424,7 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        extension::{ExtensionList, ExternalSendersExt},
+        extension::ExternalSendersExt,
         external_client_builder::test_utils::{
             TestExternalClientBuilder, TestExternalClientConfig,
         },
@@ -439,6 +439,7 @@ mod tests {
         key_package::test_utils::{test_key_package, test_key_package_message},
         protocol_version::ProtocolVersion,
         provider::crypto::{test_utils::TestCryptoProvider, SignatureSecretKey},
+        ExtensionList,
     };
     use assert_matches::assert_matches;
     use futures::{future::BoxFuture, FutureExt};

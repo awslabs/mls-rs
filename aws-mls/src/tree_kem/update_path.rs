@@ -1,4 +1,4 @@
-use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::{extension::ExtensionError, identity::IdentityProvider};
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -8,10 +8,7 @@ use super::{
     node::{LeafIndex, NodeVecError},
     tree_math::TreeMathError,
 };
-use crate::{
-    extension::ExtensionError,
-    provider::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey},
-};
+use crate::provider::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey};
 use crate::{group::message_processor::ProvisionalState, time::MlsTime};
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]

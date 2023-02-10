@@ -9,7 +9,7 @@ use crate::{
         ClientConfig, KeepAllProposals, MakeProposalFilter, MakeSimpleProposalFilter,
         ProposalFilterInit,
     },
-    extension::{ExtensionError, ExtensionList, ExtensionType, MlsExtension},
+    extension::{ExtensionType, MlsExtension},
     group::{
         proposal::{BorrowedProposal, ProposalType},
         proposal_filter::ProposalFilterContext,
@@ -946,7 +946,10 @@ mod private {
     }
 }
 
-use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::{
+    extension::{ExtensionError, ExtensionList},
+    identity::IdentityProvider,
+};
 use private::{Config, ConfigInner, IntoConfig};
 
 #[cfg(any(test, feature = "benchmark"))]

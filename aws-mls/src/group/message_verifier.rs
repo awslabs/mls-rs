@@ -192,7 +192,7 @@ mod tests {
     use crate::{
         client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_builder::{test_utils::TestClientConfig, Preferences},
-        extension::{ExtensionList, ExternalSendersExt},
+        extension::ExternalSendersExt,
         group::{
             framing::WireFormat,
             membership_tag::MembershipTag,
@@ -206,6 +206,7 @@ mod tests {
         provider::crypto::{test_utils::test_cipher_suite_provider, SignatureSecretKey},
         signer::Signable,
         tree_kem::node::LeafIndex,
+        ExtensionList,
     };
     use assert_matches::assert_matches;
 

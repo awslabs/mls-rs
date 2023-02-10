@@ -5,9 +5,9 @@ use crate::provider::crypto::{
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::time::MlsTime;
 use crate::{
-    extension::ExtensionList,
     identity::SigningIdentity,
     signer::{Signable, SignatureError},
+    ExtensionList,
 };
 use aws_mls_core::identity::IdentityProvider;
 use serde_with::serde_as;

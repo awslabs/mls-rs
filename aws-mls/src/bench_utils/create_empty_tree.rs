@@ -2,7 +2,6 @@ use aws_mls_core::crypto::CipherSuiteProvider;
 
 use crate::cipher_suite::CipherSuite;
 use crate::client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION};
-use crate::extension::ExtensionList;
 use crate::group::{ConfirmedTranscriptHash, GroupContext};
 use crate::identity::SigningIdentity;
 use crate::provider::crypto::test_utils::test_cipher_suite_provider;
@@ -11,6 +10,7 @@ use crate::provider::identity::BasicIdentityProvider;
 use crate::tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
+use crate::ExtensionList;
 use futures::StreamExt;
 use std::collections::HashMap;
 

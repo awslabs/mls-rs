@@ -1,8 +1,8 @@
+use aws_mls_core::extension::ExtensionError;
 use thiserror::Error;
 
 use crate::{
     cipher_suite::CipherSuite,
-    extension::{ExtensionError, ExtensionList},
     hash_reference::HashReferenceError,
     key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError},
     protocol_version::ProtocolVersion,
@@ -13,6 +13,7 @@ use crate::{
         leaf_node_validator::LeafNodeValidationError, path_secret::PathSecretError,
         tree_validator::TreeValidationError, RatchetTreeError, UpdatePathValidationError,
     },
+    ExtensionList,
 };
 
 use super::{

@@ -1,6 +1,6 @@
 use crate::{
     client_builder::Preferences,
-    extension::{ExtensionList, ExtensionType},
+    extension::ExtensionType,
     group::{
         framing::Sender,
         proposal::{BorrowedProposal, ProposalType},
@@ -15,6 +15,7 @@ use crate::{
         keychain::KeychainStorage, psk::PreSharedKeyStorage,
     },
     tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
+    ExtensionList,
 };
 use async_trait::async_trait;
 use aws_mls_core::identity::IdentityProvider;

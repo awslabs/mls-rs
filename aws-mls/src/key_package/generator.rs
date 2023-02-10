@@ -3,7 +3,6 @@ use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 
 use crate::{
-    extension::ExtensionList,
     group::{framing::MLSMessagePayload, MLSMessage},
     hash_reference::HashReferenceError,
     identity::SigningIdentity,
@@ -14,6 +13,7 @@ use crate::{
         leaf_node::{ConfigProperties, LeafNode, LeafNodeError},
         Capabilities, Lifetime,
     },
+    ExtensionList,
 };
 
 use super::{KeyPackage, KeyPackageError, KeyPackageRef};
@@ -161,7 +161,7 @@ mod tests {
 
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        extension::{test_utils::TestExtension, ExtensionList},
+        extension::test_utils::TestExtension,
         group::test_utils::random_bytes,
         identity::test_utils::get_test_signing_identity,
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
@@ -175,6 +175,7 @@ mod tests {
             leaf_node_validator::test_utils::FailureIdentityProvider,
             Lifetime,
         },
+        ExtensionList,
     };
 
     use super::KeyPackageGenerator;

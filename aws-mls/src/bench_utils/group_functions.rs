@@ -11,7 +11,6 @@ use crate::{
         Preferences,
     },
     client_config::ClientConfig,
-    extension::ExtensionList,
     group::{
         epoch::PriorEpoch,
         framing::{Content, MLSMessage, Sender, WireFormat},
@@ -24,6 +23,7 @@ use crate::{
         crypto::SignatureSecretKey, group_state::InMemoryGroupStateStorage,
         key_package::InMemoryKeyPackageStorage,
     },
+    ExtensionList,
 };
 use futures::StreamExt;
 

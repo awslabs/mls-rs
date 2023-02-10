@@ -1,5 +1,5 @@
 use crate::{
-    extension::{ExtensionList, ExternalSendersExt, RequiredCapabilitiesExt},
+    extension::{ExternalSendersExt, RequiredCapabilitiesExt},
     group::{
         proposal_filter::{Proposable, ProposalBundle, ProposalFilterError, ProposalInfo},
         AddProposal, BorrowedProposal, ExternalInit, JustPreSharedKeyID, PreSharedKeyProposal,
@@ -17,6 +17,7 @@ use crate::{
         node::LeafIndex,
         AccumulateBatchResults, RatchetTreeError, TreeKemPublic,
     },
+    ExtensionList,
 };
 use aws_mls_core::identity::IdentityProvider;
 use futures::TryStreamExt;
@@ -319,7 +320,7 @@ where
         let new_extensions_supported = group_context_extensions_proposal
             .proposal
             .iter()
-            .map(|extension| extension.extension_type)
+            .map(|extension| extension.extension_type())
             .filter(|&ext_type| !ext_type.is_default())
             .find(|ext_type| {
                 !new_state
@@ -603,7 +604,7 @@ fn leaf_supports_extensions(
 ) -> Result<(), ProposalFilterError> {
     extensions
         .iter()
-        .map(|ext| ext.extension_type)
+        .map(|ext| ext.extension_type())
         .filter(|&ext_type| !ext_type.is_default())
         .find(|ext_type| !leaf.capabilities.extensions.contains(ext_type))
         .map_or(Ok(()), |ext_type| {

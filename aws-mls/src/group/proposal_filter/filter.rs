@@ -1,5 +1,5 @@
 use crate::{
-    extension::{ExtensionError, ExtensionType},
+    extension::ExtensionType,
     group::{proposal_filter::ProposalBundle, BorrowedProposal, ProposalType, Sender},
     key_package::KeyPackageValidationError,
     protocol_version::ProtocolVersion,
@@ -7,6 +7,7 @@ use crate::{
         leaf_node::LeafNodeError, leaf_node_validator::LeafNodeValidationError, RatchetTreeError,
     },
 };
+use aws_mls_core::extension::ExtensionError;
 use std::marker::PhantomData;
 use thiserror::Error;
 

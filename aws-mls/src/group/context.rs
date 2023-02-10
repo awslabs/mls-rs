@@ -2,8 +2,8 @@ use serde_with::serde_as;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
-    cipher_suite::CipherSuite, extension::ExtensionList, protocol_version::ProtocolVersion,
-    serde_utils::vec_u8_as_base64::VecAsBase64,
+    cipher_suite::CipherSuite, protocol_version::ProtocolVersion,
+    serde_utils::vec_u8_as_base64::VecAsBase64, ExtensionList,
 };
 
 use super::ConfirmedTranscriptHash;

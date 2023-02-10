@@ -1,3 +1,5 @@
+use aws_mls_core::extension::ExtensionList;
+
 use super::*;
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]

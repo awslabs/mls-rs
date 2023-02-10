@@ -104,6 +104,7 @@ pub use protocol_version::ProtocolVersion;
 mod client;
 pub mod client_builder;
 mod client_config;
+/// Extension utilities and built-in extension types.
 pub mod extension;
 pub mod external_client;
 mod external_client_builder;
@@ -116,11 +117,14 @@ pub mod provider;
 mod psk;
 mod signer;
 
+pub use aws_mls_core::extension::{Extension, ExtensionList};
+
 pub use crate::client::Client;
 
 /// Error types
 pub mod error {
     pub use crate::client::ClientError;
+    pub use aws_mls_core::extension::ExtensionError;
 }
 
 pub mod time {

@@ -325,7 +325,7 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::TEST_CIPHER_SUITE,
-        extension::{test_utils::TestExtension, ExtensionList},
+        extension::test_utils::TestExtension,
         group::test_utils::{get_test_group_context, random_bytes},
         provider::{
             crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
@@ -339,6 +339,7 @@ mod tests {
             node::LeafIndex,
             Capabilities, TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
         },
+        ExtensionList,
     };
     use aws_mls_core::crypto::CipherSuiteProvider;
     use futures::StreamExt;

@@ -4,7 +4,7 @@ use tls_codec::Deserialize;
 
 use crate::{
     cipher_suite::CipherSuite,
-    extension::{ExtensionList, ExternalSendersExt, RatchetTreeExt},
+    extension::{ExternalSendersExt, RatchetTreeExt},
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     provider::{
@@ -19,6 +19,7 @@ use crate::{
         tree_validator::TreeValidator,
         TreeKemPublic,
     },
+    ExtensionList,
 };
 
 use super::{

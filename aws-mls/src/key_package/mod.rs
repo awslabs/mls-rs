@@ -1,6 +1,6 @@
 use crate::cipher_suite::CipherSuite;
+use crate::extension::ExtensionType;
 use crate::extension::RequiredCapabilitiesExt;
-use crate::extension::{ExtensionError, ExtensionList, ExtensionType};
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::{HashReference, HashReferenceError};
 use crate::identity::SigningIdentity;
@@ -10,6 +10,7 @@ use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
 use crate::time::MlsTime;
 use crate::tree_kem::leaf_node::LeafNode;
+use aws_mls_core::extension::ExtensionList;
 use serde_with::serde_as;
 use std::ops::Deref;
 use thiserror::Error;

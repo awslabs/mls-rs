@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
 use futures::{StreamExt, TryStreamExt};
 use serde_with::serde_as;
@@ -12,7 +13,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, MakeProposalFilter, ProposalFilterInit};
-use crate::extension::{ExtensionError, ExtensionList, ExternalPubExt, RatchetTreeExt};
+use crate::extension::{ExternalPubExt, RatchetTreeExt};
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
 use crate::protocol_version::ProtocolVersion;
@@ -1812,9 +1813,7 @@ mod tests {
             Client,
         },
         client_builder::{test_utils::TestClientConfig, Preferences},
-        extension::{
-            test_utils::TestExtension, Extension, ExternalSendersExt, RequiredCapabilitiesExt,
-        },
+        extension::{test_utils::TestExtension, ExternalSendersExt, RequiredCapabilitiesExt},
         identity::test_utils::get_test_signing_identity,
         key_package::test_utils::test_key_package_custom,
         psk::PreSharedKey,
@@ -1834,7 +1833,7 @@ mod tests {
     };
     use assert_matches::assert_matches;
 
-    use aws_mls_core::extension::MlsExtension;
+    use aws_mls_core::extension::{Extension, MlsExtension};
     use aws_mls_core::identity::{CertificateChain, Credential, CredentialType, CustomCredential};
     use futures::FutureExt;
     use tls_codec::Size;

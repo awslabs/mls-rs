@@ -1,12 +1,12 @@
 use itertools::Itertools;
 
 use crate::{
-    extension::ExtensionList,
     group::{
         proposal::CustomProposal, AddProposal, BorrowedProposal, ExternalInit,
         PreSharedKeyProposal, Proposal, ProposalOrRef, ProposalRef, ProposalType, ReInitProposal,
         RemoveProposal, Sender, UpdateProposal,
     },
+    ExtensionList,
 };
 use std::marker::PhantomData;
 

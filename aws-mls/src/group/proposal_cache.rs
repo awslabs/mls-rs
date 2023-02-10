@@ -1,3 +1,5 @@
+use aws_mls_core::extension::ExtensionError;
+
 use super::*;
 use crate::{
     group::proposal_filter::{

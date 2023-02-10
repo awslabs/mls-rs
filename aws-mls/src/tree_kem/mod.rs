@@ -15,7 +15,7 @@ use self::hpke_encryption::HpkeEncryptionError;
 use self::leaf_node::{LeafNode, LeafNodeError};
 use self::tree_utils::build_ascii_tree;
 
-use crate::extension::ExtensionError;
+use crate::error::ExtensionError;
 use crate::group::proposal::ProposalType;
 use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError};
 use crate::provider::crypto::{self, CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
