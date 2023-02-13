@@ -129,19 +129,36 @@ pub(crate) trait MessageProcessor: Send + Sync {
         cache_proposal: bool,
         time_sent: Option<MlsTime>,
     ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
+        let event_or_content = self.get_event_from_incoming_message(message).await?;
+
+        self.process_event_or_content(event_or_content, cache_proposal, time_sent)
+            .await
+    }
+
+    async fn get_event_from_incoming_message(
+        &mut self,
+        message: MLSMessage,
+    ) -> Result<EventOrContent<Self::EventType>, GroupError> {
         self.check_metadata(&message)?;
 
         let wire_format = message.wire_format();
 
-        let event_or_content = match message.payload {
+        match message.payload {
             MLSMessagePayload::Plain(plaintext) => self.verify_plaintext_authentication(plaintext),
             MLSMessagePayload::Cipher(cipher_text) => self.process_ciphertext(cipher_text).await,
             _ => Err(GroupError::UnexpectedMessageType(
                 vec![WireFormat::Plain, WireFormat::Cipher],
                 wire_format,
             )),
-        }?;
+        }
+    }
 
+    async fn process_event_or_content(
+        &mut self,
+        event_or_content: EventOrContent<Self::EventType>,
+        cache_proposal: bool,
+        time_sent: Option<MlsTime>,
+    ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
         let msg = match event_or_content {
             EventOrContent::Event(event) => ProcessedMessage::from(event),
             EventOrContent::Content(content) => {

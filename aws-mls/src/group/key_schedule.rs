@@ -455,6 +455,12 @@ pub(crate) mod test_utils {
             InitSecret(init_secret)
         }
     }
+
+    impl KeySchedule {
+        pub fn set_membership_key(&mut self, key: Vec<u8>) {
+            self.membership_key = key
+        }
+    }
 }
 
 #[cfg(test)]

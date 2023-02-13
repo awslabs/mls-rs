@@ -121,6 +121,9 @@ pub mod secret_tree;
 #[cfg(not(feature = "benchmark"))]
 pub(crate) mod secret_tree;
 
+#[cfg(test)]
+mod interop_test_vectors;
+
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 struct GroupSecrets {
     joiner_secret: JoinerSecret,
