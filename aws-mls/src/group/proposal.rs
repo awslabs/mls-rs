@@ -8,6 +8,7 @@ pub use proposal_filter::{
     ProposalFilterError,
 };
 
+pub use proposal_filter::ProposalFilterContext;
 pub use proposal_ref::ProposalRef;
 
 pub use aws_mls_core::group::ProposalType;

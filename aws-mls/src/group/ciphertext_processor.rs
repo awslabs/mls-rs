@@ -1,19 +1,20 @@
 use self::{
     message_key::MessageKey,
     reuse_guard::ReuseGuard,
-    sender_data_key::{MLSSenderData, MLSSenderDataAAD, SenderDataKey},
+    sender_data_key::{SenderData, SenderDataAAD, SenderDataKey},
 };
 
 use super::{
     epoch::EpochSecrets,
     framing::{
-        ContentType, MLSCiphertext, MLSCiphertextContent, MLSCiphertextContentAAD, MLSContent,
-        Sender, WireFormat,
+        ContentType, FramedContent, PrivateContentAAD, PrivateContentTBE, PrivateMessage, Sender,
+        WireFormat,
     },
     key_schedule::KeyScheduleError,
-    message_signature::MLSAuthenticatedContent,
+    message_signature::AuthenticatedContent,
+    padding::PaddingMode,
     secret_tree::{KeyType, SecretTreeError},
-    GroupContext, PaddingMode,
+    GroupContext,
 };
 use crate::{provider::crypto::CipherSuiteProvider, psk::PskError, tree_kem::node::LeafIndex};
 use thiserror::Error;
@@ -80,9 +81,9 @@ where
 
     pub fn seal(
         &mut self,
-        auth_content: MLSAuthenticatedContent,
+        auth_content: AuthenticatedContent,
         padding: PaddingMode,
-    ) -> Result<MLSCiphertext, CiphertextProcessorError> {
+    ) -> Result<PrivateMessage, CiphertextProcessorError> {
         if Sender::Member(*self.group_state.self_index()) != auth_content.content.sender {
             return Err(CiphertextProcessorError::InvalidSender(
                 auth_content.content.sender,
@@ -93,7 +94,7 @@ where
         let authenticated_data = auth_content.content.authenticated_data;
 
         // Build a ciphertext content using the plaintext content and signature
-        let mut ciphertext_content = MLSCiphertextContent {
+        let mut ciphertext_content = PrivateContentTBE {
             content: auth_content.content.content,
             auth: auth_content.auth,
             padding: Vec::new(),
@@ -102,7 +103,7 @@ where
         padding.apply_padding(&mut ciphertext_content);
 
         // Build ciphertext aad using the plaintext message
-        let aad = MLSCiphertextContentAAD {
+        let aad = PrivateContentAAD {
             group_id: auth_content.content.group_id,
             epoch: auth_content.content.epoch,
             content_type,
@@ -142,13 +143,13 @@ where
 
         // Construct an mls sender data struct using the plaintext sender info, the generation
         // of the key schedule encryption key, and the reuse guard used to encrypt ciphertext
-        let sender_data = MLSSenderData {
+        let sender_data = SenderData {
             sender: self_index,
             generation,
             reuse_guard,
         };
 
-        let sender_data_aad = MLSSenderDataAAD {
+        let sender_data_aad = SenderDataAAD {
             group_id: self.group_state.group_context().group_id.clone(),
             epoch: self.group_state.group_context().epoch,
             content_type,
@@ -164,7 +165,7 @@ where
 
         let encrypted_sender_data = sender_data_key.seal(&sender_data, &sender_data_aad)?;
 
-        Ok(MLSCiphertext {
+        Ok(PrivateMessage {
             group_id: self.group_state.group_context().group_id.clone(),
             epoch: self.group_state.group_context().epoch,
             content_type,
@@ -176,11 +177,11 @@ where
 
     pub fn open(
         &mut self,
-        ciphertext: MLSCiphertext,
-    ) -> Result<MLSAuthenticatedContent, CiphertextProcessorError> {
+        ciphertext: PrivateMessage,
+    ) -> Result<AuthenticatedContent, CiphertextProcessorError> {
         // Decrypt the sender data with the derived sender_key and sender_nonce from the message
         // epoch's key schedule
-        let sender_data_aad = MLSSenderDataAAD {
+        let sender_data_aad = SenderDataAAD {
             group_id: self.group_state.group_context().group_id.clone(),
             epoch: self.group_state.group_context().epoch,
             content_type: ciphertext.content_type,
@@ -224,21 +225,19 @@ where
                 .decrypt(
                     &self.cipher_suite_provider,
                     &ciphertext.ciphertext,
-                    &MLSCiphertextContentAAD::from(&ciphertext).tls_serialize_detached()?,
+                    &PrivateContentAAD::from(&ciphertext).tls_serialize_detached()?,
                     &sender_data.reuse_guard,
                 )
                 .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))?,
         );
 
-        let ciphertext_content = MLSCiphertextContent::tls_deserialize(
-            &mut &**decrypted_content,
-            ciphertext.content_type,
-        )?;
+        let ciphertext_content =
+            PrivateContentTBE::tls_deserialize(&mut &**decrypted_content, ciphertext.content_type)?;
 
         // Build the MLS plaintext object and process it
-        let auth_content = MLSAuthenticatedContent {
-            wire_format: WireFormat::Cipher,
-            content: MLSContent {
+        let auth_content = AuthenticatedContent {
+            wire_format: WireFormat::PrivateMessage,
+            content: FramedContent {
                 group_id: ciphertext.group_id.clone(),
                 epoch: ciphertext.epoch,
                 sender,
@@ -260,9 +259,9 @@ mod test {
         group::{
             epoch::{test_utils::get_test_epoch, PriorEpoch},
             framing::{ApplicationData, Content, Sender, WireFormat},
-            message_signature::MLSAuthenticatedContent,
+            message_signature::AuthenticatedContent,
+            padding::PaddingMode,
             test_utils::random_bytes,
-            PaddingMode,
         },
         provider::crypto::{
             test_utils::{test_cipher_suite_provider, TestCryptoProvider},
@@ -280,7 +279,7 @@ mod test {
 
     struct TestData {
         epoch: PriorEpoch,
-        content: MLSAuthenticatedContent,
+        content: AuthenticatedContent,
     }
 
     fn test_processor(
@@ -296,13 +295,13 @@ mod test {
         let test_epoch = get_test_epoch(cipher_suite);
         let (test_signer, _) = provider.signature_key_generate().unwrap();
 
-        let test_content = MLSAuthenticatedContent::new_signed(
+        let test_content = AuthenticatedContent::new_signed(
             &provider,
             &test_epoch.context,
             Sender::Member(0),
             Content::Application(ApplicationData::from(b"test".to_vec())),
             &test_signer,
-            WireFormat::Cipher,
+            WireFormat::PrivateMessage,
             vec![],
         )
         .unwrap();

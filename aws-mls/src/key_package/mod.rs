@@ -172,13 +172,14 @@ impl<'a> Signable<'a> for KeyPackage {
 pub(crate) mod test_utils {
     use super::*;
     use crate::{
-        group::{framing::MLSMessagePayload, MLSMessage},
+        group::framing::MLSMessagePayload,
         identity::test_utils::get_test_signing_identity,
         provider::{
             crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
             identity::BasicIdentityProvider,
         },
         tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
+        MLSMessage,
     };
     use futures::{future::BoxFuture, FutureExt};
 

@@ -2,9 +2,9 @@ use crate::cipher_suite::CipherSuite;
 use crate::client_builder::{BaseConfig, ClientBuilder};
 use crate::client_config::ClientConfig;
 use crate::group::framing::{
-    Content, MLSMessage, MLSMessagePayload, MLSPlaintext, Sender, WireFormat,
+    Content, MLSMessage, MLSMessagePayload, PublicMessage, Sender, WireFormat,
 };
-use crate::group::message_signature::MLSAuthenticatedContent;
+use crate::group::message_signature::AuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
 use crate::group::{process_group_info, Group, GroupError, NewMemberInfo};
 use crate::hash_reference::HashReferenceError;
@@ -64,7 +64,7 @@ pub enum ClientError {
     GroupNotFound(String),
 }
 
-/// MLS client used to create key packages and manage groups
+/// MLS client used to create key packages and manage groups.
 ///
 /// [`Client::builder`] can be used to instantiate it.
 ///
@@ -389,17 +389,17 @@ where
             .await?
             .key_package;
 
-        let message = MLSAuthenticatedContent::new_signed(
+        let message = AuthenticatedContent::new_signed(
             &cipher_suite_provider,
             &group_context,
             Sender::NewMemberProposal,
             Content::Proposal(Proposal::Add(AddProposal { key_package })),
             &signer,
-            WireFormat::Plain,
+            WireFormat::PublicMessage,
             authenticated_data,
         )?;
 
-        let plaintext = MLSPlaintext {
+        let plaintext = PublicMessage {
             content: message.content,
             auth: message.auth,
             membership_tag: None,

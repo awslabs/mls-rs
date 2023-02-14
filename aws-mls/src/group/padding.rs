@@ -1,10 +1,15 @@
 use tls_codec::Size;
 
-use super::framing::MLSCiphertextContent;
+use super::framing::PrivateContentTBE;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Padding used when sending an encrypted group message.
 pub enum PaddingMode {
+    /// Step function based on the size of the message being sent.
+    /// The amount of padding used will increase with the size of the original
+    /// message.
     StepFunction,
+    /// No padding.
     None,
 }
 
@@ -15,7 +20,7 @@ impl Default for PaddingMode {
 }
 
 impl PaddingMode {
-    pub(super) fn apply_padding(&self, content: &mut MLSCiphertextContent) {
+    pub(super) fn apply_padding(&self, content: &mut PrivateContentTBE) {
         content.padding.clear();
         match self {
             PaddingMode::StepFunction => {

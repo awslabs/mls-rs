@@ -2,11 +2,11 @@ use super::{
     commit_sender,
     confirmation_tag::ConfirmationTag,
     framing::{
-        ApplicationData, Content, ContentType, MLSCiphertext, MLSMessage, MLSMessagePayload,
-        MLSPlaintext, Sender, WireFormat,
+        ApplicationData, Content, ContentType, MLSMessage, MLSMessagePayload, PrivateMessage,
+        PublicMessage, Sender, WireFormat,
     },
     member_from_key_package, member_from_leaf_node,
-    message_signature::MLSAuthenticatedContent,
+    message_signature::AuthenticatedContent,
     proposal::{CustomProposal, ExternalInit, Proposal, ReInitProposal},
     proposal_cache::ProposalSetEffects,
     proposal_effects,
@@ -29,6 +29,7 @@ use async_trait::async_trait;
 use aws_mls_core::{
     group::RosterUpdate,
     identity::{IdentityProvider, IdentityWarning},
+    psk::ExternalPskId,
 };
 
 #[derive(Debug)]
@@ -47,30 +48,88 @@ pub(crate) struct ProvisionalState {
     pub(crate) rejected_proposals: Vec<(ProposalRef, Proposal)>,
 }
 
+/// Representation of changes made by a [commit](crate::Group::commit).
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct StateUpdate {
-    pub roster_update: RosterUpdate,
-    pub identity_events: Vec<IdentityWarning>,
-    pub added_psks: Vec<JustPreSharedKeyID>,
-    pub pending_reinit: bool,
-    pub active: bool,
-    pub epoch: u64,
-    pub custom_proposals: Vec<CustomProposal>,
-    pub rejected_proposals: Vec<(ProposalRef, Proposal)>,
+    pub(crate) roster_update: RosterUpdate,
+    pub(crate) identity_events: Vec<IdentityWarning>,
+    pub(crate) added_psks: Vec<ExternalPskId>,
+    pub(crate) pending_reinit: bool,
+    pub(crate) active: bool,
+    pub(crate) epoch: u64,
+    pub(crate) custom_proposals: Vec<CustomProposal>,
+    pub(crate) rejected_proposals: Vec<(ProposalRef, Proposal)>,
+}
+
+impl StateUpdate {
+    /// Changes to the roster as a result of proposals.
+    pub fn roster_update(&self) -> &RosterUpdate {
+        &self.roster_update
+    }
+
+    /// Warnings about roster changes produced by the
+    /// [`IdentityProvider`](crate::provider::identity::IdentityProvider)
+    /// currently in use by the group.
+    pub fn identity_warnings(&self) -> &[IdentityWarning] {
+        &self.identity_events
+    }
+
+    /// Pre-shared keys that have been added to the group.
+    pub fn added_psks(&self) -> &[ExternalPskId] {
+        &self.added_psks
+    }
+
+    /// Flag to indicate if the group is now pending reinitialization due to
+    /// receiving a [`ReInit`](crate::group::proposal::Proposal::ReInit)
+    /// proposal.
+    pub fn is_pending_reinit(&self) -> bool {
+        self.pending_reinit
+    }
+
+    /// Flag to indicate the group is still active. This will be false if the
+    /// member processing the commit has been removed from the group.
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
+
+    /// The new epoch of the group state.
+    pub fn new_epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    /// Custom proposals that were committed to.
+    pub fn custom_proposals(&self) -> &[CustomProposal] {
+        &self.custom_proposals
+    }
+
+    /// Proposals that were received in the prior epoch but not committed to.
+    pub fn rejected_proposals(&self) -> &[(ProposalRef, Proposal)] {
+        &self.rejected_proposals
+    }
 }
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
+/// An event generated as a result of processing a message for a group with
+/// [`Group::process_incoming_message`](crate::group::Group::process_incoming_message).
 pub enum Event {
+    /// An application message was decrypted.
     ApplicationMessage(Vec<u8>),
+    /// A new commit was processed creating a new group state.
     Commit(StateUpdate),
+    /// A proposal was received.
     Proposal((Proposal, ProposalRef)),
 }
 
+/// Result of calling
+/// [`Group::process_incoming_message`](crate::group::Group::process_incoming_message)
 #[derive(Clone, Debug)]
 pub struct ProcessedMessage<E> {
+    /// The [`Event`] produced by processing the message.
     pub event: E,
-    pub sender: Option<Sender>,
+    /// Sender description of the message processed.
+    pub sender: Option<Sender>, //TODO: Find a way to get rid of Option here
+    /// Unencrypted authenticated data sent with the processed message.
     pub authenticated_data: Vec<u8>,
 }
 
@@ -99,7 +158,7 @@ impl From<(Proposal, ProposalRef)> for Event {
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum EventOrContent<E> {
     Event(E),
-    Content(MLSAuthenticatedContent),
+    Content(AuthenticatedContent),
 }
 
 #[async_trait]
@@ -147,7 +206,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             MLSMessagePayload::Plain(plaintext) => self.verify_plaintext_authentication(plaintext),
             MLSMessagePayload::Cipher(cipher_text) => self.process_ciphertext(cipher_text).await,
             _ => Err(GroupError::UnexpectedMessageType(
-                vec![WireFormat::Plain, WireFormat::Cipher],
+                vec![WireFormat::PublicMessage, WireFormat::PrivateMessage],
                 wire_format,
             )),
         }
@@ -172,7 +231,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
     async fn process_auth_content(
         &mut self,
-        auth_content: MLSAuthenticatedContent,
+        auth_content: AuthenticatedContent,
         cache_proposal: bool,
         time_sent: Option<MlsTime>,
     ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
@@ -200,7 +259,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
     fn process_proposal(
         &mut self,
-        auth_content: &MLSAuthenticatedContent,
+        auth_content: &AuthenticatedContent,
         proposal: &Proposal,
         cache_proposal: bool,
     ) -> Result<ProposalRef, GroupError> {
@@ -254,14 +313,13 @@ pub(crate) trait MessageProcessor: Send + Sync {
         let psks = provisional
             .psks
             .iter()
-            .map(|psk_id| psk_id.key_id.clone())
+            .filter_map(|psk_id| match &psk_id.key_id {
+                JustPreSharedKeyID::External(e) => Some(e.clone()),
+                _ => None,
+            })
             .collect::<Vec<_>>();
 
-        let roster_update = RosterUpdate {
-            added,
-            removed,
-            updated,
-        };
+        let roster_update = RosterUpdate::new(added, removed, updated);
 
         let identity_events = self
             .identity_provider()
@@ -285,7 +343,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
     async fn process_commit(
         &mut self,
-        auth_content: MLSAuthenticatedContent,
+        auth_content: AuthenticatedContent,
         time_sent: Option<MlsTime>,
     ) -> Result<StateUpdate, GroupError> {
         let commit = match auth_content.content.content {
@@ -425,13 +483,13 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 &plaintext.content.group_id,
                 plaintext.content.epoch,
                 plaintext.content.content_type(),
-                WireFormat::Plain,
+                WireFormat::PublicMessage,
             )),
             MLSMessagePayload::Cipher(ciphertext) => Some((
                 &ciphertext.group_id,
                 ciphertext.epoch,
                 ciphertext.content_type,
-                WireFormat::Cipher,
+                WireFormat::PrivateMessage,
             )),
             _ => None,
         } {
@@ -468,7 +526,8 @@ pub(crate) trait MessageProcessor: Send + Sync {
             }
 
             // Unencrypted application messages are not allowed
-            if wire_format == WireFormat::Plain && content_type == ContentType::Application {
+            if wire_format == WireFormat::PublicMessage && content_type == ContentType::Application
+            {
                 return Err(GroupError::UnencryptedApplicationMessage);
             }
         }
@@ -478,12 +537,12 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
     async fn process_ciphertext(
         &mut self,
-        cipher_text: MLSCiphertext,
+        cipher_text: PrivateMessage,
     ) -> Result<EventOrContent<Self::EventType>, GroupError>;
 
     fn verify_plaintext_authentication(
         &self,
-        message: MLSPlaintext,
+        message: PublicMessage,
     ) -> Result<EventOrContent<Self::EventType>, GroupError>;
 
     fn calculate_provisional_state(

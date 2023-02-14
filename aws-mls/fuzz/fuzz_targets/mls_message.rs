@@ -1,7 +1,7 @@
 #![no_main]
 use aws_mls::bench_utils::group_functions::{create_group, TestClientConfig};
-use aws_mls::group::{Group, MLSMessage};
-use aws_mls::CipherSuite;
+use aws_mls::Group;
+use aws_mls::{CipherSuite, MLSMessage};
 use futures::executor::block_on;
 use libfuzzer_sys::fuzz_target;
 use once_cell::sync::Lazy;

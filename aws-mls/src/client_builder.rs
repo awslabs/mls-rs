@@ -14,7 +14,7 @@ use crate::{
         proposal::{BorrowedProposal, ProposalType},
         proposal_filter::ProposalFilterContext,
         state_repo::DEFAULT_EPOCH_RETENTION_LIMIT,
-        ControlEncryptionMode, PaddingMode,
+        ControlEncryptionMode,
     },
     identity::CredentialType,
     identity::SigningIdentity,
@@ -32,6 +32,8 @@ use crate::{
     Sealed,
 };
 use async_trait::async_trait;
+
+pub use crate::group::padding::PaddingMode;
 
 /// Base client configuration type when instantiating `ClientBuilder`
 pub type BaseConfig = Config<

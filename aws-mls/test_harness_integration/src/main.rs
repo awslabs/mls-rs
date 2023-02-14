@@ -6,8 +6,7 @@
 use aws_mls::client_builder::{
     BaseConfig, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider, WithKeychain,
 };
-use aws_mls::group::MLSMessage;
-use aws_mls::group::{Event, Group, StateUpdate};
+use aws_mls::group::{Event, StateUpdate};
 use aws_mls::identity::BasicCredential;
 use aws_mls::identity::SigningIdentity;
 use aws_mls::provider::crypto::{CipherSuiteProvider, CryptoProvider};
@@ -19,6 +18,8 @@ use aws_mls::provider::{
 use aws_mls::tls_codec::{Deserialize, Serialize};
 use aws_mls::CipherSuite;
 use aws_mls::Client;
+use aws_mls::Group;
+use aws_mls::MLSMessage;
 use aws_mls::ProtocolVersion;
 use aws_mls::{Extension, ExtensionList};
 
@@ -67,35 +68,35 @@ impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
 
     fn try_from((state_update, state_id): (StateUpdate, u32)) -> Result<Self, Self::Error> {
         let added = state_update
-            .roster_update
-            .added
+            .roster_update()
+            .added()
             .iter()
             .map(|member| member.index())
             .collect();
 
         let updated_indices = state_update
-            .roster_update
-            .updated
+            .roster_update()
+            .updated()
             .iter()
             .map(|member| member.index())
             .collect();
 
         let removed_indices = state_update
-            .roster_update
-            .removed
+            .roster_update()
+            .removed()
             .iter()
             .map(|removed| removed.index())
             .collect();
 
         let removed_leaves = state_update
-            .roster_update
-            .removed
+            .roster_update()
+            .removed()
             .iter()
             .map(|member| member.leaf_bytes().to_vec())
             .collect::<Vec<_>>();
 
         let psks = state_update
-            .added_psks
+            .added_psks()
             .iter()
             .map(|psk_id| psk_id.tls_serialize_detached())
             .collect::<Result<Vec<_>, _>>()
@@ -108,7 +109,7 @@ impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
             removed_indices,
             removed_leaves,
             psks,
-            active: state_update.active as u32,
+            active: state_update.is_active() as u32,
         })
     }
 }

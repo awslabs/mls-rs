@@ -13,8 +13,8 @@ use super::{
     confirmation_tag::ConfirmationTag,
     epoch::EpochSecrets,
     framing::{Content, WireFormat},
+    internal::AuthenticatedContent,
     message_processor::{EventOrContent, MessageProcessor},
-    message_signature::MLSAuthenticatedContent,
     proposal::{Proposal, RemoveProposal},
     secret_tree::test_utils::get_test_tree,
     test_utils::random_bytes,
@@ -202,13 +202,13 @@ async fn framing_comit() {
 
         let commit = Commit::tls_deserialize(&mut &*test_case.commit).unwrap();
 
-        let mut auth_content = MLSAuthenticatedContent::new_signed(
+        let mut auth_content = AuthenticatedContent::new_signed(
             &cs,
             &test_case.context.clone().into(),
             Sender::Member(1),
             Content::Commit(commit.clone()),
             &test_case.signature_priv.clone().into(),
-            WireFormat::Plain,
+            WireFormat::PublicMessage,
             vec![],
         )
         .unwrap();
@@ -285,13 +285,13 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
 
         test_case.commit = commit.tls_serialize_detached().unwrap();
 
-        let mut auth_content = MLSAuthenticatedContent::new_signed(
+        let mut auth_content = AuthenticatedContent::new_signed(
             &cs,
             group.context(),
             Sender::Member(1),
             Content::Commit(commit.clone()),
             &group.signer().await.unwrap(),
-            WireFormat::Plain,
+            WireFormat::PublicMessage,
             vec![],
         )
         .unwrap();
@@ -302,13 +302,13 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
         let commit_pub = group.format_for_wire(auth_content.clone()).unwrap();
         test_case.commit_pub = commit_pub.tls_serialize_detached().unwrap();
 
-        let mut auth_content = MLSAuthenticatedContent::new_signed(
+        let mut auth_content = AuthenticatedContent::new_signed(
             &cs,
             group.context(),
             Sender::Member(1),
             Content::Commit(commit),
             &group.signer().await.unwrap(),
-            WireFormat::Cipher,
+            WireFormat::PrivateMessage,
             vec![],
         )
         .unwrap();

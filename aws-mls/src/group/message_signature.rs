@@ -1,5 +1,5 @@
 use super::framing::Content;
-use crate::group::framing::{ContentType, MLSContent, MLSPlaintext, Sender, WireFormat};
+use crate::group::framing::{ContentType, FramedContent, PublicMessage, Sender, WireFormat};
 use crate::group::{ConfirmationTag, GroupContext};
 use crate::provider::crypto::{CipherSuiteProvider, SignatureSecretKey};
 use crate::signer::{Signable, SignatureError};
@@ -13,17 +13,17 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct MLSContentAuthData {
+pub struct FramedContentAuthData {
     pub signature: MessageSignature,
     pub confirmation_tag: Option<ConfirmationTag>,
 }
 
-impl MLSContentAuthData {
+impl FramedContentAuthData {
     pub(crate) fn tls_deserialize<R: Read>(
         bytes: &mut R,
         content_type: ContentType,
     ) -> Result<Self, tls_codec::Error> {
-        Ok(MLSContentAuthData {
+        Ok(FramedContentAuthData {
             signature: MessageSignature::tls_deserialize(bytes)?,
             confirmation_tag: match content_type {
                 ContentType::Commit => Some(ConfirmationTag::tls_deserialize(bytes)?),
@@ -33,40 +33,40 @@ impl MLSContentAuthData {
     }
 }
 #[derive(Clone, Debug, PartialEq, TlsSize, TlsSerialize)]
-pub struct MLSAuthenticatedContent {
+pub struct AuthenticatedContent {
     pub(crate) wire_format: WireFormat,
-    pub(crate) content: MLSContent,
-    pub(crate) auth: MLSContentAuthData,
+    pub(crate) content: FramedContent,
+    pub(crate) auth: FramedContentAuthData,
 }
 
-impl From<MLSPlaintext> for MLSAuthenticatedContent {
-    fn from(p: MLSPlaintext) -> Self {
+impl From<PublicMessage> for AuthenticatedContent {
+    fn from(p: PublicMessage) -> Self {
         Self {
-            wire_format: WireFormat::Plain,
+            wire_format: WireFormat::PublicMessage,
             content: p.content,
             auth: p.auth,
         }
     }
 }
 
-impl MLSAuthenticatedContent {
+impl AuthenticatedContent {
     pub(crate) fn new(
         context: &GroupContext,
         sender: Sender,
         content: Content,
         authenticated_data: Vec<u8>,
         wire_format: WireFormat,
-    ) -> MLSAuthenticatedContent {
-        MLSAuthenticatedContent {
+    ) -> AuthenticatedContent {
+        AuthenticatedContent {
             wire_format,
-            content: MLSContent {
+            content: FramedContent {
                 group_id: context.group_id.clone(),
                 epoch: context.epoch,
                 sender,
                 authenticated_data,
                 content,
             },
-            auth: MLSContentAuthData {
+            auth: FramedContentAuthData {
                 signature: MessageSignature::empty(),
                 confirmation_tag: None,
             },
@@ -81,10 +81,10 @@ impl MLSAuthenticatedContent {
         signer: &SignatureSecretKey,
         wire_format: WireFormat,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSAuthenticatedContent, SignatureError> {
+    ) -> Result<AuthenticatedContent, SignatureError> {
         // Construct an MLSPlaintext object containing the content
         let mut plaintext =
-            MLSAuthenticatedContent::new(context, sender, content, authenticated_data, wire_format);
+            AuthenticatedContent::new(context, sender, content, authenticated_data, wire_format);
 
         let signing_context = MessageSigningContext {
             group_context: Some(context),
@@ -98,7 +98,7 @@ impl MLSAuthenticatedContent {
     }
 }
 
-impl Size for MLSContentAuthData {
+impl Size for FramedContentAuthData {
     fn tls_serialized_len(&self) -> usize {
         self.signature.tls_serialized_len()
             + self
@@ -108,7 +108,7 @@ impl Size for MLSContentAuthData {
     }
 }
 
-impl Serialize for MLSContentAuthData {
+impl Serialize for FramedContentAuthData {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         Ok(self.signature.tls_serialize(writer)?
             + self
@@ -118,13 +118,13 @@ impl Serialize for MLSContentAuthData {
     }
 }
 
-impl Deserialize for MLSAuthenticatedContent {
+impl Deserialize for AuthenticatedContent {
     fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
         let wire_format = WireFormat::tls_deserialize(bytes)?;
-        let content = MLSContent::tls_deserialize(bytes)?;
-        let auth_data = MLSContentAuthData::tls_deserialize(bytes, content.content_type())?;
+        let content = FramedContent::tls_deserialize(bytes)?;
+        let auth_data = FramedContentAuthData::tls_deserialize(bytes, content.content_type())?;
 
-        Ok(MLSAuthenticatedContent {
+        Ok(AuthenticatedContent {
             wire_format,
             content,
             auth: auth_data,
@@ -132,7 +132,7 @@ impl Deserialize for MLSAuthenticatedContent {
     }
 }
 
-impl serde::Serialize for MLSAuthenticatedContent {
+impl serde::Serialize for AuthenticatedContent {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -145,25 +145,25 @@ impl serde::Serialize for MLSAuthenticatedContent {
     }
 }
 
-impl<'de> serde::Deserialize<'de> for MLSAuthenticatedContent {
+impl<'de> serde::Deserialize<'de> for AuthenticatedContent {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         let data: Vec<u8> = Vec::deserialize(deserializer)?;
-        MLSAuthenticatedContent::tls_deserialize(&mut &*data).map_err(serde::de::Error::custom)
+        AuthenticatedContent::tls_deserialize(&mut &*data).map_err(serde::de::Error::custom)
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct MLSContentTBS<'a> {
+pub(crate) struct AuthenticatedContentTBS<'a> {
     pub(crate) protocol_version: ProtocolVersion,
     pub(crate) wire_format: WireFormat,
-    pub(crate) content: &'a MLSContent,
+    pub(crate) content: &'a FramedContent,
     pub(crate) context: Option<&'a GroupContext>,
 }
 
-impl<'a> Size for MLSContentTBS<'a> {
+impl<'a> Size for AuthenticatedContentTBS<'a> {
     fn tls_serialized_len(&self) -> usize {
         self.protocol_version.tls_serialized_len()
             + self.wire_format.tls_serialized_len()
@@ -175,7 +175,7 @@ impl<'a> Size for MLSContentTBS<'a> {
     }
 }
 
-impl<'a> Serialize for MLSContentTBS<'a> {
+impl<'a> Serialize for AuthenticatedContentTBS<'a> {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         Ok(self.protocol_version.tls_serialize(writer)?
             + self.wire_format.tls_serialize(writer)?
@@ -187,14 +187,14 @@ impl<'a> Serialize for MLSContentTBS<'a> {
     }
 }
 
-impl<'a> MLSContentTBS<'a> {
+impl<'a> AuthenticatedContentTBS<'a> {
     /// The group context must not be `None` when the sender is `Member` or `NewMember`.
     pub(crate) fn from_authenticated_content(
-        auth_content: &'a MLSAuthenticatedContent,
+        auth_content: &'a AuthenticatedContent,
         group_context: Option<&'a GroupContext>,
         protocol_version: ProtocolVersion,
     ) -> Self {
-        MLSContentTBS {
+        AuthenticatedContentTBS {
             protocol_version,
             wire_format: auth_content.wire_format,
             content: &auth_content.content,
@@ -212,7 +212,7 @@ pub(crate) struct MessageSigningContext<'a> {
     pub protocol_version: ProtocolVersion,
 }
 
-impl<'a> Signable<'a> for MLSAuthenticatedContent {
+impl<'a> Signable<'a> for AuthenticatedContent {
     const SIGN_LABEL: &'static str = "FramedContentTBS";
 
     type SigningContext = MessageSigningContext<'a>;
@@ -225,7 +225,7 @@ impl<'a> Signable<'a> for MLSAuthenticatedContent {
         &self,
         context: &MessageSigningContext,
     ) -> Result<Vec<u8>, tls_codec::Error> {
-        MLSContentTBS::from_authenticated_content(
+        AuthenticatedContentTBS::from_authenticated_content(
             self,
             context.group_context,
             context.protocol_version,

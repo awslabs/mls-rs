@@ -538,7 +538,7 @@ mod tests {
 
     struct TestProposals {
         test_sender: u32,
-        test_proposals: Vec<MLSAuthenticatedContent>,
+        test_proposals: Vec<AuthenticatedContent>,
         expected_effects: ProposalSetEffects,
         tree: TreeKemPublic,
     }
@@ -650,7 +650,7 @@ mod tests {
 
     fn filter_proposals(
         cipher_suite: CipherSuite,
-        proposals: Vec<MLSAuthenticatedContent>,
+        proposals: Vec<AuthenticatedContent>,
     ) -> impl Iterator<Item = (ProposalRef, CachedProposal)> {
         proposals
             .into_iter()
@@ -683,7 +683,7 @@ mod tests {
         ProposalCache::new(TEST_PROTOCOL_VERSION, TEST_GROUP.to_vec())
     }
 
-    fn test_proposal_cache_setup(proposals: Vec<MLSAuthenticatedContent>) -> ProposalCache {
+    fn test_proposal_cache_setup(proposals: Vec<AuthenticatedContent>) -> ProposalCache {
         let mut cache = make_proposal_cache();
         cache.extend(filter_proposals(TEST_CIPHER_SUITE, proposals));
         cache

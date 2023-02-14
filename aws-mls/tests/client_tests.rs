@@ -2,16 +2,17 @@ use assert_matches::assert_matches;
 use aws_mls::client_builder::{
     BaseConfig, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider, WithKeychain,
 };
-use aws_mls::group::MLSMessage;
-use aws_mls::group::{Event, Group, GroupError};
+use aws_mls::error::GroupError;
+use aws_mls::group::Event;
 use aws_mls::identity::SigningIdentity;
 use aws_mls::identity::{BasicCredential, Credential};
 use aws_mls::provider::crypto::CryptoProvider;
 use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage};
-use aws_mls::CipherSuite;
 use aws_mls::Client;
 use aws_mls::ExtensionList;
+use aws_mls::MLSMessage;
 use aws_mls::ProtocolVersion;
+use aws_mls::{CipherSuite, Group};
 use aws_mls_core::crypto::CipherSuiteProvider;
 use cfg_if::cfg_if;
 
@@ -229,14 +230,14 @@ async fn get_test_groups_clients(
     // Creator can confirm the commit was processed by the server
     let update = creator_group.apply_pending_commit().await.unwrap();
 
-    assert!(update.active);
-    assert_eq!(update.epoch, 1);
+    assert!(update.is_active());
+    assert_eq!(update.new_epoch(), 1);
 
     assert!(receiver_clients.iter().all(|client| creator_group
         .get_member_with_identity(client.identity.credential.as_basic().unwrap().identifier())
         .is_ok()));
 
-    assert!(update.roster_update.removed.is_empty());
+    assert!(update.roster_update().removed().is_empty());
 
     // Export the tree for receivers
     let tree_data = creator_group.export_tree().unwrap();
@@ -350,7 +351,7 @@ async fn remove_members(
 ) {
     let remove_indexes = removed_members
         .iter()
-        .map(|removed| groups[*removed].group_stats().unwrap().current_index)
+        .map(|removed| groups[*removed].current_member_index())
         .collect::<Vec<u32>>();
 
     let commit_builder = futures::stream::iter(remove_indexes)
@@ -543,10 +544,10 @@ async fn test_update_proposals(
             }
             .unwrap();
 
-            assert!(update.active);
-            assert_eq!(update.epoch, (i as u64) + 2);
-            assert!(update.roster_update.added.is_empty());
-            assert!(update.roster_update.removed.is_empty());
+            assert!(update.is_active());
+            assert_eq!(update.new_epoch(), (i as u64) + 2);
+            assert!(update.roster_update().added().is_empty());
+            assert!(update.roster_update().removed().is_empty());
             assert!(Group::equal_group_state(receiver, &creator_group));
         }
     }
@@ -616,18 +617,19 @@ async fn test_remove_proposals(
                 _ => panic!("Expected commit result"),
             };
 
-            assert_eq!(update.epoch, epoch_count as u64);
-            assert!(update.roster_update.added.is_empty());
+            assert_eq!(update.new_epoch(), epoch_count as u64);
+            assert!(update.roster_update().added().is_empty());
 
             if expect_inactive {
-                assert!(!update.active)
+                assert!(!update.is_active())
             } else {
                 assert!(update
-                    .roster_update
-                    .removed
+                    .roster_update()
+                    .removed()
                     .iter()
                     .any(|member| member.index() == to_remove_index));
-                assert!(update.active)
+
+                assert!(update.is_active())
             }
         }
 
@@ -1015,12 +1017,12 @@ async fn reinit_works() {
 
     // Both process Bob's commit
     let state_update = bob_group.apply_pending_commit().await.unwrap();
-    assert!(!state_update.active && state_update.pending_reinit);
+    assert!(!state_update.is_active() && state_update.is_pending_reinit());
 
     let message = alice_group.process_incoming_message(commit).await.unwrap();
 
     if let Event::Commit(state_update) = message.event {
-        assert!(!state_update.active && state_update.pending_reinit);
+        assert!(!state_update.is_active() && state_update.is_pending_reinit());
     }
 
     // They can't create new epochs anymore

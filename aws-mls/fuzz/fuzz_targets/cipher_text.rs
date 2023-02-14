@@ -3,8 +3,8 @@
 use aws_mls::bench_utils::group_functions::{
     create_fuzz_commit_message, create_group, TestClientConfig,
 };
-use aws_mls::group::Group;
 use aws_mls::CipherSuite;
+use aws_mls::Group;
 use futures::executor::block_on;
 use libfuzzer_sys::fuzz_target;
 use once_cell::sync::Lazy;

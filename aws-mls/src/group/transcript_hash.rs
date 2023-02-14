@@ -57,12 +57,12 @@ impl ConfirmedTranscriptHash {
     pub(crate) fn create<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         interim_transcript_hash: &InterimTranscriptHash,
-        content: &MLSAuthenticatedContent,
+        content: &AuthenticatedContent,
     ) -> Result<Self, TranscriptHashError> {
         #[derive(Debug, TlsSerialize, TlsSize)]
         struct ConfirmedTranscriptHashInput<'a> {
             wire_format: WireFormat,
-            content: &'a MLSContent,
+            content: &'a FramedContent,
             signature: &'a MessageSignature,
         }
 

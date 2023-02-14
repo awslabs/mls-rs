@@ -19,7 +19,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Wrapper type representing a ciphersuite identifier
 /// along with default values defined by the MLS RFC. Custom ciphersuites
-/// can be defined using a custom [CryptoProvider](aws_mls_core::crypto::CryptoProvider).
+/// can be defined using a custom [`CryptoProvider`](aws_mls_core::crypto::CryptoProvider).
 ///
 /// ## Default Ciphersuites
 ///

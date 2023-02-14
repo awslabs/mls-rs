@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     extension::ExternalSendersExt,
-    group::{GroupContext, GroupError, MLSPlaintext, Sender},
+    group::{GroupContext, GroupError, PublicMessage, Sender},
     identity::SigningIdentity,
     provider::crypto::{CipherSuiteProvider, SignaturePublicKey},
     signer::Signable,
@@ -12,7 +12,7 @@ use crate::{
 use super::{
     framing::Content,
     key_schedule::KeySchedule,
-    message_signature::{MLSAuthenticatedContent, MessageSigningContext},
+    message_signature::{AuthenticatedContent, MessageSigningContext},
     proposal::{AddProposal, Proposal},
     state::GroupState,
 };
@@ -25,13 +25,13 @@ pub(crate) enum SignaturePublicKeysContainer<'a> {
 
 pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
-    plaintext: MLSPlaintext,
+    plaintext: PublicMessage,
     key_schedule: Option<&KeySchedule>,
     self_index: Option<LeafIndex>,
     state: &GroupState,
-) -> Result<MLSAuthenticatedContent, GroupError> {
+) -> Result<AuthenticatedContent, GroupError> {
     let tag = plaintext.membership_tag.clone();
-    let auth_content = MLSAuthenticatedContent::from(plaintext);
+    let auth_content = AuthenticatedContent::from(plaintext);
     let context = &state.context;
     let external_signers = external_signers(context);
     let current_tree = &state.public_tree;
@@ -91,7 +91,7 @@ pub(crate) fn verify_auth_content_signature<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     signature_keys_container: SignaturePublicKeysContainer,
     context: &GroupContext,
-    auth_content: &MLSAuthenticatedContent,
+    auth_content: &AuthenticatedContent,
     external_signers: &[SigningIdentity],
 ) -> Result<(), GroupError> {
     let sender_public_key = signing_identity_for_sender(
@@ -197,10 +197,10 @@ mod tests {
         group::{
             framing::WireFormat,
             membership_tag::MembershipTag,
-            message_signature::{MLSAuthenticatedContent, MessageSignature, MessageSigningContext},
+            message_signature::{AuthenticatedContent, MessageSignature, MessageSigningContext},
             proposal::{AddProposal, Proposal, RemoveProposal},
             test_utils::{test_group, test_group_custom, test_member, TestGroup},
-            Content, Group, GroupError, MLSPlaintext, Sender,
+            Content, Group, GroupError, PublicMessage, Sender,
         },
         identity::test_utils::get_test_signing_identity,
         key_package::KeyPackageGeneration,
@@ -216,7 +216,7 @@ mod tests {
 
     use super::{verify_auth_content_signature, verify_plaintext_authentication};
 
-    async fn make_signed_plaintext(group: &mut Group<TestClientConfig>) -> MLSPlaintext {
+    async fn make_signed_plaintext(group: &mut Group<TestClientConfig>) -> PublicMessage {
         group
             .commit(vec![])
             .await
@@ -295,8 +295,7 @@ mod tests {
     async fn valid_auth_content_is_verified() {
         let mut env = TestEnv::new(false).await;
 
-        let message =
-            MLSAuthenticatedContent::from(make_signed_plaintext(&mut env.alice.group).await);
+        let message = AuthenticatedContent::from(make_signed_plaintext(&mut env.alice.group).await);
 
         verify_auth_content_signature(
             &env.bob.group.cipher_suite_provider,
@@ -319,7 +318,7 @@ mod tests {
             .group
             .key_schedule
             .get_membership_tag(
-                &MLSAuthenticatedContent::from(message.clone()),
+                &AuthenticatedContent::from(message.clone()),
                 env.alice.group.context(),
                 &test_cipher_suite_provider(env.alice.group.cipher_suite()),
             )
@@ -376,11 +375,11 @@ mod tests {
         signer: &SignatureSecretKey,
         test_group: &TestGroup,
         mut edit: F,
-    ) -> MLSPlaintext
+    ) -> PublicMessage
     where
-        F: FnMut(&mut MLSAuthenticatedContent),
+        F: FnMut(&mut AuthenticatedContent),
     {
-        let mut content = MLSAuthenticatedContent::new_signed(
+        let mut content = AuthenticatedContent::new_signed(
             &test_group.group.cipher_suite_provider,
             test_group.group.context(),
             Sender::NewMemberProposal,
@@ -388,7 +387,7 @@ mod tests {
                 key_package: key_pkg_gen.key_package,
             })),
             signer,
-            WireFormat::Plain,
+            WireFormat::PublicMessage,
             vec![],
         )
         .unwrap();
@@ -408,7 +407,7 @@ mod tests {
             )
             .unwrap();
 
-        MLSPlaintext {
+        PublicMessage {
             content: content.content,
             auth: content.auth,
             membership_tag: None,

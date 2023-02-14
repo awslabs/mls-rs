@@ -1,8 +1,7 @@
 use aws_mls::{
     bench_utils::group_functions::{get_snapshot, load_test_cases},
     client_builder::MlsConfig,
-    group::Group,
-    CipherSuite,
+    CipherSuite, Group,
 };
 use criterion::{
     criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, BenchmarkId, Criterion,

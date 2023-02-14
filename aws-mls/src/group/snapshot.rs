@@ -95,6 +95,9 @@ impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
+    /// Write the current state of the group to the
+    /// [`GroupStorageProvider`](crate::provider::group_state::GroupStateStorage)
+    /// that is currently in use by the group.
     pub async fn write_to_storage(&mut self) -> Result<(), GroupError> {
         self.state_repo
             .write_to_storage(self.snapshot())

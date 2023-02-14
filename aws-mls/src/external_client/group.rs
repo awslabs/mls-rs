@@ -12,17 +12,17 @@ use crate::{
         cipher_suite_provider,
         confirmation_tag::ConfirmationTag,
         framing::{
-            ApplicationData, Content, MLSCiphertext, MLSMessagePayload, MLSPlaintext, WireFormat,
+            ApplicationData, Content, MLSMessagePayload, PrivateMessage, PublicMessage, WireFormat,
         },
         member_from_leaf_node,
         message_processor::{EventOrContent, MessageProcessor, ProvisionalState},
-        message_signature::MLSAuthenticatedContent,
+        message_signature::AuthenticatedContent,
         proposal::{AddProposal, Proposal, RemoveProposal},
+        proposal_ref::ProposalRef,
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_group_info, GroupError, MLSMessage, ProcessedMessage, ProposalRef, Sender,
-        StateUpdate,
+        validate_group_info, GroupError, ProcessedMessage, Sender, StateUpdate,
     },
     identity::SigningIdentity,
     key_package::KeyPackageValidator,
@@ -30,6 +30,7 @@ use crate::{
     provider::{crypto::CryptoProvider, keychain::KeychainStorage},
     psk::PassThroughPskIdValidator,
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
+    MLSMessage,
 };
 
 /// The result of processing an [ExternalGroup](ExternalGroup) message using
@@ -138,12 +139,12 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         let ptxt = match message.payload {
             MLSMessagePayload::Plain(p) => Ok(p),
             _ => Err(GroupError::UnexpectedMessageType(
-                vec![WireFormat::Plain],
+                vec![WireFormat::PublicMessage],
                 message.wire_format(),
             )),
         }?;
 
-        let auth_content: MLSAuthenticatedContent = ptxt.into();
+        let auth_content: AuthenticatedContent = ptxt.into();
         let proposal_ref = ProposalRef::from_content(&self.cipher_suite_provider, &auth_content)?;
         let sender = auth_content.content.sender;
 
@@ -267,13 +268,13 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
         let sender = Sender::External(sender_index as u32);
 
-        let auth_content = MLSAuthenticatedContent::new_signed(
+        let auth_content = AuthenticatedContent::new_signed(
             &self.cipher_suite_provider,
             &self.state.context,
             sender.clone(),
             Content::Proposal(proposal.clone()),
             &signer,
-            WireFormat::Plain,
+            WireFormat::PublicMessage,
             authenticated_data,
         )?;
 
@@ -283,7 +284,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             sender,
         );
 
-        let plaintext = MLSPlaintext {
+        let plaintext = PublicMessage {
             content: auth_content.content,
             auth: auth_content.auth,
             membership_tag: None,
@@ -395,7 +396,7 @@ where
 
     fn verify_plaintext_authentication(
         &self,
-        message: MLSPlaintext,
+        message: PublicMessage,
     ) -> Result<EventOrContent<Self::EventType>, GroupError> {
         let auth_content = crate::group::message_verifier::verify_plaintext_authentication(
             &self.cipher_suite_provider,
@@ -410,7 +411,7 @@ where
 
     async fn process_ciphertext(
         &mut self,
-        _cipher_text: MLSCiphertext,
+        _cipher_text: PrivateMessage,
     ) -> Result<EventOrContent<Self::EventType>, GroupError> {
         Ok(EventOrContent::Event(ExternalEvent::Ciphertext))
     }
@@ -573,13 +574,13 @@ mod tests {
             proposal::{AddProposal, Proposal, ProposalOrRef},
             proposal_ref::ProposalRef,
             test_utils::{test_group, TestGroup},
-            GroupError, MLSMessage,
+            GroupError,
         },
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
         key_package::test_utils::{test_key_package, test_key_package_message},
         protocol_version::ProtocolVersion,
         provider::crypto::{test_utils::TestCryptoProvider, SignatureSecretKey},
-        ExtensionList,
+        ExtensionList, MLSMessage,
     };
     use assert_matches::assert_matches;
     use futures::{future::BoxFuture, FutureExt};

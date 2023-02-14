@@ -1,5 +1,5 @@
 use crate::group::framing::WireFormat;
-use crate::group::message_signature::{MLSContentAuthData, MLSContentTBS};
+use crate::group::message_signature::{AuthenticatedContentTBS, FramedContentAuthData};
 use crate::group::GroupContext;
 use crate::provider::crypto::CipherSuiteProvider;
 use std::{io::Write, ops::Deref};
@@ -7,7 +7,7 @@ use thiserror::Error;
 use tls_codec::{Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-use super::message_signature::MLSAuthenticatedContent;
+use super::message_signature::AuthenticatedContent;
 
 #[derive(Error, Debug)]
 pub enum MembershipTagError {
@@ -20,30 +20,30 @@ pub enum MembershipTagError {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct MLSContentTBM<'a> {
-    content_tbs: MLSContentTBS<'a>,
-    auth: &'a MLSContentAuthData,
+struct AuthenticatedContentTBM<'a> {
+    content_tbs: AuthenticatedContentTBS<'a>,
+    auth: &'a FramedContentAuthData,
 }
 
-impl Size for MLSContentTBM<'_> {
+impl Size for AuthenticatedContentTBM<'_> {
     fn tls_serialized_len(&self) -> usize {
         self.content_tbs.tls_serialized_len() + self.auth.tls_serialized_len()
     }
 }
 
-impl Serialize for MLSContentTBM<'_> {
+impl Serialize for AuthenticatedContentTBM<'_> {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         Ok(self.content_tbs.tls_serialize(writer)? + self.auth.tls_serialize(writer)?)
     }
 }
 
-impl<'a> MLSContentTBM<'a> {
+impl<'a> AuthenticatedContentTBM<'a> {
     pub fn from_authenticated_content(
-        auth_content: &'a MLSAuthenticatedContent,
+        auth_content: &'a AuthenticatedContent,
         group_context: &'a GroupContext,
-    ) -> MLSContentTBM<'a> {
-        MLSContentTBM {
-            content_tbs: MLSContentTBS::from_authenticated_content(
+    ) -> AuthenticatedContentTBM<'a> {
+        AuthenticatedContentTBM {
+            content_tbs: AuthenticatedContentTBS::from_authenticated_content(
                 auth_content,
                 Some(group_context),
                 group_context.protocol_version,
@@ -73,19 +73,21 @@ impl From<Vec<u8>> for MembershipTag {
 
 impl MembershipTag {
     pub(crate) fn create<P: CipherSuiteProvider>(
-        authenticated_content: &MLSAuthenticatedContent,
+        authenticated_content: &AuthenticatedContent,
         group_context: &GroupContext,
         membership_key: &[u8],
         cipher_suite_provider: &P,
     ) -> Result<Self, MembershipTagError> {
-        if authenticated_content.wire_format != WireFormat::Plain {
+        if authenticated_content.wire_format != WireFormat::PublicMessage {
             return Err(MembershipTagError::NonPlainWireFormat(
                 authenticated_content.wire_format,
             ));
         }
 
-        let plaintext_tbm =
-            MLSContentTBM::from_authenticated_content(authenticated_content, group_context);
+        let plaintext_tbm = AuthenticatedContentTBM::from_authenticated_content(
+            authenticated_content,
+            group_context,
+        );
 
         let serialized_tbm = plaintext_tbm.tls_serialize_detached()?;
 

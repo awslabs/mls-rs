@@ -21,6 +21,7 @@ use super::ProposalType;
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+///  Capabilities of a MLS client
 pub struct Capabilities {
     #[tls_codec(with = "crate::tls::DefVec")]
     pub protocol_versions: Vec<ProtocolVersion>,
@@ -32,6 +33,33 @@ pub struct Capabilities {
     pub proposals: Vec<ProposalType>,
     #[tls_codec(with = "crate::tls::DefVec")]
     pub credentials: Vec<CredentialType>,
+}
+
+impl Capabilities {
+    /// Supported protocol versions
+    pub fn protocol_versions(&self) -> &[ProtocolVersion] {
+        &self.protocol_versions
+    }
+
+    /// Supported ciphersuites
+    pub fn cipher_suites(&self) -> &[CipherSuite] {
+        &self.cipher_suites
+    }
+
+    /// Supported extensions
+    pub fn extensions(&self) -> &[ExtensionType] {
+        &self.extensions
+    }
+
+    /// Supported proposals
+    pub fn proposals(&self) -> &[ProposalType] {
+        &self.proposals
+    }
+
+    /// Supported credentials
+    pub fn credentials(&self) -> &[CredentialType] {
+        &self.credentials
+    }
 }
 
 impl Default for Capabilities {
@@ -48,6 +76,7 @@ impl Default for Capabilities {
     }
 }
 
+/// A member of a MLS group.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Member {
     index: u32,
@@ -91,18 +120,24 @@ impl Member {
         }
     }
 
+    /// The index of this member within the current group [roster](Group::roster).
+    ///
+    /// This value is consistent for all clients.
     pub fn index(&self) -> u32 {
         self.index
     }
 
+    /// Current identity public key and credential of this member.
     pub fn signing_identity(&self) -> &SigningIdentity {
         &self.signing_identity
     }
 
+    /// Current client [Capabilities] of this member.
     pub fn capabilities(&self) -> &Capabilities {
         &self.capabilities
     }
 
+    /// Current leaf node extensions in use by this member.
     pub fn extensions(&self) -> &ExtensionList {
         &self.extensions
     }
@@ -113,9 +148,36 @@ impl Member {
     }
 }
 
+/// A set of roster updates due to a [commit](Group::commit)
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct RosterUpdate {
     pub added: Vec<Member>,
     pub removed: Vec<Member>,
     pub updated: Vec<Member>,
+}
+
+impl RosterUpdate {
+    /// Create a new roster update.
+    pub fn new(added: Vec<Member>, removed: Vec<Member>, updated: Vec<Member>) -> RosterUpdate {
+        RosterUpdate {
+            added,
+            removed,
+            updated,
+        }
+    }
+    /// Members added via this update.
+    pub fn added(&self) -> &[Member] {
+        &self.added
+    }
+
+    /// Members removed via this update.
+    pub fn removed(&self) -> &[Member] {
+        &self.removed
+    }
+
+    /// Members updated via this update.
+    pub fn updated(&self) -> &[Member] {
+        &self.updated
+    }
 }

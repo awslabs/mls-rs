@@ -110,6 +110,7 @@ pub mod extension;
 /// for server implementations.
 #[cfg(feature = "external_client")]
 pub mod external_client;
+/// E2EE group created by a [`Client`].
 pub mod group;
 mod hash_reference;
 pub mod identity;
@@ -122,9 +123,15 @@ pub use aws_mls_core::extension::{Extension, ExtensionList};
 
 pub use crate::client::Client;
 
-/// Error types
+pub use group::{
+    framing::{MLSMessage, WireFormat},
+    internal::Group,
+};
+
+/// Error types.
 pub mod error {
     pub use crate::client::ClientError;
+    pub use crate::group::error::GroupError;
     pub use aws_mls_core::extension::ExtensionError;
 }
 

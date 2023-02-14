@@ -26,7 +26,7 @@ use super::{
     confirmation_tag::ConfirmationTag,
     framing::{Sender, WireFormat},
     message_processor::ProvisionalState,
-    message_signature::MLSAuthenticatedContent,
+    message_signature::AuthenticatedContent,
     proposal_cache::{ProposalCache, ProposalSetEffects},
     proposal_filter::ProposalFilter,
     transcript_hash::InterimTranscriptHash,
@@ -232,7 +232,7 @@ where
 pub(super) fn transcript_hashes<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     prev_interim_transcript_hash: &InterimTranscriptHash,
-    content: &MLSAuthenticatedContent,
+    content: &AuthenticatedContent,
 ) -> Result<(InterimTranscriptHash, ConfirmedTranscriptHash), GroupError> {
     let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
         cipher_suite_provider,

@@ -21,7 +21,7 @@ use super::{
     framing::{Content, MLSMessage, Sender},
     key_schedule::{CommitSecret, KeySchedule},
     message_processor::MessageProcessor,
-    message_signature::MLSAuthenticatedContent,
+    message_signature::AuthenticatedContent,
     proposal::{CustomProposal, Proposal, ProposalOrRef},
     ConfirmedTranscriptHash, ControlEncryptionMode, Group, GroupError, GroupInfo,
 };
@@ -36,7 +36,7 @@ pub(crate) struct Commit {
 
 #[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub(super) struct CommitGeneration {
-    pub content: MLSAuthenticatedContent,
+    pub content: AuthenticatedContent,
     pub pending_secrets: Option<(TreeKemPrivate, PathSecret)>,
 }
 
@@ -49,11 +49,35 @@ struct CommitOptions {
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
+/// Result of MLS commit operation using
+/// [`Group::commit`](crate::group::Group::commit) or
+/// [`CommitBuilder::build`](CommitBuilder::build).
 pub struct CommitOutput {
+    /// Commit message to send to other group members.
     pub commit_message: MLSMessage,
+    /// Welcome message to send to new group members.
     pub welcome_message: Option<MLSMessage>,
 }
 
+impl CommitOutput {
+    /// Commit message to send to other group members.
+    pub fn commit_message(&self) -> &MLSMessage {
+        &self.commit_message
+    }
+
+    /// Welcome message to send to new group members.
+    pub fn welcome_message(&self) -> Option<&MLSMessage> {
+        self.welcome_message.as_ref()
+    }
+}
+
+/// Build a commit with multiple proposals by-value.
+///
+/// Proposals within a commit can be by-value or by-reference.
+/// Proposals received during the current epoch will be added to the resulting
+/// commit by-reference automatically so long as they pass the rules defined
+/// in the current
+/// [proposal filter](crate::client_builder::ClientBuilder::proposal_filter).
 pub struct CommitBuilder<'a, C>
 where
     C: ClientConfig + Clone,
@@ -69,6 +93,8 @@ impl<'a, C> CommitBuilder<'a, C>
 where
     C: ClientConfig + Clone,
 {
+    /// Insert an [`AddProposal`](crate::group::proposal::AddProposal) into
+    /// the current commit that is being built.
     pub fn add_member(
         mut self,
         key_package: MLSMessage,
@@ -78,6 +104,13 @@ where
         Ok(self)
     }
 
+    /// Set group info extensions that will be inserted into the resulting
+    /// [welcome message](CommitOutput::welcome_message) for new members.
+    ///
+    /// These extensions can be retrieved as part of
+    /// [`NewMemberInfo`](crate::group::NewMemberInfo) that is returned
+    /// by joining the group via
+    /// [`Client::join_group`](crate::Client::join_group).
     pub fn set_group_info_ext(self, extensions: ExtensionList) -> Self {
         Self {
             group_info_extensions: extensions,
@@ -85,24 +118,34 @@ where
         }
     }
 
+    /// Insert a [`RemoveProposal`](crate::group::proposal::RemoveProposal) into
+    /// the current commit that is being built.
     pub fn remove_member(mut self, index: u32) -> Result<Self, GroupError> {
         let proposal = self.group.remove_proposal(index)?;
         self.proposals.push(proposal);
         Ok(self)
     }
 
+    /// Insert a
+    /// [`GroupContextExtensions`](crate::group::proposal::Proposal::GroupContextExtensions)
+    /// into the current commit that is being built.
     pub fn set_group_context_ext(mut self, extensions: ExtensionList) -> Result<Self, GroupError> {
         let proposal = self.group.group_context_extensions_proposal(extensions);
         self.proposals.push(proposal);
         Ok(self)
     }
 
+    /// Insert a
+    /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) into
+    /// the current commit that is being built.
     pub fn add_psk(mut self, psk_id: ExternalPskId) -> Result<Self, GroupError> {
         let proposal = self.group.psk_proposal(psk_id)?;
         self.proposals.push(proposal);
         Ok(self)
     }
 
+    /// Insert a [`ReInitProposal`](crate::group::proposal::ReInitProposal) into
+    /// the current commit that is being built.
     pub fn reinit(
         mut self,
         group_id: Option<Vec<u8>>,
@@ -118,11 +161,18 @@ where
         Ok(self)
     }
 
+    /// Insert a [`CustomProposal`](crate::group::proposal::CustomProposal) into
+    /// the current commit that is being built.
     pub fn custom_proposal(mut self, proposal: CustomProposal) -> Self {
         self.proposals.push(Proposal::Custom(proposal));
         self
     }
 
+    /// Add additional authenticated data to the commit.
+    ///
+    /// # Warning
+    ///
+    /// The data provided here is always sent unencrypted.
     pub fn authenticated_data(self, authenticated_data: Vec<u8>) -> Self {
         Self {
             authenticated_data,
@@ -130,6 +180,13 @@ where
         }
     }
 
+    /// Change the committer's signing identity as part of making this commit.
+    /// This will only succeed if the [`IdentityProvider`](crate::provider::identity::IdentityProvider)
+    /// in use by the group considers the credential inside this signing_identity
+    /// [valid](crate::provider::identity::IdentityProvider::validate)
+    /// and results in the same
+    /// [identity](crate::provider::identity::IdentityProvider::identity)
+    /// being used.
     pub fn set_new_signing_identity(self, signing_identity: SigningIdentity) -> Self {
         Self {
             signing_identity: Some(signing_identity),
@@ -137,6 +194,14 @@ where
         }
     }
 
+    /// Finalize the commit to send.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if any of the proposals provided
+    /// are not contextually valid according to the rules defined by the
+    /// MLS RFC, or if they do not pass the custom rules defined by the current
+    /// [proposal filter](crate::client_builder::ClientBuilder::proposal_filter).
     pub async fn build(self) -> Result<CommitOutput, GroupError> {
         self.group
             .commit_proposals(
@@ -171,6 +236,46 @@ where
         .await
     }
 
+    /// Perform a commit of received proposals.
+    ///
+    /// This function is the equivalent of [`Group::commit_builder`] immediately
+    /// followed by [`CommitBuilder::build`]. Any received proposals since the
+    /// last commit will be included in the resulting message by-reference.
+    ///
+    /// Data provided in the `authenticated_data` field will be placed into
+    /// the resulting commit message unencrypted.
+    ///
+    /// # Pending Commits
+    ///
+    /// When a commit is created, it is not applied immediately in order to
+    /// allow for the resolution of conflicts when multiple members of a group
+    /// attempt to make commits at the same time. For example, a central relay
+    /// can be used to decide which commit should be accepted by the group by
+    /// determining a consistent view of commit packet order for all clients.
+    ///
+    /// Pending commits are stored internally as part of the group's state
+    /// so they do not need to be tracked outside of this library. Any commit
+    /// message that is processed before calling [Group::apply_pending_commit]
+    /// will clear the currently pending commit.
+    ///
+    /// # Empty Commits
+    ///
+    /// Sending a commit that contains no proposals is a valid operation
+    /// within the MLS protocol. It is useful for providing stronger forward
+    /// secrecy and post-compromise security, especially for long running
+    /// groups when group membership does not change often.
+    ///
+    /// # Path Updates
+    ///
+    /// Path updates provide forward secrecy and post-compromise security
+    /// within the MLS protocol.
+    /// The [force_commit_path_update](crate::client_builder::Preferences)
+    /// controls the ability of a group to send a commit without a path update.
+    /// An update path will automatically be sent if there are no proposals
+    /// in the commit, or if any proposal other than
+    /// [`Add`](crate::group::proposal::Proposal::Add),
+    /// [`Psk`](crate::group::proposal::Proposal::Psk),
+    /// or [`ReInit`](crate::group::proposal::Proposal::ReInit) are part of the commit.
     pub async fn commit(
         &mut self,
         authenticated_data: Vec<u8>,
@@ -179,6 +284,8 @@ where
             .await
     }
 
+    /// Create a new commit builder that can include proposals
+    /// by-value.
     pub fn commit_builder(&mut self) -> CommitBuilder<C> {
         CommitBuilder {
             group: self,
@@ -189,7 +296,8 @@ where
         }
     }
 
-    /// Returns commit and optional `MLSMessage` containing a `Welcome`
+    /// Returns commit and optional [`MLSMessage`] containing a welcome message
+    /// for newly added members.
     pub(super) async fn commit_internal(
         &mut self,
         proposals: Vec<Proposal>,
@@ -343,7 +451,7 @@ where
             path: update_path,
         };
 
-        let mut auth_content = MLSAuthenticatedContent::new_signed(
+        let mut auth_content = AuthenticatedContent::new_signed(
             &self.cipher_suite_provider,
             self.context(),
             sender,

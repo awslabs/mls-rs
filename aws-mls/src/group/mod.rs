@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::time::MlsTime;
 use futures::{StreamExt, TryStreamExt};
 use serde_with::serde_as;
 use std::collections::HashMap;
@@ -60,24 +61,22 @@ use transcript_hash::*;
 pub(crate) use self::commit::test_utils::CommitModifiers;
 
 #[cfg(test)]
-pub use self::framing::MLSCiphertext;
+pub use self::framing::PrivateMessage;
 
 use self::epoch::{EpochSecrets, PriorEpoch, SenderDataSecret};
 pub use self::message_processor::{Event, ProcessedMessage, StateUpdate};
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
+use self::padding::PaddingMode;
 use self::state_repo::GroupStateRepository;
 pub(crate) use group_info::GroupInfo;
 pub(crate) use proposal_cache::ProposalCacheError;
 
-pub use self::framing::MLSMessage;
+use self::framing::MLSMessage;
 pub use self::framing::Sender;
 pub use commit::*;
-pub use error::*;
-pub use padding::*;
-pub use proposal_filter::ProposalFilterContext;
-pub use proposal_ref::ProposalRef;
+pub(crate) use error::*;
+
 pub use roster::*;
-pub use stats::*;
 
 pub(crate) use transcript_hash::ConfirmedTranscriptHash;
 pub(crate) use util::*;
@@ -93,7 +92,7 @@ mod commit;
 pub(crate) mod confirmation_tag;
 mod context;
 pub(crate) mod epoch;
-mod error;
+pub(crate) mod error;
 pub(crate) mod framing;
 mod group_info;
 pub(crate) mod key_schedule;
@@ -101,7 +100,7 @@ mod membership_tag;
 pub(crate) mod message_processor;
 pub(crate) mod message_signature;
 pub(crate) mod message_verifier;
-mod padding;
+pub(crate) mod padding;
 pub mod proposal;
 mod proposal_cache;
 pub(crate) mod proposal_filter;
@@ -110,7 +109,6 @@ mod roster;
 pub(crate) mod snapshot;
 pub(crate) mod state;
 pub(crate) mod state_repo;
-mod stats;
 pub(crate) mod transcript_hash;
 mod util;
 
@@ -154,8 +152,26 @@ pub(crate) struct Welcome {
 }
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
+/// Information provided to new members upon joining a group.
 pub struct NewMemberInfo {
+    /// Group info extensions found within the Welcome message used to join
+    /// the group.
     pub group_info_extensions: ExtensionList,
+}
+
+impl NewMemberInfo {
+    pub(crate) fn new(group_info_extensions: ExtensionList) -> Self {
+        Self {
+            group_info_extensions,
+        }
+    }
+
+    /// Group info extensions found within the Welcome message used to join
+    /// the group.
+    pub fn group_info_extensions(&self) -> &ExtensionList {
+        &self.group_info_extensions
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,27 +180,42 @@ pub(crate) enum ControlEncryptionMode {
     Encrypted(PaddingMode),
 }
 
-#[derive(Clone)]
-pub struct Group<C>
-where
-    C: ClientConfig,
-{
-    #[cfg(feature = "benchmark")]
-    pub config: C,
-    #[cfg(not(feature = "benchmark"))]
-    config: C,
-    cipher_suite_provider: <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
-    state_repo: GroupStateRepository<C::GroupStateStorage, C::KeyPackageRepository>,
-    pub(crate) state: GroupState,
-    epoch_secrets: EpochSecrets,
-    private_tree: TreeKemPrivate,
-    key_schedule: KeySchedule,
-    pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
-    pending_commit: Option<CommitGeneration>,
-    #[cfg(test)]
-    pub(crate) commit_modifiers:
-        CommitModifiers<<C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
+pub(crate) mod internal {
+    pub use super::*;
+    /// An MLS end-to-end encrypted group.
+    ///
+    /// # Group Evolution
+    ///
+    /// MLS Groups are evolved via a propose-then-commit system. Each group state
+    /// produced by a commit is called an epoch and can produce and consume
+    /// both application and proposal messages. A [commit](Group::commit) is used
+    /// to apply existing proposals sent in the current epoch by-reference and can
+    /// optionally include additional proposals by-value using a [`CommitBuilder`].
+    #[derive(Clone)]
+    pub struct Group<C>
+    where
+        C: ClientConfig,
+    {
+        #[cfg(feature = "benchmark")]
+        pub config: C,
+        #[cfg(not(feature = "benchmark"))]
+        pub(super) config: C,
+        pub(super) cipher_suite_provider:
+            <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider,
+        pub(super) state_repo: GroupStateRepository<C::GroupStateStorage, C::KeyPackageRepository>,
+        pub(crate) state: GroupState,
+        pub(super) epoch_secrets: EpochSecrets,
+        pub(super) private_tree: TreeKemPrivate,
+        pub(super) key_schedule: KeySchedule,
+        pub(super) pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
+        pub(super) pending_commit: Option<CommitGeneration>,
+        #[cfg(test)]
+        pub(crate) commit_modifiers:
+            CommitModifiers<<C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
+    }
 }
+
+pub(crate) use internal::*;
 
 impl<C> Group<C>
 where
@@ -480,12 +511,7 @@ where
             cipher_suite_provider,
         };
 
-        Ok((
-            group,
-            NewMemberInfo {
-                group_info_extensions,
-            },
-        ))
+        Ok((group, NewMemberInfo::new(group_info_extensions)))
     }
 
     /// Returns group and external commit message
@@ -610,11 +636,15 @@ where
         &self.state.public_tree
     }
 
+    /// The current epoch of the group. This value is incremented each
+    /// time a [`Group::commit`] message is processed.
     #[inline(always)]
     pub fn current_epoch(&self) -> u64 {
         self.context().epoch
     }
 
+    /// Index within the group's [`roster`](Group::roster) for the local
+    /// group instance.
     #[inline(always)]
     pub fn current_member_index(&self) -> u32 {
         self.private_tree.self_index.0
@@ -626,6 +656,7 @@ where
             .map_err(Into::into)
     }
 
+    /// Signing identity currently in use by the local group instance.
     pub fn current_member_signing_identity(&self) -> Result<&SigningIdentity, GroupError> {
         self.current_user_leaf_node().map(|ln| &ln.signing_identity)
     }
@@ -637,7 +668,7 @@ where
     ) -> Result<MLSMessage, GroupError> {
         let signer = self.signer().await?;
 
-        let auth_content = MLSAuthenticatedContent::new_signed(
+        let auth_content = AuthenticatedContent::new_signed(
             &self.cipher_suite_provider,
             self.context(),
             Sender::Member(*self.private_tree.self_index),
@@ -674,6 +705,7 @@ where
             .ok_or(GroupError::SignerNotFound)
     }
 
+    /// Unique identifier for this group.
     #[inline(always)]
     pub fn group_id(&self) -> &[u8] {
         &self.context().group_id
@@ -923,6 +955,15 @@ where
         Ok((new_group, welcome))
     }
 
+    /// Create a sub-group from a subset of the current group members.
+    ///
+    /// Membership within the resulting sub-group is indicated by providing a
+    /// key package that produces the same
+    /// [identity](crate::provider::identity::IdentityProvider::identity) value
+    /// as an existing group member. The identity value of each key package
+    /// is determined using the
+    /// [`IdentityProvider`](crate::provider::identity::IdentityProvider)
+    /// that is currently in use by this group instance.
     // TODO investigate if it's worth updating your own signing identity here
     pub async fn branch(
         &self,
@@ -976,6 +1017,7 @@ where
         .await
     }
 
+    /// Join a subgroup that was created by [`Group::branch`].
     pub async fn join_subgroup(
         &self,
         welcome: MLSMessage,
@@ -997,6 +1039,24 @@ where
         }
     }
 
+    /// Create a new group that is based on properties defined by a previously
+    /// sent [`ReInit`](proposal::ReInitProposal).
+    ///
+    /// Membership within the resulting reinitialized group is
+    /// indicated by providing a key package that produces the same
+    /// [identity](crate::provider::identity::IdentityProvider::identity) value
+    /// as an existing group member. The identity value of each key package
+    /// is determined using the
+    /// [`IdentityProvider`](crate::provider::identity::IdentityProvider)
+    /// that is currently in use by this group instance.
+    ///
+    /// The resulting commit message can be processed by other members using
+    /// [`Group::finish_reinit_join`].
+    ///
+    /// # Warning
+    ///
+    /// This function will fail if the number of members in the reinitialized
+    /// group is not the same as the prior group roster.
     pub async fn finish_reinit_commit(
         &self,
         new_key_packages: Vec<MLSMessage>,
@@ -1068,6 +1128,8 @@ where
         }
     }
 
+    /// Join a reinitialized group that was created by
+    /// [`Group::finish_reinit_commit`].
     pub async fn finish_reinit_join(
         &self,
         welcome: MLSMessage,
@@ -1148,6 +1210,10 @@ where
         })
     }
 
+    /// Create a proposal message that adds a new member to the group.
+    ///
+    /// `authenticated_data` will be sent unencrypted along with the contents
+    /// of the proposal message.
     pub async fn propose_add(
         &mut self,
         key_package: MLSMessage,
@@ -1167,6 +1233,14 @@ where
         }))
     }
 
+    /// Create a proposal message that updates your own public keys.
+    ///
+    /// This proposal is useful for contributing additional forward secrecy
+    /// and post-compromise security to the group without having to perform
+    /// the necessary computation of a [`Group::commit`].
+    ///
+    /// `authenticated_data` will be sent unencrypted along with the contents
+    /// of the proposal message.
     pub async fn propose_update(
         &mut self,
         authenticated_data: Vec<u8>,
@@ -1175,6 +1249,23 @@ where
         self.proposal_message(proposal, authenticated_data).await
     }
 
+    /// Create a proposal message that updates your own public keys
+    /// as well as your credential.
+    ///
+    /// This proposal is useful for contributing additional forward secrecy
+    /// and post-compromise security to the group without having to perform
+    /// the necessary computation of a [`Group::commit`].
+    ///
+    /// Identity updates are allowed by the group by default assuming that the
+    /// new identity provided is considered
+    /// [valid](crate::provider::identity::IdentityProvider::validate)
+    /// by and matches the output of the
+    /// [identity](crate::provider::identity::IdentityProvider)
+    /// function of the current
+    /// [`IdentityProvider`](crate::provider::identity::IdentityProvider).
+    ///
+    /// `authenticated_data` will be sent unencrypted along with the contents
+    /// of the proposal message.
     pub async fn propose_update_with_identity(
         &mut self,
         signing_identity: SigningIdentity,
@@ -1210,6 +1301,11 @@ where
         }))
     }
 
+    /// Create a proposal message that removes an existing member from the
+    /// group.
+    ///
+    /// `authenticated_data` will be sent unencrypted along with the contents
+    /// of the proposal message.
     pub async fn propose_remove(
         &mut self,
         index: u32,
@@ -1230,6 +1326,16 @@ where
         }))
     }
 
+    /// Create a proposal message that adds a pre shared key to the group.
+    ///
+    /// Each group member will need to have the PSK associated with
+    /// [`ExternalPskId`](crate::provider::psk::ExternalPskId) installed within
+    /// the [`PreSharedKeyStorage`](crate::provider::psk::PreSharedKeyStorage)
+    /// in use by this group upon processing a [commit](Group::commit) that
+    /// contains this proposal.
+    ///
+    /// `authenticated_data` will be sent unencrypted along with the contents
+    /// of the proposal message.
     pub async fn propose_psk(
         &mut self,
         psk: ExternalPskId,
@@ -1249,6 +1355,15 @@ where
         }))
     }
 
+    /// Create a proposal message that requests for this group to be
+    /// reinitialized.
+    ///
+    /// Once a [`ReInitProposal`](proposal::ReInitProposal)
+    /// has been sent, another group member can complete reinitialization of
+    /// the group by calling [`Group::finish_reinit_commit`].
+    ///
+    /// `authenticated_data` will be sent unencrypted along with the contents
+    /// of the proposal message.
     pub async fn propose_reinit(
         &mut self,
         group_id: Option<Vec<u8>>,
@@ -1282,6 +1397,19 @@ where
         }))
     }
 
+    /// Create a proposal message that sets extensions stored in the group
+    /// state.
+    ///
+    /// # Warning
+    ///
+    /// This function does not create a diff that will be applied to the
+    /// current set of extension that are in use. In order for an existing
+    /// extension to not be overwritten by this proposal, it must be included
+    /// in the new set of extensions being proposed.
+    ///
+    ///
+    /// `authenticated_data` will be sent unencrypted along with the contents
+    /// of the proposal message.
     pub async fn propose_group_context_extensions(
         &mut self,
         extensions: ExtensionList,
@@ -1295,6 +1423,10 @@ where
         Proposal::GroupContextExtensions(extensions)
     }
 
+    /// Create a custom proposal message.
+    ///
+    /// `authenticated_data` will be sent unencrypted along with the contents
+    /// of the proposal message.
     pub async fn propose_custom(
         &mut self,
         proposal: CustomProposal,
@@ -1306,9 +1438,9 @@ where
 
     pub(crate) fn format_for_wire(
         &mut self,
-        content: MLSAuthenticatedContent,
+        content: AuthenticatedContent,
     ) -> Result<MLSMessage, GroupError> {
-        let payload = if content.wire_format == WireFormat::Cipher {
+        let payload = if content.wire_format == WireFormat::PrivateMessage {
             MLSMessagePayload::Cipher(self.create_ciphertext(content)?)
         } else {
             MLSMessagePayload::Plain(self.create_plaintext(content)?)
@@ -1319,8 +1451,8 @@ where
 
     fn create_plaintext(
         &self,
-        auth_content: MLSAuthenticatedContent,
-    ) -> Result<MLSPlaintext, GroupError> {
+        auth_content: AuthenticatedContent,
+    ) -> Result<PublicMessage, GroupError> {
         let membership_tag = matches!(auth_content.content.sender, Sender::Member(_))
             .then(|| {
                 self.key_schedule.get_membership_tag(
@@ -1331,7 +1463,7 @@ where
             })
             .transpose()?;
 
-        Ok(MLSPlaintext {
+        Ok(PublicMessage {
             content: auth_content.content,
             auth: auth_content.auth,
             membership_tag,
@@ -1340,8 +1472,8 @@ where
 
     fn create_ciphertext(
         &mut self,
-        auth_content: MLSAuthenticatedContent,
-    ) -> Result<MLSCiphertext, GroupError> {
+        auth_content: AuthenticatedContent,
+    ) -> Result<PrivateMessage, GroupError> {
         let preferences = self.config.preferences();
 
         let mut encryptor = CiphertextProcessor::new(self, self.cipher_suite_provider.clone());
@@ -1351,6 +1483,10 @@ where
             .map_err(Into::into)
     }
 
+    /// Encrypt an application message using the current group state.
+    ///
+    /// `authenticated_data` will be sent unencrypted along with the contents
+    /// of the proposal message.
     pub async fn encrypt_application_message(
         &mut self,
         message: &[u8],
@@ -1364,13 +1500,13 @@ where
             return Err(GroupError::CommitRequired);
         }
 
-        let auth_content = MLSAuthenticatedContent::new_signed(
+        let auth_content = AuthenticatedContent::new_signed(
             &self.cipher_suite_provider,
             self.context(),
             Sender::Member(*self.private_tree.self_index),
             Content::Application(message.to_vec().into()),
             &signer,
-            WireFormat::Cipher,
+            WireFormat::PrivateMessage,
             authenticated_data,
         )?;
 
@@ -1379,8 +1515,8 @@ where
 
     async fn decrypt_incoming_ciphertext(
         &mut self,
-        message: MLSCiphertext,
-    ) -> Result<MLSAuthenticatedContent, GroupError> {
+        message: PrivateMessage,
+    ) -> Result<AuthenticatedContent, GroupError> {
         let epoch_id = message.epoch;
 
         let auth_content = if epoch_id == self.context().epoch {
@@ -1420,6 +1556,8 @@ where
         Ok(auth_content)
     }
 
+    /// Apply a pending commit that was created by [`Group::commit`] or
+    /// [`CommitBuilder::build`].
     pub async fn apply_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
         let pending_commit = self
             .pending_commit
@@ -1429,10 +1567,17 @@ where
         self.process_commit(pending_commit.content, None).await
     }
 
+    /// Clear the currently pending commit.
+    ///
+    /// This function will automatically be called in the event that a
+    /// commit message is processed using [`Group::process_incoming_message`]
+    /// before [`Group::apply_pending_commit`] is called.
     pub fn clear_pending_commit(&mut self) {
         self.pending_commit = None
     }
 
+    /// Get the current path of public keys from the current member's leaf
+    /// up to the root of the ratchet tree within the current group state.
     pub fn current_direct_path(&self) -> Result<Vec<Option<HpkePublicKey>>, GroupError> {
         self.state
             .public_tree
@@ -1440,6 +1585,14 @@ where
             .map_err(Into::into)
     }
 
+    /// Process an inbound message for this group.
+    ///
+    /// # Warning
+    ///
+    /// Changes to the group's state as a result of processing `message` will
+    /// not be persisted by the
+    /// [`GroupStateStorage`](crate::provider::group_state::GroupStateStorage)
+    /// in use by this group until [`Group::write_to_storage`] is called.
     pub async fn process_incoming_message(
         &mut self,
         message: MLSMessage,
@@ -1447,6 +1600,36 @@ where
         MessageProcessor::process_incoming_message(self, message, true).await
     }
 
+    /// Process an inbound message for this group, providing additional context
+    /// with a message timestamp.
+    ///
+    /// Providing a timestamp is useful when the
+    /// [`IdentityProvider`](crate::provider::identity::IdentityProvider)
+    /// in use by the group can determine validity based on a timestamp.
+    /// For example, this allows for checking X.509 certificate expiration
+    /// at the time when `message` was received by a server rather than when
+    /// a specific client asynchronously received `message`
+    ///
+    /// # Warning
+    ///
+    /// Changes to the group's state as a result of processing `message` will
+    /// not be persisted by the
+    /// [`GroupStateStorage`](crate::provider::group_state::GroupStateStorage)
+    /// in use by this group until [`Group::write_to_storage`] is called.
+    pub async fn process_incoming_message_with_time(
+        &mut self,
+        message: MLSMessage,
+        time: MlsTime,
+    ) -> Result<ProcessedMessage<Event>, GroupError> {
+        MessageProcessor::process_incoming_message_with_time(self, message, true, Some(time)).await
+    }
+
+    /// Find a group member by
+    /// [identity](crate::provider::identity::IdentityProvider::identity)
+    ///
+    /// This function determines identity by calling the
+    /// [`IdentityProvider`](crate::provider::identity::IdentityProvider)
+    /// currently in use by the group.
     pub fn get_member_with_identity(&self, identity: &[u8]) -> Result<Member, GroupError> {
         let index = self
             .state
@@ -1459,6 +1642,8 @@ where
         Ok(member_from_leaf_node(node, index))
     }
 
+    /// Create a group info message that can be used for external proposals and commits.
+    ///
     /// The returned `GroupInfo` is suitable for one external commit for the current epoch.
     pub async fn group_info_message(
         &self,
@@ -1507,7 +1692,10 @@ where
         &self.state.context
     }
 
-    pub fn authentication_secret(&self) -> Result<Vec<u8>, GroupError> {
+    /// Get the
+    /// [epoch_authenticator](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-key-schedule)
+    /// of the current epoch.
+    pub fn epoch_authenticator(&self) -> Result<Vec<u8>, GroupError> {
         Ok(self.key_schedule.authentication_secret.clone())
     }
 
@@ -1522,6 +1710,12 @@ where
             .export_secret(label, context, len, &self.cipher_suite_provider)?)
     }
 
+    /// Export the current epoch's ratchet tree in serialized format.
+    ///
+    /// This function is used to provide the current group tree to new members
+    /// when the
+    /// [ratchet_tree_extension preference](crate::client_builder::Preferences::ratchet_tree_extension)
+    /// is not in use.
     pub fn export_tree(&self) -> Result<Vec<u8>, GroupError> {
         self.current_epoch_tree()
             .export_node_data()
@@ -1529,18 +1723,24 @@ where
             .map_err(Into::into)
     }
 
+    /// Current version of the MLS protocol in use by this group.
     pub fn protocol_version(&self) -> ProtocolVersion {
         self.context().protocol_version
     }
 
+    /// Current cipher suite in use by this group.
     pub fn cipher_suite(&self) -> CipherSuite {
         self.context().cipher_suite
     }
 
+    /// The current set of group members.
     pub fn roster(&self) -> Vec<Member> {
         self.group_state().roster()
     }
 
+    /// Determines equality of two different groups internal states.
+    /// Useful for testing.
+    ///
     pub fn equal_group_state(a: &Group<C>, b: &Group<C>) -> bool {
         a.state == b.state && a.key_schedule == b.key_schedule && a.epoch_secrets == b.epoch_secrets
     }
@@ -1589,7 +1789,7 @@ where
 
     async fn process_ciphertext(
         &mut self,
-        cipher_text: MLSCiphertext,
+        cipher_text: PrivateMessage,
     ) -> Result<EventOrContent<Self::EventType>, GroupError> {
         self.decrypt_incoming_ciphertext(cipher_text)
             .await
@@ -1598,7 +1798,7 @@ where
 
     fn verify_plaintext_authentication(
         &self,
-        message: MLSPlaintext,
+        message: PublicMessage,
     ) -> Result<EventOrContent<Self::EventType>, GroupError> {
         let auth_content = verify_plaintext_authentication(
             &self.cipher_suite_provider,
@@ -2018,8 +2218,8 @@ mod tests {
             commit_output.commit_message,
             MLSMessage {
                 payload: MLSMessagePayload::Plain(
-                    MLSPlaintext {
-                        content: MLSContent {
+                    PublicMessage {
+                        content: FramedContent {
                             content: Content::Commit(Commit {
                                 proposals,
                                 ..
@@ -2475,7 +2675,7 @@ mod tests {
         assert_eq!(
             state_update_alice.added_psks,
             (0..5)
-                .map(|i| JustPreSharedKeyID::External(ExternalPskId::new(vec![i])))
+                .map(|i| ExternalPskId::new(vec![i]))
                 .collect::<Vec<_>>()
         );
 
@@ -2752,8 +2952,8 @@ mod tests {
         let (bob_group, _) = alice_group.join("bob").await;
 
         assert_eq!(
-            alice_group.group.authentication_secret().unwrap(),
-            bob_group.group.authentication_secret().unwrap()
+            alice_group.group.epoch_authenticator().unwrap(),
+            bob_group.group.epoch_authenticator().unwrap()
         );
     }
 
@@ -3451,7 +3651,7 @@ mod tests {
             .unwrap();
         let res = groups[1]
             .group
-            .process_incoming_message_with_time(commit, true, Some(future_time))
+            .process_incoming_message_with_time(commit, future_time)
             .await;
 
         assert_matches!(

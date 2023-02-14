@@ -16,7 +16,7 @@ use crate::{
         epoch::PriorEpoch,
         framing::{Content, MLSMessage, Sender, WireFormat},
         message_processor::MessageProcessor,
-        message_signature::MLSAuthenticatedContent,
+        message_signature::AuthenticatedContent,
         snapshot::Snapshot,
         Commit, Group, GroupError,
     },
@@ -241,12 +241,12 @@ where
     context.epoch = epoch;
 
     let wire_format = if group.preferences().encrypt_controls {
-        WireFormat::Cipher
+        WireFormat::PrivateMessage
     } else {
-        WireFormat::Plain
+        WireFormat::PublicMessage
     };
 
-    let auth_content = MLSAuthenticatedContent::new_signed(
+    let auth_content = AuthenticatedContent::new_signed(
         group.cipher_suite_provider(),
         &context,
         Sender::Member(0),

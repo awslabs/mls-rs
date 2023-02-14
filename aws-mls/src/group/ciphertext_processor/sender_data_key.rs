@@ -11,14 +11,14 @@ use crate::{
 use super::{CiphertextProcessorError, ReuseGuard};
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub(crate) struct MLSSenderData {
+pub(crate) struct SenderData {
     pub sender: LeafIndex,
     pub generation: u32,
     pub reuse_guard: ReuseGuard,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub(crate) struct MLSSenderDataAAD {
+pub(crate) struct SenderDataAAD {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
@@ -70,8 +70,8 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
 
     pub(crate) fn seal(
         &self,
-        sender_data: &MLSSenderData,
-        aad: &MLSSenderDataAAD,
+        sender_data: &SenderData,
+        aad: &SenderDataAAD,
     ) -> Result<Vec<u8>, CiphertextProcessorError> {
         self.cipher_suite_provider
             .aead_seal(
@@ -86,8 +86,8 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
     pub(crate) fn open(
         &self,
         sender_data: &[u8],
-        aad: &MLSSenderDataAAD,
-    ) -> Result<MLSSenderData, CiphertextProcessorError> {
+        aad: &SenderDataAAD,
+    ) -> Result<SenderData, CiphertextProcessorError> {
         self.cipher_suite_provider
             .aead_open(
                 &self.key,
@@ -96,7 +96,7 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
                 &self.nonce,
             )
             .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))
-            .and_then(|data| MLSSenderData::tls_deserialize(&mut &*data).map_err(From::from))
+            .and_then(|data| SenderData::tls_deserialize(&mut &*data).map_err(From::from))
     }
 }
 
@@ -161,7 +161,7 @@ mod tests {
         tree_kem::node::LeafIndex,
     };
 
-    use super::{MLSSenderData, MLSSenderDataAAD, SenderDataKey};
+    use super::{SenderData, SenderDataAAD, SenderDataKey};
 
     #[derive(serde::Deserialize, serde::Serialize)]
     struct TestCase {
@@ -174,22 +174,22 @@ mod tests {
         expected_key: Vec<u8>,
         #[serde(with = "hex::serde")]
         expected_nonce: Vec<u8>,
-        sender_data: SenderData,
-        sender_data_aad: SenderDataAAD,
+        sender_data: TestSenderData,
+        sender_data_aad: TestSenderDataAAD,
         #[serde(with = "hex::serde")]
         expected_ciphertext: Vec<u8>,
     }
 
     #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-    struct SenderData {
+    struct TestSenderData {
         sender: u32,
         generation: u32,
         #[serde(with = "hex::serde")]
         reuse_guard: Vec<u8>,
     }
 
-    impl From<SenderData> for MLSSenderData {
-        fn from(value: SenderData) -> Self {
+    impl From<TestSenderData> for SenderData {
+        fn from(value: TestSenderData) -> Self {
             let reuse_guard = ReuseGuard::new(value.reuse_guard);
 
             Self {
@@ -201,14 +201,14 @@ mod tests {
     }
 
     #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-    struct SenderDataAAD {
+    struct TestSenderDataAAD {
         epoch: u64,
         #[serde(with = "hex::serde")]
         group_id: Vec<u8>,
     }
 
-    impl From<SenderDataAAD> for MLSSenderDataAAD {
-        fn from(value: SenderDataAAD) -> Self {
+    impl From<TestSenderDataAAD> for SenderDataAAD {
+        fn from(value: TestSenderDataAAD) -> Self {
             Self {
                 epoch: value.epoch,
                 group_id: value.group_id,
@@ -225,13 +225,13 @@ mod tests {
                 let secret = random_bytes(ext_size).into();
                 let ciphertext_sizes = [ext_size - 5, ext_size, ext_size + 5];
 
-                let sender_data = SenderData {
+                let sender_data = TestSenderData {
                     sender: 0,
                     generation: 13,
                     reuse_guard: random_bytes(4),
                 };
 
-                let sender_data_aad = SenderDataAAD {
+                let sender_data_aad = TestSenderDataAAD {
                     group_id: b"group".to_vec(),
                     epoch: 42,
                 };

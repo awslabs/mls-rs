@@ -15,7 +15,7 @@ use crate::provider::crypto::{
 };
 
 use super::epoch::{EpochSecrets, SenderDataSecret};
-use super::message_signature::MLSAuthenticatedContent;
+use super::message_signature::AuthenticatedContent;
 
 #[derive(Error, Debug)]
 pub enum KeyScheduleError {
@@ -192,7 +192,7 @@ impl KeySchedule {
 
     pub fn get_membership_tag<P: CipherSuiteProvider>(
         &self,
-        content: &MLSAuthenticatedContent,
+        content: &AuthenticatedContent,
         context: &GroupContext,
         cipher_suite_provider: &P,
     ) -> Result<MembershipTag, MembershipTagError> {

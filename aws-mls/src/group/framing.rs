@@ -38,11 +38,19 @@ impl From<&Content> for ContentType {
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
+/// Description of a [`MLSMessage`] sender
 pub enum Sender {
     #[tls_codec(discriminant = 1)]
+    /// Current group member index.
     Member(u32),
+    /// An external entity sending a proposal proposal identified by an index
+    /// in the current
+    /// [`ExternalSendersExt`](crate::extension::ExternalSendersExt) stored in
+    /// group context extensions.
     External(u32),
+    /// A member sending an external commit.
     NewMemberCommit,
+    /// A new member proposing their own addition to the group.
     NewMemberProposal,
 }
 
@@ -95,13 +103,13 @@ impl Content {
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) struct MLSPlaintext {
-    pub content: MLSContent,
-    pub auth: MLSContentAuthData,
+pub(crate) struct PublicMessage {
+    pub content: FramedContent,
+    pub auth: FramedContentAuthData,
     pub membership_tag: Option<MembershipTag>,
 }
 
-impl Size for MLSPlaintext {
+impl Size for PublicMessage {
     fn tls_serialized_len(&self) -> usize {
         self.content.tls_serialized_len()
             + self.auth.tls_serialized_len()
@@ -112,7 +120,7 @@ impl Size for MLSPlaintext {
     }
 }
 
-impl Serialize for MLSPlaintext {
+impl Serialize for PublicMessage {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         Ok(self.content.tls_serialize(writer)?
             + self.auth.tls_serialize(writer)?
@@ -123,10 +131,10 @@ impl Serialize for MLSPlaintext {
     }
 }
 
-impl Deserialize for MLSPlaintext {
+impl Deserialize for PublicMessage {
     fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
-        let content = MLSContent::tls_deserialize(bytes)?;
-        let auth = MLSContentAuthData::tls_deserialize(bytes, content.content_type())?;
+        let content = FramedContent::tls_deserialize(bytes)?;
+        let auth = FramedContentAuthData::tls_deserialize(bytes, content.content_type())?;
 
         let membership_tag = match content.sender {
             Sender::Member(_) => Some(MembershipTag::tls_deserialize(bytes)?),
@@ -142,13 +150,13 @@ impl Deserialize for MLSPlaintext {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct MLSCiphertextContent {
+pub(crate) struct PrivateContentTBE {
     pub content: Content,
-    pub auth: MLSContentAuthData,
+    pub auth: FramedContentAuthData,
     pub padding: Vec<u8>,
 }
 
-impl Size for MLSCiphertextContent {
+impl Size for PrivateContentTBE {
     fn tls_serialized_len(&self) -> usize {
         let content_len_without_type = match &self.content {
             Content::Application(c) => c.tls_serialized_len(),
@@ -161,7 +169,7 @@ impl Size for MLSCiphertextContent {
     }
 }
 
-impl Serialize for MLSCiphertextContent {
+impl Serialize for PrivateContentTBE {
     fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
         let len = match &self.content {
             Content::Application(c) => c.tls_serialize(writer),
@@ -174,7 +182,7 @@ impl Serialize for MLSCiphertextContent {
     }
 }
 
-impl MLSCiphertextContent {
+impl PrivateContentTBE {
     pub(crate) fn tls_deserialize<R: Read>(
         bytes: &mut R,
         content_type: ContentType,
@@ -187,7 +195,7 @@ impl MLSCiphertextContent {
             ContentType::Commit => Content::Commit(Commit::tls_deserialize(bytes)?),
         };
 
-        let auth = MLSContentAuthData::tls_deserialize(bytes, content.content_type())?;
+        let auth = FramedContentAuthData::tls_deserialize(bytes, content.content_type())?;
 
         let mut padding = Vec::new();
         bytes.read_to_end(&mut padding)?;
@@ -207,7 +215,7 @@ impl MLSCiphertextContent {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct MLSCiphertextContentAAD {
+pub struct PrivateContentAAD {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
@@ -218,7 +226,7 @@ pub struct MLSCiphertextContentAAD {
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct MLSCiphertext {
+pub struct PrivateMessage {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
@@ -231,8 +239,8 @@ pub struct MLSCiphertext {
     pub ciphertext: Vec<u8>,
 }
 
-impl From<&MLSCiphertext> for MLSCiphertextContentAAD {
-    fn from(ciphertext: &MLSCiphertext) -> Self {
+impl From<&PrivateMessage> for PrivateContentAAD {
+    fn from(ciphertext: &PrivateMessage) -> Self {
         Self {
             group_id: ciphertext.group_id.clone(),
             epoch: ciphertext.epoch,
@@ -244,6 +252,7 @@ impl From<&MLSCiphertext> for MLSCiphertextContentAAD {
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// A MLS protocol message for sending data over the wire.
 pub struct MLSMessage {
     pub(crate) version: ProtocolVersion,
     pub(crate) payload: MLSMessagePayload,
@@ -256,7 +265,7 @@ impl MLSMessage {
     }
 
     #[inline(always)]
-    pub(crate) fn into_plaintext(self) -> Option<MLSPlaintext> {
+    pub(crate) fn into_plaintext(self) -> Option<PublicMessage> {
         match self.payload {
             MLSMessagePayload::Plain(plaintext) => Some(plaintext),
             _ => None,
@@ -264,7 +273,7 @@ impl MLSMessage {
     }
 
     #[inline(always)]
-    pub(crate) fn into_ciphertext(self) -> Option<MLSCiphertext> {
+    pub(crate) fn into_ciphertext(self) -> Option<PrivateMessage> {
         match self.payload {
             MLSMessagePayload::Cipher(ciphertext) => Some(ciphertext),
             _ => None,
@@ -295,16 +304,21 @@ impl MLSMessage {
         }
     }
 
+    /// The wire format value describing the contents of this message.
     pub fn wire_format(&self) -> WireFormat {
         match self.payload {
-            MLSMessagePayload::Plain(_) => WireFormat::Plain,
-            MLSMessagePayload::Cipher(_) => WireFormat::Cipher,
+            MLSMessagePayload::Plain(_) => WireFormat::PublicMessage,
+            MLSMessagePayload::Cipher(_) => WireFormat::PrivateMessage,
             MLSMessagePayload::Welcome(_) => WireFormat::Welcome,
             MLSMessagePayload::GroupInfo(_) => WireFormat::GroupInfo,
             MLSMessagePayload::KeyPackage(_) => WireFormat::KeyPackage,
         }
     }
 
+    /// The epoch that this message belongs to.
+    ///
+    /// Returns `None` if the message is [`WireFormat::KeyPackage`]
+    /// or [`WireFormat::Welcome`]
     pub fn epoch(&self) -> Option<u64> {
         match &self.payload {
             MLSMessagePayload::Plain(p) => Some(p.content.epoch),
@@ -314,10 +328,12 @@ impl MLSMessage {
         }
     }
 
+    /// Deserialize a message from transport.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, tls_codec::Error> {
         Self::tls_deserialize(&mut &*bytes)
     }
 
+    /// Serialize a message for transport.
     pub fn to_bytes(&self) -> Result<Vec<u8>, tls_codec::Error> {
         self.tls_serialize_detached()
     }
@@ -329,15 +345,15 @@ impl MLSMessage {
 #[repr(u16)]
 pub(crate) enum MLSMessagePayload {
     #[tls_codec(discriminant = 1)]
-    Plain(MLSPlaintext),
-    Cipher(MLSCiphertext),
+    Plain(PublicMessage),
+    Cipher(PrivateMessage),
     Welcome(Welcome),
     GroupInfo(GroupInfo),
     KeyPackage(KeyPackage),
 }
 
-impl From<MLSPlaintext> for MLSMessagePayload {
-    fn from(m: MLSPlaintext) -> Self {
+impl From<PublicMessage> for MLSMessagePayload {
+    fn from(m: PublicMessage) -> Self {
         Self::Plain(m)
     }
 }
@@ -346,9 +362,10 @@ impl From<MLSPlaintext> for MLSMessagePayload {
     Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, TlsDeserialize, TlsSerialize, TlsSize,
 )]
 #[repr(u16)]
+/// Content description of an [`MLSMessage`]
 pub enum WireFormat {
-    Plain = 1,
-    Cipher,
+    PublicMessage = 1,
+    PrivateMessage,
     Welcome,
     GroupInfo,
     KeyPackage,
@@ -357,15 +374,15 @@ pub enum WireFormat {
 impl From<ControlEncryptionMode> for WireFormat {
     fn from(mode: ControlEncryptionMode) -> Self {
         match mode {
-            ControlEncryptionMode::Plaintext => WireFormat::Plain,
-            ControlEncryptionMode::Encrypted(_) => WireFormat::Cipher,
+            ControlEncryptionMode::Plaintext => WireFormat::PublicMessage,
+            ControlEncryptionMode::Encrypted(_) => WireFormat::PrivateMessage,
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub(crate) struct MLSContent {
+pub(crate) struct FramedContent {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
@@ -375,7 +392,7 @@ pub(crate) struct MLSContent {
     pub content: Content,
 }
 
-impl MLSContent {
+impl FramedContent {
     pub fn content_type(&self) -> ContentType {
         self.content.content_type()
     }
@@ -388,27 +405,27 @@ pub(crate) mod test_utils {
 
     use super::*;
 
-    pub(crate) fn get_test_auth_content(test_content: Vec<u8>) -> MLSAuthenticatedContent {
-        MLSAuthenticatedContent {
-            wire_format: WireFormat::Plain,
-            content: MLSContent {
+    pub(crate) fn get_test_auth_content(test_content: Vec<u8>) -> AuthenticatedContent {
+        AuthenticatedContent {
+            wire_format: WireFormat::PublicMessage,
+            content: FramedContent {
                 group_id: Vec::new(),
                 epoch: 0,
                 sender: Sender::Member(1),
                 authenticated_data: Vec::new(),
                 content: Content::Application(test_content.into()),
             },
-            auth: MLSContentAuthData {
+            auth: FramedContentAuthData {
                 signature: MessageSignature::empty(),
                 confirmation_tag: None,
             },
         }
     }
 
-    pub(crate) fn get_test_ciphertext_content() -> MLSCiphertextContent {
-        MLSCiphertextContent {
+    pub(crate) fn get_test_ciphertext_content() -> PrivateContentTBE {
+        PrivateContentTBE {
             content: Content::Application(random_bytes(1024).into()),
-            auth: MLSContentAuthData {
+            auth: FramedContentAuthData {
                 signature: MessageSignature::from(random_bytes(128)),
                 confirmation_tag: None,
             },
@@ -437,7 +454,7 @@ mod tests {
         ciphertext_content.padding = vec![0u8; 128];
 
         let encoded = ciphertext_content.tls_serialize_detached().unwrap();
-        let decoded = MLSCiphertextContent::tls_deserialize(
+        let decoded = PrivateContentTBE::tls_deserialize(
             &mut &*encoded,
             (&ciphertext_content.content).into(),
         )
@@ -452,7 +469,7 @@ mod tests {
         ciphertext_content.padding = vec![1u8; 128];
 
         let encoded = ciphertext_content.tls_serialize_detached().unwrap();
-        let decoded = MLSCiphertextContent::tls_deserialize(
+        let decoded = PrivateContentTBE::tls_deserialize(
             &mut &*encoded,
             (&ciphertext_content.content).into(),
         );

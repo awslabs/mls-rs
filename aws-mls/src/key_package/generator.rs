@@ -3,7 +3,7 @@ use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 
 use crate::{
-    group::{framing::MLSMessagePayload, MLSMessage},
+    group::framing::MLSMessagePayload,
     hash_reference::HashReferenceError,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
@@ -13,7 +13,7 @@ use crate::{
         leaf_node::{ConfigProperties, LeafNode, LeafNodeError},
         Capabilities, Lifetime,
     },
-    ExtensionList,
+    ExtensionList, MLSMessage,
 };
 
 use super::{KeyPackage, KeyPackageError, KeyPackageRef};

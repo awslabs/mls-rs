@@ -16,6 +16,7 @@ use crate::hash_reference::{HashReference, HashReferenceError};
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// Unique identifier for a proposal message.
 pub struct ProposalRef(HashReference);
 
 impl Deref for ProposalRef {
@@ -29,7 +30,7 @@ impl Deref for ProposalRef {
 impl ProposalRef {
     pub(crate) fn from_content<CS: CipherSuiteProvider>(
         cipher_suite_provider: &CS,
-        content: &MLSAuthenticatedContent,
+        content: &AuthenticatedContent,
     ) -> Result<Self, HashReferenceError> {
         Ok(ProposalRef(HashReference::compute(
             &content.tls_serialize_detached()?,
@@ -44,20 +45,20 @@ pub(crate) mod test_utils {
     use super::*;
     use crate::group::test_utils::{random_bytes, TEST_GROUP};
 
-    pub fn auth_content_from_proposal<S>(proposal: Proposal, sender: S) -> MLSAuthenticatedContent
+    pub fn auth_content_from_proposal<S>(proposal: Proposal, sender: S) -> AuthenticatedContent
     where
         S: Into<Sender>,
     {
-        MLSAuthenticatedContent {
-            wire_format: WireFormat::Plain,
-            content: MLSContent {
+        AuthenticatedContent {
+            wire_format: WireFormat::PublicMessage,
+            content: FramedContent {
                 group_id: TEST_GROUP.to_vec(),
                 epoch: 0,
                 sender: sender.into(),
                 authenticated_data: vec![],
                 content: Content::Proposal(proposal),
             },
-            auth: MLSContentAuthData {
+            auth: FramedContentAuthData {
                 signature: MessageSignature::from(random_bytes(128)),
                 confirmation_tag: None,
             },
@@ -189,7 +190,7 @@ mod test {
             };
 
             let proposal_content =
-                MLSAuthenticatedContent::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
+                AuthenticatedContent::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
 
             let proposal_ref = ProposalRef::from_content(&cs_provider, &proposal_content).unwrap();
 
