@@ -16,6 +16,8 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// Wrapper type representing a proposal type identifier along with default
+/// values defined by the MLS RFC.
 pub struct ProposalType(u16);
 
 impl ProposalType {

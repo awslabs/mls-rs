@@ -101,6 +101,7 @@ pub(crate) mod message_processor;
 pub(crate) mod message_signature;
 pub(crate) mod message_verifier;
 pub(crate) mod padding;
+/// Proposals to evolve a MLS [`Group`]
 pub mod proposal;
 mod proposal_cache;
 pub(crate) mod proposal_filter;
@@ -157,7 +158,7 @@ pub(crate) struct Welcome {
 pub struct NewMemberInfo {
     /// Group info extensions found within the Welcome message used to join
     /// the group.
-    pub group_info_extensions: ExtensionList,
+    pub(crate) group_info_extensions: ExtensionList,
 }
 
 impl NewMemberInfo {
@@ -188,9 +189,10 @@ pub(crate) mod internal {
     ///
     /// MLS Groups are evolved via a propose-then-commit system. Each group state
     /// produced by a commit is called an epoch and can produce and consume
-    /// both application and proposal messages. A [commit](Group::commit) is used
-    /// to apply existing proposals sent in the current epoch by-reference and can
-    /// optionally include additional proposals by-value using a [`CommitBuilder`].
+    /// application, proposal, and commit messages. A [commit](Group::commit) is used
+    /// to advance to the next epoch by applying existing proposals sent in
+    /// the current epoch by-reference along with an optional set of proposals
+    /// that are included by-value using a [`CommitBuilder`].
     #[derive(Clone)]
     pub struct Group<C>
     where
@@ -1042,8 +1044,7 @@ where
     /// Create a new group that is based on properties defined by a previously
     /// sent [`ReInit`](proposal::ReInitProposal).
     ///
-    /// Membership within the resulting reinitialized group is
-    /// indicated by providing a key package that produces the same
+    /// For each member of the group, a key package that produces the same
     /// [identity](crate::provider::identity::IdentityProvider::identity) value
     /// as an existing group member. The identity value of each key package
     /// is determined using the
@@ -1576,15 +1577,6 @@ where
         self.pending_commit = None
     }
 
-    /// Get the current path of public keys from the current member's leaf
-    /// up to the root of the ratchet tree within the current group state.
-    pub fn current_direct_path(&self) -> Result<Vec<Option<HpkePublicKey>>, GroupError> {
-        self.state
-            .public_tree
-            .direct_path_keys(self.private_tree.self_index)
-            .map_err(Into::into)
-    }
-
     /// Process an inbound message for this group.
     ///
     /// # Warning
@@ -2040,6 +2032,7 @@ mod tests {
     use aws_mls_core::extension::{Extension, MlsExtension};
     use aws_mls_core::identity::{CertificateChain, Credential, CredentialType, CustomCredential};
     use futures::FutureExt;
+    use internal::proposal_filter::ProposalFilterError;
     use tls_codec::Size;
 
     #[cfg(target_arch = "wasm32")]

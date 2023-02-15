@@ -3,12 +3,7 @@ use crate::{psk::PreSharedKeyID, tree_kem::leaf_node::LeafNode};
 use std::fmt::Debug;
 
 use aws_mls_core::tls::ByteVec;
-pub use proposal_filter::{
-    BoxedProposalFilter, PassThroughProposalFilter, ProposalBundle, ProposalFilter,
-    ProposalFilterError,
-};
 
-pub use proposal_filter::ProposalFilterContext;
 pub use proposal_ref::ProposalRef;
 
 pub use aws_mls_core::group::ProposalType;
@@ -24,23 +19,32 @@ pub use aws_mls_core::group::ProposalType;
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// A proposal that adds a member to a [`Group`](super::Group).
 pub struct AddProposal {
     pub(crate) key_package: KeyPackage,
 }
 
 impl AddProposal {
+    /// The [`SigningIdentity`](crate::identity::SigningIdentity)
+    /// of the [`Member`](super::Member) that will be added by this proposal.
     pub fn signing_identity(&self) -> &SigningIdentity {
         self.key_package.signing_identity()
     }
 
+    /// Client [`Capabilities`](super::Capabilities) of the
+    /// [`Member`](super::Member) that will be added by this proposal.
     pub fn capabilities(&self) -> &Capabilities {
         &self.key_package.leaf_node.capabilities
     }
 
+    /// Key package extensions that are assoiciated with the
+    /// [`Member`](super::Member) that will be added by this proposal.
     pub fn key_package_extensions(&self) -> &ExtensionList {
         self.key_package.extensions()
     }
 
+    /// Leaf node extensions that will be entered into the group state for the
+    /// [`Member`](super::Member) that will be added.
     pub fn leaf_node_extensions(&self) -> &ExtensionList {
         &self.key_package.leaf_node.extensions
     }
@@ -57,19 +61,27 @@ impl AddProposal {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// A proposal that will update an existing [`Member`](super::Member) of a
+/// [`Group`](super::Group)
 pub struct UpdateProposal {
     pub(crate) leaf_node: LeafNode,
 }
 
 impl UpdateProposal {
+    /// The new [`SigningIdentity`](crate::identity::SigningIdentity)
+    /// of the [`Member`](super::Member) that is being updated by this proposal.
     pub fn signing_identity(&self) -> &SigningIdentity {
         &self.leaf_node.signing_identity
     }
 
+    /// New Client [`Capabilities`](super::Capabilities) of the
+    /// [`Member`](super::Member) that will be updated by this proposal.
     pub fn capabilities(&self) -> &Capabilities {
         &self.leaf_node.capabilities
     }
 
+    /// New Leaf node extensions that will be entered into the group state for the
+    /// [`Member`](super::Member) that is being updated by this proposal.
     pub fn leaf_node_extensions(&self) -> &ExtensionList {
         &self.leaf_node.extensions
     }
@@ -87,11 +99,15 @@ impl UpdateProposal {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// A proposal to remove an existing [`Member`](super::Member) of a
+/// [`Group`](super::Group).
 pub struct RemoveProposal {
     pub(crate) to_remove: LeafIndex,
 }
 
 impl RemoveProposal {
+    /// The index of the [`Member`](super::Member) that will be removed by
+    /// this proposal.
     pub fn to_remove(&self) -> u32 {
         *self.to_remove
     }
@@ -109,11 +125,14 @@ impl RemoveProposal {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// A proposal to add a pre-shared key to a group.
 pub struct PreSharedKeyProposal {
     pub(crate) psk: PreSharedKeyID,
 }
 
 impl PreSharedKeyProposal {
+    /// The external PSK ID of this proposal.
+    ///
     /// MLS requires the PSK type for PreSharedKeyProposal to be of type `External`.
     /// Returns `None` in the condition that the underlying psk is not external.
     pub fn external_psk_id(&self) -> Option<&ExternalPskId> {
@@ -136,6 +155,7 @@ impl PreSharedKeyProposal {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// A proposal to reinitialize a group using new parameters.
 pub struct ReInitProposal {
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
@@ -146,18 +166,22 @@ pub struct ReInitProposal {
 }
 
 impl ReInitProposal {
+    /// The unique id of the new group post reinitialization.
     pub fn group_id(&self) -> &[u8] {
         &self.group_id
     }
 
+    /// The new protocol version to use post reinitialization.
     pub fn new_version(&self) -> ProtocolVersion {
         self.version
     }
 
+    /// The new ciphersuite to use post reinitialization.
     pub fn new_cipher_suite(&self) -> CipherSuite {
         self.cipher_suite
     }
 
+    /// Group context extensions to set in the new group post reinitialization.
     pub fn new_group_context_extensions(&self) -> &ExtensionList {
         &self.extensions
     }
@@ -176,6 +200,7 @@ impl ReInitProposal {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// A proposal used for external commits.
 pub struct ExternalInit {
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
@@ -185,12 +210,22 @@ pub struct ExternalInit {
 #[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// A user defined custom proposal.
+///
+/// User defined proposals are passed through the protocol as an opaque value.
 pub struct CustomProposal {
     proposal_type: ProposalType,
     data: Vec<u8>,
 }
 
 impl CustomProposal {
+    /// Create a custom proposal.
+    ///
+    /// # Warning
+    ///
+    /// Avoid using the [`ProposalType`] values that have constants already
+    /// defined by this crate. Using existing constants in a custom proposal
+    /// has unspecified behavior.
     pub fn new(proposal_type: ProposalType, data: Vec<u8>) -> Self {
         Self {
             proposal_type,
@@ -198,10 +233,12 @@ impl CustomProposal {
         }
     }
 
+    /// The proposal type used for this custom proposal.
     pub fn proposal_type(&self) -> ProposalType {
         self.proposal_type
     }
 
+    /// The opaque data communicated by this custom proposal.
     pub fn data(&self) -> &[u8] {
         &self.data
     }
@@ -210,6 +247,7 @@ impl CustomProposal {
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u16)]
+/// An enum that represents all possible types of proposals.
 pub enum Proposal {
     Add(AddProposal),
     Update(UpdateProposal),
@@ -308,6 +346,7 @@ impl Proposal {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+/// An enum that represents a borrowed version of [`Proposal`].
 pub enum BorrowedProposal<'a> {
     Add(&'a AddProposal),
     Update(&'a UpdateProposal),

@@ -107,6 +107,9 @@ where
     /// Set group info extensions that will be inserted into the resulting
     /// [welcome message](CommitOutput::welcome_message) for new members.
     ///
+    /// Group info extensions that are transmitted as part of a welcome message
+    /// are encrypted along with other private values.
+    ///
     /// These extensions can be retrieved as part of
     /// [`NewMemberInfo`](crate::group::NewMemberInfo) that is returned
     /// by joining the group via

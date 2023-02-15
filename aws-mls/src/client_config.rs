@@ -4,9 +4,7 @@ use crate::{
     group::{
         framing::Sender,
         proposal::{BorrowedProposal, ProposalType},
-        proposal_filter::{
-            ProposalBundle, ProposalFilter, ProposalFilterContext, SimpleProposalFilter,
-        },
+        proposal_filter::{ProposalBundle, ProposalFilter, SimpleProposalFilter},
     },
     identity::CredentialType,
     protocol_version::ProtocolVersion,
@@ -20,6 +18,8 @@ use crate::{
 use async_trait::async_trait;
 use aws_mls_core::identity::IdentityProvider;
 use std::convert::Infallible;
+
+pub use crate::group::proposal_filter::ProposalFilterContext;
 
 #[async_trait]
 pub trait ClientConfig: Clone + Send + Sync {

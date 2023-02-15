@@ -10,9 +10,10 @@ use super::{
     proposal::{CustomProposal, ExternalInit, Proposal, ReInitProposal},
     proposal_cache::ProposalSetEffects,
     proposal_effects,
+    proposal_filter::ProposalFilter,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
-    transcript_hashes, GroupContext, GroupError, ProposalFilter, ProposalRef,
+    transcript_hashes, GroupContext, GroupError, ProposalRef,
 };
 use crate::{
     client_config::ProposalFilterInit,

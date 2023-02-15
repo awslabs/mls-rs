@@ -447,6 +447,7 @@ mod tests {
         identity::{Credential, CredentialType, CustomCredential},
     };
     use futures::FutureExt;
+    use internal::proposal_filter::PassThroughProposalFilter;
     use itertools::Itertools;
     use std::convert::Infallible;
 

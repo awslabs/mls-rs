@@ -120,9 +120,10 @@ impl Member {
         }
     }
 
-    /// The index of this member within the current group [roster](Group::roster).
+    /// The index of this member within a group.
     ///
-    /// This value is consistent for all clients.
+    /// This value is consistent for all clients and will not change as the
+    /// group evolves.
     pub fn index(&self) -> u32 {
         self.index
     }
@@ -148,7 +149,7 @@ impl Member {
     }
 }
 
-/// A set of roster updates due to a [commit](Group::commit)
+/// A set of roster updates due to a commit.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub struct RosterUpdate {

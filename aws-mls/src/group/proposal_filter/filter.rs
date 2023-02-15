@@ -22,16 +22,7 @@ pub trait ProposalFilter: Send + Sync {
     /// invalid should be filtered out. If a by-value proposal causes the commit to be invalid,
     /// an error should be returned.
     fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error>;
-
-    fn boxed(self) -> BoxedProposalFilter<Self::Error>
-    where
-        Self: Send + Sync + Sized + 'static,
-    {
-        Box::new(self)
-    }
 }
-
-pub type BoxedProposalFilter<E> = Box<dyn ProposalFilter<Error = E> + Send + Sync>;
 
 macro_rules! delegate_proposal_filter {
     ($implementer:ty) => {
@@ -54,9 +45,25 @@ delegate_proposal_filter!(&T);
 
 #[derive(Debug)]
 #[non_exhaustive]
+/// Context that gets passed into a
+/// [`proposal_filter`](crate::client_builder::ClientBuilder::proposal_filter).
 pub struct ProposalFilterContext {
-    pub committer: Sender,
-    pub proposer: Sender,
+    pub(crate) committer: Sender,
+    pub(crate) proposer: Sender,
+}
+
+impl ProposalFilterContext {
+    /// Description of the sender of a commit containing a
+    /// [`BorrowedProposal`](crate::group::proposal::BorrowedProposal).
+    pub fn committer(&self) -> &Sender {
+        &self.committer
+    }
+
+    /// Description of the sender of a proposal
+    /// [`BorrowedProposal`](crate::group::proposal::BorrowedProposal).
+    pub fn proposer(&self) -> &Sender {
+        &self.proposer
+    }
 }
 
 pub struct SimpleProposalFilter<F> {

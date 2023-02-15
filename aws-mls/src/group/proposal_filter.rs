@@ -5,8 +5,7 @@ mod filtering;
 pub use bundle::{Proposable, ProposalBundle, ProposalInfo};
 pub(crate) use filter::SimpleProposalFilter;
 pub use filter::{
-    BoxedProposalFilter, PassThroughProposalFilter, ProposalFilter, ProposalFilterContext,
-    ProposalFilterError,
+    PassThroughProposalFilter, ProposalFilter, ProposalFilterContext, ProposalFilterError,
 };
 pub(crate) use filtering::{
     FailInvalidProposal, IgnoreInvalidByRefProposal, ProposalApplier, ProposalState,
