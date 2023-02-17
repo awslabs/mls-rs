@@ -6,9 +6,9 @@ use crate::{
     extension::RatchetTreeExt,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
-    provider::psk::PskStoreIdValidator,
     psk::{resolver::PskResolver, ExternalPskId},
     signer::Signable,
+    storage_provider::psk::PskStoreIdValidator,
     tree_kem::{
         kem::TreeKem, leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret,
         TreeKemPrivate, UpdatePath,
@@ -184,11 +184,11 @@ where
     }
 
     /// Change the committer's signing identity as part of making this commit.
-    /// This will only succeed if the [`IdentityProvider`](crate::provider::identity::IdentityProvider)
+    /// This will only succeed if the [`IdentityProvider`](crate::IdentityProvider)
     /// in use by the group considers the credential inside this signing_identity
-    /// [valid](crate::provider::identity::IdentityProvider::validate)
+    /// [valid](crate::IdentityProvider::validate)
     /// and results in the same
-    /// [identity](crate::provider::identity::IdentityProvider::identity)
+    /// [identity](crate::IdentityProvider::identity)
     /// being used.
     pub fn set_new_signing_identity(self, signing_identity: SigningIdentity) -> Self {
         Self {
@@ -546,7 +546,7 @@ where
 #[cfg(test)]
 pub(crate) mod test_utils {
     use crate::{
-        provider::crypto::SignatureSecretKey,
+        crypto::SignatureSecretKey,
         tree_kem::{leaf_node::LeafNode, TreeKemPublic, UpdatePathNode},
     };
     use core::fmt;

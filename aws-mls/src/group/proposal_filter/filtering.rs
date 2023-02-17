@@ -8,7 +8,6 @@ use crate::{
     },
     key_package::{KeyPackageValidationOptions, KeyPackageValidator},
     protocol_version::ProtocolVersion,
-    provider::crypto::CipherSuiteProvider,
     psk::{ExternalPskIdValidator, PreSharedKeyID},
     time::MlsTime,
     tree_kem::{
@@ -17,7 +16,7 @@ use crate::{
         node::LeafIndex,
         AccumulateBatchResults, RatchetTreeError, TreeKemPublic,
     },
-    ExtensionList,
+    CipherSuiteProvider, ExtensionList,
 };
 use aws_mls_core::identity::IdentityProvider;
 use futures::TryStreamExt;

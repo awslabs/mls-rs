@@ -1,6 +1,6 @@
 use crate::group::transcript_hash::ConfirmedTranscriptHash;
-use crate::provider::crypto::CipherSuiteProvider;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
+use crate::CipherSuiteProvider;
 use serde_with::serde_as;
 use std::{
     fmt::{self, Debug},
@@ -81,7 +81,7 @@ impl ConfirmationTag {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
+    use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;

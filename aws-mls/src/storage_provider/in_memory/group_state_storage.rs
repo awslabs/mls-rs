@@ -4,40 +4,15 @@ use std::{
 };
 
 use async_trait::async_trait;
-pub use aws_mls_core::group::GroupStateStorage;
-use aws_mls_core::group::{EpochRecord, GroupState};
+use aws_mls_core::group::{EpochRecord, GroupState, GroupStateStorage};
 
-use crate::group::{epoch::PriorEpoch, snapshot::Snapshot};
+use crate::storage_provider::group_state::EpochData;
 
-impl EpochRecord for PriorEpoch {
-    fn id(&self) -> u64 {
-        self.epoch_id()
-    }
-}
+#[cfg(any(feature = "benchmark", test))]
+use crate::group::epoch::PriorEpoch;
 
-impl GroupState for Snapshot {
-    fn id(&self) -> Vec<u8> {
-        self.group_id().to_vec()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct EpochData {
-    pub(crate) id: u64,
-    pub(crate) data: Vec<u8>,
-}
-
-impl EpochData {
-    pub(crate) fn new<T>(value: T) -> Result<Self, bincode::Error>
-    where
-        T: serde::Serialize + EpochRecord,
-    {
-        Ok(Self {
-            id: value.id(),
-            data: bincode::serialize(&value)?,
-        })
-    }
-}
+#[cfg(any(feature = "benchmark", test))]
+use crate::group::snapshot::Snapshot;
 
 #[derive(Debug, Clone)]
 pub(crate) struct InMemoryGroupData {
@@ -94,11 +69,15 @@ impl InMemoryGroupData {
 }
 
 #[derive(Clone, Debug)]
+/// In memory group state storage backed by a HashMap.
+///
+/// All clones of an instance of this type share the same underlying HashMap.
 pub struct InMemoryGroupStateStorage {
     pub(crate) inner: Arc<Mutex<HashMap<Vec<u8>, InMemoryGroupData>>>,
 }
 
 impl InMemoryGroupStateStorage {
+    /// Create an empty group state storage.
     pub fn new() -> Self {
         Self {
             inner: Default::default(),
@@ -135,10 +114,12 @@ impl InMemoryGroupStateStorage {
         storage
     }
 
+    /// Get the set of unique group ids that have data stored.
     pub fn stored_groups(&self) -> Vec<Vec<u8>> {
         self.inner.lock().unwrap().keys().cloned().collect()
     }
 
+    /// Delete all data corresponding to `group_id`.
     pub fn delete_group(&self, group_id: &[u8]) {
         self.inner.lock().unwrap().remove(group_id);
     }

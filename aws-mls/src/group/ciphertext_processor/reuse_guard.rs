@@ -1,6 +1,6 @@
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
-use crate::provider::crypto::CipherSuiteProvider;
+use crate::CipherSuiteProvider;
 
 const REUSE_GUARD_SIZE: usize = 4;
 
@@ -61,8 +61,7 @@ mod tests {
     use aws_mls_core::crypto::CipherSuiteProvider;
 
     use crate::{
-        client::test_utils::TEST_CIPHER_SUITE,
-        provider::crypto::test_utils::test_cipher_suite_provider,
+        client::test_utils::TEST_CIPHER_SUITE, crypto::test_utils::test_cipher_suite_provider,
     };
 
     use super::{ReuseGuard, REUSE_GUARD_SIZE};

@@ -1,4 +1,4 @@
-use crate::{group::secret_tree::MessageKeyData, provider::crypto::CipherSuiteProvider};
+use crate::{crypto::CipherSuiteProvider, group::secret_tree::MessageKeyData};
 
 use super::reuse_guard::ReuseGuard;
 

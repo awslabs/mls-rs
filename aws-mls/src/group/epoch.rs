@@ -2,7 +2,7 @@ use crate::group::GroupContext;
 use crate::psk::PreSharedKey;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::node::LeafIndex;
-use crate::{group::secret_tree::SecretTree, provider::crypto::SignaturePublicKey};
+use crate::{crypto::SignaturePublicKey, group::secret_tree::SecretTree};
 use serde_with::serde_as;
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -80,9 +80,9 @@ pub(crate) mod test_utils {
 
     use super::*;
     use crate::cipher_suite::CipherSuite;
+    use crate::crypto::test_utils::test_cipher_suite_provider;
     use crate::group::secret_tree::test_utils::get_test_tree;
     use crate::group::test_utils::{get_test_group_context_with_id, random_bytes};
-    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
 
     pub(crate) fn get_test_epoch_secrets(cipher_suite: CipherSuite) -> EpochSecrets {
         let cs_provider = test_cipher_suite_provider(cipher_suite);

@@ -1,6 +1,6 @@
 use aws_mls::{
     bench_utils::create_empty_tree::{load_test_cases, TestCase},
-    provider::identity::BasicIdentityProvider,
+    identity::basic::BasicIdentityProvider,
     tree_kem::{
         kem::TreeKem, leaf_node::ConfigProperties, node::LeafIndex,
         update_path::ValidatedUpdatePath, Capabilities,

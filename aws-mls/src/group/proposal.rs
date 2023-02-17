@@ -131,9 +131,11 @@ pub struct PreSharedKeyProposal {
 }
 
 impl PreSharedKeyProposal {
-    /// The external PSK ID of this proposal.
+    /// The external pre-shared key id of this proposal.
     ///
-    /// MLS requires the PSK type for PreSharedKeyProposal to be of type `External`.
+    /// MLS requires the pre-shared key type for PreSharedKeyProposal to be of
+    /// type `External`.
+    ///
     /// Returns `None` in the condition that the underlying psk is not external.
     pub fn external_psk_id(&self) -> Option<&ExternalPskId> {
         match self.psk.key_id {

@@ -1,6 +1,6 @@
+use crate::crypto::{CipherSuiteProvider, HpkeCiphertext, SignatureSecretKey};
 use crate::group::GroupContext;
 use crate::identity::SigningIdentity;
-use crate::provider::crypto::{CipherSuiteProvider, HpkeCiphertext, SignatureSecretKey};
 use crate::tree_kem::math as tree_math;
 use aws_mls_core::identity::IdentityProvider;
 use cfg_if::cfg_if;
@@ -325,12 +325,10 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::TEST_CIPHER_SUITE,
+        crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
         extension::test_utils::TestExtension,
         group::test_utils::{get_test_group_context, random_bytes},
-        provider::{
-            crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
-            identity::BasicIdentityProvider,
-        },
+        identity::basic::BasicIdentityProvider,
         tree_kem::{
             leaf_node::{
                 test_utils::{get_basic_test_node_sig_key, get_test_capabilities},

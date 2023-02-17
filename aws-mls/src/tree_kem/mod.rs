@@ -15,10 +15,10 @@ use self::hpke_encryption::HpkeEncryptionError;
 use self::leaf_node::{LeafNode, LeafNodeError};
 use self::tree_utils::build_ascii_tree;
 
+use crate::crypto::{self, CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::error::ExtensionError;
 use crate::group::proposal::ProposalType;
 use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError};
-use crate::provider::crypto::{self, CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::tree_kem::parent_hash::ParentHashError;
 use crate::tree_kem::path_secret::PathSecretError;
 use crate::tree_kem::tree_hash::TreeHashes;
@@ -390,25 +390,6 @@ impl TreeKemPublic {
             .try_for_each(|(pub_key, (node_index, _))| {
                 self.update_node(pub_key.clone(), *node_index)
             })
-    }
-
-    pub fn direct_path_keys(
-        &self,
-        index: LeafIndex,
-    ) -> Result<Vec<Option<HpkePublicKey>>, RatchetTreeError> {
-        let indexes = self.nodes.direct_path(index)?;
-
-        indexes
-            .iter()
-            .map(|&i| {
-                Ok(self
-                    .nodes
-                    .borrow_node(i)?
-                    .as_ref()
-                    .map(|n| n.public_key())
-                    .cloned())
-            })
-            .collect::<Result<Vec<_>, RatchetTreeError>>()
     }
 
     fn update_unmerged(&mut self, index: LeafIndex) -> Result<(), RatchetTreeError> {
@@ -851,10 +832,8 @@ impl TreeKemPublic {
 pub(crate) mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,
-        provider::{
-            crypto::{test_utils::test_cipher_suite_provider, HpkeSecretKey, SignatureSecretKey},
-            identity::BasicIdentityProvider,
-        },
+        crypto::{test_utils::test_cipher_suite_provider, HpkeSecretKey, SignatureSecretKey},
+        identity::basic::BasicIdentityProvider,
         tree_kem::leaf_node::test_utils::get_basic_test_node_sig_key,
     };
 
@@ -909,9 +888,9 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
     use crate::group::proposal::ProposalType;
-    use crate::provider::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
-    use crate::provider::identity::BasicIdentityProvider;
+    use crate::identity::basic::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNode;
     use crate::tree_kem::node::{

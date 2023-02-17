@@ -13,14 +13,14 @@ use crate::key_package::{
     KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageValidationError,
 };
 use crate::protocol_version::ProtocolVersion;
-use crate::provider::crypto::CryptoProvider;
-use crate::provider::group_state::GroupStateStorage;
-use crate::provider::key_package::KeyPackageStorage;
-use crate::provider::keychain::KeychainStorage;
 use crate::psk::ExternalPskId;
 use crate::signer::SignatureError;
 use crate::tree_kem::leaf_node::LeafNodeError;
+use aws_mls_core::crypto::CryptoProvider;
 use aws_mls_core::extension::{ExtensionError, ExtensionList};
+use aws_mls_core::group::GroupStateStorage;
+use aws_mls_core::key_package::KeyPackageStorage;
+use aws_mls_core::keychain::KeychainStorage;
 use hex::ToHex;
 use thiserror::Error;
 
@@ -97,12 +97,12 @@ where
     /// client to a [Group](crate::group::Group). Each call to this function
     /// will produce a unique value that is signed by `signing_identity`.
     ///
-    /// The [KeychainStorage](crate::provider::keychain::KeychainStorage) used to configure
+    /// The [KeychainStorage](crate::KeychainStorage) used to configure
     /// the client will be searched for a secret key matching `signing_identity`
     /// in order to generate a signature.
     ///
     /// The secret keys for the resulting key package message will be stored in
-    /// the [KeyPackageStorage](crate::provider::key_package::KeyPackageStorage)
+    /// the [KeyPackageStorage](crate::KeyPackageStorage)
     /// that was used to configure the client and will
     /// automatically be erased when this key package is used to
     /// [join a group](Client::join_group).
@@ -205,10 +205,10 @@ where
     /// Create a MLS group.
     ///
     /// The `cipher_suite` provided must be supported by the
-    /// [CipherSuiteProvider](crate::provider::crypto::CipherSuiteProvider)
+    /// [CipherSuiteProvider](crate::CipherSuiteProvider)
     /// that was used to build the client.
     ///
-    /// The [KeychainStorage](crate::provider::keychain::KeychainStorage) used to configure
+    /// The [KeychainStorage](crate::KeychainStorage) used to configure
     /// the client will be searched for a secret key matching `signing_identity`
     /// that will be used to sign messages sent to this group.
     pub async fn create_group(
@@ -263,19 +263,19 @@ where
     ///
     /// `tree_data` may be provided following the same rules as [Client::join_group]
     ///
-    /// The [KeychainStorage](crate::provider::keychain::KeychainStorage) used to configure
+    /// The [KeychainStorage](crate::KeychainStorage) used to configure
     /// the client will be searched for a secret key matching `signing_identity`
     /// that will be used to sign messages sent to this group.
     ///
     /// If PSKs are provided in `external_psks`, the
-    /// [PreSharedKeyStorage](crate::provider::psk::PreSharedKeyStorage)
+    /// [PreSharedKeyStorage](crate::PreSharedKeyStorage)
     /// used to configure the client will be searched to resolve their values.
     ///
     /// `to_remove` may be used to remove an existing member provided that the
     /// identity of the existing group member at that [index](crate::group::Member::index)
-    /// is a [valid successor](crate::provider::identity::IdentityProvider::valid_successor)
+    /// is a [valid successor](crate::IdentityProvider::valid_successor)
     /// of `signing_identity` as defined by the
-    /// [IdentityProvider](crate::provider::identity::IdentityProvider) that this client
+    /// [IdentityProvider](crate::IdentityProvider) that this client
     /// was configured with.
     ///
     /// # Warning
@@ -314,7 +314,7 @@ where
     }
 
     /// Load an existing group state into this client using the
-    /// [GroupStateStorage](crate::provider::group_state::GroupStateStorage) that
+    /// [GroupStateStorage](crate::GroupStateStorage) that
     /// this client was configured to use.
     pub async fn load_group(&self, group_id: &[u8]) -> Result<Group<C>, ClientError> {
         let snapshot = self
@@ -330,12 +330,12 @@ where
 
     /// Request to join an existing [group](crate::group::Group).
     ///
-    /// The [KeychainStorage](crate::provider::keychain::KeychainStorage) used to configure
+    /// The [KeychainStorage](crate::KeychainStorage) used to configure
     /// the client will be searched for a secret key matching `signing_identity`
     /// that will be used to sign this external add request.
     ///
     /// An existing group member will need to perform a
-    /// [commit](crate::group::Group::commit) to complete the add and the resulting
+    /// [commit](crate::Group::commit) to complete the add and the resulting
     /// welcome message can be used by [join_group](Client::join_group).
     pub async fn external_add_proposal(
         &self,
@@ -507,13 +507,13 @@ mod tests {
 
     use super::*;
     use crate::{
+        crypto::test_utils::TestCryptoProvider,
         group::{
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_group_custom_config},
             Event,
         },
         identity::test_utils::get_test_basic_credential,
-        provider::crypto::test_utils::TestCryptoProvider,
         psk::{ExternalPskId, PreSharedKey},
         tree_kem::leaf_node::LeafNodeSource,
     };

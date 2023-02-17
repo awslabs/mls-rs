@@ -4,8 +4,8 @@ use tls_codec::{Deserialize, Serialize};
 use crate::{
     client::test_utils::{TestClientConfig, TEST_PROTOCOL_VERSION},
     client_builder::Preferences,
+    crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
     group::{test_utils::test_group_custom, PaddingMode},
-    provider::crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
     tree_kem::{leaf_node::test_utils::get_basic_test_node, node::LeafIndex},
 };
 

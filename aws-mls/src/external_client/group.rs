@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use aws_mls_core::{group::Member, identity::IdentityProvider};
+use aws_mls_core::{group::Member, identity::IdentityProvider, keychain::KeychainStorage};
 use serde_with::serde_as;
 use tls_codec::Serialize;
 
@@ -27,10 +27,9 @@ use crate::{
     identity::SigningIdentity,
     key_package::KeyPackageValidator,
     protocol_version::ProtocolVersion,
-    provider::{crypto::CryptoProvider, keychain::KeychainStorage},
     psk::PassThroughPskIdValidator,
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
-    MLSMessage,
+    CryptoProvider, MLSMessage,
 };
 
 /// The result of processing an [ExternalGroup](ExternalGroup) message using
@@ -351,7 +350,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// Find a member based on their identity.
     ///
     /// Identities are matched based on the
-    /// [IdentityProvider](crate::provider::identity::IdentityProvider)
+    /// [IdentityProvider](crate::IdentityProvider)
     /// that this group was configured with.
     pub async fn get_member_with_identity(
         &self,
@@ -563,6 +562,7 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        crypto::{test_utils::TestCryptoProvider, SignatureSecretKey},
         extension::ExternalSendersExt,
         external_client::{
             group::test_utils::make_external_group_with_config,
@@ -579,7 +579,6 @@ mod tests {
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
         key_package::test_utils::{test_key_package, test_key_package_message},
         protocol_version::ProtocolVersion,
-        provider::crypto::{test_utils::TestCryptoProvider, SignatureSecretKey},
         ExtensionList, MLSMessage,
     };
     use assert_matches::assert_matches;

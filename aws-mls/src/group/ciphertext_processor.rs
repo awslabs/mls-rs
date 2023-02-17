@@ -16,7 +16,8 @@ use super::{
     secret_tree::{KeyType, SecretTreeError},
     GroupContext,
 };
-use crate::{provider::crypto::CipherSuiteProvider, psk::PskError, tree_kem::node::LeafIndex};
+use crate::{psk::PskError, tree_kem::node::LeafIndex};
+use aws_mls_core::crypto::CipherSuiteProvider;
 use thiserror::Error;
 use tls_codec::Serialize;
 use zeroize::Zeroizing;
@@ -256,16 +257,16 @@ mod test {
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::TEST_CIPHER_SUITE,
+        crypto::{
+            test_utils::{test_cipher_suite_provider, TestCryptoProvider},
+            CipherSuiteProvider,
+        },
         group::{
             epoch::{test_utils::get_test_epoch, PriorEpoch},
             framing::{ApplicationData, Content, Sender, WireFormat},
             message_signature::AuthenticatedContent,
             padding::PaddingMode,
             test_utils::random_bytes,
-        },
-        provider::crypto::{
-            test_utils::{test_cipher_suite_provider, TestCryptoProvider},
-            CipherSuiteProvider,
         },
         tree_kem::node::LeafIndex,
     };

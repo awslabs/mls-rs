@@ -19,14 +19,11 @@ use crate::{
     identity::CredentialType,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
-    provider::{
-        crypto::{CryptoProvider, SignatureSecretKey},
-        group_state::{GroupStateStorage, InMemoryGroupStateStorage},
-        key_package::{InMemoryKeyPackageStorage, KeyPackageStorage},
-        keychain::{InMemoryKeychainStorage, KeychainStorage},
-        psk::{InMemoryPreSharedKeyStorage, PreSharedKeyStorage},
-    },
     psk::{ExternalPskId, PreSharedKey},
+    storage_provider::in_memory::{
+        InMemoryGroupStateStorage, InMemoryKeyPackageStorage, InMemoryKeychainStorage,
+        InMemoryPreSharedKeyStorage,
+    },
     time::MlsTime,
     tree_kem::{Capabilities, Lifetime},
     Sealed,
@@ -65,7 +62,8 @@ pub type BaseConfig = Config<
 /// ```
 /// use aws_mls::{
 ///     Client,
-///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage},
+///     identity::basic::BasicIdentityProvider,
+///     storage_provider::{in_memory::InMemoryKeychainStorage},
 /// };
 ///
 /// use aws_mls_crypto_openssl::OpensslCryptoProvider;
@@ -89,7 +87,8 @@ pub type BaseConfig = Config<
 /// use aws_mls::{
 ///     Client,
 ///     client_builder::MlsConfig,
-///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage},
+///     identity::basic::BasicIdentityProvider,
+///     storage_provider::{in_memory::InMemoryKeychainStorage},
 /// };
 ///
 /// use aws_mls_crypto_openssl::OpensslCryptoProvider;
@@ -108,8 +107,9 @@ pub type BaseConfig = Config<
 /// use aws_mls::{
 ///     Client,
 ///     client_builder::{BaseConfig, WithIdentityProvider, WithKeychain, WithCryptoProvider},
-///     provider::{
-///         identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage,
+///     identity::basic::BasicIdentityProvider,
+///     storage_provider::{
+///         in_memory::InMemoryKeychainStorage,
 ///     },
 /// };
 ///
@@ -950,8 +950,13 @@ mod private {
 }
 
 use aws_mls_core::{
+    crypto::{CryptoProvider, SignatureSecretKey},
     extension::{ExtensionError, ExtensionList},
+    group::GroupStateStorage,
     identity::IdentityProvider,
+    key_package::KeyPackageStorage,
+    keychain::KeychainStorage,
+    psk::PreSharedKeyStorage,
 };
 use private::{Config, ConfigInner, IntoConfig};
 
@@ -959,11 +964,9 @@ use private::{Config, ConfigInner, IntoConfig};
 pub(crate) mod test_utils {
     use crate::{
         client_builder::{BaseConfig, ClientBuilder, WithIdentityProvider, WithKeychain},
-        identity::test_utils::BasicWithCustomProvider,
-        provider::{
-            crypto::test_utils::TestCryptoProvider, identity::BasicIdentityProvider,
-            keychain::InMemoryKeychainStorage,
-        },
+        crypto::test_utils::TestCryptoProvider,
+        identity::{basic::BasicIdentityProvider, test_utils::BasicWithCustomProvider},
+        storage_provider::in_memory::InMemoryKeychainStorage,
     };
 
     use super::WithCryptoProvider;

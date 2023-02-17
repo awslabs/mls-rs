@@ -8,17 +8,30 @@ use zeroize::Zeroize;
 #[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, Zeroize, serde::Serialize, serde::Deserialize)]
 #[zeroize(drop)]
+/// Wrapper type that holds a pre-shared key value and zeroizes on drop.
 pub struct PreSharedKey(#[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")] Vec<u8>);
+
+impl PreSharedKey {
+    /// Create a new PreSharedKey.
+    pub fn new(data: Vec<u8>) -> Self {
+        PreSharedKey(data)
+    }
+
+    /// Raw byte value.
+    pub fn raw_value(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 impl From<Vec<u8>> for PreSharedKey {
     fn from(bytes: Vec<u8>) -> Self {
-        Self(bytes)
+        Self::new(bytes)
     }
 }
 
 impl AsRef<[u8]> for PreSharedKey {
     fn as_ref(&self) -> &[u8] {
-        &self.0
+        self.raw_value()
     }
 }
 
@@ -26,7 +39,7 @@ impl Deref for PreSharedKey {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.raw_value()
     }
 }
 
@@ -44,6 +57,7 @@ impl Deref for PreSharedKey {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// An external pre-shared key identifier.
 pub struct ExternalPskId(
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
@@ -77,10 +91,14 @@ impl From<Vec<u8>> for ExternalPskId {
 }
 
 #[async_trait]
+/// Storage trait to maintain a set of pre-shared key values.
 pub trait PreSharedKeyStorage: Send + Sync {
+    /// Error type that the underlying storage mechanism returns on internal
+    /// failure.
     type Error: std::error::Error + Send + Sync + 'static;
 
-    async fn insert(&mut self, id: ExternalPskId, psk: PreSharedKey) -> Result<(), Self::Error>;
-    async fn delete(&mut self, id: &ExternalPskId) -> Result<(), Self::Error>;
+    /// Get a pre-shared key by [`ExternalPskId`](ExternalPskId).
+    ///
+    /// `None` should be returned if a pre-shared key can not be found for `id`.
     async fn get(&self, id: &ExternalPskId) -> Result<Option<PreSharedKey>, Self::Error>;
 }

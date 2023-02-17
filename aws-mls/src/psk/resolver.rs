@@ -1,14 +1,12 @@
 use aws_mls_core::{
     crypto::CipherSuiteProvider,
     group::GroupStateStorage,
+    key_package::KeyPackageStorage,
     psk::{ExternalPskId, PreSharedKeyStorage},
 };
 use futures::{StreamExt, TryStreamExt};
 
-use crate::{
-    group::{epoch::EpochSecrets, state_repo::GroupStateRepository, GroupContext},
-    provider::key_package::KeyPackageStorage,
-};
+use crate::group::{epoch::EpochSecrets, state_repo::GroupStateRepository, GroupContext};
 
 use super::{
     secret::{PskSecret, PskSecretInput},

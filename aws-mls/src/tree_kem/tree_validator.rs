@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::provider::crypto::CipherSuiteProvider;
+use crate::crypto::CipherSuiteProvider;
 use crate::tree_kem::math as tree_math;
 use crate::{
     extension::RequiredCapabilitiesExt,
@@ -138,11 +138,10 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::TEST_CIPHER_SUITE,
+        crypto::test_utils::test_cipher_suite_provider,
+        crypto::test_utils::TestCryptoProvider,
         group::test_utils::{get_test_group_context, random_bytes, TEST_GROUP},
-        provider::{
-            crypto::test_utils::test_cipher_suite_provider, crypto::test_utils::TestCryptoProvider,
-            identity::BasicIdentityProvider,
-        },
+        identity::basic::BasicIdentityProvider,
         tree_kem::{
             kem::TreeKem,
             leaf_node::test_utils::{default_properties, get_basic_test_node},

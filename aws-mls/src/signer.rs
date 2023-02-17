@@ -2,7 +2,7 @@ use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsSerialize, TlsSize};
 
-use crate::provider::crypto::{CipherSuiteProvider, SignaturePublicKey, SignatureSecretKey};
+use crate::crypto::{CipherSuiteProvider, SignaturePublicKey, SignatureSecretKey};
 
 #[derive(Debug, Clone, TlsSize, TlsSerialize)]
 struct SignContent {
@@ -82,7 +82,7 @@ pub(crate) trait Signable<'a> {
 pub(crate) mod test_utils {
     use aws_mls_core::crypto::CipherSuiteProvider;
 
-    use crate::provider::crypto::test_utils::try_test_cipher_suite_provider;
+    use crate::crypto::test_utils::try_test_cipher_suite_provider;
 
     use super::Signable;
 
@@ -162,10 +162,10 @@ mod tests {
     use super::{test_utils::TestSignable, *};
     use crate::{
         client::test_utils::TEST_CIPHER_SUITE,
-        group::test_utils::random_bytes,
-        provider::crypto::test_utils::{
+        crypto::test_utils::{
             test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
         },
+        group::test_utils::random_bytes,
     };
     use assert_matches::assert_matches;
 

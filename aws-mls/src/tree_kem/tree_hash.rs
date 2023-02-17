@@ -1,7 +1,7 @@
 use super::leaf_node::LeafNode;
 use super::node::LeafIndex;
 use super::tree_math::{BfsIterBottomUp, BfsIterTopDown};
-use crate::provider::crypto::CipherSuiteProvider;
+use crate::crypto::CipherSuiteProvider;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::Parent;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
@@ -357,10 +357,8 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
-        provider::{
-            crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
-            identity::BasicIdentityProvider,
-        },
+        crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
+        identity::basic::BasicIdentityProvider,
         tree_kem::{node::NodeVec, parent_hash::test_utils::get_test_tree_fig_12},
     };
 

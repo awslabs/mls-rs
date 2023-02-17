@@ -8,7 +8,7 @@ use super::{
     node::{LeafIndex, NodeVecError},
     tree_math::TreeMathError,
 };
-use crate::provider::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey};
+use crate::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey};
 use crate::{group::message_processor::ProvisionalState, time::MlsTime};
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -121,11 +121,11 @@ mod tests {
     use assert_matches::assert_matches;
 
     use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::crypto::test_utils::test_cipher_suite_provider;
+    use crate::crypto::HpkeCiphertext;
     use crate::group::message_processor::ProvisionalState;
     use crate::group::test_utils::{get_test_group_context, random_bytes, TEST_GROUP};
-    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
-    use crate::provider::crypto::HpkeCiphertext;
-    use crate::provider::identity::BasicIdentityProvider;
+    use crate::identity::basic::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::default_properties;
     use crate::tree_kem::node::LeafIndex;
     use crate::tree_kem::test_utils::{get_test_leaf_nodes, get_test_tree};

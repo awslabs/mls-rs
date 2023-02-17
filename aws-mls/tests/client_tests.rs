@@ -4,15 +4,15 @@ use aws_mls::client_builder::{
 };
 use aws_mls::error::GroupError;
 use aws_mls::group::Event;
+use aws_mls::identity::basic::{BasicCredential, BasicIdentityProvider};
+use aws_mls::identity::Credential;
 use aws_mls::identity::SigningIdentity;
-use aws_mls::identity::{BasicCredential, Credential};
-use aws_mls::provider::crypto::CryptoProvider;
-use aws_mls::provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage};
-use aws_mls::Client;
+use aws_mls::storage_provider::in_memory::InMemoryKeychainStorage;
 use aws_mls::ExtensionList;
 use aws_mls::MLSMessage;
 use aws_mls::ProtocolVersion;
 use aws_mls::{CipherSuite, Group};
+use aws_mls::{Client, CryptoProvider};
 use aws_mls_core::crypto::CipherSuiteProvider;
 use cfg_if::cfg_if;
 

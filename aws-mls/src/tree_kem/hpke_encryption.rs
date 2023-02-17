@@ -68,7 +68,7 @@ pub(crate) mod test_utils {
     use aws_mls_core::crypto::{CipherSuiteProvider, HpkeCiphertext};
     use tls_codec::{Deserialize, Serialize, Size};
 
-    use crate::provider::crypto::test_utils::try_test_cipher_suite_provider;
+    use crate::crypto::test_utils::try_test_cipher_suite_provider;
 
     use super::HpkeEncryptable;
 

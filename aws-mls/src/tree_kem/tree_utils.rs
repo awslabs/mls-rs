@@ -70,9 +70,8 @@ pub(crate) fn build_ascii_tree(nodes: &NodeVec) -> String {
 mod tests {
     use crate::{
         client::test_utils::TEST_CIPHER_SUITE,
-        provider::{
-            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
-        },
+        crypto::test_utils::test_cipher_suite_provider,
+        identity::basic::BasicIdentityProvider,
         tree_kem::{
             node::Parent,
             parent_hash::ParentHash,

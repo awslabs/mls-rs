@@ -10,6 +10,7 @@ pub use self::cipher_suite::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// Ciphertext produced by [`CipherSuiteProvider::hpke_seal`]
 pub struct HpkeCiphertext {
     #[tls_codec(with = "crate::tls::ByteVec")]
     pub kem_output: Vec<u8>,
@@ -170,6 +171,7 @@ impl Deref for SignatureSecretKey {
     }
 }
 
+/// Provides implementations for several ciphersuites via [`CipherSuiteProvider`].
 pub trait CryptoProvider: Send + Sync {
     type CipherSuiteProvider: CipherSuiteProvider + Clone;
 
@@ -181,7 +183,7 @@ pub trait CryptoProvider: Send + Sync {
         -> Option<Self::CipherSuiteProvider>;
 }
 
-/// This trait provides all cryptographic operations required by MLS for a given cipher suite.
+/// Provides all cryptographic operations required by MLS for a given cipher suite.
 pub trait CipherSuiteProvider: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
     type HpkeContextS: HpkeContextS + Send + Sync;

@@ -1,6 +1,8 @@
+pub(crate) use aws_mls_core::crypto::CipherSuiteProvider;
+
 pub use aws_mls_core::crypto::{
-    CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkeContextR, HpkeContextS, HpkePublicKey,
-    HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
+    HpkeCiphertext, HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey, SignaturePublicKey,
+    SignatureSecretKey,
 };
 
 #[cfg(any(test, feature = "benchmark"))]

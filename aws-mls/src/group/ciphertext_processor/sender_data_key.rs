@@ -3,8 +3,8 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroize;
 
 use crate::{
+    crypto::CipherSuiteProvider,
     group::{epoch::SenderDataSecret, framing::ContentType, key_schedule::kdf_expand_with_label},
-    provider::crypto::CipherSuiteProvider,
     tree_kem::node::LeafIndex,
 };
 
@@ -150,15 +150,13 @@ mod tests {
 
     use crate::{
         cipher_suite::CipherSuite,
+        crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
         group::{
             ciphertext_processor::reuse_guard::ReuseGuard, framing::ContentType,
             test_utils::random_bytes,
         },
-        provider::crypto::{
-            test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
-            CipherSuiteProvider,
-        },
         tree_kem::node::LeafIndex,
+        CipherSuiteProvider,
     };
 
     use super::{SenderData, SenderDataAAD, SenderDataKey};

@@ -1,6 +1,6 @@
 use crate::{
-    group::state_repo::GroupStateRepositoryError, provider::crypto::CipherSuiteProvider,
-    serde_utils::vec_u8_as_base64::VecAsBase64,
+    group::state_repo::GroupStateRepositoryError, serde_utils::vec_u8_as_base64::VecAsBase64,
+    CipherSuiteProvider,
 };
 use async_trait::async_trait;
 use serde_with::serde_as;
@@ -200,7 +200,7 @@ impl ExternalPskIdValidator for PassThroughPskIdValidator {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
+    use crate::crypto::test_utils::test_cipher_suite_provider;
 
     use super::PskNonce;
     use aws_mls_core::{
@@ -225,7 +225,7 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use crate::provider::crypto::test_utils::TestCryptoProvider;
+    use crate::crypto::test_utils::TestCryptoProvider;
     use std::iter;
 
     #[cfg(target_arch = "wasm32")]

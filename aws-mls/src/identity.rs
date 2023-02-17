@@ -1,4 +1,12 @@
-pub use aws_mls_core::identity::*;
+pub mod basic;
+
+pub mod x509 {
+    pub use aws_mls_core::identity::{CertificateChain, DerCertificate};
+}
+
+pub use aws_mls_core::identity::{
+    Credential, CredentialType, CustomCredential, MlsCredential, SigningIdentity,
+};
 
 #[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
@@ -13,12 +21,9 @@ pub(crate) mod test_utils {
     };
     use thiserror::Error;
 
-    use crate::provider::{
-        crypto::test_utils::test_cipher_suite_provider,
-        identity::{BasicCredentialError, BasicIdentityProvider},
-    };
+    use crate::crypto::test_utils::test_cipher_suite_provider;
 
-    use super::BasicCredential;
+    use super::basic::{BasicCredential, BasicCredentialError, BasicIdentityProvider};
 
     #[derive(Debug, Error)]
     #[error("expected basic or custom credential type 42 found: {0:?}")]
@@ -107,7 +112,7 @@ pub(crate) mod test_utils {
             ]
         }
 
-        async fn identity_events(
+        async fn identity_warnings(
             &self,
             _update: &RosterUpdate,
         ) -> Result<Vec<IdentityWarning>, Self::Error> {

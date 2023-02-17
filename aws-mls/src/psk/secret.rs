@@ -90,9 +90,7 @@ mod tests {
     use serde::{Deserialize, Serialize};
 
     use crate::{
-        provider::crypto::test_utils::{
-            test_cipher_suite_provider, try_test_cipher_suite_provider,
-        },
+        crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
         psk::{
             test_utils::{make_external_psk_id, make_nonce},
             JustPreSharedKeyID, PreSharedKeyID, PskNonce,

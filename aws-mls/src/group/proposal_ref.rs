@@ -71,11 +71,9 @@ mod test {
     use super::test_utils::auth_content_from_proposal;
     use super::*;
     use crate::{
+        crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
         extension::RequiredCapabilitiesExt,
         key_package::test_utils::test_key_package,
-        provider::crypto::test_utils::{
-            test_cipher_suite_provider, try_test_cipher_suite_provider,
-        },
         tree_kem::leaf_node::test_utils::get_basic_test_node,
     };
 

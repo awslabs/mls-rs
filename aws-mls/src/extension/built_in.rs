@@ -173,13 +173,12 @@ impl TlsCodecExtension for ExternalSendersExt {
 #[cfg(test)]
 mod tests {
     use crate::{
-        client::test_utils::TEST_CIPHER_SUITE,
-        identity::{test_utils::get_test_signing_identity, BasicCredential},
+        client::test_utils::TEST_CIPHER_SUITE, identity::test_utils::get_test_signing_identity,
     };
 
     use super::*;
 
-    use aws_mls_core::extension::MlsExtension;
+    use aws_mls_core::{extension::MlsExtension, identity::BasicCredential};
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 

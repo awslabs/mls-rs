@@ -104,6 +104,8 @@ pub use protocol_version::ProtocolVersion;
 mod client;
 pub mod client_builder;
 mod client_config;
+/// Dependencies of [`CryptoProvider`] and [`CipherSuiteProvider`]
+pub mod crypto;
 /// Extension utilities and built-in extension types.
 pub mod extension;
 /// Tools to observe groups without being a member, useful
@@ -113,11 +115,23 @@ pub mod external_client;
 /// E2EE group created by a [`Client`].
 pub mod group;
 mod hash_reference;
+/// Identity providers to use with [`ClientBuilder`](client_builder::ClientBuilder).
 pub mod identity;
 mod key_package;
-pub mod provider;
 mod psk;
 mod signer;
+/// Storage providers to use with
+/// [`ClientBuilder`](client_builder::ClientBuilder).
+pub mod storage_provider;
+
+pub use aws_mls_core::{
+    crypto::{CipherSuiteProvider, CryptoProvider},
+    group::GroupStateStorage,
+    identity::IdentityProvider,
+    key_package::KeyPackageStorage,
+    keychain::KeychainStorage,
+    psk::PreSharedKeyStorage,
+};
 
 pub use aws_mls_core::extension::{Extension, ExtensionList};
 

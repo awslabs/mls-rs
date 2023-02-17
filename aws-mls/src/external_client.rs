@@ -4,8 +4,8 @@ use crate::{
     group::framing::{MLSMessage, MLSMessagePayload},
     key_package::{KeyPackageValidationOptions, KeyPackageValidationOutput, KeyPackageValidator},
     protocol_version::ProtocolVersion,
-    provider::crypto::CryptoProvider,
     time::MlsTime,
+    CryptoProvider,
 };
 
 pub mod builder;

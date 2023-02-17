@@ -156,7 +156,7 @@ where
         self.supported_types()
     }
 
-    async fn identity_events(
+    async fn identity_warnings(
         &self,
         update: &aws_mls_core::group::RosterUpdate,
     ) -> Result<Vec<IdentityWarning>, Self::Error> {

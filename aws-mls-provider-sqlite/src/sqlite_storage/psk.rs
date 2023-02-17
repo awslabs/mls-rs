@@ -6,32 +6,10 @@ use std::{
     ops::Deref,
     sync::{Arc, Mutex},
 };
-use zeroize::Zeroize;
 
 #[derive(Debug, Clone)]
 pub struct SqLitePreSharedKeyStorage {
     connection: Arc<Mutex<Connection>>,
-}
-
-#[derive(Debug, Clone, Zeroize, PartialEq, Eq)]
-struct StoredPsk(Vec<u8>);
-
-impl Deref for StoredPsk {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl TryFrom<PreSharedKey> for StoredPsk {
-    type Error = SqLiteDataStorageError;
-
-    fn try_from(value: PreSharedKey) -> Result<Self, Self::Error> {
-        bincode::serialize(&value)
-            .map(StoredPsk)
-            .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))
-    }
 }
 
 impl SqLitePreSharedKeyStorage {
@@ -41,7 +19,11 @@ impl SqLitePreSharedKeyStorage {
         }
     }
 
-    fn insert(&mut self, psk_id: Vec<u8>, psk: StoredPsk) -> Result<(), SqLiteDataStorageError> {
+    pub fn insert(
+        &mut self,
+        psk_id: Vec<u8>,
+        psk: PreSharedKey,
+    ) -> Result<(), SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         // Upsert into the database
@@ -54,20 +36,20 @@ impl SqLitePreSharedKeyStorage {
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
 
-    fn get(&self, psk_id: &[u8]) -> Result<Option<StoredPsk>, SqLiteDataStorageError> {
+    pub fn get(&self, psk_id: &[u8]) -> Result<Option<PreSharedKey>, SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         connection
             .query_row(
                 "SELECT data FROM psk WHERE psk_id = ?",
                 params![psk_id],
-                |row| Ok(StoredPsk(row.get(0)?)),
+                |row| Ok(PreSharedKey::new(row.get(0)?)),
             )
             .optional()
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
 
-    fn delete(&mut self, psk_id: &[u8]) -> Result<(), SqLiteDataStorageError> {
+    pub fn delete(&mut self, psk_id: &[u8]) -> Result<(), SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         connection
@@ -80,22 +62,6 @@ impl SqLitePreSharedKeyStorage {
 #[async_trait]
 impl PreSharedKeyStorage for SqLitePreSharedKeyStorage {
     type Error = SqLiteDataStorageError;
-
-    async fn insert(&mut self, id: ExternalPskId, psk: PreSharedKey) -> Result<(), Self::Error> {
-        self.insert(
-            bincode::serialize(&id)
-                .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?,
-            StoredPsk::try_from(psk)
-                .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?,
-        )
-    }
-
-    async fn delete(&mut self, id: &ExternalPskId) -> Result<(), Self::Error> {
-        self.delete(
-            &bincode::serialize(&id)
-                .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?,
-        )
-    }
 
     async fn get(&self, id: &ExternalPskId) -> Result<Option<PreSharedKey>, Self::Error> {
         self.get(
@@ -112,16 +78,18 @@ impl PreSharedKeyStorage for SqLitePreSharedKeyStorage {
 #[cfg(test)]
 mod tests {
 
+    use aws_mls::storage_provider::PreSharedKey;
+
     use crate::{
         sqlite_storage::{connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
         SqLiteDataStorageEngine,
     };
 
-    use super::{SqLitePreSharedKeyStorage, StoredPsk};
+    use super::SqLitePreSharedKeyStorage;
 
-    fn test_psk() -> (Vec<u8>, StoredPsk) {
+    fn test_psk() -> (Vec<u8>, PreSharedKey) {
         let psk_id = gen_rand_bytes(32);
-        let stored_psk = StoredPsk(gen_rand_bytes(64));
+        let stored_psk = PreSharedKey::new(gen_rand_bytes(64));
 
         (psk_id, stored_psk)
     }

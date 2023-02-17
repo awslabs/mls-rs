@@ -1,4 +1,4 @@
-use crate::provider::crypto::{CipherSuiteProvider, HpkePublicKey};
+use crate::crypto::{CipherSuiteProvider, HpkePublicKey};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
@@ -319,9 +319,8 @@ pub(crate) mod test_utils {
     use super::*;
     use crate::{
         cipher_suite::CipherSuite,
-        provider::{
-            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
-        },
+        crypto::test_utils::test_cipher_suite_provider,
+        identity::basic::BasicIdentityProvider,
         tree_kem::{leaf_node::test_utils::get_basic_test_node, node::Parent},
     };
     use futures::StreamExt;
@@ -393,10 +392,8 @@ mod tests {
     use super::*;
     use crate::cipher_suite::CipherSuite;
     use crate::client::test_utils::TEST_CIPHER_SUITE;
-    use crate::provider::crypto::test_utils::{
-        test_cipher_suite_provider, try_test_cipher_suite_provider,
-    };
-    use crate::provider::identity::BasicIdentityProvider;
+    use crate::crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider};
+    use crate::identity::basic::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNodeSource;
     use crate::tree_kem::node::{NodeTypeResolver, NodeVec};

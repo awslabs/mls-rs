@@ -7,6 +7,7 @@ use crate::{
     client_config::{
         KeepAllProposals, MakeProposalFilter, MakeSimpleProposalFilter, ProposalFilterInit,
     },
+    crypto::{SignaturePublicKey, SignatureSecretKey},
     extension::ExtensionType,
     external_client::{ExternalClient, ExternalClientConfig},
     group::{
@@ -16,12 +17,9 @@ use crate::{
     identity::CredentialType,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
-    provider::{
-        crypto::{CryptoProvider, SignaturePublicKey, SignatureSecretKey},
-        keychain::{InMemoryKeychainStorage, KeychainStorage},
-    },
+    storage_provider::in_memory::InMemoryKeychainStorage,
     tree_kem::Capabilities,
-    Sealed,
+    CryptoProvider, Sealed,
 };
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -47,7 +45,8 @@ pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Missing
 /// ```
 /// use aws_mls::{
 ///     external_client::ExternalClient,
-///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage},
+///     identity::basic::BasicIdentityProvider,
+///     storage_provider::{in_memory::InMemoryKeychainStorage},
 /// };
 ///
 /// use aws_mls_crypto_openssl::OpensslCryptoProvider;
@@ -69,8 +68,9 @@ pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Missing
 /// The first option uses `impl MlsConfig`:
 /// ```
 /// use aws_mls::{
-///     external_client::{ExternalClient, MlsConfig},
-///     provider::{identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage},
+///     external_client::{ExternalClient, builder::MlsConfig},
+///     identity::basic::BasicIdentityProvider,
+///     storage_provider::{in_memory::InMemoryKeychainStorage},
 /// };
 ///
 /// use aws_mls_crypto_openssl::OpensslCryptoProvider;
@@ -87,9 +87,10 @@ pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Missing
 /// The second option is more verbose and consists in writing the full `ExternalClient` type:
 /// ```
 /// use aws_mls::{
-///     external_client::{ExternalBaseConfig, ExternalClient, WithIdentityProvider, WithKeychain, WithCryptoProvider},
-///     provider::{
-///         identity::BasicIdentityProvider, keychain::InMemoryKeychainStorage,
+///     external_client::{ExternalClient, builder::{ExternalBaseConfig, WithIdentityProvider, WithKeychain, WithCryptoProvider}},
+///     identity::basic::BasicIdentityProvider,
+///     storage_provider::{
+///         in_memory::InMemoryKeychainStorage,
 ///     },
 /// };
 ///
@@ -618,17 +619,15 @@ mod private {
     }
 }
 
-use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::{identity::IdentityProvider, keychain::KeychainStorage};
 use private::{Config, ConfigInner, IntoConfig};
 
 #[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
     use crate::{
-        cipher_suite::CipherSuite,
-        provider::{
-            crypto::test_utils::TestCryptoProvider, identity::BasicIdentityProvider,
-            keychain::InMemoryKeychainStorage,
-        },
+        cipher_suite::CipherSuite, crypto::test_utils::TestCryptoProvider,
+        identity::basic::BasicIdentityProvider,
+        storage_provider::in_memory::InMemoryKeychainStorage,
     };
 
     use super::{

@@ -1,7 +1,5 @@
 use super::{parent_hash::ParentHash, Capabilities, Lifetime};
-use crate::provider::crypto::{
-    CipherSuiteProvider, HpkePublicKey, HpkeSecretKey, SignatureSecretKey,
-};
+use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::time::MlsTime;
 use crate::{
@@ -305,19 +303,14 @@ impl<'a> Signable<'a> for LeafNode {
 
 #[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
-    use aws_mls_core::identity::CredentialType;
+    use aws_mls_core::identity::{BasicCredential, CredentialType};
 
     use crate::{
         cipher_suite::CipherSuite,
+        crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
         extension::ApplicationIdExt,
-        identity::{
-            test_utils::{get_test_signing_identity, BasicWithCustomProvider},
-            BasicCredential,
-        },
-        provider::{
-            crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
-            identity::BasicIdentityProvider,
-        },
+        identity::basic::BasicIdentityProvider,
+        identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
     };
 
     use super::*;
@@ -437,11 +430,11 @@ mod tests {
     use super::*;
 
     use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::crypto::test_utils::test_cipher_suite_provider;
+    use crate::crypto::test_utils::TestCryptoProvider;
     use crate::group::test_utils::random_bytes;
+    use crate::identity::basic::BasicIdentityProvider;
     use crate::identity::test_utils::get_test_signing_identity;
-    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
-    use crate::provider::crypto::test_utils::TestCryptoProvider;
-    use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider;
     use assert_matches::assert_matches;
 

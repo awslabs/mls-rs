@@ -1,28 +1,20 @@
+use crate::{crypto::SignatureSecretKey, identity::SigningIdentity};
 use async_trait::async_trait;
 
-use crate::{
-    crypto::{CipherSuite, SignatureSecretKey},
-    identity::SigningIdentity,
-};
-
+/// Storage trait that maintains secret signature keys
+/// indexed by public
+/// [`SigningIdentity`](aws_mls_core::identity::SigningIdentity).
 #[async_trait]
 pub trait KeychainStorage: Send + Sync {
+    /// Error type that the underlying storage mechanism returns on internal
+    /// failure.
     type Error: std::error::Error + Send + Sync + 'static;
 
-    async fn insert(
-        &mut self,
-        identity: SigningIdentity,
-        signer: SignatureSecretKey,
-        cipher_suite: CipherSuite,
-    ) -> Result<(), Self::Error>;
-
-    async fn delete(&mut self, identity: &SigningIdentity) -> Result<(), Self::Error>;
-
-    async fn get_identities(
-        &self,
-        cipher_suite: CipherSuite,
-    ) -> Result<Vec<(SigningIdentity, SignatureSecretKey)>, Self::Error>;
-
+    /// Retrieve the
+    /// [`SignatureSecretKey`](aws_mls_core::crypto::SignatureSecretKey)
+    /// that is associated with `identity`.
+    ///
+    /// `None` should be returned in the event `identity` is not found.
     async fn signer(
         &self,
         identity: &SigningIdentity,

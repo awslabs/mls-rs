@@ -1,7 +1,7 @@
 use super::leaf_node::{LeafNode, LeafNodeSigningContext, LeafNodeSource};
 use super::{Lifetime, LifetimeError};
 use crate::identity::CredentialType;
-use crate::provider::crypto::CipherSuiteProvider;
+use crate::CipherSuiteProvider;
 use crate::{
     extension::{ExtensionType, RequiredCapabilitiesExt},
     group::proposal::ProposalType,
@@ -219,14 +219,14 @@ mod tests {
     use super::*;
 
     use crate::client::test_utils::TEST_CIPHER_SUITE;
+    use crate::crypto::test_utils::test_cipher_suite_provider;
+    use crate::crypto::test_utils::TestCryptoProvider;
+    use crate::crypto::SignatureSecretKey;
     use crate::extension::test_utils::TestExtension;
     use crate::group::test_utils::random_bytes;
+    use crate::identity::basic::BasicCredential;
+    use crate::identity::basic::BasicIdentityProvider;
     use crate::identity::test_utils::get_test_signing_identity;
-    use crate::identity::BasicCredential;
-    use crate::provider::crypto::test_utils::test_cipher_suite_provider;
-    use crate::provider::crypto::test_utils::TestCryptoProvider;
-    use crate::provider::crypto::SignatureSecretKey;
-    use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::*;
     use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider;
     use crate::tree_kem::parent_hash::ParentHash;
@@ -599,15 +599,12 @@ pub(crate) mod test_utils {
     use async_trait::async_trait;
     use aws_mls_core::{
         group::RosterUpdate,
-        identity::{IdentityProvider, IdentityWarning},
+        identity::{BasicCredential, IdentityProvider, IdentityWarning},
     };
     use thiserror::Error;
     use tls_codec::Serialize;
 
-    use crate::{
-        identity::{BasicCredential, SigningIdentity},
-        time::MlsTime,
-    };
+    use crate::{identity::SigningIdentity, time::MlsTime};
 
     #[derive(Clone, Debug, Default)]
     pub struct FailureIdentityProvider;
@@ -650,7 +647,7 @@ pub(crate) mod test_utils {
             vec![BasicCredential::credential_type()]
         }
 
-        async fn identity_events(
+        async fn identity_warnings(
             &self,
             _update: &RosterUpdate,
         ) -> Result<Vec<IdentityWarning>, Self::Error> {

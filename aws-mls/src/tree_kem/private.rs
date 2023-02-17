@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-use crate::provider::crypto::CipherSuiteProvider;
+use crate::crypto::CipherSuiteProvider;
 
 use super::*;
 
@@ -120,10 +120,9 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::TEST_CIPHER_SUITE,
+        crypto::test_utils::test_cipher_suite_provider,
         group::test_utils::{get_test_group_context, random_bytes},
-        provider::{
-            crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider,
-        },
+        identity::basic::BasicIdentityProvider,
         tree_kem::{
             kem::TreeKem,
             leaf_node::test_utils::{

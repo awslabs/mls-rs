@@ -3,8 +3,9 @@ use std::{
     ops::Deref,
 };
 
+use crate::cipher_suite::CipherSuite;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
-use crate::{cipher_suite::CipherSuite, provider::crypto::CipherSuiteProvider};
+use crate::CipherSuiteProvider;
 use serde_with::serde_as;
 use thiserror::Error;
 use tls_codec::Serialize;
@@ -100,9 +101,7 @@ impl HashReference {
 mod tests {
     use crate::{
         cipher_suite::CipherSuite,
-        provider::crypto::test_utils::{
-            test_cipher_suite_provider, try_test_cipher_suite_provider,
-        },
+        crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
     };
 
     use super::*;

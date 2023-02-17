@@ -1,10 +1,6 @@
-use crate::{
-    group::PriorEpoch,
-    key_package::KeyPackageRef,
-    provider::{group_state::GroupStateStorage, key_package::KeyPackageStorage},
-};
+use crate::{group::PriorEpoch, key_package::KeyPackageRef};
 
-use aws_mls_core::psk::PreSharedKey;
+use aws_mls_core::{group::GroupStateStorage, key_package::KeyPackageStorage, psk::PreSharedKey};
 use hex::ToHex;
 use std::collections::{hash_map::Entry, HashMap, VecDeque};
 use thiserror::Error;
@@ -241,9 +237,9 @@ mod tests {
             snapshot::test_utils::get_test_snapshot,
             test_utils::{random_bytes, test_member, TEST_GROUP},
         },
-        provider::{
-            group_state::{EpochData, InMemoryGroupStateStorage},
-            key_package::InMemoryKeyPackageStorage,
+        storage_provider::{
+            group_state::EpochData,
+            in_memory::{InMemoryGroupStateStorage, InMemoryKeyPackageStorage},
         },
     };
 

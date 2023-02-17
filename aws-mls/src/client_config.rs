@@ -8,15 +8,14 @@ use crate::{
     },
     identity::CredentialType,
     protocol_version::ProtocolVersion,
-    provider::{
-        crypto::CryptoProvider, group_state::GroupStateStorage, key_package::KeyPackageStorage,
-        keychain::KeychainStorage, psk::PreSharedKeyStorage,
-    },
     tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
     ExtensionList,
 };
 use async_trait::async_trait;
-use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::{
+    crypto::CryptoProvider, group::GroupStateStorage, identity::IdentityProvider,
+    key_package::KeyPackageStorage, keychain::KeychainStorage, psk::PreSharedKeyStorage,
+};
 use std::convert::Infallible;
 
 pub use crate::group::proposal_filter::ProposalFilterContext;

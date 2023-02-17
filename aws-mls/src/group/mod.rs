@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::keychain::KeychainStorage;
 use aws_mls_core::time::MlsTime;
 use futures::{StreamExt, TryStreamExt};
 use serde_with::serde_as;
@@ -14,16 +15,11 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::cipher_suite::CipherSuite;
 use crate::client_config::{ClientConfig, MakeProposalFilter, ProposalFilterInit};
+use crate::crypto::{HpkeCiphertext, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
 use crate::extension::{ExternalPubExt, RatchetTreeExt};
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
 use crate::protocol_version::ProtocolVersion;
-use crate::provider::crypto::{
-    CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey,
-    SignatureSecretKey,
-};
-use crate::provider::keychain::KeychainStorage;
-use crate::provider::psk::PskStoreIdValidator;
 use crate::psk::resolver::PskResolver;
 use crate::psk::secret::{PskSecret, PskSecretInput};
 use crate::psk::{
@@ -32,6 +28,7 @@ use crate::psk::{
 };
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
+use crate::storage_provider::psk::PskStoreIdValidator;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
 use crate::tree_kem::leaf_node::{ConfigProperties, LeafNode};
@@ -40,6 +37,7 @@ use crate::tree_kem::path_secret::PathSecret;
 pub use crate::tree_kem::Capabilities;
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
+use crate::{CipherSuiteProvider, CryptoProvider};
 
 #[cfg(feature = "benchmark")]
 use crate::client_builder::Preferences;
@@ -961,10 +959,10 @@ where
     ///
     /// Membership within the resulting sub-group is indicated by providing a
     /// key package that produces the same
-    /// [identity](crate::provider::identity::IdentityProvider::identity) value
+    /// [identity](crate::IdentityProvider::identity) value
     /// as an existing group member. The identity value of each key package
     /// is determined using the
-    /// [`IdentityProvider`](crate::provider::identity::IdentityProvider)
+    /// [`IdentityProvider`](crate::IdentityProvider)
     /// that is currently in use by this group instance.
     // TODO investigate if it's worth updating your own signing identity here
     pub async fn branch(
@@ -1045,10 +1043,10 @@ where
     /// sent [`ReInit`](proposal::ReInitProposal).
     ///
     /// For each member of the group, a key package that produces the same
-    /// [identity](crate::provider::identity::IdentityProvider::identity) value
+    /// [identity](crate::IdentityProvider::identity) value
     /// as an existing group member. The identity value of each key package
     /// is determined using the
-    /// [`IdentityProvider`](crate::provider::identity::IdentityProvider)
+    /// [`IdentityProvider`](crate::IdentityProvider)
     /// that is currently in use by this group instance.
     ///
     /// The resulting commit message can be processed by other members using
@@ -1259,11 +1257,11 @@ where
     ///
     /// Identity updates are allowed by the group by default assuming that the
     /// new identity provided is considered
-    /// [valid](crate::provider::identity::IdentityProvider::validate)
+    /// [valid](crate::IdentityProvider::validate)
     /// by and matches the output of the
-    /// [identity](crate::provider::identity::IdentityProvider)
+    /// [identity](crate::IdentityProvider)
     /// function of the current
-    /// [`IdentityProvider`](crate::provider::identity::IdentityProvider).
+    /// [`IdentityProvider`](crate::IdentityProvider).
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
@@ -1330,8 +1328,8 @@ where
     /// Create a proposal message that adds a pre shared key to the group.
     ///
     /// Each group member will need to have the PSK associated with
-    /// [`ExternalPskId`](crate::provider::psk::ExternalPskId) installed within
-    /// the [`PreSharedKeyStorage`](crate::provider::psk::PreSharedKeyStorage)
+    /// [`ExternalPskId`](crate::storage_provider::ExternalPskId) installed within
+    /// the [`PreSharedKeyStorage`](crate::PreSharedKeyStorage)
     /// in use by this group upon processing a [commit](Group::commit) that
     /// contains this proposal.
     ///
@@ -1583,7 +1581,7 @@ where
     ///
     /// Changes to the group's state as a result of processing `message` will
     /// not be persisted by the
-    /// [`GroupStateStorage`](crate::provider::group_state::GroupStateStorage)
+    /// [`GroupStateStorage`](crate::GroupStateStorage)
     /// in use by this group until [`Group::write_to_storage`] is called.
     pub async fn process_incoming_message(
         &mut self,
@@ -1596,7 +1594,7 @@ where
     /// with a message timestamp.
     ///
     /// Providing a timestamp is useful when the
-    /// [`IdentityProvider`](crate::provider::identity::IdentityProvider)
+    /// [`IdentityProvider`](crate::IdentityProvider)
     /// in use by the group can determine validity based on a timestamp.
     /// For example, this allows for checking X.509 certificate expiration
     /// at the time when `message` was received by a server rather than when
@@ -1606,7 +1604,7 @@ where
     ///
     /// Changes to the group's state as a result of processing `message` will
     /// not be persisted by the
-    /// [`GroupStateStorage`](crate::provider::group_state::GroupStateStorage)
+    /// [`GroupStateStorage`](crate::GroupStateStorage)
     /// in use by this group until [`Group::write_to_storage`] is called.
     pub async fn process_incoming_message_with_time(
         &mut self,
@@ -1617,10 +1615,10 @@ where
     }
 
     /// Find a group member by
-    /// [identity](crate::provider::identity::IdentityProvider::identity)
+    /// [identity](crate::IdentityProvider::identity)
     ///
     /// This function determines identity by calling the
-    /// [`IdentityProvider`](crate::provider::identity::IdentityProvider)
+    /// [`IdentityProvider`](crate::IdentityProvider)
     /// currently in use by the group.
     pub fn get_member_with_identity(&self, identity: &[u8]) -> Result<Member, GroupError> {
         let index = self
@@ -1996,11 +1994,11 @@ mod tests {
     use std::time::Duration;
 
     use crate::client::test_utils::{get_basic_client_builder, test_client_with_key_pkg};
+    use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_basic_credential;
     use crate::key_package::test_utils::test_key_package_message;
     use crate::key_package::KeyPackageValidationError;
-    use crate::provider::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
     use crate::time::MlsTime;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use crate::{
@@ -2065,7 +2063,7 @@ mod tests {
 
             assert_eq!(
                 group.state.public_tree.get_leaf_nodes()[0].signing_identity,
-                group.config.keychain().export()[0].0
+                group.config.keychain().identities()[0].0
             );
         }
     }
@@ -2828,7 +2826,7 @@ mod tests {
         // Apply the commit that adds carol
         bob.group.process_incoming_message(commit).await.unwrap();
 
-        let bob_identity = bob.group.config.keychain().export()[0].0.clone();
+        let bob_identity = bob.group.config.keychain().identities()[0].0.clone();
 
         let new_key_pkg = Client::new(bob.group.config.clone())
             .generate_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, bob_identity)

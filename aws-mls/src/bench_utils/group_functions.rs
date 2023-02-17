@@ -1,4 +1,6 @@
-use aws_mls_core::{group::GroupStateStorage, key_package::KeyPackageData};
+use aws_mls_core::{
+    crypto::SignatureSecretKey, group::GroupStateStorage, key_package::KeyPackageData,
+};
 use aws_mls_crypto_openssl::OpensslCryptoProvider;
 
 use crate::{
@@ -21,9 +23,8 @@ use crate::{
         Commit, Group, GroupError,
     },
     identity::{test_utils::BasicWithCustomProvider, SigningIdentity},
-    provider::{
-        crypto::SignatureSecretKey, group_state::InMemoryGroupStateStorage,
-        key_package::InMemoryKeyPackageStorage, keychain::InMemoryKeychainStorage,
+    storage_provider::in_memory::{
+        InMemoryGroupStateStorage, InMemoryKeyPackageStorage, InMemoryKeychainStorage,
     },
     ExtensionList,
 };
@@ -179,11 +180,11 @@ async fn get_group_states(cipher_suite: CipherSuite, size: usize) -> TestCase {
             let epochs = serde_json::to_vec(&exported_epochs).unwrap();
 
             let key_repo = config.key_package_repo();
-            let exported_key_packages = key_repo.export();
+            let exported_key_packages = key_repo.key_packages();
             let key_packages = serde_json::to_vec(&exported_key_packages).unwrap();
 
             let key_chain = config.keychain();
-            let exported_key_chain = key_chain.export();
+            let exported_key_chain = key_chain.identities();
             let secrets = serde_json::to_vec(&exported_key_chain).unwrap();
 
             GroupInfo {

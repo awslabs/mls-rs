@@ -18,13 +18,13 @@ use super::{
 use crate::{
     client_config::ProposalFilterInit,
     key_package::KeyPackage,
-    provider::crypto::CipherSuiteProvider,
     psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
     time::MlsTime,
     tree_kem::{
         leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, validate_update_path,
         TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
     },
+    CipherSuiteProvider,
 };
 use async_trait::async_trait;
 use aws_mls_core::{
@@ -69,7 +69,7 @@ impl StateUpdate {
     }
 
     /// Warnings about roster changes produced by the
-    /// [`IdentityProvider`](crate::provider::identity::IdentityProvider)
+    /// [`IdentityProvider`](crate::IdentityProvider)
     /// currently in use by the group.
     pub fn identity_warnings(&self) -> &[IdentityWarning] {
         &self.identity_events
@@ -324,7 +324,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         let identity_events = self
             .identity_provider()
-            .identity_events(&roster_update)
+            .identity_warnings(&roster_update)
             .await
             .map_err(|e| GroupError::IdentityProviderError(e.into()))?;
 

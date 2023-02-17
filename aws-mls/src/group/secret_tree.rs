@@ -1,8 +1,8 @@
-use crate::provider::crypto::CipherSuiteProvider;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, NodeIndex};
+use crate::CipherSuiteProvider;
 use serde_with::serde_as;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
@@ -444,7 +444,7 @@ impl SecretKeyRatchet {
 pub(crate) mod test_utils {
     use aws_mls_core::crypto::CipherSuiteProvider;
 
-    use crate::{provider::crypto::test_utils::try_test_cipher_suite_provider, tree_kem};
+    use crate::{crypto::test_utils::try_test_cipher_suite_provider, tree_kem};
 
     use super::{KeyType, SecretKeyRatchet, SecretTree};
 
@@ -512,10 +512,10 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::TEST_CIPHER_SUITE,
-        group::{ciphertext_processor::InteropSenderData, test_utils::random_bytes},
-        provider::crypto::test_utils::{
+        crypto::test_utils::{
             test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
         },
+        group::{ciphertext_processor::InteropSenderData, test_utils::random_bytes},
     };
 
     use super::{test_utils::get_test_tree, *};

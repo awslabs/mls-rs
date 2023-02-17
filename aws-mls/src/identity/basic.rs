@@ -1,14 +1,12 @@
-use crate::{
-    identity::SigningIdentity,
-    identity::{BasicCredential, CredentialType},
-    time::MlsTime,
-};
+use crate::{identity::CredentialType, identity::SigningIdentity, time::MlsTime};
 use async_trait::async_trait;
 use aws_mls_core::{
     group::RosterUpdate,
     identity::{IdentityProvider, IdentityWarning},
 };
 use thiserror::Error;
+
+pub use aws_mls_core::identity::BasicCredential;
 
 #[derive(Debug, Error)]
 #[error("unsupported credential type found: {0:?}")]
@@ -74,7 +72,7 @@ impl IdentityProvider for BasicIdentityProvider {
         vec![BasicCredential::credential_type()]
     }
 
-    async fn identity_events(
+    async fn identity_warnings(
         &self,
         _update: &RosterUpdate,
     ) -> Result<Vec<IdentityWarning>, Self::Error> {

@@ -1,5 +1,5 @@
+use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::group::key_schedule::{kdf_derive_secret, KeyScheduleError};
-use crate::provider::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use serde_with::serde_as;
 use std::ops::Deref;
@@ -161,7 +161,7 @@ mod tests {
     use crate::{
         cipher_suite::CipherSuite,
         client::test_utils::TEST_CIPHER_SUITE,
-        provider::crypto::test_utils::{
+        crypto::test_utils::{
             test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
         },
     };

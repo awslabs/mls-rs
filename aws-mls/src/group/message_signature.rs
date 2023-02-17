@@ -1,8 +1,9 @@
 use super::framing::Content;
+use crate::crypto::SignatureSecretKey;
 use crate::group::framing::{ContentType, FramedContent, PublicMessage, Sender, WireFormat};
 use crate::group::{ConfirmationTag, GroupContext};
-use crate::provider::crypto::{CipherSuiteProvider, SignatureSecretKey};
 use crate::signer::{Signable, SignatureError};
+use crate::CipherSuiteProvider;
 use aws_mls_core::protocol_version::ProtocolVersion;
 use std::{
     io::{Read, Write},

@@ -1,17 +1,15 @@
 use async_trait::async_trait;
-use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::{identity::IdentityProvider, keychain::KeychainStorage};
 
 use crate::{
     client_config::{MakeProposalFilter, ProposalFilterInit},
+    crypto::SignaturePublicKey,
     extension::ExtensionType,
     group::proposal::ProposalType,
     identity::CredentialType,
     protocol_version::ProtocolVersion,
-    provider::{
-        crypto::{CryptoProvider, SignaturePublicKey},
-        keychain::KeychainStorage,
-    },
     tree_kem::Capabilities,
+    CryptoProvider,
 };
 
 #[async_trait]

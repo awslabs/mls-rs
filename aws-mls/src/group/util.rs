@@ -1,4 +1,4 @@
-use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::{identity::IdentityProvider, key_package::KeyPackageStorage};
 use futures::StreamExt;
 use tls_codec::Deserialize;
 
@@ -7,10 +7,6 @@ use crate::{
     extension::{ExternalSendersExt, RatchetTreeExt},
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
-    provider::{
-        crypto::{CipherSuiteProvider, CryptoProvider},
-        key_package::KeyPackageStorage,
-    },
     psk::ExternalPskIdValidator,
     signer::Signable,
     time::MlsTime,
@@ -19,7 +15,7 @@ use crate::{
         tree_validator::TreeValidator,
         TreeKemPublic,
     },
-    ExtensionList,
+    CipherSuiteProvider, CryptoProvider, ExtensionList,
 };
 
 use super::{

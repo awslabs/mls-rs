@@ -1,11 +1,11 @@
 use crate::{
     client_config::ClientConfig,
+    crypto::{HpkePublicKey, HpkeSecretKey},
     group::{
         key_schedule::KeySchedule, CachedProposal, CommitGeneration, ConfirmationTag, Group,
         GroupContext, GroupError, GroupState, InterimTranscriptHash, ProposalCache, ProposalRef,
         ReInitProposal, TreeKemPublic,
     },
-    provider::crypto::{HpkePublicKey, HpkeSecretKey},
     serde_utils::vec_u8_as_base64::VecAsBase64,
     tree_kem::{node::NodeVec, TreeKemPrivate},
 };
@@ -96,7 +96,7 @@ where
     C: ClientConfig + Clone,
 {
     /// Write the current state of the group to the
-    /// [`GroupStorageProvider`](crate::provider::group_state::GroupStateStorage)
+    /// [`GroupStorageProvider`](crate::GroupStateStorage)
     /// that is currently in use by the group.
     pub async fn write_to_storage(&mut self) -> Result<(), GroupError> {
         self.state_repo
@@ -154,12 +154,12 @@ where
 pub(crate) mod test_utils {
     use crate::{
         cipher_suite::CipherSuite,
+        crypto::test_utils::test_cipher_suite_provider,
         group::{
             confirmation_tag::ConfirmationTag, epoch::test_utils::get_test_epoch_secrets,
             key_schedule::test_utils::get_test_key_schedule, test_utils::get_test_group_context,
             transcript_hash::InterimTranscriptHash,
         },
-        provider::crypto::test_utils::test_cipher_suite_provider,
         tree_kem::{node::LeafIndex, TreeKemPrivate},
     };
 

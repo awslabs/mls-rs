@@ -3,17 +3,17 @@ use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 
 use crate::{
+    crypto::{HpkeSecretKey, SignatureSecretKey},
     group::framing::MLSMessagePayload,
     hash_reference::HashReferenceError,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
-    provider::crypto::{CipherSuiteProvider, HpkeSecretKey, SignatureSecretKey},
     signer::{Signable, SignatureError},
     tree_kem::{
         leaf_node::{ConfigProperties, LeafNode, LeafNodeError},
         Capabilities, Lifetime,
     },
-    ExtensionList, MLSMessage,
+    CipherSuiteProvider, ExtensionList, MLSMessage,
 };
 
 use super::{KeyPackage, KeyPackageError, KeyPackageRef};
@@ -80,7 +80,7 @@ impl KeyPackageGeneration {
     ) -> Result<Self, KeyPackageGenerationError> {
         Ok(KeyPackageGeneration {
             reference: KeyPackageRef::from(id),
-            key_package: KeyPackage::tls_deserialize(&mut &*data.pkg)?,
+            key_package: KeyPackage::tls_deserialize(&mut &*data.key_package_bytes)?,
             init_secret_key: data.init_key,
             leaf_node_secret_key: data.leaf_node_key,
         })
@@ -161,15 +161,13 @@ mod tests {
 
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
         extension::test_utils::TestExtension,
         group::test_utils::random_bytes,
+        identity::basic::BasicIdentityProvider,
         identity::test_utils::get_test_signing_identity,
         key_package::{KeyPackageGenerationError, KeyPackageValidator},
         protocol_version::ProtocolVersion,
-        provider::{
-            crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
-            identity::BasicIdentityProvider,
-        },
         tree_kem::{
             leaf_node::{test_utils::get_test_capabilities, LeafNodeError, LeafNodeSource},
             leaf_node_validator::test_utils::FailureIdentityProvider,

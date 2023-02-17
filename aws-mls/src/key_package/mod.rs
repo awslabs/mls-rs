@@ -1,15 +1,16 @@
 use crate::cipher_suite::CipherSuite;
+use crate::crypto::HpkePublicKey;
 use crate::extension::ExtensionType;
 use crate::extension::RequiredCapabilitiesExt;
 use crate::group::proposal::ProposalType;
 use crate::hash_reference::{HashReference, HashReferenceError};
 use crate::identity::SigningIdentity;
 use crate::protocol_version::ProtocolVersion;
-use crate::provider::crypto::{CipherSuiteProvider, HpkePublicKey};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
 use crate::time::MlsTime;
 use crate::tree_kem::leaf_node::LeafNode;
+use crate::CipherSuiteProvider;
 use aws_mls_core::extension::ExtensionList;
 use serde_with::serde_as;
 use std::ops::Deref;
@@ -172,14 +173,12 @@ impl<'a> Signable<'a> for KeyPackage {
 pub(crate) mod test_utils {
     use super::*;
     use crate::{
+        crypto::test_utils::test_cipher_suite_provider,
         group::framing::MLSMessagePayload,
+        identity::basic::BasicIdentityProvider,
         identity::test_utils::get_test_signing_identity,
-        provider::{
-            crypto::{test_utils::test_cipher_suite_provider, CipherSuiteProvider},
-            identity::BasicIdentityProvider,
-        },
         tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
-        MLSMessage,
+        CipherSuiteProvider, MLSMessage,
     };
     use futures::{future::BoxFuture, FutureExt};
 
@@ -254,9 +253,7 @@ pub(crate) mod test_utils {
 mod tests {
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        provider::crypto::test_utils::{
-            test_cipher_suite_provider, try_test_cipher_suite_provider,
-        },
+        crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
     };
 
     use super::{test_utils::test_key_package, *};

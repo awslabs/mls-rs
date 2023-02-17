@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
 use crate::{
+    crypto::SignaturePublicKey,
     extension::ExternalSendersExt,
     group::{GroupContext, GroupError, PublicMessage, Sender},
     identity::SigningIdentity,
-    provider::crypto::{CipherSuiteProvider, SignaturePublicKey},
     signer::Signable,
     tree_kem::{node::LeafIndex, TreeKemPublic},
+    CipherSuiteProvider,
 };
 
 use super::{
@@ -193,6 +194,7 @@ mod tests {
     use crate::{
         client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         client_builder::{test_utils::TestClientConfig, Preferences},
+        crypto::{test_utils::test_cipher_suite_provider, SignatureSecretKey},
         extension::ExternalSendersExt,
         group::{
             framing::WireFormat,
@@ -204,7 +206,6 @@ mod tests {
         },
         identity::test_utils::get_test_signing_identity,
         key_package::KeyPackageGeneration,
-        provider::crypto::{test_utils::test_cipher_suite_provider, SignatureSecretKey},
         signer::Signable,
         tree_kem::node::LeafIndex,
         ExtensionList,

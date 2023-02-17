@@ -410,22 +410,17 @@ mod tests {
     use super::*;
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        crypto::{self, test_utils::test_cipher_suite_provider},
         extension::{test_utils::TestExtension, ExternalSendersExt, RequiredCapabilitiesExt},
         group::{
             proposal_filter::proposer_can_propose,
             test_utils::{random_bytes, test_group, TEST_GROUP},
         },
-        identity::{
-            test_utils::{get_test_signing_identity, BasicWithCustomProvider},
-            BasicCredential,
-        },
+        identity::basic::BasicIdentityProvider,
+        identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
         key_package::{
             test_utils::{test_key_package, test_key_package_custom},
             KeyPackageGenerator,
-        },
-        provider::{
-            crypto::{self, test_utils::test_cipher_suite_provider},
-            identity::BasicIdentityProvider,
         },
         psk::PassThroughPskIdValidator,
         tree_kem::{
@@ -444,7 +439,7 @@ mod tests {
     use assert_matches::assert_matches;
     use aws_mls_core::{
         extension::MlsExtension,
-        identity::{Credential, CredentialType, CustomCredential},
+        identity::{BasicCredential, Credential, CredentialType, CustomCredential},
     };
     use futures::FutureExt;
     use internal::proposal_filter::PassThroughProposalFilter;

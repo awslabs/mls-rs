@@ -4,15 +4,14 @@ use crate::psk::secret::PskSecret;
 use crate::psk::{PreSharedKey, PskError};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
+use crate::CipherSuiteProvider;
 use serde_with::serde_as;
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::provider::crypto::{
-    CipherSuiteProvider, HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey,
-};
+use crate::crypto::{HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey};
 
 use super::epoch::{EpochSecrets, SenderDataSecret};
 use super::message_signature::AuthenticatedContent;
@@ -426,9 +425,7 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
 pub(crate) mod test_utils {
     use aws_mls_core::crypto::CipherSuiteProvider;
 
-    use crate::{
-        cipher_suite::CipherSuite, provider::crypto::test_utils::test_cipher_suite_provider,
-    };
+    use crate::{cipher_suite::CipherSuite, crypto::test_utils::test_cipher_suite_provider};
 
     use super::{InitSecret, JoinerSecret, KeySchedule};
 
@@ -465,12 +462,12 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use crate::crypto::test_utils::{
+        test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
+    };
     use crate::group::key_schedule::{kdf_derive_secret, kdf_expand_with_label};
     use crate::group::test_utils::get_test_group_context;
     use crate::group::InitSecret;
-    use crate::provider::crypto::test_utils::{
-        test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
-    };
     use aws_mls_core::crypto::CipherSuiteProvider;
 
     #[cfg(target_arch = "wasm32")]

@@ -2,9 +2,9 @@ use aws_mls_core::extension::ExtensionError;
 use aws_mls_core::identity::IdentityProvider;
 
 use super::*;
-use crate::provider::crypto::CipherSuiteProvider;
 use crate::tree_kem::leaf_node::LeafNodeSource;
 use crate::tree_kem::Lifetime;
+use crate::CipherSuiteProvider;
 use crate::{
     signer::SignatureError,
     tree_kem::leaf_node_validator::{
@@ -153,12 +153,12 @@ mod tests {
     use super::*;
     use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::client::test_utils::TEST_PROTOCOL_VERSION;
+    use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
     use crate::group::test_utils::random_bytes;
+    use crate::identity::basic::BasicIdentityProvider;
     use crate::identity::test_utils::get_test_signing_identity;
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
-    use crate::provider::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
-    use crate::provider::identity::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use assert_matches::assert_matches;
     use futures::FutureExt;

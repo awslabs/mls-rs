@@ -29,7 +29,29 @@ impl SqLiteKeychainStorage {
         }
     }
 
-    fn insert(
+    pub fn insert(
+        &mut self,
+        identity: SigningIdentity,
+        signer: SignatureSecretKey,
+        cipher_suite: CipherSuite,
+    ) -> Result<(), SqLiteDataStorageError> {
+        let (id, _) = identifier_hash(&identity)?;
+        self.insert_storage(
+            id.as_slice(),
+            StoredSigningIdentity {
+                identity,
+                signer,
+                cipher_suite,
+            },
+        )
+    }
+
+    pub fn delete(&mut self, identity: &SigningIdentity) -> Result<(), SqLiteDataStorageError> {
+        let (identifier, _) = identifier_hash(identity)?;
+        self.delete_storage(&identifier)
+    }
+
+    fn insert_storage(
         &mut self,
         identifier: &[u8],
         identity_data: StoredSigningIdentity,
@@ -62,7 +84,7 @@ impl SqLiteKeychainStorage {
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
 
-    fn delete(&mut self, identifier: &[u8]) -> Result<(), SqLiteDataStorageError> {
+    fn delete_storage(&mut self, identifier: &[u8]) -> Result<(), SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         connection
@@ -74,7 +96,7 @@ impl SqLiteKeychainStorage {
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
 
-    fn get_identities(
+    pub fn get_identities(
         &self,
         cipher_suite: CipherSuite,
     ) -> Result<Vec<(SigningIdentity, SignatureSecretKey)>, SqLiteDataStorageError> {
@@ -125,35 +147,6 @@ impl SqLiteKeychainStorage {
 impl KeychainStorage for SqLiteKeychainStorage {
     type Error = SqLiteDataStorageError;
 
-    async fn insert(
-        &mut self,
-        identity: SigningIdentity,
-        signer: SignatureSecretKey,
-        cipher_suite: CipherSuite,
-    ) -> Result<(), Self::Error> {
-        let (id, _) = identifier_hash(&identity)?;
-        self.insert(
-            id.as_slice(),
-            StoredSigningIdentity {
-                identity,
-                signer,
-                cipher_suite,
-            },
-        )
-    }
-
-    async fn delete(&mut self, identity: &SigningIdentity) -> Result<(), Self::Error> {
-        let (identifier, _) = identifier_hash(identity)?;
-        self.delete(&identifier)
-    }
-
-    async fn get_identities(
-        &self,
-        cipher_suite: CipherSuite,
-    ) -> Result<Vec<(SigningIdentity, SignatureSecretKey)>, Self::Error> {
-        self.get_identities(cipher_suite)
-    }
-
     async fn signer(
         &self,
         identity: &SigningIdentity,
@@ -176,9 +169,11 @@ fn identifier_hash(
 #[cfg(test)]
 mod tests {
     use aws_mls::{
-        identity::{BasicCredential, Credential, SigningIdentity},
+        identity::{Credential, SigningIdentity},
         CipherSuite,
     };
+
+    use aws_mls_core::identity::BasicCredential;
 
     use crate::{
         sqlite_storage::{connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
@@ -217,7 +212,7 @@ mod tests {
         let (identifier, stored_identity) = test_signing_identity();
 
         storage
-            .insert(identifier.as_slice(), stored_identity.clone())
+            .insert_storage(identifier.as_slice(), stored_identity.clone())
             .unwrap();
 
         let from_storage = storage.get_identities(TEST_CIPHER_SUITE).unwrap();
@@ -239,7 +234,9 @@ mod tests {
             .clone()
             .into_iter()
             .for_each(|(identifier, identity)| {
-                storage.insert(identifier.as_slice(), identity).unwrap();
+                storage
+                    .insert_storage(identifier.as_slice(), identity)
+                    .unwrap();
             });
 
         let from_storage = storage.get_identities(TEST_CIPHER_SUITE).unwrap();
@@ -257,9 +254,10 @@ mod tests {
         let (identifier, identity) = test_signing_identity();
 
         storage
-            .insert(identifier.clone().as_slice(), identity)
+            .insert_storage(identifier.clone().as_slice(), identity)
             .unwrap();
-        storage.delete(&identifier).unwrap();
+
+        storage.delete_storage(&identifier).unwrap();
 
         assert!(storage
             .get_identities(TEST_CIPHER_SUITE)

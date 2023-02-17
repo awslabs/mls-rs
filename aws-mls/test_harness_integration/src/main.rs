@@ -7,20 +7,16 @@ use aws_mls::client_builder::{
     BaseConfig, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider, WithKeychain,
 };
 use aws_mls::group::{Event, StateUpdate};
-use aws_mls::identity::BasicCredential;
+use aws_mls::identity::basic::{BasicCredential, BasicIdentityProvider};
 use aws_mls::identity::SigningIdentity;
-use aws_mls::provider::crypto::{CipherSuiteProvider, CryptoProvider};
-use aws_mls::provider::{
-    identity::BasicIdentityProvider,
-    keychain::InMemoryKeychainStorage,
-    psk::{ExternalPskId, InMemoryPreSharedKeyStorage, PreSharedKey},
-};
+use aws_mls::storage_provider::in_memory::{InMemoryKeychainStorage, InMemoryPreSharedKeyStorage};
+use aws_mls::storage_provider::{ExternalPskId, PreSharedKey};
 use aws_mls::tls_codec::{Deserialize, Serialize};
-use aws_mls::CipherSuite;
-use aws_mls::Client;
 use aws_mls::Group;
 use aws_mls::MLSMessage;
 use aws_mls::ProtocolVersion;
+use aws_mls::{CipherSuite, CryptoProvider};
+use aws_mls::{CipherSuiteProvider, Client};
 use aws_mls::{Extension, ExtensionList};
 
 use aws_mls_crypto_openssl::OpensslCryptoProvider;

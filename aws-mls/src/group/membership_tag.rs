@@ -1,7 +1,7 @@
+use crate::crypto::CipherSuiteProvider;
 use crate::group::framing::WireFormat;
 use crate::group::message_signature::{AuthenticatedContentTBS, FramedContentAuthData};
 use crate::group::GroupContext;
-use crate::provider::crypto::CipherSuiteProvider;
 use std::{io::Write, ops::Deref};
 use thiserror::Error;
 use tls_codec::{Serialize, Size};
@@ -102,11 +102,11 @@ impl MembershipTag {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::group::framing::test_utils::get_test_auth_content;
-    use crate::group::test_utils::get_test_group_context;
-    use crate::provider::crypto::test_utils::{
+    use crate::crypto::test_utils::{
         test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
     };
+    use crate::group::framing::test_utils::get_test_auth_content;
+    use crate::group::test_utils::get_test_group_context;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;

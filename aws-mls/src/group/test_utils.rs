@@ -11,10 +11,11 @@ use crate::{
         Preferences,
     },
     client_config::ClientConfig,
+    crypto::test_utils::test_cipher_suite_provider,
     extension::RequiredCapabilitiesExt,
+    identity::basic::BasicIdentityProvider,
     identity::test_utils::get_test_signing_identity,
     key_package::{KeyPackageGeneration, KeyPackageGenerator},
-    provider::{crypto::test_utils::test_cipher_suite_provider, identity::BasicIdentityProvider},
     tree_kem::{leaf_node::test_utils::get_test_capabilities, Lifetime},
 };
 
