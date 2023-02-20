@@ -22,11 +22,24 @@ use super::{Credential, CredentialType, MlsCredential};
     serde::Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// X.509 certificate in DER format.
 pub struct DerCertificate(
     #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
     #[tls_codec(with = "crate::tls::ByteVec")]
     Vec<u8>,
 );
+
+impl DerCertificate {
+    /// Create a der certificate from raw bytes.
+    pub fn new(data: Vec<u8>) -> DerCertificate {
+        DerCertificate(data)
+    }
+
+    /// Convert this certificate into raw bytes.
+    pub fn into_vec(self) -> Vec<u8> {
+        self.0
+    }
+}
 
 impl From<Vec<u8>> for DerCertificate {
     fn from(data: Vec<u8>) -> Self {
@@ -61,6 +74,11 @@ impl AsRef<[u8]> for DerCertificate {
     serde::Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// A chain of [`DerCertificate`] that is ordered from leaf to root.
+///
+/// Certificate chains MAY leave out root CA's so long as they are
+/// provided as input to whatever certificate validator ultimately is
+/// verifying the chain.
 pub struct CertificateChain(#[tls_codec(with = "crate::tls::DefVec")] Vec<DerCertificate>);
 
 impl Deref for CertificateChain {
@@ -96,18 +114,12 @@ impl FromIterator<DerCertificate> for CertificateChain {
 }
 
 impl CertificateChain {
-    pub fn credential_type() -> CredentialType {
-        CredentialType::X509
-    }
-
+    /// Get the leaf certificate, which is the first certificate in the chain.
     pub fn leaf(&self) -> Option<&DerCertificate> {
         self.0.first()
     }
 
-    pub fn ca(&self) -> Option<&DerCertificate> {
-        self.0.last()
-    }
-
+    /// Convert this certificate chain into a [`Credential`] enum.
     pub fn into_credential(self) -> Credential {
         Credential::X509(self)
     }
@@ -117,7 +129,7 @@ impl MlsCredential for CertificateChain {
     type Error = Infallible;
 
     fn credential_type() -> CredentialType {
-        Self::credential_type()
+        CredentialType::X509
     }
 
     fn into_credential(self) -> Result<Credential, Self::Error> {

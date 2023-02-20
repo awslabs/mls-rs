@@ -10,21 +10,30 @@ pub use aws_mls_core::identity::BasicCredential;
 
 #[derive(Debug, Error)]
 #[error("unsupported credential type found: {0:?}")]
-pub struct BasicCredentialError(CredentialType);
+/// Error returned in the event that a non-basic
+/// credential is passed to a [`BasicIdentityProvider`].
+pub struct BasicIdentityProviderError(CredentialType);
 
-impl From<CredentialType> for BasicCredentialError {
+impl From<CredentialType> for BasicIdentityProviderError {
     fn from(value: CredentialType) -> Self {
-        BasicCredentialError(value)
+        BasicIdentityProviderError(value)
     }
 }
 
-impl BasicCredentialError {
+impl BasicIdentityProviderError {
     pub fn credential_type(&self) -> CredentialType {
         self.0
     }
 }
 
 #[derive(Clone, Debug, Default)]
+/// An always-valid identity provider that works with [`BasicCredential`].
+///
+/// # Warning
+///
+/// This provider always returns `true` for `validate` as long as the
+/// [`SigningIdentity`] used contains a [`BasicCredential`]. It is only
+/// recommended to use this provider for testing purposes.
 pub struct BasicIdentityProvider;
 
 impl BasicIdentityProvider {
@@ -35,29 +44,27 @@ impl BasicIdentityProvider {
 
 fn resolve_basic_identity(
     signing_id: &SigningIdentity,
-) -> Result<&BasicCredential, BasicCredentialError> {
+) -> Result<&BasicCredential, BasicIdentityProviderError> {
     signing_id
         .credential
         .as_basic()
-        .ok_or_else(|| BasicCredentialError(signing_id.credential.credential_type()))
+        .ok_or_else(|| BasicIdentityProviderError(signing_id.credential.credential_type()))
 }
 
 #[async_trait]
 impl IdentityProvider for BasicIdentityProvider {
-    type Error = BasicCredentialError;
+    type Error = BasicIdentityProviderError;
 
     async fn validate(
         &self,
-        _signing_identity: &SigningIdentity,
+        signing_identity: &SigningIdentity,
         _timestamp: Option<MlsTime>,
     ) -> Result<(), Self::Error> {
-        //TODO: Is it actually beneficial to check the key, or does that already happen elsewhere before
-        //this point?
-        Ok(())
+        resolve_basic_identity(signing_identity).map(|_| ())
     }
 
-    async fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
-        resolve_basic_identity(signing_id).map(|b| b.identifier().to_vec())
+    async fn identity(&self, signing_identity: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
+        resolve_basic_identity(signing_identity).map(|b| b.identifier().to_vec())
     }
 
     async fn valid_successor(

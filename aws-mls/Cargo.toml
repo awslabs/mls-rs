@@ -14,6 +14,7 @@ external_client = []
 [dependencies]
 async-trait = "0.1.61"
 aws-mls-core = { path = "../aws-mls-core", version = "*" }
+aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", version = "*" }
 thiserror = "^1"
 tls_codec = "0.2.0"
 tls_codec_derive = "0.2.0"

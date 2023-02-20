@@ -3,6 +3,7 @@ use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
 use crate::{CertificateChain, X509CertificateWriter};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Subject alt name extension values.
 pub enum SubjectAltName {
     Email(String),
     Uri(String),
@@ -14,6 +15,7 @@ pub enum SubjectAltName {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// X.509 name components.
 pub enum SubjectComponent {
     CommonName(String),
     Surname(String),
@@ -37,6 +39,7 @@ pub enum SubjectComponent {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+/// A certificate authority that can create additional certificates.
 pub struct CertificateIssuer {
     pub signing_key: SignatureSecretKey,
     pub cipher_suite: CipherSuite,
@@ -45,6 +48,17 @@ pub struct CertificateIssuer {
 }
 
 impl CertificateIssuer {
+    /// Create a new certificate issuer from components.
+    ///
+    /// `chain` represents a hierarchy of Root / Intermediate CA certificates.
+    /// The first entry in the chain will be used to issue new certificates.
+    /// Any additional certificates in the chain will also be included in the
+    /// resulting [`CertificateChain`] that is created by this issuer.
+    ///
+    /// # Warning
+    ///
+    /// `signing_key` MUST be the private key assoiciated with the public key
+    /// within the first entry of the `chain`.
     pub fn new(
         signing_key: SignatureSecretKey,
         cipher_suite: CipherSuite,
@@ -61,6 +75,7 @@ impl CertificateIssuer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Representation of a certificate request.
 pub struct CertificateRequest {
     pub req_data: Vec<u8>,
     pub secret_key: SignatureSecretKey,
@@ -71,6 +86,9 @@ impl CertificateRequest {
     // validates it against the request, and stores the resulting secret key + SigningIdentity for further use
 }
 
+/// Representation of a newly generated certificate chain
+/// along with the [`SignatureSecretKey`] of the leaf certificate
+/// if it was generated randomly as part of creating this certificate.
 pub struct CertificateGeneration {
     pub chain: CertificateChain,
     pub secret_key: Option<SignatureSecretKey>,
@@ -81,12 +99,15 @@ impl CertificateGeneration {
 }
 
 #[derive(Debug, Clone)]
+/// Builder to aid with the creation of both certificate requests
+/// and new certificate chains.
 pub struct CertificateBuilder {
     subject_cipher_suite: CipherSuite,
     subject_params: CertificateParameters,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Parameters used to generate certificates and certificate requests.
 pub struct CertificateParameters {
     pub subject: Vec<SubjectComponent>,
     pub subject_alt_names: Vec<SubjectAltName>,
@@ -94,6 +115,11 @@ pub struct CertificateParameters {
 }
 
 impl CertificateBuilder {
+    /// Create a new certificate builder for
+    /// a particular [`CipherSuite`].
+    ///
+    /// `cipher_suite` is used to determine what type of signature key should be
+    /// used as part of generating the certificate.
     pub fn new(cipher_suite: CipherSuite) -> Self {
         Self {
             subject_cipher_suite: cipher_suite,
@@ -101,16 +127,20 @@ impl CertificateBuilder {
         }
     }
 
+    /// Add a subject component.
     pub fn with_subject_component(mut self, component: SubjectComponent) -> Self {
         self.subject_params.subject.push(component);
         self
     }
 
+    /// Add a subject alt name.
     pub fn with_subject_alt_name(mut self, alt_name: SubjectAltName) -> Self {
         self.subject_params.subject_alt_names.push(alt_name);
         self
     }
 
+    /// Flag to indicate the resulting certificate or certificate request
+    /// is for an intermediate CA rather than a leaf certificate.
     pub fn set_ca_flag(self) -> Self {
         Self {
             subject_params: CertificateParameters {
@@ -121,6 +151,14 @@ impl CertificateBuilder {
         }
     }
 
+    /// Produce a new certificate chain.
+    ///
+    /// Issuer is used to sign the newly created certificate. The resulting
+    /// chain will contain the newly created certificate followed by the
+    /// certificates held within the issuer.
+    ///
+    /// A [`SignaturePublicKey`] may be optionally passed in to indicate
+    /// that a new key pair should not be generated for this chain.
     pub fn build_cert_chain<B: X509CertificateWriter>(
         self,
         issuer: &CertificateIssuer,
@@ -135,6 +173,10 @@ impl CertificateBuilder {
         )
     }
 
+    /// Produce a certificate request.
+    ///
+    /// A [`SignatureSecretKey`] can be optionally provided to indicate
+    /// that a new key pair should not be generated to sign this request.
     pub fn build_csr<B: X509CertificateWriter>(
         self,
         signer: Option<SignatureSecretKey>,

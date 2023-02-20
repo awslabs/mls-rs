@@ -19,6 +19,9 @@ use super::{Credential, CredentialType, MlsCredential};
     serde::Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// Bare assertion of an identity without any additional information.
+///
+/// The format of the encoded identity is defined by the application.
 pub struct BasicCredential {
     #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
     #[tls_codec(with = "crate::tls::ByteVec")]
@@ -26,10 +29,12 @@ pub struct BasicCredential {
 }
 
 impl BasicCredential {
+    /// Create a new basic credential with raw bytes.
     pub fn new(identifier: Vec<u8>) -> BasicCredential {
         BasicCredential { identifier }
     }
 
+    /// Underlying identifier as raw bytes.
     pub fn identifier(&self) -> &[u8] {
         &self.identifier
     }

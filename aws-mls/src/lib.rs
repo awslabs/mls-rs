@@ -149,6 +149,7 @@ pub mod error {
     pub use aws_mls_core::extension::ExtensionError;
 }
 
+/// WASM compatible timestamp.
 pub mod time {
     pub use aws_mls_core::time::*;
 }

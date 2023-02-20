@@ -11,20 +11,24 @@ use wasm_bindgen::prelude::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// WASM compatible system time for use with MLS.
 pub struct MlsTime(std::time::SystemTime);
 
 #[cfg(not(target_arch = "wasm32"))]
 impl MlsTime {
+    /// Current system time.
     pub fn now() -> Self {
         Self(std::time::SystemTime::now())
     }
 
+    /// Create a timestamp from a duration since unix epoch.
     pub fn from_duration_since_epoch(duration: Duration) -> Option<MlsTime> {
         std::time::SystemTime::UNIX_EPOCH
             .checked_add(duration)
             .map(MlsTime)
     }
 
+    /// Number of seconds since the unix epoch.
     pub fn seconds_since_epoch(&self) -> Result<u64, std::time::SystemTimeError> {
         Ok(self.0.duration_since(std::time::UNIX_EPOCH)?.as_secs())
     }

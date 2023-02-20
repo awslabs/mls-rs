@@ -1,9 +1,18 @@
+use aws_mls_core::identity::CertificateChain;
+
 use crate::{
     DerCertificate, SubjectComponent, X509CertificateReader, X509IdentityError,
     X509IdentityExtractor,
 };
 
 #[derive(Debug, Clone)]
+/// A utility to determine unique identity for use with MLS by reading
+/// the subject of a certificate.
+///
+/// The default behavior of this struct is to try and produce an identity
+/// based on the common name component of the subject. If a common name
+/// component is not found, then the byte value of the entire subject
+/// is used as a fallback.
 pub struct SubjectIdentityExtractor<R: X509CertificateReader> {
     offset: usize,
     reader: R,
@@ -13,6 +22,11 @@ impl<R> SubjectIdentityExtractor<R>
 where
     R: X509CertificateReader,
 {
+    /// Create a new identity extractor.
+    ///
+    /// `offset` is used to determine which certificate in a [`CertificateChain`]
+    /// should be used to evaluate identity. A value of 0 indicates to use the
+    /// leaf (first value) of the chain.
     pub fn new(offset: usize, reader: R) -> Self {
         Self { offset, reader }
     }
@@ -30,9 +44,10 @@ where
             .cloned())
     }
 
+    /// Get a unique identifier for a `certificate_chain`.
     pub fn identity(
         &self,
-        certificate_chain: &crate::CertificateChain,
+        certificate_chain: &CertificateChain,
     ) -> Result<Vec<u8>, X509IdentityError> {
         let cert = get_certificate(certificate_chain, self.offset)?;
 
@@ -51,10 +66,13 @@ where
             .map_err(|e| X509IdentityError::CertificateParserError(e.into()))
     }
 
+    /// Determine if `successor` resolves to the same
+    /// identity value as `predecessor`, indicating that
+    /// `predecessor` and `successor` are controlled by the same entity.
     pub fn valid_successor(
         &self,
-        predecessor: &crate::CertificateChain,
-        successor: &crate::CertificateChain,
+        predecessor: &CertificateChain,
+        successor: &CertificateChain,
     ) -> Result<bool, X509IdentityError> {
         let predecessor_cert = get_certificate(predecessor, 0)?;
         let successor_cert = get_certificate(successor, 0)?;
@@ -79,24 +97,21 @@ where
 {
     type Error = X509IdentityError;
 
-    fn identity(
-        &self,
-        certificate_chain: &crate::CertificateChain,
-    ) -> Result<Vec<u8>, Self::Error> {
+    fn identity(&self, certificate_chain: &CertificateChain) -> Result<Vec<u8>, Self::Error> {
         self.identity(certificate_chain)
     }
 
     fn valid_successor(
         &self,
-        predecessor: &crate::CertificateChain,
-        successor: &crate::CertificateChain,
+        predecessor: &CertificateChain,
+        successor: &CertificateChain,
     ) -> Result<bool, Self::Error> {
         self.valid_successor(predecessor, successor)
     }
 }
 
 fn get_certificate(
-    certificate_chain: &crate::CertificateChain,
+    certificate_chain: &CertificateChain,
     offset: usize,
 ) -> Result<&DerCertificate, X509IdentityError> {
     certificate_chain

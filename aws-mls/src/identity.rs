@@ -1,7 +1,9 @@
+/// Basic credential identity provider.
 pub mod basic;
 
+/// X.509 certificate identity provider.
 pub mod x509 {
-    pub use aws_mls_core::identity::{CertificateChain, DerCertificate};
+    pub use aws_mls_identity_x509::*;
 }
 
 pub use aws_mls_core::identity::{
@@ -23,14 +25,14 @@ pub(crate) mod test_utils {
 
     use crate::crypto::test_utils::test_cipher_suite_provider;
 
-    use super::basic::{BasicCredential, BasicCredentialError, BasicIdentityProvider};
+    use super::basic::{BasicCredential, BasicIdentityProvider, BasicIdentityProviderError};
 
     #[derive(Debug, Error)]
     #[error("expected basic or custom credential type 42 found: {0:?}")]
     pub struct BasicWithCustomProviderError(CredentialType);
 
-    impl From<BasicCredentialError> for BasicWithCustomProviderError {
-        fn from(value: BasicCredentialError) -> Self {
+    impl From<BasicIdentityProviderError> for BasicWithCustomProviderError {
+        fn from(value: BasicIdentityProviderError) -> Self {
             BasicWithCustomProviderError(value.credential_type())
         }
     }

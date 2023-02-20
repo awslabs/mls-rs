@@ -21,10 +21,14 @@ use super::{BasicCredential, CertificateChain};
     serde::Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// Wrapper type representing a credential type identifier along with default
+/// values defined by the MLS RFC.
 pub struct CredentialType(u16);
 
 impl CredentialType {
+    /// Basic identity.
     pub const BASIC: CredentialType = CredentialType(1);
+    /// X509 Certificate Identity.
     pub const X509: CredentialType = CredentialType(2);
 
     pub const fn new(raw_value: u16) -> Self {
@@ -64,6 +68,13 @@ impl Deref for CredentialType {
     serde::Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// Custom user created credential type.
+///
+/// # Warning
+///
+/// In order to use a custom credential within an MLS group, a supporting
+/// [`IdentityProvider`](crate::IdentityProvider) must be created that can
+/// authenticate the credential.
 pub struct CustomCredential {
     pub(crate) credential_type: CredentialType,
     #[tls_codec(with = "crate::tls::ByteVec")]
@@ -72,6 +83,12 @@ pub struct CustomCredential {
 }
 
 impl CustomCredential {
+    /// Create a new custom credential with opaque data.
+    ///
+    /// # Warning
+    ///
+    /// Using any of the constants defined within [`CredentialType`] will
+    /// result in unspecified behavior.
     pub fn new(credential_type: CredentialType, data: Vec<u8>) -> CustomCredential {
         CustomCredential {
             credential_type,
@@ -79,10 +96,12 @@ impl CustomCredential {
         }
     }
 
+    /// Unique credential type to identify this custom credential.
     pub fn credential_type(&self) -> CredentialType {
         self.credential_type
     }
 
+    /// Opaque data representing this custom credential.
     pub fn data(&self) -> &[u8] {
         &self.data
     }
@@ -90,13 +109,24 @@ impl CustomCredential {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+/// A MLS credential used to authenticate a group member.
 pub enum Credential {
+    /// Basic identifier-only credential.
+    ///
+    /// # Warning
+    ///
+    /// Basic credentials are inherently insecure since they can not be
+    /// properly validated. It is not recommended to use [`BasicCredential`]
+    /// in production applications.
     Basic(BasicCredential),
+    /// X.509 Certificate chain.
     X509(CertificateChain),
+    /// User provided custom credential.
     Custom(CustomCredential),
 }
 
 impl Credential {
+    /// Credential type of the underlying credential.
     pub fn credential_type(&self) -> CredentialType {
         match self {
             Credential::Basic(_) => CredentialType::BASIC,
@@ -105,6 +135,9 @@ impl Credential {
         }
     }
 
+    /// Convert this enum into a [`BasicCredential`]
+    ///
+    /// Returns `None` if this credential is any other type.
     pub fn as_basic(&self) -> Option<&BasicCredential> {
         match self {
             Credential::Basic(basic) => Some(basic),
@@ -112,6 +145,9 @@ impl Credential {
         }
     }
 
+    /// Convert this enum into a [`CertificateChain`]
+    ///
+    /// Returns `None` if this credential is any other type.
     pub fn as_x509(&self) -> Option<&CertificateChain> {
         match self {
             Credential::X509(chain) => Some(chain),
@@ -119,6 +155,9 @@ impl Credential {
         }
     }
 
+    /// Convert this enum into a [`CustomCredential`]
+    ///
+    /// Returns `None` if this credential is any other type.
     pub fn as_custom(&self) -> Option<&CustomCredential> {
         match self {
             Credential::Custom(custom) => Some(custom),
@@ -180,9 +219,15 @@ impl tls_codec::Deserialize for Credential {
     }
 }
 
+/// Trait that provides a conversion between an underlying credential type and
+/// the [`Credential`] enum.
 pub trait MlsCredential: Sized {
+    /// Conversion error type.
     type Error;
 
+    /// Credential type represented by this type.
     fn credential_type() -> CredentialType;
+
+    /// Function to convert this type into a [`Credential`] enum.
     fn into_credential(self) -> Result<Credential, Self::Error>;
 }
