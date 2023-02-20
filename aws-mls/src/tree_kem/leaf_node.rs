@@ -8,9 +8,10 @@ use crate::{
     ExtensionList,
 };
 use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::tls::ByteVec;
 use serde_with::serde_as;
 use thiserror::Error;
-use tls_codec::{Serialize, Size, TlsByteSliceU32};
+use tls_codec::{Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Debug, Error)]
@@ -228,28 +229,26 @@ struct LeafNodeTBS<'a> {
 
 impl<'a> Size for LeafNodeTBS<'a> {
     fn tls_serialized_len(&self) -> usize {
-        TlsByteSliceU32(self.public_key.as_ref()).tls_serialized_len()
+        self.public_key.tls_serialized_len()
             + self.signing_identity.tls_serialized_len()
             + self.capabilities.tls_serialized_len()
             + self.leaf_node_source.tls_serialized_len()
             + self.extensions.tls_serialized_len()
-            + self
-                .group_id
-                .map_or(0, |group_id| TlsByteSliceU32(group_id).tls_serialized_len())
+            + self.group_id.map_or(0, ByteVec::tls_serialized_len)
             + self.leaf_index.map_or(0, |i| i.tls_serialized_len())
     }
 }
 
 impl<'a> Serialize for LeafNodeTBS<'a> {
     fn tls_serialize<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
-        let res = TlsByteSliceU32(self.public_key.as_ref()).tls_serialize(writer)?
+        let res = self.public_key.tls_serialize(writer)?
             + self.signing_identity.tls_serialize(writer)?
             + self.capabilities.tls_serialize(writer)?
             + self.leaf_node_source.tls_serialize(writer)?
             + self.extensions.tls_serialize(writer)?
-            + self.group_id.map_or(Ok(0), |group_id| {
-                TlsByteSliceU32(group_id).tls_serialize(writer)
-            })?
+            + self
+                .group_id
+                .map_or(Ok(0), |group_id| ByteVec::tls_serialize(group_id, writer))?
             + self.leaf_index.map_or(Ok(0), |i| i.tls_serialize(writer))?;
 
         Ok(res)

@@ -17,13 +17,12 @@ pub(crate) struct TreeHashes {
 
 #[derive(Debug, TlsSerialize, TlsSize)]
 struct LeafNodeHashInput<'a> {
-    node_index: u32,
+    leaf_index: LeafIndex,
     leaf_node: Option<&'a LeafNode>,
 }
 
 #[derive(Debug, TlsSerialize, TlsSize)]
 struct ParentNodeTreeHashInput<'a> {
-    node_index: u32,
     parent_node: Option<&'a Parent>,
     #[tls_codec(with = "crate::tls::ByteVec")]
     left_hash: &'a [u8],
@@ -42,12 +41,12 @@ enum TreeHashInput<'a> {
 impl TreeHashes {
     pub fn hash_for_leaf<P: CipherSuiteProvider>(
         &self,
-        node_index: u32,
+        leaf_index: LeafIndex,
         leaf_node: Option<&LeafNode>,
         cipher_suite_provider: &P,
     ) -> Result<Vec<u8>, RatchetTreeError> {
         let input = TreeHashInput::Leaf(LeafNodeHashInput {
-            node_index,
+            leaf_index,
             leaf_node,
         });
 
@@ -58,7 +57,6 @@ impl TreeHashes {
 
     pub fn hash_for_parent<P: CipherSuiteProvider>(
         &self,
-        node_index: u32,
         parent_node: Option<&Parent>,
         cipher_suite_provider: &P,
         filtered: &[LeafIndex],
@@ -74,7 +72,6 @@ impl TreeHashes {
         }
 
         let input = TreeHashInput::Parent(ParentNodeTreeHashInput {
-            node_index,
             parent_node: parent_node.as_ref(),
             left_hash,
             right_hash,
@@ -195,9 +192,11 @@ impl TreeKemPublic {
         while let Some(n) = nodes.front().copied().filter(|&n| n & 1 == 0) {
             let _ = nodes.pop_front();
 
+            let leaf_index = LeafIndex(n / 2);
+
             self.tree_hashes.current[n as usize] = self.tree_hashes.hash_for_leaf(
-                n,
-                self.nodes.borrow_as_leaf(LeafIndex(n / 2)).ok(),
+                leaf_index,
+                self.nodes.borrow_as_leaf(leaf_index).ok(),
                 cipher_suite_provider,
             )?;
 
@@ -210,7 +209,6 @@ impl TreeKemPublic {
 
         while let Some(n) = nodes.pop_front() {
             self.tree_hashes.current[n as usize] = self.tree_hashes.hash_for_parent(
-                n,
                 self.nodes.borrow_as_parent(n).ok(),
                 cipher_suite_provider,
                 &[],
@@ -297,7 +295,7 @@ impl TreeKemPublic {
                             .contains(&leaf_index);
 
                     let hash = self.tree_hashes.hash_for_leaf(
-                        index as u32,
+                        leaf_index,
                         if filter_leaf {
                             None
                         } else {
@@ -323,7 +321,6 @@ impl TreeKemPublic {
                     .map_or(Vec::new(), |node| node.unmerged_leaves.clone());
 
                 let hash = self.tree_hashes.hash_for_parent(
-                    n as u32,
                     self.nodes.borrow_as_parent(n as u32).ok(),
                     cipher_suite_provider,
                     &filtered,
