@@ -390,25 +390,21 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cipher_suite::CipherSuite;
     use crate::client::test_utils::TEST_CIPHER_SUITE;
-    use crate::crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider};
-    use crate::identity::basic::BasicIdentityProvider;
+    use crate::crypto::test_utils::test_cipher_suite_provider;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNodeSource;
-    use crate::tree_kem::node::{NodeTypeResolver, NodeVec};
-    use crate::tree_kem::parent_hash::test_utils::{get_test_tree_fig_12, test_parent_node};
+    use crate::tree_kem::tree_utils::test_utils::TreeWithSigners;
     use crate::tree_kem::RatchetTreeError;
     use assert_matches::assert_matches;
-    use futures::StreamExt;
-    use tls_codec::Deserialize;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[futures_test::test]
     async fn test_missing_parent_hash() {
-        let mut test_tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
+        let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;
 
         let test_key_package = get_basic_test_node(TEST_CIPHER_SUITE, "foo").await;
 
@@ -431,12 +427,11 @@ mod tests {
 
     #[futures_test::test]
     async fn test_parent_hash_mismatch() {
-        let mut test_tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
-
-        let test_key_package = get_basic_test_node(TEST_CIPHER_SUITE, "foo").await;
+        let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;
 
         let mut test_update_path = ValidatedUpdatePath {
-            leaf_node: test_key_package,
+            leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "foo").await,
             nodes: vec![],
         };
 
@@ -459,159 +454,12 @@ mod tests {
 
     #[futures_test::test]
     async fn test_parent_hash_invalid() {
-        let mut test_tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
+        let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
+        let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;
+
         test_tree.nodes[2] = None;
 
         let res = test_tree.validate_parent_hashes(&test_cipher_suite_provider(TEST_CIPHER_SUITE));
         assert_matches!(res, Err(RatchetTreeError::ParentHashMismatch));
-    }
-
-    #[futures_test::test]
-    async fn test_parent_hash_with_blanks() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
-        // Create a tree with 4 blanks: leaves C and D, and their 2 ancestors.
-        let mut tree = TreeKemPublic::new();
-
-        let leaves = futures::stream::iter(["A", "B", "C", "D", "E", "F"])
-            .then(|l| get_basic_test_node(TEST_CIPHER_SUITE, l))
-            .collect()
-            .await;
-
-        tree.add_leaves(leaves, BasicIdentityProvider, &cipher_suite_provider)
-            .await
-            .unwrap();
-
-        tree.nodes[1] = Some(test_parent_node(TEST_CIPHER_SUITE, vec![]));
-        tree.nodes[7] = Some(test_parent_node(TEST_CIPHER_SUITE, vec![]));
-        tree.nodes[9] = Some(test_parent_node(TEST_CIPHER_SUITE, vec![]));
-        tree.nodes[4] = None;
-        tree.nodes[6] = None;
-
-        // Compute parent hashes after E commits and then A commits.
-        for i in [4, 0] {
-            tree.nodes
-                .borrow_as_leaf_mut(LeafIndex(i))
-                .unwrap()
-                .leaf_node_source = LeafNodeSource::Commit(
-                tree.update_parent_hashes(LeafIndex(i), None, &cipher_suite_provider)
-                    .unwrap(),
-            );
-        }
-
-        assert!(tree.validate_parent_hashes(&cipher_suite_provider).is_ok());
-    }
-
-    #[futures_test::test]
-    async fn test_parent_hash_edge() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
-        let mut tree = TreeKemPublic::new();
-
-        let leaves = futures::stream::iter([
-            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13",
-        ])
-        .then(|l| get_basic_test_node(TEST_CIPHER_SUITE, l))
-        .collect()
-        .await;
-
-        tree.add_leaves(leaves, BasicIdentityProvider, &cipher_suite_provider)
-            .await
-            .unwrap();
-
-        for i in [19, 23, 1, 3, 5, 9, 11, 13, 7, 15] {
-            tree.nodes[i] = Some(test_parent_node(TEST_CIPHER_SUITE, vec![]));
-        }
-
-        for i in [16, 24] {
-            tree.nodes[i] = None;
-        }
-
-        for i in [0, 2, 4, 6, 9] {
-            tree.nodes
-                .borrow_as_leaf_mut(LeafIndex(i))
-                .unwrap()
-                .leaf_node_source = LeafNodeSource::Commit(
-                tree.update_parent_hashes(LeafIndex(i), None, &cipher_suite_provider)
-                    .unwrap(),
-            );
-        }
-
-        for leaf_name in ["A", "B", "C"] {
-            tree.add_leaves(
-                vec![get_basic_test_node(TEST_CIPHER_SUITE, leaf_name).await],
-                BasicIdentityProvider,
-                &cipher_suite_provider,
-            )
-            .await
-            .unwrap();
-        }
-
-        assert!(tree.validate_parent_hashes(&cipher_suite_provider).is_ok());
-    }
-
-    #[derive(serde::Deserialize, serde::Serialize)]
-    struct TestCase {
-        cipher_suite: u16,
-        #[serde(with = "hex::serde")]
-        tree_data: Vec<u8>,
-    }
-
-    impl TestCase {
-        async fn generate() -> Vec<TestCase> {
-            futures::stream::iter(CipherSuite::all())
-                .then(|cipher_suite| async move {
-                    let tree = get_test_tree_fig_12(cipher_suite).await;
-
-                    TestCase {
-                        cipher_suite: cipher_suite.into(),
-                        tree_data: tree.export_node_data().tls_serialize_detached().unwrap(),
-                    }
-                })
-                .collect()
-                .await
-        }
-    }
-
-    async fn load_test_cases() -> Vec<TestCase> {
-        load_test_cases!(parent_hash, TestCase::generate().await)
-    }
-
-    #[futures_test::test]
-    async fn test_parent_hash_test_vectors() {
-        let cases = load_test_cases().await;
-
-        for one_case in cases {
-            let Some(cs_provider) = try_test_cipher_suite_provider(one_case.cipher_suite) else {
-                continue;
-            };
-
-            let tree = TreeKemPublic::import_node_data(
-                NodeVec::tls_deserialize(&mut &*one_case.tree_data).unwrap(),
-                &BasicIdentityProvider,
-            )
-            .await
-            .unwrap();
-
-            for (index, leaf) in tree.non_empty_leaves() {
-                if let LeafNodeSource::Commit(parent_hash) = &leaf.leaf_node_source {
-                    let calculated_parent_hash = tree
-                        .parent_hash_for_leaf(&cs_provider, index, |node_index, parent_hash| {
-                            let expected_parent = &tree
-                                .nodes
-                                .borrow_node(node_index)
-                                .unwrap()
-                                .as_parent()
-                                .unwrap()
-                                .parent_hash;
-
-                            assert_eq!(parent_hash, expected_parent);
-                        })
-                        .unwrap();
-
-                    assert_eq!(&calculated_parent_hash, parent_hash);
-                }
-            }
-        }
     }
 }

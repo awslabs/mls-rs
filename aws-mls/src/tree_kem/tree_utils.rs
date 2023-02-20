@@ -67,6 +67,170 @@ pub(crate) fn build_ascii_tree(nodes: &NodeVec) -> String {
 }
 
 #[cfg(test)]
+pub(crate) mod test_utils {
+    use aws_mls_core::{
+        crypto::{CipherSuiteProvider, SignatureSecretKey},
+        group::Capabilities,
+        identity::BasicCredential,
+    };
+
+    use crate::{
+        crypto::test_utils::TestCryptoProvider,
+        identity::{basic::BasicIdentityProvider, test_utils::get_test_signing_identity},
+        signer::Signable,
+        tree_kem::{
+            leaf_node::{ConfigProperties, LeafNode, LeafNodeSigningContext, LeafNodeSource},
+            node::LeafIndex,
+            Lifetime, TreeKemPublic,
+        },
+    };
+
+    #[derive(Debug, Clone)]
+    pub struct TreeWithSigners {
+        pub tree: TreeKemPublic,
+        pub signers: Vec<Option<SignatureSecretKey>>,
+        pub group_id: Vec<u8>,
+    }
+
+    impl TreeWithSigners {
+        pub async fn make_full_tree<P: CipherSuiteProvider>(
+            n_leaves: u32,
+            cs: &P,
+        ) -> TreeWithSigners {
+            let mut tree = TreeWithSigners {
+                tree: TreeKemPublic::new(),
+                signers: vec![],
+                group_id: cs.random_bytes_vec(cs.kdf_extract_size()).unwrap(),
+            };
+
+            tree.add_member("Alice", cs).await;
+
+            // A adds B, B adds C, C adds D etc.
+            for i in 1..n_leaves {
+                tree.add_member(&format!("Alice{i}"), cs).await;
+                tree.update_committer_path(i - 1, cs).await;
+            }
+
+            tree
+        }
+
+        pub async fn add_member<P: CipherSuiteProvider>(&mut self, name: &str, cs: &P) {
+            let (leaf, signer) = make_leaf(name, cs).await;
+            let index = self.tree.nodes.insert_leaf(LeafIndex(0), leaf);
+            self.tree.update_unmerged(index).unwrap();
+            let index = *index as usize;
+
+            match self.signers.len() {
+                l if l == index => self.signers.push(Some(signer)),
+                l if l > index => self.signers[index] = Some(signer),
+                _ => panic!("signer tree size mismatch"),
+            }
+        }
+
+        pub fn remove_member(&mut self, member: u32) {
+            self.tree
+                .nodes
+                .blank_direct_path(LeafIndex(member))
+                .unwrap();
+
+            self.tree.nodes.blank_leaf_node(LeafIndex(member)).unwrap();
+
+            *self
+                .signers
+                .get_mut(member as usize)
+                .expect("signer tree size mismatch") = None;
+        }
+
+        pub async fn update_committer_path<P: CipherSuiteProvider>(
+            &mut self,
+            committer: u32,
+            cs: &P,
+        ) {
+            let path = self
+                .tree
+                .nodes
+                .filtered_direct_path(LeafIndex(committer))
+                .unwrap();
+
+            for i in path.into_iter() {
+                self.tree
+                    .update_node(cs.kem_generate().unwrap().1, i)
+                    .unwrap();
+            }
+
+            self.tree.tree_hashes.current = vec![];
+            self.tree.tree_hashes.original = vec![];
+            self.tree.tree_hash(cs).unwrap();
+
+            let parent_hash = self
+                .tree
+                .update_parent_hashes(LeafIndex(committer), None, cs)
+                .unwrap();
+
+            self.tree
+                .nodes
+                .borrow_as_leaf_mut(LeafIndex(committer))
+                .unwrap()
+                .leaf_node_source = LeafNodeSource::Commit(parent_hash);
+
+            self.tree.tree_hashes.current = vec![];
+            self.tree.tree_hashes.original = vec![];
+            self.tree.tree_hash(cs).unwrap();
+
+            let context = LeafNodeSigningContext {
+                group_id: Some(&self.group_id),
+                leaf_index: Some(committer),
+            };
+
+            let signer = self.signers[committer as usize].as_ref().unwrap();
+
+            self.tree
+                .nodes
+                .borrow_as_leaf_mut(LeafIndex(committer))
+                .unwrap()
+                .sign(cs, signer, &context)
+                .unwrap();
+
+            self.tree.tree_hashes.current = vec![];
+            self.tree.tree_hashes.original = vec![];
+            self.tree.tree_hash(cs).unwrap();
+        }
+    }
+
+    pub async fn make_leaf<P: CipherSuiteProvider>(
+        name: &str,
+        cs: &P,
+    ) -> (LeafNode, SignatureSecretKey) {
+        let (signing_identity, signature_key) =
+            get_test_signing_identity(cs.cipher_suite(), name.as_bytes().to_vec());
+
+        let capabilities = Capabilities {
+            credentials: vec![BasicCredential::credential_type()],
+            cipher_suites: TestCryptoProvider::all_supported_cipher_suites(),
+            ..Default::default()
+        };
+
+        let properties = ConfigProperties {
+            capabilities,
+            extensions: Default::default(),
+        };
+
+        let (leaf, _) = LeafNode::generate(
+            cs,
+            properties,
+            signing_identity,
+            &signature_key,
+            Lifetime::years(1).unwrap(),
+            &BasicIdentityProvider::new(),
+        )
+        .await
+        .unwrap();
+
+        (leaf, signature_key)
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use crate::{
         client::test_utils::TEST_CIPHER_SUITE,

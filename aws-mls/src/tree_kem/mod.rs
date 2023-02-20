@@ -51,6 +51,9 @@ pub mod leaf_node_validator;
 mod tree_index;
 pub(crate) mod tree_utils;
 
+#[cfg(test)]
+mod interop_test_vectors;
+
 #[derive(Error, Debug)]
 pub enum RatchetTreeError {
     #[error(transparent)]
