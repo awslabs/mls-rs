@@ -131,6 +131,16 @@ struct GroupSecrets {
 
 impl HpkeEncryptable for GroupSecrets {
     const ENCRYPT_LABEL: &'static str = "Welcome";
+
+    type Error = tls_codec::Error;
+
+    fn from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        Self::tls_deserialize(&mut &*bytes)
+    }
+
+    fn get_bytes(&self) -> Result<Vec<u8>, Self::Error> {
+        self.tls_serialize_detached()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]

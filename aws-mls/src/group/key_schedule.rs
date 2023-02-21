@@ -391,20 +391,18 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
         let welcome_secret =
             Zeroizing::new(kdf_derive_secret(cipher_suite, &epoch_seed, "welcome")?);
 
-        let key = cipher_suite
-            .kdf_expand(&welcome_secret, b"key", cipher_suite.aead_key_size())
-            .map(Zeroizing::new)
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?;
+        let key_len = cipher_suite.aead_key_size();
+        let key = kdf_expand_with_label(cipher_suite, &welcome_secret, "key", &[], Some(key_len))?;
 
-        let nonce = cipher_suite
-            .kdf_expand(&welcome_secret, b"nonce", cipher_suite.aead_nonce_size())
-            .map(Zeroizing::new)
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?;
+        let nonce_len = cipher_suite.aead_nonce_size();
+
+        let nonce =
+            kdf_expand_with_label(cipher_suite, &welcome_secret, "nonce", &[], Some(nonce_len))?;
 
         Ok(Self {
             cipher_suite,
-            key,
-            nonce,
+            key: Zeroizing::new(key),
+            nonce: Zeroizing::new(nonce),
         })
     }
 

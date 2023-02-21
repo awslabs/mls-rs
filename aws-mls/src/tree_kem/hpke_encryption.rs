@@ -1,6 +1,6 @@
 use aws_mls_core::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey};
 use thiserror::Error;
-use tls_codec::{Deserialize, Serialize};
+use tls_codec::Serialize;
 use tls_codec_derive::{TlsSerialize, TlsSize};
 
 #[derive(Debug, Clone, TlsSize, TlsSerialize)]
@@ -23,13 +23,17 @@ impl<'a> EncryptContext<'a> {
 #[derive(Debug, Error)]
 pub enum HpkeEncryptionError {
     #[error(transparent)]
-    TlsSerializationError(#[from] tls_codec::Error),
+    SerializationError(Box<dyn std::error::Error + Send + Sync>),
+    #[error(transparent)]
+    TlsCodecError(#[from] tls_codec::Error),
     #[error("internal hpke error: {0:?}")]
     InternalHpkeError(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
-pub(crate) trait HpkeEncryptable: Serialize + Deserialize + Sized {
+pub(crate) trait HpkeEncryptable: Sized {
     const ENCRYPT_LABEL: &'static str;
+
+    type Error: std::error::Error + Send + Sync + 'static;
 
     fn encrypt<P: CipherSuiteProvider>(
         &self,
@@ -38,7 +42,10 @@ pub(crate) trait HpkeEncryptable: Serialize + Deserialize + Sized {
         context: &[u8],
     ) -> Result<HpkeCiphertext, HpkeEncryptionError> {
         let context = EncryptContext::new(Self::ENCRYPT_LABEL, context).tls_serialize_detached()?;
-        let content = self.tls_serialize_detached()?;
+
+        let content = self
+            .get_bytes()
+            .map_err(|e| HpkeEncryptionError::SerializationError(e.into()))?;
 
         cipher_suite_provider
             .hpke_seal(public_key, &context, None, &content)
@@ -57,13 +64,20 @@ pub(crate) trait HpkeEncryptable: Serialize + Deserialize + Sized {
             .hpke_open(ciphertext, secret_key, &context, None)
             .map_err(|e| HpkeEncryptionError::InternalHpkeError(e.into()))?;
 
-        Ok(Self::tls_deserialize(&mut &*plaintext)?)
+        Self::from_bytes(plaintext.to_vec())
+            .map_err(|e| HpkeEncryptionError::SerializationError(e.into()))
     }
+
+    fn from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error>;
+    fn get_bytes(&self) -> Result<Vec<u8>, Self::Error>;
 }
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use std::io::{Read, Write};
+    use std::{
+        convert::Infallible,
+        io::{Read, Write},
+    };
 
     use aws_mls_core::crypto::{CipherSuiteProvider, HpkeCiphertext};
     use tls_codec::{Deserialize, Serialize, Size};
@@ -113,6 +127,16 @@ pub(crate) mod test_utils {
 
     impl HpkeEncryptable for TestEncryptable {
         const ENCRYPT_LABEL: &'static str = "EncryptWithLabel";
+
+        type Error = Infallible;
+
+        fn from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+            Ok(Self(bytes))
+        }
+
+        fn get_bytes(&self) -> Result<Vec<u8>, Self::Error> {
+            Ok(self.0.clone())
+        }
     }
 
     impl Size for TestEncryptable {

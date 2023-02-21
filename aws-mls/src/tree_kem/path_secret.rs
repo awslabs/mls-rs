@@ -2,6 +2,7 @@ use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::group::key_schedule::{kdf_derive_secret, KeyScheduleError};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use serde_with::serde_as;
+use std::convert::Infallible;
 use std::ops::Deref;
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -69,6 +70,16 @@ impl PathSecret {
 
 impl HpkeEncryptable for PathSecret {
     const ENCRYPT_LABEL: &'static str = "UpdatePathNode";
+
+    type Error = Infallible;
+
+    fn from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        Ok(Self(bytes))
+    }
+
+    fn get_bytes(&self) -> Result<Vec<u8>, Self::Error> {
+        Ok(self.0.clone())
+    }
 }
 
 #[derive(Clone, Debug)]
