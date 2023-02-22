@@ -28,10 +28,11 @@ use crate::{
 };
 use async_trait::async_trait;
 use aws_mls_core::{
-    group::RosterUpdate,
+    group::{MemberUpdate, RosterUpdate},
     identity::{IdentityProvider, IdentityWarning},
     psk::ExternalPskId,
 };
+use itertools::Itertools;
 
 #[derive(Debug)]
 pub(crate) struct ProvisionalState {
@@ -53,13 +54,13 @@ pub(crate) struct ProvisionalState {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct StateUpdate {
     pub(crate) roster_update: RosterUpdate,
-    pub(crate) identity_events: Vec<IdentityWarning>,
+    pub(crate) identity_warnings: Vec<IdentityWarning>,
     pub(crate) added_psks: Vec<ExternalPskId>,
     pub(crate) pending_reinit: bool,
     pub(crate) active: bool,
     pub(crate) epoch: u64,
     pub(crate) custom_proposals: Vec<CustomProposal>,
-    pub(crate) rejected_proposals: Vec<(ProposalRef, Proposal)>,
+    pub(crate) unused_proposals: Vec<Proposal>,
 }
 
 impl StateUpdate {
@@ -72,7 +73,7 @@ impl StateUpdate {
     /// [`IdentityProvider`](crate::IdentityProvider)
     /// currently in use by the group.
     pub fn identity_warnings(&self) -> &[IdentityWarning] {
-        &self.identity_events
+        &self.identity_warnings
     }
 
     /// Pre-shared keys that have been added to the group.
@@ -104,8 +105,8 @@ impl StateUpdate {
     }
 
     /// Proposals that were received in the prior epoch but not committed to.
-    pub fn rejected_proposals(&self) -> &[(ProposalRef, Proposal)] {
-        &self.rejected_proposals
+    pub fn unused_proposals(&self) -> &[Proposal] {
+        &self.unused_proposals
     }
 }
 
@@ -297,17 +298,33 @@ pub(crate) trait MessageProcessor: Send + Sync {
             .map(|(index, node)| member_from_leaf_node(node, *index))
             .collect::<Vec<_>>();
 
+        let old_tree = &self.group_state().public_tree;
+
         let mut updated = provisional
             .updated_leaves
             .iter()
-            .map(|(index, node)| member_from_leaf_node(node, *index))
-            .collect::<Vec<_>>();
+            .map(|(index, node)| {
+                let prior = old_tree
+                    .get_leaf_node(*index)
+                    .map(|n| member_from_leaf_node(n, *index))?;
+
+                let new = member_from_leaf_node(node, *index);
+
+                Ok::<_, GroupError>(MemberUpdate::new(prior, new))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         if let Some(path) = path {
             if provisional.external_init.is_some() {
                 added.push(member_from_leaf_node(&path.leaf_node, sender))
             } else {
-                updated.push(member_from_leaf_node(&path.leaf_node, sender))
+                let prior = old_tree
+                    .get_leaf_node(sender)
+                    .map(|n| member_from_leaf_node(n, sender))?;
+
+                let new = member_from_leaf_node(&path.leaf_node, sender);
+
+                updated.push(MemberUpdate::new(prior, new))
             }
         }
 
@@ -322,7 +339,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         let roster_update = RosterUpdate::new(added, removed, updated);
 
-        let identity_events = self
+        let identity_warnings = self
             .identity_provider()
             .identity_warnings(&roster_update)
             .await
@@ -330,13 +347,17 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         let update = StateUpdate {
             roster_update,
-            identity_events,
+            identity_warnings,
             added_psks: psks,
             pending_reinit: provisional.reinit.is_some(),
             active: true,
             epoch: provisional.epoch,
             custom_proposals: provisional.custom_proposals.clone(),
-            rejected_proposals: provisional.rejected_proposals.clone(),
+            unused_proposals: provisional
+                .rejected_proposals
+                .iter()
+                .map(|(_, p)| p.clone())
+                .collect_vec(),
         };
 
         Ok(update)

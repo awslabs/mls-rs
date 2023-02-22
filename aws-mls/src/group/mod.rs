@@ -2041,6 +2041,7 @@ mod tests {
     use aws_mls_core::identity::{CertificateChain, Credential, CredentialType, CustomCredential};
     use futures::FutureExt;
     use internal::proposal_filter::ProposalFilterError;
+    use itertools::Itertools;
     use tls_codec::Size;
 
     #[cfg(target_arch = "wasm32")]
@@ -2171,8 +2172,8 @@ mod tests {
         let state_update = test_group.group.apply_pending_commit().await.unwrap();
 
         assert_matches!(
-            &*state_update.rejected_proposals,
-            [(_, p)] if *p == proposal
+            &*state_update.unused_proposals,
+            [p] if *p == proposal
         );
     }
 
@@ -2574,12 +2575,6 @@ mod tests {
         );
     }
 
-    fn canonicalize_state_update(update: &mut StateUpdate) {
-        update.roster_update.added.sort_by_key(|a| a.index());
-        update.roster_update.updated.sort_by_key(|a| a.index());
-        update.roster_update.removed.sort_by_key(|a| a.index());
-    }
-
     #[futures_test::test]
     async fn test_state_update() {
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -2647,13 +2642,12 @@ mod tests {
         let commit_output = commit_builder.build().await.unwrap();
 
         // Check that applying pending commit and processing commit yields correct update.
-        let mut state_update_alice = alice.process_pending_commit().await.unwrap();
-        canonicalize_state_update(&mut state_update_alice);
+        let state_update_alice = alice.process_pending_commit().await.unwrap();
 
         assert_eq!(
             state_update_alice
                 .roster_update
-                .added
+                .added()
                 .iter()
                 .map(|m| m.index())
                 .collect::<Vec<_>>(),
@@ -2661,7 +2655,7 @@ mod tests {
         );
 
         assert_eq!(
-            state_update_alice.roster_update.removed,
+            state_update_alice.roster_update.removed(),
             vec![2, 5, 6]
                 .into_iter()
                 .map(|i| member_from_leaf_node(&leaves[i as usize - 2], LeafIndex(i)))
@@ -2669,7 +2663,13 @@ mod tests {
         );
 
         assert_eq!(
-            state_update_alice.roster_update.updated.as_slice(),
+            state_update_alice
+                .roster_update
+                .updated()
+                .iter()
+                .map(|update| update.after_update().clone())
+                .collect_vec()
+                .as_slice(),
             &alice.group.roster()[0..2]
         );
 
@@ -2686,19 +2686,18 @@ mod tests {
             .unwrap();
         assert_matches!(payload, Event::Commit(_));
 
-        if let Event::Commit(mut state_update_bob) = payload {
-            canonicalize_state_update(&mut state_update_bob);
+        if let Event::Commit(state_update_bob) = payload {
             assert_eq!(
-                state_update_alice.roster_update.added,
-                state_update_bob.roster_update.added
+                state_update_alice.roster_update.added(),
+                state_update_bob.roster_update.added()
             );
             assert_eq!(
-                state_update_alice.roster_update.removed,
-                state_update_bob.roster_update.removed
+                state_update_alice.roster_update.removed(),
+                state_update_bob.roster_update.removed()
             );
             assert_eq!(
-                state_update_alice.roster_update.updated,
-                state_update_bob.roster_update.updated
+                state_update_alice.roster_update.updated(),
+                state_update_bob.roster_update.updated()
             );
             assert_eq!(state_update_alice.added_psks, state_update_bob.added_psks);
         }
@@ -2728,10 +2727,7 @@ mod tests {
         assert_matches!(event, Event::Commit(_));
 
         if let Event::Commit(update) = event {
-            assert_eq!(
-                update.roster_update.added.as_slice(),
-                &bob_group.roster()[1..2]
-            )
+            assert_eq!(update.roster_update.added(), &bob_group.roster()[1..2])
         }
     }
 
@@ -3065,8 +3061,8 @@ mod tests {
         assert_eq!(
             state_update
                 .roster_update
-                .added
-                .into_iter()
+                .added()
+                .iter()
                 .map(|m| m.index())
                 .collect::<Vec<_>>(),
             vec![1]

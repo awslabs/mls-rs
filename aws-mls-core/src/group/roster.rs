@@ -149,18 +149,56 @@ impl Member {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
+/// Update of a member due to a commit.
+pub struct MemberUpdate {
+    pub(crate) prior: Member,
+    pub(crate) new: Member,
+}
+
+impl MemberUpdate {
+    /// Create a new member update.
+    pub fn new(prior: Member, new: Member) -> MemberUpdate {
+        MemberUpdate { prior, new }
+    }
+
+    /// The index that was updated.
+    pub fn index(&self) -> u32 {
+        self.new.index
+    }
+
+    /// Member state before the update.
+    pub fn before_update(&self) -> &Member {
+        &self.prior
+    }
+
+    /// Member state after the update.
+    pub fn after_update(&self) -> &Member {
+        &self.new
+    }
+}
+
 /// A set of roster updates due to a commit.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub struct RosterUpdate {
-    pub added: Vec<Member>,
-    pub removed: Vec<Member>,
-    pub updated: Vec<Member>,
+    pub(crate) added: Vec<Member>,
+    pub(crate) removed: Vec<Member>,
+    pub(crate) updated: Vec<MemberUpdate>,
 }
 
 impl RosterUpdate {
     /// Create a new roster update.
-    pub fn new(added: Vec<Member>, removed: Vec<Member>, updated: Vec<Member>) -> RosterUpdate {
+    pub fn new(
+        mut added: Vec<Member>,
+        mut removed: Vec<Member>,
+        mut updated: Vec<MemberUpdate>,
+    ) -> RosterUpdate {
+        added.sort_by_key(|m| m.index);
+        removed.sort_by_key(|m| m.index);
+        updated.sort_by_key(|u| u.index());
+
         RosterUpdate {
             added,
             removed,
@@ -178,7 +216,7 @@ impl RosterUpdate {
     }
 
     /// Members updated via this update.
-    pub fn updated(&self) -> &[Member] {
+    pub fn updated(&self) -> &[MemberUpdate] {
         &self.updated
     }
 }
