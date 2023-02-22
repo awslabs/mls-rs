@@ -12,22 +12,20 @@ pub(crate) fn build_tree(
     nodes: &NodeVec,
     idx: NodeIndex,
 ) -> Result<(), NodeVecError> {
+    let blank_tag = if nodes.is_blank(idx)? { "Blank " } else { "" };
+
     // Leaf Node
     if nodes.is_leaf(idx) {
-        let mut leaf_tag = format!("Leaf ({idx})");
-
-        if nodes.is_blank(idx)? {
-            leaf_tag = format!("Blank Leaf ({idx})");
-        }
+        let leaf_tag = format!("{blank_tag}Leaf ({idx})");
         tree.add_leaf(&leaf_tag);
         return Ok(());
     }
 
     // Parent Leaf
-    let mut parent_tag = format!("Parent ({idx})");
+    let mut parent_tag = format!("{blank_tag}Parent ({idx})");
 
     if root(nodes.total_leaf_count()) == idx {
-        parent_tag = format!("Root ({idx})");
+        parent_tag = format!("{blank_tag}Root ({idx})");
     }
 
     // Add unmerged leaves indexes
@@ -258,11 +256,11 @@ mod tests {
             .unwrap();
 
         let tree_str = concat!(
-            "Root (3)\n",
-            "├╼ Parent (1)\n",
+            "Blank Root (3)\n",
+            "├╼ Blank Parent (1)\n",
             "│ ├╼ Leaf (0)\n",
             "│ └╼ Leaf (2)\n",
-            "└╼ Parent (5)\n",
+            "└╼ Blank Parent (5)\n",
             "  ├╼ Leaf (4)\n",
             "  └╼ Leaf (6)",
         );
@@ -292,11 +290,11 @@ mod tests {
         .unwrap();
 
         let tree_str = concat!(
-            "Root (3)\n",
-            "├╼ Parent (1)\n",
+            "Blank Root (3)\n",
+            "├╼ Blank Parent (1)\n",
             "│ ├╼ Leaf (0)\n",
             "│ └╼ Blank Leaf (2)\n",
-            "└╼ Parent (5)\n",
+            "└╼ Blank Parent (5)\n",
             "  ├╼ Leaf (4)\n",
             "  └╼ Leaf (6)",
         );
@@ -337,10 +335,10 @@ mod tests {
 
         let tree_str = concat!(
             "Root (3) unmerged leaves idxs: 3\n",
-            "├╼ Parent (1)\n",
+            "├╼ Blank Parent (1)\n",
             "│ ├╼ Leaf (0)\n",
             "│ └╼ Leaf (2)\n",
-            "└╼ Parent (5)\n",
+            "└╼ Blank Parent (5)\n",
             "  ├╼ Leaf (4)\n",
             "  └╼ Leaf (6)",
         );

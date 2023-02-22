@@ -398,16 +398,194 @@ fn rejected_proposals(
 }
 
 #[cfg(test)]
-impl CachedProposal {
-    pub fn new(proposal: Proposal, sender: Sender) -> Self {
-        Self { proposal, sender }
+pub(crate) mod test_utils {
+    use std::convert::Infallible;
+
+    use aws_mls_core::{
+        crypto::CipherSuiteProvider, extension::ExtensionList, identity::IdentityProvider,
+    };
+
+    use crate::{
+        client::test_utils::TEST_PROTOCOL_VERSION,
+        group::{
+            internal::{LeafIndex, TreeKemPublic},
+            proposal::{Proposal, ProposalOrRef},
+            proposal_filter::{PassThroughProposalFilter, ProposalFilter},
+            proposal_ref::ProposalRef,
+            test_utils::TEST_GROUP,
+            Sender,
+        },
+        identity::{basic::BasicIdentityProvider, test_utils::BasicWithCustomProvider},
+        psk::{ExternalPskIdValidator, PassThroughPskIdValidator},
+    };
+
+    use super::{CachedProposal, ProposalCache, ProposalCacheError, ProposalSetEffects};
+
+    impl CachedProposal {
+        pub fn new(proposal: Proposal, sender: Sender) -> Self {
+            Self { proposal, sender }
+        }
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct CommitReceiver<'a, C, F, P, CSP> {
+        tree: &'a TreeKemPublic,
+        sender: Sender,
+        receiver: LeafIndex,
+        cache: ProposalCache,
+        identity_provider: C,
+        cipher_suite_provider: CSP,
+        group_context_extensions: ExtensionList,
+        user_filter: F,
+        external_psk_id_validator: P,
+    }
+
+    impl<'a, CSP>
+        CommitReceiver<
+            'a,
+            BasicWithCustomProvider,
+            PassThroughProposalFilter<Infallible>,
+            PassThroughPskIdValidator,
+            CSP,
+        >
+    {
+        pub fn new<S>(
+            tree: &'a TreeKemPublic,
+            sender: S,
+            receiver: LeafIndex,
+            cipher_suite_provider: CSP,
+        ) -> Self
+        where
+            S: Into<Sender>,
+        {
+            Self {
+                tree,
+                sender: sender.into(),
+                receiver,
+                cache: make_proposal_cache(),
+                identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider::new()),
+                group_context_extensions: Default::default(),
+                user_filter: pass_through_filter(),
+                external_psk_id_validator: PassThroughPskIdValidator,
+                cipher_suite_provider,
+            }
+        }
+    }
+
+    impl<'a, C, F, P, CSP> CommitReceiver<'a, C, F, P, CSP>
+    where
+        C: IdentityProvider,
+        F: ProposalFilter,
+        P: ExternalPskIdValidator,
+        CSP: CipherSuiteProvider,
+    {
+        pub fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, F, P, CSP>
+        where
+            V: IdentityProvider,
+        {
+            CommitReceiver {
+                tree: self.tree,
+                sender: self.sender,
+                receiver: self.receiver,
+                cache: self.cache,
+                identity_provider: validator,
+                group_context_extensions: self.group_context_extensions,
+                user_filter: self.user_filter,
+                external_psk_id_validator: self.external_psk_id_validator,
+                cipher_suite_provider: self.cipher_suite_provider,
+            }
+        }
+
+        pub fn with_user_filter<G>(self, f: G) -> CommitReceiver<'a, C, G, P, CSP>
+        where
+            G: ProposalFilter,
+        {
+            CommitReceiver {
+                tree: self.tree,
+                sender: self.sender,
+                receiver: self.receiver,
+                cache: self.cache,
+                identity_provider: self.identity_provider,
+                group_context_extensions: self.group_context_extensions,
+                user_filter: f,
+                external_psk_id_validator: self.external_psk_id_validator,
+                cipher_suite_provider: self.cipher_suite_provider,
+            }
+        }
+
+        pub fn with_external_psk_id_validator<V>(self, v: V) -> CommitReceiver<'a, C, F, V, CSP>
+        where
+            V: ExternalPskIdValidator,
+        {
+            CommitReceiver {
+                tree: self.tree,
+                sender: self.sender,
+                receiver: self.receiver,
+                cache: self.cache,
+                identity_provider: self.identity_provider,
+                group_context_extensions: self.group_context_extensions,
+                user_filter: self.user_filter,
+                external_psk_id_validator: v,
+                cipher_suite_provider: self.cipher_suite_provider,
+            }
+        }
+
+        pub fn with_extensions(self, extensions: ExtensionList) -> Self {
+            Self {
+                group_context_extensions: extensions,
+                ..self
+            }
+        }
+
+        pub fn cache<S>(mut self, r: ProposalRef, p: Proposal, proposer: S) -> Self
+        where
+            S: Into<Sender>,
+        {
+            self.cache.insert(r, p, proposer.into());
+            self
+        }
+
+        pub async fn receive<I>(
+            &self,
+            proposals: I,
+        ) -> Result<ProposalSetEffects, ProposalCacheError>
+        where
+            I: IntoIterator,
+            I::Item: Into<ProposalOrRef>,
+        {
+            self.cache
+                .resolve_for_commit_default(
+                    self.sender.clone(),
+                    Some(self.receiver),
+                    proposals.into_iter().map(Into::into).collect(),
+                    None,
+                    &self.group_context_extensions,
+                    &self.identity_provider,
+                    &self.cipher_suite_provider,
+                    self.tree,
+                    &self.external_psk_id_validator,
+                    &self.user_filter,
+                )
+                .await
+        }
+    }
+
+    pub(crate) fn make_proposal_cache() -> ProposalCache {
+        ProposalCache::new(TEST_PROTOCOL_VERSION, TEST_GROUP.to_vec())
+    }
+
+    pub fn pass_through_filter() -> PassThroughProposalFilter<Infallible> {
+        PassThroughProposalFilter::new()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::proposal_ref::test_utils::auth_content_from_proposal;
+    use super::test_utils::{pass_through_filter, CommitReceiver};
     use super::*;
+    use super::{
+        proposal_ref::test_utils::auth_content_from_proposal, test_utils::make_proposal_cache,
+    };
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         crypto::{self, test_utils::test_cipher_suite_provider},
@@ -675,10 +853,6 @@ mod tests {
         .unwrap()
     }
 
-    fn make_proposal_cache() -> ProposalCache {
-        ProposalCache::new(TEST_PROTOCOL_VERSION, TEST_GROUP.to_vec())
-    }
-
     fn test_proposal_cache_setup(proposals: Vec<AuthenticatedContent>) -> ProposalCache {
         let mut cache = make_proposal_cache();
         cache.extend(filter_proposals(TEST_CIPHER_SUITE, proposals));
@@ -705,10 +879,6 @@ mod tests {
             .for_each(|p| assert!(proposals.contains(p)));
 
         assert_eq!(expected_effects, effects);
-    }
-
-    fn pass_through_filter() -> PassThroughProposalFilter<Infallible> {
-        PassThroughProposalFilter::new()
     }
 
     #[futures_test::test]
@@ -1675,146 +1845,6 @@ mod tests {
             .unwrap();
 
         assert!(!effects.path_update_required())
-    }
-
-    #[derive(Debug)]
-    struct CommitReceiver<'a, C, F, P, CSP> {
-        tree: &'a TreeKemPublic,
-        sender: Sender,
-        receiver: LeafIndex,
-        cache: ProposalCache,
-        identity_provider: C,
-        cipher_suite_provider: CSP,
-        group_context_extensions: ExtensionList,
-        user_filter: F,
-        external_psk_id_validator: P,
-    }
-
-    impl<'a, CSP>
-        CommitReceiver<
-            'a,
-            BasicWithCustomProvider,
-            PassThroughProposalFilter<Infallible>,
-            PassThroughPskIdValidator,
-            CSP,
-        >
-    {
-        fn new<S>(
-            tree: &'a TreeKemPublic,
-            sender: S,
-            receiver: LeafIndex,
-            cipher_suite_provider: CSP,
-        ) -> Self
-        where
-            S: Into<Sender>,
-        {
-            Self {
-                tree,
-                sender: sender.into(),
-                receiver,
-                cache: make_proposal_cache(),
-                identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider::new()),
-                group_context_extensions: Default::default(),
-                user_filter: pass_through_filter(),
-                external_psk_id_validator: PassThroughPskIdValidator,
-                cipher_suite_provider,
-            }
-        }
-    }
-
-    impl<'a, C, F, P, CSP> CommitReceiver<'a, C, F, P, CSP>
-    where
-        C: IdentityProvider,
-        F: ProposalFilter,
-        P: ExternalPskIdValidator,
-        CSP: CipherSuiteProvider,
-    {
-        fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, F, P, CSP>
-        where
-            V: IdentityProvider,
-        {
-            CommitReceiver {
-                tree: self.tree,
-                sender: self.sender,
-                receiver: self.receiver,
-                cache: self.cache,
-                identity_provider: validator,
-                group_context_extensions: self.group_context_extensions,
-                user_filter: self.user_filter,
-                external_psk_id_validator: self.external_psk_id_validator,
-                cipher_suite_provider: self.cipher_suite_provider,
-            }
-        }
-
-        fn with_user_filter<G>(self, f: G) -> CommitReceiver<'a, C, G, P, CSP>
-        where
-            G: ProposalFilter,
-        {
-            CommitReceiver {
-                tree: self.tree,
-                sender: self.sender,
-                receiver: self.receiver,
-                cache: self.cache,
-                identity_provider: self.identity_provider,
-                group_context_extensions: self.group_context_extensions,
-                user_filter: f,
-                external_psk_id_validator: self.external_psk_id_validator,
-                cipher_suite_provider: self.cipher_suite_provider,
-            }
-        }
-
-        fn with_external_psk_id_validator<V>(self, v: V) -> CommitReceiver<'a, C, F, V, CSP>
-        where
-            V: ExternalPskIdValidator,
-        {
-            CommitReceiver {
-                tree: self.tree,
-                sender: self.sender,
-                receiver: self.receiver,
-                cache: self.cache,
-                identity_provider: self.identity_provider,
-                group_context_extensions: self.group_context_extensions,
-                user_filter: self.user_filter,
-                external_psk_id_validator: v,
-                cipher_suite_provider: self.cipher_suite_provider,
-            }
-        }
-
-        fn with_extensions(self, extensions: ExtensionList) -> Self {
-            Self {
-                group_context_extensions: extensions,
-                ..self
-            }
-        }
-
-        fn cache<S>(mut self, r: ProposalRef, p: Proposal, proposer: S) -> Self
-        where
-            S: Into<Sender>,
-        {
-            self.cache.insert(r, p, proposer.into());
-            self
-        }
-
-        async fn receive<I>(&self, proposals: I) -> Result<ProposalSetEffects, ProposalCacheError>
-        where
-            I: IntoIterator,
-            I::Item: Into<ProposalOrRef>,
-        {
-            self.cache
-                .resolve_for_commit_default(
-                    self.sender.clone(),
-                    Some(self.receiver),
-                    proposals.into_iter().map(Into::into).collect(),
-                    None,
-                    &self.group_context_extensions,
-                    &self.identity_provider,
-                    &self.cipher_suite_provider,
-                    self.tree,
-                    &self.external_psk_id_validator,
-                    &self.user_filter,
-                )
-                .await
-        }
     }
 
     #[derive(Debug)]
