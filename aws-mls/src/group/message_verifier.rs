@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use crate::{
+    client::MlsError,
     crypto::SignaturePublicKey,
     extension::ExternalSendersExt,
-    group::{GroupContext, GroupError, PublicMessage, Sender},
+    group::{GroupContext, PublicMessage, Sender},
     identity::SigningIdentity,
     signer::Signable,
     tree_kem::{node::LeafIndex, TreeKemPublic},
@@ -30,7 +31,7 @@ pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     key_schedule: Option<&KeySchedule>,
     self_index: Option<LeafIndex>,
     state: &GroupState,
-) -> Result<AuthenticatedContent, GroupError> {
+) -> Result<AuthenticatedContent, MlsError> {
     let tag = plaintext.membership_tag.clone();
     let auth_content = AuthenticatedContent::from(plaintext);
     let context = &state.context;
@@ -41,27 +42,25 @@ pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     match &auth_content.content.sender {
         Sender::Member(index) => {
             if let Some(key_schedule) = key_schedule {
-                let expected_tag = &key_schedule.get_membership_tag(
-                    &auth_content,
-                    context,
-                    cipher_suite_provider,
-                )?;
+                let expected_tag = &key_schedule
+                    .get_membership_tag(&auth_content, context, cipher_suite_provider)
+                    .map_err(|e| MlsError::MembershipTagError(e.into()))?;
 
-                let plaintext_tag = tag.as_ref().ok_or(GroupError::InvalidMembershipTag)?;
+                let plaintext_tag = tag.as_ref().ok_or(MlsError::InvalidMembershipTag)?;
 
                 if expected_tag != plaintext_tag {
-                    return Err(GroupError::InvalidMembershipTag);
+                    return Err(MlsError::InvalidMembershipTag);
                 }
             }
 
             if self_index == Some(LeafIndex(*index)) {
-                return Err(GroupError::CantProcessMessageFromSelf);
+                return Err(MlsError::CantProcessMessageFromSelf);
             }
         }
         Sender::NewMemberCommit | Sender::NewMemberProposal | Sender::External(_) => {
             tag.is_none()
                 .then_some(())
-                .ok_or(GroupError::MembershipTagForNonMember)?;
+                .ok_or(MlsError::MembershipTagForNonMember)?;
         }
     }
 
@@ -94,7 +93,7 @@ pub(crate) fn verify_auth_content_signature<P: CipherSuiteProvider>(
     context: &GroupContext,
     auth_content: &AuthenticatedContent,
     external_signers: &[SigningIdentity],
-) -> Result<(), GroupError> {
+) -> Result<(), MlsError> {
     let sender_public_key = signing_identity_for_sender(
         signature_keys_container,
         &auth_content.content.sender,
@@ -109,7 +108,7 @@ pub(crate) fn verify_auth_content_signature<P: CipherSuiteProvider>(
 
     auth_content
         .verify(cipher_suite_provider, &sender_public_key, &context)
-        .map_err(|_| GroupError::InvalidSignature)?;
+        .map_err(|_| MlsError::InvalidSignature)?;
 
     Ok(())
 }
@@ -119,7 +118,7 @@ fn signing_identity_for_sender(
     sender: &Sender,
     content: &Content,
     external_signers: &[SigningIdentity],
-) -> Result<SignaturePublicKey, GroupError> {
+) -> Result<SignaturePublicKey, MlsError> {
     match sender {
         Sender::Member(leaf_index) => {
             signing_identity_for_member(signature_keys_container, LeafIndex(*leaf_index))
@@ -135,7 +134,7 @@ fn signing_identity_for_sender(
 fn signing_identity_for_member(
     signature_keys_container: SignaturePublicKeysContainer,
     leaf_index: LeafIndex,
-) -> Result<SignaturePublicKey, GroupError> {
+) -> Result<SignaturePublicKey, MlsError> {
     match signature_keys_container {
         SignaturePublicKeysContainer::RatchetTree(tree) => Ok(tree
             .get_leaf_node(leaf_index)?
@@ -144,7 +143,7 @@ fn signing_identity_for_member(
             .clone()), // TODO: We can probably get rid of this clone
         SignaturePublicKeysContainer::List(list) => list
             .get(&leaf_index)
-            .ok_or(GroupError::LeafNotFound(*leaf_index))
+            .ok_or(MlsError::LeafNotFound(*leaf_index))
             .cloned(),
     }
 }
@@ -152,47 +151,50 @@ fn signing_identity_for_member(
 fn signing_identity_for_external(
     index: u32,
     external_signers: &[SigningIdentity],
-) -> Result<SignaturePublicKey, GroupError> {
+) -> Result<SignaturePublicKey, MlsError> {
     external_signers
         .get(index as usize)
         .map(|spk| spk.signature_key.clone())
-        .ok_or(GroupError::UnknownSigningIdentityForExternalSender)
+        .ok_or(MlsError::UnknownSigningIdentityForExternalSender)
 }
 
 fn signing_identity_for_new_member_commit(
     content: &Content,
-) -> Result<SignaturePublicKey, GroupError> {
+) -> Result<SignaturePublicKey, MlsError> {
     match content {
         Content::Commit(commit) => {
             if let Some(path) = &commit.path {
                 Ok(path.leaf_node.signing_identity.signature_key.clone())
             } else {
-                Err(GroupError::MissingUpdatePathInExternalCommit)
+                Err(MlsError::MissingUpdatePathInExternalCommit)
             }
         }
-        _ => Err(GroupError::ExpectedCommitForNewMemberCommit),
+        _ => Err(MlsError::ExpectedCommitForNewMemberCommit),
     }
 }
 
 fn signing_identity_for_new_member_proposal(
     content: &Content,
-) -> Result<SignaturePublicKey, GroupError> {
+) -> Result<SignaturePublicKey, MlsError> {
     match content {
         Content::Proposal(proposal) => {
             if let Proposal::Add(AddProposal { key_package }) = proposal {
                 Ok(key_package.leaf_node.signing_identity.signature_key.clone())
             } else {
-                Err(GroupError::ExpectedAddProposalForNewMemberProposal)
+                Err(MlsError::ExpectedAddProposalForNewMemberProposal)
             }
         }
-        _ => Err(GroupError::ExpectedAddProposalForNewMemberProposal),
+        _ => Err(MlsError::ExpectedAddProposalForNewMemberProposal),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        client::{
+            test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+            MlsError,
+        },
         client_builder::{test_utils::TestClientConfig, Preferences},
         crypto::{test_utils::test_cipher_suite_provider, SignatureSecretKey},
         extension::ExternalSendersExt,
@@ -202,7 +204,7 @@ mod tests {
             message_signature::{AuthenticatedContent, MessageSignature, MessageSigningContext},
             proposal::{AddProposal, Proposal, RemoveProposal},
             test_utils::{test_group, test_group_custom, test_member, TestGroup},
-            Content, Group, GroupError, PublicMessage, Sender,
+            Content, Group, PublicMessage, Sender,
         },
         identity::test_utils::get_test_signing_identity,
         key_package::KeyPackageGeneration,
@@ -334,7 +336,7 @@ mod tests {
             &env.bob.group.state,
         );
 
-        assert_matches!(res, Err(GroupError::InvalidSignature));
+        assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
     #[futures_test::test]
@@ -351,7 +353,7 @@ mod tests {
             &env.bob.group.state,
         );
 
-        assert_matches!(res, Err(GroupError::InvalidMembershipTag));
+        assert_matches!(res, Err(MlsError::InvalidMembershipTag));
     }
 
     #[futures_test::test]
@@ -368,7 +370,7 @@ mod tests {
             &env.bob.group.state,
         );
 
-        assert_matches!(res, Err(GroupError::InvalidMembershipTag));
+        assert_matches!(res, Err(MlsError::InvalidMembershipTag));
     }
 
     fn test_new_member_proposal<F>(
@@ -449,7 +451,7 @@ mod tests {
             &test_group.group.state,
         );
 
-        assert_matches!(res, Err(GroupError::MembershipTagForNonMember));
+        assert_matches!(res, Err(MlsError::MembershipTagForNonMember));
     }
 
     #[futures_test::test]
@@ -472,10 +474,7 @@ mod tests {
             &test_group.group.state,
         );
 
-        assert_matches!(
-            res,
-            Err(GroupError::ExpectedAddProposalForNewMemberProposal)
-        );
+        assert_matches!(res, Err(MlsError::ExpectedAddProposalForNewMemberProposal));
     }
 
     #[futures_test::test]
@@ -496,7 +495,7 @@ mod tests {
             &test_group.group.state,
         );
 
-        assert_matches!(res, Err(GroupError::ExpectedCommitForNewMemberCommit));
+        assert_matches!(res, Err(MlsError::ExpectedCommitForNewMemberCommit));
     }
 
     #[futures_test::test]
@@ -562,10 +561,7 @@ mod tests {
             &test_group.group.state,
         );
 
-        assert_matches!(
-            res,
-            Err(GroupError::UnknownSigningIdentityForExternalSender)
-        );
+        assert_matches!(res, Err(MlsError::UnknownSigningIdentityForExternalSender));
     }
 
     #[futures_test::test]
@@ -590,7 +586,7 @@ mod tests {
             &test_group.group.state,
         );
 
-        assert_matches!(res, Err(GroupError::MembershipTagForNonMember));
+        assert_matches!(res, Err(MlsError::MembershipTagForNonMember));
     }
 
     #[futures_test::test]
@@ -607,6 +603,6 @@ mod tests {
             &env.alice.group.state,
         );
 
-        assert_matches!(res, Err(GroupError::CantProcessMessageFromSelf))
+        assert_matches!(res, Err(MlsError::CantProcessMessageFromSelf))
     }
 }

@@ -1,21 +1,30 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_builder::{BaseConfig, ClientBuilder};
 use crate::client_config::ClientConfig;
+use crate::group::confirmation_tag::ConfirmationTagError;
 use crate::group::framing::{
-    Content, MLSMessage, MLSMessagePayload, PublicMessage, Sender, WireFormat,
+    Content, ContentType, MLSMessage, MLSMessagePayload, PublicMessage, Sender, WireFormat,
 };
+use crate::group::key_schedule::KeyScheduleError;
 use crate::group::message_signature::AuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
-use crate::group::{process_group_info, Group, GroupError, NewMemberInfo};
+use crate::group::state_repo::GroupStateRepositoryError;
+use crate::group::transcript_hash::TranscriptHashError;
+use crate::group::{process_group_info, Group, NewMemberInfo, ProposalCacheError};
 use crate::hash_reference::HashReferenceError;
 use crate::identity::SigningIdentity;
 use crate::key_package::{
-    KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator, KeyPackageValidationError,
+    KeyPackageError, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator,
+    KeyPackageValidationError,
 };
 use crate::protocol_version::ProtocolVersion;
-use crate::psk::ExternalPskId;
+use crate::psk::{ExternalPskId, PskError};
 use crate::signer::SignatureError;
-use crate::tree_kem::leaf_node::LeafNodeError;
+use crate::tree_kem::{
+    hpke_encryption::HpkeEncryptionError, leaf_node::LeafNodeError,
+    leaf_node_validator::LeafNodeValidationError, path_secret::PathSecretError,
+    tree_validator::TreeValidationError, RatchetTreeError, UpdatePathValidationError,
+};
 use aws_mls_core::crypto::CryptoProvider;
 use aws_mls_core::extension::{ExtensionError, ExtensionList};
 use aws_mls_core::group::GroupStateStorage;
@@ -25,17 +34,165 @@ use hex::ToHex;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum ClientError {
+pub enum MlsError {
+    #[error(transparent)]
+    RatchetTreeError(#[from] RatchetTreeError),
+    #[error(transparent)]
+    CiphertextProcessorError(Box<dyn std::error::Error + Send + Sync>),
+    #[error(transparent)]
+    SignerError(Box<dyn std::error::Error>),
+    #[error(transparent)]
+    TranscriptHashError(#[from] TranscriptHashError),
+    #[error(transparent)]
+    KeyPackageError(#[from] KeyPackageError),
+    #[error(transparent)]
+    IdentityProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error(transparent)]
+    CryptoProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
     ExtensionError(#[from] ExtensionError),
     #[error(transparent)]
     KeyPackageGenerationError(#[from] KeyPackageGenerationError),
     #[error(transparent)]
-    GroupError(#[from] GroupError),
+    LeafNodeValidationError(#[from] LeafNodeValidationError),
+    #[error(transparent)]
+    MembershipTagError(Box<dyn std::error::Error + Send + Sync>),
+    #[error(transparent)]
+    ConfirmationTagError(#[from] ConfirmationTagError),
+    #[error(transparent)]
+    LeafSecretError(#[from] PathSecretError),
+    #[error(transparent)]
+    GroupStateRepositoryError(#[from] GroupStateRepositoryError),
+    #[error(transparent)]
+    KeyScheduleError(#[from] KeyScheduleError),
+    #[error(transparent)]
+    UpdatePathValidationError(#[from] UpdatePathValidationError),
+    #[error(transparent)]
+    ProposalCacheError(#[from] ProposalCacheError),
+    #[error(transparent)]
+    TreeValidationError(#[from] TreeValidationError),
     #[error(transparent)]
     HashReferenceError(#[from] HashReferenceError),
+    #[error("key package not found")]
+    KeyPackageNotFound,
+    #[error("Cipher suite does not match")]
+    CipherSuiteMismatch,
+    #[error("Invalid key package signature")]
+    InvalidKeyPackage,
+    #[error("Invalid commit, missing required path")]
+    CommitMissingPath,
+    #[error("plaintext message for incorrect epoch")]
+    InvalidEpoch(u64),
+    #[error("epoch metadata not found for group: {0:?}")]
+    EpochMetadataNotFound(Vec<u8>),
+    #[error("invalid signature found")]
+    InvalidSignature,
+    #[error("invalid confirmation tag")]
+    InvalidConfirmationTag,
+    #[error("invalid membership tag")]
+    InvalidMembershipTag,
+    #[error("corrupt private key, missing required values")]
+    InvalidTreeKemPrivateKey,
+    #[error("key package not found, unable to process")]
+    WelcomeKeyPackageNotFound,
+    #[error("invalid participant {0}")]
+    InvalidGroupParticipant(u32),
+    #[error("self not found in ratchet tree")]
+    TreeMissingSelfUser,
+    #[error("leaf not found in tree for index {0}")]
+    LeafNotFound(u32),
+    #[error("message from self can't be processed")]
+    CantProcessMessageFromSelf,
+    #[error("pending proposals found, commit required before application messages can be sent")]
+    CommitRequired,
+    #[error("ratchet tree not provided or discovered in GroupInfo")]
+    RatchetTreeNotFound,
+    #[error("Only members can encrypt messages")]
+    OnlyMembersCanEncryptMessages,
+    #[error("External sender cannot commit")]
+    ExternalSenderCannotCommit,
+    #[error("Only members can update")]
+    OnlyMembersCanUpdate,
+    #[error(transparent)]
+    PskSecretError(#[from] PskError),
+    #[error("Subgroup uses a different protocol version: {0:?}")]
+    SubgroupWithDifferentProtocolVersion(ProtocolVersion),
+    #[error("Subgroup uses a different cipher suite: {0:?}")]
+    SubgroupWithDifferentCipherSuite(CipherSuite),
+    #[error("Unsupported protocol version {0:?}")]
+    UnsupportedProtocolVersion(ProtocolVersion),
+    #[error(
+        "message protocol version {msg_version:?} does not match version {version:?} in {wire_format:?}"
+    )]
+    ProtocolVersionMismatch {
+        msg_version: ProtocolVersion,
+        wire_format: WireFormat,
+        version: ProtocolVersion,
+    },
+    #[error("Unsupported cipher suite {0:?}")]
+    UnsupportedCipherSuite(CipherSuite),
+    #[error("Signing key of external sender is unknown")]
+    UnknownSigningIdentityForExternalSender,
+    #[error("External proposals are disabled for this group")]
+    ExternalProposalsDisabled,
+    #[error("Signing identity is not allowed to externally propose")]
+    InvalidExternalSigningIdentity,
+    #[error("Missing ExternalPub extension")]
+    MissingExternalPubExtension,
+    #[error("Missing update path in external commit")]
+    MissingUpdatePathInExternalCommit,
+    #[error("Epoch {0} not found")]
+    EpochNotFound(u64),
+    #[error("expected protocol version {0:?}, found version {1:?}")]
+    InvalidProtocolVersion(ProtocolVersion, ProtocolVersion),
+    #[error("unexpected group ID {0:?}")]
+    InvalidGroupId(Vec<u8>),
+    #[error("Unencrypted application message")]
+    UnencryptedApplicationMessage,
+    #[error("NewMemberCommit sender type can only be used to send Commit content")]
+    ExpectedCommitForNewMemberCommit,
+    #[error("NewMemberProposal sender type can only be used to send add proposals")]
+    ExpectedAddProposalForNewMemberProposal,
+    #[error("External commit missing ExternalInit proposal")]
+    ExternalCommitMissingExternalInit,
+    #[error(
+        "A ReIinit has been applied. The next action must be creating or receiving a welcome."
+    )]
+    GroupUsedAfterReInit,
+    #[error("Pending ReIinit not found.")]
+    PendingReInitNotFound,
+    #[error("A commit after ReIinit did not output a welcome message.")]
+    ReInitCommitDidNotOutputWelcome,
+    #[error("The ciphersuites in the welcome message {0:?} and in the reinit {1:?} do not match.")]
+    ReInitCiphersuiteMismatch(CipherSuite, CipherSuite),
+    #[error("The versions in the welcome message {0:?} and in the reinit {1:?} do not match.")]
+    ReInitVersionMismatch(ProtocolVersion, ProtocolVersion),
+    #[error("The extensions in the welcome message {0:?} and in the reinit {1:?} do not match.")]
+    ReInitExtensionsMismatch(ExtensionList, ExtensionList),
+    #[error("The group ids in the welcome message {0:?} and in the reinit {1:?} do not match.")]
+    ReInitIdMismatch(Vec<u8>, Vec<u8>),
+    #[error("No credential found for given ciphersuite.")]
+    NoCredentialFound,
+    #[error("Expected commit message, found: {0:?}")]
+    NotCommitContent(ContentType),
+    #[error("Expected proposal message, found: {0:?}")]
+    NotProposalContent(ContentType),
     #[error("signer not found for given identity")]
     SignerNotFound,
+    #[error("commit already pending")]
+    ExistingPendingCommit,
+    #[error("pending commit not found")]
+    PendingCommitNotFound,
+    #[error("unexpected message type, expected {0:?}, found {1:?}")]
+    UnexpectedMessageType(Vec<WireFormat>, WireFormat),
+    #[error("membership tag on MLSPlaintext for non-member sender")]
+    MembershipTagForNonMember,
+    #[error("mls message is not a key package")]
+    NotKeyPackage,
+    #[error("No member found for given identity id.")]
+    MemberNotFound,
+    #[error(transparent)]
+    HpkeEncryptionError(#[from] HpkeEncryptionError),
     #[error("the secret key provided does not match the public key in the credential")]
     IncorrectSecretKey,
     #[error(transparent)]
@@ -54,8 +211,6 @@ pub enum ClientError {
     ExpectedKeyPackageMessage,
     #[error("unsupported message protocol version: {0:?}")]
     UnsupportedMessageVersion(ProtocolVersion),
-    #[error("unsupported cipher suite: {0:?}")]
-    UnsupportedCipherSuite(CipherSuite),
     #[error("unable to load group from storage: {0:?}")]
     GroupStorageError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
@@ -115,7 +270,7 @@ where
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
-    ) -> Result<MLSMessage, ClientError> {
+    ) -> Result<MLSMessage, MlsError> {
         let key_package = self
             .generate_key_package(protocol_version, cipher_suite, signing_identity)
             .await?;
@@ -128,20 +283,20 @@ where
         protocol_version: ProtocolVersion,
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
-    ) -> Result<KeyPackageGeneration, ClientError> {
+    ) -> Result<KeyPackageGeneration, MlsError> {
         let signer = self
             .config
             .keychain()
             .signer(&signing_identity)
             .await
-            .map_err(|e| ClientError::KeychainError(e.into()))?
-            .ok_or(ClientError::SignerNotFound)?;
+            .map_err(|e| MlsError::KeychainError(e.into()))?
+            .ok_or(MlsError::SignerNotFound)?;
 
         let cipher_suite_provider = self
             .config
             .crypto_provider()
             .cipher_suite_provider(cipher_suite)
-            .ok_or_else(|| ClientError::UnsupportedCipherSuite(cipher_suite))?;
+            .ok_or_else(|| MlsError::UnsupportedCipherSuite(cipher_suite))?;
 
         let key_package_generator = KeyPackageGenerator {
             protocol_version,
@@ -166,7 +321,7 @@ where
             .key_package_repo()
             .insert(id, key_package_data)
             .await
-            .map_err(|e| ClientError::KeyPackageRepoError(e.into()))?;
+            .map_err(|e| MlsError::KeyPackageRepoError(e.into()))?;
 
         Ok(key_pkg_gen)
     }
@@ -189,7 +344,7 @@ where
         group_id: Vec<u8>,
         signing_identity: SigningIdentity,
         group_context_extensions: ExtensionList,
-    ) -> Result<Group<C>, ClientError> {
+    ) -> Result<Group<C>, MlsError> {
         Group::new(
             self.config.clone(),
             Some(group_id),
@@ -217,7 +372,7 @@ where
         cipher_suite: CipherSuite,
         signing_identity: SigningIdentity,
         group_context_extensions: ExtensionList,
-    ) -> Result<Group<C>, ClientError> {
+    ) -> Result<Group<C>, MlsError> {
         Group::new(
             self.config.clone(),
             None,
@@ -243,7 +398,7 @@ where
         &self,
         tree_data: Option<&[u8]>,
         welcome_message: MLSMessage,
-    ) -> Result<(Group<C>, NewMemberInfo), ClientError> {
+    ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         Group::join(welcome_message, tree_data, self.config.clone())
             .await
             .map_err(Into::into)
@@ -293,7 +448,7 @@ where
         to_remove: Option<u32>,
         external_psks: Vec<ExternalPskId>,
         authenticated_data: Vec<u8>,
-    ) -> Result<(Group<C>, MLSMessage), ClientError> {
+    ) -> Result<(Group<C>, MLSMessage), MlsError> {
         Group::new_external(
             self.config.clone(),
             group_info_msg,
@@ -305,10 +460,10 @@ where
         )
         .await
         .map_err(|e| {
-            if matches!(e, GroupError::UnexpectedMessageType(..)) {
-                ClientError::ExpectedGroupInfoMessage
+            if matches!(e, MlsError::UnexpectedMessageType(..)) {
+                MlsError::ExpectedGroupInfoMessage
             } else {
-                e.into()
+                e
             }
         })
     }
@@ -316,16 +471,16 @@ where
     /// Load an existing group state into this client using the
     /// [GroupStateStorage](crate::GroupStateStorage) that
     /// this client was configured to use.
-    pub async fn load_group(&self, group_id: &[u8]) -> Result<Group<C>, ClientError> {
+    pub async fn load_group(&self, group_id: &[u8]) -> Result<Group<C>, MlsError> {
         let snapshot = self
             .config
             .group_state_storage()
             .state(group_id)
             .await
-            .map_err(|e| ClientError::GroupStorageError(e.into()))?
-            .ok_or_else(|| ClientError::GroupNotFound(group_id.encode_hex_upper()))?;
+            .map_err(|e| MlsError::GroupStorageError(e.into()))?
+            .ok_or_else(|| MlsError::GroupNotFound(group_id.encode_hex_upper()))?;
 
-        Ok(Group::from_snapshot(self.config.clone(), snapshot).await?)
+        Group::from_snapshot(self.config.clone(), snapshot).await
     }
 
     /// Request to join an existing [group](crate::group::Group).
@@ -343,23 +498,23 @@ where
         tree_data: Option<&[u8]>,
         signing_identity: SigningIdentity,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, ClientError> {
+    ) -> Result<MLSMessage, MlsError> {
         let protocol_version = group_info.version;
 
         if !self.config.version_supported(protocol_version) {
-            return Err(ClientError::UnsupportedMessageVersion(group_info.version));
+            return Err(MlsError::UnsupportedMessageVersion(group_info.version));
         }
 
         let group_info = group_info
             .into_group_info()
-            .ok_or(ClientError::ExpectedGroupInfoMessage)?;
+            .ok_or(MlsError::ExpectedGroupInfoMessage)?;
 
         let cipher_suite_provider = self
             .config
             .crypto_provider()
             .cipher_suite_provider(group_info.group_context.cipher_suite)
             .ok_or_else(|| {
-                ClientError::UnsupportedCipherSuite(group_info.group_context.cipher_suite)
+                MlsError::UnsupportedCipherSuite(group_info.group_context.cipher_suite)
             })?;
 
         let group_context = process_group_info(
@@ -377,8 +532,8 @@ where
             .keychain()
             .signer(&signing_identity)
             .await
-            .map_err(|e| ClientError::KeychainError(e.into()))?
-            .ok_or(ClientError::SignerNotFound)?;
+            .map_err(|e| MlsError::KeychainError(e.into()))?
+            .ok_or(MlsError::SignerNotFound)?;
 
         let key_package = self
             .generate_key_package(
@@ -471,7 +626,7 @@ pub(crate) mod test_utils {
         other_groups: S,
         key_package: MLSMessage,
         client: &Client<C>,
-    ) -> Result<(Group<C>, NewMemberInfo), ClientError>
+    ) -> Result<(Group<C>, NewMemberInfo), MlsError>
     where
         C: ClientConfig + 'a,
         S: IntoIterator<Item = &'a mut Group<C>>,
@@ -610,7 +765,7 @@ mod tests {
             .any(|member| member.signing_identity() == &bob_identity))
     }
 
-    async fn join_via_external_commit(do_remove: bool, with_psk: bool) -> Result<(), ClientError> {
+    async fn join_via_external_commit(do_remove: bool, with_psk: bool) -> Result<(), MlsError> {
         // An external commit cannot be the first commit in a group as it requires
         // interim_transcript_hash to be computed from the confirmed_transcript_hash and
         // confirmation_tag, which is not the case for the initial interim_transcript_hash.
@@ -734,7 +889,7 @@ mod tests {
             .await
             .map(|_| ());
 
-        assert_matches!(res, Err(ClientError::ExpectedGroupInfoMessage));
+        assert_matches!(res, Err(MlsError::ExpectedGroupInfoMessage));
     }
 
     #[futures_test::test]

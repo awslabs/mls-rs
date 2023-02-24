@@ -144,8 +144,7 @@ pub use group::{
 
 /// Error types.
 pub mod error {
-    pub use crate::client::ClientError;
-    pub use crate::group::error::GroupError;
+    pub use crate::client::MlsError;
     pub use aws_mls_core::extension::ExtensionError;
 }
 

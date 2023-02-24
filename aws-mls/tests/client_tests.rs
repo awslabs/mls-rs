@@ -2,7 +2,7 @@ use assert_matches::assert_matches;
 use aws_mls::client_builder::{
     BaseConfig, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider, WithKeychain,
 };
-use aws_mls::error::GroupError;
+use aws_mls::error::MlsError;
 use aws_mls::group::Event;
 use aws_mls::identity::basic::{BasicCredential, BasicIdentityProvider};
 use aws_mls::identity::Credential;
@@ -794,7 +794,7 @@ async fn processing_message_from_self_returns_error(
         .await
         .unwrap_err();
 
-    assert_matches!(error, GroupError::CantProcessMessageFromSelf);
+    assert_matches!(error, MlsError::CantProcessMessageFromSelf);
 }
 
 #[futures_test::test]

@@ -14,6 +14,7 @@ use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::cipher_suite::CipherSuite;
+use crate::client::MlsError;
 use crate::client_config::{ClientConfig, MakeProposalFilter, ProposalFilterInit};
 use crate::crypto::{HpkeCiphertext, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
 use crate::extension::{ExternalPubExt, RatchetTreeExt};
@@ -72,7 +73,6 @@ pub(crate) use proposal_cache::ProposalCacheError;
 use self::framing::MLSMessage;
 pub use self::framing::Sender;
 pub use commit::*;
-pub(crate) use error::*;
 
 pub use roster::*;
 
@@ -238,15 +238,15 @@ where
         protocol_version: ProtocolVersion,
         signing_identity: SigningIdentity,
         group_context_extensions: ExtensionList,
-    ) -> Result<Self, GroupError> {
+    ) -> Result<Self, MlsError> {
         let cipher_suite_provider = cipher_suite_provider(config.crypto_provider(), cipher_suite)?;
 
         let signer = config
             .keychain()
             .signer(&signing_identity)
             .await
-            .map_err(|e| GroupError::KeychainError(e.into()))?
-            .ok_or(GroupError::SignerNotFound)?;
+            .map_err(|e| MlsError::KeychainError(e.into()))?
+            .ok_or(MlsError::SignerNotFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             &cipher_suite_provider,
@@ -271,7 +271,7 @@ where
         let group_id = group_id.unwrap_or(
             cipher_suite_provider
                 .random_bytes_vec(cipher_suite_provider.kdf_extract_size())
-                .map_err(|e| GroupError::CryptoProviderError(e.into()))?,
+                .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
         );
 
         let context = GroupContext::new_group(
@@ -332,7 +332,7 @@ where
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
         config: C,
-    ) -> Result<(Self, NewMemberInfo), GroupError> {
+    ) -> Result<(Self, NewMemberInfo), MlsError> {
         Self::from_welcome_message(None, welcome, tree_data, config).await
     }
 
@@ -341,17 +341,17 @@ where
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
         config: C,
-    ) -> Result<(Self, NewMemberInfo), GroupError> {
+    ) -> Result<(Self, NewMemberInfo), MlsError> {
         let protocol_version = welcome.version;
 
         if !config.version_supported(protocol_version) {
-            return Err(GroupError::UnsupportedProtocolVersion(protocol_version));
+            return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
         }
 
         let wire_format = welcome.wire_format();
 
         let welcome = welcome.into_welcome().ok_or_else(|| {
-            GroupError::UnexpectedMessageType(vec![WireFormat::Welcome], wire_format)
+            MlsError::UnexpectedMessageType(vec![WireFormat::Welcome], wire_format)
         })?;
 
         let cipher_suite_provider =
@@ -363,7 +363,7 @@ where
         let key_package_version = key_package_generation.key_package.version;
 
         if key_package_version != protocol_version {
-            return Err(GroupError::ProtocolVersionMismatch {
+            return Err(MlsError::ProtocolVersionMismatch {
                 msg_version: protocol_version,
                 wire_format: WireFormat::KeyPackage,
                 version: key_package_version,
@@ -425,7 +425,7 @@ where
         let self_index = join_context
             .public_tree
             .find_leaf_node(&key_package_generation.key_package.leaf_node)
-            .ok_or(GroupError::WelcomeKeyPackageNotFound)?;
+            .ok_or(MlsError::WelcomeKeyPackageNotFound)?;
 
         let used_key_package_ref = key_package_generation.reference;
 
@@ -459,7 +459,7 @@ where
             &join_context.group_context.confirmed_transcript_hash,
             &cipher_suite_provider,
         )? {
-            return Err(GroupError::InvalidConfirmationTag);
+            return Err(MlsError::InvalidConfirmationTag);
         }
 
         Self::join_with(
@@ -482,7 +482,7 @@ where
         epoch_secrets: EpochSecrets,
         private_tree: TreeKemPrivate,
         used_key_package_ref: Option<KeyPackageRef>,
-    ) -> Result<(Self, NewMemberInfo), GroupError> {
+    ) -> Result<(Self, NewMemberInfo), MlsError> {
         // Use the confirmed transcript hash and confirmation tag to compute the interim transcript
         // hash in the new state.
         let interim_transcript_hash = InterimTranscriptHash::create(
@@ -533,17 +533,17 @@ where
         to_remove: Option<u32>,
         external_psks: Vec<ExternalPskId>,
         authenticated_data: Vec<u8>,
-    ) -> Result<(Self, MLSMessage), GroupError> {
+    ) -> Result<(Self, MLSMessage), MlsError> {
         let protocol_version = group_info.version;
 
         if !config.version_supported(protocol_version) {
-            return Err(GroupError::UnsupportedProtocolVersion(protocol_version));
+            return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
         }
 
         let wire_format = group_info.wire_format();
 
         let group_info = group_info.into_group_info().ok_or_else(|| {
-            GroupError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
+            MlsError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
         })?;
 
         let cipher_suite_provider = cipher_suite_provider(
@@ -554,7 +554,7 @@ where
         let external_pub_ext = group_info
             .extensions
             .get_as::<ExternalPubExt>()?
-            .ok_or(GroupError::MissingExternalPubExtension)?;
+            .ok_or(MlsError::MissingExternalPubExtension)?;
 
         let join_context = validate_group_info(
             protocol_version,
@@ -569,8 +569,8 @@ where
             .keychain()
             .signer(&signing_identity)
             .await
-            .map_err(|e| GroupError::KeychainError(e.into()))?
-            .ok_or(GroupError::SignerNotFound)?;
+            .map_err(|e| MlsError::KeychainError(e.into()))?
+            .ok_or(MlsError::SignerNotFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
             &cipher_suite_provider,
@@ -610,10 +610,10 @@ where
                 Ok(PreSharedKeyID {
                     key_id: JustPreSharedKeyID::External(psk_id),
                     psk_nonce: PskNonce::random(&cipher_suite_provider)
-                        .map_err(|e| GroupError::CryptoProviderError(e.into()))?,
+                        .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
                 })
             })
-            .collect::<Result<Vec<_>, GroupError>>()?;
+            .collect::<Result<Vec<_>, MlsError>>()?;
 
         let proposals = psk_ids
             .into_iter()
@@ -660,14 +660,14 @@ where
         self.private_tree.self_index.0
     }
 
-    fn current_user_leaf_node(&self) -> Result<&LeafNode, GroupError> {
+    fn current_user_leaf_node(&self) -> Result<&LeafNode, MlsError> {
         self.current_epoch_tree()
             .get_leaf_node(self.private_tree.self_index)
             .map_err(Into::into)
     }
 
     /// Signing identity currently in use by the local group instance.
-    pub fn current_member_signing_identity(&self) -> Result<&SigningIdentity, GroupError> {
+    pub fn current_member_signing_identity(&self) -> Result<&SigningIdentity, MlsError> {
         self.current_user_leaf_node().map(|ln| &ln.signing_identity)
     }
 
@@ -675,7 +675,7 @@ where
         &mut self,
         proposal: Proposal,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let signer = self.signer().await?;
 
         let auth_content = AuthenticatedContent::new_signed(
@@ -697,22 +697,22 @@ where
         self.format_for_wire(auth_content)
     }
 
-    pub(crate) async fn signer(&self) -> Result<SignatureSecretKey, GroupError> {
+    pub(crate) async fn signer(&self) -> Result<SignatureSecretKey, MlsError> {
         self.signer_for_identity(None).await
     }
 
     pub(crate) async fn signer_for_identity(
         &self,
         signing_identity: Option<&SigningIdentity>,
-    ) -> Result<SignatureSecretKey, GroupError> {
+    ) -> Result<SignatureSecretKey, MlsError> {
         let signing_identity = signing_identity.unwrap_or(self.current_member_signing_identity()?);
 
         self.config
             .keychain()
             .signer(signing_identity)
             .await
-            .map_err(|e| GroupError::KeychainError(e.into()))?
-            .ok_or(GroupError::SignerNotFound)
+            .map_err(|e| MlsError::KeychainError(e.into()))?
+            .ok_or(MlsError::SignerNotFound)
     }
 
     /// Unique identifier for this group.
@@ -724,7 +724,7 @@ where
     fn provisional_private_tree(
         &self,
         provisional_state: &ProvisionalState,
-    ) -> Result<TreeKemPrivate, GroupError> {
+    ) -> Result<TreeKemPrivate, MlsError> {
         // Update the private tree to create a provisional private tree
         let mut provisional_private_tree = self.private_tree.clone();
         let total_leaf_count = self.current_epoch_tree().total_leaf_count();
@@ -743,7 +743,7 @@ where
             .iter()
             .try_for_each(|(leaf_index, _)| {
                 provisional_private_tree.remove_leaf(total_leaf_count, *leaf_index)?;
-                Ok::<_, GroupError>(())
+                Ok::<_, MlsError>(())
             })?;
 
         Ok(provisional_private_tree)
@@ -757,7 +757,7 @@ where
         path_secrets: Option<&Vec<Option<PathSecret>>>,
         psks: Vec<PreSharedKeyID>,
         group_info: &GroupInfo,
-    ) -> Result<Option<MLSMessage>, GroupError> {
+    ) -> Result<Option<MLSMessage>, MlsError> {
         // Encrypt the GroupInfo using the key and nonce derived from the joiner_secret for
         // the new epoch
         let welcome_secret = WelcomeSecret::from_joiner_secret(
@@ -781,7 +781,7 @@ where
                     &encrypted_group_info,
                 )
             })
-            .collect::<Result<Vec<EncryptedGroupSecrets>, GroupError>>()?;
+            .collect::<Result<Vec<EncryptedGroupSecrets>, MlsError>>()?;
 
         Ok((!secrets.is_empty()).then_some(MLSMessage::new(
             self.context().protocol_version,
@@ -801,7 +801,7 @@ where
         new_signer: &SignatureSecretKey,
         new_key_packages: Vec<MLSMessage>,
         resumption_psk_id: JustPreSharedKeyID,
-    ) -> Result<(Self, Option<MLSMessage>), GroupError> {
+    ) -> Result<(Self, Option<MLSMessage>), MlsError> {
         let required_capabilities = new_context.extensions.get_as()?;
 
         let cipher_suite_provider =
@@ -818,12 +818,12 @@ where
 
         let mut new_key_packages = futures::stream::iter(new_key_packages)
             .then(|kp| async {
-                let kp = kp.into_key_package().ok_or(GroupError::NotKeyPackage)?;
+                let kp = kp.into_key_package().ok_or(MlsError::NotKeyPackage)?;
 
                 id_provider
                     .identity(kp.signing_identity())
                     .await
-                    .map_err(|e| GroupError::IdentityProviderError(e.into()))
+                    .map_err(|e| MlsError::IdentityProviderError(e.into()))
                     .map(|id| (id, kp))
             })
             .try_collect::<HashMap<_, _>>()
@@ -843,7 +843,7 @@ where
                 id_provider
                     .identity(&leaf_node.signing_identity)
                     .await
-                    .map_err(|e| GroupError::IdentityProviderError(e.into()))
+                    .map_err(|e| MlsError::IdentityProviderError(e.into()))
             })
             .try_filter_map(|id| ready(Ok(new_key_packages.remove(&id))))
             .try_fold(
@@ -855,7 +855,7 @@ where
                     let new_leaf = new_key_pkg.leaf_node.clone();
                     leaves.push(new_leaf);
                     new_key_pkgs.push(new_key_pkg);
-                    Ok::<_, GroupError>((leaves, new_key_pkgs))
+                    Ok::<_, MlsError>((leaves, new_key_pkgs))
                 },
             )
             .await?
@@ -883,7 +883,7 @@ where
         let psks = vec![PreSharedKeyID {
             key_id: resumption_psk_id,
             psk_nonce: PskNonce::random(&cipher_suite_provider)
-                .map_err(|e| GroupError::CryptoProviderError(e.into()))?,
+                .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
         }];
 
         let psk_input = psks
@@ -979,7 +979,7 @@ where
         &self,
         sub_group_id: Vec<u8>,
         new_key_packages: Vec<MLSMessage>,
-    ) -> Result<(Group<C>, Option<MLSMessage>), GroupError> {
+    ) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
         let signer = self.signer().await?;
 
         let current_leaf_node = self.current_user_leaf_node()?;
@@ -1032,16 +1032,16 @@ where
         &self,
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
-    ) -> Result<(Group<C>, NewMemberInfo), GroupError> {
+    ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         let (subgroup, new_member_info) =
             Self::from_welcome_message(Some(self), welcome, tree_data, self.config.clone()).await?;
 
         if subgroup.state.protocol_version() != self.state.protocol_version() {
-            Err(GroupError::SubgroupWithDifferentProtocolVersion(
+            Err(MlsError::SubgroupWithDifferentProtocolVersion(
                 subgroup.state.protocol_version(),
             ))
         } else if subgroup.state.cipher_suite() != self.state.cipher_suite() {
-            Err(GroupError::SubgroupWithDifferentCipherSuite(
+            Err(MlsError::SubgroupWithDifferentCipherSuite(
                 subgroup.state.cipher_suite(),
             ))
         } else {
@@ -1070,14 +1070,14 @@ where
         &self,
         new_key_packages: Vec<MLSMessage>,
         signing_identity: Option<SigningIdentity>,
-    ) -> Result<(Group<C>, Option<MLSMessage>), GroupError> {
+    ) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
         let config = self.config.clone();
 
         let reinit = self
             .state
             .pending_reinit
             .as_ref()
-            .ok_or(GroupError::PendingReInitNotFound)?;
+            .ok_or(MlsError::PendingReInitNotFound)?;
 
         let signing_identity =
             signing_identity.unwrap_or(self.current_member_signing_identity()?.clone());
@@ -1088,7 +1088,7 @@ where
             .config
             .crypto_provider()
             .cipher_suite_provider(reinit.cipher_suite)
-            .ok_or_else(|| GroupError::UnsupportedCipherSuite(reinit.cipher_suite))?;
+            .ok_or_else(|| MlsError::UnsupportedCipherSuite(reinit.cipher_suite))?;
 
         let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
             &new_cipher_suite,
@@ -1131,7 +1131,7 @@ where
         if group.state.public_tree.occupied_leaf_count()
             != self.state.public_tree.occupied_leaf_count()
         {
-            Err(GroupError::CommitRequired)
+            Err(MlsError::CommitRequired)
         } else {
             Ok((group, welcome))
         }
@@ -1143,33 +1143,33 @@ where
         &self,
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
-    ) -> Result<(Group<C>, NewMemberInfo), GroupError> {
+    ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
         let reinit = self
             .state
             .pending_reinit
             .as_ref()
-            .ok_or(GroupError::PendingReInitNotFound)?;
+            .ok_or(MlsError::PendingReInitNotFound)?;
 
         let (group, new_member_info) =
             Self::from_welcome_message(Some(self), welcome, tree_data, self.config.clone()).await?;
 
         if group.state.protocol_version() != reinit.version {
-            Err(GroupError::ReInitVersionMismatch(
+            Err(MlsError::ReInitVersionMismatch(
                 group.state.protocol_version(),
                 reinit.version,
             ))
         } else if group.state.cipher_suite() != reinit.cipher_suite {
-            Err(GroupError::ReInitCiphersuiteMismatch(
+            Err(MlsError::ReInitCiphersuiteMismatch(
                 group.state.cipher_suite(),
                 reinit.cipher_suite,
             ))
         } else if group.state.context.group_id != reinit.group_id {
-            Err(GroupError::ReInitIdMismatch(
+            Err(MlsError::ReInitIdMismatch(
                 group.state.context.group_id,
                 reinit.group_id.clone(),
             ))
         } else if group.state.context.extensions != reinit.extensions {
-            Err(GroupError::ReInitExtensionsMismatch(
+            Err(MlsError::ReInitExtensionsMismatch(
                 group.state.context.extensions,
                 reinit.extensions.clone(),
             ))
@@ -1186,7 +1186,7 @@ where
         path_secrets: Option<&Vec<Option<PathSecret>>>,
         psks: Vec<PreSharedKeyID>,
         encrypted_group_info: &[u8],
-    ) -> Result<EncryptedGroupSecrets, GroupError> {
+    ) -> Result<EncryptedGroupSecrets, MlsError> {
         let path_secret = path_secrets
             .map(|secrets| {
                 secrets
@@ -1197,7 +1197,7 @@ where
                     )
                     .cloned()
                     .flatten()
-                    .ok_or(GroupError::InvalidTreeKemPrivateKey)
+                    .ok_or(MlsError::InvalidTreeKemPrivateKey)
             })
             .transpose()?;
 
@@ -1227,17 +1227,17 @@ where
         &mut self,
         key_package: MLSMessage,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let proposal = self.add_proposal(key_package)?;
         self.proposal_message(proposal, authenticated_data).await
     }
 
-    fn add_proposal(&self, key_package: MLSMessage) -> Result<Proposal, GroupError> {
+    fn add_proposal(&self, key_package: MLSMessage) -> Result<Proposal, MlsError> {
         let wire_format = key_package.wire_format();
 
         Ok(Proposal::Add(AddProposal {
             key_package: key_package.into_key_package().ok_or_else(|| {
-                GroupError::UnexpectedMessageType(vec![WireFormat::KeyPackage], wire_format)
+                MlsError::UnexpectedMessageType(vec![WireFormat::KeyPackage], wire_format)
             })?,
         }))
     }
@@ -1253,7 +1253,7 @@ where
     pub async fn propose_update(
         &mut self,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let proposal = self.update_proposal(None).await?;
         self.proposal_message(proposal, authenticated_data).await
     }
@@ -1279,7 +1279,7 @@ where
         &mut self,
         signing_identity: SigningIdentity,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let proposal = self.update_proposal(Some(signing_identity)).await?;
         self.proposal_message(proposal, authenticated_data).await
     }
@@ -1287,7 +1287,7 @@ where
     async fn update_proposal(
         &mut self,
         signing_identity: Option<SigningIdentity>,
-    ) -> Result<Proposal, GroupError> {
+    ) -> Result<Proposal, MlsError> {
         // Grab a copy of the current node and update it to have new key material
         let signer = self.signer_for_identity(signing_identity.as_ref()).await?;
         let mut new_leaf_node = self.current_user_leaf_node()?.clone();
@@ -1319,12 +1319,12 @@ where
         &mut self,
         index: u32,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let proposal = self.remove_proposal(index)?;
         self.proposal_message(proposal, authenticated_data).await
     }
 
-    fn remove_proposal(&self, index: u32) -> Result<Proposal, GroupError> {
+    fn remove_proposal(&self, index: u32) -> Result<Proposal, MlsError> {
         let leaf_index = LeafIndex(index);
 
         // Verify that this leaf is actually in the tree
@@ -1349,17 +1349,17 @@ where
         &mut self,
         psk: ExternalPskId,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let proposal = self.psk_proposal(psk)?;
         self.proposal_message(proposal, authenticated_data).await
     }
 
-    fn psk_proposal(&self, psk: ExternalPskId) -> Result<Proposal, GroupError> {
+    fn psk_proposal(&self, psk: ExternalPskId) -> Result<Proposal, MlsError> {
         Ok(Proposal::Psk(PreSharedKeyProposal {
             psk: PreSharedKeyID {
                 key_id: JustPreSharedKeyID::External(psk),
                 psk_nonce: PskNonce::random(&self.cipher_suite_provider)
-                    .map_err(|e| GroupError::CryptoProviderError(e.into()))?,
+                    .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
             },
         }))
     }
@@ -1380,7 +1380,7 @@ where
         cipher_suite: CipherSuite,
         extensions: ExtensionList,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let proposal = self.reinit_proposal(group_id, version, cipher_suite, extensions)?;
         self.proposal_message(proposal, authenticated_data).await
     }
@@ -1391,11 +1391,11 @@ where
         version: ProtocolVersion,
         cipher_suite: CipherSuite,
         extensions: ExtensionList,
-    ) -> Result<Proposal, GroupError> {
+    ) -> Result<Proposal, MlsError> {
         let group_id = group_id.unwrap_or(
             self.cipher_suite_provider
                 .random_bytes_vec(self.cipher_suite_provider.kdf_extract_size())
-                .map_err(|e| GroupError::CryptoProviderError(e.into()))?,
+                .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
         );
 
         Ok(Proposal::ReInit(ReInitProposal {
@@ -1423,7 +1423,7 @@ where
         &mut self,
         extensions: ExtensionList,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let proposal = self.group_context_extensions_proposal(extensions);
         self.proposal_message(proposal, authenticated_data).await
     }
@@ -1440,7 +1440,7 @@ where
         &mut self,
         proposal: CustomProposal,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         self.proposal_message(Proposal::Custom(proposal), authenticated_data)
             .await
     }
@@ -1448,7 +1448,7 @@ where
     pub(crate) fn format_for_wire(
         &mut self,
         content: AuthenticatedContent,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let payload = if content.wire_format == WireFormat::PrivateMessage {
             MLSMessagePayload::Cipher(self.create_ciphertext(content)?)
         } else {
@@ -1461,7 +1461,7 @@ where
     fn create_plaintext(
         &self,
         auth_content: AuthenticatedContent,
-    ) -> Result<PublicMessage, GroupError> {
+    ) -> Result<PublicMessage, MlsError> {
         let membership_tag = matches!(auth_content.content.sender, Sender::Member(_))
             .then(|| {
                 self.key_schedule.get_membership_tag(
@@ -1470,7 +1470,8 @@ where
                     &self.cipher_suite_provider,
                 )
             })
-            .transpose()?;
+            .transpose()
+            .map_err(|e| MlsError::MembershipTagError(e.into()))?;
 
         Ok(PublicMessage {
             content: auth_content.content,
@@ -1482,7 +1483,7 @@ where
     fn create_ciphertext(
         &mut self,
         auth_content: AuthenticatedContent,
-    ) -> Result<PrivateMessage, GroupError> {
+    ) -> Result<PrivateMessage, MlsError> {
         let preferences = self.config.preferences();
 
         let mut encryptor = CiphertextProcessor::new(self, self.cipher_suite_provider.clone());
@@ -1500,13 +1501,13 @@ where
         &mut self,
         message: &[u8],
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let signer = self.signer().await?;
 
         // A group member that has observed one or more proposals within an epoch MUST send a Commit message
         // before sending application data
         if !self.state.proposals.is_empty() {
-            return Err(GroupError::CommitRequired);
+            return Err(MlsError::CommitRequired);
         }
 
         let auth_content = AuthenticatedContent::new_signed(
@@ -1525,7 +1526,7 @@ where
     async fn decrypt_incoming_ciphertext(
         &mut self,
         message: PrivateMessage,
-    ) -> Result<AuthenticatedContent, GroupError> {
+    ) -> Result<AuthenticatedContent, MlsError> {
         let epoch_id = message.epoch;
 
         let auth_content = if epoch_id == self.context().epoch {
@@ -1540,13 +1541,13 @@ where
                 &[],
             )?;
 
-            Ok::<_, GroupError>(content)
+            Ok::<_, MlsError>(content)
         } else {
             let epoch = self
                 .state_repo
                 .get_epoch_mut(epoch_id)
                 .await?
-                .ok_or(GroupError::EpochNotFound(epoch_id))?;
+                .ok_or(MlsError::EpochNotFound(epoch_id))?;
 
             let content = CiphertextProcessor::new(epoch, self.cipher_suite_provider.clone())
                 .open(message)?;
@@ -1567,11 +1568,11 @@ where
 
     /// Apply a pending commit that was created by [`Group::commit`] or
     /// [`CommitBuilder::build`].
-    pub async fn apply_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
+    pub async fn apply_pending_commit(&mut self) -> Result<StateUpdate, MlsError> {
         let pending_commit = self
             .pending_commit
             .clone()
-            .ok_or(GroupError::PendingCommitNotFound)?;
+            .ok_or(MlsError::PendingCommitNotFound)?;
 
         self.process_commit(pending_commit.content, None).await
     }
@@ -1596,7 +1597,7 @@ where
     pub async fn process_incoming_message(
         &mut self,
         message: MLSMessage,
-    ) -> Result<ProcessedMessage<Event>, GroupError> {
+    ) -> Result<ProcessedMessage<Event>, MlsError> {
         MessageProcessor::process_incoming_message(self, message, true).await
     }
 
@@ -1620,7 +1621,7 @@ where
         &mut self,
         message: MLSMessage,
         time: MlsTime,
-    ) -> Result<ProcessedMessage<Event>, GroupError> {
+    ) -> Result<ProcessedMessage<Event>, MlsError> {
         MessageProcessor::process_incoming_message_with_time(self, message, true, Some(time)).await
     }
 
@@ -1630,12 +1631,12 @@ where
     /// This function determines identity by calling the
     /// [`IdentityProvider`](crate::IdentityProvider)
     /// currently in use by the group.
-    pub fn get_member_with_identity(&self, identity: &[u8]) -> Result<Member, GroupError> {
+    pub fn get_member_with_identity(&self, identity: &[u8]) -> Result<Member, MlsError> {
         let index = self
             .state
             .public_tree
             .get_leaf_node_with_identity(identity)
-            .ok_or(GroupError::MemberNotFound)?;
+            .ok_or(MlsError::MemberNotFound)?;
 
         let node = self.state.public_tree.get_leaf_node(index)?;
 
@@ -1648,7 +1649,7 @@ where
     pub async fn group_info_message(
         &self,
         allow_external_commit: bool,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let signer = self.signer().await?;
 
         let mut extensions = ExtensionList::new();
@@ -1695,7 +1696,7 @@ where
     /// Get the
     /// [epoch_authenticator](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-key-schedule)
     /// of the current epoch.
-    pub fn epoch_authenticator(&self) -> Result<Vec<u8>, GroupError> {
+    pub fn epoch_authenticator(&self) -> Result<Vec<u8>, MlsError> {
         Ok(self.key_schedule.authentication_secret.clone())
     }
 
@@ -1704,7 +1705,7 @@ where
         label: &str,
         context: &[u8],
         len: usize,
-    ) -> Result<Vec<u8>, GroupError> {
+    ) -> Result<Vec<u8>, MlsError> {
         Ok(self
             .key_schedule
             .export_secret(label, context, len, &self.cipher_suite_provider)?)
@@ -1716,7 +1717,7 @@ where
     /// when the
     /// [ratchet_tree_extension preference](crate::client_builder::Preferences::ratchet_tree_extension)
     /// is not in use.
-    pub fn export_tree(&self) -> Result<Vec<u8>, GroupError> {
+    pub fn export_tree(&self) -> Result<Vec<u8>, MlsError> {
         self.current_epoch_tree()
             .export_node_data()
             .tls_serialize_detached()
@@ -1790,7 +1791,7 @@ where
     async fn process_ciphertext(
         &mut self,
         cipher_text: PrivateMessage,
-    ) -> Result<EventOrContent<Self::EventType>, GroupError> {
+    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
         self.decrypt_incoming_ciphertext(cipher_text)
             .await
             .map(EventOrContent::Content)
@@ -1799,7 +1800,7 @@ where
     fn verify_plaintext_authentication(
         &self,
         message: PublicMessage,
-    ) -> Result<EventOrContent<Self::EventType>, GroupError> {
+    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
         let auth_content = verify_plaintext_authentication(
             &self.cipher_suite_provider,
             message,
@@ -1816,7 +1817,7 @@ where
         sender: LeafIndex,
         update_path: ValidatedUpdatePath,
         provisional_state: &mut ProvisionalState,
-    ) -> Result<Option<(TreeKemPrivate, PathSecret)>, GroupError> {
+    ) -> Result<Option<(TreeKemPrivate, PathSecret)>, MlsError> {
         // Update the private tree to create a provisional private tree
         let mut provisional_private_tree = self.provisional_private_tree(provisional_state)?;
 
@@ -1866,7 +1867,7 @@ where
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: ConfirmationTag,
         provisional_state: ProvisionalState,
-    ) -> Result<(), GroupError> {
+    ) -> Result<(), MlsError> {
         let commit_secret = CommitSecret::from_root_secret(
             &self.cipher_suite_provider,
             secrets.as_ref().map(|(_, root_secret)| root_secret),
@@ -1913,7 +1914,7 @@ where
         )?;
 
         if new_confirmation_tag != confirmation_tag {
-            return Err(GroupError::InvalidConfirmationTag);
+            return Err(MlsError::InvalidConfirmationTag);
         }
 
         let signature_public_keys = self
@@ -2104,7 +2105,7 @@ mod tests {
             .encrypt_application_message(b"test", vec![])
             .await;
 
-        assert_matches!(res, Err(GroupError::CommitRequired));
+        assert_matches!(res, Err(MlsError::CommitRequired));
 
         // We should be able to send application messages after a commit
         test_group.group.commit(vec![]).await.unwrap();
@@ -2302,7 +2303,7 @@ mod tests {
         .await
         .map(|_| ());
 
-        assert_matches!(bob_group, Err(GroupError::RatchetTreeNotFound));
+        assert_matches!(bob_group, Err(MlsError::RatchetTreeNotFound));
     }
 
     #[futures_test::test]
@@ -2327,7 +2328,7 @@ mod tests {
 
     async fn group_context_extension_proposal_test(
         ext_list: ExtensionList,
-    ) -> (TestGroup, Result<MLSMessage, GroupError>) {
+    ) -> (TestGroup, Result<MLSMessage, MlsError>) {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
 
@@ -2389,7 +2390,7 @@ mod tests {
 
         assert_matches!(
             commit,
-            Err(GroupError::ProposalCacheError(
+            Err(MlsError::ProposalCacheError(
                 ProposalCacheError::ProposalFilterError(
                     ProposalFilterError::LeafNodeValidationError(
                         LeafNodeValidationError::RequiredExtensionNotFound(a)
@@ -2471,7 +2472,7 @@ mod tests {
         .await
         .map(|_| ());
 
-        assert_matches!(res, Err(GroupError::MissingExternalPubExtension));
+        assert_matches!(res, Err(MlsError::MissingExternalPubExtension));
     }
 
     #[futures_test::test]
@@ -2571,7 +2572,7 @@ mod tests {
 
         assert_matches!(
             bob.group.process_incoming_message(message).await,
-            Err(GroupError::UnencryptedApplicationMessage)
+            Err(MlsError::UnencryptedApplicationMessage)
         );
     }
 
@@ -2771,7 +2772,7 @@ mod tests {
             bob_group
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(GroupError::MembershipTagForNonMember)
+            Err(MlsError::MembershipTagForNonMember)
         );
     }
 
@@ -2877,7 +2878,7 @@ mod tests {
 
     async fn joining_group_fails_if_unsupported<F>(
         f: F,
-    ) -> Result<(TestGroup, MLSMessage), GroupError>
+    ) -> Result<(TestGroup, MLSMessage), MlsError>
     where
         F: FnMut(&mut TestClientConfig),
     {
@@ -2895,7 +2896,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(GroupError::UnsupportedProtocolVersion(v)) if v ==
+            Err(MlsError::UnsupportedProtocolVersion(v)) if v ==
                 TEST_PROTOCOL_VERSION
         );
     }
@@ -2914,7 +2915,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(GroupError::UnsupportedCipherSuite(TEST_CIPHER_SUITE))
+            Err(MlsError::UnsupportedCipherSuite(TEST_CIPHER_SUITE))
         );
     }
 
@@ -2978,12 +2979,7 @@ mod tests {
 
         let res = bob_group.group.process_incoming_message(message).await;
 
-        assert_matches!(
-            res,
-            Err(GroupError::CiphertextProcessorError(
-                CiphertextProcessorError::SecretTreeError(SecretTreeError::KeyMissing(_))
-            ))
-        );
+        assert_matches!(res, Err(MlsError::CiphertextProcessorError(_)));
     }
 
     #[futures_test::test]
@@ -3087,7 +3083,7 @@ mod tests {
             groups[2]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(GroupError::UpdatePathValidationError(
+            Err(MlsError::UpdatePathValidationError(
                 UpdatePathValidationError::LeafNodeValidationError(
                     LeafNodeValidationError::InvalidLeafNodeSource
                 )
@@ -3121,7 +3117,7 @@ mod tests {
             groups[2]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(GroupError::UpdatePathValidationError(
+            Err(MlsError::UpdatePathValidationError(
                 UpdatePathValidationError::SameHpkeKey(LeafIndex(0))
             ))
         );
@@ -3161,7 +3157,7 @@ mod tests {
             groups[7]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(GroupError::RatchetTreeError(
+            Err(MlsError::RatchetTreeError(
                 RatchetTreeError::TreeIndexError(TreeIndexError::DuplicateHpkeKey(_))
             ))
         );
@@ -3205,7 +3201,7 @@ mod tests {
             groups[7]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(GroupError::RatchetTreeError(
+            Err(MlsError::RatchetTreeError(
                 RatchetTreeError::TreeIndexError(TreeIndexError::DuplicateSignatureKeys(_))
             ))
         );
@@ -3225,7 +3221,7 @@ mod tests {
             groups[2]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(GroupError::UpdatePathValidationError(
+            Err(MlsError::UpdatePathValidationError(
                 UpdatePathValidationError::LeafNodeValidationError(
                     LeafNodeValidationError::SignatureError(_)
                 )
@@ -3357,7 +3353,7 @@ mod tests {
             groups[2]
                 .process_incoming_message(commit_output.commit_message)
                 .await,
-            Err(GroupError::RatchetTreeError(
+            Err(MlsError::RatchetTreeError(
                 RatchetTreeError::TreeIndexError(
                     TreeIndexError::CredentialTypeOfNewLeafIsUnsupported(_)
                 )
@@ -3384,7 +3380,7 @@ mod tests {
             groups[2]
                 .process_incoming_message(commit_output.commit_message)
                 .await,
-            Err(GroupError::RatchetTreeError(
+            Err(MlsError::RatchetTreeError(
                 RatchetTreeError::TreeIndexError(
                     TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(..)
                 )
@@ -3418,7 +3414,7 @@ mod tests {
             groups[2]
                 .process_incoming_message(commit_output.commit_message)
                 .await,
-            Err(GroupError::UpdatePathValidationError(
+            Err(MlsError::UpdatePathValidationError(
                 UpdatePathValidationError::LeafNodeValidationError(
                     LeafNodeValidationError::RequiredCredentialNotFound(_)
                 )
@@ -3526,7 +3522,7 @@ mod tests {
             groups[7]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(GroupError::UpdatePathValidationError(_))
+            Err(MlsError::UpdatePathValidationError(_))
         );
     }
 
@@ -3653,7 +3649,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(GroupError::ProposalCacheError(
+            Err(MlsError::ProposalCacheError(
                 ProposalCacheError::ProposalFilterError(
                     ProposalFilterError::KeyPackageValidationError(
                         KeyPackageValidationError::LeafNodeValidationError(

@@ -1,6 +1,6 @@
 use super::proposal::Proposal;
 use super::*;
-use crate::protocol_version::ProtocolVersion;
+use crate::{client::MlsError, protocol_version::ProtocolVersion};
 use std::io::{Read, Write};
 use tls_codec::{Deserialize, Serialize, Size};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
@@ -78,7 +78,7 @@ impl From<Vec<u8>> for ApplicationData {
 }
 
 impl TryFrom<ApplicationData> for Event {
-    type Error = GroupError;
+    type Error = MlsError;
 
     fn try_from(data: ApplicationData) -> Result<Self, Self::Error> {
         Ok(Event::ApplicationMessage(data.0.clone()))

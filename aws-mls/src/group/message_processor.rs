@@ -13,9 +13,10 @@ use super::{
     proposal_filter::ProposalFilter,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
-    transcript_hashes, GroupContext, GroupError, ProposalRef,
+    transcript_hashes, GroupContext, ProposalRef,
 };
 use crate::{
+    client::MlsError,
     client_config::ProposalFilterInit,
     key_package::KeyPackage,
     psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
@@ -166,7 +167,7 @@ pub(crate) enum EventOrContent<E> {
 #[async_trait]
 pub(crate) trait MessageProcessor: Send + Sync {
     type EventType: From<(Proposal, ProposalRef)>
-        + TryFrom<ApplicationData, Error = GroupError>
+        + TryFrom<ApplicationData, Error = MlsError>
         + From<StateUpdate>
         + Send;
 
@@ -179,7 +180,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         &mut self,
         message: MLSMessage,
         cache_proposal: bool,
-    ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
+    ) -> Result<ProcessedMessage<Self::EventType>, MlsError> {
         self.process_incoming_message_with_time(message, cache_proposal, None)
             .await
     }
@@ -189,7 +190,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         message: MLSMessage,
         cache_proposal: bool,
         time_sent: Option<MlsTime>,
-    ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
+    ) -> Result<ProcessedMessage<Self::EventType>, MlsError> {
         let event_or_content = self.get_event_from_incoming_message(message).await?;
 
         self.process_event_or_content(event_or_content, cache_proposal, time_sent)
@@ -199,7 +200,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     async fn get_event_from_incoming_message(
         &mut self,
         message: MLSMessage,
-    ) -> Result<EventOrContent<Self::EventType>, GroupError> {
+    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
         self.check_metadata(&message)?;
 
         let wire_format = message.wire_format();
@@ -207,7 +208,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         match message.payload {
             MLSMessagePayload::Plain(plaintext) => self.verify_plaintext_authentication(plaintext),
             MLSMessagePayload::Cipher(cipher_text) => self.process_ciphertext(cipher_text).await,
-            _ => Err(GroupError::UnexpectedMessageType(
+            _ => Err(MlsError::UnexpectedMessageType(
                 vec![WireFormat::PublicMessage, WireFormat::PrivateMessage],
                 wire_format,
             )),
@@ -219,7 +220,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         event_or_content: EventOrContent<Self::EventType>,
         cache_proposal: bool,
         time_sent: Option<MlsTime>,
-    ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
+    ) -> Result<ProcessedMessage<Self::EventType>, MlsError> {
         let msg = match event_or_content {
             EventOrContent::Event(event) => ProcessedMessage::from(event),
             EventOrContent::Content(content) => {
@@ -236,7 +237,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         auth_content: AuthenticatedContent,
         cache_proposal: bool,
         time_sent: Option<MlsTime>,
-    ) -> Result<ProcessedMessage<Self::EventType>, GroupError> {
+    ) -> Result<ProcessedMessage<Self::EventType>, MlsError> {
         let authenticated_data = auth_content.content.authenticated_data.clone();
 
         let sender = Some(auth_content.content.sender.clone());
@@ -264,7 +265,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         auth_content: &AuthenticatedContent,
         proposal: &Proposal,
         cache_proposal: bool,
-    ) -> Result<ProposalRef, GroupError> {
+    ) -> Result<ProposalRef, MlsError> {
         let proposal_ref = ProposalRef::from_content(self.cipher_suite_provider(), auth_content)?;
 
         let group_state = self.group_state_mut();
@@ -285,7 +286,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         provisional: &ProvisionalState,
         path: Option<&UpdatePath>,
         sender: LeafIndex,
-    ) -> Result<StateUpdate, GroupError> {
+    ) -> Result<StateUpdate, MlsError> {
         let mut added = provisional
             .added_leaves
             .iter()
@@ -343,7 +344,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             .identity_provider()
             .identity_warnings(&roster_update)
             .await
-            .map_err(|e| GroupError::IdentityProviderError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
 
         let update = StateUpdate {
             roster_update,
@@ -367,10 +368,10 @@ pub(crate) trait MessageProcessor: Send + Sync {
         &mut self,
         auth_content: AuthenticatedContent,
         time_sent: Option<MlsTime>,
-    ) -> Result<StateUpdate, GroupError> {
+    ) -> Result<StateUpdate, MlsError> {
         let commit = match auth_content.content.content {
             Content::Commit(ref commit) => Ok(commit),
-            _ => Err(GroupError::NotCommitContent(
+            _ => Err(MlsError::NotCommitContent(
                 auth_content.content.content_type(),
             )),
         }?;
@@ -404,7 +405,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         //Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
         if provisional_state.path_update_required && commit.path.is_none() {
-            return Err(GroupError::CommitMissingPath);
+            return Err(MlsError::CommitMissingPath);
         }
 
         if !self.can_continue_processing(&provisional_state) {
@@ -476,7 +477,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
             Ok(state_update)
         } else {
-            Err(GroupError::InvalidConfirmationTag)
+            Err(MlsError::InvalidConfirmationTag)
         }
     }
 
@@ -490,11 +491,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
     fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool;
     fn min_epoch_available(&self) -> Option<u64>;
 
-    fn check_metadata(&self, message: &MLSMessage) -> Result<(), GroupError> {
+    fn check_metadata(&self, message: &MLSMessage) -> Result<(), MlsError> {
         let context = &self.group_state().context;
 
         if message.version != context.protocol_version {
-            return Err(GroupError::InvalidProtocolVersion(
+            return Err(MlsError::InvalidProtocolVersion(
                 context.protocol_version,
                 message.version,
             ));
@@ -516,13 +517,13 @@ pub(crate) trait MessageProcessor: Send + Sync {
             _ => None,
         } {
             if group_id != &context.group_id {
-                return Err(GroupError::InvalidGroupId(group_id.clone()));
+                return Err(MlsError::InvalidGroupId(group_id.clone()));
             }
 
             match content_type {
                 ContentType::Proposal | ContentType::Commit => {
                     if context.epoch != epoch {
-                        Err(GroupError::InvalidEpoch(epoch))
+                        Err(MlsError::InvalidEpoch(epoch))
                     } else {
                         Ok(())
                     }
@@ -530,7 +531,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 ContentType::Application => {
                     if let Some(min) = self.min_epoch_available() {
                         if epoch < min {
-                            Err(GroupError::InvalidEpoch(epoch))
+                            Err(MlsError::InvalidEpoch(epoch))
                         } else {
                             Ok(())
                         }
@@ -544,13 +545,13 @@ pub(crate) trait MessageProcessor: Send + Sync {
             if (content_type == ContentType::Proposal || content_type == ContentType::Commit)
                 && epoch != context.epoch
             {
-                return Err(GroupError::InvalidEpoch(epoch));
+                return Err(MlsError::InvalidEpoch(epoch));
             }
 
             // Unencrypted application messages are not allowed
             if wire_format == WireFormat::PublicMessage && content_type == ContentType::Application
             {
-                return Err(GroupError::UnencryptedApplicationMessage);
+                return Err(MlsError::UnencryptedApplicationMessage);
             }
         }
 
@@ -560,21 +561,21 @@ pub(crate) trait MessageProcessor: Send + Sync {
     async fn process_ciphertext(
         &mut self,
         cipher_text: PrivateMessage,
-    ) -> Result<EventOrContent<Self::EventType>, GroupError>;
+    ) -> Result<EventOrContent<Self::EventType>, MlsError>;
 
     fn verify_plaintext_authentication(
         &self,
         message: PublicMessage,
-    ) -> Result<EventOrContent<Self::EventType>, GroupError>;
+    ) -> Result<EventOrContent<Self::EventType>, MlsError>;
 
     fn calculate_provisional_state(
         &self,
         proposals: ProposalSetEffects,
-    ) -> Result<ProvisionalState, GroupError> {
+    ) -> Result<ProvisionalState, MlsError> {
         let group_state = self.group_state();
 
         if group_state.pending_reinit.is_some() {
-            return Err(GroupError::GroupUsedAfterReInit);
+            return Err(MlsError::GroupUsedAfterReInit);
         }
 
         let mut provisional_group_context = group_state.context.clone();
@@ -613,7 +614,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         sender: LeafIndex,
         update_path: ValidatedUpdatePath,
         provisional_state: &mut ProvisionalState,
-    ) -> Result<Option<(TreeKemPrivate, PathSecret)>, GroupError> {
+    ) -> Result<Option<(TreeKemPrivate, PathSecret)>, MlsError> {
         provisional_state
             .public_tree
             .apply_update_path(
@@ -633,5 +634,5 @@ pub(crate) trait MessageProcessor: Send + Sync {
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: ConfirmationTag,
         provisional_public_state: ProvisionalState,
-    ) -> Result<(), GroupError>;
+    ) -> Result<(), MlsError>;
 }

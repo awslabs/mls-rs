@@ -4,6 +4,7 @@ use tls_codec::Deserialize;
 
 use crate::{
     cipher_suite::CipherSuite,
+    client::MlsError,
     extension::{ExternalSendersExt, RatchetTreeExt},
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
@@ -26,7 +27,7 @@ use super::{
     proposal_cache::{ProposalCache, ProposalSetEffects},
     proposal_filter::ProposalFilter,
     transcript_hash::InterimTranscriptHash,
-    Commit, ConfirmedTranscriptHash, EncryptedGroupSecrets, GroupContext, GroupError, GroupInfo,
+    Commit, ConfirmedTranscriptHash, EncryptedGroupSecrets, GroupContext, GroupInfo,
     ProposalCacheError,
 };
 
@@ -46,7 +47,7 @@ pub(crate) async fn process_group_info<I, C>(
     tree_data: Option<&[u8]>,
     identity_provider: &I,
     cipher_suite_provider: &C,
-) -> Result<JoinContext, GroupError>
+) -> Result<JoinContext, MlsError>
 where
     I: IdentityProvider,
     C: CipherSuiteProvider,
@@ -54,7 +55,7 @@ where
     let group_protocol_version = group_info.group_context.protocol_version;
 
     if msg_protocol_version != group_protocol_version {
-        return Err(GroupError::ProtocolVersionMismatch {
+        return Err(MlsError::ProtocolVersionMismatch {
             msg_version: msg_protocol_version,
             wire_format: WireFormat::GroupInfo,
             version: group_protocol_version,
@@ -64,7 +65,7 @@ where
     let cipher_suite = cipher_suite_provider.cipher_suite();
 
     if group_info.group_context.cipher_suite != cipher_suite {
-        return Err(GroupError::CipherSuiteMismatch);
+        return Err(MlsError::CipherSuiteMismatch);
     }
 
     let ratchet_tree_ext = group_info.extensions.get_as::<RatchetTreeExt>()?;
@@ -107,7 +108,7 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
     tree_data: Option<&[u8]>,
     identity_provider: &I,
     cipher_suite_provider: &C,
-) -> Result<JoinContext, GroupError> {
+) -> Result<JoinContext, MlsError> {
     let mut join_context = process_group_info(
         msg_protocol_version,
         group_info,
@@ -141,7 +142,7 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
         ext_senders
             .verify_all(&identity_provider, None)
             .await
-            .map_err(|e| GroupError::IdentityProviderError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
     }
 
     Ok(join_context)
@@ -151,7 +152,7 @@ pub(crate) async fn find_tree<C>(
     tree_data: Option<&[u8]>,
     extension: Option<RatchetTreeExt>,
     identity_provider: &C,
-) -> Result<TreeKemPublic, GroupError>
+) -> Result<TreeKemPublic, MlsError>
 where
     C: IdentityProvider,
 {
@@ -162,7 +163,7 @@ where
         )
         .await?),
         None => {
-            let tree_extension = extension.ok_or(GroupError::RatchetTreeNotFound)?;
+            let tree_extension = extension.ok_or(MlsError::RatchetTreeNotFound)?;
 
             Ok(
                 TreeKemPublic::import_node_data(tree_extension.tree_data, identity_provider)
@@ -175,16 +176,16 @@ where
 pub(crate) fn commit_sender(
     sender: &Sender,
     provisional_state: &ProvisionalState,
-) -> Result<LeafIndex, GroupError> {
+) -> Result<LeafIndex, MlsError> {
     match sender {
         Sender::Member(index) => Ok(LeafIndex(*index)),
-        Sender::External(_) => Err(GroupError::ExternalSenderCannotCommit),
-        Sender::NewMemberProposal => Err(GroupError::ExpectedAddProposalForNewMemberProposal),
+        Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
+        Sender::NewMemberProposal => Err(MlsError::ExpectedAddProposalForNewMemberProposal),
         Sender::NewMemberCommit => provisional_state
             .external_init
             .as_ref()
             .map(|(index, _)| *index)
-            .ok_or(GroupError::ExternalCommitMissingExternalInit),
+            .ok_or(MlsError::ExternalCommitMissingExternalInit),
     }
 }
 
@@ -229,7 +230,7 @@ pub(super) fn transcript_hashes<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     prev_interim_transcript_hash: &InterimTranscriptHash,
     content: &AuthenticatedContent,
-) -> Result<(InterimTranscriptHash, ConfirmedTranscriptHash), GroupError> {
+) -> Result<(InterimTranscriptHash, ConfirmedTranscriptHash), MlsError> {
     let confirmed_transcript_hash = ConfirmedTranscriptHash::create(
         cipher_suite_provider,
         prev_interim_transcript_hash,
@@ -240,7 +241,7 @@ pub(super) fn transcript_hashes<P: CipherSuiteProvider>(
         .auth
         .confirmation_tag
         .as_ref()
-        .ok_or(GroupError::InvalidConfirmationTag)?;
+        .ok_or(MlsError::InvalidConfirmationTag)?;
 
     let interim_transcript_hash = InterimTranscriptHash::create(
         cipher_suite_provider,
@@ -254,21 +255,21 @@ pub(super) fn transcript_hashes<P: CipherSuiteProvider>(
 pub(crate) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
     key_package_repo: &K,
     secrets: &'a [EncryptedGroupSecrets],
-) -> Result<(&'a EncryptedGroupSecrets, KeyPackageGeneration), GroupError> {
+) -> Result<(&'a EncryptedGroupSecrets, KeyPackageGeneration), MlsError> {
     futures::stream::iter(secrets.iter())
         .filter_map(|secrets| {
             Box::pin(async move {
                 key_package_repo
                     .get(&secrets.new_member)
                     .await
-                    .map_err(|e| GroupError::KeyPackageRepositoryError(e.into()))
+                    .map_err(|e| MlsError::KeyPackageRepoError(e.into()))
                     .and_then(|maybe_data| {
                         if let Some(data) = maybe_data {
                             KeyPackageGeneration::from_storage(secrets.new_member.to_vec(), data)
                                 .map(|kpg| Some((secrets, kpg)))
-                                .map_err(GroupError::from)
+                                .map_err(MlsError::from)
                         } else {
-                            Ok::<_, GroupError>(None)
+                            Ok::<_, MlsError>(None)
                         }
                     })
                     .transpose()
@@ -277,17 +278,17 @@ pub(crate) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
         .next()
         .await
         .transpose()?
-        .ok_or(GroupError::KeyPackageNotFound)
+        .ok_or(MlsError::KeyPackageNotFound)
 }
 
 pub(crate) fn cipher_suite_provider<P>(
     crypto: P,
     cipher_suite: CipherSuite,
-) -> Result<P::CipherSuiteProvider, GroupError>
+) -> Result<P::CipherSuiteProvider, MlsError>
 where
     P: CryptoProvider,
 {
     crypto
         .cipher_suite_provider(cipher_suite)
-        .ok_or(GroupError::UnsupportedCipherSuite(cipher_suite))
+        .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite))
 }

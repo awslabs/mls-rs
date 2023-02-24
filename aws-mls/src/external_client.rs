@@ -1,6 +1,6 @@
 use crate::{
     cipher_suite::CipherSuite,
-    client::ClientError,
+    client::MlsError,
     group::framing::{MLSMessage, MLSMessagePayload},
     key_package::{KeyPackageValidationOptions, KeyPackageValidationOutput, KeyPackageValidator},
     protocol_version::ProtocolVersion,
@@ -64,7 +64,7 @@ where
         &self,
         group_info: MLSMessage,
         tree_data: Option<&[u8]>,
-    ) -> Result<ExternalGroup<C>, ClientError> {
+    ) -> Result<ExternalGroup<C>, MlsError> {
         ExternalGroup::join(self.config.clone(), group_info, tree_data)
             .await
             .map_err(Into::into)
@@ -76,7 +76,7 @@ where
     pub async fn load_group(
         &self,
         snapshot: ExternalSnapshot,
-    ) -> Result<ExternalGroup<C>, ClientError> {
+    ) -> Result<ExternalGroup<C>, MlsError> {
         ExternalGroup::from_snapshot(self.config.clone(), snapshot)
             .await
             .map_err(Into::into)
@@ -88,17 +88,17 @@ where
         package: &MLSMessage,
         protocol: ProtocolVersion,
         cipher_suite: CipherSuite,
-    ) -> Result<KeyPackageValidationOutput, ClientError> {
+    ) -> Result<KeyPackageValidationOutput, MlsError> {
         let package = match package.payload {
             MLSMessagePayload::KeyPackage(ref key_package) => Ok(key_package),
-            _ => Err(ClientError::ExpectedKeyPackageMessage),
+            _ => Err(MlsError::ExpectedKeyPackageMessage),
         }?;
 
         let cipher_suite_provider = self
             .config
             .crypto_provider()
             .cipher_suite_provider(cipher_suite)
-            .ok_or_else(|| ClientError::UnsupportedCipherSuite(cipher_suite))?;
+            .ok_or_else(|| MlsError::UnsupportedCipherSuite(cipher_suite))?;
 
         let keypackage_validator = KeyPackageValidator::new(
             protocol,

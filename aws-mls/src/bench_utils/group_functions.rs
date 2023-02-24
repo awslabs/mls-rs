@@ -5,9 +5,12 @@ use aws_mls_crypto_openssl::OpensslCryptoProvider;
 
 use crate::{
     cipher_suite::CipherSuite,
-    client::test_utils::{
-        get_basic_client_builder, join_group, test_client_with_key_pkg, TEST_CIPHER_SUITE,
-        TEST_PROTOCOL_VERSION,
+    client::{
+        test_utils::{
+            get_basic_client_builder, join_group, test_client_with_key_pkg, TEST_CIPHER_SUITE,
+            TEST_PROTOCOL_VERSION,
+        },
+        MlsError,
     },
     client_builder::{
         test_utils::TestClientBuilder, BaseConfig, Preferences, WithCryptoProvider,
@@ -20,7 +23,7 @@ use crate::{
         message_processor::MessageProcessor,
         message_signature::AuthenticatedContent,
         snapshot::Snapshot,
-        Commit, Group, GroupError,
+        Commit, Group,
     },
     identity::{test_utils::BasicWithCustomProvider, SigningIdentity},
     storage_provider::in_memory::{
@@ -233,7 +236,7 @@ pub async fn create_fuzz_commit_message<C>(
     epoch: u64,
     authenticated_data: Vec<u8>,
     group: &mut Group<C>,
-) -> Result<MLSMessage, GroupError>
+) -> Result<MLSMessage, MlsError>
 where
     C: ClientConfig + Clone,
 {

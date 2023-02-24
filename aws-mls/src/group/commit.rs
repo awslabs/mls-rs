@@ -2,6 +2,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
     cipher_suite::CipherSuite,
+    client::MlsError,
     client_config::{ClientConfig, ProposalFilterInit},
     extension::RatchetTreeExt,
     identity::SigningIdentity,
@@ -23,7 +24,7 @@ use super::{
     message_processor::MessageProcessor,
     message_signature::AuthenticatedContent,
     proposal::{CustomProposal, Proposal, ProposalOrRef},
-    ConfirmedTranscriptHash, ControlEncryptionMode, Group, GroupError, GroupInfo,
+    ConfirmedTranscriptHash, ControlEncryptionMode, Group, GroupInfo,
 };
 
 #[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
@@ -95,10 +96,7 @@ where
 {
     /// Insert an [`AddProposal`](crate::group::proposal::AddProposal) into
     /// the current commit that is being built.
-    pub fn add_member(
-        mut self,
-        key_package: MLSMessage,
-    ) -> Result<CommitBuilder<'a, C>, GroupError> {
+    pub fn add_member(mut self, key_package: MLSMessage) -> Result<CommitBuilder<'a, C>, MlsError> {
         let proposal = self.group.add_proposal(key_package)?;
         self.proposals.push(proposal);
         Ok(self)
@@ -123,7 +121,7 @@ where
 
     /// Insert a [`RemoveProposal`](crate::group::proposal::RemoveProposal) into
     /// the current commit that is being built.
-    pub fn remove_member(mut self, index: u32) -> Result<Self, GroupError> {
+    pub fn remove_member(mut self, index: u32) -> Result<Self, MlsError> {
         let proposal = self.group.remove_proposal(index)?;
         self.proposals.push(proposal);
         Ok(self)
@@ -132,7 +130,7 @@ where
     /// Insert a
     /// [`GroupContextExtensions`](crate::group::proposal::Proposal::GroupContextExtensions)
     /// into the current commit that is being built.
-    pub fn set_group_context_ext(mut self, extensions: ExtensionList) -> Result<Self, GroupError> {
+    pub fn set_group_context_ext(mut self, extensions: ExtensionList) -> Result<Self, MlsError> {
         let proposal = self.group.group_context_extensions_proposal(extensions);
         self.proposals.push(proposal);
         Ok(self)
@@ -141,7 +139,7 @@ where
     /// Insert a
     /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) into
     /// the current commit that is being built.
-    pub fn add_psk(mut self, psk_id: ExternalPskId) -> Result<Self, GroupError> {
+    pub fn add_psk(mut self, psk_id: ExternalPskId) -> Result<Self, MlsError> {
         let proposal = self.group.psk_proposal(psk_id)?;
         self.proposals.push(proposal);
         Ok(self)
@@ -155,7 +153,7 @@ where
         version: ProtocolVersion,
         cipher_suite: CipherSuite,
         extensions: ExtensionList,
-    ) -> Result<Self, GroupError> {
+    ) -> Result<Self, MlsError> {
         let proposal = self
             .group
             .reinit_proposal(group_id, version, cipher_suite, extensions)?;
@@ -221,7 +219,7 @@ where
     /// are not contextually valid according to the rules defined by the
     /// MLS RFC, or if they do not pass the custom rules defined by the current
     /// [proposal filter](crate::client_builder::ClientBuilder::proposal_filter).
-    pub async fn build(self) -> Result<CommitOutput, GroupError> {
+    pub async fn build(self) -> Result<CommitOutput, MlsError> {
         self.group
             .commit_proposals(
                 self.proposals,
@@ -244,7 +242,7 @@ where
         authenticated_data: Vec<u8>,
         group_info_extensions: ExtensionList,
         signing_identity: Option<SigningIdentity>,
-    ) -> Result<CommitOutput, GroupError> {
+    ) -> Result<CommitOutput, MlsError> {
         self.commit_internal(
             proposals,
             None,
@@ -295,10 +293,7 @@ where
     /// [`Add`](crate::group::proposal::Proposal::Add),
     /// [`Psk`](crate::group::proposal::Proposal::Psk),
     /// or [`ReInit`](crate::group::proposal::Proposal::ReInit) are part of the commit.
-    pub async fn commit(
-        &mut self,
-        authenticated_data: Vec<u8>,
-    ) -> Result<CommitOutput, GroupError> {
+    pub async fn commit(&mut self, authenticated_data: Vec<u8>) -> Result<CommitOutput, MlsError> {
         self.commit_internal(vec![], None, authenticated_data, Default::default(), None)
             .await
     }
@@ -324,9 +319,9 @@ where
         authenticated_data: Vec<u8>,
         group_info_extensions: ExtensionList,
         signing_identity: Option<SigningIdentity>,
-    ) -> Result<CommitOutput, GroupError> {
+    ) -> Result<CommitOutput, MlsError> {
         if self.pending_commit.is_some() {
-            return Err(GroupError::ExistingPendingCommit);
+            return Err(MlsError::ExistingPendingCommit);
         }
 
         let preferences = self.config.preferences();
@@ -387,7 +382,7 @@ where
         if is_external {
             provisional_private_tree.self_index = provisional_state
                 .external_init
-                .ok_or(GroupError::ExternalCommitMissingExternalInit)?
+                .ok_or(MlsError::ExternalCommitMissingExternalInit)?
                 .0;
 
             self.private_tree.self_index = provisional_private_tree.self_index;

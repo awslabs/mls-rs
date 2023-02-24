@@ -1,9 +1,10 @@
 use crate::{
+    client::MlsError,
     client_config::ClientConfig,
     crypto::{HpkePublicKey, HpkeSecretKey},
     group::{
         key_schedule::KeySchedule, CachedProposal, CommitGeneration, ConfirmationTag, Group,
-        GroupContext, GroupError, GroupState, InterimTranscriptHash, ProposalCache, ProposalRef,
+        GroupContext, GroupState, InterimTranscriptHash, ProposalCache, ProposalRef,
         ReInitProposal, TreeKemPublic,
     },
     serde_utils::vec_u8_as_base64::VecAsBase64,
@@ -65,7 +66,7 @@ impl RawGroupState {
         }
     }
 
-    pub(crate) async fn import<C>(self, identity_provider: &C) -> Result<GroupState, GroupError>
+    pub(crate) async fn import<C>(self, identity_provider: &C) -> Result<GroupState, MlsError>
     where
         C: IdentityProvider,
     {
@@ -98,7 +99,7 @@ where
     /// Write the current state of the group to the
     /// [`GroupStorageProvider`](crate::GroupStateStorage)
     /// that is currently in use by the group.
-    pub async fn write_to_storage(&mut self) -> Result<(), GroupError> {
+    pub async fn write_to_storage(&mut self) -> Result<(), MlsError> {
         self.state_repo
             .write_to_storage(self.snapshot())
             .await
@@ -117,7 +118,7 @@ where
         }
     }
 
-    pub(crate) async fn from_snapshot(config: C, snapshot: Snapshot) -> Result<Self, GroupError> {
+    pub(crate) async fn from_snapshot(config: C, snapshot: Snapshot) -> Result<Self, MlsError> {
         let cipher_suite_provider = cipher_suite_provider(
             config.crypto_provider(),
             snapshot.state.context.cipher_suite,

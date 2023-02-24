@@ -5,6 +5,7 @@ use tls_codec::Serialize;
 
 use crate::{
     cipher_suite::CipherSuite,
+    client::MlsError,
     client_config::{MakeProposalFilter, ProposalFilterInit},
     extension::ExternalSendersExt,
     external_client::ExternalClientConfig,
@@ -22,7 +23,7 @@ use crate::{
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_group_info, GroupError, ProcessedMessage, Sender, StateUpdate,
+        validate_group_info, ProcessedMessage, Sender, StateUpdate,
     },
     identity::SigningIdentity,
     key_package::KeyPackageValidator,
@@ -62,16 +63,16 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         config: C,
         group_info: MLSMessage,
         tree_data: Option<&[u8]>,
-    ) -> Result<Self, GroupError> {
+    ) -> Result<Self, MlsError> {
         let wire_format = group_info.wire_format();
         let protocol_version = group_info.version;
 
         if !config.version_supported(protocol_version) {
-            return Err(GroupError::UnsupportedProtocolVersion(protocol_version));
+            return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
         }
 
         let group_info = group_info.into_group_info().ok_or_else(|| {
-            GroupError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
+            MlsError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
         })?;
 
         let cipher_suite_provider = cipher_suite_provider(
@@ -128,16 +129,16 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub async fn process_incoming_message(
         &mut self,
         message: MLSMessage,
-    ) -> Result<ProcessedMessage<ExternalEvent>, GroupError> {
+    ) -> Result<ProcessedMessage<ExternalEvent>, MlsError> {
         MessageProcessor::process_incoming_message(self, message, self.config.cache_proposals())
             .await
     }
 
     /// Replay a proposal message into the group skipping all validation steps.
-    pub fn insert_proposal_from_message(&mut self, message: MLSMessage) -> Result<(), GroupError> {
+    pub fn insert_proposal_from_message(&mut self, message: MLSMessage) -> Result<(), MlsError> {
         let ptxt = match message.payload {
             MLSMessagePayload::Plain(p) => Ok(p),
-            _ => Err(GroupError::UnexpectedMessageType(
+            _ => Err(MlsError::UnexpectedMessageType(
                 vec![WireFormat::PublicMessage],
                 message.wire_format(),
             )),
@@ -149,7 +150,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
         let proposal = match auth_content.content.content {
             Content::Proposal(p) => Ok(p),
-            content => Err(GroupError::NotProposalContent(content.content_type())),
+            content => Err(MlsError::NotProposalContent(content.content_type())),
         }?;
 
         self.insert_proposal(proposal, proposal_ref, sender);
@@ -183,11 +184,11 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         key_package: MLSMessage,
         signing_identity: &SigningIdentity,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let wire_format = key_package.wire_format();
 
         let key_package = key_package.into_key_package().ok_or_else(|| {
-            GroupError::UnexpectedMessageType(vec![WireFormat::KeyPackage], wire_format)
+            MlsError::UnexpectedMessageType(vec![WireFormat::KeyPackage], wire_format)
         })?;
 
         // Check that this proposal has a valid lifetime and signature. Required capabilities are
@@ -224,7 +225,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         index: u32,
         signing_identity: &SigningIdentity,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let to_remove = LeafIndex(index);
 
         // Verify that this leaf is actually in the tree
@@ -243,27 +244,27 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         proposal: Proposal,
         signing_identity: &SigningIdentity,
         authenticated_data: Vec<u8>,
-    ) -> Result<MLSMessage, GroupError> {
+    ) -> Result<MLSMessage, MlsError> {
         let external_senders_ext = self
             .state
             .context
             .extensions
             .get_as::<ExternalSendersExt>()?
-            .ok_or(GroupError::ExternalProposalsDisabled)?;
+            .ok_or(MlsError::ExternalProposalsDisabled)?;
 
         let signer = self
             .config
             .keychain()
             .signer(signing_identity)
             .await
-            .map_err(|e| GroupError::KeychainError(e.into()))?
-            .ok_or(GroupError::SignerNotFound)?;
+            .map_err(|e| MlsError::KeychainError(e.into()))?
+            .ok_or(MlsError::SignerNotFound)?;
 
         let sender_index = external_senders_ext
             .allowed_senders
             .iter()
             .position(|allowed_signer| signing_identity == allowed_signer)
-            .ok_or(GroupError::InvalidExternalSigningIdentity)?;
+            .ok_or(MlsError::InvalidExternalSigningIdentity)?;
 
         let sender = Sender::External(sender_index as u32);
 
@@ -325,7 +326,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     }
 
     /// Export the current ratchet tree used within the group.
-    pub fn export_tree(&self) -> Result<Vec<u8>, GroupError> {
+    pub fn export_tree(&self) -> Result<Vec<u8>, MlsError> {
         self.group_state()
             .public_tree
             .export_node_data()
@@ -355,18 +356,18 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub async fn get_member_with_identity(
         &self,
         identity_id: &SigningIdentity,
-    ) -> Result<Member, GroupError> {
+    ) -> Result<Member, MlsError> {
         let identity = self
             .identity_provider()
             .identity(identity_id)
             .await
-            .map_err(|error| GroupError::IdentityProviderError(error.into()))?;
+            .map_err(|error| MlsError::IdentityProviderError(error.into()))?;
 
         let index = self
             .group_state()
             .public_tree
             .get_leaf_node_with_identity(&identity)
-            .ok_or(GroupError::MemberNotFound)?;
+            .ok_or(MlsError::MemberNotFound)?;
 
         let node = self.group_state().public_tree.get_leaf_node(index)?;
 
@@ -396,7 +397,7 @@ where
     fn verify_plaintext_authentication(
         &self,
         message: PublicMessage,
-    ) -> Result<EventOrContent<Self::EventType>, GroupError> {
+    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
         let auth_content = crate::group::message_verifier::verify_plaintext_authentication(
             &self.cipher_suite_provider,
             message,
@@ -411,7 +412,7 @@ where
     async fn process_ciphertext(
         &mut self,
         _cipher_text: PrivateMessage,
-    ) -> Result<EventOrContent<Self::EventType>, GroupError> {
+    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
         Ok(EventOrContent::Event(ExternalEvent::Ciphertext))
     }
 
@@ -421,7 +422,7 @@ where
         interim_transcript_hash: InterimTranscriptHash,
         confirmation_tag: ConfirmationTag,
         provisional_public_state: ProvisionalState,
-    ) -> Result<(), GroupError> {
+    ) -> Result<(), MlsError> {
         self.state.context = provisional_public_state.group_context;
         self.state.proposals.clear();
         self.state.interim_transcript_hash = interim_transcript_hash;
@@ -485,7 +486,7 @@ where
     pub(crate) async fn from_snapshot(
         config: C,
         snapshot: ExternalSnapshot,
-    ) -> Result<Self, GroupError> {
+    ) -> Result<Self, MlsError> {
         let identity_provider = config.identity_provider();
 
         let cipher_suite_provider = cipher_suite_provider(
@@ -508,10 +509,10 @@ impl From<StateUpdate> for ExternalEvent {
 }
 
 impl TryFrom<ApplicationData> for ExternalEvent {
-    type Error = GroupError;
+    type Error = MlsError;
 
     fn try_from(_: ApplicationData) -> Result<Self, Self::Error> {
-        Err(GroupError::UnencryptedApplicationMessage)
+        Err(MlsError::UnencryptedApplicationMessage)
     }
 }
 
@@ -561,7 +562,10 @@ mod tests {
     use super::test_utils::make_external_group;
     use crate::{
         cipher_suite::CipherSuite,
-        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+        client::{
+            test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
+            MlsError,
+        },
         crypto::{test_utils::TestCryptoProvider, SignatureSecretKey},
         extension::ExternalSendersExt,
         external_client::{
@@ -574,7 +578,6 @@ mod tests {
             proposal::{AddProposal, Proposal, ProposalOrRef},
             proposal_ref::ProposalRef,
             test_utils::{test_group, TestGroup},
-            GroupError,
         },
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
         key_package::test_utils::{test_key_package, test_key_package_message},
@@ -720,7 +723,7 @@ mod tests {
             server
                 .process_incoming_message(commit_output.commit_message)
                 .await,
-            Err(GroupError::InvalidEpoch(0))
+            Err(MlsError::InvalidEpoch(0))
         );
     }
 
@@ -745,7 +748,7 @@ mod tests {
             server
                 .process_incoming_message(commit_output.commit_message)
                 .await,
-            Err(GroupError::InvalidSignature)
+            Err(MlsError::InvalidSignature)
         );
     }
 
@@ -760,7 +763,7 @@ mod tests {
 
         assert_matches!(
             server.process_incoming_message(plaintext).await,
-            Err(GroupError::UnencryptedApplicationMessage)
+            Err(MlsError::UnencryptedApplicationMessage)
         );
     }
 
@@ -782,7 +785,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(GroupError::UnsupportedCipherSuite(TEST_CIPHER_SUITE))
+            Err(MlsError::UnsupportedCipherSuite(TEST_CIPHER_SUITE))
         );
     }
 
@@ -801,7 +804,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(GroupError::UnsupportedProtocolVersion(v)) if v ==
+            Err(MlsError::UnsupportedProtocolVersion(v)) if v ==
                 ProtocolVersion::from(64)
         );
     }
@@ -928,7 +931,7 @@ mod tests {
             .propose_add(charlie_key_package, &signing_id, vec![])
             .await;
 
-        assert_matches!(res, Err(GroupError::ExternalProposalsDisabled));
+        assert_matches!(res, Err(MlsError::ExternalProposalsDisabled));
     }
 
     #[futures_test::test]
@@ -953,7 +956,7 @@ mod tests {
 
         let res = server.propose_remove(1, &server_identity, vec![]).await;
 
-        assert_matches!(res, Err(GroupError::InvalidExternalSigningIdentity));
+        assert_matches!(res, Err(MlsError::InvalidExternalSigningIdentity));
     }
 
     #[futures_test::test]
@@ -983,7 +986,7 @@ mod tests {
 
         let res = server.process_incoming_message(old_application_msg).await;
 
-        assert_matches!(res, Err(GroupError::InvalidEpoch(1)));
+        assert_matches!(res, Err(MlsError::InvalidEpoch(1)));
     }
 
     #[futures_test::test]

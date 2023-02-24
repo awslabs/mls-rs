@@ -2,9 +2,12 @@ use rand::RngCore;
 
 use super::*;
 use crate::{
-    client::test_utils::{
-        test_client_with_key_pkg, test_client_with_key_pkg_custom, TEST_CIPHER_SUITE,
-        TEST_PROTOCOL_VERSION,
+    client::{
+        test_utils::{
+            test_client_with_key_pkg, test_client_with_key_pkg_custom, TEST_CIPHER_SUITE,
+            TEST_PROTOCOL_VERSION,
+        },
+        MlsError,
     },
     client_builder::{
         test_utils::{TestClientBuilder, TestClientConfig},
@@ -51,7 +54,7 @@ impl TestGroup {
         name: &str,
         custom_kp: bool,
         mut config: F,
-    ) -> Result<(TestGroup, MLSMessage), GroupError>
+    ) -> Result<(TestGroup, MLSMessage), MlsError>
     where
         F: FnMut(&mut TestClientConfig),
     {
@@ -113,14 +116,11 @@ impl TestGroup {
             .await
     }
 
-    pub(crate) async fn process_pending_commit(&mut self) -> Result<StateUpdate, GroupError> {
+    pub(crate) async fn process_pending_commit(&mut self) -> Result<StateUpdate, MlsError> {
         self.group.apply_pending_commit().await
     }
 
-    pub(crate) async fn process_message(
-        &mut self,
-        message: MLSMessage,
-    ) -> Result<Event, GroupError> {
+    pub(crate) async fn process_message(&mut self, message: MLSMessage) -> Result<Event, MlsError> {
         self.group
             .process_incoming_message(message)
             .await
