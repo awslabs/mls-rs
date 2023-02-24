@@ -311,7 +311,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
                 let new = member_from_leaf_node(node, *index);
 
-                Ok::<_, GroupError>(MemberUpdate::new(prior, new))
+                Ok::<_, MlsError>(MemberUpdate::new(prior, new))
             })
             .collect::<Result<Vec<_>, _>>()?;
 

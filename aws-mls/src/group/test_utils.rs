@@ -1,3 +1,5 @@
+use std::ops::DerefMut;
+
 use rand::RngCore;
 
 use super::*;
@@ -399,4 +401,117 @@ pub fn random_bytes(count: usize) -> Vec<u8> {
     let mut buf = vec![0; count];
     rand::thread_rng().fill_bytes(&mut buf);
     buf
+}
+
+pub(crate) struct GroupWithoutKeySchedule {
+    inner: Group<TestClientConfig>,
+    pub secrets: Option<(TreeKemPrivate, PathSecret)>,
+    pub provisional_public_state: Option<ProvisionalState>,
+}
+
+impl Deref for GroupWithoutKeySchedule {
+    type Target = Group<TestClientConfig>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for GroupWithoutKeySchedule {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl GroupWithoutKeySchedule {
+    pub async fn new(cs: CipherSuite) -> Self {
+        Self {
+            inner: test_group(TEST_PROTOCOL_VERSION, cs).await.group,
+            secrets: None,
+            provisional_public_state: None,
+        }
+    }
+}
+
+#[async_trait]
+impl MessageProcessor for GroupWithoutKeySchedule {
+    type CipherSuiteProvider = <Group<TestClientConfig> as MessageProcessor>::CipherSuiteProvider;
+    type EventType = <Group<TestClientConfig> as MessageProcessor>::EventType;
+    type ExternalPskIdValidator =
+        <Group<TestClientConfig> as MessageProcessor>::ExternalPskIdValidator;
+    type IdentityProvider = <Group<TestClientConfig> as MessageProcessor>::IdentityProvider;
+    type ProposalFilter = <Group<TestClientConfig> as MessageProcessor>::ProposalFilter;
+
+    fn group_state(&self) -> &GroupState {
+        self.inner.group_state()
+    }
+
+    fn group_state_mut(&mut self) -> &mut GroupState {
+        self.inner.group_state_mut()
+    }
+
+    fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter {
+        self.inner.proposal_filter(init)
+    }
+
+    fn identity_provider(&self) -> Self::IdentityProvider {
+        self.inner.identity_provider()
+    }
+
+    fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider {
+        self.inner.cipher_suite_provider()
+    }
+
+    fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator {
+        self.inner.external_psk_id_validator()
+    }
+
+    fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool {
+        self.inner.can_continue_processing(provisional_state)
+    }
+
+    fn min_epoch_available(&self) -> Option<u64> {
+        self.inner.min_epoch_available()
+    }
+
+    async fn apply_update_path(
+        &mut self,
+        sender: LeafIndex,
+        update_path: ValidatedUpdatePath,
+        provisional_state: &mut ProvisionalState,
+    ) -> Result<Option<(TreeKemPrivate, PathSecret)>, MlsError> {
+        self.inner
+            .apply_update_path(sender, update_path, provisional_state)
+            .await
+    }
+
+    async fn process_ciphertext(
+        &mut self,
+        cipher_text: PrivateMessage,
+    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
+        self.inner.process_ciphertext(cipher_text).await
+    }
+
+    fn verify_plaintext_authentication(
+        &self,
+        message: PublicMessage,
+    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
+        self.inner.verify_plaintext_authentication(message)
+    }
+
+    async fn update_key_schedule(
+        &mut self,
+        secrets: Option<(TreeKemPrivate, PathSecret)>,
+        _interim_transcript_hash: InterimTranscriptHash,
+        _confirmation_tag: ConfirmationTag,
+        provisional_public_state: ProvisionalState,
+    ) -> Result<(), MlsError> {
+        self.provisional_public_state = Some(provisional_public_state);
+        self.secrets = secrets;
+        Ok(())
+    }
+
+    fn self_index(&self) -> Option<LeafIndex> {
+        <Group<TestClientConfig> as MessageProcessor>::self_index(&self.inner)
+    }
 }

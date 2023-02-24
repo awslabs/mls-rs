@@ -425,7 +425,7 @@ pub(crate) mod test_utils {
 
     use crate::{cipher_suite::CipherSuite, crypto::test_utils::test_cipher_suite_provider};
 
-    use super::{InitSecret, JoinerSecret, KeySchedule};
+    use super::{CommitSecret, InitSecret, JoinerSecret, KeySchedule};
 
     impl From<JoinerSecret> for Vec<u8> {
         fn from(mut value: JoinerSecret) -> Self {
@@ -454,6 +454,12 @@ pub(crate) mod test_utils {
     impl KeySchedule {
         pub fn set_membership_key(&mut self, key: Vec<u8>) {
             self.membership_key = key
+        }
+    }
+
+    impl AsRef<[u8]> for CommitSecret {
+        fn as_ref(&self) -> &[u8] {
+            &self.0
         }
     }
 }
