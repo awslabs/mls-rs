@@ -10,7 +10,7 @@ default = []
 aws-mls-core = { path = "../aws-mls-core", version = "*" }
 aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", version = "*" }
 thiserror = "^1"
-zeroize = { version = "^1.3", features = ["zeroize_derive"] }
+zeroize = { version = "1", features = ["zeroize_derive"] }
 hex = { version = "^0.4.3", features = ["serde"] }
 cfg-if = "^1"
 

@@ -2,11 +2,11 @@ extern crate aead as rc_aead;
 
 use std::fmt::Debug;
 
-use aes_gcm::{Aes128Gcm, Aes256Gcm};
+use aes_gcm::{Aes128Gcm, Aes256Gcm, KeyInit};
 use aws_mls_core::crypto::CipherSuite;
 use aws_mls_crypto_traits::AeadType;
 use chacha20poly1305::ChaCha20Poly1305;
-use rc_aead::{generic_array::GenericArray, NewAead, Payload};
+use rc_aead::{generic_array::GenericArray, Payload};
 use thiserror::Error;
 
 #[derive(Debug, Error)]

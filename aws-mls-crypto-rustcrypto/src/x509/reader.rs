@@ -7,6 +7,8 @@ use x509_cert::{
     Certificate,
 };
 
+use crate::{ec::pub_key_to_uncompressed, ec_for_x509::pub_key_from_spki};
+
 use super::{
     util::{general_names_to_alt_names, parse_x509_name},
     X509Error,
@@ -55,6 +57,21 @@ impl X509CertificateReader for X509Reader {
             .into_iter()
             .flatten()
             .collect::<Vec<_>>())
+    }
+
+    fn public_key(
+        &self,
+        certificate: &DerCertificate,
+    ) -> Result<aws_mls_core::crypto::SignaturePublicKey, Self::Error> {
+        let spki = Certificate::from_der(certificate)?
+            .tbs_certificate
+            .subject_public_key_info;
+
+        let pub_key = pub_key_from_spki(&spki)?;
+
+        pub_key_to_uncompressed(&pub_key)
+            .map_err(Into::into)
+            .map(Into::into)
     }
 }
 

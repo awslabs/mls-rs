@@ -4,7 +4,6 @@
 use std::array::TryFromSliceError;
 
 use aws_mls_core::crypto::CipherSuite;
-use p256::ecdsa::signature::{Signer, Verifier};
 use p256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use rand_core::{OsRng, RngCore};
 use thiserror::Error;
@@ -23,10 +22,25 @@ pub enum EcPrivateKey {
     P256(p256::SecretKey),
 }
 
+impl Clone for EcPrivateKey {
+    fn clone(&self) -> Self {
+        match self {
+            Self::X25519(key) => Self::X25519(key.clone()),
+            Self::Ed25519(key) => Self::Ed25519(
+                ed25519_dalek::SecretKey::from_bytes(key.as_bytes())
+                    .expect("The bytes represent a secret key"),
+            ),
+            Self::P256(key) => Self::P256(key.clone()),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum EcError {
     #[error(transparent)]
-    Sec1ParsingError(#[from] sec1::der::Error),
+    P256Error(#[from] p256::elliptic_curve::Error),
+    #[error(transparent)]
+    Ed25519Error(#[from] ed25519_dalek::SignatureError),
     #[error("unsupported curve type")]
     UnsupportedCurve,
     #[error("invalid public key data")]
@@ -36,7 +50,7 @@ pub enum EcError {
     #[error(transparent)]
     TryFromSliceError(#[from] TryFromSliceError),
     #[error(transparent)]
-    P256EcdsaError(#[from] p256::ecdsa::Error),
+    SignatureError(#[from] p256::ecdsa::Error),
     #[error(transparent)]
     RandCoreError(#[from] rand_core::Error),
     #[error("ecdh key type mismatch")]
@@ -96,19 +110,6 @@ impl Curve {
     }
 }
 
-impl Clone for EcPrivateKey {
-    fn clone(&self) -> Self {
-        match self {
-            Self::X25519(key) => Self::X25519(key.clone()),
-            Self::Ed25519(key) => Self::Ed25519(
-                ed25519_dalek::SecretKey::from_bytes(key.as_bytes())
-                    .expect("The bytes represent a secret key"),
-            ),
-            Self::P256(key) => Self::P256(key.clone()),
-        }
-    }
-}
-
 impl std::fmt::Debug for EcPrivateKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -159,16 +160,21 @@ pub fn generate_private_key(curve: Curve) -> Result<EcPrivateKey, EcError> {
             // StaticSecret::new passing an Rng from rand_core
             let mut array = [0u8; 32];
             OsRng.try_fill_bytes(&mut array)?;
-            Ok(EcPrivateKey::X25519(x25519_dalek::StaticSecret::from(
-                array,
-            )))
+
+            let key = EcPrivateKey::X25519(x25519_dalek::StaticSecret::from(array));
+
+            array.zeroize();
+
+            Ok(key)
         }
         Curve::Ed25519 => {
             // ed25519_dalek uses an outdated rand_core, this is functionally equal to
             // SecretKey::generate passing an Rng from rand_core
             let mut array = [0u8; 32];
             OsRng.try_fill_bytes(&mut array)?;
+
             let key = ed25519_dalek::SecretKey::from_bytes(&array)?;
+
             array.zeroize();
 
             Ok(EcPrivateKey::Ed25519(key))
@@ -216,7 +222,7 @@ fn ecdh_p256(
         public_key.as_affine(),
     );
 
-    Ok(shared_secret.as_bytes().to_vec())
+    Ok(shared_secret.raw_secret_bytes().to_vec())
 }
 
 fn ecdh_x25519(
@@ -253,8 +259,11 @@ pub fn private_key_ecdh(
 
 pub fn sign_p256(private_key: &p256::SecretKey, data: &[u8]) -> Result<Vec<u8>, EcError> {
     let signing_key = p256::ecdsa::SigningKey::from(private_key);
-    let signature = signing_key.sign(data);
-    Ok(signature.to_der().as_bytes().to_vec())
+
+    let signature: p256::ecdsa::Signature =
+        p256::ecdsa::signature::Signer::sign(&signing_key, data);
+
+    Ok(signature.to_der().to_bytes().to_vec())
 }
 
 pub fn sign_ed25519(
@@ -262,6 +271,7 @@ pub fn sign_ed25519(
     data: &[u8],
 ) -> Result<Vec<u8>, EcError> {
     let expanded = ed25519_dalek::ExpandedSecretKey::from(private_key);
+
     Ok(expanded
         .sign(data, &ed25519_dalek::PublicKey::from(private_key))
         .to_bytes()
@@ -275,7 +285,9 @@ pub fn verify_p256(
 ) -> Result<bool, EcError> {
     let verifying_key = p256::ecdsa::VerifyingKey::from(public_key);
     let signature = p256::ecdsa::Signature::from_der(signature)?;
-    let is_valid = verifying_key.verify(data, &signature).is_ok();
+
+    let is_valid =
+        p256::ecdsa::signature::Verifier::verify(&verifying_key, data, &signature).is_ok();
 
     Ok(is_valid)
 }
@@ -286,7 +298,7 @@ pub fn verify_ed25519(
     data: &[u8],
 ) -> Result<bool, EcError> {
     let signature = ed25519_dalek::Signature::try_from(signature)?;
-    Ok(public_key.verify(data, &signature).is_ok())
+    Ok(ed25519_dalek::Verifier::verify(public_key, data, &signature).is_ok())
 }
 
 pub fn generate_keypair(curve: Curve) -> Result<KeyPair, EcError> {

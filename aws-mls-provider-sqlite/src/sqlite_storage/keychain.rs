@@ -1,8 +1,8 @@
 use crate::SqLiteDataStorageError;
 use async_trait::async_trait;
-use aws_mls::identity::SigningIdentity;
 use aws_mls_core::{
     crypto::{CipherSuite, SignatureSecretKey},
+    identity::SigningIdentity,
     keychain::KeychainStorage,
 };
 use openssl::sha::sha512;
@@ -168,12 +168,10 @@ fn identifier_hash(
 
 #[cfg(test)]
 mod tests {
-    use aws_mls::{
-        identity::{Credential, SigningIdentity},
-        CipherSuite,
+    use aws_mls_core::{
+        crypto::CipherSuite,
+        identity::{BasicCredential, Credential, SigningIdentity},
     };
-
-    use aws_mls_core::identity::BasicCredential;
 
     use crate::{
         sqlite_storage::{connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},

@@ -11,14 +11,16 @@ pub enum X509IdentityError {
     InvalidCertificateChain,
     #[error("invalid offset within certificate chain")]
     InvalidOffset,
+    #[error("empty certificate chain")]
+    EmptyCertificateChain,
     #[error(transparent)]
     CredentialEncodingError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
-    CertificateParserError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    X509ReaderError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
     IdentityExtractorError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
-    ChainValidationError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    X509ValidationError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
-    IdentityEventProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    IdentityWarningProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }

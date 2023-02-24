@@ -63,7 +63,7 @@ where
     fn subject_bytes(&self, certificate: &DerCertificate) -> Result<Vec<u8>, X509IdentityError> {
         self.reader
             .subject_bytes(certificate)
-            .map_err(|e| X509IdentityError::CertificateParserError(e.into()))
+            .map_err(|e| X509IdentityError::X509ReaderError(e.into()))
     }
 
     /// Determine if `successor` resolves to the same

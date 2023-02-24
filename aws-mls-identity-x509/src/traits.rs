@@ -56,4 +56,7 @@ pub trait X509CertificateReader {
         &self,
         certificate: &DerCertificate,
     ) -> Result<Vec<SubjectAltName>, Self::Error>;
+
+    /// Get the subject public key of a certificate.
+    fn public_key(&self, certificate: &DerCertificate) -> Result<SignaturePublicKey, Self::Error>;
 }

@@ -22,6 +22,13 @@ use super::{Credential, CredentialType, MlsCredential};
 /// Bare assertion of an identity without any additional information.
 ///
 /// The format of the encoded identity is defined by the application.
+///
+///
+/// # Warning
+///
+/// Basic credentials are inherently insecure since they can not be
+/// properly validated. It is not recommended to use [`BasicCredential`]
+/// in production applications.
 pub struct BasicCredential {
     #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
     #[tls_codec(with = "crate::tls::ByteVec")]

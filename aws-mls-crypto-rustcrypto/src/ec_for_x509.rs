@@ -1,11 +1,13 @@
 use std::fmt::Debug;
 
 use p256::pkcs8::EncodePublicKey;
-use sec1::der::Document;
-use spki::{ObjectIdentifier, SubjectPublicKeyInfo};
+use spki::{AlgorithmIdentifier, ObjectIdentifier, SubjectPublicKeyInfo};
 use thiserror::Error;
 
-use crate::ec::EcPublicKey;
+use crate::{
+    ec::{pub_key_from_uncompressed, Curve, EcError, EcPublicKey},
+    ec_signer::EcSigner,
+};
 pub const X25519_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.110");
 pub const ED25519_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.112");
 pub const P256_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
@@ -14,19 +16,63 @@ pub const P256_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.100
 pub enum EcX509Error {
     #[error(transparent)]
     DerError(#[from] x509_cert::der::Error),
+    #[error(transparent)]
+    EcError(#[from] EcError),
+    #[error(transparent)]
+    SpkiError(#[from] spki::Error),
     #[error("error parsing P256 key")]
     NistSpkiError,
+    #[error("unsupported public key algorithm: {0:?}")]
+    UnsupportedPublicKeyAlgorithm(String),
 }
 
-pub fn pub_key_to_der(key: &EcPublicKey) -> Result<Vec<u8>, EcX509Error> {
+pub fn curve_from_algorithm(algorithm: &AlgorithmIdentifier) -> Result<Curve, EcX509Error> {
+    if algorithm.oid == ED25519_OID {
+        Ok(Curve::Ed25519)
+    } else if algorithm.oid == X25519_OID {
+        Ok(Curve::X25519)
+    } else if algorithm.parameters_oid() == Ok(P256_OID) {
+        Ok(Curve::P256)
+    } else {
+        Err(EcX509Error::UnsupportedPublicKeyAlgorithm(format!(
+            "{algorithm:?}"
+        )))
+    }
+}
+
+pub fn signer_from_algorithm(algorithm: &AlgorithmIdentifier) -> Result<EcSigner, EcX509Error> {
+    let curve = curve_from_algorithm(algorithm)?;
+
+    match curve {
+        Curve::Ed25519 | Curve::P256 => Ok(EcSigner::new_from_curve(curve)),
+        _ => Err(EcX509Error::UnsupportedPublicKeyAlgorithm(format!(
+            "{algorithm:?}"
+        ))),
+    }
+}
+
+pub fn pub_key_to_spki(key: &EcPublicKey) -> Result<Vec<u8>, EcX509Error> {
     match key {
         EcPublicKey::X25519(key) => to_spki(X25519_OID, key.as_bytes()),
         EcPublicKey::Ed25519(key) => to_spki(ED25519_OID, key.as_bytes()),
         EcPublicKey::P256(key) => Ok(key
             .to_public_key_der()
             .map_err(|_| EcX509Error::NistSpkiError)?
-            .as_der()
             .to_vec()),
+    }
+}
+
+pub fn pub_key_from_spki(spki: &SubjectPublicKeyInfo) -> Result<EcPublicKey, EcX509Error> {
+    match curve_from_algorithm(&spki.algorithm)? {
+        Curve::X25519 => {
+            pub_key_from_uncompressed(spki.subject_public_key, Curve::X25519).map_err(Into::into)
+        }
+        Curve::Ed25519 => {
+            pub_key_from_uncompressed(spki.subject_public_key, Curve::Ed25519).map_err(Into::into)
+        }
+        Curve::P256 => p256::PublicKey::from_sec1_bytes(spki.subject_public_key)
+            .map_err(|e| EcX509Error::from(EcError::P256Error(e)))
+            .map(EcPublicKey::P256),
     }
 }
 

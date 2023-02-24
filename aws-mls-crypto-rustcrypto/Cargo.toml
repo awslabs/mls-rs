@@ -1,6 +1,6 @@
 [package]
 name = "aws-mls-crypto-rustcrypto"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -8,25 +8,25 @@ aws-mls-core = { path = "../aws-mls-core", version = "*" }
 aws-mls-crypto-hpke = { path = "../aws-mls-crypto-hpke", version = "*" }
 aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", optional = true, version = "*" }
 aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", version = "*" }
-thiserror = "^1"
+thiserror = "1"
 enum-iterator = "1.1.2"
-aes-gcm = { version = "^0.9.4", features = ["zeroize"] }
-chacha20poly1305 = { version = "^0.9.0" }
-aead = { version = "^0.4.3", features = ["std"] }
-getrandom = { version = "^0.2.4", features = ["std"] }
-rand_core = { version = "^0.6.3" }
-sha2 = { version = "^0.10.1", features = ["std"] }
-hmac = { version = "^0.12.0", features = ["std", "reset"] }
-hkdf = { version = "^0.12.0", features = ["std"] }
-p256 = { version = "^0.10.1", features = ["std", "ecdh", "ecdsa", "pem"] }
-x25519-dalek = { version = "^1.2.0" }
-ed25519-dalek = { version = "^1.0.1" }
-sec1 = { version = "^0.2.1", features = ["std"] }
-zeroize = { version = "^1.0", features = ["zeroize_derive"] }
-x509-cert = { version = "^0.1", optional = true, features = ["std"] }
-spki = { version = "^0.6", optional = true, features = ["std", "alloc"] }
-sha1 = { version = "^0.10.5", optional = true, features = ["std"] }
-const-oid = { version = "^0.9", optional = true, features = ["std"] }
+aes-gcm = { version = "0.10", features = ["zeroize"] }
+chacha20poly1305 = { version = "0.10" }
+aead = { version = "0.5", features = ["std"] }
+getrandom = { version = "0.2", features = ["std"] }
+rand_core = { version = "0.6" }
+sha2 = { version = "0.10", features = ["std"] }
+hmac = { version = "0.12", features = ["std", "reset"] }
+hkdf = { version = "0.12", features = ["std"] }
+p256 = { version = "0.12", features = ["std", "ecdh", "ecdsa", "pem"] }
+x25519-dalek = { version = "1" }
+ed25519-dalek = { version = "1"}
+sec1 = { version = "0.3", features = ["std"] }
+zeroize = { version = "1", features = ["zeroize_derive"] }
+x509-cert = { version = "0.1", optional = true, features = ["std"] }
+spki = { version = "0.6", optional = true, features = ["std", "alloc"] }
+sha1 = { version = "0.10", optional = true, features = ["std"] }
+const-oid = { version = "0.9", optional = true, features = ["std"] }
 
 [dev-dependencies]
 hex = { version = "^0.4.3", features = ["serde"] }

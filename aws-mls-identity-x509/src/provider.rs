@@ -17,8 +17,8 @@ use mockall::automock;
 pub trait X509IdentityExtractor {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    /// Produce a unique value to represent a certificate chain within an MLS
-    /// group.
+    /// Produce a unique identity value to represent the entity controlling a
+    /// certificate credential within an MLS group.
     fn identity(&self, certificate_chain: &CertificateChain) -> Result<Vec<u8>, Self::Error>;
 
     /// Determine if `successor` is controlled by the same entity as
@@ -118,7 +118,7 @@ where
         let leaf_public_key = self
             .validator
             .validate_chain(&chain, timestamp)
-            .map_err(|e| X509IdentityError::ChainValidationError(e.into()))?;
+            .map_err(|e| X509IdentityError::X509ValidationError(e.into()))?;
 
         if leaf_public_key != signing_identity.signature_key {
             return Err(X509IdentityError::SignatureKeyMismatch);
@@ -127,8 +127,8 @@ where
         Ok(())
     }
 
-    /// Determine the unique identity of a certificate based on the behavior
-    /// of the underlying identity extractor provided.
+    /// Produce a unique identity value to represent the entity controlling a
+    /// certificate credential within an MLS group.
     pub fn identity(
         &self,
         signing_id: &aws_mls_core::identity::SigningIdentity,
@@ -169,7 +169,7 @@ where
     ) -> Result<Vec<IdentityWarning>, X509IdentityError> {
         self.warning_provider
             .identity_warnings(update)
-            .map_err(|e| X509IdentityError::IdentityEventProviderError(e.into()))
+            .map_err(|e| X509IdentityError::IdentityWarningProviderError(e.into()))
     }
 }
 
@@ -322,7 +322,7 @@ mod tests {
 
         assert_matches!(
             test_provider.validate(&test_signing_identity(), None),
-            Err(X509IdentityError::ChainValidationError(_))
+            Err(X509IdentityError::X509ValidationError(_))
         )
     }
 }

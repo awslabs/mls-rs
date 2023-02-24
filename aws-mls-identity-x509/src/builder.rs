@@ -1,6 +1,9 @@
-use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
+use aws_mls_core::{
+    crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey},
+    identity::SigningIdentity,
+};
 
-use crate::{CertificateChain, X509CertificateWriter};
+use crate::{CertificateChain, X509CertificateReader, X509CertificateWriter, X509IdentityError};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 /// Subject alt name extension values.
@@ -57,7 +60,7 @@ impl CertificateIssuer {
     ///
     /// # Warning
     ///
-    /// `signing_key` MUST be the private key assoiciated with the public key
+    /// `signing_key` MUST be the private key associated with the public key
     /// within the first entry of the `chain`.
     pub fn new(
         signing_key: SignatureSecretKey,
@@ -77,25 +80,110 @@ impl CertificateIssuer {
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Representation of a certificate request.
 pub struct CertificateRequest {
-    pub req_data: Vec<u8>,
-    pub secret_key: SignatureSecretKey,
+    pub(crate) req_data: Vec<u8>,
+    pub(crate) public_key: SignaturePublicKey,
+    pub(crate) secret_key: SignatureSecretKey,
 }
 
 impl CertificateRequest {
-    // TODO: When Keychain is moved into core, we should have a method that processes the response,
-    // validates it against the request, and stores the resulting secret key + SigningIdentity for further use
+    /// Create a new certificate request from raw components.
+    pub fn new(
+        req_data: Vec<u8>,
+        public_key: SignaturePublicKey,
+        secret_key: SignatureSecretKey,
+    ) -> CertificateRequest {
+        CertificateRequest {
+            req_data,
+            public_key,
+            secret_key,
+        }
+    }
+
+    /// Request data to send to a CA.
+    pub fn request_data(&self) -> &[u8] {
+        &self.req_data
+    }
+
+    /// Secret key that was used to sign this request.
+    pub fn secret_key(&self) -> &SignatureSecretKey {
+        &self.secret_key
+    }
+
+    /// Convert this request into a [`CertificateGeneration`] based upon the
+    /// certificate chain data received from a CA.
+    ///
+    /// The leaf of `issued_certificate` is expected to contain the public key
+    /// value associated with the `secret_key` used to sign the request.
+    pub fn finalize<R, K>(
+        self,
+        issued_certificate: CertificateChain,
+        reader: &R,
+    ) -> Result<CertificateGeneration, X509IdentityError>
+    where
+        R: X509CertificateReader,
+    {
+        let issued_public_key = reader
+            .public_key(
+                issued_certificate
+                    .leaf()
+                    .ok_or(X509IdentityError::EmptyCertificateChain)?,
+            )
+            .map_err(|e| X509IdentityError::X509ReaderError(e.into()))?;
+
+        if issued_public_key != self.public_key {
+            return Err(X509IdentityError::SignatureKeyMismatch);
+        }
+
+        Ok(CertificateGeneration {
+            chain: issued_certificate,
+            public_key: issued_public_key,
+            generated_secret: Some(self.secret_key),
+        })
+    }
 }
 
 /// Representation of a newly generated certificate chain
 /// along with the [`SignatureSecretKey`] of the leaf certificate
 /// if it was generated randomly as part of creating this certificate.
+#[derive(Debug, Clone)]
 pub struct CertificateGeneration {
-    pub chain: CertificateChain,
-    pub secret_key: Option<SignatureSecretKey>,
+    pub(crate) chain: CertificateChain,
+    pub(crate) public_key: SignaturePublicKey,
+    pub(crate) generated_secret: Option<SignatureSecretKey>,
 }
 
 impl CertificateGeneration {
-    // TODO: When Keychain is moved into core, we should have a method that stores this value there
+    /// Create a new certificate generation.
+    pub fn new(
+        chain: CertificateChain,
+        public_key: SignaturePublicKey,
+        generated_secret: Option<SignatureSecretKey>,
+    ) -> CertificateGeneration {
+        CertificateGeneration {
+            chain,
+            public_key,
+            generated_secret,
+        }
+    }
+
+    /// Convert this certificate generation into a [`SigningIdentity`]
+    /// that can be used for MLS.
+    pub fn to_signing_identity(&self) -> SigningIdentity {
+        SigningIdentity {
+            signature_key: self.public_key.clone(),
+            credential: self.chain.clone().into_credential(),
+        }
+    }
+
+    /// `Some` if a secret key was generated as part of generating the certificate.
+    pub fn generated_secret(&self) -> Option<&SignatureSecretKey> {
+        self.generated_secret.as_ref()
+    }
+
+    /// Created certificate chain.
+    pub fn certificate_chain(&self) -> &CertificateChain {
+        &self.chain
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -158,22 +246,24 @@ impl CertificateBuilder {
     /// certificates held within the issuer.
     ///
     /// A [`SignaturePublicKey`] may be optionally passed in to indicate
-    /// that a new key pair should not be generated for this chain.
+    /// that a new key pair should not be generated. `subject_pubkey`
+    /// will be used for the subject public key info component of the newly
+    /// generated leaf certificate.
     pub fn build_cert_chain<B: X509CertificateWriter>(
         self,
         issuer: &CertificateIssuer,
-        subject_public: Option<SignaturePublicKey>,
+        subject_pubkey: Option<SignaturePublicKey>,
         x509_writer: &B,
     ) -> Result<CertificateGeneration, B::Error> {
         x509_writer.build_cert_chain(
             self.subject_cipher_suite,
             issuer,
-            subject_public,
+            subject_pubkey,
             self.subject_params,
         )
     }
 
-    /// Produce a certificate request.
+    /// Produce a certificate signing request.
     ///
     /// A [`SignatureSecretKey`] can be optionally provided to indicate
     /// that a new key pair should not be generated to sign this request.
@@ -269,6 +359,7 @@ mod tests {
         let expected_request = CertificateRequest {
             req_data: vec![0u8; 32],
             secret_key: vec![1u8; 32].into(),
+            public_key: vec![2u8; 32].into(),
         };
 
         let mock_request = expected_request.clone();

@@ -267,6 +267,11 @@ impl aws_mls_identity_x509::X509CertificateReader for X509Reader {
 
         Ok(alt_names)
     }
+
+    fn public_key(&self, certificate: &DerCertificate) -> Result<SignaturePublicKey, Self::Error> {
+        let public_key = self.parse_certificate(certificate)?.public_key()?;
+        pub_key_to_uncompressed(public_key).map(Into::into)
+    }
 }
 
 fn ip_bytes_to_ip_addr(input: &[u8]) -> Option<IpAddr> {
@@ -472,10 +477,11 @@ impl X509CertificateWriter for X509Writer {
 
         builder.sign_with_ec_signer(&signer, &secret_key)?;
 
-        Ok(CertificateRequest {
-            req_data: builder.build().to_der()?,
+        Ok(CertificateRequest::new(
+            builder.build().to_der()?,
+            public_key,
             secret_key,
-        })
+        ))
     }
 
     fn build_cert_chain(
@@ -509,7 +515,7 @@ impl X509CertificateWriter for X509Writer {
 
         // Generate a serial number
         let mut serial_number = BigNum::new()?;
-        serial_number.rand(16 * 8, MsbOption::MAYBE_ZERO, false)?;
+        serial_number.rand(20 * 8, MsbOption::MAYBE_ZERO, false)?;
         let serial_number = serial_number.to_asn1_integer()?;
         cert_builder.set_serial_number(&serial_number)?;
 
@@ -540,15 +546,15 @@ impl X509CertificateWriter for X509Writer {
         let signer = EcSigner::new(subject_cipher_suite)?;
 
         let (subjet_seckey, subject_pubkey) = match subject_pubkey {
-            Some(subject_pubkey) => (None, subject_pubkey),
+            Some(public_key) => (None, public_key),
             None => signer
                 .signature_key_generate()
                 .map(|(sk, pk)| (Some(sk), pk))?,
         };
 
-        let subject_pubkey = signer.pkey_from_public_key(&subject_pubkey)?;
+        let subject_pubkey_ossl = signer.pkey_from_public_key(&subject_pubkey)?;
 
-        cert_builder.set_pubkey(&subject_pubkey)?;
+        cert_builder.set_pubkey(&subject_pubkey_ossl)?;
 
         // Make subject key identity extension which immediately hashes the public key set above (do not move this!)
         let subject_key_id = SubjectKeyIdentifier::new()
@@ -563,10 +569,11 @@ impl X509CertificateWriter for X509Writer {
 
         let chain = [&[built_cert] as &[DerCertificate], &issuer.chain].concat();
 
-        Ok(CertificateGeneration {
-            chain: chain.into(),
-            secret_key: subjet_seckey,
-        })
+        Ok(CertificateGeneration::new(
+            chain.into(),
+            subject_pubkey,
+            subjet_seckey,
+        ))
     }
 }
 
@@ -888,12 +895,12 @@ mod tests {
             .build_csr(CipherSuite::CURVE25519_AES128, Some(subject_seckey), params)
             .unwrap();
 
-        assert_eq!(expected_csr, built_csr.req_data);
+        assert_eq!(expected_csr, built_csr.request_data());
 
-        let built_secret = private_key_from_bytes(&built_csr.secret_key, Curve::Ed25519).unwrap();
+        let built_secret = private_key_from_bytes(built_csr.secret_key(), Curve::Ed25519).unwrap();
         let expected_public = private_key_to_public(&built_secret).unwrap();
 
-        let public_key = X509Req::from_der(&built_csr.req_data)
+        let public_key = X509Req::from_der(built_csr.request_data())
             .unwrap()
             .public_key()
             .unwrap();
@@ -916,14 +923,14 @@ mod tests {
             .build_cert_chain(ciphersuite, &issuer, None, params)
             .unwrap();
 
-        let secret = crt.secret_key.unwrap();
+        let secret = crt.generated_secret().unwrap();
 
-        assert_ne!(secret, other_crt.secret_key.unwrap());
+        assert_ne!(secret, other_crt.generated_secret().unwrap());
 
-        let secret = private_key_from_bytes(&secret, Curve::Ed448).unwrap();
+        let secret = private_key_from_bytes(secret, Curve::Ed448).unwrap();
         let public = private_key_to_public(&secret).unwrap();
 
-        let crt_public = X509::from_der(crt.chain.leaf().unwrap())
+        let crt_public = X509::from_der(crt.certificate_chain().leaf().unwrap())
             .unwrap()
             .public_key()
             .unwrap();
@@ -950,13 +957,22 @@ mod tests {
             include_bytes!("../test_data/x509/leaf/cert.der").to_vec()
         };
 
+        let signer = if ca {
+            include_bytes!("../test_data/x509/intermediate_ca/key.pem").to_vec()
+        } else {
+            include_bytes!("../test_data/x509/leaf/key.pem").to_vec()
+        };
+
         let expected_crt = X509::from_der(&expected_crt_bytes).unwrap();
 
         let expected_serial = expected_crt.serial_number().to_bn().unwrap().to_vec();
         writer.set_test_serial(Some(expected_serial));
         writer.set_test_not_before(Some(asn1_time_to_unix(expected_crt.not_before())));
 
-        let subject_pubkey = pub_key_to_uncompressed(expected_crt.public_key().unwrap()).unwrap();
+        let subject_pub_key = pub_key_to_uncompressed(
+            private_key_to_public(&PKey::private_key_from_pem(&signer).unwrap()).unwrap(),
+        )
+        .unwrap();
 
         let common_name = if ca { "IntermediateCA" } else { "Leaf" };
         let alt_name = if ca { "intermediateca.org" } else { "leaf.org" };
@@ -974,16 +990,16 @@ mod tests {
             .build_cert_chain(
                 get_subject_ciphersuite(ca),
                 &get_test_root_ca(),
-                Some(subject_pubkey.into()),
+                Some(subject_pub_key.into()),
                 params,
             )
             .unwrap();
 
-        let built_crt_bytes = built_crt.chain.leaf().unwrap().to_vec();
+        let built_crt_bytes = built_crt.certificate_chain().leaf().unwrap().to_vec();
 
         assert_eq!(&built_crt_bytes, &expected_crt_bytes);
 
-        assert!(built_crt.secret_key.is_none());
+        assert!(built_crt.generated_secret().is_none());
     }
 
     fn get_test_root_ca() -> CertificateIssuer {

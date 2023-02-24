@@ -1,6 +1,6 @@
 [package]
 name = "aws-mls-identity-x509"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]

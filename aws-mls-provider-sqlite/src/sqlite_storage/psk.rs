@@ -77,8 +77,7 @@ impl PreSharedKeyStorage for SqLitePreSharedKeyStorage {
 
 #[cfg(test)]
 mod tests {
-
-    use aws_mls::storage_provider::PreSharedKey;
+    use aws_mls_core::psk::PreSharedKey;
 
     use crate::{
         sqlite_storage::{connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},

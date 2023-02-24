@@ -6,9 +6,8 @@ use spki::der::{Decode, Encode};
 use x509_cert::Certificate;
 
 use crate::{
-    ec::Curve,
-    ec_for_x509::{ED25519_OID, P256_OID},
-    ec_signer::EcSigner,
+    ec::pub_key_to_uncompressed,
+    ec_for_x509::{pub_key_from_spki, signer_from_algorithm},
 };
 
 use super::X509Error;
@@ -97,12 +96,12 @@ impl X509Validator {
             if maybe_ca.is_some() {
                 let leaf_cert = chain.first().ok_or(X509Error::EmptyCertificateChain)?;
 
-                return Ok(leaf_cert
-                    .tbs_certificate
-                    .subject_public_key_info
-                    .subject_public_key
-                    .to_vec()
-                    .into());
+                let pub_key =
+                    pub_key_from_spki(&leaf_cert.tbs_certificate.subject_public_key_info)?;
+
+                let pub_signing_key = pub_key_to_uncompressed(&pub_key).map(Into::into)?;
+
+                return Ok(pub_signing_key);
             }
         }
 
@@ -131,30 +130,17 @@ fn verify_cert(
     verified.tbs_certificate.encode_to_vec(&mut tbs)?;
 
     // Create a signer for the verifier
-    let verifier_algo = verifier
-        .tbs_certificate
-        .subject_public_key_info
-        .algorithm
-        .parameters_oid()?;
+    let signer =
+        signer_from_algorithm(&verifier.tbs_certificate.subject_public_key_info.algorithm)?;
 
-    let signer = match verifier_algo {
-        ED25519_OID => EcSigner::new_from_curve(Curve::Ed25519),
-        P256_OID => EcSigner::new_from_curve(Curve::P256),
-        _ => {
-            return Err(X509Error::UnsupportedAlgorithm(
-                verified.signature_algorithm.oid,
-            ))
-        }
-    };
-
-    let pubkey = verifier
-        .tbs_certificate
-        .subject_public_key_info
-        .subject_public_key
-        .to_vec();
+    let pub_key = pub_key_from_spki(&verifier.tbs_certificate.subject_public_key_info)?;
 
     // Verify the signature
-    signer.verify(&pubkey.into(), verified.signature.raw_bytes(), &tbs)?;
+    signer.verify(
+        &pub_key_to_uncompressed(&pub_key).map(Into::into)?,
+        verified.signature.raw_bytes(),
+        &tbs,
+    )?;
 
     // Verify properties
     if let Some(time) = timestamp {
@@ -176,12 +162,11 @@ fn validate_self_signed(
 
     verify_cert(&cert, &cert, timestamp)?;
 
-    Ok(cert
-        .tbs_certificate
-        .subject_public_key_info
-        .subject_public_key
-        .to_vec()
-        .into())
+    let pub_key = pub_key_from_spki(&cert.tbs_certificate.subject_public_key_info)?;
+
+    let pub_signing_key = pub_key_to_uncompressed(&pub_key).map(Into::into)?;
+
+    Ok(pub_signing_key)
 }
 
 impl X509CredentialValidator for X509Validator {
