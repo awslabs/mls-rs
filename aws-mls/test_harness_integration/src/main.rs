@@ -11,7 +11,6 @@ use aws_mls::identity::basic::{BasicCredential, BasicIdentityProvider};
 use aws_mls::identity::SigningIdentity;
 use aws_mls::storage_provider::in_memory::{InMemoryKeychainStorage, InMemoryPreSharedKeyStorage};
 use aws_mls::storage_provider::{ExternalPskId, PreSharedKey};
-use aws_mls::tls_codec::{Deserialize, Serialize};
 use aws_mls::Group;
 use aws_mls::MLSMessage;
 use aws_mls::ProtocolVersion;
@@ -23,7 +22,6 @@ use aws_mls_crypto_openssl::OpensslCryptoProvider;
 use clap::Parser;
 use std::convert::TryFrom;
 use std::net::IpAddr;
-use std::ops::Deref;
 use tokio::sync::Mutex;
 use tonic::{transport::Server, Code::Aborted, Request, Response, Status};
 
@@ -40,7 +38,7 @@ pub mod mls_client {
     tonic::include_proto!("mls_client");
 }
 
-const IMPLEMENTATION_NAME: &str = "AWS MLS";
+const IMPLEMENTATION_NAME: &str = "Wickr MLS";
 const TEST_VECTOR: [u8; 4] = [0, 1, 2, 3];
 
 impl TryFrom<i32> for TestVectorType {
@@ -89,14 +87,13 @@ impl TryFrom<(StateUpdate, u32)> for HandleCommitResponse {
             .removed()
             .iter()
             .map(|member| member.leaf_bytes().to_vec())
-            .collect::<Vec<_>>();
+            .collect();
 
         let psks = state_update
             .added_psks()
             .iter()
-            .map(|psk_id| psk_id.tls_serialize_detached())
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(abort)?;
+            .map(|psk_id| psk_id.to_vec())
+            .collect();
 
         Ok(Self {
             state_id,
@@ -129,6 +126,7 @@ struct ClientDetails {
 struct GroupDetails {
     group: Group<TestClientConfig>,
     psk_store: InMemoryPreSharedKeyStorage,
+    control_encryption: bool,
 }
 
 #[tonic::async_trait]
@@ -229,7 +227,7 @@ impl MlsClient for MlsClientImpl {
 
         let (secret_key, public_key) = provider.signature_key_generate().map_err(abort)?;
 
-        let credential = BasicCredential::new(b"creator".to_vec()).into_credential();
+        let credential = BasicCredential::new(b"olaf".to_vec()).into_credential();
 
         let signing_identity = SigningIdentity::new(credential, public_key);
 
@@ -255,7 +253,12 @@ impl MlsClient for MlsClientImpl {
             .map_err(abort)?;
 
         let mut groups = self.groups.lock().await;
-        groups.push(GroupDetails { group, psk_store });
+
+        groups.push(GroupDetails {
+            group,
+            psk_store,
+            control_encryption: request_ref.encrypt_handshake,
+        });
 
         Ok(Response::new(CreateGroupResponse {
             state_id: groups.len() as u32,
@@ -278,7 +281,7 @@ impl MlsClient for MlsClientImpl {
         let (secret_key, public_key) = provider.signature_key_generate().map_err(abort)?;
 
         let credential =
-            BasicCredential::new(format!("alice{}", clients.len()).into_bytes()).into_credential();
+            BasicCredential::new(format!("{}olaf", clients.len()).into_bytes()).into_credential();
 
         let signing_identity = SigningIdentity::new(credential, public_key);
 
@@ -315,7 +318,7 @@ impl MlsClient for MlsClientImpl {
         let clients = self.clients.lock().await;
         let client_index = request_ref.transaction_id as usize - 1;
 
-        let welcome_msg = MLSMessage::tls_deserialize(&mut &*request_ref.welcome).map_err(abort)?;
+        let welcome_msg = MLSMessage::from_bytes(&request_ref.welcome).map_err(abort)?;
 
         let (group, _) = clients[client_index]
             .client
@@ -328,6 +331,7 @@ impl MlsClient for MlsClientImpl {
         groups.push(GroupDetails {
             group,
             psk_store: clients[client_index].psk_store.clone(),
+            control_encryption: request_ref.encrypt_handshake,
         });
 
         Ok(Response::new(JoinGroupResponse {
@@ -337,18 +341,80 @@ impl MlsClient for MlsClientImpl {
 
     async fn external_join(
         &self,
-        _request: tonic::Request<ExternalJoinRequest>,
+        request: tonic::Request<ExternalJoinRequest>,
     ) -> Result<tonic::Response<ExternalJoinResponse>, tonic::Status> {
-        // TODO
-        Ok(Response::new(ExternalJoinResponse::default()))
+        let request_ref = request.get_ref();
+        let clients = self.clients.lock().await;
+
+        let group_info = MLSMessage::from_bytes(&request_ref.public_group_state).map_err(abort)?;
+
+        let cipher_suite = group_info
+            .cipher_suite()
+            .ok_or_else(|| Status::new(Aborted, "ciphersuite not found"))?;
+
+        let provider = OpensslCryptoProvider::new()
+            .cipher_suite_provider(cipher_suite)
+            .ok_or_else(|| Status::new(Aborted, "ciphersuite not supported"))?;
+
+        let (secret_key, public_key) = provider.signature_key_generate().map_err(abort)?;
+
+        let credential =
+            BasicCredential::new(format!("{}olaf", clients.len()).into_bytes()).into_credential();
+
+        let signing_identity = SigningIdentity::new(credential, public_key);
+
+        let psk_store = InMemoryPreSharedKeyStorage::default();
+
+        let preferences = Preferences::default().with_ratchet_tree_extension(true);
+
+        let client = ClientBuilder::new()
+            .crypto_provider(OpensslCryptoProvider::default())
+            .identity_provider(BasicIdentityProvider::new())
+            .single_signing_identity(signing_identity.clone(), secret_key, cipher_suite)
+            .preferences(preferences)
+            .psk_store(psk_store.clone())
+            .build();
+
+        let (group, commit) = client
+            .commit_external(group_info, None, signing_identity, None, vec![], vec![])
+            .await
+            .unwrap();
+
+        self.groups.lock().await.push(GroupDetails {
+            group,
+            psk_store,
+            control_encryption: request_ref.encrypt_handshake,
+        });
+
+        let resp = ExternalJoinResponse {
+            state_id: self.groups.lock().await.len() as u32,
+            commit: commit.to_bytes().unwrap(),
+        };
+
+        Ok(Response::new(resp))
     }
 
     async fn public_group_state(
         &self,
-        _request: tonic::Request<PublicGroupStateRequest>,
+        request: tonic::Request<PublicGroupStateRequest>,
     ) -> Result<tonic::Response<PublicGroupStateResponse>, tonic::Status> {
-        // TODO
-        Ok(Response::new(PublicGroupStateResponse::default()))
+        let request_ref = request.get_ref();
+
+        let group_info = self
+            .groups
+            .lock()
+            .await
+            .get(request_ref.state_id as usize - 1)
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .group
+            .group_info_message(true)
+            .await
+            .and_then(|m| Ok(m.to_bytes()?))
+            .map_err(abort)?;
+
+        Ok(Response::new(PublicGroupStateResponse {
+            public_group_state: group_info,
+        }))
     }
 
     async fn state_auth(
@@ -380,7 +446,7 @@ impl MlsClient for MlsClientImpl {
             .group
             .encrypt_application_message(&request_ref.application_data, vec![])
             .await
-            .and_then(|m| Ok(m.tls_serialize_detached()?))
+            .and_then(|m| Ok(m.to_bytes()?))
             .map_err(abort)?;
 
         Ok(Response::new(ProtectResponse { ciphertext }))
@@ -393,8 +459,7 @@ impl MlsClient for MlsClientImpl {
         let request_ref = request.get_ref();
         let mut groups = self.groups.lock().await;
 
-        let ciphertext =
-            MLSMessage::tls_deserialize(&mut &*request_ref.ciphertext).map_err(abort)?;
+        let ciphertext = MLSMessage::from_bytes(&request_ref.ciphertext).map_err(abort)?;
 
         let message = groups
             .get_mut(request_ref.state_id as usize - 1)
@@ -455,7 +520,7 @@ impl MlsClient for MlsClientImpl {
         let proposal_packet = group
             .propose_add(key_package, vec![])
             .await
-            .and_then(|m| Ok(m.tls_serialize_detached()?))
+            .and_then(|m| Ok(m.to_bytes()?))
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -478,7 +543,7 @@ impl MlsClient for MlsClientImpl {
         let proposal_packet = group
             .propose_update(vec![])
             .await
-            .and_then(|p| Ok(p.tls_serialize_detached()?))
+            .and_then(|p| Ok(p.to_bytes()?))
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -507,7 +572,7 @@ impl MlsClient for MlsClientImpl {
         let proposal_packet = group
             .propose_remove(removed, vec![])
             .await
-            .and_then(|p| Ok(p.tls_serialize_detached()?))
+            .and_then(|p| Ok(p.to_bytes()?))
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -528,9 +593,9 @@ impl MlsClient for MlsClientImpl {
             .group;
 
         let proposal_packet = group
-            .propose_psk(ExternalPskId::new(request_ref.psk_id), vec![])
+            .propose_external_psk(ExternalPskId::new(request_ref.psk_id), vec![])
             .await
-            .and_then(|p| Ok(p.tls_serialize_detached()?))
+            .and_then(|p| Ok(p.to_bytes()?))
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -570,7 +635,7 @@ impl MlsClient for MlsClientImpl {
         let proposal_packet = group
             .propose_group_context_extensions(ExtensionList::from(extensions), vec![])
             .await
-            .and_then(|p| Ok(p.tls_serialize_detached()?))
+            .and_then(|p| Ok(p.to_bytes()?))
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -587,8 +652,7 @@ impl MlsClient for MlsClientImpl {
         let mut groups = self.groups.lock().await;
 
         for proposal_bytes in &request_ref.by_reference {
-            let proposal =
-                MLSMessage::tls_deserialize(&mut proposal_bytes.deref()).map_err(abort)?;
+            let proposal = MLSMessage::from_bytes(proposal_bytes).map_err(abort)?;
 
             groups
                 .get_mut(group_index)
@@ -601,22 +665,26 @@ impl MlsClient for MlsClientImpl {
 
         // TODO: handle by value
 
-        let commit_output = groups
+        let group = groups
             .get_mut(group_index)
-            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
+            .ok_or_else(|| Status::new(Aborted, "no group with such index."))?;
+
+        let mut preferences = group.group.preferences();
+        preferences.encrypt_controls = group.control_encryption;
+
+        let commit_output = group
             .group
-            .commit(vec![])
+            .commit_builder()
+            .set_commit_preferences(preferences)
+            .build()
             .await
             .map_err(abort)?;
 
         let resp = CommitResponse {
-            commit: commit_output
-                .commit_message
-                .tls_serialize_detached()
-                .map_err(abort)?,
+            commit: commit_output.commit_message.to_bytes().map_err(abort)?,
             welcome: commit_output
                 .welcome_message
-                .map(|w| w.tls_serialize_detached())
+                .map(|w| w.to_bytes())
                 .transpose()
                 .map_err(abort)?
                 .unwrap_or_default(),
@@ -634,7 +702,7 @@ impl MlsClient for MlsClientImpl {
         let mut groups = self.groups.lock().await;
 
         for proposal in &request_ref.proposal {
-            let proposal = MLSMessage::tls_deserialize(&mut proposal.deref()).map_err(abort)?;
+            let proposal = MLSMessage::from_bytes(proposal).map_err(abort)?;
 
             groups
                 .get_mut(group_index)
@@ -645,7 +713,7 @@ impl MlsClient for MlsClientImpl {
                 .map_err(abort)?;
         }
 
-        let commit = MLSMessage::tls_deserialize(&mut &*request_ref.commit).map_err(abort)?;
+        let commit = MLSMessage::from_bytes(&request_ref.commit).map_err(abort)?;
 
         let message = groups
             .get_mut(group_index)

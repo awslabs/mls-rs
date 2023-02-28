@@ -633,6 +633,7 @@ where
                 authenticated_data,
                 Default::default(),
                 None,
+                None,
             )
             .await?;
 
@@ -1335,7 +1336,7 @@ where
         }))
     }
 
-    /// Create a proposal message that adds a pre shared key to the group.
+    /// Create a proposal message that adds an external pre shared key to the group.
     ///
     /// Each group member will need to have the PSK associated with
     /// [`ExternalPskId`](crate::storage_provider::ExternalPskId) installed within
@@ -1345,23 +1346,47 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
-    pub async fn propose_psk(
+    pub async fn propose_external_psk(
         &mut self,
         psk: ExternalPskId,
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
-        let proposal = self.psk_proposal(psk)?;
+        let proposal = self.psk_proposal(JustPreSharedKeyID::External(psk))?;
         self.proposal_message(proposal, authenticated_data).await
     }
 
-    fn psk_proposal(&self, psk: ExternalPskId) -> Result<Proposal, MlsError> {
+    fn psk_proposal(&self, key_id: JustPreSharedKeyID) -> Result<Proposal, MlsError> {
         Ok(Proposal::Psk(PreSharedKeyProposal {
             psk: PreSharedKeyID {
-                key_id: JustPreSharedKeyID::External(psk),
+                key_id,
                 psk_nonce: PskNonce::random(&self.cipher_suite_provider)
                     .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
             },
         }))
+    }
+
+    /// Create a proposal message that adds a pre shared key from a previous
+    /// epoch to the current group state.
+    ///
+    /// Each group member will need to have the secret state from `psk_epoch`.
+    /// In particular, the members who joined between `psk_epoch` and the
+    /// current epoch cannot process a commit containing this proposal.
+    ///
+    /// `authenticated_data` will be sent unencrypted along with the contents
+    /// of the proposal message.
+    pub async fn propose_resumption_psk(
+        &mut self,
+        psk_epoch: u64,
+        authenticated_data: Vec<u8>,
+    ) -> Result<MLSMessage, MlsError> {
+        let key_id = ResumptionPsk {
+            psk_epoch,
+            usage: ResumptionPSKUsage::Application,
+            psk_group_id: PskGroupId(self.group_id().to_vec()),
+        };
+
+        let proposal = self.psk_proposal(JustPreSharedKeyID::Resumption(key_id))?;
+        self.proposal_message(proposal, authenticated_data).await
     }
 
     /// Create a proposal message that requests for this group to be
@@ -2620,7 +2645,7 @@ mod tests {
         let mut commit_builder = alice.group.commit_builder();
 
         for external_psk in external_psk_ids {
-            commit_builder = commit_builder.add_psk(external_psk).unwrap();
+            commit_builder = commit_builder.add_external_psk(external_psk).unwrap();
         }
 
         for index in [2, 5, 6] {

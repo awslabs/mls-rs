@@ -328,6 +328,15 @@ impl MLSMessage {
         }
     }
 
+    pub fn cipher_suite(&self) -> Option<CipherSuite> {
+        match &self.payload {
+            MLSMessagePayload::GroupInfo(i) => Some(i.group_context.cipher_suite),
+            MLSMessagePayload::Welcome(w) => Some(w.cipher_suite),
+            MLSMessagePayload::KeyPackage(k) => Some(k.cipher_suite),
+            _ => None,
+        }
+    }
+
     /// Deserialize a message from transport.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, tls_codec::Error> {
         Self::tls_deserialize(&mut &*bytes)

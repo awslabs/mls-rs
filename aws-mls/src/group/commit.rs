@@ -3,6 +3,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
+    client_builder::Preferences,
     client_config::{ClientConfig, ProposalFilterInit},
     extension::RatchetTreeExt,
     identity::SigningIdentity,
@@ -20,6 +21,7 @@ use crate::{
 use super::{
     confirmation_tag::ConfirmationTag,
     framing::{Content, MLSMessage, Sender},
+    internal::{JustPreSharedKeyID, PskGroupId, ResumptionPSKUsage, ResumptionPsk},
     key_schedule::{CommitSecret, KeySchedule},
     message_processor::MessageProcessor,
     message_signature::AuthenticatedContent,
@@ -88,6 +90,7 @@ where
     authenticated_data: Vec<u8>,
     group_info_extensions: ExtensionList,
     signing_identity: Option<SigningIdentity>,
+    preferences: Option<Preferences>,
 }
 
 impl<'a, C> CommitBuilder<'a, C>
@@ -137,10 +140,27 @@ where
     }
 
     /// Insert a
-    /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) into
-    /// the current commit that is being built.
-    pub fn add_psk(mut self, psk_id: ExternalPskId) -> Result<Self, MlsError> {
-        let proposal = self.group.psk_proposal(psk_id)?;
+    /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) with
+    /// an external PSK into the current commit that is being built.
+    pub fn add_external_psk(mut self, psk_id: ExternalPskId) -> Result<Self, MlsError> {
+        let key_id = JustPreSharedKeyID::External(psk_id);
+        let proposal = self.group.psk_proposal(key_id)?;
+        self.proposals.push(proposal);
+        Ok(self)
+    }
+
+    /// Insert a
+    /// [`PreSharedKeyProposal`](crate::group::proposal::PreSharedKeyProposal) with
+    /// a resumption PSK into the current commit that is being built.
+    pub fn add_resumption_psk(mut self, psk_epoch: u64) -> Result<Self, MlsError> {
+        let psk_id = ResumptionPsk {
+            psk_epoch,
+            usage: ResumptionPSKUsage::Application,
+            psk_group_id: PskGroupId(self.group.group_id().to_vec()),
+        };
+
+        let key_id = JustPreSharedKeyID::Resumption(psk_id);
+        let proposal = self.group.psk_proposal(key_id)?;
         self.proposals.push(proposal);
         Ok(self)
     }
@@ -211,6 +231,16 @@ where
         }
     }
 
+    /// Set [`Preferences`](crate::client_builder::Preferences) used to make
+    /// this commit. By default, preferences from the group's
+    /// [`ClientConfig`](crate::client_config::ClientConfig) are used.
+    pub fn set_commit_preferences(self, preferences: Preferences) -> Self {
+        Self {
+            preferences: Some(preferences),
+            ..self
+        }
+    }
+
     /// Finalize the commit to send.
     ///
     /// # Errors
@@ -226,6 +256,7 @@ where
                 self.authenticated_data,
                 self.group_info_extensions,
                 self.signing_identity,
+                self.preferences,
             )
             .await
     }
@@ -242,6 +273,7 @@ where
         authenticated_data: Vec<u8>,
         group_info_extensions: ExtensionList,
         signing_identity: Option<SigningIdentity>,
+        preferences: Option<Preferences>,
     ) -> Result<CommitOutput, MlsError> {
         self.commit_internal(
             proposals,
@@ -249,6 +281,7 @@ where
             authenticated_data,
             group_info_extensions,
             signing_identity,
+            preferences,
         )
         .await
     }
@@ -294,8 +327,15 @@ where
     /// [`Psk`](crate::group::proposal::Proposal::Psk),
     /// or [`ReInit`](crate::group::proposal::Proposal::ReInit) are part of the commit.
     pub async fn commit(&mut self, authenticated_data: Vec<u8>) -> Result<CommitOutput, MlsError> {
-        self.commit_internal(vec![], None, authenticated_data, Default::default(), None)
-            .await
+        self.commit_internal(
+            vec![],
+            None,
+            authenticated_data,
+            Default::default(),
+            None,
+            None,
+        )
+        .await
     }
 
     /// Create a new commit builder that can include proposals
@@ -307,6 +347,7 @@ where
             authenticated_data: Default::default(),
             group_info_extensions: Default::default(),
             signing_identity: Default::default(),
+            preferences: Default::default(),
         }
     }
 
@@ -319,12 +360,13 @@ where
         authenticated_data: Vec<u8>,
         group_info_extensions: ExtensionList,
         signing_identity: Option<SigningIdentity>,
+        preferences: Option<Preferences>,
     ) -> Result<CommitOutput, MlsError> {
         if self.pending_commit.is_some() {
             return Err(MlsError::ExistingPendingCommit);
         }
 
-        let preferences = self.config.preferences();
+        let preferences = preferences.unwrap_or(self.config.preferences());
 
         let options = CommitOptions {
             prefer_path_update: preferences.force_commit_path_update,
@@ -764,13 +806,14 @@ mod tests {
 
         let commit_output = group
             .commit_builder()
-            .add_psk(test_psk.clone())
+            .add_external_psk(test_psk.clone())
             .unwrap()
             .build()
             .await
             .unwrap();
 
-        let expected_psk = group.psk_proposal(test_psk).unwrap();
+        let key_id = JustPreSharedKeyID::External(test_psk);
+        let expected_psk = group.psk_proposal(key_id).unwrap();
 
         assert_commit_builder_output(group, commit_output, vec![expected_psk], 0)
     }
