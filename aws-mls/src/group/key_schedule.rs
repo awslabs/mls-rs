@@ -186,7 +186,7 @@ impl KeySchedule {
             .hash(context)
             .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?;
 
-        kdf_expand_with_label(cipher_suite, &secret, "exporter", &context_hash, Some(len))
+        kdf_expand_with_label(cipher_suite, &secret, "exported", &context_hash, Some(len))
     }
 
     pub fn get_membership_tag<P: CipherSuiteProvider>(
@@ -382,14 +382,7 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
         joiner_secret: &JoinerSecret,
         psk_secret: &PskSecret,
     ) -> Result<Self, KeyScheduleError> {
-        let epoch_seed = Zeroizing::new(get_pre_epoch_secret(
-            cipher_suite,
-            psk_secret,
-            joiner_secret,
-        )?);
-
-        let welcome_secret =
-            Zeroizing::new(kdf_derive_secret(cipher_suite, &epoch_seed, "welcome")?);
+        let welcome_secret = get_welcome_secret(cipher_suite, joiner_secret, psk_secret)?;
 
         let key_len = cipher_suite.aead_key_size();
         let key = kdf_expand_with_label(cipher_suite, &welcome_secret, "key", &[], Some(key_len))?;
@@ -417,6 +410,20 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
             .aead_open(&self.key, ciphertext, None, &self.nonce)
             .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
     }
+}
+
+fn get_welcome_secret<P: CipherSuiteProvider>(
+    cipher_suite: &P,
+    joiner_secret: &JoinerSecret,
+    psk_secret: &PskSecret,
+) -> Result<Zeroizing<Vec<u8>>, KeyScheduleError> {
+    let epoch_seed = Zeroizing::new(get_pre_epoch_secret(
+        cipher_suite,
+        psk_secret,
+        joiner_secret,
+    )?);
+
+    kdf_derive_secret(cipher_suite, &epoch_seed, "welcome").map(Zeroizing::new)
 }
 
 #[cfg(test)]
@@ -466,19 +473,25 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use crate::client::test_utils::TEST_PROTOCOL_VERSION;
     use crate::crypto::test_utils::{
         test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
     };
-    use crate::group::key_schedule::{kdf_derive_secret, kdf_expand_with_label};
-    use crate::group::test_utils::get_test_group_context;
-    use crate::group::InitSecret;
+    use crate::group::internal::PskSecret;
+    use crate::group::key_schedule::{
+        get_welcome_secret, kdf_derive_secret, kdf_expand_with_label,
+    };
+    use crate::group::test_utils::random_bytes;
+    use crate::group::{GroupContext, InitSecret};
     use aws_mls_core::crypto::CipherSuiteProvider;
 
+    use aws_mls_core::extension::ExtensionList;
+    use tls_codec::Serialize;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use super::test_utils::get_test_key_schedule;
-    use super::{CommitSecret, KeySchedule};
+    use super::{CommitSecret, KeySchedule, KeyScheduleDerivationResult};
 
     #[derive(serde::Deserialize, serde::Serialize)]
     struct ExporterTestCase {
@@ -568,127 +581,293 @@ mod tests {
     struct KeyScheduleTestCase {
         cipher_suite: u16,
         #[serde(with = "hex::serde")]
-        joiner: Vec<u8>,
+        group_id: Vec<u8>,
         #[serde(with = "hex::serde")]
-        sender_data: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        encryption: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        exporter: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        confirm: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        membership: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        resumption: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        authentication: Vec<u8>,
+        initial_init_secret: Vec<u8>,
+        epochs: Vec<KeyScheduleEpoch>,
     }
 
-    fn generate_key_schedule_test_vector() -> Vec<KeyScheduleTestCase> {
-        let mut test_cases = Vec::new();
+    #[derive(serde::Deserialize, serde::Serialize)]
+    struct KeyScheduleEpoch {
+        #[serde(with = "hex::serde")]
+        commit_secret: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        psk_secret: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        confirmed_transcript_hash: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        tree_hash: Vec<u8>,
 
-        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            let cs_provider = test_cipher_suite_provider(cipher_suite);
-            let key_size = cs_provider.kdf_extract_size();
+        #[serde(with = "hex::serde")]
+        group_context: Vec<u8>,
 
-            let key_schedule = get_test_key_schedule(cipher_suite);
-            let context = get_test_group_context(42, cipher_suite);
-            let psk = vec![0u8; key_size].into();
-            let commit = CommitSecret(vec![0u8; key_size].into());
+        #[serde(with = "hex::serde")]
+        joiner_secret: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        welcome_secret: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        init_secret: Vec<u8>,
 
-            let key_schedule = KeySchedule::from_key_schedule(
-                &key_schedule,
-                &commit,
-                &context,
-                32,
-                &psk,
-                &cs_provider,
-            )
-            .unwrap();
+        #[serde(with = "hex::serde")]
+        sender_data_secret: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        encryption_secret: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        exporter_secret: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        epoch_authenticator: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        external_secret: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        confirmation_key: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        membership_key: Vec<u8>,
+        #[serde(with = "hex::serde")]
+        resumption_psk: Vec<u8>,
 
-            test_cases.push(KeyScheduleTestCase {
-                cipher_suite: cipher_suite.into(),
-                joiner: key_schedule.joiner_secret.into(),
-                exporter: key_schedule.key_schedule.exporter_secret.clone(),
-                confirm: key_schedule.confirmation_key,
-                membership: key_schedule.key_schedule.membership_key.clone(),
-                resumption: key_schedule.epoch_secrets.resumption_secret.to_vec(),
-                authentication: key_schedule.key_schedule.authentication_secret.clone(),
-                sender_data: (*key_schedule.epoch_secrets.sender_data_secret).to_vec(),
-                encryption: key_schedule.epoch_secrets.secret_tree.get_root_secret(),
-            });
-        }
+        #[serde(with = "hex::serde")]
+        external_pub: Vec<u8>,
 
-        test_cases
+        exporter: KeyScheduleExporter,
     }
 
-    fn load_key_schedue_test_cases() -> Vec<KeyScheduleTestCase> {
-        load_test_cases!(
-            key_schedule_test_vector,
-            generate_key_schedule_test_vector()
-        )
+    #[derive(serde::Deserialize, serde::Serialize)]
+    struct KeyScheduleExporter {
+        label: String,
+        #[serde(with = "hex::serde")]
+        context: Vec<u8>,
+        length: usize,
+        #[serde(with = "hex::serde")]
+        secret: Vec<u8>,
     }
 
     #[test]
     fn test_key_schedule() {
-        let test_cases = load_key_schedue_test_cases();
+        let test_cases: Vec<KeyScheduleTestCase> =
+            load_test_cases!(key_schedule_test_vector, generate_key_schedule_tests());
 
         for test_case in test_cases {
             let Some(cs_provider) = try_test_cipher_suite_provider(test_case.cipher_suite) else {
                 continue;
             };
 
+            let mut key_schedule = get_test_key_schedule(cs_provider.cipher_suite());
+            key_schedule.init_secret.0 = test_case.initial_init_secret;
+
+            for (i, epoch) in test_case.epochs.into_iter().enumerate() {
+                let context = GroupContext {
+                    protocol_version: TEST_PROTOCOL_VERSION,
+                    cipher_suite: cs_provider.cipher_suite(),
+                    group_id: test_case.group_id.clone(),
+                    epoch: i as u64,
+                    tree_hash: epoch.tree_hash,
+                    confirmed_transcript_hash: epoch.confirmed_transcript_hash.into(),
+                    extensions: ExtensionList::new(),
+                };
+
+                assert_eq!(
+                    context.tls_serialize_detached().unwrap(),
+                    epoch.group_context
+                );
+
+                let psk = epoch.psk_secret.into();
+                let commit = CommitSecret(epoch.commit_secret.into());
+
+                let key_schedule_res = KeySchedule::from_key_schedule(
+                    &key_schedule,
+                    &commit,
+                    &context,
+                    32,
+                    &psk,
+                    &cs_provider,
+                )
+                .unwrap();
+
+                key_schedule = key_schedule_res.key_schedule;
+
+                let welcome =
+                    get_welcome_secret(&cs_provider, &key_schedule_res.joiner_secret, &psk)
+                        .unwrap();
+
+                assert_eq!(*welcome, epoch.welcome_secret);
+
+                let expected: Vec<u8> = key_schedule_res.joiner_secret.into();
+                assert_eq!(epoch.joiner_secret, expected);
+
+                assert_eq!(&key_schedule.init_secret.0, &epoch.init_secret);
+
+                assert_eq!(
+                    epoch.sender_data_secret,
+                    *key_schedule_res.epoch_secrets.sender_data_secret.to_vec()
+                );
+
+                assert_eq!(
+                    epoch.encryption_secret,
+                    *key_schedule_res.epoch_secrets.secret_tree.get_root_secret()
+                );
+
+                assert_eq!(epoch.exporter_secret, key_schedule.exporter_secret);
+
+                assert_eq!(
+                    epoch.epoch_authenticator,
+                    key_schedule.authentication_secret
+                );
+
+                assert_eq!(epoch.external_secret, key_schedule.external_secret);
+                assert_eq!(epoch.confirmation_key, key_schedule_res.confirmation_key);
+                assert_eq!(epoch.membership_key, key_schedule.membership_key);
+
+                let expected: Vec<u8> = key_schedule_res.epoch_secrets.resumption_secret.to_vec();
+                assert_eq!(epoch.resumption_psk, expected);
+
+                let (_external_sec, external_pub) =
+                    key_schedule.get_external_key_pair(&cs_provider).unwrap();
+
+                assert_eq!(epoch.external_pub, *external_pub);
+
+                let exp = epoch.exporter;
+
+                let exported = key_schedule
+                    .export_secret(&exp.label, &exp.context, exp.length, &cs_provider)
+                    .unwrap();
+
+                assert_eq!(exported, exp.secret);
+            }
+        }
+    }
+
+    fn generate_key_schedule_tests() -> Vec<KeyScheduleTestCase> {
+        let mut test_cases = vec![];
+
+        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
+            let cs_provider = test_cipher_suite_provider(cipher_suite);
             let key_size = cs_provider.kdf_extract_size();
 
-            let key_schedule = get_test_key_schedule(cs_provider.cipher_suite());
-            let context = get_test_group_context(42, cs_provider.cipher_suite());
+            let mut group_context = GroupContext {
+                protocol_version: TEST_PROTOCOL_VERSION,
+                cipher_suite: cs_provider.cipher_suite(),
+                group_id: b"my group 5".to_vec(),
+                epoch: 0,
+                tree_hash: random_bytes(key_size),
+                confirmed_transcript_hash: random_bytes(key_size).into(),
+                extensions: Default::default(),
+            };
 
-            let psk = vec![0u8; key_size].into();
-            let commit = CommitSecret(vec![0u8; key_size].into());
+            let initial_init_secret = InitSecret::random(&cs_provider).unwrap();
+            let mut key_schedule = get_test_key_schedule(cs_provider.cipher_suite());
+            key_schedule.init_secret = initial_init_secret.clone();
 
-            let key_schedule = KeySchedule::from_key_schedule(
+            let commit_secret = CommitSecret(random_bytes(key_size).into());
+            let psk_secret = PskSecret::new(&cs_provider);
+
+            let key_schedule_res = KeySchedule::from_key_schedule(
                 &key_schedule,
-                &commit,
-                &context,
+                &commit_secret,
+                &group_context,
                 32,
-                &psk,
+                &psk_secret,
                 &cs_provider,
             )
             .unwrap();
 
-            let expected: Vec<u8> = key_schedule.joiner_secret.into();
-            assert_eq!(test_case.joiner, expected);
+            key_schedule = key_schedule_res.key_schedule.clone();
 
-            assert_eq!(
-                test_case.sender_data,
-                *key_schedule.epoch_secrets.sender_data_secret.to_vec()
+            let epoch1 = KeyScheduleEpoch::new(
+                key_schedule_res,
+                psk_secret,
+                commit_secret.0.to_vec(),
+                &group_context,
+                &cs_provider,
             );
 
-            assert_eq!(
-                test_case.encryption,
-                *key_schedule.epoch_secrets.secret_tree.get_root_secret()
+            group_context.epoch += 1;
+            group_context.confirmed_transcript_hash = random_bytes(key_size).into();
+            group_context.tree_hash = random_bytes(key_size);
+
+            let commit_secret = CommitSecret(random_bytes(key_size).into());
+            let psk_secret = PskSecret::new(&cs_provider);
+
+            let key_schedule_res = KeySchedule::from_key_schedule(
+                &key_schedule,
+                &commit_secret,
+                &group_context,
+                32,
+                &psk_secret,
+                &cs_provider,
+            )
+            .unwrap();
+
+            let epoch2 = KeyScheduleEpoch::new(
+                key_schedule_res,
+                psk_secret,
+                commit_secret.0.to_vec(),
+                &group_context,
+                &cs_provider,
             );
 
-            assert_eq!(
-                test_case.exporter,
-                key_schedule.key_schedule.exporter_secret
-            );
+            let test_case = KeyScheduleTestCase {
+                cipher_suite: cs_provider.cipher_suite().into(),
+                group_id: group_context.group_id.clone(),
+                initial_init_secret: initial_init_secret.0.to_vec(),
+                epochs: vec![epoch1, epoch2],
+            };
 
-            assert_eq!(test_case.confirm, key_schedule.confirmation_key);
+            test_cases.push(test_case);
+        }
 
-            assert_eq!(
-                test_case.membership,
-                key_schedule.key_schedule.membership_key
-            );
+        test_cases
+    }
 
-            let expected: Vec<u8> = key_schedule.epoch_secrets.resumption_secret.to_vec();
-            assert_eq!(test_case.resumption, expected);
+    impl KeyScheduleEpoch {
+        fn new<P: CipherSuiteProvider>(
+            key_schedule_res: KeyScheduleDerivationResult,
+            psk_secret: PskSecret,
+            commit_secret: Vec<u8>,
+            group_context: &GroupContext,
+            cs: &P,
+        ) -> Self {
+            let (_external_sec, external_pub) = key_schedule_res
+                .key_schedule
+                .get_external_key_pair(cs)
+                .unwrap();
 
-            assert_eq!(
-                test_case.authentication,
-                key_schedule.key_schedule.authentication_secret
-            );
+            let mut exporter = KeyScheduleExporter {
+                label: "exporter label 15".to_string(),
+                context: b"exporter context".to_vec(),
+                length: 64,
+                secret: vec![],
+            };
+
+            exporter.secret = key_schedule_res
+                .key_schedule
+                .export_secret(&exporter.label, &exporter.context, exporter.length, cs)
+                .unwrap();
+
+            let welcome_secret =
+                get_welcome_secret(cs, &key_schedule_res.joiner_secret, &psk_secret)
+                    .unwrap()
+                    .to_vec();
+
+            KeyScheduleEpoch {
+                commit_secret,
+                welcome_secret,
+                psk_secret: psk_secret.to_vec(),
+                group_context: group_context.tls_serialize_detached().unwrap(),
+                joiner_secret: key_schedule_res.joiner_secret.into(),
+                init_secret: key_schedule_res.key_schedule.init_secret.0.clone(),
+                sender_data_secret: key_schedule_res.epoch_secrets.sender_data_secret.to_vec(),
+                encryption_secret: key_schedule_res.epoch_secrets.secret_tree.get_root_secret(),
+                exporter_secret: key_schedule_res.key_schedule.exporter_secret.clone(),
+                epoch_authenticator: key_schedule_res.key_schedule.authentication_secret.clone(),
+                external_secret: key_schedule_res.key_schedule.external_secret.clone(),
+                confirmation_key: key_schedule_res.confirmation_key,
+                membership_key: key_schedule_res.key_schedule.membership_key.clone(),
+                resumption_psk: key_schedule_res.epoch_secrets.resumption_secret.to_vec(),
+                external_pub: external_pub.to_vec(),
+                exporter,
+                confirmed_transcript_hash: group_context.confirmed_transcript_hash.to_vec(),
+                tree_hash: group_context.tree_hash.clone(),
+            }
         }
     }
 
