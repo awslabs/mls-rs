@@ -1,4 +1,4 @@
-use crate::sqlite_storage::connection_strategy::ConnectionStrategy;
+use crate::connection_strategy::ConnectionStrategy;
 use crate::SqLiteDataStorageError;
 use rusqlite::Connection;
 
@@ -7,9 +7,13 @@ use zeroize::{Zeroize, Zeroizing};
 
 #[allow(dead_code)]
 #[derive(Debug, Zeroize, Clone)]
+/// Representation of a SQLCipher key used to unlock a database.
 pub enum SqlCipherKey {
+    /// Passphrase based key.
     Passphrase(String),
+    /// Raw key material without a salt value.
     RawKey([u8; 32]),
+    /// Raw key material with a salt value.
     RawKeyWithSalt([u8; 48]),
 }
 
@@ -28,12 +32,14 @@ impl SqlCipherKey {
 }
 
 #[derive(Debug, Clone)]
+/// SQLCipher connection config.
 pub struct SqlCipherConfig {
     key: SqlCipherKey,
     plaintext_header_size: u8,
 }
 
 impl SqlCipherConfig {
+    /// Create a new config with a specific key.
     pub fn new(key: SqlCipherKey) -> SqlCipherConfig {
         SqlCipherConfig {
             key,
@@ -41,6 +47,7 @@ impl SqlCipherConfig {
         }
     }
 
+    /// Adjust the plaintext header size.
     pub fn with_plaintext_header(self, size: u8) -> SqlCipherConfig {
         SqlCipherConfig {
             plaintext_header_size: size,
@@ -49,6 +56,7 @@ impl SqlCipherConfig {
     }
 }
 
+/// Encrypted database connection with SQLCipher.
 pub struct CipheredConnectionStrategy<I>
 where
     I: ConnectionStrategy,
@@ -57,13 +65,14 @@ where
     cipher_config: SqlCipherConfig,
 }
 
-impl<I> CipheredConnectionStrategy<I>
+impl<CS> CipheredConnectionStrategy<CS>
 where
-    I: ConnectionStrategy,
+    CS: ConnectionStrategy,
 {
-    pub fn new(inner: I, cipher_config: SqlCipherConfig) -> CipheredConnectionStrategy<I> {
+    /// Create a new SQLCipher connection that inherits another connection strategy.
+    pub fn new(strategy: CS, cipher_config: SqlCipherConfig) -> CipheredConnectionStrategy<CS> {
         CipheredConnectionStrategy {
-            inner,
+            inner: strategy,
             cipher_config,
         }
     }
@@ -112,12 +121,10 @@ mod tests {
     use assert_matches::assert_matches;
     use tempfile::NamedTempFile;
 
-    use crate::sqlite_storage::cipher::SqlCipherConfig;
-    use crate::sqlite_storage::connection_strategy::{ConnectionStrategy, MemoryStrategy};
-    use crate::sqlite_storage::test_utils::gen_rand_bytes;
-    use crate::{
-        sqlite_storage::connection_strategy::FileConnectionStrategy, SqLiteDataStorageError,
-    };
+    use crate::cipher::SqlCipherConfig;
+    use crate::connection_strategy::{ConnectionStrategy, MemoryStrategy};
+    use crate::test_utils::gen_rand_bytes;
+    use crate::{connection_strategy::FileConnectionStrategy, SqLiteDataStorageError};
 
     use super::{CipheredConnectionStrategy, SqlCipherKey};
 

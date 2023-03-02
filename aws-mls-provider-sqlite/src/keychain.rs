@@ -11,6 +11,7 @@ use serde::Serialize;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
+/// SQLite storage for MLS identities and secret keys.
 pub struct SqLiteKeychainStorage {
     connection: Arc<Mutex<Connection>>,
 }
@@ -29,8 +30,9 @@ impl SqLiteKeychainStorage {
         }
     }
 
+    /// Insert a new signing identity into storage for use within MLS groups.
     pub fn insert(
-        &mut self,
+        &self,
         identity: SigningIdentity,
         signer: SignatureSecretKey,
         cipher_suite: CipherSuite,
@@ -46,13 +48,14 @@ impl SqLiteKeychainStorage {
         )
     }
 
-    pub fn delete(&mut self, identity: &SigningIdentity) -> Result<(), SqLiteDataStorageError> {
+    /// Delete an existing identity from storage.
+    pub fn delete(&self, identity: &SigningIdentity) -> Result<(), SqLiteDataStorageError> {
         let (identifier, _) = identifier_hash(identity)?;
         self.delete_storage(&identifier)
     }
 
     fn insert_storage(
-        &mut self,
+        &self,
         identifier: &[u8],
         identity_data: StoredSigningIdentity,
     ) -> Result<(), SqLiteDataStorageError> {
@@ -84,7 +87,7 @@ impl SqLiteKeychainStorage {
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
 
-    fn delete_storage(&mut self, identifier: &[u8]) -> Result<(), SqLiteDataStorageError> {
+    fn delete_storage(&self, identifier: &[u8]) -> Result<(), SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         connection
@@ -96,32 +99,24 @@ impl SqLiteKeychainStorage {
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
 
+    /// Get all stored identities that match a ciphersuite.
     pub fn get_identities(
         &self,
         cipher_suite: CipherSuite,
-    ) -> Result<Vec<(SigningIdentity, SignatureSecretKey)>, SqLiteDataStorageError> {
+    ) -> Result<Vec<SigningIdentity>, SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         let mut stmt = connection
-            .prepare("SELECT identity, signature_secret_key FROM keychain WHERE cipher_suite = ?")
+            .prepare("SELECT identity FROM keychain WHERE cipher_suite = ?")
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
 
-        let results = stmt
+        let identities = stmt
             .query_map(params![u16::from(cipher_suite)], |row| {
-                Ok((
-                    bincode::deserialize(&row.get::<_, Vec<u8>>(0)?).unwrap(),
-                    bincode::deserialize(&row.get::<_, Vec<u8>>(1)?).unwrap(),
-                ))
+                Ok(bincode::deserialize(&row.get::<_, Vec<u8>>(0)?).unwrap())
             })
-            .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?;
-
-        // Can't use try_fold due to borrow constraints on stmt and connection
-        let mut identities = Vec::new();
-
-        for identity in results {
-            identities
-                .push(identity.map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?);
-        }
+            .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| SqLiteDataStorageError::DataConversionError(e.into()))?;
 
         Ok(identities)
     }
@@ -174,8 +169,8 @@ mod tests {
     };
 
     use crate::{
-        sqlite_storage::{connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
         SqLiteDataStorageEngine,
+        {connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
     };
 
     use super::{SqLiteKeychainStorage, StoredSigningIdentity};
@@ -200,13 +195,13 @@ mod tests {
     fn test_storage() -> SqLiteKeychainStorage {
         SqLiteDataStorageEngine::new(MemoryStrategy)
             .unwrap()
-            .keychain()
+            .keychain_storage()
             .unwrap()
     }
 
     #[test]
     fn identity_insert() {
-        let mut storage = test_storage();
+        let storage = test_storage();
         let (identifier, stored_identity) = test_signing_identity();
 
         storage
@@ -216,7 +211,7 @@ mod tests {
         let from_storage = storage.get_identities(TEST_CIPHER_SUITE).unwrap();
 
         assert_eq!(from_storage.len(), 1);
-        assert_eq!(from_storage[0].0, stored_identity.identity);
+        assert_eq!(from_storage[0], stored_identity.identity);
 
         // Get just the signer
         let signer = storage.signer(&identifier).unwrap().unwrap();
@@ -225,7 +220,7 @@ mod tests {
 
     #[test]
     fn multiple_identities() {
-        let mut storage = test_storage();
+        let storage = test_storage();
         let test_identities = (0..10).map(|_| test_signing_identity()).collect::<Vec<_>>();
 
         test_identities
@@ -242,17 +237,17 @@ mod tests {
         from_storage.into_iter().for_each(|stored_identity| {
             assert!(test_identities
                 .iter()
-                .any(|item| { item.1.signer == stored_identity.1 }))
+                .any(|item| { item.1.identity == stored_identity }))
         });
     }
 
     #[test]
     fn delete_identity() {
-        let mut storage = test_storage();
+        let storage = test_storage();
         let (identifier, identity) = test_signing_identity();
 
         storage
-            .insert_storage(identifier.clone().as_slice(), identity)
+            .insert_storage(identifier.as_slice(), identity)
             .unwrap();
 
         storage.delete_storage(&identifier).unwrap();

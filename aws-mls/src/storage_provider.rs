@@ -7,3 +7,7 @@ pub(crate) mod psk;
 pub use group_state::*;
 pub use key_package::*;
 pub use psk::*;
+
+#[cfg(feature = "sqlite")]
+/// SQLite based storage providers.
+pub mod sqlite;

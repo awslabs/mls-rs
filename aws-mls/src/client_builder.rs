@@ -30,17 +30,40 @@ use crate::{
 };
 use async_trait::async_trait;
 
+#[cfg(feature = "sqlite")]
+use aws_mls_provider_sqlite::{
+    SqLiteDataStorageEngine, SqLiteDataStorageError,
+    {
+        connection_strategy::ConnectionStrategy,
+        storage::{
+            SqLiteGroupStateStorage, SqLiteKeyPackageStorage, SqLiteKeychainStorage,
+            SqLitePreSharedKeyStorage,
+        },
+    },
+};
+
 pub use crate::group::padding::PaddingMode;
 
 /// Base client configuration type when instantiating `ClientBuilder`
 pub type BaseConfig = Config<
     InMemoryKeyPackageStorage,
-    Missing,
+    InMemoryKeychainStorage,
     InMemoryPreSharedKeyStorage,
     InMemoryGroupStateStorage,
     Missing,
     KeepAllProposals,
-    // TODO replace by the final default provider
+    Missing,
+>;
+
+/// Base client configuration that is backed by SQLite storage.
+#[cfg(feature = "sqlite")]
+pub type BaseSqlConfig = Config<
+    SqLiteKeyPackageStorage,
+    SqLiteKeychainStorage,
+    SqLitePreSharedKeyStorage,
+    SqLiteGroupStateStorage,
+    Missing,
+    KeepAllProposals,
     Missing,
 >;
 
@@ -138,17 +161,37 @@ impl Default for ClientBuilder<BaseConfig> {
 }
 
 impl ClientBuilder<BaseConfig> {
+    /// Create a new client builder with default in-memory providers
     pub fn new() -> Self {
         Self(Config(ConfigInner {
             settings: Default::default(),
             key_package_repo: Default::default(),
-            keychain: Missing,
+            keychain: Default::default(),
             psk_store: Default::default(),
             group_state_storage: Default::default(),
             identity_provider: Missing,
             make_proposal_filter: KeepAllProposals,
             crypto_provider: Missing,
         }))
+    }
+}
+
+#[cfg(feature = "sqlite")]
+impl ClientBuilder<BaseSqlConfig> {
+    /// Create a new client builder with SQLite storage providers.
+    pub fn new_sqlite<CS: ConnectionStrategy>(
+        storage: SqLiteDataStorageEngine<CS>,
+    ) -> Result<Self, SqLiteDataStorageError> {
+        Ok(Self(Config(ConfigInner {
+            settings: Default::default(),
+            key_package_repo: storage.key_package_storage()?,
+            keychain: storage.keychain_storage()?,
+            psk_store: storage.pre_shared_key_storage()?,
+            group_state_storage: storage.group_state_storage()?,
+            identity_provider: Missing,
+            make_proposal_filter: KeepAllProposals,
+            crypto_provider: Missing,
+        })))
     }
 }
 

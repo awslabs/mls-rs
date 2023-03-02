@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 
 /// Base client configuration type when instantiating `ExternalClientBuilder`
-pub type ExternalBaseConfig = Config<Missing, Missing, KeepAllProposals, Missing>;
+pub type ExternalBaseConfig = Config<InMemoryKeychainStorage, Missing, KeepAllProposals, Missing>;
 
 /// Builder for [`ExternalClient`]
 ///
@@ -123,7 +123,7 @@ impl ExternalClientBuilder<ExternalBaseConfig> {
     pub fn new() -> Self {
         Self(Config(ConfigInner {
             settings: Default::default(),
-            keychain: Missing,
+            keychain: Default::default(),
             identity_provider: Missing,
             make_proposal_filter: KeepAllProposals,
             crypto_provider: Missing,

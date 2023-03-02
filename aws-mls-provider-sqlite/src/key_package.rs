@@ -6,13 +6,14 @@ use std::sync::{Arc, Mutex};
 use crate::SqLiteDataStorageError;
 
 #[derive(Debug, Clone)]
-pub struct SqLiteKeyPackageStore {
+/// SQLite storage for MLS Key Packages.
+pub struct SqLiteKeyPackageStorage {
     connection: Arc<Mutex<Connection>>,
 }
 
-impl SqLiteKeyPackageStore {
-    pub(crate) fn new(connection: Connection) -> SqLiteKeyPackageStore {
-        SqLiteKeyPackageStore {
+impl SqLiteKeyPackageStorage {
+    pub(crate) fn new(connection: Connection) -> SqLiteKeyPackageStorage {
+        SqLiteKeyPackageStorage {
             connection: Arc::new(Mutex::new(connection)),
         }
     }
@@ -50,7 +51,8 @@ impl SqLiteKeyPackageStore {
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
 
-    fn delete(&self, id: &[u8]) -> Result<(), SqLiteDataStorageError> {
+    /// Delete a specific key package from storage based on it's id.
+    pub fn delete(&self, id: &[u8]) -> Result<(), SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         connection
@@ -61,7 +63,7 @@ impl SqLiteKeyPackageStore {
 }
 
 #[async_trait]
-impl KeyPackageStorage for SqLiteKeyPackageStore {
+impl KeyPackageStorage for SqLiteKeyPackageStorage {
     type Error = SqLiteDataStorageError;
 
     async fn insert(&mut self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error> {
@@ -79,18 +81,18 @@ impl KeyPackageStorage for SqLiteKeyPackageStore {
 
 #[cfg(test)]
 mod tests {
-    use super::SqLiteKeyPackageStore;
+    use super::SqLiteKeyPackageStorage;
     use crate::{
-        sqlite_storage::{connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
         SqLiteDataStorageEngine, SqLiteDataStorageError,
+        {connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
     };
     use assert_matches::assert_matches;
     use aws_mls_core::{crypto::HpkeSecretKey, key_package::KeyPackageData};
 
-    fn test_storage() -> SqLiteKeyPackageStore {
+    fn test_storage() -> SqLiteKeyPackageStorage {
         SqLiteDataStorageEngine::new(MemoryStrategy)
             .unwrap()
-            .key_package_repository()
+            .key_package_storage()
             .unwrap()
     }
 

@@ -4,10 +4,16 @@ use rusqlite::Connection;
 
 use crate::SqLiteDataStorageError;
 
+#[cfg(any(feature = "sqlcipher", feature = "sqlcipher-bundled"))]
+pub use crate::cipher::*;
+
+/// Trait that helps to set up a SQLite database connection.
 pub trait ConnectionStrategy {
+    /// Connect to the SQLite database.
     fn make_connection(&self) -> Result<Connection, SqLiteDataStorageError>;
 }
 
+/// Connection strategy that creates an in-memory database.
 pub struct MemoryStrategy;
 
 impl ConnectionStrategy for MemoryStrategy {
@@ -16,6 +22,7 @@ impl ConnectionStrategy for MemoryStrategy {
     }
 }
 
+/// Connection strategy that connects to a database based on a file path.
 pub struct FileConnectionStrategy {
     db_path: PathBuf,
 }

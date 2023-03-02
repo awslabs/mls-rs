@@ -1,25 +1,50 @@
+use connection_strategy::ConnectionStrategy;
+use group_state::SqLiteGroupStateStorage;
+use keychain::SqLiteKeychainStorage;
+use psk::SqLitePreSharedKeyStorage;
 use rusqlite::Connection;
-use sqlite_storage::{
-    connection_strategy::ConnectionStrategy, group_state::SqLiteGroupStateStore,
-    key_package::SqLiteKeyPackageStore, keychain::SqLiteKeychainStorage,
-    psk::SqLitePreSharedKeyStorage,
-};
+use storage::SqLiteKeyPackageStorage;
 use thiserror::Error;
 
-pub mod sqlite_storage;
+mod group_state;
+mod key_package;
+mod keychain;
+mod psk;
+
+#[cfg(any(feature = "sqlcipher", feature = "sqlcipher-bundled"))]
+mod cipher;
+
+#[cfg(test)]
+pub(crate) mod test_utils;
+
+/// Connection strategies.
+pub mod connection_strategy;
+
+/// SQLite storage components.
+pub mod storage {
+    pub use {
+        crate::group_state::SqLiteGroupStateStorage, crate::key_package::SqLiteKeyPackageStorage,
+        crate::keychain::SqLiteKeychainStorage, crate::psk::SqLitePreSharedKeyStorage,
+    };
+}
 
 #[derive(Debug, Error)]
+/// SQLite data storage error.
 pub enum SqLiteDataStorageError {
     #[error(transparent)]
+    /// SQLite error.
     SqlEngineError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
+    /// Stored data is not compatible with the expected data type.
     DataConversionError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[cfg(any(feature = "sqlcipher", feature = "sqlcipher-bundled"))]
     #[error("invalid key, must use SqlCipherKey::RawKeyWithSalt with plaintext_header_size > 0")]
+    /// Invalid SQLCipher key header.
     SqlCipherKeyInvalidWithHeader,
 }
 
 #[derive(Clone, Debug)]
+/// SQLite data storage engine.
 pub struct SqLiteDataStorageEngine<CS>
 where
     CS: ConnectionStrategy,
@@ -54,19 +79,25 @@ where
         Ok(connection)
     }
 
-    pub fn group_state_storage(&self) -> Result<SqLiteGroupStateStore, SqLiteDataStorageError> {
-        Ok(SqLiteGroupStateStore::new(self.create_connection()?))
+    /// Returns a struct that implements the `GroupStateStorage` trait for use in MLS.
+    pub fn group_state_storage(&self) -> Result<SqLiteGroupStateStorage, SqLiteDataStorageError> {
+        Ok(SqLiteGroupStateStorage::new(self.create_connection()?))
     }
 
-    pub fn key_package_repository(&self) -> Result<SqLiteKeyPackageStore, SqLiteDataStorageError> {
-        Ok(SqLiteKeyPackageStore::new(self.create_connection()?))
+    /// Returns a struct that implements the `KeyPackageStorage` trait for use in MLS.
+    pub fn key_package_storage(&self) -> Result<SqLiteKeyPackageStorage, SqLiteDataStorageError> {
+        Ok(SqLiteKeyPackageStorage::new(self.create_connection()?))
     }
 
-    pub fn keychain(&self) -> Result<SqLiteKeychainStorage, SqLiteDataStorageError> {
+    /// Returns a struct that implements the `KeychainStorage` trait for use in MLS.
+    pub fn keychain_storage(&self) -> Result<SqLiteKeychainStorage, SqLiteDataStorageError> {
         Ok(SqLiteKeychainStorage::new(self.create_connection()?))
     }
 
-    pub fn psk_store(&self) -> Result<SqLitePreSharedKeyStorage, SqLiteDataStorageError> {
+    /// Returns a struct that implements the `PreSharedKeyStorage` trait for use in MLS.
+    pub fn pre_shared_key_storage(
+        &self,
+    ) -> Result<SqLitePreSharedKeyStorage, SqLiteDataStorageError> {
         Ok(SqLitePreSharedKeyStorage::new(self.create_connection()?))
     }
 }

@@ -8,6 +8,7 @@ use std::{
 };
 
 #[derive(Debug, Clone)]
+/// SQLite storage for MLS pre-shared keys.
 pub struct SqLitePreSharedKeyStorage {
     connection: Arc<Mutex<Connection>>,
 }
@@ -19,11 +20,8 @@ impl SqLitePreSharedKeyStorage {
         }
     }
 
-    pub fn insert(
-        &mut self,
-        psk_id: Vec<u8>,
-        psk: PreSharedKey,
-    ) -> Result<(), SqLiteDataStorageError> {
+    /// Insert a pre-shared key into storage.
+    pub fn insert(&self, psk_id: Vec<u8>, psk: PreSharedKey) -> Result<(), SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         // Upsert into the database
@@ -36,6 +34,7 @@ impl SqLitePreSharedKeyStorage {
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
 
+    /// Get a pre-shared key from storage based on a unique id.
     pub fn get(&self, psk_id: &[u8]) -> Result<Option<PreSharedKey>, SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
@@ -49,7 +48,8 @@ impl SqLitePreSharedKeyStorage {
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
 
-    pub fn delete(&mut self, psk_id: &[u8]) -> Result<(), SqLiteDataStorageError> {
+    /// Delete a pre-shared key from storage based on a unique id.
+    pub fn delete(&self, psk_id: &[u8]) -> Result<(), SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
         connection
@@ -80,8 +80,8 @@ mod tests {
     use aws_mls_core::psk::PreSharedKey;
 
     use crate::{
-        sqlite_storage::{connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
         SqLiteDataStorageEngine,
+        {connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
     };
 
     use super::SqLitePreSharedKeyStorage;
@@ -96,14 +96,14 @@ mod tests {
     fn test_storage() -> SqLitePreSharedKeyStorage {
         SqLiteDataStorageEngine::new(MemoryStrategy)
             .unwrap()
-            .psk_store()
+            .pre_shared_key_storage()
             .unwrap()
     }
 
     #[test]
     fn test_insert() {
         let (psk_id, psk) = test_psk();
-        let mut storage = test_storage();
+        let storage = test_storage();
 
         storage.insert(psk_id.clone(), psk.clone()).unwrap();
 
@@ -116,7 +116,7 @@ mod tests {
         let (psk_id, psk) = test_psk();
         let (_, new_psk) = test_psk();
 
-        let mut storage = test_storage();
+        let storage = test_storage();
 
         storage.insert(psk_id.clone(), psk).unwrap();
         storage.insert(psk_id.clone(), new_psk.clone()).unwrap();
@@ -128,7 +128,7 @@ mod tests {
     #[test]
     fn test_delete() {
         let (psk_id, psk) = test_psk();
-        let mut storage = test_storage();
+        let storage = test_storage();
 
         storage.insert(psk_id.clone(), psk).unwrap();
         storage.delete(&psk_id).unwrap();

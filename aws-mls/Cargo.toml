@@ -11,10 +11,18 @@ arbitrary = ["dep:arbitrary", "aws-mls-core/arbitrary"]
 rayon = ["dep:rayon"]
 external_client = []
 
+# SQLite support
+sqlite = ["aws-mls-provider-sqlite/sqlite"]
+sqlite-bundled = ["sqlite", "aws-mls-provider-sqlite/sqlite-bundled"]
+sqlcipher = ["sqlite", "aws-mls-provider-sqlite/sqlcipher"]
+sqlcipher-bundled = ["sqlite", "aws-mls-provider-sqlite/sqlcipher-bundled"]
+
+
 [dependencies]
 async-trait = "0.1.61"
 aws-mls-core = { path = "../aws-mls-core", version = "*" }
 aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", version = "*" }
+aws-mls-provider-sqlite = { path = "../aws-mls-provider-sqlite", version = "*", optional = true }
 thiserror = "^1"
 tls_codec = "0.2.0"
 tls_codec_derive = "0.2.0"
@@ -31,7 +39,6 @@ debug_tree = "0.4.0"
 arbitrary = { version = "1", features = ["derive"], optional = true }
 # TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
 rayon = { version = "1", optional = true }
-base64 = "0.13.0"
 num_enum = "0.5"
 cfg-if = "^1"
 serde_with = "^2"

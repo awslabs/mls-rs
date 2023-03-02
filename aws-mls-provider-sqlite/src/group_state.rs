@@ -18,17 +18,19 @@ impl StoredEpoch {
 }
 
 #[derive(Debug, Clone)]
-pub struct SqLiteGroupStateStore {
+/// SQLite Storage for MLS group states.
+pub struct SqLiteGroupStateStorage {
     connection: Arc<Mutex<Connection>>,
 }
 
-impl SqLiteGroupStateStore {
-    pub(crate) fn new(connection: Connection) -> SqLiteGroupStateStore {
-        SqLiteGroupStateStore {
+impl SqLiteGroupStateStorage {
+    pub(crate) fn new(connection: Connection) -> SqLiteGroupStateStorage {
+        SqLiteGroupStateStorage {
             connection: Arc::new(Mutex::new(connection)),
         }
     }
 
+    /// List all the group ids for groups that are stored.
     pub fn group_ids(&self) -> Result<Vec<Vec<u8>>, SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
@@ -48,6 +50,7 @@ impl SqLiteGroupStateStore {
         Ok(res)
     }
 
+    /// Delete a group from storage.
     pub fn delete_group(&self, group_id: &[u8]) -> Result<(), SqLiteDataStorageError> {
         let connection = self.connection.lock().unwrap();
 
@@ -173,7 +176,7 @@ impl SqLiteGroupStateStore {
 }
 
 #[async_trait]
-impl GroupStateStorage for SqLiteGroupStateStore {
+impl GroupStateStorage for SqLiteGroupStateStorage {
     type Error = SqLiteDataStorageError;
 
     async fn write<ST, ET>(
@@ -243,13 +246,13 @@ impl GroupStateStorage for SqLiteGroupStateStore {
 #[cfg(test)]
 mod tests {
     use crate::{
-        sqlite_storage::{connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
         SqLiteDataStorageEngine,
+        {connection_strategy::MemoryStrategy, test_utils::gen_rand_bytes},
     };
 
     use super::*;
 
-    fn get_test_storage() -> SqLiteGroupStateStore {
+    fn get_test_storage() -> SqLiteGroupStateStorage {
         SqLiteDataStorageEngine::new(MemoryStrategy)
             .unwrap()
             .group_state_storage()
@@ -272,7 +275,7 @@ mod tests {
     }
 
     struct TestData {
-        storage: SqLiteGroupStateStore,
+        storage: SqLiteGroupStateStorage,
         snapshot: Vec<u8>,
         group_id: Vec<u8>,
         epoch_0: StoredEpoch,
