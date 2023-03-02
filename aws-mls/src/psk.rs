@@ -161,6 +161,8 @@ pub enum PskError {
     GroupStateRepositoryError(#[from] GroupStateRepositoryError),
     #[error("Epoch {0} not found")]
     EpochNotFound(u64),
+    #[error("Old group state not found")]
+    OldGroupStateNotound,
     #[error(transparent)]
     CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]

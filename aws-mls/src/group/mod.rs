@@ -383,18 +383,25 @@ where
 
         let psk_store = config.secret_store();
 
-        let psk_secret = if let Some(parent_group) = parent_group {
+        let psk_resolver = if let Some(parent_group) = parent_group {
             PskResolver {
-                group_context: parent_group.context(),
-                current_epoch: &parent_group.epoch_secrets,
-                prior_epochs: &parent_group.state_repo,
+                group_context: Some(parent_group.context()),
+                current_epoch: Some(&parent_group.epoch_secrets),
+                prior_epochs: Some(&parent_group.state_repo),
                 psk_store: &psk_store,
             }
-            .resolve_to_secret(&group_secrets.psks, &cipher_suite_provider)
-            .await?
         } else {
-            PskSecret::new(&cipher_suite_provider)
+            PskResolver {
+                group_context: None,
+                current_epoch: None,
+                prior_epochs: None,
+                psk_store: &psk_store,
+            }
         };
+
+        let psk_secret = psk_resolver
+            .resolve_to_secret(&group_secrets.psks, &cipher_suite_provider)
+            .await?;
 
         // From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
         // the GroupSecrets, derive the welcome_secret and using that the welcome_key and
@@ -1901,9 +1908,9 @@ where
         let secret_store = self.config.secret_store();
 
         let psk_secret = PskResolver {
-            group_context: self.context(),
-            current_epoch: &self.epoch_secrets,
-            prior_epochs: &self.state_repo,
+            group_context: Some(self.context()),
+            current_epoch: Some(&self.epoch_secrets),
+            prior_epochs: Some(&self.state_repo),
             psk_store: &secret_store,
         }
         .resolve_to_secret(&provisional_state.psks, &self.cipher_suite_provider)
@@ -3744,5 +3751,39 @@ mod tests {
         let res = alice.group.process_incoming_message(commit).await.unwrap();
 
         assert_matches!(res.event, Event::Commit(commit) if commit.custom_proposals == vec![custom_proposal])
+    }
+
+    #[futures_test::test]
+    async fn can_join_with_psk() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .await
+            .group;
+
+        let (bob, key_pkg) =
+            test_client_with_key_pkg(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "bob").await;
+
+        let psk_id = ExternalPskId::new(vec![0]);
+        let psk = PreSharedKey::from(vec![0]);
+
+        alice
+            .config
+            .secret_store()
+            .insert(psk_id.clone(), psk.clone());
+
+        bob.config.secret_store().insert(psk_id.clone(), psk);
+
+        let commit = alice
+            .commit_builder()
+            .add_member(key_pkg.clone())
+            .unwrap()
+            .add_external_psk(psk_id)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        bob.join_group(None, commit.welcome_message.unwrap())
+            .await
+            .unwrap();
     }
 }

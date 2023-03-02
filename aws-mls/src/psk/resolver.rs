@@ -19,9 +19,9 @@ where
     PS: PreSharedKeyStorage,
     K: KeyPackageStorage,
 {
-    pub group_context: &'a GroupContext,
-    pub current_epoch: &'a EpochSecrets,
-    pub prior_epochs: &'a GroupStateRepository<GS, K>,
+    pub group_context: Option<&'a GroupContext>,
+    pub current_epoch: Option<&'a EpochSecrets>,
+    pub prior_epochs: Option<&'a GroupStateRepository<GS, K>>,
     pub psk_store: &'a PS,
 }
 
@@ -46,10 +46,14 @@ impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
         id: &PreSharedKeyID,
         epoch_id: u64,
     ) -> Result<PskSecretInput, PskError> {
-        if epoch_id == self.group_context.epoch {
-            Some(self.current_epoch.resumption_secret.clone())
+        let context = self.group_context.ok_or(PskError::OldGroupStateNotound)?;
+
+        if epoch_id == context.epoch {
+            let epoch = self.current_epoch.ok_or(PskError::OldGroupStateNotound)?;
+            Some(epoch.resumption_secret.clone())
         } else {
-            self.prior_epochs.resumption_secret(epoch_id).await?
+            let prior_epochs = self.prior_epochs.ok_or(PskError::OldGroupStateNotound)?;
+            prior_epochs.resumption_secret(epoch_id).await?
         }
         .ok_or(PskError::EpochNotFound(epoch_id))
         .map(|psk| PskSecretInput {

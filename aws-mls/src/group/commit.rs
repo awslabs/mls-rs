@@ -494,9 +494,9 @@ where
         let psk_store = self.config.secret_store();
 
         let psk_secret = PskResolver {
-            group_context: self.context(),
-            current_epoch: &self.epoch_secrets,
-            prior_epochs: &self.state_repo,
+            group_context: Some(self.context()),
+            current_epoch: Some(&self.epoch_secrets),
+            prior_epochs: Some(&self.state_repo),
             psk_store: &psk_store,
         }
         .resolve_to_secret(&provisional_state.psks, &self.cipher_suite_provider)
