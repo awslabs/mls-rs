@@ -1,11 +1,8 @@
 use assert_matches::assert_matches;
-use aws_mls::client_builder::{
-    BaseConfig, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider, WithKeychain,
-};
+use aws_mls::client_builder::{ClientBuilder, Preferences};
 use aws_mls::error::MlsError;
 use aws_mls::group::Event;
-use aws_mls::identity::basic::{BasicCredential, BasicIdentityProvider};
-use aws_mls::identity::Credential;
+use aws_mls::identity::basic::BasicIdentityProvider;
 use aws_mls::identity::SigningIdentity;
 use aws_mls::storage_provider::in_memory::InMemoryKeychainStorage;
 use aws_mls::ExtensionList;
@@ -28,21 +25,14 @@ use futures::StreamExt;
 use rand::RngCore;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 
+use test_utils::scenario_utils::get_test_groups;
+use test_utils::test_client::{generate_client, get_test_basic_credential, TestClientConfig};
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test_configure!(run_in_browser);
-
-type TestClientConfig = WithIdentityProvider<
-    BasicIdentityProvider,
-    WithKeychain<InMemoryKeychainStorage, WithCryptoProvider<TestCryptoProvider, BaseConfig>>,
->;
-
-// The same method exists in `credential::test_utils` but is not compiled without the `test` flag.
-pub fn get_test_basic_credential(identity: Vec<u8>) -> Credential {
-    BasicCredential::new(identity).into_credential()
-}
 
 fn test_params() -> impl Iterator<Item = (ProtocolVersion, CipherSuite, bool)> {
     ProtocolVersion::all().flat_map(|p| {
@@ -54,32 +44,6 @@ fn test_params() -> impl Iterator<Item = (ProtocolVersion, CipherSuite, bool)> {
                     .map(move |encrypt| (p, cs, encrypt))
             })
     })
-}
-
-struct TestClient {
-    client: Client<TestClientConfig>,
-    identity: SigningIdentity,
-}
-
-fn generate_client(cipher_suite: CipherSuite, id: Vec<u8>, preferences: Preferences) -> TestClient {
-    let cipher_suite_provider = TestCryptoProvider::new()
-        .cipher_suite_provider(cipher_suite)
-        .unwrap();
-
-    let (secret_key, public_key) = cipher_suite_provider.signature_key_generate().unwrap();
-
-    let credential = get_test_basic_credential(id);
-
-    let identity = SigningIdentity::new(credential, public_key);
-
-    let client = ClientBuilder::new()
-        .crypto_provider(TestCryptoProvider::default())
-        .identity_provider(BasicIdentityProvider::new())
-        .single_signing_identity(identity.clone(), secret_key, cipher_suite)
-        .preferences(preferences)
-        .build();
-
-    TestClient { client, identity }
 }
 
 async fn test_create(
@@ -146,120 +110,6 @@ async fn test_create_group() {
 
         test_create(protocol_version, cs, preferences).await;
     }
-}
-
-async fn get_test_groups(
-    protocol_version: ProtocolVersion,
-    cipher_suite: CipherSuite,
-    num_participants: usize,
-    preferences: Preferences,
-) -> (Group<TestClientConfig>, Vec<Group<TestClientConfig>>) {
-    let (creator_group, receiver_groups, _) = get_test_groups_clients(
-        protocol_version,
-        cipher_suite,
-        num_participants,
-        preferences,
-    )
-    .await;
-    (creator_group, receiver_groups)
-}
-
-async fn get_test_groups_clients(
-    protocol_version: ProtocolVersion,
-    cipher_suite: CipherSuite,
-    num_participants: usize,
-    preferences: Preferences,
-) -> (
-    Group<TestClientConfig>,
-    Vec<Group<TestClientConfig>>,
-    Vec<TestClient>,
-) {
-    // Create the group with Alice as the group initiator
-    let creator = generate_client(cipher_suite, b"alice".to_vec(), preferences.clone());
-
-    let mut creator_group = creator
-        .client
-        .create_group_with_id(
-            protocol_version,
-            cipher_suite,
-            b"group".to_vec(),
-            creator.identity,
-            ExtensionList::default(),
-        )
-        .await
-        .unwrap();
-
-    // Generate random clients that will be members of the group
-    let receiver_clients = (0..num_participants)
-        .map(|i| {
-            generate_client(
-                cipher_suite,
-                format!("bob{i}").into_bytes(),
-                preferences.clone(),
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let receiver_keys = futures::stream::iter(&receiver_clients)
-        .then(|client| async {
-            client
-                .client
-                .generate_key_package_message(
-                    protocol_version,
-                    cipher_suite,
-                    client.identity.clone(),
-                )
-                .await
-                .unwrap()
-        })
-        .collect::<Vec<MLSMessage>>()
-        .await;
-
-    // Add the generated clients to the group the creator made
-
-    let welcome = futures::stream::iter(&receiver_keys)
-        .fold(creator_group.commit_builder(), |builder, item| async move {
-            builder.add_member(item.clone()).unwrap()
-        })
-        .await
-        .build()
-        .await
-        .unwrap()
-        .welcome_message;
-
-    // Creator can confirm the commit was processed by the server
-    let update = creator_group.apply_pending_commit().await.unwrap();
-
-    assert!(update.is_active());
-    assert_eq!(update.new_epoch(), 1);
-
-    assert!(receiver_clients.iter().all(|client| creator_group
-        .get_member_with_identity(client.identity.credential.as_basic().unwrap().identifier())
-        .is_ok()));
-
-    assert!(update.roster_update().removed().is_empty());
-
-    // Export the tree for receivers
-    let tree_data = creator_group.export_tree().unwrap();
-
-    // All the receivers will be able to join the group
-    let receiver_groups = futures::stream::iter(&receiver_clients)
-        .then(|client| async {
-            client
-                .client
-                .join_group(Some(&tree_data), welcome.clone().unwrap())
-                .await
-                .unwrap()
-                .0
-        })
-        .collect::<Vec<_>>()
-        .await;
-
-    for one_receiver in &receiver_groups {
-        assert!(Group::equal_group_state(&creator_group, one_receiver));
-    }
-
-    (creator_group, receiver_groups, receiver_clients)
 }
 
 async fn add_random_members(

@@ -31,6 +31,7 @@ pub(crate) struct TestGroup {
 }
 
 impl TestGroup {
+    #[cfg(feature = "external_client")]
     pub(crate) async fn propose(&mut self, proposal: Proposal) -> MLSMessage {
         self.group.proposal_message(proposal, vec![]).await.unwrap()
     }

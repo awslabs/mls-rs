@@ -29,6 +29,10 @@ pub enum TreeValidationError {
     ParentHashMismatch,
     #[error("unexpected pattern of unmerged leaves")]
     UnmergedLeavesMismatch,
+    #[error("empty tree")]
+    EmptyTree,
+    #[error("trailing blanks")]
+    TrailingBlanks,
 }
 
 pub(crate) struct TreeValidator<'a, C, CSP>
@@ -64,10 +68,22 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
 
     pub async fn validate(&self, tree: &mut TreeKemPublic) -> Result<(), TreeValidationError> {
         self.validate_tree_hash(tree)?;
+
         tree.validate_parent_hashes(self.cipher_suite_provider)
             .map_err(|_| TreeValidationError::ParentHashMismatch)?;
+
+        self.validate_no_trailing_blanks(tree)?;
         self.validate_leaves(tree).await?;
         validate_unmerged(tree)
+    }
+
+    fn validate_no_trailing_blanks(&self, tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
+        tree.nodes
+            .last()
+            .ok_or(TreeValidationError::EmptyTree)?
+            .is_some()
+            .then_some(())
+            .ok_or(TreeValidationError::TrailingBlanks)
     }
 
     fn validate_tree_hash(&self, tree: &mut TreeKemPublic) -> Result<(), TreeValidationError> {
