@@ -180,6 +180,7 @@ pub mod tree_kem;
 mod tree_kem;
 
 pub use tls_codec;
+pub use tls_codec_derive;
 
 mod private {
     pub trait Sealed {}

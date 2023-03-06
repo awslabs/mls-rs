@@ -7,8 +7,10 @@ pub mod x509 {
 }
 
 pub use aws_mls_core::identity::{
-    Credential, CredentialType, CustomCredential, MlsCredential, SigningIdentity,
+    Credential, CredentialType, CustomCredential, IdentityWarning, MlsCredential, SigningIdentity,
 };
+
+pub use aws_mls_core::group::RosterUpdate;
 
 #[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {

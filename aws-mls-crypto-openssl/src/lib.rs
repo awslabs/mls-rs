@@ -27,6 +27,8 @@ use aws_mls_core::crypto::{
     SignaturePublicKey, SignatureSecretKey,
 };
 
+pub use openssl;
+
 #[derive(Debug, Error)]
 pub enum OpensslCryptoError {
     #[error(transparent)]

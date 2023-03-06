@@ -4,10 +4,28 @@ use async_trait::async_trait;
 use super::{CredentialType, SigningIdentity};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 /// Customizable identity warning returned by an [`IdentityProvider`].
 pub struct IdentityWarning {
-    pub member_index: u32,
-    pub code: u64,
+    member_index: u32,
+    code: u64,
+}
+
+impl IdentityWarning {
+    /// Create a new identity warning.
+    pub fn new(member_index: u32, code: u64) -> IdentityWarning {
+        IdentityWarning { member_index, code }
+    }
+
+    /// Index in the group roster associated with this warning.
+    pub fn member_index(&self) -> u32 {
+        self.member_index
+    }
+
+    /// Code to indicate the reason for the warning.
+    pub fn code(&self) -> u64 {
+        self.code
+    }
 }
 
 #[async_trait]
