@@ -15,6 +15,7 @@ async fn interop_passive_client() {
     // Test vectors can be found here:
     // * https://github.com/mlswg/mls-implementations/blob/main/test-vectors/passive-client-welcome.json
     // * https://github.com/mlswg/mls-implementations/blob/main/test-vectors/passive-client-handle-commit.json
+    // * https://github.com/mlswg/mls-implementations/blob/main/test-vectors/passive-client-random.json
 
     let test_cases_wel: Vec<TestCase> =
         load_test_cases!(interop_passive_client_welcome, Vec::<TestCase>::new());
@@ -22,9 +23,14 @@ async fn interop_passive_client() {
     let test_cases_com: Vec<TestCase> =
         load_test_cases!(interop_passive_client_handle_commit, Vec::<TestCase>::new());
 
-    for (i, test_case) in test_cases_com
+    let test_cases_rand: Vec<TestCase> =
+        load_test_cases!(interop_passive_client_random, Vec::<TestCase>::new());
+
+    for (i, test_case) in vec![]
         .into_iter()
+        .chain(test_cases_com.into_iter())
         .chain(test_cases_wel.into_iter())
+        .chain(test_cases_rand.into_iter())
         .enumerate()
     {
         println!("test {i} cipher suite {}", test_case.cipher_suite);

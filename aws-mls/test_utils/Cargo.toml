@@ -20,3 +20,4 @@ aws-mls-crypto-rustcrypto = { path = "../../aws-mls-crypto-rustcrypto", features
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 aws-mls-crypto-openssl = { path = "../../aws-mls-crypto-openssl", version = "*"}
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+rand = "0.8"

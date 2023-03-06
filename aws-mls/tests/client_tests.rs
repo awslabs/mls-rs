@@ -6,7 +6,6 @@ use aws_mls::identity::basic::BasicIdentityProvider;
 use aws_mls::identity::SigningIdentity;
 use aws_mls::storage_provider::in_memory::InMemoryKeychainStorage;
 use aws_mls::ExtensionList;
-use aws_mls::MLSMessage;
 use aws_mls::ProtocolVersion;
 use aws_mls::{CipherSuite, Group};
 use aws_mls::{Client, CryptoProvider};
@@ -25,7 +24,10 @@ use futures::StreamExt;
 use rand::RngCore;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 
-use test_utils::scenario_utils::get_test_groups;
+use test_utils::scenario_utils::{
+    add_random_members, all_process_commit_with_update, all_process_message, get_test_groups,
+    remove_members,
+};
 use test_utils::test_client::{generate_client, get_test_basic_credential, TestClientConfig};
 
 #[cfg(target_arch = "wasm32")]
@@ -112,140 +114,22 @@ async fn test_create_group() {
     }
 }
 
-async fn add_random_members(
-    first_id: usize,
-    num_added: usize,
-    sender: usize,
-    committer: usize,
-    groups: &mut Vec<Group<TestClientConfig>>,
-    cipher_suite: CipherSuite,
-    preferences: Preferences,
-) {
-    let (key_packages, new_clients): (Vec<_>, Vec<_>) = futures::stream::iter(0..num_added)
-        .then(|i| {
-            let preferences = preferences.clone();
-            async move {
-                let id = first_id + i;
-                let new_client =
-                    generate_client(cipher_suite, format!("dave-{id}").into(), preferences);
-
-                let key_package = new_client
-                    .client
-                    .generate_key_package_message(
-                        ProtocolVersion::MLS_10,
-                        cipher_suite,
-                        new_client.identity.clone(),
-                    )
-                    .await
-                    .unwrap();
-
-                (key_package, new_client)
-            }
-        })
-        .unzip()
-        .await;
-
-    let add_proposals: Vec<MLSMessage> = futures::stream::iter(key_packages)
-        .fold(
-            (&mut groups[sender], Vec::new()),
-            |(group, mut acc), kp| async {
-                acc.push(group.propose_add(kp, vec![]).await.unwrap());
-                (group, acc)
-            },
-        )
-        .await
-        .1;
-
-    for (i, group) in groups.iter_mut().enumerate() {
-        if i != sender {
-            for p in &add_proposals {
-                group.process_incoming_message(p.clone()).await.unwrap();
-            }
-        }
-    }
-
-    let commit_output = groups[committer].commit(vec![]).await.unwrap();
-
-    for (i, group) in groups.iter_mut().enumerate() {
-        if i == committer {
-            group.apply_pending_commit().await.unwrap();
-        } else {
-            group
-                .process_incoming_message(commit_output.commit_message.clone())
-                .await
-                .unwrap();
-        }
-    }
-
-    let tree_data = groups[committer].export_tree().unwrap();
-
-    for client in &new_clients {
-        groups.push(
-            client
-                .client
-                .join_group(
-                    Some(&tree_data),
-                    commit_output.welcome_message.clone().unwrap(),
-                )
-                .await
-                .unwrap()
-                .0,
-        );
-    }
-}
-
-async fn remove_members(
-    removed_members: Vec<usize>,
-    committer: usize,
-    groups: &mut Vec<Group<TestClientConfig>>,
-) {
-    let remove_indexes = removed_members
-        .iter()
-        .map(|removed| groups[*removed].current_member_index())
-        .collect::<Vec<u32>>();
-
-    let commit_builder = futures::stream::iter(remove_indexes)
-        .fold(
-            groups[committer].commit_builder(),
-            |builder, index| async move { builder.remove_member(index).unwrap() },
-        )
-        .await;
-
-    let commit = commit_builder.build().await.unwrap().commit_message;
-
-    for (i, group) in groups.iter_mut().enumerate() {
-        if i == committer {
-            group.apply_pending_commit().await.unwrap();
-        } else {
-            group
-                .process_incoming_message(commit.clone())
-                .await
-                .unwrap();
-        }
-    }
-
-    let mut index = 0;
-    groups.retain(|_| {
-        index += 1;
-        !(removed_members.contains(&(index - 1)))
-    });
-}
-
 #[futures_test::test]
 async fn test_many_commits() {
     let cipher_suite = CipherSuite::CURVE25519_AES128;
     let preferences = Preferences::default();
 
-    let (creator_group, mut groups) = get_test_groups(
+    let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,
         cipher_suite,
-        10,
+        11,
         preferences.clone(),
     )
     .await;
 
-    groups.push(creator_group);
-    let mut rng = rand::rngs::StdRng::from_seed([42; 32]);
+    let seed: <rand::rngs::StdRng as SeedableRng>::Seed = rand::random();
+    let mut rng = rand::rngs::StdRng::from_seed(seed);
+    println!("testing random commits for seed {}", hex::encode(seed));
 
     let mut random_member_first_index = 0;
     for i in 0..100 {
@@ -253,7 +137,7 @@ async fn test_many_commits() {
         let num_removed = rng.gen_range(0..groups.len());
         let mut members = (0..groups.len()).choose_multiple(&mut rng, num_removed + 1);
         let sender = members.pop().unwrap();
-        remove_members(members, sender, &mut groups).await;
+        remove_members(members, sender, &mut groups, None).await;
 
         let num_added = rng.gen_range(2..12);
         let sender = rng.gen_range(0..groups.len());
@@ -262,10 +146,8 @@ async fn test_many_commits() {
             random_member_first_index,
             num_added,
             sender,
-            sender,
             &mut groups,
-            cipher_suite,
-            preferences.clone(),
+            None,
         )
         .await;
 
@@ -283,35 +165,22 @@ async fn test_empty_commits(
         "Testing empty commits for cipher suite: {cipher_suite:?}, participants: {participants}, {preferences:?}",
     );
 
-    let (mut creator_group, mut receiver_groups) =
+    let mut groups =
         get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
 
     // Loop through each participant and send a path update
 
-    for i in 0..receiver_groups.len() {
+    for i in 0..groups.len() {
         // Create the commit
-        let commit_output = receiver_groups[i].commit(vec![]).await.unwrap();
+        let commit_output = groups[i].commit(vec![]).await.unwrap();
 
         assert!(commit_output.welcome_message.is_none());
 
-        // Creator group processes the commit
-        creator_group
-            .process_incoming_message(commit_output.commit_message.clone())
-            .await
-            .unwrap();
+        let index = groups[i].current_member_index() as usize;
+        all_process_message(&mut groups, &commit_output.commit_message, index, true).await;
 
-        // Receiver groups process the commit
-        for (j, one_receiver) in receiver_groups.iter_mut().enumerate() {
-            if i == j {
-                one_receiver.apply_pending_commit().await.unwrap();
-            } else {
-                one_receiver
-                    .process_incoming_message(commit_output.commit_message.clone())
-                    .await
-                    .unwrap();
-            }
-
-            assert!(Group::equal_group_state(one_receiver, &creator_group));
+        for other_group in groups.iter() {
+            assert!(Group::equal_group_state(other_group, &groups[i]));
         }
     }
 }
@@ -341,65 +210,36 @@ async fn test_update_proposals(
         "Testing update proposals for cipher suite: {cipher_suite:?}, participants: {participants}, {preferences:?}",
     );
 
-    let (mut creator_group, mut receiver_groups) =
+    let mut groups =
         get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
 
     // Create an update from the ith member, have the ith + 1 member commit it
-    for i in 0..receiver_groups.len() - 1 {
-        let update_proposal_msg = receiver_groups[i].propose_update(vec![]).await.unwrap();
+    for i in 0..groups.len() - 1 {
+        let update_proposal_msg = groups[i].propose_update(vec![]).await.unwrap();
 
-        // Everyone should process the proposal
-        creator_group
-            .process_incoming_message(update_proposal_msg.clone())
-            .await
-            .unwrap();
-
-        for (j, g) in receiver_groups.iter_mut().enumerate() {
-            if i != j {
-                g.process_incoming_message(update_proposal_msg.clone())
-                    .await
-                    .unwrap();
-            }
-        }
+        let sender = groups[i].current_member_index() as usize;
+        all_process_message(&mut groups, &update_proposal_msg, sender, false).await;
 
         // Everyone receives the commit
         let committer_index = i + 1;
 
-        let commit_output = receiver_groups[committer_index]
-            .commit(vec![])
-            .await
-            .unwrap();
+        let commit_output = groups[committer_index].commit(vec![]).await.unwrap();
 
         assert!(commit_output.welcome_message.is_none());
 
-        creator_group
-            .process_incoming_message(commit_output.commit_message.clone())
-            .await
-            .unwrap();
+        let commit = commit_output.commit_message();
+        let updates = all_process_commit_with_update(&mut groups, commit, committer_index).await;
 
-        for (j, receiver) in receiver_groups.iter_mut().enumerate() {
-            let update = if j == committer_index {
-                receiver.apply_pending_commit().await
-            } else {
-                let state_update_message = receiver
-                    .process_incoming_message(commit_output.commit_message.clone())
-                    .await
-                    .unwrap()
-                    .event;
-
-                match state_update_message {
-                    Event::Commit(update) => Ok(update),
-                    _ => panic!("Expected commit result"),
-                }
-            }
-            .unwrap();
-
+        for update in updates {
             assert!(update.is_active());
             assert_eq!(update.new_epoch(), (i as u64) + 2);
             assert!(update.roster_update().added().is_empty());
             assert!(update.roster_update().removed().is_empty());
-            assert!(Group::equal_group_state(receiver, &creator_group));
         }
+
+        groups
+            .iter()
+            .for_each(|g| assert!(Group::equal_group_state(g, &groups[0])));
     }
 }
 
@@ -428,17 +268,20 @@ async fn test_remove_proposals(
         "Testing remove proposals for cipher suite: {cipher_suite:?}, participants: {participants}, {preferences:?}",
     );
 
-    let (mut creator_group, mut receiver_groups) =
+    let mut groups =
         get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
 
     let mut epoch_count = 1;
 
     // Remove people from the group one at a time
-    while receiver_groups.len() > 1 {
-        let group_to_remove = receiver_groups.choose(&mut rand::thread_rng()).unwrap();
-        let to_remove_index = group_to_remove.current_member_index();
+    while groups.len() > 1 {
+        let removed_and_committer = (0..groups.len()).choose_multiple(&mut rand::thread_rng(), 2);
 
-        let commit_output = creator_group
+        let to_remove = removed_and_committer[0];
+        let committer = removed_and_committer[1];
+        let to_remove_index = groups[to_remove].current_member_index();
+
+        let commit_output = groups[committer]
             .commit_builder()
             .remove_member(to_remove_index)
             .unwrap()
@@ -448,29 +291,18 @@ async fn test_remove_proposals(
 
         assert!(commit_output.welcome_message.is_none());
 
-        // Process the removal in the creator group
-        creator_group.apply_pending_commit().await.unwrap();
+        let commit = commit_output.commit_message();
+        let committer_index = groups[committer].current_member_index() as usize;
+        let updates = all_process_commit_with_update(&mut groups, commit, committer_index).await;
 
         epoch_count += 1;
 
-        // Process the removal in the other receiver groups
-        for one_group in receiver_groups.iter_mut() {
-            let expect_inactive = one_group.current_member_index() == to_remove_index;
-
-            let state_update = one_group
-                .process_incoming_message(commit_output.commit_message.clone())
-                .await
-                .unwrap();
-
-            let update = match state_update.event {
-                Event::Commit(update) => update,
-                _ => panic!("Expected commit result"),
-            };
-
+        // Check that remove was effective
+        for (i, update) in updates.iter().enumerate() {
             assert_eq!(update.new_epoch(), epoch_count as u64);
             assert!(update.roster_update().added().is_empty());
 
-            if expect_inactive {
+            if i == to_remove {
                 assert!(!update.is_active())
             } else {
                 assert!(update
@@ -483,10 +315,10 @@ async fn test_remove_proposals(
             }
         }
 
-        receiver_groups.retain(|group| group.current_member_index() != to_remove_index);
+        groups.retain(|group| group.current_member_index() != to_remove_index);
 
-        for one_group in receiver_groups.iter() {
-            assert!(Group::equal_group_state(one_group, &creator_group))
+        for one_group in groups.iter() {
+            assert!(Group::equal_group_state(one_group, &groups[0]))
         }
     }
 }
@@ -517,30 +349,25 @@ async fn test_application_messages(
         "Testing application messages for cipher suite: {protocol_version:?} {cipher_suite:?}, participants: {participants}, message count: {message_count}, {preferences:?}",
     );
 
-    let (mut creator_group, mut receiver_groups) =
+    let mut groups =
         get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
 
     // Loop through each participant and send application messages
-    for i in 0..receiver_groups.len() {
+    for i in 0..groups.len() {
         let mut test_message = vec![0; 1024];
         rand::thread_rng().fill_bytes(&mut test_message);
 
         for _ in 0..message_count {
             // Encrypt the application message
-            let ciphertext = receiver_groups[i]
+            let ciphertext = groups[i]
                 .encrypt_application_message(&test_message, vec![])
                 .await
                 .unwrap();
 
-            // Creator receives the application message
-            creator_group
-                .process_incoming_message(ciphertext.clone())
-                .await
-                .unwrap();
+            let sender_index = groups[i].current_member_index();
 
-            // Everyone else receives the application message
-            for (j, g) in receiver_groups.iter_mut().enumerate() {
-                if i != j {
+            for g in groups.iter_mut() {
+                if g.current_member_index() != sender_index {
                     let decrypted = g
                         .process_incoming_message(ciphertext.clone())
                         .await
@@ -555,15 +382,16 @@ async fn test_application_messages(
 
 #[futures_test::test]
 async fn test_out_of_order_application_messages() {
-    let (mut alice_group, mut receiver_groups) = get_test_groups(
+    let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,
         CipherSuite::CURVE25519_AES128,
-        1,
+        2,
         Preferences::default(),
     )
     .await;
 
-    let bob_group = receiver_groups.get_mut(0).unwrap();
+    let mut alice_group = groups[0].clone();
+    let bob_group = &mut groups[1];
 
     let mut ciphertexts = vec![alice_group
         .encrypt_application_message(&[0], vec![])
@@ -630,8 +458,8 @@ async fn processing_message_from_self_returns_error(
         "Verifying that processing one's own message returns an error for cipher suite: {cipher_suite:?}, {preferences:?}",
     );
 
-    let (mut creator_group, _) =
-        get_test_groups(protocol_version, cipher_suite, 1, preferences).await;
+    let mut creator_group = get_test_groups(protocol_version, cipher_suite, 1, preferences).await;
+    let creator_group = &mut creator_group[0];
 
     let commit = creator_group
         .commit(Vec::new())
@@ -751,7 +579,7 @@ async fn test_external_commits() {
 
 #[futures_test::test]
 async fn test_remove_nonexisting_leaf() {
-    let (_, mut groups) = get_test_groups(
+    let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,
         CipherSuite::CURVE25519_AES128,
         10,

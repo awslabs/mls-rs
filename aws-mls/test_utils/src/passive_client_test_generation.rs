@@ -7,6 +7,10 @@ use aws_mls::{
     ProtocolVersion,
 };
 
+use rand::{seq::IteratorRandom, Rng, SeedableRng};
+
+use crate::scenario_utils::{add_random_members, remove_members};
+
 use super::{
     scenario_utils::{
         all_process_message, get_test_groups, TestCase, TestEpoch, TestExternalPsk, TestRatchetTree,
@@ -93,15 +97,13 @@ pub async fn generate_passive_client_proposal_tests() {
         let crypto_provider = TestCryptoProvider::new();
         let Some(cs) = crypto_provider.cipher_suite_provider(cs) else { continue };
 
-        let (creator_group, mut groups) = get_test_groups(
+        let mut groups = get_test_groups(
             ProtocolVersion::MLS_10,
             cs.cipher_suite(),
-            6,
+            7,
             Preferences::default().with_ratchet_tree_extension(true),
         )
         .await;
-
-        groups.insert(0, creator_group);
 
         let mut partial_test_case = invite_passive_client(&mut groups, false, &cs).await;
 
@@ -295,17 +297,15 @@ pub async fn generate_passive_client_welcome_tests() {
         for with_tree_in_extension in [true, false] {
             for (with_psk, with_path) in [false, true].into_iter().cartesian_product([true, false])
             {
-                let (creator_group, mut groups) = get_test_groups(
+                let mut groups = get_test_groups(
                     ProtocolVersion::MLS_10,
                     cs.cipher_suite(),
-                    15,
+                    16,
                     Preferences::default()
                         .with_ratchet_tree_extension(with_tree_in_extension)
                         .force_commit_path_update(with_path),
                 )
                 .await;
-
-                groups.insert(0, creator_group);
 
                 // Remove a member s.t. the passive member joins in their place
                 let proposal = groups[0].propose_remove(7, vec![]).await.unwrap();
@@ -325,4 +325,67 @@ pub async fn generate_passive_client_welcome_tests() {
 
     let serialized_tests = serde_json::to_string_pretty(&test_cases).unwrap();
     write_test_cases("interop_passive_client_welcome", &serialized_tests);
+}
+
+pub async fn generate_passive_client_random_tests() {
+    let mut test_cases: Vec<TestCase> = vec![];
+
+    for cs in CipherSuite::all() {
+        let crypto_provider = TestCryptoProvider::new();
+        let Some(cs) = crypto_provider.cipher_suite_provider(cs) else { continue };
+
+        let mut groups = get_test_groups(
+            ProtocolVersion::MLS_10,
+            cs.cipher_suite(),
+            11,
+            Preferences::default().with_ratchet_tree_extension(true),
+        )
+        .await;
+
+        let mut test_case = invite_passive_client(&mut groups, false, &cs).await;
+
+        let passive_client_index = 11;
+
+        let seed: <rand::rngs::StdRng as SeedableRng>::Seed = rand::random();
+        let mut rng = rand::rngs::StdRng::from_seed(seed);
+        println!("generating random commits for seed {}", hex::encode(seed));
+
+        let mut random_member_first_index = 0;
+        for i in 0..100 {
+            println!("running step {i} members : {}", groups[0].roster().len());
+
+            // We keep the passive client and another member to send
+            let num_removed = rng.gen_range(0..groups.len() - 2);
+            let num_added = rng.gen_range(1..30);
+
+            let mut members = (0..groups.len())
+                .filter(|i| groups[*i].current_member_index() != passive_client_index)
+                .choose_multiple(&mut rng, num_removed + 1);
+
+            let sender = members.pop().unwrap();
+
+            remove_members(members, sender, &mut groups, Some(&mut test_case)).await;
+
+            let sender = (0..groups.len())
+                .filter(|i| groups[*i].current_member_index() != passive_client_index)
+                .choose(&mut rng)
+                .unwrap();
+
+            add_random_members(
+                random_member_first_index,
+                num_added,
+                sender,
+                &mut groups,
+                Some(&mut test_case),
+            )
+            .await;
+
+            random_member_first_index += num_added;
+        }
+
+        test_cases.push(test_case);
+    }
+
+    let serialized_tests = serde_json::to_string_pretty(&test_cases).unwrap();
+    write_test_cases("interop_passive_client_random", &serialized_tests);
 }
