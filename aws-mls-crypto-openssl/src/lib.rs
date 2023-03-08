@@ -15,6 +15,8 @@ use aws_mls_crypto_hpke::{
     hpke::{Hpke, HpkeError},
 };
 use aws_mls_crypto_traits::{AeadType, KdfType, KemType};
+
+use ec::EcError;
 use ec_signer::{EcSigner, EcSignerError};
 use ecdh::{Ecdh, KemId};
 use kdf::Kdf;
@@ -43,6 +45,8 @@ pub enum OpensslCryptoError {
     EcSignerError(#[from] EcSignerError),
     #[error(transparent)]
     OpensslError(#[from] ErrorStack),
+    #[error(transparent)]
+    EcError(#[from] EcError),
 }
 
 #[derive(Debug, Clone)]
@@ -141,6 +145,24 @@ where
 
     pub fn random_bytes(&self, out: &mut [u8]) -> Result<(), OpensslCryptoError> {
         Ok(openssl::rand::rand_bytes(out)?)
+    }
+
+    pub fn import_der_public_signing_key(
+        &self,
+        der_data: &[u8],
+    ) -> Result<SignaturePublicKey, OpensslCryptoError> {
+        self.ec_signer
+            .signature_key_import_der_public(der_data)
+            .map_err(Into::into)
+    }
+
+    pub fn import_der_private_signing_key(
+        &self,
+        der_data: &[u8],
+    ) -> Result<SignatureSecretKey, OpensslCryptoError> {
+        self.ec_signer
+            .signature_key_import_der_private(der_data)
+            .map_err(Into::into)
     }
 }
 

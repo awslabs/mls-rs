@@ -8,8 +8,9 @@ use openssl::{
 use thiserror::Error;
 
 use crate::ec::{
-    generate_keypair, private_key_bytes_to_public, private_key_from_bytes,
-    pub_key_from_uncompressed, Curve, EcError,
+    curve_from_private_key, curve_from_public_key, generate_keypair, private_key_bytes_to_public,
+    private_key_from_bytes, private_key_from_der, private_key_to_bytes, pub_key_from_uncompressed,
+    pub_key_to_uncompressed, public_key_from_der, Curve, EcError,
 };
 
 #[derive(Debug, Error)]
@@ -45,6 +46,32 @@ impl EcSigner {
     ) -> Result<(SignatureSecretKey, SignaturePublicKey), EcSignerError> {
         let key_pair = generate_keypair(self.0)?;
         Ok((key_pair.secret.into(), key_pair.public.into()))
+    }
+
+    pub fn signature_key_import_der_public(
+        &self,
+        der_data: &[u8],
+    ) -> Result<SignaturePublicKey, EcError> {
+        let key = public_key_from_der(der_data)?;
+
+        curve_from_public_key(&key)
+            .filter(|&c| c == self.0)
+            .ok_or(EcError::InvalidKeyBytes)?;
+
+        Ok(pub_key_to_uncompressed(&key)?.into())
+    }
+
+    pub fn signature_key_import_der_private(
+        &self,
+        der_data: &[u8],
+    ) -> Result<SignatureSecretKey, EcError> {
+        let key = private_key_from_der(der_data)?;
+
+        curve_from_private_key(&key)
+            .filter(|&c| c == self.0)
+            .ok_or(EcError::InvalidKeyBytes)?;
+
+        Ok(private_key_to_bytes(&key)?.into())
     }
 
     pub fn signature_key_derive_public(
@@ -118,7 +145,13 @@ mod test {
     use aws_mls_core::crypto::CipherSuite;
 
     use crate::{
-        ec::test_utils::{get_test_public_keys, get_test_secret_keys},
+        ec::{
+            test_utils::{
+                get_test_public_keys, get_test_public_keys_der, get_test_secret_keys,
+                get_test_secret_keys_der, TestKeys,
+            },
+            Curve,
+        },
         ec_signer::{EcSigner, EcSignerError},
     };
 
@@ -153,5 +186,53 @@ mod test {
             ec_signer.verify(&public_key, &sig, &[TEST_INPUT, &[0]].concat()),
             Err(EcSignerError::InvalidSignature)
         );
+    }
+
+    #[test]
+    fn import_der_public() {
+        let keys = get_test_public_keys();
+        let der_keys = get_test_public_keys_der();
+
+        let convert = |keys: &TestKeys, curve: Curve| {
+            EcSigner(curve)
+                .signature_key_import_der_public(&keys.get_key_from_curve(curve))
+                .unwrap()
+        };
+
+        let converted = TestKeys {
+            p256: convert(&der_keys, Curve::P256).to_vec(),
+            p384: convert(&der_keys, Curve::P384).to_vec(),
+            p521: convert(&der_keys, Curve::P521).to_vec(),
+            x25519: convert(&der_keys, Curve::X25519).to_vec(),
+            ed25519: convert(&der_keys, Curve::Ed25519).to_vec(),
+            x448: convert(&der_keys, Curve::X448).to_vec(),
+            ed448: convert(&der_keys, Curve::Ed448).to_vec(),
+        };
+
+        assert_eq!(keys, converted);
+    }
+
+    #[test]
+    fn import_der_private() {
+        let keys = get_test_secret_keys();
+        let der_keys = get_test_secret_keys_der();
+
+        let convert = |keys: &TestKeys, curve: Curve| {
+            EcSigner(curve)
+                .signature_key_import_der_private(&keys.get_key_from_curve(curve))
+                .unwrap()
+        };
+
+        let converted = TestKeys {
+            p256: convert(&der_keys, Curve::P256).to_vec(),
+            p384: convert(&der_keys, Curve::P384).to_vec(),
+            p521: convert(&der_keys, Curve::P521).to_vec(),
+            x25519: convert(&der_keys, Curve::X25519).to_vec(),
+            ed25519: convert(&der_keys, Curve::Ed25519).to_vec(),
+            x448: convert(&der_keys, Curve::X448).to_vec(),
+            ed448: convert(&der_keys, Curve::Ed448).to_vec(),
+        };
+
+        assert_eq!(keys, converted);
     }
 }

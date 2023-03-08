@@ -7,7 +7,7 @@ use openssl::{
     ec::{EcGroup, EcKey, EcPoint, PointConversionForm},
     error::ErrorStack,
     nid::Nid,
-    pkey::{Id, PKey, Private, Public},
+    pkey::{HasParams, Id, PKey, Private, Public},
 };
 
 pub type EcPublicKey = PKey<Public>;
@@ -19,7 +19,7 @@ pub enum EcError {
     OpensslError(#[from] openssl::error::ErrorStack),
     /// Attempted to import a secret key that does not contain valid bytes for its curve
     #[error("invalid secret key bytes")]
-    InvalidSecretKeyBytes,
+    InvalidKeyBytes,
     #[error("unsupported cipher suite")]
     UnsupportedCipherSuite,
 }
@@ -241,7 +241,7 @@ pub fn private_key_from_bytes(bytes: &[u8], curve: Curve) -> Result<EcPrivateKey
         Some(private_key_from_bytes_non_nist(bytes, Id::from(curve))).transpose()
     }?;
 
-    maybe_secret_key.ok_or(EcError::InvalidSecretKeyBytes)
+    maybe_secret_key.ok_or(EcError::InvalidKeyBytes)
 }
 
 pub fn private_key_to_bytes(key: &EcPrivateKey) -> Result<Vec<u8>, ErrorStack> {
@@ -277,29 +277,69 @@ pub fn private_key_ecdh(
     ecdh_derive.derive_to_vec().map_err(Into::into)
 }
 
+pub fn curve_from_nid(nid: Nid) -> Option<Curve> {
+    match nid {
+        Nid::X9_62_PRIME256V1 => Some(Curve::P256),
+        Nid::SECP384R1 => Some(Curve::P384),
+        Nid::SECP521R1 => Some(Curve::P521),
+        _ => None,
+    }
+}
+
+pub fn curve_from_pkey<T: HasParams>(value: &PKey<T>) -> Option<Curve> {
+    match value.id() {
+        Id::X25519 => Some(Curve::X25519),
+        Id::ED25519 => Some(Curve::Ed25519),
+        Id::X448 => Some(Curve::X448),
+        Id::ED448 => Some(Curve::Ed448),
+        Id::EC => value
+            .ec_key()
+            .ok()
+            .and_then(|k| k.group().curve_name())
+            .and_then(curve_from_nid),
+        _ => None,
+    }
+}
+
+pub fn curve_from_public_key(key: &EcPublicKey) -> Option<Curve> {
+    curve_from_pkey(key)
+}
+
+pub fn curve_from_private_key(key: &EcPrivateKey) -> Option<Curve> {
+    curve_from_pkey(key)
+}
+
+pub fn public_key_from_der(data: &[u8]) -> Result<EcPublicKey, ErrorStack> {
+    PKey::public_key_from_der(data)
+}
+
+pub fn private_key_from_der(data: &[u8]) -> Result<EcPrivateKey, ErrorStack> {
+    PKey::private_key_from_der(data)
+}
+
 #[cfg(test)]
 pub(crate) mod test_utils {
     use aws_mls_core::crypto::CipherSuite;
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
 
     use super::Curve;
 
-    #[derive(Deserialize)]
+    #[derive(Deserialize, Serialize, PartialEq, Debug)]
     pub(crate) struct TestKeys {
         #[serde(with = "hex::serde")]
-        p256: Vec<u8>,
+        pub(crate) p256: Vec<u8>,
         #[serde(with = "hex::serde")]
-        p384: Vec<u8>,
+        pub(crate) p384: Vec<u8>,
         #[serde(with = "hex::serde")]
-        p521: Vec<u8>,
+        pub(crate) p521: Vec<u8>,
         #[serde(with = "hex::serde")]
-        x25519: Vec<u8>,
+        pub(crate) x25519: Vec<u8>,
         #[serde(with = "hex::serde")]
-        ed25519: Vec<u8>,
+        pub(crate) ed25519: Vec<u8>,
         #[serde(with = "hex::serde")]
-        x448: Vec<u8>,
+        pub(crate) x448: Vec<u8>,
         #[serde(with = "hex::serde")]
-        ed448: Vec<u8>,
+        pub(crate) ed448: Vec<u8>,
     }
 
     impl TestKeys {
@@ -326,8 +366,18 @@ pub(crate) mod test_utils {
         serde_json::from_str(test_case_file).unwrap()
     }
 
+    pub(crate) fn get_test_public_keys_der() -> TestKeys {
+        let test_case_file = include_str!("../test_data/test_der_public.json");
+        serde_json::from_str(test_case_file).unwrap()
+    }
+
     pub(crate) fn get_test_secret_keys() -> TestKeys {
         let test_case_file = include_str!("../test_data/test_private_keys.json");
+        serde_json::from_str(test_case_file).unwrap()
+    }
+
+    pub(crate) fn get_test_secret_keys_der() -> TestKeys {
+        let test_case_file = include_str!("../test_data/test_der_private.json");
         serde_json::from_str(test_case_file).unwrap()
     }
 
@@ -480,9 +530,9 @@ mod tests {
         let p384_res = private_key_from_bytes(&p384_order, Curve::P384);
         let p521_res = private_key_from_bytes(&p521_order, Curve::P521);
 
-        assert_matches!(p256_res, Err(EcError::InvalidSecretKeyBytes));
-        assert_matches!(p384_res, Err(EcError::InvalidSecretKeyBytes));
-        assert_matches!(p521_res, Err(EcError::InvalidSecretKeyBytes));
+        assert_matches!(p256_res, Err(EcError::InvalidKeyBytes));
+        assert_matches!(p384_res, Err(EcError::InvalidKeyBytes));
+        assert_matches!(p521_res, Err(EcError::InvalidKeyBytes));
 
         let nist_curves = [Curve::P256, Curve::P384, Curve::P521];
 
@@ -490,7 +540,7 @@ mod tests {
         for curve in nist_curves {
             assert_matches!(
                 private_key_from_bytes(&vec![0u8; curve.secret_key_size()], curve),
-                Err(EcError::InvalidSecretKeyBytes)
+                Err(EcError::InvalidKeyBytes)
             );
         }
     }
