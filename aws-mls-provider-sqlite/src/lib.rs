@@ -3,9 +3,10 @@ use group_state::SqLiteGroupStateStorage;
 use keychain::SqLiteKeychainStorage;
 use psk::SqLitePreSharedKeyStorage;
 use rusqlite::Connection;
-use storage::SqLiteKeyPackageStorage;
+use storage::{SqLiteApplicationStorage, SqLiteKeyPackageStorage};
 use thiserror::Error;
 
+mod application;
 mod group_state;
 mod key_package;
 mod keychain;
@@ -23,8 +24,9 @@ pub mod connection_strategy;
 /// SQLite storage components.
 pub mod storage {
     pub use {
-        crate::group_state::SqLiteGroupStateStorage, crate::key_package::SqLiteKeyPackageStorage,
-        crate::keychain::SqLiteKeychainStorage, crate::psk::SqLitePreSharedKeyStorage,
+        crate::application::SqLiteApplicationStorage, crate::group_state::SqLiteGroupStateStorage,
+        crate::key_package::SqLiteKeyPackageStorage, crate::keychain::SqLiteKeychainStorage,
+        crate::psk::SqLitePreSharedKeyStorage,
     };
 }
 
@@ -100,6 +102,13 @@ where
     ) -> Result<SqLitePreSharedKeyStorage, SqLiteDataStorageError> {
         Ok(SqLitePreSharedKeyStorage::new(self.create_connection()?))
     }
+
+    /// Returns a key value store that can be used to store application specific data.
+    pub fn application_data_storage(
+        &self,
+    ) -> Result<SqLiteApplicationStorage, SqLiteDataStorageError> {
+        Ok(SqLiteApplicationStorage::new(self.create_connection()?))
+    }
 }
 
 fn create_tables_v1(connection: &mut Connection) -> Result<(), SqLiteDataStorageError> {
@@ -131,6 +140,10 @@ fn create_tables_v1(connection: &mut Connection) -> Result<(), SqLiteDataStorage
             CREATE TABLE psk (
                 psk_id BLOB PRIMARY KEY,
                 data BLOB NOT NULL
+            ) WITHOUT ROWID;
+            CREATE TABLE kvs (
+                key BLOB PRIMARY KEY,
+                value BLOB NOT NULL
             ) WITHOUT ROWID;
             PRAGMA user_version = 1;
             COMMIT;",
