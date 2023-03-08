@@ -147,13 +147,15 @@ impl TestGroup {
 }
 
 pub(crate) fn get_test_group_context(epoch: u64, cipher_suite: CipherSuite) -> GroupContext {
+    let cs = test_cipher_suite_provider(cipher_suite);
+
     GroupContext {
         protocol_version: TEST_PROTOCOL_VERSION,
         cipher_suite,
         group_id: TEST_GROUP.to_vec(),
         epoch,
-        tree_hash: vec![],
-        confirmed_transcript_hash: ConfirmedTranscriptHash::from(vec![]),
+        tree_hash: cs.hash(&[1, 2, 3]).unwrap(),
+        confirmed_transcript_hash: ConfirmedTranscriptHash::from(cs.hash(&[3, 2, 1]).unwrap()),
         extensions: ExtensionList::from(vec![]),
     }
 }
