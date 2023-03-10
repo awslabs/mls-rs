@@ -5,13 +5,18 @@ use crate::crypto::CipherSuiteProvider;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::Parent;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
+use aws_mls_core::serde::vec_u8_as_base64::VecAsBase64;
+use serde_with::serde_as;
 use std::collections::{HashMap, VecDeque};
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsSerialize, TlsSize};
 
+#[serde_as]
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub(crate) struct TreeHashes {
+    #[serde_as(as = "Vec<VecAsBase64>")]
     pub current: Vec<Vec<u8>>,
+    #[serde_as(as = "Vec<VecAsBase64>")]
     pub original: Vec<Vec<u8>>,
 }
 

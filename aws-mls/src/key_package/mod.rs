@@ -48,8 +48,6 @@ pub enum KeyPackageError {
 pub struct KeyPackage {
     pub(crate) version: ProtocolVersion,
     pub(crate) cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    #[serde_as(as = "VecAsBase64")]
     pub(crate) hpke_init_key: HpkePublicKey,
     pub(crate) leaf_node: LeafNode,
     pub(crate) extensions: ExtensionList,

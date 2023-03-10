@@ -20,9 +20,25 @@ pub struct HpkeCiphertext {
 
 /// Byte representation of an HPKE public key. For ciphersuites using elliptic curves,
 /// the public key should be represented in the uncompressed format.
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize, Hash)]
+#[serde_as]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    TlsDeserialize,
+    TlsSerialize,
+    TlsSize,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct HpkePublicKey(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct HpkePublicKey(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
+    Vec<u8>,
+);
 
 impl From<Vec<u8>> for HpkePublicKey {
     fn from(data: Vec<u8>) -> Self {
@@ -51,6 +67,7 @@ impl AsRef<[u8]> for HpkePublicKey {
 }
 
 /// Byte representation of an HPKE secret key.
+#[serde_as]
 #[derive(
     Clone,
     Debug,
@@ -64,7 +81,11 @@ impl AsRef<[u8]> for HpkePublicKey {
     serde::Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct HpkeSecretKey(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct HpkeSecretKey(
+    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
+    Vec<u8>,
+);
 
 impl From<Vec<u8>> for HpkeSecretKey {
     fn from(data: Vec<u8>) -> Self {

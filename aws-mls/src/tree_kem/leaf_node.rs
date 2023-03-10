@@ -66,8 +66,6 @@ pub enum LeafNodeSource {
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
 pub struct LeafNode {
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    #[serde_as(as = "VecAsBase64")]
     pub public_key: HpkePublicKey,
     pub signing_identity: SigningIdentity,
     pub capabilities: Capabilities,

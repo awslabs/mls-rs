@@ -7,7 +7,6 @@ use crate::{
         GroupContext, GroupState, InterimTranscriptHash, ProposalCache, ProposalRef,
         ReInitProposal, TreeKemPublic,
     },
-    serde_utils::vec_u8_as_base64::VecAsBase64,
     tree_kem::{node::NodeVec, TreeKemPrivate},
 };
 
@@ -28,7 +27,6 @@ pub(crate) struct Snapshot {
     private_tree: TreeKemPrivate,
     epoch_secrets: EpochSecrets,
     key_schedule: KeySchedule,
-    #[serde_as(as = "HashMap<VecAsBase64, VecAsBase64>")]
     pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>,
     pending_commit: Option<CommitGeneration>,
 }

@@ -1,6 +1,5 @@
 use super::leaf_node::LeafNode;
 use crate::crypto::HpkePublicKey;
-use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::parent_hash::ParentHash;
@@ -23,8 +22,6 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     serde::Serialize,
 )]
 pub(crate) struct Parent {
-    #[tls_codec(with = "crate::tls::ByteVec")]
-    #[serde_as(as = "VecAsBase64")]
     pub public_key: HpkePublicKey,
     pub parent_hash: ParentHash,
     #[tls_codec(with = "crate::tls::DefVec")]
