@@ -103,9 +103,8 @@ impl SqLiteGroupStateStorage {
             .query_row(
                 "SELECT MAX(epoch_id) FROM epoch WHERE group_id = ?",
                 params![group_id],
-                |row| row.get::<_, u64>(0),
+                |row| row.get::<_, Option<u64>>(0),
             )
-            .optional()
             .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
     }
 
@@ -444,6 +443,35 @@ mod tests {
                 .unwrap();
             assert_eq!(stored.unwrap(), epoch.data);
         })
+    }
+
+    #[test]
+    fn max_epoch_is_none_for_non_persisted_group() {
+        let storage = get_test_storage();
+
+        let res = storage.max_epoch_id(&[0, 1, 2]).unwrap();
+
+        assert!(res.is_none())
+    }
+
+    #[test]
+    fn max_epoch_is_none_when_no_epochs() {
+        let storage = get_test_storage();
+        let group_id = b"test";
+
+        storage
+            .update_group_state(
+                group_id,
+                vec![0, 1, 2],
+                vec![].into_iter(),
+                vec![].into_iter().map(Ok),
+                None,
+            )
+            .unwrap();
+
+        let res = storage.max_epoch_id(group_id).unwrap();
+
+        assert!(res.is_none())
     }
 
     #[test]

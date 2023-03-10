@@ -41,7 +41,7 @@ arbitrary = { version = "1", features = ["derive"], optional = true }
 rayon = { version = "1", optional = true }
 num_enum = "0.5"
 cfg-if = "^1"
-serde_with = "^2"
+serde_with = "~2.2.0"
 bincode = "1"
 aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", optional = true, version = "*" }
 

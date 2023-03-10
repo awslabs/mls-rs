@@ -537,7 +537,6 @@ mod tests {
             let mut test_tree = get_test_tree(test_secret.clone(), 16);
 
             let mut secrets: Vec<SecretRatchets> = (0..16)
-                .into_iter()
                 .map(|i| {
                     test_tree
                         .leaf_secret_ratchets(
@@ -867,7 +866,6 @@ mod tests {
                 let mut tree = SecretTree::new(n_leaves, encryption_secret.clone());
 
                 let leaves = (0..n_leaves)
-                    .into_iter()
                     .map(|leaf| {
                         gens.into_iter()
                             .map(|gen| {

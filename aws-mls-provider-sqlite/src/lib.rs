@@ -150,3 +150,25 @@ fn create_tables_v1(connection: &mut Connection) -> Result<(), SqLiteDataStorage
         )
         .map_err(|e| SqLiteDataStorageError::SqlEngineError(e.into()))
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{connection_strategy::MemoryStrategy, SqLiteDataStorageEngine};
+
+    #[test]
+    pub fn user_version_test() {
+        let database = SqLiteDataStorageEngine::new(MemoryStrategy).unwrap();
+
+        let _connection = database.create_connection().unwrap();
+
+        // Create another connection to make sure the migration doesn't try to happen again.
+        let connection = database.create_connection().unwrap();
+
+        // Run SQL to establish the schema
+        let current_schema = connection
+            .pragma_query_value(None, "user_version", |rows| rows.get::<_, u32>(0))
+            .unwrap();
+
+        assert_eq!(current_schema, 1);
+    }
+}

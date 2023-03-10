@@ -26,7 +26,6 @@ pub(crate) mod test_utils {
 
     pub fn test_certificate_chain() -> CertificateChain {
         (0..3)
-            .into_iter()
             .map(|_| {
                 let mut data = [0u8; 32];
                 thread_rng().fill(&mut data);
