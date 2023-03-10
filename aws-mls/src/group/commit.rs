@@ -1,3 +1,4 @@
+use tls_codec::Serialize;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
@@ -60,6 +61,9 @@ pub struct CommitOutput {
     pub commit_message: MLSMessage,
     /// Welcome message to send to new group members.
     pub welcome_message: Option<MLSMessage>,
+    /// Ratchet tree to send out of band if
+    /// [`Preferences::ratchet_tree_extension`] is not in use
+    pub ratchet_tree: Option<Vec<u8>>,
 }
 
 impl CommitOutput {
@@ -71,6 +75,12 @@ impl CommitOutput {
     /// Welcome message to send to new group members.
     pub fn welcome_message(&self) -> Option<&MLSMessage> {
         self.welcome_message.as_ref()
+    }
+
+    /// Ratchet tree to send out of band if
+    /// [`Preferences::ratchet_tree_extension`] is not in use
+    pub fn ratchet_tree(&self) -> Option<&[u8]> {
+        self.ratchet_tree.as_deref()
     }
 }
 
@@ -589,9 +599,19 @@ where
 
         self.pending_commit = Some(pending_commit);
 
+        let ratchet_tree = (!options.ratchet_tree_extension)
+            .then(|| {
+                provisional_state
+                    .public_tree
+                    .export_node_data()
+                    .tls_serialize_detached()
+            })
+            .transpose()?;
+
         Ok(CommitOutput {
             commit_message,
             welcome_message,
+            ratchet_tree,
         })
     }
 }
@@ -1001,5 +1021,37 @@ mod tests {
             new_member.signing_identity().signature_key,
             identity.signature_key
         );
+    }
+
+    #[futures_test::test]
+    async fn commit_includes_tree_if_no_ratchet_tree_ext() {
+        let mut group = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+            b.custom_proposal_type(ProposalType::from(42))
+                .preferences(Preferences::default())
+        })
+        .await
+        .group;
+
+        let commit = group.commit(vec![]).await.unwrap();
+
+        group.apply_pending_commit().await.unwrap();
+
+        let new_tree = group.export_tree().unwrap();
+
+        assert_eq!(new_tree, commit.ratchet_tree.unwrap())
+    }
+
+    #[futures_test::test]
+    async fn commit_does_not_include_tree_if_ratchet_tree_ext() {
+        let mut group = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
+            b.custom_proposal_type(ProposalType::from(42))
+                .preferences(Preferences::default().with_ratchet_tree_extension(true))
+        })
+        .await
+        .group;
+
+        let commit = group.commit(vec![]).await.unwrap();
+
+        assert!(commit.ratchet_tree().is_none());
     }
 }
