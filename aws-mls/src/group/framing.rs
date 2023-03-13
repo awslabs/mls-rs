@@ -338,13 +338,13 @@ impl MLSMessage {
     }
 
     /// Deserialize a message from transport.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, tls_codec::Error> {
-        Self::tls_deserialize(&mut &*bytes)
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
+        Self::tls_deserialize(&mut &*bytes).map_err(Into::into)
     }
 
     /// Serialize a message for transport.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, tls_codec::Error> {
-        self.tls_serialize_detached()
+    pub fn to_bytes(&self) -> Result<Vec<u8>, MlsError> {
+        self.tls_serialize_detached().map_err(Into::into)
     }
 }
 

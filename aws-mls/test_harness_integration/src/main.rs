@@ -409,7 +409,7 @@ impl MlsClient for MlsClientImpl {
             .group
             .group_info_message(true)
             .await
-            .and_then(|m| Ok(m.to_bytes()?))
+            .and_then(|m| m.to_bytes())
             .map_err(abort)?;
 
         Ok(Response::new(PublicGroupStateResponse {
@@ -446,7 +446,7 @@ impl MlsClient for MlsClientImpl {
             .group
             .encrypt_application_message(&request_ref.application_data, vec![])
             .await
-            .and_then(|m| Ok(m.to_bytes()?))
+            .and_then(|m| m.to_bytes())
             .map_err(abort)?;
 
         Ok(Response::new(ProtectResponse { ciphertext }))
@@ -520,7 +520,7 @@ impl MlsClient for MlsClientImpl {
         let proposal_packet = group
             .propose_add(key_package, vec![])
             .await
-            .and_then(|m| Ok(m.to_bytes()?))
+            .and_then(|m| m.to_bytes())
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -543,7 +543,7 @@ impl MlsClient for MlsClientImpl {
         let proposal_packet = group
             .propose_update(vec![])
             .await
-            .and_then(|p| Ok(p.to_bytes()?))
+            .and_then(|p| p.to_bytes())
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -572,7 +572,7 @@ impl MlsClient for MlsClientImpl {
         let proposal_packet = group
             .propose_remove(removed, vec![])
             .await
-            .and_then(|p| Ok(p.to_bytes()?))
+            .and_then(|p| p.to_bytes())
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -595,7 +595,7 @@ impl MlsClient for MlsClientImpl {
         let proposal_packet = group
             .propose_external_psk(ExternalPskId::new(request_ref.psk_id), vec![])
             .await
-            .and_then(|p| Ok(p.to_bytes()?))
+            .and_then(|p| p.to_bytes())
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
@@ -635,7 +635,7 @@ impl MlsClient for MlsClientImpl {
         let proposal_packet = group
             .propose_group_context_extensions(ExtensionList::from(extensions), vec![])
             .await
-            .and_then(|p| Ok(p.to_bytes()?))
+            .and_then(|p| p.to_bytes())
             .map_err(abort)?;
 
         Ok(Response::new(ProposalResponse {
