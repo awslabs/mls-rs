@@ -7,7 +7,7 @@ use crate::{
         GroupContext, GroupState, InterimTranscriptHash, ProposalCache, ProposalRef,
         ReInitProposal, TreeKemPublic,
     },
-    tree_kem::{node::NodeVec, TreeKemPrivate},
+    tree_kem::TreeKemPrivate,
 };
 
 use aws_mls_core::identity::IdentityProvider;
@@ -46,18 +46,26 @@ impl Snapshot {
 pub(crate) struct RawGroupState {
     pub(crate) context: GroupContext,
     pub(crate) proposals: HashMap<ProposalRef, CachedProposal>,
-    pub(crate) tree_data: NodeVec,
+    pub(crate) public_tree: TreeKemPublic,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
     pub(crate) pending_reinit: Option<ReInitProposal>,
     pub(crate) confirmation_tag: ConfirmationTag,
 }
 
 impl RawGroupState {
-    pub(crate) fn export(state: &GroupState) -> Self {
+    pub(crate) fn export(state: &GroupState, export_tree_internals: bool) -> Self {
+        let public_tree = if export_tree_internals {
+            state.public_tree.clone()
+        } else {
+            let mut tree = TreeKemPublic::new();
+            tree.nodes = state.public_tree.export_node_data();
+            tree
+        };
+
         Self {
             context: state.context.clone(),
             proposals: state.proposals.proposals().clone(),
-            tree_data: state.public_tree.export_node_data(),
+            public_tree,
             interim_transcript_hash: state.interim_transcript_hash.clone(),
             pending_reinit: state.pending_reinit.clone(),
             confirmation_tag: state.confirmation_tag.clone(),
@@ -76,13 +84,16 @@ impl RawGroupState {
             self.proposals,
         );
 
-        let current_tree =
-            TreeKemPublic::import_node_data(self.tree_data, identity_provider).await?;
+        let mut public_tree = self.public_tree;
+
+        public_tree
+            .initialize_index_if_necessary(identity_provider)
+            .await?;
 
         Ok(GroupState {
             proposals,
             context,
-            public_tree: current_tree,
+            public_tree,
             interim_transcript_hash: self.interim_transcript_hash,
             pending_reinit: self.pending_reinit,
             confirmation_tag: self.confirmation_tag,
@@ -97,16 +108,16 @@ where
     /// Write the current state of the group to the
     /// [`GroupStorageProvider`](crate::GroupStateStorage)
     /// that is currently in use by the group.
-    pub async fn write_to_storage(&mut self) -> Result<(), MlsError> {
+    pub async fn write_to_storage(&mut self, export_internals: bool) -> Result<(), MlsError> {
         self.state_repo
-            .write_to_storage(self.snapshot())
+            .write_to_storage(self.snapshot(export_internals))
             .await
             .map_err(Into::into)
     }
 
-    pub(crate) fn snapshot(&self) -> Snapshot {
+    pub(crate) fn snapshot(&self, export_tree_internals: bool) -> Snapshot {
         Snapshot {
-            state: RawGroupState::export(&self.state),
+            state: RawGroupState::export(&self.state, export_tree_internals),
             private_tree: self.private_tree.clone(),
             key_schedule: self.key_schedule.clone(),
             pending_updates: self.pending_updates.clone(),
@@ -169,7 +180,7 @@ pub(crate) mod test_utils {
             state: RawGroupState {
                 context: get_test_group_context(epoch_id, cipher_suite),
                 proposals: Default::default(),
-                tree_data: Default::default(),
+                public_tree: Default::default(),
                 interim_transcript_hash: InterimTranscriptHash::from(vec![]),
                 pending_reinit: None,
                 confirmation_tag: ConfirmationTag::empty(&test_cipher_suite_provider(cipher_suite)),
@@ -196,8 +207,8 @@ mod tests {
 
     use super::Snapshot;
 
-    async fn serialize_to_json_test(group: TestGroup) {
-        let snapshot = group.group.snapshot();
+    async fn serialize_to_json_test(group: TestGroup, export_internals: bool) {
+        let snapshot = group.group.snapshot(export_internals);
         let json = serde_json::to_vec(&snapshot).unwrap();
         let snapshot_restored: Snapshot = serde_json::from_slice(&json).unwrap();
 
@@ -208,6 +219,13 @@ mod tests {
             .unwrap();
 
         assert!(Group::equal_group_state(&group.group, &group_restored));
+
+        if export_internals {
+            assert!(group_restored
+                .state
+                .public_tree
+                .equal_internals(&group.group.state.public_tree))
+        }
     }
 
     #[futures_test::test]
@@ -215,7 +233,7 @@ mod tests {
         let mut group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         group.group.commit(vec![]).await.unwrap();
 
-        serialize_to_json_test(group).await
+        serialize_to_json_test(group, false).await
     }
 
     #[futures_test::test]
@@ -228,6 +246,13 @@ mod tests {
         // This will insert the proposal into the internal proposal cache
         let _ = group.group.proposal_message(update_proposal, vec![]).await;
 
-        serialize_to_json_test(group).await
+        serialize_to_json_test(group, false).await
+    }
+
+    #[futures_test::test]
+    async fn snapshot_can_be_serialized_to_json_with_internals() {
+        let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
+
+        serialize_to_json_test(group, true).await
     }
 }

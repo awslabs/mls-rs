@@ -476,9 +476,9 @@ where
     C: ExternalClientConfig + Clone,
 {
     /// Create a snapshot of this group's current internal state.
-    pub fn snapshot(&self) -> ExternalSnapshot {
+    pub fn snapshot(&self, export_internals: bool) -> ExternalSnapshot {
         ExternalSnapshot {
-            state: RawGroupState::export(self.group_state()),
+            state: RawGroupState::export(self.group_state(), export_internals),
             version: 1,
         }
     }
@@ -1036,7 +1036,7 @@ mod tests {
         let server =
             make_external_group(&test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await).await;
 
-        let snapshot = serde_json::to_vec(&server.snapshot()).unwrap();
+        let snapshot = serde_json::to_vec(&server.snapshot(false)).unwrap();
         let snapshot_restored = serde_json::from_slice(&snapshot).unwrap();
 
         let server_restored =

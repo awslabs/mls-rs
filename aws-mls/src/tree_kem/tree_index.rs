@@ -40,6 +40,10 @@ impl TreeIndex {
         Default::default()
     }
 
+    pub fn is_initialized(&self) -> bool {
+        !self.identities.is_empty()
+    }
+
     pub fn insert(
         &mut self,
         index: LeafIndex,

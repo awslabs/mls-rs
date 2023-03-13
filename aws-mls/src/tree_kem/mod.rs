@@ -155,35 +155,46 @@ impl TreeKemPublic {
         Default::default()
     }
 
-    pub(crate) async fn import_node_data<C>(
+    pub(crate) async fn import_node_data<IP>(
         nodes: NodeVec,
-        identity_provider: &C,
+        identity_provider: &IP,
     ) -> Result<TreeKemPublic, RatchetTreeError>
     where
-        C: IdentityProvider,
+        IP: IdentityProvider,
     {
-        let index = futures::stream::iter(nodes.non_empty_leaves().map(Ok))
-            .try_fold(
-                TreeIndex::new(),
-                |mut tree_index, (leaf_index, leaf)| async move {
-                    let identity = identity_provider
-                        .identity(&leaf.signing_identity)
-                        .await
-                        .map_err(credential_validation_error)?;
-
-                    tree_index.insert(leaf_index, leaf, identity)?;
-                    Ok::<_, RatchetTreeError>(tree_index)
-                },
-            )
-            .await?;
-
-        let tree = TreeKemPublic {
-            index,
+        let mut tree = TreeKemPublic {
             nodes,
-            tree_hashes: Default::default(),
+            ..Default::default()
         };
 
+        tree.initialize_index_if_necessary(identity_provider)
+            .await?;
+
         Ok(tree)
+    }
+
+    pub(crate) async fn initialize_index_if_necessary<IP: IdentityProvider>(
+        &mut self,
+        identity_provider: &IP,
+    ) -> Result<(), RatchetTreeError> {
+        if !self.index.is_initialized() {
+            self.index = futures::stream::iter(self.nodes.non_empty_leaves().map(Ok))
+                .try_fold(
+                    TreeIndex::new(),
+                    |mut tree_index, (leaf_index, leaf)| async move {
+                        let identity = identity_provider
+                            .identity(&leaf.signing_identity)
+                            .await
+                            .map_err(credential_validation_error)?;
+
+                        tree_index.insert(leaf_index, leaf, identity)?;
+                        Ok::<_, RatchetTreeError>(tree_index)
+                    },
+                )
+                .await?;
+        }
+
+        Ok(())
     }
 
     pub(crate) fn get_leaf_node_with_identity(&self, identity: &[u8]) -> Option<LeafIndex> {
@@ -885,6 +896,12 @@ pub(crate) mod test_utils {
             get_basic_test_node(cipher_suite, "C").await,
         ]
         .to_vec()
+    }
+
+    impl TreeKemPublic {
+        pub fn equal_internals(&self, other: &TreeKemPublic) -> bool {
+            self.tree_hashes == other.tree_hashes && self.index == other.index
+        }
     }
 }
 
