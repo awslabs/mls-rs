@@ -5,7 +5,7 @@ use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
     client_builder::Preferences,
-    client_config::{ClientConfig, ProposalFilterInit},
+    client_config::ClientConfig,
     extension::RatchetTreeExt,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
@@ -415,7 +415,7 @@ where
             .state
             .proposals
             .prepare_commit(
-                sender.clone(),
+                sender,
                 proposals,
                 &self.context().extensions,
                 self.config.identity_provider(),
@@ -423,8 +423,8 @@ where
                 &self.state.public_tree,
                 external_leaf,
                 PskStoreIdValidator::from(self.config.secret_store()),
-                self.config
-                    .proposal_filter(ProposalFilterInit::new(sender.clone())),
+                self.config.proposal_filter(),
+                &self.state.roster(),
             )
             .await?;
 

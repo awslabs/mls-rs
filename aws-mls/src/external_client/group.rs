@@ -6,7 +6,6 @@ use tls_codec::Serialize;
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
-    client_config::{MakeProposalFilter, ProposalFilterInit},
     extension::ExternalSendersExt,
     external_client::ExternalClientConfig,
     group::{
@@ -271,7 +270,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         let auth_content = AuthenticatedContent::new_signed(
             &self.cipher_suite_provider,
             &self.state.context,
-            sender.clone(),
+            sender,
             Content::Proposal(proposal.clone()),
             &signer,
             WireFormat::PublicMessage,
@@ -380,7 +379,7 @@ impl<C> MessageProcessor for ExternalGroup<C>
 where
     C: ExternalClientConfig + Clone,
 {
-    type ProposalFilter = <C::MakeProposalFilter as MakeProposalFilter>::Filter;
+    type ProposalFilter = C::ProposalFilter;
     type IdentityProvider = C::IdentityProvider;
     type ExternalPskIdValidator = PassThroughPskIdValidator;
     type EventType = ExternalEvent;
@@ -390,8 +389,8 @@ where
         None
     }
 
-    fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter {
-        self.config.proposal_filter(init)
+    fn proposal_filter(&self) -> Self::ProposalFilter {
+        self.config.proposal_filter()
     }
 
     fn verify_plaintext_authentication(

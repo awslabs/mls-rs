@@ -11,6 +11,7 @@ use crate::{
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug, Default)]
+/// A collection of proposals.
 pub struct ProposalBundle {
     additions: Vec<ProposalInfo<AddProposal>>,
     updates: Vec<ProposalInfo<UpdateProposal>>,
@@ -23,7 +24,12 @@ pub struct ProposalBundle {
 }
 
 impl ProposalBundle {
-    pub fn add(&mut self, proposal: Proposal, sender: Sender, proposal_ref: Option<ProposalRef>) {
+    pub(crate) fn add(
+        &mut self,
+        proposal: Proposal,
+        sender: Sender,
+        proposal_ref: Option<ProposalRef>,
+    ) {
         match proposal {
             Proposal::Add(proposal) => self.additions.push(ProposalInfo {
                 proposal,
@@ -70,22 +76,37 @@ impl ProposalBundle {
         }
     }
 
-    pub fn add_proposal(&mut self, p: ProposalInfo<Proposal>) {
+    pub(crate) fn add_proposal(&mut self, p: ProposalInfo<Proposal>) {
         self.add(p.proposal, p.sender, p.proposal_ref)
     }
 
+    /// Remove the proposal of type `T` at `index`
+    ///
+    /// Type `T` can be any of the standard MLS proposal types defined in the
+    /// [`proposal`](crate::group::proposal) module.
+    ///
+    /// `index` is consistent with the index returned by any of the proposal
+    /// type specific functions in this module.
     pub fn remove<T: Proposable>(&mut self, index: usize) {
         T::remove(self, index);
     }
 
+    /// Iterate over proposals, filtered by type.
+    ///
+    /// Type `T` can be any of the standard MLS proposal types defined in the
+    /// [`proposal`](crate::group::proposal) module.
     pub fn by_type<'a, T: Proposable + 'a>(&'a self) -> impl Iterator<Item = &'a ProposalInfo<T>> {
         T::filter(self).iter()
     }
 
-    pub fn by_index<'a, T: Proposable + 'a>(&'a self) -> ProposalBundleIndex<'a, T> {
+    pub(crate) fn by_index<'a, T: Proposable + 'a>(&'a self) -> ProposalBundleIndex<'a, T> {
         ProposalBundleIndex::new(self)
     }
 
+    /// Retain proposals, filtered by type.
+    ///
+    /// Type `T` can be any of the standard MLS proposal types defined in the
+    /// [`proposal`](crate::group::proposal) module.
     pub fn retain_by_type<T, F, E>(&mut self, mut f: F) -> Result<(), E>
     where
         T: Proposable,
@@ -106,6 +127,7 @@ impl ProposalBundle {
         res
     }
 
+    /// Retain custom proposals in the bundle.
     pub fn retain_custom<F, E>(&mut self, mut f: F) -> Result<(), E>
     where
         F: FnMut(&ProposalInfo<CustomProposal>) -> Result<bool, E>,
@@ -125,6 +147,7 @@ impl ProposalBundle {
         res
     }
 
+    /// Retain MLS standard proposals in the bundle.
     pub fn retain<F, E>(&mut self, mut f: F) -> Result<(), E>
     where
         F: FnMut(&ProposalInfo<BorrowedProposal<'_>>) -> Result<bool, E>,
@@ -160,6 +183,7 @@ impl ProposalBundle {
         Ok(())
     }
 
+    /// Iterate over all proposals inside the bundle.
     pub fn iter_proposals(&self) -> impl Iterator<Item = ProposalInfo<BorrowedProposal<'_>>> {
         self.additions
             .iter()
@@ -201,6 +225,7 @@ impl ProposalBundle {
             )
     }
 
+    /// Iterate over proposal in the bundle, consuming the bundle.
     pub fn into_proposals(self) -> impl Iterator<Item = ProposalInfo<Proposal>> {
         self.additions
             .into_iter()
@@ -239,14 +264,55 @@ impl ProposalBundle {
         })
     }
 
-    pub fn group_context_extensions_proposal(&self) -> Option<&ProposalInfo<ExtensionList>> {
+    /// Add proposals in the bundle.
+    pub fn add_proposals(&self) -> &[ProposalInfo<AddProposal>] {
+        &self.additions
+    }
+
+    /// Update proposals in the bundle.
+    pub fn update_proposals(&self) -> &[ProposalInfo<UpdateProposal>] {
+        &self.updates
+    }
+
+    /// Remove proposals in the bundle.
+    pub fn remove_proposals(&self) -> &[ProposalInfo<RemoveProposal>] {
+        &self.removals
+    }
+
+    /// Pre-shared key proposals in the bundle.
+    pub fn psk_proposals(&self) -> &[ProposalInfo<PreSharedKeyProposal>] {
+        &self.psks
+    }
+
+    /// Reinit proposals in the bundle.
+    pub fn reinit_proposals(&self) -> &[ProposalInfo<ReInitProposal>] {
+        &self.reinitializations
+    }
+
+    /// External init proposals in the bundle.
+    pub fn external_init_proposals(&self) -> &[ProposalInfo<ExternalInit>] {
+        &self.external_initializations
+    }
+
+    /// Group context extension proposals in the bundle.
+    pub fn group_context_ext_proposals(&self) -> &[ProposalInfo<ExtensionList>] {
+        &self.group_context_extensions
+    }
+
+    /// Custom proposals in the bundle.
+    pub fn custom_proposals(&self) -> &[ProposalInfo<CustomProposal>] {
+        &self.custom_proposals
+    }
+
+    pub(crate) fn group_context_extensions_proposal(&self) -> Option<&ProposalInfo<ExtensionList>> {
         self.group_context_extensions.first()
     }
 
-    pub fn clear_group_context_extensions(&mut self) {
+    pub(crate) fn clear_group_context_extensions(&mut self) {
         self.group_context_extensions.clear();
     }
 
+    /// Custom proposal types that are in use within this bundle.
     pub fn custom_proposal_types(&self) -> impl Iterator<Item = ProposalType> + '_ {
         self.custom_proposals
             .iter()
@@ -254,6 +320,7 @@ impl ProposalBundle {
             .unique()
     }
 
+    /// Standard proposal types that are in use within this bundle.
     pub fn proposal_types(&self) -> impl Iterator<Item = ProposalType> + '_ {
         (!self.additions.is_empty())
             .then_some(ProposalType::ADD)
@@ -319,14 +386,16 @@ impl<T: Proposable> std::ops::Index<usize> for ProposalBundleIndex<'_, T> {
 }
 
 #[derive(Clone, Debug)]
+/// Proposal description used as input to a
+/// [`ProposalFilter`](crate::ProposalFilter).
 pub struct ProposalInfo<T> {
-    pub proposal: T,
-    pub sender: Sender,
-    pub proposal_ref: Option<ProposalRef>,
+    pub(crate) proposal: T,
+    pub(crate) sender: Sender,
+    pub(crate) proposal_ref: Option<ProposalRef>,
 }
 
 impl<T> ProposalInfo<T> {
-    pub fn map<U, F>(self, f: F) -> ProposalInfo<U>
+    pub(crate) fn map<U, F>(self, f: F) -> ProposalInfo<U>
     where
         F: FnOnce(T) -> U,
     {
@@ -337,12 +406,28 @@ impl<T> ProposalInfo<T> {
         }
     }
 
-    pub fn by_ref(&self) -> ProposalInfo<&T> {
+    pub(crate) fn by_ref(&self) -> ProposalInfo<&T> {
         ProposalInfo {
             proposal: &self.proposal,
-            sender: self.sender.clone(),
+            sender: self.sender,
             proposal_ref: self.proposal_ref.clone(),
         }
+    }
+
+    /// Returns true if this proposal was passed in by-value using a
+    /// [`CommitBuilder`](crate::group::CommitBuilder).
+    pub fn is_by_value(&self) -> bool {
+        self.proposal_ref.is_none()
+    }
+
+    /// The sender of this proposal.
+    pub fn sender(&self) -> &Sender {
+        &self.sender
+    }
+
+    /// The underlying proposal value.
+    pub fn proposal(&self) -> &T {
+        &self.proposal
     }
 }
 

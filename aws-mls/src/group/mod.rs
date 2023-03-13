@@ -15,7 +15,7 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
-use crate::client_config::{ClientConfig, MakeProposalFilter, ProposalFilterInit};
+use crate::client_config::ClientConfig;
 use crate::crypto::{HpkeCiphertext, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
 use crate::extension::{ExternalPubExt, RatchetTreeExt};
 use crate::identity::SigningIdentity;
@@ -66,6 +66,7 @@ use self::epoch::{EpochSecrets, PriorEpoch, SenderDataSecret};
 pub use self::message_processor::{Event, ProcessedMessage, StateUpdate};
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
 use self::padding::PaddingMode;
+use self::proposal_ref::ProposalRef;
 use self::state_repo::GroupStateRepository;
 pub(crate) use group_info::GroupInfo;
 pub(crate) use proposal_cache::ProposalCacheError;
@@ -700,7 +701,7 @@ where
 
         self.state
             .proposals
-            .insert(proposal_ref, proposal, auth_content.content.sender.clone());
+            .insert(proposal_ref, proposal, auth_content.content.sender);
 
         self.format_for_wire(auth_content)
     }
@@ -1810,7 +1811,7 @@ impl<C> MessageProcessor for Group<C>
 where
     C: ClientConfig + Clone,
 {
-    type ProposalFilter = <C::MakeProposalFilter as MakeProposalFilter>::Filter;
+    type ProposalFilter = C::ProposalFilter;
     type IdentityProvider = C::IdentityProvider;
     type ExternalPskIdValidator = PskStoreIdValidator<C::PskStore>;
     type EventType = Event;
@@ -1992,8 +1993,8 @@ where
         Ok(())
     }
 
-    fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter {
-        self.config.proposal_filter(init)
+    fn proposal_filter(&self) -> Self::ProposalFilter {
+        self.config.proposal_filter()
     }
 
     fn identity_provider(&self) -> Self::IdentityProvider {

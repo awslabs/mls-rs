@@ -27,6 +27,7 @@ impl From<&Content> for ContentType {
 
 #[derive(
     Clone,
+    Copy,
     Debug,
     PartialEq,
     Eq,

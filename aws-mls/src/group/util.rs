@@ -1,4 +1,4 @@
-use aws_mls_core::{identity::IdentityProvider, key_package::KeyPackageStorage};
+use aws_mls_core::{group::Member, identity::IdentityProvider, key_package::KeyPackageStorage};
 use futures::StreamExt;
 use tls_codec::Deserialize;
 
@@ -202,6 +202,7 @@ pub(crate) async fn proposal_effects<C, F, P, CSP>(
     external_psk_id_validator: P,
     user_filter: F,
     commit_time: Option<MlsTime>,
+    roster: &[Member],
 ) -> Result<ProposalSetEffects, ProposalCacheError>
 where
     C: IdentityProvider,
@@ -211,7 +212,7 @@ where
 {
     proposals
         .resolve_for_commit(
-            sender.clone(),
+            *sender,
             commit_receiver,
             commit.proposals.clone(),
             commit.path.as_ref().map(|path| &path.leaf_node),
@@ -222,6 +223,7 @@ where
             external_psk_id_validator,
             user_filter,
             commit_time,
+            roster,
         )
         .await
 }

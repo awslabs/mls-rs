@@ -2,10 +2,9 @@ use async_trait::async_trait;
 use aws_mls_core::{identity::IdentityProvider, keychain::KeychainStorage};
 
 use crate::{
-    client_config::{MakeProposalFilter, ProposalFilterInit},
     crypto::SignaturePublicKey,
     extension::ExtensionType,
-    group::proposal::ProposalType,
+    group::{proposal::ProposalType, proposal_filter::ProposalFilter},
     identity::CredentialType,
     protocol_version::ProtocolVersion,
     tree_kem::Capabilities,
@@ -16,7 +15,7 @@ use crate::{
 pub trait ExternalClientConfig: Clone + Send + Sync {
     type Keychain: KeychainStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
-    type MakeProposalFilter: MakeProposalFilter;
+    type ProposalFilter: ProposalFilter + Clone;
     type CryptoProvider: CryptoProvider;
 
     fn keychain(&self) -> Self::Keychain;
@@ -26,10 +25,9 @@ pub trait ExternalClientConfig: Clone + Send + Sync {
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn crypto_provider(&self) -> Self::CryptoProvider;
     fn external_signing_key(&self, external_key_id: &[u8]) -> Option<SignaturePublicKey>;
-    fn proposal_filter(
-        &self,
-        init: ProposalFilterInit,
-    ) -> <Self::MakeProposalFilter as MakeProposalFilter>::Filter;
+
+    fn proposal_filter(&self) -> Self::ProposalFilter;
+
     fn cache_proposals(&self) -> bool;
 
     fn max_epoch_jitter(&self) -> Option<u64> {

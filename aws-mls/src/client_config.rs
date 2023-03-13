@@ -1,11 +1,7 @@
 use crate::{
     client_builder::Preferences,
     extension::ExtensionType,
-    group::{
-        framing::Sender,
-        proposal::{BorrowedProposal, ProposalType},
-        proposal_filter::{ProposalBundle, ProposalFilter, SimpleProposalFilter},
-    },
+    group::{proposal::ProposalType, proposal_filter::ProposalFilter},
     identity::CredentialType,
     protocol_version::ProtocolVersion,
     tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
@@ -16,9 +12,6 @@ use aws_mls_core::{
     crypto::CryptoProvider, group::GroupStateStorage, identity::IdentityProvider,
     key_package::KeyPackageStorage, keychain::KeychainStorage, psk::PreSharedKeyStorage,
 };
-use std::convert::Infallible;
-
-pub use crate::group::proposal_filter::ProposalFilterContext;
 
 #[async_trait]
 pub trait ClientConfig: Clone + Send + Sync {
@@ -27,7 +20,7 @@ pub trait ClientConfig: Clone + Send + Sync {
     type PskStore: PreSharedKeyStorage + Clone;
     type GroupStateStorage: GroupStateStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
-    type MakeProposalFilter: MakeProposalFilter + Clone;
+    type ProposalFilter: ProposalFilter + Clone;
     type CryptoProvider: CryptoProvider + Clone;
 
     fn supported_extensions(&self) -> Vec<ExtensionType>;
@@ -37,10 +30,7 @@ pub trait ClientConfig: Clone + Send + Sync {
     fn preferences(&self) -> Preferences;
     fn key_package_repo(&self) -> Self::KeyPackageRepository;
 
-    fn proposal_filter(
-        &self,
-        init: ProposalFilterInit,
-    ) -> <Self::MakeProposalFilter as MakeProposalFilter>::Filter;
+    fn proposal_filter(&self) -> Self::ProposalFilter;
 
     fn keychain(&self) -> Self::Keychain;
     fn secret_store(&self) -> Self::PskStore;
@@ -74,64 +64,6 @@ pub trait ClientConfig: Clone + Send + Sync {
         ConfigProperties {
             capabilities: self.capabilities(),
             extensions: self.leaf_node_extensions(),
-        }
-    }
-}
-
-pub trait MakeProposalFilter: Send + Sync {
-    type Filter: ProposalFilter;
-
-    fn make(&self, init: ProposalFilterInit) -> Self::Filter;
-}
-
-#[derive(Clone, Debug)]
-pub struct ProposalFilterInit {
-    committer: Sender,
-}
-
-impl ProposalFilterInit {
-    pub fn new(committer: Sender) -> Self {
-        Self { committer }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct MakeSimpleProposalFilter<F>(pub(crate) F);
-
-#[derive(Clone, Copy, Debug)]
-pub struct KeepAllProposals;
-
-impl MakeProposalFilter for KeepAllProposals {
-    type Filter = Self;
-
-    fn make(&self, _: ProposalFilterInit) -> Self {
-        Self
-    }
-}
-
-impl ProposalFilter for KeepAllProposals {
-    type Error = Infallible;
-
-    fn validate(&self, _: &ProposalBundle) -> Result<(), Infallible> {
-        Ok(())
-    }
-
-    fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Infallible> {
-        Ok(proposals)
-    }
-}
-
-impl<F, E> MakeProposalFilter for MakeSimpleProposalFilter<F>
-where
-    F: Fn(&ProposalFilterContext, &BorrowedProposal<'_>) -> Result<(), E> + Clone + Send + Sync,
-    E: std::error::Error + Send + Sync + 'static,
-{
-    type Filter = SimpleProposalFilter<F>;
-
-    fn make(&self, init: ProposalFilterInit) -> Self::Filter {
-        SimpleProposalFilter {
-            committer: init.committer,
-            filter: self.0.clone(),
         }
     }
 }

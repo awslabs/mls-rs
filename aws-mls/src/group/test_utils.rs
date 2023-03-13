@@ -453,8 +453,8 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.group_state_mut()
     }
 
-    fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter {
-        self.inner.proposal_filter(init)
+    fn proposal_filter(&self) -> Self::ProposalFilter {
+        self.inner.proposal_filter()
     }
 
     fn identity_provider(&self) -> Self::IdentityProvider {

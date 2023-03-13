@@ -192,6 +192,7 @@ impl ProposalCache {
         external_leaf: Option<&LeafNode>,
         external_psk_id_validator: P,
         user_filter: F,
+        roster: &[Member],
     ) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), ProposalCacheError>
     where
         C: IdentityProvider,
@@ -205,15 +206,11 @@ impl ProposalCache {
             .map(|(proposal_ref, proposal)| {
                 (
                     proposal.proposal.clone(),
-                    proposal.sender.clone(),
+                    proposal.sender,
                     Some(proposal_ref.clone()),
                 )
             })
-            .chain(
-                additional_proposals
-                    .into_iter()
-                    .map(|p| (p, sender.clone(), None)),
-            )
+            .chain(additional_proposals.into_iter().map(|p| (p, sender, None)))
             .fold(
                 ProposalBundle::default(),
                 |mut proposals, (proposal, sender, proposal_ref)| {
@@ -223,7 +220,8 @@ impl ProposalCache {
             );
 
         let proposals = user_filter
-            .filter(proposals)
+            .filter(sender, roster, group_extensions, proposals)
+            .await
             .map_err(ProposalFilterError::user_defined)?;
 
         let required_capabilities = group_extensions
@@ -301,6 +299,7 @@ impl ProposalCache {
         external_psk_id_validator: P,
         user_filter: F,
         commit_time: Option<MlsTime>,
+        roster: &[Member],
     ) -> Result<ProposalSetEffects, ProposalCacheError>
     where
         C: IdentityProvider,
@@ -316,14 +315,15 @@ impl ProposalCache {
                     ProposalOrRef::Proposal(_) => None,
                 };
 
-                let proposal = self.resolve_item(sender.clone(), proposal)?;
+                let proposal = self.resolve_item(sender, proposal)?;
                 proposals.add(proposal.proposal, proposal.sender, proposal_ref);
                 Ok::<_, ProposalCacheError>(proposals)
             },
         )?;
 
         user_filter
-            .validate(&proposals)
+            .validate(sender, roster, group_extensions, &proposals)
+            .await
             .map_err(ProposalFilterError::user_defined)?;
 
         let required_capabilities = group_extensions
@@ -399,7 +399,6 @@ fn rejected_proposals(
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use std::convert::Infallible;
 
     use aws_mls_core::{
         crypto::CipherSuiteProvider, extension::ExtensionList, identity::IdentityProvider,
@@ -444,7 +443,7 @@ pub(crate) mod test_utils {
         CommitReceiver<
             'a,
             BasicWithCustomProvider,
-            PassThroughProposalFilter<Infallible>,
+            PassThroughProposalFilter,
             PassThroughPskIdValidator,
             CSP,
         >
@@ -555,7 +554,7 @@ pub(crate) mod test_utils {
         {
             self.cache
                 .resolve_for_commit_default(
-                    self.sender.clone(),
+                    self.sender,
                     Some(self.receiver),
                     proposals.into_iter().map(Into::into).collect(),
                     None,
@@ -574,7 +573,7 @@ pub(crate) mod test_utils {
         ProposalCache::new(TEST_PROTOCOL_VERSION, TEST_GROUP.to_vec())
     }
 
-    pub fn pass_through_filter() -> PassThroughProposalFilter<Infallible> {
+    pub fn pass_through_filter() -> PassThroughProposalFilter {
         PassThroughProposalFilter::new()
     }
 }
@@ -660,6 +659,7 @@ mod tests {
                 external_psk_id_validator,
                 user_filter,
                 None,
+                &[],
             )
             .await
         }
@@ -906,6 +906,7 @@ mod tests {
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
+                &[],
             )
             .await
             .unwrap();
@@ -954,6 +955,7 @@ mod tests {
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
+                &[],
             )
             .await
             .unwrap();
@@ -1013,6 +1015,7 @@ mod tests {
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
+                &[],
             )
             .await;
 
@@ -1056,6 +1059,7 @@ mod tests {
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
+                &[],
             )
             .await
             .unwrap();
@@ -1090,6 +1094,7 @@ mod tests {
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
+                &[],
             )
             .await
             .unwrap();
@@ -1143,6 +1148,7 @@ mod tests {
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
+                &[],
             )
             .await
             .unwrap();
@@ -1205,6 +1211,7 @@ mod tests {
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
+                &[],
             )
             .await
             .unwrap();
@@ -1251,6 +1258,7 @@ mod tests {
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
+                &[],
             )
             .await;
 
@@ -1289,6 +1297,7 @@ mod tests {
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let public_tree = &group.group.state.public_tree;
+
         let identity_provider = BasicIdentityProvider::new();
 
         let res = cache
@@ -1696,6 +1705,7 @@ mod tests {
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
+                &[],
             )
             .await
             .unwrap();
@@ -1726,6 +1736,7 @@ mod tests {
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
+                &[],
             )
             .await
             .unwrap();
@@ -1773,6 +1784,7 @@ mod tests {
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
+                &[],
             )
             .await
             .unwrap();
@@ -1809,6 +1821,7 @@ mod tests {
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
+                &[],
             )
             .await
             .unwrap();
@@ -1840,6 +1853,7 @@ mod tests {
                 None,
                 PassThroughPskIdValidator,
                 pass_through_filter(),
+                &[],
             )
             .await
             .unwrap();
@@ -1863,7 +1877,7 @@ mod tests {
         CommitSender<
             'a,
             BasicWithCustomProvider,
-            PassThroughProposalFilter<Infallible>,
+            PassThroughProposalFilter,
             PassThroughPskIdValidator,
             CSP,
         >
@@ -1967,6 +1981,7 @@ mod tests {
                     None,
                     &self.external_psk_id_validator,
                     &self.user_filter,
+                    &[],
                 )
                 .await
         }
@@ -3773,14 +3788,27 @@ mod tests {
     async fn user_defined_filter_can_remove_proposals() {
         struct RemoveGroupContextExtensions;
 
+        #[async_trait]
         impl ProposalFilter for RemoveGroupContextExtensions {
             type Error = Infallible;
 
-            fn validate(&self, _: &ProposalBundle) -> Result<(), Self::Error> {
+            async fn validate(
+                &self,
+                _: Sender,
+                _: &[Member],
+                _: &ExtensionList,
+                _: &ProposalBundle,
+            ) -> Result<(), Self::Error> {
                 Ok(())
             }
 
-            fn filter(&self, mut proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
+            async fn filter(
+                &self,
+                _: Sender,
+                _: &[Member],
+                _: &ExtensionList,
+                mut proposals: ProposalBundle,
+            ) -> Result<ProposalBundle, Self::Error> {
                 proposals.clear_group_context_extensions();
                 Ok(proposals)
             }
@@ -3801,14 +3829,27 @@ mod tests {
 
     struct FailureProposalFilter;
 
+    #[async_trait]
     impl ProposalFilter for FailureProposalFilter {
         type Error = std::io::Error;
 
-        fn validate(&self, _: &ProposalBundle) -> Result<(), Self::Error> {
+        async fn validate(
+            &self,
+            _: Sender,
+            _: &[Member],
+            _: &ExtensionList,
+            _: &ProposalBundle,
+        ) -> Result<(), Self::Error> {
             Err(std::io::ErrorKind::TimedOut.into())
         }
 
-        fn filter(&self, _: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
+        async fn filter(
+            &self,
+            _: Sender,
+            _: &[Member],
+            _: &ExtensionList,
+            _: ProposalBundle,
+        ) -> Result<ProposalBundle, Self::Error> {
             Err(std::io::ErrorKind::TimedOut.into())
         }
     }
@@ -3902,16 +3943,15 @@ mod tests {
 
             let receiver = CommitReceiver::new(
                 &tree,
-                committer.clone(),
+                committer,
                 alice,
                 test_cipher_suite_provider(TEST_CIPHER_SUITE),
             )
             .with_extensions(extensions);
 
             let (receiver, proposals, proposer) = if by_ref {
-                let proposal_ref = make_proposal_ref(proposal, proposer.clone());
-                let receiver =
-                    receiver.cache(proposal_ref.clone(), proposal.clone(), proposer.clone());
+                let proposal_ref = make_proposal_ref(proposal, proposer);
+                let receiver = receiver.cache(proposal_ref.clone(), proposal.clone(), proposer);
                 (receiver, vec![ProposalOrRef::from(proposal_ref)], proposer)
             } else {
                 (receiver, vec![proposal.clone().into()], committer)

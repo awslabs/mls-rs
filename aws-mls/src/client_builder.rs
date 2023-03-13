@@ -5,14 +5,11 @@
 use crate::{
     cipher_suite::CipherSuite,
     client::Client,
-    client_config::{
-        ClientConfig, KeepAllProposals, MakeProposalFilter, MakeSimpleProposalFilter,
-        ProposalFilterInit,
-    },
+    client_config::ClientConfig,
     extension::{ExtensionType, MlsExtension},
     group::{
-        proposal::{BorrowedProposal, ProposalType},
-        proposal_filter::ProposalFilterContext,
+        proposal::ProposalType,
+        proposal_filter::{PassThroughProposalFilter, ProposalFilter},
         state_repo::DEFAULT_EPOCH_RETENTION_LIMIT,
         ControlEncryptionMode,
     },
@@ -51,7 +48,7 @@ pub type BaseConfig = Config<
     InMemoryPreSharedKeyStorage,
     InMemoryGroupStateStorage,
     Missing,
-    KeepAllProposals,
+    PassThroughProposalFilter,
     Missing,
 >;
 
@@ -63,7 +60,7 @@ pub type BaseSqlConfig = Config<
     SqLitePreSharedKeyStorage,
     SqLiteGroupStateStorage,
     Missing,
-    KeepAllProposals,
+    PassThroughProposalFilter,
     Missing,
 >;
 
@@ -170,7 +167,7 @@ impl ClientBuilder<BaseConfig> {
             psk_store: Default::default(),
             group_state_storage: Default::default(),
             identity_provider: Missing,
-            make_proposal_filter: KeepAllProposals,
+            proposal_filter: PassThroughProposalFilter,
             crypto_provider: Missing,
         }))
     }
@@ -189,7 +186,7 @@ impl ClientBuilder<BaseSqlConfig> {
             psk_store: storage.pre_shared_key_storage()?,
             group_state_storage: storage.group_state_storage()?,
             identity_provider: Missing,
-            make_proposal_filter: KeepAllProposals,
+            proposal_filter: PassThroughProposalFilter,
             crypto_provider: Missing,
         })))
     }
@@ -324,7 +321,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            make_proposal_filter: c.make_proposal_filter,
+            proposal_filter: c.proposal_filter,
             crypto_provider: c.crypto_provider,
         }))
     }
@@ -377,7 +374,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            make_proposal_filter: c.make_proposal_filter,
+            proposal_filter: c.proposal_filter,
             crypto_provider: c.crypto_provider,
         }))
     }
@@ -397,7 +394,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            make_proposal_filter: c.make_proposal_filter,
+            proposal_filter: c.proposal_filter,
             crypto_provider: c.crypto_provider,
         }))
     }
@@ -420,8 +417,8 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage,
             identity_provider: c.identity_provider,
-            make_proposal_filter: c.make_proposal_filter,
             crypto_provider: c.crypto_provider,
+            proposal_filter: c.proposal_filter,
         }))
     }
 
@@ -441,14 +438,12 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider,
-            make_proposal_filter: c.make_proposal_filter,
+            proposal_filter: c.proposal_filter,
             crypto_provider: c.crypto_provider,
         }))
     }
 
     /// Set the crypto provider to be used by the client.
-    ///
-    // TODO add a comment once we have a default provider
     pub fn crypto_provider<Cp>(
         self,
         crypto_provider: Cp,
@@ -464,7 +459,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            make_proposal_filter: c.make_proposal_filter,
+            proposal_filter: c.proposal_filter,
             crypto_provider,
         }))
     }
@@ -476,10 +471,12 @@ impl<C: IntoConfig> ClientBuilder<C> {
     /// receiving a commit, the entire commit is considered invalid. If the filter returns an error
     /// when sending a commit, the proposal the filter was called with is not included in the
     /// commit.
-    pub fn proposal_filter<F, E>(self, f: F) -> ClientBuilder<WithProposalFilter<F, C>>
+    pub fn proposal_filter<Pf>(
+        self,
+        proposal_filter: Pf,
+    ) -> ClientBuilder<WithProposalFilter<Pf, C>>
     where
-        F: Fn(&ProposalFilterContext, &BorrowedProposal<'_>) -> Result<(), E> + Clone,
-        E: std::error::Error + Send + Sync + 'static,
+        Pf: ProposalFilter,
     {
         let Config(c) = self.0.into_config();
         ClientBuilder(Config(ConfigInner {
@@ -489,7 +486,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            make_proposal_filter: MakeSimpleProposalFilter(f),
+            proposal_filter,
             crypto_provider: c.crypto_provider,
         }))
     }
@@ -502,7 +499,7 @@ where
     C::PskStore: PreSharedKeyStorage + Clone,
     C::GroupStateStorage: GroupStateStorage + Clone,
     C::IdentityProvider: IdentityProvider + Clone,
-    C::MakeProposalFilter: MakeProposalFilter + Clone,
+    C::ProposalFilter: ProposalFilter + Clone,
     C::CryptoProvider: CryptoProvider + Clone,
 {
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
@@ -567,7 +564,7 @@ pub type WithKeyPackageRepo<K, C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::ProposalFilter,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -580,7 +577,7 @@ pub type WithKeychain<K, C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::ProposalFilter,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -593,7 +590,7 @@ pub type WithPskStore<P, C> = Config<
     P,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::ProposalFilter,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -606,7 +603,7 @@ pub type WithGroupStateStorage<G, C> = Config<
     <C as IntoConfig>::PskStore,
     G,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::ProposalFilter,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -619,20 +616,20 @@ pub type WithIdentityProvider<I, C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     I,
-    <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::ProposalFilter,
     <C as IntoConfig>::CryptoProvider,
 >;
 
 /// Change the proposal filter used by a client configuration.
 ///
 /// See [`ClientBuilder::proposal_filter`].
-pub type WithProposalFilter<F, C> = Config<
+pub type WithProposalFilter<Pf, C> = Config<
     <C as IntoConfig>::KeyPackageRepository,
     <C as IntoConfig>::Keychain,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    MakeSimpleProposalFilter<F>,
+    Pf,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -645,7 +642,7 @@ pub type WithCryptoProvider<Cp, C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::ProposalFilter,
     Cp,
 >;
 
@@ -656,18 +653,18 @@ pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::ProposalFilter,
     <C as IntoConfig>::CryptoProvider,
 >;
 
-impl<Kpr, K, Ps, Gss, Ip, Mpf, Cp> ClientConfig for ConfigInner<Kpr, K, Ps, Gss, Ip, Mpf, Cp>
+impl<Kpr, K, Ps, Gss, Ip, Pf, Cp> ClientConfig for ConfigInner<Kpr, K, Ps, Gss, Ip, Pf, Cp>
 where
     Kpr: KeyPackageStorage + Clone,
     K: KeychainStorage + Clone,
     Ps: PreSharedKeyStorage + Clone,
     Gss: GroupStateStorage + Clone,
     Ip: IdentityProvider + Clone,
-    Mpf: MakeProposalFilter + Clone,
+    Pf: ProposalFilter + Clone,
     Cp: CryptoProvider + Clone,
 {
     type KeyPackageRepository = Kpr;
@@ -675,7 +672,7 @@ where
     type PskStore = Ps;
     type GroupStateStorage = Gss;
     type IdentityProvider = Ip;
-    type MakeProposalFilter = Mpf;
+    type ProposalFilter = Pf;
     type CryptoProvider = Cp;
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
@@ -694,11 +691,8 @@ where
         self.key_package_repo.clone()
     }
 
-    fn proposal_filter(
-        &self,
-        init: ProposalFilterInit,
-    ) -> <Self::MakeProposalFilter as MakeProposalFilter>::Filter {
-        self.make_proposal_filter.make(init)
+    fn proposal_filter(&self) -> Self::ProposalFilter {
+        self.proposal_filter.clone()
     }
 
     fn keychain(&self) -> Self::Keychain {
@@ -742,19 +736,19 @@ where
     }
 }
 
-impl<Kpr, K, Ps, Gss, Ip, Mpf, Cp> Sealed for Config<Kpr, K, Ps, Gss, Ip, Mpf, Cp> {}
+impl<Kpr, K, Ps, Gss, Ip, Pf, Cp> Sealed for Config<Kpr, K, Ps, Gss, Ip, Pf, Cp> {}
 
-impl<Kpr, K, Ps, Gss, Ip, Mpf, Cp> MlsConfig for Config<Kpr, K, Ps, Gss, Ip, Mpf, Cp>
+impl<Kpr, K, Ps, Gss, Ip, Pf, Cp> MlsConfig for Config<Kpr, K, Ps, Gss, Ip, Pf, Cp>
 where
     Kpr: KeyPackageStorage + Clone,
     K: KeychainStorage + Clone,
     Ps: PreSharedKeyStorage + Clone,
     Gss: GroupStateStorage + Clone,
     Ip: IdentityProvider + Clone,
-    Mpf: MakeProposalFilter + Clone,
+    Pf: ProposalFilter + Clone,
     Cp: CryptoProvider + Clone,
 {
-    type Output = ConfigInner<Kpr, K, Ps, Gss, Ip, Mpf, Cp>;
+    type Output = ConfigInner<Kpr, K, Ps, Gss, Ip, Pf, Cp>;
 
     fn get(&self) -> &Self::Output {
         &self.0
@@ -780,7 +774,7 @@ impl<T: MlsConfig> ClientConfig for T {
     type PskStore = <T::Output as ClientConfig>::PskStore;
     type GroupStateStorage = <T::Output as ClientConfig>::GroupStateStorage;
     type IdentityProvider = <T::Output as ClientConfig>::IdentityProvider;
-    type MakeProposalFilter = <T::Output as ClientConfig>::MakeProposalFilter;
+    type ProposalFilter = <T::Output as ClientConfig>::ProposalFilter;
     type CryptoProvider = <T::Output as ClientConfig>::CryptoProvider;
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
@@ -803,11 +797,8 @@ impl<T: MlsConfig> ClientConfig for T {
         self.get().key_package_repo()
     }
 
-    fn proposal_filter(
-        &self,
-        init: ProposalFilterInit,
-    ) -> <Self::MakeProposalFilter as MakeProposalFilter>::Filter {
-        self.get().proposal_filter(init)
+    fn proposal_filter(&self) -> Self::ProposalFilter {
+        self.get().proposal_filter()
     }
 
     fn keychain(&self) -> Self::Keychain {
@@ -949,19 +940,19 @@ mod private {
     use crate::client_builder::{IntoConfigOutput, Settings};
 
     #[derive(Clone, Debug)]
-    pub struct Config<Kpr, K, Ps, Gss, Ip, Mpf, Cp>(
-        pub(crate) ConfigInner<Kpr, K, Ps, Gss, Ip, Mpf, Cp>,
+    pub struct Config<Kpr, K, Ps, Gss, Ip, Pf, Cp>(
+        pub(crate) ConfigInner<Kpr, K, Ps, Gss, Ip, Pf, Cp>,
     );
 
     #[derive(Clone, Debug)]
-    pub struct ConfigInner<Kpr, K, Ps, Gss, Ip, Mpf, Cp> {
+    pub struct ConfigInner<Kpr, K, Ps, Gss, Ip, Pf, Cp> {
         pub(crate) settings: Settings,
         pub(crate) key_package_repo: Kpr,
         pub(crate) keychain: K,
         pub(crate) psk_store: Ps,
         pub(crate) group_state_storage: Gss,
         pub(crate) identity_provider: Ip,
-        pub(crate) make_proposal_filter: Mpf,
+        pub(crate) proposal_filter: Pf,
         pub(crate) crypto_provider: Cp,
     }
 
@@ -971,19 +962,19 @@ mod private {
         type PskStore;
         type GroupStateStorage;
         type IdentityProvider;
-        type MakeProposalFilter;
+        type ProposalFilter;
         type CryptoProvider;
 
         fn into_config(self) -> IntoConfigOutput<Self>;
     }
 
-    impl<Kpr, K, Ps, Gss, Ip, Mpf, Cp> IntoConfig for Config<Kpr, K, Ps, Gss, Ip, Mpf, Cp> {
+    impl<Kpr, K, Ps, Gss, Ip, Pf, Cp> IntoConfig for Config<Kpr, K, Ps, Gss, Ip, Pf, Cp> {
         type KeyPackageRepository = Kpr;
         type Keychain = K;
         type PskStore = Ps;
         type GroupStateStorage = Gss;
         type IdentityProvider = Ip;
-        type MakeProposalFilter = Mpf;
+        type ProposalFilter = Pf;
         type CryptoProvider = Cp;
 
         fn into_config(self) -> Self {

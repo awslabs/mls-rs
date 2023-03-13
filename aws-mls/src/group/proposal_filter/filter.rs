@@ -1,40 +1,81 @@
 use crate::{
     extension::ExtensionType,
-    group::{proposal_filter::ProposalBundle, BorrowedProposal, ProposalType, Sender},
+    group::{proposal_filter::ProposalBundle, ProposalType, Sender},
     key_package::KeyPackageValidationError,
     protocol_version::ProtocolVersion,
     tree_kem::{
         leaf_node::LeafNodeError, leaf_node_validator::LeafNodeValidationError, RatchetTreeError,
     },
 };
-use aws_mls_core::extension::ExtensionError;
-use std::marker::PhantomData;
+use async_trait::async_trait;
+use aws_mls_core::{
+    extension::{ExtensionError, ExtensionList},
+    group::Member,
+};
+use std::convert::Infallible;
 use thiserror::Error;
 
+/// A user controlled proposal filter that can pre-process a set of proposals
+/// during commit processing.
+///
+/// Both proposals received during the current epoch and at the time of commit
+/// will be presented for validation and filtering. This filter will present a
+/// raw list of proposals. Standard MLS rules are applied internally on the
+/// result of this filter.
+#[async_trait]
 pub trait ProposalFilter: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// This is called to validate a received commit. It should report any error making the commit
     /// invalid.
-    fn validate(&self, proposals: &ProposalBundle) -> Result<(), Self::Error>;
+    async fn validate(
+        &self,
+        commit_sender: Sender,
+        current_roster: &[Member],
+        extension_list: &ExtensionList,
+        proposals: &ProposalBundle,
+    ) -> Result<(), Self::Error>;
 
     /// This is called when preparing a commit. By-reference proposals causing the commit to be
     /// invalid should be filtered out. If a by-value proposal causes the commit to be invalid,
     /// an error should be returned.
-    fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error>;
+    async fn filter(
+        &self,
+        commit_sender: Sender,
+        current_roster: &[Member],
+        extension_list: &ExtensionList,
+        proposals: ProposalBundle,
+    ) -> Result<ProposalBundle, Self::Error>;
 }
 
 macro_rules! delegate_proposal_filter {
     ($implementer:ty) => {
+        #[async_trait]
         impl<T: ProposalFilter + ?Sized> ProposalFilter for $implementer {
             type Error = T::Error;
 
-            fn validate(&self, proposals: &ProposalBundle) -> Result<(), Self::Error> {
-                (**self).validate(proposals)
+            async fn validate(
+                &self,
+                commit_sender: Sender,
+                current_roster: &[Member],
+                extension_list: &ExtensionList,
+                proposals: &ProposalBundle,
+            ) -> Result<(), Self::Error> {
+                (**self)
+                    .validate(commit_sender, current_roster, extension_list, proposals)
+                    .await
             }
 
-            fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
-                (**self).filter(proposals)
+            async fn filter(
+                &self,
+                commit_sender: Sender,
+                current_roster: &[Member],
+                extension_list: &ExtensionList,
+                proposals: ProposalBundle,
+            ) -> Result<ProposalBundle, Self::Error> {
+                (**self)
+                    .filter(commit_sender, current_roster, extension_list, proposals)
+                    .await
             }
         }
     };
@@ -43,96 +84,37 @@ macro_rules! delegate_proposal_filter {
 delegate_proposal_filter!(Box<T>);
 delegate_proposal_filter!(&T);
 
-#[derive(Debug)]
-#[non_exhaustive]
-/// Context that gets passed into a
-/// [`proposal_filter`](crate::client_builder::ClientBuilder::proposal_filter).
-pub struct ProposalFilterContext {
-    pub(crate) committer: Sender,
-    pub(crate) proposer: Sender,
-}
+#[derive(Clone, Debug, Default)]
+/// Default allow-all proposal filter.
+pub struct PassThroughProposalFilter;
 
-impl ProposalFilterContext {
-    /// Description of the sender of a commit containing a
-    /// [`BorrowedProposal`](crate::group::proposal::BorrowedProposal).
-    pub fn committer(&self) -> &Sender {
-        &self.committer
-    }
-
-    /// Description of the sender of a proposal
-    /// [`BorrowedProposal`](crate::group::proposal::BorrowedProposal).
-    pub fn proposer(&self) -> &Sender {
-        &self.proposer
-    }
-}
-
-pub struct SimpleProposalFilter<F> {
-    pub(crate) committer: Sender,
-    pub(crate) filter: F,
-}
-
-impl<F, E> ProposalFilter for SimpleProposalFilter<F>
-where
-    F: Fn(&ProposalFilterContext, &BorrowedProposal<'_>) -> Result<(), E> + Send + Sync,
-    E: std::error::Error + Send + Sync + 'static,
-{
-    type Error = E;
-
-    fn validate(&self, proposals: &ProposalBundle) -> Result<(), Self::Error> {
-        proposals.iter_proposals().try_for_each(|proposal| {
-            let context = ProposalFilterContext {
-                committer: self.committer.clone(),
-                proposer: proposal.sender.clone(),
-            };
-
-            (self.filter)(&context, &proposal.proposal)
-        })
-    }
-
-    fn filter(&self, mut proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
-        proposals.retain(|proposal| {
-            let context = ProposalFilterContext {
-                committer: self.committer.clone(),
-                proposer: proposal.sender.clone(),
-            };
-
-            Ok((self.filter)(&context, &proposal.proposal).map_or(false, |_| true))
-        })?;
-
-        Ok(proposals)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct PassThroughProposalFilter<E> {
-    phantom: PhantomData<fn() -> E>,
-}
-
-impl<E> PassThroughProposalFilter<E> {
+impl PassThroughProposalFilter {
     pub fn new() -> Self {
-        Self {
-            phantom: PhantomData,
-        }
+        Self
     }
 }
 
-impl<E> Default for PassThroughProposalFilter<E> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+#[async_trait]
+impl ProposalFilter for PassThroughProposalFilter {
+    type Error = Infallible;
 
-impl<E> ProposalFilter for PassThroughProposalFilter<E>
-where
-    E: std::error::Error + Send + Sync + 'static,
-{
-    type Error = E;
-
-    fn validate(&self, _: &ProposalBundle) -> Result<(), Self::Error> {
+    async fn validate(
+        &self,
+        _commit_sender: Sender,
+        _current_roster: &[Member],
+        _extension_list: &ExtensionList,
+        _proposals: &ProposalBundle,
+    ) -> Result<(), Self::Error> {
         Ok(())
     }
 
-    fn filter(&self, proposals: ProposalBundle) -> Result<ProposalBundle, Self::Error> {
+    async fn filter(
+        &self,
+        _commit_sender: Sender,
+        _current_roster: &[Member],
+        _extension_list: &ExtensionList,
+        proposals: ProposalBundle,
+    ) -> Result<ProposalBundle, Self::Error> {
         Ok(proposals)
     }
 }

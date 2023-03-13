@@ -4,15 +4,12 @@
 
 use crate::{
     cipher_suite::CipherSuite,
-    client_config::{
-        KeepAllProposals, MakeProposalFilter, MakeSimpleProposalFilter, ProposalFilterInit,
-    },
     crypto::{SignaturePublicKey, SignatureSecretKey},
     extension::ExtensionType,
     external_client::{ExternalClient, ExternalClientConfig},
     group::{
-        proposal::{BorrowedProposal, ProposalType},
-        proposal_filter::ProposalFilterContext,
+        proposal::ProposalType,
+        proposal_filter::{PassThroughProposalFilter, ProposalFilter},
     },
     identity::CredentialType,
     identity::SigningIdentity,
@@ -25,7 +22,8 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 
 /// Base client configuration type when instantiating `ExternalClientBuilder`
-pub type ExternalBaseConfig = Config<InMemoryKeychainStorage, Missing, KeepAllProposals, Missing>;
+pub type ExternalBaseConfig =
+    Config<InMemoryKeychainStorage, Missing, PassThroughProposalFilter, Missing>;
 
 /// Builder for [`ExternalClient`]
 ///
@@ -125,7 +123,7 @@ impl ExternalClientBuilder<ExternalBaseConfig> {
             settings: Default::default(),
             keychain: Default::default(),
             identity_provider: Missing,
-            make_proposal_filter: KeepAllProposals,
+            proposal_filter: PassThroughProposalFilter,
             crypto_provider: Missing,
         }))
     }
@@ -234,7 +232,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
             settings: c.settings,
             keychain,
             identity_provider: c.identity_provider,
-            make_proposal_filter: c.make_proposal_filter,
+            proposal_filter: c.proposal_filter,
             crypto_provider: c.crypto_provider,
         }))
     }
@@ -266,7 +264,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
             settings: c.settings,
             keychain: c.keychain,
             identity_provider,
-            make_proposal_filter: c.make_proposal_filter,
+            proposal_filter: c.proposal_filter,
             crypto_provider: c.crypto_provider,
         }))
     }
@@ -286,7 +284,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
             settings: c.settings,
             keychain: c.keychain,
             identity_provider: c.identity_provider,
-            make_proposal_filter: c.make_proposal_filter,
+            proposal_filter: c.proposal_filter,
             crypto_provider,
         }))
     }
@@ -298,17 +296,19 @@ impl<C: IntoConfig> ExternalClientBuilder<C> {
     /// receiving a commit, the entire commit is considered invalid. If the filter returns an error
     /// when sending a commit, the proposal the filter was called with is not included in the
     /// commit.
-    pub fn proposal_filter<F, E>(self, f: F) -> ExternalClientBuilder<WithProposalFilter<F, C>>
+    pub fn proposal_filter<Pf>(
+        self,
+        proposal_filter: Pf,
+    ) -> ExternalClientBuilder<WithProposalFilter<Pf, C>>
     where
-        F: Fn(&ProposalFilterContext, &BorrowedProposal<'_>) -> Result<(), E> + Clone,
-        E: std::error::Error + Send + Sync + 'static,
+        Pf: ProposalFilter,
     {
         let Config(c) = self.0.into_config();
         ExternalClientBuilder(Config(ConfigInner {
             settings: c.settings,
             keychain: c.keychain,
             identity_provider: c.identity_provider,
-            make_proposal_filter: MakeSimpleProposalFilter(f),
+            proposal_filter,
             crypto_provider: c.crypto_provider,
         }))
     }
@@ -318,7 +318,7 @@ impl<C: IntoConfig> ExternalClientBuilder<C>
 where
     C::Keychain: KeychainStorage + Clone,
     C::IdentityProvider: IdentityProvider + Clone,
-    C::MakeProposalFilter: MakeProposalFilter + Clone,
+    C::ProposalFilter: ProposalFilter + Clone,
     C::CryptoProvider: CryptoProvider + Clone,
 {
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
@@ -364,7 +364,7 @@ pub struct Missing;
 pub type WithKeychain<K, C> = Config<
     K,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::ProposalFilter,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -374,17 +374,17 @@ pub type WithKeychain<K, C> = Config<
 pub type WithIdentityProvider<I, C> = Config<
     <C as IntoConfig>::Keychain,
     I,
-    <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::ProposalFilter,
     <C as IntoConfig>::CryptoProvider,
 >;
 
 /// Change the proposal filter used by a client configuration.
 ///
 /// See [`ExternalClientBuilder::proposal_filter`].
-pub type WithProposalFilter<F, C> = Config<
+pub type WithProposalFilter<Pf, C> = Config<
     <C as IntoConfig>::Keychain,
     <C as IntoConfig>::IdentityProvider,
-    MakeSimpleProposalFilter<F>,
+    Pf,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -394,7 +394,7 @@ pub type WithProposalFilter<F, C> = Config<
 pub type WithCryptoProvider<Cp, C> = Config<
     <C as IntoConfig>::Keychain,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::ProposalFilter,
     Cp,
 >;
 
@@ -402,20 +402,20 @@ pub type WithCryptoProvider<Cp, C> = Config<
 pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::Keychain,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::MakeProposalFilter,
+    <C as IntoConfig>::ProposalFilter,
     <C as IntoConfig>::CryptoProvider,
 >;
 
-impl<K, Ip, Mpf, Cp> ExternalClientConfig for ConfigInner<K, Ip, Mpf, Cp>
+impl<K, Ip, Pf, Cp> ExternalClientConfig for ConfigInner<K, Ip, Pf, Cp>
 where
     K: KeychainStorage + Clone,
     Ip: IdentityProvider + Clone,
-    Mpf: MakeProposalFilter + Clone,
+    Pf: ProposalFilter + Clone,
     Cp: CryptoProvider + Clone,
 {
     type Keychain = K;
     type IdentityProvider = Ip;
-    type MakeProposalFilter = Mpf;
+    type ProposalFilter = Pf;
     type CryptoProvider = Cp;
 
     fn keychain(&self) -> Self::Keychain {
@@ -445,11 +445,8 @@ where
             .cloned()
     }
 
-    fn proposal_filter(
-        &self,
-        init: ProposalFilterInit,
-    ) -> <Self::MakeProposalFilter as MakeProposalFilter>::Filter {
-        self.make_proposal_filter.make(init)
+    fn proposal_filter(&self) -> Self::ProposalFilter {
+        self.proposal_filter.clone()
     }
 
     fn max_epoch_jitter(&self) -> Option<u64> {
@@ -467,14 +464,14 @@ where
 
 impl<K, Ip, Mpf, Cp> Sealed for Config<K, Ip, Mpf, Cp> {}
 
-impl<K, Ip, Mpf, Cp> MlsConfig for Config<K, Ip, Mpf, Cp>
+impl<K, Ip, Pf, Cp> MlsConfig for Config<K, Ip, Pf, Cp>
 where
     K: KeychainStorage + Clone,
     Ip: IdentityProvider + Clone,
-    Mpf: MakeProposalFilter + Clone,
+    Pf: ProposalFilter + Clone,
     Cp: CryptoProvider + Clone,
 {
-    type Output = ConfigInner<K, Ip, Mpf, Cp>;
+    type Output = ConfigInner<K, Ip, Pf, Cp>;
 
     fn get(&self) -> &Self::Output {
         &self.0
@@ -499,7 +496,7 @@ pub trait MlsConfig: Clone + Send + Sync + Sealed {
 impl<T: MlsConfig> ExternalClientConfig for T {
     type Keychain = <T::Output as ExternalClientConfig>::Keychain;
     type IdentityProvider = <T::Output as ExternalClientConfig>::IdentityProvider;
-    type MakeProposalFilter = <T::Output as ExternalClientConfig>::MakeProposalFilter;
+    type ProposalFilter = <T::Output as ExternalClientConfig>::ProposalFilter;
     type CryptoProvider = <T::Output as ExternalClientConfig>::CryptoProvider;
 
     fn keychain(&self) -> Self::Keychain {
@@ -530,11 +527,8 @@ impl<T: MlsConfig> ExternalClientConfig for T {
         self.get().external_signing_key(external_key_id)
     }
 
-    fn proposal_filter(
-        &self,
-        init: ProposalFilterInit,
-    ) -> <Self::MakeProposalFilter as MakeProposalFilter>::Filter {
-        self.get().proposal_filter(init)
+    fn proposal_filter(&self) -> Self::ProposalFilter {
+        self.get().proposal_filter()
     }
 
     fn cache_proposals(&self) -> bool {
@@ -587,30 +581,30 @@ mod private {
     use super::{IntoConfigOutput, Settings};
 
     #[derive(Clone, Debug)]
-    pub struct Config<K, Ip, Mpf, Cp>(pub(crate) ConfigInner<K, Ip, Mpf, Cp>);
+    pub struct Config<K, Ip, Pf, Cp>(pub(crate) ConfigInner<K, Ip, Pf, Cp>);
 
     #[derive(Clone, Debug)]
     pub struct ConfigInner<K, Ip, Mpf, Cp> {
         pub(crate) settings: Settings,
         pub(crate) keychain: K,
         pub(crate) identity_provider: Ip,
-        pub(crate) make_proposal_filter: Mpf,
+        pub(crate) proposal_filter: Mpf,
         pub(crate) crypto_provider: Cp,
     }
 
     pub trait IntoConfig {
         type Keychain;
         type IdentityProvider;
-        type MakeProposalFilter;
+        type ProposalFilter;
         type CryptoProvider;
 
         fn into_config(self) -> IntoConfigOutput<Self>;
     }
 
-    impl<K, Ip, Mpf, Cp> IntoConfig for Config<K, Ip, Mpf, Cp> {
+    impl<K, Ip, Pf, Cp> IntoConfig for Config<K, Ip, Pf, Cp> {
         type Keychain = K;
         type IdentityProvider = Ip;
-        type MakeProposalFilter = Mpf;
+        type ProposalFilter = Pf;
         type CryptoProvider = Cp;
 
         fn into_config(self) -> Self {

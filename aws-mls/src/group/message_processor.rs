@@ -11,13 +11,13 @@ use super::{
     proposal_cache::ProposalSetEffects,
     proposal_effects,
     proposal_filter::ProposalFilter,
+    proposal_ref::ProposalRef,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
-    transcript_hashes, GroupContext, ProposalRef,
+    transcript_hashes, GroupContext,
 };
 use crate::{
     client::MlsError,
-    client_config::ProposalFilterInit,
     key_package::KeyPackage,
     psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
     time::MlsTime,
@@ -240,7 +240,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     ) -> Result<ProcessedMessage<Self::EventType>, MlsError> {
         let authenticated_data = auth_content.content.authenticated_data.clone();
 
-        let sender = Some(auth_content.content.sender.clone());
+        let sender = Some(auth_content.content.sender);
 
         let event = match auth_content.content.content {
             Content::Application(data) => Self::EventType::try_from(data),
@@ -274,7 +274,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             group_state.proposals.insert(
                 proposal_ref.clone(),
                 proposal.clone(),
-                auth_content.content.sender.clone(),
+                auth_content.content.sender,
             )
         });
 
@@ -389,8 +389,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
             self.cipher_suite_provider(),
             &group_state.public_tree,
             self.external_psk_id_validator(),
-            self.proposal_filter(ProposalFilterInit::new(auth_content.content.sender.clone())),
+            self.proposal_filter(),
             time_sent,
+            &group_state.roster(),
         )
         .await?;
 
@@ -484,7 +485,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     fn group_state(&self) -> &GroupState;
     fn group_state_mut(&mut self) -> &mut GroupState;
     fn self_index(&self) -> Option<LeafIndex>;
-    fn proposal_filter(&self, init: ProposalFilterInit) -> Self::ProposalFilter;
+    fn proposal_filter(&self) -> Self::ProposalFilter;
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider;
     fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator;

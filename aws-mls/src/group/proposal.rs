@@ -4,8 +4,9 @@ use std::fmt::Debug;
 
 use aws_mls_core::tls::ByteVec;
 
-pub use proposal_ref::ProposalRef;
+use proposal_ref::ProposalRef;
 
+pub use aws_mls_core::extension::ExtensionList;
 pub use aws_mls_core::group::ProposalType;
 
 #[derive(

@@ -979,7 +979,7 @@ where
             .then_some(())
             .ok_or_else(|| ProposalFilterError::InvalidProposalTypeForSender {
                 proposal_type: P::TYPE,
-                sender: p.sender.clone(),
+                sender: p.sender,
                 by_ref: p.proposal_ref.is_some(),
             })
             .and_then(|_| validate_sender(tree, external_senders, &p.sender));
@@ -1156,7 +1156,7 @@ fn leaf_index_of_update_sender(
         Sender::Member(i) => Ok(LeafIndex(i)),
         _ => Err(ProposalFilterError::InvalidProposalTypeForSender {
             proposal_type: ProposalType::UPDATE,
-            sender: p.sender.clone(),
+            sender: p.sender,
             by_ref: p.proposal_ref.is_some(),
         }),
     }
