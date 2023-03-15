@@ -51,6 +51,23 @@ impl AddProposal {
     }
 }
 
+impl From<KeyPackage> for AddProposal {
+    fn from(key_package: KeyPackage) -> Self {
+        Self { key_package }
+    }
+}
+
+impl TryFrom<MLSMessage> for AddProposal {
+    type Error = MlsError;
+
+    fn try_from(value: MLSMessage) -> Result<Self, Self::Error> {
+        value
+            .into_key_package()
+            .ok_or(MlsError::NotKeyPackage)
+            .map(Into::into)
+    }
+}
+
 #[derive(
     Clone,
     Debug,

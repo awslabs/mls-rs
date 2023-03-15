@@ -24,6 +24,13 @@ pub struct ProposalBundle {
 }
 
 impl ProposalBundle {
+    /// Push additional proposals into the bundle.
+    pub fn push(&mut self, proposals: Vec<Proposal>, sender: Sender) {
+        proposals
+            .into_iter()
+            .for_each(|p| self.add(p, sender, None))
+    }
+
     pub(crate) fn add(
         &mut self,
         proposal: Proposal,
