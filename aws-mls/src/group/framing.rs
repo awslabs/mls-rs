@@ -49,10 +49,10 @@ pub enum Sender {
     /// [`ExternalSendersExt`](crate::extension::ExternalSendersExt) stored in
     /// group context extensions.
     External(u32),
-    /// A member sending an external commit.
-    NewMemberCommit,
     /// A new member proposing their own addition to the group.
     NewMemberProposal,
+    /// A member sending an external commit.
+    NewMemberCommit,
 }
 
 impl From<LeafIndex> for Sender {
