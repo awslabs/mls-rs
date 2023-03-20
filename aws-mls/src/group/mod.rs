@@ -12,6 +12,7 @@ use std::option::Option::Some;
 use thiserror::Error;
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use zeroize::Zeroizing;
 
 use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
@@ -415,7 +416,7 @@ where
 
         // Use the key and nonce to decrypt the encrypted_group_info field.
         let decrypted_group_info = welcome_secret.decrypt(&welcome.encrypted_group_info)?;
-        let group_info = GroupInfo::tls_deserialize(&mut &*decrypted_group_info)?;
+        let group_info = GroupInfo::tls_deserialize(&mut &**decrypted_group_info)?;
 
         let join_context = validate_group_info(
             protocol_version,
@@ -1729,7 +1730,7 @@ where
     /// Get the
     /// [epoch_authenticator](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-key-schedule)
     /// of the current epoch.
-    pub fn epoch_authenticator(&self) -> Result<Vec<u8>, MlsError> {
+    pub fn epoch_authenticator(&self) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         Ok(self.key_schedule.authentication_secret.clone())
     }
 
@@ -1738,7 +1739,7 @@ where
         label: &str,
         context: &[u8],
         len: usize,
-    ) -> Result<Vec<u8>, MlsError> {
+    ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         Ok(self
             .key_schedule
             .export_secret(label, context, len, &self.cipher_suite_provider)?)

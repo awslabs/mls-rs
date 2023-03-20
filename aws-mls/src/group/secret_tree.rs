@@ -7,7 +7,7 @@ use serde_with::serde_as;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use super::key_schedule::kdf_expand_with_label;
 
@@ -59,10 +59,8 @@ impl SecretTreeNode {
 }
 
 #[serde_as]
-#[derive(Zeroize)]
-#[zeroize(drop)]
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
-struct TreeSecret(#[serde_as(as = "VecAsBase64")] Vec<u8>);
+struct TreeSecret(#[serde_as(as = "VecAsBase64")] Zeroizing<Vec<u8>>);
 
 impl Deref for TreeSecret {
     type Target = Vec<u8>;
@@ -86,6 +84,12 @@ impl AsRef<[u8]> for TreeSecret {
 
 impl From<Vec<u8>> for TreeSecret {
     fn from(vec: Vec<u8>) -> Self {
+        TreeSecret(Zeroizing::new(vec))
+    }
+}
+
+impl From<Zeroizing<Vec<u8>>> for TreeSecret {
+    fn from(vec: Zeroizing<Vec<u8>>) -> Self {
         TreeSecret(vec)
     }
 }
@@ -178,7 +182,7 @@ impl SecretRatchets {
 }
 
 impl SecretTree {
-    pub fn new(leaf_count: u32, encryption_secret: Vec<u8>) -> SecretTree {
+    pub fn new(leaf_count: u32, encryption_secret: Zeroizing<Vec<u8>>) -> SecretTree {
         let mut known_secrets = TreeSecretsVec(vec![None; (leaf_count * 2 - 1) as usize]);
 
         known_secrets[tree_math::root(leaf_count) as usize] =
@@ -324,13 +328,12 @@ impl ToString for KeyType {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, PartialEq, Eq, Zeroize, serde::Deserialize, serde::Serialize)]
-#[zeroize(drop)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct MessageKeyData {
     #[serde_as(as = "VecAsBase64")]
-    pub nonce: Vec<u8>,
+    pub nonce: Zeroizing<Vec<u8>>,
     #[serde_as(as = "VecAsBase64")]
-    pub key: Vec<u8>,
+    pub key: Zeroizing<Vec<u8>>,
 }
 
 #[serde_as]
@@ -428,7 +431,7 @@ impl SecretKeyRatchet {
         cipher_suite_provider: &P,
         label: &str,
         len: usize,
-    ) -> Result<Vec<u8>, SecretTreeError> {
+    ) -> Result<Zeroizing<Vec<u8>>, SecretTreeError> {
         kdf_expand_with_label(
             cipher_suite_provider,
             self.secret.as_ref(),
@@ -443,13 +446,14 @@ impl SecretKeyRatchet {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use aws_mls_core::crypto::CipherSuiteProvider;
+    use zeroize::Zeroizing;
 
     use crate::{crypto::test_utils::try_test_cipher_suite_provider, tree_kem};
 
     use super::{KeyType, SecretKeyRatchet, SecretTree};
 
     pub(crate) fn get_test_tree(secret: Vec<u8>, leaf_count: u32) -> SecretTree {
-        SecretTree::new(leaf_count, secret)
+        SecretTree::new(leaf_count, Zeroizing::new(secret))
     }
 
     impl SecretTree {
@@ -502,7 +506,7 @@ pub(crate) mod test_utils {
             ratchet.generation = self.generation;
             let computed = ratchet.derive_secret(cs, &self.label, self.length).unwrap();
 
-            assert_eq!(&computed, &self.out);
+            assert_eq!(&computed.to_vec(), &self.out);
         }
     }
 }
@@ -748,7 +752,9 @@ mod tests {
             .map(|cipher_suite| {
                 let provider = test_cipher_suite_provider(cipher_suite);
                 let encryption_secret = random_bytes(provider.kdf_extract_size());
-                let mut secret_tree = SecretTree::new(16, encryption_secret.clone());
+
+                let mut secret_tree =
+                    SecretTree::new(16, Zeroizing::new(encryption_secret.clone()));
 
                 TestCase {
                     cipher_suite: cipher_suite.into(),
@@ -772,7 +778,7 @@ mod tests {
                 continue;
             };
 
-            let mut secret_tree = SecretTree::new(16, case.encryption_secret);
+            let mut secret_tree = SecretTree::new(16, Zeroizing::new(case.encryption_secret));
             let ratchet_data = get_ratchet_data(&mut secret_tree, cs_provider.cipher_suite());
 
             assert_eq!(ratchet_data, case.ratchets);
@@ -791,7 +797,10 @@ mod tests {
 
             case.sender_data.verify(&cs);
 
-            let mut tree = SecretTree::new(case.leaves.len() as u32, case.encryption_secret);
+            let mut tree = SecretTree::new(
+                case.leaves.len() as u32,
+                Zeroizing::new(case.encryption_secret),
+            );
 
             for (index, leaves) in case.leaves.iter().enumerate() {
                 for leaf in leaves.iter() {
@@ -804,8 +813,8 @@ mod tests {
                         )
                         .unwrap();
 
-                    assert_eq!(key.key, leaf.application_key);
-                    assert_eq!(key.nonce, leaf.application_nonce);
+                    assert_eq!(key.key.to_vec(), leaf.application_key);
+                    assert_eq!(key.nonce.to_vec(), leaf.application_nonce);
 
                     let key = tree
                         .message_key_generation(
@@ -816,8 +825,8 @@ mod tests {
                         )
                         .unwrap();
 
-                    assert_eq!(key.key, leaf.handshake_key);
-                    assert_eq!(key.nonce, leaf.handshake_nonce);
+                    assert_eq!(key.key.to_vec(), leaf.handshake_key);
+                    assert_eq!(key.nonce.to_vec(), leaf.handshake_nonce);
                 }
             }
         }
@@ -863,7 +872,7 @@ mod tests {
             for n_leaves in tree_sizes {
                 let encryption_secret = cs.random_bytes_vec(cs.kdf_extract_size()).unwrap();
 
-                let mut tree = SecretTree::new(n_leaves, encryption_secret.clone());
+                let mut tree = SecretTree::new(n_leaves, Zeroizing::new(encryption_secret.clone()));
 
                 let leaves = (0..n_leaves)
                     .map(|leaf| {
@@ -881,10 +890,10 @@ mod tests {
 
                                 InteropLeaf {
                                     generation: gen,
-                                    application_key: app_key.key.clone(),
-                                    application_nonce: app_key.nonce.clone(),
-                                    handshake_key: handshake_key.key.clone(),
-                                    handshake_nonce: handshake_key.nonce.clone(),
+                                    application_key: app_key.key.to_vec(),
+                                    application_nonce: app_key.nonce.to_vec(),
+                                    handshake_key: handshake_key.key.to_vec(),
+                                    handshake_nonce: handshake_key.nonce.to_vec(),
                                 }
                             })
                             .collect()

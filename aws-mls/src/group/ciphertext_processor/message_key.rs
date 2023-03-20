@@ -1,3 +1,5 @@
+use zeroize::Zeroizing;
+
 use crate::{crypto::CipherSuiteProvider, group::secret_tree::MessageKeyData};
 
 use super::reuse_guard::ReuseGuard;
@@ -31,7 +33,7 @@ impl MessageKey {
         data: &[u8],
         aad: &[u8],
         reuse_guard: &ReuseGuard,
-    ) -> Result<Vec<u8>, P::Error> {
+    ) -> Result<Zeroizing<Vec<u8>>, P::Error> {
         provider.aead_open(
             &self.0.key,
             data,

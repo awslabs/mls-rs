@@ -30,32 +30,28 @@ pub enum KeyScheduleError {
     CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Zeroize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Zeroize, Default)]
 #[zeroize(drop)]
 pub struct KeySchedule {
-    exporter_secret: Vec<u8>,
-    pub authentication_secret: Vec<u8>,
-    external_secret: Vec<u8>,
-    membership_key: Vec<u8>,
+    exporter_secret: Zeroizing<Vec<u8>>,
+    pub authentication_secret: Zeroizing<Vec<u8>>,
+    external_secret: Zeroizing<Vec<u8>>,
+    membership_key: Zeroizing<Vec<u8>>,
     init_secret: InitSecret,
 }
 
 pub(crate) struct KeyScheduleDerivationResult {
     pub(crate) key_schedule: KeySchedule,
-    pub(crate) confirmation_key: Vec<u8>,
+    pub(crate) confirmation_key: Zeroizing<Vec<u8>>,
     pub(crate) joiner_secret: JoinerSecret,
     pub(crate) epoch_secrets: EpochSecrets,
 }
 
 impl KeySchedule {
     pub fn new(init_secret: InitSecret) -> Self {
-        Self {
-            exporter_secret: vec![],
-            authentication_secret: vec![],
-            external_secret: vec![],
-            membership_key: vec![],
-            init_secret,
-        }
+        let mut key_schedule = KeySchedule::default();
+        key_schedule.init_secret = init_secret;
+        key_schedule
     }
 
     pub fn derive_for_external<P: CipherSuiteProvider>(
@@ -80,7 +76,6 @@ impl KeySchedule {
     ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
         let joiner_seed = cipher_suite_provider
             .kdf_extract(&last_key_schedule.init_secret.0, &commit_secret.0)
-            .map(Zeroizing::new)
             .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?;
 
         let joiner_secret = kdf_expand_with_label(
@@ -162,9 +157,8 @@ impl KeySchedule {
 
         Ok(KeyScheduleDerivationResult {
             key_schedule,
-            // TODO investigate if it's zeroized
             confirmation_key: secrets_producer.derive("confirm")?,
-            joiner_secret: vec![].into(),
+            joiner_secret: Zeroizing::new(vec![]).into(),
             epoch_secrets,
         })
     }
@@ -175,12 +169,8 @@ impl KeySchedule {
         context: &[u8],
         len: usize,
         cipher_suite: &P,
-    ) -> Result<Vec<u8>, KeyScheduleError> {
-        let secret = Zeroizing::new(kdf_derive_secret(
-            cipher_suite,
-            &self.exporter_secret,
-            label,
-        )?);
+    ) -> Result<Zeroizing<Vec<u8>>, KeyScheduleError> {
+        let secret = kdf_derive_secret(cipher_suite, &self.exporter_secret, label)?;
 
         let context_hash = cipher_suite
             .hash(context)
@@ -238,7 +228,7 @@ pub(crate) fn kdf_expand_with_label<P: CipherSuiteProvider>(
     label: &str,
     context: &[u8],
     len: Option<usize>,
-) -> Result<Vec<u8>, KeyScheduleError> {
+) -> Result<Zeroizing<Vec<u8>>, KeyScheduleError> {
     let extract_size = cipher_suite_provider.kdf_extract_size();
     let len = len.unwrap_or(extract_size);
     let label = Label::new(len as u16, label, context);
@@ -252,16 +242,15 @@ pub(crate) fn kdf_derive_secret<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     secret: &[u8],
     label: &str,
-) -> Result<Vec<u8>, KeyScheduleError> {
+) -> Result<Zeroizing<Vec<u8>>, KeyScheduleError> {
     kdf_expand_with_label(cipher_suite_provider, secret, label, &[], None)
 }
 
-#[derive(Clone, Debug, PartialEq, Zeroize, TlsDeserialize, TlsSerialize, TlsSize)]
-#[zeroize(drop)]
-pub(crate) struct JoinerSecret(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+pub(crate) struct JoinerSecret(#[tls_codec(with = "crate::tls::ByteVec")] Zeroizing<Vec<u8>>);
 
-impl From<Vec<u8>> for JoinerSecret {
-    fn from(bytes: Vec<u8>) -> Self {
+impl From<Zeroizing<Vec<u8>>> for JoinerSecret {
+    fn from(bytes: Zeroizing<Vec<u8>>) -> Self {
         Self(bytes)
     }
 }
@@ -270,7 +259,7 @@ pub(crate) fn get_pre_epoch_secret<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     psk_secret: &PskSecret,
     joiner_secret: &JoinerSecret,
-) -> Result<Vec<u8>, PskError> {
+) -> Result<Zeroizing<Vec<u8>>, PskError> {
     cipher_suite_provider
         .kdf_extract(&joiner_secret.0, psk_secret)
         .map_err(|e| PskError::CipherSuiteProviderError(e.into()))
@@ -292,7 +281,7 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
     // TODO document somewhere in the crypto provider that the RFC defines the length of all secrets as
     // KDF extract size but then inputs secrets as MAC keys etc, therefore, we require that these
     // lengths match in the crypto provider
-    fn derive(&self, label: &str) -> Result<Vec<u8>, KeyScheduleError> {
+    fn derive(&self, label: &str) -> Result<Zeroizing<Vec<u8>>, KeyScheduleError> {
         kdf_derive_secret(self.cipher_suite_provider, self.epoch_secret, label)
             .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
     }
@@ -301,14 +290,14 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
 const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 
 #[serde_as]
-#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, Zeroize)]
-#[zeroize(drop)]
-pub struct InitSecret(#[serde_as(as = "VecAsBase64")] Vec<u8>);
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, Zeroize, Default)]
+pub struct InitSecret(#[serde_as(as = "VecAsBase64")] Zeroizing<Vec<u8>>);
 
 impl InitSecret {
     pub fn random<P: CipherSuiteProvider>(cipher_suite: &P) -> Result<Self, KeyScheduleError> {
         cipher_suite
             .random_bytes_vec(cipher_suite.kdf_extract_size())
+            .map(Zeroizing::new)
             .map(InitSecret)
             .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
     }
@@ -326,7 +315,7 @@ impl InitSecret {
             .export(EXPORTER_CONTEXT, cipher_suite.kdf_extract_size())
             .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?;
 
-        Ok((InitSecret(init_secret), kem_output))
+        Ok((InitSecret(Zeroizing::new(init_secret)), kem_output))
     }
 
     pub fn decode_for_external<P: CipherSuiteProvider>(
@@ -340,6 +329,7 @@ impl InitSecret {
 
         context
             .export(EXPORTER_CONTEXT, cipher_suite.kdf_extract_size())
+            .map(Zeroizing::new)
             .map(InitSecret)
             .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
     }
@@ -394,8 +384,8 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
 
         Ok(Self {
             cipher_suite,
-            key: Zeroizing::new(key),
-            nonce: Zeroizing::new(nonce),
+            key,
+            nonce,
         })
     }
 
@@ -405,7 +395,10 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
             .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
     }
 
-    pub(crate) fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, KeyScheduleError> {
+    pub(crate) fn decrypt(
+        &self,
+        ciphertext: &[u8],
+    ) -> Result<Zeroizing<Vec<u8>>, KeyScheduleError> {
         self.cipher_suite
             .aead_open(&self.key, ciphertext, None, &self.nonce)
             .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
@@ -417,18 +410,14 @@ fn get_welcome_secret<P: CipherSuiteProvider>(
     joiner_secret: &JoinerSecret,
     psk_secret: &PskSecret,
 ) -> Result<Zeroizing<Vec<u8>>, KeyScheduleError> {
-    let epoch_seed = Zeroizing::new(get_pre_epoch_secret(
-        cipher_suite,
-        psk_secret,
-        joiner_secret,
-    )?);
-
-    kdf_derive_secret(cipher_suite, &epoch_seed, "welcome").map(Zeroizing::new)
+    let epoch_seed = get_pre_epoch_secret(cipher_suite, psk_secret, joiner_secret)?;
+    kdf_derive_secret(cipher_suite, &epoch_seed, "welcome")
 }
 
 #[cfg(test)]
 pub(crate) mod test_utils {
     use aws_mls_core::crypto::CipherSuiteProvider;
+    use zeroize::Zeroizing;
 
     use crate::{cipher_suite::CipherSuite, crypto::test_utils::test_cipher_suite_provider};
 
@@ -442,25 +431,26 @@ pub(crate) mod test_utils {
 
     pub(crate) fn get_test_key_schedule(cipher_suite: CipherSuite) -> KeySchedule {
         let key_size = test_cipher_suite_provider(cipher_suite).kdf_extract_size();
+        let fake_secret = Zeroizing::new(vec![1u8; key_size]);
 
         KeySchedule {
-            exporter_secret: vec![0u8; key_size],
-            authentication_secret: vec![0u8; key_size],
-            external_secret: vec![0u8; key_size],
-            membership_key: vec![0u8; key_size],
+            exporter_secret: fake_secret.clone(),
+            authentication_secret: fake_secret.clone(),
+            external_secret: fake_secret.clone(),
+            membership_key: fake_secret,
             init_secret: InitSecret::new(vec![0u8; key_size]),
         }
     }
 
     impl InitSecret {
         pub fn new(init_secret: Vec<u8>) -> Self {
-            InitSecret(init_secret)
+            InitSecret(Zeroizing::new(init_secret))
         }
     }
 
     impl KeySchedule {
         pub fn set_membership_key(&mut self, key: Vec<u8>) {
-            self.membership_key = key
+            self.membership_key = Zeroizing::new(key)
         }
     }
 
@@ -489,93 +479,10 @@ mod tests {
     use tls_codec::Serialize;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
+    use zeroize::Zeroizing;
 
     use super::test_utils::get_test_key_schedule;
     use super::{CommitSecret, KeySchedule, KeyScheduleDerivationResult};
-
-    #[derive(serde::Deserialize, serde::Serialize)]
-    struct ExporterTestCase {
-        cipher_suite: u16,
-        #[serde(with = "hex::serde")]
-        input: Vec<u8>,
-        #[serde(with = "hex::serde")]
-        output: Vec<u8>,
-    }
-
-    fn generate_epoch_secret_exporter_test_vector() -> Vec<ExporterTestCase> {
-        let mut test_cases = Vec::new();
-
-        for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            let cs_provider = test_cipher_suite_provider(cipher_suite);
-            let key_size = cs_provider.kdf_extract_size();
-
-            let mut key_schedule = get_test_key_schedule(cipher_suite);
-
-            cs_provider
-                .random_bytes(&mut key_schedule.exporter_secret)
-                .unwrap();
-
-            let mut context = vec![0u8; key_size];
-            cs_provider.random_bytes(&mut context).unwrap();
-
-            let mut test_case_input = vec![];
-            test_case_input.extend(&key_schedule.exporter_secret);
-            test_case_input.extend(&context);
-
-            let exported_secret = key_schedule
-                .export_secret(
-                    "test",
-                    &context,
-                    key_size,
-                    &test_cipher_suite_provider(cipher_suite),
-                )
-                .unwrap();
-
-            test_cases.push(ExporterTestCase {
-                cipher_suite: cipher_suite.into(),
-                input: test_case_input,
-                output: exported_secret,
-            });
-        }
-
-        test_cases
-    }
-
-    fn load_exporter_test_cases() -> Vec<ExporterTestCase> {
-        load_test_cases!(
-            epoch_secret_exporter_test_vector,
-            generate_epoch_secret_exporter_test_vector()
-        )
-    }
-
-    #[test]
-    fn test_export_secret() {
-        let test_cases = load_exporter_test_cases();
-
-        for test_case in test_cases {
-            let Some(cipher_suite_provider) = try_test_cipher_suite_provider(test_case.cipher_suite) else {
-                continue;
-            };
-
-            let key_size = cipher_suite_provider.kdf_extract_size();
-
-            let key_schedule = KeySchedule {
-                exporter_secret: test_case.input[0..key_size].to_vec(),
-                authentication_secret: vec![0u8; key_size],
-                external_secret: vec![0u8; key_size],
-                membership_key: vec![0u8; key_size],
-                init_secret: InitSecret::new(vec![0u8; key_size]),
-            };
-
-            let context = &test_case.input[key_size..];
-
-            let exported_secret = key_schedule
-                .export_secret("test", context, key_size, &cipher_suite_provider)
-                .unwrap();
-
-            assert_eq!(exported_secret, test_case.output);
-        }
-    }
 
     #[derive(serde::Deserialize, serde::Serialize)]
     struct KeyScheduleTestCase {
@@ -652,7 +559,7 @@ mod tests {
             };
 
             let mut key_schedule = get_test_key_schedule(cs_provider.cipher_suite());
-            key_schedule.init_secret.0 = test_case.initial_init_secret;
+            key_schedule.init_secret.0 = Zeroizing::new(test_case.initial_init_secret);
 
             for (i, epoch) in test_case.epochs.into_iter().enumerate() {
                 let context = GroupContext {
@@ -694,7 +601,7 @@ mod tests {
                 let expected: Vec<u8> = key_schedule_res.joiner_secret.into();
                 assert_eq!(epoch.joiner_secret, expected);
 
-                assert_eq!(&key_schedule.init_secret.0, &epoch.init_secret);
+                assert_eq!(&key_schedule.init_secret.0.to_vec(), &epoch.init_secret);
 
                 assert_eq!(
                     epoch.sender_data_secret,
@@ -706,16 +613,21 @@ mod tests {
                     *key_schedule_res.epoch_secrets.secret_tree.get_root_secret()
                 );
 
-                assert_eq!(epoch.exporter_secret, key_schedule.exporter_secret);
+                assert_eq!(epoch.exporter_secret, key_schedule.exporter_secret.to_vec());
 
                 assert_eq!(
                     epoch.epoch_authenticator,
-                    key_schedule.authentication_secret
+                    key_schedule.authentication_secret.to_vec()
                 );
 
-                assert_eq!(epoch.external_secret, key_schedule.external_secret);
-                assert_eq!(epoch.confirmation_key, key_schedule_res.confirmation_key);
-                assert_eq!(epoch.membership_key, key_schedule.membership_key);
+                assert_eq!(epoch.external_secret, key_schedule.external_secret.to_vec());
+
+                assert_eq!(
+                    epoch.confirmation_key,
+                    key_schedule_res.confirmation_key.to_vec()
+                );
+
+                assert_eq!(epoch.membership_key, key_schedule.membership_key.to_vec());
 
                 let expected: Vec<u8> = key_schedule_res.epoch_secrets.resumption_secret.to_vec();
                 assert_eq!(epoch.resumption_psk, expected);
@@ -731,7 +643,7 @@ mod tests {
                     .export_secret(&exp.label, &exp.context, exp.length, &cs_provider)
                     .unwrap();
 
-                assert_eq!(exported, exp.secret);
+                assert_eq!(exported.to_vec(), exp.secret);
             }
         }
     }
@@ -841,7 +753,8 @@ mod tests {
             exporter.secret = key_schedule_res
                 .key_schedule
                 .export_secret(&exporter.label, &exporter.context, exporter.length, cs)
-                .unwrap();
+                .unwrap()
+                .to_vec();
 
             let welcome_secret =
                 get_welcome_secret(cs, &key_schedule_res.joiner_secret, &psk_secret)
@@ -854,14 +767,14 @@ mod tests {
                 psk_secret: psk_secret.to_vec(),
                 group_context: group_context.tls_serialize_detached().unwrap(),
                 joiner_secret: key_schedule_res.joiner_secret.into(),
-                init_secret: key_schedule_res.key_schedule.init_secret.0.clone(),
+                init_secret: key_schedule_res.key_schedule.init_secret.0.to_vec(),
                 sender_data_secret: key_schedule_res.epoch_secrets.sender_data_secret.to_vec(),
                 encryption_secret: key_schedule_res.epoch_secrets.secret_tree.get_root_secret(),
-                exporter_secret: key_schedule_res.key_schedule.exporter_secret.clone(),
-                epoch_authenticator: key_schedule_res.key_schedule.authentication_secret.clone(),
-                external_secret: key_schedule_res.key_schedule.external_secret.clone(),
-                confirmation_key: key_schedule_res.confirmation_key,
-                membership_key: key_schedule_res.key_schedule.membership_key.clone(),
+                exporter_secret: key_schedule_res.key_schedule.exporter_secret.to_vec(),
+                epoch_authenticator: key_schedule_res.key_schedule.authentication_secret.to_vec(),
+                external_secret: key_schedule_res.key_schedule.external_secret.to_vec(),
+                confirmation_key: key_schedule_res.confirmation_key.to_vec(),
+                membership_key: key_schedule_res.key_schedule.membership_key.to_vec(),
                 resumption_psk: key_schedule_res.epoch_secrets.resumption_secret.to_vec(),
                 external_pub: external_pub.to_vec(),
                 exporter,
@@ -918,14 +831,14 @@ mod tests {
                 )
                 .unwrap();
 
-                assert_eq!(&computed, &test_exp.out);
+                assert_eq!(&computed.to_vec(), &test_exp.out);
 
                 let test_derive = &test_case.derive_secret;
 
                 let computed =
                     kdf_derive_secret(&cs, &test_derive.secret, &test_derive.label).unwrap();
 
-                assert_eq!(&computed, &test_derive.out);
+                assert_eq!(&computed.to_vec(), &test_derive.out);
             }
         })
     }

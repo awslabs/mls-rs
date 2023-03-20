@@ -15,6 +15,7 @@ aws-mls-crypto-hpke = { path = "../aws-mls-crypto-hpke", version = "*" }
 aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", version = "*" }
 thiserror = "^1"
 enum-iterator = "1.1.2"
+zeroize = { version = "1", features = ["zeroize_derive"] }
 
 [dev-dependencies]
 hex = { version = "^0.4.3", features = ["serde"] }

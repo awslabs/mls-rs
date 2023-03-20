@@ -70,7 +70,7 @@ async fn interop_passive_client() {
         let (mut group, _info) = client.join_group(tree, welcome).await.unwrap();
 
         assert_eq!(
-            group.epoch_authenticator().unwrap(),
+            group.epoch_authenticator().unwrap().to_vec(),
             test_case.initial_epoch_authenticator
         );
 
@@ -85,7 +85,7 @@ async fn interop_passive_client() {
 
             assert_eq!(
                 epoch.epoch_authenticator,
-                group.epoch_authenticator().unwrap()
+                group.epoch_authenticator().unwrap().to_vec()
             );
         }
     }

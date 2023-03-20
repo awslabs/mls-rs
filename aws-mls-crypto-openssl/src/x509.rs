@@ -733,8 +733,12 @@ mod tests {
         let plain_validator = X509Validator::new(vec![load_test_ca()]).unwrap();
         let system_validator = X509Validator::new(vec![]).unwrap().with_system_ca();
 
+        // Some time in late 2022 (almost 53 years since 1970)
+        let cert_valid_time =
+            MlsTime::from_duration_since_epoch(Duration::from_secs(53 * 365 * 24 * 3600)).unwrap();
+
         system_validator
-            .validate_chain(&chain, Some(MlsTime::now()))
+            .validate_chain(&chain, Some(cert_valid_time))
             .unwrap();
 
         assert_matches!(

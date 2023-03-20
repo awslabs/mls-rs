@@ -2,6 +2,7 @@ use aws_mls_core::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey, H
 use thiserror::Error;
 use tls_codec::Serialize;
 use tls_codec_derive::{TlsSerialize, TlsSize};
+use zeroize::Zeroizing;
 
 #[derive(Debug, Clone, TlsSize, TlsSerialize)]
 struct EncryptContext<'a> {
@@ -41,10 +42,13 @@ pub(crate) trait HpkeEncryptable: Sized {
         public_key: &HpkePublicKey,
         context: &[u8],
     ) -> Result<HpkeCiphertext, HpkeEncryptionError> {
-        let context = EncryptContext::new(Self::ENCRYPT_LABEL, context).tls_serialize_detached()?;
+        let context = EncryptContext::new(Self::ENCRYPT_LABEL, context)
+            .tls_serialize_detached()
+            .map(Zeroizing::new)?;
 
         let content = self
             .get_bytes()
+            .map(Zeroizing::new)
             .map_err(|e| HpkeEncryptionError::SerializationError(e.into()))?;
 
         cipher_suite_provider

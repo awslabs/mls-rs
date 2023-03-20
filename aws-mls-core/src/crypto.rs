@@ -3,7 +3,7 @@ use std::ops::Deref;
 use crate::serde::vec_u8_as_base64::VecAsBase64;
 use serde_with::serde_as;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 mod cipher_suite;
 pub use self::cipher_suite::*;
@@ -242,7 +242,7 @@ pub trait CipherSuiteProvider: Send + Sync {
         ciphertext: &[u8],
         aad: Option<&[u8]>,
         nonce: &[u8],
-    ) -> Result<Vec<u8>, Self::Error>;
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error>;
 
     /// Return the length of the secret key `key` passed to [aead_seal](CipherSuiteProvider::aead_seal)
     /// and [aead_open](CipherSuiteProvider::aead_open).
@@ -258,14 +258,19 @@ pub trait CipherSuiteProvider: Send + Sync {
     /// as input to [kdf_expand](CipherSuiteProvider::kdf_expand).
     ///
     /// This function corresponds to the HKDF-Extract function from RFC 5869.
-    fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Vec<u8>, Self::Error>;
+    fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Zeroizing<Vec<u8>>, Self::Error>;
 
     /// Generate key material of the desired length `len` by expanding the given pseudo-random key
     /// `prk` of length [kdf_extract_size](CipherSuiteProvider::kdf_extract_size).
     /// The additional input `info` contains optional context data.
     ///
     /// This function corresponds to the HKDF-Expand function from RFC 5869.
-    fn kdf_expand(&self, prk: &[u8], info: &[u8], len: usize) -> Result<Vec<u8>, Self::Error>;
+    fn kdf_expand(
+        &self,
+        prk: &[u8],
+        info: &[u8],
+        len: usize,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error>;
 
     /// Return the size of pseudo-random key `prk` outputted by [kdf_extract](CipherSuiteProvider::kdf_extract)
     /// and inputted to [kdf_expand](CipherSuiteProvider::kdf_expand).

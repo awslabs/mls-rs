@@ -3,18 +3,19 @@ use std::ops::Deref;
 use async_trait::async_trait;
 use serde_with::serde_as;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 #[serde_as]
-#[derive(Clone, Debug, PartialEq, Eq, Zeroize, serde::Serialize, serde::Deserialize)]
-#[zeroize(drop)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 /// Wrapper type that holds a pre-shared key value and zeroizes on drop.
-pub struct PreSharedKey(#[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")] Vec<u8>);
+pub struct PreSharedKey(
+    #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")] Zeroizing<Vec<u8>>,
+);
 
 impl PreSharedKey {
     /// Create a new PreSharedKey.
     pub fn new(data: Vec<u8>) -> Self {
-        PreSharedKey(data)
+        PreSharedKey(Zeroizing::new(data))
     }
 
     /// Raw byte value.
@@ -26,6 +27,12 @@ impl PreSharedKey {
 impl From<Vec<u8>> for PreSharedKey {
     fn from(bytes: Vec<u8>) -> Self {
         Self::new(bytes)
+    }
+}
+
+impl From<Zeroizing<Vec<u8>>> for PreSharedKey {
+    fn from(bytes: Zeroizing<Vec<u8>>) -> Self {
+        Self(bytes)
     }
 }
 

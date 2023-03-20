@@ -35,7 +35,7 @@ pub enum PathSecretError {
 pub struct PathSecret(
     #[tls_codec(with = "crate::tls::ByteVec")]
     #[serde_as(as = "VecAsBase64")]
-    Vec<u8>,
+    Zeroizing<Vec<u8>>,
 );
 
 impl Deref for PathSecret {
@@ -48,6 +48,12 @@ impl Deref for PathSecret {
 
 impl From<Vec<u8>> for PathSecret {
     fn from(data: Vec<u8>) -> Self {
+        PathSecret(Zeroizing::new(data))
+    }
+}
+
+impl From<Zeroizing<Vec<u8>>> for PathSecret {
+    fn from(data: Zeroizing<Vec<u8>>) -> Self {
         PathSecret(data)
     }
 }
@@ -74,11 +80,11 @@ impl HpkeEncryptable for PathSecret {
     type Error = Infallible;
 
     fn from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        Ok(Self(bytes))
+        Ok(Self(Zeroizing::new(bytes)))
     }
 
     fn get_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        Ok(self.0.clone())
+        Ok(self.to_vec())
     }
 }
 

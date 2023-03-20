@@ -257,7 +257,7 @@ pub async fn add_random_members(
 
     all_process_message(groups, &commit_output.commit_message, committer_index, true).await;
 
-    let auth = groups[committer].epoch_authenticator().unwrap();
+    let auth = groups[committer].epoch_authenticator().unwrap().to_vec();
     let epoch = TestEpoch::new(add_proposals, &commit_output.commit_message, auth);
 
     if let Some(tc) = test_case {
@@ -308,7 +308,7 @@ pub async fn remove_members(
     let committer_index = groups[committer].current_member_index() as usize;
     all_process_message(groups, &commit, committer_index, true).await;
 
-    let auth = groups[committer].epoch_authenticator().unwrap();
+    let auth = groups[committer].epoch_authenticator().unwrap().to_vec();
     let epoch = TestEpoch::new(vec![], &commit, auth);
 
     if let Some(tc) = test_case {

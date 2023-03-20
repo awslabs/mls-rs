@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use aws_mls_core::{crypto::CipherSuiteProvider, psk::PreSharedKey};
 use tls_codec::Serialize;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use crate::group::key_schedule::kdf_expand_with_label;
 
@@ -13,12 +13,13 @@ pub struct PskSecretInput {
     pub psk: PreSharedKey,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Zeroize)]
-pub(crate) struct PskSecret(Vec<u8>);
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub(crate) struct PskSecret(Zeroizing<Vec<u8>>);
 
+#[cfg(test)]
 impl From<Vec<u8>> for PskSecret {
     fn from(value: Vec<u8>) -> Self {
-        PskSecret(value)
+        PskSecret(Zeroizing::new(value))
     }
 }
 
@@ -32,7 +33,7 @@ impl Deref for PskSecret {
 
 impl PskSecret {
     pub(crate) fn new<P: CipherSuiteProvider>(provider: &P) -> PskSecret {
-        PskSecret(vec![0u8; provider.kdf_extract_size()])
+        PskSecret(Zeroizing::new(vec![0u8; provider.kdf_extract_size()]))
     }
 
     pub(crate) fn calculate<P: CipherSuiteProvider>(
@@ -57,7 +58,6 @@ impl PskSecret {
                         &vec![0; cipher_suite_provider.kdf_extract_size()],
                         &psk_secret_input.psk,
                     )
-                    .map(PskSecret)
                     .map_err(|e| PskError::CipherSuiteProviderError(e.into()))?;
 
                 let psk_input = kdf_expand_with_label(
@@ -67,7 +67,6 @@ impl PskSecret {
                     &label.tls_serialize_detached()?,
                     None,
                 )
-                .map(PskSecret)
                 .map_err(|e| PskError::KeyScheduleError(e.into()))?;
 
                 cipher_suite_provider

@@ -221,16 +221,14 @@ where
 
         let sender = Sender::Member(*sender_data.sender);
 
-        let decrypted_content = Zeroizing::new(
-            MessageKey::new(key)
-                .decrypt(
-                    &self.cipher_suite_provider,
-                    &ciphertext.ciphertext,
-                    &PrivateContentAAD::from(&ciphertext).tls_serialize_detached()?,
-                    &sender_data.reuse_guard,
-                )
-                .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))?,
-        );
+        let decrypted_content = MessageKey::new(key)
+            .decrypt(
+                &self.cipher_suite_provider,
+                &ciphertext.ciphertext,
+                &PrivateContentAAD::from(&ciphertext).tls_serialize_detached()?,
+                &sender_data.reuse_guard,
+            )
+            .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))?;
 
         let ciphertext_content =
             PrivateContentTBE::tls_deserialize(&mut &**decrypted_content, ciphertext.content_type)?;

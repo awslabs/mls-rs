@@ -30,6 +30,7 @@ use aws_mls_core::crypto::{
 };
 
 pub use openssl;
+use zeroize::Zeroizing;
 
 #[derive(Debug, Error)]
 pub enum OpensslCryptoError {
@@ -203,10 +204,11 @@ where
         cipher_text: &[u8],
         aad: Option<&[u8]>,
         nonce: &[u8],
-    ) -> Result<Vec<u8>, Self::Error> {
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.aead
             .open(key, cipher_text, aad, nonce)
             .map_err(|e| OpensslCryptoError::AeadError(e.into()))
+            .map(Zeroizing::new)
     }
 
     fn aead_key_size(&self) -> usize {
@@ -217,16 +219,23 @@ where
         self.aead.nonce_size()
     }
 
-    fn kdf_expand(&self, prk: &[u8], info: &[u8], len: usize) -> Result<Vec<u8>, Self::Error> {
+    fn kdf_expand(
+        &self,
+        prk: &[u8],
+        info: &[u8],
+        len: usize,
+    ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.kdf
             .expand(prk, info, len)
             .map_err(|e| OpensslCryptoError::KdfError(e.into()))
+            .map(Zeroizing::new)
     }
 
-    fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Vec<u8>, Self::Error> {
+    fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.kdf
             .extract(salt, ikm)
             .map_err(|e| OpensslCryptoError::KdfError(e.into()))
+            .map(Zeroizing::new)
     }
 
     fn kdf_extract_size(&self) -> usize {

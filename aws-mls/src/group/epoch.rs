@@ -6,7 +6,7 @@ use crate::{crypto::SignaturePublicKey, group::secret_tree::SecretTree};
 use serde_with::serde_as;
 use std::collections::HashMap;
 use std::ops::Deref;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use super::ciphertext_processor::GroupStateProvider;
 
@@ -56,9 +56,8 @@ pub(crate) struct EpochSecrets {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, PartialEq, Zeroize, serde::Serialize, serde::Deserialize)]
-#[zeroize(drop)]
-pub(crate) struct SenderDataSecret(#[serde_as(as = "VecAsBase64")] Vec<u8>);
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SenderDataSecret(#[serde_as(as = "VecAsBase64")] Zeroizing<Vec<u8>>);
 
 impl Deref for SenderDataSecret {
     type Target = Vec<u8>;
@@ -70,6 +69,12 @@ impl Deref for SenderDataSecret {
 
 impl From<Vec<u8>> for SenderDataSecret {
     fn from(bytes: Vec<u8>) -> Self {
+        Self(Zeroizing::new(bytes))
+    }
+}
+
+impl From<Zeroizing<Vec<u8>>> for SenderDataSecret {
+    fn from(bytes: Zeroizing<Vec<u8>>) -> Self {
         Self(bytes)
     }
 }

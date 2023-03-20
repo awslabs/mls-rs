@@ -1,6 +1,6 @@
 use tls_codec::{Deserialize, Serialize};
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use crate::{
     crypto::CipherSuiteProvider,
@@ -25,10 +25,10 @@ pub(crate) struct SenderDataAAD {
     pub content_type: ContentType,
 }
 
-#[derive(Debug, Zeroize)]
+#[derive(Debug)]
 pub(crate) struct SenderDataKey<'a, CP: CipherSuiteProvider> {
-    pub(crate) key: Vec<u8>,
-    pub(crate) nonce: Vec<u8>,
+    pub(crate) key: Zeroizing<Vec<u8>>,
+    pub(crate) nonce: Zeroizing<Vec<u8>>,
     cipher_suite_provider: &'a CP,
 }
 
@@ -96,7 +96,7 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
                 &self.nonce,
             )
             .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))
-            .and_then(|data| SenderData::tls_deserialize(&mut &*data).map_err(From::from))
+            .and_then(|data| SenderData::tls_deserialize(&mut &**data).map_err(From::from))
     }
 }
 
@@ -127,8 +127,8 @@ pub(crate) mod test_utils {
 
             Self {
                 ciphertext,
-                key: key.key,
-                nonce: key.nonce,
+                key: key.key.to_vec(),
+                nonce: key.nonce.to_vec(),
                 sender_data_secret: secret,
             }
         }
@@ -136,8 +136,8 @@ pub(crate) mod test_utils {
         pub fn verify<P: CipherSuiteProvider>(&self, cs: &P) {
             let secret = self.sender_data_secret.clone().into();
             let key = SenderDataKey::new(&secret, &self.ciphertext, cs).unwrap();
-            assert_eq!(key.key, self.key, "sender data key mismatch");
-            assert_eq!(key.nonce, self.nonce, "sender data nonce mismatch");
+            assert_eq!(key.key.to_vec(), self.key, "sender data key mismatch");
+            assert_eq!(key.nonce.to_vec(), self.nonce, "sender data nonce mismatch");
         }
     }
 }
@@ -248,8 +248,8 @@ mod tests {
                         cipher_suite: provider.cipher_suite().into(),
                         secret: secret.to_vec(),
                         ciphertext_bytes,
-                        expected_key: sender_data_key.key,
-                        expected_nonce: sender_data_key.nonce,
+                        expected_key: sender_data_key.key.to_vec(),
+                        expected_nonce: sender_data_key.nonce.to_vec(),
                         sender_data: sender_data.clone(),
                         sender_data_aad: sender_data_aad.clone(),
                         expected_ciphertext,
@@ -281,8 +281,8 @@ mod tests {
             )
             .unwrap();
 
-            assert_eq!(sender_data_key.key, test_case.expected_key);
-            assert_eq!(sender_data_key.nonce, test_case.expected_nonce);
+            assert_eq!(sender_data_key.key.to_vec(), test_case.expected_key);
+            assert_eq!(sender_data_key.nonce.to_vec(), test_case.expected_nonce);
 
             let sender_data = test_case.sender_data.into();
             let sender_data_aad = test_case.sender_data_aad.into();

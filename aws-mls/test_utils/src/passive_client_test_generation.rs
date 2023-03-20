@@ -82,7 +82,7 @@ async fn invite_passive_client<P: CipherSuiteProvider>(
         encryption_priv: key_pckg_secrets.leaf_node_key.to_vec(),
         init_priv: key_pckg_secrets.init_key.to_vec(),
         welcome: commit.welcome_message.unwrap().to_bytes().unwrap(),
-        initial_epoch_authenticator: groups[0].epoch_authenticator().unwrap(),
+        initial_epoch_authenticator: groups[0].epoch_authenticator().unwrap().to_vec(),
         epochs: vec![],
         signature_priv: secret_key.to_vec(),
         external_psks: if with_psk { vec![external_psk] } else { vec![] },
@@ -114,7 +114,7 @@ pub async fn generate_passive_client_proposal_tests() {
         partial_test_case.epochs.push(TestEpoch::new(
             vec![],
             &commit.commit_message,
-            groups[0].epoch_authenticator().unwrap(),
+            groups[0].epoch_authenticator().unwrap().to_vec(),
         ));
 
         let psk = ExternalPskId::new(TEST_EXT_PSK_ID.to_vec());
@@ -230,7 +230,7 @@ pub async fn generate_passive_client_proposal_tests() {
             let commit = groups[5].commit(vec![]).await.unwrap().commit_message;
 
             groups[5].apply_pending_commit().await.unwrap();
-            let auth = groups[5].epoch_authenticator().unwrap();
+            let auth = groups[5].epoch_authenticator().unwrap().to_vec();
 
             let mut test_case = partial_test_case.clone();
             let epoch = TestEpoch::new(vec![p.clone()], &commit, auth);
@@ -247,7 +247,7 @@ pub async fn generate_passive_client_proposal_tests() {
 
         let commit = group.commit(vec![]).await.unwrap().commit_message;
         group.apply_pending_commit().await.unwrap();
-        let auth = group.epoch_authenticator().unwrap();
+        let auth = group.epoch_authenticator().unwrap().to_vec();
         let mut test_case = partial_test_case.clone();
         let proposals = proposals.into_iter().map(|(p, _)| p).collect();
         let epoch = TestEpoch::new(proposals, &commit, auth);
@@ -270,7 +270,7 @@ where
     let builder = proposal_adder(group.commit_builder());
     let commit = builder.build().await.unwrap().commit_message;
     group.apply_pending_commit().await.unwrap();
-    let auth = group.epoch_authenticator().unwrap();
+    let auth = group.epoch_authenticator().unwrap().to_vec();
     let epoch = TestEpoch::new(vec![], &commit, auth);
     let mut test_case = partial_test_case;
     test_case.epochs.push(epoch);
