@@ -26,4 +26,7 @@ jobs:
     - name: WASM aws-mls-identity-x509
       working-directory: aws-mls-identity-x509
       run: wasm-pack test --headless --chrome --release
+    - name: WASM aws-mls-crypto-hpke
+      working-directory: aws-mls-crypto-hpke
+      run: wasm-pack test --headless --chrome --release
 

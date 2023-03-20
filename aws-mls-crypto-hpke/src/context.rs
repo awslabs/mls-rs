@@ -191,15 +191,17 @@ impl<KDF: KdfType, AEAD: AeadType> Context<KDF, AEAD> {
 
 #[cfg(test)]
 mod test {
-    use aws_mls_crypto_openssl::{aead::Aead, ecdh::*, kdf::Kdf};
     use serde::Deserialize;
 
     use crate::{
         context::{Context, EncryptionContext},
         dhkem::DhKem,
         hpke::Hpke,
-        test_utils::{filter_test_case, TestCaseAlgo},
+        test_utils::{ecdh::*, filter_test_case, Aead, Kdf, TestCaseAlgo},
     };
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn rfc_context_test_vector() {

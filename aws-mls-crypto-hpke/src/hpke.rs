@@ -295,16 +295,18 @@ mod test {
 
     use assert_matches::assert_matches;
     use aws_mls_core::crypto::{CipherSuite, HpkeContextR, HpkeContextS};
-    use aws_mls_crypto_openssl::{aead::Aead, ecdh::*, kdf::Kdf};
     use serde::Deserialize;
 
     use crate::{
         dhkem::DhKem,
         hpke::HpkeError,
-        test_utils::{filter_test_case, test_dhkem, TestCaseAlgo},
+        test_utils::{ecdh::*, filter_test_case, test_dhkem, Aead, Kdf, TestCaseAlgo},
     };
 
     use super::{Hpke, ModeId, Psk};
+
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn rfc_test_vector() {

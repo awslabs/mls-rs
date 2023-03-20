@@ -179,6 +179,9 @@ mod test {
 
     use crate::test_utils::{filter_test_case, test_dhkem, TestCaseAlgo};
 
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test as test;
+
     #[test]
     fn test_derive_no_sampling() {
         // Curve 25519 does not need sampling.
@@ -195,15 +198,33 @@ mod test {
         assert_eq!(pk.to_vec(), hex::decode(expected_pk).unwrap());
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_derive_with_sampling() {
-        // Curve P521 does need sampling.
+        // Curve P521 and P256 do need sampling.
         let dhkem = test_dhkem(CipherSuite::P521_AES256);
 
         // Test case from RFC 9180, Section A.6.1, ikmE
         let ikm = "7f06ab8215105fc46aceeb2e3dc5028b44364f960426eb0d8e4026c2f8b5d7e7a986688f1591abf5ab753c357a5d6f0440414b4ed4ede71317772ac98d9239f70904";
         let expected_pk = "040138b385ca16bb0d5fa0c0665fbbd7e69e3ee29f63991d3e9b5fa740aab8900aaeed46ed73a49055758425a0ce36507c54b29cc5b85a5cee6bae0cf1c21f2731ece2013dc3fb7c8d21654bb161b463962ca19e8c654ff24c94dd2898de12051f1ed0692237fb02b2f8d1dc1c73e9b366b529eb436e98a996ee522aef863dd5739d2f29b0";
         let expected_sk = "014784c692da35df6ecde98ee43ac425dbdd0969c0c72b42f2e708ab9d535415a8569bdacfcc0a114c85b8e3f26acf4d68115f8c91a66178cdbd03b7bcc5291e374b";
+
+        let (sk, pk) = dhkem.derive(&hex::decode(ikm).unwrap()).unwrap();
+
+        assert_eq!(sk.to_vec(), hex::decode(expected_sk).unwrap());
+        assert_eq!(pk.to_vec(), hex::decode(expected_pk).unwrap());
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[test]
+    fn test_derive_with_sampling() {
+        // Curve P521 and P256 do need sampling.
+        let dhkem = test_dhkem(CipherSuite::P256_AES128);
+
+        // Test case from RFC 9180, Section A.3.1, ikmE
+        let ikm = "4270e54ffd08d79d5928020af4686d8f6b7d35dbe470265f1f5aa22816ce860e";
+        let expected_pk = "04a92719c6195d5085104f469a8b9814d5838ff72b60501e2c4466e5e67b325ac98536d7b61a1af4b78e5b7f951c0900be863c403ce65c9bfcb9382657222d18c4";
+        let expected_sk = "4995788ef4b9d6132b249ce59a77281493eb39af373d236a1fe415cb0c2d7beb";
 
         let (sk, pk) = dhkem.derive(&hex::decode(ikm).unwrap()).unwrap();
 

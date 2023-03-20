@@ -23,3 +23,8 @@ aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", features = ["mock"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", version = "*"}
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { version = "0.3.26", default-features = false }
+aws-mls-crypto-rustcrypto = { path = "../aws-mls-crypto-rustcrypto", version = "*"}
+getrandom = { version = "0.2", features = ["js"] } 
