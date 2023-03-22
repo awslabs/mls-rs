@@ -379,7 +379,7 @@ impl<C> MessageProcessor for ExternalGroup<C>
 where
     C: ExternalClientConfig + Clone,
 {
-    type ProposalFilter = C::ProposalFilter;
+    type ProposalRules = C::ProposalRules;
     type IdentityProvider = C::IdentityProvider;
     type ExternalPskIdValidator = PassThroughPskIdValidator;
     type EventType = ExternalEvent;
@@ -389,8 +389,8 @@ where
         None
     }
 
-    fn proposal_filter(&self) -> Self::ProposalFilter {
-        self.config.proposal_filter()
+    fn proposal_rules(&self) -> Self::ProposalRules {
+        self.config.proposal_rules()
     }
 
     fn verify_plaintext_authentication(

@@ -361,6 +361,7 @@ pub(crate) mod test_utils {
         get_basic_test_node_sig_key(cipher_suite, id).await.0
     }
 
+    #[allow(unused)]
     pub fn default_properties() -> ConfigProperties {
         ConfigProperties {
             capabilities: get_test_capabilities(),
@@ -368,16 +369,20 @@ pub(crate) mod test_utils {
         }
     }
 
-    pub async fn get_basic_test_node_sig_key(
+    pub async fn get_basic_test_node_capabilities(
         cipher_suite: CipherSuite,
         id: &str,
+        capabilities: Capabilities,
     ) -> (LeafNode, HpkeSecretKey, SignatureSecretKey) {
         let (signing_identity, signature_key) =
             get_test_signing_identity(cipher_suite, id.as_bytes().to_vec());
 
         LeafNode::generate(
             &test_cipher_suite_provider(cipher_suite),
-            default_properties(),
+            ConfigProperties {
+                capabilities,
+                extensions: Default::default(),
+            },
             signing_identity,
             &signature_key,
             Lifetime::years(1).unwrap(),
@@ -386,6 +391,13 @@ pub(crate) mod test_utils {
         .await
         .map(|(leaf, hpke_secret_key)| (leaf, hpke_secret_key, signature_key))
         .unwrap()
+    }
+
+    pub async fn get_basic_test_node_sig_key(
+        cipher_suite: CipherSuite,
+        id: &str,
+    ) -> (LeafNode, HpkeSecretKey, SignatureSecretKey) {
+        get_basic_test_node_capabilities(cipher_suite, id, get_test_capabilities()).await
     }
 
     #[allow(unused)]

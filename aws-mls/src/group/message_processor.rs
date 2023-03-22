@@ -10,7 +10,7 @@ use super::{
     proposal::{CustomProposal, ExternalInit, Proposal, ReInitProposal},
     proposal_cache::ProposalSetEffects,
     proposal_effects,
-    proposal_filter::ProposalFilter,
+    proposal_filter::ProposalRules,
     proposal_ref::ProposalRef,
     state::GroupState,
     transcript_hash::InterimTranscriptHash,
@@ -171,7 +171,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         + From<StateUpdate>
         + Send;
 
-    type ProposalFilter: ProposalFilter;
+    type ProposalRules: ProposalRules;
     type IdentityProvider: IdentityProvider;
     type CipherSuiteProvider: CipherSuiteProvider;
     type ExternalPskIdValidator: ExternalPskIdValidator;
@@ -389,7 +389,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             self.cipher_suite_provider(),
             &group_state.public_tree,
             self.external_psk_id_validator(),
-            self.proposal_filter(),
+            self.proposal_rules(),
             time_sent,
             &group_state.roster(),
         )
@@ -485,7 +485,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     fn group_state(&self) -> &GroupState;
     fn group_state_mut(&mut self) -> &mut GroupState;
     fn self_index(&self) -> Option<LeafIndex>;
-    fn proposal_filter(&self) -> Self::ProposalFilter;
+    fn proposal_rules(&self) -> Self::ProposalRules;
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider;
     fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator;

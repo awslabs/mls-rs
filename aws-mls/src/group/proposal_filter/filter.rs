@@ -1,6 +1,10 @@
 use crate::{
     extension::ExtensionType,
-    group::{proposal_filter::ProposalBundle, ProposalType, Sender},
+    group::{
+        proposal::{CustomProposal, Proposal},
+        proposal_filter::ProposalBundle,
+        ProposalType, Sender,
+    },
     key_package::KeyPackageValidationError,
     protocol_version::ProtocolVersion,
     tree_kem::{
@@ -15,16 +19,33 @@ use aws_mls_core::{
 use std::convert::Infallible;
 use thiserror::Error;
 
-/// A user controlled proposal filter that can pre-process a set of proposals
+use super::ProposalInfo;
+
+/// A user controlled proposal rules that can pre-process a set of proposals
 /// during commit processing.
 ///
 /// Both proposals received during the current epoch and at the time of commit
-/// will be presented for validation and filtering. This filter will present a
-/// raw list of proposals. Standard MLS rules are applied internally on the
-/// result of this filter.
+/// will be presented for validation and filtering. Filter and validate will
+/// present a raw list of proposals. Standard MLS rules are applied internally
+/// on the result of these rules.
+///
+/// Each member of a group MUST apply the same proposal rules in order to
+/// maintain a working group.
 #[async_trait]
-pub trait ProposalFilter: Send + Sync {
+pub trait ProposalRules: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
+
+    /// Treat a collection of custom proposals as a set of standard proposals.
+    ///
+    /// The proposals returned will not be sent over the wire. They will be considered as part of
+    /// validating the resulting commit follows standard MLS rules, and will be applied to the
+    /// tree.
+    async fn expand_custom_proposals(
+        &self,
+        current_roster: &[Member],
+        extension_list: &ExtensionList,
+        proposals: &[ProposalInfo<CustomProposal>],
+    ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error>;
 
     /// This is called to validate a received commit. It should report any error making the commit
     /// invalid.
@@ -48,11 +69,22 @@ pub trait ProposalFilter: Send + Sync {
     ) -> Result<ProposalBundle, Self::Error>;
 }
 
-macro_rules! delegate_proposal_filter {
+macro_rules! delegate_proposal_rules {
     ($implementer:ty) => {
         #[async_trait]
-        impl<T: ProposalFilter + ?Sized> ProposalFilter for $implementer {
+        impl<T: ProposalRules + ?Sized> ProposalRules for $implementer {
             type Error = T::Error;
+
+            async fn expand_custom_proposals(
+                &self,
+                current_roster: &[Member],
+                extension_list: &ExtensionList,
+                proposals: &[ProposalInfo<CustomProposal>],
+            ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error> {
+                (**self)
+                    .expand_custom_proposals(current_roster, extension_list, proposals)
+                    .await
+            }
 
             async fn validate(
                 &self,
@@ -81,22 +113,31 @@ macro_rules! delegate_proposal_filter {
     };
 }
 
-delegate_proposal_filter!(Box<T>);
-delegate_proposal_filter!(&T);
+delegate_proposal_rules!(Box<T>);
+delegate_proposal_rules!(&T);
 
 #[derive(Clone, Debug, Default)]
 /// Default allow-all proposal filter.
-pub struct PassThroughProposalFilter;
+pub struct PassThroughProposalRules;
 
-impl PassThroughProposalFilter {
+impl PassThroughProposalRules {
     pub fn new() -> Self {
         Self
     }
 }
 
 #[async_trait]
-impl ProposalFilter for PassThroughProposalFilter {
+impl ProposalRules for PassThroughProposalRules {
     type Error = Infallible;
+
+    async fn expand_custom_proposals(
+        &self,
+        _current_roster: &[Member],
+        _extension_list: &ExtensionList,
+        _proposals: &[ProposalInfo<CustomProposal>],
+    ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error> {
+        Ok(vec![])
+    }
 
     async fn validate(
         &self,
@@ -120,7 +161,7 @@ impl ProposalFilter for PassThroughProposalFilter {
 }
 
 #[derive(Debug, Error)]
-pub enum ProposalFilterError {
+pub enum ProposalRulesError {
     #[error(transparent)]
     KeyPackageValidationError(#[from] KeyPackageValidationError),
     #[error(transparent)]
@@ -194,7 +235,7 @@ pub enum ProposalFilterError {
     ExternalSenderWithoutExternalSendersExtension,
 }
 
-impl ProposalFilterError {
+impl ProposalRulesError {
     pub fn user_defined<E>(e: E) -> Self
     where
         E: Into<Box<dyn std::error::Error + Send + Sync>>,

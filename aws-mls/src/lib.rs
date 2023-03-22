@@ -133,14 +133,14 @@ pub use aws_mls_core::{
     psk::PreSharedKeyStorage,
 };
 
-/// Dependencies of [`ProposalFilter`].
-pub mod proposal_filter {
+/// Dependencies of [`ProposalRules`].
+pub mod proposal_rules {
     pub use crate::group::proposal_filter::{
-        PassThroughProposalFilter, ProposalBundle, ProposalInfo,
+        PassThroughProposalRules, ProposalBundle, ProposalInfo,
     };
 }
 
-pub use crate::group::proposal_filter::ProposalFilter;
+pub use crate::group::proposal_filter::ProposalRules;
 
 pub use aws_mls_core::extension::{Extension, ExtensionList};
 

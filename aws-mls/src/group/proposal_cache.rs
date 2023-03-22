@@ -4,7 +4,7 @@ use super::*;
 use crate::{
     group::proposal_filter::{
         FailInvalidProposal, IgnoreInvalidByRefProposal, ProposalApplier, ProposalBundle,
-        ProposalFilter, ProposalFilterError, ProposalInfo, ProposalState,
+        ProposalInfo, ProposalRules, ProposalRulesError, ProposalSource, ProposalState,
     },
     psk::ExternalPskIdValidator,
     time::MlsTime,
@@ -14,7 +14,7 @@ use crate::{
 #[derive(Error, Debug)]
 pub enum ProposalCacheError {
     #[error(transparent)]
-    ProposalFilterError(#[from] ProposalFilterError),
+    ProposalRulesError(#[from] ProposalRulesError),
     #[error("Proposal {0:?} not found")]
     ProposalNotFound(ProposalRef),
     #[error("Invalid required capabilities")]
@@ -117,8 +117,8 @@ impl ProposalSetEffects {
             }
             Proposal::ExternalInit(external_init) => {
                 let new_member_leaf_index =
-                    external_leaf.ok_or(ProposalCacheError::ProposalFilterError(
-                        ProposalFilterError::MissingUpdatePathInExternalCommit,
+                    external_leaf.ok_or(ProposalCacheError::ProposalRulesError(
+                        ProposalRulesError::MissingUpdatePathInExternalCommit,
                     ))?;
                 self.external_init = Some((new_member_leaf_index, external_init));
             }
@@ -180,6 +180,30 @@ impl ProposalCache {
         &self.proposals
     }
 
+    pub async fn expand_custom_proposals<F>(
+        &self,
+        roster: &[Member],
+        group_extensions: &ExtensionList,
+        proposal_bundle: &mut ProposalBundle,
+        user_rules: &F,
+    ) -> Result<(), ProposalCacheError>
+    where
+        F: ProposalRules,
+    {
+        let new_proposals = user_rules
+            .expand_custom_proposals(roster, group_extensions, proposal_bundle.custom_proposals())
+            .await
+            .map_err(|e| {
+                ProposalCacheError::ProposalRulesError(ProposalRulesError::UserDefined(e.into()))
+            })?;
+
+        new_proposals
+            .into_iter()
+            .for_each(|info| proposal_bundle.add_proposal(info));
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn prepare_commit<C, F, P, CSP>(
         &self,
@@ -196,7 +220,7 @@ impl ProposalCache {
     ) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), ProposalCacheError>
     where
         C: IdentityProvider,
-        F: ProposalFilter,
+        F: ProposalRules,
         P: ExternalPskIdValidator,
         CSP: CipherSuiteProvider,
     {
@@ -207,10 +231,14 @@ impl ProposalCache {
                 (
                     proposal.proposal.clone(),
                     proposal.sender,
-                    Some(proposal_ref.clone()),
+                    ProposalSource::ByReference(proposal_ref.clone()),
                 )
             })
-            .chain(additional_proposals.into_iter().map(|p| (p, sender, None)))
+            .chain(
+                additional_proposals
+                    .into_iter()
+                    .map(|p| (p, sender, ProposalSource::ByValue)),
+            )
             .fold(
                 ProposalBundle::default(),
                 |mut proposals, (proposal, sender, proposal_ref)| {
@@ -219,10 +247,13 @@ impl ProposalCache {
                 },
             );
 
-        let proposals = user_filter
+        let mut proposals = user_filter
             .filter(sender, roster, group_extensions, proposals)
             .await
-            .map_err(ProposalFilterError::user_defined)?;
+            .map_err(ProposalRulesError::user_defined)?;
+
+        self.expand_custom_proposals(roster, group_extensions, &mut proposals, &user_filter)
+            .await?;
 
         let required_capabilities = group_extensions
             .get_as()
@@ -297,34 +328,37 @@ impl ProposalCache {
         cipher_suite_provider: &CSP,
         public_tree: &TreeKemPublic,
         external_psk_id_validator: P,
-        user_filter: F,
+        user_rules: F,
         commit_time: Option<MlsTime>,
         roster: &[Member],
     ) -> Result<ProposalSetEffects, ProposalCacheError>
     where
         C: IdentityProvider,
-        F: ProposalFilter,
+        F: ProposalRules,
         P: ExternalPskIdValidator,
         CSP: CipherSuiteProvider,
     {
-        let proposals = proposal_list.into_iter().try_fold(
+        let mut proposals = proposal_list.into_iter().try_fold(
             ProposalBundle::default(),
             |mut proposals, proposal| {
-                let proposal_ref = match &proposal {
-                    ProposalOrRef::Reference(r) => Some(r.clone()),
-                    ProposalOrRef::Proposal(_) => None,
+                let proposal_source = match &proposal {
+                    ProposalOrRef::Reference(r) => ProposalSource::ByReference(r.clone()),
+                    ProposalOrRef::Proposal(_) => ProposalSource::ByValue,
                 };
 
                 let proposal = self.resolve_item(sender, proposal)?;
-                proposals.add(proposal.proposal, proposal.sender, proposal_ref);
+                proposals.add(proposal.proposal, proposal.sender, proposal_source);
                 Ok::<_, ProposalCacheError>(proposals)
             },
         )?;
 
-        user_filter
+        user_rules
             .validate(sender, roster, group_extensions, &proposals)
             .await
-            .map_err(ProposalFilterError::user_defined)?;
+            .map_err(ProposalRulesError::user_defined)?;
+
+        self.expand_custom_proposals(roster, group_extensions, &mut proposals, &user_rules)
+            .await?;
 
         let required_capabilities = group_extensions
             .get_as()
@@ -385,7 +419,10 @@ fn rejected_proposals(
 ) -> Vec<(ProposalRef, Proposal)> {
     accepted_proposals
         .iter_proposals()
-        .filter_map(|p| p.proposal_ref)
+        .filter_map(|p| match p.source {
+            ProposalSource::ByReference(reference) => Some(reference),
+            _ => None,
+        })
         .for_each(|r| {
             cache.remove(&r);
         });
@@ -409,7 +446,7 @@ pub(crate) mod test_utils {
         group::{
             internal::{LeafIndex, TreeKemPublic},
             proposal::{Proposal, ProposalOrRef},
-            proposal_filter::{PassThroughProposalFilter, ProposalFilter},
+            proposal_filter::{PassThroughProposalRules, ProposalRules},
             proposal_ref::ProposalRef,
             test_utils::TEST_GROUP,
             Sender,
@@ -435,7 +472,7 @@ pub(crate) mod test_utils {
         identity_provider: C,
         cipher_suite_provider: CSP,
         group_context_extensions: ExtensionList,
-        user_filter: F,
+        user_rules: F,
         external_psk_id_validator: P,
     }
 
@@ -443,7 +480,7 @@ pub(crate) mod test_utils {
         CommitReceiver<
             'a,
             BasicWithCustomProvider,
-            PassThroughProposalFilter,
+            PassThroughProposalRules,
             PassThroughPskIdValidator,
             CSP,
         >
@@ -464,7 +501,7 @@ pub(crate) mod test_utils {
                 cache: make_proposal_cache(),
                 identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider::new()),
                 group_context_extensions: Default::default(),
-                user_filter: pass_through_filter(),
+                user_rules: pass_through_rules(),
                 external_psk_id_validator: PassThroughPskIdValidator,
                 cipher_suite_provider,
             }
@@ -474,7 +511,7 @@ pub(crate) mod test_utils {
     impl<'a, C, F, P, CSP> CommitReceiver<'a, C, F, P, CSP>
     where
         C: IdentityProvider,
-        F: ProposalFilter,
+        F: ProposalRules,
         P: ExternalPskIdValidator,
         CSP: CipherSuiteProvider,
     {
@@ -489,15 +526,15 @@ pub(crate) mod test_utils {
                 cache: self.cache,
                 identity_provider: validator,
                 group_context_extensions: self.group_context_extensions,
-                user_filter: self.user_filter,
+                user_rules: self.user_rules,
                 external_psk_id_validator: self.external_psk_id_validator,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
         }
 
-        pub fn with_user_filter<G>(self, f: G) -> CommitReceiver<'a, C, G, P, CSP>
+        pub fn with_user_rules<G>(self, f: G) -> CommitReceiver<'a, C, G, P, CSP>
         where
-            G: ProposalFilter,
+            G: ProposalRules,
         {
             CommitReceiver {
                 tree: self.tree,
@@ -506,7 +543,7 @@ pub(crate) mod test_utils {
                 cache: self.cache,
                 identity_provider: self.identity_provider,
                 group_context_extensions: self.group_context_extensions,
-                user_filter: f,
+                user_rules: f,
                 external_psk_id_validator: self.external_psk_id_validator,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
@@ -523,7 +560,7 @@ pub(crate) mod test_utils {
                 cache: self.cache,
                 identity_provider: self.identity_provider,
                 group_context_extensions: self.group_context_extensions,
-                user_filter: self.user_filter,
+                user_rules: self.user_rules,
                 external_psk_id_validator: v,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
@@ -563,7 +600,7 @@ pub(crate) mod test_utils {
                     &self.cipher_suite_provider,
                     self.tree,
                     &self.external_psk_id_validator,
-                    &self.user_filter,
+                    &self.user_rules,
                 )
                 .await
         }
@@ -573,17 +610,20 @@ pub(crate) mod test_utils {
         ProposalCache::new(TEST_PROTOCOL_VERSION, TEST_GROUP.to_vec())
     }
 
-    pub fn pass_through_filter() -> PassThroughProposalFilter {
-        PassThroughProposalFilter::new()
+    pub fn pass_through_rules() -> PassThroughProposalRules {
+        PassThroughProposalRules::new()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::test_utils::{pass_through_filter, CommitReceiver};
+    use super::test_utils::{pass_through_rules, CommitReceiver};
     use super::*;
     use super::{
         proposal_ref::test_utils::auth_content_from_proposal, test_utils::make_proposal_cache,
+    };
+    use crate::tree_kem::leaf_node::test_utils::{
+        get_basic_test_node_capabilities, get_test_capabilities,
     };
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
@@ -619,7 +659,7 @@ mod tests {
         identity::{BasicCredential, Credential, CredentialType, CustomCredential},
     };
     use futures::FutureExt;
-    use internal::proposal_filter::PassThroughProposalFilter;
+    use internal::proposal_filter::PassThroughProposalRules;
     use itertools::Itertools;
     use std::convert::Infallible;
 
@@ -639,11 +679,11 @@ mod tests {
             cipher_suite_provider: &CSP,
             public_tree: &TreeKemPublic,
             external_psk_id_validator: P,
-            user_filter: F,
+            user_rules: F,
         ) -> Result<ProposalSetEffects, ProposalCacheError>
         where
             C: IdentityProvider,
-            F: ProposalFilter,
+            F: ProposalRules,
             P: ExternalPskIdValidator,
             CSP: CipherSuiteProvider,
         {
@@ -657,7 +697,7 @@ mod tests {
                 cipher_suite_provider,
                 public_tree,
                 external_psk_id_validator,
-                user_filter,
+                user_rules,
                 None,
                 &[],
             )
@@ -669,8 +709,19 @@ mod tests {
         1
     }
 
-    async fn new_tree(name: &str) -> (LeafIndex, TreeKemPublic) {
-        let (leaf, secret, _) = get_basic_test_node_sig_key(TEST_CIPHER_SUITE, name).await;
+    async fn new_tree_custom_proposals(
+        name: &str,
+        proposal_types: Vec<ProposalType>,
+    ) -> (LeafIndex, TreeKemPublic) {
+        let (leaf, secret, _) = get_basic_test_node_capabilities(
+            TEST_CIPHER_SUITE,
+            name,
+            Capabilities {
+                proposals: proposal_types,
+                ..get_test_capabilities()
+            },
+        )
+        .await;
 
         let (pub_tree, priv_tree) = TreeKemPublic::derive(
             leaf,
@@ -682,6 +733,10 @@ mod tests {
         .unwrap();
 
         (priv_tree.self_index, pub_tree)
+    }
+
+    async fn new_tree(name: &str) -> (LeafIndex, TreeKemPublic) {
+        new_tree_custom_proposals(name, vec![]).await
     }
 
     async fn add_member(tree: &mut TreeKemPublic, name: &str) -> LeafIndex {
@@ -905,7 +960,7 @@ mod tests {
                 &tree,
                 None,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
                 &[],
             )
             .await
@@ -954,7 +1009,7 @@ mod tests {
                 &tree,
                 None,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
                 &[],
             )
             .await
@@ -1014,15 +1069,15 @@ mod tests {
                 &tree,
                 None,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
                 &[],
             )
             .await;
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidProposalTypeForSender {
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidProposalTypeForSender {
                     proposal_type: ProposalType::UPDATE,
                     sender: Sender::Member(_),
                     by_ref: false,
@@ -1058,7 +1113,7 @@ mod tests {
                 &tree,
                 None,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
                 &[],
             )
             .await
@@ -1093,7 +1148,7 @@ mod tests {
                 &tree,
                 None,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
                 &[],
             )
             .await
@@ -1147,7 +1202,7 @@ mod tests {
                 &tree,
                 None,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
                 &[],
             )
             .await
@@ -1210,7 +1265,7 @@ mod tests {
                 &tree,
                 None,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
                 &[],
             )
             .await
@@ -1227,7 +1282,7 @@ mod tests {
                 &cipher_suite_provider,
                 &tree,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
             )
             .await
             .unwrap();
@@ -1257,15 +1312,15 @@ mod tests {
                 &tree,
                 None,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
                 &[],
             )
             .await;
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::DuplicatePskIds
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::DuplicatePskIds
             ))
         );
     }
@@ -1313,14 +1368,14 @@ mod tests {
                 &cipher_suite_provider,
                 public_tree,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
             )
             .await;
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::ExternalCommitMustHaveNewLeaf
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::ExternalCommitMustHaveNewLeaf
             ))
         );
     }
@@ -1357,14 +1412,14 @@ mod tests {
                 &cipher_suite_provider,
                 public_tree,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
             )
             .await;
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::OnlyMembersCanCommitProposalsByRef
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::OnlyMembersCanCommitProposalsByRef
             ))
         );
     }
@@ -1397,14 +1452,14 @@ mod tests {
                 &cipher_suite_provider,
                 public_tree,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
             )
             .await;
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::ExternalCommitMustHaveExactlyOneExternalInit
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::ExternalCommitMustHaveExactlyOneExternalInit
             ))
         );
     }
@@ -1436,7 +1491,7 @@ mod tests {
                 &cipher_suite_provider,
                 public_tree,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
             )
             .await
     }
@@ -1450,8 +1505,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidProposalTypeInExternalCommit(ProposalType::ADD)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidProposalTypeInExternalCommit(ProposalType::ADD)
             ))
         );
     }
@@ -1501,14 +1556,14 @@ mod tests {
                 &cipher_suite_provider,
                 &public_tree,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
             )
             .await;
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::ExternalCommitWithMoreThanOneRemove
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::ExternalCommitWithMoreThanOneRemove
             ))
         );
     }
@@ -1551,14 +1606,14 @@ mod tests {
                 &cipher_suite_provider,
                 &public_tree,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
             )
             .await;
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::ExternalCommitRemovesOtherIdentity
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::ExternalCommitRemovesOtherIdentity
             ))
         );
     }
@@ -1602,7 +1657,7 @@ mod tests {
                 &cipher_suite_provider,
                 &public_tree,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
             )
             .await;
 
@@ -1618,8 +1673,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidProposalTypeInExternalCommit(ProposalType::UPDATE)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidProposalTypeInExternalCommit(ProposalType::UPDATE)
             ))
         );
     }
@@ -1632,8 +1687,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidProposalTypeInExternalCommit(
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidProposalTypeInExternalCommit(
                     ProposalType::GROUP_CONTEXT_EXTENSIONS,
                 )
             ))
@@ -1652,8 +1707,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidProposalTypeInExternalCommit(ProposalType::RE_INIT)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidProposalTypeInExternalCommit(ProposalType::RE_INIT)
             ))
         );
     }
@@ -1677,14 +1732,14 @@ mod tests {
                 &cipher_suite_provider,
                 public_tree,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
             )
             .await;
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::ExternalCommitMustHaveExactlyOneExternalInit
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::ExternalCommitMustHaveExactlyOneExternalInit
             ))
         );
     }
@@ -1704,7 +1759,7 @@ mod tests {
                 &TreeKemPublic::new(),
                 None,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
                 &[],
             )
             .await
@@ -1735,7 +1790,7 @@ mod tests {
                 &TreeKemPublic::new(),
                 None,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
                 &[],
             )
             .await
@@ -1783,7 +1838,7 @@ mod tests {
                 &tree,
                 None,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
                 &[],
             )
             .await
@@ -1820,7 +1875,7 @@ mod tests {
                 &tree,
                 None,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
                 &[],
             )
             .await
@@ -1852,7 +1907,7 @@ mod tests {
                 &tree,
                 None,
                 PassThroughPskIdValidator,
-                pass_through_filter(),
+                pass_through_rules(),
                 &[],
             )
             .await
@@ -1869,7 +1924,7 @@ mod tests {
         cache: ProposalCache,
         additional_proposals: Vec<Proposal>,
         identity_provider: C,
-        user_filter: F,
+        user_rules: F,
         external_psk_id_validator: P,
     }
 
@@ -1877,7 +1932,7 @@ mod tests {
         CommitSender<
             'a,
             BasicWithCustomProvider,
-            PassThroughProposalFilter,
+            PassThroughProposalRules,
             PassThroughPskIdValidator,
             CSP,
         >
@@ -1889,7 +1944,7 @@ mod tests {
                 cache: make_proposal_cache(),
                 additional_proposals: Vec::new(),
                 identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider::new()),
-                user_filter: pass_through_filter(),
+                user_rules: pass_through_rules(),
                 external_psk_id_validator: PassThroughPskIdValidator,
                 cipher_suite_provider,
             }
@@ -1899,7 +1954,7 @@ mod tests {
     impl<'a, C, F, P, CSP> CommitSender<'a, C, F, P, CSP>
     where
         C: IdentityProvider,
-        F: ProposalFilter,
+        F: ProposalRules,
         P: ExternalPskIdValidator,
         CSP: CipherSuiteProvider,
     {
@@ -1914,7 +1969,7 @@ mod tests {
                 sender: self.sender,
                 cache: self.cache,
                 additional_proposals: self.additional_proposals,
-                user_filter: self.user_filter,
+                user_rules: self.user_rules,
                 external_psk_id_validator: self.external_psk_id_validator,
             }
         }
@@ -1935,9 +1990,9 @@ mod tests {
             self
         }
 
-        fn with_user_filter<G>(self, f: G) -> CommitSender<'a, C, G, P, CSP>
+        fn with_user_rules<G>(self, f: G) -> CommitSender<'a, C, G, P, CSP>
         where
-            G: ProposalFilter,
+            G: ProposalRules,
         {
             CommitSender {
                 tree: self.tree,
@@ -1945,7 +2000,7 @@ mod tests {
                 cache: self.cache,
                 additional_proposals: self.additional_proposals,
                 identity_provider: self.identity_provider,
-                user_filter: f,
+                user_rules: f,
                 external_psk_id_validator: self.external_psk_id_validator,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
@@ -1961,7 +2016,7 @@ mod tests {
                 cache: self.cache,
                 additional_proposals: self.additional_proposals,
                 identity_provider: self.identity_provider,
-                user_filter: self.user_filter,
+                user_rules: self.user_rules,
                 external_psk_id_validator: v,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
@@ -1980,7 +2035,7 @@ mod tests {
                     self.tree,
                     None,
                     &self.external_psk_id_validator,
-                    &self.user_filter,
+                    &self.user_rules,
                     &[],
                 )
                 .await
@@ -2042,8 +2097,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::KeyPackageValidationError(_)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::KeyPackageValidationError(_)
             ))
         );
     }
@@ -2061,8 +2116,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::KeyPackageValidationError(_)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::KeyPackageValidationError(_)
             ))
         );
     }
@@ -2103,8 +2158,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::KeyPackageValidationError(_)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::KeyPackageValidationError(_)
             ))
         );
     }
@@ -2155,8 +2210,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::LeafNodeValidationError(_)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::LeafNodeValidationError(_)
             ))
         );
     }
@@ -2202,8 +2257,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::RatchetTreeError(_)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::RatchetTreeError(_)
             ))
         );
     }
@@ -2221,8 +2276,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::RatchetTreeError(_)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::RatchetTreeError(_)
             ))
         );
     }
@@ -2282,8 +2337,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidPskNonceLength { expected, found },
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidPskNonceLength { expected, found },
             )) if expected == test_cipher_suite_provider(TEST_CIPHER_SUITE).kdf_extract_size() && found == invalid_nonce.0.len()
         );
     }
@@ -2303,8 +2358,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidPskNonceLength { expected, found },
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidPskNonceLength { expected, found },
             )) if expected == test_cipher_suite_provider(TEST_CIPHER_SUITE).kdf_extract_size() && found == invalid_nonce.0.len()
         );
     }
@@ -2355,8 +2410,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidTypeOrUsageInPreSharedKeyProposal
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidTypeOrUsageInPreSharedKeyProposal
             ))
         );
     }
@@ -2371,8 +2426,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidTypeOrUsageInPreSharedKeyProposal
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidTypeOrUsageInPreSharedKeyProposal
             ))
         );
     }
@@ -2448,7 +2503,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(ProposalFilterError::InvalidProtocolVersionInReInit {
+            Err(ProposalCacheError::ProposalRulesError(ProposalRulesError::InvalidProtocolVersionInReInit {
                 proposed,
                 original,
             })) if proposed == smaller_protocol_version && original == TEST_PROTOCOL_VERSION
@@ -2467,7 +2522,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(ProposalFilterError::InvalidProtocolVersionInReInit {
+            Err(ProposalCacheError::ProposalRulesError(ProposalRulesError::InvalidProtocolVersionInReInit {
                 proposed,
                 original,
             })) if proposed == smaller_protocol_version && original == TEST_PROTOCOL_VERSION
@@ -2522,8 +2577,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidCommitSelfUpdate
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidCommitSelfUpdate
             ))
         );
     }
@@ -2539,8 +2594,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidProposalTypeForSender {
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidProposalTypeForSender {
                     proposal_type: ProposalType::UPDATE,
                     sender: Sender::Member(_),
                     by_ref: false,
@@ -2581,8 +2636,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::CommitterSelfRemoval
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::CommitterSelfRemoval
             ))
         );
     }
@@ -2598,8 +2653,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::CommitterSelfRemoval
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::CommitterSelfRemoval
             ))
         );
     }
@@ -2645,8 +2700,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::MoreThanOneProposalForLeaf(r)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::MoreThanOneProposalForLeaf(r)
             )) if r == *bob
         );
     }
@@ -2680,6 +2735,31 @@ mod tests {
         }
     }
 
+    async fn make_custom_add_proposal(capabilities: Capabilities) -> AddProposal {
+        AddProposal {
+            key_package: test_key_package_custom(
+                &test_cipher_suite_provider(TEST_CIPHER_SUITE),
+                TEST_PROTOCOL_VERSION,
+                "frank",
+                |generator| {
+                    async move {
+                        generator
+                            .generate(
+                                Lifetime::years(1).unwrap(),
+                                capabilities,
+                                ExtensionList::default(),
+                                ExtensionList::default(),
+                            )
+                            .await
+                            .unwrap()
+                    }
+                    .boxed()
+                },
+            )
+            .await,
+        }
+    }
+
     #[futures_test::test]
     async fn receiving_add_proposals_for_same_client_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -2698,8 +2778,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::RatchetTreeError(RatchetTreeError::TreeIndexError(
                     TreeIndexError::DuplicateIdentity(LeafIndex(1))
                 ))
             ))
@@ -2720,8 +2800,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::RatchetTreeError(RatchetTreeError::TreeIndexError(
                     TreeIndexError::DuplicateIdentity(LeafIndex(1))
                 ))
             ))
@@ -2772,8 +2852,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::RatchetTreeError(RatchetTreeError::DifferentIdentityInUpdate(
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::RatchetTreeError(RatchetTreeError::DifferentIdentityInUpdate(
                     LeafIndex(1)
                 ))
             ))
@@ -2828,8 +2908,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::RatchetTreeError(RatchetTreeError::TreeIndexError(
                     TreeIndexError::DuplicateSignatureKeys(LeafIndex(1))
                 ))
             ))
@@ -2858,8 +2938,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::RatchetTreeError(RatchetTreeError::TreeIndexError(
                     TreeIndexError::DuplicateSignatureKeys(LeafIndex(1))
                 ))
             ))
@@ -2910,8 +2990,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::DuplicatePskIds
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::DuplicatePskIds
             ))
         );
     }
@@ -2928,8 +3008,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::DuplicatePskIds
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::DuplicatePskIds
             ))
         );
     }
@@ -2993,8 +3073,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::MoreThanOneGroupContextExtensionsProposal
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::MoreThanOneGroupContextExtensionsProposal
             ))
         );
     }
@@ -3013,8 +3093,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::MoreThanOneGroupContextExtensionsProposal
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::MoreThanOneGroupContextExtensionsProposal
             ))
         );
     }
@@ -3108,8 +3188,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::IdentityProviderError(_)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::IdentityProviderError(_)
             ))
         );
     }
@@ -3128,8 +3208,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::IdentityProviderError(_)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::IdentityProviderError(_)
             ))
         );
     }
@@ -3172,8 +3252,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::OtherProposalWithReInit
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::OtherProposalWithReInit
             ))
         );
     }
@@ -3192,8 +3272,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::OtherProposalWithReInit
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::OtherProposalWithReInit
             ))
         );
     }
@@ -3239,8 +3319,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidProposalTypeForSender {
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidProposalTypeForSender {
                     proposal_type: ProposalType::EXTERNAL_INIT,
                     sender: Sender::Member(_),
                     by_ref: false,
@@ -3260,8 +3340,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::InvalidProposalTypeForSender {
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidProposalTypeForSender {
                     proposal_type: ProposalType::EXTERNAL_INIT,
                     sender: Sender::Member(_),
                     by_ref: false,
@@ -3316,8 +3396,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::LeafNodeValidationError(
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::LeafNodeValidationError(
                     LeafNodeValidationError::RequiredExtensionNotFound(v)
                 )
             )) if v == 33.into()
@@ -3335,8 +3415,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::LeafNodeValidationError(
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::LeafNodeValidationError(
                     LeafNodeValidationError::RequiredExtensionNotFound(v)
                 )
             )) if v == 33.into()
@@ -3542,8 +3622,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::RatchetTreeError(RatchetTreeError::TreeIndexError(
                     TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(c, _)
                 ))
             )) if c == BasicCredential::credential_type()
@@ -3563,8 +3643,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::RatchetTreeError(RatchetTreeError::TreeIndexError(
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::RatchetTreeError(RatchetTreeError::TreeIndexError(
                     TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(
                         c,
                         _
@@ -3608,8 +3688,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::UnsupportedCustomProposal(c)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::UnsupportedCustomProposal(c)
             )) if c == custom_proposal.proposal_type()
         );
     }
@@ -3653,7 +3733,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(ProposalFilterError::UnsupportedCustomProposal(c)
+            Err(ProposalCacheError::ProposalRulesError(ProposalRulesError::UnsupportedCustomProposal(c)
             )) if c == custom_proposal.proposal_type()
         );
     }
@@ -3673,8 +3753,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::UnsupportedGroupExtension(v)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::UnsupportedGroupExtension(v)
             )) if v == 42.into()
         );
     }
@@ -3690,8 +3770,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::UnsupportedGroupExtension(v)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::UnsupportedGroupExtension(v)
             )) if v == 42.into()
         );
     }
@@ -3742,8 +3822,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::PskIdValidationError(_)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::PskIdValidationError(_)
             ))
         );
     }
@@ -3760,8 +3840,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::PskIdValidationError(_)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::PskIdValidationError(_)
             ))
         );
     }
@@ -3789,8 +3869,17 @@ mod tests {
         struct RemoveGroupContextExtensions;
 
         #[async_trait]
-        impl ProposalFilter for RemoveGroupContextExtensions {
+        impl ProposalRules for RemoveGroupContextExtensions {
             type Error = Infallible;
+
+            async fn expand_custom_proposals(
+                &self,
+                _current_roster: &[Member],
+                _extension_list: &ExtensionList,
+                _proposals: &[ProposalInfo<CustomProposal>],
+            ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error> {
+                Ok(vec![])
+            }
 
             async fn validate(
                 &self,
@@ -3819,7 +3908,7 @@ mod tests {
         let (committed, _) =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .with_additional([Proposal::GroupContextExtensions(Default::default())])
-                .with_user_filter(RemoveGroupContextExtensions)
+                .with_user_rules(RemoveGroupContextExtensions)
                 .send()
                 .await
                 .unwrap();
@@ -3827,11 +3916,20 @@ mod tests {
         assert_eq!(committed, Vec::new());
     }
 
-    struct FailureProposalFilter;
+    struct FailureProposalRules;
 
     #[async_trait]
-    impl ProposalFilter for FailureProposalFilter {
+    impl ProposalRules for FailureProposalRules {
         type Error = std::io::Error;
+
+        async fn expand_custom_proposals(
+            &self,
+            _current_roster: &[Member],
+            _extension_list: &ExtensionList,
+            _proposals: &[ProposalInfo<CustomProposal>],
+        ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error> {
+            Ok(vec![])
+        }
 
         async fn validate(
             &self,
@@ -3860,14 +3958,14 @@ mod tests {
 
         let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
             .with_additional([Proposal::GroupContextExtensions(Default::default())])
-            .with_user_filter(FailureProposalFilter)
+            .with_user_rules(FailureProposalRules)
             .send()
             .await;
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::UserDefined(_)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::UserDefined(_)
             ))
         );
     }
@@ -3882,16 +3980,161 @@ mod tests {
             alice,
             test_cipher_suite_provider(TEST_CIPHER_SUITE),
         )
-        .with_user_filter(FailureProposalFilter)
+        .with_user_rules(FailureProposalRules)
         .receive([Proposal::GroupContextExtensions(Default::default())])
         .await;
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalFilterError(
-                ProposalFilterError::UserDefined(_)
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::UserDefined(_)
             ))
         );
+    }
+
+    #[derive(Debug, Clone)]
+    struct ExpandCustomRules {
+        to_expand: Vec<ProposalInfo<Proposal>>,
+    }
+
+    #[async_trait]
+    impl ProposalRules for ExpandCustomRules {
+        type Error = Infallible;
+
+        async fn expand_custom_proposals(
+            &self,
+            _current_roster: &[Member],
+            _extension_list: &ExtensionList,
+            _proposals: &[ProposalInfo<CustomProposal>],
+        ) -> Result<Vec<ProposalInfo<Proposal>>, Self::Error> {
+            Ok(self.to_expand.clone())
+        }
+
+        async fn validate(
+            &self,
+            _: Sender,
+            _: &[Member],
+            _: &ExtensionList,
+            _: &ProposalBundle,
+        ) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn filter(
+            &self,
+            _: Sender,
+            _: &[Member],
+            _: &ExtensionList,
+            bundle: ProposalBundle,
+        ) -> Result<ProposalBundle, Self::Error> {
+            Ok(bundle)
+        }
+    }
+
+    #[futures_test::test]
+    async fn user_defined_custom_proposal_rules_are_applied_on_send() {
+        let (alice, tree) = new_tree_custom_proposals("alice", vec![ProposalType::new(42)]).await;
+
+        let add_proposal = make_custom_add_proposal(Capabilities {
+            proposals: vec![ProposalType::new(42)],
+            ..get_test_capabilities()
+        })
+        .await;
+
+        let expander = ExpandCustomRules {
+            to_expand: vec![ProposalInfo {
+                proposal: Proposal::Add(add_proposal.clone()),
+                sender: Sender::Member(alice.into()),
+                source: ProposalSource::CustomRule(true),
+            }],
+        };
+
+        let custom_proposal = CustomProposal::new(ProposalType::new(42), vec![]);
+
+        let (committed, effects) =
+            CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
+                .with_user_rules(expander.clone())
+                .with_additional(vec![Proposal::Custom(custom_proposal.clone())])
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(
+            committed,
+            vec![ProposalOrRef::Proposal(Proposal::Custom(
+                custom_proposal.clone()
+            ))]
+        );
+
+        assert_eq!(effects.adds, vec![add_proposal.key_package]);
+        assert_eq!(effects.custom_proposals, vec![custom_proposal])
+    }
+
+    #[futures_test::test]
+    async fn user_defined_custom_proposal_rules_are_applied_on_receive() {
+        let (alice, tree) = new_tree_custom_proposals("alice", vec![ProposalType::new(42)]).await;
+
+        let add_proposal = make_custom_add_proposal(Capabilities {
+            proposals: vec![ProposalType::new(42)],
+            ..get_test_capabilities()
+        })
+        .await;
+
+        let expander = ExpandCustomRules {
+            to_expand: vec![ProposalInfo {
+                proposal: Proposal::Add(add_proposal.clone()),
+                sender: Sender::Member(0),
+                source: ProposalSource::CustomRule(true),
+            }],
+        };
+
+        let custom_proposal = CustomProposal::new(ProposalType::new(42), vec![]);
+
+        let effects = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .with_user_rules(expander.clone())
+        .receive(vec![Proposal::Custom(custom_proposal.clone())])
+        .await
+        .unwrap();
+
+        assert_eq!(effects.adds, vec![add_proposal.key_package]);
+        assert_eq!(effects.custom_proposals, vec![custom_proposal])
+    }
+
+    #[futures_test::test]
+    async fn user_defined_custom_proposal_rules_are_not_exempt_from_base_rules() {
+        let (alice, tree) = new_tree_custom_proposals("alice", vec![ProposalType::new(42)]).await;
+
+        let expander = ExpandCustomRules {
+            to_expand: vec![ProposalInfo {
+                proposal: Proposal::ExternalInit(ExternalInit { kem_output: vec![] }),
+                sender: Sender::Member(0),
+                source: ProposalSource::CustomRule(true),
+            }],
+        };
+
+        let custom_proposal = CustomProposal::new(ProposalType::new(42), vec![]);
+
+        let res = CommitReceiver::new(
+            &tree,
+            alice,
+            alice,
+            test_cipher_suite_provider(TEST_CIPHER_SUITE),
+        )
+        .with_user_rules(expander.clone())
+        .receive(vec![Proposal::Custom(custom_proposal.clone())])
+        .await;
+
+        assert_matches!(
+            res,
+            Err(ProposalCacheError::ProposalRulesError(
+                ProposalRulesError::InvalidProposalTypeForSender { .. }
+            ))
+        )
     }
 
     #[futures_test::test]
@@ -3962,8 +4205,8 @@ mod tests {
             if !proposer_can_propose(&proposer, proposal.proposal_type(), by_ref) {
                 assert_matches!(
                     res,
-                    Err(ProposalCacheError::ProposalFilterError(
-                        ProposalFilterError::InvalidProposalTypeForSender {
+                    Err(ProposalCacheError::ProposalRulesError(
+                        ProposalRulesError::InvalidProposalTypeForSender {
                             proposal_type: found_type,
                             sender: found_sender,
                             by_ref: found_by_ref,
@@ -3974,14 +4217,14 @@ mod tests {
                 match proposer {
                     Sender::Member(i) => assert_matches!(
                         res,
-                        Err(ProposalCacheError::ProposalFilterError(
-                            ProposalFilterError::InvalidMemberProposer(index)
+                        Err(ProposalCacheError::ProposalRulesError(
+                            ProposalRulesError::InvalidMemberProposer(index)
                         )) if i == index
                     ),
                     Sender::External(i) => assert_matches!(
                         res,
-                        Err(ProposalCacheError::ProposalFilterError(
-                            ProposalFilterError::InvalidExternalSenderIndex(index)
+                        Err(ProposalCacheError::ProposalRulesError(
+                            ProposalRulesError::InvalidExternalSenderIndex(index)
                         )) if i == index
                     ),
                     _ => unreachable!(),

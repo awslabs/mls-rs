@@ -1812,7 +1812,7 @@ impl<C> MessageProcessor for Group<C>
 where
     C: ClientConfig + Clone,
 {
-    type ProposalFilter = C::ProposalFilter;
+    type ProposalRules = C::ProposalRules;
     type IdentityProvider = C::IdentityProvider;
     type ExternalPskIdValidator = PskStoreIdValidator<C::PskStore>;
     type EventType = Event;
@@ -1994,8 +1994,8 @@ where
         Ok(())
     }
 
-    fn proposal_filter(&self) -> Self::ProposalFilter {
-        self.config.proposal_filter()
+    fn proposal_rules(&self) -> Self::ProposalRules {
+        self.config.proposal_rules()
     }
 
     fn identity_provider(&self) -> Self::IdentityProvider {
@@ -2075,7 +2075,7 @@ mod tests {
     use aws_mls_core::extension::{Extension, MlsExtension};
     use aws_mls_core::identity::{CertificateChain, Credential, CredentialType, CustomCredential};
     use futures::FutureExt;
-    use internal::proposal_filter::ProposalFilterError;
+    use internal::proposal_filter::ProposalRulesError;
     use itertools::Itertools;
     use tls_codec::Size;
 
@@ -2425,8 +2425,8 @@ mod tests {
         assert_matches!(
             commit,
             Err(MlsError::ProposalCacheError(
-                ProposalCacheError::ProposalFilterError(
-                    ProposalFilterError::LeafNodeValidationError(
+                ProposalCacheError::ProposalRulesError(
+                    ProposalRulesError::LeafNodeValidationError(
                         LeafNodeValidationError::RequiredExtensionNotFound(a)
                     )
                 )
@@ -3684,8 +3684,8 @@ mod tests {
         assert_matches!(
             res,
             Err(MlsError::ProposalCacheError(
-                ProposalCacheError::ProposalFilterError(
-                    ProposalFilterError::KeyPackageValidationError(
+                ProposalCacheError::ProposalRulesError(
+                    ProposalRulesError::KeyPackageValidationError(
                         KeyPackageValidationError::LeafNodeValidationError(
                             LeafNodeValidationError::InvalidLifetime(_, _)
                         )

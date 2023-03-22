@@ -90,7 +90,7 @@ impl CommitOutput {
 /// Proposals received during the current epoch will be added to the resulting
 /// commit by-reference automatically so long as they pass the rules defined
 /// in the current
-/// [proposal filter](crate::client_builder::ClientBuilder::proposal_filter).
+/// [proposal rules](crate::client_builder::ClientBuilder::proposal_rules).
 pub struct CommitBuilder<'a, C>
 where
     C: ClientConfig + Clone,
@@ -258,7 +258,7 @@ where
     /// This function will return an error if any of the proposals provided
     /// are not contextually valid according to the rules defined by the
     /// MLS RFC, or if they do not pass the custom rules defined by the current
-    /// [proposal filter](crate::client_builder::ClientBuilder::proposal_filter).
+    /// [proposal rules](crate::client_builder::ClientBuilder::proposal_rules).
     pub async fn build(self) -> Result<CommitOutput, MlsError> {
         self.group
             .commit_proposals(
@@ -423,7 +423,7 @@ where
                 &self.state.public_tree,
                 external_leaf,
                 PskStoreIdValidator::from(self.config.secret_store()),
-                self.config.proposal_filter(),
+                self.config.proposal_rules(),
                 &self.state.roster(),
             )
             .await?;

@@ -40,7 +40,7 @@ pub enum MlsError {
     #[error(transparent)]
     CiphertextProcessorError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
-    SignerError(Box<dyn std::error::Error>),
+    SignerError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     TranscriptHashError(#[from] TranscriptHashError),
     #[error(transparent)]

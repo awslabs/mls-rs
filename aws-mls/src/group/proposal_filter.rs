@@ -2,8 +2,8 @@ mod bundle;
 mod filter;
 mod filtering;
 
-pub use bundle::{Proposable, ProposalBundle, ProposalInfo};
-pub use filter::{PassThroughProposalFilter, ProposalFilter, ProposalFilterError};
+pub use bundle::{Proposable, ProposalBundle, ProposalInfo, ProposalSource};
+pub use filter::{PassThroughProposalRules, ProposalRules, ProposalRulesError};
 pub(crate) use filtering::{
     FailInvalidProposal, IgnoreInvalidByRefProposal, ProposalApplier, ProposalState,
 };

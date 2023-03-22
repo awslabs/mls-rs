@@ -1,7 +1,7 @@
 use crate::{
     client_builder::Preferences,
     extension::ExtensionType,
-    group::{proposal::ProposalType, proposal_filter::ProposalFilter},
+    group::{proposal::ProposalType, proposal_filter::ProposalRules},
     identity::CredentialType,
     protocol_version::ProtocolVersion,
     tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
@@ -20,7 +20,7 @@ pub trait ClientConfig: Clone + Send + Sync {
     type PskStore: PreSharedKeyStorage + Clone;
     type GroupStateStorage: GroupStateStorage + Clone;
     type IdentityProvider: IdentityProvider + Clone;
-    type ProposalFilter: ProposalFilter + Clone;
+    type ProposalRules: ProposalRules + Clone;
     type CryptoProvider: CryptoProvider + Clone;
 
     fn supported_extensions(&self) -> Vec<ExtensionType>;
@@ -30,7 +30,7 @@ pub trait ClientConfig: Clone + Send + Sync {
     fn preferences(&self) -> Preferences;
     fn key_package_repo(&self) -> Self::KeyPackageRepository;
 
-    fn proposal_filter(&self) -> Self::ProposalFilter;
+    fn proposal_rules(&self) -> Self::ProposalRules;
 
     fn keychain(&self) -> Self::Keychain;
     fn secret_store(&self) -> Self::PskStore;

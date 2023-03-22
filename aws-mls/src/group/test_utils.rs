@@ -443,7 +443,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
     type ExternalPskIdValidator =
         <Group<TestClientConfig> as MessageProcessor>::ExternalPskIdValidator;
     type IdentityProvider = <Group<TestClientConfig> as MessageProcessor>::IdentityProvider;
-    type ProposalFilter = <Group<TestClientConfig> as MessageProcessor>::ProposalFilter;
+    type ProposalRules = <Group<TestClientConfig> as MessageProcessor>::ProposalRules;
 
     fn group_state(&self) -> &GroupState {
         self.inner.group_state()
@@ -453,8 +453,8 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.group_state_mut()
     }
 
-    fn proposal_filter(&self) -> Self::ProposalFilter {
-        self.inner.proposal_filter()
+    fn proposal_rules(&self) -> Self::ProposalRules {
+        self.inner.proposal_rules()
     }
 
     fn identity_provider(&self) -> Self::IdentityProvider {

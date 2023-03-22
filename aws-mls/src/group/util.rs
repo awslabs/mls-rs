@@ -25,7 +25,7 @@ use super::{
     message_processor::ProvisionalState,
     message_signature::AuthenticatedContent,
     proposal_cache::{ProposalCache, ProposalSetEffects},
-    proposal_filter::ProposalFilter,
+    proposal_filter::ProposalRules,
     transcript_hash::InterimTranscriptHash,
     Commit, ConfirmedTranscriptHash, EncryptedGroupSecrets, GroupContext, GroupInfo,
     ProposalCacheError,
@@ -206,7 +206,7 @@ pub(crate) async fn proposal_effects<C, F, P, CSP>(
 ) -> Result<ProposalSetEffects, ProposalCacheError>
 where
     C: IdentityProvider,
-    F: ProposalFilter,
+    F: ProposalRules,
     P: ExternalPskIdValidator,
     CSP: CipherSuiteProvider,
 {

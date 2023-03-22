@@ -131,6 +131,14 @@ impl RemoveProposal {
     }
 }
 
+impl From<u32> for RemoveProposal {
+    fn from(value: u32) -> Self {
+        RemoveProposal {
+            to_remove: LeafIndex(value),
+        }
+    }
+}
+
 #[derive(
     Clone,
     Debug,
@@ -264,6 +272,31 @@ impl CustomProposal {
     }
 }
 
+/// Trait to simplify creating custom proposals that are serialized with TLS
+/// encoding.
+pub trait TlsCustomProposal:
+    tls_codec::Serialize + tls_codec::Deserialize + tls_codec::Size + Sized
+{
+    fn proposal_type() -> ProposalType;
+
+    fn to_custom_proposal(&self) -> Result<CustomProposal, tls_codec::Error> {
+        Ok(CustomProposal::new(
+            Self::proposal_type(),
+            self.tls_serialize_detached()?,
+        ))
+    }
+
+    fn from_custom_proposal(proposal: &CustomProposal) -> Result<Self, tls_codec::Error> {
+        if proposal.proposal_type() != Self::proposal_type() {
+            return Err(tls_codec::Error::DecodingError(
+                "invalid proposal type".to_string(),
+            ));
+        }
+
+        Self::tls_deserialize(&mut proposal.data())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u16)]
@@ -375,7 +408,39 @@ pub enum BorrowedProposal<'a> {
     ReInit(&'a ReInitProposal),
     ExternalInit(&'a ExternalInit),
     GroupContextExtensions(&'a ExtensionList),
-    CustomProposal(&'a CustomProposal),
+    Custom(&'a CustomProposal),
+}
+
+impl<'a> From<BorrowedProposal<'a>> for Proposal {
+    fn from(value: BorrowedProposal<'a>) -> Self {
+        match value {
+            BorrowedProposal::Add(add) => Proposal::Add(add.clone()),
+            BorrowedProposal::Update(update) => Proposal::Update(update.clone()),
+            BorrowedProposal::Remove(remove) => Proposal::Remove(remove.clone()),
+            BorrowedProposal::Psk(psk) => Proposal::Psk(psk.clone()),
+            BorrowedProposal::ReInit(reinit) => Proposal::ReInit(reinit.clone()),
+            BorrowedProposal::ExternalInit(external) => Proposal::ExternalInit(external.clone()),
+            BorrowedProposal::GroupContextExtensions(ext) => {
+                Proposal::GroupContextExtensions(ext.clone())
+            }
+            BorrowedProposal::Custom(custom) => Proposal::Custom(custom.clone()),
+        }
+    }
+}
+
+impl BorrowedProposal<'_> {
+    pub fn proposal_type(&self) -> ProposalType {
+        match self {
+            BorrowedProposal::Add(_) => ProposalType::ADD,
+            BorrowedProposal::Update(_) => ProposalType::UPDATE,
+            BorrowedProposal::Remove(_) => ProposalType::REMOVE,
+            BorrowedProposal::Psk(_) => ProposalType::PSK,
+            BorrowedProposal::ReInit(_) => ProposalType::RE_INIT,
+            BorrowedProposal::ExternalInit(_) => ProposalType::EXTERNAL_INIT,
+            BorrowedProposal::GroupContextExtensions(_) => ProposalType::GROUP_CONTEXT_EXTENSIONS,
+            BorrowedProposal::Custom(c) => c.proposal_type,
+        }
+    }
 }
 
 impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
@@ -388,7 +453,7 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
             Proposal::ReInit(p) => BorrowedProposal::ReInit(p),
             Proposal::ExternalInit(p) => BorrowedProposal::ExternalInit(p),
             Proposal::GroupContextExtensions(p) => BorrowedProposal::GroupContextExtensions(p),
-            Proposal::Custom(p) => BorrowedProposal::CustomProposal(p),
+            Proposal::Custom(p) => BorrowedProposal::Custom(p),
         }
     }
 }
@@ -437,7 +502,7 @@ impl<'a> From<&'a ExtensionList> for BorrowedProposal<'a> {
 
 impl<'a> From<&'a CustomProposal> for BorrowedProposal<'a> {
     fn from(p: &'a CustomProposal) -> Self {
-        Self::CustomProposal(p)
+        Self::Custom(p)
     }
 }
 

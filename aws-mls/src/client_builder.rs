@@ -9,7 +9,7 @@ use crate::{
     extension::{ExtensionType, MlsExtension},
     group::{
         proposal::ProposalType,
-        proposal_filter::{PassThroughProposalFilter, ProposalFilter},
+        proposal_filter::{PassThroughProposalRules, ProposalRules},
         state_repo::DEFAULT_EPOCH_RETENTION_LIMIT,
         ControlEncryptionMode,
     },
@@ -48,7 +48,7 @@ pub type BaseConfig = Config<
     InMemoryPreSharedKeyStorage,
     InMemoryGroupStateStorage,
     Missing,
-    PassThroughProposalFilter,
+    PassThroughProposalRules,
     Missing,
 >;
 
@@ -60,7 +60,7 @@ pub type BaseSqlConfig = Config<
     SqLitePreSharedKeyStorage,
     SqLiteGroupStateStorage,
     Missing,
-    PassThroughProposalFilter,
+    PassThroughProposalRules,
     Missing,
 >;
 
@@ -167,7 +167,7 @@ impl ClientBuilder<BaseConfig> {
             psk_store: Default::default(),
             group_state_storage: Default::default(),
             identity_provider: Missing,
-            proposal_filter: PassThroughProposalFilter,
+            proposal_rules: PassThroughProposalRules,
             crypto_provider: Missing,
         }))
     }
@@ -186,7 +186,7 @@ impl ClientBuilder<BaseSqlConfig> {
             psk_store: storage.pre_shared_key_storage()?,
             group_state_storage: storage.group_state_storage()?,
             identity_provider: Missing,
-            proposal_filter: PassThroughProposalFilter,
+            proposal_rules: PassThroughProposalRules,
             crypto_provider: Missing,
         })))
     }
@@ -321,7 +321,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            proposal_filter: c.proposal_filter,
+            proposal_rules: c.proposal_rules,
             crypto_provider: c.crypto_provider,
         }))
     }
@@ -374,7 +374,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            proposal_filter: c.proposal_filter,
+            proposal_rules: c.proposal_rules,
             crypto_provider: c.crypto_provider,
         }))
     }
@@ -394,7 +394,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            proposal_filter: c.proposal_filter,
+            proposal_rules: c.proposal_rules,
             crypto_provider: c.crypto_provider,
         }))
     }
@@ -418,7 +418,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             group_state_storage,
             identity_provider: c.identity_provider,
             crypto_provider: c.crypto_provider,
-            proposal_filter: c.proposal_filter,
+            proposal_rules: c.proposal_rules,
         }))
     }
 
@@ -438,7 +438,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider,
-            proposal_filter: c.proposal_filter,
+            proposal_rules: c.proposal_rules,
             crypto_provider: c.crypto_provider,
         }))
     }
@@ -459,24 +459,21 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            proposal_filter: c.proposal_filter,
+            proposal_rules: c.proposal_rules,
             crypto_provider,
         }))
     }
 
-    /// Set the user-defined proposal filter to be used by the client.
+    /// Set the user-defined proposal rules to be used by the client.
     ///
-    /// This user-defined filter is called when sending and receiving commits, before internal
-    /// filters enforcing the MLS protocol rules are applied. If the filter returns an error when
-    /// receiving a commit, the entire commit is considered invalid. If the filter returns an error
-    /// when sending a commit, the proposal the filter was called with is not included in the
-    /// commit.
-    pub fn proposal_filter<Pf>(
-        self,
-        proposal_filter: Pf,
-    ) -> ClientBuilder<WithProposalFilter<Pf, C>>
+    /// User-defined rules are used when sending and receiving commits before
+    /// enforcing general MLS protocol rules. If the rule set returns an error when
+    /// receiving a commit, the entire commit is considered invalid. If the
+    /// rule set would return an error when sending a commit, individual proposals
+    /// may be filtered out to compensate.
+    pub fn proposal_rules<Pr>(self, proposal_rules: Pr) -> ClientBuilder<WithProposalRules<Pr, C>>
     where
-        Pf: ProposalFilter,
+        Pr: ProposalRules,
     {
         let Config(c) = self.0.into_config();
         ClientBuilder(Config(ConfigInner {
@@ -486,7 +483,7 @@ impl<C: IntoConfig> ClientBuilder<C> {
             psk_store: c.psk_store,
             group_state_storage: c.group_state_storage,
             identity_provider: c.identity_provider,
-            proposal_filter,
+            proposal_rules,
             crypto_provider: c.crypto_provider,
         }))
     }
@@ -499,7 +496,7 @@ where
     C::PskStore: PreSharedKeyStorage + Clone,
     C::GroupStateStorage: GroupStateStorage + Clone,
     C::IdentityProvider: IdentityProvider + Clone,
-    C::ProposalFilter: ProposalFilter + Clone,
+    C::ProposalRules: ProposalRules + Clone,
     C::CryptoProvider: CryptoProvider + Clone,
 {
     pub(crate) fn build_config(self) -> IntoConfigOutput<C> {
@@ -564,7 +561,7 @@ pub type WithKeyPackageRepo<K, C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalFilter,
+    <C as IntoConfig>::ProposalRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -577,7 +574,7 @@ pub type WithKeychain<K, C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalFilter,
+    <C as IntoConfig>::ProposalRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -590,7 +587,7 @@ pub type WithPskStore<P, C> = Config<
     P,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalFilter,
+    <C as IntoConfig>::ProposalRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -603,7 +600,7 @@ pub type WithGroupStateStorage<G, C> = Config<
     <C as IntoConfig>::PskStore,
     G,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalFilter,
+    <C as IntoConfig>::ProposalRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -616,20 +613,20 @@ pub type WithIdentityProvider<I, C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     I,
-    <C as IntoConfig>::ProposalFilter,
+    <C as IntoConfig>::ProposalRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
-/// Change the proposal filter used by a client configuration.
+/// Change the proposal rules used by a client configuration.
 ///
-/// See [`ClientBuilder::proposal_filter`].
-pub type WithProposalFilter<Pf, C> = Config<
+/// See [`ClientBuilder::proposal_rules`].
+pub type WithProposalRules<Pr, C> = Config<
     <C as IntoConfig>::KeyPackageRepository,
     <C as IntoConfig>::Keychain,
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    Pf,
+    Pr,
     <C as IntoConfig>::CryptoProvider,
 >;
 
@@ -642,7 +639,7 @@ pub type WithCryptoProvider<Cp, C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalFilter,
+    <C as IntoConfig>::ProposalRules,
     Cp,
 >;
 
@@ -653,18 +650,18 @@ pub type IntoConfigOutput<C> = Config<
     <C as IntoConfig>::PskStore,
     <C as IntoConfig>::GroupStateStorage,
     <C as IntoConfig>::IdentityProvider,
-    <C as IntoConfig>::ProposalFilter,
+    <C as IntoConfig>::ProposalRules,
     <C as IntoConfig>::CryptoProvider,
 >;
 
-impl<Kpr, K, Ps, Gss, Ip, Pf, Cp> ClientConfig for ConfigInner<Kpr, K, Ps, Gss, Ip, Pf, Cp>
+impl<Kpr, K, Ps, Gss, Ip, Pr, Cp> ClientConfig for ConfigInner<Kpr, K, Ps, Gss, Ip, Pr, Cp>
 where
     Kpr: KeyPackageStorage + Clone,
     K: KeychainStorage + Clone,
     Ps: PreSharedKeyStorage + Clone,
     Gss: GroupStateStorage + Clone,
     Ip: IdentityProvider + Clone,
-    Pf: ProposalFilter + Clone,
+    Pr: ProposalRules + Clone,
     Cp: CryptoProvider + Clone,
 {
     type KeyPackageRepository = Kpr;
@@ -672,7 +669,7 @@ where
     type PskStore = Ps;
     type GroupStateStorage = Gss;
     type IdentityProvider = Ip;
-    type ProposalFilter = Pf;
+    type ProposalRules = Pr;
     type CryptoProvider = Cp;
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
@@ -691,8 +688,8 @@ where
         self.key_package_repo.clone()
     }
 
-    fn proposal_filter(&self) -> Self::ProposalFilter {
-        self.proposal_filter.clone()
+    fn proposal_rules(&self) -> Self::ProposalRules {
+        self.proposal_rules.clone()
     }
 
     fn keychain(&self) -> Self::Keychain {
@@ -736,19 +733,19 @@ where
     }
 }
 
-impl<Kpr, K, Ps, Gss, Ip, Pf, Cp> Sealed for Config<Kpr, K, Ps, Gss, Ip, Pf, Cp> {}
+impl<Kpr, K, Ps, Gss, Ip, Pr, Cp> Sealed for Config<Kpr, K, Ps, Gss, Ip, Pr, Cp> {}
 
-impl<Kpr, K, Ps, Gss, Ip, Pf, Cp> MlsConfig for Config<Kpr, K, Ps, Gss, Ip, Pf, Cp>
+impl<Kpr, K, Ps, Gss, Ip, Pr, Cp> MlsConfig for Config<Kpr, K, Ps, Gss, Ip, Pr, Cp>
 where
     Kpr: KeyPackageStorage + Clone,
     K: KeychainStorage + Clone,
     Ps: PreSharedKeyStorage + Clone,
     Gss: GroupStateStorage + Clone,
     Ip: IdentityProvider + Clone,
-    Pf: ProposalFilter + Clone,
+    Pr: ProposalRules + Clone,
     Cp: CryptoProvider + Clone,
 {
-    type Output = ConfigInner<Kpr, K, Ps, Gss, Ip, Pf, Cp>;
+    type Output = ConfigInner<Kpr, K, Ps, Gss, Ip, Pr, Cp>;
 
     fn get(&self) -> &Self::Output {
         &self.0
@@ -774,7 +771,7 @@ impl<T: MlsConfig> ClientConfig for T {
     type PskStore = <T::Output as ClientConfig>::PskStore;
     type GroupStateStorage = <T::Output as ClientConfig>::GroupStateStorage;
     type IdentityProvider = <T::Output as ClientConfig>::IdentityProvider;
-    type ProposalFilter = <T::Output as ClientConfig>::ProposalFilter;
+    type ProposalRules = <T::Output as ClientConfig>::ProposalRules;
     type CryptoProvider = <T::Output as ClientConfig>::CryptoProvider;
 
     fn supported_extensions(&self) -> Vec<ExtensionType> {
@@ -797,8 +794,8 @@ impl<T: MlsConfig> ClientConfig for T {
         self.get().key_package_repo()
     }
 
-    fn proposal_filter(&self) -> Self::ProposalFilter {
-        self.get().proposal_filter()
+    fn proposal_rules(&self) -> Self::ProposalRules {
+        self.get().proposal_rules()
     }
 
     fn keychain(&self) -> Self::Keychain {
@@ -940,19 +937,19 @@ mod private {
     use crate::client_builder::{IntoConfigOutput, Settings};
 
     #[derive(Clone, Debug)]
-    pub struct Config<Kpr, K, Ps, Gss, Ip, Pf, Cp>(
-        pub(crate) ConfigInner<Kpr, K, Ps, Gss, Ip, Pf, Cp>,
+    pub struct Config<Kpr, K, Ps, Gss, Ip, Pr, Cp>(
+        pub(crate) ConfigInner<Kpr, K, Ps, Gss, Ip, Pr, Cp>,
     );
 
     #[derive(Clone, Debug)]
-    pub struct ConfigInner<Kpr, K, Ps, Gss, Ip, Pf, Cp> {
+    pub struct ConfigInner<Kpr, K, Ps, Gss, Ip, Pr, Cp> {
         pub(crate) settings: Settings,
         pub(crate) key_package_repo: Kpr,
         pub(crate) keychain: K,
         pub(crate) psk_store: Ps,
         pub(crate) group_state_storage: Gss,
         pub(crate) identity_provider: Ip,
-        pub(crate) proposal_filter: Pf,
+        pub(crate) proposal_rules: Pr,
         pub(crate) crypto_provider: Cp,
     }
 
@@ -962,19 +959,19 @@ mod private {
         type PskStore;
         type GroupStateStorage;
         type IdentityProvider;
-        type ProposalFilter;
+        type ProposalRules;
         type CryptoProvider;
 
         fn into_config(self) -> IntoConfigOutput<Self>;
     }
 
-    impl<Kpr, K, Ps, Gss, Ip, Pf, Cp> IntoConfig for Config<Kpr, K, Ps, Gss, Ip, Pf, Cp> {
+    impl<Kpr, K, Ps, Gss, Ip, Pr, Cp> IntoConfig for Config<Kpr, K, Ps, Gss, Ip, Pr, Cp> {
         type KeyPackageRepository = Kpr;
         type Keychain = K;
         type PskStore = Ps;
         type GroupStateStorage = Gss;
         type IdentityProvider = Ip;
-        type ProposalFilter = Pf;
+        type ProposalRules = Pr;
         type CryptoProvider = Cp;
 
         fn into_config(self) -> Self {
