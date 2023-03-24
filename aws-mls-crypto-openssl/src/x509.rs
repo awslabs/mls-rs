@@ -339,8 +339,6 @@ fn build_subject_alt_name(
         SubjectAltName::Dns(d) => name.dns(d),
         SubjectAltName::Rid(r) => name.rid(r),
         SubjectAltName::Ip(i) => name.ip(i),
-        SubjectAltName::DirName(dn) => name.dir_name(dn),
-        SubjectAltName::OtherName(o) => name.other_name(o),
     }
     .build(context)
 }

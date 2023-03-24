@@ -13,8 +13,6 @@ pub enum SubjectAltName {
     Dns(String),
     Rid(String),
     Ip(String),
-    DirName(String),
-    OtherName(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -117,7 +117,6 @@ impl OwnedExtension {
                     vec![GeneralName::IpAddress(OctetStringRef::new(&ip.octets())?)].to_vec()?
                 }
             },
-            _ => return Err(X509Error::UnsupportedSubjectAltName(name.clone())),
         };
 
         Ok(OwnedExtension {
