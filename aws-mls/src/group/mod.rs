@@ -681,6 +681,16 @@ where
         self.current_user_leaf_node().map(|ln| &ln.signing_identity)
     }
 
+    /// Member at a specific index in the roster.
+    pub fn member_at_index(&self, index: u32) -> Option<Member> {
+        let leaf_index = LeafIndex(index);
+
+        self.current_epoch_tree()
+            .get_leaf_node(leaf_index)
+            .ok()
+            .map(|ln| member_from_leaf_node(ln, leaf_index))
+    }
+
     async fn proposal_message(
         &mut self,
         proposal: Proposal,
@@ -1768,9 +1778,21 @@ where
         self.context().cipher_suite
     }
 
-    /// The current set of group members.
+    /// The current set of group members. This function makes a clone of
+    /// member information from the internal group state.
     pub fn roster(&self) -> Vec<Member> {
         self.group_state().roster()
+    }
+
+    /// Iterator over the current roster that lazily copies data out of the
+    /// internal group state.
+    pub fn roster_iter(&self) -> impl Iterator<Item = Member> + '_ {
+        self.group_state().roster_iter()
+    }
+
+    /// Iterator over member's signing identities.
+    pub fn member_identities(&self) -> impl Iterator<Item = &SigningIdentity> + '_ {
+        self.state.signing_identity_iter()
     }
 
     /// Determines equality of two different groups internal states.

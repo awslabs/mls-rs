@@ -30,9 +30,18 @@ pub(crate) fn member_from_leaf_node(leaf_node: &LeafNode, leaf_index: LeafIndex)
 
 impl GroupState {
     pub(crate) fn roster(&self) -> Vec<Member> {
+        self.roster_iter().collect()
+    }
+
+    pub(crate) fn roster_iter(&self) -> impl Iterator<Item = Member> + '_ {
         self.public_tree
             .non_empty_leaves()
             .map(|(index, node)| member_from_leaf_node(node, index))
-            .collect()
+    }
+
+    pub(crate) fn signing_identity_iter(&self) -> impl Iterator<Item = &SigningIdentity> + '_ {
+        self.public_tree
+            .non_empty_leaves()
+            .map(|(_, node)| &node.signing_identity)
     }
 }
