@@ -63,16 +63,16 @@ impl TestGroup {
     {
         let (mut new_client, new_key_package) = if custom_kp {
             test_client_with_key_pkg_custom(
-                self.group.state.protocol_version(),
-                self.group.state.cipher_suite(),
+                self.group.protocol_version(),
+                self.group.cipher_suite(),
                 name,
                 &mut config,
             )
             .await
         } else {
             test_client_with_key_pkg(
-                self.group.state.protocol_version(),
-                self.group.state.cipher_suite(),
+                self.group.protocol_version(),
+                self.group.cipher_suite(),
                 name,
             )
             .await

@@ -716,7 +716,7 @@ async fn reinit_works() {
         .unwrap();
 
     let (mut alice_group, welcome) = alice_group
-        .finish_reinit_commit(vec![kp], Some(alice.id2))
+        .finish_reinit_commit(vec![kp], Some(alice.id2), None)
         .await
         .unwrap();
 

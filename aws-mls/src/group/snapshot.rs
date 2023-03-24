@@ -156,6 +156,7 @@ where
             epoch_secrets: snapshot.epoch_secrets,
             state_repo,
             cipher_suite_provider,
+            previous_psk: None,
         })
     }
 }

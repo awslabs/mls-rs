@@ -294,14 +294,6 @@ const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 pub struct InitSecret(#[serde_as(as = "VecAsBase64")] Zeroizing<Vec<u8>>);
 
 impl InitSecret {
-    pub fn random<P: CipherSuiteProvider>(cipher_suite: &P) -> Result<Self, KeyScheduleError> {
-        cipher_suite
-            .random_bytes_vec(cipher_suite.kdf_extract_size())
-            .map(Zeroizing::new)
-            .map(InitSecret)
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
-    }
-
     /// Returns init secret and KEM output to be used when creating an external commit.
     pub fn encode_for_external<P: CipherSuiteProvider>(
         cipher_suite: &P,
@@ -421,7 +413,7 @@ pub(crate) mod test_utils {
 
     use crate::{cipher_suite::CipherSuite, crypto::test_utils::test_cipher_suite_provider};
 
-    use super::{CommitSecret, InitSecret, JoinerSecret, KeySchedule};
+    use super::{CommitSecret, InitSecret, JoinerSecret, KeySchedule, KeyScheduleError};
 
     impl From<JoinerSecret> for Vec<u8> {
         fn from(mut value: JoinerSecret) -> Self {
@@ -445,6 +437,14 @@ pub(crate) mod test_utils {
     impl InitSecret {
         pub fn new(init_secret: Vec<u8>) -> Self {
             InitSecret(Zeroizing::new(init_secret))
+        }
+
+        pub fn random<P: CipherSuiteProvider>(cipher_suite: &P) -> Result<Self, KeyScheduleError> {
+            cipher_suite
+                .random_bytes_vec(cipher_suite.kdf_extract_size())
+                .map(Zeroizing::new)
+                .map(InitSecret)
+                .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
         }
     }
 

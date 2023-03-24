@@ -3,10 +3,8 @@ use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
 use aws_mls_core::keychain::KeychainStorage;
 use aws_mls_core::time::MlsTime;
-use futures::{StreamExt, TryStreamExt};
 use serde_with::serde_as;
 use std::collections::HashMap;
-use std::future::ready;
 use std::ops::Deref;
 use std::option::Option::Some;
 use thiserror::Error;
@@ -16,11 +14,12 @@ use zeroize::Zeroizing;
 
 use crate::cipher_suite::CipherSuite;
 use crate::client::MlsError;
+use crate::client_builder::Preferences;
 use crate::client_config::ClientConfig;
 use crate::crypto::{HpkeCiphertext, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
 use crate::extension::{ExternalPubExt, RatchetTreeExt};
 use crate::identity::SigningIdentity;
-use crate::key_package::{KeyPackage, KeyPackageRef, KeyPackageValidator};
+use crate::key_package::{KeyPackage, KeyPackageRef};
 use crate::protocol_version::ProtocolVersion;
 use crate::psk::resolver::PskResolver;
 use crate::psk::secret::{PskSecret, PskSecretInput};
@@ -33,16 +32,13 @@ use crate::signer::Signable;
 use crate::storage_provider::psk::PskStoreIdValidator;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
-use crate::tree_kem::leaf_node::{ConfigProperties, LeafNode};
+use crate::tree_kem::leaf_node::LeafNode;
 use crate::tree_kem::node::LeafIndex;
 use crate::tree_kem::path_secret::PathSecret;
 pub use crate::tree_kem::Capabilities;
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::{CipherSuiteProvider, CryptoProvider};
-
-#[cfg(feature = "benchmark")]
-use crate::client_builder::Preferences;
 
 use ciphertext_processor::*;
 use confirmation_tag::*;
@@ -221,6 +217,7 @@ pub(crate) mod internal {
         pub(super) key_schedule: KeySchedule,
         pub(super) pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
         pub(super) pending_commit: Option<CommitGeneration>,
+        pub(super) previous_psk: Option<PskSecretInput>,
         #[cfg(test)]
         pub(crate) commit_modifiers:
             CommitModifiers<<C::CryptoProvider as CryptoProvider>::CipherSuiteProvider>,
@@ -322,6 +319,7 @@ where
             epoch_secrets: key_schedule_result.epoch_secrets,
             state_repo,
             cipher_suite_provider,
+            previous_psk: None,
         })
     }
 
@@ -335,14 +333,14 @@ where
         tree_data: Option<&[u8]>,
         config: C,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
-        Self::from_welcome_message(None, welcome, tree_data, config).await
+        Self::from_welcome_message(welcome, tree_data, config, None).await
     }
 
     async fn from_welcome_message(
-        parent_group: Option<&Group<C>>,
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
         config: C,
+        additional_psk: Option<PskSecretInput>,
     ) -> Result<(Self, NewMemberInfo), MlsError> {
         let protocol_version = welcome.version;
 
@@ -385,25 +383,36 @@ where
 
         let psk_store = config.secret_store();
 
-        let psk_resolver = if let Some(parent_group) = parent_group {
-            PskResolver {
-                group_context: Some(parent_group.context()),
-                current_epoch: Some(&parent_group.epoch_secrets),
-                prior_epochs: Some(&parent_group.state_repo),
-                psk_store: &psk_store,
-            }
+        let psk_secret = if let Some(psk) = additional_psk {
+            let psk_id = group_secrets
+                .psks
+                .first()
+                .ok_or_else(|| MlsError::UnexpectedPskId)?;
+
+            match &psk_id.key_id {
+                JustPreSharedKeyID::Resumption(r) if r.usage != ResumptionPSKUsage::Application => {
+                    Ok(())
+                }
+                _ => Err(MlsError::UnexpectedPskId),
+            }?;
+
+            let mut psk = psk;
+            psk.id.psk_nonce = psk_id.psk_nonce.clone();
+            PskSecret::calculate(&[psk], &cipher_suite_provider)?
         } else {
-            PskResolver {
+            PskResolver::<
+                <C as ClientConfig>::GroupStateStorage,
+                <C as ClientConfig>::KeyPackageRepository,
+                <C as ClientConfig>::PskStore,
+            > {
                 group_context: None,
                 current_epoch: None,
                 prior_epochs: None,
                 psk_store: &psk_store,
             }
-        };
-
-        let psk_secret = psk_resolver
             .resolve_to_secret(&group_secrets.psks, &cipher_suite_provider)
-            .await?;
+            .await?
+        };
 
         // From the joiner_secret in the decrypted GroupSecrets object and the PSKs specified in
         // the GroupSecrets, derive the welcome_secret and using that the welcome_key and
@@ -528,6 +537,7 @@ where
             epoch_secrets,
             state_repo,
             cipher_suite_provider,
+            previous_psk: None,
         };
 
         Ok((group, NewMemberInfo::new(group_info_extensions)))
@@ -813,178 +823,6 @@ where
         )))
     }
 
-    async fn new_for_resumption(
-        &self,
-        new_context: &mut GroupContext,
-        new_validated_leaf: LeafNode,
-        new_leaf_secret: HpkeSecretKey,
-        new_signer: &SignatureSecretKey,
-        new_key_packages: Vec<MLSMessage>,
-        resumption_psk_id: JustPreSharedKeyID,
-    ) -> Result<(Self, Option<MLSMessage>), MlsError> {
-        let required_capabilities = new_context.extensions.get_as()?;
-
-        let cipher_suite_provider =
-            cipher_suite_provider(self.config.crypto_provider(), new_context.cipher_suite)?;
-
-        let key_package_validator = KeyPackageValidator::new(
-            new_context.protocol_version,
-            &cipher_suite_provider,
-            required_capabilities.as_ref(),
-            self.config.identity_provider(),
-        );
-
-        let id_provider = self.config.identity_provider();
-
-        let mut new_key_packages = futures::stream::iter(new_key_packages)
-            .then(|kp| async {
-                let kp = kp.into_key_package().ok_or(MlsError::NotKeyPackage)?;
-
-                id_provider
-                    .identity(kp.signing_identity())
-                    .await
-                    .map_err(|e| MlsError::IdentityProviderError(e.into()))
-                    .map(|id| (id, kp))
-            })
-            .try_collect::<HashMap<_, _>>()
-            .await?;
-
-        // Generate new leaves for all existing members
-        let (new_members, new_key_pkgs) = {
-            let current_tree = self.current_epoch_tree();
-            let self_index = self.private_tree.self_index;
-
-            futures::stream::iter(
-                current_tree
-                    .non_empty_leaves()
-                    .filter(|&(index, _)| index != self_index),
-            )
-            .then(|(_, leaf_node)| async {
-                id_provider
-                    .identity(&leaf_node.signing_identity)
-                    .await
-                    .map_err(|e| MlsError::IdentityProviderError(e.into()))
-            })
-            .try_filter_map(|id| ready(Ok(new_key_packages.remove(&id))))
-            .try_fold(
-                (Vec::new(), Vec::new()),
-                |(mut leaves, mut new_key_pkgs), new_key_pkg| async {
-                    key_package_validator
-                        .check_if_valid(&new_key_pkg, Default::default())
-                        .await?;
-                    let new_leaf = new_key_pkg.leaf_node.clone();
-                    leaves.push(new_leaf);
-                    new_key_pkgs.push(new_key_pkg);
-                    Ok::<_, MlsError>((leaves, new_key_pkgs))
-                },
-            )
-            .await?
-        };
-
-        let (mut new_pub_tree, new_priv_tree) = TreeKemPublic::derive(
-            new_validated_leaf,
-            new_leaf_secret,
-            self.config.identity_provider(),
-            &cipher_suite_provider,
-        )
-        .await?;
-
-        // Add the generated leaves to new tree
-        let added_member_indexes = new_pub_tree
-            .add_leaves(
-                new_members,
-                self.config.identity_provider(),
-                &cipher_suite_provider,
-            )
-            .await?;
-
-        new_context.tree_hash = new_pub_tree.tree_hash(&cipher_suite_provider)?;
-
-        let psks = vec![PreSharedKeyID {
-            key_id: resumption_psk_id,
-            psk_nonce: PskNonce::random(&cipher_suite_provider)
-                .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
-        }];
-
-        let psk_input = psks
-            .iter()
-            .map(|id| PskSecretInput {
-                id: id.clone(),
-                psk: self.epoch_secrets.resumption_secret.clone(),
-            })
-            .collect::<Vec<_>>();
-
-        let psk_secret = PskSecret::calculate(&psk_input, &cipher_suite_provider)?;
-
-        let key_schedule_result = KeySchedule::from_key_schedule(
-            &KeySchedule::new(InitSecret::random(&cipher_suite_provider)?),
-            &CommitSecret::empty(&cipher_suite_provider),
-            new_context,
-            new_pub_tree.total_leaf_count(),
-            &psk_secret,
-            &cipher_suite_provider,
-        )?;
-
-        let mut group_info = GroupInfo {
-            group_context: new_context.clone(),
-            extensions: ExtensionList::new(),
-            confirmation_tag: ConfirmationTag::create(
-                &key_schedule_result.confirmation_key,
-                &new_context.confirmed_transcript_hash,
-                &cipher_suite_provider,
-            )?,
-            signer: new_priv_tree.self_index,
-            signature: Vec::new(),
-        };
-
-        group_info.sign(&cipher_suite_provider, new_signer, &())?;
-
-        let interim_transcript_hash = InterimTranscriptHash::create(
-            &cipher_suite_provider,
-            &new_context.confirmed_transcript_hash,
-            &group_info.confirmation_tag,
-        )?;
-
-        let state_repo = GroupStateRepository::new(
-            new_context.group_id.clone(),
-            self.config.preferences().max_epoch_retention,
-            self.config.group_state_storage(),
-            self.config.key_package_repo(),
-            None,
-        )
-        .await?;
-
-        let new_group = Group {
-            config: self.config.clone(),
-            state: GroupState::new(
-                new_context.clone(),
-                new_pub_tree,
-                interim_transcript_hash,
-                group_info.confirmation_tag.clone(),
-            ),
-            private_tree: new_priv_tree,
-            key_schedule: key_schedule_result.key_schedule,
-            pending_updates: Default::default(),
-            pending_commit: None,
-            #[cfg(test)]
-            commit_modifiers: Default::default(),
-            epoch_secrets: key_schedule_result.epoch_secrets,
-            state_repo,
-            cipher_suite_provider,
-        };
-
-        let welcome = new_group.make_welcome_message(
-            new_key_pkgs.into_iter().zip(added_member_indexes).collect(),
-            &key_schedule_result.joiner_secret,
-            &psk_secret,
-            None,
-            psks,
-            &group_info,
-        )?;
-
-        Ok((new_group, welcome))
-    }
-
     /// Create a sub-group from a subset of the current group members.
     ///
     /// Membership within the resulting sub-group is indicated by providing a
@@ -994,55 +832,26 @@ where
     /// is determined using the
     /// [`IdentityProvider`](crate::IdentityProvider)
     /// that is currently in use by this group instance.
-    // TODO investigate if it's worth updating your own signing identity here
     pub async fn branch(
         &self,
         sub_group_id: Vec<u8>,
         new_key_packages: Vec<MLSMessage>,
+        preferences: Option<Preferences>,
     ) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
-        let signer = self.signer().await?;
-
-        let current_leaf_node = self.current_user_leaf_node()?;
-
-        let leaf_properties = ConfigProperties {
-            capabilities: current_leaf_node.capabilities.clone(),
-            extensions: current_leaf_node.extensions.clone(),
+        let new_group_params = ResumptionGroupParameters {
+            group_id: &sub_group_id,
+            cipher_suite: self.cipher_suite(),
+            version: self.protocol_version(),
+            extensions: self.context_extensions(),
         };
 
-        let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
-            &self.cipher_suite_provider,
-            leaf_properties,
-            current_leaf_node.signing_identity.clone(),
-            &signer,
-            self.config.lifetime(),
-            &self.config.identity_provider(),
-        )
-        .await?;
-
-        let mut new_context = GroupContext {
-            epoch: 1,
-            ..GroupContext::new_group(
-                self.state.protocol_version(),
-                self.state.cipher_suite(),
-                sub_group_id.clone(),
-                vec![],
-                self.context().extensions.clone(),
-            )
-        };
-
-        let resumption_psk_id = JustPreSharedKeyID::Resumption(ResumptionPsk {
-            usage: ResumptionPSKUsage::Branch,
-            psk_group_id: PskGroupId(sub_group_id),
-            psk_epoch: self.current_epoch(),
-        });
-
-        self.new_for_resumption(
-            &mut new_context,
-            new_leaf_node,
-            new_leaf_secret,
-            &signer,
+        self.resumption_create_group(
             new_key_packages,
-            resumption_psk_id,
+            &new_group_params,
+            // TODO investigate if it's worth updating your own signing identity here
+            None,
+            preferences,
+            ResumptionPSKUsage::Branch,
         )
         .await
     }
@@ -1053,20 +862,21 @@ where
         welcome: MLSMessage,
         tree_data: Option<&[u8]>,
     ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
-        let (subgroup, new_member_info) =
-            Self::from_welcome_message(Some(self), welcome, tree_data, self.config.clone()).await?;
+        let expected_new_group_prams = ResumptionGroupParameters {
+            group_id: &[],
+            cipher_suite: self.cipher_suite(),
+            version: self.protocol_version(),
+            extensions: self.context_extensions(),
+        };
 
-        if subgroup.state.protocol_version() != self.state.protocol_version() {
-            Err(MlsError::SubgroupWithDifferentProtocolVersion(
-                subgroup.state.protocol_version(),
-            ))
-        } else if subgroup.state.cipher_suite() != self.state.cipher_suite() {
-            Err(MlsError::SubgroupWithDifferentCipherSuite(
-                subgroup.state.cipher_suite(),
-            ))
-        } else {
-            Ok((subgroup, new_member_info))
-        }
+        self.resumption_join_group(
+            welcome,
+            tree_data,
+            expected_new_group_prams,
+            false,
+            ResumptionPSKUsage::Branch,
+        )
+        .await
     }
 
     /// Create a new group that is based on properties defined by a previously
@@ -1090,71 +900,29 @@ where
         &self,
         new_key_packages: Vec<MLSMessage>,
         signing_identity: Option<SigningIdentity>,
+        preferences: Option<Preferences>,
     ) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
-        let config = self.config.clone();
-
         let reinit = self
             .state
             .pending_reinit
             .as_ref()
             .ok_or(MlsError::PendingReInitNotFound)?;
 
-        let signing_identity =
-            signing_identity.unwrap_or(self.current_member_signing_identity()?.clone());
-
-        let new_signer = self.signer_for_identity(Some(&signing_identity)).await?;
-
-        let new_cipher_suite = self
-            .config
-            .crypto_provider()
-            .cipher_suite_provider(reinit.cipher_suite)
-            .ok_or_else(|| MlsError::UnsupportedCipherSuite(reinit.cipher_suite))?;
-
-        let (new_leaf_node, new_leaf_secret) = LeafNode::generate(
-            &new_cipher_suite,
-            config.leaf_properties(),
-            signing_identity,
-            &new_signer,
-            config.lifetime(),
-            &config.identity_provider(),
-        )
-        .await?;
-
-        let mut new_context = GroupContext {
-            epoch: 1,
-            ..GroupContext::new_group(
-                reinit.version,
-                reinit.cipher_suite,
-                reinit.group_id.clone(),
-                vec![],
-                reinit.extensions.clone(),
-            )
+        let new_group_params = ResumptionGroupParameters {
+            group_id: reinit.group_id(),
+            cipher_suite: reinit.new_cipher_suite(),
+            version: reinit.new_version(),
+            extensions: reinit.new_group_context_extensions(),
         };
 
-        let resumption_psk_id = JustPreSharedKeyID::Resumption(ResumptionPsk {
-            usage: ResumptionPSKUsage::Reinit,
-            psk_group_id: PskGroupId(self.context().group_id.clone()),
-            psk_epoch: self.current_epoch(),
-        });
-
-        let (group, welcome) = self
-            .new_for_resumption(
-                &mut new_context,
-                new_leaf_node,
-                new_leaf_secret,
-                &new_signer,
-                new_key_packages,
-                resumption_psk_id,
-            )
-            .await?;
-
-        if group.state.public_tree.occupied_leaf_count()
-            != self.state.public_tree.occupied_leaf_count()
-        {
-            Err(MlsError::CommitRequired)
-        } else {
-            Ok((group, welcome))
-        }
+        self.resumption_create_group(
+            new_key_packages,
+            &new_group_params,
+            signing_identity,
+            preferences,
+            ResumptionPSKUsage::Reinit,
+        )
+        .await
     }
 
     /// Join a reinitialized group that was created by
@@ -1170,32 +938,117 @@ where
             .as_ref()
             .ok_or(MlsError::PendingReInitNotFound)?;
 
-        let (group, new_member_info) =
-            Self::from_welcome_message(Some(self), welcome, tree_data, self.config.clone()).await?;
+        let expected_group_params = ResumptionGroupParameters {
+            group_id: reinit.group_id(),
+            cipher_suite: reinit.new_cipher_suite(),
+            version: reinit.new_version(),
+            extensions: reinit.new_group_context_extensions(),
+        };
 
-        if group.state.protocol_version() != reinit.version {
+        self.resumption_join_group(
+            welcome,
+            tree_data,
+            expected_group_params,
+            true,
+            ResumptionPSKUsage::Reinit,
+        )
+        .await
+    }
+
+    async fn resumption_create_group<'a>(
+        &self,
+        new_key_packages: Vec<MLSMessage>,
+        new_group_params: &ResumptionGroupParameters<'a>,
+        signing_identity: Option<SigningIdentity>,
+        preferences: Option<Preferences>,
+        usage: ResumptionPSKUsage,
+    ) -> Result<(Group<C>, Option<MLSMessage>), MlsError> {
+        // Create a new group with new parameters
+        let signing_identity =
+            signing_identity.unwrap_or(self.current_member_signing_identity()?.clone());
+
+        let mut group = Group::new(
+            self.config.clone(),
+            Some(new_group_params.group_id.to_vec()),
+            new_group_params.cipher_suite,
+            new_group_params.version,
+            signing_identity,
+            new_group_params.extensions.clone(),
+        )
+        .await?;
+
+        // Install the resumption psk in the new group
+        group.previous_psk = Some(self.resumption_psk_input(usage)?);
+
+        // Create a commit that adds new key packages and uses the resumption PSK
+        let mut commit = group.commit_builder();
+
+        for kp in new_key_packages.into_iter() {
+            commit = commit.add_member(kp)?;
+        }
+
+        if let Some(preferences) = preferences {
+            commit = commit.set_commit_preferences(preferences);
+        }
+
+        let commit = commit.build().await?;
+        group.apply_pending_commit().await?;
+
+        // Uninstall the resumption psk on success (in case of failure, the new group is discarded anyway)
+        group.previous_psk = None;
+
+        Ok((group, commit.welcome_message))
+    }
+
+    async fn resumption_join_group<'a>(
+        &self,
+        welcome: MLSMessage,
+        tree_data: Option<&[u8]>,
+        expected_new_group_prams: ResumptionGroupParameters<'a>,
+        verify_group_id: bool,
+        usage: ResumptionPSKUsage,
+    ) -> Result<(Group<C>, NewMemberInfo), MlsError> {
+        let psk_input = Some(self.resumption_psk_input(usage)?);
+
+        let (group, new_member_info) =
+            Self::from_welcome_message(welcome, tree_data, self.config.clone(), psk_input).await?;
+
+        if group.protocol_version() != expected_new_group_prams.version {
             Err(MlsError::ReInitVersionMismatch(
-                group.state.protocol_version(),
-                reinit.version,
+                group.protocol_version(),
+                expected_new_group_prams.version,
             ))
-        } else if group.state.cipher_suite() != reinit.cipher_suite {
+        } else if group.cipher_suite() != expected_new_group_prams.cipher_suite {
             Err(MlsError::ReInitCiphersuiteMismatch(
-                group.state.cipher_suite(),
-                reinit.cipher_suite,
+                group.cipher_suite(),
+                expected_new_group_prams.cipher_suite,
             ))
-        } else if group.state.context.group_id != reinit.group_id {
+        } else if verify_group_id && group.group_id() != expected_new_group_prams.group_id {
             Err(MlsError::ReInitIdMismatch(
-                group.state.context.group_id,
-                reinit.group_id.clone(),
+                group.group_id().to_vec(),
+                expected_new_group_prams.group_id.to_vec(),
             ))
-        } else if group.state.context.extensions != reinit.extensions {
+        } else if group.context_extensions() != expected_new_group_prams.extensions {
             Err(MlsError::ReInitExtensionsMismatch(
-                group.state.context.extensions,
-                reinit.extensions.clone(),
+                group.context_extensions().clone(),
+                expected_new_group_prams.extensions.clone(),
             ))
         } else {
             Ok((group, new_member_info))
         }
+    }
+
+    fn resumption_psk_input(&self, usage: ResumptionPSKUsage) -> Result<PskSecretInput, MlsError> {
+        let psk = self.epoch_secrets().resumption_secret.clone();
+
+        let id = JustPreSharedKeyID::Resumption(ResumptionPsk {
+            usage,
+            psk_group_id: PskGroupId(self.group_id().to_vec()),
+            psk_epoch: self.current_epoch(),
+        });
+
+        let id = PreSharedKeyID::new(id, self.cipher_suite_provider())?;
+        Ok(PskSecretInput { id, psk })
     }
 
     fn encrypt_group_secrets(
@@ -1737,6 +1590,10 @@ where
         &self.state.context
     }
 
+    pub fn context_extensions(&self) -> &ExtensionList {
+        &self.state.context.extensions
+    }
+
     /// Get the
     /// [epoch_authenticator](https://messaginglayersecurity.rocks/mls-protocol/draft-ietf-mls-protocol.html#name-key-schedule)
     /// of the current epoch.
@@ -1806,6 +1663,30 @@ where
     pub fn secret_tree(&self) -> &SecretTree {
         &self.epoch_secrets.secret_tree
     }
+
+    async fn get_psk(&self, psks: &[PreSharedKeyID]) -> Result<PskSecret, MlsError> {
+        if let Some(psk) = self.previous_psk.clone() {
+            // TODO throw error if psks not empty
+            Ok(PskSecret::calculate(&[psk], self.cipher_suite_provider())?)
+        } else {
+            PskResolver {
+                group_context: Some(self.context()),
+                current_epoch: Some(&self.epoch_secrets),
+                prior_epochs: Some(&self.state_repo),
+                psk_store: &self.config.secret_store(),
+            }
+            .resolve_to_secret(psks, self.cipher_suite_provider())
+            .await
+            .map_err(Into::into)
+        }
+    }
+}
+
+struct ResumptionGroupParameters<'a> {
+    group_id: &'a [u8],
+    cipher_suite: CipherSuite,
+    version: ProtocolVersion,
+    extensions: &'a ExtensionList,
 }
 
 impl<C> GroupStateProvider for Group<C>
@@ -1929,17 +1810,6 @@ where
             secrets.as_ref().map(|(_, root_secret)| root_secret),
         )?;
 
-        let secret_store = self.config.secret_store();
-
-        let psk_secret = PskResolver {
-            group_context: Some(self.context()),
-            current_epoch: Some(&self.epoch_secrets),
-            prior_epochs: Some(&self.state_repo),
-            psk_store: &secret_store,
-        }
-        .resolve_to_secret(&provisional_state.psks, &self.cipher_suite_provider)
-        .await?;
-
         // Use the commit_secret, the psk_secret, the provisional GroupContext, and the init secret
         // from the previous epoch (or from the external init) to compute the epoch secret and
         // derived secrets for the new epoch
@@ -1956,7 +1826,7 @@ where
             &commit_secret,
             &provisional_state.group_context,
             provisional_state.public_tree.total_leaf_count(),
-            &psk_secret,
+            &self.get_psk(&provisional_state.psks).await?,
             &self.cipher_suite_provider,
         )?;
 
@@ -2114,7 +1984,7 @@ mod tests {
             let test_group = test_group(protocol_version, cipher_suite).await;
             let group = test_group.group;
 
-            assert_eq!(group.state.cipher_suite(), cipher_suite);
+            assert_eq!(group.cipher_suite(), cipher_suite);
             assert_eq!(group.state.context.epoch, 0);
             assert_eq!(group.state.context.group_id, TEST_GROUP.to_vec());
             assert_eq!(group.state.context.extensions, group_extensions());
@@ -2898,7 +2768,7 @@ mod tests {
 
         let (mut alice_sub_group, welcome) = alice
             .group
-            .branch(b"subgroup".to_vec(), vec![new_key_pkg])
+            .branch(b"subgroup".to_vec(), vec![new_key_pkg], None)
             .await
             .unwrap();
 
@@ -2906,10 +2776,7 @@ mod tests {
 
         let (mut bob_sub_group, _) = bob
             .group
-            .join_subgroup(
-                welcome.clone(),
-                Some(&alice_sub_group.export_tree().unwrap()),
-            )
+            .join_subgroup(welcome.clone(), None)
             .await
             .unwrap();
 

@@ -1,6 +1,6 @@
 use crate::{
-    group::state_repo::GroupStateRepositoryError, serde_utils::vec_u8_as_base64::VecAsBase64,
-    CipherSuiteProvider,
+    client::MlsError, group::state_repo::GroupStateRepositoryError,
+    serde_utils::vec_u8_as_base64::VecAsBase64, CipherSuiteProvider,
 };
 use async_trait::async_trait;
 use serde_with::serde_as;
@@ -29,6 +29,18 @@ pub use aws_mls_core::psk::{ExternalPskId, PreSharedKey};
 pub struct PreSharedKeyID {
     pub key_id: JustPreSharedKeyID,
     pub psk_nonce: PskNonce,
+}
+
+impl PreSharedKeyID {
+    pub(crate) fn new<P: CipherSuiteProvider>(
+        key_id: JustPreSharedKeyID,
+        cs: &P,
+    ) -> Result<Self, MlsError> {
+        Ok(Self {
+            key_id,
+            psk_nonce: PskNonce::random(cs).map_err(|e| MlsError::CryptoProviderError(e.into()))?,
+        })
+    }
 }
 
 #[derive(
@@ -162,7 +174,7 @@ pub enum PskError {
     #[error("Epoch {0} not found")]
     EpochNotFound(u64),
     #[error("Old group state not found")]
-    OldGroupStateNotound,
+    OldGroupStateNotFound,
     #[error(transparent)]
     CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]

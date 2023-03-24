@@ -2,11 +2,7 @@ use super::{
     confirmation_tag::ConfirmationTag, proposal::ReInitProposal,
     transcript_hash::InterimTranscriptHash,
 };
-use crate::{
-    cipher_suite::CipherSuite,
-    group::{GroupContext, ProposalCache, TreeKemPublic},
-    protocol_version::ProtocolVersion,
-};
+use crate::group::{GroupContext, ProposalCache, TreeKemPublic};
 
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
@@ -34,15 +30,5 @@ impl GroupState {
             pending_reinit: None,
             confirmation_tag,
         }
-    }
-
-    #[inline(always)]
-    pub(crate) fn cipher_suite(&self) -> CipherSuite {
-        self.context.cipher_suite
-    }
-
-    #[inline(always)]
-    pub(crate) fn protocol_version(&self) -> ProtocolVersion {
-        self.context.protocol_version
     }
 }

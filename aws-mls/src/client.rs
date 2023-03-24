@@ -217,6 +217,8 @@ pub enum MlsError {
     KeychainError(Box<dyn std::error::Error + Send + Sync>),
     #[error("group not found: {0}")]
     GroupNotFound(String),
+    #[error("unexpected PSK ID")]
+    UnexpectedPskId,
 }
 
 /// MLS client used to create key packages and manage groups.

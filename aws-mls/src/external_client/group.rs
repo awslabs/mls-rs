@@ -290,7 +290,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         };
 
         Ok(MLSMessage::new(
-            self.state.protocol_version(),
+            self.protocol_version(),
             MLSMessagePayload::Plain(plaintext),
         ))
     }

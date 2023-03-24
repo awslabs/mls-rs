@@ -9,7 +9,7 @@ use crate::{
     extension::RatchetTreeExt,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
-    psk::{resolver::PskResolver, ExternalPskId},
+    psk::ExternalPskId,
     signer::Signable,
     storage_provider::psk::PskStoreIdValidator,
     tree_kem::{
@@ -261,8 +261,9 @@ where
     /// [proposal rules](crate::client_builder::ClientBuilder::proposal_rules).
     pub async fn build(self) -> Result<CommitOutput, MlsError> {
         self.group
-            .commit_proposals(
+            .commit_internal(
                 self.proposals,
+                None,
                 self.authenticated_data,
                 self.group_info_extensions,
                 self.signing_identity,
@@ -276,26 +277,6 @@ impl<C> Group<C>
 where
     C: ClientConfig + Clone,
 {
-    // TODO rename to full_commit?
-    async fn commit_proposals(
-        &mut self,
-        proposals: Vec<Proposal>,
-        authenticated_data: Vec<u8>,
-        group_info_extensions: ExtensionList,
-        signing_identity: Option<SigningIdentity>,
-        preferences: Option<Preferences>,
-    ) -> Result<CommitOutput, MlsError> {
-        self.commit_internal(
-            proposals,
-            None,
-            authenticated_data,
-            group_info_extensions,
-            signing_identity,
-            preferences,
-        )
-        .await
-    }
-
     /// Perform a commit of received proposals.
     ///
     /// This function is the equivalent of [`Group::commit_builder`] immediately
@@ -501,16 +482,13 @@ where
         let commit_secret =
             CommitSecret::from_root_secret(&self.cipher_suite_provider, root_secret.as_ref())?;
 
-        let psk_store = self.config.secret_store();
+        let psks = if let Some(psk) = &self.previous_psk {
+            vec![psk.id.clone()]
+        } else {
+            provisional_state.psks.clone()
+        };
 
-        let psk_secret = PskResolver {
-            group_context: Some(self.context()),
-            current_epoch: Some(&self.epoch_secrets),
-            prior_epochs: Some(&self.state_repo),
-            psk_store: &psk_store,
-        }
-        .resolve_to_secret(&provisional_state.psks, &self.cipher_suite_provider)
-        .await?;
+        let psk_secret = self.get_psk(&provisional_state.psks).await?;
 
         let commit = Commit {
             proposals: commit_proposals,
@@ -586,7 +564,7 @@ where
             &key_schedule_result.joiner_secret,
             &psk_secret,
             path_secrets.as_ref(),
-            provisional_state.psks,
+            psks,
             &group_info,
         )?;
 

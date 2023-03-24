@@ -29,6 +29,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use aws_mls_core::{
+    crypto::CipherSuite,
     group::{MemberUpdate, RosterUpdate},
     identity::{IdentityProvider, IdentityWarning},
     psk::ExternalPskId,
@@ -57,7 +58,7 @@ pub struct StateUpdate {
     pub(crate) roster_update: RosterUpdate,
     pub(crate) identity_warnings: Vec<IdentityWarning>,
     pub(crate) added_psks: Vec<ExternalPskId>,
-    pub(crate) pending_reinit: bool,
+    pub(crate) pending_reinit: Option<CipherSuite>,
     pub(crate) active: bool,
     pub(crate) epoch: u64,
     pub(crate) custom_proposals: Vec<CustomProposal>,
@@ -86,7 +87,7 @@ impl StateUpdate {
     /// receiving a [`ReInit`](crate::group::proposal::Proposal::ReInit)
     /// proposal.
     pub fn is_pending_reinit(&self) -> bool {
-        self.pending_reinit
+        self.pending_reinit.is_some()
     }
 
     /// Flag to indicate the group is still active. This will be false if the
@@ -108,6 +109,10 @@ impl StateUpdate {
     /// Proposals that were received in the prior epoch but not committed to.
     pub fn unused_proposals(&self) -> &[Proposal] {
         &self.unused_proposals
+    }
+
+    pub fn pending_reinit_ciphersuite(&self) -> Option<CipherSuite> {
+        self.pending_reinit
     }
 }
 
@@ -350,7 +355,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             roster_update,
             identity_warnings,
             added_psks: psks,
-            pending_reinit: provisional.reinit.is_some(),
+            pending_reinit: provisional.reinit.as_ref().map(|ri| ri.new_cipher_suite()),
             active: true,
             epoch: provisional.epoch,
             custom_proposals: provisional.custom_proposals.clone(),
@@ -414,12 +419,6 @@ pub(crate) trait MessageProcessor: Send + Sync {
             return Ok(state_update);
         }
 
-        if let Some(reinit) = provisional_state.reinit {
-            self.group_state_mut().pending_reinit = Some(reinit);
-            state_update.active = false;
-            return Ok(state_update);
-        }
-
         let update_path = match commit.path.as_ref() {
             Some(update_path) => validate_update_path(
                 &self.identity_provider(),
@@ -465,6 +464,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
         provisional_state.group_context.tree_hash = provisional_state
             .public_tree
             .tree_hash(self.cipher_suite_provider())?;
+
+        if let Some(reinit) = provisional_state.reinit.take() {
+            self.group_state_mut().pending_reinit = Some(reinit);
+            state_update.active = false;
+        }
 
         if let Some(confirmation_tag) = auth_content.auth.confirmation_tag {
             // Update the key schedule to calculate new private keys
