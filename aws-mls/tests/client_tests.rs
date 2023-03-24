@@ -761,3 +761,51 @@ async fn reinit_works() {
         .await
         .unwrap();
 }
+
+#[futures_test::test]
+async fn external_joiner_can_process_siblings_update() {
+    let mut groups = get_test_groups(
+        ProtocolVersion::MLS_10,
+        CipherSuite::P256_AES128,
+        3,
+        Preferences::default().with_ratchet_tree_extension(true),
+    )
+    .await;
+
+    // Remove leaf 1 s.t. the external joiner joins in its place
+    let c = groups[0]
+        .commit_builder()
+        .remove_member(1)
+        .unwrap()
+        .build()
+        .await
+        .unwrap();
+
+    all_process_message(&mut groups, &c.commit_message, 0, true).await;
+
+    let info = groups[0].group_info_message(true).await.unwrap();
+
+    // Create the external joiner and join
+    let new_client = generate_client(
+        CipherSuite::P256_AES128,
+        b"new member".to_vec(),
+        Preferences::default(),
+    );
+
+    let (group, commit) = new_client
+        .client
+        .commit_external(info, None, new_client.identity, None, vec![], vec![])
+        .await
+        .unwrap();
+
+    all_process_message(&mut groups, &commit, 1, false).await;
+    groups[1] = group;
+
+    // New client's sibling proposes an update to blank their common parent
+    let p = groups[0].propose_update(vec![]).await.unwrap();
+    all_process_message(&mut groups, &p, 0, false).await;
+
+    // Some other member commits
+    let c = groups[2].commit(vec![]).await.unwrap();
+    all_process_message(&mut groups, &c.commit_message, 2, true).await;
+}

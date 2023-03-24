@@ -22,6 +22,13 @@ impl TreeKemPrivate {
         }
     }
 
+    pub fn new_for_external() -> Self {
+        TreeKemPrivate {
+            self_index: LeafIndex(0),
+            secret_keys: HashMap::new(),
+        }
+    }
+
     pub fn update_secrets<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,

@@ -591,7 +591,7 @@ where
             .map_err(|e| MlsError::KeychainError(e.into()))?
             .ok_or(MlsError::SignerNotFound)?;
 
-        let (leaf_node, leaf_node_secret) = LeafNode::generate(
+        let (leaf_node, _) = LeafNode::generate(
             &cipher_suite_provider,
             config.leaf_properties(),
             signing_identity,
@@ -618,7 +618,7 @@ where
             join_context,
             KeySchedule::new(init_secret),
             epoch_secrets,
-            TreeKemPrivate::new_self_leaf(LeafIndex(0), leaf_node_secret),
+            TreeKemPrivate::new_for_external(),
             None,
         )
         .await?;
@@ -735,7 +735,9 @@ where
         &self,
         signing_identity: Option<&SigningIdentity>,
     ) -> Result<SignatureSecretKey, MlsError> {
-        let signing_identity = signing_identity.unwrap_or(self.current_member_signing_identity()?);
+        let signing_identity = signing_identity
+            .map(Ok)
+            .unwrap_or_else(|| self.current_member_signing_identity())?;
 
         self.config
             .keychain()
@@ -3676,5 +3678,23 @@ mod tests {
         bob.join_group(None, commit.welcome_message.unwrap())
             .await
             .unwrap();
+    }
+
+    #[futures_test::test]
+    async fn signer_for_identity() {
+        let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
+            .await
+            .group;
+
+        let identity = alice.current_member_signing_identity().unwrap().clone();
+
+        alice
+            .state
+            .public_tree
+            .nodes
+            .blank_leaf_node(LeafIndex(alice.current_member_index()))
+            .unwrap();
+
+        alice.signer_for_identity(Some(&identity)).await.unwrap();
     }
 }
