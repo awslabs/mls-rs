@@ -270,11 +270,11 @@ where
 
         let tree_hash = public_tree.tree_hash(&cipher_suite_provider)?;
 
-        let group_id = group_id.unwrap_or(
+        let group_id = group_id.map(Ok).unwrap_or_else(|| {
             cipher_suite_provider
                 .random_bytes_vec(cipher_suite_provider.kdf_extract_size())
-                .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
-        );
+                .map_err(|e| MlsError::CryptoProviderError(e.into()))
+        })?;
 
         let context = GroupContext::new_group(
             protocol_version,
@@ -1299,11 +1299,11 @@ where
         cipher_suite: CipherSuite,
         extensions: ExtensionList,
     ) -> Result<Proposal, MlsError> {
-        let group_id = group_id.unwrap_or(
+        let group_id = group_id.map(Ok).unwrap_or_else(|| {
             self.cipher_suite_provider
                 .random_bytes_vec(self.cipher_suite_provider.kdf_extract_size())
-                .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
-        );
+                .map_err(|e| MlsError::CryptoProviderError(e.into()))
+        })?;
 
         Ok(Proposal::ReInit(ReInitProposal {
             group_id,

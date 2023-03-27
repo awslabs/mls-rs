@@ -1034,7 +1034,11 @@ pub(crate) fn proposer_can_propose(
         (Sender::External(_), false) => false,
         (Sender::External(_), true) => matches!(
             proposal_type,
-            ProposalType::ADD | ProposalType::REMOVE | ProposalType::RE_INIT
+            ProposalType::ADD
+                | ProposalType::REMOVE
+                | ProposalType::RE_INIT
+                | ProposalType::PSK
+                | ProposalType::GROUP_CONTEXT_EXTENSIONS
         ),
         (Sender::NewMemberCommit, false) => matches!(
             proposal_type,
