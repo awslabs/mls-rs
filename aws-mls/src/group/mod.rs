@@ -60,7 +60,10 @@ pub(crate) use self::commit::test_utils::CommitModifiers;
 pub use self::framing::PrivateMessage;
 
 use self::epoch::{EpochSecrets, PriorEpoch, SenderDataSecret};
-pub use self::message_processor::{Event, ProcessedMessage, StateUpdate};
+pub use self::message_processor::{
+    ApplicationMessageDescription, CommitMessageDescription, ProposalMessageDescription,
+    ProposalSender, ReceivedMessage, StateUpdate,
+};
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
 use self::padding::PaddingMode;
 use self::proposal_ref::ProposalRef;
@@ -673,8 +676,10 @@ where
         self.context().epoch
     }
 
-    /// Index within the group's [`roster`](Group::roster) for the local
-    /// group instance.
+    /// Index within the group's state for the local group instance.
+    ///
+    /// This index corresponds to indexes in content descriptions within
+    /// [`ReceivedMessage`].
     #[inline(always)]
     pub fn current_member_index(&self) -> u32 {
         self.private_tree.self_index.0
@@ -691,7 +696,10 @@ where
         self.current_user_leaf_node().map(|ln| &ln.signing_identity)
     }
 
-    /// Member at a specific index in the roster.
+    /// Member at a specific index in the group state.
+    ///
+    /// These indexes correspond to indexes in content descriptions within
+    /// [`ReceivedMessage`].
     pub fn member_at_index(&self, index: u32) -> Option<Member> {
         let leaf_index = LeafIndex(index);
 
@@ -1467,7 +1475,7 @@ where
 
     /// Apply a pending commit that was created by [`Group::commit`] or
     /// [`CommitBuilder::build`].
-    pub async fn apply_pending_commit(&mut self) -> Result<StateUpdate, MlsError> {
+    pub async fn apply_pending_commit(&mut self) -> Result<CommitMessageDescription, MlsError> {
         let pending_commit = self
             .pending_commit
             .clone()
@@ -1496,7 +1504,7 @@ where
     pub async fn process_incoming_message(
         &mut self,
         message: MLSMessage,
-    ) -> Result<ProcessedMessage<Event>, MlsError> {
+    ) -> Result<ReceivedMessage, MlsError> {
         MessageProcessor::process_incoming_message(self, message, true).await
     }
 
@@ -1520,7 +1528,7 @@ where
         &mut self,
         message: MLSMessage,
         time: MlsTime,
-    ) -> Result<ProcessedMessage<Event>, MlsError> {
+    ) -> Result<ReceivedMessage, MlsError> {
         MessageProcessor::process_incoming_message_with_time(self, message, true, Some(time)).await
     }
 
@@ -1530,7 +1538,7 @@ where
     /// This function determines identity by calling the
     /// [`IdentityProvider`](crate::IdentityProvider)
     /// currently in use by the group.
-    pub fn get_member_with_identity(&self, identity: &[u8]) -> Result<Member, MlsError> {
+    pub fn member_with_identity(&self, identity: &[u8]) -> Result<Member, MlsError> {
         let index = self
             .state
             .public_tree
@@ -1639,17 +1647,35 @@ where
 
     /// The current set of group members. This function makes a clone of
     /// member information from the internal group state.
+    ///
+    /// # Warning
+    ///
+    /// The indexes within this roster do not correlate with indexes of users
+    /// within [`ReceivedMessage`] content descriptions due to the layout of
+    /// member information within a MLS group state.
     pub fn roster(&self) -> Vec<Member> {
         self.group_state().roster()
     }
 
     /// Iterator over the current roster that lazily copies data out of the
     /// internal group state.
+    ///
+    /// # Warning
+    ///
+    /// The indexes within this iterator do not correlate with indexes of users
+    /// within [`ReceivedMessage`] content descriptions due to the layout of
+    /// member information within a MLS group state.
     pub fn roster_iter(&self) -> impl Iterator<Item = Member> + '_ {
         self.group_state().roster_iter()
     }
 
     /// Iterator over member's signing identities.
+    ///
+    /// # Warning
+    ///
+    /// The indexes within this iterator do not correlate with indexes of users
+    /// within [`ReceivedMessage`] content descriptions due to the layout of
+    /// member information within a MLS group state.
     pub fn member_identities(&self) -> impl Iterator<Item = &SigningIdentity> + '_ {
         self.state.signing_identity_iter()
     }
@@ -1720,7 +1746,7 @@ where
     type ProposalRules = C::ProposalRules;
     type IdentityProvider = C::IdentityProvider;
     type ExternalPskIdValidator = PskStoreIdValidator<C::PskStore>;
-    type EventType = Event;
+    type OutputType = ReceivedMessage;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
     fn self_index(&self) -> Option<LeafIndex> {
@@ -1730,7 +1756,7 @@ where
     async fn process_ciphertext(
         &mut self,
         cipher_text: PrivateMessage,
-    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
+    ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
         self.decrypt_incoming_ciphertext(cipher_text)
             .await
             .map(EventOrContent::Content)
@@ -1739,7 +1765,7 @@ where
     fn verify_plaintext_authentication(
         &self,
         message: PublicMessage,
-    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
+    ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
         let auth_content = verify_plaintext_authentication(
             &self.cipher_suite_provider,
             message,
@@ -2098,7 +2124,13 @@ mod tests {
 
         // The update should be filtered out because the committer commits an update for itself
         test_group.group.commit(vec![]).await.unwrap();
-        let state_update = test_group.group.apply_pending_commit().await.unwrap();
+
+        let state_update = test_group
+            .group
+            .apply_pending_commit()
+            .await
+            .unwrap()
+            .state_update;
 
         assert_matches!(
             &*state_update.unused_proposals,
@@ -2297,7 +2329,13 @@ mod tests {
 
         let (mut test_group, _) =
             group_context_extension_proposal_test(extension_list.clone()).await;
-        let state_update = test_group.group.apply_pending_commit().await.unwrap();
+
+        let state_update = test_group
+            .group
+            .apply_pending_commit()
+            .await
+            .unwrap()
+            .state_update;
 
         assert!(state_update.active);
         assert_eq!(test_group.group.state.context.extensions, extension_list)
@@ -2570,8 +2608,17 @@ mod tests {
 
         let commit_output = commit_builder.build().await.unwrap();
 
+        let commit_description = alice.process_pending_commit().await.unwrap();
+
+        assert!(!commit_description.is_external);
+
+        assert_eq!(
+            commit_description.committer,
+            alice.group.current_member_index()
+        );
+
         // Check that applying pending commit and processing commit yields correct update.
-        let state_update_alice = alice.process_pending_commit().await.unwrap();
+        let state_update_alice = commit_description.state_update.clone();
 
         assert_eq!(
             state_update_alice
@@ -2613,23 +2660,12 @@ mod tests {
             .process_message(commit_output.commit_message)
             .await
             .unwrap();
-        assert_matches!(payload, Event::Commit(_));
 
-        if let Event::Commit(state_update_bob) = payload {
-            assert_eq!(
-                state_update_alice.roster_update.added(),
-                state_update_bob.roster_update.added()
-            );
-            assert_eq!(
-                state_update_alice.roster_update.removed(),
-                state_update_bob.roster_update.removed()
-            );
-            assert_eq!(
-                state_update_alice.roster_update.updated(),
-                state_update_bob.roster_update.updated()
-            );
-            assert_eq!(state_update_alice.added_psks, state_update_bob.added_psks);
-        }
+        let ReceivedMessage::Commit(bob_commit_description) = payload else {
+            panic!("expected commit");
+        };
+
+        assert_eq!(commit_description, bob_commit_description);
     }
 
     #[futures_test::test]
@@ -2653,11 +2689,17 @@ mod tests {
 
         let event = alice_group.process_message(commit).await.unwrap();
 
-        assert_matches!(event, Event::Commit(_));
+        let ReceivedMessage::Commit(commit_description) = event else {
+            panic!("expected commit");
+        };
 
-        if let Event::Commit(update) = event {
-            assert_eq!(update.roster_update.added(), &bob_group.roster()[1..2])
-        }
+        assert!(commit_description.is_external);
+        assert_eq!(commit_description.committer, 1);
+
+        assert_eq!(
+            commit_description.state_update.roster_update.added(),
+            &bob_group.roster()[1..2]
+        )
     }
 
     #[futures_test::test]
@@ -2863,9 +2905,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(
-            Some(Sender::Member(bob_group.group.current_member_index())),
-            received_by_alice.sender
+        assert_matches!(
+            received_by_alice,
+            ReceivedMessage::ApplicationMessage(ApplicationMessageDescription { sender_index, .. })
+                if sender_index == bob_group.group.current_member_index()
         );
     }
 
@@ -2898,8 +2941,8 @@ mod tests {
             .unwrap();
 
         assert_matches!(
-            received_message.event,
-            Event::ApplicationMessage(data) if data == b"foobar"
+            received_message,
+            ReceivedMessage::ApplicationMessage(m) if m.data() == b"foobar"
         );
 
         let res = bob_group.group.process_incoming_message(message).await;
@@ -2977,7 +3020,11 @@ mod tests {
             .await
             .unwrap();
 
-        let state_update = alice_group.process_pending_commit().await.unwrap();
+        let state_update = alice_group
+            .process_pending_commit()
+            .await
+            .unwrap()
+            .state_update;
 
         assert_eq!(
             state_update
@@ -3621,7 +3668,8 @@ mod tests {
 
         let res = bob.group.process_incoming_message(commit).await.unwrap();
 
-        assert_matches!(res.event, Event::Commit(commit) if commit.custom_proposals == vec![custom_proposal])
+        assert_matches!(res, ReceivedMessage::Commit(CommitMessageDescription { state_update: StateUpdate { custom_proposals, .. }, .. })
+            if custom_proposals == vec![custom_proposal])
     }
 
     #[futures_test::test]
@@ -3638,12 +3686,14 @@ mod tests {
 
         let recv_prop = bob.group.process_incoming_message(proposal).await.unwrap();
 
-        assert_matches!(recv_prop.event, Event::Proposal((Proposal::Custom(c), _)) if c == custom_proposal);
+        assert_matches!(recv_prop, ReceivedMessage::Proposal(ProposalMessageDescription { proposal: Proposal::Custom(c), ..})
+            if c == custom_proposal);
 
         let commit = bob.group.commit(vec![]).await.unwrap().commit_message;
         let res = alice.group.process_incoming_message(commit).await.unwrap();
 
-        assert_matches!(res.event, Event::Commit(commit) if commit.custom_proposals == vec![custom_proposal])
+        assert_matches!(res, ReceivedMessage::Commit(CommitMessageDescription { state_update: StateUpdate { custom_proposals, .. }, .. })
+            if custom_proposals == vec![custom_proposal])
     }
 
     #[futures_test::test]

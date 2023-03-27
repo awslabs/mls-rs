@@ -67,10 +67,10 @@ impl From<u32> for Sender {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, Zeroize)]
+#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize, Zeroize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[zeroize(drop)]
-pub(crate) struct ApplicationData(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct ApplicationData(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
 
 impl From<Vec<u8>> for ApplicationData {
     fn from(data: Vec<u8>) -> Self {
@@ -78,11 +78,18 @@ impl From<Vec<u8>> for ApplicationData {
     }
 }
 
-impl TryFrom<ApplicationData> for Event {
-    type Error = MlsError;
+impl Deref for ApplicationData {
+    type Target = [u8];
 
-    fn try_from(data: ApplicationData) -> Result<Self, Self::Error> {
-        Ok(Event::ApplicationMessage(data.0.clone()))
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl ApplicationData {
+    /// Underlying message content.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
     }
 }
 

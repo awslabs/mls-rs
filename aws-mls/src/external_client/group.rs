@@ -11,18 +11,19 @@ use crate::{
     group::{
         cipher_suite_provider,
         confirmation_tag::ConfirmationTag,
-        framing::{
-            ApplicationData, Content, MLSMessagePayload, PrivateMessage, PublicMessage, WireFormat,
-        },
+        framing::{Content, MLSMessagePayload, PrivateMessage, PublicMessage, WireFormat},
         member_from_leaf_node,
-        message_processor::{EventOrContent, MessageProcessor, ProvisionalState},
+        message_processor::{
+            ApplicationMessageDescription, CommitMessageDescription, EventOrContent,
+            MessageProcessor, ProposalMessageDescription, ProvisionalState,
+        },
         message_signature::AuthenticatedContent,
         proposal::{AddProposal, Proposal, RemoveProposal},
         proposal_ref::ProposalRef,
         snapshot::RawGroupState,
         state::GroupState,
         transcript_hash::InterimTranscriptHash,
-        validate_group_info, ProcessedMessage, Sender, StateUpdate,
+        validate_group_info, Sender,
     },
     identity::SigningIdentity,
     key_package::KeyPackageValidator,
@@ -36,11 +37,11 @@ use crate::{
 /// [process_incoming_message](ExternalGroup::process_incoming_message)
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum ExternalEvent {
+pub enum ExternalReceivedMessage {
     /// State update as the result of a successful commit.
-    Commit(StateUpdate),
+    Commit(CommitMessageDescription),
     /// Received proposal and its unique identifier.
-    Proposal((Proposal, ProposalRef)),
+    Proposal(ProposalMessageDescription),
     /// Encrypted message that can not be processed.
     Ciphertext,
 }
@@ -128,7 +129,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     pub async fn process_incoming_message(
         &mut self,
         message: MLSMessage,
-    ) -> Result<ProcessedMessage<ExternalEvent>, MlsError> {
+    ) -> Result<ExternalReceivedMessage, MlsError> {
         MessageProcessor::process_incoming_message(self, message, self.config.cache_proposals())
             .await
     }
@@ -382,7 +383,7 @@ where
     type ProposalRules = C::ProposalRules;
     type IdentityProvider = C::IdentityProvider;
     type ExternalPskIdValidator = PassThroughPskIdValidator;
-    type EventType = ExternalEvent;
+    type OutputType = ExternalReceivedMessage;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
     fn self_index(&self) -> Option<LeafIndex> {
@@ -396,7 +397,7 @@ where
     fn verify_plaintext_authentication(
         &self,
         message: PublicMessage,
-    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
+    ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
         let auth_content = crate::group::message_verifier::verify_plaintext_authentication(
             &self.cipher_suite_provider,
             message,
@@ -411,8 +412,8 @@ where
     async fn process_ciphertext(
         &mut self,
         _cipher_text: PrivateMessage,
-    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
-        Ok(EventOrContent::Event(ExternalEvent::Ciphertext))
+    ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
+        Ok(EventOrContent::Event(ExternalReceivedMessage::Ciphertext))
     }
 
     async fn update_key_schedule(
@@ -501,23 +502,23 @@ where
     }
 }
 
-impl From<StateUpdate> for ExternalEvent {
-    fn from(state_update: StateUpdate) -> Self {
-        ExternalEvent::Commit(state_update)
+impl From<CommitMessageDescription> for ExternalReceivedMessage {
+    fn from(value: CommitMessageDescription) -> Self {
+        ExternalReceivedMessage::Commit(value)
     }
 }
 
-impl TryFrom<ApplicationData> for ExternalEvent {
+impl TryFrom<ApplicationMessageDescription> for ExternalReceivedMessage {
     type Error = MlsError;
 
-    fn try_from(_: ApplicationData) -> Result<Self, Self::Error> {
+    fn try_from(_: ApplicationMessageDescription) -> Result<Self, Self::Error> {
         Err(MlsError::UnencryptedApplicationMessage)
     }
 }
 
-impl From<(Proposal, ProposalRef)> for ExternalEvent {
-    fn from(proposal_and_ref: (Proposal, ProposalRef)) -> Self {
-        ExternalEvent::Proposal(proposal_and_ref)
+impl From<ProposalMessageDescription> for ExternalReceivedMessage {
+    fn from(value: ProposalMessageDescription) -> Self {
+        ExternalReceivedMessage::Proposal(value)
     }
 }
 
@@ -570,13 +571,14 @@ mod tests {
         external_client::{
             group::test_utils::make_external_group_with_config,
             tests_utils::{TestExternalClientBuilder, TestExternalClientConfig},
-            ExternalEvent, ExternalGroup,
+            ExternalGroup, ExternalReceivedMessage,
         },
         group::{
             framing::{Content, MLSMessagePayload},
             proposal::{AddProposal, Proposal, ProposalOrRef},
             proposal_ref::ProposalRef,
             test_utils::{test_group, TestGroup},
+            ProposalMessageDescription,
         },
         identity::{test_utils::get_test_signing_identity, SigningIdentity},
         key_package::test_utils::{test_key_package, test_key_package_message},
@@ -669,8 +671,8 @@ mod tests {
         let proposal_process = server.process_incoming_message(packet).await.unwrap();
 
         assert_matches!(
-            proposal_process.event,
-            ExternalEvent::Proposal((ref p, _)) if p == &add_proposal
+            proposal_process,
+            ExternalReceivedMessage::Proposal(ProposalMessageDescription { ref proposal, ..}) if proposal == &add_proposal
         );
 
         let commit_output = alice.group.commit(vec![]).await.unwrap();
@@ -682,8 +684,9 @@ mod tests {
             .unwrap();
 
         assert_matches!(
-            commit_result.event,
-            ExternalEvent::Commit(state_update) if state_update.roster_update.added().iter().any(|added| added.index() == 1)
+            commit_result,
+            ExternalReceivedMessage::Commit(commit_description)
+                if commit_description.state_update.roster_update.added().iter().any(|added| added.index() == 1)
         );
 
         assert_eq!(alice.group.state, server.state);
@@ -695,8 +698,8 @@ mod tests {
         let mut server = make_external_group(&alice).await;
         let (_, commit) = alice.join("bob").await;
 
-        let update = match server.process_incoming_message(commit).await.unwrap().event {
-            ExternalEvent::Commit(update) => update,
+        let update = match server.process_incoming_message(commit).await.unwrap() {
+            ExternalReceivedMessage::Commit(update) => update.state_update,
             _ => panic!("Expected processed commit"),
         };
 

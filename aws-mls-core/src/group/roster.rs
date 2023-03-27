@@ -180,7 +180,7 @@ impl MemberUpdate {
 }
 
 /// A set of roster updates due to a commit.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub struct RosterUpdate {
     pub(crate) added: Vec<Member>,

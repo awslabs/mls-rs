@@ -16,7 +16,7 @@ pub(crate) use config::ExternalClientConfig;
 
 use builder::{ExternalBaseConfig, ExternalClientBuilder};
 
-pub use group::{ExternalEvent, ExternalGroup, ExternalSnapshot};
+pub use group::{ExternalGroup, ExternalReceivedMessage, ExternalSnapshot};
 
 /// A client capable of observing a group's state without having
 /// private keys required to read content.

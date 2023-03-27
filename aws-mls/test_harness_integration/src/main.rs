@@ -6,7 +6,7 @@
 use aws_mls::client_builder::{
     BaseConfig, ClientBuilder, Preferences, WithCryptoProvider, WithIdentityProvider, WithKeychain,
 };
-use aws_mls::group::{Event, StateUpdate};
+use aws_mls::group::{ReceivedMessage, StateUpdate};
 use aws_mls::identity::basic::{BasicCredential, BasicIdentityProvider};
 use aws_mls::identity::SigningIdentity;
 use aws_mls::storage_provider::in_memory::{InMemoryKeychainStorage, InMemoryPreSharedKeyStorage};
@@ -469,8 +469,8 @@ impl MlsClient for MlsClientImpl {
             .await
             .map_err(abort)?;
 
-        let application_data = match message.event {
-            Event::ApplicationMessage(plaintext) => plaintext,
+        let application_data = match message {
+            ReceivedMessage::ApplicationMessage(plaintext) => plaintext,
             _ => {
                 return Err(Status::new(
                     Aborted,
@@ -479,7 +479,9 @@ impl MlsClient for MlsClientImpl {
             }
         };
 
-        Ok(Response::new(UnprotectResponse { application_data }))
+        Ok(Response::new(UnprotectResponse {
+            application_data: application_data.data().to_vec(),
+        }))
     }
 
     async fn store_psk(
@@ -723,9 +725,9 @@ impl MlsClient for MlsClientImpl {
             .await
             .map_err(abort)?;
 
-        match message.event {
-            Event::Commit(state_update) => Ok(Response::new(
-                (state_update, request_ref.state_id).try_into()?,
+        match message {
+            ReceivedMessage::Commit(commit_description) => Ok(Response::new(
+                (commit_description.state_update, request_ref.state_id).try_into()?,
             )),
             _ => Err(Status::new(Aborted, "message not a commit.")),
         }
@@ -739,7 +741,7 @@ impl MlsClient for MlsClientImpl {
         let group_index = request_ref.state_id as usize - 1;
         let mut groups = self.groups.lock().await;
 
-        let state_update = groups
+        let commit_description = groups
             .get_mut(group_index)
             .ok_or_else(|| Status::new(Aborted, "no group with such index."))?
             .group
@@ -748,7 +750,7 @@ impl MlsClient for MlsClientImpl {
             .map_err(abort)?;
 
         Ok(Response::new(
-            (state_update, request_ref.state_id).try_into()?,
+            (commit_description.state_update, request_ref.state_id).try_into()?,
         ))
     }
 

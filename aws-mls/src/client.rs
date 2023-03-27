@@ -219,6 +219,8 @@ pub enum MlsError {
     GroupNotFound(String),
     #[error("unexpected PSK ID")]
     UnexpectedPskId,
+    #[error("invalid sender {0:?} for content type {1:?}")]
+    InvalidSender(Sender, ContentType),
 }
 
 /// MLS client used to create key packages and manage groups.
@@ -666,9 +668,10 @@ mod tests {
     use crate::{
         crypto::test_utils::TestCryptoProvider,
         group::{
+            message_processor::ProposalMessageDescription,
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_group_custom_config},
-            Event,
+            CommitMessageDescription, ReceivedMessage,
         },
         identity::test_utils::get_test_basic_credential,
         psk::{ExternalPskId, PreSharedKey},
@@ -752,8 +755,10 @@ mod tests {
             .unwrap();
 
         assert_matches!(
-            message.event,
-            Event::Proposal((Proposal::Add(AddProposal { key_package }), _)) if key_package.leaf_node.signing_identity == bob_identity
+            message,
+            ReceivedMessage::Proposal(ProposalMessageDescription {
+                proposal: Proposal::Add(AddProposal { key_package }), ..}
+            ) if key_package.leaf_node.signing_identity == bob_identity
         );
 
         alice_group.group.commit(vec![]).await.unwrap();
@@ -827,8 +832,10 @@ mod tests {
 
         if !do_remove {
             assert!(bob_group.group.roster().len() == num_members);
-        } else if let Event::Commit(update) = message.event {
-            assert!(!update.active);
+        } else if let ReceivedMessage::Commit(CommitMessageDescription { state_update, .. }) =
+            message
+        {
+            assert!(!state_update.active);
         }
 
         let alice_msg = b"I'm Alice";
@@ -840,7 +847,7 @@ mod tests {
             .unwrap();
 
         let received = new_group.process_incoming_message(msg).await.unwrap();
-        assert_matches!(received.event, Event::ApplicationMessage(bytes) if bytes == alice_msg);
+        assert_matches!(received, ReceivedMessage::ApplicationMessage(bytes) if bytes.data() == alice_msg);
 
         let new_msg = b"I'm the new guy";
 
@@ -855,7 +862,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_matches!(received.event, Event::ApplicationMessage(bytes) if bytes == new_msg);
+        assert_matches!(received, ReceivedMessage::ApplicationMessage(application_msg) if application_msg.data() == new_msg);
 
         Ok(())
     }

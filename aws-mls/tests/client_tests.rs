@@ -1,7 +1,7 @@
 use assert_matches::assert_matches;
 use aws_mls::client_builder::{ClientBuilder, Preferences};
 use aws_mls::error::MlsError;
-use aws_mls::group::Event;
+use aws_mls::group::ReceivedMessage;
 use aws_mls::identity::basic::BasicIdentityProvider;
 use aws_mls::identity::SigningIdentity;
 use aws_mls::storage_provider::in_memory::InMemoryKeychainStorage;
@@ -373,7 +373,7 @@ async fn test_application_messages(
                         .await
                         .unwrap();
 
-                    assert_matches!(decrypted.event, Event::ApplicationMessage(m) if m == test_message);
+                    assert_matches!(decrypted, ReceivedMessage::ApplicationMessage(m) if m.data() == test_message);
                 }
             }
         }
@@ -427,8 +427,8 @@ async fn test_out_of_order_application_messages() {
 
     for i in [3, 2, 1, 0] {
         assert_matches!(
-            bob_group.process_incoming_message(ciphertexts[i].clone()).await.unwrap().event,
-            Event::ApplicationMessage(m) if m == [i as u8]
+            bob_group.process_incoming_message(ciphertexts[i].clone()).await.unwrap(),
+            ReceivedMessage::ApplicationMessage(m) if m.data() == [i as u8]
         );
     }
 }
@@ -564,7 +564,7 @@ async fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: 
                 .process_incoming_message(message.clone())
                 .await
                 .unwrap();
-            assert_matches!(processed.event, Event::ApplicationMessage(bytes) if bytes == payload);
+            assert_matches!(processed, ReceivedMessage::ApplicationMessage(m) if m.data() == payload);
         }
     }
 }
@@ -694,13 +694,16 @@ async fn reinit_works() {
     let commit = bob_group.commit(vec![]).await.unwrap().commit_message;
 
     // Both process Bob's commit
-    let state_update = bob_group.apply_pending_commit().await.unwrap();
+    let state_update = bob_group.apply_pending_commit().await.unwrap().state_update;
     assert!(!state_update.is_active() && state_update.is_pending_reinit());
 
     let message = alice_group.process_incoming_message(commit).await.unwrap();
 
-    if let Event::Commit(state_update) = message.event {
-        assert!(!state_update.is_active() && state_update.is_pending_reinit());
+    if let ReceivedMessage::Commit(commit_description) = message {
+        assert!(
+            !commit_description.state_update.is_active()
+                && commit_description.state_update.is_pending_reinit()
+        );
     }
 
     // They can't create new epochs anymore

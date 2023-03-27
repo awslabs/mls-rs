@@ -119,15 +119,17 @@ impl TestGroup {
             .await
     }
 
-    pub(crate) async fn process_pending_commit(&mut self) -> Result<StateUpdate, MlsError> {
+    pub(crate) async fn process_pending_commit(
+        &mut self,
+    ) -> Result<CommitMessageDescription, MlsError> {
         self.group.apply_pending_commit().await
     }
 
-    pub(crate) async fn process_message(&mut self, message: MLSMessage) -> Result<Event, MlsError> {
-        self.group
-            .process_incoming_message(message)
-            .await
-            .map(|r| r.event)
+    pub(crate) async fn process_message(
+        &mut self,
+        message: MLSMessage,
+    ) -> Result<ReceivedMessage, MlsError> {
+        self.group.process_incoming_message(message).await
     }
 
     pub(crate) async fn make_plaintext(&mut self, content: Content) -> MLSMessage {
@@ -439,7 +441,7 @@ impl GroupWithoutKeySchedule {
 #[async_trait]
 impl MessageProcessor for GroupWithoutKeySchedule {
     type CipherSuiteProvider = <Group<TestClientConfig> as MessageProcessor>::CipherSuiteProvider;
-    type EventType = <Group<TestClientConfig> as MessageProcessor>::EventType;
+    type OutputType = <Group<TestClientConfig> as MessageProcessor>::OutputType;
     type ExternalPskIdValidator =
         <Group<TestClientConfig> as MessageProcessor>::ExternalPskIdValidator;
     type IdentityProvider = <Group<TestClientConfig> as MessageProcessor>::IdentityProvider;
@@ -491,14 +493,14 @@ impl MessageProcessor for GroupWithoutKeySchedule {
     async fn process_ciphertext(
         &mut self,
         cipher_text: PrivateMessage,
-    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
+    ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
         self.inner.process_ciphertext(cipher_text).await
     }
 
     fn verify_plaintext_authentication(
         &self,
         message: PublicMessage,
-    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
+    ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
         self.inner.verify_plaintext_authentication(message)
     }
 

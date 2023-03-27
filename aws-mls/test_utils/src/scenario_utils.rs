@@ -1,5 +1,5 @@
 use aws_mls::client_builder::Preferences;
-use aws_mls::group::{Event, StateUpdate};
+use aws_mls::group::{ReceivedMessage, StateUpdate};
 use aws_mls::{CipherSuite, ExtensionList, Group, MLSMessage, ProtocolVersion};
 use futures::StreamExt;
 
@@ -130,16 +130,20 @@ pub async fn get_test_groups(
         .welcome_message;
 
     // Creator can confirm the commit was processed by the server
-    let update = creator_group.apply_pending_commit().await.unwrap();
+    let commit_description = creator_group.apply_pending_commit().await.unwrap();
 
-    assert!(update.is_active());
-    assert_eq!(update.new_epoch(), 1);
+    assert!(commit_description.state_update.is_active());
+    assert_eq!(commit_description.state_update.new_epoch(), 1);
 
     assert!(receiver_clients.iter().all(|client| creator_group
-        .get_member_with_identity(client.identity.credential.as_basic().unwrap().identifier())
+        .member_with_identity(client.identity.credential.as_basic().unwrap().identifier())
         .is_ok()));
 
-    assert!(update.roster_update().removed().is_empty());
+    assert!(commit_description
+        .state_update
+        .roster_update()
+        .removed()
+        .is_empty());
 
     // Export the tree for receivers
     let tree_data = creator_group.export_tree().unwrap();
@@ -175,12 +179,12 @@ pub async fn all_process_commit_with_update(
         if sender != g.current_member_index() as usize {
             let processed_msg = g.process_incoming_message(commit.clone()).await.unwrap();
 
-            match processed_msg.event {
-                Event::Commit(update) => update,
+            match processed_msg {
+                ReceivedMessage::Commit(update) => update.state_update,
                 _ => panic!("Expected commit, got {processed_msg:?}"),
             }
         } else {
-            g.apply_pending_commit().await.unwrap()
+            g.apply_pending_commit().await.unwrap().state_update
         }
     });
 

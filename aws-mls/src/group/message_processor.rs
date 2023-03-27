@@ -53,7 +53,7 @@ pub(crate) struct ProvisionalState {
 }
 
 /// Representation of changes made by a [commit](crate::Group::commit).
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct StateUpdate {
     pub(crate) roster_update: RosterUpdate,
     pub(crate) identity_warnings: Vec<IdentityWarning>,
@@ -120,47 +120,99 @@ impl StateUpdate {
 #[allow(clippy::large_enum_variant)]
 /// An event generated as a result of processing a message for a group with
 /// [`Group::process_incoming_message`](crate::group::Group::process_incoming_message).
-pub enum Event {
+pub enum ReceivedMessage {
     /// An application message was decrypted.
-    ApplicationMessage(Vec<u8>),
+    ApplicationMessage(ApplicationMessageDescription),
     /// A new commit was processed creating a new group state.
-    Commit(StateUpdate),
+    Commit(CommitMessageDescription),
     /// A proposal was received.
-    Proposal((Proposal, ProposalRef)),
+    Proposal(ProposalMessageDescription),
 }
 
-/// Result of calling
-/// [`Group::process_incoming_message`](crate::group::Group::process_incoming_message)
-#[derive(Clone, Debug)]
-pub struct ProcessedMessage<E> {
-    /// The [`Event`] produced by processing the message.
-    pub event: E,
-    /// Sender description of the message processed.
-    pub sender: Option<Sender>, //TODO: Find a way to get rid of Option here
-    /// Unencrypted authenticated data sent with the processed message.
+impl TryFrom<ApplicationMessageDescription> for ReceivedMessage {
+    type Error = MlsError;
+
+    fn try_from(value: ApplicationMessageDescription) -> Result<Self, Self::Error> {
+        Ok(ReceivedMessage::ApplicationMessage(value))
+    }
+}
+
+impl From<CommitMessageDescription> for ReceivedMessage {
+    fn from(value: CommitMessageDescription) -> Self {
+        ReceivedMessage::Commit(value)
+    }
+}
+
+impl From<ProposalMessageDescription> for ReceivedMessage {
+    fn from(value: ProposalMessageDescription) -> Self {
+        ReceivedMessage::Proposal(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Description of a MLS application message.
+pub struct ApplicationMessageDescription {
+    /// Index of this user in the group state.
+    pub sender_index: u32,
+    /// Received application data.
+    data: ApplicationData,
+    /// Plaintext authenticated data in the received MLS packet.
     pub authenticated_data: Vec<u8>,
 }
 
-impl<E> From<E> for ProcessedMessage<E> {
-    fn from(event: E) -> Self {
-        ProcessedMessage {
-            event,
-            sender: None,
-            authenticated_data: vec![],
+impl ApplicationMessageDescription {
+    pub fn data(&self) -> &[u8] {
+        self.data.as_bytes()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+/// Description of a processed MLS commit message.
+pub struct CommitMessageDescription {
+    /// True if this is the result of an external commit.
+    pub is_external: bool,
+    /// The index in the group state of the member who performed this commit.
+    pub committer: u32,
+    /// A full description of group state changes as a result of this commit.
+    pub state_update: StateUpdate,
+    /// Plaintext authenticated data in the received MLS packet.   
+    pub authenticated_data: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Proposal sender type.
+pub enum ProposalSender {
+    /// A current member of the group by index in the group state.
+    Member(u32),
+    /// An external entity by index within an
+    /// [`ExternalSendersExt`](crate::extension::built_in::ExternalSendersExt).
+    External(u32),
+    /// A new member proposing their addition to the group.
+    NewMember,
+}
+
+impl TryFrom<Sender> for ProposalSender {
+    type Error = MlsError;
+
+    fn try_from(value: Sender) -> Result<Self, Self::Error> {
+        match value {
+            Sender::Member(index) => Ok(Self::Member(index)),
+            Sender::External(index) => Ok(Self::External(index)),
+            Sender::NewMemberProposal => Ok(Self::NewMember),
+            Sender::NewMemberCommit => Err(MlsError::InvalidSender(value, ContentType::Proposal)),
         }
     }
 }
 
-impl From<StateUpdate> for Event {
-    fn from(update: StateUpdate) -> Self {
-        Event::Commit(update)
-    }
-}
-
-impl From<(Proposal, ProposalRef)> for Event {
-    fn from(proposal_and_ref: (Proposal, ProposalRef)) -> Self {
-        Event::Proposal(proposal_and_ref)
-    }
+#[derive(Debug, Clone)]
+/// Description of a processed MLS proposal message.
+pub struct ProposalMessageDescription {
+    /// Sender of the proposal.
+    pub sender: ProposalSender,
+    /// Proposal content.
+    pub proposal: Proposal,
+    /// Plaintext authenticated data in the received MLS packet.    
+    pub authenticated_data: Vec<u8>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -171,9 +223,9 @@ pub(crate) enum EventOrContent<E> {
 
 #[async_trait]
 pub(crate) trait MessageProcessor: Send + Sync {
-    type EventType: From<(Proposal, ProposalRef)>
-        + TryFrom<ApplicationData, Error = MlsError>
-        + From<StateUpdate>
+    type OutputType: TryFrom<ApplicationMessageDescription, Error = MlsError>
+        + From<CommitMessageDescription>
+        + From<ProposalMessageDescription>
         + Send;
 
     type ProposalRules: ProposalRules;
@@ -185,7 +237,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         &mut self,
         message: MLSMessage,
         cache_proposal: bool,
-    ) -> Result<ProcessedMessage<Self::EventType>, MlsError> {
+    ) -> Result<Self::OutputType, MlsError> {
         self.process_incoming_message_with_time(message, cache_proposal, None)
             .await
     }
@@ -195,7 +247,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         message: MLSMessage,
         cache_proposal: bool,
         time_sent: Option<MlsTime>,
-    ) -> Result<ProcessedMessage<Self::EventType>, MlsError> {
+    ) -> Result<Self::OutputType, MlsError> {
         let event_or_content = self.get_event_from_incoming_message(message).await?;
 
         self.process_event_or_content(event_or_content, cache_proposal, time_sent)
@@ -205,7 +257,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     async fn get_event_from_incoming_message(
         &mut self,
         message: MLSMessage,
-    ) -> Result<EventOrContent<Self::EventType>, MlsError> {
+    ) -> Result<EventOrContent<Self::OutputType>, MlsError> {
         self.check_metadata(&message)?;
 
         let wire_format = message.wire_format();
@@ -222,12 +274,12 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
     async fn process_event_or_content(
         &mut self,
-        event_or_content: EventOrContent<Self::EventType>,
+        event_or_content: EventOrContent<Self::OutputType>,
         cache_proposal: bool,
         time_sent: Option<MlsTime>,
-    ) -> Result<ProcessedMessage<Self::EventType>, MlsError> {
+    ) -> Result<Self::OutputType, MlsError> {
         let msg = match event_or_content {
-            EventOrContent::Event(event) => ProcessedMessage::from(event),
+            EventOrContent::Event(event) => event,
             EventOrContent::Content(content) => {
                 self.process_auth_content(content, cache_proposal, time_sent)
                     .await?
@@ -242,26 +294,41 @@ pub(crate) trait MessageProcessor: Send + Sync {
         auth_content: AuthenticatedContent,
         cache_proposal: bool,
         time_sent: Option<MlsTime>,
-    ) -> Result<ProcessedMessage<Self::EventType>, MlsError> {
+    ) -> Result<Self::OutputType, MlsError> {
         let authenticated_data = auth_content.content.authenticated_data.clone();
 
-        let sender = Some(auth_content.content.sender);
+        let sender = auth_content.content.sender;
 
         let event = match auth_content.content.content {
-            Content::Application(data) => Self::EventType::try_from(data),
+            Content::Application(data) => self
+                .process_application_message(data, sender, authenticated_data)
+                .and_then(Self::OutputType::try_from),
             Content::Commit(_) => self
                 .process_commit(auth_content, time_sent)
                 .await
-                .map(Self::EventType::from),
+                .map(Self::OutputType::from),
             Content::Proposal(ref proposal) => self
                 .process_proposal(&auth_content, proposal, cache_proposal)
-                .map(|p_ref| Self::EventType::from((proposal.clone(), p_ref))),
+                .map(Self::OutputType::from),
         }?;
 
-        Ok(ProcessedMessage {
-            event,
-            sender,
+        Ok(event)
+    }
+
+    fn process_application_message(
+        &self,
+        data: ApplicationData,
+        sender: Sender,
+        authenticated_data: Vec<u8>,
+    ) -> Result<ApplicationMessageDescription, MlsError> {
+        let Sender::Member(sender_index) = sender else {
+            return Err(MlsError::InvalidSender(sender, ContentType::Application));
+        };
+
+        Ok(ApplicationMessageDescription {
             authenticated_data,
+            sender_index,
+            data,
         })
     }
 
@@ -270,7 +337,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         auth_content: &AuthenticatedContent,
         proposal: &Proposal,
         cache_proposal: bool,
-    ) -> Result<ProposalRef, MlsError> {
+    ) -> Result<ProposalMessageDescription, MlsError> {
         let proposal_ref = ProposalRef::from_content(self.cipher_suite_provider(), auth_content)?;
 
         let group_state = self.group_state_mut();
@@ -283,7 +350,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
             )
         });
 
-        Ok(proposal_ref)
+        Ok(ProposalMessageDescription {
+            authenticated_data: auth_content.content.authenticated_data.clone(),
+            proposal: proposal.clone(),
+            sender: auth_content.content.sender.try_into()?,
+        })
     }
 
     async fn make_state_update(
@@ -373,7 +444,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         &mut self,
         auth_content: AuthenticatedContent,
         time_sent: Option<MlsTime>,
-    ) -> Result<StateUpdate, MlsError> {
+    ) -> Result<CommitMessageDescription, MlsError> {
         let commit = match auth_content.content.content {
             Content::Commit(ref commit) => Ok(commit),
             _ => Err(MlsError::NotCommitContent(
@@ -416,7 +487,13 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         if !self.can_continue_processing(&provisional_state) {
             state_update.active = false;
-            return Ok(state_update);
+
+            return Ok(CommitMessageDescription {
+                is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
+                authenticated_data: auth_content.content.authenticated_data.clone(),
+                committer: *sender,
+                state_update,
+            });
         }
 
         let update_path = match commit.path.as_ref() {
@@ -480,7 +557,12 @@ pub(crate) trait MessageProcessor: Send + Sync {
             )
             .await?;
 
-            Ok(state_update)
+            Ok(CommitMessageDescription {
+                is_external: matches!(auth_content.content.sender, Sender::NewMemberCommit),
+                authenticated_data: auth_content.content.authenticated_data.clone(),
+                committer: *sender,
+                state_update,
+            })
         } else {
             Err(MlsError::InvalidConfirmationTag)
         }
@@ -566,12 +648,12 @@ pub(crate) trait MessageProcessor: Send + Sync {
     async fn process_ciphertext(
         &mut self,
         cipher_text: PrivateMessage,
-    ) -> Result<EventOrContent<Self::EventType>, MlsError>;
+    ) -> Result<EventOrContent<Self::OutputType>, MlsError>;
 
     fn verify_plaintext_authentication(
         &self,
         message: PublicMessage,
-    ) -> Result<EventOrContent<Self::EventType>, MlsError>;
+    ) -> Result<EventOrContent<Self::OutputType>, MlsError>;
 
     fn calculate_provisional_state(
         &self,
