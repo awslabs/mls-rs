@@ -74,7 +74,7 @@ pub(crate) mod test_utils {
 
     use crate::{
         crypto::test_utils::TestCryptoProvider,
-        identity::{basic::BasicIdentityProvider, test_utils::get_test_signing_identity},
+        identity::test_utils::get_test_signing_identity,
         signer::Signable,
         tree_kem::{
             leaf_node::{ConfigProperties, LeafNode, LeafNodeSigningContext, LeafNodeSource},
@@ -219,7 +219,6 @@ pub(crate) mod test_utils {
             signing_identity,
             &signature_key,
             Lifetime::years(1).unwrap(),
-            &BasicIdentityProvider::new(),
         )
         .await
         .unwrap();

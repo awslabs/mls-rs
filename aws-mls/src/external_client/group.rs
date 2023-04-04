@@ -207,6 +207,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             &self.cipher_suite_provider,
             None,
             self.config.identity_provider(),
+            Some(&self.state.context.extensions),
         );
 
         key_package_validator

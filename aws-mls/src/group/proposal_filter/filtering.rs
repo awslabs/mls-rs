@@ -291,22 +291,27 @@ where
         F: FilterStrategy,
         C: IdentityProvider,
     {
-        let mut new_state = self
+        // Apply adds, updates etc. in the context of new extensions
+        let new_state = self
             .apply_tree_changes(
                 &strategy,
                 state.clone(),
-                &ExtensionList::new(),
-                None,
+                group_context_extensions_proposal.proposal(),
+                new_required_capabilities.as_ref(),
                 commit_time,
             )
             .await?;
 
+        // Verify that capabilities and extensions are supported after modifications.
+        // TODO: The newly inserted nodes have already been validated by `apply_tree_changes`
+        // above. We should investigate if there is an easy way to avoid the double check.
         let new_capabilities_supported =
             new_required_capabilities.map_or(Ok(()), |new_required_capabilities| {
                 let leaf_validator = LeafNodeValidator::new(
                     self.cipher_suite_provider,
                     Some(&new_required_capabilities),
                     &self.identity_provider,
+                    Some(group_context_extensions_proposal.proposal()),
                 );
 
                 new_state
@@ -333,34 +338,25 @@ where
 
         let group_extensions_supported = new_capabilities_supported.and(new_extensions_supported);
 
+        // If extensions are good, return `Ok`. If not and the strategy is to filter, remove the group
+        // context extensions proposal and try applying all proposals again in the context of the old
+        // extensions. Else, return an error.
         match group_extensions_supported {
             Ok(()) => Ok(new_state),
             Err(e) => {
-                let ignored =
-                    strategy.ignore(&group_context_extensions_proposal.by_ref().map(Into::into));
-
-                if ignored {
+                if strategy.ignore(&group_context_extensions_proposal.by_ref().map(Into::into)) {
                     state.proposals.clear_group_context_extensions();
-                    new_state.proposals.clear_group_context_extensions();
-                }
 
-                match (
-                    ignored,
-                    self.original_required_capabilities,
-                    self.original_group_extensions.is_empty(),
-                ) {
-                    (false, ..) => Err(e),
-                    (true, None, true) => Ok(new_state),
-                    (true, ..) => {
-                        self.apply_tree_changes(
-                            &strategy,
-                            state,
-                            self.original_group_extensions,
-                            self.original_required_capabilities,
-                            commit_time,
-                        )
-                        .await
-                    }
+                    self.apply_tree_changes(
+                        &strategy,
+                        state,
+                        self.original_group_extensions,
+                        self.original_required_capabilities,
+                        commit_time,
+                    )
+                    .await
+                } else {
+                    Err(e)
                 }
             }
         }
@@ -509,6 +505,7 @@ where
             self.cipher_suite_provider,
             required_capabilities,
             &self.identity_provider,
+            Some(self.original_group_extensions),
         );
 
         let strategy = &strategy;
@@ -560,6 +557,7 @@ where
             self.cipher_suite_provider,
             required_capabilities,
             &self.identity_provider,
+            Some(group_extensions_in_use),
         );
 
         let strategy = &strategy;
@@ -769,7 +767,7 @@ where
                 {
                     Ok(None) => Ok(()),
                     Ok(Some(extension)) => extension
-                        .verify_all(&identity_provider, commit_time)
+                        .verify_all(&identity_provider, commit_time, p.proposal())
                         .await
                         .map_err(|e| ProposalRulesError::IdentityProviderError(e.into())),
                     Err(e) => Err(e),

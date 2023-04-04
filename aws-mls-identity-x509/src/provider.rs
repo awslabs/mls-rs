@@ -4,6 +4,7 @@ use crate::{util::credential_to_chain, CertificateChain, X509IdentityError};
 use async_trait::async_trait;
 use aws_mls_core::{
     crypto::SignaturePublicKey,
+    extension::ExtensionList,
     group::RosterUpdate,
     identity::{CredentialType, IdentityProvider, IdentityWarning},
     time::MlsTime,
@@ -182,10 +183,20 @@ where
 {
     type Error = X509IdentityError;
 
-    async fn validate(
+    async fn validate_member(
         &self,
         signing_identity: &aws_mls_core::identity::SigningIdentity,
         timestamp: Option<MlsTime>,
+        _extensions: Option<&ExtensionList>,
+    ) -> Result<(), Self::Error> {
+        self.validate(signing_identity, timestamp)
+    }
+
+    async fn validate_external_sender(
+        &self,
+        signing_identity: &aws_mls_core::identity::SigningIdentity,
+        timestamp: Option<MlsTime>,
+        _extensions: Option<&ExtensionList>,
     ) -> Result<(), Self::Error> {
         self.validate(signing_identity, timestamp)
     }

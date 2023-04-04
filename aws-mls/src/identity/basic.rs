@@ -1,6 +1,7 @@
 use crate::{identity::CredentialType, identity::SigningIdentity, time::MlsTime};
 use async_trait::async_trait;
 use aws_mls_core::{
+    extension::ExtensionList,
     group::RosterUpdate,
     identity::{IdentityProvider, IdentityWarning},
 };
@@ -55,10 +56,20 @@ fn resolve_basic_identity(
 impl IdentityProvider for BasicIdentityProvider {
     type Error = BasicIdentityProviderError;
 
-    async fn validate(
+    async fn validate_member(
         &self,
         signing_identity: &SigningIdentity,
         _timestamp: Option<MlsTime>,
+        _extensions: Option<&ExtensionList>,
+    ) -> Result<(), Self::Error> {
+        resolve_basic_identity(signing_identity).map(|_| ())
+    }
+
+    async fn validate_external_sender(
+        &self,
+        signing_identity: &SigningIdentity,
+        _timestamp: Option<MlsTime>,
+        _extensions: Option<&ExtensionList>,
     ) -> Result<(), Self::Error> {
         resolve_basic_identity(signing_identity).map(|_| ())
     }

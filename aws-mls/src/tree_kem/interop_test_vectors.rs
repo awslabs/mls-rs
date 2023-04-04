@@ -1,4 +1,7 @@
-use aws_mls_core::crypto::{CipherSuite, CipherSuiteProvider};
+use aws_mls_core::{
+    crypto::{CipherSuite, CipherSuiteProvider},
+    extension::ExtensionList,
+};
 
 use itertools::Itertools;
 use tls_codec::{Deserialize, Serialize};
@@ -90,10 +93,17 @@ async fn validation() {
                 assert_eq!(&tree.nodes.get_resolution_index(i as u32).unwrap(), res)
             });
 
-        TreeValidator::new(&cs, &test_case.group_id, &tree_hash, None, id_provider)
-            .validate(&mut tree)
-            .await
-            .unwrap();
+        TreeValidator::new(
+            &cs,
+            &test_case.group_id,
+            &tree_hash,
+            None,
+            &ExtensionList::new(),
+            id_provider,
+        )
+        .validate(&mut tree)
+        .await
+        .unwrap();
     }
 }
 

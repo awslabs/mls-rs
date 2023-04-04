@@ -17,6 +17,7 @@ pub(crate) mod test_utils {
     use async_trait::async_trait;
     use aws_mls_core::{
         crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},
+        extension::ExtensionList,
         group::RosterUpdate,
         identity::{
             Credential, CredentialType, IdentityProvider, IdentityWarning, SigningIdentity,
@@ -84,10 +85,22 @@ pub(crate) mod test_utils {
     impl IdentityProvider for BasicWithCustomProvider {
         type Error = BasicWithCustomProviderError;
 
-        async fn validate(
+        async fn validate_member(
             &self,
             _signing_identity: &SigningIdentity,
             _timestamp: Option<MlsTime>,
+            _extensions: Option<&ExtensionList>,
+        ) -> Result<(), Self::Error> {
+            //TODO: Is it actually beneficial to check the key, or does that already happen elsewhere before
+            //this point?
+            Ok(())
+        }
+
+        async fn validate_external_sender(
+            &self,
+            _signing_identity: &SigningIdentity,
+            _timestamp: Option<MlsTime>,
+            _extensions: Option<&ExtensionList>,
         ) -> Result<(), Self::Error> {
             //TODO: Is it actually beneficial to check the key, or does that already happen elsewhere before
             //this point?

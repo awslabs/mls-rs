@@ -1,6 +1,6 @@
 use aws_mls_core::{
     crypto::HpkePublicKey,
-    extension::{ExtensionType, TlsCodecExtension},
+    extension::{ExtensionList, ExtensionType, TlsCodecExtension},
     group::ProposalType,
     identity::{CredentialType, IdentityProvider, SigningIdentity},
     time::MlsTime,
@@ -157,9 +157,12 @@ impl ExternalSendersExt {
         &self,
         provider: &I,
         timestamp: Option<MlsTime>,
+        group_context_extensions: &ExtensionList,
     ) -> Result<(), I::Error> {
         futures::stream::iter(self.allowed_senders.iter().map(Ok))
-            .try_for_each(|id| provider.validate(id, timestamp))
+            .try_for_each(|id| {
+                provider.validate_external_sender(id, timestamp, Some(group_context_extensions))
+            })
             .await
     }
 }

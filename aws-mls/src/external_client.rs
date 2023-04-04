@@ -105,6 +105,7 @@ where
             &cipher_suite_provider,
             None,
             self.config.identity_provider(),
+            None,
         );
 
         let options = KeyPackageValidationOptions {

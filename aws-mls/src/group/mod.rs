@@ -256,7 +256,6 @@ where
             signing_identity,
             &signer,
             config.lifetime(),
-            &config.identity_provider(),
         )
         .await?;
 
@@ -600,7 +599,6 @@ where
             signing_identity,
             &signer,
             config.lifetime(),
-            &config.identity_provider(),
         )
         .await?;
 

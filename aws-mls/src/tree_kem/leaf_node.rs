@@ -1,13 +1,11 @@
 use super::{parent_hash::ParentHash, Capabilities, Lifetime};
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
-use crate::time::MlsTime;
 use crate::{
     identity::SigningIdentity,
     signer::{Signable, SignatureError},
     ExtensionList,
 };
-use aws_mls_core::identity::IdentityProvider;
 use aws_mls_core::tls::ByteVec;
 use serde_with::serde_as;
 use thiserror::Error;
@@ -83,50 +81,16 @@ pub struct ConfigProperties {
 }
 
 impl LeafNode {
-    async fn check_signing_identity<I, CSP>(
-        signing_identity: &SigningIdentity,
-        signer: &SignatureSecretKey,
-        identity_provider: &I,
-        cipher_suite_provider: &CSP,
-    ) -> Result<(), LeafNodeError>
-    where
-        I: IdentityProvider,
-        CSP: CipherSuiteProvider,
-    {
-        let public_key = cipher_suite_provider
-            .signature_key_derive_public(signer)
-            .map_err(|e| LeafNodeError::CipherSuiteProviderError(e.into()))?;
-
-        if public_key != signing_identity.signature_key {
-            return Err(LeafNodeError::InvalidSignerPublicKey);
-        }
-
-        identity_provider
-            .validate(signing_identity, Some(MlsTime::now()))
-            .await
-            .map_err(|e| LeafNodeError::IdentityProviderError(e.into()))
-    }
-
-    pub async fn generate<IP, CSP>(
+    pub async fn generate<CSP>(
         cipher_suite_provider: &CSP,
         properties: ConfigProperties,
         signing_identity: SigningIdentity,
         signer: &SignatureSecretKey,
         lifetime: Lifetime,
-        identity_provider: &IP,
     ) -> Result<(Self, HpkeSecretKey), LeafNodeError>
     where
-        IP: IdentityProvider,
         CSP: CipherSuiteProvider,
     {
-        LeafNode::check_signing_identity(
-            &signing_identity,
-            signer,
-            identity_provider,
-            cipher_suite_provider,
-        )
-        .await?;
-
         let (secret_key, public_key) = cipher_suite_provider
             .kem_generate()
             .map_err(|e| LeafNodeError::CipherSuiteProviderError(e.into()))?;
@@ -306,7 +270,6 @@ pub(crate) mod test_utils {
         cipher_suite::CipherSuite,
         crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
         extension::ApplicationIdExt,
-        identity::basic::BasicIdentityProvider,
         identity::test_utils::{get_test_signing_identity, BasicWithCustomProvider},
     };
 
@@ -350,7 +313,6 @@ pub(crate) mod test_utils {
             signing_identity,
             secret,
             lifetime,
-            &BasicIdentityProvider::new(),
         )
         .await
         .unwrap()
@@ -386,7 +348,6 @@ pub(crate) mod test_utils {
             signing_identity,
             &signature_key,
             Lifetime::years(1).unwrap(),
-            &BasicIdentityProvider::new(),
         )
         .await
         .map(|(leaf, hpke_secret_key)| (leaf, hpke_secret_key, signature_key))
@@ -442,12 +403,9 @@ mod tests {
     use crate::crypto::test_utils::test_cipher_suite_provider;
     use crate::crypto::test_utils::TestCryptoProvider;
     use crate::group::test_utils::random_bytes;
-    use crate::identity::basic::BasicIdentityProvider;
     use crate::identity::test_utils::get_test_signing_identity;
-    use crate::tree_kem::leaf_node_validator::test_utils::FailureIdentityProvider;
     use assert_matches::assert_matches;
 
-    use aws_mls_core::crypto::CipherSuite;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -503,68 +461,6 @@ mod tests {
                 )
                 .unwrap();
         }
-    }
-
-    #[futures_test::test]
-    async fn test_credential_signature_mismatch() {
-        let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
-
-        let (test_signing_identity, _) =
-            get_test_signing_identity(TEST_CIPHER_SUITE, b"foo".to_vec());
-
-        let (incorrect_secret, _) = cipher_suite_provider.signature_key_generate().unwrap();
-
-        let res = LeafNode::generate(
-            &cipher_suite_provider,
-            default_properties(),
-            test_signing_identity,
-            &incorrect_secret,
-            Lifetime::years(1).unwrap(),
-            &BasicIdentityProvider::new(),
-        )
-        .await;
-
-        assert_matches!(res, Err(LeafNodeError::InvalidSignerPublicKey));
-    }
-
-    #[futures_test::test]
-    async fn test_identity_invalid_for_ciphersuite() {
-        let cipher_suite = TEST_CIPHER_SUITE;
-
-        let (test_signing_identity, signer) =
-            get_test_signing_identity(CipherSuite::P256_AES128, b"foo".to_vec());
-
-        let res = LeafNode::generate(
-            &test_cipher_suite_provider(cipher_suite),
-            default_properties(),
-            test_signing_identity,
-            &signer,
-            Lifetime::years(1).unwrap(),
-            &BasicIdentityProvider::new(),
-        )
-        .await;
-
-        assert_matches!(res, Err(LeafNodeError::InvalidSignerPublicKey));
-    }
-
-    #[futures_test::test]
-    async fn invalid_credential_for_application() {
-        let cipher_suite = TEST_CIPHER_SUITE;
-
-        let (test_signing_identity, signer) =
-            get_test_signing_identity(cipher_suite, b"foo".to_vec());
-
-        let res = LeafNode::generate(
-            &test_cipher_suite_provider(cipher_suite),
-            default_properties(),
-            test_signing_identity,
-            &signer,
-            Lifetime::years(1).unwrap(),
-            &FailureIdentityProvider,
-        )
-        .await;
-
-        assert_matches!(res, Err(LeafNodeError::IdentityProviderError(_)));
     }
 
     #[futures_test::test]

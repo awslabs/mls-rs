@@ -635,19 +635,37 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use async_trait::async_trait;
+    use thiserror::Error;
+
+    use aws_mls_core::{
+        group::RosterUpdate,
+        identity::{CredentialType, IdentityProvider, IdentityWarning},
+        time::MlsTime,
+    };
+
+    use crate::{crypto::test_utils::TestCryptoProvider, extension::ExternalSendersExt, Client};
+
     use crate::{
         client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
-        client_builder::test_utils::TestClientConfig,
+        client_builder::{
+            test_utils::TestClientConfig, BaseConfig, ClientBuilder, WithCryptoProvider,
+            WithIdentityProvider, WithKeychain,
+        },
         client_config::ClientConfig,
-        extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
+        extension::{
+            test_utils::{TestExtension, TEST_EXTENSION_TYPE},
+            RequiredCapabilitiesExt,
+        },
         group::{
             proposal::{PreSharedKeyProposal, ProposalType},
             test_utils::{test_group_custom_config, test_n_member_group},
         },
-        identity::test_utils::get_test_basic_credential,
         identity::test_utils::get_test_signing_identity,
+        identity::{basic::BasicIdentityProvider, test_utils::get_test_basic_credential},
         key_package::test_utils::test_key_package_message,
         psk::{JustPreSharedKeyID, PreSharedKey, PreSharedKeyID},
+        storage_provider::in_memory::InMemoryKeychainStorage,
     };
 
     use super::*;
@@ -1031,5 +1049,219 @@ mod tests {
         let commit = group.commit(vec![]).await.unwrap();
 
         assert!(commit.ratchet_tree().is_none());
+    }
+
+    #[futures_test::test]
+    async fn member_identity_is_validated_against_new_extensions() {
+        let (alice, identity) = client_with_test_extension(b"alice");
+
+        let mut alice = alice
+            .create_group(
+                TEST_PROTOCOL_VERSION,
+                TEST_CIPHER_SUITE,
+                identity,
+                ExtensionList::new(),
+            )
+            .await
+            .unwrap();
+
+        let (bob, identity) = client_with_test_extension(b"bob");
+
+        let bob_kp = bob
+            .generate_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, identity)
+            .await
+            .unwrap();
+
+        let mut extension_list = ExtensionList::new();
+        let extension = TestExtension { foo: b'a' };
+        extension_list.set_from(extension.clone()).unwrap();
+
+        let res = alice
+            .commit_builder()
+            .add_member(bob_kp)
+            .unwrap()
+            .set_group_context_ext(extension_list.clone())
+            .unwrap()
+            .build()
+            .await;
+
+        assert!(res.is_err());
+
+        let (alex, identity) = client_with_test_extension(b"alex");
+
+        let alex_kp = alex
+            .generate_key_package_message(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, identity)
+            .await
+            .unwrap();
+
+        alice
+            .commit_builder()
+            .add_member(alex_kp)
+            .unwrap()
+            .set_group_context_ext(extension_list.clone())
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+    }
+
+    #[futures_test::test]
+    async fn server_identity_is_validated_against_new_extensions() {
+        let (alice, identity) = client_with_test_extension(b"alice");
+
+        let mut alice = alice
+            .create_group(
+                TEST_PROTOCOL_VERSION,
+                TEST_CIPHER_SUITE,
+                identity,
+                ExtensionList::new(),
+            )
+            .await
+            .unwrap();
+
+        let mut extension_list = ExtensionList::new();
+        let extension = TestExtension { foo: b'a' };
+        extension_list.set_from(extension.clone()).unwrap();
+
+        let (alex_server, _) = get_test_signing_identity(TEST_CIPHER_SUITE, b"alex".to_vec());
+
+        let mut alex_extensions = extension_list.clone();
+
+        alex_extensions
+            .set_from(ExternalSendersExt {
+                allowed_senders: vec![alex_server],
+            })
+            .unwrap();
+
+        let res = alice
+            .commit_builder()
+            .set_group_context_ext(alex_extensions)
+            .unwrap()
+            .build()
+            .await;
+
+        assert!(res.is_err());
+
+        let (bob_server, _) = get_test_signing_identity(TEST_CIPHER_SUITE, b"bob".to_vec());
+
+        let mut bob_extensions = extension_list;
+
+        bob_extensions
+            .set_from(ExternalSendersExt {
+                allowed_senders: vec![bob_server],
+            })
+            .unwrap();
+
+        alice
+            .commit_builder()
+            .set_group_context_ext(bob_extensions)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+    }
+
+    #[derive(Debug, Clone)]
+    struct IdentityProviderWithExtension(BasicIdentityProvider);
+
+    #[derive(Debug, Clone, Error)]
+    #[error("test error")]
+    struct IdentityProviderWithExtensionError {}
+
+    impl IdentityProviderWithExtension {
+        // True if the identity starts with the character `foo` from `TestExtension` or if `TestExtension`
+        // is not set.
+        async fn starts_with_foo(
+            &self,
+            identity: &SigningIdentity,
+            _timestamp: Option<MlsTime>,
+            extensions: Option<&ExtensionList>,
+        ) -> bool {
+            if let Some(extensions) = extensions {
+                if let Some(ext) = extensions.get_as::<TestExtension>().unwrap() {
+                    self.identity(identity).await.unwrap()[0] == ext.foo
+                } else {
+                    true
+                }
+            } else {
+                true
+            }
+        }
+    }
+
+    #[async_trait]
+    impl IdentityProvider for IdentityProviderWithExtension {
+        type Error = IdentityProviderWithExtensionError;
+
+        async fn validate_member(
+            &self,
+            identity: &SigningIdentity,
+            timestamp: Option<MlsTime>,
+            extensions: Option<&ExtensionList>,
+        ) -> Result<(), Self::Error> {
+            self.starts_with_foo(identity, timestamp, extensions)
+                .await
+                .then_some(())
+                .ok_or(IdentityProviderWithExtensionError {})
+        }
+
+        async fn validate_external_sender(
+            &self,
+            identity: &SigningIdentity,
+            timestamp: Option<MlsTime>,
+            extensions: Option<&ExtensionList>,
+        ) -> Result<(), Self::Error> {
+            (!self.starts_with_foo(identity, timestamp, extensions).await)
+                .then_some(())
+                .ok_or(IdentityProviderWithExtensionError {})
+        }
+
+        async fn identity(
+            &self,
+            signing_identity: &SigningIdentity,
+        ) -> Result<Vec<u8>, Self::Error> {
+            self.0
+                .identity(signing_identity)
+                .await
+                .map_err(|_| IdentityProviderWithExtensionError {})
+        }
+
+        async fn valid_successor(
+            &self,
+            _predecessor: &SigningIdentity,
+            _successor: &SigningIdentity,
+        ) -> Result<bool, Self::Error> {
+            Ok(true)
+        }
+
+        fn supported_types(&self) -> Vec<CredentialType> {
+            self.0.supported_types()
+        }
+
+        async fn identity_warnings(
+            &self,
+            _update: &RosterUpdate,
+        ) -> Result<Vec<IdentityWarning>, Self::Error> {
+            Ok(vec![])
+        }
+    }
+
+    type ExtensionClientConfig = WithIdentityProvider<
+        IdentityProviderWithExtension,
+        WithKeychain<InMemoryKeychainStorage, WithCryptoProvider<TestCryptoProvider, BaseConfig>>,
+    >;
+
+    fn client_with_test_extension(name: &[u8]) -> (Client<ExtensionClientConfig>, SigningIdentity) {
+        let (identity, secret_key) = get_test_signing_identity(TEST_CIPHER_SUITE, name.to_vec());
+
+        let client = ClientBuilder::new()
+            .crypto_provider(TestCryptoProvider::new())
+            .keychain(InMemoryKeychainStorage::new())
+            .single_signing_identity(identity.clone(), secret_key, TEST_CIPHER_SUITE)
+            .extension_types(vec![TEST_EXTENSION_TYPE.into()])
+            .identity_provider(IdentityProviderWithExtension(BasicIdentityProvider::new()))
+            .build();
+
+        (client, identity)
     }
 }

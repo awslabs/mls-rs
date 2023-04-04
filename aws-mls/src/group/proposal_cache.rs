@@ -3127,7 +3127,6 @@ mod tests {
                 signing_identity,
                 &signature_key,
                 Lifetime::years(1).unwrap(),
-                &BasicIdentityProvider::new(),
             )
             .await
             .unwrap();

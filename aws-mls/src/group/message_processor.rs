@@ -504,6 +504,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 &provisional_state,
                 sender,
                 time_sent,
+                &provisional_state.group_context.extensions,
             )
             .await
             .map(Some),

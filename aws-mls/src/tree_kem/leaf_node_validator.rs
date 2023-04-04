@@ -8,6 +8,7 @@ use crate::{
     signer::{Signable, SignatureError},
     time::MlsTime,
 };
+use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
 use thiserror::Error;
 
@@ -68,6 +69,7 @@ where
     cipher_suite_provider: &'a CP,
     identity_provider: C,
     required_capabilities: Option<&'a RequiredCapabilitiesExt>,
+    group_context_extensions: Option<&'a ExtensionList>,
 }
 
 impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, CP> {
@@ -75,11 +77,13 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         cipher_suite_provider: &'a CP,
         required_capabilities: Option<&'a RequiredCapabilitiesExt>,
         identity_provider: C,
+        group_context_extensions: Option<&'a ExtensionList>,
     ) -> Self {
         Self {
             cipher_suite_provider,
             required_capabilities,
             identity_provider,
+            group_context_extensions,
         }
     }
 
@@ -179,7 +183,11 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
 
         // Verify the credential
         self.identity_provider
-            .validate(&leaf_node.signing_identity, context.generation_time())
+            .validate_member(
+                &leaf_node.signing_identity,
+                context.generation_time(),
+                self.group_context_extensions,
+            )
             .await
             .map_err(|e| LeafNodeValidationError::IdentityProviderError(e.into()))?;
 
@@ -252,8 +260,12 @@ mod tests {
 
         let (leaf_node, _) = get_test_add_node().await;
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, BasicIdentityProvider::new());
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            None,
+            BasicIdentityProvider::new(),
+            None,
+        );
 
         assert_matches!(
             test_validator
@@ -268,8 +280,12 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let (leaf_node, _) = get_test_add_node().await;
 
-        let fail_test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, FailureIdentityProvider::new());
+        let fail_test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            None,
+            FailureIdentityProvider::new(),
+            None,
+        );
 
         assert_matches!(
             fail_test_validator
@@ -298,8 +314,12 @@ mod tests {
             )
             .unwrap();
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, BasicIdentityProvider::new());
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            None,
+            BasicIdentityProvider::new(),
+            None,
+        );
 
         assert_matches!(
             test_validator
@@ -328,8 +348,12 @@ mod tests {
             )
             .unwrap();
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, BasicIdentityProvider::new());
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            None,
+            BasicIdentityProvider::new(),
+            None,
+        );
 
         assert_matches!(
             test_validator
@@ -343,8 +367,12 @@ mod tests {
     async fn test_incorrect_context() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, BasicIdentityProvider::new());
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            None,
+            BasicIdentityProvider::new(),
+            None,
+        );
 
         let (mut leaf_node, secret) = get_test_add_node().await;
 
@@ -427,8 +455,12 @@ mod tests {
 
             leaf_node.signature = random_bytes(leaf_node.signature.len());
 
-            let test_validator =
-                LeafNodeValidator::new(&cipher_suite_provider, None, BasicIdentityProvider::new());
+            let test_validator = LeafNodeValidator::new(
+                &cipher_suite_provider,
+                None,
+                BasicIdentityProvider::new(),
+                None,
+            );
 
             assert_matches!(
                 test_validator
@@ -466,8 +498,12 @@ mod tests {
 
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, BasicIdentityProvider::new());
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            None,
+            BasicIdentityProvider::new(),
+            None,
+        );
 
         assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)).await,
             Err(LeafNodeValidationError::ExtensionNotInCapabilities(ext)) if ext == 42.into());
@@ -479,8 +515,12 @@ mod tests {
 
         let (leaf_node, _) = get_test_add_node().await;
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, BasicIdentityProvider::new());
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            None,
+            BasicIdentityProvider::new(),
+            None,
+        );
 
         assert_matches!(
             test_validator
@@ -505,6 +545,7 @@ mod tests {
             &cipher_suite_provider,
             Some(&required_capabilities),
             BasicIdentityProvider::new(),
+            None,
         );
 
         assert_matches!(
@@ -530,6 +571,7 @@ mod tests {
             &cipher_suite_provider,
             Some(&required_capabilities),
             BasicIdentityProvider::new(),
+            None,
         );
 
         assert_matches!(
@@ -555,6 +597,7 @@ mod tests {
             &cipher_suite_provider,
             Some(&required_capabilities),
             BasicIdentityProvider::new(),
+            None,
         );
 
         assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)).await,
@@ -568,8 +611,12 @@ mod tests {
 
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
-        let test_validator =
-            LeafNodeValidator::new(&cipher_suite_provider, None, BasicIdentityProvider::new());
+        let test_validator = LeafNodeValidator::new(
+            &cipher_suite_provider,
+            None,
+            BasicIdentityProvider::new(),
+            None,
+        );
 
         let good_lifetime = MlsTime::now();
 
@@ -598,6 +645,7 @@ mod tests {
 pub(crate) mod test_utils {
     use async_trait::async_trait;
     use aws_mls_core::{
+        extension::ExtensionList,
         group::RosterUpdate,
         identity::{BasicCredential, IdentityProvider, IdentityWarning},
     };
@@ -623,10 +671,20 @@ pub(crate) mod test_utils {
     impl IdentityProvider for FailureIdentityProvider {
         type Error = TestFailureError;
 
-        async fn validate(
+        async fn validate_member(
             &self,
             _signing_identity: &SigningIdentity,
             _timestamp: Option<MlsTime>,
+            _extensions: Option<&ExtensionList>,
+        ) -> Result<(), Self::Error> {
+            Err(TestFailureError)
+        }
+
+        async fn validate_external_sender(
+            &self,
+            _signing_identity: &SigningIdentity,
+            _timestamp: Option<MlsTime>,
+            _extensions: Option<&ExtensionList>,
         ) -> Result<(), Self::Error> {
             Err(TestFailureError)
         }

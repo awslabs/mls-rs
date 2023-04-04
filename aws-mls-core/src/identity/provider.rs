@@ -1,4 +1,4 @@
-use crate::{group::RosterUpdate, time::MlsTime};
+use crate::{extension::ExtensionList, group::RosterUpdate, time::MlsTime};
 use async_trait::async_trait;
 
 use super::{CredentialType, SigningIdentity};
@@ -35,15 +35,30 @@ pub trait IdentityProvider: Send + Sync {
     /// Error type that this provider returns on internal failure.
     type Error: std::error::Error + Send + Sync + 'static;
 
-    /// Determine if `signing_identity` is valid.
+    /// Determine if `signing_identity` is valid for a group member.
     ///
     /// A `timestamp` value can optionally be supplied to aid with validation
     /// of a [`Credential`](aws-mls-core::identity::Credential) that requires
     /// time based context. For example, X.509 certificates can become expired.
-    async fn validate(
+    async fn validate_member(
         &self,
         signing_identity: &SigningIdentity,
         timestamp: Option<MlsTime>,
+        extensions: Option<&ExtensionList>,
+    ) -> Result<(), Self::Error>;
+
+    /// Determine if `signing_identity` is valid for an external sender in
+    /// [`ExternalSendersExt`](crate::extension::ExternalSendersExt) stored in the
+    /// group context.
+    ///
+    /// A `timestamp` value can optionally be supplied to aid with validation
+    /// of a [`Credential`](aws-mls-core::identity::Credential) that requires
+    /// time based context. For example, X.509 certificates can become expired.
+    async fn validate_external_sender(
+        &self,
+        signing_identity: &SigningIdentity,
+        timestamp: Option<MlsTime>,
+        extensions: Option<&ExtensionList>,
     ) -> Result<(), Self::Error>;
 
     /// A unique identifier for `signing_identity`.
@@ -84,12 +99,26 @@ pub trait IdentityProvider: Send + Sync {
 impl<T: IdentityProvider> IdentityProvider for &T {
     type Error = T::Error;
 
-    async fn validate(
+    async fn validate_member(
         &self,
         signing_identity: &SigningIdentity,
         timestamp: Option<MlsTime>,
+        extensions: Option<&ExtensionList>,
     ) -> Result<(), Self::Error> {
-        (*self).validate(signing_identity, timestamp).await
+        (*self)
+            .validate_member(signing_identity, timestamp, extensions)
+            .await
+    }
+
+    async fn validate_external_sender(
+        &self,
+        signing_identity: &SigningIdentity,
+        timestamp: Option<MlsTime>,
+        extensions: Option<&ExtensionList>,
+    ) -> Result<(), Self::Error> {
+        (*self)
+            .validate_external_sender(signing_identity, timestamp, extensions)
+            .await
     }
 
     async fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {

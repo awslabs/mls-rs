@@ -65,6 +65,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, 
         cipher_suite_provider: &'a CSP,
         required_capabilities: Option<&'a RequiredCapabilitiesExt>,
         identity_provider: C,
+        group_context_extensions: Option<&'a ExtensionList>,
     ) -> KeyPackageValidator<'a, C, CSP> {
         KeyPackageValidator {
             protocol_version,
@@ -73,6 +74,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, 
                 cipher_suite_provider,
                 required_capabilities,
                 identity_provider,
+                group_context_extensions,
             ),
         }
     }
@@ -187,6 +189,7 @@ mod tests {
                 &cipher_suite_provider,
                 None,
                 BasicIdentityProvider::new(),
+                None,
             );
 
             assert_matches!(
@@ -223,6 +226,7 @@ mod tests {
                 &cipher_suite_provider,
                 None,
                 BasicIdentityProvider::new(),
+                None,
             );
 
             assert_matches!(
@@ -248,6 +252,7 @@ mod tests {
             &invalid_cipher_suite_provider,
             None,
             BasicIdentityProvider::new(),
+            None,
         );
 
         assert_matches!(
@@ -335,6 +340,7 @@ mod tests {
             &cipher_suite_provider,
             None,
             BasicIdentityProvider::new(),
+            None,
         );
 
         assert_matches!(
@@ -365,6 +371,7 @@ mod tests {
             &cipher_suite_provider,
             None,
             BasicIdentityProvider::new(),
+            None,
         );
 
         assert_matches!(
@@ -420,6 +427,7 @@ mod tests {
             &cipher_suite_provider,
             None,
             BasicIdentityProvider::new(),
+            None,
         );
 
         let options = KeyPackageValidationOptions {
@@ -447,6 +455,7 @@ mod tests {
             &cipher_suite_provider,
             None,
             BasicIdentityProvider::new(),
+            None,
         );
 
         assert_matches!(
@@ -502,6 +511,7 @@ mod tests {
             &cipher_suite_provider,
             Some(&required_capabilities),
             BasicIdentityProvider::new(),
+            None,
         );
 
         assert_matches!(
@@ -535,6 +545,7 @@ mod tests {
             &cipher_suite_provider,
             Some(&required_capabilities),
             BasicIdentityProvider::new(),
+            None,
         );
 
         assert_matches!(
@@ -580,6 +591,7 @@ mod tests {
             &cipher_suite_provider,
             None,
             BasicIdentityProvider::new(),
+            None,
         );
 
         assert_matches!(

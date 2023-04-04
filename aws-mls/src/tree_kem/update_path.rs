@@ -1,4 +1,7 @@
-use aws_mls_core::{extension::ExtensionError, identity::IdentityProvider};
+use aws_mls_core::{
+    extension::{ExtensionError, ExtensionList},
+    identity::IdentityProvider,
+};
 use thiserror::Error;
 use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
@@ -61,6 +64,7 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
     state: &ProvisionalState,
     sender: LeafIndex,
     commit_time: Option<MlsTime>,
+    group_context_extensions: &ExtensionList,
 ) -> Result<ValidatedUpdatePath, UpdatePathValidationError> {
     let required_capabilities = state.group_context.extensions.get_as()?;
 
@@ -68,6 +72,7 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
         cipher_suite_provider,
         required_capabilities.as_ref(),
         identity_provider,
+        Some(group_context_extensions),
     );
 
     leaf_validator
@@ -119,6 +124,7 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+    use aws_mls_core::extension::ExtensionList;
 
     use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::crypto::test_utils::test_cipher_suite_provider;
@@ -209,6 +215,7 @@ mod tests {
             &test_provisional_state(TEST_CIPHER_SUITE).await,
             LeafIndex(0),
             None,
+            &ExtensionList::new(),
         )
         .await
         .unwrap();
@@ -230,6 +237,7 @@ mod tests {
             &test_provisional_state(TEST_CIPHER_SUITE).await,
             LeafIndex(0),
             None,
+            &ExtensionList::new(),
         )
         .await;
 
@@ -252,6 +260,7 @@ mod tests {
             &test_provisional_state(cipher_suite).await,
             LeafIndex(0),
             None,
+            &ExtensionList::new(),
         )
         .await;
 
@@ -281,6 +290,7 @@ mod tests {
             &state,
             LeafIndex(0),
             None,
+            &ExtensionList::new(),
         )
         .await;
 

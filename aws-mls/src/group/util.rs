@@ -126,6 +126,7 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
         &join_context.group_context.group_id,
         &join_context.group_context.tree_hash,
         required_capabilities.as_ref(),
+        &join_context.group_context.extensions,
         identity_provider,
     );
 
@@ -140,7 +141,11 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
     {
         // TODO do joiners verify group against current time??
         ext_senders
-            .verify_all(&identity_provider, None)
+            .verify_all(
+                &identity_provider,
+                None,
+                &join_context.group_context.extensions,
+            )
             .await
             .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
     }

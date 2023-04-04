@@ -9,6 +9,7 @@ use crate::{
         RatchetTreeError, TreeKemPublic,
     },
 };
+use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
 use futures::TryStreamExt;
 use thiserror::Error;
@@ -52,6 +53,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
         group_id: &'a [u8],
         tree_hash: &'a [u8],
         required_capabilities: Option<&'a RequiredCapabilitiesExt>,
+        group_context_extensions: &'a ExtensionList,
         identity_provider: C,
     ) -> Self {
         TreeValidator {
@@ -60,6 +62,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
                 cipher_suite_provider,
                 required_capabilities,
                 identity_provider,
+                Some(group_context_extensions),
             ),
             group_id,
             cipher_suite_provider,
@@ -230,11 +233,14 @@ mod tests {
             let mut test_tree = get_valid_tree(cipher_suite).await;
             let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).unwrap();
 
+            let extensions = ExtensionList::new();
+
             let validator = TreeValidator::new(
                 &cipher_suite_provider,
                 TEST_GROUP,
                 &expected_tree_hash,
                 None,
+                &extensions,
                 BasicIdentityProvider::new(),
             );
 
@@ -249,12 +255,14 @@ mod tests {
             let expected_tree_hash = random_bytes(32);
 
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
+            let extensions = ExtensionList::new();
 
             let validator = TreeValidator::new(
                 &cipher_suite_provider,
                 b"",
                 &expected_tree_hash,
                 None,
+                &extensions,
                 BasicIdentityProvider::new(),
             );
 
@@ -276,11 +284,14 @@ mod tests {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
             let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).unwrap();
 
+            let extensions = ExtensionList::new();
+
             let validator = TreeValidator::new(
                 &cipher_suite_provider,
                 b"",
                 &expected_tree_hash,
                 None,
+                &extensions,
                 BasicIdentityProvider::new(),
             );
 
@@ -304,12 +315,14 @@ mod tests {
 
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
             let expected_tree_hash = test_tree.tree_hash(&cipher_suite_provider).unwrap();
+            let extensions = ExtensionList::new();
 
             let validator = TreeValidator::new(
                 &cipher_suite_provider,
                 b"",
                 &expected_tree_hash,
                 None,
+                &extensions,
                 BasicIdentityProvider::new(),
             );
 

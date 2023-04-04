@@ -128,7 +128,6 @@ where
             self.signing_identity.clone(),
             self.signing_key,
             lifetime,
-            self.identity_provider,
         )
         .await?;
 
@@ -160,17 +159,15 @@ mod tests {
     use aws_mls_core::crypto::CipherSuiteProvider;
 
     use crate::{
-        client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider},
         extension::test_utils::TestExtension,
         group::test_utils::random_bytes,
         identity::basic::BasicIdentityProvider,
         identity::test_utils::get_test_signing_identity,
-        key_package::{KeyPackageGenerationError, KeyPackageValidator},
+        key_package::KeyPackageValidator,
         protocol_version::ProtocolVersion,
         tree_kem::{
-            leaf_node::{test_utils::get_test_capabilities, LeafNodeError, LeafNodeSource},
-            leaf_node_validator::test_utils::FailureIdentityProvider,
+            leaf_node::{test_utils::get_test_capabilities, LeafNodeSource},
             Lifetime,
         },
         ExtensionList,
@@ -270,6 +267,7 @@ mod tests {
                 &cipher_suite_provider,
                 None,
                 BasicIdentityProvider::new(),
+                None,
             );
 
             validator
@@ -277,39 +275,6 @@ mod tests {
                 .await
                 .unwrap();
         }
-    }
-
-    #[futures_test::test]
-    async fn test_credential_signature_mismatch() {
-        let protocol_version = TEST_PROTOCOL_VERSION;
-        let cipher_suite = TEST_CIPHER_SUITE;
-
-        let (_, signing_key) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
-        let (signing_identity, _) = get_test_signing_identity(cipher_suite, b"foo".to_vec());
-
-        let test_generator = KeyPackageGenerator {
-            protocol_version,
-            cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
-            signing_identity: &signing_identity,
-            signing_key: &signing_key,
-            identity_provider: &BasicIdentityProvider::new(),
-        };
-
-        let generated = test_generator
-            .generate(
-                test_lifetime(),
-                get_test_capabilities(),
-                ExtensionList::default(),
-                ExtensionList::default(),
-            )
-            .await;
-
-        assert_matches!(
-            generated,
-            Err(KeyPackageGenerationError::LeafNodeError(
-                LeafNodeError::InvalidSignerPublicKey
-            ))
-        );
     }
 
     #[futures_test::test]
@@ -362,34 +327,5 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[futures_test::test]
-    async fn test_failure_when_credential_is_not_valid() {
-        let cipher_suite = TEST_CIPHER_SUITE;
-        let (signing_identity, signing_key) =
-            get_test_signing_identity(cipher_suite, b"test".to_vec());
-
-        let test_generator = KeyPackageGenerator {
-            protocol_version: TEST_PROTOCOL_VERSION,
-            cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
-            signing_identity: &signing_identity,
-            signing_key: &signing_key,
-            identity_provider: &FailureIdentityProvider,
-        };
-
-        assert_matches!(
-            test_generator
-                .generate(
-                    test_lifetime(),
-                    get_test_capabilities(),
-                    ExtensionList::default(),
-                    ExtensionList::default()
-                )
-                .await,
-            Err(KeyPackageGenerationError::LeafNodeError(
-                LeafNodeError::IdentityProviderError(_)
-            ))
-        );
     }
 }
