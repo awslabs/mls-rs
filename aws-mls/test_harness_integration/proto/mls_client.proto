@@ -1,4 +1,4 @@
-// Code copied from https://github.com/mulmarta/mls-implementations/tree/add-more-functionality.
+// Code copied from https://github.com/mlswg/mls-implementations/
 // DO NOT EDIT.
 
 syntax = "proto3";
@@ -15,10 +15,6 @@ service MLSClient {
   // List of supported ciphersuites
   rpc SupportedCiphersuites(SupportedCiphersuitesRequest) returns (SupportedCiphersuitesResponse) {}
 
-  // Test vector generation and verification
-  rpc GenerateTestVector(GenerateTestVectorRequest) returns (GenerateTestVectorResponse) {}
-  rpc VerifyTestVector(VerifyTestVectorRequest) returns (VerifyTestVectorResponse) {}
-
   // Ways to become a member of a group
   rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse) {}
   rpc CreateKeyPackage(CreateKeyPackageRequest) returns (CreateKeyPackageResponse) {}
@@ -26,7 +22,7 @@ service MLSClient {
   rpc ExternalJoin(ExternalJoinRequest) returns (ExternalJoinResponse) {}
 
   // Operations using a group state
-  rpc PublicGroupState(PublicGroupStateRequest) returns (PublicGroupStateResponse) {}
+  rpc GroupInfo(GroupInfoRequest) returns (GroupInfoResponse) {}
   rpc StateAuth(StateAuthRequest) returns (StateAuthResponse) {}
   rpc Export(ExportRequest) returns (ExportResponse) {}
   rpc Protect(ProtectRequest) returns (ProtectResponse) {}
@@ -36,14 +32,31 @@ service MLSClient {
   rpc AddProposal(AddProposalRequest) returns (ProposalResponse) {}
   rpc UpdateProposal(UpdateProposalRequest) returns (ProposalResponse) {}
   rpc RemoveProposal(RemoveProposalRequest) returns (ProposalResponse) {}
-  rpc PSKProposal(PSKProposalRequest) returns (ProposalResponse) {}
-  rpc ReInitProposal(ReInitProposalRequest) returns (ProposalResponse) {}
+  rpc ExternalPSKProposal(ExternalPSKProposalRequest) returns (ProposalResponse) {}
+  rpc ResumptionPSKProposal(ResumptionPSKProposalRequest) returns (ProposalResponse) {}
   rpc GroupContextExtensionsProposal(GroupContextExtensionsProposalRequest) returns (ProposalResponse) {}
   
   rpc Commit(CommitRequest) returns (CommitResponse) {}
   rpc HandleCommit(HandleCommitRequest) returns (HandleCommitResponse) {}
-  rpc HandlePendingCommit(HandlePendingCommitRequest) returns (HandleCommitResponse) {} 
-  rpc HandleExternalCommit(HandleExternalCommitRequest) returns (HandleExternalCommitResponse) {}
+  rpc HandlePendingCommit(HandlePendingCommitRequest) returns (HandleCommitResponse) {}
+
+  // Reinitialization
+  rpc ReInitProposal(ReInitProposalRequest) returns (ProposalResponse) {}
+  rpc ReInitCommit(CommitRequest) returns (CommitResponse) {}
+  rpc HandlePendingReInitCommit(HandlePendingCommitRequest) returns (HandleReInitCommitResponse) {}
+  rpc HandleReInitCommit(HandleCommitRequest) returns (HandleReInitCommitResponse) {}
+  rpc ReInitWelcome(ReInitWelcomeRequest) returns (CreateSubgroupResponse) {}
+  rpc HandleReInitWelcome(HandleReInitWelcomeRequest) returns (JoinGroupResponse) {}
+
+  // Subgroup Branching
+  rpc CreateBranch(CreateBranchRequest) returns (CreateSubgroupResponse) {}
+  rpc HandleBranch(HandleBranchRequest) returns (HandleBranchResponse) {}
+
+  // External proposals
+  rpc NewMemberAddProposal(NewMemberAddProposalRequest) returns (NewMemberAddProposalResponse) {}
+  rpc CreateExternalSigner(CreateExternalSignerRequest) returns (CreateExternalSignerResponse) {}
+  rpc AddExternalSigner(AddExternalSignerRequest) returns (ProposalResponse) {}
+  rpc ExternalSignerProposal(ExternalSignerProposalRequest) returns (ProposalResponse) {}
 }
 
 // rpc Name
@@ -60,44 +73,13 @@ message SupportedCiphersuitesResponse {
   repeated uint32 ciphersuites = 1; // Actually uint16 ciphersuite values
 }
 
-// rpc GenerateTestVector
-enum TestVectorType {
-  TREE_MATH = 0;
-  ENCRYPTION = 1;
-  KEY_SCHEDULE = 2;
-  TRANSCRIPT = 3;
-  TREEKEM = 4;
-  MESSAGES = 5;
-}
-
-// Generation parameters that are not needed for a given test type are ignored
-message GenerateTestVectorRequest {
-  TestVectorType test_vector_type = 1;
-  uint32 cipher_suite = 2; // Actually uint16
-  uint32 n_leaves = 3;
-  uint32 n_generations = 4;
-  uint32 n_epochs = 5;
-}
-
-message GenerateTestVectorResponse {
-  bytes test_vector = 1;
-}
-
-// rpc VerifyTestVector
-message VerifyTestVectorRequest {
-  TestVectorType test_vector_type = 1;
-  bytes test_vector = 2;
-}
-
-message VerifyTestVectorResponse {}
-
-
 // rpc CreateGroup
 // XXX(RLB): Credential type is omitted; let's just use Basic for these tests
 message CreateGroupRequest { 
   bytes group_id = 1;
   uint32 cipher_suite = 2; // Actually uint16
-  bool encrypt_handshake = 3; 
+  bool encrypt_handshake = 3;
+  bytes identity = 4;
 }
 
 message CreateGroupResponse {
@@ -107,11 +89,15 @@ message CreateGroupResponse {
 // rpc CreateKeyPackage
 message CreateKeyPackageRequest {
   uint32 cipher_suite = 1;
+  bytes identity = 2;
 }
 
 message CreateKeyPackageResponse {
   uint32 transaction_id = 1;
   bytes key_package = 2;
+  bytes init_priv = 3;
+  bytes encryption_priv = 4;
+  bytes signature_priv = 5;
 }
 
 // rpc JoinGroup
@@ -119,30 +105,45 @@ message JoinGroupRequest {
   uint32 transaction_id = 1;
   bytes welcome = 2;
   bool encrypt_handshake = 3;
+  bytes identity = 4;
+  bytes ratchet_tree = 5;
 }
 
 message JoinGroupResponse { 
   uint32 state_id = 1;
+  bytes epoch_authenticator = 2;
 }
 
 // rpc ExternalJoin
+message PreSharedKey {
+  bytes psk_id = 1;
+  bytes psk_secret = 2;
+}
+
 message ExternalJoinRequest {
-  bytes public_group_state = 1;
-  bool encrypt_handshake = 2;
+  bytes group_info = 1;
+  bytes ratchet_tree = 2;
+  bool encrypt_handshake = 3;
+  bytes identity = 4;
+  bool remove_prior = 5;
+  repeated PreSharedKey psks = 6;
 }
 
 message ExternalJoinResponse {
   uint32 state_id = 1;
   bytes commit = 2;
+  bytes epoch_authenticator = 3;
 }
 
-// rpc PublicGroupState
-message PublicGroupStateRequest {
+// rpc GroupInfo
+message GroupInfoRequest {
   uint32 state_id = 1;
+  bool external_tree = 2;
 }
 
-message PublicGroupStateResponse {
-  bytes public_group_state = 1;
+message GroupInfoResponse {
+  bytes group_info = 1;
+  bytes ratchet_tree = 2;
 }
 
 // rpc StateAuth
@@ -169,7 +170,8 @@ message ExportResponse {
 // rpc Protect
 message ProtectRequest {
   uint32 state_id = 1;
-  bytes application_data = 2;
+  bytes authenticated_data = 2;
+  bytes plaintext = 3;
 }
 
 message ProtectResponse { 
@@ -183,14 +185,15 @@ message UnprotectRequest {
 }
 
 message UnprotectResponse {
-  bytes application_data = 1;
+  bytes authenticated_data = 1;
+  bytes plaintext = 2;
 }
 
 // rpc StorePSK
 message StorePSKRequest {
-  uint32 state_id = 1;
+  uint32 state_or_transaction_id = 1;
   bytes psk_id = 2;
-  bytes psk = 3;
+  bytes psk_secret = 3;
 }
 
 message StorePSKResponse {}
@@ -213,39 +216,60 @@ message UpdateProposalRequest {
 // rpc RemoveProposal
 message RemoveProposalRequest {
   uint32 state_id = 1;
-  uint32 removed = 2;
+  bytes removed_id = 2;
 }
 
-// rpc PSKProposal
-message PSKProposalRequest {
+// rpc ExternalPSKProposal
+message ExternalPSKProposalRequest {
   uint32 state_id = 1;
   bytes psk_id = 2;
 }
 
-// rpc ReInitProposal
-message ReInitProposalRequest {
+// rpc ResumptionPSKProposal
+message ResumptionPSKProposalRequest {
   uint32 state_id = 1;
-  bytes group_id = 2;
-  uint32 cipher_suite = 3; // actually uint16
+  uint64 epoch_id = 2;
 }
 
 // rpc GroupContextExtensionsProposal
+message Extension {
+  uint32 extension_type = 1;
+  bytes extension_data = 2;
+}
+
 message GroupContextExtensionsProposalRequest {
   uint32 state_id = 1;
-  repeated uint32 extension_type = 2;
-  repeated bytes extension_data = 3;
+  repeated Extension extensions = 2;
+}
+
+// `proposal_type` is one of "add", "remove", "externalPSK", "resumptionPSK",
+// "groupContextExtensions", "reinit". The type "reinit" can only be used in
+// rpc ExternalSignerProposal.
+message ProposalDescription {
+  bytes proposal_type = 1;
+  bytes key_package = 2; // Required if proposal_type is "add"
+  bytes removed_id = 3; // Required if proposal_type is "remove"
+  bytes psk_id = 4; // Required if proposal_type is "externalPSK"
+  uint64 epoch_id = 5; // Required if proposal_type is "resumptionPSK"
+  repeated Extension extensions = 6; // Required if proposal_type is "groupContextExtensions"
+  bytes group_id = 7; // Required if proposal_type is "reinit"
+  uint32 ciphersuite = 8; // Required if proposal_type is "reinit"
 }
 
 // rpc Commit
+// Note: CommitResponse.ratchet_tree should be empty if CommitRequest.external_tree is not true
 message CommitRequest {
   uint32 state_id = 1;
   repeated bytes by_reference = 2;
-  repeated bytes by_value = 3;
+  repeated ProposalDescription by_value = 3;
+  bool force_path = 4;
+  bool external_tree = 5;
 }
 
 message CommitResponse {
   bytes commit = 1;
   bytes welcome = 2;
+  bytes ratchet_tree = 3;
 }
 
 // rpc HandleCommit
@@ -257,12 +281,7 @@ message HandleCommitRequest {
 
 message HandleCommitResponse { 
   uint32 state_id = 1;
-  repeated uint32 added = 2;
-  repeated uint32 removed_indices = 3;
-  repeated bytes removed_leaves = 4;
-  repeated uint32 updated = 5;
-  repeated bytes psks = 6;
-  uint32 active = 7;
+  bytes epoch_authenticator = 2;
 }
 
 // rpc HandlePendingCommit
@@ -270,12 +289,114 @@ message HandlePendingCommitRequest {
   uint32 state_id = 1;
 }
 
-// rpc HandleExternalCommit
-message HandleExternalCommitRequest {
+// rpc ReInitProposal
+message ReInitProposalRequest {
   uint32 state_id = 1;
-  bytes commit = 3;
+  uint32 cipher_suite = 2;
+  bytes group_id = 3;
+  repeated Extension extensions = 4;
 }
 
-message HandleExternalCommitResponse { 
+// rpc ReInitCommit
+// (uses CommitRequest / CommitResponse)
+
+// rpc HandlePendingReInitCommit
+// rpc HandleReInitCommit
+// (uses HandleCommitRequest)
+message HandleReInitCommitResponse {
+  uint32 reinit_id = 1;
+  bytes key_package = 2;
+  bytes epoch_authenticator = 3;
+}
+
+// rpc ReInitWelcome
+message ReInitWelcomeRequest {
+  uint32 reinit_id = 1;
+  repeated bytes key_package = 2;
+  bool force_path = 3;
+  bool external_tree = 4;
+}
+
+message CreateSubgroupResponse {
   uint32 state_id = 1;
+  bytes welcome = 2;
+  bytes ratchet_tree = 3;
+  bytes epoch_authenticator = 4;
+}
+
+// rpc HandleReInitWelcome
+message HandleReInitWelcomeRequest {
+  uint32 reinit_id = 1;
+  bytes welcome = 2;
+  bytes ratchet_tree = 3;
+}
+
+
+// rpc CreateBranch
+// (uses CreateSubgroupResponse)
+message CreateBranchRequest {
+  uint32 state_id = 1;
+  bytes group_id = 2;
+  repeated Extension extensions = 3;
+  repeated bytes key_packages = 4;
+  bool force_path = 5;
+  bool external_tree = 6;
+}
+
+// rpc CreateBranch
+message HandleBranchRequest {
+  uint32 state_id = 1;
+  uint32 transaction_id = 2;
+  bytes welcome = 3;
+  bytes ratchet_tree = 4;
+}
+
+message HandleBranchResponse {
+  uint32 state_id = 1;
+  bytes epoch_authenticator = 2;
+}
+
+// rpc NewMemberAddProposal
+message NewMemberAddProposalRequest{
+  bytes group_info = 1;
+  bytes identity = 2;
+}
+
+message NewMemberAddProposalResponse{
+  uint32 transaction_id = 1;
+  bytes proposal = 2;
+  bytes init_priv = 3;
+  bytes encryption_priv = 4;
+  bytes signature_priv = 5;
+}
+
+// rpc CreateExternalSigner
+message CreateExternalSignerRequest{
+  uint32 cipher_suite = 1;
+  bytes identity = 2;
+}
+
+message CreateExternalSignerResponse{
+  uint32 signer_id = 1;
+  bytes external_sender = 2;
+}
+
+// rpc AddExternalSignerProposal
+message AddExternalSignerRequest{
+  uint32 state_id = 1;
+  bytes external_sender = 2;
+}
+
+message AddExternalSignerResponse {
+  bytes proposal = 1;
+  uint32 signer_index = 2;
+}
+
+// rpc ExternalSignerProposal
+message ExternalSignerProposalRequest{
+  uint32 signer_id = 1;
+  uint32 signer_index = 2;
+  bytes group_info = 3;
+  bytes ratchet_tree = 4;
+  ProposalDescription description = 5;
 }

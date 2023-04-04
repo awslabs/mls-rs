@@ -20,15 +20,21 @@ jobs:
     - name: Clone test runner
       uses: actions/checkout@master
       with:
-        repository: mulmarta/mls-implementations
-        ref: 5a7d4bd59bdc687d6b37ea8062bbb84426de7b0a
+        repository: mlswg/mls-implementations
         path: interop
+    - uses: arduino/setup-protoc@v1
+      with:
+        version: '3.x'
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Run tests
       working-directory: interop/interop
       run: |
-        python scenario_generators/generate_config_basic.py
+        go env -w GOPROXY=direct
+        go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+        go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
         export GOPATH=$HOME/go
         export GOBIN=$GOPATH/bin
         export PATH=$PATH:$GOROOT:$GOPATH:$GOBIN
         GOFLAGS=-mod=mod go generate ./...
-        make run-test
+        make test-runner/test-runner
+        for config in `ls configs | grep -v deep | sed -e "s/configs\///"`; do test-runner/test-runner --client localhost:50002 --config configs/$config ; done
