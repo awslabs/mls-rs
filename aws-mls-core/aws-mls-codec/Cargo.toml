@@ -1,0 +1,21 @@
+[package]
+name = "aws-mls-codec"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["std"]
+std = ["thiserror-core/std"]
+
+[dependencies]
+aws-mls-codec-derive = { version = "*", path = "./derive" }
+thiserror-core = { version = "1.0.38", default-features = false }
+
+[dev-dependencies]
+assert_matches = "1.5.0"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { version = "0.3.26", default-features = false }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2.79" }
