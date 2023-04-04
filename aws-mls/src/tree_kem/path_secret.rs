@@ -1,11 +1,11 @@
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::group::key_schedule::{kdf_derive_secret, KeyScheduleError};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use std::convert::Infallible;
 use std::ops::Deref;
 use thiserror::Error;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::{Zeroize, Zeroizing};
 
 use super::hpke_encryption::HpkeEncryptable;
@@ -25,15 +25,15 @@ pub enum PathSecretError {
     Zeroize,
     Eq,
     PartialEq,
-    TlsSerialize,
-    TlsDeserialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Serialize,
     serde::Deserialize,
 )]
 #[zeroize(drop)]
 pub struct PathSecret(
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     Zeroizing<Vec<u8>>,
 );

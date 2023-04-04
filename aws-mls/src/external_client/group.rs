@@ -1,10 +1,10 @@
 use async_trait::async_trait;
+use aws_mls_codec::MlsEncode;
 use aws_mls_core::{
     crypto::CipherSuiteProvider, extension::ExtensionList, group::Member,
     identity::IdentityProvider, keychain::KeychainStorage, psk::ExternalPskId,
 };
 use serde_with::serde_as;
-use tls_codec::Serialize;
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -472,7 +472,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         self.group_state()
             .public_tree
             .export_node_data()
-            .tls_serialize_detached()
+            .mls_encode_to_vec()
             .map_err(Into::into)
     }
 

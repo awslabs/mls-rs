@@ -1,12 +1,12 @@
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::{
     crypto::HpkePublicKey,
-    extension::{ExtensionList, ExtensionType, TlsCodecExtension},
+    extension::{ExtensionList, ExtensionType, MlsCodecExtension},
     group::ProposalType,
     identity::{CredentialType, IdentityProvider, SigningIdentity},
     time::MlsTime,
 };
 use futures::TryStreamExt;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::tree_kem::node::NodeVec;
 
@@ -14,9 +14,9 @@ use crate::tree_kem::node::NodeVec;
 ///
 /// A custom application level identifier that can be optionally stored
 /// within the `leaf_node_extensions` of a group [Member](crate::group::Member).
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub struct ApplicationIdExt {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub(crate) identifier: Vec<u8>,
 }
 
@@ -32,7 +32,7 @@ impl ApplicationIdExt {
     }
 }
 
-impl TlsCodecExtension for ApplicationIdExt {
+impl MlsCodecExtension for ApplicationIdExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::APPLICATION_ID
     }
@@ -44,12 +44,12 @@ impl TlsCodecExtension for ApplicationIdExt {
 /// a copy of the current group state in-band. This extension is enabled
 /// via the `ratchet_tree_extension`
 /// [Preferences](crate::client_builder::Preferences).
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 pub struct RatchetTreeExt {
     pub(crate) tree_data: NodeVec,
 }
 
-impl TlsCodecExtension for RatchetTreeExt {
+impl MlsCodecExtension for RatchetTreeExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::RATCHET_TREE
     }
@@ -67,13 +67,10 @@ impl TlsCodecExtension for RatchetTreeExt {
 /// Extension, proposal, and credential types defined by the MLS RFC and
 /// provided are considered required by default and should NOT be used
 /// within this extension.
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Default)]
 pub struct RequiredCapabilitiesExt {
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub extensions: Vec<ExtensionType>,
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub proposals: Vec<ProposalType>,
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub credentials: Vec<CredentialType>,
 }
 
@@ -107,7 +104,7 @@ impl RequiredCapabilitiesExt {
     }
 }
 
-impl TlsCodecExtension for RequiredCapabilitiesExt {
+impl MlsCodecExtension for RequiredCapabilitiesExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::REQUIRED_CAPABILITIES
     }
@@ -117,9 +114,9 @@ impl TlsCodecExtension for RequiredCapabilitiesExt {
 ///
 /// This proposal type is optionally provided as part of a
 /// [Group Info](crate::group::Group::group_info_message).
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub struct ExternalPubExt {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub(crate) external_pub: HpkePublicKey,
 }
 
@@ -130,17 +127,16 @@ impl ExternalPubExt {
     }
 }
 
-impl TlsCodecExtension for ExternalPubExt {
+impl MlsCodecExtension for ExternalPubExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::EXTERNAL_PUB
     }
 }
 
 /// Enable proposals by an [ExternalClient](crate::external_client::ExternalClient).
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[non_exhaustive]
 pub struct ExternalSendersExt {
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub(crate) allowed_senders: Vec<SigningIdentity>,
 }
 
@@ -167,7 +163,7 @@ impl ExternalSendersExt {
     }
 }
 
-impl TlsCodecExtension for ExternalSendersExt {
+impl MlsCodecExtension for ExternalSendersExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::EXTERNAL_SENDERS
     }

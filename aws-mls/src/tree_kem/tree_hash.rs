@@ -5,11 +5,10 @@ use crate::crypto::CipherSuiteProvider;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::Parent;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
+use aws_mls_codec::{MlsEncode, MlsSize};
 use aws_mls_core::serde::vec_u8_as_base64::VecAsBase64;
 use serde_with::serde_as;
 use std::collections::{HashMap, VecDeque};
-use tls_codec::Serialize;
-use tls_codec_derive::{TlsSerialize, TlsSize};
 
 #[serde_as]
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -20,27 +19,26 @@ pub(crate) struct TreeHashes {
     pub original: Vec<Vec<u8>>,
 }
 
-#[derive(Debug, TlsSerialize, TlsSize)]
+#[derive(Debug, MlsSize, MlsEncode)]
 struct LeafNodeHashInput<'a> {
     leaf_index: LeafIndex,
     leaf_node: Option<&'a LeafNode>,
 }
 
-#[derive(Debug, TlsSerialize, TlsSize)]
+#[derive(Debug, MlsSize, MlsEncode)]
 struct ParentNodeTreeHashInput<'a> {
     parent_node: Option<&'a Parent>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     left_hash: &'a [u8],
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     right_hash: &'a [u8],
 }
 
-#[derive(Debug, TlsSerialize, TlsSize)]
+#[derive(Debug, MlsSize, MlsEncode)]
 #[repr(u8)]
 enum TreeHashInput<'a> {
-    #[tls_codec(discriminant = 1)]
-    Leaf(LeafNodeHashInput<'a>),
-    Parent(ParentNodeTreeHashInput<'a>),
+    Leaf(LeafNodeHashInput<'a>) = 1u8,
+    Parent(ParentNodeTreeHashInput<'a>) = 2u8,
 }
 
 impl TreeHashes {
@@ -56,7 +54,7 @@ impl TreeHashes {
         });
 
         cipher_suite_provider
-            .hash(&input.tls_serialize_detached()?)
+            .hash(&input.mls_encode_to_vec()?)
             .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
     }
 
@@ -83,7 +81,7 @@ impl TreeHashes {
         });
 
         cipher_suite_provider
-            .hash(&input.tls_serialize_detached()?)
+            .hash(&input.mls_encode_to_vec()?)
             .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
     }
 }
@@ -354,8 +352,8 @@ impl TreeKemPublic {
 
 #[cfg(test)]
 mod tests {
+    use aws_mls_codec::MlsDecode;
     use futures::StreamExt;
-    use tls_codec::Deserialize;
 
     use crate::{
         cipher_suite::CipherSuite,
@@ -386,7 +384,7 @@ mod tests {
 
                     TestCase {
                         cipher_suite: cipher_suite.into(),
-                        tree_data: tree.export_node_data().tls_serialize_detached().unwrap(),
+                        tree_data: tree.export_node_data().mls_encode_to_vec().unwrap(),
                         tree_hash: tree
                             .tree_hash(&test_cipher_suite_provider(cipher_suite))
                             .unwrap(),
@@ -411,7 +409,7 @@ mod tests {
             };
 
             let mut tree = TreeKemPublic::import_node_data(
-                NodeVec::tls_deserialize(&mut &*one_case.tree_data).unwrap(),
+                NodeVec::mls_decode(&*one_case.tree_data).unwrap(),
                 &BasicIdentityProvider,
             )
             .await

@@ -168,17 +168,6 @@ mod serde_utils {
 
 #[cfg(feature = "benchmark")]
 #[doc(hidden)]
-pub mod tls {
-    pub use aws_mls_core::tls::*;
-}
-
-#[cfg(not(feature = "benchmark"))]
-mod tls {
-    pub use aws_mls_core::tls::*;
-}
-
-#[cfg(feature = "benchmark")]
-#[doc(hidden)]
 pub mod bench_utils;
 
 #[cfg(feature = "benchmark")]
@@ -188,8 +177,7 @@ pub mod tree_kem;
 #[cfg(not(feature = "benchmark"))]
 mod tree_kem;
 
-pub use tls_codec;
-pub use tls_codec_derive;
+pub use aws_mls_codec;
 
 mod private {
     pub trait Sealed {}

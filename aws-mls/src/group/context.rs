@@ -1,5 +1,5 @@
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use crate::{
     cipher_suite::CipherSuite, protocol_version::ProtocolVersion,
@@ -10,24 +10,17 @@ use super::ConfirmedTranscriptHash;
 
 #[serde_as]
 #[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
+    Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct GroupContext {
     pub protocol_version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     pub tree_hash: Vec<u8>,
     pub confirmed_transcript_hash: ConfirmedTranscriptHash,

@@ -2,39 +2,26 @@ use crate::crypto::CipherSuiteProvider;
 use crate::group::framing::WireFormat;
 use crate::group::message_signature::{AuthenticatedContentTBS, FramedContentAuthData};
 use crate::group::GroupContext;
-use std::{io::Write, ops::Deref};
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use std::ops::Deref;
 use thiserror::Error;
-use tls_codec::{Serialize, Size};
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use super::message_signature::AuthenticatedContent;
 
 #[derive(Error, Debug)]
 pub enum MembershipTagError {
     #[error(transparent)]
-    SerializationError(#[from] tls_codec::Error),
+    SerializationError(#[from] aws_mls_codec::Error),
     #[error("Membership tags can only be created for the plaintext wire format, found: {0:?}")]
     NonPlainWireFormat(WireFormat),
     #[error(transparent)]
     CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode)]
 struct AuthenticatedContentTBM<'a> {
     content_tbs: AuthenticatedContentTBS<'a>,
     auth: &'a FramedContentAuthData,
-}
-
-impl Size for AuthenticatedContentTBM<'_> {
-    fn tls_serialized_len(&self) -> usize {
-        self.content_tbs.tls_serialized_len() + self.auth.tls_serialized_len()
-    }
-}
-
-impl Serialize for AuthenticatedContentTBM<'_> {
-    fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
-        Ok(self.content_tbs.tls_serialize(writer)? + self.auth.tls_serialize(writer)?)
-    }
 }
 
 impl<'a> AuthenticatedContentTBM<'a> {
@@ -53,9 +40,9 @@ impl<'a> AuthenticatedContentTBM<'a> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct MembershipTag(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct MembershipTag(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl Deref for MembershipTag {
     type Target = Vec<u8>;
@@ -89,7 +76,7 @@ impl MembershipTag {
             group_context,
         );
 
-        let serialized_tbm = plaintext_tbm.tls_serialize_detached()?;
+        let serialized_tbm = plaintext_tbm.mls_encode_to_vec()?;
 
         let tag = cipher_suite_provider
             .mac(membership_key, &serialized_tbm)

@@ -196,7 +196,7 @@ pub enum MlsError {
     #[error("the secret key provided does not match the public key in the credential")]
     IncorrectSecretKey,
     #[error(transparent)]
-    SerializationError(#[from] tls_codec::Error),
+    SerializationError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
     #[error(transparent)]
@@ -678,8 +678,8 @@ mod tests {
         tree_kem::leaf_node::LeafNodeSource,
     };
     use assert_matches::assert_matches;
-    use tls_codec::Serialize;
 
+    use aws_mls_codec::MlsEncode;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -718,9 +718,9 @@ mod tests {
                 key_package
                     .leaf_node
                     .signing_identity
-                    .tls_serialize_detached()
+                    .mls_encode_to_vec()
                     .unwrap(),
-                identity.tls_serialize_detached().unwrap()
+                identity.mls_encode_to_vec().unwrap()
             );
 
             let client_lifetime = client.config.lifetime();

@@ -1,5 +1,4 @@
-use tls_codec::{Deserialize, Serialize};
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::Zeroizing;
 
 use crate::{
@@ -10,16 +9,16 @@ use crate::{
 
 use super::{CiphertextProcessorError, ReuseGuard};
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub(crate) struct SenderData {
     pub sender: LeafIndex,
     pub generation: u32,
     pub reuse_guard: ReuseGuard,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub(crate) struct SenderDataAAD {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub content_type: ContentType,
@@ -76,8 +75,8 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
         self.cipher_suite_provider
             .aead_seal(
                 &self.key,
-                &sender_data.tls_serialize_detached()?,
-                Some(&aad.tls_serialize_detached()?),
+                &sender_data.mls_encode_to_vec()?,
+                Some(&aad.mls_encode_to_vec()?),
                 &self.nonce,
             )
             .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))
@@ -92,11 +91,11 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
             .aead_open(
                 &self.key,
                 sender_data,
-                Some(&aad.tls_serialize_detached()?),
+                Some(&aad.mls_encode_to_vec()?),
                 &self.nonce,
             )
             .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))
-            .and_then(|data| SenderData::tls_deserialize(&mut &**data).map_err(From::from))
+            .and_then(|data| SenderData::mls_decode(&**data).map_err(From::from))
     }
 }
 

@@ -1,10 +1,10 @@
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use crate::CipherSuiteProvider;
 
 const REUSE_GUARD_SIZE: usize = 4;
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub(crate) struct ReuseGuard([u8; REUSE_GUARD_SIZE]);
 
 impl From<[u8; REUSE_GUARD_SIZE]> for ReuseGuard {

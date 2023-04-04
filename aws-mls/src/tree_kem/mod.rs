@@ -5,7 +5,6 @@ use std::ops::Deref;
 use aws_mls_core::identity::IdentityProvider;
 use futures::TryStreamExt;
 use thiserror::Error;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use math as tree_math;
 use math::TreeMathError;
@@ -65,7 +64,7 @@ pub enum RatchetTreeError {
     #[error(transparent)]
     NodeVecError(#[from] NodeVecError),
     #[error(transparent)]
-    TlsCodecError(#[from] tls_codec::Error),
+    MlsCodecError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
     ParentHashError(#[from] ParentHashError),
     #[error(transparent)]
@@ -134,19 +133,6 @@ pub struct TreeKemPublic {
 impl PartialEq for TreeKemPublic {
     fn eq(&self, other: &Self) -> bool {
         self.index == other.index && self.nodes == other.nodes
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub struct SecretPath {
-    #[tls_codec(with = "crate::tls::DefMap")]
-    path_secrets: HashMap<NodeIndex, PathSecret>,
-    root_secret: PathSecret,
-}
-
-impl SecretPath {
-    pub fn get_path_secret(&self, index: NodeIndex) -> Option<PathSecret> {
-        self.path_secrets.get(&index).cloned()
     }
 }
 

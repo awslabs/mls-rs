@@ -1,13 +1,13 @@
 use crate::group::transcript_hash::ConfirmedTranscriptHash;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::CipherSuiteProvider;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use std::{
     fmt::{self, Debug},
     ops::Deref,
 };
 use thiserror::Error;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Debug, Error)]
 pub enum ConfirmationTagError {
@@ -16,12 +16,10 @@ pub enum ConfirmationTagError {
 }
 
 #[serde_as]
-#[derive(
-    Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ConfirmationTag(
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     Vec<u8>,
 );

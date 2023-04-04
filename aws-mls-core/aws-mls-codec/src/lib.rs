@@ -55,6 +55,16 @@ pub trait MlsSize {
     fn mls_encoded_len(&self) -> usize;
 }
 
+impl<T> MlsSize for &T
+where
+    T: MlsSize + ?Sized,
+{
+    #[inline]
+    fn mls_encoded_len(&self) -> usize {
+        (*self).mls_encoded_len()
+    }
+}
+
 /// Trait to support serializing a type with MLS encoding.
 pub trait MlsEncode: MlsSize {
     fn mls_encode<W: Writer>(&self, writer: W) -> Result<(), Error>;
@@ -65,6 +75,16 @@ pub trait MlsEncode: MlsSize {
         self.mls_encode(&mut vec)?;
 
         Ok(vec)
+    }
+}
+
+impl<T> MlsEncode for &T
+where
+    T: MlsEncode + ?Sized,
+{
+    #[inline]
+    fn mls_encode<W: Writer>(&self, writer: W) -> Result<(), Error> {
+        (*self).mls_encode(writer)
     }
 }
 

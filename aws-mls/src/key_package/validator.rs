@@ -15,7 +15,7 @@ use crate::{
 #[derive(Debug, Error)]
 pub enum KeyPackageValidationError {
     #[error(transparent)]
-    SerializationError(#[from] tls_codec::Error),
+    SerializationError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
     ExtensionError(#[from] ExtensionError),
     #[error(transparent)]

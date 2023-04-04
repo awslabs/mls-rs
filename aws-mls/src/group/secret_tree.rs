@@ -30,7 +30,7 @@ pub enum SecretTreeError {
     #[error(transparent)]
     CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
-    TlsCodecError(#[from] tls_codec::Error),
+    MlsCodecError(#[from] aws_mls_codec::Error),
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]

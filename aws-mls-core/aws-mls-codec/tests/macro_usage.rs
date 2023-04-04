@@ -1,7 +1,7 @@
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
 #[derive(Debug, Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
-struct TestTupleStrust(u64);
+struct TestTupleStruct(u64);
 
 #[derive(Debug, Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 struct TestFieldStruct {
@@ -17,7 +17,7 @@ struct TestType {
     field_d: Option<Vec<u8>>,
     field_e: u32,
     field_f: Option<u16>,
-    field_g: Vec<TestTupleStrust>,
+    field_g: Vec<TestTupleStruct>,
     field_h: TestFieldStruct,
 }
 
@@ -33,7 +33,7 @@ struct BorrowedTestType<'a> {
 enum TestEnum {
     Case1 = 1u16,
     Case2(TestFieldStruct) = 200u16,
-    Case3(TestTupleStrust) = 42u16,
+    Case3(TestTupleStruct) = 42u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
@@ -49,9 +49,9 @@ fn round_trip_struct_encode() {
         field_e: 1000000,
         field_f: None,
         field_g: vec![
-            TestTupleStrust(100),
-            TestTupleStrust(200),
-            TestTupleStrust(300),
+            TestTupleStruct(100),
+            TestTupleStruct(200),
+            TestTupleStruct(300),
         ],
         field_h: TestFieldStruct {
             item1: Some(42),
@@ -100,7 +100,7 @@ fn round_trip_enum_encode_one_field() {
 
 #[test]
 fn round_trip_enum_encode_one_tuple() {
-    let item = TestEnum::Case3(TestTupleStrust(42));
+    let item = TestEnum::Case3(TestTupleStruct(42));
 
     let serialized = item.mls_encode_to_vec().unwrap();
     let decoded = TestEnum::mls_decode(&*serialized).unwrap();

@@ -1,9 +1,7 @@
 use std::ops::Deref;
 
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
-
-use crate::tls::{ByteVec, DefVec};
 
 use super::{BasicCredential, CertificateChain};
 
@@ -14,9 +12,9 @@ use super::{BasicCredential, CertificateChain};
     Hash,
     Clone,
     Copy,
-    TlsSize,
-    TlsSerialize,
-    TlsDeserialize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Serialize,
     serde::Deserialize,
 )]
@@ -58,9 +56,9 @@ impl Deref for CredentialType {
 #[derive(
     Clone,
     Debug,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     PartialEq,
     Eq,
     Hash,
@@ -77,7 +75,7 @@ impl Deref for CredentialType {
 /// authenticate the credential.
 pub struct CustomCredential {
     pub(crate) credential_type: CredentialType,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
     pub(crate) data: Vec<u8>,
 }
@@ -166,54 +164,52 @@ impl Credential {
     }
 }
 
-impl tls_codec::Size for Credential {
-    fn tls_serialized_len(&self) -> usize {
+impl MlsSize for Credential {
+    fn mls_encoded_len(&self) -> usize {
         let inner_len = match self {
-            Credential::Basic(c) => c.tls_serialized_len(),
-            Credential::X509(c) => DefVec::tls_serialized_len(c),
-            Credential::Custom(c) => ByteVec::tls_serialized_len(&c.data),
+            Credential::Basic(c) => c.mls_encoded_len(),
+            Credential::X509(c) => c.mls_encoded_len(),
+            Credential::Custom(c) => aws_mls_codec::byte_vec::mls_encoded_len(&c.data),
         };
 
-        self.credential_type().tls_serialized_len() + inner_len
+        self.credential_type().mls_encoded_len() + inner_len
     }
 }
 
-impl tls_codec::Serialize for Credential {
-    fn tls_serialize<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
-        let type_len = self.credential_type().tls_serialize(writer)?;
+impl MlsEncode for Credential {
+    fn mls_encode<W: aws_mls_codec::Writer>(
+        &self,
+        mut writer: W,
+    ) -> Result<(), aws_mls_codec::Error> {
+        self.credential_type().mls_encode(&mut writer)?;
 
-        let inner_len = match self {
-            Credential::Basic(c) => c.tls_serialize(writer),
-            Credential::X509(c) => DefVec::tls_serialize(c, writer),
+        match self {
+            Credential::Basic(c) => c.mls_encode(&mut writer),
+            Credential::X509(c) => c.mls_encode(&mut writer),
             Credential::Custom(c) => {
                 if c.credential_type.raw_value() <= 2 {
-                    return Err(tls_codec::Error::EncodingError(
+                    return Err(aws_mls_codec::Error::Custom(
                         "custom credential types can not be set to defined values of 0-2"
                             .to_string(),
                     ));
                 }
 
-                ByteVec::tls_serialize(&c.data, writer)
+                aws_mls_codec::byte_vec::mls_encode(&c.data, writer)
             }
-        }?;
-
-        Ok(type_len + inner_len)
+        }
     }
 }
 
-impl tls_codec::Deserialize for Credential {
-    fn tls_deserialize<R: std::io::Read>(bytes: &mut R) -> Result<Self, tls_codec::Error>
-    where
-        Self: Sized,
-    {
-        let credential_type = CredentialType::tls_deserialize(bytes)?;
+impl MlsDecode for Credential {
+    fn mls_decode<R: aws_mls_codec::Reader>(mut reader: R) -> Result<Self, aws_mls_codec::Error> {
+        let credential_type = CredentialType::mls_decode(&mut reader)?;
 
         Ok(match credential_type {
-            CredentialType::BASIC => Credential::Basic(BasicCredential::tls_deserialize(bytes)?),
-            CredentialType::X509 => Credential::X509(CertificateChain::tls_deserialize(bytes)?),
+            CredentialType::BASIC => Credential::Basic(BasicCredential::mls_decode(&mut reader)?),
+            CredentialType::X509 => Credential::X509(CertificateChain::mls_decode(&mut reader)?),
             custom => Credential::Custom(CustomCredential {
                 credential_type: custom,
-                data: ByteVec::tls_deserialize(bytes)?,
+                data: aws_mls_codec::byte_vec::mls_decode(&mut reader)?,
             }),
         })
     }

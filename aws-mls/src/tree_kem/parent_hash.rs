@@ -5,12 +5,11 @@ use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVecError};
 use crate::tree_kem::RatchetTreeError;
 use crate::tree_kem::TreeKemPublic;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use thiserror::Error;
-use tls_codec::Serialize;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use super::leaf_node::LeafNodeSource;
 use super::ValidatedUpdatePath;
@@ -18,7 +17,7 @@ use super::ValidatedUpdatePath;
 #[derive(Error, Debug)]
 pub enum ParentHashError {
     #[error(transparent)]
-    SerializationError(#[from] tls_codec::Error),
+    SerializationError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
     NodeVecError(#[from] NodeVecError),
     #[error(transparent)]
@@ -29,31 +28,23 @@ pub enum ParentHashError {
     CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
-#[derive(Clone, Debug, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, MlsSize, MlsEncode)]
 struct ParentHashInput<'a> {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     public_key: &'a HpkePublicKey,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     parent_hash: &'a [u8],
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     original_sibling_tree_hash: &'a [u8],
 }
 
 #[serde_as]
 #[derive(
-    Clone,
-    Debug,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-    PartialEq,
-    Eq,
+    Clone, Debug, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize, PartialEq, Eq,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ParentHash(
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     Vec<u8>,
 );
@@ -85,7 +76,7 @@ impl ParentHash {
             original_sibling_tree_hash,
         };
 
-        let input_bytes = input.tls_serialize_detached()?;
+        let input_bytes = input.mls_encode_to_vec()?;
 
         let hash = cipher_suite_provider
             .hash(&input_bytes)

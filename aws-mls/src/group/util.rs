@@ -1,6 +1,6 @@
+use aws_mls_codec::MlsDecode;
 use aws_mls_core::{group::Member, identity::IdentityProvider, key_package::KeyPackageStorage};
 use futures::StreamExt;
-use tls_codec::Deserialize;
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -163,7 +163,7 @@ where
 {
     match tree_data {
         Some(tree_data) => Ok(TreeKemPublic::import_node_data(
-            NodeVec::tls_deserialize(&mut &*tree_data)?,
+            NodeVec::mls_decode(tree_data)?,
             identity_provider,
         )
         .await?),

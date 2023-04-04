@@ -1,5 +1,5 @@
+use aws_mls_codec::{MlsDecode, MlsEncode};
 use aws_mls_core::crypto::{CipherSuite, CipherSuiteProvider, SignaturePublicKey};
-use tls_codec::{Deserialize, Serialize};
 
 use crate::{
     client::test_utils::{TestClientConfig, TEST_PROTOCOL_VERSION},
@@ -135,20 +135,20 @@ async fn framing_proposal() {
         ];
 
         for enable_encryption in [true, false] {
-            let proposal = Proposal::tls_deserialize(&mut &*test_case.proposal).unwrap();
+            let proposal = Proposal::mls_decode(&*test_case.proposal).unwrap();
 
             let built = make_group(&test_case, true, enable_encryption, &cs)
                 .await
                 .proposal_message(proposal, vec![])
                 .await
                 .unwrap()
-                .tls_serialize_detached()
+                .mls_encode_to_vec()
                 .unwrap();
 
             to_check.push(built);
         }
 
-        let proposal = Proposal::tls_deserialize(&mut &*test_case.proposal).unwrap();
+        let proposal = Proposal::mls_decode(&*test_case.proposal).unwrap();
 
         for message in to_check {
             match process_message(&test_case, &message, &cs).await {
@@ -176,7 +176,7 @@ async fn framing_application() {
             .encrypt_application_message(&test_case.application, vec![])
             .await
             .unwrap()
-            .tls_serialize_detached()
+            .mls_encode_to_vec()
             .unwrap();
 
         for message in [&test_case.application_priv, &built_priv] {
@@ -200,7 +200,7 @@ async fn framing_comit() {
             continue;
         };
 
-        let commit = Commit::tls_deserialize(&mut &*test_case.commit).unwrap();
+        let commit = Commit::mls_decode(&*test_case.commit).unwrap();
 
         let mut auth_content = AuthenticatedContent::new_signed(
             &cs,
@@ -222,7 +222,7 @@ async fn framing_comit() {
                 .await
                 .format_for_wire(auth_content.clone())
                 .unwrap()
-                .tls_serialize_detached()
+                .mls_encode_to_vec()
                 .unwrap();
 
             to_check.push(built);
@@ -234,7 +234,7 @@ async fn framing_comit() {
                 _ => panic!("received value not commit"),
             };
         }
-        let commit = Commit::tls_deserialize(&mut &*test_case.commit).unwrap();
+        let commit = Commit::mls_decode(&*test_case.commit).unwrap();
 
         match process_message(&test_case, &test_case.commit_priv.clone(), &cs).await {
             Content::Commit(c) => assert_eq!(&c, &commit),
@@ -260,22 +260,22 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
             .await
             .unwrap();
 
-        test_case.application_priv = application_priv.tls_serialize_detached().unwrap();
+        test_case.application_priv = application_priv.mls_encode_to_vec().unwrap();
 
         // Generate private and public proposal message
         let proposal = Proposal::Remove(RemoveProposal {
             to_remove: LeafIndex(2),
         });
 
-        test_case.proposal = proposal.tls_serialize_detached().unwrap();
+        test_case.proposal = proposal.mls_encode_to_vec().unwrap();
 
         let mut group = make_group(&test_case, true, false, &cs).await;
         let proposal_pub = group.proposal_message(proposal.clone(), vec![]).await;
-        test_case.proposal_pub = proposal_pub.unwrap().tls_serialize_detached().unwrap();
+        test_case.proposal_pub = proposal_pub.unwrap().mls_encode_to_vec().unwrap();
 
         let mut group = make_group(&test_case, true, true, &cs).await;
         let proposal_priv = group.proposal_message(proposal, vec![]).await.unwrap();
-        test_case.proposal_priv = proposal_priv.tls_serialize_detached().unwrap();
+        test_case.proposal_priv = proposal_priv.mls_encode_to_vec().unwrap();
 
         // Generate private and public commit message
         let commit = Commit {
@@ -283,7 +283,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
             path: None,
         };
 
-        test_case.commit = commit.tls_serialize_detached().unwrap();
+        test_case.commit = commit.mls_encode_to_vec().unwrap();
 
         let mut auth_content = AuthenticatedContent::new_signed(
             &cs,
@@ -300,7 +300,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
 
         let mut group = make_group(&test_case, true, false, &cs).await;
         let commit_pub = group.format_for_wire(auth_content.clone()).unwrap();
-        test_case.commit_pub = commit_pub.tls_serialize_detached().unwrap();
+        test_case.commit_pub = commit_pub.mls_encode_to_vec().unwrap();
 
         let mut auth_content = AuthenticatedContent::new_signed(
             &cs,
@@ -317,7 +317,7 @@ async fn generate_framing_test_vector() -> Vec<FramingTestCase> {
 
         let mut group = make_group(&test_case, true, true, &cs).await;
         let commit_priv = group.format_for_wire(auth_content.clone()).unwrap();
-        test_case.commit_priv = commit_priv.tls_serialize_detached().unwrap();
+        test_case.commit_priv = commit_priv.mls_encode_to_vec().unwrap();
 
         test_vector.push(test_case);
     }
@@ -398,7 +398,7 @@ async fn process_message<P: CipherSuiteProvider>(
 ) -> Content {
     // Enabling encryption doesn't matter for processing
     let mut group = make_group(test_case, false, true, cs).await;
-    let message = MLSMessage::tls_deserialize(&mut &*message).unwrap();
+    let message = MLSMessage::mls_decode(message).unwrap();
     let evt_or_cont = group.get_event_from_incoming_message(message);
 
     match evt_or_cont.await.unwrap() {

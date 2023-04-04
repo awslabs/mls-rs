@@ -23,9 +23,8 @@ async-trait = "0.1.61"
 aws-mls-core = { path = "../aws-mls-core", version = "*" }
 aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", version = "*" }
 aws-mls-provider-sqlite = { path = "../aws-mls-provider-sqlite", version = "*", optional = true }
+aws-mls-codec = { path = "../aws-mls-core/aws-mls-codec", version = "*" }
 thiserror = "^1"
-tls_codec = "0.2.0"
-tls_codec_derive = "0.2.0"
 hex = { version = "^0.4.3", features = ["serde"] }
 enum-iterator = "1.1.3"
 futures = "0.3.25"

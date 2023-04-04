@@ -31,20 +31,6 @@ impl<T: MlsDecode> MlsDecode for Option<T> {
     }
 }
 
-impl<T: MlsSize> MlsSize for &Option<T> {
-    #[inline]
-    fn mls_encoded_len(&self) -> usize {
-        (*self).mls_encoded_len()
-    }
-}
-
-impl<T: MlsEncode> MlsEncode for &Option<T> {
-    #[inline]
-    fn mls_encode<W: crate::Writer>(&self, writer: W) -> Result<(), crate::Error> {
-        (*self).mls_encode(writer)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use alloc::vec;

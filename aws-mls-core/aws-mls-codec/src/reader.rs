@@ -28,3 +28,33 @@ impl Reader for &[u8] {
         Ok(())
     }
 }
+
+pub struct ReadWithCount<R> {
+    inner: R,
+    count: usize,
+}
+
+impl<R> ReadWithCount<R> {
+    pub fn new(r: R) -> Self {
+        Self { inner: r, count: 0 }
+    }
+
+    #[inline]
+    pub fn bytes_read(&self) -> usize {
+        self.count
+    }
+}
+
+impl<R: Reader> Reader for ReadWithCount<R> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<(), crate::Error> {
+        self.inner.read(buf)?;
+        self.count += buf.len();
+        Ok(())
+    }
+}
+
+impl<R> From<R> for ReadWithCount<R> {
+    fn from(r: R) -> Self {
+        Self::new(r)
+    }
+}

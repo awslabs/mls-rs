@@ -1,5 +1,5 @@
 pub use aws_mls_core::extension::{
-    ExtensionListIter, ExtensionType, MlsExtension, TlsCodecExtension,
+    ExtensionListIter, ExtensionType, MlsCodecExtension, MlsExtension,
 };
 
 pub(crate) use built_in::*;
@@ -9,16 +9,16 @@ pub mod built_in;
 
 #[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
+    use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
     use aws_mls_core::extension::MlsExtension;
     use std::convert::Infallible;
     use std::fmt::Debug;
-    use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
     use super::*;
 
     pub const TEST_EXTENSION_TYPE: u16 = 42;
 
-    #[derive(TlsSize, TlsSerialize, TlsDeserialize, Clone, Debug, PartialEq)]
+    #[derive(MlsSize, MlsEncode, MlsDecode, Clone, Debug, PartialEq)]
     pub(crate) struct TestExtension {
         pub(crate) foo: u8,
     }

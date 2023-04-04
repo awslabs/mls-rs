@@ -4,13 +4,9 @@ use crate::group::framing::{ContentType, FramedContent, PublicMessage, Sender, W
 use crate::group::{ConfirmationTag, GroupContext};
 use crate::signer::{Signable, SignatureError};
 use crate::CipherSuiteProvider;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize, Reader};
 use aws_mls_core::protocol_version::ProtocolVersion;
-use std::{
-    io::{Read, Write},
-    ops::Deref,
-};
-use tls_codec::{Deserialize, Serialize, Size};
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use std::ops::Deref;
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -19,21 +15,47 @@ pub struct FramedContentAuthData {
     pub confirmation_tag: Option<ConfirmationTag>,
 }
 
+impl MlsSize for FramedContentAuthData {
+    fn mls_encoded_len(&self) -> usize {
+        self.signature.mls_encoded_len()
+            + self
+                .confirmation_tag
+                .as_ref()
+                .map_or(0, |tag| tag.mls_encoded_len())
+    }
+}
+
+impl MlsEncode for FramedContentAuthData {
+    fn mls_encode<W: aws_mls_codec::Writer>(
+        &self,
+        mut writer: W,
+    ) -> Result<(), aws_mls_codec::Error> {
+        self.signature.mls_encode(&mut writer)?;
+
+        if let Some(ref tag) = self.confirmation_tag {
+            tag.mls_encode(&mut writer)?;
+        }
+
+        Ok(())
+    }
+}
+
 impl FramedContentAuthData {
-    pub(crate) fn tls_deserialize<R: Read>(
-        bytes: &mut R,
+    pub(crate) fn mls_decode<R: Reader>(
+        mut reader: R,
         content_type: ContentType,
-    ) -> Result<Self, tls_codec::Error> {
+    ) -> Result<Self, aws_mls_codec::Error> {
         Ok(FramedContentAuthData {
-            signature: MessageSignature::tls_deserialize(bytes)?,
+            signature: MessageSignature::mls_decode(&mut reader)?,
             confirmation_tag: match content_type {
-                ContentType::Commit => Some(ConfirmationTag::tls_deserialize(bytes)?),
+                ContentType::Commit => Some(ConfirmationTag::mls_decode(&mut reader)?),
                 ContentType::Application | ContentType::Proposal => None,
             },
         })
     }
 }
-#[derive(Clone, Debug, PartialEq, TlsSize, TlsSerialize)]
+
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode)]
 pub struct AuthenticatedContent {
     pub(crate) wire_format: WireFormat,
     pub(crate) content: FramedContent,
@@ -99,31 +121,11 @@ impl AuthenticatedContent {
     }
 }
 
-impl Size for FramedContentAuthData {
-    fn tls_serialized_len(&self) -> usize {
-        self.signature.tls_serialized_len()
-            + self
-                .confirmation_tag
-                .as_ref()
-                .map_or(0, |tag| tag.tls_serialized_len())
-    }
-}
-
-impl Serialize for FramedContentAuthData {
-    fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
-        Ok(self.signature.tls_serialize(writer)?
-            + self
-                .confirmation_tag
-                .as_ref()
-                .map_or(Ok(0), |tag| tag.tls_serialize(writer))?)
-    }
-}
-
-impl Deserialize for AuthenticatedContent {
-    fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
-        let wire_format = WireFormat::tls_deserialize(bytes)?;
-        let content = FramedContent::tls_deserialize(bytes)?;
-        let auth_data = FramedContentAuthData::tls_deserialize(bytes, content.content_type())?;
+impl MlsDecode for AuthenticatedContent {
+    fn mls_decode<R: Reader>(mut reader: R) -> Result<Self, aws_mls_codec::Error> {
+        let wire_format = WireFormat::mls_decode(&mut reader)?;
+        let content = FramedContent::mls_decode(&mut reader)?;
+        let auth_data = FramedContentAuthData::mls_decode(&mut reader, content.content_type())?;
 
         Ok(AuthenticatedContent {
             wire_format,
@@ -138,11 +140,11 @@ impl serde::Serialize for AuthenticatedContent {
     where
         S: serde::Serializer,
     {
-        let tls_serialize = self
-            .tls_serialize_detached()
+        let mls_serialize = self
+            .mls_encode_to_vec()
             .map_err(serde::ser::Error::custom)?;
 
-        serializer.serialize_bytes(&tls_serialize)
+        serializer.serialize_bytes(&mls_serialize)
     }
 }
 
@@ -152,7 +154,7 @@ impl<'de> serde::Deserialize<'de> for AuthenticatedContent {
         D: serde::Deserializer<'de>,
     {
         let data: Vec<u8> = Vec::deserialize(deserializer)?;
-        AuthenticatedContent::tls_deserialize(&mut &*data).map_err(serde::de::Error::custom)
+        AuthenticatedContent::mls_decode(&*data).map_err(serde::de::Error::custom)
     }
 }
 
@@ -164,27 +166,29 @@ pub(crate) struct AuthenticatedContentTBS<'a> {
     pub(crate) context: Option<&'a GroupContext>,
 }
 
-impl<'a> Size for AuthenticatedContentTBS<'a> {
-    fn tls_serialized_len(&self) -> usize {
-        self.protocol_version.tls_serialized_len()
-            + self.wire_format.tls_serialized_len()
-            + self.content.tls_serialized_len()
-            + self
-                .context
-                .as_ref()
-                .map_or(0, |ctx| ctx.tls_serialized_len())
+impl<'a> MlsSize for AuthenticatedContentTBS<'a> {
+    fn mls_encoded_len(&self) -> usize {
+        self.protocol_version.mls_encoded_len()
+            + self.wire_format.mls_encoded_len()
+            + self.content.mls_encoded_len()
+            + self.context.as_ref().map_or(0, |ctx| ctx.mls_encoded_len())
     }
 }
 
-impl<'a> Serialize for AuthenticatedContentTBS<'a> {
-    fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
-        Ok(self.protocol_version.tls_serialize(writer)?
-            + self.wire_format.tls_serialize(writer)?
-            + self.content.tls_serialize(writer)?
-            + self
-                .context
-                .as_ref()
-                .map_or(Ok(0), |ctx| ctx.tls_serialize(writer))?)
+impl<'a> MlsEncode for AuthenticatedContentTBS<'a> {
+    fn mls_encode<W: aws_mls_codec::Writer>(
+        &self,
+        mut writer: W,
+    ) -> Result<(), aws_mls_codec::Error> {
+        self.protocol_version.mls_encode(&mut writer)?;
+        self.wire_format.mls_encode(&mut writer)?;
+        self.content.mls_encode(&mut writer)?;
+
+        if let Some(context) = self.context {
+            context.mls_encode(&mut writer)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -225,13 +229,13 @@ impl<'a> Signable<'a> for AuthenticatedContent {
     fn signable_content(
         &self,
         context: &MessageSigningContext,
-    ) -> Result<Vec<u8>, tls_codec::Error> {
+    ) -> Result<Vec<u8>, aws_mls_codec::Error> {
         AuthenticatedContentTBS::from_authenticated_content(
             self,
             context.group_context,
             context.protocol_version,
         )
-        .tls_serialize_detached()
+        .mls_encode_to_vec()
     }
 
     fn write_signature(&mut self, signature: Vec<u8>) {
@@ -239,9 +243,9 @@ impl<'a> Signable<'a> for AuthenticatedContent {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct MessageSignature(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct MessageSignature(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl MessageSignature {
     pub(crate) fn empty() -> Self {

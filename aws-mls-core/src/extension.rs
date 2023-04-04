@@ -1,8 +1,8 @@
 use std::ops::Deref;
 
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use thiserror::Error;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 mod list;
 
@@ -15,9 +15,9 @@ pub use list::*;
     Hash,
     Clone,
     Copy,
-    TlsSize,
-    TlsSerialize,
-    TlsDeserialize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Serialize,
     serde::Deserialize,
 )]
@@ -76,15 +76,7 @@ pub enum ExtensionError {
 
 #[serde_as]
 #[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
+    Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
@@ -94,7 +86,7 @@ pub enum ExtensionError {
 /// MLS protocol and are inserted into an [ExtensionList](self::ExtensionList).
 pub struct Extension {
     pub(crate) extension_type: ExtensionType,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
     pub(crate) extension_data: Vec<u8>,
 }
@@ -160,30 +152,28 @@ pub trait MlsExtension: Sized {
 }
 
 /// Convenience trait for custom extension types that use
-/// [tls_codec](crate::tls_codec) as an underlying serialization mechanism
-pub trait TlsCodecExtension:
-    tls_codec::Serialize + tls_codec::Deserialize + tls_codec::Size
-{
+/// [aws_mls_codec](crate::aws_mls_codec) as an underlying serialization mechanism
+pub trait MlsCodecExtension: MlsSize + MlsEncode + MlsDecode {
     fn extension_type() -> ExtensionType;
 }
 
 impl<T> MlsExtension for T
 where
-    T: TlsCodecExtension,
+    T: MlsCodecExtension,
 {
-    type SerializationError = tls_codec::Error;
-    type DeserializationError = tls_codec::Error;
+    type SerializationError = aws_mls_codec::Error;
+    type DeserializationError = aws_mls_codec::Error;
 
     fn extension_type() -> ExtensionType {
-        <Self as TlsCodecExtension>::extension_type()
+        <Self as MlsCodecExtension>::extension_type()
     }
 
     fn to_bytes(&self) -> Result<Vec<u8>, Self::SerializationError> {
-        self.tls_serialize_detached()
+        self.mls_encode_to_vec()
     }
 
     fn from_bytes(data: &[u8]) -> Result<Self, Self::DeserializationError> {
-        Self::tls_deserialize(&mut &*data)
+        Self::mls_decode(data)
     }
 }
 
@@ -192,13 +182,13 @@ mod tests {
     use std::convert::Infallible;
 
     use assert_matches::assert_matches;
-    use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+    use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
-    use super::{Extension, ExtensionError, ExtensionType, MlsExtension, TlsCodecExtension};
+    use super::{Extension, ExtensionError, ExtensionType, MlsCodecExtension, MlsExtension};
 
     struct TestExtension;
 
-    #[derive(Debug, TlsSerialize, TlsSize, TlsDeserialize)]
+    #[derive(Debug, MlsSize, MlsEncode, MlsDecode)]
     struct AnotherTestExtension;
 
     impl MlsExtension for TestExtension {
@@ -218,7 +208,7 @@ mod tests {
         }
     }
 
-    impl TlsCodecExtension for AnotherTestExtension {
+    impl MlsCodecExtension for AnotherTestExtension {
         fn extension_type() -> ExtensionType {
             ExtensionType(43)
         }

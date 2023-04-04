@@ -11,12 +11,13 @@ use crate::signer::Signable;
 use crate::time::MlsTime;
 use crate::tree_kem::leaf_node::LeafNode;
 use crate::CipherSuiteProvider;
+use aws_mls_codec::MlsDecode;
+use aws_mls_codec::MlsEncode;
+use aws_mls_codec::MlsSize;
 use aws_mls_core::extension::ExtensionList;
 use serde_with::serde_as;
 use std::ops::Deref;
 use thiserror::Error;
-use tls_codec::Serialize;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 mod validator;
 pub(crate) use validator::*;
@@ -27,7 +28,7 @@ pub(crate) use generator::*;
 #[derive(Error, Debug)]
 pub enum KeyPackageError {
     #[error(transparent)]
-    SerializationError(#[from] tls_codec::Error),
+    SerializationError(#[from] aws_mls_codec::Error),
     #[error("unsupported cipher suite: {0:?}")]
     UnsupportedCipherSuite(CipherSuite),
 }
@@ -35,14 +36,7 @@ pub enum KeyPackageError {
 #[serde_as]
 #[non_exhaustive]
 #[derive(
-    Clone,
-    Debug,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
-    PartialEq,
+    Clone, Debug, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize, PartialEq,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct KeyPackage {
@@ -51,7 +45,7 @@ pub struct KeyPackage {
     pub(crate) hpke_init_key: HpkePublicKey,
     pub(crate) leaf_node: LeafNode,
     pub(crate) extensions: ExtensionList,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     pub(crate) signature: Vec<u8>,
 }
@@ -64,9 +58,9 @@ pub struct KeyPackage {
     PartialOrd,
     Ord,
     Hash,
-    TlsSerialize,
-    TlsDeserialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Serialize,
     serde::Deserialize,
 )]
@@ -93,14 +87,13 @@ impl From<Vec<u8>> for KeyPackageRef {
     }
 }
 
-#[derive(TlsSerialize, TlsSize)]
+#[derive(MlsSize, MlsEncode)]
 struct KeyPackageData<'a> {
     pub version: ProtocolVersion,
     pub cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub hpke_init_key: &'a HpkePublicKey,
     pub leaf_node: &'a LeafNode,
-    #[tls_codec(with = "crate::tls::DefRef")]
     pub extensions: &'a ExtensionList,
 }
 
@@ -132,7 +125,7 @@ impl KeyPackage {
         }
 
         Ok(KeyPackageRef(HashReference::compute(
-            &self.tls_serialize_detached()?,
+            &self.mls_encode_to_vec()?,
             b"MLS 1.0 KeyPackage Reference",
             cipher_suite_provider,
         )?))
@@ -151,7 +144,7 @@ impl<'a> Signable<'a> for KeyPackage {
     fn signable_content(
         &self,
         _context: &Self::SigningContext,
-    ) -> Result<Vec<u8>, tls_codec::Error> {
+    ) -> Result<Vec<u8>, aws_mls_codec::Error> {
         KeyPackageData {
             version: self.version,
             cipher_suite: self.cipher_suite,
@@ -159,7 +152,7 @@ impl<'a> Signable<'a> for KeyPackage {
             leaf_node: &self.leaf_node,
             extensions: &self.extensions,
         }
-        .tls_serialize_detached()
+        .mls_encode_to_vec()
     }
 
     fn write_signature(&mut self, signature: Vec<u8>) {
@@ -257,7 +250,6 @@ mod tests {
     use super::{test_utils::test_key_package, *};
     use assert_matches::assert_matches;
     use futures::StreamExt;
-    use tls_codec::Deserialize;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -286,7 +278,7 @@ mod tests {
                     .unwrap();
                 TestCase {
                     cipher_suite: cipher_suite.into(),
-                    input: pkg.tls_serialize_detached().unwrap(),
+                    input: pkg.mls_encode_to_vec().unwrap(),
                     output: pkg_ref.to_vec(),
                 }
             })
@@ -309,7 +301,7 @@ mod tests {
                 continue;
             };
 
-            let key_package = KeyPackage::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
+            let key_package = KeyPackage::mls_decode(one_case.input.as_slice()).unwrap();
 
             let key_package_ref = key_package.to_reference(&provider).unwrap();
 

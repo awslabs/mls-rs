@@ -1,6 +1,6 @@
+use aws_mls_codec::{MlsDecode, MlsEncode};
 use aws_mls_core::{identity::IdentityProvider, key_package::KeyPackageData};
 use thiserror::Error;
-use tls_codec::{Deserialize, Serialize};
 
 use crate::{
     crypto::{HpkeSecretKey, SignatureSecretKey},
@@ -31,7 +31,7 @@ pub enum KeyPackageGenerationError {
     #[error(transparent)]
     CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
-    TlsCodecError(#[from] tls_codec::Error),
+    MlsCodecError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
     HashReferenceError(#[from] HashReferenceError),
 }
@@ -66,7 +66,7 @@ impl KeyPackageGeneration {
         let id = self.reference.to_vec();
 
         let data = KeyPackageData::new(
-            self.key_package.tls_serialize_detached()?,
+            self.key_package.mls_encode_to_vec()?,
             self.init_secret_key.clone(),
             self.leaf_node_secret_key.clone(),
         );
@@ -80,7 +80,7 @@ impl KeyPackageGeneration {
     ) -> Result<Self, KeyPackageGenerationError> {
         Ok(KeyPackageGeneration {
             reference: KeyPackageRef::from(id),
-            key_package: KeyPackage::tls_deserialize(&mut &*data.key_package_bytes)?,
+            key_package: KeyPackage::mls_decode(&*data.key_package_bytes)?,
             init_secret_key: data.init_key,
             leaf_node_secret_key: data.leaf_node_key,
         })

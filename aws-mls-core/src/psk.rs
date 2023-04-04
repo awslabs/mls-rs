@@ -1,8 +1,8 @@
 use std::ops::Deref;
 
 use async_trait::async_trait;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroizing;
 
 #[serde_as]
@@ -57,16 +57,16 @@ impl Deref for PreSharedKey {
     Eq,
     Hash,
     PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// An external pre-shared key identifier.
 pub struct ExternalPskId(
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
     Vec<u8>,
 );

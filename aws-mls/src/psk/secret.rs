@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
+use aws_mls_codec::MlsEncode;
 use aws_mls_core::{crypto::CipherSuiteProvider, psk::PreSharedKey};
-use tls_codec::Serialize;
 use zeroize::Zeroizing;
 
 use crate::group::key_schedule::kdf_expand_with_label;
@@ -65,7 +65,7 @@ impl PskSecret {
                     cipher_suite_provider,
                     &psk_extracted,
                     "derived psk",
-                    &label.tls_serialize_detached()?,
+                    &label.mls_encode_to_vec()?,
                     None,
                 )
                 .map_err(|e| PskError::KeyScheduleError(e.into()))?;

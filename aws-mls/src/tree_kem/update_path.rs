@@ -1,9 +1,9 @@
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::{
     extension::{ExtensionError, ExtensionList},
     identity::IdentityProvider,
 };
 use thiserror::Error;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use super::{
     leaf_node::LeafNode,
@@ -14,20 +14,17 @@ use super::{
 use crate::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey};
 use crate::{group::message_processor::ProvisionalState, time::MlsTime};
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct UpdatePathNode {
-    #[tls_codec(with = "crate::tls::ByteVec")]
     pub public_key: HpkePublicKey,
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub encrypted_path_secret: Vec<HpkeCiphertext>,
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct UpdatePath {
     pub leaf_node: LeafNode,
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub nodes: Vec<UpdatePathNode>,
 }
 

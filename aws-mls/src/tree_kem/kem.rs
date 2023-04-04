@@ -2,13 +2,12 @@ use crate::crypto::{CipherSuiteProvider, HpkeCiphertext, SignatureSecretKey};
 use crate::group::GroupContext;
 use crate::identity::SigningIdentity;
 use crate::tree_kem::math as tree_math;
+use aws_mls_codec::MlsEncode;
 use aws_mls_core::identity::IdentityProvider;
 use cfg_if::cfg_if;
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
-
-use tls_codec::Serialize;
 
 use super::hpke_encryption::HpkeEncryptable;
 use super::leaf_node::ConfigProperties;
@@ -130,7 +129,7 @@ impl<'a> TreeKem<'a> {
 
         context.tree_hash = self.tree_kem_public.tree_hash(cipher_suite_provider)?;
 
-        let context_bytes = context.tls_serialize_detached()?;
+        let context_bytes = context.mls_encode_to_vec()?;
 
         cfg_if! {
             if #[cfg(feature = "rayon")] {
@@ -230,7 +229,7 @@ impl<'a> TreeKem<'a> {
         // Update the tree hash to get context for decryption
         context.tree_hash = self.tree_kem_public.tree_hash(cipher_suite_provider)?;
 
-        let context_bytes = context.tls_serialize_detached()?;
+        let context_bytes = context.mls_encode_to_vec()?;
 
         let lca_path_secret = filtered_direct_path_co_path
             .iter()

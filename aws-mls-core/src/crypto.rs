@@ -1,20 +1,20 @@
 use std::ops::Deref;
 
 use crate::serde::vec_u8_as_base64::VecAsBase64;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::{Zeroize, Zeroizing};
 
 mod cipher_suite;
 pub use self::cipher_suite::*;
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// Ciphertext produced by [`CipherSuiteProvider::hpke_seal`]
 pub struct HpkeCiphertext {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub kem_output: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub ciphertext: Vec<u8>,
 }
 
@@ -26,16 +26,16 @@ pub struct HpkeCiphertext {
     Debug,
     PartialEq,
     Eq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
     Hash,
+    MlsSize,
+    MlsDecode,
+    MlsEncode,
     serde::Serialize,
     serde::Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct HpkePublicKey(
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
     Vec<u8>,
 );
@@ -73,16 +73,16 @@ impl AsRef<[u8]> for HpkePublicKey {
     Debug,
     PartialEq,
     Eq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     Zeroize,
     serde::Serialize,
     serde::Deserialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct HpkeSecretKey(
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
     Vec<u8>,
 );
@@ -146,15 +146,15 @@ pub trait HpkeContextR {
     PartialEq,
     Eq,
     Hash,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SignaturePublicKey(
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     Vec<u8>,
 );

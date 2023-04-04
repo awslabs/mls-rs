@@ -1,6 +1,6 @@
 use crate::time::MlsTime;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use thiserror::Error;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Debug, Error)]
 pub enum LifetimeError {
@@ -15,9 +15,9 @@ pub enum LifetimeError {
     Debug,
     PartialEq,
     Eq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
     Default,

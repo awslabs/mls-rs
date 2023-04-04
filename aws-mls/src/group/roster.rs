@@ -15,7 +15,7 @@ pub(crate) fn member_from_leaf_node(leaf_node: &LeafNode, leaf_index: LeafIndex)
                 leaf_node.signing_identity.clone(),
                 leaf_node.capabilities.clone(),
                 leaf_node.extensions.clone(),
-                leaf_node.tls_serialize_detached().unwrap()
+                leaf_node.mls_encode_to_vec().unwrap()
             )
         } else {
             Member::new(

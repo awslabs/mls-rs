@@ -1,4 +1,4 @@
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use crate::crypto::SignaturePublicKey;
 
@@ -10,9 +10,9 @@ use super::Credential;
     Eq,
     Hash,
     PartialEq,
-    TlsSize,
-    TlsSerialize,
-    TlsDeserialize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Serialize,
     serde::Deserialize,
 )]

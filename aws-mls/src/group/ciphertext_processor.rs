@@ -17,9 +17,9 @@ use super::{
     GroupContext,
 };
 use crate::{psk::PskError, tree_kem::node::LeafIndex};
+use aws_mls_codec::MlsEncode;
 use aws_mls_core::crypto::CipherSuiteProvider;
 use thiserror::Error;
-use tls_codec::Serialize;
 use zeroize::Zeroizing;
 
 mod message_key;
@@ -36,7 +36,7 @@ pub enum CiphertextProcessorError {
     #[error(transparent)]
     SecretTreeError(#[from] SecretTreeError),
     #[error(transparent)]
-    TlsCodecError(#[from] tls_codec::Error),
+    MlsCodecError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
     PskSecretError(#[from] PskError),
     #[error("key derivation failure")]
@@ -121,7 +121,7 @@ where
             _ => KeyType::Handshake,
         };
 
-        let ciphertext_content = Zeroizing::new(ciphertext_content.tls_serialize_detached()?);
+        let ciphertext_content = Zeroizing::new(ciphertext_content.mls_encode_to_vec()?);
 
         // Encrypt the ciphertext content using the encryption key and a nonce that is
         // reuse safe by xor the reuse guard with the first 4 bytes
@@ -137,7 +137,7 @@ where
             .encrypt(
                 &self.cipher_suite_provider,
                 &ciphertext_content,
-                &aad.tls_serialize_detached()?,
+                &aad.mls_encode_to_vec()?,
                 &reuse_guard,
             )
             .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))?;
@@ -225,13 +225,13 @@ where
             .decrypt(
                 &self.cipher_suite_provider,
                 &ciphertext.ciphertext,
-                &PrivateContentAAD::from(&ciphertext).tls_serialize_detached()?,
+                &PrivateContentAAD::from(&ciphertext).mls_encode_to_vec()?,
                 &sender_data.reuse_guard,
             )
             .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))?;
 
         let ciphertext_content =
-            PrivateContentTBE::tls_deserialize(&mut &**decrypted_content, ciphertext.content_type)?;
+            PrivateContentTBE::mls_decode(&decrypted_content, ciphertext.content_type)?;
 
         // Build the MLS plaintext object and process it
         let auth_content = AuthenticatedContent {

@@ -1,10 +1,10 @@
+use aws_mls_codec::{MlsDecode, MlsEncode};
 use aws_mls_core::{
     crypto::{CipherSuite, CipherSuiteProvider},
     extension::ExtensionList,
 };
 
 use itertools::Itertools;
-use tls_codec::{Deserialize, Serialize};
 
 use crate::{
     crypto::test_utils::try_test_cipher_suite_provider, identity::basic::BasicIdentityProvider,
@@ -48,7 +48,7 @@ impl ValidationTestCase {
 
         Self {
             cipher_suite: cs.cipher_suite().into(),
-            tree: tree.export_node_data().tls_serialize_detached().unwrap(),
+            tree: tree.export_node_data().mls_encode_to_vec().unwrap(),
             tree_hashes: tree.tree_hashes.current.into_iter().map(TreeHash).collect(),
             group_id: group_id.to_vec(),
             resolutions,
@@ -71,7 +71,7 @@ async fn validation() {
         let id_provider = &BasicIdentityProvider;
 
         let mut tree = TreeKemPublic::import_node_data(
-            NodeVec::tls_deserialize(&mut &*test_case.tree).unwrap(),
+            NodeVec::mls_decode(&*test_case.tree).unwrap(),
             &id_provider,
         )
         .await

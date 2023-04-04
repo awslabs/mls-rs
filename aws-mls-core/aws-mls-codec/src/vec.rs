@@ -1,35 +1,6 @@
 use alloc::vec::Vec;
 
-use crate::{varint::VarInt, MlsDecode, MlsEncode, MlsSize, Reader};
-
-struct ReadWithCount<R> {
-    inner: R,
-    count: usize,
-}
-
-impl<R> ReadWithCount<R> {
-    pub fn new(r: R) -> Self {
-        Self { inner: r, count: 0 }
-    }
-
-    pub fn bytes_read(&self) -> usize {
-        self.count
-    }
-}
-
-impl<R: Reader> Reader for ReadWithCount<R> {
-    fn read(&mut self, buf: &mut [u8]) -> Result<(), crate::Error> {
-        self.inner.read(buf)?;
-        self.count += buf.len();
-        Ok(())
-    }
-}
-
-impl<R> From<R> for ReadWithCount<R> {
-    fn from(r: R) -> Self {
-        Self::new(r)
-    }
-}
+use crate::{varint::VarInt, MlsDecode, MlsEncode, MlsSize, ReadWithCount};
 
 impl<T> MlsSize for [T]
 where
@@ -43,16 +14,6 @@ where
             .mls_encoded_len();
 
         header_length + len
-    }
-}
-
-impl<T> MlsSize for &[T]
-where
-    T: MlsSize,
-{
-    #[inline]
-    fn mls_encoded_len(&self) -> usize {
-        (*self).mls_encoded_len()
     }
 }
 
@@ -81,16 +42,6 @@ where
         writer.write(&buffer)?;
 
         Ok(())
-    }
-}
-
-impl<T> MlsEncode for &[T]
-where
-    T: MlsEncode,
-{
-    #[inline]
-    fn mls_encode<W: crate::Writer>(&self, writer: W) -> Result<(), crate::Error> {
-        (*self).mls_encode(writer)
     }
 }
 

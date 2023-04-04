@@ -5,10 +5,9 @@ use crate::psk::{PreSharedKey, PskError};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
 use crate::CipherSuiteProvider;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use thiserror::Error;
-use tls_codec::Serialize;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::crypto::{HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey};
@@ -21,7 +20,7 @@ pub enum KeyScheduleError {
     #[error(transparent)]
     SecretTreeError(#[from] SecretTreeError),
     #[error(transparent)]
-    TlsCodecError(#[from] tls_codec::Error),
+    MlsCodecError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
     PskSecretError(#[from] PskError),
     #[error("key derivation failure")]
@@ -82,7 +81,7 @@ impl KeySchedule {
             cipher_suite_provider,
             &joiner_seed,
             "joiner",
-            &context.tls_serialize_detached()?,
+            &context.mls_encode_to_vec()?,
             None,
         )
         .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?
@@ -112,7 +111,7 @@ impl KeySchedule {
         psk_secret: &PskSecret,
     ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
         let epoch_seed = get_pre_epoch_secret(cipher_suite_provider, psk_secret, joiner_secret)?;
-        let context = context.tls_serialize_detached()?;
+        let context = context.mls_encode_to_vec()?;
 
         let epoch_secret =
             kdf_expand_with_label(cipher_suite_provider, &epoch_seed, "epoch", &context, None)
@@ -203,12 +202,12 @@ impl KeySchedule {
     }
 }
 
-#[derive(TlsSerialize, TlsSize)]
+#[derive(MlsEncode, MlsSize)]
 struct Label<'a> {
     length: u16,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     label: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     context: &'a [u8],
 }
 
@@ -234,7 +233,7 @@ pub(crate) fn kdf_expand_with_label<P: CipherSuiteProvider>(
     let label = Label::new(len as u16, label, context);
 
     cipher_suite_provider
-        .kdf_expand(secret, &label.tls_serialize_detached()?, len)
+        .kdf_expand(secret, &label.mls_encode_to_vec()?, len)
         .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
 }
 
@@ -246,8 +245,8 @@ pub(crate) fn kdf_derive_secret<P: CipherSuiteProvider>(
     kdf_expand_with_label(cipher_suite_provider, secret, label, &[], None)
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
-pub(crate) struct JoinerSecret(#[tls_codec(with = "crate::tls::ByteVec")] Zeroizing<Vec<u8>>);
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
+pub(crate) struct JoinerSecret(#[mls_codec(with = "aws_mls_codec::byte_vec")] Zeroizing<Vec<u8>>);
 
 impl From<Zeroizing<Vec<u8>>> for JoinerSecret {
     fn from(bytes: Zeroizing<Vec<u8>>) -> Self {
@@ -473,10 +472,10 @@ mod tests {
     };
     use crate::group::test_utils::random_bytes;
     use crate::group::{GroupContext, InitSecret};
+    use aws_mls_codec::MlsEncode;
     use aws_mls_core::crypto::CipherSuiteProvider;
 
     use aws_mls_core::extension::ExtensionList;
-    use tls_codec::Serialize;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
     use zeroize::Zeroizing;
@@ -572,10 +571,7 @@ mod tests {
                     extensions: ExtensionList::new(),
                 };
 
-                assert_eq!(
-                    context.tls_serialize_detached().unwrap(),
-                    epoch.group_context
-                );
+                assert_eq!(context.mls_encode_to_vec().unwrap(), epoch.group_context);
 
                 let psk = epoch.psk_secret.into();
                 let commit = CommitSecret(epoch.commit_secret.into());
@@ -765,7 +761,7 @@ mod tests {
                 commit_secret,
                 welcome_secret,
                 psk_secret: psk_secret.to_vec(),
-                group_context: group_context.tls_serialize_detached().unwrap(),
+                group_context: group_context.mls_encode_to_vec().unwrap(),
                 joiner_secret: key_schedule_res.joiner_secret.into(),
                 init_secret: key_schedule_res.key_schedule.init_secret.0.to_vec(),
                 sender_data_secret: key_schedule_res.epoch_secrets.sender_data_secret.to_vec(),

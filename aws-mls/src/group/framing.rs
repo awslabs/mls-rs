@@ -1,18 +1,16 @@
 use super::proposal::Proposal;
 use super::*;
 use crate::{client::MlsError, protocol_version::ProtocolVersion};
-use std::io::{Read, Write};
-use tls_codec::{Deserialize, Serialize, Size};
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize, ReadWithCount};
 use zeroize::Zeroize;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum ContentType {
-    Application = 1,
-    Proposal = 2,
-    Commit = 3,
+    Application = 1u8,
+    Proposal = 2u8,
+    Commit = 3u8,
 }
 
 impl From<&Content> for ContentType {
@@ -31,9 +29,9 @@ impl From<&Content> for ContentType {
     Debug,
     PartialEq,
     Eq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
 )]
@@ -41,18 +39,17 @@ impl From<&Content> for ContentType {
 #[repr(u8)]
 /// Description of a [`MLSMessage`] sender
 pub enum Sender {
-    #[tls_codec(discriminant = 1)]
     /// Current group member index.
-    Member(u32),
+    Member(u32) = 1u8,
     /// An external entity sending a proposal proposal identified by an index
     /// in the current
     /// [`ExternalSendersExt`](crate::extension::ExternalSendersExt) stored in
     /// group context extensions.
-    External(u32),
+    External(u32) = 2u8,
     /// A new member proposing their own addition to the group.
-    NewMemberProposal,
+    NewMemberProposal = 3u8,
     /// A member sending an external commit.
-    NewMemberCommit,
+    NewMemberCommit = 4u8,
 }
 
 impl From<LeafIndex> for Sender {
@@ -67,10 +64,10 @@ impl From<u32> for Sender {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize, Zeroize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, Zeroize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[zeroize(drop)]
-pub struct ApplicationData(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+pub struct ApplicationData(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
 impl From<Vec<u8>> for ApplicationData {
     fn from(data: Vec<u8>) -> Self {
@@ -93,14 +90,13 @@ impl ApplicationData {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub(crate) enum Content {
-    #[tls_codec(discriminant = 1)]
-    Application(ApplicationData),
-    Proposal(Proposal),
-    Commit(Commit),
+    Application(ApplicationData) = 1u8,
+    Proposal(Proposal) = 2u8,
+    Commit(Commit) = 3u8,
 }
 
 impl Content {
@@ -117,35 +113,38 @@ pub(crate) struct PublicMessage {
     pub membership_tag: Option<MembershipTag>,
 }
 
-impl Size for PublicMessage {
-    fn tls_serialized_len(&self) -> usize {
-        self.content.tls_serialized_len()
-            + self.auth.tls_serialized_len()
+impl MlsSize for PublicMessage {
+    fn mls_encoded_len(&self) -> usize {
+        self.content.mls_encoded_len()
+            + self.auth.mls_encoded_len()
             + self
                 .membership_tag
                 .as_ref()
-                .map_or(0, |tag| tag.tls_serialized_len())
+                .map_or(0, |tag| tag.mls_encoded_len())
     }
 }
 
-impl Serialize for PublicMessage {
-    fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
-        Ok(self.content.tls_serialize(writer)?
-            + self.auth.tls_serialize(writer)?
-            + self
-                .membership_tag
-                .as_ref()
-                .map_or(Ok(0), |tag| tag.tls_serialize(writer))?)
+impl MlsEncode for PublicMessage {
+    fn mls_encode<W: aws_mls_codec::Writer>(
+        &self,
+        mut writer: W,
+    ) -> Result<(), aws_mls_codec::Error> {
+        self.content.mls_encode(&mut writer)?;
+        self.auth.mls_encode(&mut writer)?;
+
+        self.membership_tag
+            .as_ref()
+            .map_or(Ok(()), |tag| tag.mls_encode(writer))
     }
 }
 
-impl Deserialize for PublicMessage {
-    fn tls_deserialize<R: Read>(bytes: &mut R) -> Result<Self, tls_codec::Error> {
-        let content = FramedContent::tls_deserialize(bytes)?;
-        let auth = FramedContentAuthData::tls_deserialize(bytes, content.content_type())?;
+impl MlsDecode for PublicMessage {
+    fn mls_decode<R: aws_mls_codec::Reader>(mut reader: R) -> Result<Self, aws_mls_codec::Error> {
+        let content = FramedContent::mls_decode(&mut reader)?;
+        let auth = FramedContentAuthData::mls_decode(&mut reader, content.content_type())?;
 
         let membership_tag = match content.sender {
-            Sender::Member(_) => Some(MembershipTag::tls_deserialize(bytes)?),
+            Sender::Member(_) => Some(MembershipTag::mls_decode(&mut reader)?),
             _ => None,
         };
 
@@ -164,52 +163,57 @@ pub(crate) struct PrivateContentTBE {
     pub padding: Vec<u8>,
 }
 
-impl Size for PrivateContentTBE {
-    fn tls_serialized_len(&self) -> usize {
+impl MlsSize for PrivateContentTBE {
+    fn mls_encoded_len(&self) -> usize {
         let content_len_without_type = match &self.content {
-            Content::Application(c) => c.tls_serialized_len(),
-            Content::Proposal(c) => c.tls_serialized_len(),
-            Content::Commit(c) => c.tls_serialized_len(),
+            Content::Application(c) => c.mls_encoded_len(),
+            Content::Proposal(c) => c.mls_encoded_len(),
+            Content::Commit(c) => c.mls_encoded_len(),
         };
 
         // Padding has arbitrary size
-        content_len_without_type + self.auth.tls_serialized_len() + self.padding.len()
+        content_len_without_type + self.auth.mls_encoded_len() + self.padding.len()
     }
 }
 
-impl Serialize for PrivateContentTBE {
-    fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
-        let len = match &self.content {
-            Content::Application(c) => c.tls_serialize(writer),
-            Content::Proposal(c) => c.tls_serialize(writer),
-            Content::Commit(c) => c.tls_serialize(writer),
+impl MlsEncode for PrivateContentTBE {
+    fn mls_encode<W: aws_mls_codec::Writer>(
+        &self,
+        mut writer: W,
+    ) -> Result<(), aws_mls_codec::Error> {
+        match &self.content {
+            Content::Application(c) => c.mls_encode(&mut writer),
+            Content::Proposal(c) => c.mls_encode(&mut writer),
+            Content::Commit(c) => c.mls_encode(&mut writer),
         }?;
 
         // Padding has arbitrary size
-        Ok(len + self.auth.tls_serialize(writer)? + writer.write(&self.padding)?)
+        self.auth.mls_encode(&mut writer)?;
+        writer.write(&self.padding)
     }
 }
 
 impl PrivateContentTBE {
-    pub(crate) fn tls_deserialize<R: Read>(
-        bytes: &mut R,
+    pub(crate) fn mls_decode(
+        data: &[u8],
         content_type: ContentType,
-    ) -> Result<Self, tls_codec::Error> {
+    ) -> Result<Self, aws_mls_codec::Error> {
+        let mut reader = ReadWithCount::new(data);
+
         let content = match content_type {
             ContentType::Application => {
-                Content::Application(ApplicationData::tls_deserialize(bytes)?)
+                Content::Application(ApplicationData::mls_decode(&mut reader)?)
             }
-            ContentType::Proposal => Content::Proposal(Proposal::tls_deserialize(bytes)?),
-            ContentType::Commit => Content::Commit(Commit::tls_deserialize(bytes)?),
+            ContentType::Proposal => Content::Proposal(Proposal::mls_decode(&mut reader)?),
+            ContentType::Commit => Content::Commit(Commit::mls_decode(&mut reader)?),
         };
 
-        let auth = FramedContentAuthData::tls_deserialize(bytes, content.content_type())?;
+        let auth = FramedContentAuthData::mls_decode(&mut reader, content.content_type())?;
 
-        let mut padding = Vec::new();
-        bytes.read_to_end(&mut padding)?;
+        let padding = data[reader.bytes_read()..].to_vec();
 
         if padding.iter().any(|&i| i != 0u8) {
-            return Err(tls_codec::Error::DecodingError(
+            return Err(aws_mls_codec::Error::Custom(
                 "non-zero padding bytes discovered".to_string(),
             ));
         }
@@ -222,28 +226,28 @@ impl PrivateContentTBE {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub struct PrivateContentAAD {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub content_type: ContentType,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub authenticated_data: Vec<u8>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct PrivateMessage {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub content_type: ContentType,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub authenticated_data: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub encrypted_sender_data: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub ciphertext: Vec<u8>,
 }
 
@@ -258,7 +262,7 @@ impl From<&PrivateMessage> for PrivateContentAAD {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A MLS protocol message for sending data over the wire.
 pub struct MLSMessage {
@@ -347,26 +351,25 @@ impl MLSMessage {
 
     /// Deserialize a message from transport.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
-        Self::tls_deserialize(&mut &*bytes).map_err(Into::into)
+        Self::mls_decode(bytes).map_err(Into::into)
     }
 
     /// Serialize a message for transport.
     pub fn to_bytes(&self) -> Result<Vec<u8>, MlsError> {
-        self.tls_serialize_detached().map_err(Into::into)
+        self.mls_encode_to_vec().map_err(Into::into)
     }
 }
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u16)]
 pub(crate) enum MLSMessagePayload {
-    #[tls_codec(discriminant = 1)]
-    Plain(PublicMessage),
-    Cipher(PrivateMessage),
-    Welcome(Welcome),
-    GroupInfo(GroupInfo),
-    KeyPackage(KeyPackage),
+    Plain(PublicMessage) = 1u16,
+    Cipher(PrivateMessage) = 2u16,
+    Welcome(Welcome) = 3u16,
+    GroupInfo(GroupInfo) = 4u16,
+    KeyPackage(KeyPackage) = 5u16,
 }
 
 impl From<PublicMessage> for MLSMessagePayload {
@@ -376,16 +379,16 @@ impl From<PublicMessage> for MLSMessagePayload {
 }
 
 #[derive(
-    Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, TlsDeserialize, TlsSerialize, TlsSize,
+    Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, MlsSize, MlsEncode, MlsDecode,
 )]
 #[repr(u16)]
 /// Content description of an [`MLSMessage`]
 pub enum WireFormat {
-    PublicMessage = 1,
-    PrivateMessage,
-    Welcome,
-    GroupInfo,
-    KeyPackage,
+    PublicMessage = 1u16,
+    PrivateMessage = 2u16,
+    Welcome = 3u16,
+    GroupInfo = 4u16,
+    KeyPackage = 5u16,
 }
 
 impl From<ControlEncryptionMode> for WireFormat {
@@ -397,14 +400,14 @@ impl From<ControlEncryptionMode> for WireFormat {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct FramedContent {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub group_id: Vec<u8>,
     pub epoch: u64,
     pub sender: Sender,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub authenticated_data: Vec<u8>,
     pub content: Content,
 }
@@ -466,16 +469,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_mls_ciphertext_content_tls_encoding() {
+    fn test_mls_ciphertext_content_mls_encoding() {
         let mut ciphertext_content = get_test_ciphertext_content();
         ciphertext_content.padding = vec![0u8; 128];
 
-        let encoded = ciphertext_content.tls_serialize_detached().unwrap();
-        let decoded = PrivateContentTBE::tls_deserialize(
-            &mut &*encoded,
-            (&ciphertext_content.content).into(),
-        )
-        .unwrap();
+        let encoded = ciphertext_content.mls_encode_to_vec().unwrap();
+        let decoded =
+            PrivateContentTBE::mls_decode(&encoded, (&ciphertext_content.content).into()).unwrap();
 
         assert_eq!(ciphertext_content, decoded);
     }
@@ -485,12 +485,9 @@ mod tests {
         let mut ciphertext_content = get_test_ciphertext_content();
         ciphertext_content.padding = vec![1u8; 128];
 
-        let encoded = ciphertext_content.tls_serialize_detached().unwrap();
-        let decoded = PrivateContentTBE::tls_deserialize(
-            &mut &*encoded,
-            (&ciphertext_content.content).into(),
-        );
+        let encoded = ciphertext_content.mls_encode_to_vec().unwrap();
+        let decoded = PrivateContentTBE::mls_decode(&encoded, (&ciphertext_content.content).into());
 
-        assert_matches!(decoded, Err(tls_codec::Error::DecodingError(e)) if e == "non-zero padding bytes discovered");
+        assert_matches!(decoded, Err(aws_mls_codec::Error::Custom(e)) if e == "non-zero padding bytes discovered");
     }
 }

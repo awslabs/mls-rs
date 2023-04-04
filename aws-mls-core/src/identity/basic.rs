@@ -1,7 +1,7 @@
 use std::convert::Infallible;
 
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use super::{Credential, CredentialType, MlsCredential};
 
@@ -12,9 +12,9 @@ use super::{Credential, CredentialType, MlsCredential};
     PartialEq,
     Eq,
     Hash,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Serialize,
     serde::Deserialize,
 )]
@@ -31,7 +31,7 @@ use super::{Credential, CredentialType, MlsCredential};
 /// in production applications.
 pub struct BasicCredential {
     #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     identifier: Vec<u8>,
 }
 

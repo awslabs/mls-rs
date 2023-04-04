@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
 #[derive(
     Debug,
@@ -11,9 +11,9 @@ use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
     Ord,
     PartialEq,
     PartialOrd,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
 )]

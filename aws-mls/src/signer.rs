@@ -1,14 +1,13 @@
+use aws_mls_codec::{MlsEncode, MlsSize};
 use thiserror::Error;
-use tls_codec::Serialize;
-use tls_codec_derive::{TlsSerialize, TlsSize};
 
 use crate::crypto::{CipherSuiteProvider, SignaturePublicKey, SignatureSecretKey};
 
-#[derive(Debug, Clone, TlsSize, TlsSerialize)]
+#[derive(Debug, Clone, MlsSize, MlsEncode)]
 struct SignContent {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     label: Vec<u8>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     content: Vec<u8>,
 }
 
@@ -24,7 +23,7 @@ impl SignContent {
 #[derive(Debug, Error)]
 pub enum SignatureError {
     #[error(transparent)]
-    TlsSerializationError(#[from] tls_codec::Error),
+    SerializationError(#[from] aws_mls_codec::Error),
     #[error("internal signer error: {0:?}")]
     InternalSignerError(#[source] Box<dyn std::error::Error + Send + Sync>),
     #[error("signature validation failed, info: {0:?}")]
@@ -38,8 +37,10 @@ pub(crate) trait Signable<'a> {
 
     fn signature(&self) -> &[u8];
 
-    fn signable_content(&self, context: &Self::SigningContext)
-        -> Result<Vec<u8>, tls_codec::Error>;
+    fn signable_content(
+        &self,
+        context: &Self::SigningContext,
+    ) -> Result<Vec<u8>, aws_mls_codec::Error>;
 
     fn write_signature(&mut self, signature: Vec<u8>);
 
@@ -52,7 +53,7 @@ pub(crate) trait Signable<'a> {
         let sign_content = SignContent::new(Self::SIGN_LABEL, self.signable_content(context)?);
 
         let signature = signature_provider
-            .sign(signer, &sign_content.tls_serialize_detached()?)
+            .sign(signer, &sign_content.mls_encode_to_vec()?)
             .map_err(|e| SignatureError::InternalSignerError(e.into()))?;
 
         self.write_signature(signature);
@@ -72,7 +73,7 @@ pub(crate) trait Signable<'a> {
             .verify(
                 public_key,
                 self.signature(),
-                &sign_content.tls_serialize_detached()?,
+                &sign_content.mls_encode_to_vec()?,
             )
             .map_err(|e| SignatureError::SignatureValidationFailed(e.into()))
     }
@@ -134,7 +135,7 @@ pub(crate) mod test_utils {
         fn signable_content(
             &self,
             context: &Self::SigningContext,
-        ) -> Result<Vec<u8>, tls_codec::Error> {
+        ) -> Result<Vec<u8>, aws_mls_codec::Error> {
             Ok([context.as_slice(), self.content.as_slice()].concat())
         }
 
@@ -145,7 +146,7 @@ pub(crate) mod test_utils {
 
     impl SignatureInteropTestCase {
         pub fn verify<P: CipherSuiteProvider>(&self, cs: &P) {
-            let public = self.public.clone().into(); //SignaturePublicKey::tls_deserialize(&mut &*self.public).unwrap();
+            let public = self.public.clone().into();
 
             let signable = TestSignable {
                 content: self.content.clone(),

@@ -1,4 +1,4 @@
-use tls_codec::{Deserialize, Serialize};
+use aws_mls_codec::{MlsDecode, MlsEncode};
 
 use crate::{
     client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
@@ -35,9 +35,9 @@ impl TreeModsTestCase {
         let tree_after = apply_proposal(proposal.clone(), proposal_sender, &tree_before).await;
 
         Self {
-            tree_before: tree_before.nodes.tls_serialize_detached().unwrap(),
-            proposal: proposal.tls_serialize_detached().unwrap(),
-            tree_after: tree_after.nodes.tls_serialize_detached().unwrap(),
+            tree_before: tree_before.nodes.mls_encode_to_vec().unwrap(),
+            proposal: proposal.mls_encode_to_vec().unwrap(),
+            tree_after: tree_after.nodes.mls_encode_to_vec().unwrap(),
             proposal_sender,
         }
     }
@@ -87,7 +87,7 @@ async fn tree_modifications_interop() {
         load_test_cases!(tree_modifications_interop, generate_tree_mods_tests().await);
 
     for test_case in test_cases.into_iter() {
-        let nodes = NodeVec::tls_deserialize(&mut &*test_case.tree_before).unwrap();
+        let nodes = NodeVec::mls_decode(&*test_case.tree_before).unwrap();
 
         let tree_before = TreeKemPublic::import_node_data(nodes, &BasicIdentityProvider)
             .await
@@ -95,16 +95,13 @@ async fn tree_modifications_interop() {
 
         println!("tree before operation {}", &tree_before);
 
-        let proposal = Proposal::tls_deserialize(&mut &*test_case.proposal).unwrap();
+        let proposal = Proposal::mls_decode(&*test_case.proposal).unwrap();
 
         let tree_after = apply_proposal(proposal, test_case.proposal_sender, &tree_before).await;
 
         println!("tree after operation {}", &tree_after);
 
-        let tree_after = tree_after
-            .export_node_data()
-            .tls_serialize_detached()
-            .unwrap();
+        let tree_after = tree_after.export_node_data().mls_encode_to_vec().unwrap();
 
         assert_eq!(tree_after, test_case.tree_after);
     }

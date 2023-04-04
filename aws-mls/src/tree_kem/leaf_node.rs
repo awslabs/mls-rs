@@ -6,16 +6,14 @@ use crate::{
     signer::{Signable, SignatureError},
     ExtensionList,
 };
-use aws_mls_core::tls::ByteVec;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use thiserror::Error;
-use tls_codec::{Serialize, Size};
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Debug, Error)]
 pub enum LeafNodeError {
     #[error(transparent)]
-    TlsCodecError(#[from] tls_codec::Error),
+    MlsCodecError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
     #[error("parent hash error: {0}")]
@@ -31,35 +29,19 @@ pub enum LeafNodeError {
 }
 
 #[derive(
-    Debug,
-    Clone,
-    TlsSize,
-    TlsSerialize,
-    TlsDeserialize,
-    PartialEq,
-    Eq,
-    serde::Deserialize,
-    serde::Serialize,
+    Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum LeafNodeSource {
-    #[tls_codec(discriminant = 1)]
-    KeyPackage(Lifetime),
-    Update,
-    Commit(ParentHash),
+    KeyPackage(Lifetime) = 1u8,
+    Update = 2u8,
+    Commit(ParentHash) = 3u8,
 }
 
 #[serde_as]
 #[derive(
-    Debug,
-    Clone,
-    TlsSize,
-    TlsSerialize,
-    TlsDeserialize,
-    PartialEq,
-    serde::Deserialize,
-    serde::Serialize,
+    Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[non_exhaustive]
@@ -69,7 +51,7 @@ pub struct LeafNode {
     pub capabilities: Capabilities,
     pub leaf_node_source: LeafNodeSource,
     pub extensions: ExtensionList,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     pub signature: Vec<u8>,
 }
@@ -189,31 +171,41 @@ struct LeafNodeTBS<'a> {
     leaf_index: Option<u32>,
 }
 
-impl<'a> Size for LeafNodeTBS<'a> {
-    fn tls_serialized_len(&self) -> usize {
-        self.public_key.tls_serialized_len()
-            + self.signing_identity.tls_serialized_len()
-            + self.capabilities.tls_serialized_len()
-            + self.leaf_node_source.tls_serialized_len()
-            + self.extensions.tls_serialized_len()
-            + self.group_id.map_or(0, ByteVec::tls_serialized_len)
-            + self.leaf_index.map_or(0, |i| i.tls_serialized_len())
+impl<'a> MlsSize for LeafNodeTBS<'a> {
+    fn mls_encoded_len(&self) -> usize {
+        self.public_key.mls_encoded_len()
+            + self.signing_identity.mls_encoded_len()
+            + self.capabilities.mls_encoded_len()
+            + self.leaf_node_source.mls_encoded_len()
+            + self.extensions.mls_encoded_len()
+            + self
+                .group_id
+                .as_ref()
+                .map_or(0, aws_mls_codec::byte_vec::mls_encoded_len)
+            + self.leaf_index.map_or(0, |i| i.mls_encoded_len())
     }
 }
 
-impl<'a> Serialize for LeafNodeTBS<'a> {
-    fn tls_serialize<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
-        let res = self.public_key.tls_serialize(writer)?
-            + self.signing_identity.tls_serialize(writer)?
-            + self.capabilities.tls_serialize(writer)?
-            + self.leaf_node_source.tls_serialize(writer)?
-            + self.extensions.tls_serialize(writer)?
-            + self
-                .group_id
-                .map_or(Ok(0), |group_id| ByteVec::tls_serialize(group_id, writer))?
-            + self.leaf_index.map_or(Ok(0), |i| i.tls_serialize(writer))?;
+impl<'a> MlsEncode for LeafNodeTBS<'a> {
+    fn mls_encode<W: aws_mls_codec::Writer>(
+        &self,
+        mut writer: W,
+    ) -> Result<(), aws_mls_codec::Error> {
+        self.public_key.mls_encode(&mut writer)?;
+        self.signing_identity.mls_encode(&mut writer)?;
+        self.capabilities.mls_encode(&mut writer)?;
+        self.leaf_node_source.mls_encode(&mut writer)?;
+        self.extensions.mls_encode(&mut writer)?;
 
-        Ok(res)
+        if let Some(ref group_id) = self.group_id {
+            aws_mls_codec::byte_vec::mls_encode(group_id, &mut writer)?;
+        }
+
+        if let Some(leaf_index) = self.leaf_index {
+            leaf_index.mls_encode(&mut writer)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -244,7 +236,7 @@ impl<'a> Signable<'a> for LeafNode {
     fn signable_content(
         &self,
         context: &Self::SigningContext,
-    ) -> Result<Vec<u8>, tls_codec::Error> {
+    ) -> Result<Vec<u8>, aws_mls_codec::Error> {
         LeafNodeTBS {
             public_key: &self.public_key,
             signing_identity: &self.signing_identity,
@@ -254,7 +246,7 @@ impl<'a> Signable<'a> for LeafNode {
             group_id: context.group_id,
             leaf_index: context.leaf_index,
         }
-        .tls_serialize_detached()
+        .mls_encode_to_vec()
     }
 
     fn write_signature(&mut self, signature: Vec<u8>) {
@@ -389,7 +381,7 @@ pub(crate) mod test_utils {
     pub fn get_test_client_identity(leaf: &LeafNode) -> Vec<u8> {
         leaf.signing_identity
             .credential
-            .tls_serialize_detached()
+            .mls_encode_to_vec()
             .unwrap()
     }
 }

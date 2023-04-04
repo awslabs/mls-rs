@@ -1,4 +1,4 @@
-use tls_codec::Size;
+use aws_mls_codec::MlsSize;
 
 use super::framing::PrivateContentTBE;
 
@@ -19,7 +19,7 @@ impl PaddingMode {
         content.padding.clear();
         match self {
             PaddingMode::StepFunction => {
-                let len = content.tls_serialized_len();
+                let len = content.mls_encoded_len();
                 content.padding.resize(step_padded_len(len) - len, 0);
             }
             PaddingMode::None => {}

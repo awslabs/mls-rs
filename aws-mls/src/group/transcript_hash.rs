@@ -4,31 +4,22 @@ use std::{
     ops::Deref,
 };
 use thiserror::Error;
-use tls_codec::Serialize;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Error, Debug)]
 pub enum TranscriptHashError {
     #[error(transparent)]
-    TlsCodecError(#[from] tls_codec::Error),
+    MlsCodecError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
     CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 #[serde_as]
 #[derive(
-    Clone,
-    PartialEq,
-    Eq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
+    Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ConfirmedTranscriptHash(
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     Vec<u8>,
 );
@@ -59,7 +50,7 @@ impl ConfirmedTranscriptHash {
         interim_transcript_hash: &InterimTranscriptHash,
         content: &AuthenticatedContent,
     ) -> Result<Self, TranscriptHashError> {
-        #[derive(Debug, TlsSerialize, TlsSize)]
+        #[derive(Debug, MlsSize, MlsEncode)]
         struct ConfirmedTranscriptHashInput<'a> {
             wire_format: WireFormat,
             content: &'a FramedContent,
@@ -74,7 +65,7 @@ impl ConfirmedTranscriptHash {
 
         let hash_input = [
             interim_transcript_hash.deref(),
-            input.tls_serialize_detached()?.deref(),
+            input.mls_encode_to_vec()?.deref(),
         ]
         .concat();
 
@@ -86,11 +77,9 @@ impl ConfirmedTranscriptHash {
 }
 
 #[serde_as]
-#[derive(
-    Clone, PartialEq, TlsDeserialize, TlsSerialize, TlsSize, serde::Deserialize, serde::Serialize,
-)]
+#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize)]
 pub(crate) struct InterimTranscriptHash(
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     Vec<u8>,
 );
@@ -121,12 +110,12 @@ impl InterimTranscriptHash {
         confirmed: &ConfirmedTranscriptHash,
         confirmation_tag: &ConfirmationTag,
     ) -> Result<Self, TranscriptHashError> {
-        #[derive(Debug, TlsSerialize, TlsSize)]
+        #[derive(Debug, MlsSize, MlsEncode)]
         struct InterimTranscriptHashInput<'a> {
             confirmation_tag: &'a ConfirmationTag,
         }
 
-        let input = InterimTranscriptHashInput { confirmation_tag }.tls_serialize_detached()?;
+        let input = InterimTranscriptHashInput { confirmation_tag }.mls_encode_to_vec()?;
 
         cipher_suite_provider
             .hash(&[confirmed.0.deref(), &input].concat())
@@ -137,8 +126,8 @@ impl InterimTranscriptHash {
 
 #[cfg(test)]
 mod tests {
+    use aws_mls_codec::{MlsDecode, MlsEncode};
     use aws_mls_core::crypto::{CipherSuite, CipherSuiteProvider};
-    use tls_codec::{Deserialize, Serialize};
 
     use crate::{
         crypto::test_utils::{test_cipher_suite_provider, try_test_cipher_suite_provider},
@@ -184,8 +173,7 @@ mod tests {
             };
 
             let auth_content =
-                AuthenticatedContent::tls_deserialize(&mut &*test_case.authenticated_content)
-                    .unwrap();
+                AuthenticatedContent::mls_decode(&*test_case.authenticated_content).unwrap();
 
             assert!(auth_content.content.content_type() == ContentType::Commit);
 
@@ -251,7 +239,7 @@ mod tests {
                 cipher_suite: cs.cipher_suite().into(),
 
                 confirmation_key: conf_key,
-                authenticated_content: auth_content.tls_serialize_detached().unwrap(),
+                authenticated_content: auth_content.mls_encode_to_vec().unwrap(),
                 interim_transcript_hash_before: interim_hash_before.0,
 
                 confirmed_transcript_hash_after: conf_hash_after.0,

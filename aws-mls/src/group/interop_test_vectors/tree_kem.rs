@@ -1,6 +1,3 @@
-use aws_mls_core::{crypto::CipherSuiteProvider, extension::ExtensionList};
-use tls_codec::Deserialize;
-
 use crate::{
     client::test_utils::TEST_PROTOCOL_VERSION,
     crypto::test_utils::try_test_cipher_suite_provider,
@@ -17,6 +14,8 @@ use crate::{
     },
     WireFormat,
 };
+use aws_mls_codec::MlsDecode;
+use aws_mls_core::{crypto::CipherSuiteProvider, extension::ExtensionList};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 struct TreeKemTestCase {
@@ -75,7 +74,7 @@ async fn tree_kem() {
         };
 
         // Import the public ratchet tree
-        let nodes = NodeVec::tls_deserialize(&mut &*test_case.ratchet_tree).unwrap();
+        let nodes = NodeVec::mls_decode(&*test_case.ratchet_tree).unwrap();
 
         let mut tree = TreeKemPublic::import_node_data(nodes, &BasicIdentityProvider)
             .await
@@ -132,7 +131,7 @@ async fn tree_kem() {
                 group.state.public_tree = tree.clone();
                 group.private_tree = tree_private.clone();
 
-                let path = UpdatePath::tls_deserialize(&mut &*update_path.update_path).unwrap();
+                let path = UpdatePath::mls_decode(&*update_path.update_path).unwrap();
 
                 let commit = Commit {
                     proposals: vec![],

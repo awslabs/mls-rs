@@ -1,5 +1,4 @@
-use tls_codec::Serialize;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use crate::{
     cipher_suite::CipherSuite,
@@ -30,10 +29,9 @@ use super::{
     ConfirmedTranscriptHash, ControlEncryptionMode, Group, GroupInfo,
 };
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct Commit {
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub proposals: Vec<ProposalOrRef>,
     pub path: Option<UpdatePath>,
 }
@@ -582,7 +580,7 @@ where
                 provisional_state
                     .public_tree
                     .export_node_data()
-                    .tls_serialize_detached()
+                    .mls_encode_to_vec()
             })
             .transpose()?;
 

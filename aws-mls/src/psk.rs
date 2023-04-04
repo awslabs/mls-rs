@@ -3,10 +3,10 @@ use crate::{
     serde_utils::vec_u8_as_base64::VecAsBase64, CipherSuiteProvider,
 };
 use async_trait::async_trait;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use std::convert::Infallible;
 use thiserror::Error;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 pub(crate) mod resolver;
 pub(crate) mod secret;
@@ -19,9 +19,9 @@ pub use aws_mls_core::psk::{ExternalPskId, PreSharedKey};
     Eq,
     Hash,
     PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
 )]
@@ -49,18 +49,17 @@ impl PreSharedKeyID {
     Eq,
     Hash,
     PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum JustPreSharedKeyID {
-    #[tls_codec(discriminant = 1)]
-    External(ExternalPskId),
-    Resumption(ResumptionPsk),
+    External(ExternalPskId) = 1u8,
+    Resumption(ResumptionPsk) = 2u8,
 }
 
 #[serde_as]
@@ -70,15 +69,15 @@ pub enum JustPreSharedKeyID {
     Eq,
     Hash,
     PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct PskGroupId(
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     pub Vec<u8>,
 );
@@ -90,15 +89,15 @@ pub struct PskGroupId(
     Eq,
     Hash,
     PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct PskNonce(
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     pub Vec<u8>,
 );
@@ -119,9 +118,9 @@ impl PskNonce {
     Eq,
     Hash,
     PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
 )]
@@ -138,21 +137,21 @@ pub struct ResumptionPsk {
     Eq,
     Hash,
     PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 pub enum ResumptionPSKUsage {
-    Application = 1,
-    Reinit,
-    Branch,
+    Application = 1u8,
+    Reinit = 2u8,
+    Branch = 3u8,
 }
 
-#[derive(Clone, Debug, PartialEq, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode)]
 struct PSKLabel<'a> {
     id: &'a PreSharedKeyID,
     index: u16,
@@ -168,7 +167,7 @@ pub enum PskError {
     #[error(transparent)]
     PskStoreError(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
-    SerializationError(#[from] tls_codec::Error),
+    SerializationError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
     GroupStateRepositoryError(#[from] GroupStateRepositoryError),
     #[error("Epoch {0} not found")]

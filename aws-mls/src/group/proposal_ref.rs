@@ -9,9 +9,9 @@ use crate::hash_reference::{HashReference, HashReferenceError};
     Hash,
     PartialOrd,
     Ord,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
 )]
@@ -33,7 +33,7 @@ impl ProposalRef {
         content: &AuthenticatedContent,
     ) -> Result<Self, HashReferenceError> {
         Ok(ProposalRef(HashReference::compute(
-            &content.tls_serialize_detached()?,
+            &content.mls_encode_to_vec()?,
             b"MLS 1.0 Proposal Reference",
             cipher_suite_provider,
         )?))
@@ -146,7 +146,7 @@ mod test {
 
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite.into(),
-                input: add.tls_serialize_detached().unwrap(),
+                input: add.mls_encode_to_vec().unwrap(),
                 output: ProposalRef::from_content(&cipher_suite_provider, &add)
                     .unwrap()
                     .to_vec(),
@@ -154,7 +154,7 @@ mod test {
 
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite.into(),
-                input: update.tls_serialize_detached().unwrap(),
+                input: update.mls_encode_to_vec().unwrap(),
                 output: ProposalRef::from_content(&cipher_suite_provider, &update)
                     .unwrap()
                     .to_vec(),
@@ -162,7 +162,7 @@ mod test {
 
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite.into(),
-                input: remove.tls_serialize_detached().unwrap(),
+                input: remove.mls_encode_to_vec().unwrap(),
                 output: ProposalRef::from_content(&cipher_suite_provider, &remove)
                     .unwrap()
                     .to_vec(),
@@ -170,7 +170,7 @@ mod test {
 
             test_cases.push(TestCase {
                 cipher_suite: cipher_suite.into(),
-                input: group_context_ext.tls_serialize_detached().unwrap(),
+                input: group_context_ext.mls_encode_to_vec().unwrap(),
                 output: ProposalRef::from_content(&cipher_suite_provider, &group_context_ext)
                     .unwrap()
                     .to_vec(),
@@ -194,7 +194,7 @@ mod test {
             };
 
             let proposal_content =
-                AuthenticatedContent::tls_deserialize(&mut one_case.input.as_slice()).unwrap();
+                AuthenticatedContent::mls_decode(one_case.input.as_slice()).unwrap();
 
             let proposal_ref = ProposalRef::from_content(&cs_provider, &proposal_content).unwrap();
 

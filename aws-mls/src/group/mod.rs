@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
 use aws_mls_core::keychain::KeychainStorage;
@@ -8,8 +9,6 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::option::Option::Some;
 use thiserror::Error;
-use tls_codec::{Deserialize, Serialize};
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 use zeroize::Zeroizing;
 
 use crate::cipher_suite::CipherSuite;
@@ -122,42 +121,40 @@ pub(crate) mod secret_tree;
 #[cfg(test)]
 mod interop_test_vectors;
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 struct GroupSecrets {
     joiner_secret: JoinerSecret,
     path_secret: Option<PathSecret>,
-    #[tls_codec(with = "crate::tls::DefVec")]
     psks: Vec<PreSharedKeyID>,
 }
 
 impl HpkeEncryptable for GroupSecrets {
     const ENCRYPT_LABEL: &'static str = "Welcome";
 
-    type Error = tls_codec::Error;
+    type Error = aws_mls_codec::Error;
 
     fn from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        Self::tls_deserialize(&mut &*bytes)
+        Self::mls_decode(bytes.as_slice())
     }
 
     fn get_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        self.tls_serialize_detached()
+        self.mls_encode_to_vec()
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct EncryptedGroupSecrets {
     pub new_member: KeyPackageRef,
     pub encrypted_group_secrets: HpkeCiphertext,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, Eq, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct Welcome {
     pub cipher_suite: CipherSuite,
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub secrets: Vec<EncryptedGroupSecrets>,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub encrypted_group_info: Vec<u8>,
 }
 
@@ -427,7 +424,7 @@ where
 
         // Use the key and nonce to decrypt the encrypted_group_info field.
         let decrypted_group_info = welcome_secret.decrypt(&welcome.encrypted_group_info)?;
-        let group_info = GroupInfo::tls_deserialize(&mut &**decrypted_group_info)?;
+        let group_info = GroupInfo::mls_decode(&**decrypted_group_info)?;
 
         let join_context = validate_group_info(
             protocol_version,
@@ -804,7 +801,7 @@ where
             psk_secret,
         )?;
 
-        let group_info_data = group_info.tls_serialize_detached()?;
+        let group_info_data = group_info.mls_encode_to_vec()?;
         let encrypted_group_info = welcome_secret.encrypt(&group_info_data)?;
 
         let secrets = new_members
@@ -1629,7 +1626,7 @@ where
     pub fn export_tree(&self) -> Result<Vec<u8>, MlsError> {
         self.current_epoch_tree()
             .export_node_data()
-            .tls_serialize_detached()
+            .mls_encode_to_vec()
             .map_err(Into::into)
     }
 
@@ -1995,7 +1992,6 @@ mod tests {
     use futures::FutureExt;
     use internal::proposal_filter::ProposalRulesError;
     use itertools::Itertools;
-    use tls_codec::Size;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -2399,7 +2395,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(with_padding.tls_serialized_len() > without_padding.tls_serialized_len());
+        assert!(with_padding.mls_encoded_len() > without_padding.mls_encoded_len());
     }
 
     #[futures_test::test]

@@ -1,23 +1,22 @@
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::extension::ExtensionList;
 
 use super::*;
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub(crate) struct GroupInfo {
     pub group_context: GroupContext,
     pub extensions: ExtensionList,
     pub confirmation_tag: ConfirmationTag,
     pub signer: LeafIndex,
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub signature: Vec<u8>,
 }
 
-#[derive(TlsSerialize, TlsSize)]
+#[derive(MlsEncode, MlsSize)]
 struct SignableGroupInfo<'a> {
-    #[tls_codec(with = "crate::tls::DefRef")]
     group_context: &'a GroupContext,
-    #[tls_codec(with = "crate::tls::DefRef")]
     extensions: &'a ExtensionList,
     confirmation_tag: &'a ConfirmationTag,
     signer: LeafIndex,
@@ -34,14 +33,14 @@ impl<'a> Signable<'a> for GroupInfo {
     fn signable_content(
         &self,
         _context: &Self::SigningContext,
-    ) -> Result<Vec<u8>, tls_codec::Error> {
+    ) -> Result<Vec<u8>, aws_mls_codec::Error> {
         SignableGroupInfo {
             group_context: &self.group_context,
             extensions: &self.extensions,
             confirmation_tag: &self.confirmation_tag,
             signer: self.signer,
         }
-        .tls_serialize_detached()
+        .mls_encode_to_vec()
     }
 
     fn write_signature(&mut self, signature: Vec<u8>) {

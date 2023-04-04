@@ -3,28 +3,20 @@ use crate::crypto::HpkePublicKey;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::parent_hash::ParentHash;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[serde_as]
 #[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
+    Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
 )]
 pub(crate) struct Parent {
     pub public_key: HpkePublicKey,
     pub parent_hash: ParentHash,
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub unmerged_leaves: Vec<LeafIndex>,
 }
 
@@ -37,9 +29,9 @@ pub(crate) struct Parent {
     PartialOrd,
     Hash,
     Eq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
 )]
@@ -99,22 +91,14 @@ pub enum NodeVecError {
 }
 
 #[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
+    Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
 )]
 #[allow(clippy::large_enum_variant)]
 #[repr(u8)]
 //TODO: Research if this should actually be a Box<Leaf> for memory / performance reasons
 pub(crate) enum Node {
-    #[tls_codec(discriminant = 1)]
-    Leaf(LeafNode),
-    Parent(Parent),
+    Leaf(LeafNode) = 1u8,
+    Parent(Parent) = 2u8,
 }
 
 impl Node {
@@ -204,14 +188,14 @@ impl NodeTypeResolver for Option<Node> {
     Clone,
     Debug,
     PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     Default,
     serde::Deserialize,
     serde::Serialize,
 )]
-pub(crate) struct NodeVec(#[tls_codec(with = "crate::tls::DefVec")] Vec<Option<Node>>);
+pub(crate) struct NodeVec(Vec<Option<Node>>);
 
 impl From<Vec<Option<Node>>> for NodeVec {
     fn from(x: Vec<Option<Node>>) -> Self {

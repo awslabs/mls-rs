@@ -11,4 +11,3 @@ pub mod protocol_version;
 pub mod psk;
 pub mod serde;
 pub mod time;
-pub mod tls;

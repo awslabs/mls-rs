@@ -2,22 +2,13 @@ use super::*;
 use crate::{psk::PreSharedKeyID, tree_kem::leaf_node::LeafNode};
 use std::fmt::Debug;
 
-use aws_mls_core::tls::ByteVec;
-
 use proposal_ref::ProposalRef;
 
 pub use aws_mls_core::extension::ExtensionList;
 pub use aws_mls_core::group::ProposalType;
 
 #[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
+    Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal that adds a member to a [`Group`](super::Group).
@@ -69,14 +60,7 @@ impl TryFrom<MLSMessage> for AddProposal {
 }
 
 #[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
+    Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal that will update an existing [`Member`](super::Member) of a
@@ -106,15 +90,7 @@ impl UpdateProposal {
 }
 
 #[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
+    Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal to remove an existing [`Member`](super::Member) of a
@@ -140,15 +116,7 @@ impl From<u32> for RemoveProposal {
 }
 
 #[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
+    Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal to add a pre-shared key to a group.
@@ -173,19 +141,12 @@ impl PreSharedKeyProposal {
 
 #[serde_as]
 #[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
+    Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal to reinitialize a group using new parameters.
 pub struct ReInitProposal {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     pub(crate) group_id: Vec<u8>,
     pub(crate) version: ProtocolVersion,
@@ -217,20 +178,12 @@ impl ReInitProposal {
 
 #[serde_as]
 #[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
+    Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A proposal used for external commits.
 pub struct ExternalInit {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     pub(crate) kem_output: Vec<u8>,
 }
@@ -272,28 +225,26 @@ impl CustomProposal {
     }
 }
 
-/// Trait to simplify creating custom proposals that are serialized with TLS
+/// Trait to simplify creating custom proposals that are serialized with MLS
 /// encoding.
-pub trait TlsCustomProposal:
-    tls_codec::Serialize + tls_codec::Deserialize + tls_codec::Size + Sized
-{
+pub trait MlsCustomProposal: MlsSize + MlsEncode + MlsDecode + Sized {
     fn proposal_type() -> ProposalType;
 
-    fn to_custom_proposal(&self) -> Result<CustomProposal, tls_codec::Error> {
+    fn to_custom_proposal(&self) -> Result<CustomProposal, aws_mls_codec::Error> {
         Ok(CustomProposal::new(
             Self::proposal_type(),
-            self.tls_serialize_detached()?,
+            self.mls_encode_to_vec()?,
         ))
     }
 
-    fn from_custom_proposal(proposal: &CustomProposal) -> Result<Self, tls_codec::Error> {
+    fn from_custom_proposal(proposal: &CustomProposal) -> Result<Self, aws_mls_codec::Error> {
         if proposal.proposal_type() != Self::proposal_type() {
-            return Err(tls_codec::Error::DecodingError(
+            return Err(aws_mls_codec::Error::Custom(
                 "invalid proposal type".to_string(),
             ));
         }
 
-        Self::tls_deserialize(&mut proposal.data())
+        Self::mls_decode(proposal.data())
     }
 }
 
@@ -312,72 +263,70 @@ pub enum Proposal {
     Custom(CustomProposal),
 }
 
-impl tls_codec::Size for Proposal {
-    fn tls_serialized_len(&self) -> usize {
+impl MlsSize for Proposal {
+    fn mls_encoded_len(&self) -> usize {
         let inner_len = match self {
-            Proposal::Add(p) => p.tls_serialized_len(),
-            Proposal::Update(p) => p.tls_serialized_len(),
-            Proposal::Remove(p) => p.tls_serialized_len(),
-            Proposal::Psk(p) => p.tls_serialized_len(),
-            Proposal::ReInit(p) => p.tls_serialized_len(),
-            Proposal::ExternalInit(p) => p.tls_serialized_len(),
-            Proposal::GroupContextExtensions(p) => p.tls_serialized_len(),
-            Proposal::Custom(p) => ByteVec::tls_serialized_len(&p.data),
+            Proposal::Add(p) => p.mls_encoded_len(),
+            Proposal::Update(p) => p.mls_encoded_len(),
+            Proposal::Remove(p) => p.mls_encoded_len(),
+            Proposal::Psk(p) => p.mls_encoded_len(),
+            Proposal::ReInit(p) => p.mls_encoded_len(),
+            Proposal::ExternalInit(p) => p.mls_encoded_len(),
+            Proposal::GroupContextExtensions(p) => p.mls_encoded_len(),
+            Proposal::Custom(p) => aws_mls_codec::byte_vec::mls_encoded_len(&p.data),
         };
 
-        self.proposal_type().tls_serialized_len() + inner_len
+        self.proposal_type().mls_encoded_len() + inner_len
     }
 }
 
-impl tls_codec::Serialize for Proposal {
-    fn tls_serialize<W: std::io::Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
-        let type_len = self.proposal_type().tls_serialize(writer)?;
+impl MlsEncode for Proposal {
+    fn mls_encode<W: aws_mls_codec::Writer>(
+        &self,
+        mut writer: W,
+    ) -> Result<(), aws_mls_codec::Error> {
+        self.proposal_type().mls_encode(&mut writer)?;
 
-        let inner_len = match self {
-            Proposal::Add(p) => p.tls_serialize(writer),
-            Proposal::Update(p) => p.tls_serialize(writer),
-            Proposal::Remove(p) => p.tls_serialize(writer),
-            Proposal::Psk(p) => p.tls_serialize(writer),
-            Proposal::ReInit(p) => p.tls_serialize(writer),
-            Proposal::ExternalInit(p) => p.tls_serialize(writer),
-            Proposal::GroupContextExtensions(p) => p.tls_serialize(writer),
+        match self {
+            Proposal::Add(p) => p.mls_encode(&mut writer),
+            Proposal::Update(p) => p.mls_encode(&mut writer),
+            Proposal::Remove(p) => p.mls_encode(&mut writer),
+            Proposal::Psk(p) => p.mls_encode(&mut writer),
+            Proposal::ReInit(p) => p.mls_encode(&mut writer),
+            Proposal::ExternalInit(p) => p.mls_encode(&mut writer),
+            Proposal::GroupContextExtensions(p) => p.mls_encode(&mut writer),
 
             Proposal::Custom(p) => {
                 if p.proposal_type.raw_value() <= 7 {
-                    return Err(tls_codec::Error::EncodingError(
+                    return Err(aws_mls_codec::Error::Custom(
                         "custom proposal types can not be set to defined values of 0-7".to_string(),
                     ));
                 }
-                ByteVec::tls_serialize(&p.data, writer)
+                aws_mls_codec::byte_vec::mls_encode(&p.data, &mut writer)
             }
-        }?;
-
-        Ok(type_len + inner_len)
+        }
     }
 }
 
-impl tls_codec::Deserialize for Proposal {
-    fn tls_deserialize<R: std::io::Read>(bytes: &mut R) -> Result<Self, tls_codec::Error>
-    where
-        Self: Sized,
-    {
-        let proposal_type = ProposalType::tls_deserialize(bytes)?;
+impl MlsDecode for Proposal {
+    fn mls_decode<R: aws_mls_codec::Reader>(mut reader: R) -> Result<Self, aws_mls_codec::Error> {
+        let proposal_type = ProposalType::mls_decode(&mut reader)?;
 
         Ok(match proposal_type {
-            ProposalType::ADD => Proposal::Add(AddProposal::tls_deserialize(bytes)?),
-            ProposalType::UPDATE => Proposal::Update(UpdateProposal::tls_deserialize(bytes)?),
-            ProposalType::REMOVE => Proposal::Remove(RemoveProposal::tls_deserialize(bytes)?),
-            ProposalType::PSK => Proposal::Psk(PreSharedKeyProposal::tls_deserialize(bytes)?),
-            ProposalType::RE_INIT => Proposal::ReInit(ReInitProposal::tls_deserialize(bytes)?),
+            ProposalType::ADD => Proposal::Add(AddProposal::mls_decode(&mut reader)?),
+            ProposalType::UPDATE => Proposal::Update(UpdateProposal::mls_decode(&mut reader)?),
+            ProposalType::REMOVE => Proposal::Remove(RemoveProposal::mls_decode(&mut reader)?),
+            ProposalType::PSK => Proposal::Psk(PreSharedKeyProposal::mls_decode(&mut reader)?),
+            ProposalType::RE_INIT => Proposal::ReInit(ReInitProposal::mls_decode(&mut reader)?),
             ProposalType::EXTERNAL_INIT => {
-                Proposal::ExternalInit(ExternalInit::tls_deserialize(bytes)?)
+                Proposal::ExternalInit(ExternalInit::mls_decode(&mut reader)?)
             }
             ProposalType::GROUP_CONTEXT_EXTENSIONS => {
-                Proposal::GroupContextExtensions(ExtensionList::tls_deserialize(bytes)?)
+                Proposal::GroupContextExtensions(ExtensionList::mls_decode(&mut reader)?)
             }
             custom => Proposal::Custom(CustomProposal {
                 proposal_type: custom,
-                data: ByteVec::tls_deserialize(bytes)?,
+                data: aws_mls_codec::byte_vec::mls_decode(&mut reader)?,
             }),
         })
     }
@@ -506,14 +455,13 @@ impl<'a> From<&'a CustomProposal> for BorrowedProposal<'a> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, TlsDeserialize, TlsSerialize, TlsSize)]
+#[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum ProposalOrRef {
-    #[tls_codec(discriminant = 1)]
-    Proposal(Proposal),
-    Reference(ProposalRef),
+    Proposal(Proposal) = 1u8,
+    Reference(ProposalRef) = 2u8,
 }
 
 impl From<Proposal> for ProposalOrRef {

@@ -3,8 +3,8 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 use super::{Credential, CredentialType, MlsCredential};
 
@@ -15,9 +15,9 @@ use super::{Credential, CredentialType, MlsCredential};
     PartialEq,
     Eq,
     Hash,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Serialize,
     serde::Deserialize,
 )]
@@ -25,7 +25,7 @@ use super::{Credential, CredentialType, MlsCredential};
 /// X.509 certificate in DER format.
 pub struct DerCertificate(
     #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     Vec<u8>,
 );
 
@@ -67,9 +67,9 @@ impl AsRef<[u8]> for DerCertificate {
     PartialEq,
     Eq,
     Hash,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Serialize,
     serde::Deserialize,
 )]
@@ -79,7 +79,7 @@ impl AsRef<[u8]> for DerCertificate {
 /// Certificate chains MAY leave out root CA's so long as they are
 /// provided as input to whatever certificate validator ultimately is
 /// verifying the chain.
-pub struct CertificateChain(#[tls_codec(with = "crate::tls::DefVec")] Vec<DerCertificate>);
+pub struct CertificateChain(Vec<DerCertificate>);
 
 impl Deref for CertificateChain {
     type Target = Vec<DerCertificate>;

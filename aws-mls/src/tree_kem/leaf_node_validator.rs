@@ -41,7 +41,7 @@ pub enum LeafNodeValidationError {
     #[error(transparent)]
     LifetimeError(#[from] LifetimeError),
     #[error(transparent)]
-    SerializationError(#[from] tls_codec::Error),
+    SerializationError(#[from] aws_mls_codec::Error),
     #[error("invalid leaf_node_source")]
     InvalidLeafNodeSource,
     #[error(transparent)]
@@ -644,13 +644,13 @@ mod tests {
 #[cfg(test)]
 pub(crate) mod test_utils {
     use async_trait::async_trait;
+    use aws_mls_codec::MlsEncode;
     use aws_mls_core::{
         extension::ExtensionList,
         group::RosterUpdate,
         identity::{BasicCredential, IdentityProvider, IdentityWarning},
     };
     use thiserror::Error;
-    use tls_codec::Serialize;
 
     use crate::{identity::SigningIdentity, time::MlsTime};
 
@@ -690,7 +690,7 @@ pub(crate) mod test_utils {
         }
 
         async fn identity(&self, signing_id: &SigningIdentity) -> Result<Vec<u8>, Self::Error> {
-            Ok(signing_id.credential.tls_serialize_detached().unwrap())
+            Ok(signing_id.credential.mls_encode_to_vec().unwrap())
         }
 
         async fn valid_successor(

@@ -1,9 +1,5 @@
-use std::io::{Read, Write};
-
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize, ReadWithCount, VarInt};
 use indexmap::IndexMap;
-use tls_codec::{Deserialize, Serialize, Size};
-
-use crate::tls::{ReadWithCount, VarInt};
 
 use super::{Extension, ExtensionError, ExtensionType, MlsExtension};
 
@@ -35,58 +31,55 @@ impl From<IndexMap<ExtensionType, Extension>> for ExtensionList {
     }
 }
 
-impl Size for ExtensionList {
-    fn tls_serialized_len(&self) -> usize {
-        let len = self
-            .iter()
-            .map(|ext| ext.tls_serialized_len())
-            .sum::<usize>();
+impl MlsSize for ExtensionList {
+    fn mls_encoded_len(&self) -> usize {
+        let len = self.iter().map(|x| x.mls_encoded_len()).sum::<usize>();
 
-        let header_len = VarInt::try_from(len)
-            .expect("Extension list has too many bytes to be serialized")
-            .tls_serialized_len();
+        let header_length = VarInt::try_from(len)
+            .expect("exceeded max len of VarInt::MAX")
+            .mls_encoded_len();
 
-        header_len + len
+        header_length + len
     }
 }
 
-impl Serialize for ExtensionList {
-    fn tls_serialize<W: Write>(&self, writer: &mut W) -> Result<usize, tls_codec::Error> {
+impl MlsEncode for ExtensionList {
+    fn mls_encode<W: aws_mls_codec::Writer>(
+        &self,
+        mut writer: W,
+    ) -> Result<(), aws_mls_codec::Error> {
         let mut buffer = Vec::new();
 
-        let len = self.iter().try_fold(0, |acc, x| {
-            Ok::<_, tls_codec::Error>(acc + x.tls_serialize(&mut buffer)?)
-        })?;
+        self.iter().try_for_each(|x| x.mls_encode(&mut buffer))?;
 
-        let len = VarInt::try_from(len).map_err(|_| tls_codec::Error::InvalidVectorLength)?;
-        let written = len.tls_serialize(writer)?;
-        writer.write_all(&buffer)?;
+        let len = VarInt::try_from(buffer.len())?;
 
-        Ok(written + buffer.len())
+        len.mls_encode(&mut writer)?;
+        writer.write(&buffer)?;
+
+        Ok(())
     }
 }
 
-impl Deserialize for ExtensionList {
-    fn tls_deserialize<R: Read>(reader: &mut R) -> Result<Self, tls_codec::Error> {
-        let len: usize = VarInt::tls_deserialize(reader)?
-            .try_into()
-            .map_err(|_| tls_codec::Error::InvalidVectorLength)?;
+impl MlsDecode for ExtensionList {
+    fn mls_decode<R: aws_mls_codec::Reader>(mut reader: R) -> Result<Self, aws_mls_codec::Error> {
+        let len = VarInt::mls_decode(&mut reader)?.0 as usize;
 
-        let reader = &mut ReadWithCount::new(reader);
+        let mut reader = ReadWithCount::new(&mut reader);
         let mut items = IndexMap::new();
 
         while reader.bytes_read() < len {
-            let ext = Extension::tls_deserialize(reader)?;
+            let ext = Extension::mls_decode(&mut reader)?;
             let ext_type = ext.extension_type;
 
             if items.insert(ext_type, ext).is_some() {
-                return Err(tls_codec::Error::DecodingError(format!(
+                return Err(aws_mls_codec::Error::Custom(format!(
                     "Extension list has duplicate extension of type {ext_type:?}"
                 )));
             }
         }
 
-        Ok(ExtensionList::from(items))
+        Ok(items.into())
     }
 }
 
@@ -212,27 +205,25 @@ impl ExtensionList {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-
-    use tls_codec::{Deserialize, Serialize};
-    use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+    use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
     use crate::extension::{
-        Extension, ExtensionList, ExtensionType, MlsExtension, TlsCodecExtension,
+        Extension, ExtensionList, ExtensionType, MlsCodecExtension, MlsExtension,
     };
 
-    #[derive(Debug, Clone, TlsSerialize, TlsDeserialize, TlsSize, PartialEq, Eq)]
+    #[derive(Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq)]
     struct TestExtensionA(u32);
 
-    #[derive(Debug, Clone, TlsSerialize, TlsDeserialize, TlsSize, PartialEq, Eq)]
-    struct TestExtensionB(#[tls_codec(with = "crate::tls::ByteVec")] Vec<u8>);
+    #[derive(Debug, Clone, MlsEncode, MlsDecode, MlsSize, PartialEq, Eq)]
+    struct TestExtensionB(#[mls_codec(with = "aws_mls_codec::byte_vec")] Vec<u8>);
 
-    impl TlsCodecExtension for TestExtensionA {
+    impl MlsCodecExtension for TestExtensionA {
         fn extension_type() -> ExtensionType {
             ExtensionType(128)
         }
     }
 
-    impl TlsCodecExtension for TestExtensionB {
+    impl MlsCodecExtension for TestExtensionB {
         fn extension_type() -> ExtensionType {
             ExtensionType(129)
         }
@@ -290,7 +281,7 @@ mod tests {
         assert!(list.get_as::<TestExtensionA>().unwrap().is_none());
 
         assert!(list
-            .get(<TestExtensionA as TlsCodecExtension>::extension_type())
+            .get(<TestExtensionA as MlsCodecExtension>::extension_type())
             .is_none());
 
         list.set_from(TestExtensionA(1)).unwrap();
@@ -298,7 +289,7 @@ mod tests {
         assert!(list.get_as::<TestExtensionB>().unwrap().is_none());
 
         assert!(list
-            .get(<TestExtensionB as TlsCodecExtension>::extension_type())
+            .get(<TestExtensionB as MlsCodecExtension>::extension_type())
             .is_none());
     }
 
@@ -310,12 +301,12 @@ mod tests {
 
         list.set_from(ext).unwrap();
 
-        assert!(list.has_extension(<TestExtensionA as TlsCodecExtension>::extension_type()));
+        assert!(list.has_extension(<TestExtensionA as MlsCodecExtension>::extension_type()));
         assert!(!list.has_extension(42.into()));
     }
 
-    #[derive(TlsSerialize, TlsSize)]
-    struct ExtensionsVec(#[tls_codec(with = "crate::tls::DefVec")] Vec<Extension>);
+    #[derive(MlsEncode, MlsSize)]
+    struct ExtensionsVec(Vec<Extension>);
 
     #[test]
     fn extension_list_is_serialized_like_a_sequence_of_extensions() {
@@ -327,10 +318,8 @@ mod tests {
         let extension_list: ExtensionList = ExtensionList::from(extension_vec.clone());
 
         assert_eq!(
-            ExtensionsVec(extension_vec)
-                .tls_serialize_detached()
-                .unwrap(),
-            extension_list.tls_serialize_detached().unwrap(),
+            ExtensionsVec(extension_vec).mls_encode_to_vec().unwrap(),
+            extension_list.mls_encode_to_vec().unwrap(),
         );
     }
 
@@ -341,11 +330,11 @@ mod tests {
             TestExtensionA(2).into_extension().unwrap(),
         ]);
 
-        let serialized_extensions = extensions.tls_serialize_detached().unwrap();
+        let serialized_extensions = extensions.mls_encode_to_vec().unwrap();
 
         assert_matches!(
-            ExtensionList::tls_deserialize(&mut &*serialized_extensions),
-            Err(tls_codec::Error::DecodingError(_))
+            ExtensionList::mls_decode(&*serialized_extensions),
+            Err(aws_mls_codec::Error::Custom(_))
         );
     }
 }

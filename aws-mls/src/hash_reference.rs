@@ -6,26 +6,25 @@ use std::{
 use crate::cipher_suite::CipherSuite;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::CipherSuiteProvider;
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use thiserror::Error;
-use tls_codec::Serialize;
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
 
 #[derive(Debug, Error)]
 pub enum HashReferenceError {
     #[error(transparent)]
-    TlsCodecError(#[from] tls_codec::Error),
+    MlsCodecError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
     CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("cipher suite {0:?} is invalid for calculating hash references of this object")]
     InvalidCipherSuite(CipherSuite),
 }
 
-#[derive(Debug, TlsSerialize, TlsSize)]
+#[derive(Debug, MlsSize, MlsEncode)]
 struct RefHashInput<'a> {
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub label: &'a [u8],
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub value: &'a [u8],
 }
 
@@ -37,15 +36,15 @@ struct RefHashInput<'a> {
     Ord,
     Hash,
     Clone,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
+    MlsSize,
+    MlsEncode,
+    MlsDecode,
     serde::Deserialize,
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct HashReference(
-    #[tls_codec(with = "crate::tls::ByteVec")]
+    #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     Vec<u8>,
 );
@@ -87,7 +86,7 @@ impl HashReference {
         let input = RefHashInput { label, value };
 
         input
-            .tls_serialize_detached()
+            .mls_encode_to_vec()
             .map_err(Into::into)
             .and_then(|bytes| {
                 Ok(HashReference(cipher_suite.hash(&bytes).map_err(|e| {

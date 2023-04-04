@@ -9,8 +9,7 @@ benchmark = []
 
 [dependencies]
 async-trait = "0.1.61"
-tls_codec = "0.2.0"
-tls_codec_derive = "0.2.0"
+aws-mls-codec = { version = "*", path = "./aws-mls-codec"}
 serde = { version = "1.0", features = ["derive"] }
 zeroize = { version = "1", features = ["zeroize_derive"] }
 arbitrary = { version = "1", features = ["derive"], optional = true }

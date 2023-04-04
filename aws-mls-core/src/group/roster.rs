@@ -1,4 +1,4 @@
-use tls_codec_derive::{TlsDeserialize, TlsSerialize, TlsSize};
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use crate::{
     crypto::CipherSuite,
@@ -10,28 +10,15 @@ use crate::{
 use super::ProposalType;
 
 #[derive(
-    Clone,
-    PartialEq,
-    Eq,
-    Debug,
-    TlsDeserialize,
-    TlsSerialize,
-    TlsSize,
-    serde::Deserialize,
-    serde::Serialize,
+    Clone, PartialEq, Eq, Debug, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 ///  Capabilities of a MLS client
 pub struct Capabilities {
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub protocol_versions: Vec<ProtocolVersion>,
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub cipher_suites: Vec<CipherSuite>,
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub extensions: Vec<ExtensionType>,
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub proposals: Vec<ProposalType>,
-    #[tls_codec(with = "crate::tls::DefVec")]
     pub credentials: Vec<CredentialType>,
 }
 

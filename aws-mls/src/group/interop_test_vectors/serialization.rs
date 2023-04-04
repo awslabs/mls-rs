@@ -1,4 +1,4 @@
-use tls_codec::{Deserialize, Serialize};
+use aws_mls_codec::{MlsDecode, MlsEncode};
 
 use aws_mls_core::extension::ExtensionList;
 
@@ -75,98 +75,89 @@ async fn serialization() {
         message.clone().into_key_package().unwrap();
         assert_eq!(&message.to_bytes().unwrap(), &test_case.mls_key_package);
 
-        let tree = NodeVec::tls_deserialize(&mut &*test_case.ratchet_tree).unwrap();
+        let tree = NodeVec::mls_decode(&*test_case.ratchet_tree).unwrap();
+
+        assert_eq!(&tree.mls_encode_to_vec().unwrap(), &test_case.ratchet_tree);
+
+        let secs = GroupSecrets::mls_decode(&*test_case.group_secrets).unwrap();
+
+        assert_eq!(&secs.mls_encode_to_vec().unwrap(), &test_case.group_secrets);
+
+        let proposal = AddProposal::mls_decode(&*test_case.add_proposal).unwrap();
 
         assert_eq!(
-            &tree.tls_serialize_detached().unwrap(),
-            &test_case.ratchet_tree
-        );
-
-        let secs = GroupSecrets::tls_deserialize(&mut &*test_case.group_secrets).unwrap();
-
-        assert_eq!(
-            &secs.tls_serialize_detached().unwrap(),
-            &test_case.group_secrets
-        );
-
-        let proposal = AddProposal::tls_deserialize(&mut &*test_case.add_proposal).unwrap();
-
-        assert_eq!(
-            &proposal.tls_serialize_detached().unwrap(),
+            &proposal.mls_encode_to_vec().unwrap(),
             &test_case.add_proposal
         );
 
-        let proposal = UpdateProposal::tls_deserialize(&mut &*test_case.update_proposal).unwrap();
+        let proposal = UpdateProposal::mls_decode(&*test_case.update_proposal).unwrap();
 
         assert_eq!(
-            &proposal.tls_serialize_detached().unwrap(),
+            &proposal.mls_encode_to_vec().unwrap(),
             &test_case.update_proposal
         );
 
-        let proposal = RemoveProposal::tls_deserialize(&mut &*test_case.remove_proposal).unwrap();
+        let proposal = RemoveProposal::mls_decode(&*test_case.remove_proposal).unwrap();
 
         assert_eq!(
-            &proposal.tls_serialize_detached().unwrap(),
+            &proposal.mls_encode_to_vec().unwrap(),
             &test_case.remove_proposal
         );
 
-        let proposal = ReInitProposal::tls_deserialize(&mut &*test_case.re_init_proposal).unwrap();
+        let proposal = ReInitProposal::mls_decode(&*test_case.re_init_proposal).unwrap();
 
         assert_eq!(
-            &proposal.tls_serialize_detached().unwrap(),
+            &proposal.mls_encode_to_vec().unwrap(),
             &test_case.re_init_proposal
         );
 
         let proposal =
-            PreSharedKeyProposal::tls_deserialize(&mut &*test_case.pre_shared_key_proposal)
-                .unwrap();
+            PreSharedKeyProposal::mls_decode(&*test_case.pre_shared_key_proposal).unwrap();
 
         assert_eq!(
-            &proposal.tls_serialize_detached().unwrap(),
+            &proposal.mls_encode_to_vec().unwrap(),
             &test_case.pre_shared_key_proposal
         );
 
-        let proposal =
-            ExternalInit::tls_deserialize(&mut &*test_case.external_init_proposal).unwrap();
+        let proposal = ExternalInit::mls_decode(&*test_case.external_init_proposal).unwrap();
 
         assert_eq!(
-            &proposal.tls_serialize_detached().unwrap(),
+            &proposal.mls_encode_to_vec().unwrap(),
             &test_case.external_init_proposal
         );
 
         let proposal =
-            ExtensionList::tls_deserialize(&mut &*test_case.group_context_extensions_proposal)
-                .unwrap();
+            ExtensionList::mls_decode(&*test_case.group_context_extensions_proposal).unwrap();
 
         assert_eq!(
-            &proposal.tls_serialize_detached().unwrap(),
+            &proposal.mls_encode_to_vec().unwrap(),
             &test_case.group_context_extensions_proposal
         );
 
-        let commit = Commit::tls_deserialize(&mut &*test_case.commit).unwrap();
+        let commit = Commit::mls_decode(&*test_case.commit).unwrap();
 
-        assert_eq!(&commit.tls_serialize_detached().unwrap(), &test_case.commit);
+        assert_eq!(&commit.mls_encode_to_vec().unwrap(), &test_case.commit);
 
         let message = MLSMessage::from_bytes(&test_case.public_message_application).unwrap();
-        let serialized = message.tls_serialize_detached().unwrap();
+        let serialized = message.mls_encode_to_vec().unwrap();
         assert_eq!(&serialized, &test_case.public_message_application);
         let content_type = message.into_plaintext().unwrap().content.content_type();
         assert_eq!(content_type, ContentType::Application);
 
         let message = MLSMessage::from_bytes(&test_case.public_message_proposal).unwrap();
-        let serialized = message.tls_serialize_detached().unwrap();
+        let serialized = message.mls_encode_to_vec().unwrap();
         assert_eq!(&serialized, &test_case.public_message_proposal);
         let content_type = message.into_plaintext().unwrap().content.content_type();
         assert_eq!(content_type, ContentType::Proposal);
 
         let message = MLSMessage::from_bytes(&test_case.public_message_commit).unwrap();
-        let serialized = message.tls_serialize_detached().unwrap();
+        let serialized = message.mls_encode_to_vec().unwrap();
         assert_eq!(&serialized, &test_case.public_message_commit);
         let content_type = message.into_plaintext().unwrap().content.content_type();
         assert_eq!(content_type, ContentType::Commit);
 
         let message = MLSMessage::from_bytes(&test_case.private_message).unwrap();
-        let serialized = message.tls_serialize_detached().unwrap();
+        let serialized = message.mls_encode_to_vec().unwrap();
         assert_eq!(&serialized, &test_case.private_message);
         message.into_ciphertext().unwrap();
     }
