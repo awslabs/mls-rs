@@ -6,7 +6,7 @@ use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::Parent;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
 use aws_mls_codec::{MlsEncode, MlsSize};
-use aws_mls_core::serde::vec_u8_as_base64::VecAsBase64;
+use aws_mls_core::serde_util::vec_u8_as_base64::VecAsBase64;
 use serde_with::serde_as;
 use std::collections::{HashMap, VecDeque};
 

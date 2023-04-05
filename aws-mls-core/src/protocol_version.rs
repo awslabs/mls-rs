@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use core::ops::Deref;
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 

@@ -1,8 +1,15 @@
-use std::ops::Deref;
+use core::ops::Deref;
 
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
-use thiserror::Error;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 mod list;
 
@@ -64,12 +71,12 @@ impl Deref for ExtensionType {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum ExtensionError {
     #[error(transparent)]
-    SerializationError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    SerializationError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
-    DeserializationError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    DeserializationError(Box<dyn Error + Send + Sync + 'static>),
     #[error("incorrect extension type: {0:?}, expecting: {1:?}")]
     IncorrectType(ExtensionType, ExtensionType),
 }
@@ -87,7 +94,7 @@ pub enum ExtensionError {
 pub struct Extension {
     pub(crate) extension_type: ExtensionType,
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
+    #[serde_as(as = "crate::serde_util::vec_u8_as_base64::VecAsBase64")]
     pub(crate) extension_data: Vec<u8>,
 }
 
@@ -114,10 +121,10 @@ impl Extension {
 /// Trait used to convert a type to and from an [Extension](self::Extension)
 pub trait MlsExtension: Sized {
     /// Error type of the underlying serializer that can convert this type into a `Vec<u8>`.
-    type SerializationError: std::error::Error + Send + Sync + 'static;
+    type SerializationError: Error + Send + Sync + 'static;
 
     /// Error type of the underlying deserializer that can convert a `Vec<u8>` into this type.
-    type DeserializationError: std::error::Error + Send + Sync + 'static;
+    type DeserializationError: Error + Send + Sync + 'static;
 
     /// Extension type value that this type represents.
     fn extension_type() -> ExtensionType;
@@ -179,8 +186,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::convert::Infallible;
+    use core::convert::Infallible;
 
+    use alloc::vec;
+    use alloc::vec::Vec;
     use assert_matches::assert_matches;
     use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 

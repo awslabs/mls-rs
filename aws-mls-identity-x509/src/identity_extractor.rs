@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use aws_mls_core::identity::CertificateChain;
 
 use crate::{
@@ -119,13 +120,14 @@ fn get_certificate(
         .ok_or(X509IdentityError::InvalidOffset)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use crate::{
         test_utils::test_certificate_chain, MockX509CertificateReader, SubjectComponent,
         SubjectIdentityExtractor, X509IdentityError,
     };
 
+    use alloc::vec;
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]

@@ -1,8 +1,9 @@
-use std::{
+use core::{
     convert::Infallible,
     ops::{Deref, DerefMut},
 };
 
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 
@@ -24,7 +25,7 @@ use super::{Credential, CredentialType, MlsCredential};
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// X.509 certificate in DER format.
 pub struct DerCertificate(
-    #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
+    #[serde_as(as = "crate::serde_util::vec_u8_as_base64::VecAsBase64")]
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
     Vec<u8>,
 );

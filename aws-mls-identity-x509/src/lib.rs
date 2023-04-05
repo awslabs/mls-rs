@@ -1,3 +1,7 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(feature = "std"), feature(error_in_core))]
+extern crate alloc;
+
 mod builder;
 mod error;
 mod identity_extractor;
@@ -13,8 +17,10 @@ pub use traits::*;
 
 pub use aws_mls_core::identity::{CertificateChain, DerCertificate};
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 pub(crate) mod test_utils {
+
+    use alloc::vec;
     use aws_mls_core::{crypto::SignaturePublicKey, identity::SigningIdentity};
     use rand::{thread_rng, Rng};
 

@@ -1,3 +1,6 @@
+use alloc::format;
+use alloc::vec::Vec;
+
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize, ReadWithCount, VarInt};
 use indexmap::IndexMap;
 
@@ -204,6 +207,8 @@ impl ExtensionList {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+    use alloc::vec::Vec;
     use assert_matches::assert_matches;
     use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 

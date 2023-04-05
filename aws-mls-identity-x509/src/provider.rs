@@ -1,8 +1,10 @@
-use std::convert::Infallible;
+use core::convert::Infallible;
 
 use crate::{util::credential_to_chain, CertificateChain, X509IdentityError};
-use async_trait::async_trait;
+use alloc::vec;
+use alloc::{boxed::Box, vec::Vec};
 use aws_mls_core::{
+    async_trait::async_trait,
     crypto::SignaturePublicKey,
     extension::ExtensionList,
     group::RosterUpdate,
@@ -10,13 +12,19 @@ use aws_mls_core::{
     time::MlsTime,
 };
 
-#[cfg(test)]
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
+
+#[cfg(all(test, feature = "std"))]
 use mockall::automock;
 
-#[cfg_attr(test, automock(type Error = crate::test_utils::TestError;))]
+#[cfg_attr(all(test, feature = "std"), automock(type Error = crate::test_utils::TestError;))]
 /// X.509 certificate unique identity trait.
 pub trait X509IdentityExtractor {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     /// Produce a unique identity value to represent the entity controlling a
     /// certificate credential within an MLS group.
@@ -31,10 +39,10 @@ pub trait X509IdentityExtractor {
     ) -> Result<bool, Self::Error>;
 }
 
-#[cfg_attr(test, automock(type Error = crate::test_utils::TestError;))]
+#[cfg_attr(all(test, feature = "std"), automock(type Error = crate::test_utils::TestError;))]
 /// X.509 certificate validation trait.
 pub trait X509CredentialValidator {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     /// Validate a certificate chain.
     ///
@@ -46,10 +54,10 @@ pub trait X509CredentialValidator {
     ) -> Result<SignaturePublicKey, Self::Error>;
 }
 
-#[cfg_attr(test, automock(type Error = crate::test_utils::TestError;))]
+#[cfg_attr(all(test, feature = "std"), automock(type Error = crate::test_utils::TestError;))]
 /// X.509 certificate identity warnings.
 pub trait X509WarningProvider {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     /// Produce any custom warnings that are created due to a [`RosterUpdate`]
     fn identity_warnings(&self, update: &RosterUpdate)
@@ -228,7 +236,7 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use aws_mls_core::{crypto::SignaturePublicKey, identity::CredentialType, time::MlsTime};
 
@@ -240,6 +248,8 @@ mod tests {
         MockX509CredentialValidator, MockX509IdentityExtractor, MockX509WarningProvider,
         X509IdentityError, X509IdentityProvider,
     };
+
+    use alloc::vec;
 
     use assert_matches::assert_matches;
 

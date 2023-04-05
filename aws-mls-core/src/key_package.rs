@@ -1,6 +1,14 @@
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 use async_trait::async_trait;
 
 use crate::crypto::HpkeSecretKey;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
@@ -30,7 +38,7 @@ impl KeyPackageData {
 pub trait KeyPackageStorage: Send + Sync {
     /// Error type that the underlying storage mechanism returns on internal
     /// failure.
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     /// Delete [`KeyPackageData`] referenced by `id`.
     ///

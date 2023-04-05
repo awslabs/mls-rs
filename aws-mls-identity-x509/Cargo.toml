@@ -3,10 +3,13 @@ name = "aws-mls-identity-x509"
 version = "0.3.1"
 edition = "2021"
 
+[features]
+default = ["std"]
+std = ["aws-mls-core/std"]
+
 [dependencies]
-async-trait = "0.1.61"
-aws-mls-core = { path = "../aws-mls-core", version = "*" }
-thiserror = "1"
+aws-mls-core = { path = "../aws-mls-core", default-features = false, version = "*" }
+thiserror = { package = "thiserror-core", version = "1" }
 
 [dev-dependencies]
 mockall = "0.11"

@@ -1,5 +1,6 @@
-use std::convert::Infallible;
+use core::convert::Infallible;
 
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 
@@ -30,7 +31,7 @@ use super::{Credential, CredentialType, MlsCredential};
 /// properly validated. It is not recommended to use [`BasicCredential`]
 /// in production applications.
 pub struct BasicCredential {
-    #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
+    #[serde_as(as = "crate::serde_util::vec_u8_as_base64::VecAsBase64")]
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
     identifier: Vec<u8>,
 }

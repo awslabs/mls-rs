@@ -1,5 +1,5 @@
-use std::fmt::Debug;
-use std::ops::Deref;
+use core::fmt::Debug;
+use core::ops::Deref;
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
@@ -61,7 +61,7 @@ impl ProposalType {
 }
 
 impl Debug for ProposalType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match *self {
             Self::ADD => f.write_str("Add"),
             Self::UPDATE => f.write_str("Update"),

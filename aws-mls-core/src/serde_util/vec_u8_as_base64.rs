@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use serde::de::{self, Visitor};
 use serde::Deserialize;
 use serde::{Deserializer, Serializer};
@@ -39,7 +40,7 @@ where
         impl Visitor<'_> for Base64Visitor {
             type Value = Vec<u8>;
 
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
                 formatter.write_str("a base64 string")
             }
 

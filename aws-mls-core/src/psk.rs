@@ -1,15 +1,24 @@
-use std::ops::Deref;
+use core::ops::Deref;
+
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 
 use async_trait::async_trait;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use zeroize::Zeroizing;
 
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
+
 #[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 /// Wrapper type that holds a pre-shared key value and zeroizes on drop.
 pub struct PreSharedKey(
-    #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")] Zeroizing<Vec<u8>>,
+    #[serde_as(as = "crate::serde_util::vec_u8_as_base64::VecAsBase64")] Zeroizing<Vec<u8>>,
 );
 
 impl PreSharedKey {
@@ -67,7 +76,7 @@ impl Deref for PreSharedKey {
 /// An external pre-shared key identifier.
 pub struct ExternalPskId(
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
-    #[serde_as(as = "crate::serde::vec_u8_as_base64::VecAsBase64")]
+    #[serde_as(as = "crate::serde_util::vec_u8_as_base64::VecAsBase64")]
     Vec<u8>,
 );
 
@@ -102,7 +111,7 @@ impl From<Vec<u8>> for ExternalPskId {
 pub trait PreSharedKeyStorage: Send + Sync {
     /// Error type that the underlying storage mechanism returns on internal
     /// failure.
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     /// Get a pre-shared key by [`ExternalPskId`](ExternalPskId).
     ///

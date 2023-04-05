@@ -3,14 +3,21 @@ use crate::{
     DerCertificate, SubjectAltName, SubjectComponent,
 };
 
+use alloc::vec::Vec;
 use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 use mockall::automock;
 
-#[cfg_attr(test, automock(type Error = crate::test_utils::TestError;))]
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
+
+#[cfg_attr(all(test, feature = "std"), automock(type Error = crate::test_utils::TestError;))]
 /// Trait for X.509 certificate writing.
 pub trait X509CertificateWriter {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     /// Build a CSR from parameters.
     ///
@@ -37,10 +44,10 @@ pub trait X509CertificateWriter {
     ) -> Result<CertificateGeneration, Self::Error>;
 }
 
-#[cfg_attr(test, automock(type Error = crate::test_utils::TestError;))]
+#[cfg_attr(all(test, feature = "std"), automock(type Error = crate::test_utils::TestError;))]
 /// Trait for X.509 certificate parsing.
 pub trait X509CertificateReader {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     /// Der encoded bytes of a certificate subject field.
     fn subject_bytes(&self, certificate: &DerCertificate) -> Result<Vec<u8>, Self::Error>;

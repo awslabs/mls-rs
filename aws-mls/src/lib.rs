@@ -163,7 +163,7 @@ pub mod time {
 }
 
 mod serde_utils {
-    pub use aws_mls_core::serde::*;
+    pub use aws_mls_core::serde_util::*;
 }
 
 #[cfg(feature = "benchmark")]

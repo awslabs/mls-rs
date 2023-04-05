@@ -1,3 +1,4 @@
+use alloc::{string::String, vec::Vec};
 use aws_mls_core::{
     crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey},
     identity::SigningIdentity,
@@ -274,8 +275,11 @@ impl CertificateBuilder {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 pub(crate) mod test_utils {
+    use alloc::vec::Vec;
+    use alloc::{string::ToString, vec};
+
     use crate::{SubjectAltName, SubjectComponent};
 
     pub fn test_subject_components() -> Vec<SubjectComponent> {
@@ -293,8 +297,9 @@ pub(crate) mod test_utils {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests {
+    use alloc::vec;
     use aws_mls_core::crypto::CipherSuite;
 
     use crate::{

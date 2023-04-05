@@ -1,20 +1,20 @@
-use std::time::Duration;
+use core::time::Duration;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
 pub type SystemTimeError = std::time::SystemTimeError;
 
-#[cfg(target_arch = "wasm32")]
-pub type SystemTimeError = std::convert::Infallible;
+#[cfg(any(target_arch = "wasm32", not(feature = "std")))]
+pub type SystemTimeError = core::convert::Infallible;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// WASM compatible system time for use with MLS.
 pub struct MlsTime(std::time::SystemTime);
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
 impl MlsTime {
     /// Current system time.
     pub fn now() -> Self {
@@ -43,12 +43,13 @@ extern "C" {
     fn date_now() -> f64;
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", not(feature = "std")))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MlsTime(u64);
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", not(feature = "std")))]
 impl MlsTime {
+    #[cfg(target_arch = "wasm32")]
     pub fn now() -> Self {
         Self((date_now() / 1000.0) as u64)
     }
