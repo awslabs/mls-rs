@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use thiserror::Error;
 
 use super::node::LeafIndex;

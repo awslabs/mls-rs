@@ -8,9 +8,15 @@ use crate::{
     signer::{Signable, SignatureError},
     time::MlsTime,
 };
+use alloc::boxed::Box;
 use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
-use thiserror::Error;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 pub enum ValidationContext<'a> {
     Add(Option<MlsTime>),
@@ -36,7 +42,7 @@ impl<'a> ValidationContext<'a> {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum LeafNodeValidationError {
     #[error(transparent)]
     LifetimeError(#[from] LifetimeError),
@@ -57,7 +63,7 @@ pub enum LeafNodeValidationError {
     #[error("capabilities must describe extensions used")]
     ExtensionNotInCapabilities(ExtensionType),
     #[error("credential rejected by custom credential validator {0:?}")]
-    IdentityProviderError(#[source] Box<dyn std::error::Error + Sync + Send>),
+    IdentityProviderError(#[source] Box<dyn Error + Sync + Send>),
 }
 
 #[derive(Clone, Debug)]
@@ -220,9 +226,10 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use assert_matches::assert_matches;
     use aws_mls_core::crypto::CipherSuite;
-    use std::time::Duration;
+    use core::time::Duration;
 
     use super::*;
 
@@ -606,6 +613,7 @@ mod tests {
     }
 
     #[futures_test::test]
+    #[cfg(feature = "std")]
     async fn test_add_lifetime() {
         let (leaf_node, _) = get_test_add_node().await;
 
@@ -643,6 +651,8 @@ mod tests {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use alloc::vec;
+    use alloc::{boxed::Box, vec::Vec};
     use async_trait::async_trait;
     use aws_mls_codec::MlsEncode;
     use aws_mls_core::{

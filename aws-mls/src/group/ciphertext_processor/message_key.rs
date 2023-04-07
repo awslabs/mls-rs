@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use zeroize::Zeroizing;
 
 use crate::{crypto::CipherSuiteProvider, group::secret_tree::MessageKeyData};

@@ -22,6 +22,8 @@ pub use list::*;
     Hash,
     Clone,
     Copy,
+    PartialOrd,
+    Ord,
     MlsSize,
     MlsEncode,
     MlsDecode,

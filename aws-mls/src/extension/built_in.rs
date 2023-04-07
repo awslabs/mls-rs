@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::{
     crypto::HpkePublicKey,
@@ -177,6 +178,7 @@ mod tests {
 
     use super::*;
 
+    use alloc::vec;
     use aws_mls_core::{extension::MlsExtension, identity::BasicCredential};
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;

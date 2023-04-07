@@ -1,4 +1,6 @@
 use crate::{identity::CredentialType, identity::SigningIdentity, time::MlsTime};
+use alloc::vec;
+use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
 use aws_mls_core::{
     extension::ExtensionList,

@@ -1,7 +1,8 @@
-use std::ops::Deref;
-
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_codec::MlsEncode;
 use aws_mls_core::{crypto::CipherSuiteProvider, psk::PreSharedKey};
+use core::ops::Deref;
 use zeroize::Zeroizing;
 
 use crate::group::key_schedule::kdf_expand_with_label;
@@ -81,8 +82,9 @@ impl PskSecret {
 
 #[cfg(test)]
 mod tests {
-    use std::iter;
+    use core::iter;
 
+    use alloc::{format, vec::Vec};
     use aws_mls_core::{
         crypto::{CipherSuite, CipherSuiteProvider},
         psk::ExternalPskId,

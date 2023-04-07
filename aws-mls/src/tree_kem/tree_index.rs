@@ -2,9 +2,18 @@ use super::*;
 use crate::group::proposal::ProposalType;
 use crate::identity::CredentialType;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
+#[cfg(feature = "std")]
 use itertools::Itertools;
 use serde_with::serde_as;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::btree_map::Entry;
+
+#[cfg(feature = "std")]
 use std::collections::hash_map::Entry;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeSet;
 
 #[derive(Debug, Error)]
 pub enum TreeIndexError {
@@ -20,19 +29,46 @@ pub enum TreeIndexError {
     CredentialTypeOfNewLeafIsUnsupported(CredentialType),
 }
 
+#[cfg(feature = "std")]
 #[serde_as]
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct TreeIndex {
+    #[cfg(feature = "std")]
     #[serde_as(as = "HashMap<VecAsBase64, _>")]
     credential_signature_key: HashMap<Vec<u8>, LeafIndex>,
+    #[cfg(feature = "std")]
     #[serde_as(as = "HashMap<VecAsBase64, _>")]
     hpke_key: HashMap<Vec<u8>, LeafIndex>,
+    #[cfg(feature = "std")]
     #[serde_as(as = "HashMap<VecAsBase64, _>")]
     identities: HashMap<Vec<u8>, LeafIndex>,
+    #[cfg(feature = "std")]
     #[serde_as(as = "Vec<(_,_)>")]
     credential_type_counters: HashMap<CredentialType, TypeCounter>,
+    #[cfg(feature = "std")]
     #[serde_as(as = "Vec<(_,_)>")]
     proposal_type_counter: HashMap<ProposalType, usize>,
+}
+
+#[cfg(not(feature = "std"))]
+#[serde_as]
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct TreeIndex {
+    #[cfg(not(feature = "std"))]
+    #[serde_as(as = "BTreeMap<VecAsBase64, _>")]
+    credential_signature_key: BTreeMap<Vec<u8>, LeafIndex>,
+    #[cfg(not(feature = "std"))]
+    #[serde_as(as = "BTreeMap<VecAsBase64, _>")]
+    hpke_key: BTreeMap<Vec<u8>, LeafIndex>,
+    #[cfg(not(feature = "std"))]
+    #[serde_as(as = "BTreeMap<VecAsBase64, _>")]
+    identities: BTreeMap<Vec<u8>, LeafIndex>,
+    #[cfg(not(feature = "std"))]
+    #[serde_as(as = "Vec<(_,_)>")]
+    credential_type_counters: BTreeMap<CredentialType, TypeCounter>,
+    #[cfg(not(feature = "std"))]
+    #[serde_as(as = "Vec<(_,_)>")]
+    proposal_type_counter: BTreeMap<ProposalType, usize>,
 }
 
 impl TreeIndex {
@@ -98,30 +134,34 @@ impl TreeIndex {
 
         cred_type_counters.used += 1;
 
+        let credential_type_iter = leaf_node.capabilities.credentials.iter().copied();
+
+        #[cfg(feature = "std")]
+        let credential_type_iter = credential_type_iter.unique();
+
+        #[cfg(not(feature = "std"))]
+        let credential_type_iter = credential_type_iter.collect::<BTreeSet<_>>().into_iter();
+
         // Credential type counter updates
-        leaf_node
-            .capabilities
-            .credentials
-            .iter()
-            .copied()
-            .unique()
-            .for_each(|cred_type| {
-                self.credential_type_counters
-                    .entry(cred_type)
-                    .or_default()
-                    .supported += 1;
-            });
+        credential_type_iter.for_each(|cred_type| {
+            self.credential_type_counters
+                .entry(cred_type)
+                .or_default()
+                .supported += 1;
+        });
+
+        let proposal_type_iter = leaf_node.capabilities.proposals.iter().copied();
+
+        #[cfg(feature = "std")]
+        let proposal_type_iter = proposal_type_iter.unique();
+
+        #[cfg(not(feature = "std"))]
+        let proposal_type_iter = proposal_type_iter.collect::<BTreeSet<_>>().into_iter();
 
         // Proposal type counter update
-        leaf_node
-            .capabilities
-            .proposals
-            .iter()
-            .copied()
-            .unique()
-            .for_each(|proposal_type| {
-                *self.proposal_type_counter.entry(proposal_type).or_default() += 1;
-            });
+        proposal_type_iter.for_each(|proposal_type| {
+            *self.proposal_type_counter.entry(proposal_type).or_default() += 1;
+        });
 
         identity_entry.or_insert(index);
         credential_entry.or_insert(index);
@@ -151,28 +191,34 @@ impl TreeIndex {
             counters.used -= 1;
         }
 
-        leaf_node
-            .capabilities
-            .credentials
-            .iter()
-            .unique()
-            .for_each(|cred_type| {
-                if let Some(counters) = self.credential_type_counters.get_mut(cred_type) {
-                    counters.supported -= 1;
-                }
-            });
+        let credential_type_iter = leaf_node.capabilities.credentials.iter();
+
+        #[cfg(feature = "std")]
+        let credential_type_iter = credential_type_iter.unique();
+
+        #[cfg(not(feature = "std"))]
+        let credential_type_iter = credential_type_iter.collect::<BTreeSet<_>>().into_iter();
+
+        credential_type_iter.for_each(|cred_type| {
+            if let Some(counters) = self.credential_type_counters.get_mut(cred_type) {
+                counters.supported -= 1;
+            }
+        });
+
+        let proposal_type_iter = leaf_node.capabilities.proposals.iter();
+
+        #[cfg(feature = "std")]
+        let proposal_type_iter = proposal_type_iter.unique();
+
+        #[cfg(not(feature = "std"))]
+        let proposal_type_iter = proposal_type_iter.collect::<BTreeSet<_>>().into_iter();
 
         // Decrement proposal type counters
-        leaf_node
-            .capabilities
-            .proposals
-            .iter()
-            .unique()
-            .for_each(|proposal_type| {
-                if let Some(supported) = self.proposal_type_counter.get_mut(proposal_type) {
-                    *supported -= 1;
-                }
-            })
+        proposal_type_iter.for_each(|proposal_type| {
+            if let Some(supported) = self.proposal_type_counter.get_mut(proposal_type) {
+                *supported -= 1;
+            }
+        })
     }
 
     pub fn count_supporting_proposal(&self, proposal_type: ProposalType) -> usize {
@@ -201,6 +247,7 @@ mod tests {
         client::test_utils::TEST_CIPHER_SUITE,
         tree_kem::leaf_node::test_utils::{get_basic_test_node, get_test_client_identity},
     };
+    use alloc::format;
     use assert_matches::assert_matches;
     use futures::StreamExt;
 

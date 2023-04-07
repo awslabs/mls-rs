@@ -13,6 +13,8 @@ use super::{BasicCredential, CertificateChain};
     Hash,
     Clone,
     Copy,
+    PartialOrd,
+    Ord,
     MlsSize,
     MlsEncode,
     MlsDecode,
@@ -63,6 +65,8 @@ impl Deref for CredentialType {
     PartialEq,
     Eq,
     Hash,
+    PartialOrd,
+    Ord,
     serde::Serialize,
     serde::Deserialize,
 )]
@@ -106,7 +110,9 @@ impl CustomCredential {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Clone, Debug, PartialEq, Ord, PartialOrd, Eq, Hash, serde::Deserialize, serde::Serialize,
+)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 /// A MLS credential used to authenticate a group member.
 pub enum Credential {

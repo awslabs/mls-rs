@@ -1,3 +1,5 @@
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 

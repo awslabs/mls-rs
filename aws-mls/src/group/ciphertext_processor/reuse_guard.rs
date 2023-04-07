@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use crate::CipherSuiteProvider;
@@ -45,6 +46,8 @@ impl ReuseGuard {
 
 #[cfg(test)]
 mod test_utils {
+    use alloc::vec::Vec;
+
     use super::{ReuseGuard, REUSE_GUARD_SIZE};
 
     impl ReuseGuard {
@@ -58,6 +61,7 @@ mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
     use aws_mls_core::crypto::CipherSuiteProvider;
 
     use crate::{

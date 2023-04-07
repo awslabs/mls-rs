@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::extension::ExtensionList;
 

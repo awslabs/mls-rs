@@ -1,16 +1,22 @@
 use super::*;
-use std::{
+use core::{
     fmt::{self, Debug},
     ops::Deref,
 };
 use thiserror::Error;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 #[derive(Error, Debug)]
 pub enum TranscriptHashError {
     #[error(transparent)]
     MlsCodecError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
 }
 
 #[serde_as]
@@ -126,6 +132,8 @@ impl InterimTranscriptHash {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+    use alloc::vec::Vec;
     use aws_mls_codec::{MlsDecode, MlsEncode};
     use aws_mls_core::crypto::{CipherSuite, CipherSuiteProvider};
 

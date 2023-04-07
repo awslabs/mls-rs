@@ -25,30 +25,38 @@ use crate::tree_kem::{
     leaf_node_validator::LeafNodeValidationError, path_secret::PathSecretError,
     tree_validator::TreeValidationError, RatchetTreeError, UpdatePathValidationError,
 };
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
 use aws_mls_core::crypto::CryptoProvider;
 use aws_mls_core::extension::{ExtensionError, ExtensionList};
 use aws_mls_core::group::GroupStateStorage;
 use aws_mls_core::key_package::KeyPackageStorage;
 use aws_mls_core::keychain::KeychainStorage;
 use hex::ToHex;
-use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
+
+#[derive(thiserror::Error, Debug)]
 pub enum MlsError {
     #[error(transparent)]
     RatchetTreeError(#[from] RatchetTreeError),
     #[error(transparent)]
-    CiphertextProcessorError(Box<dyn std::error::Error + Send + Sync>),
+    CiphertextProcessorError(Box<dyn Error + Send + Sync>),
     #[error(transparent)]
-    SignerError(Box<dyn std::error::Error + Send + Sync>),
+    SignerError(Box<dyn Error + Send + Sync>),
     #[error(transparent)]
     TranscriptHashError(#[from] TranscriptHashError),
     #[error(transparent)]
     KeyPackageError(#[from] KeyPackageError),
     #[error(transparent)]
-    IdentityProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    IdentityProviderError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
-    CryptoProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CryptoProviderError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
     ExtensionError(#[from] ExtensionError),
     #[error(transparent)]
@@ -56,7 +64,7 @@ pub enum MlsError {
     #[error(transparent)]
     LeafNodeValidationError(#[from] LeafNodeValidationError),
     #[error(transparent)]
-    MembershipTagError(Box<dyn std::error::Error + Send + Sync>),
+    MembershipTagError(Box<dyn Error + Send + Sync>),
     #[error(transparent)]
     ConfirmationTagError(#[from] ConfirmationTagError),
     #[error(transparent)]
@@ -200,7 +208,7 @@ pub enum MlsError {
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
     #[error(transparent)]
-    KeyPackageRepoError(Box<dyn std::error::Error + Send + Sync>),
+    KeyPackageRepoError(Box<dyn Error + Send + Sync>),
     #[error(transparent)]
     LeafNodeError(#[from] LeafNodeError),
     #[error(transparent)]
@@ -212,9 +220,9 @@ pub enum MlsError {
     #[error("unsupported message protocol version: {0:?}")]
     UnsupportedMessageVersion(ProtocolVersion),
     #[error("unable to load group from storage: {0:?}")]
-    GroupStorageError(Box<dyn std::error::Error + Send + Sync>),
+    GroupStorageError(Box<dyn Error + Send + Sync>),
     #[error(transparent)]
-    KeychainError(Box<dyn std::error::Error + Send + Sync>),
+    KeychainError(Box<dyn Error + Send + Sync>),
     #[error("group not found: {0}")]
     GroupNotFound(String),
     #[error("unexpected PSK ID")]
@@ -660,7 +668,6 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
 
     use super::test_utils::*;
 
@@ -677,6 +684,7 @@ mod tests {
         psk::{ExternalPskId, PreSharedKey},
         tree_kem::leaf_node::LeafNodeSource,
     };
+    use alloc::vec;
     use assert_matches::assert_matches;
 
     use aws_mls_codec::MlsEncode;
@@ -692,8 +700,6 @@ mod tests {
                 .into_iter()
                 .map(move |cs| (p, cs))
         }) {
-            println!("Running client keygen for {cipher_suite:?}");
-
             let (client, identity) = get_basic_client_builder(cipher_suite, "foo");
             let client = client.build();
 

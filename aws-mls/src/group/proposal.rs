@@ -1,7 +1,8 @@
 use super::*;
 use crate::{psk::PreSharedKeyID, tree_kem::leaf_node::LeafNode};
-use std::fmt::Debug;
+use core::fmt::Debug;
 
+use alloc::string::ToString;
 use proposal_ref::ProposalRef;
 
 pub use aws_mls_core::extension::ExtensionList;

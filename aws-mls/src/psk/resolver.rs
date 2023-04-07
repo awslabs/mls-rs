@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use aws_mls_core::{
     crypto::CipherSuiteProvider,
     group::GroupStateStorage,

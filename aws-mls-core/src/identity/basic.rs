@@ -13,6 +13,8 @@ use super::{Credential, CredentialType, MlsCredential};
     PartialEq,
     Eq,
     Hash,
+    PartialOrd,
+    Ord,
     MlsSize,
     MlsEncode,
     MlsDecode,

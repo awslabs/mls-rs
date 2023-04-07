@@ -3,12 +3,19 @@ use crate::crypto::HpkePublicKey;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::parent_hash::ParentHash;
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use core::hash::Hash;
+use core::ops::{Deref, DerefMut};
 use serde_with::serde_as;
-use std::collections::HashSet;
-use std::hash::Hash;
-use std::ops::{Deref, DerefMut};
 use thiserror::Error;
+
+#[cfg(feature = "std")]
+use std::collections::HashSet;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeSet;
 
 #[serde_as]
 #[derive(
@@ -456,15 +463,17 @@ impl NodeVec {
         node_index: NodeIndex,
         excluding: &[LeafIndex],
     ) -> Result<Vec<&Node>, NodeVecError> {
-        let excluding = excluding
-            .iter()
-            .map(NodeIndex::from)
-            .collect::<HashSet<NodeIndex>>();
+        let excluding = excluding.iter().map(NodeIndex::from);
+
+        #[cfg(feature = "std")]
+        let excluding = excluding.collect::<HashSet<NodeIndex>>();
+        #[cfg(not(feature = "std"))]
+        let excluding = excluding.collect::<BTreeSet<NodeIndex>>();
 
         self.get_resolution_index(node_index)?
-            .iter()
+            .into_iter()
             .filter(|i| !excluding.contains(i))
-            .map(|&i| self.borrow_node(i).and_then(|n| n.as_non_empty()))
+            .map(|i| self.borrow_node(i).and_then(|n| n.as_non_empty()))
             .collect()
     }
 

@@ -1,3 +1,6 @@
+use alloc::vec;
+use alloc::vec::Vec;
+
 use aws_mls_core::{
     crypto::{CipherSuiteProvider, CryptoProvider},
     psk::ExternalPskId,
@@ -26,15 +29,12 @@ async fn interop_passive_client() {
     let test_cases_rand: Vec<TestCase> =
         load_test_cases!(interop_passive_client_random, Vec::<TestCase>::new());
 
-    for (i, test_case) in vec![]
+    for test_case in vec![]
         .into_iter()
         .chain(test_cases_com.into_iter())
         .chain(test_cases_wel.into_iter())
         .chain(test_cases_rand.into_iter())
-        .enumerate()
     {
-        println!("test {i} cipher suite {}", test_case.cipher_suite);
-
         let crypto_provider = TestCryptoProvider::new();
         let Some(cs) = crypto_provider.cipher_suite_provider(test_case.cipher_suite.into()) else { continue };
 

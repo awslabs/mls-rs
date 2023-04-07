@@ -17,6 +17,7 @@ use super::{
     GroupContext,
 };
 use crate::{psk::PskError, tree_kem::node::LeafIndex};
+use alloc::{boxed::Box, vec::Vec};
 use aws_mls_codec::MlsEncode;
 use aws_mls_core::crypto::CipherSuiteProvider;
 use thiserror::Error;
@@ -29,10 +30,16 @@ mod sender_data_key;
 #[cfg(test)]
 pub use sender_data_key::test_utils::*;
 
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
+
 #[derive(Error, Debug)]
 pub enum CiphertextProcessorError {
     #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
     SecretTreeError(#[from] SecretTreeError),
     #[error(transparent)]
@@ -271,6 +278,7 @@ mod test {
 
     use super::{CiphertextProcessor, CiphertextProcessorError};
 
+    use alloc::vec;
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]

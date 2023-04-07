@@ -17,9 +17,6 @@ pub mod serde_util;
 pub mod time;
 
 pub use async_trait;
-pub use aws_mls_codec;
-pub use indexmap;
-pub use zeroize;
 
 #[cfg(feature = "arbitrary")]
 pub use arbitrary;

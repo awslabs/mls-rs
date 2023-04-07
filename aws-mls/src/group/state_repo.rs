@@ -1,11 +1,25 @@
 use crate::{group::PriorEpoch, key_package::KeyPackageRef};
 
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
+use alloc::{boxed::Box, string::String};
 use aws_mls_core::{group::GroupStateStorage, key_package::KeyPackageStorage, psk::PreSharedKey};
 use hex::ToHex;
-use std::collections::{hash_map::Entry, HashMap, VecDeque};
 use thiserror::Error;
 
 use super::{internal::ResumptionPsk, snapshot::Snapshot};
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
+
+#[cfg(feature = "std")]
+use std::collections::{hash_map::Entry, HashMap};
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::{btree_map::Entry, BTreeMap};
 
 pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
 
@@ -18,9 +32,9 @@ pub enum GroupStateRepositoryError {
     #[error("storage retention can not be zero")]
     NonZeroRetentionRequired,
     #[error(transparent)]
-    StorageError(Box<dyn std::error::Error + Sync + Send + 'static>),
+    StorageError(Box<dyn Error + Sync + Send + 'static>),
     #[error(transparent)]
-    KeyPackageRepoError(Box<dyn std::error::Error + Sync + Send + 'static>),
+    KeyPackageRepoError(Box<dyn Error + Sync + Send + 'static>),
 }
 
 /// A set of changes to apply to a GroupStateStorage implementation. These changes MUST
@@ -28,7 +42,10 @@ pub enum GroupStateRepositoryError {
 #[derive(Default, Clone, Debug)]
 struct EpochStorageCommit {
     pub(crate) inserts: VecDeque<PriorEpoch>,
+    #[cfg(feature = "std")]
     pub(crate) updates: HashMap<u64, PriorEpoch>,
+    #[cfg(not(feature = "std"))]
+    pub(crate) updates: BTreeMap<u64, PriorEpoch>,
     pub(crate) delete_under: Option<u64>,
 }
 
@@ -228,7 +245,9 @@ where
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use assert_matches::assert_matches;
+    use bincode::config::Configuration;
 
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
@@ -297,7 +316,11 @@ mod tests {
         );
 
         assert!(test_repo.pending_commit.updates.is_empty());
+
+        #[cfg(feature = "std")]
         assert!(test_repo.storage.inner.lock().unwrap().is_empty());
+        #[cfg(not(feature = "std"))]
+        assert!(test_repo.storage.inner.lock().is_empty());
 
         let psk_id = ResumptionPsk {
             psk_epoch: 0,
@@ -325,12 +348,21 @@ mod tests {
         assert!(test_repo.pending_commit.updates.is_empty());
 
         // Make sure the storage was written
+        #[cfg(feature = "std")]
         let storage = test_repo.storage.inner.lock().unwrap();
+        #[cfg(not(feature = "std"))]
+        let storage = test_repo.storage.inner.lock();
+
         assert_eq!(storage.len(), 1);
 
         let stored = storage.get(TEST_GROUP).unwrap();
 
-        assert_eq!(stored.state_data, bincode::serialize(&snapshot).unwrap());
+        assert_eq!(
+            stored.state_data,
+            bincode::serde::encode_to_vec::<_, Configuration>(&snapshot, Configuration::default())
+                .unwrap()
+        );
+
         assert_eq!(stored.epoch_data.len(), 1);
 
         assert_eq!(
@@ -355,12 +387,20 @@ mod tests {
 
         assert!(test_repo.pending_commit.updates.is_empty());
         assert_eq!(test_repo.pending_commit.inserts.len(), 1);
+
+        #[cfg(feature = "std")]
         assert!(test_repo.storage.inner.lock().unwrap().is_empty());
+        #[cfg(not(feature = "std"))]
+        assert!(test_repo.storage.inner.lock().is_empty());
 
         test_repo.write_to_storage(test_snapshot(1)).await.unwrap();
 
         // Make sure the storage was written
+        #[cfg(feature = "std")]
         let storage = test_repo.storage.inner.lock().unwrap();
+        #[cfg(not(feature = "std"))]
+        let storage = test_repo.storage.inner.lock();
+
         assert_eq!(storage.len(), 1);
 
         let stored = storage.get(TEST_GROUP).unwrap();
@@ -403,7 +443,11 @@ mod tests {
         test_repo.write_to_storage(test_snapshot(2)).await.unwrap();
 
         // Make sure the storage was written
+        #[cfg(feature = "std")]
         let storage = test_repo.storage.inner.lock().unwrap();
+        #[cfg(not(feature = "std"))]
+        let storage = test_repo.storage.inner.lock();
+
         assert_eq!(storage.len(), 1);
 
         let stored = storage.get(TEST_GROUP).unwrap();
@@ -459,12 +503,21 @@ mod tests {
         assert!(test_repo.pending_commit.inserts.is_empty());
 
         // Make sure the storage was written
+        #[cfg(feature = "std")]
         let storage = test_repo.storage.inner.lock().unwrap();
+        #[cfg(not(feature = "std"))]
+        let storage = test_repo.storage.inner.lock();
+
         assert_eq!(storage.len(), 1);
 
         let stored = storage.get(TEST_GROUP).unwrap();
 
-        assert_eq!(stored.state_data, bincode::serialize(&snapshot).unwrap());
+        assert_eq!(
+            stored.state_data,
+            bincode::serde::encode_to_vec::<_, Configuration>(&snapshot, Configuration::default())
+                .unwrap()
+        );
+
         assert_eq!(stored.epoch_data.len(), 1);
 
         assert_eq!(
@@ -498,7 +551,11 @@ mod tests {
         assert!(test_repo.pending_commit.updates.is_empty());
 
         // Make sure the storage was written
+        #[cfg(feature = "std")]
         let storage = test_repo.storage.inner.lock().unwrap();
+        #[cfg(not(feature = "std"))]
+        let storage = test_repo.storage.inner.lock();
+
         assert_eq!(storage.len(), 1);
 
         let stored = storage.get(TEST_GROUP).unwrap();
@@ -601,17 +658,12 @@ mod tests {
         repo.insert(test_epoch(1)).await.unwrap();
         repo.write_to_storage(test_snapshot(1)).await.unwrap();
 
-        assert_eq!(
-            repo.storage
-                .inner
-                .lock()
-                .unwrap()
-                .get(TEST_GROUP)
-                .unwrap()
-                .epoch_data
-                .len(),
-            1
-        );
+        #[cfg(feature = "std")]
+        let lock = repo.storage.inner.lock().unwrap();
+        #[cfg(not(feature = "std"))]
+        let lock = repo.storage.inner.lock();
+
+        assert_eq!(lock.get(TEST_GROUP).unwrap().epoch_data.len(), 1);
     }
 
     async fn existing_storage_setup(

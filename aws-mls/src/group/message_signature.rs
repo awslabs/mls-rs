@@ -4,9 +4,11 @@ use crate::group::framing::{ContentType, FramedContent, PublicMessage, Sender, W
 use crate::group::{ConfirmationTag, GroupContext};
 use crate::signer::{Signable, SignatureError};
 use crate::CipherSuiteProvider;
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize, Reader};
 use aws_mls_core::protocol_version::ProtocolVersion;
-use std::ops::Deref;
+use core::ops::Deref;
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]

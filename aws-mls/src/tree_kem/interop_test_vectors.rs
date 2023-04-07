@@ -1,3 +1,5 @@
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode};
 use aws_mls_core::{
     crypto::{CipherSuite, CipherSuiteProvider},
@@ -11,8 +13,7 @@ use crate::{
 };
 
 use super::{
-    node::NodeVec, tree_utils::test_utils::TreeWithSigners, tree_validator::TreeValidator,
-    TreeKemPublic,
+    node::NodeVec, test_utils::TreeWithSigners, tree_validator::TreeValidator, TreeKemPublic,
 };
 
 #[cfg(target_arch = "wasm32")]

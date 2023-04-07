@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use itertools::Itertools;
 
 use crate::{
@@ -8,7 +9,7 @@ use crate::{
     },
     ExtensionList,
 };
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 #[derive(Clone, Debug, Default)]
 /// A collection of proposals.
@@ -308,10 +309,22 @@ impl ProposalBundle {
 
     /// Custom proposal types that are in use within this bundle.
     pub fn custom_proposal_types(&self) -> impl Iterator<Item = ProposalType> + '_ {
-        self.custom_proposals
+        #[cfg(feature = "std")]
+        let res = self
+            .custom_proposals
             .iter()
             .map(|v| v.proposal.proposal_type())
-            .unique()
+            .unique();
+
+        #[cfg(not(feature = "std"))]
+        let res = self
+            .custom_proposals
+            .iter()
+            .map(|v| v.proposal.proposal_type())
+            .collect::<alloc::collections::BTreeSet<_>>()
+            .into_iter();
+
+        res
     }
 
     /// Standard proposal types that are in use within this bundle.
@@ -371,7 +384,7 @@ impl<'a, T> ProposalBundleIndex<'a, T> {
     }
 }
 
-impl<T: Proposable> std::ops::Index<usize> for ProposalBundleIndex<'_, T> {
+impl<T: Proposable> core::ops::Index<usize> for ProposalBundleIndex<'_, T> {
     type Output = ProposalInfo<T>;
 
     fn index(&self, index: usize) -> &Self::Output {

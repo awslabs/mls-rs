@@ -2,11 +2,18 @@ use crate::{
     client::MlsError, group::state_repo::GroupStateRepositoryError,
     serde_utils::vec_u8_as_base64::VecAsBase64, CipherSuiteProvider,
 };
+use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use core::convert::Infallible;
 use serde_with::serde_as;
-use std::convert::Infallible;
 use thiserror::Error;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 pub(crate) mod resolver;
 pub(crate) mod secret;
@@ -19,6 +26,8 @@ pub use aws_mls_core::psk::{ExternalPskId, PreSharedKey};
     Eq,
     Hash,
     PartialEq,
+    PartialOrd,
+    Ord,
     MlsSize,
     MlsEncode,
     MlsDecode,
@@ -48,6 +57,8 @@ impl PreSharedKeyID {
     Debug,
     Eq,
     Hash,
+    Ord,
+    PartialOrd,
     PartialEq,
     MlsSize,
     MlsEncode,
@@ -68,6 +79,8 @@ pub enum JustPreSharedKeyID {
     Debug,
     Eq,
     Hash,
+    Ord,
+    PartialOrd,
     PartialEq,
     MlsSize,
     MlsEncode,
@@ -89,6 +102,8 @@ pub struct PskGroupId(
     Eq,
     Hash,
     PartialEq,
+    PartialOrd,
+    Ord,
     MlsSize,
     MlsEncode,
     MlsDecode,
@@ -117,6 +132,8 @@ impl PskNonce {
     Debug,
     Eq,
     Hash,
+    Ord,
+    PartialOrd,
     PartialEq,
     MlsSize,
     MlsEncode,
@@ -137,6 +154,8 @@ pub struct ResumptionPsk {
     Eq,
     Hash,
     PartialEq,
+    Ord,
+    PartialOrd,
     MlsSize,
     MlsEncode,
     MlsDecode,
@@ -165,7 +184,7 @@ pub enum PskError {
     #[error("No PSK for ID {0:?}")]
     NoPskForId(ExternalPskId),
     #[error(transparent)]
-    PskStoreError(Box<dyn std::error::Error + Send + Sync>),
+    PskStoreError(Box<dyn Error + Send + Sync>),
     #[error(transparent)]
     SerializationError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
@@ -175,14 +194,14 @@ pub enum PskError {
     #[error("Old group state not found")]
     OldGroupStateNotFound,
     #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
-    KeyScheduleError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    KeyScheduleError(Box<dyn Error + Send + Sync + 'static>),
 }
 
 #[async_trait]
 pub(crate) trait ExternalPskIdValidator: Send + Sync {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     async fn validate(&self, psk_id: &ExternalPskId) -> Result<(), Self::Error>;
 }
@@ -239,7 +258,7 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use crate::crypto::test_utils::TestCryptoProvider;
-    use std::iter;
+    use core::iter;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;

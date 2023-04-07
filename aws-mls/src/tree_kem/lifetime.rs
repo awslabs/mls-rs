@@ -38,7 +38,11 @@ impl Lifetime {
     }
 
     pub fn seconds(s: u64) -> Result<Self, LifetimeError> {
+        #[cfg(feature = "std")]
         let not_before = MlsTime::now().seconds_since_epoch()?;
+        #[cfg(not(feature = "std"))]
+        // There is no clock on no_std, this is here just so that we can run tests.
+        let not_before = 3600u64;
 
         let not_after = not_before
             .checked_add(s)
@@ -67,7 +71,7 @@ impl Lifetime {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use core::time::Duration;
 
     use super::*;
     use assert_matches::assert_matches;

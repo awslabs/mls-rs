@@ -162,6 +162,8 @@ mod tests {
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
+    use alloc::format;
+    use alloc::vec;
     use assert_matches::assert_matches;
     use futures::FutureExt;
 

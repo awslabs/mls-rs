@@ -1,7 +1,15 @@
+use alloc::vec::Vec;
+use alloc::{boxed::Box, format};
 use aws_mls_codec::{MlsEncode, MlsSize};
 use thiserror::Error;
 
 use crate::crypto::{CipherSuiteProvider, SignaturePublicKey, SignatureSecretKey};
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 #[derive(Debug, Clone, MlsSize, MlsEncode)]
 struct SignContent {
@@ -25,9 +33,9 @@ pub enum SignatureError {
     #[error(transparent)]
     SerializationError(#[from] aws_mls_codec::Error),
     #[error("internal signer error: {0:?}")]
-    InternalSignerError(#[source] Box<dyn std::error::Error + Send + Sync>),
+    InternalSignerError(#[source] Box<dyn Error + Send + Sync>),
     #[error("signature validation failed, info: {0:?}")]
-    SignatureValidationFailed(#[source] Box<dyn std::error::Error + Send + Sync>),
+    SignatureValidationFailed(#[source] Box<dyn Error + Send + Sync>),
 }
 
 pub(crate) trait Signable<'a> {
@@ -81,6 +89,8 @@ pub(crate) trait Signable<'a> {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use alloc::vec;
+    use alloc::{string::String, vec::Vec};
     use aws_mls_core::crypto::CipherSuiteProvider;
 
     use crate::crypto::test_utils::try_test_cipher_suite_provider;
@@ -168,6 +178,7 @@ mod tests {
         },
         group::test_utils::random_bytes,
     };
+    use alloc::vec;
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]

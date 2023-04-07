@@ -1,18 +1,25 @@
 use crate::group::transcript_hash::ConfirmedTranscriptHash;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::CipherSuiteProvider;
+use alloc::{boxed::Box, vec::Vec};
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use serde_with::serde_as;
-use std::{
+use core::{
     fmt::{self, Debug},
     ops::Deref,
 };
+use serde_with::serde_as;
 use thiserror::Error;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 #[derive(Debug, Error)]
 pub enum ConfirmationTagError {
     #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
 }
 
 #[serde_as]
@@ -70,7 +77,10 @@ impl ConfirmationTag {
     pub(crate) fn empty<P: CipherSuiteProvider>(cipher_suite_provider: &P) -> Self {
         Self(
             cipher_suite_provider
-                .mac(&vec![0; cipher_suite_provider.kdf_extract_size()], &[])
+                .mac(
+                    &alloc::vec![0; cipher_suite_provider.kdf_extract_size()],
+                    &[],
+                )
                 .unwrap(),
         )
     }
@@ -87,8 +97,6 @@ mod tests {
     #[test]
     fn test_confirmation_tag_matching() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            println!("Running confirmation tag tests for {cipher_suite:?}");
-
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
             let confirmed_hash_a = ConfirmedTranscriptHash::from(b"foo_a".to_vec());

@@ -18,10 +18,19 @@ use crate::{
     },
     CipherSuiteProvider, ExtensionList,
 };
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_core::identity::IdentityProvider;
 use futures::TryStreamExt;
 use itertools::Itertools;
-use std::collections::{BTreeSet, HashMap, HashSet};
+
+#[cfg(feature = "std")]
+use std::collections::{HashMap, HashSet};
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap;
+
+use alloc::collections::BTreeSet;
 
 #[derive(Clone, Debug)]
 pub(crate) struct ProposalState {
@@ -698,7 +707,11 @@ fn filter_out_extra_removal_or_update_for_same_leaf<F>(
 where
     F: FilterStrategy,
 {
+    #[cfg(feature = "std")]
     let mut indexes = HashSet::new();
+
+    #[cfg(not(feature = "std"))]
+    let mut indexes = BTreeSet::new();
 
     proposals.retain_by_type::<RemoveProposal, _, _>(|p| {
         apply_strategy(
@@ -710,8 +723,14 @@ where
         )
     })?;
 
+    #[cfg(feature = "std")]
+    let per_leaf = HashMap::new();
+
+    #[cfg(not(feature = "std"))]
+    let per_leaf = BTreeMap::new();
+
     let last_update_indexes_per_leaf = proposals.by_type::<UpdateProposal>().enumerate().fold(
-        HashMap::new(),
+        per_leaf,
         |mut last_per_leaf, (i, p)| {
             if let Sender::Member(leaf_index) = p.sender {
                 last_per_leaf.insert(leaf_index, i);
@@ -799,7 +818,7 @@ where
         apply_strategy(
             &strategy,
             p,
-            (!std::mem::replace(&mut found, true))
+            (!core::mem::replace(&mut found, true))
                 .then_some(())
                 .ok_or(ProposalRulesError::MoreThanOneGroupContextExtensionsProposal),
         )
@@ -849,7 +868,7 @@ where
         apply_strategy(
             &strategy,
             p,
-            (has_only_reinit && !std::mem::replace(&mut found, true))
+            (has_only_reinit && !core::mem::replace(&mut found, true))
                 .then_some(())
                 .ok_or(ProposalRulesError::OtherProposalWithReInit),
         )
@@ -897,7 +916,10 @@ where
 
     #[derive(Default)]
     struct ValidationState {
+        #[cfg(feature = "std")]
         ids_seen: HashSet<PreSharedKeyID>,
+        #[cfg(not(feature = "std"))]
+        ids_seen: BTreeSet<PreSharedKeyID>,
         bad_indices: Vec<usize>,
     }
 

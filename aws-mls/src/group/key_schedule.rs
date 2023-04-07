@@ -5,6 +5,9 @@ use crate::psk::{PreSharedKey, PskError};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
 use crate::CipherSuiteProvider;
+use alloc::boxed::Box;
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use thiserror::Error;
@@ -14,6 +17,12 @@ use crate::crypto::{HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey};
 
 use super::epoch::{EpochSecrets, SenderDataSecret};
 use super::message_signature::AuthenticatedContent;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 #[derive(Error, Debug)]
 pub enum KeyScheduleError {
@@ -26,7 +35,7 @@ pub enum KeyScheduleError {
     #[error("key derivation failure")]
     KeyDerivationFailure,
     #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Zeroize, Default)]
@@ -407,6 +416,8 @@ fn get_welcome_secret<P: CipherSuiteProvider>(
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use alloc::vec;
+    use alloc::vec::Vec;
     use aws_mls_core::crypto::CipherSuiteProvider;
     use zeroize::Zeroizing;
 
@@ -416,7 +427,7 @@ pub(crate) mod test_utils {
 
     impl From<JoinerSecret> for Vec<u8> {
         fn from(mut value: JoinerSecret) -> Self {
-            std::mem::take(&mut value.0)
+            core::mem::take(&mut value.0)
         }
     }
 
@@ -472,6 +483,9 @@ mod tests {
     };
     use crate::group::test_utils::random_bytes;
     use crate::group::{GroupContext, InitSecret};
+    use alloc::string::{String, ToString};
+    use alloc::vec;
+    use alloc::vec::Vec;
     use aws_mls_codec::MlsEncode;
     use aws_mls_core::crypto::CipherSuiteProvider;
 

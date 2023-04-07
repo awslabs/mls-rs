@@ -12,7 +12,12 @@ use crate::{
 
 use aws_mls_core::identity::IdentityProvider;
 use serde_with::serde_as;
+
+#[cfg(feature = "std")]
 use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap;
 
 use super::{cipher_suite_provider, epoch::EpochSecrets, state_repo::GroupStateRepository};
 
@@ -27,7 +32,10 @@ pub(crate) struct Snapshot {
     private_tree: TreeKemPrivate,
     epoch_secrets: EpochSecrets,
     key_schedule: KeySchedule,
+    #[cfg(feature = "std")]
     pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>,
+    #[cfg(not(feature = "std"))]
+    pending_updates: BTreeMap<HpkePublicKey, HpkeSecretKey>,
     pending_commit: Option<CommitGeneration>,
 }
 
@@ -45,7 +53,10 @@ impl Snapshot {
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Clone)]
 pub(crate) struct RawGroupState {
     pub(crate) context: GroupContext,
+    #[cfg(feature = "std")]
     pub(crate) proposals: HashMap<ProposalRef, CachedProposal>,
+    #[cfg(not(feature = "std"))]
+    pub(crate) proposals: BTreeMap<ProposalRef, CachedProposal>,
     pub(crate) public_tree: TreeKemPublic,
     pub(crate) interim_transcript_hash: InterimTranscriptHash,
     pub(crate) pending_reinit: Option<ReInitProposal>,
@@ -163,6 +174,8 @@ where
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use alloc::vec;
+
     use crate::{
         cipher_suite::CipherSuite,
         crypto::test_utils::test_cipher_suite_provider,
@@ -198,6 +211,8 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         group::{

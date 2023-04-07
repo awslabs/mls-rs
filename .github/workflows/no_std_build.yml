@@ -1,0 +1,19 @@
+name: no_std
+on: [push, pull_request]
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  BuildAndTest:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        targets: thumbv6m-none-eabi
+        components: clippy
+    - name: Clippy
+      run: cargo +nightly clippy --no-default-features -p aws-mls -- -D warnings
+    - name: Test
+      run: cargo +nightly test --no-default-features --verbose -p aws-mls
+    - name: Build Embedded
+      run: cargo +nightly build --package aws-mls --lib --no-default-features --target thumbv6m-none-eabi

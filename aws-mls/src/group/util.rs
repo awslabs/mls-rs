@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use aws_mls_codec::MlsDecode;
 use aws_mls_core::{group::Member, identity::IdentityProvider, key_package::KeyPackageStorage};
 use futures::StreamExt;

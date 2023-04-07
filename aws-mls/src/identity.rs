@@ -14,6 +14,9 @@ pub use aws_mls_core::group::RosterUpdate;
 
 #[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
+    use alloc::boxed::Box;
+    use alloc::vec;
+    use alloc::vec::Vec;
     use async_trait::async_trait;
     use aws_mls_core::{
         crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},

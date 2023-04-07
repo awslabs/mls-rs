@@ -27,6 +27,8 @@ use crate::{
     },
     CipherSuiteProvider,
 };
+use alloc::vec;
+use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
 use aws_mls_core::{
     crypto::CipherSuite,
@@ -217,6 +219,7 @@ pub struct ProposalMessageDescription {
 
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum EventOrContent<E> {
+    #[cfg_attr(not(feature = "external_client"), allow(dead_code))]
     Event(E),
     Content(AuthenticatedContent),
 }

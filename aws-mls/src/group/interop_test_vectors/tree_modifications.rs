@@ -1,3 +1,5 @@
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode};
 
 use crate::{
@@ -14,8 +16,7 @@ use crate::{
     identity::basic::BasicIdentityProvider,
     key_package::test_utils::test_key_package,
     tree_kem::{
-        leaf_node::test_utils::default_properties, node::NodeVec,
-        tree_utils::test_utils::TreeWithSigners,
+        leaf_node::test_utils::default_properties, node::NodeVec, test_utils::TreeWithSigners,
     },
 };
 
@@ -93,13 +94,9 @@ async fn tree_modifications_interop() {
             .await
             .unwrap();
 
-        println!("tree before operation {}", &tree_before);
-
         let proposal = Proposal::mls_decode(&*test_case.proposal).unwrap();
 
         let tree_after = apply_proposal(proposal, test_case.proposal_sender, &tree_before).await;
-
-        println!("tree after operation {}", &tree_after);
 
         let tree_after = tree_after.export_node_data().mls_encode_to_vec().unwrap();
 

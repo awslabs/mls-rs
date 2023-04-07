@@ -2,7 +2,12 @@ use alloc::format;
 use alloc::vec::Vec;
 
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize, ReadWithCount, VarInt};
+
+#[cfg(feature = "std")]
 use indexmap::IndexMap;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap;
 
 use super::{Extension, ExtensionError, ExtensionType, MlsExtension};
 
@@ -26,10 +31,23 @@ impl<'a> arbitrary::Arbitrary<'a> for ExtensionList {
 ///
 /// Extension lists require that each type of extension has at most one entry.
 #[derive(Debug, Clone, PartialEq, Default, serde::Deserialize, serde::Serialize)]
-pub struct ExtensionList(#[serde(with = "indexmap::serde_seq")] IndexMap<ExtensionType, Extension>);
+pub struct ExtensionList(
+    #[cfg(feature = "std")]
+    #[serde(with = "indexmap::serde_seq")]
+    IndexMap<ExtensionType, Extension>,
+    #[cfg(not(feature = "std"))] BTreeMap<ExtensionType, Extension>,
+);
 
+#[cfg(feature = "std")]
 impl From<IndexMap<ExtensionType, Extension>> for ExtensionList {
     fn from(map: IndexMap<ExtensionType, Extension>) -> Self {
+        Self(map)
+    }
+}
+
+#[cfg(not(feature = "std"))]
+impl From<BTreeMap<ExtensionType, Extension>> for ExtensionList {
+    fn from(map: BTreeMap<ExtensionType, Extension>) -> Self {
         Self(map)
     }
 }
@@ -69,36 +87,33 @@ impl MlsDecode for ExtensionList {
         let len = VarInt::mls_decode(&mut reader)?.0 as usize;
 
         let mut reader = ReadWithCount::new(&mut reader);
-        let mut items = IndexMap::new();
+
+        let mut list = ExtensionList::new();
 
         while reader.bytes_read() < len {
             let ext = Extension::mls_decode(&mut reader)?;
             let ext_type = ext.extension_type;
 
-            if items.insert(ext_type, ext).is_some() {
+            if list.0.insert(ext_type, ext).is_some() {
                 return Err(aws_mls_codec::Error::Custom(format!(
                     "Extension list has duplicate extension of type {ext_type:?}"
                 )));
             }
         }
 
-        Ok(items.into())
+        Ok(list)
     }
 }
 
 impl From<Vec<Extension>> for ExtensionList {
     fn from(v: Vec<Extension>) -> Self {
-        Self::from(IndexMap::from_iter(
-            v.into_iter().map(|ext| (ext.extension_type, ext)),
-        ))
+        Self(v.into_iter().map(|ext| (ext.extension_type, ext)).collect())
     }
 }
 
 impl<const N: usize> From<[Extension; N]> for ExtensionList {
-    fn from(value: [Extension; N]) -> Self {
-        Self::from(IndexMap::from_iter(
-            value.into_iter().map(|ext| (ext.extension_type, ext)),
-        ))
+    fn from(v: [Extension; N]) -> Self {
+        Self(v.into_iter().map(|ext| (ext.extension_type, ext)).collect())
     }
 }
 
@@ -112,7 +127,13 @@ impl<'a> IntoIterator for &'a ExtensionList {
 }
 
 /// An iterator created by [ExtensionList::iter](ExtensionList::iter)
+#[cfg(feature = "std")]
 pub struct ExtensionListIter<'a>(indexmap::map::Values<'a, ExtensionType, Extension>);
+
+#[cfg(not(feature = "std"))]
+pub struct ExtensionListIter<'a>(
+    alloc::collections::btree_map::Values<'a, ExtensionType, Extension>,
+);
 
 impl<'a> Iterator for ExtensionListIter<'a> {
     type Item = &'a Extension;
@@ -193,7 +214,10 @@ impl ExtensionList {
     /// Remove an extension from the list by
     /// [ExtensionType](super::ExtensionType)
     pub fn remove(&mut self, ext_type: ExtensionType) {
+        #[cfg(feature = "std")]
         self.0.shift_remove(&ext_type);
+        #[cfg(not(feature = "std"))]
+        self.0.remove(&ext_type);
     }
 
     /// Append another extension list to this one.

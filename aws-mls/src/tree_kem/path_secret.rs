@@ -1,19 +1,28 @@
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::group::key_schedule::{kdf_derive_secret, KeyScheduleError};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
+use alloc::boxed::Box;
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use core::convert::Infallible;
+use core::ops::Deref;
 use serde_with::serde_as;
-use std::convert::Infallible;
-use std::ops::Deref;
 use thiserror::Error;
 use zeroize::{Zeroize, Zeroizing};
 
 use super::hpke_encryption::HpkeEncryptable;
 
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
+
 #[derive(Error, Debug)]
 pub enum PathSecretError {
     #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
     KeyScheduleError(#[from] KeyScheduleError),
 }
@@ -185,6 +194,7 @@ mod tests {
 
     use super::*;
 
+    use alloc::string::String;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 

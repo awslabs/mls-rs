@@ -1,13 +1,14 @@
+use alloc::vec;
+use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
 use aws_mls_core::keychain::KeychainStorage;
 use aws_mls_core::time::MlsTime;
+use core::ops::Deref;
+use core::option::Option::Some;
 use serde_with::serde_as;
-use std::collections::HashMap;
-use std::ops::Deref;
-use std::option::Option::Some;
 use thiserror::Error;
 use zeroize::Zeroizing;
 
@@ -38,6 +39,12 @@ pub use crate::tree_kem::Capabilities;
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::{CipherSuiteProvider, CryptoProvider};
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap;
 
 use ciphertext_processor::*;
 use confirmation_tag::*;
@@ -215,7 +222,10 @@ pub(crate) mod internal {
         pub(super) epoch_secrets: EpochSecrets,
         pub(super) private_tree: TreeKemPrivate,
         pub(super) key_schedule: KeySchedule,
+        #[cfg(feature = "std")]
         pub(super) pending_updates: HashMap<HpkePublicKey, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
+        #[cfg(not(feature = "std"))]
+        pub(super) pending_updates: BTreeMap<HpkePublicKey, HpkeSecretKey>, // Hash of leaf node hpke public key to secret key
         pub(super) pending_commit: Option<CommitGeneration>,
         pub(super) previous_psk: Option<PskSecretInput>,
         #[cfg(test)]
@@ -1870,14 +1880,13 @@ where
             .state
             .public_tree
             .non_empty_leaves()
-            .map(|(index, leaf)| (index, leaf.signing_identity.signature_key.clone()))
-            .collect::<HashMap<_, _>>();
+            .map(|(index, leaf)| (index, leaf.signing_identity.signature_key.clone()));
 
         let past_epoch = PriorEpoch {
             context: self.context().clone(),
             self_index: self.private_tree.self_index,
             secrets: self.epoch_secrets.clone(),
-            signature_public_keys,
+            signature_public_keys: signature_public_keys.collect(),
         };
 
         self.state_repo.insert(past_epoch).await?;
@@ -1951,7 +1960,7 @@ pub(crate) mod test_utils;
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use core::time::Duration;
 
     use crate::client::test_utils::{get_basic_client_builder, test_client_with_key_pkg};
     use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
@@ -1985,6 +1994,7 @@ mod tests {
         },
         *,
     };
+    use alloc::format;
     use assert_matches::assert_matches;
 
     use aws_mls_core::extension::{Extension, MlsExtension};

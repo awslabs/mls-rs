@@ -14,6 +14,8 @@ use crate::{
     },
     WireFormat,
 };
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_codec::MlsDecode;
 use aws_mls_core::{crypto::CipherSuiteProvider, extension::ExtensionList};
 
@@ -68,7 +70,7 @@ async fn tree_kem() {
     let test_cases: Vec<TreeKemTestCase> =
         load_test_cases!(interop_tree_kem, Vec::<TreeKemTestCase>::new());
 
-    for (case_number, test_case) in test_cases.into_iter().enumerate() {
+    for test_case in test_cases {
         let Some(cs) = try_test_cipher_suite_provider(test_case.cipher_suite) else {
             continue;
         };
@@ -121,11 +123,6 @@ async fn tree_kem() {
                 .filter(|path| path.sender != leaf.index);
 
             for update_path in paths {
-                println!(
-                    "testing case {} leaf {} path {}",
-                    case_number, leaf.index, update_path.sender
-                );
-
                 let mut group = GroupWithoutKeySchedule::new(cs.cipher_suite()).await;
                 group.state.context = group_context.clone();
                 group.state.public_tree = tree.clone();

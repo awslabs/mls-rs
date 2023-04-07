@@ -44,6 +44,9 @@
 #![allow(clippy::enum_variant_names)]
 #![allow(clippy::result_large_err)]
 #![allow(clippy::nonstandard_macro_braces)]
+#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(feature = "std"), feature(error_in_core))]
+extern crate alloc;
 
 #[cfg(all(test, target_arch = "wasm32"))]
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
@@ -61,8 +64,10 @@ macro_rules! load_test_cases {
         load_test_cases!($name, $generate, to_vec_pretty)
     };
     ($name:ident, $generate:expr, $to_json:ident) => {{
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(any(target_arch = "wasm32", not(feature = "std")))]
         {
+            // Do not remove `async`! (The goal of this line is to remove warnings
+            // about `$generate` not being used. Actually calling it will make tests fail.)
             let _ = async { $generate };
             serde_json::from_slice(include_bytes!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
@@ -73,7 +78,7 @@ macro_rules! load_test_cases {
             .unwrap()
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(not(target_arch = "wasm32"), feature = "std"))]
         {
             let path = concat!(
                 env!("CARGO_MANIFEST_DIR"),

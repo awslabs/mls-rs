@@ -21,10 +21,14 @@ use crate::{
         InMemoryGroupStateStorage, InMemoryKeyPackageStorage, InMemoryKeychainStorage,
         InMemoryPreSharedKeyStorage,
     },
-    time::MlsTime,
     tree_kem::{Capabilities, Lifetime},
     Sealed,
 };
+
+#[cfg(feature = "std")]
+use crate::time::MlsTime;
+
+use alloc::vec::Vec;
 use async_trait::async_trait;
 
 #[cfg(feature = "sqlite")]
@@ -721,7 +725,12 @@ where
     }
 
     fn lifetime(&self) -> Lifetime {
+        #[cfg(feature = "std")]
         let now_timestamp = MlsTime::now().seconds_since_epoch().unwrap();
+
+        #[cfg(not(feature = "std"))]
+        let now_timestamp = 0;
+
         Lifetime {
             not_before: now_timestamp,
             not_after: now_timestamp + self.settings.lifetime_in_s,

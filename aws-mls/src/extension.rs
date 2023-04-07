@@ -9,10 +9,11 @@ pub mod built_in;
 
 #[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
+    use alloc::vec::Vec;
     use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
     use aws_mls_core::extension::MlsExtension;
-    use std::convert::Infallible;
-    use std::fmt::Debug;
+    use core::convert::Infallible;
+    use core::fmt::Debug;
 
     use super::*;
 

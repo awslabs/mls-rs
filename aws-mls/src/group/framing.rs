@@ -1,6 +1,7 @@
 use super::proposal::Proposal;
 use super::*;
 use crate::{client::MlsError, protocol_version::ProtocolVersion};
+use alloc::{string::ToString, vec::Vec};
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize, ReadWithCount};
 use zeroize::Zeroize;
 

@@ -1,18 +1,35 @@
-use std::{
-    collections::HashMap,
-    convert::Infallible,
-    sync::{Arc, Mutex},
-};
+#[cfg(feature = "std")]
+use alloc::sync::Arc;
 
+#[cfg(not(feature = "std"))]
+use portable_atomic_util::Arc;
+
+use core::convert::Infallible;
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap;
+use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
 use aws_mls_core::key_package::{KeyPackageData, KeyPackageStorage};
+
+#[cfg(feature = "std")]
+use std::sync::Mutex;
+
+#[cfg(not(feature = "std"))]
+use spin::Mutex;
 
 #[derive(Clone, Default, Debug)]
 /// In memory key package storage backed by a HashMap.
 ///
 /// All clones of an instance of this type share the same underlying HashMap.
 pub struct InMemoryKeyPackageStorage {
+    #[cfg(feature = "std")]
     inner: Arc<Mutex<HashMap<Vec<u8>, KeyPackageData>>>,
+    #[cfg(not(feature = "std"))]
+    inner: Arc<Mutex<BTreeMap<Vec<u8>, KeyPackageData>>>,
 }
 
 impl InMemoryKeyPackageStorage {
@@ -23,22 +40,45 @@ impl InMemoryKeyPackageStorage {
 
     /// Insert key package data.
     pub fn insert(&self, id: Vec<u8>, pkg: KeyPackageData) {
-        self.inner.lock().unwrap().insert(id, pkg);
+        #[cfg(feature = "std")]
+        let mut lock = self.inner.lock().unwrap();
+
+        #[cfg(not(feature = "std"))]
+        let mut lock = self.inner.lock();
+
+        lock.insert(id, pkg);
     }
 
     /// Get a key package data by `id`.
     pub fn get(&self, id: &[u8]) -> Option<KeyPackageData> {
-        self.inner.lock().unwrap().get(id).cloned()
+        #[cfg(feature = "std")]
+        let lock = self.inner.lock().unwrap();
+
+        #[cfg(not(feature = "std"))]
+        let lock = self.inner.lock();
+
+        lock.get(id).cloned()
     }
 
     /// Delete key package data by `id`.
     pub fn delete(&self, id: &[u8]) {
-        self.inner.lock().unwrap().remove(id);
+        #[cfg(feature = "std")]
+        let mut lock = self.inner.lock().unwrap();
+
+        #[cfg(not(feature = "std"))]
+        let mut lock = self.inner.lock();
+
+        lock.remove(id);
     }
 
     /// Get all key packages that are currently stored.
     pub fn key_packages(&self) -> Vec<(Vec<u8>, KeyPackageData)> {
-        let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        #[cfg(feature = "std")]
+        let map = self.inner.lock().unwrap();
+
+        #[cfg(not(feature = "std"))]
+        let map = self.inner.lock();
+
         map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
 

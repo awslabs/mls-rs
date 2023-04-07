@@ -1,4 +1,4 @@
-use std::{
+use core::{
     fmt::{self, Debug},
     ops::Deref,
 };
@@ -6,16 +6,23 @@ use std::{
 use crate::cipher_suite::CipherSuite;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::CipherSuiteProvider;
+use alloc::{boxed::Box, vec::Vec};
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use thiserror::Error;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 #[derive(Debug, Error)]
 pub enum HashReferenceError {
     #[error(transparent)]
     MlsCodecError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
     #[error("cipher suite {0:?} is invalid for calculating hash references of this object")]
     InvalidCipherSuite(CipherSuite),
 }
@@ -104,6 +111,7 @@ mod tests {
     };
 
     use super::*;
+    use alloc::string::{String, ToString};
     use serde::{Deserialize, Serialize};
 
     #[cfg(target_arch = "wasm32")]

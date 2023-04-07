@@ -1,3 +1,5 @@
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 
 use crate::{
@@ -30,7 +32,7 @@ use super::{
 };
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
-#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "arbitrary", derive(aws_mls_core::arbitrary::Arbitrary))]
 pub(crate) struct Commit {
     pub proposals: Vec<ProposalOrRef>,
     pub path: Option<UpdatePath>,
@@ -594,6 +596,8 @@ where
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use alloc::vec::Vec;
+
     use crate::{
         crypto::SignatureSecretKey,
         tree_kem::{leaf_node::LeafNode, TreeKemPublic, UpdatePathNode},
@@ -635,6 +639,8 @@ pub(crate) mod test_utils {
 mod tests {
     use async_trait::async_trait;
     use thiserror::Error;
+
+    use alloc::boxed::Box;
 
     use aws_mls_core::{
         group::RosterUpdate,

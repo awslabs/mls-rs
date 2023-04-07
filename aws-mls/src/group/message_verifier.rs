@@ -1,4 +1,11 @@
+use alloc::vec;
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
 use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap;
 
 use crate::{
     client::MlsError,
@@ -22,7 +29,10 @@ use super::{
 #[derive(Debug)]
 pub(crate) enum SignaturePublicKeysContainer<'a> {
     RatchetTree(&'a TreeKemPublic),
+    #[cfg(feature = "std")]
     List(&'a HashMap<LeafIndex, SignaturePublicKey>),
+    #[cfg(not(feature = "std"))]
+    List(&'a BTreeMap<LeafIndex, SignaturePublicKey>),
 }
 
 pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
@@ -212,6 +222,7 @@ mod tests {
         tree_kem::node::LeafIndex,
         ExtensionList,
     };
+    use alloc::vec;
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]

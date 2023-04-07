@@ -11,15 +11,23 @@ use crate::{
         leaf_node::LeafNodeError, leaf_node_validator::LeafNodeValidationError, RatchetTreeError,
     },
 };
+use alloc::vec;
+use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
 use aws_mls_core::{
     extension::{ExtensionError, ExtensionList},
     group::Member,
 };
-use std::convert::Infallible;
+use core::convert::Infallible;
 use thiserror::Error;
 
 use super::ProposalInfo;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 /// A user controlled proposal rules that can pre-process a set of proposals
 /// during commit processing.
@@ -33,7 +41,7 @@ use super::ProposalInfo;
 /// maintain a working group.
 #[async_trait]
 pub trait ProposalRules: Send + Sync {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     /// Treat a collection of custom proposals as a set of standard proposals.
     ///
@@ -212,7 +220,7 @@ pub enum ProposalRulesError {
     #[error("Committer can not remove themselves")]
     CommitterSelfRemoval,
     #[error(transparent)]
-    UserDefined(Box<dyn std::error::Error + Send + Sync>),
+    UserDefined(Box<dyn Error + Send + Sync>),
     #[error("Only members can commit proposals by reference")]
     OnlyMembersCanCommitProposalsByRef,
     #[error("Other proposal with ReInit")]
@@ -224,9 +232,9 @@ pub enum ProposalRulesError {
     #[error("Unsupported custom proposal type {0:?}")]
     UnsupportedCustomProposal(ProposalType),
     #[error(transparent)]
-    PskIdValidationError(Box<dyn std::error::Error + Send + Sync>),
+    PskIdValidationError(Box<dyn Error + Send + Sync>),
     #[error(transparent)]
-    IdentityProviderError(Box<dyn std::error::Error + Send + Sync>),
+    IdentityProviderError(Box<dyn Error + Send + Sync>),
     #[error("Invalid index {0:?} for member proposer")]
     InvalidMemberProposer(u32),
     #[error("Invalid external sender index {0}")]
@@ -238,7 +246,7 @@ pub enum ProposalRulesError {
 impl ProposalRulesError {
     pub fn user_defined<E>(e: E) -> Self
     where
-        E: Into<Box<dyn std::error::Error + Send + Sync>>,
+        E: Into<Box<dyn Error + Send + Sync>>,
     {
         Self::UserDefined(e.into())
     }

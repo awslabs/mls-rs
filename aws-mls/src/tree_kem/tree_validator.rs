@@ -1,4 +1,10 @@
+use alloc::string::String;
+
+#[cfg(feature = "std")]
 use std::collections::{HashMap, HashSet};
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::{BTreeMap, BTreeSet};
 
 use crate::crypto::CipherSuiteProvider;
 use crate::tree_kem::math as tree_math;
@@ -14,7 +20,7 @@ use aws_mls_core::identity::IdentityProvider;
 use futures::TryStreamExt;
 use thiserror::Error;
 
-use super::node::{LeafIndex, NodeIndex, NodeVecError};
+use super::node::{NodeIndex, NodeVecError};
 
 #[derive(Debug, Error)]
 pub enum TreeValidationError {
@@ -113,11 +119,17 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
 }
 
 fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
-    let mut unmerged_sets: HashMap<u32, HashSet<LeafIndex>> = tree
-        .nodes
-        .non_empty_parents()
+    let unmerged_sets = tree.nodes.non_empty_parents();
+
+    #[cfg(feature = "std")]
+    let mut unmerged_sets = unmerged_sets
         .map(|(i, n)| (i, HashSet::from_iter(n.unmerged_leaves.iter().cloned())))
-        .collect();
+        .collect::<HashMap<_, HashSet<_>>>();
+
+    #[cfg(not(feature = "std"))]
+    let mut unmerged_sets = unmerged_sets
+        .map(|(i, n)| (i, BTreeSet::from_iter(n.unmerged_leaves.iter().cloned())))
+        .collect::<BTreeMap<_, BTreeSet<_>>>();
 
     // For each leaf L, we search for the longest prefix P[1], P[2], ..., P[k] of the direct path of L
     // such that for each i=1..k, either L is in the unmerged leaves of P[i], or P[i] is blank. We will
@@ -142,15 +154,20 @@ fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
         }
     }
 
+    #[cfg(feature = "std")]
+    let unmerged_sets = unmerged_sets.values().all(HashSet::is_empty);
+
+    #[cfg(not(feature = "std"))]
+    let unmerged_sets = unmerged_sets.values().all(BTreeSet::is_empty);
+
     unmerged_sets
-        .values()
-        .all(HashSet::is_empty)
         .then_some(())
         .ok_or(TreeValidationError::UnmergedLeavesMismatch)
 }
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use assert_matches::assert_matches;
 
     use super::*;
@@ -227,7 +244,6 @@ mod tests {
     #[futures_test::test]
     async fn test_valid_tree() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            println!("Checking cipher suite: {cipher_suite:?}");
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
 
             let mut test_tree = get_valid_tree(cipher_suite).await;

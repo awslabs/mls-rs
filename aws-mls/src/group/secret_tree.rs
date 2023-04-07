@@ -3,11 +3,26 @@ use crate::tree_kem::math as tree_math;
 use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, NodeIndex};
 use crate::CipherSuiteProvider;
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
+use core::ops::{Deref, DerefMut};
 use serde_with::serde_as;
-use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
 use thiserror::Error;
 use zeroize::Zeroizing;
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 use super::key_schedule::kdf_expand_with_label;
 
@@ -28,7 +43,7 @@ pub enum SecretTreeError {
     #[error("requested generation {0} is too far ahead of current generation {1}")]
     InvalidFutureGeneration(u32, u32),
     #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
     MlsCodecError(#[from] aws_mls_codec::Error),
 }
@@ -340,8 +355,12 @@ pub struct MessageKeyData {
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct SecretKeyRatchet {
     secret: TreeSecret,
+    #[cfg(feature = "std")]
     #[serde_as(as = "Vec<(_,_)>")]
     history: HashMap<u32, MessageKeyData>,
+    #[cfg(not(feature = "std"))]
+    #[serde_as(as = "Vec<(_,_)>")]
+    history: BTreeMap<u32, MessageKeyData>,
     generation: u32,
 }
 
@@ -445,6 +464,7 @@ impl SecretKeyRatchet {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use alloc::{string::String, vec::Vec};
     use aws_mls_core::crypto::CipherSuiteProvider;
     use zeroize::Zeroizing;
 
@@ -532,8 +552,6 @@ mod tests {
     #[test]
     fn test_secret_tree() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            println!("Running secret tree derivation for {cipher_suite:?}");
-
             let cs_provider = test_cipher_suite_provider(cipher_suite);
 
             let test_secret = vec![0u8; cs_provider.kdf_extract_size()];
@@ -569,8 +587,6 @@ mod tests {
     #[test]
     fn test_secret_key_ratchet() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            println!("Running secret tree ratchet for {cipher_suite:?}");
-
             let provider = test_cipher_suite_provider(cipher_suite);
 
             let mut app_ratchet = SecretKeyRatchet::new(
@@ -608,8 +624,6 @@ mod tests {
     #[test]
     fn test_get_key() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            println!("Running secret tree get key for {cipher_suite:?}");
-
             let provider = test_cipher_suite_provider(cipher_suite);
 
             let mut ratchet = SecretKeyRatchet::new(
@@ -640,8 +654,6 @@ mod tests {
     #[test]
     fn test_secret_ratchet() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            println!("Running secret tree secret ratchet {cipher_suite:?}");
-
             let provider = test_cipher_suite_provider(cipher_suite);
 
             let mut ratchet = SecretKeyRatchet::new(

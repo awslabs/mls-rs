@@ -7,6 +7,7 @@ use crate::{
     tree_kem::{leaf_node::ConfigProperties, Capabilities, Lifetime},
     ExtensionList,
 };
+use alloc::vec::Vec;
 use async_trait::async_trait;
 use aws_mls_core::{
     crypto::CryptoProvider, group::GroupStateStorage, identity::IdentityProvider,

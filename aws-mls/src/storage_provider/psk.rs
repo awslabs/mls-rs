@@ -1,4 +1,5 @@
 use crate::psk::ExternalPskIdValidator;
+use alloc::boxed::Box;
 
 pub use crate::psk::{ExternalPskId, PreSharedKey};
 

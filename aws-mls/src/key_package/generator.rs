@@ -1,3 +1,5 @@
+use alloc::vec;
+use alloc::{boxed::Box, vec::Vec};
 use aws_mls_codec::{MlsDecode, MlsEncode};
 use aws_mls_core::{identity::IdentityProvider, key_package::KeyPackageData};
 use thiserror::Error;
@@ -18,10 +20,16 @@ use crate::{
 
 use super::{KeyPackage, KeyPackageError, KeyPackageRef};
 
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
+
 #[derive(Debug, Error)]
 pub enum KeyPackageGenerationError {
     #[error("internal signer error: {0:?}")]
-    SignerError(Box<dyn std::error::Error + Send + Sync>),
+    SignerError(Box<dyn Error + Send + Sync>),
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
     #[error(transparent)]
@@ -29,7 +37,7 @@ pub enum KeyPackageGenerationError {
     #[error(transparent)]
     LeafNodeError(#[from] LeafNodeError),
     #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
     MlsCodecError(#[from] aws_mls_codec::Error),
     #[error(transparent)]

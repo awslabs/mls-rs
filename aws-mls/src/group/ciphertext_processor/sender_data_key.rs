@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::Zeroizing;
 
@@ -101,6 +102,7 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
+    use alloc::vec::Vec;
     use aws_mls_core::crypto::CipherSuiteProvider;
 
     use super::SenderDataKey;
@@ -144,6 +146,7 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
 
+    use alloc::vec::Vec;
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 

@@ -5,16 +5,29 @@ use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVecError};
 use crate::tree_kem::RatchetTreeError;
 use crate::tree_kem::TreeKemPublic;
+use alloc::boxed::Box;
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use core::ops::Deref;
 use serde_with::serde_as;
-use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
-use thiserror::Error;
 
 use super::leaf_node::LeafNodeSource;
 use super::ValidatedUpdatePath;
 
-#[derive(Error, Debug)]
+#[cfg(feature = "std")]
+use std::collections::{HashMap, HashSet};
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::{BTreeMap, BTreeSet};
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
+
+#[derive(thiserror::Error, Debug)]
 pub enum ParentHashError {
     #[error(transparent)]
     SerializationError(#[from] aws_mls_codec::Error),
@@ -25,7 +38,7 @@ pub enum ParentHashError {
     #[error("original tree hash not initialized for node index {0}")]
     TreeHashNotInitialized(u32),
     #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
 }
 
 #[derive(Clone, Debug, MlsSize, MlsEncode)]
@@ -173,7 +186,10 @@ impl TreeKemPublic {
         // First update the relevant original hashes used for parent hash computation.
         self.update_hashes(&mut vec![index], &[], cipher_suite_provider)?;
 
+        #[cfg(feature = "std")]
         let mut changes = HashMap::new();
+        #[cfg(not(feature = "std"))]
+        let mut changes = BTreeMap::new();
 
         // Since we can't mut borrow self here we will just collect the list of changes
         // and apply them later
@@ -182,7 +198,7 @@ impl TreeKemPublic {
                 changes.insert(index, hash.clone());
             })?;
 
-        changes.drain().try_for_each(|(index, hash)| {
+        changes.into_iter().try_for_each(|(index, hash)| {
             self.nodes
                 .borrow_as_parent_mut(index)
                 .map(|p| {
@@ -213,11 +229,16 @@ impl TreeKemPublic {
         &self,
         cipher_suite_provider: &P,
     ) -> Result<(), RatchetTreeError> {
-        let mut nodes_to_validate: HashSet<u32> = self
+        let nodes_to_validate = self
             .nodes
             .non_empty_parents()
-            .map(|(node_index, _)| node_index)
-            .collect();
+            .map(|(node_index, _)| node_index);
+
+        #[cfg(feature = "std")]
+        let mut nodes_to_validate = nodes_to_validate.collect::<HashSet<_>>();
+        #[cfg(not(feature = "std"))]
+        let mut nodes_to_validate = nodes_to_validate.collect::<BTreeSet<_>>();
+
         let num_leaves = self.total_leaf_count();
         let root = tree_math::root(num_leaves);
 
@@ -262,18 +283,25 @@ impl TreeKemPublic {
                             // under c is equal to the resolution of c with n removed".
                             let c = tree_math::sibling(s, num_leaves)?;
 
-                            let mut c_resolution = self
-                                .nodes
-                                .get_resolution_index(c)?
-                                .into_iter()
-                                .collect::<HashSet<_>>();
+                            let c_resolution = self.nodes.get_resolution_index(c)?.into_iter();
+
+                            #[cfg(feature = "std")]
+                            let mut c_resolution = c_resolution.collect::<HashSet<_>>();
+                            #[cfg(not(feature = "std"))]
+                            let mut c_resolution = c_resolution.collect::<BTreeSet<_>>();
 
                             let p_unmerged_in_c_subtree = self
                                 .unmerged_in_subtree(p, c)?
                                 .iter()
                                 .copied()
-                                .map(|x| *x * 2)
-                                .collect::<HashSet<_>>();
+                                .map(|x| *x * 2);
+
+                            #[cfg(feature = "std")]
+                            let p_unmerged_in_c_subtree =
+                                p_unmerged_in_c_subtree.collect::<HashSet<_>>();
+                            #[cfg(not(feature = "std"))]
+                            let p_unmerged_in_c_subtree =
+                                p_unmerged_in_c_subtree.collect::<BTreeSet<_>>();
 
                             if c_resolution.remove(&n)
                                 && c_resolution == p_unmerged_in_c_subtree
@@ -385,7 +413,7 @@ mod tests {
     use crate::crypto::test_utils::test_cipher_suite_provider;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNodeSource;
-    use crate::tree_kem::tree_utils::test_utils::TreeWithSigners;
+    use crate::tree_kem::test_utils::TreeWithSigners;
     use crate::tree_kem::RatchetTreeError;
     use assert_matches::assert_matches;
 

@@ -1,7 +1,15 @@
+use alloc::vec::Vec;
+use alloc::{boxed::Box, format};
 use aws_mls_codec::{MlsEncode, MlsSize};
 use aws_mls_core::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey};
 use thiserror::Error;
 use zeroize::Zeroizing;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 #[derive(Debug, Clone, MlsSize, MlsEncode)]
 struct EncryptContext<'a> {
@@ -23,17 +31,17 @@ impl<'a> EncryptContext<'a> {
 #[derive(Debug, Error)]
 pub enum HpkeEncryptionError {
     #[error(transparent)]
-    SerializationError(Box<dyn std::error::Error + Send + Sync>),
+    SerializationError(Box<dyn Error + Send + Sync>),
     #[error(transparent)]
     MlsCodecError(#[from] aws_mls_codec::Error),
     #[error("internal hpke error: {0:?}")]
-    InternalHpkeError(#[source] Box<dyn std::error::Error + Send + Sync>),
+    InternalHpkeError(#[source] Box<dyn Error + Send + Sync>),
 }
 
 pub(crate) trait HpkeEncryptable: Sized {
     const ENCRYPT_LABEL: &'static str;
 
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     fn encrypt<P: CipherSuiteProvider>(
         &self,
@@ -77,8 +85,9 @@ pub(crate) trait HpkeEncryptable: Sized {
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use std::convert::Infallible;
+    use core::convert::Infallible;
 
+    use alloc::{string::String, vec::Vec};
     use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
     use aws_mls_core::crypto::{CipherSuiteProvider, HpkeCiphertext};
 

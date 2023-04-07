@@ -65,6 +65,8 @@ impl Deref for PreSharedKey {
     Debug,
     Eq,
     Hash,
+    Ord,
+    PartialOrd,
     PartialEq,
     MlsSize,
     MlsEncode,

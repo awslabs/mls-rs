@@ -3,10 +3,16 @@ use crate::psk::PreSharedKey;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::node::LeafIndex;
 use crate::{crypto::SignaturePublicKey, group::secret_tree::SecretTree};
+use alloc::vec::Vec;
+use core::ops::Deref;
 use serde_with::serde_as;
-use std::collections::HashMap;
-use std::ops::Deref;
 use zeroize::Zeroizing;
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap;
 
 use super::ciphertext_processor::GroupStateProvider;
 
@@ -15,7 +21,11 @@ pub(crate) struct PriorEpoch {
     pub(crate) context: GroupContext,
     pub(crate) self_index: LeafIndex,
     pub(crate) secrets: EpochSecrets,
+
+    #[cfg(feature = "std")]
     pub(crate) signature_public_keys: HashMap<LeafIndex, SignaturePublicKey>,
+    #[cfg(not(feature = "std"))]
+    pub(crate) signature_public_keys: BTreeMap<LeafIndex, SignaturePublicKey>,
 }
 
 impl PriorEpoch {

@@ -2,11 +2,19 @@ use crate::crypto::CipherSuiteProvider;
 use crate::group::framing::WireFormat;
 use crate::group::message_signature::{AuthenticatedContentTBS, FramedContentAuthData};
 use crate::group::GroupContext;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use std::ops::Deref;
+use core::ops::Deref;
 use thiserror::Error;
 
 use super::message_signature::AuthenticatedContent;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 #[derive(Error, Debug)]
 pub enum MembershipTagError {
@@ -15,7 +23,7 @@ pub enum MembershipTagError {
     #[error("Membership tags can only be created for the plaintext wire format, found: {0:?}")]
     NonPlainWireFormat(WireFormat),
     #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
 }
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode)]

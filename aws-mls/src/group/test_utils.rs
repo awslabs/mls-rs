@@ -1,5 +1,6 @@
-use std::ops::DerefMut;
+use core::ops::DerefMut;
 
+use alloc::format;
 use rand::RngCore;
 
 use super::*;

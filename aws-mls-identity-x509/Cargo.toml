@@ -5,11 +5,11 @@ edition = "2021"
 
 [features]
 default = ["std"]
-std = ["aws-mls-core/std"]
+std = ["aws-mls-core/std", "thiserror/std"]
 
 [dependencies]
 aws-mls-core = { path = "../aws-mls-core", default-features = false, version = "*" }
-thiserror = { package = "thiserror-core", version = "1" }
+thiserror = { package = "thiserror-core", version = "1", default-features = false }
 
 [dev-dependencies]
 mockall = "0.11"

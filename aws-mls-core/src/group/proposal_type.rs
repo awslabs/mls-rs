@@ -8,6 +8,8 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
     Copy,
     Eq,
     Hash,
+    PartialOrd,
+    Ord,
     PartialEq,
     MlsSize,
     MlsEncode,

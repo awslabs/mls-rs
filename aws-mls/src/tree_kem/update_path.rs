@@ -1,3 +1,4 @@
+use alloc::{boxed::Box, vec::Vec};
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::{
     extension::{ExtensionError, ExtensionList},
@@ -13,6 +14,12 @@ use super::{
 };
 use crate::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey};
 use crate::{group::message_processor::ProvisionalState, time::MlsTime};
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -37,7 +44,7 @@ pub enum UpdatePathValidationError {
     #[error("same HPKE leaf key before and after applying the update path for leaf {0:?}")]
     SameHpkeKey(LeafIndex),
     #[error(transparent)]
-    CredentialValidationError(Box<dyn std::error::Error + Send + Sync>),
+    CredentialValidationError(Box<dyn Error + Send + Sync>),
     #[error(transparent)]
     NodeVecError(#[from] NodeVecError),
     #[error(transparent)]
@@ -120,6 +127,7 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use assert_matches::assert_matches;
     use aws_mls_core::extension::ExtensionList;
 

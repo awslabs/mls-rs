@@ -6,9 +6,17 @@ use crate::{
     signer::{Signable, SignatureError},
     ExtensionList,
 };
+use alloc::boxed::Box;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use thiserror::Error;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
 
 #[derive(Debug, Error)]
 pub enum LeafNodeError {
@@ -17,15 +25,15 @@ pub enum LeafNodeError {
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
     #[error("parent hash error: {0}")]
-    ParentHashError(#[source] Box<dyn std::error::Error + Send + Sync>),
+    ParentHashError(#[source] Box<dyn Error + Send + Sync>),
     #[error("internal signer error: {0}")]
-    SignerError(#[source] Box<dyn std::error::Error + Send + Sync>),
+    SignerError(#[source] Box<dyn Error + Send + Sync>),
     #[error("signing identity public key does not match the signer (secret key)")]
     InvalidSignerPublicKey,
     #[error("credential rejected by custom credential validator {0:?}")]
-    IdentityProviderError(#[source] Box<dyn std::error::Error + Sync + Send>),
+    IdentityProviderError(#[source] Box<dyn Error + Sync + Send>),
     #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
 }
 
 #[derive(
@@ -256,6 +264,7 @@ impl<'a> Signable<'a> for LeafNode {
 
 #[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
+    use alloc::vec;
     use aws_mls_core::identity::{BasicCredential, CredentialType};
 
     use crate::{
@@ -396,6 +405,7 @@ mod tests {
     use crate::crypto::test_utils::TestCryptoProvider;
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_signing_identity;
+    use alloc::vec;
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]

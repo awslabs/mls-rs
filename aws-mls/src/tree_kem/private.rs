@@ -10,22 +10,28 @@ use super::*;
 #[non_exhaustive]
 pub struct TreeKemPrivate {
     pub self_index: LeafIndex,
+    #[cfg(feature = "std")]
     #[serde_as(as = "Vec<(_,_)>")]
     pub secret_keys: HashMap<NodeIndex, HpkeSecretKey>,
+    #[cfg(not(feature = "std"))]
+    #[serde_as(as = "Vec<(_,_)>")]
+    pub secret_keys: BTreeMap<NodeIndex, HpkeSecretKey>,
 }
 
 impl TreeKemPrivate {
     pub fn new_self_leaf(self_index: LeafIndex, leaf_secret: HpkeSecretKey) -> Self {
         TreeKemPrivate {
             self_index,
-            secret_keys: HashMap::from([(NodeIndex::from(self_index), leaf_secret)]),
+            secret_keys: [(NodeIndex::from(self_index), leaf_secret)]
+                .into_iter()
+                .collect(),
         }
     }
 
     pub fn new_for_external() -> Self {
         TreeKemPrivate {
             self_index: LeafIndex(0),
-            secret_keys: HashMap::new(),
+            secret_keys: Default::default(),
         }
     }
 
@@ -114,7 +120,7 @@ impl TreeKemPrivate {
     pub fn new(self_index: LeafIndex) -> Self {
         TreeKemPrivate {
             self_index,
-            secret_keys: HashMap::new(),
+            secret_keys: Default::default(),
         }
     }
 }
@@ -122,7 +128,6 @@ impl TreeKemPrivate {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
-    use std::collections::HashSet;
 
     use crate::{
         cipher_suite::CipherSuite,
@@ -143,6 +148,12 @@ mod tests {
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
+
+    #[cfg(feature = "std")]
+    use std::collections::HashSet;
+
+    #[cfg(not(feature = "std"))]
+    use alloc::collections::BTreeSet;
 
     fn random_hpke_secret_key() -> HpkeSecretKey {
         let (secret, _) = test_cipher_suite_provider(TEST_CIPHER_SUITE)
@@ -252,8 +263,15 @@ mod tests {
             .unwrap();
 
         // Determine the private key values that should now match between Alice and Charlie
+        #[cfg(feature = "std")]
         let alice_path: HashSet<u32> = HashSet::from_iter(LeafIndex(0).direct_path(4).unwrap());
+        #[cfg(feature = "std")]
         let charlie_path: HashSet<u32> = HashSet::from_iter(LeafIndex(2).direct_path(4).unwrap());
+
+        #[cfg(not(feature = "std"))]
+        let alice_path: BTreeSet<u32> = BTreeSet::from_iter(LeafIndex(0).direct_path(4).unwrap());
+        #[cfg(not(feature = "std"))]
+        let charlie_path: BTreeSet<u32> = BTreeSet::from_iter(LeafIndex(2).direct_path(4).unwrap());
 
         let intersection = alice_path
             .intersection(&charlie_path)

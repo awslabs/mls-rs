@@ -5,10 +5,18 @@ use crate::crypto::CipherSuiteProvider;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::Parent;
 use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
+use alloc::collections::VecDeque;
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsEncode, MlsSize};
 use aws_mls_core::serde_util::vec_u8_as_base64::VecAsBase64;
 use serde_with::serde_as;
-use std::collections::{HashMap, VecDeque};
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap;
 
 #[serde_as]
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -279,7 +287,11 @@ impl TreeKemPublic {
         }
 
         // The value `hashes[n][a]` is the tree hash of `n` with the unmerged leaves of `n` filtered out.
+        #[cfg(feature = "std")]
         let mut hashes: Vec<HashMap<u32, Vec<u8>>> = vec![HashMap::new(); num_leaves * 2 - 1];
+        #[cfg(not(feature = "std"))]
+        let mut hashes: Vec<BTreeMap<u32, Vec<u8>>> = vec![BTreeMap::new(); num_leaves * 2 - 1];
+
         let mut bfs_iterator = BfsIterBottomUp::new(num_leaves);
 
         // First, compute `hashes[l]` for each leaf `l`.

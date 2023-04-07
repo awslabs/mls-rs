@@ -1,10 +1,16 @@
-use std::{
-    collections::{hash_map::Entry, HashMap, VecDeque},
-    sync::{Arc, Mutex},
-};
+use alloc::boxed::Box;
+use alloc::collections::VecDeque;
 
+#[cfg(feature = "std")]
+use alloc::sync::Arc;
+
+#[cfg(not(feature = "std"))]
+use portable_atomic_util::Arc;
+
+use alloc::vec::Vec;
 use async_trait::async_trait;
 use aws_mls_core::group::{EpochRecord, GroupState, GroupStateStorage};
+use bincode::{config::Configuration, de::read::SliceReader};
 
 use crate::storage_provider::group_state::EpochData;
 
@@ -13,6 +19,18 @@ use crate::group::epoch::PriorEpoch;
 
 #[cfg(any(feature = "benchmark", test))]
 use crate::group::snapshot::Snapshot;
+
+#[cfg(feature = "std")]
+use std::collections::{hash_map::Entry, HashMap};
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::{btree_map::Entry, BTreeMap};
+
+#[cfg(feature = "std")]
+use std::sync::Mutex;
+
+#[cfg(not(feature = "std"))]
+use spin::Mutex;
 
 #[derive(Debug, Clone)]
 pub(crate) struct InMemoryGroupData {
@@ -73,7 +91,10 @@ impl InMemoryGroupData {
 ///
 /// All clones of an instance of this type share the same underlying HashMap.
 pub struct InMemoryGroupStateStorage {
+    #[cfg(feature = "std")]
     pub(crate) inner: Arc<Mutex<HashMap<Vec<u8>, InMemoryGroupData>>>,
+    #[cfg(not(feature = "std"))]
+    pub(crate) inner: Arc<Mutex<BTreeMap<Vec<u8>, InMemoryGroupData>>>,
 }
 
 impl InMemoryGroupStateStorage {
@@ -86,12 +107,19 @@ impl InMemoryGroupStateStorage {
 
     #[cfg(any(feature = "benchmark", test))]
     pub(crate) fn export_epoch_data(&self, group_id: &[u8]) -> Option<Vec<PriorEpoch>> {
-        self.inner.lock().unwrap().get(group_id).map(|data| {
-            Vec::from_iter(
-                data.epoch_data
-                    .iter()
-                    .map(|v| bincode::deserialize(&v.data).unwrap()),
-            )
+        #[cfg(feature = "std")]
+        let lock = self.inner.lock().unwrap();
+        #[cfg(not(feature = "std"))]
+        let lock = self.inner.lock();
+
+        lock.get(group_id).map(|data| {
+            Vec::from_iter(data.epoch_data.iter().map(|v| {
+                bincode::serde::decode_from_reader::<PriorEpoch, _, Configuration>(
+                    SliceReader::new(&v.data),
+                    Configuration::default(),
+                )
+                .unwrap()
+            }))
         })
     }
 
@@ -99,7 +127,10 @@ impl InMemoryGroupStateStorage {
     pub(crate) fn from_benchmark_data(snapshot: Snapshot, epoch_data: Vec<PriorEpoch>) -> Self {
         let group_id = snapshot.group_id().to_vec();
 
-        let mut group_data = InMemoryGroupData::new(bincode::serialize(&snapshot).unwrap());
+        let mut group_data = InMemoryGroupData::new(
+            bincode::serde::encode_to_vec::<_, Configuration>(&snapshot, Configuration::default())
+                .unwrap(),
+        );
 
         epoch_data.into_iter().for_each(|epoch| {
             group_data
@@ -116,12 +147,20 @@ impl InMemoryGroupStateStorage {
 
     /// Get the set of unique group ids that have data stored.
     pub fn stored_groups(&self) -> Vec<Vec<u8>> {
-        self.inner.lock().unwrap().keys().cloned().collect()
+        #[cfg(feature = "std")]
+        let res = self.inner.lock().unwrap().keys().cloned().collect();
+        #[cfg(not(feature = "std"))]
+        let res = self.inner.lock().keys().cloned().collect();
+
+        res
     }
 
     /// Delete all data corresponding to `group_id`.
     pub fn delete_group(&self, group_id: &[u8]) {
+        #[cfg(feature = "std")]
         self.inner.lock().unwrap().remove(group_id);
+        #[cfg(not(feature = "std"))]
+        self.inner.lock().remove(group_id);
     }
 }
 
@@ -131,15 +170,40 @@ impl Default for InMemoryGroupStateStorage {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum BincodeError {
+    #[error("bincode encode error")]
+    Encode(bincode::error::EncodeError),
+    #[error("bincode decode error")]
+    Decode(bincode::error::DecodeError),
+}
+
+// Manual impl to help with no_std
+impl From<bincode::error::EncodeError> for BincodeError {
+    fn from(value: bincode::error::EncodeError) -> Self {
+        BincodeError::Encode(value)
+    }
+}
+
+// Manual impl to help with no_std
+impl From<bincode::error::DecodeError> for BincodeError {
+    fn from(value: bincode::error::DecodeError) -> Self {
+        BincodeError::Decode(value)
+    }
+}
+
 #[async_trait]
 impl GroupStateStorage for InMemoryGroupStateStorage {
-    type Error = bincode::Error;
+    type Error = BincodeError;
 
     async fn max_epoch_id(&self, group_id: &[u8]) -> Result<Option<u64>, Self::Error> {
-        Ok(self
-            .inner
-            .lock()
-            .unwrap()
+        #[cfg(feature = "std")]
+        let lock = self.inner.lock().unwrap();
+
+        #[cfg(not(feature = "std"))]
+        let lock = self.inner.lock();
+
+        Ok(lock
             .get(group_id)
             .and_then(|group_data| group_data.epoch_data.back().map(|e| e.id)))
     }
@@ -148,25 +212,42 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
     where
         T: aws_mls_core::group::GroupState + serde::de::DeserializeOwned,
     {
-        self.inner
-            .lock()
-            .unwrap()
-            .get(group_id)
-            .map(|v| bincode::deserialize(&v.state_data))
+        #[cfg(feature = "std")]
+        let lock = self.inner.lock().unwrap();
+        #[cfg(not(feature = "std"))]
+        let lock = self.inner.lock();
+
+        lock.get(group_id)
+            .map(|v| {
+                bincode::serde::decode_from_reader::<T, _, Configuration>(
+                    SliceReader::new(&v.state_data),
+                    Configuration::default(),
+                )
+            })
             .transpose()
+            .map_err(Into::into)
     }
 
     async fn epoch<T>(&self, group_id: &[u8], epoch_id: u64) -> Result<Option<T>, Self::Error>
     where
         T: aws_mls_core::group::EpochRecord + serde::Serialize + serde::de::DeserializeOwned,
     {
-        self.inner
-            .lock()
-            .unwrap()
-            .get(group_id)
+        #[cfg(feature = "std")]
+        let lock = self.inner.lock().unwrap();
+
+        #[cfg(not(feature = "std"))]
+        let lock = self.inner.lock();
+
+        lock.get(group_id)
             .and_then(|group_data| group_data.get_epoch(epoch_id))
-            .map(|v| bincode::deserialize(&v.data))
+            .map(|v| {
+                bincode::serde::decode_from_reader::<T, _, Configuration>(
+                    SliceReader::new(&v.data),
+                    Configuration::default(),
+                )
+            })
             .transpose()
+            .map_err(Into::into)
     }
 
     async fn write<ST, ET>(
@@ -180,9 +261,14 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
         ST: GroupState + serde::Serialize + serde::de::DeserializeOwned + Send + Sync,
         ET: EpochRecord + serde::Serialize + serde::de::DeserializeOwned + Send + Sync,
     {
+        #[cfg(feature = "std")]
         let mut group_map = self.inner.lock().unwrap();
 
-        let state_data = bincode::serialize(&state)?;
+        #[cfg(not(feature = "std"))]
+        let mut group_map = self.inner.lock();
+
+        let state_data =
+            bincode::serde::encode_to_vec::<_, Configuration>(&state, Configuration::default())?;
 
         let group_data = match group_map.entry(state.id()) {
             Entry::Occupied(entry) => {
@@ -195,12 +281,12 @@ impl GroupStateStorage for InMemoryGroupStateStorage {
 
         epoch_inserts.into_iter().try_for_each(|e| {
             group_data.insert_epoch(EpochData::new(e)?);
-            Ok::<_, bincode::Error>(())
+            Ok::<_, Self::Error>(())
         })?;
 
         epoch_updates.into_iter().try_for_each(|e| {
             group_data.update_epoch(EpochData::new(e)?);
-            Ok::<_, bincode::Error>(())
+            Ok::<_, Self::Error>(())
         })?;
 
         if let Some(min_epoch) = delete_epoch_under {

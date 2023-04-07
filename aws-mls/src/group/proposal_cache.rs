@@ -11,6 +11,12 @@ use crate::{
     tree_kem::leaf_node::LeafNode,
 };
 
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
+use alloc::collections::BTreeMap;
+
 #[derive(Error, Debug)]
 pub enum ProposalCacheError {
     #[error(transparent)]
@@ -139,7 +145,10 @@ pub struct CachedProposal {
 pub(crate) struct ProposalCache {
     protocol_version: ProtocolVersion,
     group_id: Vec<u8>,
+    #[cfg(feature = "std")]
     proposals: HashMap<ProposalRef, CachedProposal>,
+    #[cfg(not(feature = "std"))]
+    proposals: BTreeMap<ProposalRef, CachedProposal>,
 }
 
 impl ProposalCache {
@@ -154,7 +163,8 @@ impl ProposalCache {
     pub fn import(
         protocol_version: ProtocolVersion,
         group_id: Vec<u8>,
-        proposals: HashMap<ProposalRef, CachedProposal>,
+        #[cfg(feature = "std")] proposals: HashMap<ProposalRef, CachedProposal>,
+        #[cfg(not(feature = "std"))] proposals: BTreeMap<ProposalRef, CachedProposal>,
     ) -> Self {
         Self {
             protocol_version,
@@ -163,10 +173,12 @@ impl ProposalCache {
         }
     }
 
+    #[inline]
     pub fn clear(&mut self) {
         self.proposals.clear();
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.proposals.is_empty()
     }
@@ -176,7 +188,15 @@ impl ProposalCache {
         self.proposals.insert(proposal_ref, cached_proposal);
     }
 
+    #[cfg(feature = "std")]
+    #[inline]
     pub fn proposals(&self) -> &HashMap<ProposalRef, CachedProposal> {
+        &self.proposals
+    }
+
+    #[cfg(not(feature = "std"))]
+    #[inline]
+    pub fn proposals(&self) -> &BTreeMap<ProposalRef, CachedProposal> {
         &self.proposals
     }
 
@@ -271,6 +291,12 @@ impl ProposalCache {
             external_psk_id_validator,
         );
 
+        #[cfg(feature = "std")]
+        let time = Some(MlsTime::now());
+
+        #[cfg(not(feature = "std"))]
+        let time = None;
+
         let ProposalState {
             tree,
             proposals,
@@ -278,12 +304,7 @@ impl ProposalCache {
             removed_leaves,
             external_leaf_index,
         } = applier
-            .apply_proposals(
-                IgnoreInvalidByRefProposal,
-                &sender,
-                proposals,
-                Some(MlsTime::now()),
-            )
+            .apply_proposals(IgnoreInvalidByRefProposal, &sender, proposals, time)
             .await?;
 
         let rejected = rejected_proposals(self.proposals.clone(), &proposals, &sender);
@@ -413,7 +434,8 @@ impl Extend<(ProposalRef, CachedProposal)> for ProposalCache {
 }
 
 fn rejected_proposals(
-    mut cache: HashMap<ProposalRef, CachedProposal>,
+    #[cfg(feature = "std")] mut cache: HashMap<ProposalRef, CachedProposal>,
+    #[cfg(not(feature = "std"))] mut cache: BTreeMap<ProposalRef, CachedProposal>,
     accepted_proposals: &ProposalBundle,
     sender: &Sender,
 ) -> Vec<(ProposalRef, Proposal)> {
@@ -658,10 +680,10 @@ mod tests {
         extension::MlsExtension,
         identity::{BasicCredential, Credential, CredentialType, CustomCredential},
     };
+    use core::convert::Infallible;
     use futures::FutureExt;
     use internal::proposal_filter::PassThroughProposalRules;
     use itertools::Itertools;
-    use std::convert::Infallible;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -3798,10 +3820,10 @@ mod tests {
 
     #[async_trait]
     impl ExternalPskIdValidator for FailurePskIdValidator {
-        type Error = std::io::Error;
+        type Error = MlsError;
 
         async fn validate(&self, _: &ExternalPskId) -> Result<(), Self::Error> {
-            Err(std::io::ErrorKind::InvalidData.into())
+            Err(MlsError::UnexpectedPskId)
         }
     }
 
@@ -3919,7 +3941,7 @@ mod tests {
 
     #[async_trait]
     impl ProposalRules for FailureProposalRules {
-        type Error = std::io::Error;
+        type Error = MlsError;
 
         async fn expand_custom_proposals(
             &self,
@@ -3937,7 +3959,7 @@ mod tests {
             _: &ExtensionList,
             _: &ProposalBundle,
         ) -> Result<(), Self::Error> {
-            Err(std::io::ErrorKind::TimedOut.into())
+            Err(MlsError::InvalidKeyPackage)
         }
 
         async fn filter(
@@ -3947,7 +3969,7 @@ mod tests {
             _: &ExtensionList,
             _: ProposalBundle,
         ) -> Result<ProposalBundle, Self::Error> {
-            Err(std::io::ErrorKind::TimedOut.into())
+            Err(MlsError::InvalidKeyPackage)
         }
     }
 

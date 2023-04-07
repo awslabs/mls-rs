@@ -5,44 +5,62 @@ authors = ["Tom Leavy <tom@wickr.com>"]
 edition = "2021"
 
 [features]
-benchmark = ["serde_json", "aws-mls-crypto-openssl", "aws-mls-core/benchmark"]
-default = ["rayon"]
-arbitrary = ["dep:arbitrary", "aws-mls-core/arbitrary"]
-rayon = ["dep:rayon"]
-external_client = []
+std = [
+    "aws-mls-core/std",
+    "aws-mls-codec/std",
+    "aws-mls-identity-x509/std",
+    "hex/std",
+    "futures/std",
+    "itertools/use_std",
+    "serde/std",
+    "serde_with/std",
+    "zeroize/std",
+    "dep:debug_tree",
+    "thiserror/std"
+]
+
+benchmark = ["std", "serde_json", "aws-mls-crypto-openssl", "aws-mls-core/benchmark"]
+default = ["std", "rayon"]
+arbitrary = ["std", "dep:arbitrary", "aws-mls-core/arbitrary"]
+rayon = ["std", "dep:rayon"]
+external_client = ["std"]
 
 # SQLite support
-sqlite = ["aws-mls-provider-sqlite/sqlite"]
+sqlite = ["std", "aws-mls-provider-sqlite/sqlite"]
 sqlite-bundled = ["sqlite", "aws-mls-provider-sqlite/sqlite-bundled"]
 sqlcipher = ["sqlite", "aws-mls-provider-sqlite/sqlcipher"]
 sqlcipher-bundled = ["sqlite", "aws-mls-provider-sqlite/sqlcipher-bundled"]
 
 
 [dependencies]
-async-trait = "0.1.61"
-aws-mls-core = { path = "../aws-mls-core", version = "*" }
-aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", version = "*" }
-aws-mls-provider-sqlite = { path = "../aws-mls-provider-sqlite", version = "*", optional = true }
-aws-mls-codec = { path = "../aws-mls-core/aws-mls-codec", version = "*" }
-thiserror = "^1"
-hex = { version = "^0.4.3", features = ["serde"] }
+aws-mls-core = { path = "../aws-mls-core", default-features = false, version = "*" }
+aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", default-features = false, version = "*" }
+zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
+aws-mls-codec = { version = "*", path = "../aws-mls-core/aws-mls-codec", default-features = false}
+thiserror = { package = "thiserror-core", version = "1", default-features = false }
+hex = { version = "^0.4.3", default-features = false, features = ["serde", "alloc"] }
+serde = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
+serde_with = { version = "2.3.1", default-features = false, features = ["alloc", "macros"]}
+futures = { version = "0.3.25", default-features = false, features = ["alloc"]}
+itertools = { version = "0.10.3", default-features = false, features = ["use_alloc"]}
 enum-iterator = "1.1.3"
-futures = "0.3.25"
-indexmap = { version = "1.8.0", features = ["serde"] }
-itertools = "0.10.3"
-der = { version = "^0.6.0", features = ["alloc"]}
-serde = { version = "^1.0", features = ["derive"] }
-serde_json = { version = "^1.0", optional = true }
-zeroize = { version = "1", features = ["zeroize_derive", "serde"] }
-debug_tree = "0.4.0"
-arbitrary = { version = "1", features = ["derive"], optional = true }
-# TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
-rayon = { version = "1", optional = true }
-num_enum = "0.5"
-cfg-if = "^1"
-serde_with = "2.3.1"
-bincode = "1"
+bincode = { version = "2.0.0-rc.3", default-features = false, features = ["alloc", "serde"]}
+cfg-if = "1"
+async-trait = "0.1.61"
+debug_tree = { version = "0.4.0", optional = true }
+spin = { version = "0.9.8", default-features = false, features = ["mutex", "spin_mutex", "portable_atomic"]}
+portable-atomic = { version = "*", default-features = false, features = ["critical-section"]}
+portable-atomic-util = { version = "0.1.2", default-features = false, features = ["alloc"]}
+
+# Optional dependencies
+aws-mls-provider-sqlite = { path = "../aws-mls-provider-sqlite", version = "*", optional = true }
 aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", optional = true, version = "*" }
+rayon = { version = "1", optional = true }
+arbitrary = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "^1.0", optional = true }
+
+# TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
+
 
 [dev-dependencies]
 assert_matches = "1.5.0"

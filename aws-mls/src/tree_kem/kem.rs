@@ -2,6 +2,8 @@ use crate::crypto::{CipherSuiteProvider, HpkeCiphertext, SignatureSecretKey};
 use crate::group::GroupContext;
 use crate::identity::SigningIdentity;
 use crate::tree_kem::math as tree_math;
+use alloc::vec;
+use alloc::vec::Vec;
 use aws_mls_codec::MlsEncode;
 use aws_mls_core::identity::IdentityProvider;
 use cfg_if::cfg_if;
@@ -338,6 +340,7 @@ mod tests {
         },
         ExtensionList,
     };
+    use alloc::{format, vec, vec::Vec};
     use aws_mls_core::crypto::CipherSuiteProvider;
     use futures::StreamExt;
 
@@ -507,7 +510,6 @@ mod tests {
         let mut receiver_trees: Vec<TreeKemPublic> = (1..size).map(|_| test_tree.clone()).collect();
 
         for (i, tree) in receiver_trees.iter_mut().enumerate() {
-            println!("Decap for {:?}, user: {:?}", i, private_keys[i].self_index);
             TreeKem::new(tree, &mut private_keys[i])
                 .decap(
                     LeafIndex(0),
@@ -530,7 +532,6 @@ mod tests {
     #[futures_test::test]
     async fn test_encap_decap() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
-            println!("Testing Tree KEM encap / decap for: {cipher_suite:?}");
             encap_decap(cipher_suite, 10, None, None).await;
         }
     }

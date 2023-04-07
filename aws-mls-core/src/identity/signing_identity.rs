@@ -10,6 +10,8 @@ use super::Credential;
     Eq,
     Hash,
     PartialEq,
+    PartialOrd,
+    Ord,
     MlsSize,
     MlsEncode,
     MlsDecode,
