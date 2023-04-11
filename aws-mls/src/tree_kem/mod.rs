@@ -149,7 +149,7 @@ pub struct TreeKemPublic {
 
 impl PartialEq for TreeKemPublic {
     fn eq(&self, other: &Self) -> bool {
-        self.index == other.index && self.nodes == other.nodes
+        self.nodes == other.nodes
     }
 }
 

@@ -13,16 +13,16 @@ pub(crate) fn member_from_leaf_node(leaf_node: &LeafNode, leaf_index: LeafIndex)
             Member::new(
                 *leaf_index,
                 leaf_node.signing_identity.clone(),
-                leaf_node.capabilities.clone(),
-                leaf_node.extensions.clone(),
+                leaf_node.ungreased_capabilities(),
+                leaf_node.ungreased_extensions(),
                 leaf_node.mls_encode_to_vec().unwrap()
             )
         } else {
             Member::new(
                 *leaf_index,
                 leaf_node.signing_identity.clone(),
-                leaf_node.capabilities.clone(),
-                leaf_node.extensions.clone(),
+                leaf_node.ungreased_capabilities(),
+                leaf_node.ungreased_extensions(),
             )
         }
     }

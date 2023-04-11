@@ -176,9 +176,13 @@ pub struct NewMemberInfo {
 
 impl NewMemberInfo {
     pub(crate) fn new(group_info_extensions: ExtensionList) -> Self {
-        Self {
+        let mut new_member_info = Self {
             group_info_extensions,
-        }
+        };
+
+        new_member_info.ungrease();
+
+        new_member_info
     }
 
     /// Group info extensions found within the Welcome message used to join
@@ -1592,6 +1596,8 @@ where
             signature: Vec::new(),
         };
 
+        info.grease(self.cipher_suite_provider())?;
+
         info.sign(&self.cipher_suite_provider, &signer, &())?;
 
         Ok(MLSMessage::new(
@@ -2106,12 +2112,14 @@ mod tests {
         };
 
         assert_ne!(update.leaf_node.public_key, existing_leaf.public_key);
+
         assert_eq!(
             update.leaf_node.signing_identity,
             existing_leaf.signing_identity
         );
-        assert_eq!(update.leaf_node.extensions, extension_list);
-        assert_eq!(update.leaf_node.capabilities, new_capabilities);
+
+        assert_eq!(update.leaf_node.ungreased_extensions(), extension_list);
+        assert_eq!(update.leaf_node.ungreased_capabilities(), new_capabilities);
     }
 
     #[futures_test::test]

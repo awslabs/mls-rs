@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::{
     crypto::{HpkeSecretKey, SignatureSecretKey},
+    grease::GreaseError,
     group::framing::MLSMessagePayload,
     hash_reference::HashReferenceError,
     identity::SigningIdentity,
@@ -42,6 +43,8 @@ pub enum KeyPackageGenerationError {
     MlsCodecError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
     HashReferenceError(#[from] HashReferenceError),
+    #[error(transparent)]
+    GreaseError(#[from] GreaseError),
 }
 
 #[derive(Clone, Debug)]
@@ -148,6 +151,8 @@ where
             signature: vec![],
         };
 
+        package.grease(self.cipher_suite_provider)?;
+
         self.sign(&mut package)?;
 
         let reference = package.to_reference(self.cipher_suite_provider)?;
@@ -244,16 +249,26 @@ mod tests {
             assert_matches!(generated.key_package.leaf_node.leaf_node_source,
                             LeafNodeSource::KeyPackage(ref lt) if lt == &lifetime);
 
-            assert_eq!(generated.key_package.leaf_node.capabilities, capabilities);
-            assert_eq!(generated.key_package.leaf_node.extensions, leaf_node_ext);
-            assert_eq!(generated.key_package.extensions, key_package_ext);
+            assert_eq!(
+                generated.key_package.leaf_node.ungreased_capabilities(),
+                capabilities
+            );
+
+            assert_eq!(
+                generated.key_package.leaf_node.ungreased_extensions(),
+                leaf_node_ext
+            );
+
+            assert_eq!(
+                generated.key_package.ungreased_extensions(),
+                key_package_ext
+            );
 
             assert_ne!(
                 generated.key_package.hpke_init_key.as_ref(),
                 generated.key_package.leaf_node.public_key.as_ref()
             );
 
-            assert_eq!(generated.key_package.extensions, key_package_ext);
             assert_eq!(generated.key_package.cipher_suite, cipher_suite);
             assert_eq!(generated.key_package.version, protocol_version);
 

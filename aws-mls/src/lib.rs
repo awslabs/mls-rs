@@ -117,6 +117,7 @@ pub mod extension;
 /// for server implementations.
 #[cfg(feature = "external_client")]
 pub mod external_client;
+mod grease;
 /// E2EE group created by a [`Client`].
 pub mod group;
 mod hash_reference;

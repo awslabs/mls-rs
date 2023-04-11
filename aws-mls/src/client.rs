@@ -1,6 +1,7 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_builder::{BaseConfig, ClientBuilder};
 use crate::client_config::ClientConfig;
+use crate::grease::GreaseError;
 use crate::group::confirmation_tag::ConfirmationTagError;
 use crate::group::framing::{
     Content, ContentType, MLSMessage, MLSMessagePayload, PublicMessage, Sender, WireFormat,
@@ -229,6 +230,8 @@ pub enum MlsError {
     UnexpectedPskId,
     #[error("invalid sender {0:?} for content type {1:?}")]
     InvalidSender(Sender, ContentType),
+    #[error(transparent)]
+    GreaseError(#[from] GreaseError),
 }
 
 /// MLS client used to create key packages and manage groups.
@@ -729,11 +732,11 @@ mod tests {
                 identity.mls_encode_to_vec().unwrap()
             );
 
+            let capabilities = key_package.leaf_node.ungreased_capabilities();
+            assert_eq!(capabilities, client.config.capabilities());
+
             let client_lifetime = client.config.lifetime();
             assert_matches!(key_package.leaf_node.leaf_node_source, LeafNodeSource::KeyPackage(lifetime) if (lifetime.not_after - lifetime.not_before) == (client_lifetime.not_after - client_lifetime.not_before));
-
-            let capabilities = key_package.leaf_node.capabilities;
-            assert_eq!(capabilities, client.config.capabilities());
         }
     }
 

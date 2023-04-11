@@ -556,6 +556,8 @@ where
             signature: vec![],
         };
 
+        group_info.grease(self.cipher_suite_provider())?;
+
         // Sign the GroupInfo using the member's private signing key
         group_info.sign(&self.cipher_suite_provider, &new_signer, &())?;
 

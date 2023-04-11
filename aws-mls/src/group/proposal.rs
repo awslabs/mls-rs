@@ -26,20 +26,20 @@ impl AddProposal {
 
     /// Client [`Capabilities`](super::Capabilities) of the
     /// [`Member`](super::Member) that will be added by this proposal.
-    pub fn capabilities(&self) -> &Capabilities {
-        &self.key_package.leaf_node.capabilities
+    pub fn capabilities(&self) -> Capabilities {
+        self.key_package.leaf_node.ungreased_capabilities()
     }
 
     /// Key package extensions that are assoiciated with the
     /// [`Member`](super::Member) that will be added by this proposal.
-    pub fn key_package_extensions(&self) -> &ExtensionList {
-        self.key_package.extensions()
+    pub fn key_package_extensions(&self) -> ExtensionList {
+        self.key_package.ungreased_extensions()
     }
 
     /// Leaf node extensions that will be entered into the group state for the
     /// [`Member`](super::Member) that will be added.
-    pub fn leaf_node_extensions(&self) -> &ExtensionList {
-        &self.key_package.leaf_node.extensions
+    pub fn leaf_node_extensions(&self) -> ExtensionList {
+        self.key_package.leaf_node.ungreased_extensions()
     }
 }
 
@@ -79,14 +79,14 @@ impl UpdateProposal {
 
     /// New Client [`Capabilities`](super::Capabilities) of the
     /// [`Member`](super::Member) that will be updated by this proposal.
-    pub fn capabilities(&self) -> &Capabilities {
-        &self.leaf_node.capabilities
+    pub fn capabilities(&self) -> Capabilities {
+        self.leaf_node.ungreased_capabilities()
     }
 
     /// New Leaf node extensions that will be entered into the group state for the
     /// [`Member`](super::Member) that is being updated by this proposal.
-    pub fn leaf_node_extensions(&self) -> &ExtensionList {
-        &self.leaf_node.extensions
+    pub fn leaf_node_extensions(&self) -> ExtensionList {
+        self.leaf_node.ungreased_extensions()
     }
 }
 

@@ -5,6 +5,13 @@ authors = ["Tom Leavy <tom@wickr.com>"]
 edition = "2021"
 
 [features]
+benchmark = ["std", "serde_json", "aws-mls-crypto-openssl", "aws-mls-core/benchmark"]
+default = ["std", "rayon"]
+arbitrary = ["std", "dep:arbitrary", "aws-mls-core/arbitrary"]
+rayon = ["std", "dep:rayon"]
+external_client = ["std"]
+grease = ["std"]
+
 std = [
     "aws-mls-core/std",
     "aws-mls-codec/std",
@@ -19,18 +26,11 @@ std = [
     "thiserror/std"
 ]
 
-benchmark = ["std", "serde_json", "aws-mls-crypto-openssl", "aws-mls-core/benchmark"]
-default = ["std", "rayon"]
-arbitrary = ["std", "dep:arbitrary", "aws-mls-core/arbitrary"]
-rayon = ["std", "dep:rayon"]
-external_client = ["std"]
-
 # SQLite support
 sqlite = ["std", "aws-mls-provider-sqlite/sqlite"]
 sqlite-bundled = ["sqlite", "aws-mls-provider-sqlite/sqlite-bundled"]
 sqlcipher = ["sqlite", "aws-mls-provider-sqlite/sqlcipher"]
 sqlcipher-bundled = ["sqlite", "aws-mls-provider-sqlite/sqlcipher-bundled"]
-
 
 [dependencies]
 aws-mls-core = { path = "../aws-mls-core", default-features = false, version = "*" }

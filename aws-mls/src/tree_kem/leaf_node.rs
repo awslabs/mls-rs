@@ -2,6 +2,7 @@ use super::{parent_hash::ParentHash, Capabilities, Lifetime};
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::{
+    grease::GreaseError,
     identity::SigningIdentity,
     signer::{Signable, SignatureError},
     ExtensionList,
@@ -34,6 +35,8 @@ pub enum LeafNodeError {
     IdentityProviderError(#[source] Box<dyn Error + Sync + Send>),
     #[error(transparent)]
     CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
+    #[error(transparent)]
+    GreaseError(#[from] GreaseError),
 }
 
 #[derive(
@@ -94,6 +97,8 @@ impl LeafNode {
             signature: Default::default(),
         };
 
+        leaf_node.grease(cipher_suite_provider)?;
+
         leaf_node.sign(
             cipher_suite_provider,
             signer,
@@ -120,6 +125,8 @@ impl LeafNode {
         self.capabilities = new_properties.capabilities;
         self.extensions = new_properties.extensions;
         self.leaf_node_source = LeafNodeSource::Update;
+
+        self.grease(cipher_suite_provider)?;
 
         if let Some(signing_identity) = signing_identity {
             self.signing_identity = signing_identity;
@@ -431,8 +438,8 @@ mod tests {
             )
             .await;
 
-            assert_eq!(leaf_node.capabilities, capabilities);
-            assert_eq!(leaf_node.extensions, extensions);
+            assert_eq!(leaf_node.ungreased_capabilities(), capabilities);
+            assert_eq!(leaf_node.ungreased_extensions(), extensions);
             assert_eq!(leaf_node.signing_identity, signing_identity);
 
             assert_matches!(
@@ -510,8 +517,16 @@ mod tests {
             assert_ne!(new_secret, leaf_secret);
             assert_ne!(original_leaf.public_key, leaf.public_key);
 
-            assert_eq!(leaf.capabilities, original_leaf.capabilities);
-            assert_eq!(leaf.extensions, original_leaf.extensions);
+            assert_eq!(
+                leaf.ungreased_capabilities(),
+                original_leaf.ungreased_capabilities()
+            );
+
+            assert_eq!(
+                leaf.ungreased_extensions(),
+                original_leaf.ungreased_extensions()
+            );
+
             assert_eq!(leaf.signing_identity, original_leaf.signing_identity);
             assert_matches!(&leaf.leaf_node_source, LeafNodeSource::Update);
 
@@ -548,8 +563,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(leaf.capabilities, new_properties.capabilities);
-        assert_eq!(leaf.extensions, new_properties.extensions);
+        assert_eq!(leaf.ungreased_capabilities(), new_properties.capabilities);
+        assert_eq!(leaf.ungreased_extensions(), new_properties.extensions);
     }
 
     #[futures_test::test]
@@ -582,8 +597,16 @@ mod tests {
             assert_ne!(new_secret, leaf_secret);
             assert_ne!(original_leaf.public_key, leaf.public_key);
 
-            assert_eq!(leaf.capabilities, original_leaf.capabilities);
-            assert_eq!(leaf.extensions, original_leaf.extensions);
+            assert_eq!(
+                leaf.ungreased_capabilities(),
+                original_leaf.ungreased_capabilities()
+            );
+
+            assert_eq!(
+                leaf.ungreased_extensions(),
+                original_leaf.ungreased_extensions()
+            );
+
             assert_eq!(leaf.signing_identity, original_leaf.signing_identity);
             assert_matches!(&leaf.leaf_node_source, LeafNodeSource::Commit(parent_hash) if parent_hash == &test_parent_hash);
 
