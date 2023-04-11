@@ -1,18 +1,19 @@
 extern crate aead as rc_aead;
 
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 use aes_gcm::{Aes128Gcm, Aes256Gcm, KeyInit};
 use aws_mls_core::crypto::CipherSuite;
 use aws_mls_crypto_traits::AeadType;
 use chacha20poly1305::ChaCha20Poly1305;
 use rc_aead::{generic_array::GenericArray, Payload};
-use thiserror::Error;
 
-#[derive(Debug, Error)]
+use alloc::vec::Vec;
+
+#[derive(Debug, thiserror::Error)]
 pub enum AeadError {
-    #[error(transparent)]
-    RcAeadError(#[from] rc_aead::Error),
+    #[error("Rc AEAD Error")]
+    RcAeadError(rc_aead::Error),
     #[error("AEAD ciphertext of length {0} is too short to fit the tag")]
     InvalidCipherLen(usize),
     #[error("encrypted message cannot be empty")]
@@ -21,6 +22,12 @@ pub enum AeadError {
     InvalidKeyLen(usize, usize),
     #[error("unsupported cipher suite")]
     UnsupportedCipherSuite,
+}
+
+impl From<rc_aead::Error> for AeadError {
+    fn from(value: rc_aead::Error) -> Self {
+        AeadError::RcAeadError(value)
+    }
 }
 
 pub const TAG_LEN: usize = 16;
@@ -174,6 +181,9 @@ mod test {
     use super::{Aead, AeadError};
 
     use assert_matches::assert_matches;
+
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     fn get_aeads() -> Vec<Aead> {
         [

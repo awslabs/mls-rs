@@ -3,6 +3,8 @@ use aws_mls_crypto_traits::{AeadType, KdfType};
 
 use crate::{hpke::HpkeError, kdf::HpkeKdf};
 
+use alloc::vec::Vec;
+
 /// A type representing an HPKE context
 #[derive(Debug, Clone)]
 pub(super) struct Context<KDF: KdfType, AEAD: AeadType> {
@@ -199,6 +201,8 @@ mod test {
         hpke::Hpke,
         test_utils::{ecdh::*, filter_test_case, Aead, Kdf, TestCaseAlgo},
     };
+
+    use alloc::vec::Vec;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;

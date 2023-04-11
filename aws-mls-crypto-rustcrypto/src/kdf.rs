@@ -1,21 +1,36 @@
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 use aws_mls_core::crypto::CipherSuite;
 use aws_mls_crypto_traits::KdfType;
-use hkdf::{InvalidLength, InvalidPrkLength, SimpleHkdf};
+use hkdf::SimpleHkdf;
 use sha2::{Sha256, Sha384, Sha512};
 use thiserror::Error;
 
+use alloc::vec;
+use alloc::vec::Vec;
+
 #[derive(Debug, Error)]
 pub enum KdfError {
-    #[error(transparent)]
-    InvalidPrkLength(#[from] InvalidPrkLength),
-    #[error(transparent)]
-    InvalidLength(#[from] InvalidLength),
+    #[error("invalid prk length")]
+    InvalidPrkLength,
+    #[error("invalid length")]
+    InvalidLength,
     #[error("the provided length of the key {0} is shorter than the minimum length {1}")]
     TooShortKey(usize, usize),
     #[error("unsupported cipher suite")]
     UnsupportedCipherSuite,
+}
+
+impl From<hkdf::InvalidPrkLength> for KdfError {
+    fn from(_value: hkdf::InvalidPrkLength) -> Self {
+        KdfError::InvalidPrkLength
+    }
+}
+
+impl From<hkdf::InvalidLength> for KdfError {
+    fn from(_value: hkdf::InvalidLength) -> Self {
+        KdfError::InvalidLength
+    }
 }
 
 /// Aead KDF as specified in RFC 9180, Table 3.
@@ -97,6 +112,9 @@ mod test {
 
     use crate::kdf::{Kdf, KdfError};
 
+    use alloc::vec;
+    use alloc::vec::Vec;
+
     #[derive(Deserialize)]
     struct TestCase {
         pub ciphersuite: CipherSuite,
@@ -114,11 +132,6 @@ mod test {
     }
 
     fn run_test_case(case: &TestCase) {
-        println!(
-            "Running HKDF test case for cipher suite: {:?}",
-            case.ciphersuite
-        );
-
         let kdf = Kdf::new(case.ciphersuite).unwrap();
 
         let extracted = kdf.extract(&case.salt, &case.ikm).unwrap();

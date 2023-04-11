@@ -15,5 +15,7 @@ jobs:
       run: cargo +nightly clippy --no-default-features -p aws-mls -- -D warnings
     - name: Test
       run: cargo +nightly test --no-default-features --verbose -p aws-mls
-    - name: Build Embedded
+    - name: Build MLS Embedded
       run: cargo +nightly build --package aws-mls --lib --no-default-features --target thumbv6m-none-eabi
+    - name: Build rust crypto embedded 
+      run: cargo +nightly build --package aws-mls-crypto-rustcrypto --no-default-features --target thumbv6m-none-eabi

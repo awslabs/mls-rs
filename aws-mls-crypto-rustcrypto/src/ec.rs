@@ -1,12 +1,17 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
 use std::array::TryFromSliceError;
+
+#[cfg(not(feature = "std"))]
+use core::array::TryFromSliceError;
 
 use aws_mls_core::crypto::CipherSuite;
 use p256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use rand_core::{OsRng, RngCore};
-use thiserror::Error;
 use zeroize::Zeroize;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -35,28 +40,52 @@ impl Clone for EcPrivateKey {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum EcError {
-    #[error(transparent)]
-    P256Error(#[from] p256::elliptic_curve::Error),
-    #[error(transparent)]
-    Ed25519Error(#[from] ed25519_dalek::SignatureError),
+    #[error("p256 error: {0:?}")]
+    P256Error(p256::elliptic_curve::Error),
+    #[error("ed25519 error: {0:?}")]
+    Ed25519Error(ed25519_dalek::SignatureError),
     #[error("unsupported curve type")]
     UnsupportedCurve,
     #[error("invalid public key data")]
-    EcKeyInvalidKeyData(Box<dyn std::error::Error + Send + Sync>),
+    EcKeyInvalidKeyData,
     #[error("ec key is not a signature key")]
     EcKeyNotSignature,
     #[error(transparent)]
     TryFromSliceError(#[from] TryFromSliceError),
-    #[error(transparent)]
-    SignatureError(#[from] p256::ecdsa::Error),
-    #[error(transparent)]
-    RandCoreError(#[from] rand_core::Error),
+    #[error("p256 signature error: {0:?}")]
+    SignatureError(p256::ecdsa::Error),
+    #[error("rand error: {0:?}")]
+    RandCoreError(rand_core::Error),
     #[error("ecdh key type mismatch")]
     EcdhKeyTypeMismatch,
     #[error("ec key is not an ecdh key")]
     EcKeyNotEcdh,
+}
+
+impl From<p256::elliptic_curve::Error> for EcError {
+    fn from(value: p256::elliptic_curve::Error) -> Self {
+        EcError::P256Error(value)
+    }
+}
+
+impl From<ed25519_dalek::SignatureError> for EcError {
+    fn from(value: ed25519_dalek::SignatureError) -> Self {
+        EcError::Ed25519Error(value)
+    }
+}
+
+impl From<p256::ecdsa::Error> for EcError {
+    fn from(value: p256::ecdsa::Error) -> Self {
+        EcError::SignatureError(value)
+    }
+}
+
+impl From<rand_core::Error> for EcError {
+    fn from(value: rand_core::Error) -> Self {
+        EcError::RandCoreError(value)
+    }
 }
 
 /// Elliptic curve types
@@ -110,8 +139,8 @@ impl Curve {
     }
 }
 
-impl std::fmt::Debug for EcPrivateKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for EcPrivateKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::X25519(_) => f.write_str("X25519 Secret Key"),
             Self::Ed25519(_) => f.write_str("Ed25519 Secret Key"),
@@ -123,14 +152,13 @@ impl std::fmt::Debug for EcPrivateKey {
 pub fn pub_key_from_uncompressed(bytes: &[u8], curve: Curve) -> Result<EcPublicKey, EcError> {
     match curve {
         Curve::P256 => {
-            let encoded_point = p256::EncodedPoint::from_bytes(bytes)
-                .map_err(|e| EcError::EcKeyInvalidKeyData(e.into()))?;
+            let encoded_point =
+                p256::EncodedPoint::from_bytes(bytes).map_err(|_| EcError::EcKeyInvalidKeyData)?;
 
             let key_option: Option<p256::PublicKey> =
                 p256::PublicKey::from_encoded_point(&encoded_point).into();
 
-            let key = key_option
-                .ok_or_else(|| EcError::EcKeyInvalidKeyData("Failed decoding P256 point".into()))?;
+            let key = key_option.ok_or_else(|| EcError::EcKeyInvalidKeyData)?;
 
             Ok(EcPublicKey::P256(key))
         }
@@ -185,14 +213,14 @@ pub fn generate_private_key(curve: Curve) -> Result<EcPrivateKey, EcError> {
 pub fn private_key_from_bytes(bytes: &[u8], curve: Curve) -> Result<EcPrivateKey, EcError> {
     match curve {
         Curve::P256 => p256::SecretKey::from_be_bytes(bytes)
-            .map_err(|e| EcError::EcKeyInvalidKeyData(e.into()))
+            .map_err(|_| EcError::EcKeyInvalidKeyData)
             .map(EcPrivateKey::P256),
         Curve::X25519 => bytes
             .try_into()
-            .map_err(|e: TryFromSliceError| EcError::EcKeyInvalidKeyData(e.into()))
+            .map_err(|_| EcError::EcKeyInvalidKeyData)
             .map(|bytes: &[u8; 32]| EcPrivateKey::X25519(x25519_dalek::StaticSecret::from(*bytes))),
         Curve::Ed25519 => ed25519_dalek::SecretKey::from_bytes(bytes)
-            .map_err(|e| EcError::EcKeyInvalidKeyData(e.into()))
+            .map_err(|_| EcError::EcKeyInvalidKeyData)
             .map(EcPrivateKey::Ed25519),
     }
 }
@@ -328,6 +356,8 @@ pub(crate) mod test_utils {
 
     use super::Curve;
 
+    use alloc::vec::Vec;
+
     #[derive(Deserialize)]
     pub(crate) struct TestKeys {
         #[serde(with = "hex::serde")]
@@ -393,6 +423,8 @@ mod tests {
         test_utils::{get_test_public_keys, get_test_secret_keys},
         Curve, EcError,
     };
+
+    use alloc::vec;
 
     #[test]
     fn private_key_can_be_generated() {
@@ -468,11 +500,6 @@ mod tests {
     fn mismatched_curve_import() {
         for curve in Curve::all() {
             for other_curve in Curve::all().filter(|c| !c.byte_equal(curve)) {
-                println!(
-                    "Mismatched curve public key import : key curve {:?}, import curve {:?}",
-                    &curve, &other_curve
-                );
-
                 let public_key = get_test_public_keys().get_key_from_curve(curve);
                 let res = pub_key_from_uncompressed(&public_key, other_curve);
 
@@ -489,7 +516,7 @@ mod tests {
 
         // Keys must be <= to order
         let p256_res = private_key_from_bytes(&p256_order, Curve::P256);
-        assert_matches!(p256_res, Err(EcError::EcKeyInvalidKeyData(_)));
+        assert_matches!(p256_res, Err(EcError::EcKeyInvalidKeyData));
 
         let nist_curves = [Curve::P256];
 
@@ -497,7 +524,7 @@ mod tests {
         for curve in nist_curves {
             assert_matches!(
                 private_key_from_bytes(&vec![0u8; curve.secret_key_size()], curve),
-                Err(EcError::EcKeyInvalidKeyData(_))
+                Err(EcError::EcKeyInvalidKeyData)
             );
         }
     }

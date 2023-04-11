@@ -1,17 +1,27 @@
 use aws_mls_crypto_traits::{DhType, KdfType, KemResult, KemType};
-use thiserror::Error;
 
 use aws_mls_core::crypto::{HpkePublicKey, HpkeSecretKey};
 use zeroize::Zeroizing;
 
 use crate::kdf::HpkeKdf;
 
-#[derive(Debug, Error)]
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
+
+use alloc::boxed::Box;
+#[cfg(test)]
+use alloc::vec;
+use alloc::vec::Vec;
+
+#[derive(Debug, thiserror::Error)]
 pub enum DhKemError {
     #[error(transparent)]
-    KdfError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    KdfError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
-    DhError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    DhError(Box<dyn Error + Send + Sync + 'static>),
     /// NIST key derivation from bytes failure. This is statistically unlikely
     #[error("Failed to derive nist keypair from raw bytes after 255 attempts")]
     KeyDerivationError,
@@ -178,6 +188,8 @@ mod test {
     use serde::Deserialize;
 
     use crate::test_utils::{filter_test_case, test_dhkem, TestCaseAlgo};
+
+    use alloc::vec::Vec;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;

@@ -1,5 +1,7 @@
 use aws_mls_crypto_traits::KdfType;
 
+use alloc::vec::Vec;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct HpkeKdf<K: KdfType> {
     suite_id: Vec<u8>,

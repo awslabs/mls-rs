@@ -1,3 +1,7 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(feature = "std"), feature(error_in_core))]
+extern crate alloc;
+
 mod aead;
 mod dh;
 mod kdf;

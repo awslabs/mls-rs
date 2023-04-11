@@ -1,4 +1,6 @@
-use std::fmt::Debug;
+use core::fmt::Debug;
+
+use crate::alloc::borrow::ToOwned;
 
 use aws_mls_core::crypto::{
     HpkeCiphertext, HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey,
@@ -6,7 +8,6 @@ use aws_mls_core::crypto::{
 
 use aws_mls_crypto_traits::{AeadType, KdfType, KemType, AEAD_ID_EXPORT_ONLY};
 
-use thiserror::Error;
 use zeroize::Zeroizing;
 
 use crate::{
@@ -14,14 +15,23 @@ use crate::{
     kdf::HpkeKdf,
 };
 
-#[derive(Debug, Error)]
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
+
+#[derive(Debug, thiserror::Error)]
 pub enum HpkeError {
     #[error(transparent)]
-    KemError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    KemError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
-    KdfError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    KdfError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
-    AeadError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    AeadError(Box<dyn Error + Send + Sync + 'static>),
     /// An invalid PSK was supplied. A PSK MUST have 32 bytes of entropy
     #[error("PSK must be at least 32 bytes in length")]
     InsufficientPskLength,
@@ -292,6 +302,8 @@ where
 
 #[cfg(test)]
 mod test {
+
+    use alloc::vec::Vec;
 
     use assert_matches::assert_matches;
     use aws_mls_core::crypto::{CipherSuite, HpkeContextR, HpkeContextS};

@@ -1,3 +1,7 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(feature = "std"), feature(error_in_core))]
+extern crate alloc;
+
 pub mod aead;
 mod ec;
 pub mod ec_signer;
@@ -11,6 +15,12 @@ pub mod x509;
 #[cfg(feature = "x509")]
 mod ec_for_x509;
 
+#[cfg(feature = "std")]
+use std::error::Error;
+
+#[cfg(not(feature = "std"))]
+use core::error::Error;
+
 use crate::aead::Aead;
 use aws_mls_crypto_hpke::{
     context::{ContextR, ContextS},
@@ -23,7 +33,6 @@ use ecdh::{Ecdh, KemId};
 use kdf::Kdf;
 use mac::{Hash, HashError};
 use rand_core::{OsRng, RngCore};
-use thiserror::Error;
 
 use aws_mls_core::crypto::{
     CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey,
@@ -31,20 +40,30 @@ use aws_mls_core::crypto::{
 };
 use zeroize::Zeroizing;
 
-#[derive(Debug, Error)]
+use alloc::boxed::Box;
+use alloc::vec;
+use alloc::vec::Vec;
+
+#[derive(Debug, thiserror::Error)]
 pub enum RustCryptoError {
     #[error(transparent)]
-    AeadError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    AeadError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
     HpkeError(#[from] HpkeError),
     #[error(transparent)]
-    KdfError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    KdfError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
     HashError(#[from] HashError),
-    #[error(transparent)]
-    RandError(#[from] rand_core::Error),
+    #[error("rand core error: {0:?}")]
+    RandError(rand_core::Error),
     #[error(transparent)]
     EcSignerError(#[from] EcSignerError),
+}
+
+impl From<rand_core::Error> for RustCryptoError {
+    fn from(value: rand_core::Error) -> Self {
+        RustCryptoError::RandError(value)
+    }
 }
 
 #[derive(Debug, Clone)]

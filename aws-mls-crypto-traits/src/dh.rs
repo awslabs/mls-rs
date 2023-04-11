@@ -1,12 +1,17 @@
 use aws_mls_core::crypto::{HpkePublicKey, HpkeSecretKey};
 
+use alloc::vec::Vec;
+
 #[cfg(feature = "mock")]
 use mockall::automock;
 
 /// A trait that provides the required DH functions, as in RFC 9180,Section 4.1
 #[cfg_attr(feature = "mock", automock(type Error = crate::mock::TestError;))]
 pub trait DhType {
+    #[cfg(feature = "std")]
     type Error: std::error::Error + Send + Sync + 'static;
+    #[cfg(not(feature = "std"))]
+    type Error: core::error::Error + Send + Sync + 'static;
 
     fn dh(
         &self,

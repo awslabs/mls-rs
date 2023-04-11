@@ -4,12 +4,13 @@ use hmac::{
     Mac, SimpleHmac,
 };
 use sha2::{Digest, Sha256, Sha384, Sha512};
-use thiserror::Error;
 
-#[derive(Debug, Error)]
+use alloc::vec::Vec;
+
+#[derive(Debug, thiserror::Error)]
 pub enum HashError {
-    #[error(transparent)]
-    InvalidHmacLength(#[from] hmac::digest::InvalidLength),
+    #[error("invalid hmac length")]
+    InvalidHmacLength,
     #[error("unsupported cipher suite")]
     UnsupportedCipherSuite,
 }
@@ -46,9 +47,21 @@ impl Hash {
 
     pub fn mac(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>, HashError> {
         match self {
-            Hash::Sha256 => generic_generate_tag(SimpleHmac::<Sha256>::new_from_slice(key)?, data),
-            Hash::Sha384 => generic_generate_tag(SimpleHmac::<Sha384>::new_from_slice(key)?, data),
-            Hash::Sha512 => generic_generate_tag(SimpleHmac::<Sha512>::new_from_slice(key)?, data),
+            Hash::Sha256 => generic_generate_tag(
+                SimpleHmac::<Sha256>::new_from_slice(key)
+                    .map_err(|_| HashError::InvalidHmacLength)?,
+                data,
+            ),
+            Hash::Sha384 => generic_generate_tag(
+                SimpleHmac::<Sha384>::new_from_slice(key)
+                    .map_err(|_| HashError::InvalidHmacLength)?,
+                data,
+            ),
+            Hash::Sha512 => generic_generate_tag(
+                SimpleHmac::<Sha512>::new_from_slice(key)
+                    .map_err(|_| HashError::InvalidHmacLength)?,
+                data,
+            ),
         }
     }
 }
@@ -79,11 +92,6 @@ mod test {
     }
 
     fn run_test_case(case: &TestCase) {
-        println!(
-            "Running HMAC test case for cipher suite: {:?}",
-            case.ciphersuite
-        );
-
         // Test Sign
         let hash = Hash::new(case.ciphersuite).unwrap();
         let tag = hash.mac(&case.key, &case.message).unwrap();

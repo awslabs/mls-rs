@@ -4,8 +4,10 @@ version = "0.3.0"
 edition = "2021"
 
 [features]
-mock = ["dep:mockall"]
+mock = ["std", "dep:mockall"]
+std = ["aws-mls-core/std"]
+default = ["std"]
 
 [dependencies]
-aws-mls-core = { path = "../aws-mls-core", version = "*" }
+aws-mls-core = { path = "../aws-mls-core", version = "*", default-features = false }
 mockall = { version = "^0.11", optional = true }

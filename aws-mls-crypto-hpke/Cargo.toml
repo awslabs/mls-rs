@@ -4,14 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = []
+default = ["std"]
+std = ["aws-mls-core/std", "aws-mls-crypto-traits/std", "thiserror/std", "zeroize/std"]
 
 [dependencies]
-aws-mls-core = { path = "../aws-mls-core", version = "*" }
-aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", version = "*" }
-thiserror = "^1"
-zeroize = { version = "1", features = ["zeroize_derive"] }
-hex = { version = "^0.4.3", features = ["serde"] }
+aws-mls-core = { path = "../aws-mls-core", default-features = false, version = "*" }
+aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", default-features = false, version = "*" }
+thiserror = { package = "thiserror-core", version = "1", default-features = false }
+zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 cfg-if = "^1"
 
 [dev-dependencies]
@@ -19,6 +19,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"
 mockall = "0.11"
+hex = { version = "^0.4.3", features = ["serde"] }
 aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", features = ["mock"], version = "*" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]

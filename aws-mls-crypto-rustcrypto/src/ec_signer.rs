@@ -1,7 +1,9 @@
-use std::ops::Deref;
+use core::ops::Deref;
 
 use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
 use thiserror::Error;
+
+use alloc::vec::Vec;
 
 use crate::ec::{
     generate_keypair, private_key_bytes_to_public, private_key_from_bytes,
@@ -105,8 +107,6 @@ mod test {
     }
 
     fn test_signature(cipher_suite: CipherSuite) {
-        println!("Testing signatures for cipher suite: {cipher_suite:?}");
-
         let public_key = get_test_public_keys().get_key(cipher_suite, true).into();
         let secret_key = get_test_secret_keys().get_key(cipher_suite, true);
         let ec_signer = EcSigner::new(cipher_suite).unwrap();

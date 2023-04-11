@@ -1,4 +1,6 @@
-use std::ops::Deref;
+use core::ops::Deref;
+
+use alloc::vec::Vec;
 
 use aws_mls_crypto_traits::DhType;
 use thiserror::Error;
@@ -107,6 +109,8 @@ mod test {
     use aws_mls_crypto_traits::DhType;
     use serde::Deserialize;
 
+    use alloc::vec::Vec;
+
     use crate::ecdh::Ecdh;
 
     fn get_ecdhs() -> Vec<Ecdh> {
@@ -133,11 +137,6 @@ mod test {
     }
 
     fn run_test_case(test_case: TestCase) {
-        println!(
-            "Running ECDH test for ciphersuite: {:?}",
-            test_case.ciphersuite
-        );
-
         let ecdh = Ecdh::new(test_case.ciphersuite).unwrap();
 
         // Import the keys into their structures
@@ -173,8 +172,6 @@ mod test {
     #[test]
     fn test_mismatched_curve() {
         for ecdh in get_ecdhs() {
-            println!("Testing mismatched curve error for {:?}", *ecdh);
-
             let secret_key = ecdh.generate().unwrap().0;
 
             for other_ecdh in get_ecdhs().into_iter().filter(|c| c != &ecdh) {

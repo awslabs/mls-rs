@@ -3,26 +3,59 @@ name = "aws-mls-crypto-rustcrypto"
 version = "0.3.0"
 edition = "2021"
 
+[features]
+x509 = ["std", "aws-mls-identity-x509", "x509-cert", "spki", "sha1", "const-oid"]
+default = ["std", "x509"]
+browser = ["getrandom/js"]
+
+std = [
+    "aws-mls-core/std",
+    "aws-mls-crypto-hpke/std",
+    "aws-mls-crypto-traits/std",
+    "getrandom/std",
+    "rand_core/std",
+    "aead/std",
+    "sha2/std",
+    "hmac/std",
+    "hkdf/std",
+    "p256/std",
+    "sec1/std",
+    "x25519-dalek/std",
+    "ed25519-dalek/std"
+]
+
 [dependencies]
-aws-mls-core = { path = "../aws-mls-core", version = "*" }
-aws-mls-crypto-hpke = { path = "../aws-mls-crypto-hpke", version = "*" }
-aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", optional = true, version = "*" }
-aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", version = "*" }
-thiserror = "1"
+aws-mls-core = { path = "../aws-mls-core", default-features = false, version = "*" }
+aws-mls-crypto-hpke = { path = "../aws-mls-crypto-hpke", default-features = false, version = "*" }
+aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", default-features = false, version = "*" }
+
+thiserror = { package = "thiserror-core", version = "1", default-features = false }
+zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 enum-iterator = "1.1.2"
+
+# Random
+getrandom = { version = "0.2", default-features = false, features = ["custom"] }
+rand_core = { version = "0.6", default-features = false, features = ["alloc"] }
+
+# AEAD
 aes-gcm = { version = "0.10", features = ["zeroize"] }
-chacha20poly1305 = { version = "0.10" }
-aead = { version = "0.5", features = ["std"] }
-getrandom = { version = "0.2", features = ["std"] }
-rand_core = { version = "0.6" }
-sha2 = { version = "0.10", features = ["std"] }
-hmac = { version = "0.12", features = ["std", "reset"] }
-hkdf = { version = "0.12", features = ["std"] }
-p256 = { version = "0.12", features = ["std", "ecdh", "ecdsa", "pem"] }
-x25519-dalek = { version = "1" }
-ed25519-dalek = { version = "1"}
-sec1 = { version = "0.3", features = ["std"] }
-zeroize = { version = "1", features = ["zeroize_derive"] }
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc", "getrandom"] }
+aead = { version = "0.5", default-features = false, features = ["alloc", "getrandom"] }
+
+# Hash
+sha2 = { version = "0.10", default-features = false }
+
+hmac = { version = "0.12", default-features = false, features = ["reset"] }
+hkdf = { version = "0.12", default-features = false }
+
+# KEM
+p256 = { version = "0.12", default-features = false, features = ["alloc", "ecdh", "ecdsa", "pem"] }
+x25519-dalek = { version = "1", default-features = false, features = ["u64_backend"] }
+ed25519-dalek = { version = "1", default-features = false, features = ["u64_backend"] }
+sec1 = { version = "0.3", default-features = false, features = ["alloc"] }
+
+# X509 feature
+aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", optional = true, version = "*" }
 x509-cert = { version = "0.1", optional = true, features = ["std"] }
 spki = { version = "0.6", optional = true, features = ["std", "alloc"] }
 sha1 = { version = "0.10", optional = true, features = ["std"] }
@@ -34,7 +67,3 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "^1.0" }
 assert_matches = "1.5.0"
 
-[features]
-x509 = ["aws-mls-identity-x509", "x509-cert", "spki", "sha1", "const-oid"]
-default = ["x509"]
-browser = ["getrandom/js"]
