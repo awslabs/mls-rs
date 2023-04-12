@@ -170,7 +170,10 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[futures_test::test]
+    #[cfg(not(target_arch = "wasm32"))]
+    use futures_test::test;
+
+    #[test]
     async fn test_standard_validation() {
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
             TestCryptoProvider::all_supported_cipher_suites()
@@ -212,7 +215,7 @@ mod tests {
         test_package
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_invalid_signature() {
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
             TestCryptoProvider::all_supported_cipher_suites()
@@ -240,7 +243,7 @@ mod tests {
         }
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_invalid_cipher_suite() {
         let cipher_suite = TEST_CIPHER_SUITE;
         let version = TEST_PROTOCOL_VERSION;
@@ -323,7 +326,7 @@ mod tests {
         test_package
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_invalid_init_key() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -353,7 +356,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_matching_init_key() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -416,7 +419,7 @@ mod tests {
         .await
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_expired() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -444,7 +447,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_skip_expiration_check() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -473,7 +476,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_required_capabilities_check() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -524,7 +527,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_required_capabilities_failure() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -558,7 +561,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_leaf_node_validation_failure() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let protocol_version = TEST_PROTOCOL_VERSION;

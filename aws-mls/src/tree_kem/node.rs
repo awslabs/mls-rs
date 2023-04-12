@@ -549,7 +549,10 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[futures_test::test]
+    #[cfg(not(target_arch = "wasm32"))]
+    use futures_test::test;
+
+    #[test]
     async fn node_key_getters() {
         let test_node_parent: Node = Parent {
             public_key: b"pub".to_vec().into(),
@@ -565,7 +568,7 @@ mod tests {
         assert_eq!(test_node_leaf.public_key(), &test_leaf.public_key);
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_empty_leaves() {
         let mut test_vec = get_test_node_vec().await;
         let mut test_vec_clone = get_test_node_vec().await;
@@ -576,7 +579,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_direct_path() {
         let test_vec = get_test_node_vec().await;
         // Tree math is already tested in that module, just ensure equality
@@ -585,7 +588,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_filtered_direct_path() {
         let test_vec = get_test_node_vec().await;
         let expected = [3];
@@ -593,7 +596,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_filtered_direct_path_co_path() {
         let test_vec = get_test_node_vec().await;
         let expected = [(3, 5)];
@@ -601,7 +604,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_get_parent_node() {
         let mut test_vec = get_test_node_vec().await;
 
@@ -623,7 +626,7 @@ mod tests {
         assert_eq!(test_vec.borrow_as_parent_mut(5).unwrap(), &mut expected);
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_get_resolution() {
         let test_vec = get_test_node_vec().await;
 
@@ -651,7 +654,7 @@ mod tests {
         assert_eq!(resolution_node_3, expected_3.iter().collect::<Vec<&Node>>());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_resolution_filter() {
         let test_vec = get_test_node_vec().await;
         let resolution_node_5 = test_vec.get_resolution(5, &[LeafIndex(2)]).unwrap();
@@ -660,7 +663,7 @@ mod tests {
         assert_eq!(resolution_node_5, expected_5.iter().collect::<Vec<&Node>>());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_get_or_fill_existing() {
         let mut test_vec = get_test_node_vec().await;
         let mut test_vec2 = test_vec.clone();
@@ -673,7 +676,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_get_or_fill_empty() {
         let mut test_vec = get_test_node_vec().await;
 
@@ -690,7 +693,7 @@ mod tests {
         assert_eq!(actual, &mut expected);
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_leaf_count() {
         let test_vec = get_test_node_vec().await;
         assert_eq!(test_vec.len(), 7);
@@ -701,7 +704,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_total_leaf_count() {
         let test_vec = get_test_node_vec().await;
         assert_eq!(test_vec.occupied_leaf_count(), 3);

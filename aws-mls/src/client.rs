@@ -694,7 +694,10 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[futures_test::test]
+    #[cfg(not(target_arch = "wasm32"))]
+    use futures_test::test;
+
+    #[test]
     async fn test_keygen() {
         // This is meant to test the inputs to the internal key package generator
         // See KeyPackageGenerator tests for key generation specific tests
@@ -740,7 +743,7 @@ mod tests {
         }
     }
 
-    #[futures_test::test]
+    #[test]
     async fn new_member_add_proposal_adds_to_group() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -876,7 +879,7 @@ mod tests {
         Ok(())
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_external_commit() {
         // New member can join
         join_via_external_commit(false, false).await.unwrap();
@@ -888,7 +891,7 @@ mod tests {
         join_via_external_commit(true, true).await.unwrap();
     }
 
-    #[futures_test::test]
+    #[test]
     async fn creating_an_external_commit_requires_a_group_info_message() {
         let (alice, alice_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "alice");
         let alice = alice.build();
@@ -910,7 +913,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::ExpectedGroupInfoMessage));
     }
 
-    #[futures_test::test]
+    #[test]
     async fn external_commit_with_invalid_group_info_fails() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let mut bob_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;

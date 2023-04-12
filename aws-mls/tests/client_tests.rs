@@ -36,6 +36,9 @@ use wasm_bindgen_test::{wasm_bindgen_test as test, wasm_bindgen_test_configure};
 #[cfg(target_arch = "wasm32")]
 wasm_bindgen_test_configure!(run_in_browser);
 
+#[cfg(not(target_arch = "wasm32"))]
+use futures_test::test;
+
 fn test_params() -> impl Iterator<Item = (ProtocolVersion, CipherSuite, bool)> {
     ProtocolVersion::all().flat_map(|p| {
         TestCryptoProvider::all_supported_cipher_suites()
@@ -103,7 +106,7 @@ async fn test_create(
     assert!(Group::equal_group_state(&alice_group, &bob_group));
 }
 
-#[futures_test::test]
+#[test]
 async fn test_create_group() {
     for (protocol_version, cs, encrypt_controls) in test_params() {
         let preferences = Preferences::default()
@@ -114,7 +117,7 @@ async fn test_create_group() {
     }
 }
 
-#[futures_test::test]
+#[test]
 async fn test_many_commits() {
     let cipher_suite = CipherSuite::CURVE25519_AES128;
     let preferences = Preferences::default();
@@ -185,7 +188,7 @@ async fn test_empty_commits(
     }
 }
 
-#[futures_test::test]
+#[test]
 async fn test_group_path_updates() {
     for (protocol_version, cs, encrypt_controls) in test_params() {
         test_empty_commits(
@@ -243,7 +246,7 @@ async fn test_update_proposals(
     }
 }
 
-#[futures_test::test]
+#[test]
 async fn test_group_update_proposals() {
     for (protocol_version, cs, encrypt_controls) in test_params() {
         test_update_proposals(
@@ -323,7 +326,7 @@ async fn test_remove_proposals(
     }
 }
 
-#[futures_test::test]
+#[test]
 async fn test_group_remove_proposals() {
     for (protocol_version, cs, encrypt_controls) in test_params() {
         test_remove_proposals(
@@ -380,7 +383,7 @@ async fn test_application_messages(
     }
 }
 
-#[futures_test::test]
+#[test]
 async fn test_out_of_order_application_messages() {
     let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,
@@ -433,7 +436,7 @@ async fn test_out_of_order_application_messages() {
     }
 }
 
-#[futures_test::test]
+#[test]
 async fn test_group_application_messages() {
     for (protocol_version, cs, encrypt_controls) in test_params() {
         test_application_messages(
@@ -475,7 +478,7 @@ async fn processing_message_from_self_returns_error(
     assert_matches!(error, MlsError::CantProcessMessageFromSelf);
 }
 
-#[futures_test::test]
+#[test]
 async fn test_processing_message_from_self_returns_error() {
     for (protocol_version, cs, encrypt_controls) in test_params() {
         processing_message_from_self_returns_error(
@@ -569,7 +572,7 @@ async fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: 
     }
 }
 
-#[futures_test::test]
+#[test]
 async fn test_external_commits() {
     for (protocol_version, cipher_suite, _) in test_params().filter(|&(_, _, encrypted)| !encrypted)
     {
@@ -577,7 +580,7 @@ async fn test_external_commits() {
     }
 }
 
-#[futures_test::test]
+#[test]
 async fn test_remove_nonexisting_leaf() {
     let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,
@@ -633,7 +636,7 @@ fn get_reinit_client(suite1: CipherSuite, suite2: CipherSuite, id: &str) -> Rein
     ReinitClientGeneration { client, id1, id2 }
 }
 
-#[futures_test::test]
+#[test]
 async fn reinit_works() {
     let suite1 = CipherSuite::CURVE25519_AES128;
     let suite2 = CipherSuite::P256_AES128;
@@ -765,7 +768,7 @@ async fn reinit_works() {
         .unwrap();
 }
 
-#[futures_test::test]
+#[test]
 async fn external_joiner_can_process_siblings_update() {
     let mut groups = get_test_groups(
         ProtocolVersion::MLS_10,

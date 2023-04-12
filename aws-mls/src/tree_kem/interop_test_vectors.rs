@@ -19,6 +19,9 @@ use super::{
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_test::wasm_bindgen_test as test;
 
+#[cfg(not(target_arch = "wasm32"))]
+use futures_test::test;
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
 struct ValidationTestCase {
     pub cipher_suite: u16,
@@ -57,7 +60,7 @@ impl ValidationTestCase {
     }
 }
 
-#[futures_test::test]
+#[test]
 async fn validation() {
     let test_cases: Vec<ValidationTestCase> = load_test_cases!(
         interop_tree_validation,

@@ -420,7 +420,10 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[futures_test::test]
+    #[cfg(not(target_arch = "wasm32"))]
+    use futures_test::test;
+
+    #[test]
     async fn test_missing_parent_hash() {
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;
@@ -444,7 +447,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_parent_hash_mismatch() {
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;
@@ -471,7 +474,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_parent_hash_invalid() {
         let cs = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut test_tree = TreeWithSigners::make_full_tree(8, &cs).await.tree;

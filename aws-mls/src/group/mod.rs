@@ -2012,7 +2012,10 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[futures_test::test]
+    #[cfg(not(target_arch = "wasm32"))]
+    use futures_test::test;
+
+    #[test]
     async fn test_create_group() {
         for (protocol_version, cipher_suite) in ProtocolVersion::all().flat_map(|p| {
             TestCryptoProvider::all_supported_cipher_suites()
@@ -2044,7 +2047,7 @@ mod tests {
         }
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_pending_proposals_application_data() {
         let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2083,7 +2086,7 @@ mod tests {
             .is_ok());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_update_proposals() {
         let mut new_capabilities = get_test_capabilities();
         new_capabilities.extensions.push(42.into());
@@ -2122,7 +2125,7 @@ mod tests {
         assert_eq!(update.leaf_node.ungreased_capabilities(), new_capabilities);
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_invalid_commit_self_update() {
         let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2150,7 +2153,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn update_proposal_with_bad_key_package_is_ignored_when_committing() {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
@@ -2232,17 +2235,17 @@ mod tests {
         (test_group, bob_test_group)
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_welcome_processing_exported_tree() {
         test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, false).await;
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_welcome_processing_tree_extension() {
         test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_welcome_processing_missing_tree() {
         let mut test_group = test_group_custom(
             TEST_PROTOCOL_VERSION,
@@ -2278,7 +2281,7 @@ mod tests {
         assert_matches!(bob_group, Err(MlsError::RatchetTreeNotFound));
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_group_context_ext_proposal_create() {
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2328,7 +2331,7 @@ mod tests {
         (test_group, commit)
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_group_context_ext_proposal_commit() {
         let mut extension_list = ExtensionList::new();
         extension_list
@@ -2353,7 +2356,7 @@ mod tests {
         assert_eq!(test_group.group.state.context.extensions, extension_list)
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_group_context_ext_proposal_invalid() {
         let mut extension_list = ExtensionList::new();
         extension_list
@@ -2378,7 +2381,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_group_encrypt_plaintext_padding() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2416,7 +2419,7 @@ mod tests {
         assert!(with_padding.mls_encoded_len() > without_padding.mls_encoded_len());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn external_commit_requires_external_pub_extension() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2453,7 +2456,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::MissingExternalPubExtension));
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_path_update_preference() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2512,7 +2515,7 @@ mod tests {
             .is_some());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_path_update_preference_override() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2536,7 +2539,7 @@ mod tests {
             .is_some());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn group_rejects_unencrypted_application_message() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2554,7 +2557,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_state_update() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2680,7 +2683,7 @@ mod tests {
         assert_eq!(commit_description, bob_commit_description);
     }
 
-    #[futures_test::test]
+    #[test]
     async fn state_update_external_commit() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2714,7 +2717,7 @@ mod tests {
         )
     }
 
-    #[futures_test::test]
+    #[test]
     async fn can_join_new_group_externally() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
@@ -2736,7 +2739,7 @@ mod tests {
         alice_group.process_message(commit).await.unwrap();
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_membership_tag_from_non_member() {
         let (mut alice_group, mut bob_group) =
             test_two_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, true).await;
@@ -2758,7 +2761,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_partial_commits() {
         let protocol_version = TEST_PROTOCOL_VERSION;
         let cipher_suite = TEST_CIPHER_SUITE;
@@ -2786,7 +2789,7 @@ mod tests {
         bob.process_message(commit).await.unwrap();
     }
 
-    #[futures_test::test]
+    #[test]
     async fn old_hpke_secrets_are_removed() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         alice.join("bob").await;
@@ -2806,7 +2809,7 @@ mod tests {
         assert!(!alice.group.private_tree.secret_keys.contains_key(&1));
     }
 
-    #[futures_test::test]
+    #[test]
     async fn only_selected_members_of_the_original_group_can_join_subgroup() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob, _) = alice.join("bob").await;
@@ -2865,7 +2868,7 @@ mod tests {
         alice_group.join_with_custom_config("alice", false, f).await
     }
 
-    #[futures_test::test]
+    #[test]
     async fn joining_group_fails_if_protocol_version_is_not_supported() {
         let res = joining_group_fails_if_unsupported(|config| {
             config.0.settings.protocol_versions.clear();
@@ -2880,7 +2883,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn joining_group_fails_if_cipher_suite_is_not_supported() {
         let res = joining_group_fails_if_unsupported(|config| {
             config
@@ -2898,7 +2901,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn member_can_see_sender_creds() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob_group, _) = alice_group.join("bob").await;
@@ -2924,7 +2927,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn members_of_a_group_have_identical_authentication_secrets() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (bob_group, _) = alice_group.join("bob").await;
@@ -2935,7 +2938,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn member_cannot_decrypt_same_message_twice() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let (mut bob_group, _) = alice_group.join("bob").await;
@@ -2962,7 +2965,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::CiphertextProcessorError(_)));
     }
 
-    #[futures_test::test]
+    #[test]
     async fn removing_requirements_allows_to_add() {
         let mut capabilities = get_test_capabilities();
         capabilities.extensions = vec![17.into()];
@@ -3051,7 +3054,7 @@ mod tests {
         assert_eq!(alice_group.group.roster().len(), 2);
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_leaf_wrong_source() {
         // RFC, 13.4.2. "The leaf_node_source field MUST be set to commit."
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
@@ -3075,7 +3078,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_leaf_same_hpke_key() {
         // RFC 13.4.2. "Verify that the encryption_key value in the LeafNode is different from the committer's current leaf node"
 
@@ -3107,7 +3110,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_leaf_duplicate_hpke_key() {
         // RFC 8.3 "Verify that the following fields are unique among the members of the group: `encryption_key`"
 
@@ -3147,7 +3150,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_leaf_duplicate_signature_key() {
         // RFC 8.3 "Verify that the following fields are unique among the members of the group: `signature_key`"
 
@@ -3191,7 +3194,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_leaf_incorrect_signature() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
 
@@ -3213,7 +3216,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_leaf_not_supporting_used_context_extension() {
         // The new leaf of the committer doesn't support an extension set in group context
         let extension = Extension::new(999.into(), vec![]);
@@ -3233,7 +3236,7 @@ mod tests {
             .is_err());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_leaf_not_supporting_used_leaf_extension() {
         // The new leaf of the committer doesn't support an extension set in another leaf
         let extension = Extension::new(999.into(), vec![]);
@@ -3255,7 +3258,7 @@ mod tests {
             .is_err());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_leaf_uses_extension_unsupported_by_another_leaf() {
         // The new leaf of the committer uses an extension unsupported by another leaf
         let mut groups =
@@ -3280,7 +3283,7 @@ mod tests {
             .is_err());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_leaf_not_supporting_required_extension() {
         // The new leaf of the committer doesn't support an extension required by group context
 
@@ -3306,7 +3309,7 @@ mod tests {
             .is_err());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_leaf_has_unsupported_credential() {
         // The new leaf of the committer has a credential unsupported by another leaf
         let mut groups =
@@ -3345,7 +3348,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_leaf_not_supporting_credential_used_in_another_leaf() {
         // The new leaf of the committer doesn't support another leaf's credential
 
@@ -3372,7 +3375,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_leaf_not_supporting_required_credential() {
         // The new leaf of the committer doesn't support a credentia required by group context
 
@@ -3406,7 +3409,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_leaf_not_supporting_credential_used_by_external_sender() {
         // The new leaf of the committer doesn't support credential used by an external sender
         let (_, ext_sender_pk) = test_cipher_suite_provider(TEST_CIPHER_SUITE)
@@ -3443,7 +3446,7 @@ mod tests {
      * Edge case paths
      */
 
-    #[futures_test::test]
+    #[test]
     async fn committing_degenerate_path_succeeds() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
@@ -3465,7 +3468,7 @@ mod tests {
             .is_ok());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn inserting_key_in_filtered_node_fails() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
@@ -3510,7 +3513,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn commit_with_too_short_path_fails() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 10).await;
 
@@ -3546,7 +3549,7 @@ mod tests {
             .is_err());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn update_proposal_can_change_credential() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 3).await;
         let (identity, secret_key) =
@@ -3601,7 +3604,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn receiving_commit_with_old_adds_fails() {
         let mut groups = test_n_member_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, 2).await;
 
@@ -3663,7 +3666,7 @@ mod tests {
         (alice, bob)
     }
 
-    #[futures_test::test]
+    #[test]
     async fn custom_proposal_by_value() {
         let (mut alice, mut bob) = custom_proposal_setup().await;
 
@@ -3684,7 +3687,7 @@ mod tests {
             if custom_proposals == vec![custom_proposal])
     }
 
-    #[futures_test::test]
+    #[test]
     async fn custom_proposal_by_reference() {
         let (mut alice, mut bob) = custom_proposal_setup().await;
 
@@ -3708,7 +3711,7 @@ mod tests {
             if custom_proposals == vec![custom_proposal])
     }
 
-    #[futures_test::test]
+    #[test]
     async fn can_join_with_psk() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .await
@@ -3742,7 +3745,7 @@ mod tests {
             .unwrap();
     }
 
-    #[futures_test::test]
+    #[test]
     async fn signer_for_identity() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE)
             .await

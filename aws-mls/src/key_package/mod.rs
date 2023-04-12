@@ -258,6 +258,9 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
+    #[cfg(not(target_arch = "wasm32"))]
+    use futures_test::test;
+
     #[derive(serde::Deserialize, serde::Serialize)]
     struct TestCase {
         cipher_suite: u16,
@@ -295,7 +298,7 @@ mod tests {
         load_test_cases!(key_package_ref, TestCase::generate().await)
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_key_package_ref() {
         let cases = load_test_cases().await;
 
@@ -313,7 +316,7 @@ mod tests {
         }
     }
 
-    #[futures_test::test]
+    #[test]
     async fn key_package_ref_fails_invalid_cipher_suite() {
         let key_package = test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "test").await;
 

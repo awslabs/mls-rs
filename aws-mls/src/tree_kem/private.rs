@@ -149,6 +149,9 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
+    #[cfg(not(target_arch = "wasm32"))]
+    use futures_test::test;
+
     #[cfg(feature = "std")]
     use std::collections::HashSet;
 
@@ -164,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_self_leaf() {
+    async fn test_create_self_leaf() {
         let secret = random_hpke_secret_key();
 
         let self_index = LeafIndex(42);
@@ -240,7 +243,7 @@ mod tests {
         (public_tree, charlie_private, alice_private, path_secret)
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_update_secrets() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
@@ -293,7 +296,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_update_secrets_key_mismatch() {
         let cipher_suite = TEST_CIPHER_SUITE;
 
@@ -336,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn test_update_leaf() {
+    async fn test_update_leaf() {
         let self_leaf = LeafIndex(42);
         let mut private_key = setup_direct_path(self_leaf, 128);
 
@@ -356,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_leaf() {
+    async fn test_remove_leaf() {
         let self_leaf = LeafIndex(42);
         let mut private_key = setup_direct_path(self_leaf, 128);
 

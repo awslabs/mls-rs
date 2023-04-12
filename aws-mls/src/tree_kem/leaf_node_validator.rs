@@ -251,6 +251,9 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
+    #[cfg(not(target_arch = "wasm32"))]
+    use futures_test::test;
+
     async fn get_test_add_node() -> (LeafNode, SignatureSecretKey) {
         let (signing_identity, secret) =
             get_test_signing_identity(TEST_CIPHER_SUITE, b"foo".to_vec());
@@ -261,7 +264,7 @@ mod tests {
         (leaf_node, secret)
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_basic_add_validation() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -282,7 +285,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_failed_validation() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let (leaf_node, _) = get_test_add_node().await;
@@ -302,7 +305,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_basic_update_validation() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let group_id = b"group_id";
@@ -336,7 +339,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_basic_commit_validation() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let group_id = b"group_id";
@@ -370,7 +373,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_incorrect_context() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -449,7 +452,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_bad_signature() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
@@ -480,7 +483,7 @@ mod tests {
         }
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_capabilities_mismatch() {
         let (signing_identity, secret) =
             get_test_signing_identity(TEST_CIPHER_SUITE, b"foo".to_vec());
@@ -516,7 +519,7 @@ mod tests {
             Err(LeafNodeValidationError::ExtensionNotInCapabilities(ext)) if ext == 42.into());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_cipher_suite_mismatch() {
         let cipher_suite_provider = test_cipher_suite_provider(CipherSuite::P256_AES128);
 
@@ -537,7 +540,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_required_extension() {
         let required_capabilities = RequiredCapabilitiesExt {
             extensions: vec![43.into()],
@@ -563,7 +566,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_required_proposal() {
         let required_capabilities = RequiredCapabilitiesExt {
             proposals: vec![42.into()],
@@ -589,7 +592,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_required_credential() {
         let required_capabilities = RequiredCapabilitiesExt {
             credentials: vec![0.into()],
@@ -612,7 +615,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     #[cfg(feature = "std")]
     async fn test_add_lifetime() {
         let (leaf_node, _) = get_test_add_node().await;

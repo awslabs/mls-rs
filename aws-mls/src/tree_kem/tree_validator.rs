@@ -190,6 +190,9 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
+    #[cfg(not(target_arch = "wasm32"))]
+    use futures_test::test;
+
     fn test_parent_node(cipher_suite: CipherSuite) -> Parent {
         let (_, public_key) = test_cipher_suite_provider(cipher_suite)
             .kem_generate()
@@ -241,7 +244,7 @@ mod tests {
         test_tree.public
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_valid_tree() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let cipher_suite_provider = test_cipher_suite_provider(cipher_suite);
@@ -264,7 +267,7 @@ mod tests {
         }
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_tree_hash_mismatch() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite).await;
@@ -289,7 +292,7 @@ mod tests {
         }
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_parent_hash_mismatch() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite).await;
@@ -318,7 +321,7 @@ mod tests {
         }
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_key_package_validation_failure() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let mut test_tree = get_valid_tree(cipher_suite).await;
@@ -349,13 +352,13 @@ mod tests {
         }
     }
 
-    #[futures_test::test]
+    #[test]
     async fn verify_unmerged_with_correct_tree() {
         let tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
         validate_unmerged(&tree).unwrap();
     }
 
-    #[futures_test::test]
+    #[test]
     async fn verify_unmerged_with_blank_leaf() {
         let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 
@@ -368,7 +371,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn verify_unmerged_with_broken_path() {
         let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 
@@ -381,7 +384,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn verify_unmerged_with_leaf_outside_tree() {
         let mut tree = get_test_tree_fig_12(TEST_CIPHER_SUITE).await;
 

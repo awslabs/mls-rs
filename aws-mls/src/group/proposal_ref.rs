@@ -86,6 +86,9 @@ mod test {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
+    #[cfg(not(target_arch = "wasm32"))]
+    use futures_test::test;
+
     fn get_test_extension_list() -> ExtensionList {
         let test_extension = RequiredCapabilitiesExt {
             extensions: vec![42.into()],
@@ -184,7 +187,7 @@ mod test {
         load_test_cases!(proposal_ref, generate_proposal_test_cases().await)
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_proposal_ref() {
         let test_cases = load_test_cases().await;
 

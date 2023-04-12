@@ -1092,7 +1092,10 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
-    #[futures_test::test]
+    #[cfg(not(target_arch = "wasm32"))]
+    use futures_test::test;
+
+    #[test]
     async fn test_derive() {
         for cipher_suite in TestCryptoProvider::all_supported_cipher_suites() {
             let test_tree = get_test_tree(cipher_suite).await;
@@ -1111,7 +1114,7 @@ mod tests {
         }
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_import_export() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1139,7 +1142,7 @@ mod tests {
         assert_eq!(test_tree.public.index, imported.index);
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_add_leaf() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = TreeKemPublic::new();
@@ -1174,7 +1177,7 @@ mod tests {
         assert_eq!(tree.nodes[4], leaf_nodes[2].clone().into());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_get_key_packages() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1190,7 +1193,7 @@ mod tests {
         assert_eq!(key_packages, key_packages.to_owned());
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_add_leaf_duplicate() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1218,7 +1221,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_add_leaf_empty_leaf() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1249,7 +1252,7 @@ mod tests {
         assert_eq!(tree.nodes.len(), 3)
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_add_leaf_unmerged() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1285,7 +1288,7 @@ mod tests {
         )
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_update_leaf() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1345,7 +1348,7 @@ mod tests {
             });
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_update_leaf_not_found() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1374,7 +1377,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_remove_leaf() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1419,7 +1422,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_remove_leaf_middle() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1459,7 +1462,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_create_blanks() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1496,7 +1499,7 @@ mod tests {
         assert_eq!(removed_location, &None);
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_remove_leaf_failure() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1516,7 +1519,7 @@ mod tests {
         );
     }
 
-    #[futures_test::test]
+    #[test]
     async fn test_find_leaf_node() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1582,7 +1585,7 @@ mod tests {
         }
     }
 
-    #[futures_test::test]
+    #[test]
     async fn batch_edit_works() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
 
@@ -1618,7 +1621,7 @@ mod tests {
         assert_eq!(acc.updates, [LeafIndex(1)]);
     }
 
-    #[futures_test::test]
+    #[test]
     async fn custom_proposal_support() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let mut tree = TreeKemPublic::new();
