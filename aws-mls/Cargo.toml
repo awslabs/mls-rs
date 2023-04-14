@@ -11,6 +11,7 @@ arbitrary = ["std", "dep:arbitrary", "aws-mls-core/arbitrary"]
 rayon = ["std", "dep:rayon"]
 external_client = ["std"]
 grease = ["std"]
+secret_tree_access = []
 
 std = [
     "aws-mls-core/std",

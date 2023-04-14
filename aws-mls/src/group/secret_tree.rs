@@ -188,7 +188,7 @@ impl SecretRatchets {
         &mut self,
         cipher_suite_provider: &P,
         key_type: KeyType,
-    ) -> Result<(MessageKeyData, u32), SecretTreeError> {
+    ) -> Result<MessageKeyData, SecretTreeError> {
         match key_type {
             KeyType::Handshake => self.handshake.next_message_key(cipher_suite_provider),
             KeyType::Application => self.application.next_message_key(cipher_suite_provider),
@@ -290,7 +290,7 @@ impl SecretTree {
         cipher_suite_provider: &P,
         leaf_index: LeafIndex,
         key_type: KeyType,
-    ) -> Result<(MessageKeyData, u32), SecretTreeError> {
+    ) -> Result<MessageKeyData, SecretTreeError> {
         self.message_key(cipher_suite_provider, leaf_index, |ratchet| {
             ratchet.next_message_key(cipher_suite_provider, key_type)
         })
@@ -344,11 +344,33 @@ impl ToString for KeyType {
 
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+/// AEAD key derived by the MLS secret tree.
 pub struct MessageKeyData {
     #[serde_as(as = "VecAsBase64")]
-    pub nonce: Zeroizing<Vec<u8>>,
+    pub(crate) nonce: Zeroizing<Vec<u8>>,
     #[serde_as(as = "VecAsBase64")]
-    pub key: Zeroizing<Vec<u8>>,
+    pub(crate) key: Zeroizing<Vec<u8>>,
+    pub(crate) generation: u32,
+}
+
+impl MessageKeyData {
+    /// AEAD nonce.
+    #[cfg_attr(not(feature = "secret_tree_access"), allow(dead_code))]
+    pub fn nonce(&self) -> &[u8] {
+        &self.nonce
+    }
+
+    /// AEAD key.
+    #[cfg_attr(not(feature = "secret_tree_access"), allow(dead_code))]
+    pub fn key(&self) -> &[u8] {
+        &self.key
+    }
+
+    /// Generation of this key within the key schedule.
+    #[cfg_attr(not(feature = "secret_tree_access"), allow(dead_code))]
+    pub fn generation(&self) -> u32 {
+        self.generation
+    }
 }
 
 #[serde_as]
@@ -407,18 +429,18 @@ impl SecretKeyRatchet {
             }
 
             while self.generation < generation {
-                let (key_data, generation) = self.next_message_key(cipher_suite_provider)?;
-                self.history.insert(generation, key_data);
+                let key_data = self.next_message_key(cipher_suite_provider)?;
+                self.history.insert(key_data.generation, key_data);
             }
 
-            self.next_message_key(cipher_suite_provider).map(|r| r.0)
+            self.next_message_key(cipher_suite_provider)
         }
     }
 
     fn next_message_key<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
-    ) -> Result<(MessageKeyData, u32), SecretTreeError> {
+    ) -> Result<MessageKeyData, SecretTreeError> {
         let generation = self.generation;
 
         let key = MessageKeyData {
@@ -432,6 +454,7 @@ impl SecretKeyRatchet {
                 "key",
                 cipher_suite_provider.aead_key_size(),
             )?,
+            generation,
         };
 
         self.secret = TreeSecret::from(self.derive_secret(
@@ -442,7 +465,7 @@ impl SecretKeyRatchet {
 
         self.generation = generation + 1;
 
-        Ok((key, generation))
+        Ok(key)
     }
 
     fn derive_secret<P: CipherSuiteProvider>(
@@ -603,12 +626,12 @@ mod tests {
             )
             .unwrap();
 
-            let app_keys: Vec<(MessageKeyData, u32)> = vec![
+            let app_keys: Vec<MessageKeyData> = vec![
                 app_ratchet.next_message_key(&provider).unwrap(),
                 app_ratchet.next_message_key(&provider).unwrap(),
             ];
 
-            let handshake_keys: Vec<(MessageKeyData, u32)> = vec![
+            let handshake_keys: Vec<MessageKeyData> = vec![
                 handshake_ratchet.next_message_key(&provider).unwrap(),
                 handshake_ratchet.next_message_key(&provider).unwrap(),
             ];
@@ -647,7 +670,7 @@ mod tests {
                 .get_message_key(&provider, ratchet_clone.generation - 1)
                 .unwrap();
 
-            assert_eq!(clone_2.0, second_key)
+            assert_eq!(clone_2, second_key)
         }
     }
 
@@ -723,8 +746,8 @@ mod tests {
 
     #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
     struct Ratchet {
-        application_keys: Vec<(MessageKeyData, u32)>,
-        handshake_keys: Vec<(MessageKeyData, u32)>,
+        application_keys: Vec<MessageKeyData>,
+        handshake_keys: Vec<MessageKeyData>,
     }
 
     #[derive(Debug, serde::Serialize, serde::Deserialize)]

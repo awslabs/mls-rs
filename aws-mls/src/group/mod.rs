@@ -125,6 +125,9 @@ pub mod secret_tree;
 #[cfg(not(feature = "benchmark"))]
 pub(crate) mod secret_tree;
 
+#[cfg(feature = "secret_tree_access")]
+pub use secret_tree::MessageKeyData as MessageKey;
+
 #[cfg(test)]
 mod interop_test_vectors;
 
@@ -1718,6 +1721,28 @@ where
             .await
             .map_err(Into::into)
         }
+    }
+
+    #[cfg(feature = "secret_tree_access")]
+    pub fn next_encryption_key(&mut self) -> Result<MessageKey, MlsError> {
+        let mut processor = CiphertextProcessor::new(self, self.cipher_suite_provider.clone());
+
+        processor
+            .next_encryption_key(KeyType::Application)
+            .map_err(Into::into)
+    }
+
+    #[cfg(feature = "secret_tree_access")]
+    pub fn derive_decryption_key(
+        &mut self,
+        sender: u32,
+        generation: u32,
+    ) -> Result<MessageKey, MlsError> {
+        let mut processor = CiphertextProcessor::new(self, self.cipher_suite_provider.clone());
+
+        processor
+            .decryption_key(LeafIndex(sender), KeyType::Application, generation)
+            .map_err(Into::into)
     }
 }
 

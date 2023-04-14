@@ -13,7 +13,7 @@ use super::{
     key_schedule::KeyScheduleError,
     message_signature::AuthenticatedContent,
     padding::PaddingMode,
-    secret_tree::{KeyType, SecretTreeError},
+    secret_tree::{KeyType, MessageKeyData, SecretTreeError},
     GroupContext,
 };
 use crate::{psk::PskError, tree_kem::node::LeafIndex};
@@ -87,6 +87,32 @@ where
         }
     }
 
+    pub fn next_encryption_key(
+        &mut self,
+        key_type: KeyType,
+    ) -> Result<MessageKeyData, CiphertextProcessorError> {
+        let self_index = self.group_state.self_index();
+
+        self.group_state
+            .epoch_secrets_mut()
+            .secret_tree
+            .next_message_key(&self.cipher_suite_provider, self_index, key_type)
+            .map_err(Into::into)
+    }
+
+    pub fn decryption_key(
+        &mut self,
+        sender: LeafIndex,
+        key_type: KeyType,
+        generation: u32,
+    ) -> Result<MessageKeyData, CiphertextProcessorError> {
+        self.group_state
+            .epoch_secrets_mut()
+            .secret_tree
+            .message_key_generation(&self.cipher_suite_provider, sender, key_type, generation)
+            .map_err(Into::into)
+    }
+
     pub fn seal(
         &mut self,
         auth_content: AuthenticatedContent,
@@ -134,11 +160,8 @@ where
         // reuse safe by xor the reuse guard with the first 4 bytes
         let self_index = self.group_state.self_index();
 
-        let (key_data, generation) = self
-            .group_state
-            .epoch_secrets_mut()
-            .secret_tree
-            .next_message_key(&self.cipher_suite_provider, self_index, key_type)?;
+        let key_data = self.next_encryption_key(key_type)?;
+        let generation = key_data.generation;
 
         let ciphertext = MessageKey::new(key_data)
             .encrypt(
@@ -215,16 +238,7 @@ where
         };
 
         // Decrypt the content of the message using the grabbed key
-        let key = self
-            .group_state
-            .epoch_secrets_mut()
-            .secret_tree
-            .message_key_generation(
-                &self.cipher_suite_provider,
-                sender_data.sender,
-                key_type,
-                sender_data.generation,
-            )?;
+        let key = self.decryption_key(sender_data.sender, key_type, sender_data.generation)?;
 
         let sender = Sender::Member(*sender_data.sender);
 
