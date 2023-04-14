@@ -65,14 +65,14 @@ pub async fn create_stage(cipher_suite: CipherSuite, size: usize) -> TestCase {
     let (mut test_tree, encap_private_key) = TreeKemPublic::derive(
         encap_node,
         encap_hpke_secret,
-        BasicIdentityProvider,
+        &BasicIdentityProvider,
         &cipher_suite_provider,
     )
     .await
     .unwrap();
 
     test_tree
-        .add_leaves(leaf_nodes, BasicIdentityProvider, &cipher_suite_provider)
+        .add_leaves(leaf_nodes, &BasicIdentityProvider, &cipher_suite_provider)
         .await
         .unwrap();
 

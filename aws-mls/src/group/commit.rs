@@ -399,7 +399,7 @@ where
                 sender,
                 proposals,
                 &self.context().extensions,
-                self.config.identity_provider(),
+                &self.config.identity_provider(),
                 &self.cipher_suite_provider,
                 &self.state.public_tree,
                 external_leaf,

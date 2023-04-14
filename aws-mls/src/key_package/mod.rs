@@ -196,7 +196,7 @@ pub(crate) mod test_utils {
             cipher_suite_provider,
             signing_identity: &signing_identity,
             signing_key: &secret_key,
-            identity_provider: &BasicIdentityProvider::new(),
+            identity_provider: &BasicIdentityProvider,
         };
 
         custom(generator).await.key_package

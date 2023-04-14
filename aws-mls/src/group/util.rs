@@ -143,7 +143,7 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
         // TODO do joiners verify group against current time??
         ext_senders
             .verify_all(
-                &identity_provider,
+                identity_provider,
                 None,
                 &join_context.group_context.extensions,
             )
@@ -202,7 +202,7 @@ pub(crate) async fn proposal_effects<C, F, P, CSP>(
     commit: &Commit,
     sender: &Sender,
     group_extensions: &ExtensionList,
-    identity_provider: C,
+    identity_provider: &C,
     cipher_suite_provider: &CSP,
     public_tree: &TreeKemPublic,
     external_psk_id_validator: P,

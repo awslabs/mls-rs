@@ -202,11 +202,13 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
 
         // Check that this proposal has a valid lifetime and signature. Required capabilities are
         // not checked as they may be changed in another proposal in the same commit.
+        let id_provider = self.config.identity_provider();
+
         let key_package_validator = KeyPackageValidator::new(
             self.protocol_version(),
             &self.cipher_suite_provider,
             None,
-            self.config.identity_provider(),
+            &id_provider,
             Some(&self.state.context.extensions),
         );
 

@@ -189,7 +189,7 @@ mod tests {
 
         tree.add_leaves(
             leaf_nodes,
-            BasicIdentityProvider::new(),
+            &BasicIdentityProvider,
             &test_cipher_suite_provider(cipher_suite),
         )
         .await
@@ -217,7 +217,7 @@ mod tests {
         let update_path = test_update_path(TEST_CIPHER_SUITE, "creator").await;
 
         let validated = validate_update_path(
-            &BasicIdentityProvider::new(),
+            &BasicIdentityProvider,
             &cipher_suite_provider,
             &update_path,
             &test_provisional_state(TEST_CIPHER_SUITE).await,
@@ -239,7 +239,7 @@ mod tests {
         update_path.leaf_node.signature = random_bytes(32);
 
         let validated = validate_update_path(
-            &BasicIdentityProvider::new(),
+            &BasicIdentityProvider,
             &cipher_suite_provider,
             &update_path,
             &test_provisional_state(TEST_CIPHER_SUITE).await,
@@ -262,7 +262,7 @@ mod tests {
         let update_path = test_update_path(cipher_suite, "foobar").await;
 
         let validated = validate_update_path(
-            &BasicIdentityProvider::new(),
+            &BasicIdentityProvider,
             &cipher_suite_provider,
             &update_path,
             &test_provisional_state(cipher_suite).await,
@@ -292,7 +292,7 @@ mod tests {
             .public_key = update_path.leaf_node.public_key.clone();
 
         let validated = validate_update_path(
-            &BasicIdentityProvider::new(),
+            &BasicIdentityProvider,
             &cipher_suite_provider,
             &update_path,
             &state,

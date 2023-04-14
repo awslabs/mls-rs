@@ -230,7 +230,7 @@ impl ProposalCache {
         sender: Sender,
         additional_proposals: Vec<Proposal>,
         group_extensions: &ExtensionList,
-        identity_provider: C,
+        identity_provider: &C,
         cipher_suite_provider: &CSP,
         public_tree: &TreeKemPublic,
         external_leaf: Option<&LeafNode>,
@@ -287,7 +287,7 @@ impl ProposalCache {
             group_extensions,
             required_capabilities.as_ref(),
             external_leaf,
-            &identity_provider,
+            identity_provider,
             external_psk_id_validator,
         );
 
@@ -304,7 +304,7 @@ impl ProposalCache {
             removed_leaves,
             external_leaf_index,
         } = applier
-            .apply_proposals(IgnoreInvalidByRefProposal, &sender, proposals, time)
+            .apply_proposals(&IgnoreInvalidByRefProposal, &sender, proposals, time)
             .await?;
 
         let rejected = rejected_proposals(self.proposals.clone(), &proposals, &sender);
@@ -345,7 +345,7 @@ impl ProposalCache {
         proposal_list: Vec<ProposalOrRef>,
         external_leaf: Option<&LeafNode>,
         group_extensions: &ExtensionList,
-        identity_provider: C,
+        identity_provider: &C,
         cipher_suite_provider: &CSP,
         public_tree: &TreeKemPublic,
         external_psk_id_validator: P,
@@ -393,7 +393,7 @@ impl ProposalCache {
             group_extensions,
             required_capabilities.as_ref(),
             external_leaf,
-            &identity_provider,
+            identity_provider,
             external_psk_id_validator,
         );
 
@@ -404,7 +404,7 @@ impl ProposalCache {
             removed_leaves,
             external_leaf_index,
         } = applier
-            .apply_proposals(FailInvalidProposal, &sender, proposals, commit_time)
+            .apply_proposals(&FailInvalidProposal, &sender, proposals, commit_time)
             .await?;
 
         let rejected = receiver
@@ -521,7 +521,7 @@ pub(crate) mod test_utils {
                 sender: sender.into(),
                 receiver,
                 cache: make_proposal_cache(),
-                identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider::new()),
+                identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider),
                 group_context_extensions: Default::default(),
                 user_rules: pass_through_rules(),
                 external_psk_id_validator: PassThroughPskIdValidator,
@@ -700,7 +700,7 @@ mod tests {
             proposal_list: Vec<ProposalOrRef>,
             external_leaf: Option<&LeafNode>,
             group_extensions: &ExtensionList,
-            identity_provider: C,
+            identity_provider: &C,
             cipher_suite_provider: &CSP,
             public_tree: &TreeKemPublic,
             external_psk_id_validator: P,
@@ -751,7 +751,7 @@ mod tests {
         let (pub_tree, priv_tree) = TreeKemPublic::derive(
             leaf,
             secret,
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &test_cipher_suite_provider(TEST_CIPHER_SUITE),
         )
         .await
@@ -767,7 +767,7 @@ mod tests {
     async fn add_member(tree: &mut TreeKemPublic, name: &str) -> LeafIndex {
         tree.add_leaves(
             vec![get_basic_test_node(TEST_CIPHER_SUITE, name).await],
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &test_cipher_suite_provider(TEST_CIPHER_SUITE),
         )
         .await
@@ -811,7 +811,7 @@ mod tests {
         let (mut tree, _) = TreeKemPublic::derive(
             sender_leaf,
             sender_leaf_secret,
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -841,7 +841,7 @@ mod tests {
         let test_sender = *tree
             .add_leaves(
                 vec![get_basic_test_node(cipher_suite, "charlie").await],
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -855,7 +855,7 @@ mod tests {
                 &[(sender, update_leaf.clone())],
                 &[remove_leaf_index],
                 &[add_package.leaf_node.clone()],
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -980,7 +980,7 @@ mod tests {
                 Sender::Member(test_sender),
                 vec![],
                 &ExtensionList::new(),
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
                 None,
@@ -1029,7 +1029,7 @@ mod tests {
                 Sender::Member(test_sender),
                 additional.clone(),
                 &ExtensionList::new(),
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
                 None,
@@ -1058,7 +1058,7 @@ mod tests {
                 &[],
                 &[],
                 &[additional_key_package.leaf_node.clone()],
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -1089,7 +1089,7 @@ mod tests {
                 Sender::Member(test_sender()),
                 additional,
                 &ExtensionList::new(),
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
                 None,
@@ -1133,7 +1133,7 @@ mod tests {
                 Sender::Member(test_sender),
                 vec![],
                 &ExtensionList::new(),
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
                 None,
@@ -1168,7 +1168,7 @@ mod tests {
                 Sender::Member(test_sender),
                 vec![],
                 &ExtensionList::new(),
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
                 None,
@@ -1222,7 +1222,7 @@ mod tests {
                 Sender::Member(2),
                 Vec::new(),
                 &ExtensionList::new(),
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
                 None,
@@ -1278,14 +1278,12 @@ mod tests {
             key_package: test_key_package(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, "frank").await,
         })];
 
-        let identity_provider = BasicIdentityProvider::new();
-
         let (proposals, effects) = cache
             .prepare_commit(
                 Sender::Member(test_sender),
                 additional,
                 &ExtensionList::new(),
-                &identity_provider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
                 None,
@@ -1303,7 +1301,7 @@ mod tests {
                 proposals,
                 None,
                 &ExtensionList::new(),
-                &identity_provider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
                 PassThroughPskIdValidator,
@@ -1332,7 +1330,7 @@ mod tests {
                 Sender::Member(*alice),
                 vec![proposal.clone(), proposal],
                 &ExtensionList::new(),
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
                 None,
@@ -1378,8 +1376,6 @@ mod tests {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let public_tree = &group.group.state.public_tree;
 
-        let identity_provider = BasicIdentityProvider::new();
-
         let res = cache
             .resolve_for_commit_default(
                 Sender::NewMemberCommit,
@@ -1389,7 +1385,7 @@ mod tests {
                 ))],
                 None,
                 &group.group.context().extensions,
-                identity_provider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
                 PassThroughPskIdValidator,
@@ -1433,7 +1429,7 @@ mod tests {
                 vec![ProposalOrRef::Reference(proposal_ref)],
                 Some(&test_node().await),
                 &group.group.context().extensions,
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
                 PassThroughPskIdValidator,
@@ -1456,7 +1452,6 @@ mod tests {
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let public_tree = &group.group.state.public_tree;
-        let identity_provider = BasicIdentityProvider::new();
 
         let res = cache
             .resolve_for_commit_default(
@@ -1473,7 +1468,7 @@ mod tests {
                 .collect(),
                 Some(&test_node().await),
                 &group.group.context().extensions,
-                identity_provider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
                 PassThroughPskIdValidator,
@@ -1497,7 +1492,6 @@ mod tests {
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let public_tree = &group.group.state.public_tree;
-        let identity_provider = BasicIdentityProvider::new();
 
         cache
             .resolve_for_commit_default(
@@ -1512,7 +1506,7 @@ mod tests {
                 .collect(),
                 Some(&test_node().await),
                 &group.group.context().extensions,
-                identity_provider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
                 PassThroughPskIdValidator,
@@ -1544,7 +1538,6 @@ mod tests {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let group_extensions = group.group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
-        let identity_provider = BasicIdentityProvider::new();
 
         let test_leaf_nodes = vec![
             get_basic_test_node(TEST_CIPHER_SUITE, "foo").await,
@@ -1554,7 +1547,7 @@ mod tests {
         let test_leaf_node_indexes = public_tree
             .add_leaves(
                 test_leaf_nodes,
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -1577,7 +1570,7 @@ mod tests {
                 proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
                 Some(&test_node().await),
                 &group_extensions,
-                identity_provider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &public_tree,
                 PassThroughPskIdValidator,
@@ -1607,7 +1600,7 @@ mod tests {
         let test_leaf_node_indexes = public_tree
             .add_leaves(
                 test_leaf_nodes,
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -1627,7 +1620,7 @@ mod tests {
                 proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
                 Some(&test_node().await),
                 &group_extensions,
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &public_tree,
                 PassThroughPskIdValidator,
@@ -1651,14 +1644,13 @@ mod tests {
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let group_extensions = group.group.context().extensions.clone();
         let mut public_tree = group.group.state.public_tree;
-        let identity_provider = BasicIdentityProvider::new();
 
         let test_leaf_nodes = vec![get_basic_test_node(TEST_CIPHER_SUITE, "foo").await];
 
         let test_leaf_node_indexes = public_tree
             .add_leaves(
                 test_leaf_nodes,
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -1678,7 +1670,7 @@ mod tests {
                 proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
                 Some(&test_node().await),
                 &group_extensions,
-                identity_provider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &public_tree,
                 PassThroughPskIdValidator,
@@ -1744,7 +1736,6 @@ mod tests {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
         let public_tree = &group.group.state.public_tree;
-        let identity_provider = BasicIdentityProvider::new();
 
         let res = cache
             .resolve_for_commit_default(
@@ -1753,7 +1744,7 @@ mod tests {
                 Vec::new(),
                 Some(&test_node().await),
                 &group.group.context().extensions,
-                identity_provider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
                 PassThroughPskIdValidator,
@@ -1779,7 +1770,7 @@ mod tests {
                 Sender::Member(test_sender()),
                 vec![],
                 &ExtensionList::new(),
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &TreeKemPublic::new(),
                 None,
@@ -1810,7 +1801,7 @@ mod tests {
                 Sender::Member(test_sender()),
                 Vec::new(),
                 &ExtensionList::new(),
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &TreeKemPublic::new(),
                 None,
@@ -1836,7 +1827,7 @@ mod tests {
         let (mut tree, _) = TreeKemPublic::derive(
             alice_leaf,
             alice_secret,
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -1845,7 +1836,7 @@ mod tests {
         let bob = tree
             .add_leaves(
                 vec![get_basic_test_node(TEST_CIPHER_SUITE, "bob").await],
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -1858,7 +1849,7 @@ mod tests {
                 Sender::Member(alice),
                 vec![remove],
                 &ExtensionList::new(),
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
                 None,
@@ -1895,7 +1886,7 @@ mod tests {
                 Sender::Member(*alice),
                 vec![psk, add],
                 &ExtensionList::new(),
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
                 None,
@@ -1927,7 +1918,7 @@ mod tests {
                 Sender::Member(*alice),
                 vec![reinit],
                 &ExtensionList::new(),
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
                 None,
@@ -3157,7 +3148,7 @@ mod tests {
             .unwrap();
 
             let (pub_tree, priv_tree) =
-                TreeKemPublic::derive(leaf, secret, BasicIdentityProvider, &cipher_suite_provider)
+                TreeKemPublic::derive(leaf, secret, &BasicIdentityProvider, &cipher_suite_provider)
                     .await
                     .unwrap();
 
@@ -3475,7 +3466,7 @@ mod tests {
         let (mut tree, priv_tree) = TreeKemPublic::derive(
             alice_leaf.clone(),
             alice_secret,
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -3544,7 +3535,7 @@ mod tests {
         let (mut tree, priv_tree) = TreeKemPublic::derive(
             alice_leaf.clone(),
             alice_secret,
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await

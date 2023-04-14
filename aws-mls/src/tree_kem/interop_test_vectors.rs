@@ -72,11 +72,9 @@ async fn validation() {
             continue;
         };
 
-        let id_provider = &BasicIdentityProvider;
-
         let mut tree = TreeKemPublic::import_node_data(
             NodeVec::mls_decode(&*test_case.tree).unwrap(),
-            &id_provider,
+            &BasicIdentityProvider,
         )
         .await
         .unwrap();
@@ -103,7 +101,7 @@ async fn validation() {
             &tree_hash,
             None,
             &ExtensionList::new(),
-            id_provider,
+            &BasicIdentityProvider,
         )
         .validate(&mut tree)
         .await

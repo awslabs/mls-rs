@@ -202,7 +202,7 @@ mod tests {
         let (mut public_tree, mut alice_private) = TreeKemPublic::derive(
             alice_leaf,
             alice_hpke_secret,
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -212,7 +212,7 @@ mod tests {
         public_tree
             .add_leaves(
                 vec![bob_leaf, charlie_leaf],
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await

@@ -91,7 +91,7 @@ mod tests {
         let mut tree = get_test_tree(TEST_CIPHER_SUITE).await.public;
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+        tree.add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -117,13 +117,13 @@ mod tests {
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
         let to_remove = tree
-            .add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+            .add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap()[0];
 
         tree.remove_leaves(
             vec![to_remove],
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -152,7 +152,7 @@ mod tests {
 
         tree.add_leaves(
             [key_packages[0].clone(), key_packages[1].clone()].to_vec(),
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -167,7 +167,7 @@ mod tests {
 
         tree.add_leaves(
             [key_packages[2].clone()].to_vec(),
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await

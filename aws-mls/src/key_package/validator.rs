@@ -64,7 +64,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, 
         protocol_version: ProtocolVersion,
         cipher_suite_provider: &'a CSP,
         required_capabilities: Option<&'a RequiredCapabilitiesExt>,
-        identity_provider: C,
+        identity_provider: &'a C,
         group_context_extensions: Option<&'a ExtensionList>,
     ) -> KeyPackageValidator<'a, C, CSP> {
         KeyPackageValidator {
@@ -193,7 +193,7 @@ mod tests {
                 protocol_version,
                 &cipher_suite_provider,
                 None,
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 None,
             );
 
@@ -230,7 +230,7 @@ mod tests {
                 protocol_version,
                 &cipher_suite_provider,
                 None,
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 None,
             );
 
@@ -256,7 +256,7 @@ mod tests {
             version,
             &invalid_cipher_suite_provider,
             None,
-            BasicIdentityProvider::new(),
+            &BasicIdentityProvider,
             None,
         );
 
@@ -298,7 +298,7 @@ mod tests {
                             cipher_suite_provider: &cipher_suite_provider,
                             signing_identity: &alternate_sining_id,
                             signing_key: &signing_key,
-                            identity_provider: &BasicIdentityProvider::new(),
+                            identity_provider: &BasicIdentityProvider,
                         };
 
                         new_generator
@@ -344,7 +344,7 @@ mod tests {
             protocol_version,
             &cipher_suite_provider,
             None,
-            BasicIdentityProvider::new(),
+            &BasicIdentityProvider,
             None,
         );
 
@@ -375,7 +375,7 @@ mod tests {
             protocol_version,
             &cipher_suite_provider,
             None,
-            BasicIdentityProvider::new(),
+            &BasicIdentityProvider,
             None,
         );
 
@@ -431,7 +431,7 @@ mod tests {
             protocol_version,
             &cipher_suite_provider,
             None,
-            BasicIdentityProvider::new(),
+            &BasicIdentityProvider,
             None,
         );
 
@@ -459,7 +459,7 @@ mod tests {
             protocol_version,
             &cipher_suite_provider,
             None,
-            BasicIdentityProvider::new(),
+            &BasicIdentityProvider,
             None,
         );
 
@@ -515,7 +515,7 @@ mod tests {
             protocol_version,
             &cipher_suite_provider,
             Some(&required_capabilities),
-            BasicIdentityProvider::new(),
+            &BasicIdentityProvider,
             None,
         );
 
@@ -549,7 +549,7 @@ mod tests {
             protocol_version,
             &cipher_suite_provider,
             Some(&required_capabilities),
-            BasicIdentityProvider::new(),
+            &BasicIdentityProvider,
             None,
         );
 
@@ -595,7 +595,7 @@ mod tests {
             protocol_version,
             &cipher_suite_provider,
             None,
-            BasicIdentityProvider::new(),
+            &BasicIdentityProvider,
             None,
         );
 

@@ -231,7 +231,7 @@ mod tests {
                 cipher_suite_provider: &cipher_suite_provider,
                 signing_identity: &signing_identity,
                 signing_key: &signing_key,
-                identity_provider: &BasicIdentityProvider::new(),
+                identity_provider: &BasicIdentityProvider,
             };
 
             let mut capabilities = get_test_capabilities();
@@ -292,7 +292,7 @@ mod tests {
                 protocol_version,
                 &cipher_suite_provider,
                 None,
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
                 None,
             );
 
@@ -318,7 +318,7 @@ mod tests {
                 cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
                 signing_identity: &signing_identity,
                 signing_key: &signing_key,
-                identity_provider: &BasicIdentityProvider::new(),
+                identity_provider: &BasicIdentityProvider,
             };
 
             let first_key_package = test_generator

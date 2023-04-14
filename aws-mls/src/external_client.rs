@@ -100,13 +100,10 @@ where
             .cipher_suite_provider(cipher_suite)
             .ok_or_else(|| MlsError::UnsupportedCipherSuite(cipher_suite))?;
 
-        let keypackage_validator = KeyPackageValidator::new(
-            protocol,
-            &cipher_suite_provider,
-            None,
-            self.config.identity_provider(),
-            None,
-        );
+        let id_provider = self.config.identity_provider();
+
+        let keypackage_validator =
+            KeyPackageValidator::new(protocol, &cipher_suite_provider, None, &id_provider, None);
 
         let options = KeyPackageValidationOptions {
             apply_lifetime_check: Some(MlsTime::now()),

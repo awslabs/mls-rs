@@ -456,6 +456,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         }?;
 
         let group_state = self.group_state();
+        let id_provider = self.identity_provider();
 
         // Calculate the diff that the commit will apply
         let proposal_effects = proposal_effects(
@@ -464,7 +465,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             commit,
             &auth_content.content.sender,
             &group_state.context.extensions,
-            self.identity_provider(),
+            &id_provider,
             self.cipher_suite_provider(),
             &group_state.public_tree,
             self.external_psk_id_validator(),

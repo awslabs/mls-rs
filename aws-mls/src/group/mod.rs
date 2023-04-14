@@ -276,7 +276,7 @@ where
         let (mut public_tree, private_tree) = TreeKemPublic::derive(
             leaf_node,
             leaf_node_secret,
-            config.identity_provider(),
+            &config.identity_provider(),
             &cipher_suite_provider,
         )
         .await?;

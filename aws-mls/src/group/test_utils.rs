@@ -204,7 +204,7 @@ pub(crate) async fn test_member(
         cipher_suite_provider: &test_cipher_suite_provider(cipher_suite),
         signing_identity: &signing_identity,
         signing_key: &signing_key,
-        identity_provider: &BasicIdentityProvider::new(),
+        identity_provider: &BasicIdentityProvider,
     };
 
     let key_package = key_package_generator

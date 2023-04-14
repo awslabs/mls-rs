@@ -60,7 +60,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
         tree_hash: &'a [u8],
         required_capabilities: Option<&'a RequiredCapabilitiesExt>,
         group_context_extensions: &'a ExtensionList,
-        identity_provider: C,
+        identity_provider: &'a C,
     ) -> Self {
         TreeValidator {
             expected_tree_hash: tree_hash,
@@ -217,7 +217,7 @@ mod tests {
             .public
             .add_leaves(
                 vec![leaf1, leaf2],
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -260,7 +260,7 @@ mod tests {
                 &expected_tree_hash,
                 None,
                 &extensions,
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
             );
 
             validator.validate(&mut test_tree).await.unwrap();
@@ -282,7 +282,7 @@ mod tests {
                 &expected_tree_hash,
                 None,
                 &extensions,
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
             );
 
             assert_matches!(
@@ -311,7 +311,7 @@ mod tests {
                 &expected_tree_hash,
                 None,
                 &extensions,
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
             );
 
             assert_matches!(
@@ -342,7 +342,7 @@ mod tests {
                 &expected_tree_hash,
                 None,
                 &extensions,
-                BasicIdentityProvider::new(),
+                &BasicIdentityProvider,
             );
 
             assert_matches!(

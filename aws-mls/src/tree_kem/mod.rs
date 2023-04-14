@@ -211,7 +211,7 @@ impl TreeKemPublic {
     pub async fn derive<I, CP>(
         leaf_node: LeafNode,
         secret_key: HpkeSecretKey,
-        identity_provider: I,
+        identity_provider: &I,
         cipher_suite_provider: &CP,
     ) -> Result<(TreeKemPublic, TreeKemPrivate), RatchetTreeError>
     where
@@ -259,7 +259,7 @@ impl TreeKemPublic {
     pub async fn add_leaves<I, CP>(
         &mut self,
         leaf_nodes: Vec<LeafNode>,
-        identity_provider: I,
+        identity_provider: &I,
         cipher_suite_provider: &CP,
     ) -> Result<Vec<LeafIndex>, RatchetTreeError>
     where
@@ -426,7 +426,7 @@ impl TreeKemPublic {
         updates: &[(LeafIndex, LeafNode)],
         removals: &[LeafIndex],
         additions: &[LeafNode],
-        identity_provider: I,
+        identity_provider: &I,
         cipher_suite_provider: &CP,
     ) -> Result<A::Output, RatchetTreeError>
     where
@@ -775,7 +775,7 @@ impl TreeKemPublic {
         &mut self,
         index: LeafIndex,
         leaf_node: LeafNode,
-        identity_provider: I,
+        identity_provider: &I,
         cipher_suite_provider: &CP,
     ) -> Result<(), RatchetTreeError>
     where
@@ -806,7 +806,7 @@ impl TreeKemPublic {
     pub async fn remove_leaves<I, CP>(
         &mut self,
         indexes: Vec<LeafIndex>,
-        identity_provider: I,
+        identity_provider: &I,
         cipher_suite_provider: &CP,
     ) -> Result<Vec<(LeafIndex, LeafNode)>, RatchetTreeError>
     where
@@ -895,7 +895,7 @@ pub(crate) mod test_utils {
         let (test_public, test_private) = TreeKemPublic::derive(
             creator_leaf.clone(),
             creator_hpke_secret.clone(),
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -1126,7 +1126,7 @@ mod tests {
             .public
             .add_leaves(
                 additional_key_packages,
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -1152,7 +1152,7 @@ mod tests {
         let res = tree
             .add_leaves(
                 leaf_nodes.clone(),
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -1185,7 +1185,7 @@ mod tests {
 
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+        tree.add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -1203,14 +1203,14 @@ mod tests {
 
         tree.add_leaves(
             key_packages.clone(),
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
         .unwrap();
 
         let add_res = tree
-            .add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+            .add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
             .await;
 
         assert_matches!(
@@ -1230,7 +1230,7 @@ mod tests {
 
         tree.add_leaves(
             [key_packages[0].clone()].to_vec(),
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -1240,7 +1240,7 @@ mod tests {
                               //
         tree.add_leaves(
             [key_packages[1].clone()].to_vec(),
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -1261,7 +1261,7 @@ mod tests {
 
         tree.add_leaves(
             [key_packages[0].clone(), key_packages[1].clone()].to_vec(),
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -1276,7 +1276,7 @@ mod tests {
 
         tree.add_leaves(
             [key_packages[2].clone()].to_vec(),
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -1297,7 +1297,7 @@ mod tests {
 
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+        tree.add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -1320,7 +1320,7 @@ mod tests {
         tree.update_leaf(
             original_leaf_index,
             updated_leaf.clone(),
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -1357,7 +1357,7 @@ mod tests {
 
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+        tree.add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -1367,7 +1367,7 @@ mod tests {
             tree.update_leaf(
                 LeafIndex(128),
                 new_key_package,
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider
             )
             .await,
@@ -1388,7 +1388,7 @@ mod tests {
         let indexes = tree
             .add_leaves(
                 key_packages.clone(),
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -1407,7 +1407,7 @@ mod tests {
         let res = tree
             .remove_leaves(
                 indexes.clone(),
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -1433,7 +1433,7 @@ mod tests {
         let to_remove = tree
             .add_leaves(
                 leaf_nodes.clone(),
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -1444,7 +1444,7 @@ mod tests {
         let res = tree
             .remove_leaves(
                 vec![to_remove],
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -1471,7 +1471,7 @@ mod tests {
 
         let key_packages = get_test_leaf_nodes(TEST_CIPHER_SUITE).await;
 
-        tree.add_leaves(key_packages, BasicIdentityProvider, &cipher_suite_provider)
+        tree.add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -1480,7 +1480,7 @@ mod tests {
         let to_remove = vec![LeafIndex(2)];
 
         // Remove the leaf from the tree
-        tree.remove_leaves(to_remove, BasicIdentityProvider, &cipher_suite_provider)
+        tree.remove_leaves(to_remove, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -1509,7 +1509,7 @@ mod tests {
         assert_matches!(
             tree.remove_leaves(
                 vec![LeafIndex(128)],
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider
             )
             .await,
@@ -1530,7 +1530,7 @@ mod tests {
 
         tree.add_leaves(
             leaf_nodes.clone(),
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -1595,7 +1595,7 @@ mod tests {
 
         tree.add_leaves(
             leaf_nodes.clone(),
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
@@ -1610,7 +1610,7 @@ mod tests {
                 )],
                 &[LeafIndex(2)],
                 &[get_basic_test_node(TEST_CIPHER_SUITE, "D").await],
-                BasicIdentityProvider,
+                &BasicIdentityProvider,
                 &cipher_suite_provider,
             )
             .await
@@ -1634,7 +1634,7 @@ mod tests {
             .iter_mut()
             .for_each(|n| n.capabilities.proposals.push(test_proposal_type));
 
-        tree.add_leaves(leaf_nodes, BasicIdentityProvider, &cipher_suite_provider)
+        tree.add_leaves(leaf_nodes, &BasicIdentityProvider, &cipher_suite_provider)
             .await
             .unwrap();
 
@@ -1643,7 +1643,7 @@ mod tests {
 
         tree.add_leaves(
             vec![get_basic_test_node(TEST_CIPHER_SUITE, "another").await],
-            BasicIdentityProvider,
+            &BasicIdentityProvider,
             &cipher_suite_provider,
         )
         .await
