@@ -60,6 +60,9 @@ rayon = { version = "1", optional = true }
 arbitrary = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "^1.0", optional = true }
 
+# Example 
+tokio = { version = "1", optional = true }
+
 # TODO: https://github.com/GoogleChromeLabs/wasm-bindgen-rayon
 
 
@@ -80,6 +83,10 @@ aws-mls-crypto-rustcrypto = { path = "../aws-mls-crypto-rustcrypto", features = 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", version = "*"}
+
+[[example]]
+name = "basic_usage"
+required-features = ["tokio"]
 
 
 [[bench]]
