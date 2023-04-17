@@ -1,5 +1,4 @@
 use alloc::boxed::Box;
-use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 #[cfg(feature = "std")]
@@ -24,11 +23,8 @@ use self::hpke_encryption::HpkeEncryptionError;
 use self::leaf_node::{LeafNode, LeafNodeError};
 
 use crate::crypto::{self, CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
-use crate::error::ExtensionError;
+use crate::group::key_schedule::KeyScheduleError;
 use crate::group::proposal::ProposalType;
-use crate::key_package::{KeyPackageError, KeyPackageGenerationError, KeyPackageValidationError};
-use crate::tree_kem::parent_hash::ParentHashError;
-use crate::tree_kem::path_secret::PathSecretError;
 use crate::tree_kem::tree_hash::TreeHashes;
 
 pub use tree_index::TreeIndexError;
@@ -75,28 +71,17 @@ pub enum RatchetTreeError {
     #[error(transparent)]
     TreeMathError(#[from] TreeMathError),
     #[error(transparent)]
-    KeyPackageError(#[from] KeyPackageError),
-    #[error(transparent)]
-    KeyPackageGeneratorError(#[from] KeyPackageGenerationError),
-    #[error(transparent)]
     NodeVecError(#[from] NodeVecError),
     #[error(transparent)]
     MlsCodecError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
-    ParentHashError(#[from] ParentHashError),
-    #[error(transparent)]
-    ExtensionError(#[from] ExtensionError),
-    #[error(transparent)]
-    PathSecretError(#[from] PathSecretError),
-    #[error(transparent)]
-    KeyPackageValidationError(#[from] KeyPackageValidationError),
-    #[error(transparent)]
     LeafNodeError(#[from] LeafNodeError),
     #[error(transparent)]
     TreeIndexError(#[from] TreeIndexError),
+    #[error(transparent)]
+    KeyScheduleError(#[from] KeyScheduleError),
     #[error("invalid update path signature")]
     InvalidUpdatePathSignature,
-    // TODO: This should probably tell you the expected key vs actual key
     #[error("update path pub key mismatch")]
     PubKeyMismatch,
     #[error("invalid leaf signature")]
@@ -113,10 +98,6 @@ pub enum RatchetTreeError {
     ParentHashNotFound,
     #[error("update path parent hash mismatch")]
     ParentHashMismatch,
-    #[error("invalid parent hash: {0}")]
-    InvalidParentHash(String),
-    #[error("HPKE decrypt called with incorrect secret key, ciphertext or context")]
-    HPKEDecryptionError,
     #[error("decrypting commit from self")]
     DecryptFromSelf,
     #[error(transparent)]

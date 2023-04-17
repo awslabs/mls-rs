@@ -3,7 +3,8 @@ use crate::group::{GroupContext, MembershipTag, MembershipTagError, SecretTree};
 use crate::psk::secret::PskSecret;
 use crate::psk::{PreSharedKey, PskError};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
-use crate::tree_kem::path_secret::{PathSecret, PathSecretError, PathSecretGenerator};
+use crate::tree_kem::path_secret::{PathSecret, PathSecretGenerator};
+use crate::tree_kem::RatchetTreeError;
 use crate::CipherSuiteProvider;
 use alloc::boxed::Box;
 use alloc::vec;
@@ -343,7 +344,7 @@ impl CommitSecret {
     pub fn from_root_secret<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         root_secret: Option<&PathSecret>,
-    ) -> Result<Self, PathSecretError> {
+    ) -> Result<Self, RatchetTreeError> {
         match root_secret {
             Some(root_secret) => {
                 let mut generator =

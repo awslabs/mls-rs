@@ -23,8 +23,8 @@ use crate::psk::{ExternalPskId, PskError};
 use crate::signer::SignatureError;
 use crate::tree_kem::{
     hpke_encryption::HpkeEncryptionError, leaf_node::LeafNodeError,
-    leaf_node_validator::LeafNodeValidationError, path_secret::PathSecretError,
-    tree_validator::TreeValidationError, RatchetTreeError, UpdatePathValidationError,
+    leaf_node_validator::LeafNodeValidationError, tree_validator::TreeValidationError,
+    RatchetTreeError, UpdatePathValidationError,
 };
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -68,8 +68,6 @@ pub enum MlsError {
     MembershipTagError(Box<dyn Error + Send + Sync>),
     #[error(transparent)]
     ConfirmationTagError(#[from] ConfirmationTagError),
-    #[error(transparent)]
-    LeafSecretError(#[from] PathSecretError),
     #[error(transparent)]
     GroupStateRepositoryError(#[from] GroupStateRepositoryError),
     #[error(transparent)]

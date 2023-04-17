@@ -1,11 +1,9 @@
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::math as tree_math;
-use crate::tree_kem::math::TreeMathError;
-use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeVecError};
+use crate::tree_kem::node::{LeafIndex, Node, NodeIndex};
 use crate::tree_kem::RatchetTreeError;
 use crate::tree_kem::TreeKemPublic;
-use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
@@ -20,26 +18,6 @@ use std::collections::{HashMap, HashSet};
 
 #[cfg(not(feature = "std"))]
 use alloc::collections::{BTreeMap, BTreeSet};
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-#[derive(thiserror::Error, Debug)]
-pub enum ParentHashError {
-    #[error(transparent)]
-    SerializationError(#[from] aws_mls_codec::Error),
-    #[error(transparent)]
-    NodeVecError(#[from] NodeVecError),
-    #[error(transparent)]
-    TreeMathError(#[from] TreeMathError),
-    #[error("original tree hash not initialized for node index {0}")]
-    TreeHashNotInitialized(u32),
-    #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
-}
 
 #[derive(Clone, Debug, MlsSize, MlsEncode)]
 struct ParentHashInput<'a> {
@@ -82,7 +60,7 @@ impl ParentHash {
         public_key: &HpkePublicKey,
         parent_hash: &ParentHash,
         original_sibling_tree_hash: &[u8],
-    ) -> Result<Self, ParentHashError> {
+    ) -> Result<Self, RatchetTreeError> {
         let input = ParentHashInput {
             public_key,
             parent_hash,
@@ -93,7 +71,7 @@ impl ParentHash {
 
         let hash = cipher_suite_provider
             .hash(&input_bytes)
-            .map_err(|e| ParentHashError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))?;
 
         Ok(Self(hash))
     }
