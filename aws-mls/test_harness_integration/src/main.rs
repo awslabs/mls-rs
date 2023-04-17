@@ -786,7 +786,7 @@ impl MlsClient for MlsClientImpl {
             let mut extensions = group.context_extensions().clone();
 
             let ext_sender =
-                SigningIdentity::mls_decode(&*request.external_sender).map_err(abort)?;
+                SigningIdentity::mls_decode(&mut &*request.external_sender).map_err(abort)?;
 
             let mut ext_senders = extensions
                 .get_as::<ExternalSendersExt>()

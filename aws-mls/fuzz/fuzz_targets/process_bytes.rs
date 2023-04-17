@@ -15,7 +15,7 @@ static GROUP_DATA: Lazy<Mutex<Vec<Group<TestClientConfig>>>> = Lazy::new(|| {
 });
 
 fuzz_target!(|data: &[u8]| {
-    if let Ok(message) = MLSMessage::mls_decode(data) {
+    if let Ok(message) = MLSMessage::mls_decode(&mut &*data) {
         block_on(GROUP_DATA.lock().unwrap()[1].process_incoming_message(message)).ok();
     }
 });

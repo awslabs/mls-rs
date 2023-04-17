@@ -181,7 +181,7 @@ mod tests {
             };
 
             let auth_content =
-                AuthenticatedContent::mls_decode(&*test_case.authenticated_content).unwrap();
+                AuthenticatedContent::mls_decode(&mut &*test_case.authenticated_content).unwrap();
 
             assert!(auth_content.content.content_type() == ContentType::Commit);
 

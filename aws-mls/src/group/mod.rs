@@ -144,7 +144,7 @@ impl HpkeEncryptable for GroupSecrets {
     type Error = aws_mls_codec::Error;
 
     fn from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        Self::mls_decode(bytes.as_slice())
+        Self::mls_decode(&mut bytes.as_slice())
     }
 
     fn get_bytes(&self) -> Result<Vec<u8>, Self::Error> {
@@ -441,7 +441,7 @@ where
 
         // Use the key and nonce to decrypt the encrypted_group_info field.
         let decrypted_group_info = welcome_secret.decrypt(&welcome.encrypted_group_info)?;
-        let group_info = GroupInfo::mls_decode(&**decrypted_group_info)?;
+        let group_info = GroupInfo::mls_decode(&mut &**decrypted_group_info)?;
 
         let join_context = validate_group_info(
             protocol_version,

@@ -16,7 +16,6 @@ mod array;
 pub mod byte_vec;
 
 mod option;
-mod reader;
 mod stdint;
 mod varint;
 mod vec;
@@ -24,7 +23,6 @@ mod writer;
 
 pub use array::*;
 pub use option::*;
-pub use reader::*;
 pub use stdint::*;
 pub use varint::*;
 pub use vec::*;
@@ -90,5 +88,5 @@ where
 
 /// Trait to support deserialzing to a type using MLS encoding.
 pub trait MlsDecode: Sized {
-    fn mls_decode<R: Reader>(reader: R) -> Result<Self, Error>;
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, Error>;
 }

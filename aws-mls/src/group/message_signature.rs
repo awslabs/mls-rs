@@ -6,7 +6,7 @@ use crate::signer::{Signable, SignatureError};
 use crate::CipherSuiteProvider;
 use alloc::vec;
 use alloc::vec::Vec;
-use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize, Reader};
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::protocol_version::ProtocolVersion;
 use core::ops::Deref;
 
@@ -43,14 +43,14 @@ impl MlsEncode for FramedContentAuthData {
 }
 
 impl FramedContentAuthData {
-    pub(crate) fn mls_decode<R: Reader>(
-        mut reader: R,
+    pub(crate) fn mls_decode(
+        reader: &mut &[u8],
         content_type: ContentType,
     ) -> Result<Self, aws_mls_codec::Error> {
         Ok(FramedContentAuthData {
-            signature: MessageSignature::mls_decode(&mut reader)?,
+            signature: MessageSignature::mls_decode(reader)?,
             confirmation_tag: match content_type {
-                ContentType::Commit => Some(ConfirmationTag::mls_decode(&mut reader)?),
+                ContentType::Commit => Some(ConfirmationTag::mls_decode(reader)?),
                 ContentType::Application | ContentType::Proposal => None,
             },
         })
@@ -124,10 +124,10 @@ impl AuthenticatedContent {
 }
 
 impl MlsDecode for AuthenticatedContent {
-    fn mls_decode<R: Reader>(mut reader: R) -> Result<Self, aws_mls_codec::Error> {
-        let wire_format = WireFormat::mls_decode(&mut reader)?;
-        let content = FramedContent::mls_decode(&mut reader)?;
-        let auth_data = FramedContentAuthData::mls_decode(&mut reader, content.content_type())?;
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, aws_mls_codec::Error> {
+        let wire_format = WireFormat::mls_decode(reader)?;
+        let content = FramedContent::mls_decode(reader)?;
+        let auth_data = FramedContentAuthData::mls_decode(reader, content.content_type())?;
 
         Ok(AuthenticatedContent {
             wire_format,
@@ -156,7 +156,7 @@ impl<'de> serde::Deserialize<'de> for AuthenticatedContent {
         D: serde::Deserializer<'de>,
     {
         let data: Vec<u8> = Vec::deserialize(deserializer)?;
-        AuthenticatedContent::mls_decode(&*data).map_err(serde::de::Error::custom)
+        AuthenticatedContent::mls_decode(&mut &*data).map_err(serde::de::Error::custom)
     }
 }
 

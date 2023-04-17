@@ -2,7 +2,7 @@ use super::proposal::Proposal;
 use super::*;
 use crate::{client::MlsError, protocol_version::ProtocolVersion};
 use alloc::{string::ToString, vec::Vec};
-use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize, ReadWithCount};
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::Zeroize;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
@@ -140,12 +140,12 @@ impl MlsEncode for PublicMessage {
 }
 
 impl MlsDecode for PublicMessage {
-    fn mls_decode<R: aws_mls_codec::Reader>(mut reader: R) -> Result<Self, aws_mls_codec::Error> {
-        let content = FramedContent::mls_decode(&mut reader)?;
-        let auth = FramedContentAuthData::mls_decode(&mut reader, content.content_type())?;
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, aws_mls_codec::Error> {
+        let content = FramedContent::mls_decode(reader)?;
+        let auth = FramedContentAuthData::mls_decode(reader, content.content_type())?;
 
         let membership_tag = match content.sender {
-            Sender::Member(_) => Some(MembershipTag::mls_decode(&mut reader)?),
+            Sender::Member(_) => Some(MembershipTag::mls_decode(reader)?),
             _ => None,
         };
 
@@ -196,22 +196,18 @@ impl MlsEncode for PrivateContentTBE {
 
 impl PrivateContentTBE {
     pub(crate) fn mls_decode(
-        data: &[u8],
+        reader: &mut &[u8],
         content_type: ContentType,
     ) -> Result<Self, aws_mls_codec::Error> {
-        let mut reader = ReadWithCount::new(data);
-
         let content = match content_type {
-            ContentType::Application => {
-                Content::Application(ApplicationData::mls_decode(&mut reader)?)
-            }
-            ContentType::Proposal => Content::Proposal(Proposal::mls_decode(&mut reader)?),
-            ContentType::Commit => Content::Commit(Commit::mls_decode(&mut reader)?),
+            ContentType::Application => Content::Application(ApplicationData::mls_decode(reader)?),
+            ContentType::Proposal => Content::Proposal(Proposal::mls_decode(reader)?),
+            ContentType::Commit => Content::Commit(Commit::mls_decode(reader)?),
         };
 
-        let auth = FramedContentAuthData::mls_decode(&mut reader, content.content_type())?;
+        let auth = FramedContentAuthData::mls_decode(reader, content.content_type())?;
 
-        let padding = data[reader.bytes_read()..].to_vec();
+        let padding = reader.to_vec();
 
         if padding.iter().any(|&i| i != 0u8) {
             return Err(aws_mls_codec::Error::Custom(
@@ -352,7 +348,7 @@ impl MLSMessage {
 
     /// Deserialize a message from transport.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, MlsError> {
-        Self::mls_decode(bytes).map_err(Into::into)
+        Self::mls_decode(&mut &*bytes).map_err(Into::into)
     }
 
     /// Serialize a message for transport.
@@ -476,7 +472,8 @@ mod tests {
 
         let encoded = ciphertext_content.mls_encode_to_vec().unwrap();
         let decoded =
-            PrivateContentTBE::mls_decode(&encoded, (&ciphertext_content.content).into()).unwrap();
+            PrivateContentTBE::mls_decode(&mut &*encoded, (&ciphertext_content.content).into())
+                .unwrap();
 
         assert_eq!(ciphertext_content, decoded);
     }
@@ -487,7 +484,8 @@ mod tests {
         ciphertext_content.padding = vec![1u8; 128];
 
         let encoded = ciphertext_content.mls_encode_to_vec().unwrap();
-        let decoded = PrivateContentTBE::mls_decode(&encoded, (&ciphertext_content.content).into());
+        let decoded =
+            PrivateContentTBE::mls_decode(&mut &*encoded, (&ciphertext_content.content).into());
 
         assert_matches!(decoded, Err(aws_mls_codec::Error::Custom(e)) if e == "non-zero padding bytes discovered");
     }

@@ -1,7 +1,7 @@
 use alloc::format;
 use alloc::vec::Vec;
 
-use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize, ReadWithCount, VarInt};
+use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize, VarInt};
 
 #[cfg(feature = "std")]
 use indexmap::IndexMap;
@@ -83,15 +83,19 @@ impl MlsEncode for ExtensionList {
 }
 
 impl MlsDecode for ExtensionList {
-    fn mls_decode<R: aws_mls_codec::Reader>(mut reader: R) -> Result<Self, aws_mls_codec::Error> {
-        let len = VarInt::mls_decode(&mut reader)?.0 as usize;
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, aws_mls_codec::Error> {
+        let len = VarInt::mls_decode(reader)?.0 as usize;
 
-        let mut reader = ReadWithCount::new(&mut reader);
+        (len <= reader.len())
+            .then_some(())
+            .ok_or(aws_mls_codec::Error::UnexpectedEOF)?;
 
+        let (mut data, rest) = reader.split_at(len);
+        *reader = rest;
         let mut list = ExtensionList::new();
 
-        while reader.bytes_read() < len {
-            let ext = Extension::mls_decode(&mut reader)?;
+        while !data.is_empty() {
+            let ext = Extension::mls_decode(&mut data)?;
             let ext_type = ext.extension_type;
 
             if list.0.insert(ext_type, ext).is_some() {
@@ -362,7 +366,7 @@ mod tests {
         let serialized_extensions = extensions.mls_encode_to_vec().unwrap();
 
         assert_matches!(
-            ExtensionList::mls_decode(&*serialized_extensions),
+            ExtensionList::mls_decode(&mut &*serialized_extensions),
             Err(aws_mls_codec::Error::Custom(_))
         );
     }

@@ -88,13 +88,13 @@ async fn tree_modifications_interop() {
         load_test_cases!(tree_modifications_interop, generate_tree_mods_tests().await);
 
     for test_case in test_cases.into_iter() {
-        let nodes = NodeVec::mls_decode(&*test_case.tree_before).unwrap();
+        let nodes = NodeVec::mls_decode(&mut &*test_case.tree_before).unwrap();
 
         let tree_before = TreeKemPublic::import_node_data(nodes, &BasicIdentityProvider)
             .await
             .unwrap();
 
-        let proposal = Proposal::mls_decode(&*test_case.proposal).unwrap();
+        let proposal = Proposal::mls_decode(&mut &*test_case.proposal).unwrap();
 
         let tree_after = apply_proposal(proposal, test_case.proposal_sender, &tree_before).await;
 

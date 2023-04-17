@@ -182,7 +182,7 @@ where
     }
 
     fn from_bytes(data: &[u8]) -> Result<Self, Self::DeserializationError> {
-        Self::mls_decode(data)
+        Self::mls_decode(&mut &*data)
     }
 }
 

@@ -22,10 +22,10 @@ impl<T: MlsEncode> MlsEncode for Option<T> {
 }
 
 impl<T: MlsDecode> MlsDecode for Option<T> {
-    fn mls_decode<R: crate::Reader>(mut reader: R) -> Result<Self, crate::Error> {
-        match u8::mls_decode(&mut reader)? {
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, crate::Error> {
+        match u8::mls_decode(reader)? {
             0 => Ok(None),
-            1 => T::mls_decode(&mut reader).map(Some),
+            1 => T::mls_decode(reader).map(Some),
             n => Err(crate::Error::OptionOutOfRange(n)),
         }
     }
@@ -55,14 +55,14 @@ mod tests {
     fn none_round_trips() {
         let val = None::<u8>;
         let x = val.mls_encode_to_vec().unwrap();
-        assert_eq!(val, Option::mls_decode(&*x).unwrap());
+        assert_eq!(val, Option::mls_decode(&mut &*x).unwrap());
     }
 
     #[test]
     fn some_round_trips() {
         let val = Some(32u8);
         let x = val.mls_encode_to_vec().unwrap();
-        assert_eq!(val, Option::mls_decode(&*x).unwrap());
+        assert_eq!(val, Option::mls_decode(&mut &*x).unwrap());
     }
 
     #[test]

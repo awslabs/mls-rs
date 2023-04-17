@@ -62,8 +62,8 @@ impl MlsEncode for VarInt {
 }
 
 impl MlsDecode for VarInt {
-    fn mls_decode<R: crate::Reader>(mut reader: R) -> Result<Self, Error> {
-        let first = u8::mls_decode(&mut reader)?;
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, Error> {
+        let first = u8::mls_decode(reader)?;
 
         let prefix = first >> 6;
 
@@ -72,7 +72,7 @@ impl MlsDecode for VarInt {
             .ok_or(Error::InvalidVarIntPrefix(prefix))?;
 
         let n = (1..count).try_fold(u32::from(first & 0x3f), |n, _| {
-            u8::mls_decode(&mut reader).map(|b| n << 8 | u32::from(b))
+            u8::mls_decode(reader).map(|b| n << 8 | u32::from(b))
         })?;
 
         let n = VarInt(n);
@@ -136,7 +136,7 @@ mod tests {
         let n = VarInt::try_from(0u32).unwrap();
 
         let serialized = n.mls_encode_to_vec().unwrap();
-        let restored = VarInt::mls_decode(&*serialized).unwrap();
+        let restored = VarInt::mls_decode(&mut &*serialized).unwrap();
 
         assert_eq!(restored, n);
     }
@@ -146,7 +146,7 @@ mod tests {
         let n = VarInt::MAX;
 
         let serialized = n.mls_encode_to_vec().unwrap();
-        let restored = VarInt::mls_decode(&*serialized).unwrap();
+        let restored = VarInt::mls_decode(&mut &*serialized).unwrap();
 
         assert_eq!(restored, n);
     }
@@ -162,7 +162,7 @@ mod tests {
         let bytes = &bytes[start..];
 
         assert_eq!(
-            VarInt::mls_decode(bytes).unwrap(),
+            VarInt::mls_decode(&mut &*bytes).unwrap(),
             VarInt::try_from(decoded).unwrap()
         );
     }

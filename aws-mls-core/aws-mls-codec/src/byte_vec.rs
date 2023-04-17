@@ -1,6 +1,6 @@
 use crate::{Error, MlsDecode, MlsEncode, MlsSize, VarInt, Writer};
 
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
 
 /// Optimized length calculation for types that can be represented as u8 slices.
 pub fn mls_encoded_len<T>(data: &T) -> usize
@@ -31,14 +31,17 @@ where
 }
 
 /// Optimized decoding for types that can be represented as Vec<u8>
-pub fn mls_decode<T, R: crate::Reader>(mut reader: R) -> Result<T, crate::Error>
+pub fn mls_decode<T>(reader: &mut &[u8]) -> Result<T, crate::Error>
 where
     T: From<Vec<u8>>,
 {
-    let len = VarInt::mls_decode(&mut reader)?.0 as usize;
+    let len = VarInt::mls_decode(reader)?.0 as usize;
 
-    let mut out = vec![0u8; len];
-    reader.read(&mut out)?;
+    let out = reader
+        .get(..len)
+        .map(|head| head.to_vec().into())
+        .ok_or(crate::Error::UnexpectedEOF)?;
 
-    Ok(out.into())
+    *reader = &reader[len..];
+    Ok(out)
 }

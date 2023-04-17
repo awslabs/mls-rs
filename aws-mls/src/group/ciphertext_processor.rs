@@ -252,7 +252,7 @@ where
             .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))?;
 
         let ciphertext_content =
-            PrivateContentTBE::mls_decode(&decrypted_content, ciphertext.content_type)?;
+            PrivateContentTBE::mls_decode(&mut &**decrypted_content, ciphertext.content_type)?;
 
         // Build the MLS plaintext object and process it
         let auth_content = AuthenticatedContent {

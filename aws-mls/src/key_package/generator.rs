@@ -91,7 +91,7 @@ impl KeyPackageGeneration {
     ) -> Result<Self, KeyPackageGenerationError> {
         Ok(KeyPackageGeneration {
             reference: KeyPackageRef::from(id),
-            key_package: KeyPackage::mls_decode(&*data.key_package_bytes)?,
+            key_package: KeyPackage::mls_decode(&mut &*data.key_package_bytes)?,
             init_secret_key: data.init_key,
             leaf_node_secret_key: data.leaf_node_key,
         })

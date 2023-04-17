@@ -197,7 +197,7 @@ mod test {
             };
 
             let proposal_content =
-                AuthenticatedContent::mls_decode(one_case.input.as_slice()).unwrap();
+                AuthenticatedContent::mls_decode(&mut one_case.input.as_slice()).unwrap();
 
             let proposal_ref = ProposalRef::from_content(&cs_provider, &proposal_content).unwrap();
 

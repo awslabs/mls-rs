@@ -424,7 +424,7 @@ mod tests {
             };
 
             let mut tree = TreeKemPublic::import_node_data(
-                NodeVec::mls_decode(&*one_case.tree_data).unwrap(),
+                NodeVec::mls_decode(&mut &*one_case.tree_data).unwrap(),
                 &BasicIdentityProvider,
             )
             .await

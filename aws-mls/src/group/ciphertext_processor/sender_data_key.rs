@@ -96,7 +96,7 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
                 &self.nonce,
             )
             .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))
-            .and_then(|data| SenderData::mls_decode(&**data).map_err(From::from))
+            .and_then(|data| SenderData::mls_decode(&mut &**data).map_err(From::from))
     }
 }
 

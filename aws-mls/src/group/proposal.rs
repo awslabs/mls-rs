@@ -245,7 +245,7 @@ pub trait MlsCustomProposal: MlsSize + MlsEncode + MlsDecode + Sized {
             ));
         }
 
-        Self::mls_decode(proposal.data())
+        Self::mls_decode(&mut proposal.data())
     }
 }
 
@@ -310,24 +310,24 @@ impl MlsEncode for Proposal {
 }
 
 impl MlsDecode for Proposal {
-    fn mls_decode<R: aws_mls_codec::Reader>(mut reader: R) -> Result<Self, aws_mls_codec::Error> {
-        let proposal_type = ProposalType::mls_decode(&mut reader)?;
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, aws_mls_codec::Error> {
+        let proposal_type = ProposalType::mls_decode(reader)?;
 
         Ok(match proposal_type {
-            ProposalType::ADD => Proposal::Add(AddProposal::mls_decode(&mut reader)?),
-            ProposalType::UPDATE => Proposal::Update(UpdateProposal::mls_decode(&mut reader)?),
-            ProposalType::REMOVE => Proposal::Remove(RemoveProposal::mls_decode(&mut reader)?),
-            ProposalType::PSK => Proposal::Psk(PreSharedKeyProposal::mls_decode(&mut reader)?),
-            ProposalType::RE_INIT => Proposal::ReInit(ReInitProposal::mls_decode(&mut reader)?),
+            ProposalType::ADD => Proposal::Add(AddProposal::mls_decode(reader)?),
+            ProposalType::UPDATE => Proposal::Update(UpdateProposal::mls_decode(reader)?),
+            ProposalType::REMOVE => Proposal::Remove(RemoveProposal::mls_decode(reader)?),
+            ProposalType::PSK => Proposal::Psk(PreSharedKeyProposal::mls_decode(reader)?),
+            ProposalType::RE_INIT => Proposal::ReInit(ReInitProposal::mls_decode(reader)?),
             ProposalType::EXTERNAL_INIT => {
-                Proposal::ExternalInit(ExternalInit::mls_decode(&mut reader)?)
+                Proposal::ExternalInit(ExternalInit::mls_decode(reader)?)
             }
             ProposalType::GROUP_CONTEXT_EXTENSIONS => {
-                Proposal::GroupContextExtensions(ExtensionList::mls_decode(&mut reader)?)
+                Proposal::GroupContextExtensions(ExtensionList::mls_decode(reader)?)
             }
             custom => Proposal::Custom(CustomProposal {
                 proposal_type: custom,
-                data: aws_mls_codec::byte_vec::mls_decode(&mut reader)?,
+                data: aws_mls_codec::byte_vec::mls_decode(reader)?,
             }),
         })
     }

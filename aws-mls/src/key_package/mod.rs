@@ -307,7 +307,7 @@ mod tests {
                 continue;
             };
 
-            let key_package = KeyPackage::mls_decode(one_case.input.as_slice()).unwrap();
+            let key_package = KeyPackage::mls_decode(&mut one_case.input.as_slice()).unwrap();
 
             let key_package_ref = key_package.to_reference(&provider).unwrap();
 

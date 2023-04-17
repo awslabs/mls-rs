@@ -33,7 +33,7 @@ impl Operation {
         match self {
             Operation::Size => quote! {},
             Operation::Encode => quote! { , &mut writer },
-            Operation::Decode => quote! { &mut reader },
+            Operation::Decode => quote! { reader },
         }
     }
 
@@ -263,7 +263,8 @@ pub fn derive_encode(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
 pub fn derive_decode(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let trait_name = quote! { aws_mls_codec::MlsDecode };
 
-    let function_def = quote! { fn mls_decode<R: aws_mls_codec::Reader>(mut reader: R) -> Result<Self, aws_mls_codec::Error> };
+    let function_def =
+        quote! { fn mls_decode(reader: &mut &[u8]) -> Result<Self, aws_mls_codec::Error> };
 
     derive_impl(input, trait_name, function_def, |input| {
         input.handle_input(Operation::Decode)

@@ -15,11 +15,14 @@ impl<const N: usize> MlsEncode for [u8; N] {
 }
 
 impl<const N: usize> MlsDecode for [u8; N] {
-    fn mls_decode<R: crate::Reader>(mut reader: R) -> Result<Self, crate::Error> {
-        let mut res = [0u8; N];
-        reader.read(&mut res)?;
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, crate::Error> {
+        let array = reader
+            .get(..N)
+            .and_then(|head| head.try_into().ok())
+            .ok_or(crate::Error::UnexpectedEOF)?;
 
-        Ok(res)
+        *reader = &reader[N..];
+        Ok(array)
     }
 }
 
@@ -43,7 +46,7 @@ mod tests {
     fn serialize_round_trip() {
         let arr = [0u8, 1u8, 2u8];
         let serialized = arr.mls_encode_to_vec().unwrap();
-        let restored: [u8; 3] = crate::MlsDecode::mls_decode(&*serialized).unwrap();
+        let restored: [u8; 3] = crate::MlsDecode::mls_decode(&mut &*serialized).unwrap();
         assert_eq!(arr, restored);
     }
 
@@ -51,7 +54,7 @@ mod tests {
     fn end_of_file_error() {
         let arr = [0u8, 1u8, 2u8];
         let serialized = arr.mls_encode_to_vec().unwrap();
-        let res: Result<[u8; 5], Error> = crate::MlsDecode::mls_decode(&*serialized);
+        let res: Result<[u8; 5], Error> = crate::MlsDecode::mls_decode(&mut &*serialized);
 
         assert_matches!(res, Err(Error::UnexpectedEOF))
     }

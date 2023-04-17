@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use crate::{varint::VarInt, MlsDecode, MlsEncode, MlsSize, ReadWithCount};
+use crate::{varint::VarInt, MlsDecode, MlsEncode, MlsSize};
 
 impl<T> MlsSize for [T]
 where
@@ -59,15 +59,19 @@ impl<T> MlsDecode for Vec<T>
 where
     T: MlsDecode,
 {
-    fn mls_decode<R: crate::Reader>(mut reader: R) -> Result<Self, crate::Error> {
-        let len = VarInt::mls_decode(&mut reader)?.0 as usize;
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, crate::Error> {
+        let len = VarInt::mls_decode(reader)?.0 as usize;
 
-        let mut reader = ReadWithCount::new(&mut reader);
+        (len <= reader.len())
+            .then_some(())
+            .ok_or(crate::Error::UnexpectedEOF)?;
 
+        let (mut data, rest) = reader.split_at(len);
+        *reader = rest;
         let mut items = Vec::new();
 
-        while reader.bytes_read() < len {
-            items.push(T::mls_decode(&mut reader)?);
+        while !data.is_empty() {
+            items.push(T::mls_decode(&mut data)?);
         }
 
         Ok(items)
@@ -95,18 +99,18 @@ mod tests {
     fn data_round_trips() {
         let val = vec![1u8, 2, 3];
         let x = val.mls_encode_to_vec().unwrap();
-        assert_eq!(val, Vec::mls_decode(&*x).unwrap());
+        assert_eq!(val, Vec::mls_decode(&mut &*x).unwrap());
     }
 
     #[test]
     fn empty_vec_can_be_deserialized() {
-        assert_eq!(Vec::<u8>::new(), Vec::mls_decode(&[0u8][..]).unwrap());
+        assert_eq!(Vec::<u8>::new(), Vec::mls_decode(&mut &[0u8][..]).unwrap());
     }
 
     #[test]
     fn too_few_items_to_deserialize_gives_an_error() {
         assert_matches!(
-            Vec::<u8>::mls_decode(&[2, 3][..]),
+            Vec::<u8>::mls_decode(&mut &[2, 3][..]),
             Err(Error::UnexpectedEOF)
         );
     }

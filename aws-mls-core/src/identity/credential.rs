@@ -208,15 +208,15 @@ impl MlsEncode for Credential {
 }
 
 impl MlsDecode for Credential {
-    fn mls_decode<R: aws_mls_codec::Reader>(mut reader: R) -> Result<Self, aws_mls_codec::Error> {
-        let credential_type = CredentialType::mls_decode(&mut reader)?;
+    fn mls_decode(reader: &mut &[u8]) -> Result<Self, aws_mls_codec::Error> {
+        let credential_type = CredentialType::mls_decode(reader)?;
 
         Ok(match credential_type {
-            CredentialType::BASIC => Credential::Basic(BasicCredential::mls_decode(&mut reader)?),
-            CredentialType::X509 => Credential::X509(CertificateChain::mls_decode(&mut reader)?),
+            CredentialType::BASIC => Credential::Basic(BasicCredential::mls_decode(reader)?),
+            CredentialType::X509 => Credential::X509(CertificateChain::mls_decode(reader)?),
             custom => Credential::Custom(CustomCredential {
                 credential_type: custom,
-                data: aws_mls_codec::byte_vec::mls_decode(&mut reader)?,
+                data: aws_mls_codec::byte_vec::mls_decode(reader)?,
             }),
         })
     }

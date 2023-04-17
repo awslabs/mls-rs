@@ -164,7 +164,7 @@ where
 {
     match tree_data {
         Some(tree_data) => Ok(TreeKemPublic::import_node_data(
-            NodeVec::mls_decode(tree_data)?,
+            NodeVec::mls_decode(&mut &*tree_data)?,
             identity_provider,
         )
         .await?),

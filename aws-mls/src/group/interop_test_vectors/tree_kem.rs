@@ -76,7 +76,7 @@ async fn tree_kem() {
         };
 
         // Import the public ratchet tree
-        let nodes = NodeVec::mls_decode(&*test_case.ratchet_tree).unwrap();
+        let nodes = NodeVec::mls_decode(&mut &*test_case.ratchet_tree).unwrap();
 
         let mut tree = TreeKemPublic::import_node_data(nodes, &BasicIdentityProvider)
             .await
@@ -128,7 +128,7 @@ async fn tree_kem() {
                 group.state.public_tree = tree.clone();
                 group.private_tree = tree_private.clone();
 
-                let path = UpdatePath::mls_decode(&*update_path.update_path).unwrap();
+                let path = UpdatePath::mls_decode(&mut &*update_path.update_path).unwrap();
 
                 let commit = Commit {
                     proposals: vec![],

@@ -137,7 +137,7 @@ async fn framing_proposal() {
         ];
 
         for enable_encryption in [true, false] {
-            let proposal = Proposal::mls_decode(&*test_case.proposal).unwrap();
+            let proposal = Proposal::mls_decode(&mut &*test_case.proposal).unwrap();
 
             let built = make_group(&test_case, true, enable_encryption, &cs)
                 .await
@@ -150,7 +150,7 @@ async fn framing_proposal() {
             to_check.push(built);
         }
 
-        let proposal = Proposal::mls_decode(&*test_case.proposal).unwrap();
+        let proposal = Proposal::mls_decode(&mut &*test_case.proposal).unwrap();
 
         for message in to_check {
             match process_message(&test_case, &message, &cs).await {
@@ -202,7 +202,7 @@ async fn framing_comit() {
             continue;
         };
 
-        let commit = Commit::mls_decode(&*test_case.commit).unwrap();
+        let commit = Commit::mls_decode(&mut &*test_case.commit).unwrap();
 
         let mut auth_content = AuthenticatedContent::new_signed(
             &cs,
@@ -236,7 +236,7 @@ async fn framing_comit() {
                 _ => panic!("received value not commit"),
             };
         }
-        let commit = Commit::mls_decode(&*test_case.commit).unwrap();
+        let commit = Commit::mls_decode(&mut &*test_case.commit).unwrap();
 
         match process_message(&test_case, &test_case.commit_priv.clone(), &cs).await {
             Content::Commit(c) => assert_eq!(&c, &commit),
@@ -400,7 +400,7 @@ async fn process_message<P: CipherSuiteProvider>(
 ) -> Content {
     // Enabling encryption doesn't matter for processing
     let mut group = make_group(test_case, false, true, cs).await;
-    let message = MLSMessage::mls_decode(message).unwrap();
+    let message = MLSMessage::mls_decode(&mut &*message).unwrap();
     let evt_or_cont = group.get_event_from_incoming_message(message);
 
     match evt_or_cont.await.unwrap() {

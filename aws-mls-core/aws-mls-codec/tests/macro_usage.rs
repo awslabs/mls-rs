@@ -60,7 +60,7 @@ fn round_trip_struct_encode() {
     };
 
     let data = item.mls_encode_to_vec().unwrap();
-    let restored = TestType::mls_decode(&*data).unwrap();
+    let restored = TestType::mls_decode(&mut &*data).unwrap();
 
     assert_eq!(restored, item);
 }
@@ -69,7 +69,7 @@ fn round_trip_struct_encode() {
 fn round_trip_generic_encode() {
     let item = TestGeneric(42u16);
     let data = item.mls_encode_to_vec().unwrap();
-    let restored = TestGeneric::mls_decode(&*data).unwrap();
+    let restored = TestGeneric::mls_decode(&mut &*data).unwrap();
 
     assert_eq!(restored, item);
 }
@@ -79,7 +79,7 @@ fn round_trip_enum_encode_simple() {
     let item = TestEnum::Case1;
 
     let serialized = item.mls_encode_to_vec().unwrap();
-    let decoded = TestEnum::mls_decode(&*serialized).unwrap();
+    let decoded = TestEnum::mls_decode(&mut &*serialized).unwrap();
 
     assert_eq!(serialized, 1u16.mls_encode_to_vec().unwrap());
     assert_eq!(decoded, item);
@@ -93,7 +93,7 @@ fn round_trip_enum_encode_one_field() {
     });
 
     let serialized = item.mls_encode_to_vec().unwrap();
-    let decoded = TestEnum::mls_decode(&*serialized).unwrap();
+    let decoded = TestEnum::mls_decode(&mut &*serialized).unwrap();
 
     assert_eq!(decoded, item);
 }
@@ -103,7 +103,7 @@ fn round_trip_enum_encode_one_tuple() {
     let item = TestEnum::Case3(TestTupleStruct(42));
 
     let serialized = item.mls_encode_to_vec().unwrap();
-    let decoded = TestEnum::mls_decode(&*serialized).unwrap();
+    let decoded = TestEnum::mls_decode(&mut &*serialized).unwrap();
 
     assert_eq!(decoded, item);
 }
@@ -118,10 +118,10 @@ fn round_trip_custom_module_struct() {
 
     let item = TestCustomStruct { value: 33 };
 
-    let serizlied = item.mls_encode_to_vec().unwrap();
-    assert_eq!(serizlied.len(), 2);
+    let serialized = item.mls_encode_to_vec().unwrap();
+    assert_eq!(serialized.len(), 2);
 
-    let decoded = TestCustomStruct::mls_decode(&*serizlied).unwrap();
+    let decoded = TestCustomStruct::mls_decode(&mut &*serialized).unwrap();
     assert_eq!(item, decoded);
 }
 
@@ -138,12 +138,12 @@ fn round_trip_custom_module_enum() {
     let serialized = item.mls_encode_to_vec().unwrap();
     assert_eq!(serialized.len(), 4);
 
-    let decoded = TestCustomEnum::mls_decode(&*serialized).unwrap();
+    let decoded = TestCustomEnum::mls_decode(&mut &*serialized).unwrap();
     assert_eq!(item, decoded)
 }
 
 mod test_with {
-    use aws_mls_codec::{Reader, Writer};
+    use aws_mls_codec::{MlsDecode, Writer};
 
     pub fn mls_encoded_len(_val: &u8) -> usize {
         2
@@ -153,10 +153,7 @@ mod test_with {
         writer.write(&[*val, 42])
     }
 
-    pub fn mls_decode<R: Reader>(mut reader: R) -> Result<u8, aws_mls_codec::Error> {
-        let mut data = vec![0u8; 2];
-        reader.read(&mut data)?;
-
-        Ok(data[0])
+    pub fn mls_decode(reader: &mut &[u8]) -> Result<u8, aws_mls_codec::Error> {
+        Ok(<[u8; 2]>::mls_decode(reader)?[0])
     }
 }
