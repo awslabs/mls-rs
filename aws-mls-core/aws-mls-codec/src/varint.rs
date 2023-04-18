@@ -1,4 +1,5 @@
 use crate::{Error, MlsDecode, MlsEncode, MlsSize};
+use alloc::vec::Vec;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VarInt(pub u32);
@@ -42,7 +43,7 @@ impl MlsSize for VarInt {
 }
 
 impl MlsEncode for VarInt {
-    fn mls_encode<W: crate::Writer>(&self, mut writer: W) -> Result<(), Error> {
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), Error> {
         let mut bytes = self.0.to_be_bytes();
 
         let bytes = match count_bytes_to_encode_int(*self) {
@@ -57,7 +58,8 @@ impl MlsEncode for VarInt {
             }
         };
 
-        writer.write(bytes)
+        writer.extend_from_slice(bytes);
+        Ok(())
     }
 }
 

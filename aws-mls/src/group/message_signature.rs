@@ -28,14 +28,11 @@ impl MlsSize for FramedContentAuthData {
 }
 
 impl MlsEncode for FramedContentAuthData {
-    fn mls_encode<W: aws_mls_codec::Writer>(
-        &self,
-        mut writer: W,
-    ) -> Result<(), aws_mls_codec::Error> {
-        self.signature.mls_encode(&mut writer)?;
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
+        self.signature.mls_encode(writer)?;
 
         if let Some(ref tag) = self.confirmation_tag {
-            tag.mls_encode(&mut writer)?;
+            tag.mls_encode(writer)?;
         }
 
         Ok(())
@@ -178,16 +175,13 @@ impl<'a> MlsSize for AuthenticatedContentTBS<'a> {
 }
 
 impl<'a> MlsEncode for AuthenticatedContentTBS<'a> {
-    fn mls_encode<W: aws_mls_codec::Writer>(
-        &self,
-        mut writer: W,
-    ) -> Result<(), aws_mls_codec::Error> {
-        self.protocol_version.mls_encode(&mut writer)?;
-        self.wire_format.mls_encode(&mut writer)?;
-        self.content.mls_encode(&mut writer)?;
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
+        self.protocol_version.mls_encode(writer)?;
+        self.wire_format.mls_encode(writer)?;
+        self.content.mls_encode(writer)?;
 
         if let Some(context) = self.context {
-            context.mls_encode(&mut writer)?;
+            context.mls_encode(writer)?;
         }
 
         Ok(())

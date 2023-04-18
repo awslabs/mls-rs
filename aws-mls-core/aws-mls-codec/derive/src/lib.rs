@@ -32,7 +32,7 @@ impl Operation {
     fn extras(&self) -> TokenStream {
         match self {
             Operation::Size => quote! {},
-            Operation::Encode => quote! { , &mut writer },
+            Operation::Encode => quote! { , writer },
             Operation::Decode => quote! { reader },
         }
     }
@@ -252,7 +252,7 @@ pub fn derive_size(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 pub fn derive_encode(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let trait_name = quote! { aws_mls_codec::MlsEncode };
 
-    let function_def = quote! { fn mls_encode<W: aws_mls_codec::Writer>(&self, mut writer: W) -> Result<(), aws_mls_codec::Error> };
+    let function_def = quote! { fn mls_encode(&self, writer: &mut aws_mls_codec::Vec<u8>) -> Result<(), aws_mls_codec::Error> };
 
     derive_impl(input, trait_name, function_def, |input| {
         input.handle_input(Operation::Encode)

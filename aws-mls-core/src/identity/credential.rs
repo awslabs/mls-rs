@@ -184,15 +184,12 @@ impl MlsSize for Credential {
 }
 
 impl MlsEncode for Credential {
-    fn mls_encode<W: aws_mls_codec::Writer>(
-        &self,
-        mut writer: W,
-    ) -> Result<(), aws_mls_codec::Error> {
-        self.credential_type().mls_encode(&mut writer)?;
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
+        self.credential_type().mls_encode(writer)?;
 
         match self {
-            Credential::Basic(c) => c.mls_encode(&mut writer),
-            Credential::X509(c) => c.mls_encode(&mut writer),
+            Credential::Basic(c) => c.mls_encode(writer),
+            Credential::X509(c) => c.mls_encode(writer),
             Credential::Custom(c) => {
                 if c.credential_type.raw_value() <= 2 {
                     return Err(aws_mls_codec::Error::Custom(

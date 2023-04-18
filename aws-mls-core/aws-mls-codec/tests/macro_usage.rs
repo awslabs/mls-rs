@@ -143,14 +143,15 @@ fn round_trip_custom_module_enum() {
 }
 
 mod test_with {
-    use aws_mls_codec::{MlsDecode, Writer};
+    use aws_mls_codec::MlsDecode;
 
     pub fn mls_encoded_len(_val: &u8) -> usize {
         2
     }
 
-    pub fn mls_encode<W: Writer>(val: &u8, mut writer: W) -> Result<(), aws_mls_codec::Error> {
-        writer.write(&[*val, 42])
+    pub fn mls_encode(val: &u8, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
+        writer.extend([*val, 42]);
+        Ok(())
     }
 
     pub fn mls_decode(reader: &mut &[u8]) -> Result<u8, aws_mls_codec::Error> {

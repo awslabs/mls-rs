@@ -65,18 +65,15 @@ impl MlsSize for ExtensionList {
 }
 
 impl MlsEncode for ExtensionList {
-    fn mls_encode<W: aws_mls_codec::Writer>(
-        &self,
-        mut writer: W,
-    ) -> Result<(), aws_mls_codec::Error> {
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
         let mut buffer = Vec::new();
 
         self.iter().try_for_each(|x| x.mls_encode(&mut buffer))?;
 
         let len = VarInt::try_from(buffer.len())?;
 
-        len.mls_encode(&mut writer)?;
-        writer.write(&buffer)?;
+        len.mls_encode(writer)?;
+        writer.extend(buffer);
 
         Ok(())
     }

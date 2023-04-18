@@ -1,4 +1,5 @@
 use crate::{MlsDecode, MlsEncode, MlsSize};
+use alloc::vec::Vec;
 
 macro_rules! impl_stdint {
     ($t:ty) => {
@@ -9,8 +10,9 @@ macro_rules! impl_stdint {
         }
 
         impl MlsEncode for $t {
-            fn mls_encode<W: crate::Writer>(&self, mut writer: W) -> Result<(), crate::Error> {
-                writer.write(&self.to_be_bytes())
+            fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), crate::Error> {
+                writer.extend(self.to_be_bytes());
+                Ok(())
             }
         }
 

@@ -1,4 +1,5 @@
 use crate::{MlsDecode, MlsEncode, MlsSize};
+use alloc::vec::Vec;
 
 impl<const N: usize> MlsSize for [u8; N] {
     #[inline(always)]
@@ -9,8 +10,9 @@ impl<const N: usize> MlsSize for [u8; N] {
 
 impl<const N: usize> MlsEncode for [u8; N] {
     #[inline(always)]
-    fn mls_encode<W: crate::Writer>(&self, mut writer: W) -> Result<(), crate::Error> {
-        writer.write(self)
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), crate::Error> {
+        writer.extend_from_slice(self);
+        Ok(())
     }
 }
 

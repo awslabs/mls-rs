@@ -202,22 +202,19 @@ impl<'a> MlsSize for LeafNodeTBS<'a> {
 }
 
 impl<'a> MlsEncode for LeafNodeTBS<'a> {
-    fn mls_encode<W: aws_mls_codec::Writer>(
-        &self,
-        mut writer: W,
-    ) -> Result<(), aws_mls_codec::Error> {
-        self.public_key.mls_encode(&mut writer)?;
-        self.signing_identity.mls_encode(&mut writer)?;
-        self.capabilities.mls_encode(&mut writer)?;
-        self.leaf_node_source.mls_encode(&mut writer)?;
-        self.extensions.mls_encode(&mut writer)?;
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
+        self.public_key.mls_encode(writer)?;
+        self.signing_identity.mls_encode(writer)?;
+        self.capabilities.mls_encode(writer)?;
+        self.leaf_node_source.mls_encode(writer)?;
+        self.extensions.mls_encode(writer)?;
 
         if let Some(ref group_id) = self.group_id {
-            aws_mls_codec::byte_vec::mls_encode(group_id, &mut writer)?;
+            aws_mls_codec::byte_vec::mls_encode(group_id, writer)?;
         }
 
         if let Some(leaf_index) = self.leaf_index {
-            leaf_index.mls_encode(&mut writer)?;
+            leaf_index.mls_encode(writer)?;
         }
 
         Ok(())

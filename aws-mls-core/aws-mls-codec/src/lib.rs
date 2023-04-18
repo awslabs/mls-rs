@@ -2,7 +2,8 @@
 #![cfg_attr(not(feature = "std"), feature(error_in_core))]
 extern crate alloc;
 
-use alloc::{string::String, vec::Vec};
+use alloc::string::String;
+pub use alloc::vec::Vec;
 
 extern crate thiserror_core as thiserror;
 
@@ -19,14 +20,12 @@ mod option;
 mod stdint;
 mod varint;
 mod vec;
-mod writer;
 
 pub use array::*;
 pub use option::*;
 pub use stdint::*;
 pub use varint::*;
 pub use vec::*;
-pub use writer::*;
 
 pub use aws_mls_codec_derive::*;
 
@@ -65,7 +64,7 @@ where
 
 /// Trait to support serializing a type with MLS encoding.
 pub trait MlsEncode: MlsSize {
-    fn mls_encode<W: Writer>(&self, writer: W) -> Result<(), Error>;
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), Error>;
 
     #[inline]
     fn mls_encode_to_vec(&self) -> Result<Vec<u8>, Error> {
@@ -81,7 +80,7 @@ where
     T: MlsEncode + ?Sized,
 {
     #[inline]
-    fn mls_encode<W: Writer>(&self, writer: W) -> Result<(), Error> {
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), Error> {
         (*self).mls_encode(writer)
     }
 }

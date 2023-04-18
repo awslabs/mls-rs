@@ -1,4 +1,5 @@
 use crate::{MlsDecode, MlsEncode, MlsSize};
+use alloc::vec::Vec;
 
 impl<T: MlsSize> MlsSize for Option<T> {
     #[inline]
@@ -11,12 +12,13 @@ impl<T: MlsSize> MlsSize for Option<T> {
 }
 
 impl<T: MlsEncode> MlsEncode for Option<T> {
-    fn mls_encode<W: crate::Writer>(&self, mut writer: W) -> Result<(), crate::Error> {
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), crate::Error> {
         if let Some(item) = self {
-            writer.write(&[1])?;
-            item.mls_encode(&mut writer)
+            writer.push(1);
+            item.mls_encode(writer)
         } else {
-            writer.write(&[0])
+            writer.push(0);
+            Ok(())
         }
     }
 }

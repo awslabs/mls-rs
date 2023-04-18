@@ -126,12 +126,9 @@ impl MlsSize for PublicMessage {
 }
 
 impl MlsEncode for PublicMessage {
-    fn mls_encode<W: aws_mls_codec::Writer>(
-        &self,
-        mut writer: W,
-    ) -> Result<(), aws_mls_codec::Error> {
-        self.content.mls_encode(&mut writer)?;
-        self.auth.mls_encode(&mut writer)?;
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
+        self.content.mls_encode(writer)?;
+        self.auth.mls_encode(writer)?;
 
         self.membership_tag
             .as_ref()
@@ -178,19 +175,17 @@ impl MlsSize for PrivateContentTBE {
 }
 
 impl MlsEncode for PrivateContentTBE {
-    fn mls_encode<W: aws_mls_codec::Writer>(
-        &self,
-        mut writer: W,
-    ) -> Result<(), aws_mls_codec::Error> {
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
         match &self.content {
-            Content::Application(c) => c.mls_encode(&mut writer),
-            Content::Proposal(c) => c.mls_encode(&mut writer),
-            Content::Commit(c) => c.mls_encode(&mut writer),
+            Content::Application(c) => c.mls_encode(writer),
+            Content::Proposal(c) => c.mls_encode(writer),
+            Content::Commit(c) => c.mls_encode(writer),
         }?;
 
         // Padding has arbitrary size
-        self.auth.mls_encode(&mut writer)?;
-        writer.write(&self.padding)
+        self.auth.mls_encode(writer)?;
+        writer.extend_from_slice(&self.padding);
+        Ok(())
     }
 }
 

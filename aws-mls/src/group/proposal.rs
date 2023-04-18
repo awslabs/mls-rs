@@ -282,20 +282,17 @@ impl MlsSize for Proposal {
 }
 
 impl MlsEncode for Proposal {
-    fn mls_encode<W: aws_mls_codec::Writer>(
-        &self,
-        mut writer: W,
-    ) -> Result<(), aws_mls_codec::Error> {
-        self.proposal_type().mls_encode(&mut writer)?;
+    fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
+        self.proposal_type().mls_encode(writer)?;
 
         match self {
-            Proposal::Add(p) => p.mls_encode(&mut writer),
-            Proposal::Update(p) => p.mls_encode(&mut writer),
-            Proposal::Remove(p) => p.mls_encode(&mut writer),
-            Proposal::Psk(p) => p.mls_encode(&mut writer),
-            Proposal::ReInit(p) => p.mls_encode(&mut writer),
-            Proposal::ExternalInit(p) => p.mls_encode(&mut writer),
-            Proposal::GroupContextExtensions(p) => p.mls_encode(&mut writer),
+            Proposal::Add(p) => p.mls_encode(writer),
+            Proposal::Update(p) => p.mls_encode(writer),
+            Proposal::Remove(p) => p.mls_encode(writer),
+            Proposal::Psk(p) => p.mls_encode(writer),
+            Proposal::ReInit(p) => p.mls_encode(writer),
+            Proposal::ExternalInit(p) => p.mls_encode(writer),
+            Proposal::GroupContextExtensions(p) => p.mls_encode(writer),
 
             Proposal::Custom(p) => {
                 if p.proposal_type.raw_value() <= 7 {
@@ -303,7 +300,7 @@ impl MlsEncode for Proposal {
                         "custom proposal types can not be set to defined values of 0-7".to_string(),
                     ));
                 }
-                aws_mls_codec::byte_vec::mls_encode(&p.data, &mut writer)
+                aws_mls_codec::byte_vec::mls_encode(&p.data, writer)
             }
         }
     }

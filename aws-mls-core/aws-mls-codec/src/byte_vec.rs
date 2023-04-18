@@ -1,4 +1,4 @@
-use crate::{Error, MlsDecode, MlsEncode, MlsSize, VarInt, Writer};
+use crate::{Error, MlsDecode, MlsEncode, MlsSize, VarInt};
 
 use alloc::vec::Vec;
 
@@ -17,15 +17,15 @@ where
 }
 
 /// Optimized encoding for types that can be represented as u8 slices.
-pub fn mls_encode<T, W: Writer>(data: &T, mut writer: W) -> Result<(), Error>
+pub fn mls_encode<T>(data: &T, writer: &mut Vec<u8>) -> Result<(), Error>
 where
     T: AsRef<[u8]>,
 {
     let data = data.as_ref();
     let len = VarInt::try_from(data.len())?;
 
-    len.mls_encode(&mut writer)?;
-    writer.write(data)?;
+    len.mls_encode(writer)?;
+    writer.extend_from_slice(data);
 
     Ok(())
 }
