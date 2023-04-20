@@ -614,10 +614,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         let context = &self.group_state().context;
 
         if message.version != context.protocol_version {
-            return Err(MlsError::InvalidProtocolVersion(
-                context.protocol_version,
-                message.version,
-            ));
+            return Err(MlsError::ProtocolVersionMismatch);
         }
 
         if let Some((group_id, epoch, content_type, wire_format)) = match &message.payload {
@@ -636,7 +633,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             _ => None,
         } {
             if group_id != &context.group_id {
-                return Err(MlsError::InvalidGroupId(group_id.clone()));
+                return Err(MlsError::GroupIdMismatch);
             }
 
             match content_type {

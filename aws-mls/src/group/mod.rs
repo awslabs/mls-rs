@@ -9,7 +9,6 @@ use aws_mls_core::time::MlsTime;
 use core::ops::Deref;
 use core::option::Option::Some;
 use serde_with::serde_as;
-use thiserror::Error;
 use zeroize::Zeroizing;
 
 use crate::cipher_suite::CipherSuite;
@@ -78,7 +77,6 @@ use self::padding::PaddingMode;
 use self::proposal_ref::ProposalRef;
 use self::state_repo::GroupStateRepository;
 pub(crate) use group_info::GroupInfo;
-pub(crate) use proposal_cache::ProposalCacheError;
 
 use self::framing::MLSMessage;
 pub use self::framing::Sender;
@@ -103,7 +101,6 @@ mod commit;
 pub(crate) mod confirmation_tag;
 mod context;
 pub(crate) mod epoch;
-pub(crate) mod error;
 pub(crate) mod framing;
 mod group_info;
 pub(crate) mod key_schedule;
@@ -147,14 +144,12 @@ struct GroupSecrets {
 impl HpkeEncryptable for GroupSecrets {
     const ENCRYPT_LABEL: &'static str = "Welcome";
 
-    type Error = aws_mls_codec::Error;
-
-    fn from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        Self::mls_decode(&mut bytes.as_slice())
+    fn from_bytes(bytes: Vec<u8>) -> Result<Self, MlsError> {
+        Self::mls_decode(&mut bytes.as_slice()).map_err(Into::into)
     }
 
-    fn get_bytes(&self) -> Result<Vec<u8>, Self::Error> {
-        self.mls_encode_to_vec()
+    fn get_bytes(&self) -> Result<Vec<u8>, MlsError> {
+        self.mls_encode_to_vec().map_err(Into::into)
     }
 }
 
@@ -385,11 +380,7 @@ where
         let key_package_version = key_package_generation.key_package.version;
 
         if key_package_version != protocol_version {
-            return Err(MlsError::ProtocolVersionMismatch {
-                msg_version: protocol_version,
-                wire_format: WireFormat::KeyPackage,
-                version: key_package_version,
-            });
+            return Err(MlsError::ProtocolVersionMismatch);
         }
 
         // Decrypt the encrypted_group_secrets using HPKE with the algorithms indicated by the
@@ -1043,20 +1034,11 @@ where
             Self::from_welcome_message(welcome, tree_data, self.config.clone(), psk_input).await?;
 
         if group.protocol_version() != expected_new_group_prams.version {
-            Err(MlsError::ReInitVersionMismatch(
-                group.protocol_version(),
-                expected_new_group_prams.version,
-            ))
+            Err(MlsError::ProtocolVersionMismatch)
         } else if group.cipher_suite() != expected_new_group_prams.cipher_suite {
-            Err(MlsError::ReInitCiphersuiteMismatch(
-                group.cipher_suite(),
-                expected_new_group_prams.cipher_suite,
-            ))
+            Err(MlsError::CipherSuiteMismatch)
         } else if verify_group_id && group.group_id() != expected_new_group_prams.group_id {
-            Err(MlsError::ReInitIdMismatch(
-                group.group_id().to_vec(),
-                expected_new_group_prams.group_id.to_vec(),
-            ))
+            Err(MlsError::GroupIdMismatch)
         } else if group.context_extensions() != expected_new_group_prams.extensions {
             Err(MlsError::ReInitExtensionsMismatch(
                 group.context_extensions().clone(),
@@ -1396,8 +1378,7 @@ where
                     &self.cipher_suite_provider,
                 )
             })
-            .transpose()
-            .map_err(|e| MlsError::MembershipTagError(e.into()))?;
+            .transpose()?;
 
         Ok(PublicMessage {
             content: auth_content.content,
@@ -1646,9 +1627,8 @@ where
         context: &[u8],
         len: usize,
     ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
-        Ok(self
-            .key_schedule
-            .export_secret(label, context, len, &self.cipher_suite_provider)?)
+        self.key_schedule
+            .export_secret(label, context, len, &self.cipher_suite_provider)
     }
 
     /// Export the current epoch's ratchet tree in serialized format.
@@ -2017,7 +1997,6 @@ mod tests {
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_basic_credential;
     use crate::key_package::test_utils::test_key_package_message;
-    use crate::key_package::KeyPackageValidationError;
     use crate::time::MlsTime;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
     use crate::{
@@ -2030,10 +2009,7 @@ mod tests {
         identity::test_utils::get_test_signing_identity,
         key_package::test_utils::test_key_package_custom,
         psk::PreSharedKey,
-        tree_kem::{
-            leaf_node::LeafNodeSource, leaf_node_validator::LeafNodeValidationError, Lifetime,
-            RatchetTreeError, TreeIndexError, UpdatePathNode, UpdatePathValidationError,
-        },
+        tree_kem::{leaf_node::LeafNodeSource, Lifetime, UpdatePathNode},
     };
 
     use super::test_utils::test_group_custom_config;
@@ -2050,7 +2026,6 @@ mod tests {
     use aws_mls_core::extension::{Extension, MlsExtension};
     use aws_mls_core::identity::{CertificateChain, Credential, CredentialType, CustomCredential};
     use futures::FutureExt;
-    use internal::proposal_filter::ProposalRulesError;
     use itertools::Itertools;
 
     #[cfg(target_arch = "wasm32")]
@@ -2415,13 +2390,7 @@ mod tests {
 
         assert_matches!(
             commit,
-            Err(MlsError::ProposalCacheError(
-                ProposalCacheError::ProposalRulesError(
-                    ProposalRulesError::LeafNodeValidationError(
-                        LeafNodeValidationError::RequiredExtensionNotFound(a)
-                    )
-                )
-            )) if a == 999.into()
+            Err(MlsError::RequiredExtensionNotFound(a)) if a == 999.into()
         );
     }
 
@@ -3018,7 +2987,7 @@ mod tests {
 
         let res = bob_group.group.process_incoming_message(message).await;
 
-        assert_matches!(res, Err(MlsError::CiphertextProcessorError(_)));
+        assert_matches!(res, Err(MlsError::KeyMissing(0)));
     }
 
     #[test]
@@ -3126,11 +3095,7 @@ mod tests {
             groups[2]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(MlsError::UpdatePathValidationError(
-                UpdatePathValidationError::LeafNodeValidationError(
-                    LeafNodeValidationError::InvalidLeafNodeSource
-                )
-            ))
+            Err(MlsError::InvalidLeafNodeSource)
         );
     }
 
@@ -3160,9 +3125,7 @@ mod tests {
             groups[2]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(MlsError::UpdatePathValidationError(
-                UpdatePathValidationError::SameHpkeKey(LeafIndex(0))
-            ))
+            Err(MlsError::SameHpkeKey(0))
         );
     }
 
@@ -3200,9 +3163,7 @@ mod tests {
             groups[7]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(MlsError::RatchetTreeError(
-                RatchetTreeError::TreeIndexError(TreeIndexError::DuplicateHpkeKey(_))
-            ))
+            Err(MlsError::DuplicateHpkeKey(_))
         );
     }
 
@@ -3244,9 +3205,7 @@ mod tests {
             groups[7]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(MlsError::RatchetTreeError(
-                RatchetTreeError::TreeIndexError(TreeIndexError::DuplicateSignatureKeys(_))
-            ))
+            Err(MlsError::DuplicateSignatureKeys(_))
         );
     }
 
@@ -3264,11 +3223,7 @@ mod tests {
             groups[2]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(MlsError::UpdatePathValidationError(
-                UpdatePathValidationError::LeafNodeValidationError(
-                    LeafNodeValidationError::SignatureError(_)
-                )
-            ))
+            Err(MlsError::InvalidSignature)
         );
     }
 
@@ -3396,11 +3351,7 @@ mod tests {
             groups[2]
                 .process_incoming_message(commit_output.commit_message)
                 .await,
-            Err(MlsError::RatchetTreeError(
-                RatchetTreeError::TreeIndexError(
-                    TreeIndexError::CredentialTypeOfNewLeafIsUnsupported(_)
-                )
-            ))
+            Err(MlsError::CredentialTypeOfNewLeafIsUnsupported(_))
         );
     }
 
@@ -3423,17 +3374,13 @@ mod tests {
             groups[2]
                 .process_incoming_message(commit_output.commit_message)
                 .await,
-            Err(MlsError::RatchetTreeError(
-                RatchetTreeError::TreeIndexError(
-                    TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(..)
-                )
-            ))
+            Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf(..))
         );
     }
 
     #[test]
     async fn commit_leaf_not_supporting_required_credential() {
-        // The new leaf of the committer doesn't support a credentia required by group context
+        // The new leaf of the committer doesn't support a credential required by group context
 
         let extension = RequiredCapabilitiesExt {
             extensions: vec![],
@@ -3457,11 +3404,7 @@ mod tests {
             groups[2]
                 .process_incoming_message(commit_output.commit_message)
                 .await,
-            Err(MlsError::UpdatePathValidationError(
-                UpdatePathValidationError::LeafNodeValidationError(
-                    LeafNodeValidationError::RequiredCredentialNotFound(_)
-                )
-            ))
+            Err(MlsError::RequiredCredentialNotFound(_))
         );
     }
 
@@ -3565,7 +3508,7 @@ mod tests {
             groups[7]
                 .process_message(commit_output.commit_message)
                 .await,
-            Err(MlsError::UpdatePathValidationError(_))
+            Err(MlsError::WrongPathLen(4, 3))
         );
     }
 
@@ -3690,18 +3633,7 @@ mod tests {
             .process_incoming_message_with_time(commit, future_time)
             .await;
 
-        assert_matches!(
-            res,
-            Err(MlsError::ProposalCacheError(
-                ProposalCacheError::ProposalRulesError(
-                    ProposalRulesError::KeyPackageValidationError(
-                        KeyPackageValidationError::LeafNodeValidationError(
-                            LeafNodeValidationError::InvalidLifetime(_, _)
-                        )
-                    )
-                )
-            ))
-        );
+        assert_matches!(res, Err(MlsError::InvalidLifetime(_, _)));
     }
 
     async fn custom_proposal_setup() -> (TestGroup, TestGroup) {

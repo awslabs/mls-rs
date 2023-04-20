@@ -41,7 +41,6 @@ aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", default-features = 
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 aws-mls-codec = { version = "*", path = "../aws-mls-core/aws-mls-codec", default-features = false}
 thiserror = { package = "thiserror-core", version = "1", default-features = false }
-hex = { version = "^0.4.3", default-features = false, features = ["serde", "alloc"] }
 serde = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
 serde_with = { version = "2.3.1", default-features = false, features = ["alloc", "macros"]}
 futures = { version = "0.3.25", default-features = false, features = ["alloc"]}
@@ -74,6 +73,7 @@ criterion = { version = "0.3.5", features = ["async_futures", "html_reports"] }
 futures-test = "0.3.25"
 serde_json = "^1.0"
 rand = "0.8"
+hex = { version = "^0.4.3", default-features = false, features = ["serde", "alloc"] }
 test_utils = { path = "test_utils" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

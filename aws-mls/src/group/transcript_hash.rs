@@ -1,27 +1,9 @@
 use super::*;
-use core::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
-use thiserror::Error;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-#[derive(Error, Debug)]
-pub enum TranscriptHashError {
-    #[error(transparent)]
-    MlsCodecError(#[from] aws_mls_codec::Error),
-    #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
-}
+use core::ops::Deref;
 
 #[serde_as]
 #[derive(
-    Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
+    Debug, Clone, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ConfirmedTranscriptHash(
@@ -44,18 +26,12 @@ impl From<Vec<u8>> for ConfirmedTranscriptHash {
     }
 }
 
-impl Debug for ConfirmedTranscriptHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&hex::encode(&self.0))
-    }
-}
-
 impl ConfirmedTranscriptHash {
     pub(crate) fn create<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         interim_transcript_hash: &InterimTranscriptHash,
         content: &AuthenticatedContent,
-    ) -> Result<Self, TranscriptHashError> {
+    ) -> Result<Self, MlsError> {
         #[derive(Debug, MlsSize, MlsEncode)]
         struct ConfirmedTranscriptHashInput<'a> {
             wire_format: WireFormat,
@@ -78,12 +54,14 @@ impl ConfirmedTranscriptHash {
         cipher_suite_provider
             .hash(&hash_input)
             .map(Into::into)
-            .map_err(|e| TranscriptHashError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 }
 
 #[serde_as]
-#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
+)]
 pub(crate) struct InterimTranscriptHash(
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
@@ -104,18 +82,12 @@ impl From<Vec<u8>> for InterimTranscriptHash {
     }
 }
 
-impl Debug for InterimTranscriptHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&hex::encode(&self.0))
-    }
-}
-
 impl InterimTranscriptHash {
     pub fn create<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         confirmed: &ConfirmedTranscriptHash,
         confirmation_tag: &ConfirmationTag,
-    ) -> Result<Self, TranscriptHashError> {
+    ) -> Result<Self, MlsError> {
         #[derive(Debug, MlsSize, MlsEncode)]
         struct InterimTranscriptHashInput<'a> {
             confirmation_tag: &'a ConfirmationTag,
@@ -126,7 +98,7 @@ impl InterimTranscriptHash {
         cipher_suite_provider
             .hash(&[confirmed.0.deref(), &input].concat())
             .map(Into::into)
-            .map_err(|e| TranscriptHashError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 }
 

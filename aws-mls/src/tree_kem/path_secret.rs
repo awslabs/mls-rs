@@ -1,16 +1,15 @@
+use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
 use crate::group::key_schedule::kdf_derive_secret;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use core::convert::Infallible;
 use core::ops::Deref;
 use serde_with::serde_as;
 use zeroize::{Zeroize, Zeroizing};
 
 use super::hpke_encryption::HpkeEncryptable;
-use super::RatchetTreeError;
 
 #[serde_as]
 #[derive(
@@ -55,11 +54,11 @@ impl From<Zeroizing<Vec<u8>>> for PathSecret {
 impl PathSecret {
     pub fn random<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
-    ) -> Result<PathSecret, RatchetTreeError> {
+    ) -> Result<PathSecret, MlsError> {
         cipher_suite_provider
             .random_bytes_vec(cipher_suite_provider.kdf_extract_size())
             .map(Into::into)
-            .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 
     pub fn empty<P: CipherSuiteProvider>(cipher_suite_provider: &P) -> Self {
@@ -71,13 +70,11 @@ impl PathSecret {
 impl HpkeEncryptable for PathSecret {
     const ENCRYPT_LABEL: &'static str = "UpdatePathNode";
 
-    type Error = Infallible;
-
-    fn from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+    fn from_bytes(bytes: Vec<u8>) -> Result<Self, MlsError> {
         Ok(Self(Zeroizing::new(bytes)))
     }
 
-    fn get_bytes(&self) -> Result<Vec<u8>, Self::Error> {
+    fn get_bytes(&self) -> Result<Vec<u8>, MlsError> {
         Ok(self.to_vec())
     }
 }
@@ -89,14 +86,14 @@ pub struct PathSecretGeneration<'a, P> {
 }
 
 impl<'a, P: CipherSuiteProvider> PathSecretGeneration<'a, P> {
-    pub fn random(cipher_suite_provider: &'a P) -> Result<Self, RatchetTreeError> {
+    pub fn random(cipher_suite_provider: &'a P) -> Result<Self, MlsError> {
         Ok(Self {
             path_secret: PathSecret::random(cipher_suite_provider)?,
             cipher_suite_provider,
         })
     }
 
-    pub fn to_hpke_key_pair(&self) -> Result<(HpkeSecretKey, HpkePublicKey), RatchetTreeError> {
+    pub fn to_hpke_key_pair(&self) -> Result<(HpkeSecretKey, HpkePublicKey), MlsError> {
         let node_secret = Zeroizing::new(kdf_derive_secret(
             self.cipher_suite_provider,
             &self.path_secret,
@@ -105,7 +102,7 @@ impl<'a, P: CipherSuiteProvider> PathSecretGeneration<'a, P> {
 
         self.cipher_suite_provider
             .kem_derive(&node_secret)
-            .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 }
 
@@ -139,13 +136,13 @@ impl<'a, P: CipherSuiteProvider> PathSecretGenerator<'a, P> {
         }
     }
 
-    pub fn next_secret(&mut self) -> Result<PathSecretGeneration<'a, P>, RatchetTreeError> {
+    pub fn next_secret(&mut self) -> Result<PathSecretGeneration<'a, P>, MlsError> {
         let secret = if let Some(starting_with) = self.starting_with.take() {
             Ok(starting_with)
         } else if let Some(last) = self.last.take() {
             kdf_derive_secret(self.cipher_suite_provider, &last, "path")
                 .map(PathSecret::from)
-                .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
+                .map_err(|e| MlsError::CryptoProviderError(e.into()))
         } else {
             PathSecret::random(self.cipher_suite_provider)
         }?;
@@ -160,7 +157,7 @@ impl<'a, P: CipherSuiteProvider> PathSecretGenerator<'a, P> {
 }
 
 impl<'a, P: CipherSuiteProvider> Iterator for PathSecretGenerator<'a, P> {
-    type Item = Result<PathSecretGeneration<'a, P>, RatchetTreeError>;
+    type Item = Result<PathSecretGeneration<'a, P>, MlsError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         Some(self.next_secret())

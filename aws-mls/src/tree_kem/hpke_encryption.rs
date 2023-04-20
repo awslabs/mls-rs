@@ -1,15 +1,10 @@
+use alloc::format;
 use alloc::vec::Vec;
-use alloc::{boxed::Box, format};
 use aws_mls_codec::{MlsEncode, MlsSize};
 use aws_mls_core::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey};
-use thiserror::Error;
 use zeroize::Zeroizing;
 
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
+use crate::client::MlsError;
 
 #[derive(Debug, Clone, MlsSize, MlsEncode)]
 struct EncryptContext<'a> {
@@ -28,39 +23,24 @@ impl<'a> EncryptContext<'a> {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum HpkeEncryptionError {
-    #[error(transparent)]
-    SerializationError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
-    MlsCodecError(#[from] aws_mls_codec::Error),
-    #[error("internal hpke error: {0:?}")]
-    InternalHpkeError(#[source] Box<dyn Error + Send + Sync>),
-}
-
 pub(crate) trait HpkeEncryptable: Sized {
     const ENCRYPT_LABEL: &'static str;
-
-    type Error: Error + Send + Sync + 'static;
 
     fn encrypt<P: CipherSuiteProvider>(
         &self,
         cipher_suite_provider: &P,
         public_key: &HpkePublicKey,
         context: &[u8],
-    ) -> Result<HpkeCiphertext, HpkeEncryptionError> {
+    ) -> Result<HpkeCiphertext, MlsError> {
         let context = EncryptContext::new(Self::ENCRYPT_LABEL, context)
             .mls_encode_to_vec()
             .map(Zeroizing::new)?;
 
-        let content = self
-            .get_bytes()
-            .map(Zeroizing::new)
-            .map_err(|e| HpkeEncryptionError::SerializationError(e.into()))?;
+        let content = self.get_bytes().map(Zeroizing::new)?;
 
         cipher_suite_provider
             .hpke_seal(public_key, &context, None, &content)
-            .map_err(|e| HpkeEncryptionError::InternalHpkeError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 
     fn decrypt<P: CipherSuiteProvider>(
@@ -68,30 +48,27 @@ pub(crate) trait HpkeEncryptable: Sized {
         secret_key: &HpkeSecretKey,
         context: &[u8],
         ciphertext: &HpkeCiphertext,
-    ) -> Result<Self, HpkeEncryptionError> {
+    ) -> Result<Self, MlsError> {
         let context = EncryptContext::new(Self::ENCRYPT_LABEL, context).mls_encode_to_vec()?;
 
         let plaintext = cipher_suite_provider
             .hpke_open(ciphertext, secret_key, &context, None)
-            .map_err(|e| HpkeEncryptionError::InternalHpkeError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         Self::from_bytes(plaintext.to_vec())
-            .map_err(|e| HpkeEncryptionError::SerializationError(e.into()))
     }
 
-    fn from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error>;
-    fn get_bytes(&self) -> Result<Vec<u8>, Self::Error>;
+    fn from_bytes(bytes: Vec<u8>) -> Result<Self, MlsError>;
+    fn get_bytes(&self) -> Result<Vec<u8>, MlsError>;
 }
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use core::convert::Infallible;
-
     use alloc::{string::String, vec::Vec};
     use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
     use aws_mls_core::crypto::{CipherSuiteProvider, HpkeCiphertext};
 
-    use crate::crypto::test_utils::try_test_cipher_suite_provider;
+    use crate::{client::MlsError, crypto::test_utils::try_test_cipher_suite_provider};
 
     use super::HpkeEncryptable;
 
@@ -137,13 +114,11 @@ pub(crate) mod test_utils {
     impl HpkeEncryptable for TestEncryptable {
         const ENCRYPT_LABEL: &'static str = "EncryptWithLabel";
 
-        type Error = Infallible;
-
-        fn from_bytes(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        fn from_bytes(bytes: Vec<u8>) -> Result<Self, MlsError> {
             Ok(Self(bytes))
         }
 
-        fn get_bytes(&self) -> Result<Vec<u8>, Self::Error> {
+        fn get_bytes(&self) -> Result<Vec<u8>, MlsError> {
             Ok(self.0.clone())
         }
     }

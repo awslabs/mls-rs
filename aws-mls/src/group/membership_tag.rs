@@ -1,30 +1,12 @@
+use crate::client::MlsError;
 use crate::crypto::CipherSuiteProvider;
-use crate::group::framing::WireFormat;
 use crate::group::message_signature::{AuthenticatedContentTBS, FramedContentAuthData};
 use crate::group::GroupContext;
-use alloc::boxed::Box;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use core::ops::Deref;
-use thiserror::Error;
 
 use super::message_signature::AuthenticatedContent;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-#[derive(Error, Debug)]
-pub enum MembershipTagError {
-    #[error(transparent)]
-    SerializationError(#[from] aws_mls_codec::Error),
-    #[error("Membership tags can only be created for the plaintext wire format, found: {0:?}")]
-    NonPlainWireFormat(WireFormat),
-    #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
-}
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode)]
 struct AuthenticatedContentTBM<'a> {
@@ -72,13 +54,7 @@ impl MembershipTag {
         group_context: &GroupContext,
         membership_key: &[u8],
         cipher_suite_provider: &P,
-    ) -> Result<Self, MembershipTagError> {
-        if authenticated_content.wire_format != WireFormat::PublicMessage {
-            return Err(MembershipTagError::NonPlainWireFormat(
-                authenticated_content.wire_format,
-            ));
-        }
-
+    ) -> Result<Self, MlsError> {
         let plaintext_tbm = AuthenticatedContentTBM::from_authenticated_content(
             authenticated_content,
             group_context,
@@ -88,7 +64,7 @@ impl MembershipTag {
 
         let tag = cipher_suite_provider
             .mac(membership_key, &serialized_tbm)
-            .map_err(|e| MembershipTagError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         Ok(MembershipTag(tag))
     }

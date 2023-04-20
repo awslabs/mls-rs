@@ -1,19 +1,12 @@
+use crate::client::MlsError;
 use crate::{group::PriorEpoch, key_package::KeyPackageRef};
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
-use alloc::{boxed::Box, string::String};
 use aws_mls_core::{group::GroupStateStorage, key_package::KeyPackageStorage, psk::PreSharedKey};
-use hex::ToHex;
 use thiserror::Error;
 
 use super::{internal::ResumptionPsk, snapshot::Snapshot};
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
 
 #[cfg(feature = "std")]
 use std::collections::{hash_map::Entry, HashMap};
@@ -22,20 +15,6 @@ use std::collections::{hash_map::Entry, HashMap};
 use alloc::collections::{btree_map::Entry, BTreeMap};
 
 pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
-
-#[derive(Debug, Error)]
-pub enum GroupStateRepositoryError {
-    #[error("invalid group id: expected {expected}, found {found}")]
-    UnexpectedGroupId { expected: String, found: String },
-    #[error("invalid insert: expected {expected} found {found}")]
-    UnexpectedEpochId { expected: u64, found: u64 },
-    #[error("storage retention can not be zero")]
-    NonZeroRetentionRequired,
-    #[error(transparent)]
-    StorageError(Box<dyn Error + Sync + Send + 'static>),
-    #[error(transparent)]
-    KeyPackageRepoError(Box<dyn Error + Sync + Send + 'static>),
-}
 
 /// A set of changes to apply to a GroupStateStorage implementation. These changes MUST
 /// be made in a single transaction to avoid creating invalid states.
@@ -75,16 +54,16 @@ where
         key_package_repo: K,
         // Set to `None` if restoring from snapshot; set to `Some` when joining a group.
         key_package_to_remove: Option<KeyPackageRef>,
-    ) -> Result<GroupStateRepository<S, K>, GroupStateRepositoryError> {
+    ) -> Result<GroupStateRepository<S, K>, MlsError> {
         if max_epoch_retention == 0 {
-            return Err(GroupStateRepositoryError::NonZeroRetentionRequired);
+            return Err(MlsError::NonZeroRetentionRequired);
         }
 
         let pending_commit = EpochStorageCommit {
             delete_under: storage
                 .max_epoch_id(&group_id)
                 .await
-                .map_err(|e| GroupStateRepositoryError::StorageError(e.into()))?
+                .map_err(|e| MlsError::GroupStorageError(e.into()))?
                 .and_then(|max| max.checked_sub(max_epoch_retention - 1)),
             ..Default::default()
         };
@@ -99,21 +78,21 @@ where
         })
     }
 
-    async fn find_max_id(&self) -> Result<Option<u64>, GroupStateRepositoryError> {
+    async fn find_max_id(&self) -> Result<Option<u64>, MlsError> {
         if let Some(max) = self.pending_commit.inserts.back().map(|e| e.epoch_id()) {
             Ok(Some(max))
         } else {
             self.storage
                 .max_epoch_id(&self.group_id)
                 .await
-                .map_err(|e| GroupStateRepositoryError::StorageError(e.into()))
+                .map_err(|e| MlsError::GroupStorageError(e.into()))
         }
     }
 
     pub async fn resumption_secret(
         &self,
         psk_id: &ResumptionPsk,
-    ) -> Result<Option<PreSharedKey>, GroupStateRepositoryError> {
+    ) -> Result<Option<PreSharedKey>, MlsError> {
         if self.epoch_pending_delete(psk_id.psk_epoch) {
             return Ok(None);
         }
@@ -138,7 +117,7 @@ where
         self.storage
             .epoch::<PriorEpoch>(&psk_id.psk_group_id.0, psk_id.psk_epoch)
             .await
-            .map_err(|e| GroupStateRepositoryError::StorageError(e.into()))
+            .map_err(|e| MlsError::GroupStorageError(e.into()))
             .map(|e| e.map(|e| e.secrets.resumption_secret))
     }
 
@@ -153,7 +132,7 @@ where
     pub async fn get_epoch_mut(
         &mut self,
         epoch_id: u64,
-    ) -> Result<Option<&mut PriorEpoch>, GroupStateRepositoryError> {
+    ) -> Result<Option<&mut PriorEpoch>, MlsError> {
         if self.epoch_pending_delete(epoch_id) {
             return Ok(None);
         }
@@ -175,25 +154,22 @@ where
                 .storage
                 .epoch(&self.group_id, epoch_id)
                 .await
-                .map_err(|e| GroupStateRepositoryError::StorageError(e.into()))?
+                .map_err(|e| MlsError::GroupStorageError(e.into()))?
                 .map(|epoch| entry.insert(epoch)),
             Entry::Occupied(entry) => Some(entry.into_mut()),
         })
     }
 
-    pub async fn insert(&mut self, epoch: PriorEpoch) -> Result<(), GroupStateRepositoryError> {
+    pub async fn insert(&mut self, epoch: PriorEpoch) -> Result<(), MlsError> {
         if epoch.group_id() != self.group_id {
-            return Err(GroupStateRepositoryError::UnexpectedGroupId {
-                expected: self.group_id.encode_hex_upper(),
-                found: epoch.group_id().encode_hex_upper(),
-            });
+            return Err(MlsError::GroupIdMismatch);
         }
 
         let epoch_id = epoch.epoch_id();
 
         if let Some(expected_id) = self.find_max_id().await?.map(|id| id + 1) {
             if epoch_id != expected_id {
-                return Err(GroupStateRepositoryError::UnexpectedEpochId {
+                return Err(MlsError::UnexpectedEpochId {
                     expected: expected_id,
                     found: epoch_id,
                 });
@@ -216,10 +192,7 @@ where
         Ok(())
     }
 
-    pub async fn write_to_storage(
-        &mut self,
-        group_snapshot: Snapshot,
-    ) -> Result<(), GroupStateRepositoryError> {
+    pub async fn write_to_storage(&mut self, group_snapshot: Snapshot) -> Result<(), MlsError> {
         let inserts = self.pending_commit.inserts.iter().cloned().collect();
         let updates = self.pending_commit.updates.values().cloned().collect();
         let delete_under = self.pending_commit.delete_under;
@@ -227,13 +200,13 @@ where
         self.storage
             .write(group_snapshot, inserts, updates, delete_under)
             .await
-            .map_err(|e| GroupStateRepositoryError::StorageError(e.into()))?;
+            .map_err(|e| MlsError::GroupStorageError(e.into()))?;
 
         if let Some(ref key_package_ref) = self.pending_key_package_removal {
             self.key_package_repo
                 .delete(key_package_ref)
                 .await
-                .map_err(|e| GroupStateRepositoryError::KeyPackageRepoError(e.into()))?;
+                .map_err(|e| MlsError::KeyPackageRepoError(e.into()))?;
         }
 
         self.pending_commit.inserts.clear();
@@ -298,7 +271,7 @@ mod tests {
                 None,
             )
             .await,
-            Err(GroupStateRepositoryError::NonZeroRetentionRequired)
+            Err(MlsError::NonZeroRetentionRequired)
         )
     }
 

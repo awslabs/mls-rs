@@ -1,8 +1,9 @@
 use super::framing::Content;
+use crate::client::MlsError;
 use crate::crypto::SignatureSecretKey;
 use crate::group::framing::{ContentType, FramedContent, PublicMessage, Sender, WireFormat};
 use crate::group::{ConfirmationTag, GroupContext};
-use crate::signer::{Signable, SignatureError};
+use crate::signer::Signable;
 use crate::CipherSuiteProvider;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -103,7 +104,7 @@ impl AuthenticatedContent {
         signer: &SignatureSecretKey,
         wire_format: WireFormat,
         authenticated_data: Vec<u8>,
-    ) -> Result<AuthenticatedContent, SignatureError> {
+    ) -> Result<AuthenticatedContent, MlsError> {
         // Construct an MLSPlaintext object containing the content
         let mut plaintext =
             AuthenticatedContent::new(context, sender, content, authenticated_data, wire_format);

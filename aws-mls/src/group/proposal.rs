@@ -55,7 +55,7 @@ impl TryFrom<MLSMessage> for AddProposal {
     fn try_from(value: MLSMessage) -> Result<Self, Self::Error> {
         value
             .into_key_package()
-            .ok_or(MlsError::NotKeyPackage)
+            .ok_or(MlsError::ExpectedKeyPackageMessage)
             .map(Into::into)
     }
 }

@@ -3,12 +3,13 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::Zeroizing;
 
 use crate::{
+    client::MlsError,
     crypto::CipherSuiteProvider,
     group::{epoch::SenderDataSecret, framing::ContentType, key_schedule::kdf_expand_with_label},
     tree_kem::node::LeafIndex,
 };
 
-use super::{CiphertextProcessorError, ReuseGuard};
+use super::ReuseGuard;
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub(crate) struct SenderData {
@@ -37,7 +38,7 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
         sender_data_secret: &SenderDataSecret,
         ciphertext: &[u8],
         cipher_suite_provider: &'a CP,
-    ) -> Result<Self, CiphertextProcessorError> {
+    ) -> Result<Self, MlsError> {
         // Sample the first extract_size bytes of the ciphertext, and if it is shorter, just use
         // the ciphertext itself
         let extract_size = cipher_suite_provider.kdf_extract_size();
@@ -72,7 +73,7 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
         &self,
         sender_data: &SenderData,
         aad: &SenderDataAAD,
-    ) -> Result<Vec<u8>, CiphertextProcessorError> {
+    ) -> Result<Vec<u8>, MlsError> {
         self.cipher_suite_provider
             .aead_seal(
                 &self.key,
@@ -80,14 +81,14 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
                 Some(&aad.mls_encode_to_vec()?),
                 &self.nonce,
             )
-            .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 
     pub(crate) fn open(
         &self,
         sender_data: &[u8],
         aad: &SenderDataAAD,
-    ) -> Result<SenderData, CiphertextProcessorError> {
+    ) -> Result<SenderData, MlsError> {
         self.cipher_suite_provider
             .aead_open(
                 &self.key,
@@ -95,7 +96,7 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
                 Some(&aad.mls_encode_to_vec()?),
                 &self.nonce,
             )
-            .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
             .and_then(|data| SenderData::mls_decode(&mut &**data).map_err(From::from))
     }
 }

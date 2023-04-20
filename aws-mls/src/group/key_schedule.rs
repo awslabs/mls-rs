@@ -1,17 +1,14 @@
-use crate::group::secret_tree::SecretTreeError;
-use crate::group::{GroupContext, MembershipTag, MembershipTagError, SecretTree};
+use crate::client::MlsError;
+use crate::group::{GroupContext, MembershipTag, SecretTree};
 use crate::psk::secret::PskSecret;
-use crate::psk::{PreSharedKey, PskError};
+use crate::psk::PreSharedKey;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretGenerator};
-use crate::tree_kem::RatchetTreeError;
 use crate::CipherSuiteProvider;
-use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
-use thiserror::Error;
 use zeroize::{Zeroize, Zeroizing};
 
 #[cfg(feature = "external_commit")]
@@ -19,26 +16,6 @@ use crate::crypto::{HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey};
 
 use super::epoch::{EpochSecrets, SenderDataSecret};
 use super::message_signature::AuthenticatedContent;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-#[derive(Error, Debug)]
-pub enum KeyScheduleError {
-    #[error(transparent)]
-    SecretTreeError(#[from] SecretTreeError),
-    #[error(transparent)]
-    MlsCodecError(#[from] aws_mls_codec::Error),
-    #[error(transparent)]
-    PskSecretError(#[from] PskError),
-    #[error("key derivation failure")]
-    KeyDerivationFailure,
-    #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Zeroize, Default)]
 #[zeroize(drop)]
@@ -71,7 +48,7 @@ impl KeySchedule {
         &self,
         kem_output: &[u8],
         cipher_suite: &P,
-    ) -> Result<KeySchedule, KeyScheduleError> {
+    ) -> Result<KeySchedule, MlsError> {
         let (secret, _public) = self.get_external_key_pair(cipher_suite)?;
         let init_secret = InitSecret::decode_for_external(cipher_suite, kem_output, &secret)?;
         Ok(KeySchedule::new(init_secret))
@@ -86,10 +63,10 @@ impl KeySchedule {
         secret_tree_size: u32,
         psk_secret: &PskSecret,
         cipher_suite_provider: &P,
-    ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
+    ) -> Result<KeyScheduleDerivationResult, MlsError> {
         let joiner_seed = cipher_suite_provider
             .kdf_extract(&last_key_schedule.init_secret.0, &commit_secret.0)
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         let joiner_secret = kdf_expand_with_label(
             cipher_suite_provider,
@@ -98,7 +75,7 @@ impl KeySchedule {
             &context.mls_encode_to_vec()?,
             None,
         )
-        .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?
+        .map_err(|e| MlsError::CryptoProviderError(e.into()))?
         .into();
 
         let key_schedule_result = Self::from_joiner(
@@ -123,14 +100,14 @@ impl KeySchedule {
         context: &GroupContext,
         secret_tree_size: u32,
         psk_secret: &PskSecret,
-    ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
+    ) -> Result<KeyScheduleDerivationResult, MlsError> {
         let epoch_seed = get_pre_epoch_secret(cipher_suite_provider, psk_secret, joiner_secret)?;
         let context = context.mls_encode_to_vec()?;
 
         let epoch_secret =
             kdf_expand_with_label(cipher_suite_provider, &epoch_seed, "epoch", &context, None)
                 .map(Zeroizing::new)
-                .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?;
+                .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         Self::from_epoch_secret(cipher_suite_provider, &epoch_secret, secret_tree_size)
     }
@@ -138,11 +115,11 @@ impl KeySchedule {
     pub(crate) fn from_random_epoch_secret<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         secret_tree_size: u32,
-    ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
+    ) -> Result<KeyScheduleDerivationResult, MlsError> {
         let epoch_secret = cipher_suite_provider
             .random_bytes_vec(cipher_suite_provider.kdf_extract_size())
             .map(Zeroizing::new)
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         Self::from_epoch_secret(cipher_suite_provider, &epoch_secret, secret_tree_size)
     }
@@ -151,7 +128,7 @@ impl KeySchedule {
         cipher_suite_provider: &P,
         epoch_secret: &[u8],
         secret_tree_size: u32,
-    ) -> Result<KeyScheduleDerivationResult, KeyScheduleError> {
+    ) -> Result<KeyScheduleDerivationResult, MlsError> {
         let secrets_producer = SecretsProducer::new(cipher_suite_provider, epoch_secret);
 
         let epoch_secrets = EpochSecrets {
@@ -183,12 +160,12 @@ impl KeySchedule {
         context: &[u8],
         len: usize,
         cipher_suite: &P,
-    ) -> Result<Zeroizing<Vec<u8>>, KeyScheduleError> {
+    ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         let secret = kdf_derive_secret(cipher_suite, &self.exporter_secret, label)?;
 
         let context_hash = cipher_suite
             .hash(context)
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         kdf_expand_with_label(cipher_suite, &secret, "exported", &context_hash, Some(len))
     }
@@ -198,7 +175,7 @@ impl KeySchedule {
         content: &AuthenticatedContent,
         context: &GroupContext,
         cipher_suite_provider: &P,
-    ) -> Result<MembershipTag, MembershipTagError> {
+    ) -> Result<MembershipTag, MlsError> {
         MembershipTag::create(
             content,
             context,
@@ -211,10 +188,10 @@ impl KeySchedule {
     pub fn get_external_key_pair<P: CipherSuiteProvider>(
         &self,
         cipher_suite: &P,
-    ) -> Result<(HpkeSecretKey, HpkePublicKey), KeyScheduleError> {
+    ) -> Result<(HpkeSecretKey, HpkePublicKey), MlsError> {
         cipher_suite
             .kem_derive(&self.external_secret)
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 }
 
@@ -243,21 +220,21 @@ pub(crate) fn kdf_expand_with_label<P: CipherSuiteProvider>(
     label: &str,
     context: &[u8],
     len: Option<usize>,
-) -> Result<Zeroizing<Vec<u8>>, KeyScheduleError> {
+) -> Result<Zeroizing<Vec<u8>>, MlsError> {
     let extract_size = cipher_suite_provider.kdf_extract_size();
     let len = len.unwrap_or(extract_size);
     let label = Label::new(len as u16, label, context);
 
     cipher_suite_provider
         .kdf_expand(secret, &label.mls_encode_to_vec()?, len)
-        .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
+        .map_err(|e| MlsError::CryptoProviderError(e.into()))
 }
 
 pub(crate) fn kdf_derive_secret<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     secret: &[u8],
     label: &str,
-) -> Result<Zeroizing<Vec<u8>>, KeyScheduleError> {
+) -> Result<Zeroizing<Vec<u8>>, MlsError> {
     kdf_expand_with_label(cipher_suite_provider, secret, label, &[], None)
 }
 
@@ -274,10 +251,10 @@ pub(crate) fn get_pre_epoch_secret<P: CipherSuiteProvider>(
     cipher_suite_provider: &P,
     psk_secret: &PskSecret,
     joiner_secret: &JoinerSecret,
-) -> Result<Zeroizing<Vec<u8>>, PskError> {
+) -> Result<Zeroizing<Vec<u8>>, MlsError> {
     cipher_suite_provider
         .kdf_extract(&joiner_secret.0, psk_secret)
-        .map_err(|e| PskError::CipherSuiteProviderError(e.into()))
+        .map_err(|e| MlsError::CryptoProviderError(e.into()))
 }
 
 struct SecretsProducer<'a, P: CipherSuiteProvider> {
@@ -296,9 +273,9 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
     // TODO document somewhere in the crypto provider that the RFC defines the length of all secrets as
     // KDF extract size but then inputs secrets as MAC keys etc, therefore, we require that these
     // lengths match in the crypto provider
-    fn derive(&self, label: &str) -> Result<Zeroizing<Vec<u8>>, KeyScheduleError> {
+    fn derive(&self, label: &str) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         kdf_derive_secret(self.cipher_suite_provider, self.epoch_secret, label)
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 }
 
@@ -315,14 +292,14 @@ impl InitSecret {
     pub fn encode_for_external<P: CipherSuiteProvider>(
         cipher_suite: &P,
         external_pub: &HpkePublicKey,
-    ) -> Result<(Self, Vec<u8>), KeyScheduleError> {
+    ) -> Result<(Self, Vec<u8>), MlsError> {
         let (kem_output, context) = cipher_suite
             .hpke_setup_s(external_pub, &[])
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         let init_secret = context
             .export(EXPORTER_CONTEXT, cipher_suite.kdf_extract_size())
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         Ok((InitSecret(Zeroizing::new(init_secret)), kem_output))
     }
@@ -331,16 +308,16 @@ impl InitSecret {
         cipher_suite: &P,
         kem_output: &[u8],
         external_secret: &HpkeSecretKey,
-    ) -> Result<Self, KeyScheduleError> {
+    ) -> Result<Self, MlsError> {
         let context = cipher_suite
             .hpke_setup_r(kem_output, external_secret, &[])
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         context
             .export(EXPORTER_CONTEXT, cipher_suite.kdf_extract_size())
             .map(Zeroizing::new)
             .map(InitSecret)
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 }
 
@@ -352,7 +329,7 @@ impl CommitSecret {
     pub fn from_root_secret<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         root_secret: Option<&PathSecret>,
-    ) -> Result<Self, RatchetTreeError> {
+    ) -> Result<Self, MlsError> {
         match root_secret {
             Some(root_secret) => {
                 let mut generator =
@@ -380,7 +357,7 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
         cipher_suite: &'a P,
         joiner_secret: &JoinerSecret,
         psk_secret: &PskSecret,
-    ) -> Result<Self, KeyScheduleError> {
+    ) -> Result<Self, MlsError> {
         let welcome_secret = get_welcome_secret(cipher_suite, joiner_secret, psk_secret)?;
 
         let key_len = cipher_suite.aead_key_size();
@@ -398,19 +375,16 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
         })
     }
 
-    pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, KeyScheduleError> {
+    pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, MlsError> {
         self.cipher_suite
             .aead_seal(&self.key, plaintext, None, &self.nonce)
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 
-    pub(crate) fn decrypt(
-        &self,
-        ciphertext: &[u8],
-    ) -> Result<Zeroizing<Vec<u8>>, KeyScheduleError> {
+    pub(crate) fn decrypt(&self, ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         self.cipher_suite
             .aead_open(&self.key, ciphertext, None, &self.nonce)
-            .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 }
 
@@ -418,7 +392,7 @@ fn get_welcome_secret<P: CipherSuiteProvider>(
     cipher_suite: &P,
     joiner_secret: &JoinerSecret,
     psk_secret: &PskSecret,
-) -> Result<Zeroizing<Vec<u8>>, KeyScheduleError> {
+) -> Result<Zeroizing<Vec<u8>>, MlsError> {
     let epoch_seed = get_pre_epoch_secret(cipher_suite, psk_secret, joiner_secret)?;
     kdf_derive_secret(cipher_suite, &epoch_seed, "welcome")
 }
@@ -432,7 +406,7 @@ pub(crate) mod test_utils {
 
     use crate::{cipher_suite::CipherSuite, crypto::test_utils::test_cipher_suite_provider};
 
-    use super::{CommitSecret, InitSecret, JoinerSecret, KeySchedule, KeyScheduleError};
+    use super::{CommitSecret, InitSecret, JoinerSecret, KeySchedule, MlsError};
 
     impl From<JoinerSecret> for Vec<u8> {
         fn from(mut value: JoinerSecret) -> Self {
@@ -459,12 +433,12 @@ pub(crate) mod test_utils {
             InitSecret(Zeroizing::new(init_secret))
         }
 
-        pub fn random<P: CipherSuiteProvider>(cipher_suite: &P) -> Result<Self, KeyScheduleError> {
+        pub fn random<P: CipherSuiteProvider>(cipher_suite: &P) -> Result<Self, MlsError> {
             cipher_suite
                 .random_bytes_vec(cipher_suite.kdf_extract_size())
                 .map(Zeroizing::new)
                 .map(InitSecret)
-                .map_err(|e| KeyScheduleError::CipherSuiteProviderError(e.into()))
+                .map_err(|e| MlsError::CryptoProviderError(e.into()))
         }
     }
 

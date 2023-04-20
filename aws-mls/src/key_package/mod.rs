@@ -1,9 +1,8 @@
 use crate::cipher_suite::CipherSuite;
+use crate::client::MlsError;
 use crate::crypto::HpkePublicKey;
-use crate::extension::ExtensionType;
 use crate::extension::RequiredCapabilitiesExt;
-use crate::group::proposal::ProposalType;
-use crate::hash_reference::{HashReference, HashReferenceError};
+use crate::hash_reference::HashReference;
 use crate::identity::SigningIdentity;
 use crate::protocol_version::ProtocolVersion;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
@@ -11,8 +10,6 @@ use crate::signer::Signable;
 use crate::time::MlsTime;
 use crate::tree_kem::leaf_node::LeafNode;
 use crate::CipherSuiteProvider;
-use alloc::string::String;
-use alloc::string::ToString;
 use alloc::vec::Vec;
 use aws_mls_codec::MlsDecode;
 use aws_mls_codec::MlsEncode;
@@ -20,21 +17,12 @@ use aws_mls_codec::MlsSize;
 use aws_mls_core::extension::ExtensionList;
 use core::ops::Deref;
 use serde_with::serde_as;
-use thiserror::Error;
 
 mod validator;
 pub(crate) use validator::*;
 
 pub(crate) mod generator;
 pub(crate) use generator::*;
-
-#[derive(Error, Debug)]
-pub enum KeyPackageError {
-    #[error(transparent)]
-    SerializationError(#[from] aws_mls_codec::Error),
-    #[error("unsupported cipher suite: {0:?}")]
-    UnsupportedCipherSuite(CipherSuite),
-}
 
 #[serde_as]
 #[non_exhaustive]
@@ -78,12 +66,6 @@ impl Deref for KeyPackageRef {
     }
 }
 
-impl ToString for KeyPackageRef {
-    fn to_string(&self) -> String {
-        hex::encode(self.deref())
-    }
-}
-
 impl From<Vec<u8>> for KeyPackageRef {
     fn from(v: Vec<u8>) -> Self {
         Self(HashReference::from(v))
@@ -120,11 +102,9 @@ impl KeyPackage {
     pub(crate) fn to_reference<CP: CipherSuiteProvider>(
         &self,
         cipher_suite_provider: &CP,
-    ) -> Result<KeyPackageRef, HashReferenceError> {
+    ) -> Result<KeyPackageRef, MlsError> {
         if cipher_suite_provider.cipher_suite() != self.cipher_suite {
-            return Err(HashReferenceError::InvalidCipherSuite(
-                cipher_suite_provider.cipher_suite(),
-            ));
+            return Err(MlsError::CipherSuiteMismatch);
         }
 
         Ok(KeyPackageRef(HashReference::compute(
@@ -322,9 +302,7 @@ mod tests {
 
         assert_matches!(
             key_package.to_reference(&test_cipher_suite_provider(CipherSuite::P256_AES128)),
-            Err(HashReferenceError::InvalidCipherSuite(
-                CipherSuite::P256_AES128
-            ))
+            Err(MlsError::CipherSuiteMismatch)
         )
     }
 }

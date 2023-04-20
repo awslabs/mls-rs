@@ -1,29 +1,15 @@
-use crate::group::transcript_hash::ConfirmedTranscriptHash;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::CipherSuiteProvider;
-use alloc::{boxed::Box, vec::Vec};
+use crate::{client::MlsError, group::transcript_hash::ConfirmedTranscriptHash};
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use core::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
+use core::ops::Deref;
 use serde_with::serde_as;
-use thiserror::Error;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-#[derive(Debug, Error)]
-pub enum ConfirmationTagError {
-    #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
-}
 
 #[serde_as]
-#[derive(Clone, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
+)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct ConfirmationTag(
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
@@ -38,22 +24,16 @@ impl Deref for ConfirmationTag {
     }
 }
 
-impl Debug for ConfirmationTag {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&hex::encode(&self.0))
-    }
-}
-
 impl ConfirmationTag {
     pub(crate) fn create<P: CipherSuiteProvider>(
         confirmation_key: &[u8],
         confirmed_transcript_hash: &ConfirmedTranscriptHash,
         cipher_suite_provider: &P,
-    ) -> Result<Self, ConfirmationTagError> {
+    ) -> Result<Self, MlsError> {
         cipher_suite_provider
             .mac(confirmation_key, confirmed_transcript_hash)
             .map(ConfirmationTag)
-            .map_err(|e| ConfirmationTagError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 
     pub(crate) fn matches<P: CipherSuiteProvider>(
@@ -61,7 +41,7 @@ impl ConfirmationTag {
         confirmation_key: &[u8],
         confirmed_transcript_hash: &ConfirmedTranscriptHash,
         cipher_suite_provider: &P,
-    ) -> Result<bool, ConfirmationTagError> {
+    ) -> Result<bool, MlsError> {
         let tag = ConfirmationTag::create(
             confirmation_key,
             confirmed_transcript_hash,

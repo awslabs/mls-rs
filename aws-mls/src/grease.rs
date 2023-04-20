@@ -1,25 +1,11 @@
-use alloc::boxed::Box;
-use thiserror::Error;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
 use aws_mls_core::{crypto::CipherSuiteProvider, extension::ExtensionList, group::Capabilities};
 
 use crate::{
+    client::MlsError,
     group::{GroupInfo, NewMemberInfo},
     key_package::KeyPackage,
-    tree_kem::leaf_node::{LeafNode, LeafNodeError},
+    tree_kem::leaf_node::LeafNode,
 };
-
-#[derive(Debug, Error)]
-pub enum GreaseError {
-    #[error(transparent)]
-    RandomGeneratorError(Box<dyn Error + Send + Sync + 'static>),
-}
 
 impl LeafNode {
     pub fn ungreased_capabilities(&self) -> Capabilities {
@@ -37,7 +23,7 @@ impl LeafNode {
         extensions
     }
 
-    pub fn grease<P: CipherSuiteProvider>(&mut self, cs: &P) -> Result<(), LeafNodeError> {
+    pub fn grease<P: CipherSuiteProvider>(&mut self, cs: &P) -> Result<(), MlsError> {
         grease_functions::grease(&mut self.capabilities.cipher_suites, cs)?;
         grease_functions::grease(&mut self.capabilities.proposals, cs)?;
         grease_functions::grease(&mut self.capabilities.credentials, cs)?;
@@ -50,7 +36,7 @@ impl LeafNode {
 }
 
 impl KeyPackage {
-    pub fn grease<P: CipherSuiteProvider>(&mut self, cs: &P) -> Result<(), GreaseError> {
+    pub fn grease<P: CipherSuiteProvider>(&mut self, cs: &P) -> Result<(), MlsError> {
         grease_functions::grease_extensions(&mut self.extensions, cs).map(|_| ())
     }
 
@@ -62,7 +48,7 @@ impl KeyPackage {
 }
 
 impl GroupInfo {
-    pub fn grease<P: CipherSuiteProvider>(&mut self, cs: &P) -> Result<(), GreaseError> {
+    pub fn grease<P: CipherSuiteProvider>(&mut self, cs: &P) -> Result<(), MlsError> {
         grease_functions::grease_extensions(&mut self.extensions, cs).map(|_| ())
     }
 }
@@ -82,7 +68,7 @@ mod grease_functions {
         extension::{Extension, ExtensionList, ExtensionType},
     };
 
-    use super::GreaseError;
+    use super::MlsError;
 
     pub const GREASE_VALUES: &[u16] = &[
         0x0A0A, 0x1A1A, 0x2A2A, 0x3A3A, 0x4A4A, 0x5A5A, 0x6A6A, 0x7A7A, 0x8A8A, 0x9A9A, 0xAAAA,
@@ -92,7 +78,7 @@ mod grease_functions {
     pub fn grease<T: From<u16>, P: CipherSuiteProvider>(
         array: &mut Vec<T>,
         cs: &P,
-    ) -> Result<(), GreaseError> {
+    ) -> Result<(), MlsError> {
         array.push(random_grease_value(cs)?.into());
         Ok(())
     }
@@ -100,16 +86,16 @@ mod grease_functions {
     pub fn grease_extensions<P: CipherSuiteProvider>(
         extensions: &mut ExtensionList,
         cs: &P,
-    ) -> Result<Vec<ExtensionType>, GreaseError> {
+    ) -> Result<Vec<ExtensionType>, MlsError> {
         let grease_value = random_grease_value(cs)?;
         extensions.set(Extension::new(grease_value.into(), vec![]));
         Ok(vec![grease_value.into()])
     }
 
-    fn random_grease_value<P: CipherSuiteProvider>(cs: &P) -> Result<u16, GreaseError> {
+    fn random_grease_value<P: CipherSuiteProvider>(cs: &P) -> Result<u16, MlsError> {
         let index = cs
             .random_bytes_vec(1)
-            .map_err(|e| GreaseError::RandomGeneratorError(e.into()))?[0];
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?[0];
 
         Ok(GREASE_VALUES[index as usize % GREASE_VALUES.len()])
     }
@@ -136,19 +122,19 @@ mod grease_functions {
         extension::{ExtensionList, ExtensionType},
     };
 
-    use super::GreaseError;
+    use super::MlsError;
 
     pub fn grease<T: From<u16>, P: CipherSuiteProvider>(
         _array: &mut [T],
         _cs: &P,
-    ) -> Result<(), GreaseError> {
+    ) -> Result<(), MlsError> {
         Ok(())
     }
 
     pub fn grease_extensions<P: CipherSuiteProvider>(
         _extensions: &mut ExtensionList,
         _cs: &P,
-    ) -> Result<Vec<ExtensionType>, GreaseError> {
+    ) -> Result<Vec<ExtensionType>, MlsError> {
         Ok(Vec::new())
     }
 

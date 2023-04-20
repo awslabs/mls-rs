@@ -1,46 +1,21 @@
-use alloc::string::String;
-
 #[cfg(feature = "std")]
 use std::collections::{HashMap, HashSet};
 
 #[cfg(not(feature = "std"))]
 use alloc::collections::{BTreeMap, BTreeSet};
 
+use crate::client::MlsError;
 use crate::crypto::CipherSuiteProvider;
 use crate::tree_kem::math as tree_math;
 use crate::{
     extension::RequiredCapabilitiesExt,
-    tree_kem::{
-        leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator},
-        RatchetTreeError, TreeKemPublic,
-    },
+    tree_kem::{leaf_node_validator::LeafNodeValidator, TreeKemPublic},
 };
 use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
 use futures::TryStreamExt;
-use thiserror::Error;
 
-use super::node::{NodeIndex, NodeVecError};
-
-#[derive(Debug, Error)]
-pub enum TreeValidationError {
-    #[error(transparent)]
-    RatchetTreeError(#[from] RatchetTreeError),
-    #[error(transparent)]
-    NodeVecError(#[from] NodeVecError),
-    #[error(transparent)]
-    LeafNodeValidationError(#[from] LeafNodeValidationError),
-    #[error("tree hash mismatch, expected: {0} found: {1}")]
-    TreeHashMismatch(String, String),
-    #[error("invalid node parent hash found")]
-    ParentHashMismatch,
-    #[error("unexpected pattern of unmerged leaves")]
-    UnmergedLeavesMismatch,
-    #[error("empty tree")]
-    EmptyTree,
-    #[error("trailing blanks")]
-    TrailingBlanks,
-}
+use super::node::NodeIndex;
 
 pub(crate) struct TreeValidator<'a, C, CSP>
 where
@@ -75,41 +50,38 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
         }
     }
 
-    pub async fn validate(&self, tree: &mut TreeKemPublic) -> Result<(), TreeValidationError> {
+    pub async fn validate(&self, tree: &mut TreeKemPublic) -> Result<(), MlsError> {
         self.validate_tree_hash(tree)?;
 
         tree.validate_parent_hashes(self.cipher_suite_provider)
-            .map_err(|_| TreeValidationError::ParentHashMismatch)?;
+            .map_err(|_| MlsError::ParentHashMismatch)?;
 
         self.validate_no_trailing_blanks(tree)?;
         self.validate_leaves(tree).await?;
         validate_unmerged(tree)
     }
 
-    fn validate_no_trailing_blanks(&self, tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
+    fn validate_no_trailing_blanks(&self, tree: &TreeKemPublic) -> Result<(), MlsError> {
         tree.nodes
             .last()
-            .ok_or(TreeValidationError::EmptyTree)?
+            .ok_or(MlsError::UnexpectedEmptyTree)?
             .is_some()
             .then_some(())
-            .ok_or(TreeValidationError::TrailingBlanks)
+            .ok_or(MlsError::UnexpectedTrailingBlanks)
     }
 
-    fn validate_tree_hash(&self, tree: &mut TreeKemPublic) -> Result<(), TreeValidationError> {
+    fn validate_tree_hash(&self, tree: &mut TreeKemPublic) -> Result<(), MlsError> {
         //Verify that the tree hash of the ratchet tree matches the tree_hash field in the GroupInfo.
         let tree_hash = tree.tree_hash(self.cipher_suite_provider)?;
 
         if tree_hash != self.expected_tree_hash {
-            return Err(TreeValidationError::TreeHashMismatch(
-                hex::encode(self.expected_tree_hash),
-                hex::encode(tree_hash),
-            ));
+            return Err(MlsError::TreeHashMismatch);
         }
 
         Ok(())
     }
 
-    async fn validate_leaves(&self, tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
+    async fn validate_leaves(&self, tree: &TreeKemPublic) -> Result<(), MlsError> {
         // For each non-empty leaf node, verify the signature on the LeafNode.
         futures::stream::iter(tree.nodes.non_empty_leaves().map(Ok))
             .try_for_each(|(li, ln)| self.leaf_node_validator.revalidate(ln, self.group_id, *li))
@@ -118,7 +90,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> TreeValidator<'a, C, CSP
     }
 }
 
-fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
+fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), MlsError> {
     let unmerged_sets = tree.nodes.non_empty_parents();
 
     #[cfg(feature = "std")]
@@ -162,7 +134,7 @@ fn validate_unmerged(tree: &TreeKemPublic) -> Result<(), TreeValidationError> {
 
     unmerged_sets
         .then_some(())
-        .ok_or(TreeValidationError::UnmergedLeavesMismatch)
+        .ok_or(MlsError::UnmergedLeavesMismatch)
 }
 
 #[cfg(test)]
@@ -287,7 +259,7 @@ mod tests {
 
             assert_matches!(
                 validator.validate(&mut test_tree).await,
-                Err(TreeValidationError::TreeHashMismatch(_, _))
+                Err(MlsError::TreeHashMismatch)
             );
         }
     }
@@ -316,7 +288,7 @@ mod tests {
 
             assert_matches!(
                 validator.validate(&mut test_tree).await,
-                Err(TreeValidationError::ParentHashMismatch)
+                Err(MlsError::ParentHashMismatch)
             );
         }
     }
@@ -347,7 +319,7 @@ mod tests {
 
             assert_matches!(
                 validator.validate(&mut test_tree).await,
-                Err(TreeValidationError::LeafNodeValidationError(_))
+                Err(MlsError::InvalidSignature)
             );
         }
     }
@@ -367,7 +339,7 @@ mod tests {
 
         assert_matches!(
             validate_unmerged(&tree),
-            Err(TreeValidationError::UnmergedLeavesMismatch)
+            Err(MlsError::UnmergedLeavesMismatch)
         );
     }
 
@@ -380,7 +352,7 @@ mod tests {
 
         assert_matches!(
             validate_unmerged(&tree),
-            Err(TreeValidationError::UnmergedLeavesMismatch)
+            Err(MlsError::UnmergedLeavesMismatch)
         );
     }
 
@@ -393,7 +365,7 @@ mod tests {
 
         assert_matches!(
             validate_unmerged(&tree),
-            Err(TreeValidationError::UnmergedLeavesMismatch)
+            Err(MlsError::UnmergedLeavesMismatch)
         );
     }
 }

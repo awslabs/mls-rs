@@ -15,20 +15,6 @@ use std::collections::hash_map::Entry;
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeSet;
 
-#[derive(Debug, Error)]
-pub enum TreeIndexError {
-    #[error("credential signature keys must be unique, duplicate key found at index: {0:?}")]
-    DuplicateSignatureKeys(LeafIndex),
-    #[error("hpke keys must be unique, duplicate key found at index: {0:?}")]
-    DuplicateHpkeKey(LeafIndex),
-    #[error("identities must be unique, duplicate identity found at index {0:?}")]
-    DuplicateIdentity(LeafIndex),
-    #[error("In-use credential type {0:?} not supported by new leaf at index {1:?}")]
-    InUseCredentialTypeUnsupportedByNewLeaf(CredentialType, LeafIndex),
-    #[error("Not all members support the credential type used by new leaf")]
-    CredentialTypeOfNewLeafIsUnsupported(CredentialType),
-}
-
 #[cfg(feature = "std")]
 #[serde_as]
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -85,26 +71,26 @@ impl TreeIndex {
         index: LeafIndex,
         leaf_node: &LeafNode,
         identity: Vec<u8>,
-    ) -> Result<(), TreeIndexError> {
+    ) -> Result<(), MlsError> {
         let old_leaf_count = self.credential_signature_key.len();
 
         let pub_key = leaf_node.signing_identity.signature_key.clone();
         let credential_entry = self.credential_signature_key.entry(pub_key.to_vec());
 
         if let Entry::Occupied(entry) = credential_entry {
-            return Err(TreeIndexError::DuplicateSignatureKeys(*entry.get()));
+            return Err(MlsError::DuplicateSignatureKeys(**entry.get()));
         }
 
         let hpke_key = leaf_node.public_key.as_ref().to_vec();
         let hpke_entry = self.hpke_key.entry(hpke_key);
 
         if let Entry::Occupied(entry) = hpke_entry {
-            return Err(TreeIndexError::DuplicateHpkeKey(*entry.get()));
+            return Err(MlsError::DuplicateHpkeKey(**entry.get()));
         }
 
         let identity_entry = self.identities.entry(identity);
         if let Entry::Occupied(entry) = identity_entry {
-            return Err(TreeIndexError::DuplicateIdentity(*entry.get()));
+            return Err(MlsError::DuplicateIdentity(**entry.get()));
         }
 
         let in_use_cred_type_unsupported_by_new_leaf = self
@@ -114,8 +100,8 @@ impl TreeIndex {
             .find(|cred_type| !leaf_node.capabilities.credentials.contains(cred_type));
 
         if let Some(cred_type) = in_use_cred_type_unsupported_by_new_leaf {
-            return Err(TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(
-                cred_type, index,
+            return Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf(
+                cred_type, *index,
             ));
         }
 
@@ -127,7 +113,7 @@ impl TreeIndex {
             .or_default();
 
         if cred_type_counters.supported != old_leaf_count {
-            return Err(TreeIndexError::CredentialTypeOfNewLeafIsUnsupported(
+            return Err(MlsError::CredentialTypeOfNewLeafIsUnsupported(
                 new_leaf_cred_type,
             ));
         }
@@ -328,8 +314,8 @@ mod tests {
             get_test_client_identity(&new_key_package),
         );
 
-        assert_matches!(res, Err(TreeIndexError::DuplicateSignatureKeys(index))
-                        if index == test_data[1].index);
+        assert_matches!(res, Err(MlsError::DuplicateSignatureKeys(index))
+                        if index == *test_data[1].index);
 
         assert_eq!(before_error, test_index);
     }
@@ -349,8 +335,8 @@ mod tests {
             get_test_client_identity(&new_leaf_node),
         );
 
-        assert_matches!(res, Err(TreeIndexError::DuplicateHpkeKey(index))
-                        if index == test_data[1].index);
+        assert_matches!(res, Err(MlsError::DuplicateHpkeKey(index))
+                        if index == *test_data[1].index);
 
         assert_eq!(before_error, test_index);
     }

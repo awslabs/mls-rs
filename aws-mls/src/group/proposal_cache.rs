@@ -1,10 +1,8 @@
-use aws_mls_core::extension::ExtensionError;
-
 use super::*;
 use crate::{
     group::proposal_filter::{
         FailInvalidProposal, IgnoreInvalidByRefProposal, ProposalApplier, ProposalBundle,
-        ProposalInfo, ProposalRules, ProposalRulesError, ProposalSource, ProposalState,
+        ProposalInfo, ProposalRules, ProposalSource, ProposalState,
     },
     psk::ExternalPskIdValidator,
     time::MlsTime,
@@ -16,16 +14,6 @@ use std::collections::HashMap;
 
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
-
-#[derive(Error, Debug)]
-pub enum ProposalCacheError {
-    #[error(transparent)]
-    ProposalRulesError(#[from] ProposalRulesError),
-    #[error("Proposal {0:?} not found")]
-    ProposalNotFound(ProposalRef),
-    #[error("Invalid required capabilities")]
-    InvalidRequiredCapabilities(#[source] ExtensionError),
-}
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct ProposalSetEffects {
@@ -52,7 +40,7 @@ impl ProposalSetEffects {
         proposals: ProposalBundle,
         #[cfg(feature = "external_commit")] external_leaf: Option<LeafIndex>,
         rejected_proposals: Vec<(ProposalRef, Proposal)>,
-    ) -> Result<Self, ProposalCacheError> {
+    ) -> Result<Self, MlsError> {
         let init = ProposalSetEffects {
             tree,
             added_leaf_indexes,
@@ -120,7 +108,7 @@ impl ProposalSetEffects {
         mut self,
         item: ProposalInfo<Proposal>,
         #[cfg(feature = "external_commit")] external_leaf: Option<LeafIndex>,
-    ) -> Result<Self, ProposalCacheError> {
+    ) -> Result<Self, MlsError> {
         match item.proposal {
             Proposal::Add(add) => self.adds.push(add.key_package),
             Proposal::Update(update) => {
@@ -139,10 +127,8 @@ impl ProposalSetEffects {
             }
             #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(external_init) => {
-                let new_member_leaf_index =
-                    external_leaf.ok_or(ProposalCacheError::ProposalRulesError(
-                        ProposalRulesError::MissingUpdatePathInExternalCommit,
-                    ))?;
+                let new_member_leaf_index = external_leaf.ok_or(MlsError::CommitMissingPath)?;
+
                 self.external_init = Some((new_member_leaf_index, external_init));
             }
             Proposal::Custom(custom) => self.custom_proposals.push(custom),
@@ -223,16 +209,14 @@ impl ProposalCache {
         group_extensions: &ExtensionList,
         proposal_bundle: &mut ProposalBundle,
         user_rules: &F,
-    ) -> Result<(), ProposalCacheError>
+    ) -> Result<(), MlsError>
     where
         F: ProposalRules,
     {
         let new_proposals = user_rules
             .expand_custom_proposals(roster, group_extensions, proposal_bundle.custom_proposals())
             .await
-            .map_err(|e| {
-                ProposalCacheError::ProposalRulesError(ProposalRulesError::UserDefined(e.into()))
-            })?;
+            .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into()))?;
 
         new_proposals
             .into_iter()
@@ -254,7 +238,7 @@ impl ProposalCache {
         external_psk_id_validator: P,
         user_filter: F,
         roster: &[Member],
-    ) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), ProposalCacheError>
+    ) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), MlsError>
     where
         C: IdentityProvider,
         F: ProposalRules,
@@ -287,14 +271,12 @@ impl ProposalCache {
         let mut proposals = user_filter
             .filter(sender, roster, group_extensions, proposals)
             .await
-            .map_err(ProposalRulesError::user_defined)?;
+            .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into()))?;
 
         self.expand_custom_proposals(roster, group_extensions, &mut proposals, &user_filter)
             .await?;
 
-        let required_capabilities = group_extensions
-            .get_as()
-            .map_err(ProposalCacheError::InvalidRequiredCapabilities)?;
+        let required_capabilities = group_extensions.get_as()?;
 
         let applier = ProposalApplier::new(
             public_tree,
@@ -346,14 +328,14 @@ impl ProposalCache {
         &self,
         sender: Sender,
         proposal: ProposalOrRef,
-    ) -> Result<CachedProposal, ProposalCacheError> {
+    ) -> Result<CachedProposal, MlsError> {
         match proposal {
             ProposalOrRef::Proposal(proposal) => Ok(CachedProposal { proposal, sender }),
             ProposalOrRef::Reference(proposal_ref) => self
                 .proposals
                 .get(&proposal_ref)
                 .cloned()
-                .ok_or(ProposalCacheError::ProposalNotFound(proposal_ref)),
+                .ok_or(MlsError::ProposalNotFound(proposal_ref)),
         }
     }
 
@@ -372,7 +354,7 @@ impl ProposalCache {
         user_rules: F,
         commit_time: Option<MlsTime>,
         roster: &[Member],
-    ) -> Result<ProposalSetEffects, ProposalCacheError>
+    ) -> Result<ProposalSetEffects, MlsError>
     where
         C: IdentityProvider,
         F: ProposalRules,
@@ -389,21 +371,19 @@ impl ProposalCache {
 
                 let proposal = self.resolve_item(sender, proposal)?;
                 proposals.add(proposal.proposal, proposal.sender, proposal_source);
-                Ok::<_, ProposalCacheError>(proposals)
+                Ok::<_, MlsError>(proposals)
             },
         )?;
 
         user_rules
             .validate(sender, roster, group_extensions, &proposals)
             .await
-            .map_err(ProposalRulesError::user_defined)?;
+            .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into()))?;
 
         self.expand_custom_proposals(roster, group_extensions, &mut proposals, &user_rules)
             .await?;
 
-        let required_capabilities = group_extensions
-            .get_as()
-            .map_err(ProposalCacheError::InvalidRequiredCapabilities)?;
+        let required_capabilities = group_extensions.get_as()?;
 
         let applier = ProposalApplier::new(
             public_tree,
@@ -500,7 +480,7 @@ pub(crate) mod test_utils {
         psk::{ExternalPskIdValidator, PassThroughPskIdValidator},
     };
 
-    use super::{CachedProposal, ProposalCache, ProposalCacheError, ProposalSetEffects};
+    use super::{CachedProposal, MlsError, ProposalCache, ProposalSetEffects};
 
     impl CachedProposal {
         pub fn new(proposal: Proposal, sender: Sender) -> Self {
@@ -626,10 +606,7 @@ pub(crate) mod test_utils {
             self
         }
 
-        pub async fn receive<I>(
-            &self,
-            proposals: I,
-        ) -> Result<ProposalSetEffects, ProposalCacheError>
+        pub async fn receive<I>(&self, proposals: I) -> Result<ProposalSetEffects, MlsError>
         where
             I: IntoIterator,
             I::Item: Into<ProposalOrRef>,
@@ -670,6 +647,7 @@ mod tests {
     use crate::tree_kem::leaf_node::test_utils::{
         get_basic_test_node_capabilities, get_test_capabilities,
     };
+    use crate::tree_kem::leaf_node::LeafNodeSigningContext;
     use crate::{
         client::test_utils::{TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
         crypto::{self, test_utils::test_cipher_suite_provider},
@@ -692,9 +670,9 @@ mod tests {
                 },
                 ConfigProperties, LeafNodeSource,
             },
-            leaf_node_validator::{test_utils::FailureIdentityProvider, LeafNodeValidationError},
+            leaf_node_validator::test_utils::FailureIdentityProvider,
             parent_hash::ParentHash,
-            AccumulateBatchResults, Lifetime, RatchetTreeError, TreeIndexError,
+            AccumulateBatchResults, Lifetime,
         },
     };
 
@@ -728,7 +706,7 @@ mod tests {
             public_tree: &TreeKemPublic,
             external_psk_id_validator: P,
             user_rules: F,
-        ) -> Result<ProposalSetEffects, ProposalCacheError>
+        ) -> Result<ProposalSetEffects, MlsError>
         where
             C: IdentityProvider,
             F: ProposalRules,
@@ -922,7 +900,7 @@ mod tests {
     impl AccumulateBatchResults for NoopAccumulator {
         type Output = ();
 
-        fn finish(self) -> Result<Self::Output, RatchetTreeError> {
+        fn finish(self) -> Result<Self::Output, MlsError> {
             Ok(())
         }
     }
@@ -1129,13 +1107,11 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidProposalTypeForSender {
-                    proposal_type: ProposalType::UPDATE,
-                    sender: Sender::Member(_),
-                    by_ref: false,
-                }
-            ))
+            Err(MlsError::InvalidProposalTypeForSender {
+                proposal_type: ProposalType::UPDATE,
+                sender: Sender::Member(_),
+                by_ref: false,
+            })
         );
     }
 
@@ -1373,12 +1349,7 @@ mod tests {
             )
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::DuplicatePskIds
-            ))
-        );
+        assert_matches!(res, Err(MlsError::DuplicatePskIds));
     }
 
     async fn test_node() -> LeafNode {
@@ -1427,12 +1398,7 @@ mod tests {
             )
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::ExternalCommitMustHaveNewLeaf
-            ))
-        );
+        assert_matches!(res, Err(MlsError::ExternalCommitMustHaveNewLeaf));
     }
 
     #[cfg(feature = "external_commit")]
@@ -1472,12 +1438,7 @@ mod tests {
             )
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::OnlyMembersCanCommitProposalsByRef
-            ))
-        );
+        assert_matches!(res, Err(MlsError::OnlyMembersCanCommitProposalsByRef));
     }
 
     #[cfg(feature = "external_commit")]
@@ -1514,16 +1475,14 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::ExternalCommitMustHaveExactlyOneExternalInit
-            ))
+            Err(MlsError::ExternalCommitMustHaveExactlyOneExternalInit)
         );
     }
 
     #[cfg(feature = "external_commit")]
     async fn new_member_commits_proposal(
         proposal: Proposal,
-    ) -> Result<ProposalSetEffects, ProposalCacheError> {
+    ) -> Result<ProposalSetEffects, MlsError> {
         let cache = make_proposal_cache();
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);
         let kem_output = vec![0; cipher_suite_provider.kdf_extract_size()];
@@ -1562,8 +1521,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidProposalTypeInExternalCommit(ProposalType::ADD)
+            Err(MlsError::InvalidProposalTypeInExternalCommit(
+                ProposalType::ADD
             ))
         );
     }
@@ -1617,12 +1576,7 @@ mod tests {
             )
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::ExternalCommitWithMoreThanOneRemove
-            ))
-        );
+        assert_matches!(res, Err(MlsError::ExternalCommitWithMoreThanOneRemove));
     }
 
     #[cfg(feature = "external_commit")]
@@ -1668,12 +1622,7 @@ mod tests {
             )
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::ExternalCommitRemovesOtherIdentity
-            ))
-        );
+        assert_matches!(res, Err(MlsError::ExternalCommitRemovesOtherIdentity));
     }
 
     #[cfg(feature = "external_commit")]
@@ -1732,8 +1681,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidProposalTypeInExternalCommit(ProposalType::UPDATE)
+            Err(MlsError::InvalidProposalTypeInExternalCommit(
+                ProposalType::UPDATE
             ))
         );
     }
@@ -1747,10 +1696,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidProposalTypeInExternalCommit(
-                    ProposalType::GROUP_CONTEXT_EXTENSIONS,
-                )
+            Err(MlsError::InvalidProposalTypeInExternalCommit(
+                ProposalType::GROUP_CONTEXT_EXTENSIONS,
             ))
         );
     }
@@ -1768,8 +1715,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidProposalTypeInExternalCommit(ProposalType::RE_INIT)
+            Err(MlsError::InvalidProposalTypeInExternalCommit(
+                ProposalType::RE_INIT
             ))
         );
     }
@@ -1799,9 +1746,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::ExternalCommitMustHaveExactlyOneExternalInit
-            ))
+            Err(MlsError::ExternalCommitMustHaveExactlyOneExternalInit)
         );
     }
 
@@ -2088,9 +2033,7 @@ mod tests {
             }
         }
 
-        async fn send(
-            &self,
-        ) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), ProposalCacheError> {
+        async fn send(&self) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), MlsError> {
             self.cache
                 .prepare_commit(
                     Sender::Member(*self.sender),
@@ -2126,7 +2069,7 @@ mod tests {
                 async move {
                     let mut key_package_gen = gen
                         .generate(
-                            Default::default(),
+                            Lifetime::years(1).unwrap(),
                             Default::default(),
                             Default::default(),
                             Default::default(),
@@ -2135,6 +2078,20 @@ mod tests {
                         .unwrap();
 
                     key_package_gen.key_package.leaf_node.public_key = key;
+
+                    key_package_gen
+                        .key_package
+                        .leaf_node
+                        .sign(
+                            &cipher_suite_provider,
+                            gen.signing_key,
+                            &LeafNodeSigningContext {
+                                group_id: None,
+                                leaf_index: None,
+                            },
+                        )
+                        .unwrap();
+
                     key_package_gen
                         .key_package
                         .sign(&cipher_suite_provider, gen.signing_key, &())
@@ -2162,12 +2119,7 @@ mod tests {
         })])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::KeyPackageValidationError(_)
-            ))
-        );
+        assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
     #[test]
@@ -2181,12 +2133,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::KeyPackageValidationError(_)
-            ))
-        );
+        assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
     #[test]
@@ -2223,12 +2170,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::KeyPackageValidationError(_)
-            ))
-        );
+        assert_matches!(res, Err(MlsError::DuplicateHpkeKey(_)));
     }
 
     #[test]
@@ -2263,6 +2205,7 @@ mod tests {
         let proposal = Proposal::Update(UpdateProposal {
             leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "alice").await,
         });
+
         let proposal_ref = make_proposal_ref(&proposal, bob);
 
         let res = CommitReceiver::new(
@@ -2275,12 +2218,7 @@ mod tests {
         .receive([proposal_ref])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::LeafNodeValidationError(_)
-            ))
-        );
+        assert_matches!(res, Err(MlsError::InvalidLeafNodeSource));
     }
 
     #[test]
@@ -2322,12 +2260,7 @@ mod tests {
         })])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::RatchetTreeError(_)
-            ))
-        );
+        assert_matches!(res, Err(MlsError::InvalidNodeIndex(20)));
     }
 
     #[test]
@@ -2341,12 +2274,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::RatchetTreeError(_)
-            ))
-        );
+        assert_matches!(res, Err(MlsError::InvalidNodeIndex(20)));
     }
 
     #[test]
@@ -2404,9 +2332,9 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidPskNonceLength { expected, found },
-            )) if expected == test_cipher_suite_provider(TEST_CIPHER_SUITE).kdf_extract_size() && found == invalid_nonce.0.len()
+            Err(
+                MlsError::InvalidPskNonceLength { expected, found },
+            ) if expected == test_cipher_suite_provider(TEST_CIPHER_SUITE).kdf_extract_size() && found == invalid_nonce.0.len()
         );
     }
 
@@ -2425,9 +2353,9 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidPskNonceLength { expected, found },
-            )) if expected == test_cipher_suite_provider(TEST_CIPHER_SUITE).kdf_extract_size() && found == invalid_nonce.0.len()
+            Err(
+                MlsError::InvalidPskNonceLength { expected, found },
+            ) if expected == test_cipher_suite_provider(TEST_CIPHER_SUITE).kdf_extract_size() && found == invalid_nonce.0.len()
         );
     }
 
@@ -2475,12 +2403,7 @@ mod tests {
         .receive([Proposal::Psk(make_resumption_psk(usage))])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidTypeOrUsageInPreSharedKeyProposal
-            ))
-        );
+        assert_matches!(res, Err(MlsError::InvalidTypeOrUsageInPreSharedKeyProposal));
     }
 
     async fn sending_additional_resumption_psk_with_bad_usage_fails(usage: ResumptionPSKUsage) {
@@ -2491,12 +2414,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidTypeOrUsageInPreSharedKeyProposal
-            ))
-        );
+        assert_matches!(res, Err(MlsError::InvalidTypeOrUsageInPreSharedKeyProposal));
     }
 
     async fn sending_resumption_psk_with_bad_usage_filters_it_out(usage: ResumptionPSKUsage) {
@@ -2570,10 +2488,10 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(ProposalRulesError::InvalidProtocolVersionInReInit {
+            Err(MlsError::InvalidProtocolVersionInReInit {
                 proposed,
                 original,
-            })) if proposed == smaller_protocol_version && original == TEST_PROTOCOL_VERSION
+            }) if proposed == smaller_protocol_version && original == TEST_PROTOCOL_VERSION
         );
     }
 
@@ -2589,10 +2507,10 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(ProposalRulesError::InvalidProtocolVersionInReInit {
+            Err(MlsError::InvalidProtocolVersionInReInit {
                 proposed,
                 original,
-            })) if proposed == smaller_protocol_version && original == TEST_PROTOCOL_VERSION
+            }) if proposed == smaller_protocol_version && original == TEST_PROTOCOL_VERSION
         );
     }
 
@@ -2642,12 +2560,7 @@ mod tests {
         .receive([update_ref])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidCommitSelfUpdate
-            ))
-        );
+        assert_matches!(res, Err(MlsError::InvalidCommitSelfUpdate));
     }
 
     #[test]
@@ -2661,13 +2574,11 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidProposalTypeForSender {
-                    proposal_type: ProposalType::UPDATE,
-                    sender: Sender::Member(_),
-                    by_ref: false,
-                }
-            ))
+            Err(MlsError::InvalidProposalTypeForSender {
+                proposal_type: ProposalType::UPDATE,
+                sender: Sender::Member(_),
+                by_ref: false,
+            })
         );
     }
 
@@ -2701,12 +2612,7 @@ mod tests {
         .receive([Proposal::Remove(RemoveProposal { to_remove: alice })])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::CommitterSelfRemoval
-            ))
-        );
+        assert_matches!(res, Err(MlsError::CommitterSelfRemoval));
     }
 
     #[test]
@@ -2718,12 +2624,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::CommitterSelfRemoval
-            ))
-        );
+        assert_matches!(res, Err(MlsError::CommitterSelfRemoval));
     }
 
     #[test]
@@ -2767,9 +2668,9 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::MoreThanOneProposalForLeaf(r)
-            )) if r == *bob
+            Err(
+                MlsError::MoreThanOneProposalForLeaf(r)
+            ) if r == *bob
         );
     }
 
@@ -2843,14 +2744,7 @@ mod tests {
         ])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::RatchetTreeError(RatchetTreeError::TreeIndexError(
-                    TreeIndexError::DuplicateIdentity(LeafIndex(1))
-                ))
-            ))
-        );
+        assert_matches!(res, Err(MlsError::DuplicateIdentity(1)));
     }
 
     #[test]
@@ -2865,14 +2759,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::RatchetTreeError(RatchetTreeError::TreeIndexError(
-                    TreeIndexError::DuplicateIdentity(LeafIndex(1))
-                ))
-            ))
-        );
+        assert_matches!(res, Err(MlsError::DuplicateIdentity(1)));
     }
 
     #[test]
@@ -2917,14 +2804,7 @@ mod tests {
         .receive([update_ref])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::RatchetTreeError(RatchetTreeError::DifferentIdentityInUpdate(
-                    LeafIndex(1)
-                ))
-            ))
-        );
+        assert_matches!(res, Err(MlsError::DifferentIdentityInUpdate(1)));
     }
 
     #[test]
@@ -2973,14 +2853,7 @@ mod tests {
         .receive([add])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::RatchetTreeError(RatchetTreeError::TreeIndexError(
-                    TreeIndexError::DuplicateSignatureKeys(LeafIndex(1))
-                ))
-            ))
-        );
+        assert_matches!(res, Err(MlsError::DuplicateSignatureKeys(1)));
     }
 
     #[test]
@@ -3003,14 +2876,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::RatchetTreeError(RatchetTreeError::TreeIndexError(
-                    TreeIndexError::DuplicateSignatureKeys(LeafIndex(1))
-                ))
-            ))
-        );
+        assert_matches!(res, Err(MlsError::DuplicateSignatureKeys(1)));
     }
 
     #[test]
@@ -3055,12 +2921,7 @@ mod tests {
         .receive([psk_proposal.clone(), psk_proposal])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::DuplicatePskIds
-            ))
-        );
+        assert_matches!(res, Err(MlsError::DuplicatePskIds));
     }
 
     #[test]
@@ -3073,12 +2934,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::DuplicatePskIds
-            ))
-        );
+        assert_matches!(res, Err(MlsError::DuplicatePskIds));
     }
 
     #[test]
@@ -3140,9 +2996,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::MoreThanOneGroupContextExtensionsProposal
-            ))
+            Err(MlsError::MoreThanOneGroupContextExtensionsProposal)
         );
     }
 
@@ -3160,9 +3014,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::MoreThanOneGroupContextExtensionsProposal
-            ))
+            Err(MlsError::MoreThanOneGroupContextExtensionsProposal)
         );
     }
 
@@ -3252,12 +3104,7 @@ mod tests {
         )])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::IdentityProviderError(_)
-            ))
-        );
+        assert_matches!(res, Err(MlsError::IdentityProviderError(_)));
     }
 
     #[test]
@@ -3272,12 +3119,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::IdentityProviderError(_)
-            ))
-        );
+        assert_matches!(res, Err(MlsError::IdentityProviderError(_)));
     }
 
     #[test]
@@ -3316,12 +3158,7 @@ mod tests {
         ])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::OtherProposalWithReInit
-            ))
-        );
+        assert_matches!(res, Err(MlsError::OtherProposalWithReInit));
     }
 
     #[test]
@@ -3336,12 +3173,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::OtherProposalWithReInit
-            ))
-        );
+        assert_matches!(res, Err(MlsError::OtherProposalWithReInit));
     }
 
     #[test]
@@ -3387,13 +3219,11 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidProposalTypeForSender {
-                    proposal_type: ProposalType::EXTERNAL_INIT,
-                    sender: Sender::Member(_),
-                    by_ref: false,
-                }
-            ))
+            Err(MlsError::InvalidProposalTypeForSender {
+                proposal_type: ProposalType::EXTERNAL_INIT,
+                sender: Sender::Member(_),
+                by_ref: false,
+            })
         );
     }
 
@@ -3409,13 +3239,11 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidProposalTypeForSender {
-                    proposal_type: ProposalType::EXTERNAL_INIT,
-                    sender: Sender::Member(_),
-                    by_ref: false,
-                }
-            ))
+            Err(MlsError::InvalidProposalTypeForSender {
+                proposal_type: ProposalType::EXTERNAL_INIT,
+                sender: Sender::Member(_),
+                by_ref: false,
+            })
         );
     }
 
@@ -3466,11 +3294,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::LeafNodeValidationError(
-                    LeafNodeValidationError::RequiredExtensionNotFound(v)
-                )
-            )) if v == 33.into()
+            Err(MlsError::RequiredExtensionNotFound(v)) if v == 33.into()
         );
     }
 
@@ -3485,11 +3309,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::LeafNodeValidationError(
-                    LeafNodeValidationError::RequiredExtensionNotFound(v)
-                )
-            )) if v == 33.into()
+            Err(MlsError::RequiredExtensionNotFound(v)) if v == 33.into()
         );
     }
 
@@ -3692,11 +3512,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::RatchetTreeError(RatchetTreeError::TreeIndexError(
-                    TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(c, _)
-                ))
-            )) if c == BasicCredential::credential_type()
+            Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf(c, _)) if c == BasicCredential::credential_type()
         );
     }
 
@@ -3713,14 +3529,8 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::RatchetTreeError(RatchetTreeError::TreeIndexError(
-                    TreeIndexError::InUseCredentialTypeUnsupportedByNewLeaf(
-                        c,
-                        _
-                    )
-                ))
-            )) if c == BasicCredential::credential_type()
+            Err(MlsError::InUseCredentialTypeUnsupportedByNewLeaf(c,_)
+            ) if c == BasicCredential::credential_type()
         );
     }
 
@@ -3758,9 +3568,9 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::UnsupportedCustomProposal(c)
-            )) if c == custom_proposal.proposal_type()
+            Err(
+                MlsError::UnsupportedCustomProposal(c)
+            ) if c == custom_proposal.proposal_type()
         );
     }
 
@@ -3803,8 +3613,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(ProposalRulesError::UnsupportedCustomProposal(c)
-            )) if c == custom_proposal.proposal_type()
+            Err(MlsError::UnsupportedCustomProposal(c)) if c == custom_proposal.proposal_type()
         );
     }
 
@@ -3823,9 +3632,9 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::UnsupportedGroupExtension(v)
-            )) if v == 42.into()
+            Err(
+                MlsError::UnsupportedGroupExtension(v)
+            ) if v == 42.into()
         );
     }
 
@@ -3840,9 +3649,9 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::UnsupportedGroupExtension(v)
-            )) if v == 42.into()
+            Err(
+                MlsError::UnsupportedGroupExtension(v)
+            ) if v == 42.into()
         );
     }
 
@@ -3890,12 +3699,7 @@ mod tests {
         .receive([Proposal::Psk(new_external_psk(b"abc"))])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::PskIdValidationError(_)
-            ))
-        );
+        assert_matches!(res, Err(MlsError::PskIdValidationError(_)));
     }
 
     #[test]
@@ -3908,12 +3712,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::PskIdValidationError(_)
-            ))
-        );
+        assert_matches!(res, Err(MlsError::PskIdValidationError(_)));
     }
 
     #[test]
@@ -4008,7 +3807,7 @@ mod tests {
             _: &ExtensionList,
             _: &ProposalBundle,
         ) -> Result<(), Self::Error> {
-            Err(MlsError::InvalidKeyPackage)
+            Err(MlsError::InvalidSignature)
         }
 
         async fn filter(
@@ -4018,7 +3817,7 @@ mod tests {
             _: &ExtensionList,
             _: ProposalBundle,
         ) -> Result<ProposalBundle, Self::Error> {
-            Err(MlsError::InvalidKeyPackage)
+            Err(MlsError::InvalidSignature)
         }
     }
 
@@ -4032,12 +3831,7 @@ mod tests {
             .send()
             .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::UserDefined(_)
-            ))
-        );
+        assert_matches!(res, Err(MlsError::UserDefinedProposalFilterError(_)));
     }
 
     #[test]
@@ -4054,12 +3848,7 @@ mod tests {
         .receive([Proposal::GroupContextExtensions(Default::default())])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::UserDefined(_)
-            ))
-        );
+        assert_matches!(res, Err(MlsError::UserDefinedProposalFilterError(_)));
     }
 
     #[derive(Debug, Clone)]
@@ -4201,12 +3990,7 @@ mod tests {
         .receive(vec![Proposal::Custom(custom_proposal.clone())])
         .await;
 
-        assert_matches!(
-            res,
-            Err(ProposalCacheError::ProposalRulesError(
-                ProposalRulesError::InvalidProposalTypeForSender { .. }
-            ))
-        )
+        assert_matches!(res, Err(MlsError::InvalidProposalTypeForSender { .. }))
     }
 
     #[test]
@@ -4279,27 +4063,27 @@ mod tests {
             if !proposer_can_propose(&proposer, proposal.proposal_type(), by_ref) {
                 assert_matches!(
                     res,
-                    Err(ProposalCacheError::ProposalRulesError(
-                        ProposalRulesError::InvalidProposalTypeForSender {
+                    Err(
+                        MlsError::InvalidProposalTypeForSender {
                             proposal_type: found_type,
                             sender: found_sender,
                             by_ref: found_by_ref,
                         }
-                    )) if found_type == proposal.proposal_type() && found_sender == proposer && found_by_ref == by_ref
+                    ) if found_type == proposal.proposal_type() && found_sender == proposer && found_by_ref == by_ref
                 );
             } else if !sender_is_valid(&proposer) {
                 match proposer {
                     Sender::Member(i) => assert_matches!(
                         res,
-                        Err(ProposalCacheError::ProposalRulesError(
-                            ProposalRulesError::InvalidMemberProposer(index)
-                        )) if i == index
+                        Err(
+                            MlsError::InvalidMemberProposer(index)
+                        ) if i == index
                     ),
                     Sender::External(i) => assert_matches!(
                         res,
-                        Err(ProposalCacheError::ProposalRulesError(
-                            ProposalRulesError::InvalidExternalSenderIndex(index)
-                        )) if i == index
+                        Err(
+                            MlsError::InvalidExternalSenderIndex(index)
+                        ) if i == index
                     ),
                     _ => unreachable!(),
                 }

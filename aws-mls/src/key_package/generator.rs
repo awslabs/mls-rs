@@ -1,51 +1,23 @@
 use alloc::vec;
-use alloc::{boxed::Box, vec::Vec};
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode};
 use aws_mls_core::{identity::IdentityProvider, key_package::KeyPackageData};
-use thiserror::Error;
 
+use crate::client::MlsError;
 use crate::{
     crypto::{HpkeSecretKey, SignatureSecretKey},
-    grease::GreaseError,
     group::framing::MLSMessagePayload,
-    hash_reference::HashReferenceError,
     identity::SigningIdentity,
     protocol_version::ProtocolVersion,
-    signer::{Signable, SignatureError},
+    signer::Signable,
     tree_kem::{
-        leaf_node::{ConfigProperties, LeafNode, LeafNodeError},
+        leaf_node::{ConfigProperties, LeafNode},
         Capabilities, Lifetime,
     },
     CipherSuiteProvider, ExtensionList, MLSMessage,
 };
 
-use super::{KeyPackage, KeyPackageError, KeyPackageRef};
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-#[derive(Debug, Error)]
-pub enum KeyPackageGenerationError {
-    #[error("internal signer error: {0:?}")]
-    SignerError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
-    SignatureError(#[from] SignatureError),
-    #[error(transparent)]
-    KeyPackageError(#[from] KeyPackageError),
-    #[error(transparent)]
-    LeafNodeError(#[from] LeafNodeError),
-    #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    MlsCodecError(#[from] aws_mls_codec::Error),
-    #[error(transparent)]
-    HashReferenceError(#[from] HashReferenceError),
-    #[error(transparent)]
-    GreaseError(#[from] GreaseError),
-}
+use super::{KeyPackage, KeyPackageRef};
 
 #[derive(Clone, Debug)]
 pub struct KeyPackageGenerator<'a, IP, CP>
@@ -73,7 +45,7 @@ pub struct KeyPackageGeneration {
 }
 
 impl KeyPackageGeneration {
-    pub fn to_storage(&self) -> Result<(Vec<u8>, KeyPackageData), KeyPackageGenerationError> {
+    pub fn to_storage(&self) -> Result<(Vec<u8>, KeyPackageData), MlsError> {
         let id = self.reference.to_vec();
 
         let data = KeyPackageData::new(
@@ -85,10 +57,7 @@ impl KeyPackageGeneration {
         Ok((id, data))
     }
 
-    pub fn from_storage(
-        id: Vec<u8>,
-        data: KeyPackageData,
-    ) -> Result<Self, KeyPackageGenerationError> {
+    pub fn from_storage(id: Vec<u8>, data: KeyPackageData) -> Result<Self, MlsError> {
         Ok(KeyPackageGeneration {
             reference: KeyPackageRef::from(id),
             key_package: KeyPackage::mls_decode(&mut &*data.key_package_bytes)?,
@@ -110,7 +79,7 @@ where
     IP: IdentityProvider,
     CP: CipherSuiteProvider,
 {
-    pub(super) fn sign(&self, package: &mut KeyPackage) -> Result<(), KeyPackageGenerationError> {
+    pub(super) fn sign(&self, package: &mut KeyPackage) -> Result<(), MlsError> {
         package
             .sign(self.cipher_suite_provider, self.signing_key, &())
             .map_err(Into::into)
@@ -122,11 +91,11 @@ where
         capabilities: Capabilities,
         key_package_extensions: ExtensionList,
         leaf_node_extensions: ExtensionList,
-    ) -> Result<KeyPackageGeneration, KeyPackageGenerationError> {
+    ) -> Result<KeyPackageGeneration, MlsError> {
         let (init_secret_key, public_init) = self
             .cipher_suite_provider
             .kem_generate()
-            .map_err(|e| KeyPackageGenerationError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         let properties = ConfigProperties {
             capabilities,

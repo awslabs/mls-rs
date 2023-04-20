@@ -1,19 +1,8 @@
 use alloc::vec::Vec;
-use thiserror::Error;
+
+use crate::client::MlsError;
 
 use super::node::LeafIndex;
-
-#[derive(Error, Debug)]
-pub enum TreeMathError {
-    #[error("leaf node has no children")]
-    NoChildren,
-    #[error("root node has no parent")]
-    NoParent,
-    #[error("no common ancestor")]
-    NoCommonAncestor,
-    #[error("index out of range")]
-    InvalidIndex,
-}
 
 pub fn level(x: u32) -> u32 {
     x.trailing_ones()
@@ -23,34 +12,34 @@ pub fn root(n: u32) -> u32 {
     n - 1
 }
 
-pub fn left(x: u32) -> Result<u32, TreeMathError> {
+pub fn left(x: u32) -> Result<u32, MlsError> {
     let k = level(x);
     if k == 0 {
-        Err(TreeMathError::NoChildren)
+        Err(MlsError::LeafNodeNoChildren)
     } else {
         Ok(x ^ (0x01 << (k - 1)))
     }
 }
 
-pub fn right(x: u32) -> Result<u32, TreeMathError> {
+pub fn right(x: u32) -> Result<u32, MlsError> {
     let k = level(x);
     if k == 0 {
-        Err(TreeMathError::NoChildren)
+        Err(MlsError::LeafNodeNoChildren)
     } else {
         Ok(x ^ (0x03 << (k - 1)))
     }
 }
 
-pub fn parent(x: u32, n: u32) -> Result<u32, TreeMathError> {
+pub fn parent(x: u32, n: u32) -> Result<u32, MlsError> {
     if x == root(n) {
-        return Err(TreeMathError::NoParent);
+        return Err(MlsError::LeafNodeNoParent);
     }
 
     let lvl = level(x);
     Ok((x & !(1 << (lvl + 1))) | (1 << lvl))
 }
 
-pub fn sibling(x: u32, n: u32) -> Result<u32, TreeMathError> {
+pub fn sibling(x: u32, n: u32) -> Result<u32, MlsError> {
     let p = parent(x, n)?;
     if x < p {
         right(p)
@@ -59,9 +48,9 @@ pub fn sibling(x: u32, n: u32) -> Result<u32, TreeMathError> {
     }
 }
 
-pub fn direct_path(x: u32, n: u32) -> Result<Vec<u32>, TreeMathError> {
+pub fn direct_path(x: u32, n: u32) -> Result<Vec<u32>, MlsError> {
     if x > 2 * n - 1 {
-        return Err(TreeMathError::InvalidIndex);
+        return Err(MlsError::InvalidTreeIndex);
     }
 
     let mut d = Vec::new();
@@ -74,7 +63,7 @@ pub fn direct_path(x: u32, n: u32) -> Result<Vec<u32>, TreeMathError> {
     Ok(d)
 }
 
-pub fn copath(x: u32, n: u32) -> Result<Vec<u32>, TreeMathError> {
+pub fn copath(x: u32, n: u32) -> Result<Vec<u32>, MlsError> {
     let mut d = Vec::new();
 
     if x == root(n) {

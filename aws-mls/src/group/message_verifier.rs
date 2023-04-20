@@ -52,9 +52,11 @@ pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     match &auth_content.content.sender {
         Sender::Member(index) => {
             if let Some(key_schedule) = key_schedule {
-                let expected_tag = &key_schedule
-                    .get_membership_tag(&auth_content, context, cipher_suite_provider)
-                    .map_err(|e| MlsError::MembershipTagError(e.into()))?;
+                let expected_tag = &key_schedule.get_membership_tag(
+                    &auth_content,
+                    context,
+                    cipher_suite_provider,
+                )?;
 
                 let plaintext_tag = tag.as_ref().ok_or(MlsError::InvalidMembershipTag)?;
 
@@ -178,7 +180,7 @@ fn signing_identity_for_new_member_commit(
             if let Some(path) = &commit.path {
                 Ok(path.leaf_node.signing_identity.signature_key.clone())
             } else {
-                Err(MlsError::MissingUpdatePathInExternalCommit)
+                Err(MlsError::CommitMissingPath)
             }
         }
         _ => Err(MlsError::ExpectedCommitForNewMemberCommit),

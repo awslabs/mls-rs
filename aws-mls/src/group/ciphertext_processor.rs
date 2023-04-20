@@ -10,17 +10,15 @@ use super::{
         ContentType, FramedContent, PrivateContentAAD, PrivateContentTBE, PrivateMessage, Sender,
         WireFormat,
     },
-    key_schedule::KeyScheduleError,
     message_signature::AuthenticatedContent,
     padding::PaddingMode,
-    secret_tree::{KeyType, MessageKeyData, SecretTreeError},
+    secret_tree::{KeyType, MessageKeyData},
     GroupContext,
 };
-use crate::{psk::PskError, tree_kem::node::LeafIndex};
-use alloc::{boxed::Box, vec::Vec};
+use crate::{client::MlsError, tree_kem::node::LeafIndex};
+use alloc::vec::Vec;
 use aws_mls_codec::MlsEncode;
 use aws_mls_core::crypto::CipherSuiteProvider;
-use thiserror::Error;
 use zeroize::Zeroizing;
 
 mod message_key;
@@ -29,32 +27,6 @@ mod sender_data_key;
 
 #[cfg(test)]
 pub use sender_data_key::test_utils::*;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-#[derive(Error, Debug)]
-pub enum CiphertextProcessorError {
-    #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    SecretTreeError(#[from] SecretTreeError),
-    #[error(transparent)]
-    MlsCodecError(#[from] aws_mls_codec::Error),
-    #[error(transparent)]
-    PskSecretError(#[from] PskError),
-    #[error("key derivation failure")]
-    KeyDerivationFailure,
-    #[error("seal is only supported for self created messages")]
-    InvalidSender(Sender),
-    #[error("message from self can't be processed")]
-    CantProcessMessageFromSelf,
-    #[error(transparent)]
-    KeyScheduleError(#[from] KeyScheduleError),
-}
 
 pub(crate) trait GroupStateProvider {
     fn group_context(&self) -> &GroupContext;
@@ -87,10 +59,7 @@ where
         }
     }
 
-    pub fn next_encryption_key(
-        &mut self,
-        key_type: KeyType,
-    ) -> Result<MessageKeyData, CiphertextProcessorError> {
+    pub fn next_encryption_key(&mut self, key_type: KeyType) -> Result<MessageKeyData, MlsError> {
         let self_index = self.group_state.self_index();
 
         self.group_state
@@ -105,7 +74,7 @@ where
         sender: LeafIndex,
         key_type: KeyType,
         generation: u32,
-    ) -> Result<MessageKeyData, CiphertextProcessorError> {
+    ) -> Result<MessageKeyData, MlsError> {
         self.group_state
             .epoch_secrets_mut()
             .secret_tree
@@ -117,10 +86,11 @@ where
         &mut self,
         auth_content: AuthenticatedContent,
         padding: PaddingMode,
-    ) -> Result<PrivateMessage, CiphertextProcessorError> {
+    ) -> Result<PrivateMessage, MlsError> {
         if Sender::Member(*self.group_state.self_index()) != auth_content.content.sender {
-            return Err(CiphertextProcessorError::InvalidSender(
+            return Err(MlsError::InvalidSender(
                 auth_content.content.sender,
+                ContentType::Application,
             ));
         }
 
@@ -146,7 +116,7 @@ where
 
         // Generate a 4 byte reuse guard
         let reuse_guard = ReuseGuard::random(&self.cipher_suite_provider)
-            .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         // Grab an encryption key from the current epoch's key schedule
         let key_type = match &content_type {
@@ -170,7 +140,7 @@ where
                 &aad.mls_encode_to_vec()?,
                 &reuse_guard,
             )
-            .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         // Construct an mls sender data struct using the plaintext sender info, the generation
         // of the key schedule encryption key, and the reuse guard used to encrypt ciphertext
@@ -206,10 +176,7 @@ where
         })
     }
 
-    pub fn open(
-        &mut self,
-        ciphertext: PrivateMessage,
-    ) -> Result<AuthenticatedContent, CiphertextProcessorError> {
+    pub fn open(&mut self, ciphertext: PrivateMessage) -> Result<AuthenticatedContent, MlsError> {
         // Decrypt the sender data with the derived sender_key and sender_nonce from the message
         // epoch's key schedule
         let sender_data_aad = SenderDataAAD {
@@ -228,7 +195,7 @@ where
             sender_data_key.open(&ciphertext.encrypted_sender_data, &sender_data_aad)?;
 
         if self.group_state.self_index() == sender_data.sender {
-            return Err(CiphertextProcessorError::CantProcessMessageFromSelf);
+            return Err(MlsError::CantProcessMessageFromSelf);
         }
 
         // Grab a decryption key from the message epoch's key schedule
@@ -249,7 +216,7 @@ where
                 &PrivateContentAAD::from(&ciphertext).mls_encode_to_vec()?,
                 &sender_data.reuse_guard,
             )
-            .map_err(|e| CiphertextProcessorError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         let ciphertext_content =
             PrivateContentTBE::mls_decode(&mut &**decrypted_content, ciphertext.content_type)?;
@@ -290,7 +257,7 @@ mod test {
         tree_kem::node::LeafIndex,
     };
 
-    use super::{CiphertextProcessor, CiphertextProcessorError};
+    use super::{CiphertextProcessor, MlsError};
 
     use alloc::vec;
     use assert_matches::assert_matches;
@@ -382,7 +349,7 @@ mod test {
 
         let res = ciphertext_processor.seal(test_data.content, PaddingMode::None);
 
-        assert_matches!(res, Err(CiphertextProcessorError::InvalidSender(_)))
+        assert_matches!(res, Err(MlsError::InvalidSender(..)))
     }
 
     #[test]
@@ -397,10 +364,7 @@ mod test {
 
         let res = ciphertext_processor.open(ciphertext);
 
-        assert_matches!(
-            res,
-            Err(CiphertextProcessorError::CantProcessMessageFromSelf)
-        )
+        assert_matches!(res, Err(MlsError::CantProcessMessageFromSelf))
     }
 
     #[test]

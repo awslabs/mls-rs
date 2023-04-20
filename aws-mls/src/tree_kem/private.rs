@@ -42,7 +42,7 @@ impl TreeKemPrivate {
         signer_index: LeafIndex,
         path_secret: PathSecret,
         public_tree: &TreeKemPublic,
-    ) -> Result<(), RatchetTreeError> {
+    ) -> Result<(), MlsError> {
         // Identify the lowest common
         // ancestor of the leaves at index and at GroupInfo.signer_index. Set the private key
         // for this node to the private key derived from the path_secret.
@@ -68,16 +68,16 @@ impl TreeKemPrivate {
                     .borrow_node(index)?
                     .as_ref()
                     .map(|n| n.public_key())
-                    .ok_or(RatchetTreeError::PubKeyMismatch)?;
+                    .ok_or(MlsError::PubKeyMismatch)?;
 
                 let (secret_key, public_key) = secret_generation?.to_hpke_key_pair()?;
 
                 if expected_pub_key != &public_key {
-                    return Err(RatchetTreeError::PubKeyMismatch);
+                    return Err(MlsError::PubKeyMismatch);
                 }
 
                 self.secret_keys.insert(index, secret_key);
-                Ok::<_, RatchetTreeError>(())
+                Ok::<_, MlsError>(())
             })?;
 
         Ok(())
@@ -87,7 +87,7 @@ impl TreeKemPrivate {
         &mut self,
         num_leaves: u32,
         new_leaf: HpkeSecretKey,
-    ) -> Result<(), RatchetTreeError> {
+    ) -> Result<(), MlsError> {
         self.secret_keys
             .insert(NodeIndex::from(self.self_index), new_leaf);
 
@@ -101,11 +101,7 @@ impl TreeKemPrivate {
         Ok(())
     }
 
-    pub fn remove_leaf(
-        &mut self,
-        num_leaves: u32,
-        index: LeafIndex,
-    ) -> Result<(), RatchetTreeError> {
+    pub fn remove_leaf(&mut self, num_leaves: u32, index: LeafIndex) -> Result<(), MlsError> {
         self.secret_keys.remove(&NodeIndex::from(index));
 
         index.direct_path(num_leaves)?.iter().for_each(|i| {
@@ -319,7 +315,7 @@ mod tests {
             &public_tree,
         );
 
-        assert_matches!(res, Err(RatchetTreeError::PubKeyMismatch));
+        assert_matches!(res, Err(MlsError::PubKeyMismatch));
     }
 
     fn setup_direct_path(self_index: LeafIndex, leaf_count: u32) -> TreeKemPrivate {

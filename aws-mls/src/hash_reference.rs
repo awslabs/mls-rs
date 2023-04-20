@@ -1,31 +1,11 @@
-use core::{
-    fmt::{self, Debug},
-    ops::Deref,
-};
+use core::ops::Deref;
 
-use crate::cipher_suite::CipherSuite;
+use crate::client::MlsError;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::CipherSuiteProvider;
-use alloc::{boxed::Box, vec::Vec};
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
-use thiserror::Error;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-#[derive(Debug, Error)]
-pub enum HashReferenceError {
-    #[error(transparent)]
-    MlsCodecError(#[from] aws_mls_codec::Error),
-    #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
-    #[error("cipher suite {0:?} is invalid for calculating hash references of this object")]
-    InvalidCipherSuite(CipherSuite),
-}
 
 #[derive(Debug, MlsSize, MlsEncode)]
 struct RefHashInput<'a> {
@@ -37,6 +17,7 @@ struct RefHashInput<'a> {
 
 #[serde_as]
 #[derive(
+    Debug,
     PartialEq,
     Eq,
     PartialOrd,
@@ -55,14 +36,6 @@ pub struct HashReference(
     #[serde_as(as = "VecAsBase64")]
     Vec<u8>,
 );
-
-impl Debug for HashReference {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("HashReference")
-            .field(&hex::encode(&self.0))
-            .finish()
-    }
-}
 
 impl Deref for HashReference {
     type Target = [u8];
@@ -89,16 +62,18 @@ impl HashReference {
         value: &[u8],
         label: &[u8],
         cipher_suite: &P,
-    ) -> Result<HashReference, HashReferenceError> {
+    ) -> Result<HashReference, MlsError> {
         let input = RefHashInput { label, value };
 
         input
             .mls_encode_to_vec()
             .map_err(Into::into)
             .and_then(|bytes| {
-                Ok(HashReference(cipher_suite.hash(&bytes).map_err(|e| {
-                    HashReferenceError::CipherSuiteProviderError(e.into())
-                })?))
+                Ok(HashReference(
+                    cipher_suite
+                        .hash(&bytes)
+                        .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
+                ))
             })
     }
 }

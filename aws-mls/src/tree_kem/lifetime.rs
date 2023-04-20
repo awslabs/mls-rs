@@ -1,14 +1,5 @@
-use crate::time::MlsTime;
+use crate::{client::MlsError, time::MlsTime};
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum LifetimeError {
-    #[error(transparent)]
-    SystemTimeError(#[from] crate::time::SystemTimeError),
-    #[error("time overflow")]
-    TimeOverflow,
-}
 
 #[derive(
     Clone,
@@ -37,16 +28,14 @@ impl Lifetime {
         }
     }
 
-    pub fn seconds(s: u64) -> Result<Self, LifetimeError> {
+    pub fn seconds(s: u64) -> Result<Self, MlsError> {
         #[cfg(feature = "std")]
         let not_before = MlsTime::now().seconds_since_epoch()?;
         #[cfg(not(feature = "std"))]
         // There is no clock on no_std, this is here just so that we can run tests.
         let not_before = 3600u64;
 
-        let not_after = not_before
-            .checked_add(s)
-            .ok_or(LifetimeError::TimeOverflow)?;
+        let not_after = not_before.checked_add(s).ok_or(MlsError::TimeOverflow)?;
 
         Ok(Lifetime {
             // Subtract 1 hour to address time difference between machines
@@ -55,15 +44,15 @@ impl Lifetime {
         })
     }
 
-    pub fn days(d: u32) -> Result<Self, LifetimeError> {
+    pub fn days(d: u32) -> Result<Self, MlsError> {
         Self::seconds((d * 86400) as u64)
     }
 
-    pub fn years(y: u8) -> Result<Self, LifetimeError> {
+    pub fn years(y: u8) -> Result<Self, MlsError> {
         Self::days(365 * y as u32)
     }
 
-    pub(crate) fn within_lifetime(&self, time: MlsTime) -> Result<bool, LifetimeError> {
+    pub(crate) fn within_lifetime(&self, time: MlsTime) -> Result<bool, MlsError> {
         let since_epoch = time.seconds_since_epoch()?;
         Ok(since_epoch >= self.not_before && since_epoch <= self.not_after)
     }
@@ -79,7 +68,7 @@ mod tests {
     #[test]
     fn test_lifetime_overflow() {
         let res = Lifetime::seconds(u64::MAX);
-        assert_matches!(res, Err(LifetimeError::TimeOverflow))
+        assert_matches!(res, Err(MlsError::TimeOverflow))
     }
 
     #[test]

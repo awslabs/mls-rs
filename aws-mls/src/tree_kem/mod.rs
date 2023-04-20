@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 #[cfg(feature = "std")]
@@ -13,21 +12,16 @@ use alloc::collections::{BTreeMap, BTreeSet};
 
 use aws_mls_core::identity::IdentityProvider;
 use futures::TryStreamExt;
-use thiserror::Error;
 
 use math as tree_math;
-use math::TreeMathError;
-use node::{LeafIndex, NodeIndex, NodeVec, NodeVecError};
+use node::{LeafIndex, NodeIndex, NodeVec};
 
-use self::hpke_encryption::HpkeEncryptionError;
-use self::leaf_node::{LeafNode, LeafNodeError};
+use self::leaf_node::LeafNode;
 
+use crate::client::MlsError;
 use crate::crypto::{self, CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
-use crate::group::key_schedule::KeyScheduleError;
 use crate::group::proposal::ProposalType;
 use crate::tree_kem::tree_hash::TreeHashes;
-
-pub use tree_index::TreeIndexError;
 
 mod capabilities;
 pub(crate) mod hpke_encryption;
@@ -60,67 +54,6 @@ pub(crate) mod tree_utils;
 #[cfg(all(test, feature = "external_commit"))]
 mod interop_test_vectors;
 
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-#[derive(thiserror::Error, Debug)]
-pub enum RatchetTreeError {
-    #[error(transparent)]
-    TreeMathError(#[from] TreeMathError),
-    #[error(transparent)]
-    NodeVecError(#[from] NodeVecError),
-    #[error(transparent)]
-    MlsCodecError(#[from] aws_mls_codec::Error),
-    #[error(transparent)]
-    LeafNodeError(#[from] LeafNodeError),
-    #[error(transparent)]
-    TreeIndexError(#[from] TreeIndexError),
-    #[error(transparent)]
-    KeyScheduleError(#[from] KeyScheduleError),
-    #[error("invalid update path signature")]
-    InvalidUpdatePathSignature,
-    #[error("update path pub key mismatch")]
-    PubKeyMismatch,
-    #[error("invalid leaf signature")]
-    InvalidLeafSignature,
-    #[error("tree hash mismatch")]
-    TreeHashMismatch,
-    #[error("bad update: no suitable secret key")]
-    UpdateErrorNoSecretKey,
-    #[error("invalid lca, not found on direct path")]
-    LcaNotFoundInDirectPath,
-    #[error("bad state: missing own credential")]
-    MissingSelfCredential,
-    #[error("update path missing parent hash")]
-    ParentHashNotFound,
-    #[error("update path parent hash mismatch")]
-    ParentHashMismatch,
-    #[error("decrypting commit from self")]
-    DecryptFromSelf,
-    #[error(transparent)]
-    CredentialValidationError(Box<dyn Error + Send + Sync>),
-    #[error("update and remove proposals for same leaf {0:?}")]
-    UpdateAndRemoveForSameLeaf(LeafIndex),
-    #[error("multiple removals for leaf {0:?}")]
-    MultipleRemovals(LeafIndex),
-    #[error("different identity in update for leaf {0:?}")]
-    DifferentIdentityInUpdate(LeafIndex),
-    #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    HpkeEncryptionError(#[from] HpkeEncryptionError),
-}
-
-fn credential_validation_error<E>(e: E) -> RatchetTreeError
-where
-    E: Into<Box<dyn Error + Send + Sync>>,
-{
-    RatchetTreeError::CredentialValidationError(e.into())
-}
-
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, Default)]
 pub struct TreeKemPublic {
     index: TreeIndex,
@@ -142,7 +75,7 @@ impl TreeKemPublic {
     pub(crate) async fn import_node_data<IP>(
         nodes: NodeVec,
         identity_provider: &IP,
-    ) -> Result<TreeKemPublic, RatchetTreeError>
+    ) -> Result<TreeKemPublic, MlsError>
     where
         IP: IdentityProvider,
     {
@@ -160,7 +93,7 @@ impl TreeKemPublic {
     pub(crate) async fn initialize_index_if_necessary<IP: IdentityProvider>(
         &mut self,
         identity_provider: &IP,
-    ) -> Result<(), RatchetTreeError> {
+    ) -> Result<(), MlsError> {
         if !self.index.is_initialized() {
             self.index = futures::stream::iter(self.nodes.non_empty_leaves().map(Ok))
                 .try_fold(
@@ -169,10 +102,10 @@ impl TreeKemPublic {
                         let identity = identity_provider
                             .identity(&leaf.signing_identity)
                             .await
-                            .map_err(credential_validation_error)?;
+                            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
 
                         tree_index.insert(leaf_index, leaf, identity)?;
-                        Ok::<_, RatchetTreeError>(tree_index)
+                        Ok::<_, MlsError>(tree_index)
                     },
                 )
                 .await?;
@@ -194,7 +127,7 @@ impl TreeKemPublic {
         secret_key: HpkeSecretKey,
         identity_provider: &I,
         cipher_suite_provider: &CP,
-    ) -> Result<(TreeKemPublic, TreeKemPrivate), RatchetTreeError>
+    ) -> Result<(TreeKemPublic, TreeKemPrivate), MlsError>
     where
         I: IdentityProvider,
         CP: CipherSuiteProvider,
@@ -217,8 +150,8 @@ impl TreeKemPublic {
         self.nodes.occupied_leaf_count()
     }
 
-    pub fn get_leaf_node(&self, index: LeafIndex) -> Result<&LeafNode, RatchetTreeError> {
-        self.nodes.borrow_as_leaf(index).map_err(|e| e.into())
+    pub fn get_leaf_node(&self, index: LeafIndex) -> Result<&LeafNode, MlsError> {
+        self.nodes.borrow_as_leaf(index)
     }
 
     pub fn find_leaf_node(&self, leaf_node: &LeafNode) -> Option<LeafIndex> {
@@ -242,7 +175,7 @@ impl TreeKemPublic {
         leaf_nodes: Vec<LeafNode>,
         identity_provider: &I,
         cipher_suite_provider: &CP,
-    ) -> Result<Vec<LeafIndex>, RatchetTreeError>
+    ) -> Result<Vec<LeafIndex>, MlsError>
     where
         I: IdentityProvider,
         CP: CipherSuiteProvider,
@@ -255,16 +188,12 @@ impl TreeKemPublic {
         impl AccumulateBatchResults for Accumulator {
             type Output = Vec<LeafIndex>;
 
-            fn on_add(
-                &mut self,
-                _: usize,
-                r: Result<LeafIndex, RatchetTreeError>,
-            ) -> Result<(), RatchetTreeError> {
+            fn on_add(&mut self, _: usize, r: Result<LeafIndex, MlsError>) -> Result<(), MlsError> {
                 self.new_leaf_indexes.push(r?);
                 Ok(())
             }
 
-            fn finish(self) -> Result<Self::Output, RatchetTreeError> {
+            fn finish(self) -> Result<Self::Output, MlsError> {
                 Ok(self.new_leaf_indexes)
             }
         }
@@ -285,7 +214,7 @@ impl TreeKemPublic {
         index: LeafIndex,
         leaf_node: LeafNode,
         identity_provider: C,
-    ) -> Result<(), RatchetTreeError>
+    ) -> Result<(), MlsError>
     where
         C: IdentityProvider,
     {
@@ -295,12 +224,12 @@ impl TreeKemPublic {
         let existing_identity = identity_provider
             .identity(&existing_leaf.signing_identity)
             .await
-            .map_err(credential_validation_error)?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
 
         let new_identity = identity_provider
             .identity(&leaf_node.signing_identity)
             .await
-            .map_err(credential_validation_error)?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
 
         // Update the cache
         self.index.remove(existing_leaf, &existing_identity);
@@ -318,10 +247,9 @@ impl TreeKemPublic {
         &mut self,
         pub_key: crypto::HpkePublicKey,
         index: NodeIndex,
-    ) -> Result<(), RatchetTreeError> {
+    ) -> Result<(), MlsError> {
         self.nodes
             .borrow_or_fill_node_as_parent(index, &pub_key)
-            .map_err(|e| e.into())
             .map(|p| {
                 p.public_key = pub_key;
                 p.unmerged_leaves = vec![];
@@ -334,7 +262,7 @@ impl TreeKemPublic {
         update_path: &ValidatedUpdatePath,
         identity_provider: IP,
         cipher_suite_provider: &CP,
-    ) -> Result<Vec<(u32, u32)>, RatchetTreeError>
+    ) -> Result<Vec<(u32, u32)>, MlsError>
     where
         IP: IdentityProvider,
         CP: CipherSuiteProvider,
@@ -346,12 +274,12 @@ impl TreeKemPublic {
         let original_identity = identity_provider
             .identity(&original_leaf_node.signing_identity)
             .await
-            .map_err(credential_validation_error)?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
 
         let updated_identity = identity_provider
             .identity(&update_path.leaf_node.signing_identity)
             .await
-            .map_err(credential_validation_error)?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
 
         *existing_leaf = update_path.leaf_node.clone();
 
@@ -381,7 +309,7 @@ impl TreeKemPublic {
         &mut self,
         updated_pks: Vec<&HpkePublicKey>,
         filtered_direct_path_co_path: &[(u32, u32)],
-    ) -> Result<(), RatchetTreeError> {
+    ) -> Result<(), MlsError> {
         updated_pks
             .into_iter()
             .zip(filtered_direct_path_co_path)
@@ -390,7 +318,7 @@ impl TreeKemPublic {
             })
     }
 
-    fn update_unmerged(&mut self, index: LeafIndex) -> Result<(), RatchetTreeError> {
+    fn update_unmerged(&mut self, index: LeafIndex) -> Result<(), MlsError> {
         // For a given leaf index, find parent nodes and add the leaf to the unmerged leaf
         self.nodes.direct_path(index)?.into_iter().for_each(|i| {
             if let Ok(p) = self.nodes.borrow_as_parent_mut(i) {
@@ -409,7 +337,7 @@ impl TreeKemPublic {
         additions: &[LeafNode],
         identity_provider: &I,
         cipher_suite_provider: &CP,
-    ) -> Result<A::Output, RatchetTreeError>
+    ) -> Result<A::Output, MlsError>
     where
         A: AccumulateBatchResults,
         I: IdentityProvider,
@@ -443,12 +371,12 @@ impl TreeKemPublic {
                             let identity = identity_provider
                                 .identity(&leaf.signing_identity)
                                 .await
-                                .map_err(credential_validation_error)?;
+                                .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
 
                             removed_indexes
                                 .insert(leaf_index)
                                 .then_some(())
-                                .ok_or(RatchetTreeError::MultipleRemovals(leaf_index))?;
+                                .ok_or_else(|| MlsError::MoreThanOneProposalForLeaf(*leaf_index))?;
 
                             tree_index.remove(leaf, &identity);
                             op.disarm();
@@ -471,22 +399,23 @@ impl TreeKemPublic {
                     let r = async {
                         (!removed_indexes.contains(leaf_index))
                             .then_some(())
-                            .ok_or(RatchetTreeError::UpdateAndRemoveForSameLeaf(*leaf_index))?;
+                            .ok_or_else(|| MlsError::MoreThanOneProposalForLeaf(**leaf_index))?;
 
                         let old_leaf = self_.nodes.borrow_as_leaf(*leaf_index)?;
+
                         let old_identity = identity_provider
                             .identity(&old_leaf.signing_identity)
                             .await
-                            .map_err(credential_validation_error)?;
+                            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
 
                         let new_identity = identity_provider
                             .identity(&new_leaf.signing_identity)
                             .await
-                            .map_err(credential_validation_error)?;
+                            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
 
                         (old_identity == new_identity)
                             .then_some((*leaf_index, new_leaf, old_identity, new_identity))
-                            .ok_or(RatchetTreeError::DifferentIdentityInUpdate(*leaf_index))
+                            .ok_or_else(|| MlsError::DifferentIdentityInUpdate(**leaf_index))
                     }
                     .await;
 
@@ -553,7 +482,7 @@ impl TreeKemPublic {
                             .map_err(Some)?;
 
                         if update_failed {
-                            Err(None::<RatchetTreeError>)
+                            Err(None::<MlsError>)
                         } else {
                             Ok(tree_index)
                         }
@@ -624,7 +553,7 @@ impl TreeKemPublic {
                     let r = identity_provider
                         .identity(&leaf.signing_identity)
                         .await
-                        .map_err(credential_validation_error)
+                        .map_err(|e| MlsError::IdentityProviderError(e.into()))
                         .and_then(|identity| {
                             tree_index
                                 .insert(leaf_index, leaf, identity)
@@ -645,13 +574,7 @@ impl TreeKemPublic {
                         leaf_indexes.push(leaf_index);
                     }
 
-                    Ok::<_, RatchetTreeError>((
-                        leaf_indexes,
-                        leaf_index,
-                        tree_index,
-                        accumulator,
-                        self_,
-                    ))
+                    Ok::<_, MlsError>((leaf_indexes, leaf_index, tree_index, accumulator, self_))
                 },
             )
             .await?;
@@ -678,9 +601,9 @@ impl TreeKemPublic {
     }
 }
 
-fn empty_on_fail<T, F>(opt: &mut Option<T>, f: F) -> Result<(), RatchetTreeError>
+fn empty_on_fail<T, F>(opt: &mut Option<T>, f: F) -> Result<(), MlsError>
 where
-    F: FnOnce(&T) -> Result<(), RatchetTreeError>,
+    F: FnOnce(&T) -> Result<(), MlsError>,
 {
     let mut opt = EmptyOnDrop::new(opt);
     if let Some(x) = &*opt.value {
@@ -723,31 +646,23 @@ impl Display for TreeKemPublic {
 pub trait AccumulateBatchResults {
     type Output;
 
-    fn on_update(
-        &mut self,
-        _: usize,
-        r: Result<LeafIndex, RatchetTreeError>,
-    ) -> Result<(), RatchetTreeError> {
+    fn on_update(&mut self, _: usize, r: Result<LeafIndex, MlsError>) -> Result<(), MlsError> {
         r.map(|_| ())
     }
 
     fn on_remove(
         &mut self,
         _: usize,
-        r: Result<(LeafIndex, LeafNode), RatchetTreeError>,
-    ) -> Result<(), RatchetTreeError> {
+        r: Result<(LeafIndex, LeafNode), MlsError>,
+    ) -> Result<(), MlsError> {
         r.map(|_| ())
     }
 
-    fn on_add(
-        &mut self,
-        _: usize,
-        r: Result<LeafIndex, RatchetTreeError>,
-    ) -> Result<(), RatchetTreeError> {
+    fn on_add(&mut self, _: usize, r: Result<LeafIndex, MlsError>) -> Result<(), MlsError> {
         r.map(|_| ())
     }
 
-    fn finish(self) -> Result<Self::Output, RatchetTreeError>;
+    fn finish(self) -> Result<Self::Output, MlsError>;
 }
 
 #[cfg(test)]
@@ -758,7 +673,7 @@ impl TreeKemPublic {
         leaf_node: LeafNode,
         identity_provider: &I,
         cipher_suite_provider: &CP,
-    ) -> Result<(), RatchetTreeError>
+    ) -> Result<(), MlsError>
     where
         I: IdentityProvider,
         CP: CipherSuiteProvider,
@@ -768,7 +683,7 @@ impl TreeKemPublic {
         impl AccumulateBatchResults for Accumulator {
             type Output = ();
 
-            fn finish(self) -> Result<Self::Output, RatchetTreeError> {
+            fn finish(self) -> Result<Self::Output, MlsError> {
                 Ok(())
             }
         }
@@ -789,7 +704,7 @@ impl TreeKemPublic {
         indexes: Vec<LeafIndex>,
         identity_provider: &I,
         cipher_suite_provider: &CP,
-    ) -> Result<Vec<(LeafIndex, LeafNode)>, RatchetTreeError>
+    ) -> Result<Vec<(LeafIndex, LeafNode)>, MlsError>
     where
         I: IdentityProvider,
         CP: CipherSuiteProvider,
@@ -805,13 +720,13 @@ impl TreeKemPublic {
             fn on_remove(
                 &mut self,
                 _: usize,
-                r: Result<(LeafIndex, LeafNode), RatchetTreeError>,
-            ) -> Result<(), RatchetTreeError> {
+                r: Result<(LeafIndex, LeafNode), MlsError>,
+            ) -> Result<(), MlsError> {
                 self.removed.push(r?);
                 Ok(())
             }
 
-            fn finish(self) -> Result<Self::Output, RatchetTreeError> {
+            fn finish(self) -> Result<Self::Output, MlsError> {
                 Ok(self.removed)
             }
         }
@@ -1058,13 +973,10 @@ mod tests {
     use crate::identity::basic::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNode;
-    use crate::tree_kem::node::{
-        LeafIndex, Node, NodeIndex, NodeTypeResolver, NodeVecError, Parent,
-    };
+    use crate::tree_kem::node::{LeafIndex, Node, NodeIndex, NodeTypeResolver, Parent};
     use crate::tree_kem::parent_hash::ParentHash;
     use crate::tree_kem::test_utils::{get_test_leaf_nodes, get_test_tree};
-    use crate::tree_kem::tree_index::TreeIndexError;
-    use crate::tree_kem::{AccumulateBatchResults, RatchetTreeError, TreeKemPublic};
+    use crate::tree_kem::{AccumulateBatchResults, MlsError, TreeKemPublic};
     use alloc::borrow::ToOwned;
     use alloc::vec;
     use alloc::vec::Vec;
@@ -1194,12 +1106,7 @@ mod tests {
             .add_leaves(key_packages, &BasicIdentityProvider, &cipher_suite_provider)
             .await;
 
-        assert_matches!(
-            add_res,
-            Err(RatchetTreeError::TreeIndexError(
-                TreeIndexError::DuplicateSignatureKeys(LeafIndex(0))
-            ))
-        );
+        assert_matches!(add_res, Err(MlsError::DuplicateSignatureKeys(0)));
     }
 
     #[test]
@@ -1352,9 +1259,7 @@ mod tests {
                 &cipher_suite_provider
             )
             .await,
-            Err(RatchetTreeError::NodeVecError(
-                NodeVecError::InvalidNodeIndex(256)
-            ))
+            Err(MlsError::InvalidNodeIndex(256))
         );
     }
 
@@ -1494,9 +1399,7 @@ mod tests {
                 &cipher_suite_provider
             )
             .await,
-            Err(RatchetTreeError::NodeVecError(
-                NodeVecError::InvalidNodeIndex(256)
-            ))
+            Err(MlsError::InvalidNodeIndex(256))
         );
     }
 
@@ -1534,11 +1437,7 @@ mod tests {
     impl AccumulateBatchResults for BatchAccumulator {
         type Output = Self;
 
-        fn on_add(
-            &mut self,
-            _: usize,
-            r: Result<LeafIndex, RatchetTreeError>,
-        ) -> Result<(), RatchetTreeError> {
+        fn on_add(&mut self, _: usize, r: Result<LeafIndex, MlsError>) -> Result<(), MlsError> {
             self.additions.push(r?);
             Ok(())
         }
@@ -1546,22 +1445,18 @@ mod tests {
         fn on_remove(
             &mut self,
             _: usize,
-            r: Result<(LeafIndex, LeafNode), RatchetTreeError>,
-        ) -> Result<(), RatchetTreeError> {
+            r: Result<(LeafIndex, LeafNode), MlsError>,
+        ) -> Result<(), MlsError> {
             self.removals.push(r?);
             Ok(())
         }
 
-        fn on_update(
-            &mut self,
-            _: usize,
-            r: Result<LeafIndex, RatchetTreeError>,
-        ) -> Result<(), RatchetTreeError> {
+        fn on_update(&mut self, _: usize, r: Result<LeafIndex, MlsError>) -> Result<(), MlsError> {
             self.updates.push(r?);
             Ok(())
         }
 
-        fn finish(self) -> Result<Self::Output, RatchetTreeError> {
+        fn finish(self) -> Result<Self::Output, MlsError> {
             Ok(self)
         }
     }

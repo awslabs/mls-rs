@@ -1,7 +1,7 @@
 use super::leaf_node::LeafNode;
+use crate::client::MlsError;
 use crate::crypto::HpkePublicKey;
 use crate::tree_kem::math as tree_math;
-use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::parent_hash::ParentHash;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -9,7 +9,6 @@ use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use core::hash::Hash;
 use core::ops::{Deref, DerefMut};
 use serde_with::serde_as;
-use thiserror::Error;
 
 #[cfg(feature = "std")]
 use std::collections::HashSet;
@@ -72,30 +71,16 @@ impl From<LeafIndex> for NodeIndex {
 }
 
 impl LeafIndex {
-    pub(crate) fn direct_path(&self, leaf_count: u32) -> Result<Vec<NodeIndex>, TreeMathError> {
+    pub(crate) fn direct_path(&self, leaf_count: u32) -> Result<Vec<NodeIndex>, MlsError> {
         tree_math::direct_path(NodeIndex::from(self), leaf_count)
     }
 
-    fn copath(&self, leaf_count: u32) -> Result<Vec<NodeIndex>, TreeMathError> {
+    fn copath(&self, leaf_count: u32) -> Result<Vec<NodeIndex>, MlsError> {
         tree_math::copath(NodeIndex::from(self), leaf_count)
     }
 }
 
 pub(crate) type NodeIndex = u32;
-
-#[derive(Error, Debug)]
-pub enum NodeVecError {
-    #[error(transparent)]
-    TreeMathError(#[from] TreeMathError),
-    #[error("not a parent")]
-    NotParentNode,
-    #[error("not a leaf")]
-    NotLeafNode,
-    #[error("node index is out of bounds {0}")]
-    InvalidNodeIndex(NodeIndex),
-    #[error("unexpected empty node found")]
-    UnexpectedEmptyNode,
-}
 
 #[derive(
     Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
@@ -142,52 +127,52 @@ impl From<LeafNode> for Node {
 }
 
 pub(crate) trait NodeTypeResolver {
-    fn as_parent(&self) -> Result<&Parent, NodeVecError>;
-    fn as_parent_mut(&mut self) -> Result<&mut Parent, NodeVecError>;
-    fn as_leaf(&self) -> Result<&LeafNode, NodeVecError>;
-    fn as_leaf_mut(&mut self) -> Result<&mut LeafNode, NodeVecError>;
-    fn as_non_empty(&self) -> Result<&Node, NodeVecError>;
+    fn as_parent(&self) -> Result<&Parent, MlsError>;
+    fn as_parent_mut(&mut self) -> Result<&mut Parent, MlsError>;
+    fn as_leaf(&self) -> Result<&LeafNode, MlsError>;
+    fn as_leaf_mut(&mut self) -> Result<&mut LeafNode, MlsError>;
+    fn as_non_empty(&self) -> Result<&Node, MlsError>;
 }
 
 impl NodeTypeResolver for Option<Node> {
-    fn as_parent(&self) -> Result<&Parent, NodeVecError> {
+    fn as_parent(&self) -> Result<&Parent, MlsError> {
         self.as_ref()
             .and_then(|n| match n {
                 Node::Parent(p) => Some(p),
                 Node::Leaf(_) => None,
             })
-            .ok_or(NodeVecError::NotParentNode)
+            .ok_or(MlsError::ExpectedParentNode)
     }
 
-    fn as_parent_mut(&mut self) -> Result<&mut Parent, NodeVecError> {
+    fn as_parent_mut(&mut self) -> Result<&mut Parent, MlsError> {
         self.as_mut()
             .and_then(|n| match n {
                 Node::Parent(p) => Some(p),
                 Node::Leaf(_) => None,
             })
-            .ok_or(NodeVecError::NotParentNode)
+            .ok_or(MlsError::ExpectedParentNode)
     }
 
-    fn as_leaf(&self) -> Result<&LeafNode, NodeVecError> {
+    fn as_leaf(&self) -> Result<&LeafNode, MlsError> {
         self.as_ref()
             .and_then(|n| match n {
                 Node::Parent(_) => None,
                 Node::Leaf(l) => Some(l),
             })
-            .ok_or(NodeVecError::NotLeafNode)
+            .ok_or(MlsError::ExpectedLeafNode)
     }
 
-    fn as_leaf_mut(&mut self) -> Result<&mut LeafNode, NodeVecError> {
+    fn as_leaf_mut(&mut self) -> Result<&mut LeafNode, MlsError> {
         self.as_mut()
             .and_then(|n| match n {
                 Node::Parent(_) => None,
                 Node::Leaf(l) => Some(l),
             })
-            .ok_or(NodeVecError::NotLeafNode)
+            .ok_or(MlsError::ExpectedLeafNode)
     }
 
-    fn as_non_empty(&self) -> Result<&Node, NodeVecError> {
-        self.as_ref().ok_or(NodeVecError::UnexpectedEmptyNode)
+    fn as_non_empty(&self) -> Result<&Node, MlsError> {
+        self.as_ref().ok_or(MlsError::UnexpectedEmptyNode)
     }
 }
 
@@ -234,13 +219,13 @@ impl NodeVec {
     }
 
     #[inline]
-    pub fn borrow_node(&self, index: NodeIndex) -> Result<&Option<Node>, NodeVecError> {
+    pub fn borrow_node(&self, index: NodeIndex) -> Result<&Option<Node>, MlsError> {
         Ok(self.get(self.validate_index(index)?).unwrap_or(&None))
     }
 
-    fn validate_index(&self, index: NodeIndex) -> Result<usize, NodeVecError> {
+    fn validate_index(&self, index: NodeIndex) -> Result<usize, MlsError> {
         if (index as usize) >= self.len().next_power_of_two() {
-            Err(NodeVecError::InvalidNodeIndex(index))
+            Err(MlsError::InvalidNodeIndex(index))
         } else {
             Ok(index as usize)
         }
@@ -281,12 +266,12 @@ impl NodeVec {
     }
 
     #[inline]
-    pub fn direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
+    pub fn direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, MlsError> {
         // Direct path from leaf to root
         index.direct_path(self.total_leaf_count())
     }
 
-    pub fn filtered_direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, TreeMathError> {
+    pub fn filtered_direct_path(&self, index: LeafIndex) -> Result<Vec<NodeIndex>, MlsError> {
         Ok(self
             .filtered_direct_path_co_path(index)?
             .into_iter()
@@ -300,7 +285,7 @@ impl NodeVec {
     pub fn filtered_direct_path_co_path(
         &self,
         index: LeafIndex,
-    ) -> Result<Vec<(NodeIndex, NodeIndex)>, TreeMathError> {
+    ) -> Result<Vec<(NodeIndex, NodeIndex)>, MlsError> {
         index
             .direct_path(self.total_leaf_count())?
             .into_iter()
@@ -316,7 +301,7 @@ impl NodeVec {
     }
 
     #[inline]
-    pub fn is_blank(&self, index: NodeIndex) -> Result<bool, NodeVecError> {
+    pub fn is_blank(&self, index: NodeIndex) -> Result<bool, MlsError> {
         self.borrow_node(index).map(|n| n.is_none())
     }
 
@@ -326,10 +311,7 @@ impl NodeVec {
     }
 
     // Blank a previously filled leaf node, and return the existing leaf
-    pub fn blank_leaf_node(
-        &mut self,
-        leaf_index: LeafIndex,
-    ) -> Result<Option<LeafNode>, NodeVecError> {
+    pub fn blank_leaf_node(&mut self, leaf_index: LeafIndex) -> Result<Option<LeafNode>, MlsError> {
         let node_index = NodeIndex::from(leaf_index);
         let blanked_leaf = self.blank_node(node_index)?.and_then(|node| match node {
             Node::Leaf(l) => Some(l),
@@ -339,15 +321,12 @@ impl NodeVec {
         Ok(blanked_leaf)
     }
 
-    pub fn blank_node(&mut self, node_index: NodeIndex) -> Result<Option<Node>, NodeVecError> {
+    pub fn blank_node(&mut self, node_index: NodeIndex) -> Result<Option<Node>, MlsError> {
         let index = self.validate_index(node_index)?;
         Ok(self.get_mut(index).and_then(Option::take))
     }
 
-    pub fn blank_direct_path(
-        &mut self,
-        leaf: LeafIndex,
-    ) -> Result<Vec<Option<Node>>, NodeVecError> {
+    pub fn blank_direct_path(&mut self, leaf: LeafIndex) -> Result<Vec<Option<Node>>, MlsError> {
         self.direct_path(leaf)?
             .iter()
             .map(|&index| self.blank_node(index))
@@ -371,31 +350,28 @@ impl NodeVec {
         }
     }
 
-    pub fn borrow_as_parent(&self, node_index: NodeIndex) -> Result<&Parent, NodeVecError> {
+    pub fn borrow_as_parent(&self, node_index: NodeIndex) -> Result<&Parent, MlsError> {
         self.borrow_node(node_index).and_then(|n| n.as_parent())
     }
 
-    pub fn borrow_as_parent_mut(
-        &mut self,
-        node_index: NodeIndex,
-    ) -> Result<&mut Parent, NodeVecError> {
+    pub fn borrow_as_parent_mut(&mut self, node_index: NodeIndex) -> Result<&mut Parent, MlsError> {
         let index = self.validate_index(node_index)?;
 
         self.get_mut(index)
-            .ok_or(NodeVecError::InvalidNodeIndex(node_index))?
+            .ok_or(MlsError::InvalidNodeIndex(node_index))?
             .as_parent_mut()
     }
 
-    pub fn borrow_as_leaf_mut(&mut self, index: LeafIndex) -> Result<&mut LeafNode, NodeVecError> {
+    pub fn borrow_as_leaf_mut(&mut self, index: LeafIndex) -> Result<&mut LeafNode, MlsError> {
         let node_index = NodeIndex::from(index);
         let index = self.validate_index(node_index)?;
 
         self.get_mut(index)
-            .ok_or(NodeVecError::InvalidNodeIndex(node_index))?
+            .ok_or(MlsError::InvalidNodeIndex(node_index))?
             .as_leaf_mut()
     }
 
-    pub fn borrow_as_leaf(&self, index: LeafIndex) -> Result<&LeafNode, NodeVecError> {
+    pub fn borrow_as_leaf(&self, index: LeafIndex) -> Result<&LeafNode, MlsError> {
         let node_index = NodeIndex::from(index);
         self.borrow_node(node_index).and_then(|n| n.as_leaf())
     }
@@ -404,7 +380,7 @@ impl NodeVec {
         &mut self,
         node_index: NodeIndex,
         public_key: &HpkePublicKey,
-    ) -> Result<&mut Parent, NodeVecError> {
+    ) -> Result<&mut Parent, MlsError> {
         let index = self.validate_index(node_index)?;
 
         while self.len() <= index {
@@ -412,7 +388,7 @@ impl NodeVec {
         }
 
         self.get_mut(index)
-            .ok_or(NodeVecError::InvalidNodeIndex(node_index))
+            .ok_or(MlsError::InvalidNodeIndex(node_index))
             .and_then(|n| {
                 if n.is_none() {
                     *n = Parent {
@@ -426,7 +402,7 @@ impl NodeVec {
             })
     }
 
-    pub fn get_resolution_index(&self, index: NodeIndex) -> Result<Vec<NodeIndex>, NodeVecError> {
+    pub fn get_resolution_index(&self, index: NodeIndex) -> Result<Vec<NodeIndex>, MlsError> {
         match self.get(index as usize) {
             None | Some(None) => {
                 // This node is blank
@@ -462,7 +438,7 @@ impl NodeVec {
         &self,
         node_index: NodeIndex,
         excluding: &[LeafIndex],
-    ) -> Result<Vec<&Node>, NodeVecError> {
+    ) -> Result<Vec<&Node>, MlsError> {
         let excluding = excluding.iter().map(NodeIndex::from);
 
         #[cfg(feature = "std")]

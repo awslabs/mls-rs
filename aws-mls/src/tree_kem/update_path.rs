@@ -1,25 +1,17 @@
-use alloc::{boxed::Box, vec::Vec};
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use aws_mls_core::{
-    extension::{ExtensionError, ExtensionList},
-    identity::IdentityProvider,
-};
-use thiserror::Error;
+use aws_mls_core::{extension::ExtensionList, identity::IdentityProvider};
 
 use super::{
     leaf_node::LeafNode,
-    leaf_node_validator::{LeafNodeValidationError, LeafNodeValidator, ValidationContext},
-    node::{LeafIndex, NodeVecError},
-    tree_math::TreeMathError,
+    leaf_node_validator::{LeafNodeValidator, ValidationContext},
+    node::LeafIndex,
 };
-use crate::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey};
+use crate::{
+    client::MlsError,
+    crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey},
+};
 use crate::{group::message_processor::ProvisionalState, time::MlsTime};
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -33,26 +25,6 @@ pub struct UpdatePathNode {
 pub struct UpdatePath {
     pub leaf_node: LeafNode,
     pub nodes: Vec<UpdatePathNode>,
-}
-
-#[derive(Debug, Error)]
-pub enum UpdatePathValidationError {
-    #[error(transparent)]
-    LeafNodeValidationError(#[from] LeafNodeValidationError),
-    #[error("different identity in update for leaf {0:?}")]
-    DifferentIdentity(LeafIndex),
-    #[error("same HPKE leaf key before and after applying the update path for leaf {0:?}")]
-    SameHpkeKey(LeafIndex),
-    #[error(transparent)]
-    CredentialValidationError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
-    NodeVecError(#[from] NodeVecError),
-    #[error(transparent)]
-    ExtensionError(#[from] ExtensionError),
-    #[error(transparent)]
-    TreeMathError(#[from] TreeMathError),
-    #[error("the length of the update path {0} different than the length of the direct path {1}")]
-    WrongPathLen(usize, usize),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -69,7 +41,7 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
     sender: LeafIndex,
     commit_time: Option<MlsTime>,
     group_context_extensions: &ExtensionList,
-) -> Result<ValidatedUpdatePath, UpdatePathValidationError> {
+) -> Result<ValidatedUpdatePath, MlsError> {
     let required_capabilities = state.group_context.extensions.get_as()?;
 
     let leaf_validator = LeafNodeValidator::new(
@@ -99,20 +71,20 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
         let original_identity = identity_provider
             .identity(&original_leaf_node.signing_identity)
             .await
-            .map_err(|e| UpdatePathValidationError::CredentialValidationError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
 
         let updated_identity = identity_provider
             .identity(&path.leaf_node.signing_identity)
             .await
-            .map_err(|e| UpdatePathValidationError::CredentialValidationError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
 
         (original_identity == updated_identity)
             .then_some(())
-            .ok_or(UpdatePathValidationError::DifferentIdentity(sender))?;
+            .ok_or(MlsError::DifferentIdentityInUpdate(*sender))?;
 
         (existing_leaf.public_key != path.leaf_node.public_key)
             .then_some(())
-            .ok_or(UpdatePathValidationError::SameHpkeKey(sender))?;
+            .ok_or(MlsError::SameHpkeKey(*sender))?;
     }
 
     let path_copath = state
@@ -122,10 +94,7 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
 
     (path.nodes.len() == path_copath.len())
         .then_some(())
-        .ok_or(UpdatePathValidationError::WrongPathLen(
-            path.nodes.len(),
-            path_copath.len(),
-        ))?;
+        .ok_or(MlsError::WrongPathLen(path.nodes.len(), path_copath.len()))?;
 
     Ok(ValidatedUpdatePath {
         leaf_node: path.leaf_node.clone(),
@@ -154,7 +123,7 @@ mod tests {
     };
 
     use super::{UpdatePath, UpdatePathNode};
-    use crate::{cipher_suite::CipherSuite, tree_kem::UpdatePathValidationError};
+    use crate::{cipher_suite::CipherSuite, tree_kem::MlsError};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -258,10 +227,7 @@ mod tests {
         )
         .await;
 
-        assert_matches!(
-            validated,
-            Err(UpdatePathValidationError::LeafNodeValidationError(_))
-        );
+        assert_matches!(validated, Err(MlsError::InvalidSignature));
     }
 
     #[test]
@@ -281,10 +247,7 @@ mod tests {
         )
         .await;
 
-        assert_matches!(
-            validated,
-            Err(UpdatePathValidationError::DifferentIdentity(_))
-        );
+        assert_matches!(validated, Err(MlsError::DifferentIdentityInUpdate(_)));
     }
 
     #[test]
@@ -311,6 +274,6 @@ mod tests {
         )
         .await;
 
-        assert_matches!(validated, Err(UpdatePathValidationError::SameHpkeKey(_)));
+        assert_matches!(validated, Err(MlsError::SameHpkeKey(_)));
     }
 }

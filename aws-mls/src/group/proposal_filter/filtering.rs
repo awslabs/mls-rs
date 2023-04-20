@@ -1,7 +1,8 @@
 use crate::{
+    client::MlsError,
     extension::{ExternalSendersExt, RequiredCapabilitiesExt},
     group::{
-        proposal_filter::{Proposable, ProposalBundle, ProposalInfo, ProposalRulesError},
+        proposal_filter::{Proposable, ProposalBundle, ProposalInfo},
         AddProposal, BorrowedProposal, JustPreSharedKeyID, PreSharedKeyProposal, ProposalType,
         ReInitProposal, RemoveProposal, ResumptionPSKUsage, ResumptionPsk, Sender, UpdateProposal,
     },
@@ -13,7 +14,7 @@ use crate::{
         leaf_node::LeafNode,
         leaf_node_validator::{LeafNodeValidator, ValidationContext},
         node::LeafIndex,
-        AccumulateBatchResults, RatchetTreeError, TreeKemPublic,
+        AccumulateBatchResults, TreeKemPublic,
     },
     CipherSuiteProvider, ExtensionList,
 };
@@ -112,7 +113,7 @@ where
         commit_sender: &Sender,
         proposals: ProposalBundle,
         commit_time: Option<MlsTime>,
-    ) -> Result<ProposalState, ProposalRulesError>
+    ) -> Result<ProposalState, MlsError>
     where
         F: FilterStrategy,
     {
@@ -132,7 +133,7 @@ where
                     .await
             }
             Sender::External(_) | Sender::NewMemberProposal => {
-                Err(ProposalRulesError::ExternalSenderCannotCommit)
+                Err(MlsError::ExternalSenderCannotCommit)
             }
         }?;
 
@@ -145,7 +146,7 @@ where
         commit_sender: LeafIndex,
         proposals: ProposalBundle,
         commit_time: Option<MlsTime>,
-    ) -> Result<ProposalState, ProposalRulesError>
+    ) -> Result<ProposalState, MlsError>
     where
         F: FilterStrategy,
     {
@@ -195,10 +196,10 @@ where
         &self,
         proposals: ProposalBundle,
         commit_time: Option<MlsTime>,
-    ) -> Result<ProposalState, ProposalRulesError> {
+    ) -> Result<ProposalState, MlsError> {
         let external_leaf = self
             .external_leaf
-            .ok_or(ProposalRulesError::ExternalCommitMustHaveNewLeaf)?;
+            .ok_or(MlsError::ExternalCommitMustHaveNewLeaf)?;
 
         ensure_exactly_one_external_init(&proposals)?;
 
@@ -250,7 +251,7 @@ where
         strategy: &F,
         mut state: ProposalState,
         commit_time: Option<MlsTime>,
-    ) -> Result<ProposalState, ProposalRulesError>
+    ) -> Result<ProposalState, MlsError>
     where
         F: FilterStrategy,
     {
@@ -258,18 +259,16 @@ where
             .proposals
             .group_context_extensions_proposal()
             .cloned()
-            .and_then(
-                |p| match p.proposal.get_as().map_err(ProposalRulesError::from) {
-                    Ok(capabilities) => Some(Ok((p, capabilities))),
-                    Err(e) => {
-                        if strategy.ignore(&p.by_ref().map(Into::into)) {
-                            None
-                        } else {
-                            Some(Err(e))
-                        }
+            .and_then(|p| match p.proposal.get_as().map_err(MlsError::from) {
+                Ok(capabilities) => Some(Ok((p, capabilities))),
+                Err(e) => {
+                    if strategy.ignore(&p.by_ref().map(Into::into)) {
+                        None
+                    } else {
+                        Some(Err(e))
                     }
-                },
-            )
+                }
+            })
             .transpose()?;
 
         // If the extensions proposal is ignored, remove it from the list of proposals.
@@ -308,7 +307,7 @@ where
         group_context_extensions_proposal: ProposalInfo<ExtensionList>,
         new_required_capabilities: Option<RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
-    ) -> Result<ProposalState, ProposalRulesError>
+    ) -> Result<ProposalState, MlsError>
     where
         F: FilterStrategy,
         C: IdentityProvider,
@@ -340,7 +339,7 @@ where
                     .tree
                     .non_empty_leaves()
                     .try_for_each(|(_, leaf)| leaf_validator.validate_required_capabilities(leaf))
-                    .map_err(ProposalRulesError::from)
+                    .map_err(MlsError::from)
             });
 
         let new_extensions_supported = group_context_extensions_proposal
@@ -355,7 +354,7 @@ where
                     .all(|(_, leaf)| leaf.capabilities.extensions.contains(ext_type))
             })
             .map_or(Ok(()), |ext_type| {
-                Err(ProposalRulesError::UnsupportedGroupExtension(ext_type))
+                Err(MlsError::UnsupportedGroupExtension(ext_type))
             });
 
         let group_extensions_supported = new_capabilities_supported.and(new_extensions_supported);
@@ -391,7 +390,7 @@ where
         group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
-    ) -> Result<ProposalState, ProposalRulesError>
+    ) -> Result<ProposalState, MlsError>
     where
         F: FilterStrategy,
     {
@@ -485,7 +484,7 @@ where
         group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
-    ) -> Result<ProposalState, ProposalRulesError>
+    ) -> Result<ProposalState, MlsError>
     where
         F: FilterStrategy,
     {
@@ -519,7 +518,7 @@ where
         group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
-    ) -> Result<ProposalState, ProposalRulesError>
+    ) -> Result<ProposalState, MlsError>
     where
         F: FilterStrategy,
     {
@@ -569,7 +568,7 @@ where
         group_extensions_in_use: &ExtensionList,
         required_capabilities: Option<&RequiredCapabilitiesExt>,
         commit_time: Option<MlsTime>,
-    ) -> Result<ProposalState, ProposalRulesError>
+    ) -> Result<ProposalState, MlsError>
     where
         F: FilterStrategy,
     {
@@ -615,17 +614,14 @@ where
     }
 }
 
-fn leaf_supports_extensions(
-    leaf: &LeafNode,
-    extensions: &ExtensionList,
-) -> Result<(), ProposalRulesError> {
+fn leaf_supports_extensions(leaf: &LeafNode, extensions: &ExtensionList) -> Result<(), MlsError> {
     extensions
         .iter()
         .map(|ext| ext.extension_type())
         .filter(|&ext_type| !ext_type.is_default())
         .find(|ext_type| !leaf.capabilities.extensions.contains(ext_type))
         .map_or(Ok(()), |ext_type| {
-            Err(ProposalRulesError::UnsupportedGroupExtension(ext_type))
+            Err(MlsError::UnsupportedGroupExtension(ext_type))
         })
 }
 
@@ -654,8 +650,8 @@ impl FilterStrategy for FailInvalidProposal {
 fn apply_strategy<F, P>(
     strategy: &F,
     proposal: &ProposalInfo<P>,
-    r: Result<(), ProposalRulesError>,
-) -> Result<bool, ProposalRulesError>
+    r: Result<(), MlsError>,
+) -> Result<bool, MlsError>
 where
     F: FilterStrategy,
     for<'a> &'a P: Into<BorrowedProposal<'a>>,
@@ -669,7 +665,7 @@ fn filter_out_update_for_committer<F>(
     strategy: &F,
     commit_sender: LeafIndex,
     mut proposals: ProposalBundle,
-) -> Result<ProposalBundle, ProposalRulesError>
+) -> Result<ProposalBundle, MlsError>
 where
     F: FilterStrategy,
 {
@@ -679,7 +675,7 @@ where
             p,
             (p.sender != Sender::Member(*commit_sender))
                 .then_some(())
-                .ok_or(ProposalRulesError::InvalidCommitSelfUpdate),
+                .ok_or(MlsError::InvalidCommitSelfUpdate),
         )
     })?;
     Ok(proposals)
@@ -689,7 +685,7 @@ fn filter_out_removal_of_committer<F>(
     strategy: &F,
     commit_sender: LeafIndex,
     mut proposals: ProposalBundle,
-) -> Result<ProposalBundle, ProposalRulesError>
+) -> Result<ProposalBundle, MlsError>
 where
     F: FilterStrategy,
 {
@@ -699,7 +695,7 @@ where
             p,
             (p.proposal.to_remove != commit_sender)
                 .then_some(())
-                .ok_or(ProposalRulesError::CommitterSelfRemoval),
+                .ok_or(MlsError::CommitterSelfRemoval),
         )
     })?;
     Ok(proposals)
@@ -708,7 +704,7 @@ where
 fn filter_out_extra_removal_or_update_for_same_leaf<F>(
     strategy: &F,
     mut proposals: ProposalBundle,
-) -> Result<ProposalBundle, ProposalRulesError>
+) -> Result<ProposalBundle, MlsError>
 where
     F: FilterStrategy,
 {
@@ -722,9 +718,10 @@ where
         apply_strategy(
             strategy,
             p,
-            indexes.insert(p.proposal.to_remove).then_some(()).ok_or(
-                ProposalRulesError::MoreThanOneProposalForLeaf(*p.proposal.to_remove),
-            ),
+            indexes
+                .insert(p.proposal.to_remove)
+                .then_some(())
+                .ok_or(MlsError::MoreThanOneProposalForLeaf(*p.proposal.to_remove)),
         )
     })?;
 
@@ -761,7 +758,7 @@ where
             p,
             (is_last_update && indexes.insert(leaf_index))
                 .then_some(())
-                .ok_or(ProposalRulesError::MoreThanOneProposalForLeaf(*leaf_index)),
+                .ok_or(MlsError::MoreThanOneProposalForLeaf(*leaf_index)),
         )
     })?;
 
@@ -773,7 +770,7 @@ async fn filter_out_invalid_group_extensions<F, C>(
     mut proposals: ProposalBundle,
     identity_provider: &C,
     commit_time: Option<MlsTime>,
-) -> Result<ProposalBundle, ProposalRulesError>
+) -> Result<ProposalBundle, MlsError>
 where
     F: FilterStrategy,
     C: IdentityProvider,
@@ -790,7 +787,7 @@ where
                     Ok(Some(extension)) => extension
                         .verify_all(identity_provider, commit_time, p.proposal())
                         .await
-                        .map_err(|e| ProposalRulesError::IdentityProviderError(e.into())),
+                        .map_err(|e| MlsError::IdentityProviderError(e.into())),
                     Err(e) => Err(e),
                 };
 
@@ -810,7 +807,7 @@ where
 fn filter_out_extra_group_context_extensions<F>(
     strategy: &F,
     mut proposals: ProposalBundle,
-) -> Result<ProposalBundle, ProposalRulesError>
+) -> Result<ProposalBundle, MlsError>
 where
     F: FilterStrategy,
 {
@@ -822,7 +819,7 @@ where
             p,
             (!core::mem::replace(&mut found, true))
                 .then_some(())
-                .ok_or(ProposalRulesError::MoreThanOneGroupContextExtensionsProposal),
+                .ok_or(MlsError::MoreThanOneGroupContextExtensionsProposal),
         )
     })?;
 
@@ -833,7 +830,7 @@ fn filter_out_invalid_reinit<F>(
     strategy: &F,
     mut proposals: ProposalBundle,
     protocol_version: ProtocolVersion,
-) -> Result<ProposalBundle, ProposalRulesError>
+) -> Result<ProposalBundle, MlsError>
 where
     F: FilterStrategy,
 {
@@ -843,7 +840,7 @@ where
             p,
             (p.proposal.version >= protocol_version)
                 .then_some(())
-                .ok_or(ProposalRulesError::InvalidProtocolVersionInReInit {
+                .ok_or(MlsError::InvalidProtocolVersionInReInit {
                     proposed: p.proposal.version,
                     original: protocol_version,
                 }),
@@ -856,7 +853,7 @@ where
 fn filter_out_reinit_if_other_proposals<F>(
     strategy: &F,
     mut proposals: ProposalBundle,
-) -> Result<ProposalBundle, ProposalRulesError>
+) -> Result<ProposalBundle, MlsError>
 where
     F: FilterStrategy,
 {
@@ -872,7 +869,7 @@ where
             p,
             (has_only_reinit && !core::mem::replace(&mut found, true))
                 .then_some(())
-                .ok_or(ProposalRulesError::OtherProposalWithReInit),
+                .ok_or(MlsError::OtherProposalWithReInit),
         )
     })?;
 
@@ -884,7 +881,7 @@ fn filter_out_external_init<F>(
     strategy: &F,
     commit_sender: LeafIndex,
     mut proposals: ProposalBundle,
-) -> Result<ProposalBundle, ProposalRulesError>
+) -> Result<ProposalBundle, MlsError>
 where
     F: FilterStrategy,
 {
@@ -892,7 +889,7 @@ where
         apply_strategy(
             strategy,
             p,
-            Err(ProposalRulesError::InvalidProposalTypeForSender {
+            Err(MlsError::InvalidProposalTypeForSender {
                 proposal_type: ProposalType::EXTERNAL_INIT,
                 sender: Sender::Member(*commit_sender),
                 by_ref: p.is_by_reference(),
@@ -908,7 +905,7 @@ async fn filter_out_invalid_psks<F, P, CP>(
     cipher_suite_provider: &CP,
     mut proposals: ProposalBundle,
     external_psk_id_validator: &P,
-) -> Result<ProposalBundle, ProposalRulesError>
+) -> Result<ProposalBundle, MlsError>
 where
     F: FilterStrategy,
     P: ExternalPskIdValidator,
@@ -949,19 +946,19 @@ where
             JustPreSharedKeyID::External(id) => external_psk_id_validator
                 .validate(id)
                 .await
-                .map_err(|e| ProposalRulesError::PskIdValidationError(e.into())),
+                .map_err(|e| MlsError::PskIdValidationError(e.into())),
             JustPreSharedKeyID::Resumption(_) => Ok(()),
         };
 
         let res = if !valid {
-            Err(ProposalRulesError::InvalidTypeOrUsageInPreSharedKeyProposal)
+            Err(MlsError::InvalidTypeOrUsageInPreSharedKeyProposal)
         } else if !nonce_valid {
-            Err(ProposalRulesError::InvalidPskNonceLength {
+            Err(MlsError::InvalidPskNonceLength {
                 expected: kdf_extract_size,
                 found: nonce_length,
             })
         } else if !is_new_id {
-            Err(ProposalRulesError::DuplicatePskIds)
+            Err(MlsError::DuplicatePskIds)
         } else {
             external_id_is_valid
         };
@@ -972,7 +969,7 @@ where
             state.bad_indices.push(i)
         }
 
-        Ok::<_, ProposalRulesError>(state)
+        Ok::<_, MlsError>(state)
     })
     .await?;
 
@@ -990,7 +987,7 @@ fn validate_proposer<P, F>(
     tree: &TreeKemPublic,
     external_senders: Option<&ExternalSendersExt>,
     proposals: &mut ProposalBundle,
-) -> Result<(), ProposalRulesError>
+) -> Result<(), MlsError>
 where
     P: Proposable,
     for<'a> &'a P: Into<BorrowedProposal<'a>>,
@@ -999,7 +996,7 @@ where
     proposals.retain_by_type::<P, _, _>(|p| {
         let res = proposer_can_propose(&p.sender, P::TYPE, p.is_by_reference())
             .then_some(())
-            .ok_or_else(|| ProposalRulesError::InvalidProposalTypeForSender {
+            .ok_or_else(|| MlsError::InvalidProposalTypeForSender {
                 proposal_type: P::TYPE,
                 sender: p.sender,
                 by_ref: p.is_by_reference(),
@@ -1013,18 +1010,18 @@ fn validate_sender(
     tree: &TreeKemPublic,
     external_senders: Option<&ExternalSendersExt>,
     sender: &Sender,
-) -> Result<(), ProposalRulesError> {
+) -> Result<(), MlsError> {
     match *sender {
         Sender::Member(i) => tree
             .get_leaf_node(LeafIndex(i))
             .map(|_| ())
-            .map_err(|_| ProposalRulesError::InvalidMemberProposer(i)),
+            .map_err(|_| MlsError::InvalidMemberProposer(i)),
         Sender::External(i) => external_senders
-            .ok_or(ProposalRulesError::ExternalSenderWithoutExternalSendersExtension)
+            .ok_or(MlsError::ExternalProposalsDisabled)
             .and_then(|ext| {
                 (ext.allowed_senders.len() > i as usize)
                     .then_some(())
-                    .ok_or(ProposalRulesError::InvalidExternalSenderIndex(i))
+                    .ok_or(MlsError::InvalidExternalSenderIndex(i))
             }),
         _ => Ok(()),
     }
@@ -1079,7 +1076,7 @@ fn filter_out_invalid_proposers<F>(
     tree: &TreeKemPublic,
     group_context_extensions: &ExtensionList,
     mut proposals: ProposalBundle,
-) -> Result<ProposalBundle, ProposalRulesError>
+) -> Result<ProposalBundle, MlsError>
 where
     F: FilterStrategy,
 {
@@ -1099,16 +1096,16 @@ where
 }
 
 #[cfg(feature = "external_commit")]
-fn ensure_exactly_one_external_init(proposals: &ProposalBundle) -> Result<(), ProposalRulesError> {
+fn ensure_exactly_one_external_init(proposals: &ProposalBundle) -> Result<(), MlsError> {
     (proposals.by_type::<ExternalInit>().count() == 1)
         .then_some(())
-        .ok_or(ProposalRulesError::ExternalCommitMustHaveExactlyOneExternalInit)
+        .ok_or(MlsError::ExternalCommitMustHaveExactlyOneExternalInit)
 }
 
 #[cfg(feature = "external_commit")]
 fn ensure_proposals_in_external_commit_are_allowed(
     proposals: &ProposalBundle,
-) -> Result<(), ProposalRulesError> {
+) -> Result<(), MlsError> {
     let unsupported_type = proposals.proposal_types().find(|ty| {
         ![
             ProposalType::EXTERNAL_INIT,
@@ -1119,9 +1116,7 @@ fn ensure_proposals_in_external_commit_are_allowed(
     });
 
     match unsupported_type {
-        Some(kind) => Err(ProposalRulesError::InvalidProposalTypeInExternalCommit(
-            kind,
-        )),
+        Some(kind) => Err(MlsError::InvalidProposalTypeInExternalCommit(kind)),
         None => Ok(()),
     }
 }
@@ -1132,7 +1127,7 @@ async fn ensure_at_most_one_removal_for_self<C>(
     external_leaf: &LeafNode,
     tree: &TreeKemPublic,
     identity_provider: &C,
-) -> Result<(), ProposalRulesError>
+) -> Result<(), MlsError>
 where
     C: IdentityProvider,
 {
@@ -1143,7 +1138,7 @@ where
             ensure_removal_is_for_self(&removal.proposal, external_leaf, tree, identity_provider)
                 .await
         }
-        (Some(_), Some(_)) => Err(ProposalRulesError::ExternalCommitWithMoreThanOneRemove),
+        (Some(_), Some(_)) => Err(MlsError::ExternalCommitWithMoreThanOneRemove),
         (None, _) => Ok(()),
     }
 }
@@ -1154,7 +1149,7 @@ async fn ensure_removal_is_for_self<C>(
     external_leaf: &LeafNode,
     tree: &TreeKemPublic,
     identity_provider: &C,
-) -> Result<(), ProposalRulesError>
+) -> Result<(), MlsError>
 where
     C: IdentityProvider,
 {
@@ -1163,26 +1158,24 @@ where
     identity_provider
         .valid_successor(existing_signing_id, &external_leaf.signing_identity)
         .await
-        .map_err(|e| RatchetTreeError::CredentialValidationError(e.into()))?
+        .map_err(|e| MlsError::IdentityProviderError(e.into()))?
         .then_some(())
-        .ok_or(ProposalRulesError::ExternalCommitRemovesOtherIdentity)
+        .ok_or(MlsError::ExternalCommitRemovesOtherIdentity)
 }
 
 #[cfg(feature = "external_commit")]
-fn ensure_no_proposal_by_ref(proposals: &ProposalBundle) -> Result<(), ProposalRulesError> {
+fn ensure_no_proposal_by_ref(proposals: &ProposalBundle) -> Result<(), MlsError> {
     proposals
         .iter_proposals()
         .all(|p| p.is_by_value())
         .then_some(())
-        .ok_or(ProposalRulesError::OnlyMembersCanCommitProposalsByRef)
+        .ok_or(MlsError::OnlyMembersCanCommitProposalsByRef)
 }
 
-fn leaf_index_of_update_sender(
-    p: &ProposalInfo<UpdateProposal>,
-) -> Result<LeafIndex, ProposalRulesError> {
+fn leaf_index_of_update_sender(p: &ProposalInfo<UpdateProposal>) -> Result<LeafIndex, MlsError> {
     match p.sender {
         Sender::Member(i) => Ok(LeafIndex(i)),
-        _ => Err(ProposalRulesError::InvalidProposalTypeForSender {
+        _ => Err(MlsError::InvalidProposalTypeForSender {
             proposal_type: ProposalType::UPDATE,
             sender: p.sender,
             by_ref: p.is_by_reference(),
@@ -1196,7 +1189,7 @@ async fn insert_external_leaf<I, CP>(
     leaf_node: LeafNode,
     identity_provider: &I,
     cipher_suite_provider: &CP,
-) -> Result<ProposalState, ProposalRulesError>
+) -> Result<ProposalState, MlsError>
 where
     I: IdentityProvider,
     CP: CipherSuiteProvider,
@@ -1213,7 +1206,7 @@ where
 fn filter_out_unsupported_custom_proposals<F>(
     mut state: ProposalState,
     strategy: &F,
-) -> Result<ProposalState, ProposalRulesError>
+) -> Result<ProposalState, MlsError>
 where
     F: FilterStrategy,
 {
@@ -1230,9 +1223,7 @@ where
             supported_types
                 .contains(&p.proposal.proposal_type())
                 .then_some(())
-                .ok_or_else(|| {
-                    ProposalRulesError::UnsupportedCustomProposal(p.proposal.proposal_type())
-                }),
+                .ok_or_else(|| MlsError::UnsupportedCustomProposal(p.proposal.proposal_type())),
         )
     })?;
 
@@ -1262,11 +1253,7 @@ impl<'a, F: FilterStrategy> TreeBatchEditAccumulator<'a, F> {
         }
     }
 
-    fn apply_strategy<T>(
-        &self,
-        index: usize,
-        r: Result<(), RatchetTreeError>,
-    ) -> Result<(), RatchetTreeError>
+    fn apply_strategy<T>(&self, index: usize, r: Result<(), MlsError>) -> Result<(), MlsError>
     where
         T: Proposable,
         for<'b> BorrowedProposal<'b>: From<&'b T>,
@@ -1291,11 +1278,7 @@ impl<'a, F: FilterStrategy> TreeBatchEditAccumulator<'a, F> {
 impl<F: FilterStrategy> AccumulateBatchResults for TreeBatchEditAccumulator<'_, F> {
     type Output = Self;
 
-    fn on_update(
-        &mut self,
-        index: usize,
-        r: Result<LeafIndex, RatchetTreeError>,
-    ) -> Result<(), RatchetTreeError> {
+    fn on_update(&mut self, index: usize, r: Result<LeafIndex, MlsError>) -> Result<(), MlsError> {
         if r.is_err() {
             self.invalid_updates.insert(index);
         }
@@ -1305,8 +1288,8 @@ impl<F: FilterStrategy> AccumulateBatchResults for TreeBatchEditAccumulator<'_, 
     fn on_remove(
         &mut self,
         index: usize,
-        r: Result<(LeafIndex, LeafNode), RatchetTreeError>,
-    ) -> Result<(), RatchetTreeError> {
+        r: Result<(LeafIndex, LeafNode), MlsError>,
+    ) -> Result<(), MlsError> {
         let r = match r {
             Ok(leaf) => {
                 self.removed_leaves.push(leaf);
@@ -1320,11 +1303,7 @@ impl<F: FilterStrategy> AccumulateBatchResults for TreeBatchEditAccumulator<'_, 
         self.apply_strategy::<RemoveProposal>(index, r)
     }
 
-    fn on_add(
-        &mut self,
-        index: usize,
-        r: Result<LeafIndex, RatchetTreeError>,
-    ) -> Result<(), RatchetTreeError> {
+    fn on_add(&mut self, index: usize, r: Result<LeafIndex, MlsError>) -> Result<(), MlsError> {
         match r {
             Ok(leaf_index) => self.new_leaf_indexes.push(leaf_index),
             Err(_) => {
@@ -1334,7 +1313,7 @@ impl<F: FilterStrategy> AccumulateBatchResults for TreeBatchEditAccumulator<'_, 
         self.apply_strategy::<AddProposal>(index, r.map(|_| ()))
     }
 
-    fn finish(self) -> Result<Self::Output, RatchetTreeError> {
+    fn finish(self) -> Result<Self::Output, MlsError> {
         Ok(self)
     }
 }

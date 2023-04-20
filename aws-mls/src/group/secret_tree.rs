@@ -1,15 +1,13 @@
+use crate::client::MlsError;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::math as tree_math;
-use crate::tree_kem::math::TreeMathError;
 use crate::tree_kem::node::{LeafIndex, NodeIndex};
 use crate::CipherSuiteProvider;
-use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::ops::{Deref, DerefMut};
 use serde_with::serde_as;
-use thiserror::Error;
 use zeroize::Zeroizing;
 
 #[cfg(feature = "std")]
@@ -18,35 +16,9 @@ use std::collections::HashMap;
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
 
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
 use super::key_schedule::kdf_expand_with_label;
 
 pub(crate) const MAX_RATCHET_BACK_HISTORY: u32 = 1024;
-
-#[derive(Error, Debug)]
-pub enum SecretTreeError {
-    #[error(transparent)]
-    TreeMathError(#[from] TreeMathError),
-    #[error("requested invalid index")]
-    InvalidIndex,
-    #[error("attempted to consume an already consumed node")]
-    InvalidNodeConsumption,
-    #[error("leaf secret already consumed")]
-    InvalidLeafConsumption,
-    #[error("key not available, invalid generation {0}")]
-    KeyMissing(u32),
-    #[error("requested generation {0} is too far ahead of current generation {1}")]
-    InvalidFutureGeneration(u32, u32),
-    #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    MlsCodecError(#[from] aws_mls_codec::Error),
-}
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[repr(u8)]
@@ -131,9 +103,9 @@ impl TreeSecretsVec {
         &mut self,
         index: NodeIndex,
         value: Option<SecretTreeNode>,
-    ) -> Result<(), SecretTreeError> {
+    ) -> Result<(), MlsError> {
         self.get_mut(index as usize)
-            .ok_or(SecretTreeError::InvalidIndex)
+            .ok_or(MlsError::InvalidNodeIndex(index))
             .map(|n| *n = value)
     }
 
@@ -174,7 +146,7 @@ impl SecretRatchets {
         cipher_suite_provider: &P,
         generation: u32,
         key_type: KeyType,
-    ) -> Result<MessageKeyData, SecretTreeError> {
+    ) -> Result<MessageKeyData, MlsError> {
         match key_type {
             KeyType::Handshake => self
                 .handshake
@@ -189,7 +161,7 @@ impl SecretRatchets {
         &mut self,
         cipher_suite_provider: &P,
         key_type: KeyType,
-    ) -> Result<MessageKeyData, SecretTreeError> {
+    ) -> Result<MessageKeyData, MlsError> {
         match key_type {
             KeyType::Handshake => self.handshake.next_message_key(cipher_suite_provider),
             KeyType::Application => self.application.next_message_key(cipher_suite_provider),
@@ -214,18 +186,18 @@ impl SecretTree {
         &mut self,
         cipher_suite_provider: &P,
         index: NodeIndex,
-    ) -> Result<(), SecretTreeError> {
+    ) -> Result<(), MlsError> {
         if let Some(secret) = self.read_node(index)?.and_then(|n| n.into_secret()) {
             let left_index = tree_math::left(index)?;
             let right_index = tree_math::right(index)?;
 
             let left_secret =
                 kdf_expand_with_label(cipher_suite_provider, &secret, "tree", b"left", None)
-                    .map_err(|e| SecretTreeError::CipherSuiteProviderError(e.into()))?;
+                    .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
             let right_secret =
                 kdf_expand_with_label(cipher_suite_provider, &secret, "tree", b"right", None)
-                    .map_err(|e| SecretTreeError::CipherSuiteProviderError(e.into()))?;
+                    .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
             self.write_node(left_index, Some(SecretTreeNode::Secret(left_secret.into())))?;
             self.write_node(
@@ -238,7 +210,7 @@ impl SecretTree {
         }
     }
 
-    fn read_node(&self, index: NodeIndex) -> Result<Option<SecretTreeNode>, SecretTreeError> {
+    fn read_node(&self, index: NodeIndex) -> Result<Option<SecretTreeNode>, MlsError> {
         Ok(self.known_secrets.get_secret(index))
     }
 
@@ -246,7 +218,7 @@ impl SecretTree {
         &mut self,
         index: NodeIndex,
         value: Option<SecretTreeNode>,
-    ) -> Result<(), SecretTreeError> {
+    ) -> Result<(), MlsError> {
         self.known_secrets.replace_node(index, value)
     }
 
@@ -255,7 +227,7 @@ impl SecretTree {
         &mut self,
         cipher_suite_provider: &P,
         leaf_index: LeafIndex,
-    ) -> Result<SecretRatchets, SecretTreeError> {
+    ) -> Result<SecretRatchets, MlsError> {
         if let Some(ratchet) = self
             .read_node(leaf_index.into())?
             .and_then(|n| n.into_ratchet())
@@ -272,7 +244,7 @@ impl SecretTree {
         let secret = self
             .read_node(leaf_index.into())?
             .and_then(|n| n.into_secret())
-            .ok_or(SecretTreeError::InvalidLeafConsumption)?;
+            .ok_or(MlsError::InvalidLeafConsumption)?;
 
         self.write_node(leaf_index.into(), None)?;
 
@@ -291,7 +263,7 @@ impl SecretTree {
         cipher_suite_provider: &P,
         leaf_index: LeafIndex,
         key_type: KeyType,
-    ) -> Result<MessageKeyData, SecretTreeError> {
+    ) -> Result<MessageKeyData, MlsError> {
         self.message_key(cipher_suite_provider, leaf_index, |ratchet| {
             ratchet.next_message_key(cipher_suite_provider, key_type)
         })
@@ -303,7 +275,7 @@ impl SecretTree {
         leaf_index: LeafIndex,
         key_type: KeyType,
         generation: u32,
-    ) -> Result<MessageKeyData, SecretTreeError> {
+    ) -> Result<MessageKeyData, MlsError> {
         self.message_key(cipher_suite_provider, leaf_index, |ratchet| {
             ratchet.message_key_generation(cipher_suite_provider, generation, key_type)
         })
@@ -314,9 +286,9 @@ impl SecretTree {
         cipher_suite_provider: &P,
         leaf_index: LeafIndex,
         mut op: F,
-    ) -> Result<T, SecretTreeError>
+    ) -> Result<T, MlsError>
     where
-        F: FnMut(&mut SecretRatchets) -> Result<T, SecretTreeError>,
+        F: FnMut(&mut SecretRatchets) -> Result<T, MlsError>,
         P: CipherSuiteProvider,
     {
         let mut ratchet = self.leaf_secret_ratchets(cipher_suite_provider, leaf_index)?;
@@ -392,7 +364,7 @@ impl SecretKeyRatchet {
         cipher_suite_provider: &P,
         secret: &[u8],
         key_type: KeyType,
-    ) -> Result<Self, SecretTreeError> {
+    ) -> Result<Self, MlsError> {
         let secret = kdf_expand_with_label(
             cipher_suite_provider,
             secret,
@@ -400,7 +372,7 @@ impl SecretKeyRatchet {
             &[],
             None,
         )
-        .map_err(|e| SecretTreeError::CipherSuiteProviderError(e.into()))?;
+        .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         Ok(Self {
             secret: TreeSecret::from(secret),
@@ -413,17 +385,17 @@ impl SecretKeyRatchet {
         &mut self,
         cipher_suite_provider: &P,
         generation: u32,
-    ) -> Result<MessageKeyData, SecretTreeError> {
+    ) -> Result<MessageKeyData, MlsError> {
         if generation < self.generation {
             self.history
                 .remove_entry(&generation)
                 .map(|(_, mk)| mk)
-                .ok_or(SecretTreeError::KeyMissing(generation))
+                .ok_or(MlsError::KeyMissing(generation))
         } else {
             let max_generation_allowed = self.generation + MAX_RATCHET_BACK_HISTORY;
 
             if generation > max_generation_allowed {
-                return Err(SecretTreeError::InvalidFutureGeneration(
+                return Err(MlsError::InvalidFutureGeneration(
                     generation,
                     max_generation_allowed,
                 ));
@@ -441,7 +413,7 @@ impl SecretKeyRatchet {
     fn next_message_key<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
-    ) -> Result<MessageKeyData, SecretTreeError> {
+    ) -> Result<MessageKeyData, MlsError> {
         let generation = self.generation;
 
         let key = MessageKeyData {
@@ -474,7 +446,7 @@ impl SecretKeyRatchet {
         cipher_suite_provider: &P,
         label: &str,
         len: usize,
-    ) -> Result<Zeroizing<Vec<u8>>, SecretTreeError> {
+    ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         kdf_expand_with_label(
             cipher_suite_provider,
             self.secret.as_ref(),
@@ -482,7 +454,7 @@ impl SecretKeyRatchet {
             &self.generation.to_be_bytes(),
             Some(len),
         )
-        .map_err(|e| SecretTreeError::CipherSuiteProviderError(e.into()))
+        .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 }
 
@@ -737,7 +709,7 @@ mod tests {
 
         assert_matches!(
             res,
-            Err(SecretTreeError::InvalidFutureGeneration(
+            Err(MlsError::InvalidFutureGeneration(
                 invalid,
                 expected
             ))

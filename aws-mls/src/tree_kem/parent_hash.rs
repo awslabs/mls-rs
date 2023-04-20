@@ -1,8 +1,8 @@
+use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::{LeafIndex, Node, NodeIndex};
-use crate::tree_kem::RatchetTreeError;
 use crate::tree_kem::TreeKemPublic;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -60,7 +60,7 @@ impl ParentHash {
         public_key: &HpkePublicKey,
         parent_hash: &ParentHash,
         original_sibling_tree_hash: &[u8],
-    ) -> Result<Self, RatchetTreeError> {
+    ) -> Result<Self, MlsError> {
         let input = ParentHashInput {
             public_key,
             parent_hash,
@@ -71,7 +71,7 @@ impl ParentHash {
 
         let hash = cipher_suite_provider
             .hash(&input_bytes)
-            .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         Ok(Self(hash))
     }
@@ -105,7 +105,7 @@ impl TreeKemPublic {
         node_index: NodeIndex,
         co_path_child_index: NodeIndex,
         cipher_suite_provider: &P,
-    ) -> Result<ParentHash, RatchetTreeError> {
+    ) -> Result<ParentHash, MlsError> {
         let node = self.nodes.borrow_as_parent(node_index)?;
 
         ParentHash::new(
@@ -114,7 +114,7 @@ impl TreeKemPublic {
             parent_parent_hash,
             &self.tree_hashes.original[co_path_child_index as usize],
         )
-        .map_err(RatchetTreeError::from)
+        .map_err(MlsError::from)
     }
 
     fn parent_hash_for_leaf<P, T>(
@@ -122,7 +122,7 @@ impl TreeKemPublic {
         cipher_suite_provider: &P,
         index: LeafIndex,
         mut on_node_calculation: T,
-    ) -> Result<ParentHash, RatchetTreeError>
+    ) -> Result<ParentHash, MlsError>
     where
         P: CipherSuiteProvider,
         T: FnMut(NodeIndex, &ParentHash),
@@ -160,7 +160,7 @@ impl TreeKemPublic {
         index: LeafIndex,
         update_path: Option<&ValidatedUpdatePath>,
         cipher_suite_provider: &P,
-    ) -> Result<ParentHash, RatchetTreeError> {
+    ) -> Result<ParentHash, MlsError> {
         // First update the relevant original hashes used for parent hash computation.
         self.update_hashes(&mut vec![index], &[], cipher_suite_provider)?;
 
@@ -182,7 +182,7 @@ impl TreeKemPublic {
                 .map(|p| {
                     p.parent_hash = hash;
                 })
-                .map_err(RatchetTreeError::from)
+                .map_err(MlsError::from)
         })?;
 
         if let Some(update_path) = update_path {
@@ -190,10 +190,10 @@ impl TreeKemPublic {
             // in the local tree
             if let LeafNodeSource::Commit(parent_hash) = &update_path.leaf_node.leaf_node_source {
                 if !leaf_hash.matches(parent_hash) {
-                    return Err(RatchetTreeError::ParentHashMismatch);
+                    return Err(MlsError::ParentHashMismatch);
                 }
             } else {
-                return Err(RatchetTreeError::ParentHashNotFound);
+                return Err(MlsError::InvalidLeafNodeSource);
             }
         }
 
@@ -206,7 +206,7 @@ impl TreeKemPublic {
     pub(super) fn validate_parent_hashes<P: CipherSuiteProvider>(
         &self,
         cipher_suite_provider: &P,
-    ) -> Result<(), RatchetTreeError> {
+    ) -> Result<(), MlsError> {
         let nodes_to_validate = self
             .nodes
             .non_empty_parents()
@@ -289,7 +289,7 @@ impl TreeKemPublic {
                                 n = p;
                             } else {
                                 // If p is validated for the second time, the check fails ("all non-blank parent nodes are covered by exactly one such chain").
-                                return Err(RatchetTreeError::ParentHashMismatch);
+                                return Err(MlsError::ParentHashMismatch);
                             }
                         } else {
                             // If n's parent_hash field doesn't match, we're done with this chain.
@@ -305,7 +305,7 @@ impl TreeKemPublic {
         if nodes_to_validate.is_empty() {
             Ok(())
         } else {
-            Err(RatchetTreeError::ParentHashMismatch)
+            Err(MlsError::ParentHashMismatch)
         }
     }
 }
@@ -392,7 +392,7 @@ mod tests {
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNodeSource;
     use crate::tree_kem::test_utils::TreeWithSigners;
-    use crate::tree_kem::RatchetTreeError;
+    use crate::tree_kem::MlsError;
     use assert_matches::assert_matches;
 
     #[cfg(target_arch = "wasm32")]
@@ -421,7 +421,7 @@ mod tests {
 
         assert_matches!(
             missing_parent_hash_res,
-            Err(RatchetTreeError::ParentHashNotFound)
+            Err(MlsError::InvalidLeafNodeSource)
         );
     }
 
@@ -446,10 +446,7 @@ mod tests {
             &test_cipher_suite_provider(TEST_CIPHER_SUITE),
         );
 
-        assert_matches!(
-            invalid_parent_hash_res,
-            Err(RatchetTreeError::ParentHashMismatch)
-        );
+        assert_matches!(invalid_parent_hash_res, Err(MlsError::ParentHashMismatch));
     }
 
     #[test]
@@ -460,6 +457,6 @@ mod tests {
         test_tree.nodes[2] = None;
 
         let res = test_tree.validate_parent_hashes(&test_cipher_suite_provider(TEST_CIPHER_SUITE));
-        assert_matches!(res, Err(RatchetTreeError::ParentHashMismatch));
+        assert_matches!(res, Err(MlsError::ParentHashMismatch));
     }
 }

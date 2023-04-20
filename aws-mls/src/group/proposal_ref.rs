@@ -1,5 +1,5 @@
 use super::*;
-use crate::hash_reference::{HashReference, HashReferenceError};
+use crate::hash_reference::HashReference;
 
 #[derive(
     Debug,
@@ -31,7 +31,7 @@ impl ProposalRef {
     pub(crate) fn from_content<CS: CipherSuiteProvider>(
         cipher_suite_provider: &CS,
         content: &AuthenticatedContent,
-    ) -> Result<Self, HashReferenceError> {
+    ) -> Result<Self, MlsError> {
         Ok(ProposalRef(HashReference::compute(
             &content.mls_encode_to_vec()?,
             b"MLS 1.0 Proposal Reference",

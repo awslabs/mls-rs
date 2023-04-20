@@ -1,3 +1,4 @@
+use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, HpkeCiphertext, SignatureSecretKey};
 use crate::group::GroupContext;
 use crate::identity::SigningIdentity;
@@ -17,8 +18,7 @@ use super::node::Node;
 use super::{
     node::{LeafIndex, NodeIndex},
     path_secret::{PathSecret, PathSecretGeneration, PathSecretGenerator},
-    RatchetTreeError, TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathNode,
-    ValidatedUpdatePath,
+    TreeKemPrivate, TreeKemPublic, UpdatePath, UpdatePathNode, ValidatedUpdatePath,
 };
 
 #[cfg(test)]
@@ -57,7 +57,7 @@ impl<'a> TreeKem<'a> {
         identity_provider: C,
         cipher_suite_provider: &P,
         #[cfg(test)] commit_modifiers: &CommitModifiers<P>,
-    ) -> Result<EncapGeneration, RatchetTreeError>
+    ) -> Result<EncapGeneration, MlsError>
     where
         C: IdentityProvider,
         P: CipherSuiteProvider + Send + Sync,
@@ -82,7 +82,7 @@ impl<'a> TreeKem<'a> {
                     Ok(None)
                 }
             })
-            .collect::<Result<Vec<_>, RatchetTreeError>>()?;
+            .collect::<Result<Vec<_>, MlsError>>()?;
 
         #[cfg(test)]
         (commit_modifiers.modify_tree)(self.tree_kem_public);
@@ -166,7 +166,7 @@ impl<'a> TreeKem<'a> {
                     })
                 })
             })
-            .collect::<Result<Vec<_>, RatchetTreeError>>()?;
+            .collect::<Result<Vec<_>, MlsError>>()?;
 
         #[cfg(test)]
         let node_updates = (commit_modifiers.modify_path)(node_updates);
@@ -201,7 +201,7 @@ impl<'a> TreeKem<'a> {
         context: &mut GroupContext,
         identity_provider: IP,
         cipher_suite_provider: &CP,
-    ) -> Result<PathSecret, RatchetTreeError>
+    ) -> Result<PathSecret, MlsError>
     where
         IP: IdentityProvider,
         CP: CipherSuiteProvider,
@@ -252,7 +252,7 @@ impl<'a> TreeKem<'a> {
                     None
                 }
             })
-            .ok_or(RatchetTreeError::LcaNotFoundInDirectPath)??;
+            .ok_or(MlsError::LcaNotFoundInDirectPath)??;
 
         // Derive the rest of the secrets for the tree and assign to the proper nodes
         let node_secret_gen =
@@ -271,7 +271,7 @@ impl<'a> TreeKem<'a> {
                 let (hpke_private, hpke_public) = secret.to_hpke_key_pair()?;
 
                 if hpke_public != update.public_key {
-                    return Err(RatchetTreeError::PubKeyMismatch);
+                    return Err(MlsError::PubKeyMismatch);
                 }
 
                 self.private_key.secret_keys.insert(index, hpke_private);
@@ -281,7 +281,7 @@ impl<'a> TreeKem<'a> {
         // The only situation in which there are no path secrets is when the committer is alone in the
         // group and doesn't add anyone. In such case, he should process pending commit instead of
         // decrypting.
-        root_secret.ok_or(RatchetTreeError::DecryptFromSelf)
+        root_secret.ok_or(MlsError::CantProcessMessageFromSelf)
     }
 }
 
@@ -290,14 +290,14 @@ fn encrypt_copath_node_resolution<P: CipherSuiteProvider>(
     path_secret: &PathSecret,
     resolution: Vec<&Node>,
     context: &[u8],
-) -> Result<Vec<HpkeCiphertext>, RatchetTreeError> {
+) -> Result<Vec<HpkeCiphertext>, MlsError> {
     resolution
         .iter()
         .map(|&copath_node| {
             path_secret.encrypt(cipher_suite_provider, copath_node.public_key(), context)
         })
         .collect::<Result<Vec<HpkeCiphertext>, _>>()
-        .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
+        .map_err(|e| MlsError::CryptoProviderError(e.into()))
 }
 
 fn decrypt_parent_path_secret<P: CipherSuiteProvider>(
@@ -308,7 +308,7 @@ fn decrypt_parent_path_secret<P: CipherSuiteProvider>(
     lca_direct_path_child: NodeIndex,
     excluding: &[NodeIndex],
     context: &[u8],
-) -> Result<PathSecret, RatchetTreeError> {
+) -> Result<PathSecret, MlsError> {
     tree_kem_public
         .nodes
         .get_resolution_index(lca_direct_path_child)? // Resolution of the lca child node
@@ -316,8 +316,8 @@ fn decrypt_parent_path_secret<P: CipherSuiteProvider>(
         .filter(|i| !excluding.contains(i)) // Match up the nodes with their ciphertexts
         .zip(update_node.encrypted_path_secret.iter())
         .find_map(|(i, ct)| private_key.secret_keys.get(i).map(|sk| (sk, ct)))
-        .ok_or(RatchetTreeError::UpdateErrorNoSecretKey)
-        .and_then(|(sk, ct)| Ok(PathSecret::decrypt(cipher_suite_provider, sk, context, ct)?))
+        .ok_or(MlsError::UpdateErrorNoSecretKey)
+        .and_then(|(sk, ct)| PathSecret::decrypt(cipher_suite_provider, sk, context, ct))
 }
 
 #[cfg(test)]

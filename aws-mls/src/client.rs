@@ -1,40 +1,28 @@
 use crate::cipher_suite::CipherSuite;
 use crate::client_builder::{BaseConfig, ClientBuilder};
 use crate::client_config::ClientConfig;
-use crate::grease::GreaseError;
-use crate::group::confirmation_tag::ConfirmationTagError;
 use crate::group::framing::{
     Content, ContentType, MLSMessage, MLSMessagePayload, PublicMessage, Sender, WireFormat,
 };
-use crate::group::key_schedule::KeyScheduleError;
 use crate::group::message_signature::AuthenticatedContent;
 use crate::group::proposal::{AddProposal, Proposal};
-use crate::group::state_repo::GroupStateRepositoryError;
-use crate::group::transcript_hash::TranscriptHashError;
-use crate::group::{process_group_info, Group, NewMemberInfo, ProposalCacheError};
-use crate::hash_reference::HashReferenceError;
+use crate::group::proposal_ref::ProposalRef;
+use crate::group::{process_group_info, Group, NewMemberInfo};
 use crate::identity::SigningIdentity;
-use crate::key_package::{
-    KeyPackageError, KeyPackageGeneration, KeyPackageGenerationError, KeyPackageGenerator,
-    KeyPackageValidationError,
-};
+use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
 use crate::protocol_version::ProtocolVersion;
-use crate::psk::PskError;
-use crate::signer::SignatureError;
-use crate::tree_kem::{
-    hpke_encryption::HpkeEncryptionError, leaf_node::LeafNodeError,
-    leaf_node_validator::LeafNodeValidationError, tree_validator::TreeValidationError,
-    RatchetTreeError, UpdatePathValidationError,
-};
+use crate::tree_kem::node::NodeIndex;
+use crate::tree_kem::Lifetime;
 use alloc::boxed::Box;
-use alloc::string::String;
 use alloc::vec::Vec;
 use aws_mls_core::crypto::CryptoProvider;
-use aws_mls_core::extension::{ExtensionError, ExtensionList};
-use aws_mls_core::group::GroupStateStorage;
+use aws_mls_core::extension::{ExtensionError, ExtensionList, ExtensionType};
+use aws_mls_core::group::{GroupStateStorage, ProposalType};
+use aws_mls_core::identity::CredentialType;
 use aws_mls_core::key_package::KeyPackageStorage;
 use aws_mls_core::keychain::KeychainStorage;
-use hex::ToHex;
+use aws_mls_core::psk::ExternalPskId;
+use aws_mls_core::time::MlsTime;
 
 #[cfg(feature = "std")]
 use std::error::Error;
@@ -42,59 +30,37 @@ use std::error::Error;
 #[cfg(not(feature = "std"))]
 use core::error::Error;
 
-#[cfg(feature = "external_commit")]
-use crate::psk::ExternalPskId;
-
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum MlsError {
-    #[error(transparent)]
-    RatchetTreeError(#[from] RatchetTreeError),
-    #[error(transparent)]
-    CiphertextProcessorError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
-    SignerError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
-    TranscriptHashError(#[from] TranscriptHashError),
-    #[error(transparent)]
-    KeyPackageError(#[from] KeyPackageError),
     #[error(transparent)]
     IdentityProviderError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
     CryptoProviderError(Box<dyn Error + Send + Sync + 'static>),
     #[error(transparent)]
+    KeyPackageRepoError(Box<dyn Error + Send + Sync>),
+    #[error(transparent)]
+    KeychainError(Box<dyn Error + Send + Sync>),
+    #[error(transparent)]
+    GroupStorageError(Box<dyn Error + Sync + Send + 'static>),
+    #[error(transparent)]
+    PskStoreError(Box<dyn Error + Send + Sync>),
+    #[error(transparent)]
+    UserDefinedProposalFilterError(Box<dyn Error + Send + Sync>),
+    #[error(transparent)]
+    PskIdValidationError(Box<dyn Error + Send + Sync>),
+    #[error(transparent)]
+    SerializationError(#[from] aws_mls_codec::Error),
+    #[error(transparent)]
     ExtensionError(#[from] ExtensionError),
     #[error(transparent)]
-    KeyPackageGenerationError(#[from] KeyPackageGenerationError),
-    #[error(transparent)]
-    LeafNodeValidationError(#[from] LeafNodeValidationError),
-    #[error(transparent)]
-    MembershipTagError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
-    ConfirmationTagError(#[from] ConfirmationTagError),
-    #[error(transparent)]
-    GroupStateRepositoryError(#[from] GroupStateRepositoryError),
-    #[error(transparent)]
-    KeyScheduleError(#[from] KeyScheduleError),
-    #[error(transparent)]
-    UpdatePathValidationError(#[from] UpdatePathValidationError),
-    #[error(transparent)]
-    ProposalCacheError(#[from] ProposalCacheError),
-    #[error(transparent)]
-    TreeValidationError(#[from] TreeValidationError),
-    #[error(transparent)]
-    HashReferenceError(#[from] HashReferenceError),
-    #[error("key package not found")]
-    KeyPackageNotFound,
+    SystemTimeError(#[from] crate::time::SystemTimeError),
     #[error("Cipher suite does not match")]
     CipherSuiteMismatch,
-    #[error("Invalid key package signature")]
-    InvalidKeyPackage,
     #[error("Invalid commit, missing required path")]
     CommitMissingPath,
     #[error("plaintext message for incorrect epoch")]
     InvalidEpoch(u64),
-    #[error("epoch metadata not found for group: {0:?}")]
-    EpochMetadataNotFound(Vec<u8>),
     #[error("invalid signature found")]
     InvalidSignature,
     #[error("invalid confirmation tag")]
@@ -105,10 +71,6 @@ pub enum MlsError {
     InvalidTreeKemPrivateKey,
     #[error("key package not found, unable to process")]
     WelcomeKeyPackageNotFound,
-    #[error("invalid participant {0}")]
-    InvalidGroupParticipant(u32),
-    #[error("self not found in ratchet tree")]
-    TreeMissingSelfUser,
     #[error("leaf not found in tree for index {0}")]
     LeafNotFound(u32),
     #[error("message from self can't be processed")]
@@ -117,28 +79,12 @@ pub enum MlsError {
     CommitRequired,
     #[error("ratchet tree not provided or discovered in GroupInfo")]
     RatchetTreeNotFound,
-    #[error("Only members can encrypt messages")]
-    OnlyMembersCanEncryptMessages,
     #[error("External sender cannot commit")]
     ExternalSenderCannotCommit,
-    #[error("Only members can update")]
-    OnlyMembersCanUpdate,
-    #[error(transparent)]
-    PskSecretError(#[from] PskError),
-    #[error("Subgroup uses a different protocol version: {0:?}")]
-    SubgroupWithDifferentProtocolVersion(ProtocolVersion),
-    #[error("Subgroup uses a different cipher suite: {0:?}")]
-    SubgroupWithDifferentCipherSuite(CipherSuite),
     #[error("Unsupported protocol version {0:?}")]
     UnsupportedProtocolVersion(ProtocolVersion),
-    #[error(
-        "message protocol version {msg_version:?} does not match version {version:?} in {wire_format:?}"
-    )]
-    ProtocolVersionMismatch {
-        msg_version: ProtocolVersion,
-        wire_format: WireFormat,
-        version: ProtocolVersion,
-    },
+    #[error("Protocol version mismatch")]
+    ProtocolVersionMismatch,
     #[error("Unsupported cipher suite {0:?}")]
     UnsupportedCipherSuite(CipherSuite),
     #[error("Signing key of external sender is unknown")]
@@ -150,14 +96,8 @@ pub enum MlsError {
     #[cfg(feature = "external_commit")]
     #[error("Missing ExternalPub extension")]
     MissingExternalPubExtension,
-    #[error("Missing update path in external commit")]
-    MissingUpdatePathInExternalCommit,
     #[error("Epoch {0} not found")]
     EpochNotFound(u64),
-    #[error("expected protocol version {0:?}, found version {1:?}")]
-    InvalidProtocolVersion(ProtocolVersion, ProtocolVersion),
-    #[error("unexpected group ID {0:?}")]
-    InvalidGroupId(Vec<u8>),
     #[error("Unencrypted application message")]
     UnencryptedApplicationMessage,
     #[cfg(feature = "external_commit")]
@@ -165,6 +105,7 @@ pub enum MlsError {
     ExpectedCommitForNewMemberCommit,
     #[error("NewMemberProposal sender type can only be used to send add proposals")]
     ExpectedAddProposalForNewMemberProposal,
+    #[cfg(feature = "external_commit")]
     #[error("External commit missing ExternalInit proposal")]
     ExternalCommitMissingExternalInit,
     #[error(
@@ -175,16 +116,8 @@ pub enum MlsError {
     PendingReInitNotFound,
     #[error("A commit after ReIinit did not output a welcome message.")]
     ReInitCommitDidNotOutputWelcome,
-    #[error("The ciphersuites in the welcome message {0:?} and in the reinit {1:?} do not match.")]
-    ReInitCiphersuiteMismatch(CipherSuite, CipherSuite),
-    #[error("The versions in the welcome message {0:?} and in the reinit {1:?} do not match.")]
-    ReInitVersionMismatch(ProtocolVersion, ProtocolVersion),
     #[error("The extensions in the welcome message {0:?} and in the reinit {1:?} do not match.")]
     ReInitExtensionsMismatch(ExtensionList, ExtensionList),
-    #[error("The group ids in the welcome message {0:?} and in the reinit {1:?} do not match.")]
-    ReInitIdMismatch(Vec<u8>, Vec<u8>),
-    #[error("No credential found for given ciphersuite.")]
-    NoCredentialFound,
     #[error("Expected commit message, found: {0:?}")]
     NotCommitContent(ContentType),
     #[error("Expected proposal message, found: {0:?}")]
@@ -199,42 +132,157 @@ pub enum MlsError {
     UnexpectedMessageType(Vec<WireFormat>, WireFormat),
     #[error("membership tag on MLSPlaintext for non-member sender")]
     MembershipTagForNonMember,
-    #[error("mls message is not a key package")]
-    NotKeyPackage,
     #[error("No member found for given identity id.")]
     MemberNotFound,
-    #[error(transparent)]
-    HpkeEncryptionError(#[from] HpkeEncryptionError),
-    #[error("the secret key provided does not match the public key in the credential")]
-    IncorrectSecretKey,
-    #[error(transparent)]
-    SerializationError(#[from] aws_mls_codec::Error),
-    #[error(transparent)]
-    SignatureError(#[from] SignatureError),
-    #[error(transparent)]
-    KeyPackageRepoError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
-    LeafNodeError(#[from] LeafNodeError),
-    #[error(transparent)]
-    KeyPackageValidationError(#[from] KeyPackageValidationError),
     #[error("expected group info message")]
     ExpectedGroupInfoMessage,
     #[error("expected key package message")]
     ExpectedKeyPackageMessage,
-    #[error("unsupported message protocol version: {0:?}")]
-    UnsupportedMessageVersion(ProtocolVersion),
-    #[error("unable to load group from storage: {0:?}")]
-    GroupStorageError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
-    KeychainError(Box<dyn Error + Send + Sync>),
-    #[error("group not found: {0}")]
-    GroupNotFound(String),
+    #[error("group not found: {0:?}")]
+    GroupNotFound(Vec<u8>),
     #[error("unexpected PSK ID")]
     UnexpectedPskId,
     #[error("invalid sender {0:?} for content type {1:?}")]
     InvalidSender(Sender, ContentType),
-    #[error(transparent)]
-    GreaseError(#[from] GreaseError),
+    #[error("GroupID mismatch")]
+    GroupIdMismatch,
+    #[error("invalid insert: expected {expected} found {found}")]
+    UnexpectedEpochId { expected: u64, found: u64 },
+    #[error("storage retention can not be zero")]
+    NonZeroRetentionRequired,
+    #[error("Too many PSK IDs ({0}) to compute PSK secret")]
+    TooManyPskIds(usize),
+    #[error("No PSK for ID {0:?}")]
+    NoPskForId(ExternalPskId),
+    #[error("Old group state not found")]
+    OldGroupStateNotFound,
+    #[error("leaf secret already consumed")]
+    InvalidLeafConsumption,
+    #[error("key not available, invalid generation {0}")]
+    KeyMissing(u32),
+    #[error("requested generation {0} is too far ahead of current generation {1}")]
+    InvalidFutureGeneration(u32, u32),
+    #[error("leaf node has no children")]
+    LeafNodeNoChildren,
+    #[error("root node has no parent")]
+    LeafNodeNoParent,
+    #[error("index out of range")]
+    InvalidTreeIndex,
+    #[error("time overflow")]
+    TimeOverflow,
+    #[error("invalid leaf_node_source")]
+    InvalidLeafNodeSource,
+    #[error("{0:?} is not within lifetime {1:?}")]
+    InvalidLifetime(MlsTime, Lifetime),
+    #[error("required extension not found")]
+    RequiredExtensionNotFound(ExtensionType),
+    #[error("required proposal not found")]
+    RequiredProposalNotFound(ProposalType),
+    #[error("required credential not found")]
+    RequiredCredentialNotFound(CredentialType),
+    #[error("capabilities must describe extensions used")]
+    ExtensionNotInCapabilities(ExtensionType),
+    #[error("not a parent")]
+    ExpectedParentNode,
+    #[error("not a leaf")]
+    ExpectedLeafNode,
+    #[error("node index is out of bounds {0}")]
+    InvalidNodeIndex(NodeIndex),
+    #[error("unexpected empty node found")]
+    UnexpectedEmptyNode,
+    #[error("credential signature keys must be unique, duplicate key found at index: {0:?}")]
+    DuplicateSignatureKeys(u32),
+    #[error("hpke keys must be unique, duplicate key found at index: {0:?}")]
+    DuplicateHpkeKey(u32),
+    #[error("identities must be unique, duplicate identity found at index {0:?}")]
+    DuplicateIdentity(u32),
+    #[error("In-use credential type {0:?} not supported by new leaf at index {1:?}")]
+    InUseCredentialTypeUnsupportedByNewLeaf(CredentialType, u32),
+    #[error("Not all members support the credential type used by new leaf")]
+    CredentialTypeOfNewLeafIsUnsupported(CredentialType),
+    #[error("the length of the update path {0} different than the length of the direct path {1}")]
+    WrongPathLen(usize, usize),
+    #[error("same HPKE leaf key before and after applying the update path for leaf {0:?}")]
+    SameHpkeKey(u32),
+    #[error("{0:?} is not within lifetime {1:?}")]
+    InvalidKeyLifetime(MlsTime, Lifetime),
+    #[error("init key is not valid for cipher suite")]
+    InvalidInitKey,
+    #[error("init key can not be equal to leaf node public key")]
+    InitLeafKeyEquality,
+    #[error("different identity in update for leaf {0:?}")]
+    DifferentIdentityInUpdate(u32),
+    #[error("update path pub key mismatch")]
+    PubKeyMismatch,
+    #[error("tree hash mismatch")]
+    TreeHashMismatch,
+    #[error("bad update: no suitable secret key")]
+    UpdateErrorNoSecretKey,
+    #[error("invalid lca, not found on direct path")]
+    LcaNotFoundInDirectPath,
+    #[error("update path parent hash mismatch")]
+    ParentHashMismatch,
+    #[error("unexpected pattern of unmerged leaves")]
+    UnmergedLeavesMismatch,
+    #[error("empty tree")]
+    UnexpectedEmptyTree,
+    #[error("trailing blanks")]
+    UnexpectedTrailingBlanks,
+    // Proposal Rules errors
+    #[error("Commiter must not include any update proposals generated by the commiter")]
+    InvalidCommitSelfUpdate,
+    #[error("A PreSharedKey proposal must have a PSK of type External or type Resumption and usage Application")]
+    InvalidTypeOrUsageInPreSharedKeyProposal,
+    #[error("Expected PSK nonce with length {expected} but found length {found}")]
+    InvalidPskNonceLength { expected: usize, found: usize },
+    #[error("Protocol version {proposed:?} in ReInit proposal is less than version {original:?} in original group")]
+    InvalidProtocolVersionInReInit {
+        proposed: ProtocolVersion,
+        original: ProtocolVersion,
+    },
+    #[error("More than one proposal applying to leaf {0:?}")]
+    MoreThanOneProposalForLeaf(u32),
+    #[error("More than one GroupContextExtensions proposal")]
+    MoreThanOneGroupContextExtensionsProposal,
+    #[error("Invalid proposal of type {proposal_type:?} for sender {sender:?}")]
+    InvalidProposalTypeForSender {
+        proposal_type: ProposalType,
+        sender: Sender,
+        by_ref: bool,
+    },
+    #[cfg(feature = "external_commit")]
+    #[error("External commit must have exactly one ExternalInit proposal")]
+    ExternalCommitMustHaveExactlyOneExternalInit,
+    #[cfg(feature = "external_commit")]
+    #[error("External commit must have a new leaf")]
+    ExternalCommitMustHaveNewLeaf,
+    #[cfg(feature = "external_commit")]
+    #[error("External commit contains removal of other identity")]
+    ExternalCommitRemovesOtherIdentity,
+    #[cfg(feature = "external_commit")]
+    #[error("External commit contains more than one Remove proposal")]
+    ExternalCommitWithMoreThanOneRemove,
+    #[error("Duplicate PSK IDs")]
+    DuplicatePskIds,
+    #[cfg(feature = "external_commit")]
+    #[error("Invalid proposal type {0:?} in external commit")]
+    InvalidProposalTypeInExternalCommit(ProposalType),
+    #[error("Committer can not remove themselves")]
+    CommitterSelfRemoval,
+    #[error("Only members can commit proposals by reference")]
+    OnlyMembersCanCommitProposalsByRef,
+    #[error("Other proposal with ReInit")]
+    OtherProposalWithReInit,
+    #[error("Unsupported group extension {0:?}")]
+    UnsupportedGroupExtension(ExtensionType),
+    #[error("Unsupported custom proposal type {0:?}")]
+    UnsupportedCustomProposal(ProposalType),
+    #[error("Invalid index {0:?} for member proposer")]
+    InvalidMemberProposer(u32),
+    #[error("Invalid external sender index {0}")]
+    InvalidExternalSenderIndex(u32),
+    #[error("Proposal {0:?} not found")]
+    ProposalNotFound(ProposalRef),
 }
 
 /// MLS client used to create key packages and manage groups.
@@ -497,7 +545,7 @@ where
             .state(group_id)
             .await
             .map_err(|e| MlsError::GroupStorageError(e.into()))?
-            .ok_or_else(|| MlsError::GroupNotFound(group_id.encode_hex_upper()))?;
+            .ok_or(MlsError::GroupNotFound(group_id.to_vec()))?;
 
         Group::from_snapshot(self.config.clone(), snapshot).await
     }
@@ -521,7 +569,7 @@ where
         let protocol_version = group_info.version;
 
         if !self.config.version_supported(protocol_version) {
-            return Err(MlsError::UnsupportedMessageVersion(group_info.version));
+            return Err(MlsError::UnsupportedProtocolVersion(group_info.version));
         }
 
         let group_info = group_info

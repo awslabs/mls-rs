@@ -5,15 +5,15 @@ use core::borrow::BorrowMut;
 use debug_tree::TreeBuilder;
 
 use super::node::NodeIndex;
-use super::NodeVecError;
 use super::{math::root, node::NodeVec};
+use crate::client::MlsError;
 use crate::tree_kem::math::{left, right};
 
 pub(crate) fn build_tree(
     tree: &mut TreeBuilder,
     nodes: &NodeVec,
     idx: NodeIndex,
-) -> Result<(), NodeVecError> {
+) -> Result<(), MlsError> {
     let blank_tag = if nodes.is_blank(idx)? { "Blank " } else { "" };
 
     // Leaf Node

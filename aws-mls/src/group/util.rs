@@ -22,13 +22,12 @@ use crate::{
 
 use super::{
     confirmation_tag::ConfirmationTag,
-    framing::{Sender, WireFormat},
+    framing::Sender,
     message_signature::AuthenticatedContent,
     proposal_cache::{ProposalCache, ProposalSetEffects},
     proposal_filter::ProposalRules,
     transcript_hash::InterimTranscriptHash,
     Commit, ConfirmedTranscriptHash, EncryptedGroupSecrets, GroupContext, GroupInfo,
-    ProposalCacheError,
 };
 
 #[cfg(feature = "external_commit")]
@@ -58,11 +57,7 @@ where
     let group_protocol_version = group_info.group_context.protocol_version;
 
     if msg_protocol_version != group_protocol_version {
-        return Err(MlsError::ProtocolVersionMismatch {
-            msg_version: msg_protocol_version,
-            wire_format: WireFormat::GroupInfo,
-            version: group_protocol_version,
-        });
+        return Err(MlsError::ProtocolVersionMismatch);
     }
 
     let cipher_suite = cipher_suite_provider.cipher_suite();
@@ -212,7 +207,7 @@ pub(crate) async fn proposal_effects<C, F, P, CSP>(
     user_filter: F,
     commit_time: Option<MlsTime>,
     roster: &[Member],
-) -> Result<ProposalSetEffects, ProposalCacheError>
+) -> Result<ProposalSetEffects, MlsError>
 where
     C: IdentityProvider,
     F: ProposalRules,
@@ -290,7 +285,7 @@ pub(crate) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
         .next()
         .await
         .transpose()?
-        .ok_or(MlsError::KeyPackageNotFound)
+        .ok_or(MlsError::WelcomeKeyPackageNotFound)
 }
 
 pub(crate) fn cipher_suite_provider<P>(

@@ -1,15 +1,9 @@
+use alloc::format;
 use alloc::vec::Vec;
-use alloc::{boxed::Box, format};
 use aws_mls_codec::{MlsEncode, MlsSize};
-use thiserror::Error;
 
+use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, SignaturePublicKey, SignatureSecretKey};
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
 
 #[derive(Debug, Clone, MlsSize, MlsEncode)]
 struct SignContent {
@@ -26,16 +20,6 @@ impl SignContent {
             content,
         }
     }
-}
-
-#[derive(Debug, Error)]
-pub enum SignatureError {
-    #[error(transparent)]
-    SerializationError(#[from] aws_mls_codec::Error),
-    #[error("internal signer error: {0:?}")]
-    InternalSignerError(#[source] Box<dyn Error + Send + Sync>),
-    #[error("signature validation failed, info: {0:?}")]
-    SignatureValidationFailed(#[source] Box<dyn Error + Send + Sync>),
 }
 
 pub(crate) trait Signable<'a> {
@@ -57,12 +41,12 @@ pub(crate) trait Signable<'a> {
         signature_provider: &P,
         signer: &SignatureSecretKey,
         context: &Self::SigningContext,
-    ) -> Result<(), SignatureError> {
+    ) -> Result<(), MlsError> {
         let sign_content = SignContent::new(Self::SIGN_LABEL, self.signable_content(context)?);
 
         let signature = signature_provider
             .sign(signer, &sign_content.mls_encode_to_vec()?)
-            .map_err(|e| SignatureError::InternalSignerError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         self.write_signature(signature);
 
@@ -74,7 +58,7 @@ pub(crate) trait Signable<'a> {
         signature_provider: &P,
         public_key: &SignaturePublicKey,
         context: &Self::SigningContext,
-    ) -> Result<(), SignatureError> {
+    ) -> Result<(), MlsError> {
         let sign_content = SignContent::new(Self::SIGN_LABEL, self.signable_content(context)?);
 
         signature_provider
@@ -83,7 +67,7 @@ pub(crate) trait Signable<'a> {
                 self.signature(),
                 &sign_content.mls_encode_to_vec()?,
             )
-            .map_err(|e| SignatureError::SignatureValidationFailed(e.into()))
+            .map_err(|_| MlsError::InvalidSignature)
     }
 }
 
@@ -290,7 +274,7 @@ mod tests {
 
         let res = test_signable.verify(&cipher_suite_provider, &incorrect_public, &vec![]);
 
-        assert_matches!(res, Err(SignatureError::SignatureValidationFailed(_)));
+        assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 
     #[test]
@@ -312,6 +296,6 @@ mod tests {
             .unwrap();
 
         let res = test_signable.verify(&cipher_suite_provider, &public, &incorrect_context);
-        assert_matches!(res, Err(SignatureError::SignatureValidationFailed(_)));
+        assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 }

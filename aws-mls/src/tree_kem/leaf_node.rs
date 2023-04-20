@@ -1,43 +1,11 @@
 use super::{parent_hash::ParentHash, Capabilities, Lifetime};
+use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
-use crate::{
-    grease::GreaseError,
-    identity::SigningIdentity,
-    signer::{Signable, SignatureError},
-    ExtensionList,
-};
-use alloc::boxed::Box;
+use crate::{identity::SigningIdentity, signer::Signable, ExtensionList};
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
-use thiserror::Error;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-#[derive(Debug, Error)]
-pub enum LeafNodeError {
-    #[error(transparent)]
-    MlsCodecError(#[from] aws_mls_codec::Error),
-    #[error(transparent)]
-    SignatureError(#[from] SignatureError),
-    #[error("parent hash error: {0}")]
-    ParentHashError(#[source] Box<dyn Error + Send + Sync>),
-    #[error("internal signer error: {0}")]
-    SignerError(#[source] Box<dyn Error + Send + Sync>),
-    #[error("signing identity public key does not match the signer (secret key)")]
-    InvalidSignerPublicKey,
-    #[error("credential rejected by custom credential validator {0:?}")]
-    IdentityProviderError(#[source] Box<dyn Error + Sync + Send>),
-    #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    GreaseError(#[from] GreaseError),
-}
 
 #[derive(
     Debug, Clone, MlsSize, MlsEncode, MlsDecode, PartialEq, Eq, serde::Deserialize, serde::Serialize,
@@ -80,13 +48,13 @@ impl LeafNode {
         signing_identity: SigningIdentity,
         signer: &SignatureSecretKey,
         lifetime: Lifetime,
-    ) -> Result<(Self, HpkeSecretKey), LeafNodeError>
+    ) -> Result<(Self, HpkeSecretKey), MlsError>
     where
         CSP: CipherSuiteProvider,
     {
         let (secret_key, public_key) = cipher_suite_provider
             .kem_generate()
-            .map_err(|e| LeafNodeError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         let mut leaf_node = LeafNode {
             public_key,
@@ -116,10 +84,10 @@ impl LeafNode {
         new_properties: ConfigProperties,
         signing_identity: Option<SigningIdentity>,
         signer: &SignatureSecretKey,
-    ) -> Result<HpkeSecretKey, LeafNodeError> {
+    ) -> Result<HpkeSecretKey, MlsError> {
         let (secret, public) = cipher_suite_provider
             .kem_generate()
-            .map_err(|e| LeafNodeError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         self.public_key = public;
         self.capabilities = new_properties.capabilities;
@@ -151,10 +119,10 @@ impl LeafNode {
         new_signing_identity: Option<SigningIdentity>,
         signer: &SignatureSecretKey,
         parent_hash: ParentHash,
-    ) -> Result<HpkeSecretKey, LeafNodeError> {
+    ) -> Result<HpkeSecretKey, MlsError> {
         let (secret, public) = cipher_suite_provider
             .kem_generate()
-            .map_err(|e| LeafNodeError::CipherSuiteProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
         self.public_key = public;
         self.capabilities = new_properties.capabilities;
@@ -677,13 +645,15 @@ mod tests {
             &signing_identity.signature_key,
             &(b"foo".as_slice(), 1).into(),
         );
-        assert_matches!(res, Err(SignatureError::SignatureValidationFailed(_)));
+
+        assert_matches!(res, Err(MlsError::InvalidSignature));
 
         let res = leaf.verify(
             &provider,
             &signing_identity.signature_key,
             &(b"bar".as_slice(), 0).into(),
         );
-        assert_matches!(res, Err(SignatureError::SignatureValidationFailed(_)));
+
+        assert_matches!(res, Err(MlsError::InvalidSignature));
     }
 }

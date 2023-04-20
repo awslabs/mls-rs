@@ -7,11 +7,14 @@ use aws_mls_core::{
 };
 use futures::{StreamExt, TryStreamExt};
 
-use crate::group::{epoch::EpochSecrets, state_repo::GroupStateRepository, GroupContext};
+use crate::{
+    client::MlsError,
+    group::{epoch::EpochSecrets, state_repo::GroupStateRepository, GroupContext},
+};
 
 use super::{
     secret::{PskSecret, PskSecretInput},
-    JustPreSharedKeyID, PreSharedKeyID, PskError, ResumptionPsk,
+    JustPreSharedKeyID, PreSharedKeyID, ResumptionPsk,
 };
 
 pub(crate) struct PskResolver<'a, GS, K, PS>
@@ -42,10 +45,10 @@ impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage> Clone
 impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
     PskResolver<'_, GS, K, PS>
 {
-    async fn resolve_resumption(&self, psk_id: &ResumptionPsk) -> Result<PreSharedKey, PskError> {
+    async fn resolve_resumption(&self, psk_id: &ResumptionPsk) -> Result<PreSharedKey, MlsError> {
         if let Some(ctx) = self.group_context {
             if ctx.epoch == psk_id.psk_epoch && ctx.group_id == psk_id.psk_group_id.0 {
-                let epoch = self.current_epoch.ok_or(PskError::OldGroupStateNotFound)?;
+                let epoch = self.current_epoch.ok_or(MlsError::OldGroupStateNotFound)?;
                 return Ok(epoch.resumption_secret.clone());
             }
         }
@@ -56,18 +59,18 @@ impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
             }
         }
 
-        Err(PskError::OldGroupStateNotFound)
+        Err(MlsError::OldGroupStateNotFound)
     }
 
-    async fn resolve_external(&self, psk_id: &ExternalPskId) -> Result<PreSharedKey, PskError> {
+    async fn resolve_external(&self, psk_id: &ExternalPskId) -> Result<PreSharedKey, MlsError> {
         self.psk_store
             .get(psk_id)
             .await
-            .map_err(|e| PskError::PskStoreError(e.into()))?
-            .ok_or_else(|| PskError::NoPskForId(psk_id.clone()))
+            .map_err(|e| MlsError::PskStoreError(e.into()))?
+            .ok_or_else(|| MlsError::NoPskForId(psk_id.clone()))
     }
 
-    async fn resolve(&self, id: &[PreSharedKeyID]) -> Result<Vec<PskSecretInput>, PskError> {
+    async fn resolve(&self, id: &[PreSharedKeyID]) -> Result<Vec<PskSecretInput>, MlsError> {
         futures::stream::iter(id.iter())
             .then(|id| async {
                 let psk = match &id.key_id {
@@ -90,7 +93,7 @@ impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
         &self,
         id: &[PreSharedKeyID],
         cipher_suite_provider: &P,
-    ) -> Result<PskSecret, PskError> {
+    ) -> Result<PskSecret, MlsError> {
         self.resolve(id)
             .await
             .and_then(|psk| PskSecret::calculate(&psk, cipher_suite_provider))

@@ -1,22 +1,9 @@
 use super::leaf_node::{LeafNode, LeafNodeSigningContext, LeafNodeSource};
-use super::{Lifetime, LifetimeError};
-use crate::identity::CredentialType;
+use crate::client::MlsError;
 use crate::CipherSuiteProvider;
-use crate::{
-    extension::{ExtensionType, RequiredCapabilitiesExt},
-    group::proposal::ProposalType,
-    signer::{Signable, SignatureError},
-    time::MlsTime,
-};
-use alloc::boxed::Box;
+use crate::{extension::RequiredCapabilitiesExt, signer::Signable, time::MlsTime};
 use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
 
 pub enum ValidationContext<'a> {
     Add(Option<MlsTime>),
@@ -40,30 +27,6 @@ impl<'a> ValidationContext<'a> {
             ValidationContext::Commit((_, _, t)) => t,
         }
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum LeafNodeValidationError {
-    #[error(transparent)]
-    LifetimeError(#[from] LifetimeError),
-    #[error(transparent)]
-    SerializationError(#[from] aws_mls_codec::Error),
-    #[error("invalid leaf_node_source")]
-    InvalidLeafNodeSource,
-    #[error(transparent)]
-    SignatureError(#[from] SignatureError),
-    #[error("{0:?} is not within lifetime {1:?}")]
-    InvalidLifetime(MlsTime, Lifetime),
-    #[error("required extension not found")]
-    RequiredExtensionNotFound(ExtensionType),
-    #[error("required proposal not found")]
-    RequiredProposalNotFound(ProposalType),
-    #[error("required credential not found")]
-    RequiredCredentialNotFound(CredentialType),
-    #[error("capabilities must describe extensions used")]
-    ExtensionNotInCapabilities(ExtensionType),
-    #[error("credential rejected by custom credential validator {0:?}")]
-    IdentityProviderError(#[source] Box<dyn Error + Sync + Send>),
 }
 
 #[derive(Clone, Debug)]
@@ -97,7 +60,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         &self,
         leaf_node: &LeafNode,
         context: &ValidationContext,
-    ) -> Result<(), LeafNodeValidationError> {
+    ) -> Result<(), MlsError> {
         // Context specific checks
         match context {
             ValidationContext::Add(time) => {
@@ -105,27 +68,24 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
                 if let LeafNodeSource::KeyPackage(lifetime) = &leaf_node.leaf_node_source {
                     if let Some(current_time) = time {
                         if !lifetime.within_lifetime(*current_time)? {
-                            return Err(LeafNodeValidationError::InvalidLifetime(
-                                *current_time,
-                                lifetime.clone(),
-                            ));
+                            return Err(MlsError::InvalidLifetime(*current_time, lifetime.clone()));
                         }
                     }
                 } else {
                     // If the leaf_node_source is anything other than Add it is invalid
-                    return Err(LeafNodeValidationError::InvalidLeafNodeSource);
+                    return Err(MlsError::InvalidLeafNodeSource);
                 }
             }
             ValidationContext::Update(_) => {
                 // If the leaf_node_source is anything other than Update it is invalid
                 if !matches!(leaf_node.leaf_node_source, LeafNodeSource::Update) {
-                    return Err(LeafNodeValidationError::InvalidLeafNodeSource);
+                    return Err(MlsError::InvalidLeafNodeSource);
                 }
             }
             ValidationContext::Commit(_) => {
                 // If the leaf_node_source is anything other than Commit it is invalid
                 if !matches!(leaf_node.leaf_node_source, LeafNodeSource::Commit(_)) {
-                    return Err(LeafNodeValidationError::InvalidLeafNodeSource);
+                    return Err(MlsError::InvalidLeafNodeSource);
                 }
             }
         }
@@ -138,7 +98,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         leaf_node: &LeafNode,
         group_id: &[u8],
         leaf_index: u32,
-    ) -> Result<(), LeafNodeValidationError> {
+    ) -> Result<(), MlsError> {
         let context = match leaf_node.leaf_node_source {
             LeafNodeSource::KeyPackage(_) => ValidationContext::Add(None),
             LeafNodeSource::Update => ValidationContext::Update((group_id, leaf_index, None)),
@@ -148,30 +108,23 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         self.check_if_valid(leaf_node, context).await
     }
 
-    pub fn validate_required_capabilities(
-        &self,
-        leaf_node: &LeafNode,
-    ) -> Result<(), LeafNodeValidationError> {
+    pub fn validate_required_capabilities(&self, leaf_node: &LeafNode) -> Result<(), MlsError> {
         if let Some(required_capabilities) = self.required_capabilities {
             for extension in &required_capabilities.extensions {
                 if !leaf_node.capabilities.extensions.contains(extension) {
-                    return Err(LeafNodeValidationError::RequiredExtensionNotFound(
-                        *extension,
-                    ));
+                    return Err(MlsError::RequiredExtensionNotFound(*extension));
                 }
             }
 
             for proposal in &required_capabilities.proposals {
                 if !leaf_node.capabilities.proposals.contains(proposal) {
-                    return Err(LeafNodeValidationError::RequiredProposalNotFound(*proposal));
+                    return Err(MlsError::RequiredProposalNotFound(*proposal));
                 }
             }
 
             for credential in &required_capabilities.credentials {
                 if !leaf_node.capabilities.credentials.contains(credential) {
-                    return Err(LeafNodeValidationError::RequiredCredentialNotFound(
-                        *credential,
-                    ));
+                    return Err(MlsError::RequiredCredentialNotFound(*credential));
                 }
             }
         }
@@ -183,7 +136,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
         &self,
         leaf_node: &LeafNode,
         context: ValidationContext<'_>,
-    ) -> Result<(), LeafNodeValidationError> {
+    ) -> Result<(), MlsError> {
         // Check that we are validating within the proper context
         self.check_context(leaf_node, &context)?;
 
@@ -195,7 +148,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
                 self.group_context_extensions,
             )
             .await
-            .map_err(|e| LeafNodeValidationError::IdentityProviderError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
 
         // Verify that the credential signed the leaf node
         leaf_node.verify(
@@ -214,7 +167,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
                 .extensions
                 .contains(&one_ext.extension_type())
             {
-                return Err(LeafNodeValidationError::ExtensionNotInCapabilities(
+                return Err(MlsError::ExtensionNotInCapabilities(
                     one_ext.extension_type(),
                 ));
             }
@@ -229,6 +182,7 @@ mod tests {
     use alloc::vec;
     use assert_matches::assert_matches;
     use aws_mls_core::crypto::CipherSuite;
+    use aws_mls_core::group::ProposalType;
     use core::time::Duration;
 
     use super::*;
@@ -293,7 +247,7 @@ mod tests {
             fail_test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Add(None))
                 .await,
-            Err(LeafNodeValidationError::IdentityProviderError(_))
+            Err(MlsError::IdentityProviderError(_))
         );
     }
 
@@ -370,14 +324,14 @@ mod tests {
             test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Update((b"foo", 0, None)))
                 .await,
-            Err(LeafNodeValidationError::InvalidLeafNodeSource)
+            Err(MlsError::InvalidLeafNodeSource)
         );
 
         assert_matches!(
             test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Commit((b"foo", 0, None)))
                 .await,
-            Err(LeafNodeValidationError::InvalidLeafNodeSource)
+            Err(MlsError::InvalidLeafNodeSource)
         );
 
         leaf_node
@@ -395,14 +349,14 @@ mod tests {
             test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Add(None))
                 .await,
-            Err(LeafNodeValidationError::InvalidLeafNodeSource)
+            Err(MlsError::InvalidLeafNodeSource)
         );
 
         assert_matches!(
             test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Commit((b"foo", 0, None)))
                 .await,
-            Err(LeafNodeValidationError::InvalidLeafNodeSource)
+            Err(MlsError::InvalidLeafNodeSource)
         );
 
         leaf_node
@@ -421,14 +375,14 @@ mod tests {
             test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Add(None))
                 .await,
-            Err(LeafNodeValidationError::InvalidLeafNodeSource)
+            Err(MlsError::InvalidLeafNodeSource)
         );
 
         assert_matches!(
             test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Update((b"foo", 0, None)))
                 .await,
-            Err(LeafNodeValidationError::InvalidLeafNodeSource)
+            Err(MlsError::InvalidLeafNodeSource)
         );
     }
 
@@ -452,9 +406,7 @@ mod tests {
                 test_validator
                     .check_if_valid(&leaf_node, ValidationContext::Add(None))
                     .await,
-                Err(LeafNodeValidationError::SignatureError(
-                    SignatureError::SignatureValidationFailed(_)
-                ))
+                Err(MlsError::InvalidSignature)
             );
         }
     }
@@ -488,7 +440,7 @@ mod tests {
             LeafNodeValidator::new(&cipher_suite_provider, None, &BasicIdentityProvider, None);
 
         assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)).await,
-            Err(LeafNodeValidationError::ExtensionNotInCapabilities(ext)) if ext == 42.into());
+            Err(MlsError::ExtensionNotInCapabilities(ext)) if ext == 42.into());
     }
 
     #[test]
@@ -504,7 +456,7 @@ mod tests {
             test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Add(None))
                 .await,
-            Err(LeafNodeValidationError::SignatureError(_))
+            Err(MlsError::InvalidSignature)
         );
     }
 
@@ -530,7 +482,7 @@ mod tests {
             test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Add(None))
                 .await,
-            Err(LeafNodeValidationError::RequiredExtensionNotFound(v)) if v == 43.into()
+            Err(MlsError::RequiredExtensionNotFound(v)) if v == 43.into()
         );
     }
 
@@ -556,7 +508,7 @@ mod tests {
             test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Add(None))
                 .await,
-            Err(LeafNodeValidationError::RequiredProposalNotFound(p)) if p == ProposalType::new(42)
+            Err(MlsError::RequiredProposalNotFound(p)) if p == ProposalType::new(42)
         );
     }
 
@@ -579,7 +531,7 @@ mod tests {
         );
 
         assert_matches!(test_validator.check_if_valid(&leaf_node, ValidationContext::Add(None)).await,
-            Err(LeafNodeValidationError::RequiredCredentialNotFound(ext)) if ext == 0.into()
+            Err(MlsError::RequiredCredentialNotFound(ext)) if ext == 0.into()
         );
     }
 
@@ -611,7 +563,7 @@ mod tests {
             test_validator
                 .check_if_valid(&leaf_node, ValidationContext::Add(Some(bad_lifetime)))
                 .await,
-            Err(LeafNodeValidationError::InvalidLifetime(_, _))
+            Err(MlsError::InvalidLifetime(_, _))
         );
     }
 }

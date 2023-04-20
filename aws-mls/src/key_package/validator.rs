@@ -1,46 +1,10 @@
-use aws_mls_core::extension::ExtensionError;
 use aws_mls_core::identity::IdentityProvider;
 
 use super::*;
+use crate::client::MlsError;
 use crate::tree_kem::leaf_node::LeafNodeSource;
-use crate::tree_kem::Lifetime;
+use crate::tree_kem::leaf_node_validator::{LeafNodeValidator, ValidationContext};
 use crate::CipherSuiteProvider;
-use crate::{
-    signer::SignatureError,
-    tree_kem::leaf_node_validator::{
-        LeafNodeValidationError, LeafNodeValidator, ValidationContext,
-    },
-};
-
-#[derive(Debug, Error)]
-pub enum KeyPackageValidationError {
-    #[error(transparent)]
-    SerializationError(#[from] aws_mls_codec::Error),
-    #[error(transparent)]
-    ExtensionError(#[from] ExtensionError),
-    #[error(transparent)]
-    KeyPackageError(#[from] KeyPackageError),
-    #[error(transparent)]
-    SignatureError(#[from] SignatureError),
-    #[error(transparent)]
-    LeafNodeValidationError(#[from] LeafNodeValidationError),
-    #[error("key lifetime not found")]
-    MissingKeyLifetime,
-    #[error("{0:?} is not within lifetime {1:?}")]
-    InvalidKeyLifetime(MlsTime, Lifetime),
-    #[error("required extension not found")]
-    RequiredExtensionNotFound(ExtensionType),
-    #[error("required proposal not found")]
-    RequiredProposalNotFound(ProposalType),
-    #[error("found cipher suite {0:?} expected {1:?}")]
-    InvalidCipherSuite(CipherSuite, CipherSuite),
-    #[error("found protocol version {0:?} expected {1:?}")]
-    InvalidProtocolVersion(ProtocolVersion, ProtocolVersion),
-    #[error("init key is not valid for cipher suite")]
-    InvalidInitKey,
-    #[error("init key can not be equal to leaf node public key")]
-    InitLeafKeyEquality,
-}
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, Default)]
 pub struct KeyPackageValidationOptions {
@@ -79,7 +43,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, 
         }
     }
 
-    fn check_signature(&self, package: &KeyPackage) -> Result<(), KeyPackageValidationError> {
+    fn check_signature(&self, package: &KeyPackage) -> Result<(), MlsError> {
         // Verify that the signature on the KeyPackage is valid using the public key in the contained LeafNode's credential
         package
             .verify(
@@ -94,7 +58,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, 
         &self,
         package: &KeyPackage,
         options: KeyPackageValidationOptions,
-    ) -> Result<KeyPackageValidationOutput, KeyPackageValidationError> {
+    ) -> Result<KeyPackageValidationOutput, MlsError> {
         self.validate_properties(package)?;
 
         self.leaf_node_validator
@@ -105,7 +69,7 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, 
             if let LeafNodeSource::KeyPackage(lifetime) = &package.leaf_node.leaf_node_source {
                 lifetime.not_after
             } else {
-                return Err(KeyPackageValidationError::MissingKeyLifetime);
+                return Err(MlsError::InvalidLeafNodeSource);
             };
 
         Ok(KeyPackageValidationOutput {
@@ -113,33 +77,27 @@ impl<'a, C: IdentityProvider, CSP: CipherSuiteProvider> KeyPackageValidator<'a, 
         })
     }
 
-    fn validate_properties(&self, package: &KeyPackage) -> Result<(), KeyPackageValidationError> {
+    fn validate_properties(&self, package: &KeyPackage) -> Result<(), MlsError> {
         self.check_signature(package)?;
 
         // Verify that the protocol version matches
         if package.version != self.protocol_version {
-            return Err(KeyPackageValidationError::InvalidProtocolVersion(
-                package.version,
-                self.protocol_version,
-            ));
+            return Err(MlsError::ProtocolVersionMismatch);
         }
 
         // Verify that the cipher suite matches
         if package.cipher_suite != self.cipher_suite_provider.cipher_suite() {
-            return Err(KeyPackageValidationError::InvalidCipherSuite(
-                package.cipher_suite,
-                self.cipher_suite_provider.cipher_suite(),
-            ));
+            return Err(MlsError::CipherSuiteMismatch);
         }
 
         // Verify that the public init key is a valid format for this cipher suite
         self.cipher_suite_provider
             .kem_public_key_validate(&package.hpke_init_key)
-            .map_err(|_| KeyPackageValidationError::InvalidInitKey)?;
+            .map_err(|_| MlsError::InvalidInitKey)?;
 
         // Verify that the init key and the leaf node public key are different
         if package.hpke_init_key.as_ref() == package.leaf_node.public_key.as_ref() {
-            return Err(KeyPackageValidationError::InitLeafKeyEquality);
+            return Err(MlsError::InitLeafKeyEquality);
         }
 
         Ok(())
@@ -162,6 +120,7 @@ mod tests {
     use crate::key_package::test_utils::test_key_package;
     use crate::key_package::test_utils::test_key_package_custom;
     use crate::tree_kem::leaf_node::test_utils::get_test_capabilities;
+    use crate::tree_kem::Lifetime;
     use alloc::format;
     use alloc::vec;
     use assert_matches::assert_matches;
@@ -238,7 +197,7 @@ mod tests {
                 validator
                     .check_if_valid(&test_package, Default::default())
                     .await,
-                Err(KeyPackageValidationError::SignatureError(_))
+                Err(MlsError::InvalidSignature)
             );
         }
     }
@@ -264,11 +223,8 @@ mod tests {
             validator
                 .check_if_valid(&test_package, Default::default())
                 .await,
-            Err(KeyPackageValidationError::InvalidCipherSuite(
-                TEST_CIPHER_SUITE,
-                CipherSuite::CURVE25519_CHACHA
-            ))
-        );
+            Err(MlsError::CipherSuiteMismatch)
+        )
     }
 
     async fn test_init_key_manipulation<F, CSP>(
@@ -352,7 +308,7 @@ mod tests {
             validator
                 .check_if_valid(&key_package, Default::default())
                 .await,
-            Err(KeyPackageValidationError::InvalidInitKey)
+            Err(MlsError::InvalidInitKey)
         );
     }
 
@@ -383,7 +339,7 @@ mod tests {
             validator
                 .check_if_valid(&key_package, Default::default())
                 .await,
-            Err(KeyPackageValidationError::InitLeafKeyEquality)
+            Err(MlsError::InitLeafKeyEquality)
         );
     }
 
@@ -441,9 +397,7 @@ mod tests {
 
         assert_matches!(
             validator.check_if_valid(&test_package, options).await,
-            Err(KeyPackageValidationError::LeafNodeValidationError(
-                LeafNodeValidationError::InvalidLifetime(_, _)
-            ))
+            Err(MlsError::InvalidLifetime(_, _))
         );
     }
 
@@ -557,7 +511,7 @@ mod tests {
             validator
                 .check_if_valid(&key_package, Default::default())
                 .await,
-            Err(KeyPackageValidationError::LeafNodeValidationError(_))
+            Err(MlsError::RequiredExtensionNotFound(_))
         );
     }
 
@@ -603,7 +557,7 @@ mod tests {
             validator
                 .check_if_valid(&key_package, Default::default())
                 .await,
-            Err(KeyPackageValidationError::LeafNodeValidationError(_))
+            Err(MlsError::InvalidSignature)
         );
     }
 }

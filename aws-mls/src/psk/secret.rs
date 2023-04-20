@@ -5,9 +5,9 @@ use aws_mls_core::{crypto::CipherSuiteProvider, psk::PreSharedKey};
 use core::ops::Deref;
 use zeroize::Zeroizing;
 
-use crate::group::key_schedule::kdf_expand_with_label;
+use crate::{client::MlsError, group::key_schedule::kdf_expand_with_label};
 
-use super::{PSKLabel, PreSharedKeyID, PskError};
+use super::{PSKLabel, PreSharedKeyID};
 
 #[derive(Clone)]
 pub struct PskSecretInput {
@@ -41,8 +41,8 @@ impl PskSecret {
     pub(crate) fn calculate<P: CipherSuiteProvider>(
         input: &[PskSecretInput],
         cipher_suite_provider: &P,
-    ) -> Result<PskSecret, PskError> {
-        let len = u16::try_from(input.len()).map_err(|_| PskError::TooManyPskIds(input.len()))?;
+    ) -> Result<PskSecret, MlsError> {
+        let len = u16::try_from(input.len()).map_err(|_| MlsError::TooManyPskIds(input.len()))?;
 
         input.iter().enumerate().try_fold(
             PskSecret::new(cipher_suite_provider),
@@ -60,7 +60,7 @@ impl PskSecret {
                         &vec![0; cipher_suite_provider.kdf_extract_size()],
                         &psk_secret_input.psk,
                     )
-                    .map_err(|e| PskError::CipherSuiteProviderError(e.into()))?;
+                    .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
                 let psk_input = kdf_expand_with_label(
                     cipher_suite_provider,
@@ -68,13 +68,12 @@ impl PskSecret {
                     "derived psk",
                     &label.mls_encode_to_vec()?,
                     None,
-                )
-                .map_err(|e| PskError::KeyScheduleError(e.into()))?;
+                )?;
 
                 cipher_suite_provider
                     .kdf_extract(&psk_input, &psk_secret)
                     .map(PskSecret)
-                    .map_err(|e| PskError::CipherSuiteProviderError(e.into()))
+                    .map_err(|e| MlsError::CryptoProviderError(e.into()))
             },
         )
     }

@@ -1,10 +1,11 @@
 use super::leaf_node::LeafNode;
 use super::node::LeafIndex;
 use super::tree_math::{BfsIterBottomUp, BfsIterTopDown};
+use crate::client::MlsError;
 use crate::crypto::CipherSuiteProvider;
 use crate::tree_kem::math as tree_math;
 use crate::tree_kem::node::Parent;
-use crate::tree_kem::{RatchetTreeError, TreeKemPublic};
+use crate::tree_kem::TreeKemPublic;
 use alloc::collections::VecDeque;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -55,7 +56,7 @@ impl TreeHashes {
         leaf_index: LeafIndex,
         leaf_node: Option<&LeafNode>,
         cipher_suite_provider: &P,
-    ) -> Result<Vec<u8>, RatchetTreeError> {
+    ) -> Result<Vec<u8>, MlsError> {
         let input = TreeHashInput::Leaf(LeafNodeHashInput {
             leaf_index,
             leaf_node,
@@ -63,7 +64,7 @@ impl TreeHashes {
 
         cipher_suite_provider
             .hash(&input.mls_encode_to_vec()?)
-            .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 
     pub fn hash_for_parent<P: CipherSuiteProvider>(
@@ -73,7 +74,7 @@ impl TreeHashes {
         filtered: &[LeafIndex],
         left_hash: &[u8],
         right_hash: &[u8],
-    ) -> Result<Vec<u8>, RatchetTreeError> {
+    ) -> Result<Vec<u8>, MlsError> {
         let mut parent_node = parent_node.cloned();
 
         if let Some(ref mut parent_node) = parent_node {
@@ -90,7 +91,7 @@ impl TreeHashes {
 
         cipher_suite_provider
             .hash(&input.mls_encode_to_vec()?)
-            .map_err(|e| RatchetTreeError::CipherSuiteProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into()))
     }
 }
 
@@ -98,7 +99,7 @@ impl TreeKemPublic {
     pub fn tree_hash<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
-    ) -> Result<Vec<u8>, RatchetTreeError>
+    ) -> Result<Vec<u8>, MlsError>
     where
         P: CipherSuiteProvider,
     {
@@ -114,7 +115,7 @@ impl TreeKemPublic {
         path_blanked: &mut Vec<LeafIndex>,
         leaves_added: &[LeafIndex],
         cipher_suite_provider: &P,
-    ) -> Result<(), RatchetTreeError>
+    ) -> Result<(), MlsError>
     where
         P: CipherSuiteProvider,
     {
@@ -164,7 +165,7 @@ impl TreeKemPublic {
     }
 
     // Initialize all hashes after creating / importing a tree.
-    fn initialize_hashes<P>(&mut self, cipher_suite_provider: &P) -> Result<(), RatchetTreeError>
+    fn initialize_hashes<P>(&mut self, cipher_suite_provider: &P) -> Result<(), MlsError>
     where
         P: CipherSuiteProvider,
     {
@@ -181,7 +182,7 @@ impl TreeKemPublic {
         &mut self,
         leaf_indices: impl Iterator<Item = &'a LeafIndex>,
         cipher_suite_provider: &P,
-    ) -> Result<(), RatchetTreeError> {
+    ) -> Result<(), MlsError> {
         let num_leaves = self.total_leaf_count();
         let root = tree_math::root(num_leaves);
 
@@ -243,7 +244,7 @@ impl TreeKemPublic {
         &self,
         node_unmerged: u32,
         subtree_root: u32,
-    ) -> Result<&[LeafIndex], RatchetTreeError> {
+    ) -> Result<&[LeafIndex], MlsError> {
         let unmerged = &self.nodes.borrow_as_parent(node_unmerged)?.unmerged_leaves;
         let (left, right) = tree_math::subtree(subtree_root);
         let mut start = 0;
@@ -257,7 +258,7 @@ impl TreeKemPublic {
         Ok(&unmerged[start..end])
     }
 
-    fn different_unmerged(&self, ancestor: u32, descendant: u32) -> Result<bool, RatchetTreeError> {
+    fn different_unmerged(&self, ancestor: u32, descendant: u32) -> Result<bool, MlsError> {
         Ok(!self.nodes.is_blank(ancestor)?
             && !self.nodes.is_blank(descendant)?
             && self.unmerged_in_subtree(ancestor, descendant)?
@@ -267,7 +268,7 @@ impl TreeKemPublic {
     fn initialize_original_hashes<P: CipherSuiteProvider>(
         &mut self,
         cipher_suite_provider: &P,
-    ) -> Result<(), RatchetTreeError> {
+    ) -> Result<(), MlsError> {
         let num_leaves = self.nodes.total_leaf_count() as usize;
         let root = tree_math::root(num_leaves as u32);
 
@@ -321,7 +322,7 @@ impl TreeKemPublic {
 
                     hashes[index].insert(*a, hash);
                 }
-                Ok::<_, RatchetTreeError>(())
+                Ok::<_, MlsError>(())
             })?;
 
         // Then, compute `hashes[n]` for each internal node `n`, traversing the tree bottom-up.

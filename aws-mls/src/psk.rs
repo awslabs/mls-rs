@@ -1,14 +1,9 @@
-use crate::{
-    client::MlsError, group::state_repo::GroupStateRepositoryError,
-    serde_utils::vec_u8_as_base64::VecAsBase64, CipherSuiteProvider,
-};
+use crate::{client::MlsError, serde_utils::vec_u8_as_base64::VecAsBase64, CipherSuiteProvider};
 use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use core::convert::Infallible;
 use serde_with::serde_as;
-use thiserror::Error;
-
 #[cfg(feature = "std")]
 use std::error::Error;
 
@@ -175,28 +170,6 @@ struct PSKLabel<'a> {
     id: &'a PreSharedKeyID,
     index: u16,
     count: u16,
-}
-
-#[derive(Debug, Error)]
-pub enum PskError {
-    #[error("Too many PSK IDs ({0}) to compute PSK secret")]
-    TooManyPskIds(usize),
-    #[error("No PSK for ID {0:?}")]
-    NoPskForId(ExternalPskId),
-    #[error(transparent)]
-    PskStoreError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
-    SerializationError(#[from] aws_mls_codec::Error),
-    #[error(transparent)]
-    GroupStateRepositoryError(#[from] GroupStateRepositoryError),
-    #[error("Epoch {0} not found")]
-    EpochNotFound(u64),
-    #[error("Old group state not found")]
-    OldGroupStateNotFound,
-    #[error(transparent)]
-    CipherSuiteProviderError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    KeyScheduleError(Box<dyn Error + Send + Sync + 'static>),
 }
 
 #[async_trait]
