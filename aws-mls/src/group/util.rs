@@ -23,7 +23,6 @@ use crate::{
 use super::{
     confirmation_tag::ConfirmationTag,
     framing::{Sender, WireFormat},
-    message_processor::ProvisionalState,
     message_signature::AuthenticatedContent,
     proposal_cache::{ProposalCache, ProposalSetEffects},
     proposal_filter::ProposalRules,
@@ -31,6 +30,9 @@ use super::{
     Commit, ConfirmedTranscriptHash, EncryptedGroupSecrets, GroupContext, GroupInfo,
     ProposalCacheError,
 };
+
+#[cfg(feature = "external_commit")]
+use super::message_processor::ProvisionalState;
 
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -181,12 +183,13 @@ where
 
 pub(crate) fn commit_sender(
     sender: &Sender,
-    provisional_state: &ProvisionalState,
+    #[cfg(feature = "external_commit")] provisional_state: &ProvisionalState,
 ) -> Result<LeafIndex, MlsError> {
     match sender {
         Sender::Member(index) => Ok(LeafIndex(*index)),
         Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
         Sender::NewMemberProposal => Err(MlsError::ExpectedAddProposalForNewMemberProposal),
+        #[cfg(feature = "external_commit")]
         Sender::NewMemberCommit => provisional_state
             .external_init
             .as_ref()
@@ -221,6 +224,7 @@ where
             *sender,
             commit_receiver,
             commit.proposals.clone(),
+            #[cfg(feature = "external_commit")]
             commit.path.as_ref().map(|path| &path.leaf_node),
             group_extensions,
             identity_provider,

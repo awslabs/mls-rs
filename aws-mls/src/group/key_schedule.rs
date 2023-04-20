@@ -14,6 +14,7 @@ use serde_with::serde_as;
 use thiserror::Error;
 use zeroize::{Zeroize, Zeroizing};
 
+#[cfg(feature = "external_commit")]
 use crate::crypto::{HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey};
 
 use super::epoch::{EpochSecrets, SenderDataSecret};
@@ -44,6 +45,7 @@ pub enum KeyScheduleError {
 pub struct KeySchedule {
     exporter_secret: Zeroizing<Vec<u8>>,
     pub authentication_secret: Zeroizing<Vec<u8>>,
+    #[cfg(feature = "external_commit")]
     external_secret: Zeroizing<Vec<u8>>,
     membership_key: Zeroizing<Vec<u8>>,
     init_secret: InitSecret,
@@ -57,12 +59,14 @@ pub(crate) struct KeyScheduleDerivationResult {
 }
 
 impl KeySchedule {
+    #[cfg(feature = "external_commit")]
     pub fn new(init_secret: InitSecret) -> Self {
         let mut key_schedule = KeySchedule::default();
         key_schedule.init_secret = init_secret;
         key_schedule
     }
 
+    #[cfg(feature = "external_commit")]
     pub fn derive_for_external<P: CipherSuiteProvider>(
         &self,
         kem_output: &[u8],
@@ -159,6 +163,7 @@ impl KeySchedule {
         let key_schedule = Self {
             exporter_secret: secrets_producer.derive("exporter")?,
             authentication_secret: secrets_producer.derive("authentication")?,
+            #[cfg(feature = "external_commit")]
             external_secret: secrets_producer.derive("external")?,
             membership_key: secrets_producer.derive("membership")?,
             init_secret: InitSecret(secrets_producer.derive("init")?),
@@ -202,6 +207,7 @@ impl KeySchedule {
         )
     }
 
+    #[cfg(feature = "external_commit")]
     pub fn get_external_key_pair<P: CipherSuiteProvider>(
         &self,
         cipher_suite: &P,
@@ -296,12 +302,14 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
     }
 }
 
+#[cfg(feature = "external_commit")]
 const EXPORTER_CONTEXT: &[u8] = b"MLS 1.0 external init secret";
 
 #[serde_as]
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, Zeroize, Default)]
 pub struct InitSecret(#[serde_as(as = "VecAsBase64")] Zeroizing<Vec<u8>>);
 
+#[cfg(feature = "external_commit")]
 impl InitSecret {
     /// Returns init secret and KEM output to be used when creating an external commit.
     pub fn encode_for_external<P: CipherSuiteProvider>(
@@ -439,6 +447,7 @@ pub(crate) mod test_utils {
         KeySchedule {
             exporter_secret: fake_secret.clone(),
             authentication_secret: fake_secret.clone(),
+            #[cfg(feature = "external_commit")]
             external_secret: fake_secret.clone(),
             membership_key: fake_secret,
             init_secret: InitSecret::new(vec![0u8; key_size]),
@@ -537,6 +546,7 @@ mod tests {
         exporter_secret: Vec<u8>,
         #[serde(with = "hex::serde")]
         epoch_authenticator: Vec<u8>,
+        #[cfg(feature = "external_commit")]
         #[serde(with = "hex::serde")]
         external_secret: Vec<u8>,
         #[serde(with = "hex::serde")]
@@ -546,6 +556,7 @@ mod tests {
         #[serde(with = "hex::serde")]
         resumption_psk: Vec<u8>,
 
+        #[cfg(feature = "external_commit")]
         #[serde(with = "hex::serde")]
         external_pub: Vec<u8>,
 
@@ -631,6 +642,7 @@ mod tests {
                     key_schedule.authentication_secret.to_vec()
                 );
 
+                #[cfg(feature = "external_commit")]
                 assert_eq!(epoch.external_secret, key_schedule.external_secret.to_vec());
 
                 assert_eq!(
@@ -643,10 +655,13 @@ mod tests {
                 let expected: Vec<u8> = key_schedule_res.epoch_secrets.resumption_secret.to_vec();
                 assert_eq!(epoch.resumption_psk, expected);
 
-                let (_external_sec, external_pub) =
-                    key_schedule.get_external_key_pair(&cs_provider).unwrap();
+                #[cfg(feature = "external_commit")]
+                {
+                    let (_external_sec, external_pub) =
+                        key_schedule.get_external_key_pair(&cs_provider).unwrap();
 
-                assert_eq!(epoch.external_pub, *external_pub);
+                    assert_eq!(epoch.external_pub, *external_pub);
+                }
 
                 let exp = epoch.exporter;
 
@@ -659,6 +674,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "rfc_compliant")]
     fn generate_key_schedule_tests() -> Vec<KeyScheduleTestCase> {
         let mut test_cases = vec![];
 
@@ -741,6 +757,11 @@ mod tests {
         test_cases
     }
 
+    #[cfg(not(feature = "rfc_compliant"))]
+    fn generate_key_schedule_tests() -> Vec<KeyScheduleTestCase> {
+        panic!("key schedule test vectors can only be generated with the feature \"rfc_compliant\"")
+    }
+
     impl KeyScheduleEpoch {
         fn new<P: CipherSuiteProvider>(
             key_schedule_res: KeyScheduleDerivationResult,
@@ -749,6 +770,7 @@ mod tests {
             group_context: &GroupContext,
             cs: &P,
         ) -> Self {
+            #[cfg(feature = "external_commit")]
             let (_external_sec, external_pub) = key_schedule_res
                 .key_schedule
                 .get_external_key_pair(cs)
@@ -783,10 +805,12 @@ mod tests {
                 encryption_secret: key_schedule_res.epoch_secrets.secret_tree.get_root_secret(),
                 exporter_secret: key_schedule_res.key_schedule.exporter_secret.to_vec(),
                 epoch_authenticator: key_schedule_res.key_schedule.authentication_secret.to_vec(),
+                #[cfg(feature = "external_commit")]
                 external_secret: key_schedule_res.key_schedule.external_secret.to_vec(),
                 confirmation_key: key_schedule_res.confirmation_key.to_vec(),
                 membership_key: key_schedule_res.key_schedule.membership_key.to_vec(),
                 resumption_psk: key_schedule_res.epoch_secrets.resumption_secret.to_vec(),
+                #[cfg(feature = "external_commit")]
                 external_pub: external_pub.to_vec(),
                 exporter,
                 confirmed_transcript_hash: group_context.confirmed_transcript_hash.to_vec(),

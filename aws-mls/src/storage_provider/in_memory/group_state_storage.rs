@@ -17,7 +17,7 @@ use crate::storage_provider::group_state::EpochData;
 #[cfg(any(feature = "benchmark", test))]
 use crate::group::epoch::PriorEpoch;
 
-#[cfg(any(feature = "benchmark", test))]
+#[cfg(feature = "benchmark")]
 use crate::group::snapshot::Snapshot;
 
 #[cfg(feature = "std")]

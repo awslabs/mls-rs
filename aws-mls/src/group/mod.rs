@@ -17,15 +17,15 @@ use crate::client::MlsError;
 use crate::client_builder::Preferences;
 use crate::client_config::ClientConfig;
 use crate::crypto::{HpkeCiphertext, HpkePublicKey, HpkeSecretKey, SignatureSecretKey};
-use crate::extension::{ExternalPubExt, RatchetTreeExt};
+use crate::extension::RatchetTreeExt;
 use crate::identity::SigningIdentity;
 use crate::key_package::{KeyPackage, KeyPackageRef};
 use crate::protocol_version::ProtocolVersion;
 use crate::psk::resolver::PskResolver;
 use crate::psk::secret::{PskSecret, PskSecretInput};
 use crate::psk::{
-    ExternalPskId, JustPreSharedKeyID, PreSharedKey, PreSharedKeyID, PskGroupId, PskNonce,
-    ResumptionPSKUsage, ResumptionPsk,
+    ExternalPskId, JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, ResumptionPSKUsage,
+    ResumptionPsk,
 };
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
@@ -39,6 +39,9 @@ pub use crate::tree_kem::Capabilities;
 use crate::tree_kem::{math as tree_math, ValidatedUpdatePath};
 use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::{CipherSuiteProvider, CryptoProvider};
+
+#[cfg(feature = "external_commit")]
+use crate::{extension::ExternalPubExt, psk::PreSharedKey};
 
 #[cfg(feature = "std")]
 use std::collections::HashMap;
@@ -65,7 +68,7 @@ pub(crate) use self::commit::test_utils::CommitModifiers;
 #[cfg(test)]
 pub use self::framing::PrivateMessage;
 
-use self::epoch::{EpochSecrets, PriorEpoch, SenderDataSecret};
+use self::epoch::{EpochSecrets, PriorEpoch};
 pub use self::message_processor::{
     ApplicationMessageDescription, CommitMessageDescription, ProposalMessageDescription,
     ProposalSender, ReceivedMessage, StateUpdate,
@@ -91,6 +94,9 @@ pub use context::*;
 
 #[cfg(not(feature = "benchmark"))]
 pub(crate) use context::*;
+
+#[cfg(feature = "external_commit")]
+use self::epoch::SenderDataSecret;
 
 mod ciphertext_processor;
 mod commit;
@@ -128,7 +134,7 @@ pub(crate) mod secret_tree;
 #[cfg(feature = "secret_tree_access")]
 pub use secret_tree::MessageKeyData as MessageKey;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "rfc_compliant"))]
 mod interop_test_vectors;
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
@@ -560,6 +566,7 @@ where
     }
 
     /// Returns group and external commit message
+    #[cfg(feature = "external_commit")]
     pub(crate) async fn new_external(
         config: C,
         group_info: MLSMessage,
@@ -1565,35 +1572,43 @@ where
     /// Create a group info message that can be used for external proposals and commits.
     ///
     /// The returned `GroupInfo` is suitable for one external commit for the current epoch.
-    pub async fn group_info_message(
+    #[cfg(feature = "external_commit")]
+    pub async fn group_info_message_allowing_ext_commit(&self) -> Result<MLSMessage, MlsError> {
+        let mut extensions = ExtensionList::new();
+
+        extensions.set_from({
+            let (_external_secret, external_pub) = self
+                .key_schedule
+                .get_external_key_pair(&self.cipher_suite_provider)?;
+
+            ExternalPubExt { external_pub }
+        })?;
+
+        self.group_info_message_internal(extensions).await
+    }
+
+    /// Create a group info message that can be used for external proposals.
+    pub async fn group_info_message(&self) -> Result<MLSMessage, MlsError> {
+        self.group_info_message_internal(ExtensionList::new()).await
+    }
+
+    pub async fn group_info_message_internal(
         &self,
-        allow_external_commit: bool,
+        mut initial_extensions: ExtensionList,
     ) -> Result<MLSMessage, MlsError> {
         let signer = self.signer().await?;
-
-        let mut extensions = ExtensionList::new();
 
         let preferences = self.config.preferences();
 
         if preferences.ratchet_tree_extension {
-            extensions.set_from(RatchetTreeExt {
+            initial_extensions.set_from(RatchetTreeExt {
                 tree_data: self.state.public_tree.nodes.clone(),
-            })?;
-        }
-
-        if allow_external_commit {
-            extensions.set_from({
-                let (_external_secret, external_pub) = self
-                    .key_schedule
-                    .get_external_key_pair(&self.cipher_suite_provider)?;
-
-                ExternalPubExt { external_pub }
             })?;
         }
 
         let mut info = GroupInfo {
             group_context: self.context().clone(),
-            extensions,
+            extensions: initial_extensions,
             confirmation_tag: self.state.confirmation_tag.clone(),
             signer: self.private_tree.self_index,
             signature: Vec::new(),
@@ -1878,6 +1893,10 @@ where
         // from the previous epoch (or from the external init) to compute the epoch secret and
         // derived secrets for the new epoch
 
+        #[cfg(not(feature = "external_commit"))]
+        let key_schedule = self.key_schedule.clone();
+
+        #[cfg(feature = "external_commit")]
         let key_schedule = match provisional_state.external_init {
             Some((_, ExternalInit { kem_output })) if self.pending_commit.is_none() => self
                 .key_schedule
@@ -2444,6 +2463,7 @@ mod tests {
         assert!(with_padding.mls_encoded_len() > without_padding.mls_encoded_len());
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn external_commit_requires_external_pub_extension() {
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -2452,7 +2472,7 @@ mod tests {
 
         let info = group
             .group
-            .group_info_message(false)
+            .group_info_message()
             .await
             .unwrap()
             .into_group_info()
@@ -2650,6 +2670,7 @@ mod tests {
 
         let commit_description = alice.process_pending_commit().await.unwrap();
 
+        #[cfg(feature = "external_commit")]
         assert!(!commit_description.is_external);
 
         assert_eq!(
@@ -2708,6 +2729,7 @@ mod tests {
         assert_eq!(commit_description, bob_commit_description);
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn state_update_external_commit() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2717,7 +2739,11 @@ mod tests {
         let (bob_group, commit) = bob
             .build()
             .commit_external(
-                alice_group.group.group_info_message(true).await.unwrap(),
+                alice_group
+                    .group
+                    .group_info_message_allowing_ext_commit()
+                    .await
+                    .unwrap(),
                 Some(&alice_group.group.export_tree().unwrap()),
                 bob_identity,
                 None,
@@ -2742,6 +2768,7 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn can_join_new_group_externally() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2751,7 +2778,11 @@ mod tests {
         let (_, commit) = bob
             .build()
             .commit_external(
-                alice_group.group.group_info_message(true).await.unwrap(),
+                alice_group
+                    .group
+                    .group_info_message_allowing_ext_commit()
+                    .await
+                    .unwrap(),
                 Some(&alice_group.group.export_tree().unwrap()),
                 bob_identity,
                 None,

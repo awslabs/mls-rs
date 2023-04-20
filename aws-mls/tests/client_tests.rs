@@ -492,6 +492,7 @@ async fn test_processing_message_from_self_returns_error() {
     }
 }
 
+#[cfg(feature = "external_commit")]
 async fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: CipherSuite) {
     let creator = generate_client(cipher_suite, b"alice-0".to_vec(), Default::default());
 
@@ -522,7 +523,10 @@ async fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: 
     let mut groups = futures::stream::iter(&others)
         .fold(vec![creator_group], |mut groups, client| async move {
             let existing_group = groups.choose_mut(&mut rand::thread_rng()).unwrap();
-            let group_info = existing_group.group_info_message(true).await.unwrap();
+            let group_info = existing_group
+                .group_info_message_allowing_ext_commit()
+                .await
+                .unwrap();
 
             let (new_group, commit) = client
                 .client
@@ -572,6 +576,7 @@ async fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: 
     }
 }
 
+#[cfg(feature = "external_commit")]
 #[test]
 async fn test_external_commits() {
     for (protocol_version, cipher_suite, _) in test_params().filter(|&(_, _, encrypted)| !encrypted)
@@ -768,6 +773,7 @@ async fn reinit_works() {
         .unwrap();
 }
 
+#[cfg(feature = "external_commit")]
 #[test]
 async fn external_joiner_can_process_siblings_update() {
     let mut groups = get_test_groups(
@@ -789,7 +795,10 @@ async fn external_joiner_can_process_siblings_update() {
 
     all_process_message(&mut groups, &c.commit_message, 0, true).await;
 
-    let info = groups[0].group_info_message(true).await.unwrap();
+    let info = groups[0]
+        .group_info_message_allowing_ext_commit()
+        .await
+        .unwrap();
 
     // Create the external joiner and join
     let new_client = generate_client(

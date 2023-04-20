@@ -38,6 +38,7 @@ pub(crate) struct ProposalSetEffects {
     pub group_context_ext: Option<ExtensionList>,
     pub psks: Vec<PreSharedKeyID>,
     pub reinit: Option<ReInitProposal>,
+    #[cfg(feature = "external_commit")]
     pub external_init: Option<(LeafIndex, ExternalInit)>,
     pub custom_proposals: Vec<CustomProposal>,
     pub rejected_proposals: Vec<(ProposalRef, Proposal)>,
@@ -49,7 +50,7 @@ impl ProposalSetEffects {
         added_leaf_indexes: Vec<LeafIndex>,
         removed_leaves: Vec<(LeafIndex, LeafNode)>,
         proposals: ProposalBundle,
-        external_leaf: Option<LeafIndex>,
+        #[cfg(feature = "external_commit")] external_leaf: Option<LeafIndex>,
         rejected_proposals: Vec<(ProposalRef, Proposal)>,
     ) -> Result<Self, ProposalCacheError> {
         let init = ProposalSetEffects {
@@ -62,24 +63,34 @@ impl ProposalSetEffects {
             group_context_ext: None,
             psks: Vec::new(),
             reinit: None,
+            #[cfg(feature = "external_commit")]
             external_init: None,
             rejected_proposals,
             custom_proposals: Vec::new(),
         };
 
-        proposals
-            .into_proposals()
-            .try_fold(init, |effects, item| effects.add(item, external_leaf))
+        proposals.into_proposals().try_fold(init, |effects, item| {
+            effects.add(
+                item,
+                #[cfg(feature = "external_commit")]
+                external_leaf,
+            )
+        })
     }
 
     pub fn is_empty(&self) -> bool {
-        self.adds.is_empty()
+        #[cfg(not(feature = "external_commit"))]
+        let res = true;
+
+        #[cfg(feature = "external_commit")]
+        let res = self.external_init.is_none();
+
+        res && self.adds.is_empty()
             && self.updates.is_empty()
             && self.removes.is_empty()
             && self.group_context_ext.is_none()
             && self.psks.is_empty()
             && self.reinit.is_none()
-            && self.external_init.is_none()
     }
 
     //By default, the path field of a Commit MUST be populated. The path field MAY be omitted if
@@ -93,17 +104,22 @@ impl ProposalSetEffects {
     // psk
     // reinit
     pub fn path_update_required(&self) -> bool {
-        self.is_empty()
+        #[cfg(feature = "external_commit")]
+        let res = self.external_init.is_some();
+
+        #[cfg(not(feature = "external_commit"))]
+        let res = false;
+
+        res || self.is_empty()
             || self.group_context_ext.is_some()
             || !self.updates.is_empty()
             || !self.removes.is_empty()
-            || self.external_init.is_some()
     }
 
     fn add(
         mut self,
         item: ProposalInfo<Proposal>,
-        external_leaf: Option<LeafIndex>,
+        #[cfg(feature = "external_commit")] external_leaf: Option<LeafIndex>,
     ) -> Result<Self, ProposalCacheError> {
         match item.proposal {
             Proposal::Add(add) => self.adds.push(add.key_package),
@@ -121,6 +137,7 @@ impl ProposalSetEffects {
             Proposal::ReInit(reinit) => {
                 self.reinit = Some(reinit);
             }
+            #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(external_init) => {
                 let new_member_leaf_index =
                     external_leaf.ok_or(ProposalCacheError::ProposalRulesError(
@@ -233,7 +250,7 @@ impl ProposalCache {
         identity_provider: &C,
         cipher_suite_provider: &CSP,
         public_tree: &TreeKemPublic,
-        external_leaf: Option<&LeafNode>,
+        #[cfg(feature = "external_commit")] external_leaf: Option<&LeafNode>,
         external_psk_id_validator: P,
         user_filter: F,
         roster: &[Member],
@@ -286,6 +303,7 @@ impl ProposalCache {
             &self.group_id,
             group_extensions,
             required_capabilities.as_ref(),
+            #[cfg(feature = "external_commit")]
             external_leaf,
             identity_provider,
             external_psk_id_validator,
@@ -302,6 +320,7 @@ impl ProposalCache {
             proposals,
             added_indexes,
             removed_leaves,
+            #[cfg(feature = "external_commit")]
             external_leaf_index,
         } = applier
             .apply_proposals(&IgnoreInvalidByRefProposal, &sender, proposals, time)
@@ -314,6 +333,7 @@ impl ProposalCache {
             added_indexes,
             removed_leaves,
             proposals.clone(),
+            #[cfg(feature = "external_commit")]
             external_leaf_index,
             rejected,
         )?;
@@ -343,7 +363,7 @@ impl ProposalCache {
         sender: Sender,
         receiver: Option<LeafIndex>,
         proposal_list: Vec<ProposalOrRef>,
-        external_leaf: Option<&LeafNode>,
+        #[cfg(feature = "external_commit")] external_leaf: Option<&LeafNode>,
         group_extensions: &ExtensionList,
         identity_provider: &C,
         cipher_suite_provider: &CSP,
@@ -392,6 +412,7 @@ impl ProposalCache {
             &self.group_id,
             group_extensions,
             required_capabilities.as_ref(),
+            #[cfg(feature = "external_commit")]
             external_leaf,
             identity_provider,
             external_psk_id_validator,
@@ -402,6 +423,7 @@ impl ProposalCache {
             proposals,
             added_indexes,
             removed_leaves,
+            #[cfg(feature = "external_commit")]
             external_leaf_index,
         } = applier
             .apply_proposals(&FailInvalidProposal, &sender, proposals, commit_time)
@@ -418,6 +440,7 @@ impl ProposalCache {
             added_indexes,
             removed_leaves,
             proposals,
+            #[cfg(feature = "external_commit")]
             external_leaf_index,
             rejected,
         )
@@ -716,6 +739,7 @@ mod tests {
                 sender,
                 receiver,
                 proposal_list,
+                #[cfg(feature = "external_commit")]
                 external_leaf,
                 group_extensions,
                 identity_provider,
@@ -874,6 +898,7 @@ mod tests {
             group_context_ext: Some(ExtensionList::new()),
             psks: Vec::new(),
             reinit: None,
+            #[cfg(feature = "external_commit")]
             external_init: None,
             rejected_proposals: Vec::new(),
             custom_proposals: Vec::new(),
@@ -983,6 +1008,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
+                #[cfg(feature = "external_commit")]
                 None,
                 PassThroughPskIdValidator,
                 pass_through_rules(),
@@ -1032,6 +1058,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
+                #[cfg(feature = "external_commit")]
                 None,
                 PassThroughPskIdValidator,
                 pass_through_rules(),
@@ -1092,6 +1119,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
+                #[cfg(feature = "external_commit")]
                 None,
                 PassThroughPskIdValidator,
                 pass_through_rules(),
@@ -1136,6 +1164,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
+                #[cfg(feature = "external_commit")]
                 None,
                 PassThroughPskIdValidator,
                 pass_through_rules(),
@@ -1171,6 +1200,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
+                #[cfg(feature = "external_commit")]
                 None,
                 PassThroughPskIdValidator,
                 pass_through_rules(),
@@ -1225,6 +1255,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
+                #[cfg(feature = "external_commit")]
                 None,
                 PassThroughPskIdValidator,
                 pass_through_rules(),
@@ -1286,6 +1317,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
+                #[cfg(feature = "external_commit")]
                 None,
                 PassThroughPskIdValidator,
                 pass_through_rules(),
@@ -1333,6 +1365,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
+                #[cfg(feature = "external_commit")]
                 None,
                 PassThroughPskIdValidator,
                 pass_through_rules(),
@@ -1367,6 +1400,7 @@ mod tests {
         leaf_node
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn external_commit_must_have_new_leaf() {
         let cache = make_proposal_cache();
@@ -1401,6 +1435,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn proposal_cache_rejects_proposals_by_ref_for_new_member() {
         let mut cache = make_proposal_cache();
@@ -1445,6 +1480,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn proposal_cache_rejects_multiple_external_init_proposals_in_commit() {
         let cache = make_proposal_cache();
@@ -1484,6 +1520,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "external_commit")]
     async fn new_member_commits_proposal(
         proposal: Proposal,
     ) -> Result<ProposalSetEffects, ProposalCacheError> {
@@ -1515,6 +1552,7 @@ mod tests {
             .await
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn new_member_cannot_commit_add_proposal() {
         let res = new_member_commits_proposal(Proposal::Add(AddProposal {
@@ -1530,6 +1568,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn new_member_cannot_commit_more_than_one_remove_proposal() {
         let cache = make_proposal_cache();
@@ -1586,6 +1625,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn new_member_remove_proposal_invalid_credential() {
         let cache = make_proposal_cache();
@@ -1636,6 +1676,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn new_member_remove_proposal_valid_credential() {
         let cache = make_proposal_cache();
@@ -1681,6 +1722,7 @@ mod tests {
         assert_matches!(res, Ok(_));
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn new_member_cannot_commit_update_proposal() {
         let res = new_member_commits_proposal(Proposal::Update(UpdateProposal {
@@ -1696,6 +1738,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn new_member_cannot_commit_group_extensions_proposal() {
         let res =
@@ -1712,6 +1755,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn new_member_cannot_commit_reinit_proposal() {
         let res = new_member_commits_proposal(Proposal::ReInit(ReInitProposal {
@@ -1730,6 +1774,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn new_member_commit_must_contain_an_external_init_proposal() {
         let cache = make_proposal_cache();
@@ -1773,6 +1818,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &TreeKemPublic::new(),
+                #[cfg(feature = "external_commit")]
                 None,
                 PassThroughPskIdValidator,
                 pass_through_rules(),
@@ -1804,6 +1850,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &TreeKemPublic::new(),
+                #[cfg(feature = "external_commit")]
                 None,
                 PassThroughPskIdValidator,
                 pass_through_rules(),
@@ -1852,6 +1899,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
+                #[cfg(feature = "external_commit")]
                 None,
                 PassThroughPskIdValidator,
                 pass_through_rules(),
@@ -1889,6 +1937,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
+                #[cfg(feature = "external_commit")]
                 None,
                 PassThroughPskIdValidator,
                 pass_through_rules(),
@@ -1921,6 +1970,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
+                #[cfg(feature = "external_commit")]
                 None,
                 PassThroughPskIdValidator,
                 pass_through_rules(),
@@ -2049,6 +2099,7 @@ mod tests {
                     &self.identity_provider,
                     &self.cipher_suite_provider,
                     self.tree,
+                    #[cfg(feature = "external_commit")]
                     None,
                     &self.external_psk_id_validator,
                     &self.user_rules,
@@ -3313,12 +3364,14 @@ mod tests {
         assert_eq!(effects.rejected_proposals, vec![(reinit_ref, reinit)]);
     }
 
+    #[cfg(feature = "external_commit")]
     fn make_external_init() -> ExternalInit {
         ExternalInit {
             kem_output: vec![33; test_cipher_suite_provider(TEST_CIPHER_SUITE).kdf_extract_size()],
         }
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn receiving_external_init_from_member_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3344,6 +3397,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn sending_additional_external_init_from_member_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3365,6 +3419,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn sending_external_init_from_member_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
@@ -4126,8 +4181,10 @@ mod tests {
 
         let expander = ExpandCustomRules {
             to_expand: vec![ProposalInfo {
-                proposal: Proposal::ExternalInit(ExternalInit { kem_output: vec![] }),
-                sender: Sender::Member(0),
+                proposal: Proposal::Update(UpdateProposal {
+                    leaf_node: get_basic_test_node(TEST_CIPHER_SUITE, "leaf").await,
+                }),
+                sender: Sender::External(0),
                 source: ProposalSource::CustomRule(true),
             }],
         };
@@ -4176,6 +4233,7 @@ mod tests {
                 PskNonce::random(&test_cipher_suite_provider(TEST_CIPHER_SUITE)).unwrap(),
             )),
             Proposal::ReInit(make_reinit(TEST_PROTOCOL_VERSION)),
+            #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(make_external_init()),
             Proposal::GroupContextExtensions(Default::default()),
         ];
@@ -4185,6 +4243,7 @@ mod tests {
             Sender::Member(33),
             Sender::External(0),
             Sender::External(1),
+            #[cfg(feature = "external_commit")]
             Sender::NewMemberCommit,
             Sender::NewMemberProposal,
         ];

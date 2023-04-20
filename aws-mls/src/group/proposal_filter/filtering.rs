@@ -2,9 +2,8 @@ use crate::{
     extension::{ExternalSendersExt, RequiredCapabilitiesExt},
     group::{
         proposal_filter::{Proposable, ProposalBundle, ProposalInfo, ProposalRulesError},
-        AddProposal, BorrowedProposal, ExternalInit, JustPreSharedKeyID, PreSharedKeyProposal,
-        ProposalType, ReInitProposal, RemoveProposal, ResumptionPSKUsage, ResumptionPsk, Sender,
-        UpdateProposal,
+        AddProposal, BorrowedProposal, JustPreSharedKeyID, PreSharedKeyProposal, ProposalType,
+        ReInitProposal, RemoveProposal, ResumptionPSKUsage, ResumptionPsk, Sender, UpdateProposal,
     },
     key_package::{KeyPackageValidationOptions, KeyPackageValidator},
     protocol_version::ProtocolVersion,
@@ -18,11 +17,17 @@ use crate::{
     },
     CipherSuiteProvider, ExtensionList,
 };
+
+#[cfg(feature = "external_commit")]
 use alloc::vec;
+
 use alloc::vec::Vec;
 use aws_mls_core::identity::IdentityProvider;
 use futures::TryStreamExt;
 use itertools::Itertools;
+
+#[cfg(feature = "external_commit")]
+use crate::group::ExternalInit;
 
 #[cfg(feature = "std")]
 use std::collections::{HashMap, HashSet};
@@ -38,6 +43,7 @@ pub(crate) struct ProposalState {
     pub(crate) proposals: ProposalBundle,
     pub(crate) added_indexes: Vec<LeafIndex>,
     pub(crate) removed_leaves: Vec<(LeafIndex, LeafNode)>,
+    #[cfg(feature = "external_commit")]
     pub(crate) external_leaf_index: Option<LeafIndex>,
 }
 
@@ -48,6 +54,7 @@ impl ProposalState {
             proposals,
             added_indexes: Vec::new(),
             removed_leaves: Vec::new(),
+            #[cfg(feature = "external_commit")]
             external_leaf_index: None,
         }
     }
@@ -61,6 +68,7 @@ pub(crate) struct ProposalApplier<'a, C, P, CSP> {
     group_id: &'a [u8],
     original_group_extensions: &'a ExtensionList,
     original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
+    #[cfg(feature = "external_commit")]
     external_leaf: Option<&'a LeafNode>,
     identity_provider: &'a C,
     external_psk_id_validator: P,
@@ -80,7 +88,7 @@ where
         group_id: &'a [u8],
         original_group_extensions: &'a ExtensionList,
         original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
-        external_leaf: Option<&'a LeafNode>,
+        #[cfg(feature = "external_commit")] external_leaf: Option<&'a LeafNode>,
         identity_provider: &'a C,
         external_psk_id_validator: P,
     ) -> Self {
@@ -91,6 +99,7 @@ where
             group_id,
             original_group_extensions,
             original_required_capabilities,
+            #[cfg(feature = "external_commit")]
             external_leaf,
             identity_provider,
             external_psk_id_validator,
@@ -117,6 +126,7 @@ where
                 )
                 .await
             }
+            #[cfg(feature = "external_commit")]
             Sender::NewMemberCommit => {
                 self.apply_proposals_from_new_member(proposals, commit_time)
                     .await
@@ -169,6 +179,8 @@ where
         let proposals = filter_out_extra_group_context_extensions(strategy, proposals)?;
         let proposals = filter_out_invalid_reinit(strategy, proposals, self.protocol_version)?;
         let proposals = filter_out_reinit_if_other_proposals(strategy, proposals)?;
+
+        #[cfg(feature = "external_commit")]
         let proposals = filter_out_external_init(strategy, commit_sender, proposals)?;
 
         let state = ProposalState::new(self.original_tree.clone(), proposals);
@@ -178,6 +190,7 @@ where
         Ok(state)
     }
 
+    #[cfg(feature = "external_commit")]
     async fn apply_proposals_from_new_member(
         &self,
         proposals: ProposalBundle,
@@ -866,6 +879,7 @@ where
     Ok(proposals)
 }
 
+#[cfg(feature = "external_commit")]
 fn filter_out_external_init<F>(
     strategy: &F,
     commit_sender: LeafIndex,
@@ -1000,19 +1014,19 @@ fn validate_sender(
     external_senders: Option<&ExternalSendersExt>,
     sender: &Sender,
 ) -> Result<(), ProposalRulesError> {
-    match sender {
-        &Sender::Member(i) => tree
+    match *sender {
+        Sender::Member(i) => tree
             .get_leaf_node(LeafIndex(i))
             .map(|_| ())
             .map_err(|_| ProposalRulesError::InvalidMemberProposer(i)),
-        &Sender::External(i) => external_senders
+        Sender::External(i) => external_senders
             .ok_or(ProposalRulesError::ExternalSenderWithoutExternalSendersExtension)
             .and_then(|ext| {
                 (ext.allowed_senders.len() > i as usize)
                     .then_some(())
                     .ok_or(ProposalRulesError::InvalidExternalSenderIndex(i))
             }),
-        Sender::NewMemberCommit | Sender::NewMemberProposal => Ok(()),
+        _ => Ok(()),
     }
 }
 
@@ -1048,10 +1062,12 @@ pub(crate) fn proposer_can_propose(
                 | ProposalType::PSK
                 | ProposalType::GROUP_CONTEXT_EXTENSIONS
         ),
+        #[cfg(feature = "external_commit")]
         (Sender::NewMemberCommit, false) => matches!(
             proposal_type,
             ProposalType::REMOVE | ProposalType::PSK | ProposalType::EXTERNAL_INIT
         ),
+        #[cfg(feature = "external_commit")]
         (Sender::NewMemberCommit, true) => false,
         (Sender::NewMemberProposal, false) => false,
         (Sender::NewMemberProposal, true) => matches!(proposal_type, ProposalType::ADD),
@@ -1075,18 +1091,21 @@ where
     validate_proposer::<RemoveProposal, _>(strategy, tree, external_senders, &mut proposals)?;
     validate_proposer::<PreSharedKeyProposal, _>(strategy, tree, external_senders, &mut proposals)?;
     validate_proposer::<ReInitProposal, _>(strategy, tree, external_senders, &mut proposals)?;
+    #[cfg(feature = "external_commit")]
     validate_proposer::<ExternalInit, _>(strategy, tree, external_senders, &mut proposals)?;
     validate_proposer::<ExtensionList, _>(strategy, tree, external_senders, &mut proposals)?;
 
     Ok(proposals)
 }
 
+#[cfg(feature = "external_commit")]
 fn ensure_exactly_one_external_init(proposals: &ProposalBundle) -> Result<(), ProposalRulesError> {
     (proposals.by_type::<ExternalInit>().count() == 1)
         .then_some(())
         .ok_or(ProposalRulesError::ExternalCommitMustHaveExactlyOneExternalInit)
 }
 
+#[cfg(feature = "external_commit")]
 fn ensure_proposals_in_external_commit_are_allowed(
     proposals: &ProposalBundle,
 ) -> Result<(), ProposalRulesError> {
@@ -1107,6 +1126,7 @@ fn ensure_proposals_in_external_commit_are_allowed(
     }
 }
 
+#[cfg(feature = "external_commit")]
 async fn ensure_at_most_one_removal_for_self<C>(
     proposals: &ProposalBundle,
     external_leaf: &LeafNode,
@@ -1128,6 +1148,7 @@ where
     }
 }
 
+#[cfg(feature = "external_commit")]
 async fn ensure_removal_is_for_self<C>(
     removal: &RemoveProposal,
     external_leaf: &LeafNode,
@@ -1147,6 +1168,7 @@ where
         .ok_or(ProposalRulesError::ExternalCommitRemovesOtherIdentity)
 }
 
+#[cfg(feature = "external_commit")]
 fn ensure_no_proposal_by_ref(proposals: &ProposalBundle) -> Result<(), ProposalRulesError> {
     proposals
         .iter_proposals()
@@ -1168,6 +1190,7 @@ fn leaf_index_of_update_sender(
     }
 }
 
+#[cfg(feature = "external_commit")]
 async fn insert_external_leaf<I, CP>(
     mut state: ProposalState,
     leaf_node: LeafNode,

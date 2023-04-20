@@ -3,12 +3,16 @@ use itertools::Itertools;
 
 use crate::{
     group::{
-        proposal::CustomProposal, AddProposal, BorrowedProposal, ExternalInit,
-        PreSharedKeyProposal, Proposal, ProposalOrRef, ProposalRef, ProposalType, ReInitProposal,
-        RemoveProposal, Sender, UpdateProposal,
+        proposal::CustomProposal, AddProposal, BorrowedProposal, PreSharedKeyProposal, Proposal,
+        ProposalOrRef, ProposalRef, ProposalType, ReInitProposal, RemoveProposal, Sender,
+        UpdateProposal,
     },
     ExtensionList,
 };
+
+#[cfg(feature = "external_commit")]
+use crate::group::ExternalInit;
+
 use core::marker::PhantomData;
 
 #[derive(Clone, Debug, Default)]
@@ -19,6 +23,7 @@ pub struct ProposalBundle {
     removals: Vec<ProposalInfo<RemoveProposal>>,
     psks: Vec<ProposalInfo<PreSharedKeyProposal>>,
     reinitializations: Vec<ProposalInfo<ReInitProposal>>,
+    #[cfg(feature = "external_commit")]
     external_initializations: Vec<ProposalInfo<ExternalInit>>,
     group_context_extensions: Vec<ProposalInfo<ExtensionList>>,
     pub(crate) custom_proposals: Vec<ProposalInfo<CustomProposal>>,
@@ -52,6 +57,7 @@ impl ProposalBundle {
                 sender,
                 source,
             }),
+            #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(proposal) => self.external_initializations.push(ProposalInfo {
                 proposal,
                 sender,
@@ -168,6 +174,7 @@ impl ProposalBundle {
             f(&proposal.by_ref().map(BorrowedProposal::from))
         })?;
 
+        #[cfg(feature = "external_commit")]
         self.retain_by_type::<ExternalInit, _, _>(|proposal| {
             f(&proposal.by_ref().map(BorrowedProposal::from))
         })?;
@@ -181,7 +188,8 @@ impl ProposalBundle {
 
     /// Iterate over all proposals inside the bundle.
     pub fn iter_proposals(&self) -> impl Iterator<Item = ProposalInfo<BorrowedProposal<'_>>> {
-        self.additions
+        let res = self
+            .additions
             .iter()
             .map(|p| p.by_ref().map(BorrowedProposal::Add))
             .chain(
@@ -203,27 +211,31 @@ impl ProposalBundle {
                 self.reinitializations
                     .iter()
                     .map(|p| p.by_ref().map(BorrowedProposal::ReInit)),
-            )
-            .chain(
-                self.external_initializations
-                    .iter()
-                    .map(|p| p.by_ref().map(BorrowedProposal::ExternalInit)),
-            )
-            .chain(
-                self.group_context_extensions
-                    .iter()
-                    .map(|p| p.by_ref().map(BorrowedProposal::GroupContextExtensions)),
-            )
-            .chain(
-                self.custom_proposals
-                    .iter()
-                    .map(|p| p.by_ref().map(BorrowedProposal::Custom)),
-            )
+            );
+
+        #[cfg(feature = "external_commit")]
+        let res = res.chain(
+            self.external_initializations
+                .iter()
+                .map(|p| p.by_ref().map(BorrowedProposal::ExternalInit)),
+        );
+
+        res.chain(
+            self.group_context_extensions
+                .iter()
+                .map(|p| p.by_ref().map(BorrowedProposal::GroupContextExtensions)),
+        )
+        .chain(
+            self.custom_proposals
+                .iter()
+                .map(|p| p.by_ref().map(BorrowedProposal::Custom)),
+        )
     }
 
     /// Iterate over proposal in the bundle, consuming the bundle.
     pub fn into_proposals(self) -> impl Iterator<Item = ProposalInfo<Proposal>> {
-        self.additions
+        let res = self
+            .additions
             .into_iter()
             .map(|p| p.map(Proposal::Add))
             .chain(self.updates.into_iter().map(|p| p.map(Proposal::Update)))
@@ -233,22 +245,25 @@ impl ProposalBundle {
                 self.reinitializations
                     .into_iter()
                     .map(|p| p.map(Proposal::ReInit)),
-            )
-            .chain(
-                self.external_initializations
-                    .into_iter()
-                    .map(|p| p.map(Proposal::ExternalInit)),
-            )
-            .chain(
-                self.group_context_extensions
-                    .into_iter()
-                    .map(|p| p.map(Proposal::GroupContextExtensions)),
-            )
-            .chain(
-                self.custom_proposals
-                    .into_iter()
-                    .map(|p| p.map(Proposal::Custom)),
-            )
+            );
+
+        #[cfg(feature = "external_commit")]
+        let res = res.chain(
+            self.external_initializations
+                .into_iter()
+                .map(|p| p.map(Proposal::ExternalInit)),
+        );
+
+        res.chain(
+            self.group_context_extensions
+                .into_iter()
+                .map(|p| p.map(Proposal::GroupContextExtensions)),
+        )
+        .chain(
+            self.custom_proposals
+                .into_iter()
+                .map(|p| p.map(Proposal::Custom)),
+        )
     }
 
     pub(crate) fn into_proposals_or_refs(self) -> impl Iterator<Item = ProposalOrRef> {
@@ -285,6 +300,7 @@ impl ProposalBundle {
     }
 
     /// External init proposals in the bundle.
+    #[cfg(feature = "external_commit")]
     pub fn external_init_proposals(&self) -> &[ProposalInfo<ExternalInit>] {
         &self.external_initializations
     }
@@ -329,21 +345,24 @@ impl ProposalBundle {
 
     /// Standard proposal types that are in use within this bundle.
     pub fn proposal_types(&self) -> impl Iterator<Item = ProposalType> + '_ {
-        (!self.additions.is_empty())
+        let res = (!self.additions.is_empty())
             .then_some(ProposalType::ADD)
             .into_iter()
             .chain((!self.updates.is_empty()).then_some(ProposalType::UPDATE))
             .chain((!self.removals.is_empty()).then_some(ProposalType::REMOVE))
             .chain((!self.psks.is_empty()).then_some(ProposalType::PSK))
-            .chain((!self.reinitializations.is_empty()).then_some(ProposalType::RE_INIT))
-            .chain(
-                (!self.external_initializations.is_empty()).then_some(ProposalType::EXTERNAL_INIT),
-            )
-            .chain(
-                (!self.group_context_extensions.is_empty())
-                    .then_some(ProposalType::GROUP_CONTEXT_EXTENSIONS),
-            )
-            .chain(self.custom_proposal_types())
+            .chain((!self.reinitializations.is_empty()).then_some(ProposalType::RE_INIT));
+
+        #[cfg(feature = "external_commit")]
+        let res = res.chain(
+            (!self.external_initializations.is_empty()).then_some(ProposalType::EXTERNAL_INIT),
+        );
+
+        res.chain(
+            (!self.group_context_extensions.is_empty())
+                .then_some(ProposalType::GROUP_CONTEXT_EXTENSIONS),
+        )
+        .chain(self.custom_proposal_types())
     }
 }
 
@@ -533,6 +552,7 @@ impl_proposable!(UpdateProposal, UPDATE, updates);
 impl_proposable!(RemoveProposal, REMOVE, removals);
 impl_proposable!(PreSharedKeyProposal, PSK, psks);
 impl_proposable!(ReInitProposal, RE_INIT, reinitializations);
+#[cfg(feature = "external_commit")]
 impl_proposable!(ExternalInit, EXTERNAL_INIT, external_initializations);
 impl_proposable!(
     ExtensionList,

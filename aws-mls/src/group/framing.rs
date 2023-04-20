@@ -38,6 +38,7 @@ impl From<&Content> for ContentType {
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
+#[non_exhaustive]
 /// Description of a [`MLSMessage`] sender
 pub enum Sender {
     /// Current group member index.
@@ -50,6 +51,7 @@ pub enum Sender {
     /// A new member proposing their own addition to the group.
     NewMemberProposal = 3u8,
     /// A member sending an external commit.
+    #[cfg(feature = "external_commit")]
     NewMemberCommit = 4u8,
 }
 

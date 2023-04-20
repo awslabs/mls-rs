@@ -693,7 +693,11 @@ pub(crate) mod test_utils {
 
         ExternalGroup::join(
             config,
-            group.group.group_info_message(true).await.unwrap(),
+            group
+                .group
+                .group_info_message_allowing_ext_commit()
+                .await
+                .unwrap(),
             Some(&public_tree),
         )
         .await
@@ -923,7 +927,11 @@ mod tests {
 
         let res = ExternalGroup::join(
             config,
-            alice.group.group_info_message(true).await.unwrap(),
+            alice
+                .group
+                .group_info_message_allowing_ext_commit()
+                .await
+                .unwrap(),
             None,
         )
         .await
@@ -941,7 +949,11 @@ mod tests {
 
         let config = TestExternalClientBuilder::new_for_test().build_config();
 
-        let mut group_info = alice.group.group_info_message(true).await.unwrap();
+        let mut group_info = alice
+            .group
+            .group_info_message_allowing_ext_commit()
+            .await
+            .unwrap();
         group_info.version = ProtocolVersion::from(64);
 
         let res = ExternalGroup::join(config, group_info, None)
@@ -1165,7 +1177,12 @@ mod tests {
     #[futures_test::test]
     async fn external_group_can_observe_since_creation() {
         let mut alice = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
-        let info = alice.group.group_info_message(true).await.unwrap();
+
+        let info = alice
+            .group
+            .group_info_message_allowing_ext_commit()
+            .await
+            .unwrap();
 
         let config = TestExternalClientBuilder::new_for_test().build_config();
         let mut server = ExternalGroup::join(config, info, None).await.unwrap();

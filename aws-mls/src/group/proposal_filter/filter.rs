@@ -169,6 +169,7 @@ impl ProposalRules for PassThroughProposalRules {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ProposalRulesError {
     #[error(transparent)]
     KeyPackageValidationError(#[from] KeyPackageValidationError),
@@ -201,16 +202,21 @@ pub enum ProposalRulesError {
         sender: Sender,
         by_ref: bool,
     },
+    #[cfg(feature = "external_commit")]
     #[error("External commit must have exactly one ExternalInit proposal")]
     ExternalCommitMustHaveExactlyOneExternalInit,
+    #[cfg(feature = "external_commit")]
     #[error("External commit must have a new leaf")]
     ExternalCommitMustHaveNewLeaf,
     #[error("External sender cannot commit")]
     ExternalSenderCannotCommit,
+    #[cfg(feature = "external_commit")]
     #[error("Missing update path in external commit")]
     MissingUpdatePathInExternalCommit,
+    #[cfg(feature = "external_commit")]
     #[error("External commit contains removal of other identity")]
     ExternalCommitRemovesOtherIdentity,
+    #[cfg(feature = "external_commit")]
     #[error("External commit contains more than one Remove proposal")]
     ExternalCommitWithMoreThanOneRemove,
     #[error("Duplicate PSK IDs")]

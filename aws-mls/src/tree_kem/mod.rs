@@ -57,7 +57,7 @@ mod tree_index;
 #[cfg(feature = "std")]
 pub(crate) mod tree_utils;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "external_commit"))]
 mod interop_test_vectors;
 
 #[cfg(feature = "std")]

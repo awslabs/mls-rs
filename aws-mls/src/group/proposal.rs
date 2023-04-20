@@ -177,6 +177,7 @@ impl ReInitProposal {
     }
 }
 
+#[cfg(feature = "external_commit")]
 #[serde_as]
 #[derive(
     Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode, serde::Deserialize, serde::Serialize,
@@ -252,6 +253,7 @@ pub trait MlsCustomProposal: MlsSize + MlsEncode + MlsDecode + Sized {
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u16)]
+#[non_exhaustive]
 /// An enum that represents all possible types of proposals.
 pub enum Proposal {
     Add(AddProposal),
@@ -259,6 +261,7 @@ pub enum Proposal {
     Remove(RemoveProposal),
     Psk(PreSharedKeyProposal),
     ReInit(ReInitProposal),
+    #[cfg(feature = "external_commit")]
     ExternalInit(ExternalInit),
     GroupContextExtensions(ExtensionList),
     Custom(CustomProposal),
@@ -272,6 +275,7 @@ impl MlsSize for Proposal {
             Proposal::Remove(p) => p.mls_encoded_len(),
             Proposal::Psk(p) => p.mls_encoded_len(),
             Proposal::ReInit(p) => p.mls_encoded_len(),
+            #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(p) => p.mls_encoded_len(),
             Proposal::GroupContextExtensions(p) => p.mls_encoded_len(),
             Proposal::Custom(p) => aws_mls_codec::byte_vec::mls_encoded_len(&p.data),
@@ -291,6 +295,7 @@ impl MlsEncode for Proposal {
             Proposal::Remove(p) => p.mls_encode(writer),
             Proposal::Psk(p) => p.mls_encode(writer),
             Proposal::ReInit(p) => p.mls_encode(writer),
+            #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(p) => p.mls_encode(writer),
             Proposal::GroupContextExtensions(p) => p.mls_encode(writer),
 
@@ -316,6 +321,7 @@ impl MlsDecode for Proposal {
             ProposalType::REMOVE => Proposal::Remove(RemoveProposal::mls_decode(reader)?),
             ProposalType::PSK => Proposal::Psk(PreSharedKeyProposal::mls_decode(reader)?),
             ProposalType::RE_INIT => Proposal::ReInit(ReInitProposal::mls_decode(reader)?),
+            #[cfg(feature = "external_commit")]
             ProposalType::EXTERNAL_INIT => {
                 Proposal::ExternalInit(ExternalInit::mls_decode(reader)?)
             }
@@ -338,6 +344,7 @@ impl Proposal {
             Proposal::Remove(_) => ProposalType::REMOVE,
             Proposal::Psk(_) => ProposalType::PSK,
             Proposal::ReInit(_) => ProposalType::RE_INIT,
+            #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(_) => ProposalType::EXTERNAL_INIT,
             Proposal::GroupContextExtensions(_) => ProposalType::GROUP_CONTEXT_EXTENSIONS,
             Proposal::Custom(c) => c.proposal_type,
@@ -353,6 +360,7 @@ pub enum BorrowedProposal<'a> {
     Remove(&'a RemoveProposal),
     Psk(&'a PreSharedKeyProposal),
     ReInit(&'a ReInitProposal),
+    #[cfg(feature = "external_commit")]
     ExternalInit(&'a ExternalInit),
     GroupContextExtensions(&'a ExtensionList),
     Custom(&'a CustomProposal),
@@ -366,6 +374,7 @@ impl<'a> From<BorrowedProposal<'a>> for Proposal {
             BorrowedProposal::Remove(remove) => Proposal::Remove(remove.clone()),
             BorrowedProposal::Psk(psk) => Proposal::Psk(psk.clone()),
             BorrowedProposal::ReInit(reinit) => Proposal::ReInit(reinit.clone()),
+            #[cfg(feature = "external_commit")]
             BorrowedProposal::ExternalInit(external) => Proposal::ExternalInit(external.clone()),
             BorrowedProposal::GroupContextExtensions(ext) => {
                 Proposal::GroupContextExtensions(ext.clone())
@@ -383,6 +392,7 @@ impl BorrowedProposal<'_> {
             BorrowedProposal::Remove(_) => ProposalType::REMOVE,
             BorrowedProposal::Psk(_) => ProposalType::PSK,
             BorrowedProposal::ReInit(_) => ProposalType::RE_INIT,
+            #[cfg(feature = "external_commit")]
             BorrowedProposal::ExternalInit(_) => ProposalType::EXTERNAL_INIT,
             BorrowedProposal::GroupContextExtensions(_) => ProposalType::GROUP_CONTEXT_EXTENSIONS,
             BorrowedProposal::Custom(c) => c.proposal_type,
@@ -398,6 +408,7 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
             Proposal::Remove(p) => BorrowedProposal::Remove(p),
             Proposal::Psk(p) => BorrowedProposal::Psk(p),
             Proposal::ReInit(p) => BorrowedProposal::ReInit(p),
+            #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(p) => BorrowedProposal::ExternalInit(p),
             Proposal::GroupContextExtensions(p) => BorrowedProposal::GroupContextExtensions(p),
             Proposal::Custom(p) => BorrowedProposal::Custom(p),
@@ -435,6 +446,7 @@ impl<'a> From<&'a ReInitProposal> for BorrowedProposal<'a> {
     }
 }
 
+#[cfg(feature = "external_commit")]
 impl<'a> From<&'a ExternalInit> for BorrowedProposal<'a> {
     fn from(p: &'a ExternalInit) -> Self {
         Self::ExternalInit(p)

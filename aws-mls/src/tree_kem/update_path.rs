@@ -86,26 +86,34 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
         )
         .await?;
 
-    let existing_leaf = state.public_tree.nodes.borrow_as_leaf(sender)?;
-    let original_leaf_node = existing_leaf.clone();
+    #[cfg(feature = "external_commit")]
+    let check_identity_eq = state.external_init.is_none();
 
-    let original_identity = identity_provider
-        .identity(&original_leaf_node.signing_identity)
-        .await
-        .map_err(|e| UpdatePathValidationError::CredentialValidationError(e.into()))?;
+    #[cfg(not(feature = "external_commit"))]
+    let check_identity_eq = true;
 
-    let updated_identity = identity_provider
-        .identity(&path.leaf_node.signing_identity)
-        .await
-        .map_err(|e| UpdatePathValidationError::CredentialValidationError(e.into()))?;
+    if check_identity_eq {
+        let existing_leaf = state.public_tree.nodes.borrow_as_leaf(sender)?;
+        let original_leaf_node = existing_leaf.clone();
 
-    (state.external_init.is_some() || original_identity == updated_identity)
-        .then_some(())
-        .ok_or(UpdatePathValidationError::DifferentIdentity(sender))?;
+        let original_identity = identity_provider
+            .identity(&original_leaf_node.signing_identity)
+            .await
+            .map_err(|e| UpdatePathValidationError::CredentialValidationError(e.into()))?;
 
-    (state.external_init.is_some() || existing_leaf.public_key != path.leaf_node.public_key)
-        .then_some(())
-        .ok_or(UpdatePathValidationError::SameHpkeKey(sender))?;
+        let updated_identity = identity_provider
+            .identity(&path.leaf_node.signing_identity)
+            .await
+            .map_err(|e| UpdatePathValidationError::CredentialValidationError(e.into()))?;
+
+        (original_identity == updated_identity)
+            .then_some(())
+            .ok_or(UpdatePathValidationError::DifferentIdentity(sender))?;
+
+        (existing_leaf.public_key != path.leaf_node.public_key)
+            .then_some(())
+            .ok_or(UpdatePathValidationError::SameHpkeKey(sender))?;
+    }
 
     let path_copath = state
         .public_tree
@@ -205,6 +213,7 @@ mod tests {
             path_update_required: true,
             psks: vec![],
             reinit: None,
+            #[cfg(feature = "external_commit")]
             external_init: None,
             rejected_proposals: vec![],
             custom_proposals: vec![],

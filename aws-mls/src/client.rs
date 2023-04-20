@@ -19,7 +19,7 @@ use crate::key_package::{
     KeyPackageValidationError,
 };
 use crate::protocol_version::ProtocolVersion;
-use crate::psk::{ExternalPskId, PskError};
+use crate::psk::PskError;
 use crate::signer::SignatureError;
 use crate::tree_kem::{
     hpke_encryption::HpkeEncryptionError, leaf_node::LeafNodeError,
@@ -41,6 +41,9 @@ use std::error::Error;
 
 #[cfg(not(feature = "std"))]
 use core::error::Error;
+
+#[cfg(feature = "external_commit")]
+use crate::psk::ExternalPskId;
 
 #[derive(thiserror::Error, Debug)]
 pub enum MlsError {
@@ -144,6 +147,7 @@ pub enum MlsError {
     ExternalProposalsDisabled,
     #[error("Signing identity is not allowed to externally propose")]
     InvalidExternalSigningIdentity,
+    #[cfg(feature = "external_commit")]
     #[error("Missing ExternalPub extension")]
     MissingExternalPubExtension,
     #[error("Missing update path in external commit")]
@@ -156,6 +160,7 @@ pub enum MlsError {
     InvalidGroupId(Vec<u8>),
     #[error("Unencrypted application message")]
     UnencryptedApplicationMessage,
+    #[cfg(feature = "external_commit")]
     #[error("NewMemberCommit sender type can only be used to send Commit content")]
     ExpectedCommitForNewMemberCommit,
     #[error("NewMemberProposal sender type can only be used to send add proposals")]
@@ -453,6 +458,7 @@ where
     ///
     // TODO: Add a comment about forward secrecy and a pointer to the future
     // book chapter on this topic
+    #[cfg(feature = "external_commit")]
     pub async fn commit_external(
         &self,
         group_info_msg: MLSMessage,
@@ -583,7 +589,10 @@ where
 #[cfg(any(test, feature = "benchmark"))]
 pub(crate) mod test_utils {
     use super::*;
-    use crate::{client_config::ClientConfig, identity::test_utils::get_test_signing_identity};
+    use crate::identity::test_utils::get_test_signing_identity;
+
+    #[cfg(features = "benchmark")]
+    use crate::client_config::ClientConfig;
 
     pub use crate::client_builder::test_utils::{TestClientBuilder, TestClientConfig};
 
@@ -632,38 +641,6 @@ pub(crate) mod test_utils {
             .unwrap();
 
         (client, key_package)
-    }
-
-    pub async fn join_group<'a, C, S>(
-        committer: &mut Group<C>,
-        other_groups: S,
-        key_package: MLSMessage,
-        client: &Client<C>,
-    ) -> Result<(Group<C>, NewMemberInfo), MlsError>
-    where
-        C: ClientConfig + 'a,
-        S: IntoIterator<Item = &'a mut Group<C>>,
-    {
-        let commit_output = committer
-            .commit_builder()
-            .add_member(key_package)?
-            .build()
-            .await?;
-
-        committer.apply_pending_commit().await?;
-
-        for group in other_groups {
-            group
-                .process_incoming_message(commit_output.commit_message.clone())
-                .await?;
-        }
-
-        client
-            .join_group(
-                Some(&committer.export_tree().unwrap()),
-                commit_output.welcome_message.unwrap(),
-            )
-            .await
     }
 }
 
@@ -741,6 +718,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn new_member_add_proposal_adds_to_group() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -750,7 +728,11 @@ mod tests {
         let proposal = bob
             .build()
             .external_add_proposal(
-                alice_group.group.group_info_message(true).await.unwrap(),
+                alice_group
+                    .group
+                    .group_info_message_allowing_ext_commit()
+                    .await
+                    .unwrap(),
                 Some(&alice_group.group.export_tree().unwrap()),
                 bob_identity.clone(),
                 vec![],
@@ -782,6 +764,7 @@ mod tests {
             .any(|member| member.signing_identity() == &bob_identity))
     }
 
+    #[cfg(feature = "external_commit")]
     async fn join_via_external_commit(do_remove: bool, with_psk: bool) -> Result<(), MlsError> {
         // An external commit cannot be the first commit in a group as it requires
         // interim_transcript_hash to be computed from the confirmed_transcript_hash and
@@ -803,7 +786,11 @@ mod tests {
             .await
             .unwrap();
 
-        let group_info_msg = alice_group.group.group_info_message(true).await.unwrap();
+        let group_info_msg = alice_group
+            .group
+            .group_info_message_allowing_ext_commit()
+            .await
+            .unwrap();
 
         let new_client_id = if do_remove { "bob" } else { "charlie" };
         let (new_client, new_client_identity) =
@@ -877,6 +864,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn test_external_commit() {
         // New member can join
@@ -889,6 +877,7 @@ mod tests {
         join_via_external_commit(true, true).await.unwrap();
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn creating_an_external_commit_requires_a_group_info_message() {
         let (alice, alice_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "alice");
@@ -911,6 +900,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::ExpectedGroupInfoMessage));
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     async fn external_commit_with_invalid_group_info_fails() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -919,7 +909,11 @@ mod tests {
         bob_group.group.commit(vec![]).await.unwrap();
         bob_group.group.apply_pending_commit().await.unwrap();
 
-        let group_info_msg = bob_group.group.group_info_message(true).await.unwrap();
+        let group_info_msg = bob_group
+            .group
+            .group_info_message_allowing_ext_commit()
+            .await
+            .unwrap();
 
         let (carol, carol_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "carol");
 

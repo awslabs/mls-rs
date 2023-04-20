@@ -5,13 +5,15 @@ authors = ["Tom Leavy <tom@wickr.com>"]
 edition = "2021"
 
 [features]
-benchmark = ["std", "serde_json", "aws-mls-crypto-openssl", "aws-mls-core/benchmark"]
-default = ["std", "rayon"]
+benchmark = ["std", "serde_json", "aws-mls-crypto-openssl", "aws-mls-core/benchmark", "rfc_compliant"]
+default = ["std", "rayon", "rfc_compliant"]
 arbitrary = ["std", "dep:arbitrary", "aws-mls-core/arbitrary"]
 rayon = ["std", "dep:rayon"]
 external_client = ["std"]
 grease = ["std"]
 secret_tree_access = []
+external_commit = ["aws-mls-core/external_commit"]
+rfc_compliant = ["external_commit"]
 
 std = [
     "aws-mls-core/std",

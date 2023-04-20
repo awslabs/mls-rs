@@ -314,7 +314,7 @@ impl MlsClient for MlsClientImpl {
             .ok_or_else(|| Status::aborted("no group with such index."))?;
 
         let group_info = group
-            .group_info_message(true)
+            .group_info_message_allowing_ext_commit()
             .await
             .and_then(|m| m.to_bytes())
             .map_err(abort)?;

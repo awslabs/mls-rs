@@ -7,7 +7,7 @@ use crate::{
     cipher_suite::CipherSuite,
     client::{
         test_utils::{
-            get_basic_client_builder, join_group, test_client_with_key_pkg, TEST_CIPHER_SUITE,
+            get_basic_client_builder, test_client_with_key_pkg, TEST_CIPHER_SUITE,
             TEST_PROTOCOL_VERSION,
         },
         MlsError,
@@ -146,10 +146,30 @@ pub async fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<T
         let (bob, bob_key_pkg) =
             test_client_with_key_pkg(TEST_PROTOCOL_VERSION, cipher_suite, &format!("bob{n}")).await;
 
-        let (bob_group, _) =
-            join_group(committer_group, other_groups.iter_mut(), bob_key_pkg, &bob)
+        let commit_output = committer_group
+            .commit_builder()
+            .add_member(bob_key_pkg)
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        committer_group.apply_pending_commit().await.unwrap();
+
+        for group in other_groups {
+            group
+                .process_incoming_message(commit_output.commit_message.clone())
                 .await
                 .unwrap();
+        }
+
+        let (bob_group, _) = bob
+            .join_group(
+                Some(&committer_group.export_tree().unwrap()),
+                commit_output.welcome_message.unwrap(),
+            )
+            .await
+            .unwrap();
 
         groups.push(bob_group);
     }

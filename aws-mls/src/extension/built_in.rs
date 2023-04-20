@@ -1,7 +1,6 @@
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::{
-    crypto::HpkePublicKey,
     extension::{ExtensionList, ExtensionType, MlsCodecExtension},
     group::ProposalType,
     identity::{CredentialType, IdentityProvider, SigningIdentity},
@@ -10,6 +9,9 @@ use aws_mls_core::{
 use futures::TryStreamExt;
 
 use crate::tree_kem::node::NodeVec;
+
+#[cfg(feature = "external_commit")]
+use aws_mls_core::crypto::HpkePublicKey;
 
 /// Application specific identifier.
 ///
@@ -115,12 +117,14 @@ impl MlsCodecExtension for RequiredCapabilitiesExt {
 ///
 /// This proposal type is optionally provided as part of a
 /// [Group Info](crate::group::Group::group_info_message).
+#[cfg(feature = "external_commit")]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub struct ExternalPubExt {
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
     pub(crate) external_pub: HpkePublicKey,
 }
 
+#[cfg(feature = "external_commit")]
 impl ExternalPubExt {
     /// Get the public key to be used for an external commit.
     pub fn external_pub(&self) -> &HpkePublicKey {
@@ -128,6 +132,7 @@ impl ExternalPubExt {
     }
 }
 
+#[cfg(feature = "external_commit")]
 impl MlsCodecExtension for ExternalPubExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::EXTERNAL_PUB
@@ -247,6 +252,7 @@ mod tests {
         assert_eq!(ext, restored)
     }
 
+    #[cfg(feature = "external_commit")]
     #[test]
     fn test_external_pub() {
         let ext = ExternalPubExt {

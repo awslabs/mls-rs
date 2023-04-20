@@ -14,11 +14,13 @@ use crate::{
     signer::Signable,
     storage_provider::psk::PskStoreIdValidator,
     tree_kem::{
-        kem::TreeKem, leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret,
-        TreeKemPrivate, UpdatePath,
+        kem::TreeKem, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate, UpdatePath,
     },
     ExtensionList,
 };
+
+#[cfg(feature = "external_commit")]
+use crate::tree_kem::leaf_node::LeafNode;
 
 use super::{
     confirmation_tag::ConfirmationTag,
@@ -263,6 +265,7 @@ where
         self.group
             .commit_internal(
                 self.proposals,
+                #[cfg(feature = "external_commit")]
                 None,
                 self.authenticated_data,
                 self.group_info_extensions,
@@ -320,6 +323,7 @@ where
     pub async fn commit(&mut self, authenticated_data: Vec<u8>) -> Result<CommitOutput, MlsError> {
         self.commit_internal(
             vec![],
+            #[cfg(feature = "external_commit")]
             None,
             authenticated_data,
             Default::default(),
@@ -347,7 +351,7 @@ where
     pub(super) async fn commit_internal(
         &mut self,
         proposals: Vec<Proposal>,
-        external_leaf: Option<&LeafNode>,
+        #[cfg(feature = "external_commit")] external_leaf: Option<&LeafNode>,
         authenticated_data: Vec<u8>,
         group_info_extensions: ExtensionList,
         signing_identity: Option<SigningIdentity>,
@@ -365,17 +369,23 @@ where
             ratchet_tree_extension: preferences.ratchet_tree_extension,
         };
 
+        #[cfg(feature = "external_commit")]
+        let is_external = external_leaf.is_some();
+
         // Construct an initial Commit object with the proposals field populated from Proposals
         // received during the current epoch, and an empty path field. Add passed in proposals
         // by value
-        let is_external = external_leaf.is_some();
-
+        #[cfg(feature = "external_commit")]
         let sender = if is_external {
             Sender::NewMemberCommit
         } else {
             Sender::Member(*self.private_tree.self_index)
         };
 
+        #[cfg(not(feature = "external_commit"))]
+        let sender = Sender::Member(*self.private_tree.self_index);
+
+        #[cfg(feature = "external_commit")]
         let new_signer = match external_leaf {
             Some(leaf_node) => {
                 self.signer_for_identity(Some(&leaf_node.signing_identity))
@@ -384,6 +394,10 @@ where
             None => self.signer_for_identity(signing_identity.as_ref()).await,
         }?;
 
+        #[cfg(not(feature = "external_commit"))]
+        let new_signer = self.signer_for_identity(signing_identity.as_ref()).await?;
+
+        #[cfg(feature = "external_commit")]
         let old_signer = match external_leaf {
             Some(leaf_node) => {
                 self.signer_for_identity(Some(&leaf_node.signing_identity))
@@ -391,6 +405,9 @@ where
             }
             None => self.signer().await,
         }?;
+
+        #[cfg(not(feature = "external_commit"))]
+        let old_signer = self.signer().await?;
 
         let (commit_proposals, proposal_effects) = self
             .state
@@ -402,6 +419,7 @@ where
                 &self.config.identity_provider(),
                 &self.cipher_suite_provider,
                 &self.state.public_tree,
+                #[cfg(feature = "external_commit")]
                 external_leaf,
                 PskStoreIdValidator::from(self.config.secret_store()),
                 self.config.proposal_rules(),
@@ -412,6 +430,7 @@ where
         let mut provisional_state = self.calculate_provisional_state(proposal_effects)?;
         let mut provisional_private_tree = self.provisional_private_tree(&provisional_state)?;
 
+        #[cfg(feature = "external_commit")]
         if is_external {
             provisional_private_tree.self_index = provisional_state
                 .external_init

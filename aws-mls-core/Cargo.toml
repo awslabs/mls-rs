@@ -7,6 +7,7 @@ edition = "2021"
 default = ["std"]
 arbitrary = ["dep:arbitrary"]
 benchmark = []
+external_commit = []
 std = ["aws-mls-codec/std", "serde/std", "zeroize/std", "serde_with/std", "base64/std", "num_enum/std", "indexmap/std", "thiserror/std", "indexmap"]
 
 [dependencies]

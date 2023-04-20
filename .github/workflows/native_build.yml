@@ -14,10 +14,14 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
     - name: Rust Fmt
       run: cargo fmt --all -- --check
-    - name: Clippy
+    - name: Clippy Full RFC Compliance
       run: cargo clippy --all-targets --all-features --workspace -- -D warnings
-    - name: Test
+    - name: Clippy Bare Bones
+      run: cargo clippy --all-targets --no-default-features --features std --workspace -- -D warnings
+    - name: Test Full RFC Compliance
       run: cargo test --all-features --verbose --workspace
+    - name: Test Bare Bones
+      run: cargo test --no-default-features --features std --verbose --workspace
     - name: Examples
       working-directory: aws-mls
       run: cargo run --example basic_usage --features=tokio 
