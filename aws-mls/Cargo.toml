@@ -13,7 +13,8 @@ external_client = ["std"]
 grease = ["std"]
 secret_tree_access = []
 external_commit = ["aws-mls-core/external_commit"]
-rfc_compliant = ["external_commit"]
+state_update = []
+rfc_compliant = ["external_commit", "state_update"]
 
 std = [
     "aws-mls-core/std",

@@ -130,15 +130,22 @@ pub async fn get_test_groups(
         .welcome_message;
 
     // Creator can confirm the commit was processed by the server
-    let commit_description = creator_group.apply_pending_commit().await.unwrap();
+    #[cfg(feature = "state_update")]
+    {
+        let commit_description = creator_group.apply_pending_commit().await.unwrap();
 
-    assert!(commit_description.state_update.is_active());
-    assert_eq!(commit_description.state_update.new_epoch(), 1);
+        assert!(commit_description.state_update.is_active());
+        assert_eq!(commit_description.state_update.new_epoch(), 1);
+    }
+
+    #[cfg(not(feature = "state_update"))]
+    creator_group.apply_pending_commit().await.unwrap();
 
     assert!(receiver_clients.iter().all(|client| creator_group
         .member_with_identity(client.identity.credential.as_basic().unwrap().identifier())
         .is_ok()));
 
+    #[cfg(feature = "state_update")]
     assert!(commit_description
         .state_update
         .roster_update()

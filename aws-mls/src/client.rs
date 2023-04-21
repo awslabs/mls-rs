@@ -696,7 +696,7 @@ mod tests {
             message_processor::ProposalMessageDescription,
             proposal::{AddProposal, Proposal},
             test_utils::{test_group, test_group_custom_config},
-            CommitMessageDescription, ReceivedMessage,
+            ReceivedMessage,
         },
         identity::test_utils::get_test_basic_credential,
         psk::{ExternalPskId, PreSharedKey},
@@ -706,6 +706,7 @@ mod tests {
     use assert_matches::assert_matches;
 
     use aws_mls_codec::MlsEncode;
+
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -862,6 +863,8 @@ mod tests {
             .await
             .unwrap();
 
+        let bob_current_epoch = bob_group.group.current_epoch();
+
         let message = bob_group
             .group
             .process_incoming_message(external_commit)
@@ -872,10 +875,15 @@ mod tests {
 
         if !do_remove {
             assert!(bob_group.group.roster().len() == num_members);
-        } else if let ReceivedMessage::Commit(CommitMessageDescription { state_update, .. }) =
-            message
-        {
-            assert!(!state_update.active);
+        } else {
+            // Bob was removed so his epoch must stay the same
+            assert_eq!(bob_group.group.current_epoch(), bob_current_epoch);
+
+            #[cfg(feature = "state_update")]
+            assert_matches!(message, ReceivedMessage::Commit(desc) if !desc.state_update.active);
+
+            #[cfg(not(feature = "state_update"))]
+            assert_matches!(message, ReceivedMessage::Commit(_));
         }
 
         let alice_msg = b"I'm Alice";

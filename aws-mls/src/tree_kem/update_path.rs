@@ -184,7 +184,9 @@ mod tests {
             reinit: None,
             #[cfg(feature = "external_commit")]
             external_init: None,
+            #[cfg(feature = "state_update")]
             rejected_proposals: vec![],
+            #[cfg(feature = "state_update")]
             custom_proposals: vec![],
         }
     }

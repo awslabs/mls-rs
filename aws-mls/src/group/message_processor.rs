@@ -7,9 +7,8 @@ use super::{
         ApplicationData, Content, ContentType, MLSMessage, MLSMessagePayload, PrivateMessage,
         PublicMessage, Sender, WireFormat,
     },
-    member_from_key_package, member_from_leaf_node,
     message_signature::AuthenticatedContent,
-    proposal::{CustomProposal, Proposal, ReInitProposal},
+    proposal::{Proposal, ReInitProposal},
     proposal_cache::ProposalSetEffects,
     proposal_effects,
     proposal_filter::ProposalRules,
@@ -21,24 +20,35 @@ use super::{
 use crate::{
     client::MlsError,
     key_package::KeyPackage,
-    psk::{JustPreSharedKeyID, PreSharedKeyID},
+    psk::PreSharedKeyID,
     time::MlsTime,
     tree_kem::{
         leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, validate_update_path,
-        TreeKemPrivate, TreeKemPublic, UpdatePath, ValidatedUpdatePath,
+        TreeKemPrivate, TreeKemPublic, ValidatedUpdatePath,
     },
     CipherSuiteProvider,
 };
 use alloc::vec;
 use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
+use aws_mls_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
+
+#[cfg(feature = "state_update")]
+use itertools::Itertools;
+
+#[cfg(feature = "state_update")]
 use aws_mls_core::{
     crypto::CipherSuite,
     group::{MemberUpdate, RosterUpdate},
-    identity::{IdentityProvider, IdentityWarning},
-    psk::{ExternalPskId, PreSharedKeyStorage},
+    identity::IdentityWarning,
+    psk::ExternalPskId,
 };
-use itertools::Itertools;
+
+#[cfg(feature = "state_update")]
+use crate::{psk::JustPreSharedKeyID, tree_kem::UpdatePath};
+
+#[cfg(feature = "state_update")]
+use super::{member_from_key_package, member_from_leaf_node, proposal::CustomProposal};
 
 #[derive(Debug)]
 pub(crate) struct ProvisionalState {
@@ -53,11 +63,14 @@ pub(crate) struct ProvisionalState {
     pub(crate) reinit: Option<ReInitProposal>,
     #[cfg(feature = "external_commit")]
     pub(crate) external_init: Option<(LeafIndex, ExternalInit)>,
+    #[cfg(feature = "state_update")]
     pub(crate) custom_proposals: Vec<CustomProposal>,
+    #[cfg(feature = "state_update")]
     pub(crate) rejected_proposals: Vec<(ProposalRef, Proposal)>,
 }
 
 /// Representation of changes made by a [commit](crate::Group::commit).
+#[cfg(feature = "state_update")]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct StateUpdate {
     pub(crate) roster_update: RosterUpdate,
@@ -70,6 +83,12 @@ pub struct StateUpdate {
     pub(crate) unused_proposals: Vec<Proposal>,
 }
 
+#[cfg(not(feature = "state_update"))]
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq)]
+pub struct StateUpdate {}
+
+#[cfg(feature = "state_update")]
 impl StateUpdate {
     /// Changes to the roster as a result of proposals.
     pub fn roster_update(&self) -> &RosterUpdate {
@@ -366,6 +385,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         })
     }
 
+    #[cfg(feature = "state_update")]
     async fn make_state_update(
         &self,
         provisional: &ProvisionalState,
@@ -481,6 +501,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         // Calculate the diff that the commit will apply
         let proposal_effects = proposal_effects(
+            #[cfg(feature = "state_update")]
             self.self_index(),
             &group_state.proposals,
             commit,
@@ -504,9 +525,13 @@ pub(crate) trait MessageProcessor: Send + Sync {
             &provisional_state,
         )?;
 
+        #[cfg(feature = "state_update")]
         let mut state_update = self
             .make_state_update(&provisional_state, commit.path.as_ref(), sender)
             .await?;
+
+        #[cfg(not(feature = "state_update"))]
+        let state_update = StateUpdate {};
 
         //Verify that the path value is populated if the proposals vector contains any Update
         // or Remove proposals, or if it's empty. Otherwise, the path value MAY be omitted.
@@ -515,7 +540,10 @@ pub(crate) trait MessageProcessor: Send + Sync {
         }
 
         if !self.can_continue_processing(&provisional_state) {
-            state_update.active = false;
+            #[cfg(feature = "state_update")]
+            {
+                state_update.active = false;
+            }
 
             return Ok(CommitMessageDescription {
                 #[cfg(feature = "external_commit")]
@@ -575,7 +603,11 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         if let Some(reinit) = provisional_state.reinit.take() {
             self.group_state_mut().pending_reinit = Some(reinit);
-            state_update.active = false;
+
+            #[cfg(feature = "state_update")]
+            {
+                state_update.active = false;
+            }
         }
 
         if let Some(confirmation_tag) = auth_content.auth.confirmation_tag {
@@ -721,7 +753,9 @@ pub(crate) trait MessageProcessor: Send + Sync {
             reinit: proposals.reinit,
             #[cfg(feature = "external_commit")]
             external_init: proposals.external_init,
+            #[cfg(feature = "state_update")]
             custom_proposals: proposals.custom_proposals,
+            #[cfg(feature = "state_update")]
             rejected_proposals: proposals.rejected_proposals,
         })
     }

@@ -231,9 +231,12 @@ async fn test_update_proposals(
         assert!(commit_output.welcome_message.is_none());
 
         let commit = commit_output.commit_message();
-        let updates = all_process_commit_with_update(&mut groups, commit, committer_index).await;
 
-        for update in updates {
+        #[cfg(not(feature = "state_update"))]
+        all_process_commit_with_update(&mut groups, commit, committer_index).await;
+
+        #[cfg(feature = "state_update")]
+        for update in all_process_commit_with_update(&mut groups, commit, committer_index).await {
             assert!(update.is_active());
             assert_eq!(update.new_epoch(), (i as u64) + 2);
             assert!(update.roster_update().added().is_empty());
@@ -274,8 +277,6 @@ async fn test_remove_proposals(
     let mut groups =
         get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
 
-    let mut epoch_count = 1;
-
     // Remove people from the group one at a time
     while groups.len() > 1 {
         let removed_and_committer = (0..groups.len()).choose_multiple(&mut rand::thread_rng(), 2);
@@ -283,6 +284,8 @@ async fn test_remove_proposals(
         let to_remove = removed_and_committer[0];
         let committer = removed_and_committer[1];
         let to_remove_index = groups[to_remove].current_member_index();
+
+        let epoch_before_remove = groups[committer].current_epoch();
 
         let commit_output = groups[committer]
             .commit_builder()
@@ -296,25 +299,19 @@ async fn test_remove_proposals(
 
         let commit = commit_output.commit_message();
         let committer_index = groups[committer].current_member_index() as usize;
-        let updates = all_process_commit_with_update(&mut groups, commit, committer_index).await;
-
-        epoch_count += 1;
+        all_process_message(&mut groups, commit, committer_index, true).await;
 
         // Check that remove was effective
-        for (i, update) in updates.iter().enumerate() {
-            assert_eq!(update.new_epoch(), epoch_count as u64);
-            assert!(update.roster_update().added().is_empty());
-
+        for (i, group) in groups.iter().enumerate() {
             if i == to_remove {
-                assert!(!update.is_active())
+                assert_eq!(group.current_epoch(), epoch_before_remove);
             } else {
-                assert!(update
-                    .roster_update()
-                    .removed()
-                    .iter()
-                    .any(|member| member.index() == to_remove_index));
+                assert_eq!(group.current_epoch(), epoch_before_remove + 1);
 
-                assert!(update.is_active())
+                assert!(group
+                    .roster()
+                    .iter()
+                    .all(|member| member.index() != to_remove_index));
             }
         }
 
@@ -698,17 +695,28 @@ async fn reinit_works() {
     let commit = bob_group.commit(vec![]).await.unwrap().commit_message;
 
     // Both process Bob's commit
-    let state_update = bob_group.apply_pending_commit().await.unwrap().state_update;
-    assert!(!state_update.is_active() && state_update.is_pending_reinit());
+
+    #[cfg(feature = "state_update")]
+    {
+        let state_update = bob_group.apply_pending_commit().await.unwrap().state_update;
+        assert!(!state_update.is_active() && state_update.is_pending_reinit());
+    }
+
+    #[cfg(not(feature = "state_update"))]
+    bob_group.apply_pending_commit().await.unwrap();
 
     let message = alice_group.process_incoming_message(commit).await.unwrap();
 
+    #[cfg(feature = "state_update")]
     if let ReceivedMessage::Commit(commit_description) = message {
         assert!(
             !commit_description.state_update.is_active()
                 && commit_description.state_update.is_pending_reinit()
         );
     }
+
+    #[cfg(not(feature = "state_update"))]
+    assert_matches!(message, ReceivedMessage::Commit(_));
 
     // They can't create new epochs anymore
     assert!(alice_group.commit(vec![]).await.is_err());

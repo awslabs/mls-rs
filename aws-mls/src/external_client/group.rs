@@ -831,11 +831,15 @@ mod tests {
             .await
             .unwrap();
 
+        #[cfg(feature = "state_update")]
         assert_matches!(
             commit_result,
             ExternalReceivedMessage::Commit(commit_description)
                 if commit_description.state_update.roster_update.added().iter().any(|added| added.index() == 1)
         );
+
+        #[cfg(not(feature = "state_update"))]
+        assert_matches!(commit_result, ExternalReceivedMessage::Commit(_));
 
         assert_eq!(alice.group.state, server.state);
     }
@@ -851,7 +855,9 @@ mod tests {
             _ => panic!("Expected processed commit"),
         };
 
+        #[cfg(feature = "state_update")]
         assert_eq!(update.roster_update.added().len(), 1);
+
         assert_eq!(server.state.public_tree.get_leaf_nodes().len(), 2);
 
         assert_eq!(alice.group.state, server.state);

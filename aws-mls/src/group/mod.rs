@@ -1902,13 +1902,18 @@ mod tests {
         },
         *,
     };
-    use alloc::format;
+
     use assert_matches::assert_matches;
 
     use aws_mls_core::extension::{Extension, MlsExtension};
     use aws_mls_core::identity::{CertificateChain, Credential, CredentialType, CustomCredential};
     use futures::FutureExt;
+
+    #[cfg(feature = "state_update")]
     use itertools::Itertools;
+
+    #[cfg(feature = "state_update")]
+    use alloc::format;
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -2038,19 +2043,18 @@ mod tests {
             _ => panic!("found non-proposal message"),
         };
 
-        // The update should be filtered out because the committer commits an update for itself
+        let update_leaf = match proposal {
+            Proposal::Update(u) => u.leaf_node,
+            _ => panic!("found proposal message that isn't an update"),
+        };
+
         test_group.group.commit(vec![]).await.unwrap();
+        test_group.group.apply_pending_commit().await.unwrap();
 
-        let state_update = test_group
-            .group
-            .apply_pending_commit()
-            .await
-            .unwrap()
-            .state_update;
-
-        assert_matches!(
-            &*state_update.unused_proposals,
-            [p] if *p == proposal
+        // The leaf node should not be the one from the update, because the committer rejects it
+        assert_ne!(
+            &update_leaf,
+            test_group.group.current_user_leaf_node().unwrap()
         );
     }
 
@@ -2235,6 +2239,7 @@ mod tests {
     #[test]
     async fn test_group_context_ext_proposal_commit() {
         let mut extension_list = ExtensionList::new();
+
         extension_list
             .set_from(RequiredCapabilitiesExt {
                 extensions: vec![42.into()],
@@ -2246,14 +2251,15 @@ mod tests {
         let (mut test_group, _) =
             group_context_extension_proposal_test(extension_list.clone()).await;
 
-        let state_update = test_group
-            .group
-            .apply_pending_commit()
-            .await
-            .unwrap()
-            .state_update;
+        #[cfg(feature = "state_update")]
+        {
+            let update = test_group.group.apply_pending_commit().await.unwrap();
+            assert!(update.state_update.active);
+        }
 
-        assert!(state_update.active);
+        #[cfg(not(feature = "state_update"))]
+        test_group.group.apply_pending_commit().await.unwrap();
+
         assert_eq!(test_group.group.state.context.extensions, extension_list)
     }
 
@@ -2449,6 +2455,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "state_update")]
     #[test]
     async fn test_state_update() {
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -2578,7 +2585,7 @@ mod tests {
 
     #[cfg(feature = "external_commit")]
     #[test]
-    async fn state_update_external_commit() {
+    async fn commit_description_external_commit() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
         let (bob, bob_identity) = get_basic_client_builder(TEST_CIPHER_SUITE, "bob");
@@ -2609,7 +2616,9 @@ mod tests {
         assert_eq!(
             commit_description.state_update.roster_update.added(),
             &bob_group.roster()[1..2]
-        )
+        );
+
+        assert_eq!(bob_group.roster(), alice_group.group.roster());
     }
 
     #[cfg(feature = "external_commit")]
@@ -2938,6 +2947,7 @@ mod tests {
             .unwrap()
             .state_update;
 
+        #[cfg(feature = "state_update")]
         assert_eq!(
             state_update
                 .roster_update
@@ -2947,6 +2957,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![1]
         );
+
+        #[cfg(not(feature = "state_update"))]
+        assert!(state_update == StateUpdate {});
 
         assert_eq!(alice_group.group.roster().len(), 2);
     }
@@ -3543,8 +3556,12 @@ mod tests {
 
         let res = bob.group.process_incoming_message(commit).await.unwrap();
 
+        #[cfg(feature = "state_update")]
         assert_matches!(res, ReceivedMessage::Commit(CommitMessageDescription { state_update: StateUpdate { custom_proposals, .. }, .. })
-            if custom_proposals == vec![custom_proposal])
+            if custom_proposals == vec![custom_proposal]);
+
+        #[cfg(not(feature = "state_update"))]
+        assert_matches!(res, ReceivedMessage::Commit(_));
     }
 
     #[test]
@@ -3567,8 +3584,12 @@ mod tests {
         let commit = bob.group.commit(vec![]).await.unwrap().commit_message;
         let res = alice.group.process_incoming_message(commit).await.unwrap();
 
+        #[cfg(feature = "state_update")]
         assert_matches!(res, ReceivedMessage::Commit(CommitMessageDescription { state_update: StateUpdate { custom_proposals, .. }, .. })
-            if custom_proposals == vec![custom_proposal])
+            if custom_proposals == vec![custom_proposal]);
+
+        #[cfg(not(feature = "state_update"))]
+        assert_matches!(res, ReceivedMessage::Commit(_));
     }
 
     #[test]

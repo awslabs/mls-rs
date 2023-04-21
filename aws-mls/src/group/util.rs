@@ -197,7 +197,7 @@ pub(crate) fn commit_sender(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn proposal_effects<C, F, P, CSP>(
-    commit_receiver: Option<LeafIndex>,
+    #[cfg(feature = "state_update")] commit_receiver: Option<LeafIndex>,
     proposals: &ProposalCache,
     commit: &Commit,
     sender: &Sender,
@@ -219,6 +219,7 @@ where
     proposals
         .resolve_for_commit(
             *sender,
+            #[cfg(feature = "state_update")]
             commit_receiver,
             commit.proposals.clone(),
             #[cfg(feature = "external_commit")]

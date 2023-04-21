@@ -3,6 +3,7 @@ use cfg_if::cfg_if;
 
 pub use aws_mls_core::group::Member;
 
+#[cfg(feature = "state_update")]
 pub(crate) fn member_from_key_package(key_package: &KeyPackage, index: LeafIndex) -> Member {
     member_from_leaf_node(&key_package.leaf_node, index)
 }

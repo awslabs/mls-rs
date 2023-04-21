@@ -28,7 +28,9 @@ pub(crate) struct ProposalSetEffects {
     pub reinit: Option<ReInitProposal>,
     #[cfg(feature = "external_commit")]
     pub external_init: Option<(LeafIndex, ExternalInit)>,
+    #[cfg(feature = "state_update")]
     pub custom_proposals: Vec<CustomProposal>,
+    #[cfg(feature = "state_update")]
     pub rejected_proposals: Vec<(ProposalRef, Proposal)>,
 }
 
@@ -39,7 +41,7 @@ impl ProposalSetEffects {
         removed_leaves: Vec<(LeafIndex, LeafNode)>,
         proposals: ProposalBundle,
         #[cfg(feature = "external_commit")] external_leaf: Option<LeafIndex>,
-        rejected_proposals: Vec<(ProposalRef, Proposal)>,
+        #[cfg(feature = "state_update")] rejected_proposals: Vec<(ProposalRef, Proposal)>,
     ) -> Result<Self, MlsError> {
         let init = ProposalSetEffects {
             tree,
@@ -53,7 +55,9 @@ impl ProposalSetEffects {
             reinit: None,
             #[cfg(feature = "external_commit")]
             external_init: None,
+            #[cfg(feature = "state_update")]
             rejected_proposals,
+            #[cfg(feature = "state_update")]
             custom_proposals: Vec::new(),
         };
 
@@ -131,7 +135,10 @@ impl ProposalSetEffects {
 
                 self.external_init = Some((new_member_leaf_index, external_init));
             }
+            #[cfg(feature = "state_update")]
             Proposal::Custom(custom) => self.custom_proposals.push(custom),
+            #[cfg(not(feature = "state_update"))]
+            Proposal::Custom(_) => (),
         };
 
         Ok(self)
@@ -308,6 +315,7 @@ impl ProposalCache {
             .apply_proposals(&IgnoreInvalidByRefProposal, &sender, proposals, time)
             .await?;
 
+        #[cfg(feature = "state_update")]
         let rejected = rejected_proposals(self.proposals.clone(), &proposals, &sender);
 
         let effects = ProposalSetEffects::new(
@@ -317,6 +325,7 @@ impl ProposalCache {
             proposals.clone(),
             #[cfg(feature = "external_commit")]
             external_leaf_index,
+            #[cfg(feature = "state_update")]
             rejected,
         )?;
 
@@ -343,7 +352,7 @@ impl ProposalCache {
     pub async fn resolve_for_commit<C, F, P, CSP>(
         &self,
         sender: Sender,
-        receiver: Option<LeafIndex>,
+        #[cfg(feature = "state_update")] receiver: Option<LeafIndex>,
         proposal_list: Vec<ProposalOrRef>,
         #[cfg(feature = "external_commit")] external_leaf: Option<&LeafNode>,
         group_extensions: &ExtensionList,
@@ -409,6 +418,7 @@ impl ProposalCache {
             .apply_proposals(&FailInvalidProposal, &sender, proposals, commit_time)
             .await?;
 
+        #[cfg(feature = "state_update")]
         let rejected = receiver
             .map(|index| {
                 rejected_proposals(self.proposals.clone(), &proposals, &Sender::Member(*index))
@@ -422,6 +432,7 @@ impl ProposalCache {
             proposals,
             #[cfg(feature = "external_commit")]
             external_leaf_index,
+            #[cfg(feature = "state_update")]
             rejected,
         )
     }
@@ -436,6 +447,7 @@ impl Extend<(ProposalRef, CachedProposal)> for ProposalCache {
     }
 }
 
+#[cfg(feature = "state_update")]
 fn rejected_proposals(
     #[cfg(feature = "std")] mut cache: HashMap<ProposalRef, CachedProposal>,
     #[cfg(not(feature = "std"))] mut cache: BTreeMap<ProposalRef, CachedProposal>,
@@ -615,6 +627,7 @@ pub(crate) mod test_utils {
             self.cache
                 .resolve_for_commit_default(
                     self.sender,
+                    #[cfg(feature = "state_update")]
                     Some(self.receiver),
                     proposals.into_iter().map(Into::into).collect(),
                     None,
@@ -678,6 +691,7 @@ mod tests {
     };
 
     use assert_matches::assert_matches;
+    use aws_mls_core::psk::PreSharedKey;
     use aws_mls_core::{
         extension::MlsExtension,
         identity::{BasicCredential, Credential, CredentialType, CustomCredential},
@@ -698,7 +712,7 @@ mod tests {
         pub async fn resolve_for_commit_default<C, F, P, CSP>(
             &self,
             sender: Sender,
-            receiver: Option<LeafIndex>,
+            #[cfg(feature = "state_update")] receiver: Option<LeafIndex>,
             proposal_list: Vec<ProposalOrRef>,
             external_leaf: Option<&LeafNode>,
             group_extensions: &ExtensionList,
@@ -716,6 +730,7 @@ mod tests {
         {
             self.resolve_for_commit(
                 sender,
+                #[cfg(feature = "state_update")]
                 receiver,
                 proposal_list,
                 #[cfg(feature = "external_commit")]
@@ -879,7 +894,9 @@ mod tests {
             reinit: None,
             #[cfg(feature = "external_commit")]
             external_init: None,
+            #[cfg(feature = "state_update")]
             rejected_proposals: Vec::new(),
+            #[cfg(feature = "state_update")]
             custom_proposals: Vec::new(),
         };
 
@@ -1306,6 +1323,7 @@ mod tests {
         let resolution = cache
             .resolve_for_commit_default(
                 Sender::Member(test_sender),
+                #[cfg(feature = "state_update")]
                 Some(LeafIndex(test_sender)),
                 proposals,
                 None,
@@ -1385,6 +1403,7 @@ mod tests {
         let res = cache
             .resolve_for_commit_default(
                 Sender::NewMemberCommit,
+                #[cfg(feature = "state_update")]
                 None,
                 vec![ProposalOrRef::Proposal(Proposal::ExternalInit(
                     ExternalInit { kem_output },
@@ -1427,6 +1446,7 @@ mod tests {
         let res = cache
             .resolve_for_commit_default(
                 Sender::NewMemberCommit,
+                #[cfg(feature = "state_update")]
                 None,
                 vec![ProposalOrRef::Reference(proposal_ref)],
                 Some(&test_node().await),
@@ -1454,6 +1474,7 @@ mod tests {
         let res = cache
             .resolve_for_commit_default(
                 Sender::NewMemberCommit,
+                #[cfg(feature = "state_update")]
                 None,
                 [
                     Proposal::ExternalInit(ExternalInit {
@@ -1493,6 +1514,7 @@ mod tests {
         cache
             .resolve_for_commit_default(
                 Sender::NewMemberCommit,
+                #[cfg(feature = "state_update")]
                 None,
                 [
                     Proposal::ExternalInit(ExternalInit { kem_output }),
@@ -1565,6 +1587,7 @@ mod tests {
         let res = cache
             .resolve_for_commit_default(
                 Sender::NewMemberCommit,
+                #[cfg(feature = "state_update")]
                 None,
                 proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
                 Some(&test_node().await),
@@ -1611,6 +1634,7 @@ mod tests {
         let res = cache
             .resolve_for_commit_default(
                 Sender::NewMemberCommit,
+                #[cfg(feature = "state_update")]
                 None,
                 proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
                 Some(&test_node().await),
@@ -1657,6 +1681,7 @@ mod tests {
         let res = cache
             .resolve_for_commit_default(
                 Sender::NewMemberCommit,
+                #[cfg(feature = "state_update")]
                 None,
                 proposals.into_iter().map(ProposalOrRef::Proposal).collect(),
                 Some(&test_node().await),
@@ -1733,6 +1758,7 @@ mod tests {
         let res = cache
             .resolve_for_commit_default(
                 Sender::NewMemberCommit,
+                #[cfg(feature = "state_update")]
                 None,
                 Vec::new(),
                 Some(&test_node().await),
@@ -2146,15 +2172,20 @@ mod tests {
         });
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(proposal_ref.clone(), proposal.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(proposal_ref, proposal)]
+        );
     }
 
     #[test]
@@ -2187,15 +2218,20 @@ mod tests {
 
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(proposal_ref.clone(), proposal.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(proposal_ref, proposal)]
+        );
     }
 
     #[test]
@@ -2232,18 +2268,19 @@ mod tests {
         });
         let proposal_ref = make_proposal_ref(&proposal, bob);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(proposal_ref, proposal, bob)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
+        assert_eq!(processed_proposals.0, Vec::new());
 
         // Alice didn't propose the update. Bob did. That's why it is not returned in the list of
         // rejected proposals.
-        assert_eq!(effects.rejected_proposals, Vec::new());
+        #[cfg(feature = "state_update")]
+        assert_eq!(processed_proposals.1.rejected_proposals, Vec::new());
     }
 
     #[test]
@@ -2287,15 +2324,20 @@ mod tests {
         });
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(proposal_ref.clone(), proposal.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(proposal_ref, proposal)]
+        );
     }
 
     fn make_external_psk(id: &[u8], nonce: PskNonce) -> PreSharedKeyProposal {
@@ -2367,15 +2409,20 @@ mod tests {
         let proposal = Proposal::Psk(make_external_psk(b"foo", invalid_nonce));
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(proposal_ref.clone(), proposal.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(proposal_ref, proposal)]
+        );
     }
 
     fn make_resumption_psk(usage: ResumptionPSKUsage) -> PreSharedKeyProposal {
@@ -2423,15 +2470,20 @@ mod tests {
         let proposal = Proposal::Psk(make_resumption_psk(usage));
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(proposal_ref.clone(), proposal.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(proposal_ref, proposal)]
+        );
     }
 
     #[test]
@@ -2522,15 +2574,20 @@ mod tests {
         let proposal = Proposal::ReInit(make_reinit(smaller_protocol_version));
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(proposal_ref.clone(), proposal.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(proposal_ref, proposal)]
+        );
     }
 
     async fn make_update_proposal(name: &str) -> UpdateProposal {
@@ -2589,15 +2646,20 @@ mod tests {
         let proposal = Proposal::Update(make_update_proposal("alice").await);
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(proposal_ref.clone(), proposal.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(proposal_ref, proposal)]
+        );
     }
 
     #[test]
@@ -2634,15 +2696,20 @@ mod tests {
         let proposal = Proposal::Remove(RemoveProposal { to_remove: alice });
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(proposal_ref.clone(), proposal.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(proposal_ref, proposal)]
+        );
     }
 
     #[test]
@@ -2686,7 +2753,7 @@ mod tests {
         let remove = Proposal::Remove(RemoveProposal { to_remove: bob });
         let remove_ref = make_proposal_ref(&remove, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(update_ref.clone(), update.clone(), alice)
                 .cache(remove_ref.clone(), remove, alice)
@@ -2694,8 +2761,13 @@ mod tests {
                 .await
                 .unwrap();
 
-        assert_eq!(committed, vec![remove_ref.into()]);
-        assert_eq!(effects.rejected_proposals, vec![(update_ref, update)]);
+        assert_eq!(processed_proposals.0, vec![remove_ref.into()]);
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(update_ref, update)]
+        );
     }
 
     async fn make_add_proposal() -> AddProposal {
@@ -2773,7 +2845,7 @@ mod tests {
         ];
         let add_refs = adds.clone().map(|p| make_proposal_ref(&p, alice));
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(add_refs[0].clone(), adds[0].clone(), alice)
                 .cache(add_refs[1].clone(), adds[1].clone(), alice)
@@ -2781,9 +2853,17 @@ mod tests {
                 .await
                 .unwrap();
 
+        let committed_add_ref = match &*processed_proposals.0 {
+            [ProposalOrRef::Reference(add_ref)] => add_ref,
+            _ => panic!("committed proposals list does not contain exactly one reference"),
+        };
+
+        assert!(add_refs.contains(committed_add_ref));
+
+        #[cfg(feature = "state_update")]
         assert_matches!(
-            (&*committed, &*effects.rejected_proposals),
-            ([ProposalOrRef::Reference(cr)], [(rr, _)]) if cr != rr && add_refs.contains(cr) && add_refs.contains(rr)
+            &*processed_proposals.1.rejected_proposals,
+            [(rejected_add_ref, _)] if committed_add_ref != rejected_add_ref && add_refs.contains(rejected_add_ref)
         );
     }
 
@@ -2816,18 +2896,19 @@ mod tests {
         let update = Proposal::Update(make_update_proposal("carol").await);
         let update_ref = make_proposal_ref(&update, bob);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(update_ref, update, bob)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
+        assert_eq!(processed_proposals.0, Vec::new());
 
         // Bob proposed the update, so it is not listed as rejected when Alice commits it because
         // she didn't propose it.
-        assert_eq!(effects.rejected_proposals, Vec::new());
+        #[cfg(feature = "state_update")]
+        assert_eq!(processed_proposals.1.rejected_proposals, Vec::new());
     }
 
     #[test]
@@ -2897,15 +2978,20 @@ mod tests {
 
         let proposal_ref = make_proposal_ref(&add, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(proposal_ref.clone(), add.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, add)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(proposal_ref, add)]
+        );
     }
 
     #[test]
@@ -2944,12 +3030,13 @@ mod tests {
         let bob = add_member(&mut tree, "bob").await;
 
         let proposal = Proposal::Psk(new_external_psk(b"foo"));
+
         let proposal_refs = [
             make_proposal_ref(&proposal, alice),
             make_proposal_ref(&proposal, bob),
         ];
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(proposal_refs[0].clone(), proposal.clone(), alice)
                 .cache(proposal_refs[1].clone(), proposal, bob)
@@ -2957,16 +3044,17 @@ mod tests {
                 .await
                 .unwrap();
 
-        let committed_ref = match &*committed {
+        let committed_ref = match &*processed_proposals.0 {
             [ProposalOrRef::Reference(r)] => r.clone(),
-            _ => panic!("Expected single proposal reference in {committed:?}"),
+            _ => panic!("Expected single proposal reference in {processed_proposals:?}"),
         };
 
         assert!(proposal_refs.contains(&committed_ref));
 
         // The list of rejected proposals may be empty if Bob's proposal was the one that got
         // rejected.
-        match &*effects.rejected_proposals {
+        #[cfg(feature = "state_update")]
+        match &*processed_proposals.1.rejected_proposals {
             [(r, _)] => {
                 assert_ne!(*r, committed_ref);
                 assert!(proposal_refs.contains(r));
@@ -2974,7 +3062,7 @@ mod tests {
             [] => {}
             _ => panic!(
                 "Expected zero or one proposal reference in {:?}",
-                effects.rejected_proposals
+                processed_proposals.1.rejected_proposals
             ),
         }
     }
@@ -3064,19 +3152,27 @@ mod tests {
             Proposal::GroupContextExtensions(make_extension_list(1)),
         ];
 
-        let proposal_refs = proposals.clone().map(|p| make_proposal_ref(&p, alice));
+        let gce_refs = proposals.clone().map(|p| make_proposal_ref(&p, alice));
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .cache(proposal_refs[0].clone(), proposals[0].clone(), alice)
-                .cache(proposal_refs[1].clone(), proposals[1].clone(), alice)
+                .cache(gce_refs[0].clone(), proposals[0].clone(), alice)
+                .cache(gce_refs[1].clone(), proposals[1].clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
+        let committed_gce_ref = match &*processed_proposals.0 {
+            [ProposalOrRef::Reference(gce_ref)] => gce_ref,
+            _ => panic!("committed proposals list does not contain exactly one reference"),
+        };
+
+        assert!(gce_refs.contains(committed_gce_ref));
+
+        #[cfg(feature = "state_update")]
         assert_matches!(
-            (&*committed, &*effects.rejected_proposals),
-            ([ProposalOrRef::Reference(cr)], [(rr, _)]) if cr != rr && proposal_refs.contains(cr) && proposal_refs.contains(rr)
+            &*processed_proposals.1.rejected_proposals,
+            [(rejected_gce_ref, _)] if committed_gce_ref != rejected_gce_ref && gce_refs.contains(rejected_gce_ref)
         );
     }
 
@@ -3131,7 +3227,7 @@ mod tests {
 
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .with_identity_provider(FailureIdentityProvider::new())
                 .cache(proposal_ref.clone(), proposal.clone(), alice)
@@ -3139,8 +3235,13 @@ mod tests {
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(proposal_ref, proposal)]
+        );
     }
 
     #[test]
@@ -3185,7 +3286,7 @@ mod tests {
         let add = Proposal::Add(make_add_proposal().await);
         let add_ref = make_proposal_ref(&add, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(reinit_ref.clone(), reinit.clone(), alice)
                 .cache(add_ref.clone(), add, alice)
@@ -3193,8 +3294,13 @@ mod tests {
                 .await
                 .unwrap();
 
-        assert_eq!(committed, vec![add_ref.into()]);
-        assert_eq!(effects.rejected_proposals, vec![(reinit_ref, reinit)]);
+        assert_eq!(processed_proposals.0, vec![add_ref.into()]);
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(reinit_ref, reinit)]
+        );
     }
 
     #[cfg(feature = "external_commit")]
@@ -3255,16 +3361,18 @@ mod tests {
         let external_init = Proposal::ExternalInit(make_external_init());
         let external_init_ref = make_proposal_ref(&external_init, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(external_init_ref.clone(), external_init.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
         assert_eq!(
-            effects.rejected_proposals,
+            processed_proposals.1.rejected_proposals,
             vec![(external_init_ref, external_init)]
         );
     }
@@ -3321,15 +3429,20 @@ mod tests {
         let proposal = required_capabilities_proposal(33);
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(proposal_ref.clone(), proposal.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(proposal_ref, proposal)]
+        );
     }
 
     #[test]
@@ -3545,15 +3658,20 @@ mod tests {
 
         let add_ref = make_proposal_ref(&add, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(add_ref.clone(), add.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(add_ref, add)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(add_ref, add)]
+        );
     }
 
     #[test]
@@ -3583,16 +3701,18 @@ mod tests {
 
         let custom_ref = make_proposal_ref(&custom_proposal, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(custom_ref.clone(), custom_proposal.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
         assert_eq!(
-            effects.rejected_proposals,
+            processed_proposals.1.rejected_proposals,
             vec![(custom_ref, custom_proposal)]
         );
     }
@@ -3663,15 +3783,20 @@ mod tests {
         let proposal = Proposal::GroupContextExtensions(make_extension_list(0));
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .cache(proposal_ref.clone(), proposal.clone(), alice)
                 .send()
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(proposal_ref, proposal)]
+        );
     }
 
     #[derive(Debug)]
@@ -3722,7 +3847,7 @@ mod tests {
         let proposal = Proposal::Psk(new_external_psk(b"abc"));
         let proposal_ref = make_proposal_ref(&proposal, alice);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .with_psk_storage(AlwaysNotFoundPskStorage)
                 .cache(proposal_ref.clone(), proposal.clone(), alice)
@@ -3730,8 +3855,13 @@ mod tests {
                 .await
                 .unwrap();
 
-        assert_eq!(committed, Vec::new());
-        assert_eq!(effects.rejected_proposals, vec![(proposal_ref, proposal)]);
+        assert_eq!(processed_proposals.0, Vec::new());
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.rejected_proposals,
+            vec![(proposal_ref, proposal)]
+        );
     }
 
     #[test]
@@ -3911,7 +4041,7 @@ mod tests {
 
         let custom_proposal = CustomProposal::new(ProposalType::new(42), vec![]);
 
-        let (committed, effects) =
+        let processed_proposals =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
                 .with_user_rules(expander.clone())
                 .with_additional(vec![Proposal::Custom(custom_proposal.clone())])
@@ -3920,14 +4050,20 @@ mod tests {
                 .unwrap();
 
         assert_eq!(
-            committed,
+            processed_proposals.0,
             vec![ProposalOrRef::Proposal(Proposal::Custom(
                 custom_proposal.clone()
             ))]
         );
 
-        assert_eq!(effects.adds, vec![add_proposal.key_package]);
-        assert_eq!(effects.custom_proposals, vec![custom_proposal])
+        #[cfg(feature = "state_update")]
+        assert_eq!(processed_proposals.1.adds, vec![add_proposal.key_package]);
+
+        #[cfg(feature = "state_update")]
+        assert_eq!(
+            processed_proposals.1.custom_proposals,
+            vec![custom_proposal]
+        )
     }
 
     #[test]
@@ -3961,7 +4097,11 @@ mod tests {
         .await
         .unwrap();
 
+        // If the add is applied, then the custom proposal must have been applied.
         assert_eq!(effects.adds, vec![add_proposal.key_package]);
+
+        // Check that `custom_proposals` are computed correctly.
+        #[cfg(feature = "state_update")]
         assert_eq!(effects.custom_proposals, vec![custom_proposal])
     }
 
