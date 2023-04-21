@@ -11,8 +11,11 @@ use super::{internal::ResumptionPsk, snapshot::Snapshot};
 #[cfg(feature = "std")]
 use std::collections::{hash_map::Entry, HashMap};
 
+#[cfg(all(not(feature = "std"), feature = "private_message"))]
+use alloc::collections::btree_map::Entry;
+
 #[cfg(not(feature = "std"))]
-use alloc::collections::{btree_map::Entry, BTreeMap};
+use alloc::collections::BTreeMap;
 
 pub(crate) const DEFAULT_EPOCH_RETENTION_LIMIT: u64 = 3;
 
@@ -129,6 +132,7 @@ where
             .unwrap_or(false)
     }
 
+    #[cfg(feature = "private_message")]
     pub async fn get_epoch_mut(
         &mut self,
         epoch_id: u64,

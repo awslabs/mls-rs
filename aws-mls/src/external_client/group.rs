@@ -14,7 +14,7 @@ use crate::{
     group::{
         cipher_suite_provider,
         confirmation_tag::ConfirmationTag,
-        framing::{Content, MLSMessagePayload, PrivateMessage, PublicMessage, WireFormat},
+        framing::{Content, MLSMessagePayload, PublicMessage, WireFormat},
         member_from_leaf_node,
         message_processor::{
             ApplicationMessageDescription, CommitMessageDescription, EventOrContent,
@@ -41,6 +41,9 @@ use crate::{
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
     CryptoProvider, MLSMessage,
 };
+
+#[cfg(feature = "private_message")]
+use crate::group::framing::PrivateMessage;
 
 /// The result of processing an [ExternalGroup](ExternalGroup) message using
 /// [process_incoming_message](ExternalGroup::process_incoming_message)
@@ -553,6 +556,7 @@ where
         Ok(EventOrContent::Content(auth_content))
     }
 
+    #[cfg(feature = "private_message")]
     async fn process_ciphertext(
         &mut self,
         _cipher_text: PrivateMessage,

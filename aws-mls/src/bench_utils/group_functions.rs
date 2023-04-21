@@ -119,13 +119,16 @@ pub async fn create_group(cipher_suite: CipherSuite, size: usize) -> Vec<Group<T
 
     let (alice, alice_identity) = get_basic_client_builder(cipher_suite, "alice");
 
-    let alice = alice
-        .preferences(
-            Preferences::default()
-                .with_ratchet_tree_extension(true)
-                .with_control_encryption(true),
-        )
-        .build();
+    let mut preferences = Preferences::default();
+
+    preferences = preferences.with_ratchet_tree_extension(true);
+
+    #[cfg(feature = "private_message")]
+    {
+        preferences = preferences.with_control_encryption(true);
+    }
+
+    let alice = alice.preferences(preferences).build();
 
     let alice_group = alice
         .create_group_with_id(
@@ -264,11 +267,15 @@ where
     context.group_id = group_id;
     context.epoch = epoch;
 
+    #[cfg(feature = "private_message")]
     let wire_format = if group.preferences().encrypt_controls {
         WireFormat::PrivateMessage
     } else {
         WireFormat::PublicMessage
     };
+
+    #[cfg(not(feature = "private_message"))]
+    let wire_format = WireFormat::PublicMessage;
 
     let auth_content = AuthenticatedContent::new_signed(
         group.cipher_suite_provider(),

@@ -1,10 +1,14 @@
 use crate::client::MlsError;
-use crate::group::{GroupContext, MembershipTag, SecretTree};
+use crate::group::{GroupContext, MembershipTag};
 use crate::psk::secret::PskSecret;
 use crate::psk::PreSharedKey;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::path_secret::{PathSecret, PathSecretGenerator};
 use crate::CipherSuiteProvider;
+
+#[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
+use crate::group::SecretTree;
+
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
@@ -60,6 +64,7 @@ impl KeySchedule {
         last_key_schedule: &KeySchedule,
         commit_secret: &CommitSecret,
         context: &GroupContext,
+        #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
         secret_tree_size: u32,
         psk_secret: &PskSecret,
         cipher_suite_provider: &P,
@@ -82,6 +87,7 @@ impl KeySchedule {
             cipher_suite_provider,
             &joiner_secret,
             context,
+            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             secret_tree_size,
             psk_secret,
         )?;
@@ -98,6 +104,7 @@ impl KeySchedule {
         cipher_suite_provider: &P,
         joiner_secret: &JoinerSecret,
         context: &GroupContext,
+        #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
         secret_tree_size: u32,
         psk_secret: &PskSecret,
     ) -> Result<KeyScheduleDerivationResult, MlsError> {
@@ -109,11 +116,17 @@ impl KeySchedule {
                 .map(Zeroizing::new)
                 .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
-        Self::from_epoch_secret(cipher_suite_provider, &epoch_secret, secret_tree_size)
+        Self::from_epoch_secret(
+            cipher_suite_provider,
+            &epoch_secret,
+            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
+            secret_tree_size,
+        )
     }
 
     pub(crate) fn from_random_epoch_secret<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
+        #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
         secret_tree_size: u32,
     ) -> Result<KeyScheduleDerivationResult, MlsError> {
         let epoch_secret = cipher_suite_provider
@@ -121,12 +134,18 @@ impl KeySchedule {
             .map(Zeroizing::new)
             .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
 
-        Self::from_epoch_secret(cipher_suite_provider, &epoch_secret, secret_tree_size)
+        Self::from_epoch_secret(
+            cipher_suite_provider,
+            &epoch_secret,
+            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
+            secret_tree_size,
+        )
     }
 
     fn from_epoch_secret<P: CipherSuiteProvider>(
         cipher_suite_provider: &P,
         epoch_secret: &[u8],
+        #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
         secret_tree_size: u32,
     ) -> Result<KeyScheduleDerivationResult, MlsError> {
         let secrets_producer = SecretsProducer::new(cipher_suite_provider, epoch_secret);
@@ -134,6 +153,7 @@ impl KeySchedule {
         let epoch_secrets = EpochSecrets {
             resumption_secret: PreSharedKey::from(secrets_producer.derive("resumption")?),
             sender_data_secret: SenderDataSecret::from(secrets_producer.derive("sender data")?),
+            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             secret_tree: SecretTree::new(secret_tree_size, secrets_producer.derive("encryption")?),
         };
 
@@ -514,6 +534,7 @@ mod tests {
 
         #[serde(with = "hex::serde")]
         sender_data_secret: Vec<u8>,
+        #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
         #[serde(with = "hex::serde")]
         encryption_secret: Vec<u8>,
         #[serde(with = "hex::serde")]
@@ -580,6 +601,7 @@ mod tests {
                     &key_schedule,
                     &commit,
                     &context,
+                    #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
                     32,
                     &psk,
                     &cs_provider,
@@ -604,6 +626,7 @@ mod tests {
                     *key_schedule_res.epoch_secrets.sender_data_secret.to_vec()
                 );
 
+                #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
                 assert_eq!(
                     epoch.encryption_secret,
                     *key_schedule_res.epoch_secrets.secret_tree.get_root_secret()
@@ -677,6 +700,7 @@ mod tests {
                 &key_schedule,
                 &commit_secret,
                 &group_context,
+                #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
                 32,
                 &psk_secret,
                 &cs_provider,
@@ -704,6 +728,7 @@ mod tests {
                 &key_schedule,
                 &commit_secret,
                 &group_context,
+                #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
                 32,
                 &psk_secret,
                 &cs_provider,
@@ -776,6 +801,7 @@ mod tests {
                 joiner_secret: key_schedule_res.joiner_secret.into(),
                 init_secret: key_schedule_res.key_schedule.init_secret.0.to_vec(),
                 sender_data_secret: key_schedule_res.epoch_secrets.sender_data_secret.to_vec(),
+                #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
                 encryption_secret: key_schedule_res.epoch_secrets.secret_tree.get_root_secret(),
                 exporter_secret: key_schedule_res.key_schedule.exporter_secret.to_vec(),
                 epoch_authenticator: key_schedule_res.key_schedule.authentication_secret.to_vec(),

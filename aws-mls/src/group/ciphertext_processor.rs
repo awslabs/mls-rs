@@ -6,10 +6,7 @@ use self::{
 
 use super::{
     epoch::EpochSecrets,
-    framing::{
-        ContentType, FramedContent, PrivateContentAAD, PrivateContentTBE, PrivateMessage, Sender,
-        WireFormat,
-    },
+    framing::{ContentType, FramedContent, Sender, WireFormat},
     message_signature::AuthenticatedContent,
     padding::PaddingMode,
     secret_tree::{KeyType, MessageKeyData},
@@ -24,6 +21,9 @@ use zeroize::Zeroizing;
 mod message_key;
 mod reuse_guard;
 mod sender_data_key;
+
+#[cfg(feature = "private_message")]
+use super::framing::{PrivateContentAAD, PrivateContentTBE, PrivateMessage};
 
 #[cfg(test)]
 pub use sender_data_key::test_utils::*;

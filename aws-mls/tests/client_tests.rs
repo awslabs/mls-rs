@@ -1,6 +1,7 @@
 use assert_matches::assert_matches;
 use aws_mls::client_builder::{ClientBuilder, Preferences};
 use aws_mls::error::MlsError;
+use aws_mls::group::proposal::Proposal;
 use aws_mls::group::ReceivedMessage;
 use aws_mls::identity::basic::BasicIdentityProvider;
 use aws_mls::identity::SigningIdentity;
@@ -20,7 +21,7 @@ cfg_if! {
     }
 }
 
-use futures::StreamExt;
+use futures::{Future, StreamExt};
 use rand::RngCore;
 use rand::{prelude::IteratorRandom, prelude::SliceRandom, Rng, SeedableRng};
 
@@ -39,21 +40,48 @@ wasm_bindgen_test_configure!(run_in_browser);
 #[cfg(not(target_arch = "wasm32"))]
 use futures_test::test;
 
-fn test_params() -> impl Iterator<Item = (ProtocolVersion, CipherSuite, bool)> {
-    ProtocolVersion::all().flat_map(|p| {
-        TestCryptoProvider::all_supported_cipher_suites()
-            .into_iter()
-            .flat_map(move |cs| {
-                [false, true]
-                    .into_iter()
-                    .map(move |encrypt| (p, cs, encrypt))
-            })
-    })
+#[cfg(feature = "private_message")]
+async fn test_on_all_params<F, Fut>(test: F)
+where
+    F: Fn(ProtocolVersion, CipherSuite, usize, Preferences) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    for version in ProtocolVersion::all() {
+        for cs in TestCryptoProvider::all_supported_cipher_suites() {
+            for encrypt_controls in [true, false] {
+                let preferences = Preferences::default().with_control_encryption(encrypt_controls);
+
+                test(version, cs, 10, preferences).await;
+            }
+        }
+    }
+}
+
+#[cfg(not(feature = "private_message"))]
+async fn test_on_all_params<F, Fut>(test: F)
+where
+    F: Fn(ProtocolVersion, CipherSuite, usize, Preferences) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    test_on_all_params_plaintext(test).await;
+}
+
+async fn test_on_all_params_plaintext<F, Fut>(test: F)
+where
+    F: Fn(ProtocolVersion, CipherSuite, usize, Preferences) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    for version in ProtocolVersion::all() {
+        for cs in TestCryptoProvider::all_supported_cipher_suites() {
+            test(version, cs, 10, Preferences::default()).await;
+        }
+    }
 }
 
 async fn test_create(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
+    _n_participants: usize,
     preferences: Preferences,
 ) {
     println!(
@@ -108,13 +136,7 @@ async fn test_create(
 
 #[test]
 async fn test_create_group() {
-    for (protocol_version, cs, encrypt_controls) in test_params() {
-        let preferences = Preferences::default()
-            .with_control_encryption(encrypt_controls)
-            .with_ratchet_tree_extension(false);
-
-        test_create(protocol_version, cs, preferences).await;
-    }
+    test_on_all_params(test_create).await;
 }
 
 #[test]
@@ -190,17 +212,7 @@ async fn test_empty_commits(
 
 #[test]
 async fn test_group_path_updates() {
-    for (protocol_version, cs, encrypt_controls) in test_params() {
-        test_empty_commits(
-            protocol_version,
-            cs,
-            10,
-            Preferences::default()
-                .with_control_encryption(encrypt_controls)
-                .with_ratchet_tree_extension(false),
-        )
-        .await;
-    }
+    test_on_all_params(test_empty_commits).await;
 }
 
 async fn test_update_proposals(
@@ -251,17 +263,7 @@ async fn test_update_proposals(
 
 #[test]
 async fn test_group_update_proposals() {
-    for (protocol_version, cs, encrypt_controls) in test_params() {
-        test_update_proposals(
-            protocol_version,
-            cs,
-            10,
-            Preferences::default()
-                .with_control_encryption(encrypt_controls)
-                .with_ratchet_tree_extension(false),
-        )
-        .await;
-    }
+    test_on_all_params(test_update_proposals).await;
 }
 
 async fn test_remove_proposals(
@@ -325,29 +327,17 @@ async fn test_remove_proposals(
 
 #[test]
 async fn test_group_remove_proposals() {
-    for (protocol_version, cs, encrypt_controls) in test_params() {
-        test_remove_proposals(
-            protocol_version,
-            cs,
-            10,
-            Preferences::default()
-                .with_control_encryption(encrypt_controls)
-                .with_ratchet_tree_extension(false),
-        )
-        .await;
-    }
+    test_on_all_params(test_remove_proposals).await;
 }
 
+#[cfg(feature = "private_message")]
 async fn test_application_messages(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
     participants: usize,
-    message_count: usize,
     preferences: Preferences,
 ) {
-    println!(
-        "Testing application messages for cipher suite: {protocol_version:?} {cipher_suite:?}, participants: {participants}, message count: {message_count}, {preferences:?}",
-    );
+    let message_count = 20;
 
     let mut groups =
         get_test_groups(protocol_version, cipher_suite, participants, preferences).await;
@@ -380,6 +370,7 @@ async fn test_application_messages(
     }
 }
 
+#[cfg(feature = "private_message")]
 #[test]
 async fn test_out_of_order_application_messages() {
     let mut groups = get_test_groups(
@@ -433,25 +424,16 @@ async fn test_out_of_order_application_messages() {
     }
 }
 
+#[cfg(feature = "private_message")]
 #[test]
 async fn test_group_application_messages() {
-    for (protocol_version, cs, encrypt_controls) in test_params() {
-        test_application_messages(
-            protocol_version,
-            cs,
-            10,
-            20,
-            Preferences::default()
-                .with_control_encryption(encrypt_controls)
-                .with_ratchet_tree_extension(false),
-        )
-        .await;
-    }
+    test_on_all_params(test_application_messages).await
 }
 
 async fn processing_message_from_self_returns_error(
     protocol_version: ProtocolVersion,
     cipher_suite: CipherSuite,
+    _n_participants: usize,
     preferences: Preferences,
 ) {
     println!(
@@ -477,21 +459,17 @@ async fn processing_message_from_self_returns_error(
 
 #[test]
 async fn test_processing_message_from_self_returns_error() {
-    for (protocol_version, cs, encrypt_controls) in test_params() {
-        processing_message_from_self_returns_error(
-            protocol_version,
-            cs,
-            Preferences::default()
-                .with_control_encryption(encrypt_controls)
-                .with_ratchet_tree_extension(false),
-        )
-        .await;
-    }
+    test_on_all_params(processing_message_from_self_returns_error).await;
 }
 
 #[cfg(feature = "external_commit")]
-async fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: CipherSuite) {
-    let creator = generate_client(cipher_suite, b"alice-0".to_vec(), Default::default());
+async fn external_commits_work(
+    protocol_version: ProtocolVersion,
+    cipher_suite: CipherSuite,
+    _n_participants: usize,
+    preferences: Preferences,
+) {
+    let creator = generate_client(cipher_suite, b"alice-0".to_vec(), preferences);
 
     let creator_group = creator
         .client
@@ -551,20 +529,23 @@ async fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: 
         .all(|group| group.roster().len() == PARTICIPANT_COUNT));
 
     for i in 0..groups.len() {
-        let payload = rand::thread_rng()
-            .sample_iter(rand::distributions::Standard)
-            .take(256)
-            .collect::<Vec<_>>();
-        let message = groups[i]
-            .encrypt_application_message(&payload, Vec::new())
-            .await
-            .unwrap();
+        let message = groups[i].propose_remove(0, Vec::new()).await.unwrap();
+
         for (_, group) in groups.iter_mut().enumerate().filter(|&(j, _)| i != j) {
             let processed = group
                 .process_incoming_message(message.clone())
                 .await
                 .unwrap();
-            assert_matches!(processed, ReceivedMessage::ApplicationMessage(m) if m.data() == payload);
+
+            if let ReceivedMessage::Proposal(p) = &processed {
+                if let Proposal::Remove(r) = &p.proposal {
+                    if r.to_remove() == 0 {
+                        continue;
+                    }
+                }
+            }
+
+            panic!("expected a proposal, got {processed:?}");
         }
     }
 }
@@ -572,10 +553,7 @@ async fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: 
 #[cfg(feature = "external_commit")]
 #[test]
 async fn test_external_commits() {
-    for (protocol_version, cipher_suite, _) in test_params().filter(|&(_, _, encrypted)| !encrypted)
-    {
-        external_commits_work(protocol_version, cipher_suite).await;
-    }
+    test_on_all_params_plaintext(external_commits_work).await
 }
 
 #[test]

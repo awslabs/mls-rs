@@ -47,7 +47,9 @@ use std::collections::HashMap;
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
 
+#[cfg(feature = "private_message")]
 use ciphertext_processor::*;
+
 use confirmation_tag::*;
 use framing::*;
 use key_schedule::*;
@@ -56,15 +58,17 @@ use message_signature::*;
 use message_verifier::*;
 use proposal::*;
 use proposal_cache::*;
-use secret_tree::*;
 use state::*;
 use transcript_hash::*;
 
 #[cfg(test)]
 pub(crate) use self::commit::test_utils::CommitModifiers;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "private_message"))]
 pub use self::framing::PrivateMessage;
+
+#[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
+use secret_tree::*;
 
 use self::epoch::{EpochSecrets, PriorEpoch};
 pub use self::message_processor::{
@@ -72,6 +76,7 @@ pub use self::message_processor::{
     ProposalSender, ReceivedMessage, StateUpdate,
 };
 use self::message_processor::{EventOrContent, MessageProcessor, ProvisionalState};
+#[cfg(feature = "private_message")]
 use self::padding::PaddingMode;
 use self::proposal_ref::ProposalRef;
 use self::state_repo::GroupStateRepository;
@@ -92,7 +97,9 @@ pub use context::*;
 #[cfg(not(feature = "benchmark"))]
 pub(crate) use context::*;
 
+#[cfg(feature = "private_message")]
 mod ciphertext_processor;
+
 mod commit;
 pub(crate) mod confirmation_tag;
 mod context;
@@ -104,6 +111,7 @@ mod membership_tag;
 pub(crate) mod message_processor;
 pub(crate) mod message_signature;
 pub(crate) mod message_verifier;
+#[cfg(feature = "private_message")]
 pub(crate) mod padding;
 /// Proposals to evolve a MLS [`Group`]
 pub mod proposal;
@@ -125,10 +133,13 @@ pub mod external_commit;
 #[doc(hidden)]
 pub mod secret_tree;
 
-#[cfg(not(feature = "benchmark"))]
+#[cfg(all(
+    not(feature = "benchmark"),
+    any(feature = "secret_tree_access", feature = "private_message")
+))]
 pub(crate) mod secret_tree;
 
-#[cfg(feature = "secret_tree_access")]
+#[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
 pub use secret_tree::MessageKeyData as MessageKey;
 
 #[cfg(all(test, feature = "rfc_compliant"))]
@@ -196,6 +207,7 @@ impl NewMemberInfo {
     }
 }
 
+#[cfg(feature = "private_message")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ControlEncryptionMode {
     Plaintext,
@@ -309,6 +321,7 @@ where
 
         let key_schedule_result = KeySchedule::from_random_epoch_secret(
             &cipher_suite_provider,
+            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             public_tree.total_leaf_count(),
         )?;
 
@@ -479,6 +492,7 @@ where
             &cipher_suite_provider,
             &group_secrets.joiner_secret,
             &join_context.group_context,
+            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             join_context.public_tree.total_leaf_count(),
             &psk_secret,
         )?;
@@ -614,7 +628,10 @@ where
             Sender::Member(*self.private_tree.self_index),
             Content::Proposal(proposal.clone()),
             &signer,
+            #[cfg(feature = "private_message")]
             self.config.preferences().encryption_mode().into(),
+            #[cfg(not(feature = "private_message"))]
+            WireFormat::PublicMessage,
             authenticated_data,
         )?;
 
@@ -932,7 +949,7 @@ where
     }
 
     fn resumption_psk_input(&self, usage: ResumptionPSKUsage) -> Result<PskSecretInput, MlsError> {
-        let psk = self.epoch_secrets().resumption_secret.clone();
+        let psk = self.epoch_secrets.resumption_secret.clone();
 
         let id = JustPreSharedKeyID::Resumption(ResumptionPsk {
             usage,
@@ -1239,11 +1256,14 @@ where
         &mut self,
         content: AuthenticatedContent,
     ) -> Result<MLSMessage, MlsError> {
+        #[cfg(feature = "private_message")]
         let payload = if content.wire_format == WireFormat::PrivateMessage {
             MLSMessagePayload::Cipher(self.create_ciphertext(content)?)
         } else {
             MLSMessagePayload::Plain(self.create_plaintext(content)?)
         };
+        #[cfg(not(feature = "private_message"))]
+        let payload = MLSMessagePayload::Plain(self.create_plaintext(content)?);
 
         Ok(MLSMessage::new(self.protocol_version(), payload))
     }
@@ -1269,6 +1289,7 @@ where
         })
     }
 
+    #[cfg(feature = "private_message")]
     fn create_ciphertext(
         &mut self,
         auth_content: AuthenticatedContent,
@@ -1286,6 +1307,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[cfg(feature = "private_message")]
     pub async fn encrypt_application_message(
         &mut self,
         message: &[u8],
@@ -1312,6 +1334,7 @@ where
         self.format_for_wire(auth_content)
     }
 
+    #[cfg(feature = "private_message")]
     async fn decrypt_incoming_ciphertext(
         &mut self,
         message: PrivateMessage,
@@ -1602,10 +1625,13 @@ where
 
     #[cfg(feature = "secret_tree_access")]
     pub fn next_encryption_key(&mut self) -> Result<MessageKey, MlsError> {
-        let mut processor = CiphertextProcessor::new(self, self.cipher_suite_provider.clone());
-
-        processor
-            .next_encryption_key(KeyType::Application)
+        self.epoch_secrets
+            .secret_tree
+            .next_message_key(
+                &self.cipher_suite_provider,
+                self.private_tree.self_index,
+                KeyType::Application,
+            )
             .map_err(Into::into)
     }
 
@@ -1615,10 +1641,14 @@ where
         sender: u32,
         generation: u32,
     ) -> Result<MessageKey, MlsError> {
-        let mut processor = CiphertextProcessor::new(self, self.cipher_suite_provider.clone());
-
-        processor
-            .decryption_key(LeafIndex(sender), KeyType::Application, generation)
+        self.epoch_secrets
+            .secret_tree
+            .message_key_generation(
+                &self.cipher_suite_provider,
+                LeafIndex(sender),
+                KeyType::Application,
+                generation,
+            )
             .map_err(Into::into)
     }
 }
@@ -1630,6 +1660,7 @@ struct ResumptionGroupParameters<'a> {
     extensions: &'a ExtensionList,
 }
 
+#[cfg(feature = "private_message")]
 impl<C> GroupStateProvider for Group<C>
 where
     C: ClientConfig + Clone,
@@ -1666,6 +1697,7 @@ where
         Some(self.private_tree.self_index)
     }
 
+    #[cfg(feature = "private_message")]
     async fn process_ciphertext(
         &mut self,
         cipher_text: PrivateMessage,
@@ -1770,6 +1802,7 @@ where
             &key_schedule,
             &commit_secret,
             &provisional_state.group_context,
+            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             provisional_state.public_tree.total_leaf_count(),
             &self.get_psk(&provisional_state.psks).await?,
             &self.cipher_suite_provider,
@@ -1953,6 +1986,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "private_message")]
     #[test]
     async fn test_pending_proposals_application_data() {
         let mut test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2282,6 +2316,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "private_message")]
     #[test]
     async fn test_group_encrypt_plaintext_padding() {
         let protocol_version = TEST_PROTOCOL_VERSION;
@@ -2807,6 +2842,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "private_message")]
     #[test]
     async fn member_can_see_sender_creds() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
@@ -2844,6 +2880,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "private_message")]
     #[test]
     async fn member_cannot_decrypt_same_message_twice() {
         let mut alice_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;

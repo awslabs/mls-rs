@@ -490,6 +490,7 @@ impl MessageProcessor for GroupWithoutKeySchedule {
             .await
     }
 
+    #[cfg(feature = "private_message")]
     async fn process_ciphertext(
         &mut self,
         cipher_text: PrivateMessage,

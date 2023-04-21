@@ -535,7 +535,7 @@ mod tests {
         crypto::test_utils::{
             test_cipher_suite_provider, try_test_cipher_suite_provider, TestCryptoProvider,
         },
-        group::{ciphertext_processor::InteropSenderData, test_utils::random_bytes},
+        group::test_utils::random_bytes,
     };
 
     use super::{test_utils::get_test_tree, *};
@@ -792,6 +792,21 @@ mod tests {
             assert_eq!(ratchet_data, case.ratchets);
         }
     }
+}
+
+#[cfg(all(test, feature = "rfc_compliant"))]
+mod interop_tests {
+    use aws_mls_core::crypto::{CipherSuite, CipherSuiteProvider};
+    use zeroize::Zeroizing;
+
+    use crate::{
+        crypto::test_utils::try_test_cipher_suite_provider,
+        group::{
+            ciphertext_processor::InteropSenderData, internal::LeafIndex, secret_tree::KeyType,
+        },
+    };
+
+    use super::SecretTree;
 
     #[test]
     fn interop_test_vector() {

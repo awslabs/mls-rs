@@ -11,7 +11,6 @@ use crate::{
         proposal::ProposalType,
         proposal_filter::{PassThroughProposalRules, ProposalRules},
         state_repo::DEFAULT_EPOCH_RETENTION_LIMIT,
-        ControlEncryptionMode,
     },
     identity::CredentialType,
     identity::SigningIdentity,
@@ -24,6 +23,9 @@ use crate::{
     tree_kem::{Capabilities, Lifetime},
     Sealed,
 };
+
+#[cfg(feature = "private_message")]
+use crate::group::ControlEncryptionMode;
 
 #[cfg(feature = "std")]
 use crate::time::MlsTime;
@@ -43,6 +45,7 @@ use aws_mls_provider_sqlite::{
     },
 };
 
+#[cfg(feature = "private_message")]
 pub use crate::group::padding::PaddingMode;
 
 /// Base client configuration type when instantiating `ClientBuilder`
@@ -878,9 +881,12 @@ impl Default for Settings {
 }
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Preferences {
+    #[cfg(feature = "private_message")]
     pub encrypt_controls: bool,
     pub ratchet_tree_extension: bool,
+    #[cfg(feature = "private_message")]
     pub padding_mode: PaddingMode,
     pub force_commit_path_update: bool,
     pub max_epoch_retention: u64,
@@ -889,8 +895,10 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            #[cfg(feature = "private_message")]
             encrypt_controls: Default::default(),
             ratchet_tree_extension: Default::default(),
+            #[cfg(feature = "private_message")]
             padding_mode: Default::default(),
             force_commit_path_update: true,
             max_epoch_retention: DEFAULT_EPOCH_RETENTION_LIMIT,
@@ -899,6 +907,7 @@ impl Default for Preferences {
 }
 
 impl Preferences {
+    #[cfg(feature = "private_message")]
     #[must_use]
     pub fn with_control_encryption(self, enabled: bool) -> Self {
         Self {
@@ -915,6 +924,7 @@ impl Preferences {
         }
     }
 
+    #[cfg(feature = "private_message")]
     #[must_use]
     pub fn with_padding_mode(self, padding_mode: PaddingMode) -> Self {
         Self {
@@ -931,6 +941,7 @@ impl Preferences {
         }
     }
 
+    #[cfg(feature = "private_message")]
     pub(crate) fn encryption_mode(&self) -> ControlEncryptionMode {
         if self.encrypt_controls {
             ControlEncryptionMode::Encrypted(self.padding_mode)

@@ -851,7 +851,7 @@ mod tests {
             builder = builder.with_external_psk(psk_id);
         }
 
-        let (mut new_group, external_commit) = builder.build(group_info_msg).await?;
+        let (new_group, external_commit) = builder.build(group_info_msg).await?;
 
         let num_members = if do_remove { 2 } else { 3 };
 
@@ -886,31 +886,11 @@ mod tests {
             assert_matches!(message, ReceivedMessage::Commit(_));
         }
 
-        let alice_msg = b"I'm Alice";
-
-        let msg = alice_group
-            .group
-            .encrypt_application_message(alice_msg, vec![])
-            .await
-            .unwrap();
-
-        let received = new_group.process_incoming_message(msg).await.unwrap();
-        assert_matches!(received, ReceivedMessage::ApplicationMessage(bytes) if bytes.data() == alice_msg);
-
-        let new_msg = b"I'm the new guy";
-
-        let msg = new_group
-            .encrypt_application_message(new_msg, vec![])
-            .await
-            .unwrap();
-
-        let received = alice_group
-            .group
-            .process_incoming_message(msg)
-            .await
-            .unwrap();
-
-        assert_matches!(received, ReceivedMessage::ApplicationMessage(application_msg) if application_msg.data() == new_msg);
+        // Comparing epoch authenticators is sufficient to check that members are in sync.
+        assert_eq!(
+            alice_group.group.epoch_authenticator().unwrap(),
+            new_group.epoch_authenticator().unwrap()
+        );
 
         Ok(())
     }

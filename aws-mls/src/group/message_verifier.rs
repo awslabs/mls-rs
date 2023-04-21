@@ -4,7 +4,10 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
-#[cfg(not(feature = "std"))]
+#[cfg(all(
+    not(feature = "std"),
+    any(feature = "secret_tree_access", feature = "private_message")
+))]
 use alloc::collections::BTreeMap;
 
 use crate::{
@@ -29,9 +32,15 @@ use super::{
 #[derive(Debug)]
 pub(crate) enum SignaturePublicKeysContainer<'a> {
     RatchetTree(&'a TreeKemPublic),
-    #[cfg(feature = "std")]
+    #[cfg(all(
+        feature = "std",
+        any(feature = "secret_tree_access", feature = "private_message")
+    ))]
     List(&'a HashMap<LeafIndex, SignaturePublicKey>),
-    #[cfg(not(feature = "std"))]
+    #[cfg(all(
+        not(feature = "std"),
+        any(feature = "secret_tree_access", feature = "private_message")
+    ))]
     List(&'a BTreeMap<LeafIndex, SignaturePublicKey>),
 }
 
@@ -154,6 +163,7 @@ fn signing_identity_for_member(
             .signing_identity
             .signature_key
             .clone()), // TODO: We can probably get rid of this clone
+        #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
         SignaturePublicKeysContainer::List(list) => list
             .get(&leaf_index)
             .ok_or(MlsError::LeafNotFound(*leaf_index))
@@ -253,17 +263,13 @@ mod tests {
     }
 
     impl TestEnv {
-        async fn new(encrypt_controls: bool) -> Self {
+        async fn new() -> Self {
             let mut alice = test_group_custom(
                 TEST_PROTOCOL_VERSION,
                 TEST_CIPHER_SUITE,
                 None,
                 None,
-                Some(
-                    Preferences::default()
-                        .with_ratchet_tree_extension(true)
-                        .with_control_encryption(encrypt_controls),
-                ),
+                Some(Preferences::default().with_ratchet_tree_extension(true)),
             )
             .await;
 
@@ -298,7 +304,7 @@ mod tests {
 
     #[test]
     async fn valid_plaintext_is_verified() {
-        let mut env = TestEnv::new(false).await;
+        let mut env = TestEnv::new().await;
 
         let message = make_signed_plaintext(&mut env.alice.group).await;
 
@@ -314,7 +320,7 @@ mod tests {
 
     #[test]
     async fn valid_auth_content_is_verified() {
-        let mut env = TestEnv::new(false).await;
+        let mut env = TestEnv::new().await;
 
         let message = AuthenticatedContent::from(make_signed_plaintext(&mut env.alice.group).await);
 
@@ -330,7 +336,7 @@ mod tests {
 
     #[test]
     async fn invalid_plaintext_is_not_verified() {
-        let mut env = TestEnv::new(false).await;
+        let mut env = TestEnv::new().await;
         let mut message = make_signed_plaintext(&mut env.alice.group).await;
         message.auth.signature = MessageSignature::from(b"test".to_vec());
 
@@ -359,7 +365,7 @@ mod tests {
 
     #[test]
     async fn plaintext_from_member_requires_membership_tag() {
-        let mut env = TestEnv::new(false).await;
+        let mut env = TestEnv::new().await;
         let mut message = make_signed_plaintext(&mut env.alice.group).await;
         message.membership_tag = None;
 
@@ -376,7 +382,7 @@ mod tests {
 
     #[test]
     async fn plaintext_fails_with_invalid_membership_tag() {
-        let mut env = TestEnv::new(false).await;
+        let mut env = TestEnv::new().await;
         let mut message = make_signed_plaintext(&mut env.alice.group).await;
         message.membership_tag = Some(MembershipTag::from(b"test".to_vec()));
 
@@ -610,7 +616,7 @@ mod tests {
 
     #[test]
     async fn plaintext_from_self_fails_verification() {
-        let mut env = TestEnv::new(false).await;
+        let mut env = TestEnv::new().await;
 
         let message = make_signed_plaintext(&mut env.alice.group).await;
 

@@ -1,9 +1,12 @@
 use super::proposal::Proposal;
 use super::*;
 use crate::{client::MlsError, protocol_version::ProtocolVersion};
-use alloc::{string::ToString, vec::Vec};
+use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use zeroize::Zeroize;
+
+#[cfg(feature = "private_message")]
+use alloc::string::ToString;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -156,6 +159,7 @@ impl MlsDecode for PublicMessage {
     }
 }
 
+#[cfg(feature = "private_message")]
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PrivateContentTBE {
     pub content: Content,
@@ -163,6 +167,7 @@ pub(crate) struct PrivateContentTBE {
     pub padding: Vec<u8>,
 }
 
+#[cfg(feature = "private_message")]
 impl MlsSize for PrivateContentTBE {
     fn mls_encoded_len(&self) -> usize {
         let content_len_without_type = match &self.content {
@@ -176,6 +181,7 @@ impl MlsSize for PrivateContentTBE {
     }
 }
 
+#[cfg(feature = "private_message")]
 impl MlsEncode for PrivateContentTBE {
     fn mls_encode(&self, writer: &mut Vec<u8>) -> Result<(), aws_mls_codec::Error> {
         match &self.content {
@@ -191,6 +197,7 @@ impl MlsEncode for PrivateContentTBE {
     }
 }
 
+#[cfg(feature = "private_message")]
 impl PrivateContentTBE {
     pub(crate) fn mls_decode(
         reader: &mut &[u8],
@@ -220,6 +227,7 @@ impl PrivateContentTBE {
     }
 }
 
+#[cfg(feature = "private_message")]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 pub struct PrivateContentAAD {
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
@@ -230,6 +238,7 @@ pub struct PrivateContentAAD {
     pub authenticated_data: Vec<u8>,
 }
 
+#[cfg(feature = "private_message")]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct PrivateMessage {
@@ -245,6 +254,7 @@ pub struct PrivateMessage {
     pub ciphertext: Vec<u8>,
 }
 
+#[cfg(feature = "private_message")]
 impl From<&PrivateMessage> for PrivateContentAAD {
     fn from(ciphertext: &PrivateMessage) -> Self {
         Self {
@@ -278,6 +288,7 @@ impl MLSMessage {
         }
     }
 
+    #[cfg(feature = "private_message")]
     #[inline(always)]
     pub(crate) fn into_ciphertext(self) -> Option<PrivateMessage> {
         match self.payload {
@@ -314,6 +325,7 @@ impl MLSMessage {
     pub fn wire_format(&self) -> WireFormat {
         match self.payload {
             MLSMessagePayload::Plain(_) => WireFormat::PublicMessage,
+            #[cfg(feature = "private_message")]
             MLSMessagePayload::Cipher(_) => WireFormat::PrivateMessage,
             MLSMessagePayload::Welcome(_) => WireFormat::Welcome,
             MLSMessagePayload::GroupInfo(_) => WireFormat::GroupInfo,
@@ -328,6 +340,7 @@ impl MLSMessage {
     pub fn epoch(&self) -> Option<u64> {
         match &self.payload {
             MLSMessagePayload::Plain(p) => Some(p.content.epoch),
+            #[cfg(feature = "private_message")]
             MLSMessagePayload::Cipher(c) => Some(c.epoch),
             MLSMessagePayload::GroupInfo(gi) => Some(gi.group_context.epoch),
             _ => None,
@@ -360,6 +373,7 @@ impl MLSMessage {
 #[repr(u16)]
 pub(crate) enum MLSMessagePayload {
     Plain(PublicMessage) = 1u16,
+    #[cfg(feature = "private_message")]
     Cipher(PrivateMessage) = 2u16,
     Welcome(Welcome) = 3u16,
     GroupInfo(GroupInfo) = 4u16,
@@ -376,15 +390,18 @@ impl From<PublicMessage> for MLSMessagePayload {
     Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, MlsSize, MlsEncode, MlsDecode,
 )]
 #[repr(u16)]
+#[non_exhaustive]
 /// Content description of an [`MLSMessage`]
 pub enum WireFormat {
     PublicMessage = 1u16,
+    #[cfg(feature = "private_message")]
     PrivateMessage = 2u16,
     Welcome = 3u16,
     GroupInfo = 4u16,
     KeyPackage = 5u16,
 }
 
+#[cfg(feature = "private_message")]
 impl From<ControlEncryptionMode> for WireFormat {
     fn from(mode: ControlEncryptionMode) -> Self {
         match mode {
@@ -436,6 +453,7 @@ pub(crate) mod test_utils {
         }
     }
 
+    #[cfg(feature = "private_message")]
     pub(crate) fn get_test_ciphertext_content() -> PrivateContentTBE {
         PrivateContentTBE {
             content: Content::Application(random_bytes(1024).into()),
@@ -454,6 +472,7 @@ pub(crate) mod test_utils {
     }
 }
 
+#[cfg(feature = "private_message")]
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;

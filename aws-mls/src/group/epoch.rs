@@ -1,8 +1,8 @@
+use crate::crypto::SignaturePublicKey;
 use crate::group::GroupContext;
 use crate::psk::PreSharedKey;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::tree_kem::node::LeafIndex;
-use crate::{crypto::SignaturePublicKey, group::secret_tree::SecretTree};
 use alloc::vec::Vec;
 use core::ops::Deref;
 use serde_with::serde_as;
@@ -14,7 +14,11 @@ use std::collections::HashMap;
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
 
+#[cfg(feature = "private_message")]
 use super::ciphertext_processor::GroupStateProvider;
+
+#[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
+use crate::group::secret_tree::SecretTree;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub(crate) struct PriorEpoch {
@@ -40,6 +44,7 @@ impl PriorEpoch {
     }
 }
 
+#[cfg(feature = "private_message")]
 impl GroupStateProvider for PriorEpoch {
     fn group_context(&self) -> &GroupContext {
         &self.context
@@ -62,6 +67,7 @@ impl GroupStateProvider for PriorEpoch {
 pub(crate) struct EpochSecrets {
     pub(crate) resumption_secret: PreSharedKey,
     pub(crate) sender_data_secret: SenderDataSecret,
+    #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
     pub(crate) secret_tree: SecretTree,
 }
 
@@ -96,17 +102,22 @@ pub(crate) mod test_utils {
     use super::*;
     use crate::cipher_suite::CipherSuite;
     use crate::crypto::test_utils::test_cipher_suite_provider;
+
+    #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
     use crate::group::secret_tree::test_utils::get_test_tree;
+
     use crate::group::test_utils::{get_test_group_context_with_id, random_bytes};
 
     pub(crate) fn get_test_epoch_secrets(cipher_suite: CipherSuite) -> EpochSecrets {
         let cs_provider = test_cipher_suite_provider(cipher_suite);
 
+        #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
         let secret_tree = get_test_tree(random_bytes(cs_provider.kdf_extract_size()), 2);
 
         EpochSecrets {
             resumption_secret: random_bytes(cs_provider.kdf_extract_size()).into(),
             sender_data_secret: random_bytes(cs_provider.kdf_extract_size()).into(),
+            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             secret_tree,
         }
     }

@@ -21,6 +21,9 @@ use crate::{
 #[cfg(feature = "external_commit")]
 use crate::tree_kem::leaf_node::LeafNode;
 
+#[cfg(not(feature = "private_message"))]
+use crate::WireFormat;
+
 use super::{
     confirmation_tag::ConfirmationTag,
     framing::{Content, MLSMessage, Sender},
@@ -29,8 +32,11 @@ use super::{
     message_processor::MessageProcessor,
     message_signature::AuthenticatedContent,
     proposal::{CustomProposal, Proposal, ProposalOrRef},
-    ConfirmedTranscriptHash, ControlEncryptionMode, Group, GroupInfo,
+    ConfirmedTranscriptHash, Group, GroupInfo,
 };
+
+#[cfg(feature = "private_message")]
+use super::ControlEncryptionMode;
 
 #[derive(Clone, Debug, PartialEq, MlsSize, MlsEncode, MlsDecode)]
 #[cfg_attr(feature = "arbitrary", derive(aws_mls_core::arbitrary::Arbitrary))]
@@ -48,6 +54,7 @@ pub(super) struct CommitGeneration {
 #[derive(Clone, Debug)]
 struct CommitOptions {
     pub prefer_path_update: bool,
+    #[cfg(feature = "private_message")]
     pub encryption_mode: ControlEncryptionMode,
     pub ratchet_tree_extension: bool,
 }
@@ -364,6 +371,7 @@ where
 
         let options = CommitOptions {
             prefer_path_update: preferences.force_commit_path_update,
+            #[cfg(feature = "private_message")]
             encryption_mode: preferences.encryption_mode(),
             ratchet_tree_extension: preferences.ratchet_tree_extension,
         };
@@ -519,7 +527,10 @@ where
             sender,
             Content::Commit(commit),
             &old_signer,
+            #[cfg(feature = "private_message")]
             options.encryption_mode.into(),
+            #[cfg(not(feature = "private_message"))]
+            WireFormat::PublicMessage,
             authenticated_data,
         )?;
 
@@ -551,6 +562,7 @@ where
             &self.key_schedule,
             &commit_secret,
             &provisional_group_context,
+            #[cfg(any(feature = "secret_tree_access", feature = "private_message"))]
             self.state.public_tree.total_leaf_count(),
             &psk_secret,
             &self.cipher_suite_provider,

@@ -4,8 +4,8 @@ use super::{
     commit_sender,
     confirmation_tag::ConfirmationTag,
     framing::{
-        ApplicationData, Content, ContentType, MLSMessage, MLSMessagePayload, PrivateMessage,
-        PublicMessage, Sender, WireFormat,
+        ApplicationData, Content, ContentType, MLSMessage, MLSMessagePayload, PublicMessage,
+        Sender, WireFormat,
     },
     message_signature::AuthenticatedContent,
     proposal::{Proposal, ReInitProposal},
@@ -49,6 +49,9 @@ use crate::{psk::JustPreSharedKeyID, tree_kem::UpdatePath};
 
 #[cfg(feature = "state_update")]
 use super::{member_from_key_package, member_from_leaf_node, proposal::CustomProposal};
+
+#[cfg(feature = "private_message")]
+use crate::group::framing::PrivateMessage;
 
 #[derive(Debug)]
 pub(crate) struct ProvisionalState {
@@ -292,9 +295,14 @@ pub(crate) trait MessageProcessor: Send + Sync {
 
         match message.payload {
             MLSMessagePayload::Plain(plaintext) => self.verify_plaintext_authentication(plaintext),
+            #[cfg(feature = "private_message")]
             MLSMessagePayload::Cipher(cipher_text) => self.process_ciphertext(cipher_text).await,
             _ => Err(MlsError::UnexpectedMessageType(
-                vec![WireFormat::PublicMessage, WireFormat::PrivateMessage],
+                vec![
+                    WireFormat::PublicMessage,
+                    #[cfg(feature = "private_message")]
+                    WireFormat::PrivateMessage,
+                ],
                 wire_format,
             )),
         }
@@ -656,6 +664,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
                 plaintext.content.content_type(),
                 WireFormat::PublicMessage,
             )),
+            #[cfg(feature = "private_message")]
             MLSMessagePayload::Cipher(ciphertext) => Some((
                 &ciphertext.group_id,
                 ciphertext.epoch,
@@ -706,6 +715,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
         Ok(())
     }
 
+    #[cfg(feature = "private_message")]
     async fn process_ciphertext(
         &mut self,
         cipher_text: PrivateMessage,
