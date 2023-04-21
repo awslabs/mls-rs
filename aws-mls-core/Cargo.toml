@@ -4,11 +4,12 @@ version = "0.6.0"
 edition = "2021"
 
 [features]
-default = ["std"]
+default = ["std", "rfc_compliant"]
 arbitrary = ["dep:arbitrary"]
 benchmark = []
 external_commit = []
 std = ["aws-mls-codec/std", "serde/std", "zeroize/std", "serde_with/std", "base64/std", "num_enum/std", "indexmap/std", "thiserror/std", "indexmap"]
+rfc_compliant = ["external_commit"]
 
 [dependencies]
 async-trait = "0.1.61"

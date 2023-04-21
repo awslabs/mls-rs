@@ -523,6 +523,7 @@ async fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: 
     let mut groups = futures::stream::iter(&others)
         .fold(vec![creator_group], |mut groups, client| async move {
             let existing_group = groups.choose_mut(&mut rand::thread_rng()).unwrap();
+
             let group_info = existing_group
                 .group_info_message_allowing_ext_commit()
                 .await
@@ -530,14 +531,9 @@ async fn external_commits_work(protocol_version: ProtocolVersion, cipher_suite: 
 
             let (new_group, commit) = client
                 .client
-                .commit_external(
-                    group_info,
-                    Some(&existing_group.export_tree().unwrap()),
-                    client.identity.clone(),
-                    None,
-                    vec![],
-                    vec![],
-                )
+                .external_commit_builder(client.identity.clone())
+                .with_tree_data(existing_group.export_tree().unwrap())
+                .build(group_info)
                 .await
                 .unwrap();
 
@@ -809,7 +805,7 @@ async fn external_joiner_can_process_siblings_update() {
 
     let (group, commit) = new_client
         .client
-        .commit_external(info, None, new_client.identity, None, vec![], vec![])
+        .commit_external(info, new_client.identity)
         .await
         .unwrap();
 

@@ -14,6 +14,7 @@ use crate::protocol_version::ProtocolVersion;
 use crate::tree_kem::node::NodeIndex;
 use crate::tree_kem::Lifetime;
 use alloc::boxed::Box;
+use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_core::crypto::CryptoProvider;
 use aws_mls_core::extension::{ExtensionError, ExtensionList, ExtensionType};
@@ -134,10 +135,6 @@ pub enum MlsError {
     MembershipTagForNonMember,
     #[error("No member found for given identity id.")]
     MemberNotFound,
-    #[error("expected group info message")]
-    ExpectedGroupInfoMessage,
-    #[error("expected key package message")]
-    ExpectedKeyPackageMessage,
     #[error("group not found: {0:?}")]
     GroupNotFound(Vec<u8>),
     #[error("unexpected PSK ID")]
@@ -510,29 +507,25 @@ where
     pub async fn commit_external(
         &self,
         group_info_msg: MLSMessage,
-        tree_data: Option<&[u8]>,
         signing_identity: SigningIdentity,
-        to_remove: Option<u32>,
-        external_psks: Vec<ExternalPskId>,
-        authenticated_data: Vec<u8>,
     ) -> Result<(Group<C>, MLSMessage), MlsError> {
-        Group::new_external(
-            self.config.clone(),
-            group_info_msg,
-            tree_data,
+        crate::group::external_commit::ExternalCommitBuilder::new(
             signing_identity,
-            to_remove,
-            external_psks,
-            authenticated_data,
+            self.config.clone(),
         )
+        .build(group_info_msg)
         .await
-        .map_err(|e| {
-            if matches!(e, MlsError::UnexpectedMessageType(..)) {
-                MlsError::ExpectedGroupInfoMessage
-            } else {
-                e
-            }
-        })
+    }
+
+    #[cfg(feature = "external_commit")]
+    pub fn external_commit_builder(
+        &self,
+        signing_identity: SigningIdentity,
+    ) -> crate::group::external_commit::ExternalCommitBuilder<C> {
+        crate::group::external_commit::ExternalCommitBuilder::new(
+            signing_identity,
+            self.config.clone(),
+        )
     }
 
     /// Load an existing group state into this client using the
@@ -567,14 +560,15 @@ where
         authenticated_data: Vec<u8>,
     ) -> Result<MLSMessage, MlsError> {
         let protocol_version = group_info.version;
+        let wire_format = group_info.wire_format();
 
         if !self.config.version_supported(protocol_version) {
             return Err(MlsError::UnsupportedProtocolVersion(group_info.version));
         }
 
-        let group_info = group_info
-            .into_group_info()
-            .ok_or(MlsError::ExpectedGroupInfoMessage)?;
+        let group_info = group_info.into_group_info().ok_or_else(|| {
+            MlsError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
+        })?;
 
         let cipher_suite_provider = self
             .config
@@ -846,16 +840,19 @@ mod tests {
 
         let new_client = new_client.psk(psk_id.clone(), psk).build();
 
-        let (mut new_group, external_commit) = new_client
-            .commit_external(
-                group_info_msg,
-                Some(&alice_group.group.export_tree().unwrap()),
-                new_client_identity,
-                do_remove.then_some(1),
-                if with_psk { vec![psk_id] } else { vec![] },
-                vec![],
-            )
-            .await?;
+        let mut builder = new_client
+            .external_commit_builder(new_client_identity)
+            .with_tree_data(alice_group.group.export_tree().unwrap());
+
+        if do_remove {
+            builder = builder.with_removal(1);
+        }
+
+        if with_psk {
+            builder = builder.with_external_psk(psk_id);
+        }
+
+        let (mut new_group, external_commit) = builder.build(group_info_msg).await?;
 
         let num_members = if do_remove { 2 } else { 3 };
 
@@ -940,12 +937,9 @@ mod tests {
             .await
             .unwrap();
 
-        let res = alice
-            .commit_external(msg, None, alice_identity, None, vec![], vec![])
-            .await
-            .map(|_| ());
+        let res = alice.commit_external(msg, alice_identity).await.map(|_| ());
 
-        assert_matches!(res, Err(MlsError::ExpectedGroupInfoMessage));
+        assert_matches!(res, Err(MlsError::UnexpectedMessageType(_, _)));
     }
 
     #[cfg(feature = "external_commit")]
@@ -967,14 +961,9 @@ mod tests {
 
         let (_, external_commit) = carol
             .build()
-            .commit_external(
-                group_info_msg,
-                Some(&bob_group.group.export_tree().unwrap()),
-                carol_identity,
-                None,
-                vec![],
-                vec![],
-            )
+            .external_commit_builder(carol_identity)
+            .with_tree_data(bob_group.group.export_tree().unwrap())
+            .build(group_info_msg)
             .await
             .unwrap();
 

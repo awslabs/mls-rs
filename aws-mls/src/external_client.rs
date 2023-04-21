@@ -1,11 +1,11 @@
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
-    group::framing::{MLSMessage, MLSMessagePayload},
+    group::framing::MLSMessage,
     key_package::{KeyPackageValidationOptions, KeyPackageValidationOutput, KeyPackageValidator},
     protocol_version::ProtocolVersion,
     time::MlsTime,
-    CryptoProvider,
+    CryptoProvider, WireFormat,
 };
 
 pub mod builder;
@@ -85,14 +85,15 @@ where
     /// Utility function to validate key packages
     pub async fn validate_key_package(
         &self,
-        package: &MLSMessage,
+        package: MLSMessage,
         protocol: ProtocolVersion,
         cipher_suite: CipherSuite,
     ) -> Result<KeyPackageValidationOutput, MlsError> {
-        let package = match package.payload {
-            MLSMessagePayload::KeyPackage(ref key_package) => Ok(key_package),
-            _ => Err(MlsError::ExpectedKeyPackageMessage),
-        }?;
+        let wire_format = package.wire_format();
+
+        let key_package = package.into_key_package().ok_or_else(|| {
+            MlsError::UnexpectedMessageType(vec![WireFormat::KeyPackage], wire_format)
+        })?;
 
         let cipher_suite_provider = self
             .config
@@ -110,7 +111,7 @@ where
         };
 
         keypackage_validator
-            .check_if_valid(package, options)
+            .check_if_valid(&key_package, options)
             .await
             .map_err(Into::into)
     }

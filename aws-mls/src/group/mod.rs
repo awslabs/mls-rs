@@ -40,7 +40,7 @@ use crate::tree_kem::{TreeKemPrivate, TreeKemPublic};
 use crate::{CipherSuiteProvider, CryptoProvider};
 
 #[cfg(feature = "external_commit")]
-use crate::{extension::ExternalPubExt, psk::PreSharedKey};
+use crate::extension::ExternalPubExt;
 
 #[cfg(feature = "std")]
 use std::collections::HashMap;
@@ -93,9 +93,6 @@ pub use context::*;
 #[cfg(not(feature = "benchmark"))]
 pub(crate) use context::*;
 
-#[cfg(feature = "external_commit")]
-use self::epoch::SenderDataSecret;
-
 mod ciphertext_processor;
 mod commit;
 pub(crate) mod confirmation_tag;
@@ -120,6 +117,10 @@ pub(crate) mod state;
 pub(crate) mod state_repo;
 pub(crate) mod transcript_hash;
 mod util;
+
+#[cfg(feature = "external_commit")]
+/// External commit building.
+pub mod external_commit;
 
 #[cfg(feature = "benchmark")]
 #[doc(hidden)]
@@ -554,124 +555,6 @@ where
         };
 
         Ok((group, NewMemberInfo::new(group_info_extensions)))
-    }
-
-    /// Returns group and external commit message
-    #[cfg(feature = "external_commit")]
-    pub(crate) async fn new_external(
-        config: C,
-        group_info: MLSMessage,
-        tree_data: Option<&[u8]>,
-        signing_identity: SigningIdentity,
-        to_remove: Option<u32>,
-        external_psks: Vec<ExternalPskId>,
-        authenticated_data: Vec<u8>,
-    ) -> Result<(Self, MLSMessage), MlsError> {
-        let protocol_version = group_info.version;
-
-        if !config.version_supported(protocol_version) {
-            return Err(MlsError::UnsupportedProtocolVersion(protocol_version));
-        }
-
-        let wire_format = group_info.wire_format();
-
-        let group_info = group_info.into_group_info().ok_or_else(|| {
-            MlsError::UnexpectedMessageType(vec![WireFormat::GroupInfo], wire_format)
-        })?;
-
-        let cipher_suite_provider = cipher_suite_provider(
-            config.crypto_provider(),
-            group_info.group_context.cipher_suite,
-        )?;
-
-        let external_pub_ext = group_info
-            .extensions
-            .get_as::<ExternalPubExt>()?
-            .ok_or(MlsError::MissingExternalPubExtension)?;
-
-        let join_context = validate_group_info(
-            protocol_version,
-            group_info,
-            tree_data,
-            &config.identity_provider(),
-            &cipher_suite_provider,
-        )
-        .await?;
-
-        let signer = config
-            .keychain()
-            .signer(&signing_identity)
-            .await
-            .map_err(|e| MlsError::KeychainError(e.into()))?
-            .ok_or(MlsError::SignerNotFound)?;
-
-        let (leaf_node, _) = LeafNode::generate(
-            &cipher_suite_provider,
-            config.leaf_properties(),
-            signing_identity,
-            &signer,
-            config.lifetime(),
-        )
-        .await?;
-
-        let (init_secret, kem_output) = InitSecret::encode_for_external(
-            &cipher_suite_provider,
-            &external_pub_ext.external_pub,
-        )?;
-
-        let epoch_secrets = EpochSecrets {
-            resumption_secret: PreSharedKey::from(vec![]),
-            sender_data_secret: SenderDataSecret::from(vec![]),
-            secret_tree: SecretTree::empty(),
-        };
-
-        let (mut group, _) = Self::join_with(
-            config,
-            cipher_suite_provider.clone(),
-            join_context,
-            KeySchedule::new(init_secret),
-            epoch_secrets,
-            TreeKemPrivate::new_for_external(),
-            None,
-        )
-        .await?;
-
-        let psk_ids = external_psks
-            .into_iter()
-            .map(|psk_id| {
-                Ok(PreSharedKeyID {
-                    key_id: JustPreSharedKeyID::External(psk_id),
-                    psk_nonce: PskNonce::random(&cipher_suite_provider)
-                        .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
-                })
-            })
-            .collect::<Result<Vec<_>, MlsError>>()?;
-
-        let proposals = psk_ids
-            .into_iter()
-            .map(|psk| Proposal::Psk(PreSharedKeyProposal { psk }))
-            .chain([Proposal::ExternalInit(ExternalInit { kem_output })])
-            .chain(to_remove.map(|r| {
-                Proposal::Remove(RemoveProposal {
-                    to_remove: LeafIndex(r),
-                })
-            }))
-            .collect::<Vec<_>>();
-
-        let commit_output = group
-            .commit_internal(
-                proposals,
-                Some(&leaf_node),
-                authenticated_data,
-                Default::default(),
-                None,
-                None,
-            )
-            .await?;
-
-        group.apply_pending_commit().await?;
-
-        Ok((group, commit_output.commit_message))
     }
 
     #[inline(always)]
@@ -2455,17 +2338,13 @@ mod tests {
             .unwrap()
             .clone();
 
-        let res = Group::new_external(
-            group.group.config,
-            info_msg,
-            None,
+        let res = external_commit::ExternalCommitBuilder::new(
             signing_identity,
-            None,
-            vec![],
-            vec![],
+            group.group.config.clone(),
         )
+        .build(info_msg)
         .await
-        .map(|_| ());
+        .map(|_| {});
 
         assert_matches!(res, Err(MlsError::MissingExternalPubExtension));
     }
@@ -2707,17 +2586,14 @@ mod tests {
 
         let (bob_group, commit) = bob
             .build()
-            .commit_external(
+            .external_commit_builder(bob_identity)
+            .with_tree_data(alice_group.group.export_tree().unwrap())
+            .build(
                 alice_group
                     .group
                     .group_info_message_allowing_ext_commit()
                     .await
                     .unwrap(),
-                Some(&alice_group.group.export_tree().unwrap()),
-                bob_identity,
-                None,
-                vec![],
-                vec![],
             )
             .await
             .unwrap();
@@ -2746,17 +2622,14 @@ mod tests {
 
         let (_, commit) = bob
             .build()
-            .commit_external(
+            .external_commit_builder(bob_identity)
+            .with_tree_data(alice_group.group.export_tree().unwrap())
+            .build(
                 alice_group
                     .group
                     .group_info_message_allowing_ext_commit()
                     .await
                     .unwrap(),
-                Some(&alice_group.group.export_tree().unwrap()),
-                bob_identity,
-                None,
-                vec![],
-                vec![],
             )
             .await
             .unwrap();
