@@ -21,7 +21,7 @@ use super::{
 use crate::{
     client::MlsError,
     key_package::KeyPackage,
-    psk::{ExternalPskIdValidator, JustPreSharedKeyID, PreSharedKeyID},
+    psk::{JustPreSharedKeyID, PreSharedKeyID},
     time::MlsTime,
     tree_kem::{
         leaf_node::LeafNode, node::LeafIndex, path_secret::PathSecret, validate_update_path,
@@ -36,7 +36,7 @@ use aws_mls_core::{
     crypto::CipherSuite,
     group::{MemberUpdate, RosterUpdate},
     identity::{IdentityProvider, IdentityWarning},
-    psk::ExternalPskId,
+    psk::{ExternalPskId, PreSharedKeyStorage},
 };
 use itertools::Itertools;
 
@@ -240,7 +240,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     type ProposalRules: ProposalRules;
     type IdentityProvider: IdentityProvider;
     type CipherSuiteProvider: CipherSuiteProvider;
-    type ExternalPskIdValidator: ExternalPskIdValidator;
+    type PreSharedKeyStorage: PreSharedKeyStorage;
 
     async fn process_incoming_message(
         &mut self,
@@ -489,7 +489,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             &id_provider,
             self.cipher_suite_provider(),
             &group_state.public_tree,
-            self.external_psk_id_validator(),
+            self.psk_storage(),
             self.proposal_rules(),
             time_sent,
             &group_state.roster(),
@@ -606,7 +606,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
     fn proposal_rules(&self) -> Self::ProposalRules;
     fn identity_provider(&self) -> Self::IdentityProvider;
     fn cipher_suite_provider(&self) -> &Self::CipherSuiteProvider;
-    fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator;
+    fn psk_storage(&self) -> Self::PreSharedKeyStorage;
     fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool;
     fn min_epoch_available(&self) -> Option<u64>;
 

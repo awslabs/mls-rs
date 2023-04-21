@@ -9,7 +9,8 @@ use aws_mls::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
     },
-    storage_provider::{in_memory::InMemoryKeychainStorage, ExternalPskId},
+    psk::ExternalPskId,
+    storage_provider::in_memory::InMemoryKeychainStorage,
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider,
 };
 

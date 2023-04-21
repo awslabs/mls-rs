@@ -10,7 +10,7 @@ use crate::{client::MlsError, group::key_schedule::kdf_expand_with_label};
 use super::{PSKLabel, PreSharedKeyID};
 
 #[derive(Clone)]
-pub struct PskSecretInput {
+pub(crate) struct PskSecretInput {
     pub id: PreSharedKeyID,
     pub psk: PreSharedKey,
 }

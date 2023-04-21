@@ -1,14 +1,23 @@
 use crate::{client::MlsError, serde_utils::vec_u8_as_base64::VecAsBase64, CipherSuiteProvider};
-use alloc::{boxed::Box, vec::Vec};
+use alloc::vec::Vec;
+
+#[cfg(any(test, feature = "external_client"))]
+use alloc::vec;
+
+#[cfg(any(test, feature = "external_client"))]
+use alloc::boxed::Box;
+
+#[cfg(any(test, feature = "external_client"))]
 use async_trait::async_trait;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use core::convert::Infallible;
-use serde_with::serde_as;
-#[cfg(feature = "std")]
-use std::error::Error;
 
-#[cfg(not(feature = "std"))]
-use core::error::Error;
+#[cfg(any(test, feature = "external_client"))]
+use aws_mls_core::psk::PreSharedKeyStorage;
+
+#[cfg(any(test, feature = "external_client"))]
+use core::convert::Infallible;
+
+use serde_with::serde_as;
 
 pub(crate) mod resolver;
 pub(crate) mod secret;
@@ -30,7 +39,7 @@ pub use aws_mls_core::psk::{ExternalPskId, PreSharedKey};
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct PreSharedKeyID {
+pub(crate) struct PreSharedKeyID {
     pub key_id: JustPreSharedKeyID,
     pub psk_nonce: PskNonce,
 }
@@ -63,7 +72,7 @@ impl PreSharedKeyID {
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
-pub enum JustPreSharedKeyID {
+pub(crate) enum JustPreSharedKeyID {
     External(ExternalPskId) = 1u8,
     Resumption(ResumptionPsk) = 2u8,
 }
@@ -84,7 +93,7 @@ pub enum JustPreSharedKeyID {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct PskGroupId(
+pub(crate) struct PskGroupId(
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     pub Vec<u8>,
@@ -106,7 +115,7 @@ pub struct PskGroupId(
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct PskNonce(
+pub(crate) struct PskNonce(
     #[mls_codec(with = "aws_mls_codec::byte_vec")]
     #[serde_as(as = "VecAsBase64")]
     pub Vec<u8>,
@@ -137,7 +146,7 @@ impl PskNonce {
     serde::Serialize,
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
-pub struct ResumptionPsk {
+pub(crate) struct ResumptionPsk {
     pub usage: ResumptionPSKUsage,
     pub psk_group_id: PskGroupId,
     pub psk_epoch: u64,
@@ -159,7 +168,7 @@ pub struct ResumptionPsk {
 )]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[repr(u8)]
-pub enum ResumptionPSKUsage {
+pub(crate) enum ResumptionPSKUsage {
     Application = 1u8,
     Reinit = 2u8,
     Branch = 3u8,
@@ -172,34 +181,17 @@ struct PSKLabel<'a> {
     count: u16,
 }
 
-#[async_trait]
-pub(crate) trait ExternalPskIdValidator: Send + Sync {
-    type Error: Error + Send + Sync + 'static;
-
-    async fn validate(&self, psk_id: &ExternalPskId) -> Result<(), Self::Error>;
-}
-
-#[async_trait]
-impl<F> ExternalPskIdValidator for &F
-where
-    F: ExternalPskIdValidator + ?Sized,
-{
-    type Error = F::Error;
-
-    async fn validate(&self, psk_id: &ExternalPskId) -> Result<(), Self::Error> {
-        (**self).validate(psk_id).await
-    }
-}
-
+#[cfg(any(test, feature = "external_client"))]
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct PassThroughPskIdValidator;
+pub(crate) struct AlwaysFoundPskStorage;
 
+#[cfg(any(test, feature = "external_client"))]
 #[async_trait]
-impl ExternalPskIdValidator for PassThroughPskIdValidator {
+impl PreSharedKeyStorage for AlwaysFoundPskStorage {
     type Error = Infallible;
 
-    async fn validate(&self, _: &ExternalPskId) -> Result<(), Self::Error> {
-        Ok(())
+    async fn get(&self, _: &ExternalPskId) -> Result<Option<PreSharedKey>, Self::Error> {
+        Ok(Some(vec![].into()))
     }
 }
 

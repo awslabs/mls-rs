@@ -28,7 +28,6 @@ use crate::psk::{
 };
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::signer::Signable;
-use crate::storage_provider::psk::PskStoreIdValidator;
 use crate::tree_kem::hpke_encryption::HpkeEncryptable;
 use crate::tree_kem::kem::TreeKem;
 use crate::tree_kem::leaf_node::LeafNode;
@@ -1659,7 +1658,7 @@ where
 {
     type ProposalRules = C::ProposalRules;
     type IdentityProvider = C::IdentityProvider;
-    type ExternalPskIdValidator = PskStoreIdValidator<C::PskStore>;
+    type PreSharedKeyStorage = C::PskStore;
     type OutputType = ReceivedMessage;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
@@ -1839,8 +1838,8 @@ where
         self.config.identity_provider()
     }
 
-    fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator {
-        PskStoreIdValidator::from(self.config.secret_store())
+    fn psk_storage(&self) -> Self::PreSharedKeyStorage {
+        self.config.secret_store()
     }
 
     fn group_state(&self) -> &GroupState {

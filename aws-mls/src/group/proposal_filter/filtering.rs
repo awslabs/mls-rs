@@ -8,7 +8,7 @@ use crate::{
     },
     key_package::{KeyPackageValidationOptions, KeyPackageValidator},
     protocol_version::ProtocolVersion,
-    psk::{ExternalPskIdValidator, PreSharedKeyID},
+    psk::PreSharedKeyID,
     time::MlsTime,
     tree_kem::{
         leaf_node::LeafNode,
@@ -23,7 +23,7 @@ use crate::{
 use alloc::vec;
 
 use alloc::vec::Vec;
-use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
 use futures::TryStreamExt;
 use itertools::Itertools;
 
@@ -72,13 +72,13 @@ pub(crate) struct ProposalApplier<'a, C, P, CSP> {
     #[cfg(feature = "external_commit")]
     external_leaf: Option<&'a LeafNode>,
     identity_provider: &'a C,
-    external_psk_id_validator: P,
+    psk_storage: &'a P,
 }
 
 impl<'a, C, P, CSP> ProposalApplier<'a, C, P, CSP>
 where
     C: IdentityProvider,
-    P: ExternalPskIdValidator,
+    P: PreSharedKeyStorage,
     CSP: CipherSuiteProvider,
 {
     #[allow(clippy::too_many_arguments)]
@@ -91,7 +91,7 @@ where
         original_required_capabilities: Option<&'a RequiredCapabilitiesExt>,
         #[cfg(feature = "external_commit")] external_leaf: Option<&'a LeafNode>,
         identity_provider: &'a C,
-        external_psk_id_validator: P,
+        psk_storage: &'a P,
     ) -> Self {
         Self {
             original_tree,
@@ -103,7 +103,7 @@ where
             #[cfg(feature = "external_commit")]
             external_leaf,
             identity_provider,
-            external_psk_id_validator,
+            psk_storage,
         }
     }
 
@@ -165,7 +165,7 @@ where
             strategy,
             self.cipher_suite_provider,
             proposals,
-            &self.external_psk_id_validator,
+            self.psk_storage,
         )
         .await?;
 
@@ -225,7 +225,7 @@ where
             &FailInvalidProposal,
             self.cipher_suite_provider,
             proposals,
-            &self.external_psk_id_validator,
+            self.psk_storage,
         )
         .await?;
 
@@ -904,11 +904,11 @@ async fn filter_out_invalid_psks<F, P, CP>(
     strategy: &F,
     cipher_suite_provider: &CP,
     mut proposals: ProposalBundle,
-    external_psk_id_validator: &P,
+    psk_storage: &P,
 ) -> Result<ProposalBundle, MlsError>
 where
     F: FilterStrategy,
-    P: ExternalPskIdValidator,
+    P: PreSharedKeyStorage,
     CP: CipherSuiteProvider,
 {
     let kdf_extract_size = cipher_suite_provider.kdf_extract_size();
@@ -943,10 +943,17 @@ where
         let is_new_id = state.ids_seen.insert(p.proposal.psk.clone());
 
         let external_id_is_valid = match &p.proposal.psk.key_id {
-            JustPreSharedKeyID::External(id) => external_psk_id_validator
-                .validate(id)
+            JustPreSharedKeyID::External(id) => psk_storage
+                .contains(id)
                 .await
-                .map_err(|e| MlsError::PskIdValidationError(e.into())),
+                .map_err(|e| MlsError::PskStoreError(e.into()))
+                .and_then(|found| {
+                    if found {
+                        Ok(())
+                    } else {
+                        Err(MlsError::NoPskForId(id.clone()))
+                    }
+                }),
             JustPreSharedKeyID::Resumption(_) => Ok(()),
         };
 

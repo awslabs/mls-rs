@@ -4,7 +4,6 @@ use crate::{
         FailInvalidProposal, IgnoreInvalidByRefProposal, ProposalApplier, ProposalBundle,
         ProposalInfo, ProposalRules, ProposalSource, ProposalState,
     },
-    psk::ExternalPskIdValidator,
     time::MlsTime,
     tree_kem::leaf_node::LeafNode,
 };
@@ -14,6 +13,7 @@ use std::collections::HashMap;
 
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
+use aws_mls_core::psk::PreSharedKeyStorage;
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct ProposalSetEffects {
@@ -235,14 +235,14 @@ impl ProposalCache {
         cipher_suite_provider: &CSP,
         public_tree: &TreeKemPublic,
         #[cfg(feature = "external_commit")] external_leaf: Option<&LeafNode>,
-        external_psk_id_validator: P,
+        psk_storage: &P,
         user_filter: F,
         roster: &[Member],
     ) -> Result<(Vec<ProposalOrRef>, ProposalSetEffects), MlsError>
     where
         C: IdentityProvider,
         F: ProposalRules,
-        P: ExternalPskIdValidator,
+        P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
         let proposals = self
@@ -288,7 +288,7 @@ impl ProposalCache {
             #[cfg(feature = "external_commit")]
             external_leaf,
             identity_provider,
-            external_psk_id_validator,
+            psk_storage,
         );
 
         #[cfg(feature = "std")]
@@ -350,7 +350,7 @@ impl ProposalCache {
         identity_provider: &C,
         cipher_suite_provider: &CSP,
         public_tree: &TreeKemPublic,
-        external_psk_id_validator: P,
+        psk_storage: &P,
         user_rules: F,
         commit_time: Option<MlsTime>,
         roster: &[Member],
@@ -358,7 +358,7 @@ impl ProposalCache {
     where
         C: IdentityProvider,
         F: ProposalRules,
-        P: ExternalPskIdValidator,
+        P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
         let mut proposals = proposal_list.into_iter().try_fold(
@@ -395,7 +395,7 @@ impl ProposalCache {
             #[cfg(feature = "external_commit")]
             external_leaf,
             identity_provider,
-            external_psk_id_validator,
+            psk_storage,
         );
 
         let ProposalState {
@@ -464,6 +464,7 @@ pub(crate) mod test_utils {
 
     use aws_mls_core::{
         crypto::CipherSuiteProvider, extension::ExtensionList, identity::IdentityProvider,
+        psk::PreSharedKeyStorage,
     };
 
     use crate::{
@@ -477,7 +478,7 @@ pub(crate) mod test_utils {
             Sender,
         },
         identity::{basic::BasicIdentityProvider, test_utils::BasicWithCustomProvider},
-        psk::{ExternalPskIdValidator, PassThroughPskIdValidator},
+        psk::AlwaysFoundPskStorage,
     };
 
     use super::{CachedProposal, MlsError, ProposalCache, ProposalSetEffects};
@@ -498,7 +499,7 @@ pub(crate) mod test_utils {
         cipher_suite_provider: CSP,
         group_context_extensions: ExtensionList,
         user_rules: F,
-        external_psk_id_validator: P,
+        with_psk_storage: P,
     }
 
     impl<'a, CSP>
@@ -506,7 +507,7 @@ pub(crate) mod test_utils {
             'a,
             BasicWithCustomProvider,
             PassThroughProposalRules,
-            PassThroughPskIdValidator,
+            AlwaysFoundPskStorage,
             CSP,
         >
     {
@@ -527,7 +528,7 @@ pub(crate) mod test_utils {
                 identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider),
                 group_context_extensions: Default::default(),
                 user_rules: pass_through_rules(),
-                external_psk_id_validator: PassThroughPskIdValidator,
+                with_psk_storage: AlwaysFoundPskStorage,
                 cipher_suite_provider,
             }
         }
@@ -537,7 +538,7 @@ pub(crate) mod test_utils {
     where
         C: IdentityProvider,
         F: ProposalRules,
-        P: ExternalPskIdValidator,
+        P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
         pub fn with_identity_provider<V>(self, validator: V) -> CommitReceiver<'a, V, F, P, CSP>
@@ -552,7 +553,7 @@ pub(crate) mod test_utils {
                 identity_provider: validator,
                 group_context_extensions: self.group_context_extensions,
                 user_rules: self.user_rules,
-                external_psk_id_validator: self.external_psk_id_validator,
+                with_psk_storage: self.with_psk_storage,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
         }
@@ -569,14 +570,14 @@ pub(crate) mod test_utils {
                 identity_provider: self.identity_provider,
                 group_context_extensions: self.group_context_extensions,
                 user_rules: f,
-                external_psk_id_validator: self.external_psk_id_validator,
+                with_psk_storage: self.with_psk_storage,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
         }
 
-        pub fn with_external_psk_id_validator<V>(self, v: V) -> CommitReceiver<'a, C, F, V, CSP>
+        pub fn with_psk_storage<V>(self, v: V) -> CommitReceiver<'a, C, F, V, CSP>
         where
-            V: ExternalPskIdValidator,
+            V: PreSharedKeyStorage,
         {
             CommitReceiver {
                 tree: self.tree,
@@ -586,7 +587,7 @@ pub(crate) mod test_utils {
                 identity_provider: self.identity_provider,
                 group_context_extensions: self.group_context_extensions,
                 user_rules: self.user_rules,
-                external_psk_id_validator: v,
+                with_psk_storage: v,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
         }
@@ -621,7 +622,7 @@ pub(crate) mod test_utils {
                     &self.identity_provider,
                     &self.cipher_suite_provider,
                     self.tree,
-                    &self.external_psk_id_validator,
+                    &self.with_psk_storage,
                     &self.user_rules,
                 )
                 .await
@@ -662,7 +663,7 @@ mod tests {
             test_utils::{test_key_package, test_key_package_custom},
             KeyPackageGenerator,
         },
-        psk::PassThroughPskIdValidator,
+        psk::AlwaysFoundPskStorage,
         tree_kem::{
             leaf_node::{
                 test_utils::{
@@ -704,13 +705,13 @@ mod tests {
             identity_provider: &C,
             cipher_suite_provider: &CSP,
             public_tree: &TreeKemPublic,
-            external_psk_id_validator: P,
+            psk_storage: &P,
             user_rules: F,
         ) -> Result<ProposalSetEffects, MlsError>
         where
             C: IdentityProvider,
             F: ProposalRules,
-            P: ExternalPskIdValidator,
+            P: PreSharedKeyStorage,
             CSP: CipherSuiteProvider,
         {
             self.resolve_for_commit(
@@ -723,7 +724,7 @@ mod tests {
                 identity_provider,
                 cipher_suite_provider,
                 public_tree,
-                external_psk_id_validator,
+                psk_storage,
                 user_rules,
                 None,
                 &[],
@@ -988,7 +989,7 @@ mod tests {
                 &tree,
                 #[cfg(feature = "external_commit")]
                 None,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
                 &[],
             )
@@ -1038,7 +1039,7 @@ mod tests {
                 &tree,
                 #[cfg(feature = "external_commit")]
                 None,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
                 &[],
             )
@@ -1099,7 +1100,7 @@ mod tests {
                 &tree,
                 #[cfg(feature = "external_commit")]
                 None,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
                 &[],
             )
@@ -1142,7 +1143,7 @@ mod tests {
                 &tree,
                 #[cfg(feature = "external_commit")]
                 None,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
                 &[],
             )
@@ -1178,7 +1179,7 @@ mod tests {
                 &tree,
                 #[cfg(feature = "external_commit")]
                 None,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
                 &[],
             )
@@ -1233,7 +1234,7 @@ mod tests {
                 &tree,
                 #[cfg(feature = "external_commit")]
                 None,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
                 &[],
             )
@@ -1295,7 +1296,7 @@ mod tests {
                 &tree,
                 #[cfg(feature = "external_commit")]
                 None,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
                 &[],
             )
@@ -1312,7 +1313,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &tree,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
             )
             .await
@@ -1343,7 +1344,7 @@ mod tests {
                 &tree,
                 #[cfg(feature = "external_commit")]
                 None,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
                 &[],
             )
@@ -1393,7 +1394,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
             )
             .await;
@@ -1433,7 +1434,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
             )
             .await;
@@ -1468,7 +1469,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
             )
             .await;
@@ -1505,7 +1506,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
             )
             .await
@@ -1571,7 +1572,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &public_tree,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
             )
             .await;
@@ -1617,7 +1618,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &public_tree,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
             )
             .await;
@@ -1663,7 +1664,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 &public_tree,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
             )
             .await;
@@ -1739,7 +1740,7 @@ mod tests {
                 &BasicIdentityProvider,
                 &cipher_suite_provider,
                 public_tree,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
             )
             .await;
@@ -1765,7 +1766,7 @@ mod tests {
                 &TreeKemPublic::new(),
                 #[cfg(feature = "external_commit")]
                 None,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
                 &[],
             )
@@ -1797,7 +1798,7 @@ mod tests {
                 &TreeKemPublic::new(),
                 #[cfg(feature = "external_commit")]
                 None,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
                 &[],
             )
@@ -1846,7 +1847,7 @@ mod tests {
                 &tree,
                 #[cfg(feature = "external_commit")]
                 None,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
                 &[],
             )
@@ -1884,7 +1885,7 @@ mod tests {
                 &tree,
                 #[cfg(feature = "external_commit")]
                 None,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
                 &[],
             )
@@ -1917,7 +1918,7 @@ mod tests {
                 &tree,
                 #[cfg(feature = "external_commit")]
                 None,
-                PassThroughPskIdValidator,
+                &AlwaysFoundPskStorage,
                 pass_through_rules(),
                 &[],
             )
@@ -1936,7 +1937,7 @@ mod tests {
         additional_proposals: Vec<Proposal>,
         identity_provider: C,
         user_rules: F,
-        external_psk_id_validator: P,
+        psk_storage: P,
     }
 
     impl<'a, CSP>
@@ -1944,7 +1945,7 @@ mod tests {
             'a,
             BasicWithCustomProvider,
             PassThroughProposalRules,
-            PassThroughPskIdValidator,
+            AlwaysFoundPskStorage,
             CSP,
         >
     {
@@ -1956,7 +1957,7 @@ mod tests {
                 additional_proposals: Vec::new(),
                 identity_provider: BasicWithCustomProvider::new(BasicIdentityProvider::new()),
                 user_rules: pass_through_rules(),
-                external_psk_id_validator: PassThroughPskIdValidator,
+                psk_storage: AlwaysFoundPskStorage,
                 cipher_suite_provider,
             }
         }
@@ -1966,7 +1967,7 @@ mod tests {
     where
         C: IdentityProvider,
         F: ProposalRules,
-        P: ExternalPskIdValidator,
+        P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
         fn with_identity_provider<V>(self, identity_provider: V) -> CommitSender<'a, V, F, P, CSP>
@@ -1981,7 +1982,7 @@ mod tests {
                 cache: self.cache,
                 additional_proposals: self.additional_proposals,
                 user_rules: self.user_rules,
-                external_psk_id_validator: self.external_psk_id_validator,
+                psk_storage: self.psk_storage,
             }
         }
 
@@ -2012,14 +2013,14 @@ mod tests {
                 additional_proposals: self.additional_proposals,
                 identity_provider: self.identity_provider,
                 user_rules: f,
-                external_psk_id_validator: self.external_psk_id_validator,
+                psk_storage: self.psk_storage,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
         }
 
-        fn with_external_psk_id_validator<V>(self, v: V) -> CommitSender<'a, C, F, V, CSP>
+        fn with_psk_storage<V>(self, v: V) -> CommitSender<'a, C, F, V, CSP>
         where
-            V: ExternalPskIdValidator,
+            V: PreSharedKeyStorage,
         {
             CommitSender {
                 tree: self.tree,
@@ -2028,7 +2029,7 @@ mod tests {
                 additional_proposals: self.additional_proposals,
                 identity_provider: self.identity_provider,
                 user_rules: self.user_rules,
-                external_psk_id_validator: v,
+                psk_storage: v,
                 cipher_suite_provider: self.cipher_suite_provider,
             }
         }
@@ -2044,7 +2045,7 @@ mod tests {
                     self.tree,
                     #[cfg(feature = "external_commit")]
                     None,
-                    &self.external_psk_id_validator,
+                    &self.psk_storage,
                     &self.user_rules,
                     &[],
                 )
@@ -3674,14 +3675,14 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct FailurePskIdValidator;
+    struct AlwaysNotFoundPskStorage;
 
     #[async_trait]
-    impl ExternalPskIdValidator for FailurePskIdValidator {
-        type Error = MlsError;
+    impl PreSharedKeyStorage for AlwaysNotFoundPskStorage {
+        type Error = Infallible;
 
-        async fn validate(&self, _: &ExternalPskId) -> Result<(), Self::Error> {
-            Err(MlsError::UnexpectedPskId)
+        async fn get(&self, _: &ExternalPskId) -> Result<Option<PreSharedKey>, Self::Error> {
+            Ok(None)
         }
     }
 
@@ -3695,11 +3696,11 @@ mod tests {
             alice,
             test_cipher_suite_provider(TEST_CIPHER_SUITE),
         )
-        .with_external_psk_id_validator(FailurePskIdValidator)
+        .with_psk_storage(AlwaysNotFoundPskStorage)
         .receive([Proposal::Psk(new_external_psk(b"abc"))])
         .await;
 
-        assert_matches!(res, Err(MlsError::PskIdValidationError(_)));
+        assert_matches!(res, Err(MlsError::NoPskForId(_)));
     }
 
     #[test]
@@ -3707,12 +3708,12 @@ mod tests {
         let (alice, tree) = new_tree("alice").await;
 
         let res = CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-            .with_external_psk_id_validator(FailurePskIdValidator)
+            .with_psk_storage(AlwaysNotFoundPskStorage)
             .with_additional([Proposal::Psk(new_external_psk(b"abc"))])
             .send()
             .await;
 
-        assert_matches!(res, Err(MlsError::PskIdValidationError(_)));
+        assert_matches!(res, Err(MlsError::NoPskForId(_)));
     }
 
     #[test]
@@ -3723,7 +3724,7 @@ mod tests {
 
         let (committed, effects) =
             CommitSender::new(&tree, alice, test_cipher_suite_provider(TEST_CIPHER_SUITE))
-                .with_external_psk_id_validator(FailurePskIdValidator)
+                .with_psk_storage(AlwaysNotFoundPskStorage)
                 .cache(proposal_ref.clone(), proposal.clone(), alice)
                 .send()
                 .await

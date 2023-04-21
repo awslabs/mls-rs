@@ -443,8 +443,7 @@ impl GroupWithoutKeySchedule {
 impl MessageProcessor for GroupWithoutKeySchedule {
     type CipherSuiteProvider = <Group<TestClientConfig> as MessageProcessor>::CipherSuiteProvider;
     type OutputType = <Group<TestClientConfig> as MessageProcessor>::OutputType;
-    type ExternalPskIdValidator =
-        <Group<TestClientConfig> as MessageProcessor>::ExternalPskIdValidator;
+    type PreSharedKeyStorage = <Group<TestClientConfig> as MessageProcessor>::PreSharedKeyStorage;
     type IdentityProvider = <Group<TestClientConfig> as MessageProcessor>::IdentityProvider;
     type ProposalRules = <Group<TestClientConfig> as MessageProcessor>::ProposalRules;
 
@@ -468,8 +467,8 @@ impl MessageProcessor for GroupWithoutKeySchedule {
         self.inner.cipher_suite_provider()
     }
 
-    fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator {
-        self.inner.external_psk_id_validator()
+    fn psk_storage(&self) -> Self::PreSharedKeyStorage {
+        self.inner.psk_storage()
     }
 
     fn can_continue_processing(&self, provisional_state: &ProvisionalState) -> bool {

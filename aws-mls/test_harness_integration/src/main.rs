@@ -11,6 +11,7 @@ use aws_mls::{
         ExternalClient,
     },
     group::ReceivedMessage,
+    psk::ExternalPskId,
 };
 
 use aws_mls::{
@@ -26,11 +27,8 @@ use aws_mls::{
         basic::{BasicCredential, BasicIdentityProvider},
         Credential, SigningIdentity,
     },
-    storage_provider::{
-        in_memory::{
-            InMemoryKeyPackageStorage, InMemoryKeychainStorage, InMemoryPreSharedKeyStorage,
-        },
-        ExternalPskId,
+    storage_provider::in_memory::{
+        InMemoryKeyPackageStorage, InMemoryKeychainStorage, InMemoryPreSharedKeyStorage,
     },
     CipherSuite, CipherSuiteProvider, Client, CryptoProvider, Extension, ExtensionList, Group,
     MLSMessage, ProtocolVersion,

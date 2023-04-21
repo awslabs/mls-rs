@@ -12,7 +12,6 @@ use crate::{
     protocol_version::ProtocolVersion,
     psk::ExternalPskId,
     signer::Signable,
-    storage_provider::psk::PskStoreIdValidator,
     tree_kem::{
         kem::TreeKem, node::LeafIndex, path_secret::PathSecret, TreeKemPrivate, UpdatePath,
     },
@@ -421,7 +420,7 @@ where
                 &self.state.public_tree,
                 #[cfg(feature = "external_commit")]
                 external_leaf,
-                PskStoreIdValidator::from(self.config.secret_store()),
+                &self.config.secret_store(),
                 self.config.proposal_rules(),
                 &self.state.roster(),
             )

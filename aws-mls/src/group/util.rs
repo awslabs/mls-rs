@@ -1,6 +1,9 @@
 use alloc::boxed::Box;
 use aws_mls_codec::MlsDecode;
-use aws_mls_core::{group::Member, identity::IdentityProvider, key_package::KeyPackageStorage};
+use aws_mls_core::{
+    group::Member, identity::IdentityProvider, key_package::KeyPackageStorage,
+    psk::PreSharedKeyStorage,
+};
 use futures::StreamExt;
 
 use crate::{
@@ -9,7 +12,6 @@ use crate::{
     extension::{ExternalSendersExt, RatchetTreeExt},
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
-    psk::ExternalPskIdValidator,
     signer::Signable,
     time::MlsTime,
     tree_kem::{
@@ -203,7 +205,7 @@ pub(crate) async fn proposal_effects<C, F, P, CSP>(
     identity_provider: &C,
     cipher_suite_provider: &CSP,
     public_tree: &TreeKemPublic,
-    external_psk_id_validator: P,
+    psk_storage: P,
     user_filter: F,
     commit_time: Option<MlsTime>,
     roster: &[Member],
@@ -211,7 +213,7 @@ pub(crate) async fn proposal_effects<C, F, P, CSP>(
 where
     C: IdentityProvider,
     F: ProposalRules,
-    P: ExternalPskIdValidator,
+    P: PreSharedKeyStorage,
     CSP: CipherSuiteProvider,
 {
     proposals
@@ -225,7 +227,7 @@ where
             identity_provider,
             cipher_suite_provider,
             public_tree,
-            external_psk_id_validator,
+            &psk_storage,
             user_filter,
             commit_time,
             roster,

@@ -119,4 +119,9 @@ pub trait PreSharedKeyStorage: Send + Sync {
     ///
     /// `None` should be returned if a pre-shared key can not be found for `id`.
     async fn get(&self, id: &ExternalPskId) -> Result<Option<PreSharedKey>, Self::Error>;
+
+    /// Determines if a PSK is located within the store
+    async fn contains(&self, id: &ExternalPskId) -> Result<bool, Self::Error> {
+        self.get(id).await.map(|key| key.is_some())
+    }
 }

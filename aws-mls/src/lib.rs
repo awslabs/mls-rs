@@ -124,7 +124,8 @@ mod hash_reference;
 /// Identity providers to use with [`ClientBuilder`](client_builder::ClientBuilder).
 pub mod identity;
 mod key_package;
-mod psk;
+/// Pre-shared key support.
+pub mod psk;
 mod signer;
 /// Storage providers to use with
 /// [`ClientBuilder`](client_builder::ClientBuilder).

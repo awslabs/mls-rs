@@ -35,7 +35,7 @@ use crate::{
     key_package::KeyPackageValidator,
     protocol_version::ProtocolVersion,
     psk::{
-        JustPreSharedKeyID, PassThroughPskIdValidator, PreSharedKeyID, PskGroupId, PskNonce,
+        AlwaysFoundPskStorage, JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce,
         ResumptionPSKUsage, ResumptionPsk,
     },
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
@@ -526,7 +526,7 @@ where
 {
     type ProposalRules = C::ProposalRules;
     type IdentityProvider = C::IdentityProvider;
-    type ExternalPskIdValidator = PassThroughPskIdValidator;
+    type PreSharedKeyStorage = AlwaysFoundPskStorage;
     type OutputType = ExternalReceivedMessage;
     type CipherSuiteProvider = <C::CryptoProvider as CryptoProvider>::CipherSuiteProvider;
 
@@ -580,8 +580,8 @@ where
         self.config.identity_provider()
     }
 
-    fn external_psk_id_validator(&self) -> Self::ExternalPskIdValidator {
-        PassThroughPskIdValidator
+    fn psk_storage(&self) -> Self::PreSharedKeyStorage {
+        AlwaysFoundPskStorage
     }
 
     fn group_state(&self) -> &GroupState {

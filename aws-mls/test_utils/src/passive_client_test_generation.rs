@@ -2,7 +2,8 @@ use aws_mls::{
     client_builder::{ClientBuilder, Preferences},
     group::CommitBuilder,
     identity::{basic::BasicIdentityProvider, SigningIdentity},
-    storage_provider::{in_memory::InMemoryKeyPackageStorage, ExternalPskId},
+    psk::ExternalPskId,
+    storage_provider::in_memory::InMemoryKeyPackageStorage,
     CipherSuite, CipherSuiteProvider, CryptoProvider, ExtensionList, Group, MLSMessage,
     ProtocolVersion,
 };

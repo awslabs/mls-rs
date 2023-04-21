@@ -49,8 +49,6 @@ pub enum MlsError {
     #[error(transparent)]
     UserDefinedProposalFilterError(Box<dyn Error + Send + Sync>),
     #[error(transparent)]
-    PskIdValidationError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
     SerializationError(#[from] aws_mls_codec::Error),
     #[error(transparent)]
     ExtensionError(#[from] ExtensionError),
