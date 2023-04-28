@@ -15,7 +15,8 @@ secret_tree_access = []
 external_commit = ["aws-mls-core/external_commit"]
 state_update = []
 private_message = []
-rfc_compliant = ["external_commit", "state_update", "private_message"]
+custom_proposal = []
+rfc_compliant = ["external_commit", "state_update", "private_message", "custom_proposal"]
 
 std = [
     "aws-mls-core/std",

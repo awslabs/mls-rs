@@ -1,19 +1,23 @@
 use alloc::vec::Vec;
+
+#[cfg(feature = "custom_proposal")]
 use itertools::Itertools;
 
 use crate::{
     group::{
-        proposal::CustomProposal, AddProposal, BorrowedProposal, PreSharedKeyProposal, Proposal,
-        ProposalOrRef, ProposalRef, ProposalType, ReInitProposal, RemoveProposal, Sender,
-        UpdateProposal,
+        AddProposal, BorrowedProposal, PreSharedKeyProposal, Proposal, ProposalOrRef, ProposalRef,
+        ProposalType, ReInitProposal, RemoveProposal, Sender, UpdateProposal,
     },
     ExtensionList,
 };
 
+#[cfg(feature = "custom_proposal")]
+use crate::group::proposal::CustomProposal;
+
 #[cfg(feature = "external_commit")]
 use crate::group::ExternalInit;
 
-use core::marker::PhantomData;
+use core::{iter::empty, marker::PhantomData};
 
 #[derive(Clone, Debug, Default)]
 /// A collection of proposals.
@@ -26,6 +30,7 @@ pub struct ProposalBundle {
     #[cfg(feature = "external_commit")]
     external_initializations: Vec<ProposalInfo<ExternalInit>>,
     group_context_extensions: Vec<ProposalInfo<ExtensionList>>,
+    #[cfg(feature = "custom_proposal")]
     pub(crate) custom_proposals: Vec<ProposalInfo<CustomProposal>>,
 }
 
@@ -70,6 +75,7 @@ impl ProposalBundle {
                     source,
                 })
             }
+            #[cfg(feature = "custom_proposal")]
             Proposal::Custom(proposal) => self.custom_proposals.push(ProposalInfo {
                 proposal,
                 sender,
@@ -130,6 +136,7 @@ impl ProposalBundle {
     }
 
     /// Retain custom proposals in the bundle.
+    #[cfg(feature = "custom_proposal")]
     pub fn retain_custom<F, E>(&mut self, mut f: F) -> Result<(), E>
     where
         F: FnMut(&ProposalInfo<CustomProposal>) -> Result<bool, E>,
@@ -220,32 +227,32 @@ impl ProposalBundle {
                 .map(|p| p.by_ref().map(BorrowedProposal::ExternalInit)),
         );
 
-        res.chain(
+        let res = res.chain(
             self.group_context_extensions
                 .iter()
                 .map(|p| p.by_ref().map(BorrowedProposal::GroupContextExtensions)),
-        )
-        .chain(
+        );
+
+        #[cfg(feature = "custom_proposal")]
+        let res = res.chain(
             self.custom_proposals
                 .iter()
                 .map(|p| p.by_ref().map(BorrowedProposal::Custom)),
-        )
+        );
+
+        res
     }
 
     /// Iterate over proposal in the bundle, consuming the bundle.
     pub fn into_proposals(self) -> impl Iterator<Item = ProposalInfo<Proposal>> {
-        let res = self
-            .additions
-            .into_iter()
-            .map(|p| p.map(Proposal::Add))
-            .chain(self.updates.into_iter().map(|p| p.map(Proposal::Update)))
-            .chain(self.removals.into_iter().map(|p| p.map(Proposal::Remove)))
-            .chain(self.psks.into_iter().map(|p| p.map(Proposal::Psk)))
-            .chain(
-                self.reinitializations
-                    .into_iter()
-                    .map(|p| p.map(Proposal::ReInit)),
-            );
+        let res = empty();
+
+        #[cfg(feature = "custom_proposal")]
+        let res = res.chain(
+            self.custom_proposals
+                .into_iter()
+                .map(|p| p.map(Proposal::Custom)),
+        );
 
         #[cfg(feature = "external_commit")]
         let res = res.chain(
@@ -254,23 +261,36 @@ impl ProposalBundle {
                 .map(|p| p.map(Proposal::ExternalInit)),
         );
 
-        res.chain(
-            self.group_context_extensions
-                .into_iter()
-                .map(|p| p.map(Proposal::GroupContextExtensions)),
-        )
-        .chain(
-            self.custom_proposals
-                .into_iter()
-                .map(|p| p.map(Proposal::Custom)),
-        )
+        res.chain(self.additions.into_iter().map(|p| p.map(Proposal::Add)))
+            .chain(self.updates.into_iter().map(|p| p.map(Proposal::Update)))
+            .chain(self.removals.into_iter().map(|p| p.map(Proposal::Remove)))
+            .chain(self.psks.into_iter().map(|p| p.map(Proposal::Psk)))
+            .chain(
+                self.reinitializations
+                    .into_iter()
+                    .map(|p| p.map(Proposal::ReInit)),
+            )
+            .chain(
+                self.group_context_extensions
+                    .into_iter()
+                    .map(|p| p.map(Proposal::GroupContextExtensions)),
+            )
     }
 
+    #[cfg(feature = "custom_proposal")]
     pub(crate) fn into_proposals_or_refs(self) -> impl Iterator<Item = ProposalOrRef> {
         self.into_proposals().filter_map(|p| match p.source {
             ProposalSource::ByValue => Some(ProposalOrRef::Proposal(p.proposal)),
             ProposalSource::ByReference(reference) => Some(ProposalOrRef::Reference(reference)),
             _ => None,
+        })
+    }
+
+    #[cfg(not(feature = "custom_proposal"))]
+    pub(crate) fn into_proposals_or_refs(self) -> impl Iterator<Item = ProposalOrRef> {
+        self.into_proposals().map(|p| match p.source {
+            ProposalSource::ByValue => ProposalOrRef::Proposal(p.proposal),
+            ProposalSource::ByReference(reference) => ProposalOrRef::Reference(reference),
         })
     }
 
@@ -311,6 +331,7 @@ impl ProposalBundle {
     }
 
     /// Custom proposals in the bundle.
+    #[cfg(feature = "custom_proposal")]
     pub fn custom_proposals(&self) -> &[ProposalInfo<CustomProposal>] {
         &self.custom_proposals
     }
@@ -324,6 +345,7 @@ impl ProposalBundle {
     }
 
     /// Custom proposal types that are in use within this bundle.
+    #[cfg(feature = "custom_proposal")]
     pub fn custom_proposal_types(&self) -> impl Iterator<Item = ProposalType> + '_ {
         #[cfg(feature = "std")]
         let res = self
@@ -358,11 +380,19 @@ impl ProposalBundle {
             (!self.external_initializations.is_empty()).then_some(ProposalType::EXTERNAL_INIT),
         );
 
-        res.chain(
+        #[cfg(not(feature = "custom_proposal"))]
+        return res.chain(
             (!self.group_context_extensions.is_empty())
                 .then_some(ProposalType::GROUP_CONTEXT_EXTENSIONS),
-        )
-        .chain(self.custom_proposal_types())
+        );
+
+        #[cfg(feature = "custom_proposal")]
+        return res
+            .chain(
+                (!self.group_context_extensions.is_empty())
+                    .then_some(ProposalType::GROUP_CONTEXT_EXTENSIONS),
+            )
+            .chain(self.custom_proposal_types());
     }
 }
 
@@ -416,6 +446,7 @@ pub enum ProposalSource {
     ByValue,
     ByReference(ProposalRef),
     /// True if originally by value.
+    #[cfg(feature = "custom_proposal")]
     CustomRule(bool),
 }
 
@@ -428,6 +459,7 @@ pub struct ProposalInfo<T> {
     pub(crate) source: ProposalSource,
 }
 
+#[cfg(feature = "custom_proposal")]
 impl ProposalInfo<CustomProposal> {
     /// Expand this proposal to multiple proposals.
     ///
@@ -451,6 +483,7 @@ impl ProposalInfo<CustomProposal> {
     }
 }
 
+#[cfg(feature = "custom_proposal")]
 impl ProposalInfo<Proposal> {
     /// Create a new ProposalInfo.
     ///
@@ -492,6 +525,7 @@ impl<T> ProposalInfo<T> {
         match self.source {
             ProposalSource::ByValue => true,
             ProposalSource::ByReference(_) => false,
+            #[cfg(feature = "custom_proposal")]
             ProposalSource::CustomRule(by_value) => by_value,
         }
     }

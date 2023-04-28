@@ -1,5 +1,8 @@
 use super::*;
+
+#[cfg(feature = "custom_proposal")]
 use crate::group::proposal::ProposalType;
+
 use crate::identity::CredentialType;
 use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 #[cfg(feature = "std")]
@@ -19,19 +22,15 @@ use alloc::collections::BTreeSet;
 #[serde_as]
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct TreeIndex {
-    #[cfg(feature = "std")]
     #[serde_as(as = "HashMap<VecAsBase64, _>")]
     credential_signature_key: HashMap<Vec<u8>, LeafIndex>,
-    #[cfg(feature = "std")]
     #[serde_as(as = "HashMap<VecAsBase64, _>")]
     hpke_key: HashMap<Vec<u8>, LeafIndex>,
-    #[cfg(feature = "std")]
     #[serde_as(as = "HashMap<VecAsBase64, _>")]
     identities: HashMap<Vec<u8>, LeafIndex>,
-    #[cfg(feature = "std")]
     #[serde_as(as = "Vec<(_,_)>")]
     credential_type_counters: HashMap<CredentialType, TypeCounter>,
-    #[cfg(feature = "std")]
+    #[cfg(feature = "custom_proposal")]
     #[serde_as(as = "Vec<(_,_)>")]
     proposal_type_counter: HashMap<ProposalType, usize>,
 }
@@ -40,19 +39,15 @@ pub struct TreeIndex {
 #[serde_as]
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct TreeIndex {
-    #[cfg(not(feature = "std"))]
     #[serde_as(as = "BTreeMap<VecAsBase64, _>")]
     credential_signature_key: BTreeMap<Vec<u8>, LeafIndex>,
-    #[cfg(not(feature = "std"))]
     #[serde_as(as = "BTreeMap<VecAsBase64, _>")]
     hpke_key: BTreeMap<Vec<u8>, LeafIndex>,
-    #[cfg(not(feature = "std"))]
     #[serde_as(as = "BTreeMap<VecAsBase64, _>")]
     identities: BTreeMap<Vec<u8>, LeafIndex>,
-    #[cfg(not(feature = "std"))]
     #[serde_as(as = "Vec<(_,_)>")]
     credential_type_counters: BTreeMap<CredentialType, TypeCounter>,
-    #[cfg(not(feature = "std"))]
+    #[cfg(feature = "custom_proposal")]
     #[serde_as(as = "Vec<(_,_)>")]
     proposal_type_counter: BTreeMap<ProposalType, usize>,
 }
@@ -136,18 +131,21 @@ impl TreeIndex {
                 .supported += 1;
         });
 
-        let proposal_type_iter = leaf_node.capabilities.proposals.iter().copied();
+        #[cfg(feature = "custom_proposal")]
+        {
+            let proposal_type_iter = leaf_node.capabilities.proposals.iter().copied();
 
-        #[cfg(feature = "std")]
-        let proposal_type_iter = proposal_type_iter.unique();
+            #[cfg(feature = "std")]
+            let proposal_type_iter = proposal_type_iter.unique();
 
-        #[cfg(not(feature = "std"))]
-        let proposal_type_iter = proposal_type_iter.collect::<BTreeSet<_>>().into_iter();
+            #[cfg(not(feature = "std"))]
+            let proposal_type_iter = proposal_type_iter.collect::<BTreeSet<_>>().into_iter();
 
-        // Proposal type counter update
-        proposal_type_iter.for_each(|proposal_type| {
-            *self.proposal_type_counter.entry(proposal_type).or_default() += 1;
-        });
+            // Proposal type counter update
+            proposal_type_iter.for_each(|proposal_type| {
+                *self.proposal_type_counter.entry(proposal_type).or_default() += 1;
+            });
+        }
 
         identity_entry.or_insert(index);
         credential_entry.or_insert(index);
@@ -191,22 +189,26 @@ impl TreeIndex {
             }
         });
 
-        let proposal_type_iter = leaf_node.capabilities.proposals.iter();
+        #[cfg(feature = "custom_proposal")]
+        {
+            let proposal_type_iter = leaf_node.capabilities.proposals.iter();
 
-        #[cfg(feature = "std")]
-        let proposal_type_iter = proposal_type_iter.unique();
+            #[cfg(feature = "std")]
+            let proposal_type_iter = proposal_type_iter.unique();
 
-        #[cfg(not(feature = "std"))]
-        let proposal_type_iter = proposal_type_iter.collect::<BTreeSet<_>>().into_iter();
+            #[cfg(not(feature = "std"))]
+            let proposal_type_iter = proposal_type_iter.collect::<BTreeSet<_>>().into_iter();
 
-        // Decrement proposal type counters
-        proposal_type_iter.for_each(|proposal_type| {
-            if let Some(supported) = self.proposal_type_counter.get_mut(proposal_type) {
-                *supported -= 1;
-            }
-        })
+            // Decrement proposal type counters
+            proposal_type_iter.for_each(|proposal_type| {
+                if let Some(supported) = self.proposal_type_counter.get_mut(proposal_type) {
+                    *supported -= 1;
+                }
+            })
+        }
     }
 
+    #[cfg(feature = "custom_proposal")]
     pub fn count_supporting_proposal(&self, proposal_type: ProposalType) -> usize {
         self.proposal_type_counter
             .get(&proposal_type)
@@ -373,6 +375,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "custom_proposal")]
     #[test]
     async fn custom_proposals() {
         let test_proposal_id = ProposalType::new(42);

@@ -20,7 +20,10 @@ use self::leaf_node::LeafNode;
 
 use crate::client::MlsError;
 use crate::crypto::{self, CipherSuiteProvider, HpkePublicKey, HpkeSecretKey};
+
+#[cfg(feature = "custom_proposal")]
 use crate::group::proposal::ProposalType;
+
 use crate::tree_kem::tree_hash::TreeHashes;
 
 mod capabilities;
@@ -146,6 +149,7 @@ impl TreeKemPublic {
         self.nodes.total_leaf_count()
     }
 
+    #[cfg(any(test, feature = "custom_proposal"))]
     pub fn occupied_leaf_count(&self) -> u32 {
         self.nodes.occupied_leaf_count()
     }
@@ -164,6 +168,7 @@ impl TreeKemPublic {
         })
     }
 
+    #[cfg(feature = "custom_proposal")]
     pub fn can_support_proposal(&self, proposal_type: ProposalType) -> bool {
         self.index.count_supporting_proposal(proposal_type) as u32 == self.occupied_leaf_count()
     }
@@ -969,7 +974,10 @@ pub(crate) mod test_utils {
 mod tests {
     use crate::client::test_utils::TEST_CIPHER_SUITE;
     use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
+
+    #[cfg(feature = "custom_proposal")]
     use crate::group::proposal::ProposalType;
+
     use crate::identity::basic::BasicIdentityProvider;
     use crate::tree_kem::leaf_node::test_utils::get_basic_test_node;
     use crate::tree_kem::leaf_node::LeafNode;
@@ -1497,6 +1505,7 @@ mod tests {
         assert_eq!(acc.updates, [LeafIndex(1)]);
     }
 
+    #[cfg(feature = "custom_proposal")]
     #[test]
     async fn custom_proposal_support() {
         let cipher_suite_provider = test_cipher_suite_provider(TEST_CIPHER_SUITE);

@@ -28,7 +28,7 @@ pub(crate) struct ProposalSetEffects {
     pub reinit: Option<ReInitProposal>,
     #[cfg(feature = "external_commit")]
     pub external_init: Option<(LeafIndex, ExternalInit)>,
-    #[cfg(feature = "state_update")]
+    #[cfg(all(feature = "state_update", feature = "custom_proposal"))]
     pub custom_proposals: Vec<CustomProposal>,
     #[cfg(feature = "state_update")]
     pub rejected_proposals: Vec<(ProposalRef, Proposal)>,
@@ -57,7 +57,7 @@ impl ProposalSetEffects {
             external_init: None,
             #[cfg(feature = "state_update")]
             rejected_proposals,
-            #[cfg(feature = "state_update")]
+            #[cfg(all(feature = "custom_proposal", feature = "state_update"))]
             custom_proposals: Vec::new(),
         };
 
@@ -135,9 +135,9 @@ impl ProposalSetEffects {
 
                 self.external_init = Some((new_member_leaf_index, external_init));
             }
-            #[cfg(feature = "state_update")]
+            #[cfg(all(feature = "state_update", feature = "custom_proposal"))]
             Proposal::Custom(custom) => self.custom_proposals.push(custom),
-            #[cfg(not(feature = "state_update"))]
+            #[cfg(all(not(feature = "state_update"), feature = "custom_proposal"))]
             Proposal::Custom(_) => (),
         };
 
@@ -211,6 +211,7 @@ impl ProposalCache {
         &self.proposals
     }
 
+    #[cfg(feature = "custom_proposal")]
     pub async fn expand_custom_proposals<F>(
         &self,
         roster: &[Member],
@@ -276,11 +277,15 @@ impl ProposalCache {
                 },
             );
 
-        let mut proposals = user_filter
+        let proposals = user_filter
             .filter(sender, roster, group_extensions, proposals)
             .await
             .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into()))?;
 
+        #[cfg(feature = "custom_proposal")]
+        let mut proposals = proposals;
+
+        #[cfg(feature = "custom_proposal")]
         self.expand_custom_proposals(roster, group_extensions, &mut proposals, &user_filter)
             .await?;
 
@@ -371,7 +376,7 @@ impl ProposalCache {
         P: PreSharedKeyStorage,
         CSP: CipherSuiteProvider,
     {
-        let mut proposals = proposal_list.into_iter().try_fold(
+        let proposals = proposal_list.into_iter().try_fold(
             ProposalBundle::default(),
             |mut proposals, proposal| {
                 let proposal_source = match &proposal {
@@ -390,6 +395,10 @@ impl ProposalCache {
             .await
             .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into()))?;
 
+        #[cfg(feature = "custom_proposal")]
+        let mut proposals = proposals;
+
+        #[cfg(feature = "custom_proposal")]
         self.expand_custom_proposals(roster, group_extensions, &mut proposals, &user_rules)
             .await?;
 
@@ -897,7 +906,7 @@ mod tests {
             external_init: None,
             #[cfg(feature = "state_update")]
             rejected_proposals: Vec::new(),
-            #[cfg(feature = "state_update")]
+            #[cfg(all(feature = "state_update", feature = "custom_proposal"))]
             custom_proposals: Vec::new(),
         };
 
@@ -2777,6 +2786,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "custom_proposal")]
     async fn make_custom_add_proposal(capabilities: Capabilities) -> AddProposal {
         AddProposal {
             key_package: test_key_package_custom(
@@ -3675,6 +3685,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "custom_proposal")]
     #[test]
     async fn sending_custom_proposal_with_member_not_supporting_proposal_type_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3694,6 +3705,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "custom_proposal")]
     #[test]
     async fn sending_custom_proposal_with_member_not_supporting_filters_it_out() {
         let (alice, tree) = new_tree("alice").await;
@@ -3718,6 +3730,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "custom_proposal")]
     #[test]
     async fn receiving_custom_proposal_with_member_not_supporting_fails() {
         let (alice, tree) = new_tree("alice").await;
@@ -3873,6 +3886,7 @@ mod tests {
         impl ProposalRules for RemoveGroupContextExtensions {
             type Error = Infallible;
 
+            #[cfg(feature = "custom_proposal")]
             async fn expand_custom_proposals(
                 &self,
                 _current_roster: &[Member],
@@ -3923,6 +3937,7 @@ mod tests {
     impl ProposalRules for FailureProposalRules {
         type Error = MlsError;
 
+        #[cfg(feature = "custom_proposal")]
         async fn expand_custom_proposals(
             &self,
             _current_roster: &[Member],
@@ -3983,11 +3998,13 @@ mod tests {
         assert_matches!(res, Err(MlsError::UserDefinedProposalFilterError(_)));
     }
 
+    #[cfg(feature = "custom_proposal")]
     #[derive(Debug, Clone)]
     struct ExpandCustomRules {
         to_expand: Vec<ProposalInfo<Proposal>>,
     }
 
+    #[cfg(feature = "custom_proposal")]
     #[async_trait]
     impl ProposalRules for ExpandCustomRules {
         type Error = Infallible;
@@ -4022,6 +4039,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "custom_proposal")]
     #[test]
     async fn user_defined_custom_proposal_rules_are_applied_on_send() {
         let (alice, tree) = new_tree_custom_proposals("alice", vec![ProposalType::new(42)]).await;
@@ -4067,6 +4085,7 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "custom_proposal")]
     #[test]
     async fn user_defined_custom_proposal_rules_are_applied_on_receive() {
         let (alice, tree) = new_tree_custom_proposals("alice", vec![ProposalType::new(42)]).await;
@@ -4106,6 +4125,7 @@ mod tests {
         assert_eq!(effects.custom_proposals, vec![custom_proposal])
     }
 
+    #[cfg(feature = "custom_proposal")]
     #[test]
     async fn user_defined_custom_proposal_rules_are_not_exempt_from_base_rules() {
         let (alice, tree) = new_tree_custom_proposals("alice", vec![ProposalType::new(42)]).await;

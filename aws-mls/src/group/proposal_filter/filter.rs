@@ -1,14 +1,17 @@
-use crate::group::{
-    proposal::{CustomProposal, Proposal},
-    proposal_filter::ProposalBundle,
-    Sender,
-};
-use alloc::vec;
-use alloc::{boxed::Box, vec::Vec};
+use crate::group::{proposal_filter::ProposalBundle, Sender};
+
+#[cfg(feature = "custom_proposal")]
+use crate::group::proposal::{CustomProposal, Proposal};
+
+#[cfg(feature = "custom_proposal")]
+use alloc::{vec, vec::Vec};
+
+use alloc::boxed::Box;
 use async_trait::async_trait;
 use aws_mls_core::{extension::ExtensionList, group::Member};
 use core::convert::Infallible;
 
+#[cfg(feature = "custom_proposal")]
 use super::ProposalInfo;
 
 #[cfg(feature = "std")]
@@ -36,6 +39,7 @@ pub trait ProposalRules: Send + Sync {
     /// The proposals returned will not be sent over the wire. They will be considered as part of
     /// validating the resulting commit follows standard MLS rules, and will be applied to the
     /// tree.
+    #[cfg(feature = "custom_proposal")]
     async fn expand_custom_proposals(
         &self,
         current_roster: &[Member],
@@ -71,6 +75,7 @@ macro_rules! delegate_proposal_rules {
         impl<T: ProposalRules + ?Sized> ProposalRules for $implementer {
             type Error = T::Error;
 
+            #[cfg(feature = "custom_proposal")]
             async fn expand_custom_proposals(
                 &self,
                 current_roster: &[Member],
@@ -126,6 +131,7 @@ impl PassThroughProposalRules {
 impl ProposalRules for PassThroughProposalRules {
     type Error = Infallible;
 
+    #[cfg(feature = "custom_proposal")]
     async fn expand_custom_proposals(
         &self,
         _current_roster: &[Member],

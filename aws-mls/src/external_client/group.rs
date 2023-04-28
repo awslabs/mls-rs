@@ -21,10 +21,7 @@ use crate::{
             MessageProcessor, ProposalMessageDescription, ProvisionalState,
         },
         message_signature::AuthenticatedContent,
-        proposal::{
-            AddProposal, CustomProposal, PreSharedKeyProposal, Proposal, ReInitProposal,
-            RemoveProposal,
-        },
+        proposal::{AddProposal, PreSharedKeyProposal, Proposal, ReInitProposal, RemoveProposal},
         proposal_ref::ProposalRef,
         snapshot::RawGroupState,
         state::GroupState,
@@ -41,6 +38,9 @@ use crate::{
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
     CryptoProvider, MLSMessage,
 };
+
+#[cfg(feature = "custom_proposal")]
+use crate::group::proposal::CustomProposal;
 
 #[cfg(feature = "private_message")]
 use crate::group::framing::PrivateMessage;
@@ -372,6 +372,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
+    #[cfg(feature = "custom_proposal")]
     pub async fn propose_custom(
         &mut self,
         proposal: CustomProposal,

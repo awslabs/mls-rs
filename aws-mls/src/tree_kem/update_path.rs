@@ -186,7 +186,7 @@ mod tests {
             external_init: None,
             #[cfg(feature = "state_update")]
             rejected_proposals: vec![],
-            #[cfg(feature = "state_update")]
+            #[cfg(all(feature = "custom_proposal", feature = "state_update"))]
             custom_proposals: vec![],
         }
     }

@@ -31,9 +31,12 @@ use super::{
     key_schedule::{CommitSecret, KeySchedule},
     message_processor::MessageProcessor,
     message_signature::AuthenticatedContent,
-    proposal::{CustomProposal, Proposal, ProposalOrRef},
+    proposal::{Proposal, ProposalOrRef},
     ConfirmedTranscriptHash, Group, GroupInfo,
 };
+
+#[cfg(feature = "custom_proposal")]
+use super::proposal::CustomProposal;
 
 #[cfg(feature = "private_message")]
 use super::ControlEncryptionMode;
@@ -202,6 +205,7 @@ where
 
     /// Insert a [`CustomProposal`](crate::group::proposal::CustomProposal) into
     /// the current commit that is being built.
+    #[cfg(feature = "custom_proposal")]
     pub fn custom_proposal(mut self, proposal: CustomProposal) -> Self {
         self.proposals.push(Proposal::Custom(proposal));
         self
@@ -928,6 +932,7 @@ mod tests {
         assert_commit_builder_output(group, commit_output, vec![expected_reinit], 0);
     }
 
+    #[cfg(feature = "custom_proposal")]
     #[futures_test::test]
     async fn test_commit_builder_custom_proposal() {
         let mut group = test_commit_builder_group().await;

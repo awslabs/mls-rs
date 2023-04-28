@@ -1243,6 +1243,7 @@ where
     ///
     /// `authenticated_data` will be sent unencrypted along with the contents
     /// of the proposal message.
+    #[cfg(feature = "custom_proposal")]
     pub async fn propose_custom(
         &mut self,
         proposal: CustomProposal,
@@ -1927,7 +1928,9 @@ mod tests {
         tree_kem::{leaf_node::LeafNodeSource, Lifetime, UpdatePathNode},
     };
 
+    #[cfg(feature = "custom_proposal")]
     use super::test_utils::test_group_custom_config;
+
     use super::{
         test_utils::{
             get_test_25519_key, get_test_groups_with_features, group_extensions, process_commit,
@@ -3558,6 +3561,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::InvalidLifetime(_, _)));
     }
 
+    #[cfg(feature = "custom_proposal")]
     async fn custom_proposal_setup() -> (TestGroup, TestGroup) {
         let mut alice = test_group_custom_config(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, |b| {
             b.custom_proposal_type(ProposalType::new(42))
@@ -3576,6 +3580,7 @@ mod tests {
         (alice, bob)
     }
 
+    #[cfg(feature = "custom_proposal")]
     #[test]
     async fn custom_proposal_by_value() {
         let (mut alice, mut bob) = custom_proposal_setup().await;
@@ -3601,6 +3606,7 @@ mod tests {
         assert_matches!(res, ReceivedMessage::Commit(_));
     }
 
+    #[cfg(feature = "custom_proposal")]
     #[test]
     async fn custom_proposal_by_reference() {
         let (mut alice, mut bob) = custom_proposal_setup().await;

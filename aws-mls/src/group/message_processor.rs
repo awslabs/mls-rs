@@ -48,7 +48,10 @@ use aws_mls_core::{
 use crate::{psk::JustPreSharedKeyID, tree_kem::UpdatePath};
 
 #[cfg(feature = "state_update")]
-use super::{member_from_key_package, member_from_leaf_node, proposal::CustomProposal};
+use super::{member_from_key_package, member_from_leaf_node};
+
+#[cfg(all(feature = "state_update", feature = "custom_proposal"))]
+use super::proposal::CustomProposal;
 
 #[cfg(feature = "private_message")]
 use crate::group::framing::PrivateMessage;
@@ -66,7 +69,7 @@ pub(crate) struct ProvisionalState {
     pub(crate) reinit: Option<ReInitProposal>,
     #[cfg(feature = "external_commit")]
     pub(crate) external_init: Option<(LeafIndex, ExternalInit)>,
-    #[cfg(feature = "state_update")]
+    #[cfg(all(feature = "state_update", feature = "custom_proposal"))]
     pub(crate) custom_proposals: Vec<CustomProposal>,
     #[cfg(feature = "state_update")]
     pub(crate) rejected_proposals: Vec<(ProposalRef, Proposal)>,
@@ -82,6 +85,7 @@ pub struct StateUpdate {
     pub(crate) pending_reinit: Option<CipherSuite>,
     pub(crate) active: bool,
     pub(crate) epoch: u64,
+    #[cfg(feature = "custom_proposal")]
     pub(crate) custom_proposals: Vec<CustomProposal>,
     pub(crate) unused_proposals: Vec<Proposal>,
 }
@@ -129,6 +133,7 @@ impl StateUpdate {
     }
 
     /// Custom proposals that were committed to.
+    #[cfg(feature = "custom_proposal")]
     pub fn custom_proposals(&self) -> &[CustomProposal] {
         &self.custom_proposals
     }
@@ -481,6 +486,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             pending_reinit: provisional.reinit.as_ref().map(|ri| ri.new_cipher_suite()),
             active: true,
             epoch: provisional.epoch,
+            #[cfg(feature = "custom_proposal")]
             custom_proposals: provisional.custom_proposals.clone(),
             unused_proposals: provisional
                 .rejected_proposals
@@ -763,7 +769,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             reinit: proposals.reinit,
             #[cfg(feature = "external_commit")]
             external_init: proposals.external_init,
-            #[cfg(feature = "state_update")]
+            #[cfg(all(feature = "custom_proposal", feature = "state_update"))]
             custom_proposals: proposals.custom_proposals,
             #[cfg(feature = "state_update")]
             rejected_proposals: proposals.rejected_proposals,

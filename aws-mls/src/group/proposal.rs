@@ -1,8 +1,8 @@
 use super::*;
 use crate::{psk::PreSharedKeyID, tree_kem::leaf_node::LeafNode};
+use alloc::string::ToString;
 use core::fmt::Debug;
 
-use alloc::string::ToString;
 use proposal_ref::ProposalRef;
 
 pub use aws_mls_core::extension::ExtensionList;
@@ -192,6 +192,7 @@ pub struct ExternalInit {
     pub(crate) kem_output: Vec<u8>,
 }
 
+#[cfg(feature = "custom_proposal")]
 #[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
@@ -203,6 +204,7 @@ pub struct CustomProposal {
     data: Vec<u8>,
 }
 
+#[cfg(feature = "custom_proposal")]
 impl CustomProposal {
     /// Create a custom proposal.
     ///
@@ -231,6 +233,7 @@ impl CustomProposal {
 
 /// Trait to simplify creating custom proposals that are serialized with MLS
 /// encoding.
+#[cfg(feature = "custom_proposal")]
 pub trait MlsCustomProposal: MlsSize + MlsEncode + MlsDecode + Sized {
     fn proposal_type() -> ProposalType;
 
@@ -266,6 +269,7 @@ pub enum Proposal {
     #[cfg(feature = "external_commit")]
     ExternalInit(ExternalInit),
     GroupContextExtensions(ExtensionList),
+    #[cfg(feature = "custom_proposal")]
     Custom(CustomProposal),
 }
 
@@ -280,6 +284,7 @@ impl MlsSize for Proposal {
             #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(p) => p.mls_encoded_len(),
             Proposal::GroupContextExtensions(p) => p.mls_encoded_len(),
+            #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => aws_mls_codec::byte_vec::mls_encoded_len(&p.data),
         };
 
@@ -300,7 +305,7 @@ impl MlsEncode for Proposal {
             #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(p) => p.mls_encode(writer),
             Proposal::GroupContextExtensions(p) => p.mls_encode(writer),
-
+            #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => {
                 if p.proposal_type.raw_value() <= 7 {
                     return Err(aws_mls_codec::Error::Custom(
@@ -330,10 +335,16 @@ impl MlsDecode for Proposal {
             ProposalType::GROUP_CONTEXT_EXTENSIONS => {
                 Proposal::GroupContextExtensions(ExtensionList::mls_decode(reader)?)
             }
+            #[cfg(feature = "custom_proposal")]
             custom => Proposal::Custom(CustomProposal {
                 proposal_type: custom,
                 data: aws_mls_codec::byte_vec::mls_decode(reader)?,
             }),
+            #[cfg(not(feature = "custom_proposal"))]
+            _ => return Err(aws_mls_codec::Error::Custom(
+                "Custom proposals not supported. Use the custom_proposal feature to enable them"
+                    .to_string(),
+            )),
         })
     }
 }
@@ -349,6 +360,7 @@ impl Proposal {
             #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(_) => ProposalType::EXTERNAL_INIT,
             Proposal::GroupContextExtensions(_) => ProposalType::GROUP_CONTEXT_EXTENSIONS,
+            #[cfg(feature = "custom_proposal")]
             Proposal::Custom(c) => c.proposal_type,
         }
     }
@@ -365,6 +377,7 @@ pub enum BorrowedProposal<'a> {
     #[cfg(feature = "external_commit")]
     ExternalInit(&'a ExternalInit),
     GroupContextExtensions(&'a ExtensionList),
+    #[cfg(feature = "custom_proposal")]
     Custom(&'a CustomProposal),
 }
 
@@ -381,6 +394,7 @@ impl<'a> From<BorrowedProposal<'a>> for Proposal {
             BorrowedProposal::GroupContextExtensions(ext) => {
                 Proposal::GroupContextExtensions(ext.clone())
             }
+            #[cfg(feature = "custom_proposal")]
             BorrowedProposal::Custom(custom) => Proposal::Custom(custom.clone()),
         }
     }
@@ -397,6 +411,7 @@ impl BorrowedProposal<'_> {
             #[cfg(feature = "external_commit")]
             BorrowedProposal::ExternalInit(_) => ProposalType::EXTERNAL_INIT,
             BorrowedProposal::GroupContextExtensions(_) => ProposalType::GROUP_CONTEXT_EXTENSIONS,
+            #[cfg(feature = "custom_proposal")]
             BorrowedProposal::Custom(c) => c.proposal_type,
         }
     }
@@ -413,6 +428,7 @@ impl<'a> From<&'a Proposal> for BorrowedProposal<'a> {
             #[cfg(feature = "external_commit")]
             Proposal::ExternalInit(p) => BorrowedProposal::ExternalInit(p),
             Proposal::GroupContextExtensions(p) => BorrowedProposal::GroupContextExtensions(p),
+            #[cfg(feature = "custom_proposal")]
             Proposal::Custom(p) => BorrowedProposal::Custom(p),
         }
     }
@@ -461,6 +477,7 @@ impl<'a> From<&'a ExtensionList> for BorrowedProposal<'a> {
     }
 }
 
+#[cfg(feature = "custom_proposal")]
 impl<'a> From<&'a CustomProposal> for BorrowedProposal<'a> {
     fn from(p: &'a CustomProposal) -> Self {
         Self::Custom(p)

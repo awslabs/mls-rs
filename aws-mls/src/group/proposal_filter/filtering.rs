@@ -25,6 +25,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
 use futures::TryStreamExt;
+
+#[cfg(feature = "custom_proposal")]
 use itertools::Itertools;
 
 #[cfg(feature = "external_commit")]
@@ -137,7 +139,10 @@ where
             }
         }?;
 
-        filter_out_unsupported_custom_proposals(state, strategy)
+        #[cfg(feature = "custom_proposal")]
+        let state = filter_out_unsupported_custom_proposals(state, strategy)?;
+
+        Ok(state)
     }
 
     async fn apply_proposals_from_member<F>(
@@ -1210,6 +1215,7 @@ where
     Ok(state)
 }
 
+#[cfg(feature = "custom_proposal")]
 fn filter_out_unsupported_custom_proposals<F>(
     mut state: ProposalState,
     strategy: &F,
