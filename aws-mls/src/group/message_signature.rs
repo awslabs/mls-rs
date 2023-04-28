@@ -205,7 +205,9 @@ impl<'a> AuthenticatedContentTBS<'a> {
                 Sender::Member(_) | Sender::NewMemberCommit => group_context,
                 #[cfg(not(feature = "external_commit"))]
                 Sender::Member(_) => group_context,
-                Sender::External(_) | Sender::NewMemberProposal => None,
+                #[cfg(feature = "external_proposal")]
+                Sender::External(_) => None,
+                Sender::NewMemberProposal => None,
             },
         }
     }

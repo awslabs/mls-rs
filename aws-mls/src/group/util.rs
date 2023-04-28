@@ -9,7 +9,7 @@ use futures::StreamExt;
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
-    extension::{ExternalSendersExt, RatchetTreeExt},
+    extension::RatchetTreeExt,
     key_package::KeyPackageGeneration,
     protocol_version::ProtocolVersion,
     signer::Signable,
@@ -21,6 +21,9 @@ use crate::{
     },
     CipherSuiteProvider, CryptoProvider, ExtensionList,
 };
+
+#[cfg(feature = "external_proposal")]
+use crate::extension::ExternalSendersExt;
 
 use super::{
     confirmation_tag::ConfirmationTag,
@@ -134,6 +137,7 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
         .validate(&mut join_context.public_tree)
         .await?;
 
+    #[cfg(feature = "external_proposal")]
     if let Some(ext_senders) = join_context
         .group_context
         .extensions
@@ -184,6 +188,7 @@ pub(crate) fn commit_sender(
 ) -> Result<LeafIndex, MlsError> {
     match sender {
         Sender::Member(index) => Ok(LeafIndex(*index)),
+        #[cfg(feature = "external_proposal")]
         Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
         Sender::NewMemberProposal => Err(MlsError::ExpectedAddProposalForNewMemberProposal),
         #[cfg(feature = "external_commit")]

@@ -200,6 +200,7 @@ where
         self.validate(signing_identity, timestamp)
     }
 
+    #[cfg(feature = "external_proposal")]
     async fn validate_external_sender(
         &self,
         signing_identity: &aws_mls_core::identity::SigningIdentity,

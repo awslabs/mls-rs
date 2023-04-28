@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = ["std"]
 std = ["aws-mls-core/std", "thiserror/std"]
+external_proposal = []
 
 [dependencies]
 aws-mls-core = { path = "../aws-mls-core", default-features = false, version = "*" }

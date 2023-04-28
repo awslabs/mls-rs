@@ -1,6 +1,6 @@
 use crate::{
     client::MlsError,
-    extension::{ExternalSendersExt, RequiredCapabilitiesExt},
+    extension::RequiredCapabilitiesExt,
     group::{
         proposal_filter::{Proposable, ProposalBundle, ProposalInfo},
         AddProposal, BorrowedProposal, JustPreSharedKeyID, PreSharedKeyProposal, ProposalType,
@@ -18,6 +18,9 @@ use crate::{
     },
     CipherSuiteProvider, ExtensionList,
 };
+
+#[cfg(feature = "external_proposal")]
+use crate::extension::ExternalSendersExt;
 
 #[cfg(feature = "external_commit")]
 use alloc::vec;
@@ -134,9 +137,9 @@ where
                 self.apply_proposals_from_new_member(proposals, commit_time)
                     .await
             }
-            Sender::External(_) | Sender::NewMemberProposal => {
-                Err(MlsError::ExternalSenderCannotCommit)
-            }
+            #[cfg(feature = "external_proposal")]
+            Sender::External(_) => Err(MlsError::ExternalSenderCannotCommit),
+            Sender::NewMemberProposal => Err(MlsError::ExternalSenderCannotCommit),
         }?;
 
         #[cfg(feature = "custom_proposal")]
@@ -158,6 +161,7 @@ where
         let proposals = filter_out_invalid_proposers(
             strategy,
             self.original_tree,
+            #[cfg(feature = "external_proposal")]
             self.original_group_extensions,
             proposals,
         )?;
@@ -174,6 +178,7 @@ where
         )
         .await?;
 
+        #[cfg(feature = "external_proposal")]
         let proposals = filter_out_invalid_group_extensions(
             strategy,
             proposals,
@@ -222,6 +227,7 @@ where
         let proposals = filter_out_invalid_proposers(
             &FailInvalidProposal,
             self.original_tree,
+            #[cfg(feature = "external_proposal")]
             self.original_group_extensions,
             proposals,
         )?;
@@ -770,6 +776,7 @@ where
     Ok(proposals)
 }
 
+#[cfg(feature = "external_proposal")]
 async fn filter_out_invalid_group_extensions<F, C>(
     strategy: &F,
     mut proposals: ProposalBundle,
@@ -997,7 +1004,7 @@ where
 fn validate_proposer<P, F>(
     strategy: &F,
     tree: &TreeKemPublic,
-    external_senders: Option<&ExternalSendersExt>,
+    #[cfg(feature = "external_proposal")] external_senders: Option<&ExternalSendersExt>,
     proposals: &mut ProposalBundle,
 ) -> Result<(), MlsError>
 where
@@ -1013,14 +1020,21 @@ where
                 sender: p.sender,
                 by_ref: p.is_by_reference(),
             })
-            .and_then(|_| validate_sender(tree, external_senders, &p.sender));
+            .and_then(|_| {
+                validate_sender(
+                    tree,
+                    #[cfg(feature = "external_proposal")]
+                    external_senders,
+                    &p.sender,
+                )
+            });
         apply_strategy(strategy, p, res)
     })
 }
 
 fn validate_sender(
     tree: &TreeKemPublic,
-    external_senders: Option<&ExternalSendersExt>,
+    #[cfg(feature = "external_proposal")] external_senders: Option<&ExternalSendersExt>,
     sender: &Sender,
 ) -> Result<(), MlsError> {
     match *sender {
@@ -1028,6 +1042,7 @@ fn validate_sender(
             .get_leaf_node(LeafIndex(i))
             .map(|_| ())
             .map_err(|_| MlsError::InvalidMemberProposer(i)),
+        #[cfg(feature = "external_proposal")]
         Sender::External(i) => external_senders
             .ok_or(MlsError::ExternalProposalsDisabled)
             .and_then(|ext| {
@@ -1062,7 +1077,9 @@ pub(crate) fn proposer_can_propose(
                 | ProposalType::RE_INIT
                 | ProposalType::GROUP_CONTEXT_EXTENSIONS
         ),
+        #[cfg(feature = "external_proposal")]
         (Sender::External(_), false) => false,
+        #[cfg(feature = "external_proposal")]
         (Sender::External(_), true) => matches!(
             proposal_type,
             ProposalType::ADD
@@ -1086,23 +1103,74 @@ pub(crate) fn proposer_can_propose(
 fn filter_out_invalid_proposers<F>(
     strategy: &F,
     tree: &TreeKemPublic,
-    group_context_extensions: &ExtensionList,
+    #[cfg(feature = "external_proposal")] group_context_extensions: &ExtensionList,
     mut proposals: ProposalBundle,
 ) -> Result<ProposalBundle, MlsError>
 where
     F: FilterStrategy,
 {
+    #[cfg(feature = "external_proposal")]
     let external_senders = group_context_extensions.get_as().ok().flatten();
+
+    #[cfg(feature = "external_proposal")]
     let external_senders = external_senders.as_ref();
 
-    validate_proposer::<AddProposal, _>(strategy, tree, external_senders, &mut proposals)?;
-    validate_proposer::<UpdateProposal, _>(strategy, tree, external_senders, &mut proposals)?;
-    validate_proposer::<RemoveProposal, _>(strategy, tree, external_senders, &mut proposals)?;
-    validate_proposer::<PreSharedKeyProposal, _>(strategy, tree, external_senders, &mut proposals)?;
-    validate_proposer::<ReInitProposal, _>(strategy, tree, external_senders, &mut proposals)?;
+    validate_proposer::<AddProposal, _>(
+        strategy,
+        tree,
+        #[cfg(feature = "external_proposal")]
+        external_senders,
+        &mut proposals,
+    )?;
+
+    validate_proposer::<UpdateProposal, _>(
+        strategy,
+        tree,
+        #[cfg(feature = "external_proposal")]
+        external_senders,
+        &mut proposals,
+    )?;
+
+    validate_proposer::<RemoveProposal, _>(
+        strategy,
+        tree,
+        #[cfg(feature = "external_proposal")]
+        external_senders,
+        &mut proposals,
+    )?;
+
+    validate_proposer::<PreSharedKeyProposal, _>(
+        strategy,
+        tree,
+        #[cfg(feature = "external_proposal")]
+        external_senders,
+        &mut proposals,
+    )?;
+
+    validate_proposer::<ReInitProposal, _>(
+        strategy,
+        tree,
+        #[cfg(feature = "external_proposal")]
+        external_senders,
+        &mut proposals,
+    )?;
+
     #[cfg(feature = "external_commit")]
-    validate_proposer::<ExternalInit, _>(strategy, tree, external_senders, &mut proposals)?;
-    validate_proposer::<ExtensionList, _>(strategy, tree, external_senders, &mut proposals)?;
+    validate_proposer::<ExternalInit, _>(
+        strategy,
+        tree,
+        #[cfg(feature = "external_proposal")]
+        external_senders,
+        &mut proposals,
+    )?;
+
+    validate_proposer::<ExtensionList, _>(
+        strategy,
+        tree,
+        #[cfg(feature = "external_proposal")]
+        external_senders,
+        &mut proposals,
+    )?;
 
     Ok(proposals)
 }

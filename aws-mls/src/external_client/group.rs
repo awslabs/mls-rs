@@ -1,15 +1,11 @@
 use async_trait::async_trait;
 use aws_mls_codec::MlsEncode;
-use aws_mls_core::{
-    crypto::CipherSuiteProvider, extension::ExtensionList, group::Member,
-    identity::IdentityProvider, keychain::KeychainStorage, psk::ExternalPskId,
-};
+use aws_mls_core::{group::Member, identity::IdentityProvider};
 use serde_with::serde_as;
 
 use crate::{
     cipher_suite::CipherSuite,
     client::MlsError,
-    extension::ExternalSendersExt,
     external_client::ExternalClientConfig,
     group::{
         cipher_suite_provider,
@@ -21,7 +17,7 @@ use crate::{
             MessageProcessor, ProposalMessageDescription, ProvisionalState,
         },
         message_signature::AuthenticatedContent,
-        proposal::{AddProposal, PreSharedKeyProposal, Proposal, ReInitProposal, RemoveProposal},
+        proposal::Proposal,
         proposal_ref::ProposalRef,
         snapshot::RawGroupState,
         state::GroupState,
@@ -29,18 +25,30 @@ use crate::{
         validate_group_info, Sender,
     },
     identity::SigningIdentity,
-    key_package::KeyPackageValidator,
     protocol_version::ProtocolVersion,
-    psk::{
-        AlwaysFoundPskStorage, JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce,
-        ResumptionPSKUsage, ResumptionPsk,
-    },
+    psk::AlwaysFoundPskStorage,
     tree_kem::{node::LeafIndex, path_secret::PathSecret, TreeKemPrivate},
     CryptoProvider, MLSMessage,
 };
 
-#[cfg(feature = "custom_proposal")]
+#[cfg(all(feature = "external_proposal", feature = "custom_proposal"))]
 use crate::group::proposal::CustomProposal;
+
+#[cfg(feature = "external_proposal")]
+use aws_mls_core::{
+    crypto::CipherSuiteProvider, extension::ExtensionList, keychain::KeychainStorage,
+    psk::ExternalPskId,
+};
+
+#[cfg(feature = "external_proposal")]
+use crate::{
+    extension::ExternalSendersExt,
+    group::proposal::{AddProposal, PreSharedKeyProposal, ReInitProposal, RemoveProposal},
+    key_package::KeyPackageValidator,
+    psk::{
+        JustPreSharedKeyID, PreSharedKeyID, PskGroupId, PskNonce, ResumptionPSKUsage, ResumptionPsk,
+    },
+};
 
 #[cfg(feature = "private_message")]
 use crate::group::framing::PrivateMessage;
@@ -191,6 +199,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
+    #[cfg(feature = "external_proposal")]
     pub async fn propose_add(
         &mut self,
         key_package: MLSMessage,
@@ -235,6 +244,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
+    #[cfg(feature = "external_proposal")]
     pub async fn propose_remove(
         &mut self,
         index: u32,
@@ -263,6 +273,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
+    #[cfg(feature = "external_proposal")]
     pub async fn propose_external_psk(
         &mut self,
         psk: ExternalPskId,
@@ -283,6 +294,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
+    #[cfg(feature = "external_proposal")]
     pub async fn propose_resumption_psk(
         &mut self,
         psk_epoch: u64,
@@ -300,6 +312,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .await
     }
 
+    #[cfg(feature = "external_proposal")]
     fn psk_proposal(&self, key_id: JustPreSharedKeyID) -> Result<Proposal, MlsError> {
         Ok(Proposal::Psk(PreSharedKeyProposal {
             psk: PreSharedKeyID {
@@ -319,6 +332,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
+    #[cfg(feature = "external_proposal")]
     pub async fn propose_group_context_extensions(
         &mut self,
         extensions: ExtensionList,
@@ -338,6 +352,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
+    #[cfg(feature = "external_proposal")]
     pub async fn propose_reinit(
         &mut self,
         group_id: Option<Vec<u8>>,
@@ -372,7 +387,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
     /// committed, the group needs to have `signing_identity` as an entry
     /// within an [ExternalSendersExt](crate::extension::built_in::ExternalSendersExt)
     /// as part of its group context extensions.
-    #[cfg(feature = "custom_proposal")]
+    #[cfg(all(feature = "external_proposal", feature = "custom_proposal"))]
     pub async fn propose_custom(
         &mut self,
         proposal: CustomProposal,
@@ -387,6 +402,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         .await
     }
 
+    #[cfg(feature = "external_proposal")]
     async fn propose(
         &mut self,
         proposal: Proposal,
@@ -751,7 +767,7 @@ mod tests {
     async fn test_group_two_members(
         v: ProtocolVersion,
         cs: CipherSuite,
-        ext_identity: Option<SigningIdentity>,
+        #[cfg(feature = "external_proposal")] ext_identity: Option<SigningIdentity>,
     ) -> TestGroup {
         let mut group = test_group_with_one_commit(v, cs).await;
 
@@ -763,6 +779,7 @@ mod tests {
             .add_member(bob_key_package)
             .unwrap();
 
+        #[cfg(feature = "external_proposal")]
         if let Some(ext_signer) = ext_identity {
             let mut ext_list = ExtensionList::new();
 
@@ -978,6 +995,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "external_proposal")]
     async fn setup_extern_proposal_test(
         extern_proposals_allowed: bool,
     ) -> (SigningIdentity, SignatureSecretKey, TestGroup) {
@@ -994,6 +1012,7 @@ mod tests {
         (server_identity, server_key, alice)
     }
 
+    #[cfg(feature = "external_proposal")]
     async fn test_external_proposal<F>(proposal_creation: F)
     where
         F: for<'a> Fn(
@@ -1050,6 +1069,7 @@ mod tests {
         assert_eq!(alice.group.state, server.state);
     }
 
+    #[cfg(feature = "external_proposal")]
     #[futures_test::test]
     async fn external_group_can_propose_add() {
         test_external_proposal(|ext_group, ext_identity| {
@@ -1068,6 +1088,7 @@ mod tests {
         .await
     }
 
+    #[cfg(feature = "external_proposal")]
     #[futures_test::test]
     async fn external_group_can_propose_remove() {
         test_external_proposal(|ext_group, ext_identity| {
@@ -1082,6 +1103,7 @@ mod tests {
         .await
     }
 
+    #[cfg(feature = "external_proposal")]
     #[futures_test::test]
     async fn external_group_external_proposal_not_allowed() {
         let (signing_id, secret_key, alice) = setup_extern_proposal_test(false).await;
@@ -1103,6 +1125,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::ExternalProposalsDisabled));
     }
 
+    #[cfg(feature = "external_proposal")]
     #[futures_test::test]
     async fn external_group_external_signing_identity_invalid() {
         let (server_identity, server_key) =

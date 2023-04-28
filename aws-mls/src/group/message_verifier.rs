@@ -1,5 +1,5 @@
-use alloc::vec;
-use alloc::vec::Vec;
+#[cfg(feature = "external_proposal")]
+use alloc::{vec, vec::Vec};
 
 #[cfg(feature = "std")]
 use std::collections::HashMap;
@@ -13,13 +13,14 @@ use alloc::collections::BTreeMap;
 use crate::{
     client::MlsError,
     crypto::SignaturePublicKey,
-    extension::ExternalSendersExt,
     group::{GroupContext, PublicMessage, Sender},
-    identity::SigningIdentity,
     signer::Signable,
     tree_kem::{node::LeafIndex, TreeKemPublic},
     CipherSuiteProvider,
 };
+
+#[cfg(feature = "external_proposal")]
+use crate::{extension::ExternalSendersExt, identity::SigningIdentity};
 
 use super::{
     framing::Content,
@@ -54,7 +55,10 @@ pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
     let tag = plaintext.membership_tag.clone();
     let auth_content = AuthenticatedContent::from(plaintext);
     let context = &state.context;
+
+    #[cfg(feature = "external_proposal")]
     let external_signers = external_signers(context);
+
     let current_tree = &state.public_tree;
 
     // Verify the membership tag if needed
@@ -92,12 +96,14 @@ pub(crate) fn verify_plaintext_authentication<P: CipherSuiteProvider>(
         SignaturePublicKeysContainer::RatchetTree(current_tree),
         context,
         &auth_content,
+        #[cfg(feature = "external_proposal")]
         &external_signers,
     )?;
 
     Ok(auth_content)
 }
 
+#[cfg(feature = "external_proposal")]
 fn external_signers(context: &GroupContext) -> Vec<SigningIdentity> {
     context
         .extensions
@@ -113,12 +119,13 @@ pub(crate) fn verify_auth_content_signature<P: CipherSuiteProvider>(
     signature_keys_container: SignaturePublicKeysContainer,
     context: &GroupContext,
     auth_content: &AuthenticatedContent,
-    external_signers: &[SigningIdentity],
+    #[cfg(feature = "external_proposal")] external_signers: &[SigningIdentity],
 ) -> Result<(), MlsError> {
     let sender_public_key = signing_identity_for_sender(
         signature_keys_container,
         &auth_content.content.sender,
         &auth_content.content.content,
+        #[cfg(feature = "external_proposal")]
         external_signers,
     )?;
 
@@ -138,12 +145,13 @@ fn signing_identity_for_sender(
     signature_keys_container: SignaturePublicKeysContainer,
     sender: &Sender,
     content: &Content,
-    external_signers: &[SigningIdentity],
+    #[cfg(feature = "external_proposal")] external_signers: &[SigningIdentity],
 ) -> Result<SignaturePublicKey, MlsError> {
     match sender {
         Sender::Member(leaf_index) => {
             signing_identity_for_member(signature_keys_container, LeafIndex(*leaf_index))
         }
+        #[cfg(feature = "external_proposal")]
         Sender::External(external_key_index) => {
             signing_identity_for_external(*external_key_index, external_signers)
         }
@@ -171,6 +179,7 @@ fn signing_identity_for_member(
     }
 }
 
+#[cfg(feature = "external_proposal")]
 fn signing_identity_for_external(
     index: u32,
     external_signers: &[SigningIdentity],
@@ -221,7 +230,6 @@ mod tests {
         },
         client_builder::{test_utils::TestClientConfig, Preferences},
         crypto::{test_utils::test_cipher_suite_provider, SignatureSecretKey},
-        extension::ExternalSendersExt,
         group::{
             framing::WireFormat,
             membership_tag::MembershipTag,
@@ -234,10 +242,12 @@ mod tests {
         key_package::KeyPackageGeneration,
         signer::Signable,
         tree_kem::node::LeafIndex,
-        ExtensionList,
     };
     use alloc::vec;
     use assert_matches::assert_matches;
+
+    #[cfg(feature = "external_proposal")]
+    use crate::{extension::ExternalSendersExt, ExtensionList};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -329,6 +339,7 @@ mod tests {
             super::SignaturePublicKeysContainer::RatchetTree(&env.bob.group.state.public_tree),
             env.bob.group.context(),
             &message,
+            #[cfg(feature = "external_proposal")]
             &[],
         )
         .unwrap();
@@ -523,6 +534,7 @@ mod tests {
         assert_matches!(res, Err(MlsError::ExpectedCommitForNewMemberCommit));
     }
 
+    #[cfg(feature = "external_proposal")]
     #[test]
     async fn valid_proposal_from_external_is_verified() {
         let (bob_key_pkg_gen, _) =
@@ -566,6 +578,7 @@ mod tests {
         .unwrap();
     }
 
+    #[cfg(feature = "external_proposal")]
     #[test]
     async fn external_proposal_must_be_from_valid_sender() {
         let (bob_key_pkg_gen, _) =

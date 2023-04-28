@@ -1351,6 +1351,7 @@ where
                 SignaturePublicKeysContainer::RatchetTree(&self.state.public_tree),
                 self.context(),
                 &content,
+                #[cfg(feature = "external_proposal")]
                 &[],
             )?;
 
@@ -1370,6 +1371,7 @@ where
                 SignaturePublicKeysContainer::List(&epoch.signature_public_keys),
                 &epoch.context,
                 &content,
+                #[cfg(feature = "external_proposal")]
                 &[],
             )?;
 
@@ -1909,7 +1911,7 @@ mod tests {
     use core::time::Duration;
 
     use crate::client::test_utils::{get_basic_client_builder, test_client_with_key_pkg};
-    use crate::crypto::test_utils::{test_cipher_suite_provider, TestCryptoProvider};
+    use crate::crypto::test_utils::TestCryptoProvider;
     use crate::group::test_utils::random_bytes;
     use crate::identity::test_utils::get_test_basic_credential;
     use crate::key_package::test_utils::test_key_package_message;
@@ -1921,14 +1923,14 @@ mod tests {
             Client,
         },
         client_builder::{test_utils::TestClientConfig, Preferences},
-        extension::{test_utils::TestExtension, ExternalSendersExt, RequiredCapabilitiesExt},
+        extension::{test_utils::TestExtension, RequiredCapabilitiesExt},
         identity::test_utils::get_test_signing_identity,
         key_package::test_utils::test_key_package_custom,
         psk::PreSharedKey,
         tree_kem::{leaf_node::LeafNodeSource, Lifetime, UpdatePathNode},
     };
 
-    #[cfg(feature = "custom_proposal")]
+    #[cfg(all(feature = "external_proposal", feature = "custom_proposal"))]
     use super::test_utils::test_group_custom_config;
 
     use super::{
@@ -1942,14 +1944,20 @@ mod tests {
     use assert_matches::assert_matches;
 
     use aws_mls_core::extension::{Extension, MlsExtension};
-    use aws_mls_core::identity::{CertificateChain, Credential, CredentialType, CustomCredential};
+    use aws_mls_core::identity::{Credential, CredentialType, CustomCredential};
     use futures::FutureExt;
+
+    #[cfg(feature = "external_proposal")]
+    use aws_mls_core::identity::CertificateChain;
 
     #[cfg(feature = "state_update")]
     use itertools::Itertools;
 
     #[cfg(feature = "state_update")]
     use alloc::format;
+
+    #[cfg(feature = "external_proposal")]
+    use crate::{crypto::test_utils::test_cipher_suite_provider, extension::ExternalSendersExt};
 
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -2695,7 +2703,7 @@ mod tests {
             _ => panic!("Non plaintext message"),
         };
 
-        plaintext.content.sender = Sender::External(0);
+        plaintext.content.sender = Sender::NewMemberCommit;
 
         assert_matches!(
             bob_group
@@ -3333,6 +3341,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "external_proposal")]
     #[test]
     async fn commit_leaf_not_supporting_credential_used_by_external_sender() {
         // The new leaf of the committer doesn't support credential used by an external sender

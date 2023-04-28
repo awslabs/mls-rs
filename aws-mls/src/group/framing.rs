@@ -50,6 +50,7 @@ pub enum Sender {
     /// in the current
     /// [`ExternalSendersExt`](crate::extension::ExternalSendersExt) stored in
     /// group context extensions.
+    #[cfg(feature = "external_proposal")]
     External(u32) = 2u8,
     /// A new member proposing their own addition to the group.
     NewMemberProposal = 3u8,

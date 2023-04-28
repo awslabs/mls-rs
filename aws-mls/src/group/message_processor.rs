@@ -231,6 +231,7 @@ impl TryFrom<Sender> for ProposalSender {
     fn try_from(value: Sender) -> Result<Self, Self::Error> {
         match value {
             Sender::Member(index) => Ok(Self::Member(index)),
+            #[cfg(feature = "external_proposal")]
             Sender::External(index) => Ok(Self::External(index)),
             Sender::NewMemberProposal => Ok(Self::NewMember),
             #[cfg(feature = "external_commit")]

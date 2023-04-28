@@ -586,6 +586,7 @@ pub(crate) mod test_utils {
     #[derive(Clone, Debug, Default)]
     pub struct FailureIdentityProvider;
 
+    #[cfg(feature = "external_proposal")]
     impl FailureIdentityProvider {
         pub fn new() -> Self {
             Self::default()
@@ -609,6 +610,7 @@ pub(crate) mod test_utils {
             Err(TestFailureError)
         }
 
+        #[cfg(feature = "external_proposal")]
         async fn validate_external_sender(
             &self,
             _signing_identity: &SigningIdentity,

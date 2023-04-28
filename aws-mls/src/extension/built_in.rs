@@ -1,12 +1,20 @@
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use aws_mls_core::{
-    extension::{ExtensionList, ExtensionType, MlsCodecExtension},
+    extension::{ExtensionType, MlsCodecExtension},
     group::ProposalType,
-    identity::{CredentialType, IdentityProvider, SigningIdentity},
+    identity::CredentialType,
+};
+
+#[cfg(feature = "external_proposal")]
+use futures::TryStreamExt;
+
+#[cfg(feature = "external_proposal")]
+use aws_mls_core::{
+    extension::ExtensionList,
+    identity::{IdentityProvider, SigningIdentity},
     time::MlsTime,
 };
-use futures::TryStreamExt;
 
 use crate::tree_kem::node::NodeVec;
 
@@ -140,12 +148,14 @@ impl MlsCodecExtension for ExternalPubExt {
 }
 
 /// Enable proposals by an [ExternalClient](crate::external_client::ExternalClient).
+#[cfg(feature = "external_proposal")]
 #[derive(Clone, Debug, PartialEq, Eq, MlsSize, MlsEncode, MlsDecode)]
 #[non_exhaustive]
 pub struct ExternalSendersExt {
     pub(crate) allowed_senders: Vec<SigningIdentity>,
 }
 
+#[cfg(feature = "external_proposal")]
 impl ExternalSendersExt {
     pub fn new(allowed_senders: Vec<SigningIdentity>) -> Self {
         Self { allowed_senders }
@@ -169,6 +179,7 @@ impl ExternalSendersExt {
     }
 }
 
+#[cfg(feature = "external_proposal")]
 impl MlsCodecExtension for ExternalSendersExt {
     fn extension_type() -> ExtensionType {
         ExtensionType::EXTERNAL_SENDERS
@@ -177,6 +188,7 @@ impl MlsCodecExtension for ExternalSendersExt {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "external_proposal")]
     use crate::{
         client::test_utils::TEST_CIPHER_SUITE, identity::test_utils::get_test_signing_identity,
     };
@@ -235,6 +247,7 @@ mod tests {
         assert_eq!(ext, restored)
     }
 
+    #[cfg(feature = "external_proposal")]
     #[test]
     fn test_external_senders() {
         let ext = ExternalSendersExt::new(vec![

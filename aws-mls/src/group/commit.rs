@@ -684,7 +684,10 @@ mod tests {
         time::MlsTime,
     };
 
-    use crate::{crypto::test_utils::TestCryptoProvider, extension::ExternalSendersExt, Client};
+    use crate::{crypto::test_utils::TestCryptoProvider, Client};
+
+    #[cfg(feature = "external_proposal")]
+    use crate::extension::ExternalSendersExt;
 
     use crate::{
         client::test_utils::{test_client_with_key_pkg, TEST_CIPHER_SUITE, TEST_PROTOCOL_VERSION},
@@ -1146,6 +1149,7 @@ mod tests {
             .unwrap();
     }
 
+    #[cfg(feature = "external_proposal")]
     #[futures_test::test]
     async fn server_identity_is_validated_against_new_extensions() {
         let (alice, identity) = client_with_test_extension(b"alice");
@@ -1246,6 +1250,7 @@ mod tests {
                 .ok_or(IdentityProviderWithExtensionError {})
         }
 
+        #[cfg(feature = "external_proposal")]
         async fn validate_external_sender(
             &self,
             identity: &SigningIdentity,

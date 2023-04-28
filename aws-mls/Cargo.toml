@@ -16,7 +16,8 @@ external_commit = ["aws-mls-core/external_commit"]
 state_update = []
 private_message = []
 custom_proposal = []
-rfc_compliant = ["external_commit", "state_update", "private_message", "custom_proposal"]
+external_proposal = ["aws-mls-core/external_proposal", "aws-mls-identity-x509/external_proposal"]
+rfc_compliant = ["external_commit", "state_update", "private_message", "custom_proposal", "external_proposal"]
 
 std = [
     "aws-mls-core/std",
