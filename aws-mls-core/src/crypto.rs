@@ -1,9 +1,8 @@
-use core::ops::Deref;
-
 use crate::serde_util::vec_u8_as_base64::VecAsBase64;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use core::ops::Deref;
 use serde_with::serde_as;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -187,12 +186,17 @@ impl From<Vec<u8>> for SignaturePublicKey {
 
 /// Byte representation of a signature key.
 #[serde_as]
+#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::ffi_type(opaque))]
 #[derive(Clone, Debug, PartialEq, Eq, Zeroize, serde::Serialize, serde::Deserialize)]
-pub struct SignatureSecretKey(#[serde_as(as = "VecAsBase64")] Vec<u8>);
+#[serde(transparent)]
+pub struct SignatureSecretKey {
+    #[serde_as(as = "VecAsBase64")]
+    bytes: Vec<u8>,
+}
 
 impl From<Vec<u8>> for SignatureSecretKey {
-    fn from(data: Vec<u8>) -> Self {
-        Self(data)
+    fn from(bytes: Vec<u8>) -> Self {
+        Self { bytes }
     }
 }
 
@@ -200,7 +204,7 @@ impl Deref for SignatureSecretKey {
     type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.bytes
     }
 }
 

@@ -8,7 +8,7 @@ default = ["std"]
 std = ["thiserror-core/std"]
 
 [dependencies]
-aws-mls-codec-derive = { version = "*", path = "./derive" }
+aws-mls-codec-derive = { version = "*", path = "../aws-mls-codec-derive" }
 thiserror-core = { version = "1.0.38", default-features = false }
 
 [dev-dependencies]

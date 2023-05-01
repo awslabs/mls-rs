@@ -880,6 +880,7 @@ impl Default for Settings {
     }
 }
 
+#[cfg_attr(all(feature = "ffi", not(test)), ::safer_ffi_gen::ffi_type(opaque))]
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Preferences {

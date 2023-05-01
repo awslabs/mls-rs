@@ -12,8 +12,8 @@ members = [
     "aws-mls-crypto-rustcrypto",
     "aws-mls-crypto-hpke",
     "aws-mls-provider-sqlite",
-    "aws-mls-core/aws-mls-codec",
-    "aws-mls-core/aws-mls-codec/derive"
+    "aws-mls-codec",
+    "aws-mls-codec-derive"
 ]
 
 default-members = [
@@ -24,7 +24,7 @@ default-members = [
     "aws-mls-crypto-openssl",
     "aws-mls-crypto-rustcrypto",
     "aws-mls-provider-sqlite",
-    "aws-mls-core/aws-mls-codec"
+    "aws-mls-codec"
 ]
 
 [profile.release-mini]
