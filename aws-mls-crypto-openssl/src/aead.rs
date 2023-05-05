@@ -1,6 +1,6 @@
 use std::{fmt::Debug, ops::Deref};
 
-use aws_mls_core::crypto::CipherSuite;
+use aws_mls_core::{crypto::CipherSuite, error::IntoAnyError};
 use aws_mls_crypto_traits::AeadType;
 use openssl::symm::{decrypt_aead, encrypt_aead, Cipher};
 use thiserror::Error;
@@ -15,6 +15,12 @@ pub enum AeadError {
     EmptyPlaintext,
     #[error("unsupported cipher suite")]
     UnsupportedCipherSuite,
+}
+
+impl IntoAnyError for AeadError {
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
+    }
 }
 
 pub const TAG_LEN: usize = 16;

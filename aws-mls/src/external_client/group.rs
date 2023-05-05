@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use aws_mls_codec::MlsEncode;
-use aws_mls_core::{group::Member, identity::IdentityProvider};
+use aws_mls_core::{error::IntoAnyError, group::Member, identity::IdentityProvider};
 use serde_with::serde_as;
 
 use crate::{
@@ -318,7 +318,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             psk: PreSharedKeyID {
                 key_id,
                 psk_nonce: PskNonce::random(&self.cipher_suite_provider)
-                    .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
+                    .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?,
             },
         }))
     }
@@ -365,7 +365,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
         let group_id = group_id.map(Ok).unwrap_or_else(|| {
             self.cipher_suite_provider
                 .random_bytes_vec(self.cipher_suite_provider.kdf_extract_size())
-                .map_err(|e| MlsError::CryptoProviderError(e.into()))
+                .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
         })?;
 
         let proposal = Proposal::ReInit(ReInitProposal {
@@ -421,7 +421,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .keychain()
             .signer(signing_identity)
             .await
-            .map_err(|e| MlsError::KeychainError(e.into()))?
+            .map_err(|e| MlsError::KeychainError(e.into_any_error()))?
             .ok_or(MlsError::SignerNotFound)?;
 
         let sender_index = external_senders_ext
@@ -525,7 +525,7 @@ impl<C: ExternalClientConfig + Clone> ExternalGroup<C> {
             .identity_provider()
             .identity(identity_id)
             .await
-            .map_err(|error| MlsError::IdentityProviderError(error.into()))?;
+            .map_err(|error| MlsError::IdentityProviderError(error.into_any_error()))?;
 
         let index = self
             .group_state()

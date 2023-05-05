@@ -1,6 +1,6 @@
 use std::{fmt::Debug, ops::Deref};
 
-use aws_mls_core::crypto::CipherSuite;
+use aws_mls_core::{crypto::CipherSuite, error::IntoAnyError};
 use aws_mls_crypto_traits::KdfType;
 use openssl::{
     md::{Md, MdRef},
@@ -17,6 +17,12 @@ pub enum KdfError {
     TooShortKey(usize, usize),
     #[error("unsupported cipher suite")]
     UnsupportedCipherSuite,
+}
+
+impl IntoAnyError for KdfError {
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
+    }
 }
 
 #[derive(Clone)]

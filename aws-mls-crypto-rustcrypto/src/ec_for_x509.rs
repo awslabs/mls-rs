@@ -2,7 +2,6 @@ use std::fmt::Debug;
 
 use p256::pkcs8::EncodePublicKey;
 use spki::{AlgorithmIdentifier, ObjectIdentifier, SubjectPublicKeyInfo};
-use thiserror::Error;
 
 use crate::{
     ec::{pub_key_from_uncompressed, Curve, EcError, EcPublicKey},
@@ -12,18 +11,37 @@ pub const X25519_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.1
 pub const ED25519_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.112");
 pub const P256_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum EcX509Error {
-    #[error(transparent)]
-    DerError(#[from] x509_cert::der::Error),
-    #[error(transparent)]
-    EcError(#[from] EcError),
-    #[error(transparent)]
-    SpkiError(#[from] spki::Error),
-    #[error("error parsing P256 key")]
+    #[cfg_attr(feature = "std", error(transparent))]
+    DerError(x509_cert::der::Error),
+    #[cfg_attr(feature = "std", error(transparent))]
+    EcError(EcError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    SpkiError(spki::Error),
+    #[cfg_attr(feature = "std", error("error parsing P256 key"))]
     NistSpkiError,
-    #[error("unsupported public key algorithm: {0:?}")]
+    #[cfg_attr(feature = "std", error("unsupported public key algorithm: {0:?}"))]
     UnsupportedPublicKeyAlgorithm(String),
+}
+
+impl From<x509_cert::der::Error> for EcX509Error {
+    fn from(e: x509_cert::der::Error) -> Self {
+        EcX509Error::DerError(e)
+    }
+}
+
+impl From<EcError> for EcX509Error {
+    fn from(e: EcError) -> Self {
+        EcX509Error::EcError(e)
+    }
+}
+
+impl From<spki::Error> for EcX509Error {
+    fn from(e: spki::Error) -> Self {
+        EcX509Error::SpkiError(e)
+    }
 }
 
 pub fn curve_from_algorithm(algorithm: &AlgorithmIdentifier) -> Result<Curve, EcX509Error> {

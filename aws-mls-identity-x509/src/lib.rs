@@ -1,5 +1,4 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(not(feature = "std"), feature(error_in_core))]
 extern crate alloc;
 
 mod builder;
@@ -21,7 +20,9 @@ pub use aws_mls_core::identity::{CertificateChain, DerCertificate};
 pub(crate) mod test_utils {
 
     use alloc::vec;
-    use aws_mls_core::{crypto::SignaturePublicKey, identity::SigningIdentity};
+    use aws_mls_core::{
+        crypto::SignaturePublicKey, error::IntoAnyError, identity::SigningIdentity,
+    };
     use rand::{thread_rng, Rng};
 
     use crate::{CertificateChain, DerCertificate};
@@ -29,6 +30,12 @@ pub(crate) mod test_utils {
     #[derive(Debug, thiserror::Error)]
     #[error("test error")]
     pub struct TestError;
+
+    impl IntoAnyError for TestError {
+        fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+            Ok(self.into())
+        }
+    }
 
     pub fn test_certificate_chain() -> CertificateChain {
         (0..3)

@@ -1,7 +1,10 @@
 use alloc::format;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsEncode, MlsSize};
-use aws_mls_core::crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey};
+use aws_mls_core::{
+    crypto::{CipherSuiteProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey},
+    error::IntoAnyError,
+};
 use zeroize::Zeroizing;
 
 use crate::client::MlsError;
@@ -40,7 +43,7 @@ pub(crate) trait HpkeEncryptable: Sized {
 
         cipher_suite_provider
             .hpke_seal(public_key, &context, None, &content)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 
     fn decrypt<P: CipherSuiteProvider>(
@@ -53,7 +56,7 @@ pub(crate) trait HpkeEncryptable: Sized {
 
         let plaintext = cipher_suite_provider
             .hpke_open(ciphertext, secret_key, &context, None)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Self::from_bytes(plaintext.to_vec())
     }

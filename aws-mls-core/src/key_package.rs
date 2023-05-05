@@ -2,13 +2,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use async_trait::async_trait;
 
-use crate::crypto::HpkeSecretKey;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
+use crate::{crypto::HpkeSecretKey, error::IntoAnyError};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
@@ -38,7 +32,7 @@ impl KeyPackageData {
 pub trait KeyPackageStorage: Send + Sync {
     /// Error type that the underlying storage mechanism returns on internal
     /// failure.
-    type Error: Error + Send + Sync + 'static;
+    type Error: IntoAnyError;
 
     /// Delete [`KeyPackageData`] referenced by `id`.
     ///
@@ -56,7 +50,7 @@ pub trait KeyPackageStorage: Send + Sync {
     /// This function is automatically called whenever a new key package is created.
     async fn insert(&mut self, id: Vec<u8>, pkg: KeyPackageData) -> Result<(), Self::Error>;
 
-    /// Retrieve [`KeyPackageData`] by its `id`.  
+    /// Retrieve [`KeyPackageData`] by its `id`.
     ///
     /// `None` should be returned in the event that no key packages are found
     /// that match `id`.

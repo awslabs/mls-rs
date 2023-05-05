@@ -2,6 +2,7 @@ use alloc::vec;
 use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use aws_mls_core::error::IntoAnyError;
 use aws_mls_core::extension::ExtensionList;
 use aws_mls_core::identity::IdentityProvider;
 use aws_mls_core::keychain::KeychainStorage;
@@ -274,7 +275,7 @@ where
             .keychain()
             .signer(&signing_identity)
             .await
-            .map_err(|e| MlsError::KeychainError(e.into()))?
+            .map_err(|e| MlsError::KeychainError(e.into_any_error()))?
             .ok_or(MlsError::SignerNotFound)?;
 
         let (leaf_node, leaf_node_secret) = LeafNode::generate(
@@ -299,7 +300,7 @@ where
         let group_id = group_id.map(Ok).unwrap_or_else(|| {
             cipher_suite_provider
                 .random_bytes_vec(cipher_suite_provider.kdf_extract_size())
-                .map_err(|e| MlsError::CryptoProviderError(e.into()))
+                .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
         })?;
 
         let context = GroupContext::new_group(
@@ -413,7 +414,7 @@ where
             let psk_id = group_secrets
                 .psks
                 .first()
-                .ok_or_else(|| MlsError::UnexpectedPskId)?;
+                .ok_or(MlsError::UnexpectedPskId)?;
 
             match &psk_id.key_id {
                 JustPreSharedKeyID::Resumption(r) if r.usage != ResumptionPSKUsage::Application => {
@@ -660,7 +661,7 @@ where
             .keychain()
             .signer(signing_identity)
             .await
-            .map_err(|e| MlsError::KeychainError(e.into()))?
+            .map_err(|e| MlsError::KeychainError(e.into_any_error()))?
             .ok_or(MlsError::SignerNotFound)
     }
 
@@ -1142,7 +1143,7 @@ where
             psk: PreSharedKeyID {
                 key_id,
                 psk_nonce: PskNonce::random(&self.cipher_suite_provider)
-                    .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
+                    .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?,
             },
         }))
     }
@@ -1202,7 +1203,7 @@ where
         let group_id = group_id.map(Ok).unwrap_or_else(|| {
             self.cipher_suite_provider
                 .random_bytes_vec(self.cipher_suite_provider.kdf_extract_size())
-                .map_err(|e| MlsError::CryptoProviderError(e.into()))
+                .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
         })?;
 
         Ok(Proposal::ReInit(ReInitProposal {
@@ -2698,7 +2699,7 @@ mod tests {
 
         let mut commit_output = alice_group.group.commit(vec![]).await.unwrap();
 
-        let mut plaintext = match commit_output.commit_message.payload {
+        let plaintext = match commit_output.commit_message.payload {
             MLSMessagePayload::Plain(ref mut plain) => plain,
             _ => panic!("Non plaintext message"),
         };

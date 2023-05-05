@@ -10,3 +10,9 @@ impl std::fmt::Display for TestError {
         f.write_str("TestError")
     }
 }
+
+impl aws_mls_core::error::IntoAnyError for TestError {
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
+    }
+}

@@ -1,14 +1,8 @@
-use crate::{extension::ExtensionList, group::RosterUpdate, time::MlsTime};
+use crate::{error::IntoAnyError, extension::ExtensionList, group::RosterUpdate, time::MlsTime};
 use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
 
 use super::{CredentialType, SigningIdentity};
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
@@ -40,7 +34,7 @@ impl IdentityWarning {
 /// [`SigningIdentity`](aws-mls-core::identity::SigningIdentity)
 pub trait IdentityProvider: Send + Sync {
     /// Error type that this provider returns on internal failure.
-    type Error: Error + Send + Sync + 'static;
+    type Error: IntoAnyError;
 
     /// Determine if `signing_identity` is valid for a group member.
     ///

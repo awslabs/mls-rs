@@ -3,7 +3,10 @@ use std::ops::Deref;
 use aws_mls_crypto_traits::DhType;
 use thiserror::Error;
 
-use aws_mls_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
+use aws_mls_core::{
+    crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey},
+    error::IntoAnyError,
+};
 
 use crate::ec::{
     generate_keypair, private_key_bytes_to_public, private_key_ecdh, private_key_from_bytes,
@@ -18,6 +21,12 @@ pub enum EcdhKemError {
     EcError(#[from] EcError),
     #[error("unsupported cipher suite")]
     UnsupportedCipherSuite,
+}
+
+impl IntoAnyError for EcdhKemError {
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
+    }
 }
 
 /// Kem identifiers for HPKE

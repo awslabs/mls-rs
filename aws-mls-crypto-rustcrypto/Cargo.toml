@@ -21,7 +21,8 @@ std = [
     "p256/std",
     "sec1/std",
     "x25519-dalek/std",
-    "ed25519-dalek/std"
+    "ed25519-dalek/std",
+    "dep:thiserror"
 ]
 
 [dependencies]
@@ -29,7 +30,7 @@ aws-mls-core = { path = "../aws-mls-core", default-features = false, version = "
 aws-mls-crypto-hpke = { path = "../aws-mls-crypto-hpke", default-features = false, version = "*" }
 aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", default-features = false, version = "*" }
 
-thiserror = { package = "thiserror-core", version = "1", default-features = false }
+thiserror = { version = "1.0.40", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 enum-iterator = "1.1.2"
 

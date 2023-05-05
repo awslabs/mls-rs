@@ -1,32 +1,36 @@
-use alloc::boxed::Box;
-use aws_mls_core::identity::CredentialType;
+use aws_mls_core::{error::AnyError, identity::CredentialType};
 
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum X509IdentityError {
-    #[error("unsupported credential type {0:?}")]
+    #[cfg_attr(feature = "std", error("unsupported credential type {0:?}"))]
     UnsupportedCredentialType(CredentialType),
-    #[error("signing identity public key does not match the leaf certificate")]
+    #[cfg_attr(
+        feature = "std",
+        error("signing identity public key does not match the leaf certificate")
+    )]
     SignatureKeyMismatch,
-    #[error("unable to parse certificate chain data")]
+    #[cfg_attr(feature = "std", error("unable to parse certificate chain data"))]
     InvalidCertificateChain,
-    #[error("invalid offset within certificate chain")]
+    #[cfg_attr(feature = "std", error("invalid offset within certificate chain"))]
     InvalidOffset,
-    #[error("empty certificate chain")]
+    #[cfg_attr(feature = "std", error("empty certificate chain"))]
     EmptyCertificateChain,
-    #[error(transparent)]
-    CredentialEncodingError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    X509ReaderError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    IdentityExtractorError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    X509ValidationError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    IdentityWarningProviderError(Box<dyn Error + Send + Sync + 'static>),
+    #[cfg_attr(feature = "std", error(transparent))]
+    CredentialEncodingError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    X509ReaderError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    IdentityExtractorError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    X509ValidationError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    IdentityWarningProviderError(AnyError),
+}
+
+impl aws_mls_core::error::IntoAnyError for X509IdentityError {
+    #[cfg(feature = "std")]
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
+    }
 }

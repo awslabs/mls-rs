@@ -9,7 +9,10 @@ use portable_atomic_util::Arc;
 
 use alloc::vec::Vec;
 use async_trait::async_trait;
-use aws_mls_core::group::{EpochRecord, GroupState, GroupStateStorage};
+use aws_mls_core::{
+    error::IntoAnyError,
+    group::{EpochRecord, GroupState, GroupStateStorage},
+};
 use bincode::{config::Configuration, de::read::SliceReader};
 
 use crate::storage_provider::group_state::EpochData;
@@ -170,11 +173,12 @@ impl Default for InMemoryGroupStateStorage {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum BincodeError {
-    #[error("bincode encode error")]
+    #[cfg_attr(feature = "std", error("bincode encode error"))]
     Encode(bincode::error::EncodeError),
-    #[error("bincode decode error")]
+    #[cfg_attr(feature = "std", error("bincode decode error"))]
     Decode(bincode::error::DecodeError),
 }
 
@@ -189,6 +193,13 @@ impl From<bincode::error::EncodeError> for BincodeError {
 impl From<bincode::error::DecodeError> for BincodeError {
     fn from(value: bincode::error::DecodeError) -> Self {
         BincodeError::Decode(value)
+    }
+}
+
+impl IntoAnyError for BincodeError {
+    #[cfg(feature = "std")]
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
     }
 }
 

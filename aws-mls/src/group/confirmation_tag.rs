@@ -3,6 +3,7 @@ use crate::CipherSuiteProvider;
 use crate::{client::MlsError, group::transcript_hash::ConfirmedTranscriptHash};
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use aws_mls_core::error::IntoAnyError;
 use core::ops::Deref;
 use serde_with::serde_as;
 
@@ -33,7 +34,7 @@ impl ConfirmationTag {
         cipher_suite_provider
             .mac(confirmation_key, confirmed_transcript_hash)
             .map(ConfirmationTag)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 
     pub(crate) fn matches<P: CipherSuiteProvider>(

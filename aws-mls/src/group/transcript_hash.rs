@@ -1,4 +1,5 @@
 use super::*;
+use aws_mls_core::error::IntoAnyError;
 use core::ops::Deref;
 
 #[serde_as]
@@ -54,7 +55,7 @@ impl ConfirmedTranscriptHash {
         cipher_suite_provider
             .hash(&hash_input)
             .map(Into::into)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
 
@@ -98,7 +99,7 @@ impl InterimTranscriptHash {
         cipher_suite_provider
             .hash(&[confirmed.0.deref(), &input].concat())
             .map(Into::into)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
 

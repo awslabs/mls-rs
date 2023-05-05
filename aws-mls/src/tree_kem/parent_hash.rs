@@ -7,6 +7,7 @@ use crate::tree_kem::TreeKemPublic;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use aws_mls_core::error::IntoAnyError;
 use core::ops::Deref;
 use serde_with::serde_as;
 
@@ -71,7 +72,7 @@ impl ParentHash {
 
         let hash = cipher_suite_provider
             .hash(&input_bytes)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Ok(Self(hash))
     }

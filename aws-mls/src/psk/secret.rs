@@ -1,7 +1,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::MlsEncode;
-use aws_mls_core::{crypto::CipherSuiteProvider, psk::PreSharedKey};
+use aws_mls_core::{crypto::CipherSuiteProvider, error::IntoAnyError, psk::PreSharedKey};
 use core::ops::Deref;
 use zeroize::Zeroizing;
 
@@ -60,7 +60,7 @@ impl PskSecret {
                         &vec![0; cipher_suite_provider.kdf_extract_size()],
                         &psk_secret_input.psk,
                     )
-                    .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+                    .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
                 let psk_input = kdf_expand_with_label(
                     cipher_suite_provider,
@@ -73,7 +73,7 @@ impl PskSecret {
                 cipher_suite_provider
                     .kdf_extract(&psk_input, &psk_secret)
                     .map(PskSecret)
-                    .map_err(|e| MlsError::CryptoProviderError(e.into()))
+                    .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
             },
         )
     }

@@ -12,6 +12,7 @@ use crate::group::SecretTree;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use aws_mls_core::error::IntoAnyError;
 use serde_with::serde_as;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -71,7 +72,7 @@ impl KeySchedule {
     ) -> Result<KeyScheduleDerivationResult, MlsError> {
         let joiner_seed = cipher_suite_provider
             .kdf_extract(&last_key_schedule.init_secret.0, &commit_secret.0)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         let joiner_secret = kdf_expand_with_label(
             cipher_suite_provider,
@@ -80,7 +81,7 @@ impl KeySchedule {
             &context.mls_encode_to_vec()?,
             None,
         )
-        .map_err(|e| MlsError::CryptoProviderError(e.into()))?
+        .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?
         .into();
 
         let key_schedule_result = Self::from_joiner(
@@ -114,7 +115,7 @@ impl KeySchedule {
         let epoch_secret =
             kdf_expand_with_label(cipher_suite_provider, &epoch_seed, "epoch", &context, None)
                 .map(Zeroizing::new)
-                .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+                .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Self::from_epoch_secret(
             cipher_suite_provider,
@@ -132,7 +133,7 @@ impl KeySchedule {
         let epoch_secret = cipher_suite_provider
             .random_bytes_vec(cipher_suite_provider.kdf_extract_size())
             .map(Zeroizing::new)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Self::from_epoch_secret(
             cipher_suite_provider,
@@ -185,7 +186,7 @@ impl KeySchedule {
 
         let context_hash = cipher_suite
             .hash(context)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         kdf_expand_with_label(cipher_suite, &secret, "exported", &context_hash, Some(len))
     }
@@ -211,7 +212,7 @@ impl KeySchedule {
     ) -> Result<(HpkeSecretKey, HpkePublicKey), MlsError> {
         cipher_suite
             .kem_derive(&self.external_secret)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
 
@@ -247,7 +248,7 @@ pub(crate) fn kdf_expand_with_label<P: CipherSuiteProvider>(
 
     cipher_suite_provider
         .kdf_expand(secret, &label.mls_encode_to_vec()?, len)
-        .map_err(|e| MlsError::CryptoProviderError(e.into()))
+        .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
 }
 
 pub(crate) fn kdf_derive_secret<P: CipherSuiteProvider>(
@@ -274,7 +275,7 @@ pub(crate) fn get_pre_epoch_secret<P: CipherSuiteProvider>(
 ) -> Result<Zeroizing<Vec<u8>>, MlsError> {
     cipher_suite_provider
         .kdf_extract(&joiner_secret.0, psk_secret)
-        .map_err(|e| MlsError::CryptoProviderError(e.into()))
+        .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
 }
 
 struct SecretsProducer<'a, P: CipherSuiteProvider> {
@@ -295,7 +296,7 @@ impl<'a, P: CipherSuiteProvider> SecretsProducer<'a, P> {
     // lengths match in the crypto provider
     fn derive(&self, label: &str) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         kdf_derive_secret(self.cipher_suite_provider, self.epoch_secret, label)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
 
@@ -315,11 +316,11 @@ impl InitSecret {
     ) -> Result<(Self, Vec<u8>), MlsError> {
         let (kem_output, context) = cipher_suite
             .hpke_setup_s(external_pub, &[])
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         let init_secret = context
             .export(EXPORTER_CONTEXT, cipher_suite.kdf_extract_size())
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Ok((InitSecret(Zeroizing::new(init_secret)), kem_output))
     }
@@ -331,13 +332,13 @@ impl InitSecret {
     ) -> Result<Self, MlsError> {
         let context = cipher_suite
             .hpke_setup_r(kem_output, external_secret, &[])
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         context
             .export(EXPORTER_CONTEXT, cipher_suite.kdf_extract_size())
             .map(Zeroizing::new)
             .map(InitSecret)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
 
@@ -398,13 +399,13 @@ impl<'a, P: CipherSuiteProvider> WelcomeSecret<'a, P> {
     pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, MlsError> {
         self.cipher_suite
             .aead_seal(&self.key, plaintext, None, &self.nonce)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 
     pub(crate) fn decrypt(&self, ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, MlsError> {
         self.cipher_suite
             .aead_open(&self.key, ciphertext, None, &self.nonce)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
 
@@ -421,7 +422,7 @@ fn get_welcome_secret<P: CipherSuiteProvider>(
 pub(crate) mod test_utils {
     use alloc::vec;
     use alloc::vec::Vec;
-    use aws_mls_core::crypto::CipherSuiteProvider;
+    use aws_mls_core::{crypto::CipherSuiteProvider, error::IntoAnyError};
     use zeroize::Zeroizing;
 
     use crate::{cipher_suite::CipherSuite, crypto::test_utils::test_cipher_suite_provider};
@@ -458,7 +459,7 @@ pub(crate) mod test_utils {
                 .random_bytes_vec(cipher_suite.kdf_extract_size())
                 .map(Zeroizing::new)
                 .map(InitSecret)
-                .map_err(|e| MlsError::CryptoProviderError(e.into()))
+                .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
         }
     }
 

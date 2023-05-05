@@ -5,12 +5,12 @@ edition = "2021"
 
 [features]
 default = ["std"]
-std = ["aws-mls-core/std", "aws-mls-crypto-traits/std", "thiserror/std", "zeroize/std"]
+std = ["aws-mls-core/std", "aws-mls-crypto-traits/std", "dep:thiserror", "zeroize/std"]
 
 [dependencies]
 aws-mls-core = { path = "../aws-mls-core", default-features = false, version = "*" }
 aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", default-features = false, version = "*" }
-thiserror = { package = "thiserror-core", version = "1", default-features = false }
+thiserror = { version = "1.0.40", optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 cfg-if = "^1"
 
@@ -28,4 +28,4 @@ aws-mls-crypto-openssl = { path = "../aws-mls-crypto-openssl", version = "*"}
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { version = "0.3.26", default-features = false }
 aws-mls-crypto-rustcrypto = { path = "../aws-mls-crypto-rustcrypto", version = "*"}
-getrandom = { version = "0.2", features = ["js"] } 
+getrandom = { version = "0.2", features = ["js"] }

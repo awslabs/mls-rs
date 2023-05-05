@@ -8,7 +8,7 @@ use crate::CipherSuiteProvider;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use aws_mls_core::protocol_version::ProtocolVersion;
+use aws_mls_core::{error::IntoAnyError, protocol_version::ProtocolVersion};
 use core::ops::Deref;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -142,7 +142,7 @@ impl serde::Serialize for AuthenticatedContent {
     {
         let mls_serialize = self
             .mls_encode_to_vec()
-            .map_err(serde::ser::Error::custom)?;
+            .map_err(|e| serde::ser::Error::custom(e.into_any_error()))?;
 
         serializer.serialize_bytes(&mls_serialize)
     }
@@ -154,7 +154,8 @@ impl<'de> serde::Deserialize<'de> for AuthenticatedContent {
         D: serde::Deserializer<'de>,
     {
         let data: Vec<u8> = Vec::deserialize(deserializer)?;
-        AuthenticatedContent::mls_decode(&mut &*data).map_err(serde::de::Error::custom)
+        AuthenticatedContent::mls_decode(&mut &*data)
+            .map_err(|e| serde::de::Error::custom(e.into_any_error()))
     }
 }
 

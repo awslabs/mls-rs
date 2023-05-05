@@ -5,6 +5,7 @@ use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::CipherSuiteProvider;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use aws_mls_core::error::IntoAnyError;
 use serde_with::serde_as;
 
 #[derive(Debug, MlsSize, MlsEncode)]
@@ -69,11 +70,9 @@ impl HashReference {
             .mls_encode_to_vec()
             .map_err(Into::into)
             .and_then(|bytes| {
-                Ok(HashReference(
-                    cipher_suite
-                        .hash(&bytes)
-                        .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
-                ))
+                Ok(HashReference(cipher_suite.hash(&bytes).map_err(|e| {
+                    MlsError::CryptoProviderError(e.into_any_error())
+                })?))
             })
     }
 }

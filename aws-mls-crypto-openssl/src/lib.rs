@@ -24,9 +24,12 @@ use mac::{Hash, HashError};
 use openssl::error::ErrorStack;
 use thiserror::Error;
 
-use aws_mls_core::crypto::{
-    CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey,
-    SignaturePublicKey, SignatureSecretKey,
+use aws_mls_core::{
+    crypto::{
+        CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey,
+        HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
+    },
+    error::{AnyError, IntoAnyError},
 };
 
 pub use openssl;
@@ -35,11 +38,11 @@ use zeroize::Zeroizing;
 #[derive(Debug, Error)]
 pub enum OpensslCryptoError {
     #[error(transparent)]
-    AeadError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    AeadError(AnyError),
     #[error(transparent)]
     HpkeError(#[from] HpkeError),
     #[error(transparent)]
-    KdfError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    KdfError(AnyError),
     #[error(transparent)]
     HashError(#[from] HashError),
     #[error(transparent)]
@@ -48,6 +51,12 @@ pub enum OpensslCryptoError {
     OpensslError(#[from] ErrorStack),
     #[error(transparent)]
     EcError(#[from] EcError),
+}
+
+impl IntoAnyError for OpensslCryptoError {
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -195,7 +204,7 @@ where
     ) -> Result<Vec<u8>, Self::Error> {
         self.aead
             .seal(key, data, aad, nonce)
-            .map_err(|e| OpensslCryptoError::AeadError(e.into()))
+            .map_err(|e| OpensslCryptoError::AeadError(e.into_any_error()))
     }
 
     fn aead_open(
@@ -207,7 +216,7 @@ where
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.aead
             .open(key, cipher_text, aad, nonce)
-            .map_err(|e| OpensslCryptoError::AeadError(e.into()))
+            .map_err(|e| OpensslCryptoError::AeadError(e.into_any_error()))
             .map(Zeroizing::new)
     }
 
@@ -227,14 +236,14 @@ where
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.kdf
             .expand(prk, info, len)
-            .map_err(|e| OpensslCryptoError::KdfError(e.into()))
+            .map_err(|e| OpensslCryptoError::KdfError(e.into_any_error()))
             .map(Zeroizing::new)
     }
 
     fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.kdf
             .extract(salt, ikm)
-            .map_err(|e| OpensslCryptoError::KdfError(e.into()))
+            .map_err(|e| OpensslCryptoError::KdfError(e.into_any_error()))
             .map(Zeroizing::new)
     }
 

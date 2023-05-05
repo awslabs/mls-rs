@@ -3,21 +3,37 @@ use core::ops::Deref;
 use alloc::vec::Vec;
 
 use aws_mls_crypto_traits::DhType;
-use thiserror::Error;
 
-use aws_mls_core::crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey};
+use aws_mls_core::{
+    crypto::{CipherSuite, HpkePublicKey, HpkeSecretKey},
+    error::IntoAnyError,
+};
 
 use crate::ec::{
     generate_keypair, private_key_bytes_to_public, private_key_ecdh, private_key_from_bytes,
     pub_key_from_uncompressed, Curve, EcError, EcPublicKey,
 };
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum EcdhKemError {
-    #[error(transparent)]
-    EcError(#[from] EcError),
-    #[error("unsupported cipher suite")]
+    #[cfg_attr(feature = "std", error(transparent))]
+    EcError(EcError),
+    #[cfg_attr(feature = "std", error("unsupported cipher suite"))]
     UnsupportedCipherSuite,
+}
+
+impl From<EcError> for EcdhKemError {
+    fn from(e: EcError) -> Self {
+        EcdhKemError::EcError(e)
+    }
+}
+
+impl IntoAnyError for EcdhKemError {
+    #[cfg(feature = "std")]
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
+    }
 }
 
 /// Kem identifiers for HPKE

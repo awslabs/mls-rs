@@ -8,17 +8,11 @@ use alloc::{vec, vec::Vec};
 
 use alloc::boxed::Box;
 use async_trait::async_trait;
-use aws_mls_core::{extension::ExtensionList, group::Member};
+use aws_mls_core::{error::IntoAnyError, extension::ExtensionList, group::Member};
 use core::convert::Infallible;
 
 #[cfg(feature = "custom_proposal")]
 use super::ProposalInfo;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
 
 /// A user controlled proposal rules that can pre-process a set of proposals
 /// during commit processing.
@@ -32,7 +26,7 @@ use core::error::Error;
 /// maintain a working group.
 #[async_trait]
 pub trait ProposalRules: Send + Sync {
-    type Error: Error + Send + Sync + 'static;
+    type Error: IntoAnyError;
 
     /// Treat a collection of custom proposals as a set of standard proposals.
     ///

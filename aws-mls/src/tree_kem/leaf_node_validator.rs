@@ -2,8 +2,7 @@ use super::leaf_node::{LeafNode, LeafNodeSigningContext, LeafNodeSource};
 use crate::client::MlsError;
 use crate::CipherSuiteProvider;
 use crate::{extension::RequiredCapabilitiesExt, signer::Signable, time::MlsTime};
-use aws_mls_core::extension::ExtensionList;
-use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::{error::IntoAnyError, extension::ExtensionList, identity::IdentityProvider};
 
 pub enum ValidationContext<'a> {
     Add(Option<MlsTime>),
@@ -148,7 +147,7 @@ impl<'a, C: IdentityProvider, CP: CipherSuiteProvider> LeafNodeValidator<'a, C, 
                 self.group_context_extensions,
             )
             .await
-            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
         // Verify that the credential signed the leaf node
         leaf_node.verify(
@@ -575,11 +574,11 @@ pub(crate) mod test_utils {
     use async_trait::async_trait;
     use aws_mls_codec::MlsEncode;
     use aws_mls_core::{
+        error::IntoAnyError,
         extension::ExtensionList,
         group::RosterUpdate,
         identity::{BasicCredential, IdentityProvider, IdentityWarning},
     };
-    use thiserror::Error;
 
     use crate::{identity::SigningIdentity, time::MlsTime};
 
@@ -593,9 +592,17 @@ pub(crate) mod test_utils {
         }
     }
 
-    #[derive(Debug, Error)]
-    #[error("test error")]
+    #[derive(Debug)]
+    #[cfg_attr(feature = "std", derive(thiserror::Error))]
+    #[cfg_attr(feature = "std", error("test error"))]
     pub struct TestFailureError;
+
+    impl IntoAnyError for TestFailureError {
+        #[cfg(feature = "std")]
+        fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+            Ok(self.into())
+        }
+    }
 
     #[async_trait]
     impl IdentityProvider for FailureIdentityProvider {

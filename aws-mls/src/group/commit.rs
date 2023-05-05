@@ -674,11 +674,11 @@ pub(crate) mod test_utils {
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
-    use thiserror::Error;
 
     use alloc::boxed::Box;
 
     use aws_mls_core::{
+        error::IntoAnyError,
         group::RosterUpdate,
         identity::{CredentialType, IdentityProvider, IdentityWarning},
         time::MlsTime,
@@ -1209,9 +1209,17 @@ mod tests {
     #[derive(Debug, Clone)]
     struct IdentityProviderWithExtension(BasicIdentityProvider);
 
-    #[derive(Debug, Clone, Error)]
-    #[error("test error")]
+    #[derive(Clone, Debug)]
+    #[cfg_attr(feature = "std", derive(thiserror::Error))]
+    #[cfg_attr(feature = "std", error("test error"))]
     struct IdentityProviderWithExtensionError {}
+
+    impl IntoAnyError for IdentityProviderWithExtensionError {
+        #[cfg(feature = "std")]
+        fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+            Ok(self.into())
+        }
+    }
 
     impl IdentityProviderWithExtension {
         // True if the identity starts with the character `foo` from `TestExtension` or if `TestExtension`

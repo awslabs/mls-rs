@@ -1,4 +1,5 @@
 use aws_mls_core::{
+    error::IntoAnyError,
     identity::SigningIdentity,
     keychain::KeychainStorage,
     psk::{ExternalPskId, PreSharedKey},
@@ -122,7 +123,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
             .keychain()
             .signer(&self.signing_identity)
             .await
-            .map_err(|e| MlsError::KeychainError(e.into()))?
+            .map_err(|e| MlsError::KeychainError(e.into_any_error()))?
             .ok_or(MlsError::SignerNotFound)?;
 
         let (leaf_node, _) = LeafNode::generate(
@@ -163,7 +164,7 @@ impl<C: ClientConfig> ExternalCommitBuilder<C> {
                 Ok(PreSharedKeyID {
                     key_id: JustPreSharedKeyID::External(psk_id),
                     psk_nonce: PskNonce::random(&cipher_suite_provider)
-                        .map_err(|e| MlsError::CryptoProviderError(e.into()))?,
+                        .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?,
                 })
             })
             .collect::<Result<Vec<_>, MlsError>>()?;

@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 #[cfg(not(feature = "std"))]
 use alloc::collections::{BTreeMap, BTreeSet};
 
-use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::{error::IntoAnyError, identity::IdentityProvider};
 use futures::TryStreamExt;
 
 use math as tree_math;
@@ -105,7 +105,7 @@ impl TreeKemPublic {
                         let identity = identity_provider
                             .identity(&leaf.signing_identity)
                             .await
-                            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
+                            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
                         tree_index.insert(leaf_index, leaf, identity)?;
                         Ok::<_, MlsError>(tree_index)
@@ -159,13 +159,15 @@ impl TreeKemPublic {
     }
 
     pub fn find_leaf_node(&self, leaf_node: &LeafNode) -> Option<LeafIndex> {
-        self.nodes.non_empty_leaves().find_map(|(index, node)| {
-            if node.deref() == leaf_node {
-                Some(index)
-            } else {
-                None
-            }
-        })
+        self.nodes.non_empty_leaves().find_map(
+            |(index, node)| {
+                if node == leaf_node {
+                    Some(index)
+                } else {
+                    None
+                }
+            },
+        )
     }
 
     #[cfg(feature = "custom_proposal")]
@@ -229,12 +231,12 @@ impl TreeKemPublic {
         let existing_identity = identity_provider
             .identity(&existing_leaf.signing_identity)
             .await
-            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
         let new_identity = identity_provider
             .identity(&leaf_node.signing_identity)
             .await
-            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
         // Update the cache
         self.index.remove(existing_leaf, &existing_identity);
@@ -279,12 +281,12 @@ impl TreeKemPublic {
         let original_identity = identity_provider
             .identity(&original_leaf_node.signing_identity)
             .await
-            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
         let updated_identity = identity_provider
             .identity(&update_path.leaf_node.signing_identity)
             .await
-            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
         *existing_leaf = update_path.leaf_node.clone();
 
@@ -376,12 +378,12 @@ impl TreeKemPublic {
                             let identity = identity_provider
                                 .identity(&leaf.signing_identity)
                                 .await
-                                .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
+                                .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
                             removed_indexes
                                 .insert(leaf_index)
                                 .then_some(())
-                                .ok_or_else(|| MlsError::MoreThanOneProposalForLeaf(*leaf_index))?;
+                                .ok_or(MlsError::MoreThanOneProposalForLeaf(*leaf_index))?;
 
                             tree_index.remove(leaf, &identity);
                             op.disarm();
@@ -404,23 +406,23 @@ impl TreeKemPublic {
                     let r = async {
                         (!removed_indexes.contains(leaf_index))
                             .then_some(())
-                            .ok_or_else(|| MlsError::MoreThanOneProposalForLeaf(**leaf_index))?;
+                            .ok_or(MlsError::MoreThanOneProposalForLeaf(**leaf_index))?;
 
                         let old_leaf = self_.nodes.borrow_as_leaf(*leaf_index)?;
 
                         let old_identity = identity_provider
                             .identity(&old_leaf.signing_identity)
                             .await
-                            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
+                            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
                         let new_identity = identity_provider
                             .identity(&new_leaf.signing_identity)
                             .await
-                            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
+                            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
                         (old_identity == new_identity)
                             .then_some((*leaf_index, new_leaf, old_identity, new_identity))
-                            .ok_or_else(|| MlsError::DifferentIdentityInUpdate(**leaf_index))
+                            .ok_or(MlsError::DifferentIdentityInUpdate(**leaf_index))
                     }
                     .await;
 
@@ -558,7 +560,7 @@ impl TreeKemPublic {
                     let r = identity_provider
                         .identity(&leaf.signing_identity)
                         .await
-                        .map_err(|e| MlsError::IdentityProviderError(e.into()))
+                        .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))
                         .and_then(|identity| {
                             tree_index
                                 .insert(leaf_index, leaf, identity)

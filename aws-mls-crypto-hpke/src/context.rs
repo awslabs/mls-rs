@@ -1,4 +1,7 @@
-use aws_mls_core::crypto::{HpkeContextR, HpkeContextS};
+use aws_mls_core::{
+    crypto::{HpkeContextR, HpkeContextS},
+    error::IntoAnyError,
+};
 use aws_mls_crypto_traits::{AeadType, KdfType};
 
 use crate::{hpke::HpkeError, kdf::HpkeKdf};
@@ -46,7 +49,7 @@ impl<KDF: KdfType, AEAD: AeadType> Context<KDF, AEAD> {
     fn export(&self, exporter_context: &[u8], len: usize) -> Result<Vec<u8>, HpkeError> {
         self.kdf
             .labeled_expand(&self.exporter_secret, b"sec", exporter_context, len)
-            .map_err(|e| HpkeError::KdfError(e.into()))
+            .map_err(|e| HpkeError::KdfError(e.into_any_error()))
     }
 }
 
@@ -153,7 +156,7 @@ impl<AEAD: AeadType> EncryptionContext<AEAD> {
         let ct = self
             .aead
             .seal(&self.aead_key, pt, aad, &self.compute_nonce())
-            .map_err(|e| HpkeError::AeadError(e.into()))?;
+            .map_err(|e| HpkeError::AeadError(e.into_any_error()))?;
 
         self.increment_seq()?;
 
@@ -164,7 +167,7 @@ impl<AEAD: AeadType> EncryptionContext<AEAD> {
         let pt = self
             .aead
             .open(&self.aead_key, ct, aad, &self.compute_nonce())
-            .map_err(|e| HpkeError::AeadError(e.into()))?;
+            .map_err(|e| HpkeError::AeadError(e.into_any_error()))?;
 
         self.increment_seq()?;
 

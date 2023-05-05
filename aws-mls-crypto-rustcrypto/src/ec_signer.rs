@@ -1,24 +1,27 @@
-use core::ops::Deref;
-
-use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
-use thiserror::Error;
-
-use alloc::vec::Vec;
-
 use crate::ec::{
     generate_keypair, private_key_bytes_to_public, private_key_from_bytes,
     pub_key_from_uncompressed, sign_ed25519, sign_p256, verify_ed25519, verify_p256, Curve,
     EcError, EcPrivateKey, EcPublicKey,
 };
+use alloc::vec::Vec;
+use aws_mls_core::crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey};
+use core::ops::Deref;
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum EcSignerError {
-    #[error("ec key is not a signature key")]
+    #[cfg_attr(feature = "std", error("ec key is not a signature key"))]
     EcKeyNotSignature,
-    #[error(transparent)]
-    EcError(#[from] EcError),
-    #[error("invalid signature")]
+    #[cfg_attr(feature = "std", error(transparent))]
+    EcError(EcError),
+    #[cfg_attr(feature = "std", error("invalid signature"))]
     InvalidSignature,
+}
+
+impl From<EcError> for EcSignerError {
+    fn from(e: EcError) -> Self {
+        EcSignerError::EcError(e)
+    }
 }
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]

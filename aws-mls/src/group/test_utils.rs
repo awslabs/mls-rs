@@ -46,7 +46,7 @@ impl TestGroup {
         name: &str,
         preferences: Preferences,
     ) -> (TestGroup, MLSMessage) {
-        self.join_with_custom_config(name, false, |mut config| {
+        self.join_with_custom_config(name, false, |config| {
             config.0.settings.preferences = preferences.clone();
         })
         .await

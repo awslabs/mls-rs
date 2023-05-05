@@ -1,5 +1,5 @@
 use alloc::vec::Vec;
-use aws_mls_core::identity::CertificateChain;
+use aws_mls_core::{error::IntoAnyError, identity::CertificateChain};
 
 use crate::{
     DerCertificate, SubjectComponent, X509CertificateReader, X509IdentityError,
@@ -39,7 +39,7 @@ where
         Ok(self
             .reader
             .subject_components(certificate)
-            .map_err(|err| X509IdentityError::IdentityExtractorError(err.into()))?
+            .map_err(|err| X509IdentityError::IdentityExtractorError(err.into_any_error()))?
             .iter()
             .find(|component| matches!(component, SubjectComponent::CommonName(_)))
             .cloned())
@@ -64,7 +64,7 @@ where
     fn subject_bytes(&self, certificate: &DerCertificate) -> Result<Vec<u8>, X509IdentityError> {
         self.reader
             .subject_bytes(certificate)
-            .map_err(|e| X509IdentityError::X509ReaderError(e.into()))
+            .map_err(|e| X509IdentityError::X509ReaderError(e.into_any_error()))
     }
 
     /// Determine if `successor` resolves to the same

@@ -40,27 +40,28 @@ impl Clone for EcPrivateKey {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum EcError {
-    #[error("p256 error: {0:?}")]
+    #[cfg_attr(feature = "std", error("p256 error: {0:?}"))]
     P256Error(p256::elliptic_curve::Error),
-    #[error("ed25519 error: {0:?}")]
+    #[cfg_attr(feature = "std", error("ed25519 error: {0:?}"))]
     Ed25519Error(ed25519_dalek::SignatureError),
-    #[error("unsupported curve type")]
+    #[cfg_attr(feature = "std", error("unsupported curve type"))]
     UnsupportedCurve,
-    #[error("invalid public key data")]
+    #[cfg_attr(feature = "std", error("invalid public key data"))]
     EcKeyInvalidKeyData,
-    #[error("ec key is not a signature key")]
+    #[cfg_attr(feature = "std", error("ec key is not a signature key"))]
     EcKeyNotSignature,
-    #[error(transparent)]
-    TryFromSliceError(#[from] TryFromSliceError),
-    #[error("p256 signature error: {0:?}")]
+    #[cfg_attr(feature = "std", error(transparent))]
+    TryFromSliceError(TryFromSliceError),
+    #[cfg_attr(feature = "std", error("p256 signature error: {0:?}"))]
     SignatureError(p256::ecdsa::Error),
-    #[error("rand error: {0:?}")]
+    #[cfg_attr(feature = "std", error("rand error: {0:?}"))]
     RandCoreError(rand_core::Error),
-    #[error("ecdh key type mismatch")]
+    #[cfg_attr(feature = "std", error("ecdh key type mismatch"))]
     EcdhKeyTypeMismatch,
-    #[error("ec key is not an ecdh key")]
+    #[cfg_attr(feature = "std", error("ec key is not an ecdh key"))]
     EcKeyNotEcdh,
 }
 
@@ -85,6 +86,12 @@ impl From<p256::ecdsa::Error> for EcError {
 impl From<rand_core::Error> for EcError {
     fn from(value: rand_core::Error) -> Self {
         EcError::RandCoreError(value)
+    }
+}
+
+impl From<TryFromSliceError> for EcError {
+    fn from(e: TryFromSliceError) -> Self {
+        EcError::TryFromSliceError(e)
     }
 }
 

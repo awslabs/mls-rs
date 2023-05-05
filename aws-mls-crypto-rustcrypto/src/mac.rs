@@ -7,11 +7,12 @@ use sha2::{Digest, Sha256, Sha384, Sha512};
 
 use alloc::vec::Vec;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum HashError {
-    #[error("invalid hmac length")]
+    #[cfg_attr(feature = "std", error("invalid hmac length"))]
     InvalidHmacLength,
-    #[error("unsupported cipher suite")]
+    #[cfg_attr(feature = "std", error("unsupported cipher suite"))]
     UnsupportedCipherSuite,
 }
 

@@ -1,13 +1,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(not(feature = "std"), feature(error_in_core))]
 extern crate alloc;
 
 use alloc::string::String;
 pub use alloc::vec::Vec;
-
-extern crate thiserror_core as thiserror;
-
-use thiserror_core::Error;
 
 mod array;
 
@@ -29,21 +24,22 @@ pub use vec::*;
 
 pub use aws_mls_codec_derive::*;
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum Error {
-    #[error("Integer out of range for VarInt")]
+    #[cfg_attr(feature = "std", error("Integer out of range for VarInt"))]
     VarIntOutOfRange,
-    #[error("Invalid varint prefix {0}")]
+    #[cfg_attr(feature = "std", error("Invalid varint prefix {0}"))]
     InvalidVarIntPrefix(u8),
-    #[error("VarInt does not use the min-length encoding")]
+    #[cfg_attr(feature = "std", error("VarInt does not use the min-length encoding"))]
     VarIntMinimumLengthEncoding,
-    #[error("UnexpectedEOF")]
+    #[cfg_attr(feature = "std", error("UnexpectedEOF"))]
     UnexpectedEOF,
-    #[error("Option marker out of range: {0}")]
+    #[cfg_attr(feature = "std", error("Option marker out of range: {0}"))]
     OptionOutOfRange(u8),
-    #[error("Unsupported enum discriminant")]
+    #[cfg_attr(feature = "std", error("Unsupported enum discriminant"))]
     UnsupportedEnumDiscriminant,
-    #[error("mls codec error: {0}")]
+    #[cfg_attr(feature = "std", error("mls codec error: {0}"))]
     Custom(String),
 }
 

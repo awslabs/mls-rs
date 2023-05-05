@@ -65,6 +65,7 @@ mod grease_functions {
 
     use aws_mls_core::{
         crypto::CipherSuiteProvider,
+        error::IntoAnyError,
         extension::{Extension, ExtensionList, ExtensionType},
     };
 
@@ -95,7 +96,7 @@ mod grease_functions {
     fn random_grease_value<P: CipherSuiteProvider>(cs: &P) -> Result<u16, MlsError> {
         let index = cs
             .random_bytes_vec(1)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?[0];
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?[0];
 
         Ok(GREASE_VALUES[index as usize % GREASE_VALUES.len()])
     }

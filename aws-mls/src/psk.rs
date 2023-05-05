@@ -1,5 +1,6 @@
 use crate::{client::MlsError, serde_utils::vec_u8_as_base64::VecAsBase64, CipherSuiteProvider};
 use alloc::vec::Vec;
+use aws_mls_core::error::IntoAnyError;
 
 #[cfg(any(test, feature = "external_client"))]
 use alloc::vec;
@@ -51,7 +52,8 @@ impl PreSharedKeyID {
     ) -> Result<Self, MlsError> {
         Ok(Self {
             key_id,
-            psk_nonce: PskNonce::random(cs).map_err(|e| MlsError::CryptoProviderError(e.into()))?,
+            psk_nonce: PskNonce::random(cs)
+                .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?,
         })
     }
 }

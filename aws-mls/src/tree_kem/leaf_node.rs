@@ -5,6 +5,7 @@ use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use crate::{identity::SigningIdentity, signer::Signable, ExtensionList};
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use aws_mls_core::error::IntoAnyError;
 use serde_with::serde_as;
 
 #[derive(
@@ -54,7 +55,7 @@ impl LeafNode {
     {
         let (secret_key, public_key) = cipher_suite_provider
             .kem_generate()
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         let mut leaf_node = LeafNode {
             public_key,
@@ -87,7 +88,7 @@ impl LeafNode {
     ) -> Result<HpkeSecretKey, MlsError> {
         let (secret, public) = cipher_suite_provider
             .kem_generate()
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         self.public_key = public;
         self.capabilities = new_properties.capabilities;
@@ -122,7 +123,7 @@ impl LeafNode {
     ) -> Result<HpkeSecretKey, MlsError> {
         let (secret, public) = cipher_suite_provider
             .kem_generate()
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         self.public_key = public;
         self.capabilities = new_properties.capabilities;

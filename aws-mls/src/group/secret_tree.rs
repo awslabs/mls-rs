@@ -6,6 +6,7 @@ use crate::CipherSuiteProvider;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
+use aws_mls_core::error::IntoAnyError;
 use core::ops::{Deref, DerefMut};
 use serde_with::serde_as;
 use zeroize::Zeroizing;
@@ -193,11 +194,11 @@ impl SecretTree {
 
             let left_secret =
                 kdf_expand_with_label(cipher_suite_provider, &secret, "tree", b"left", None)
-                    .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+                    .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
             let right_secret =
                 kdf_expand_with_label(cipher_suite_provider, &secret, "tree", b"right", None)
-                    .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+                    .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
             self.write_node(left_index, Some(SecretTreeNode::Secret(left_secret.into())))?;
             self.write_node(
@@ -372,7 +373,7 @@ impl SecretKeyRatchet {
             &[],
             None,
         )
-        .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+        .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Ok(Self {
             secret: TreeSecret::from(secret),
@@ -454,7 +455,7 @@ impl SecretKeyRatchet {
             &self.generation.to_be_bytes(),
             Some(len),
         )
-        .map_err(|e| MlsError::CryptoProviderError(e.into()))
+        .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
 

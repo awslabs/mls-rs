@@ -1,7 +1,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode};
-use aws_mls_core::{identity::IdentityProvider, key_package::KeyPackageData};
+use aws_mls_core::{error::IntoAnyError, identity::IdentityProvider, key_package::KeyPackageData};
 
 use crate::client::MlsError;
 use crate::{
@@ -95,7 +95,7 @@ where
         let (init_secret_key, public_init) = self
             .cipher_suite_provider
             .kem_generate()
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         let properties = ConfigProperties {
             capabilities,

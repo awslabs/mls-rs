@@ -30,7 +30,7 @@ std = [
     "serde_with/std",
     "zeroize/std",
     "dep:debug_tree",
-    "thiserror/std"
+    "dep:thiserror"
 ]
 
 ffi = ["dep:safer-ffi", "dep:safer-ffi-gen", "aws-mls-core/ffi"]
@@ -46,7 +46,7 @@ aws-mls-core = { path = "../aws-mls-core", default-features = false, version = "
 aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", default-features = false, version = "*" }
 zeroize = { version = "1", default-features = false, features = ["alloc", "zeroize_derive"] }
 aws-mls-codec = { version = "*", path = "../aws-mls-codec", default-features = false}
-thiserror = { package = "thiserror-core", version = "1", default-features = false }
+thiserror = { version = "1.0.40", optional = true }
 serde = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
 serde_with = { version = "2.3.1", default-features = false, features = ["alloc", "macros"]}
 futures = { version = "0.3.25", default-features = false, features = ["alloc"]}

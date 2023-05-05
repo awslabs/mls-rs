@@ -26,7 +26,7 @@ use crate::extension::ExternalSendersExt;
 use alloc::vec;
 
 use alloc::vec::Vec;
-use aws_mls_core::{identity::IdentityProvider, psk::PreSharedKeyStorage};
+use aws_mls_core::{error::IntoAnyError, identity::IdentityProvider, psk::PreSharedKeyStorage};
 use futures::TryStreamExt;
 
 #[cfg(feature = "custom_proposal")]
@@ -799,7 +799,7 @@ where
                     Ok(Some(extension)) => extension
                         .verify_all(identity_provider, commit_time, p.proposal())
                         .await
-                        .map_err(|e| MlsError::IdentityProviderError(e.into())),
+                        .map_err(|e| MlsError::IdentityProviderError(e.into_any_error())),
                     Err(e) => Err(e),
                 };
 
@@ -958,7 +958,7 @@ where
             JustPreSharedKeyID::External(id) => psk_storage
                 .contains(id)
                 .await
-                .map_err(|e| MlsError::PskStoreError(e.into()))
+                .map_err(|e| MlsError::PskStoreError(e.into_any_error()))
                 .and_then(|found| {
                     if found {
                         Ok(())
@@ -1238,7 +1238,7 @@ where
     identity_provider
         .valid_successor(existing_signing_id, &external_leaf.signing_identity)
         .await
-        .map_err(|e| MlsError::IdentityProviderError(e.into()))?
+        .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?
         .then_some(())
         .ok_or(MlsError::ExternalCommitRemovesOtherIdentity)
 }

@@ -1,30 +1,37 @@
 use aws_mls_crypto_traits::{DhType, KdfType, KemResult, KemType};
 
-use aws_mls_core::crypto::{HpkePublicKey, HpkeSecretKey};
+use aws_mls_core::{
+    crypto::{HpkePublicKey, HpkeSecretKey},
+    error::{AnyError, IntoAnyError},
+};
 use zeroize::Zeroizing;
 
 use crate::kdf::HpkeKdf;
 
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-use alloc::boxed::Box;
 #[cfg(test)]
 use alloc::vec;
 use alloc::vec::Vec;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum DhKemError {
-    #[error(transparent)]
-    KdfError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    DhError(Box<dyn Error + Send + Sync + 'static>),
+    #[cfg_attr(feature = "std", error(transparent))]
+    KdfError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    DhError(AnyError),
     /// NIST key derivation from bytes failure. This is statistically unlikely
-    #[error("Failed to derive nist keypair from raw bytes after 255 attempts")]
+    #[cfg_attr(
+        feature = "std",
+        error("Failed to derive nist keypair from raw bytes after 255 attempts")
+    )]
     KeyDerivationError,
+}
+
+impl IntoAnyError for DhKemError {
+    #[cfg(feature = "std")]
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -64,7 +71,7 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
         let dkp_prk = self
             .kdf
             .labeled_extract(&[], b"dkp_prk", ikm)
-            .map_err(|e| DhKemError::KdfError(e.into()))?;
+            .map_err(|e| DhKemError::KdfError(e.into_any_error()))?;
 
         if let Some(bitmask) = self.dh.bitmask_for_rejection_sampling() {
             self.derive_with_rejection_sampling(&dkp_prk, bitmask)
@@ -81,7 +88,7 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
 
         self.dh
             .generate()
-            .map_err(|e| DhKemError::DhError(e.into()))
+            .map_err(|e| DhKemError::DhError(e.into_any_error()))
     }
 
     fn encap(&self, remote_pk: &HpkePublicKey) -> Result<KemResult, Self::Error> {
@@ -91,14 +98,14 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
             .dh
             .dh(&ephemeral_sk, remote_pk)
             .map(Zeroizing::new)
-            .map_err(|e| DhKemError::DhError(e.into()))?;
+            .map_err(|e| DhKemError::DhError(e.into_any_error()))?;
 
         let kem_context = [ephemeral_pk.as_ref(), remote_pk.as_ref()].concat();
 
         let shared_secret = self
             .kdf
             .labeled_extract_then_expand(&ecdh_ss, &kem_context, self.n_secret)
-            .map_err(|e| DhKemError::KdfError(e.into()))?;
+            .map_err(|e| DhKemError::KdfError(e.into_any_error()))?;
 
         Ok(KemResult::new(shared_secret, ephemeral_pk.into()))
     }
@@ -110,24 +117,24 @@ impl<DH: DhType, KDF: KdfType> KemType for DhKem<DH, KDF> {
             .dh
             .dh(secret_key, &remote_pk)
             .map(Zeroizing::new)
-            .map_err(|e| DhKemError::DhError(e.into()))?;
+            .map_err(|e| DhKemError::DhError(e.into_any_error()))?;
 
         let local_public_key = self
             .dh
             .to_public(secret_key)
-            .map_err(|e| DhKemError::DhError(e.into()))?;
+            .map_err(|e| DhKemError::DhError(e.into_any_error()))?;
 
         let kem_context = [enc, &local_public_key].concat();
 
         self.kdf
             .labeled_extract_then_expand(&ecdh_ss, &kem_context, self.n_secret)
-            .map_err(|e| DhKemError::KdfError(e.into()))
+            .map_err(|e| DhKemError::KdfError(e.into_any_error()))
     }
 
     fn public_key_validate(&self, key: &HpkePublicKey) -> Result<(), Self::Error> {
         self.dh
             .public_key_validate(key)
-            .map_err(|e| DhKemError::DhError(e.into()))
+            .map_err(|e| DhKemError::DhError(e.into_any_error()))
     }
 }
 
@@ -142,7 +149,7 @@ impl<DH: DhType, KDF: KdfType> DhKem<DH, KDF> {
             let mut secret_key = self
                 .kdf
                 .labeled_expand(dkp_prk, b"candidate", &[i], self.dh.secret_key_size())
-                .map_err(|e| DhKemError::KdfError(e.into()))?;
+                .map_err(|e| DhKemError::KdfError(e.into_any_error()))?;
 
             secret_key[0] &= bitmask;
             let secret_key = secret_key.into();
@@ -164,13 +171,13 @@ impl<DH: DhType, KDF: KdfType> DhKem<DH, KDF> {
         let sk = self
             .kdf
             .labeled_expand(dkp_prk, b"sk", &[], self.dh.secret_key_size())
-            .map_err(|e| DhKemError::KdfError(e.into()))?
+            .map_err(|e| DhKemError::KdfError(e.into_any_error()))?
             .into();
 
         let pk = self
             .dh
             .to_public(&sk)
-            .map_err(|e| DhKemError::DhError(e.into()))?;
+            .map_err(|e| DhKemError::DhError(e.into_any_error()))?;
 
         Ok((sk, pk))
     }

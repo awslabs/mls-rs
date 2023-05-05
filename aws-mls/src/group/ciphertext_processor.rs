@@ -15,7 +15,7 @@ use super::{
 use crate::{client::MlsError, tree_kem::node::LeafIndex};
 use alloc::vec::Vec;
 use aws_mls_codec::MlsEncode;
-use aws_mls_core::crypto::CipherSuiteProvider;
+use aws_mls_core::{crypto::CipherSuiteProvider, error::IntoAnyError};
 use zeroize::Zeroizing;
 
 mod message_key;
@@ -116,7 +116,7 @@ where
 
         // Generate a 4 byte reuse guard
         let reuse_guard = ReuseGuard::random(&self.cipher_suite_provider)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         // Grab an encryption key from the current epoch's key schedule
         let key_type = match &content_type {
@@ -140,7 +140,7 @@ where
                 &aad.mls_encode_to_vec()?,
                 &reuse_guard,
             )
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         // Construct an mls sender data struct using the plaintext sender info, the generation
         // of the key schedule encryption key, and the reuse guard used to encrypt ciphertext
@@ -216,7 +216,7 @@ where
                 &PrivateContentAAD::from(&ciphertext).mls_encode_to_vec()?,
                 &sender_data.reuse_guard,
             )
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         let ciphertext_content =
             PrivateContentTBE::mls_decode(&mut &**decrypted_content, ciphertext.content_type)?;

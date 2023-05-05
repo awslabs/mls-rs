@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
-use aws_mls_core::{extension::ExtensionList, identity::IdentityProvider};
+use aws_mls_core::{error::IntoAnyError, extension::ExtensionList, identity::IdentityProvider};
 
 use super::{
     leaf_node::LeafNode,
@@ -71,12 +71,12 @@ pub(crate) async fn validate_update_path<C: IdentityProvider, CSP: CipherSuitePr
         let original_identity = identity_provider
             .identity(&original_leaf_node.signing_identity)
             .await
-            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
         let updated_identity = identity_provider
             .identity(&path.leaf_node.signing_identity)
             .await
-            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
         (original_identity == updated_identity)
             .then_some(())

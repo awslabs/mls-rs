@@ -6,7 +6,7 @@ use crate::tree_kem::math as tree_math;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::MlsEncode;
-use aws_mls_core::identity::IdentityProvider;
+use aws_mls_core::{error::IntoAnyError, identity::IdentityProvider};
 use cfg_if::cfg_if;
 
 #[cfg(feature = "rayon")]
@@ -297,7 +297,7 @@ fn encrypt_copath_node_resolution<P: CipherSuiteProvider>(
             path_secret.encrypt(cipher_suite_provider, copath_node.public_key(), context)
         })
         .collect::<Result<Vec<HpkeCiphertext>, _>>()
-        .map_err(|e| MlsError::CryptoProviderError(e.into()))
+        .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
 }
 
 fn decrypt_parent_path_secret<P: CipherSuiteProvider>(

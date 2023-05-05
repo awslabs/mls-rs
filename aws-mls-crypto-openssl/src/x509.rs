@@ -2,6 +2,7 @@ use std::{net::IpAddr, ops::Deref};
 
 use aws_mls_core::{
     crypto::{SignaturePublicKey, SignatureSecretKey},
+    error::IntoAnyError,
     time::{MlsTime, SystemTimeError},
 };
 use aws_mls_identity_x509::{
@@ -50,6 +51,12 @@ pub enum X509Error {
     OpensslError(#[from] ErrorStack),
     #[error(transparent)]
     SystemTimeError(#[from] SystemTimeError),
+}
+
+impl IntoAnyError for X509Error {
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
+    }
 }
 
 #[derive(Debug, Clone)]

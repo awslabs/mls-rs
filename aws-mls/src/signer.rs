@@ -1,6 +1,7 @@
 use alloc::format;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsEncode, MlsSize};
+use aws_mls_core::error::IntoAnyError;
 
 use crate::client::MlsError;
 use crate::crypto::{CipherSuiteProvider, SignaturePublicKey, SignatureSecretKey};
@@ -46,7 +47,7 @@ pub(crate) trait Signable<'a> {
 
         let signature = signature_provider
             .sign(signer, &sign_content.mls_encode_to_vec()?)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         self.write_signature(signature);
 

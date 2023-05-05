@@ -3,8 +3,10 @@ use crate::{group::PriorEpoch, key_package::KeyPackageRef};
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
-use aws_mls_core::{group::GroupStateStorage, key_package::KeyPackageStorage, psk::PreSharedKey};
-use thiserror::Error;
+use aws_mls_core::{
+    error::IntoAnyError, group::GroupStateStorage, key_package::KeyPackageStorage,
+    psk::PreSharedKey,
+};
 
 use super::{internal::ResumptionPsk, snapshot::Snapshot};
 
@@ -31,7 +33,7 @@ struct EpochStorageCommit {
     pub(crate) delete_under: Option<u64>,
 }
 
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone)]
 pub(crate) struct GroupStateRepository<S, K>
 where
     S: GroupStateStorage,
@@ -66,7 +68,7 @@ where
             delete_under: storage
                 .max_epoch_id(&group_id)
                 .await
-                .map_err(|e| MlsError::GroupStorageError(e.into()))?
+                .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
                 .and_then(|max| max.checked_sub(max_epoch_retention - 1)),
             ..Default::default()
         };
@@ -88,7 +90,7 @@ where
             self.storage
                 .max_epoch_id(&self.group_id)
                 .await
-                .map_err(|e| MlsError::GroupStorageError(e.into()))
+                .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))
         }
     }
 
@@ -120,7 +122,7 @@ where
         self.storage
             .epoch::<PriorEpoch>(&psk_id.psk_group_id.0, psk_id.psk_epoch)
             .await
-            .map_err(|e| MlsError::GroupStorageError(e.into()))
+            .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))
             .map(|e| e.map(|e| e.secrets.resumption_secret))
     }
 
@@ -158,7 +160,7 @@ where
                 .storage
                 .epoch(&self.group_id, epoch_id)
                 .await
-                .map_err(|e| MlsError::GroupStorageError(e.into()))?
+                .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
                 .map(|epoch| entry.insert(epoch)),
             Entry::Occupied(entry) => Some(entry.into_mut()),
         })
@@ -204,13 +206,13 @@ where
         self.storage
             .write(group_snapshot, inserts, updates, delete_under)
             .await
-            .map_err(|e| MlsError::GroupStorageError(e.into()))?;
+            .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?;
 
         if let Some(ref key_package_ref) = self.pending_key_package_removal {
             self.key_package_repo
                 .delete(key_package_ref)
                 .await
-                .map_err(|e| MlsError::KeyPackageRepoError(e.into()))?;
+                .map_err(|e| MlsError::KeyPackageRepoError(e.into_any_error()))?;
         }
 
         self.pending_commit.inserts.clear();

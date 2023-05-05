@@ -495,7 +495,7 @@ mod tests {
         let (key_pkg_gen, signer) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
 
-        let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |mut msg| {
+        let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |msg| {
             msg.content.content = Content::Proposal(Proposal::Remove(RemoveProposal {
                 to_remove: LeafIndex(0),
             }))
@@ -519,7 +519,7 @@ mod tests {
         let (key_pkg_gen, signer) =
             test_member(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE, b"bob").await;
 
-        let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |mut msg| {
+        let message = test_new_member_proposal(key_pkg_gen, &signer, &test_group, |msg| {
             msg.content.sender = Sender::NewMemberCommit;
         });
 
@@ -563,10 +563,9 @@ mod tests {
 
         test_group.group.apply_pending_commit().await.unwrap();
 
-        let message =
-            test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |mut msg| {
-                msg.content.sender = Sender::External(0)
-            });
+        let message = test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |msg| {
+            msg.content.sender = Sender::External(0)
+        });
 
         verify_plaintext_authentication(
             &test_group.group.cipher_suite_provider,
@@ -586,10 +585,9 @@ mod tests {
         let (_, ted_secret) = get_test_signing_identity(TEST_CIPHER_SUITE, b"ted".to_vec());
         let test_group = test_group(TEST_PROTOCOL_VERSION, TEST_CIPHER_SUITE).await;
 
-        let message =
-            test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |mut msg| {
-                msg.content.sender = Sender::External(0)
-            });
+        let message = test_new_member_proposal(bob_key_pkg_gen, &ted_secret, &test_group, |msg| {
+            msg.content.sender = Sender::External(0)
+        });
 
         let res = verify_plaintext_authentication(
             &test_group.group.cipher_suite_provider,

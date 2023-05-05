@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use aws_mls_codec::MlsDecode;
 use aws_mls_core::{
-    group::Member, identity::IdentityProvider, key_package::KeyPackageStorage,
+    error::IntoAnyError, group::Member, identity::IdentityProvider, key_package::KeyPackageStorage,
     psk::PreSharedKeyStorage,
 };
 use futures::StreamExt;
@@ -151,7 +151,7 @@ pub(crate) async fn validate_group_info<I: IdentityProvider, C: CipherSuiteProvi
                 &join_context.group_context.extensions,
             )
             .await
-            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
     }
 
     Ok(join_context)
@@ -277,7 +277,7 @@ pub(crate) async fn find_key_package_generation<'a, K: KeyPackageStorage>(
                 key_package_repo
                     .get(&secrets.new_member)
                     .await
-                    .map_err(|e| MlsError::KeyPackageRepoError(e.into()))
+                    .map_err(|e| MlsError::KeyPackageRepoError(e.into_any_error()))
                     .and_then(|maybe_data| {
                         if let Some(data) = maybe_data {
                             KeyPackageGeneration::from_storage(secrets.new_member.to_vec(), data)

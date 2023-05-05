@@ -13,10 +13,10 @@ use crate::key_package::{KeyPackageGeneration, KeyPackageGenerator};
 use crate::protocol_version::ProtocolVersion;
 use crate::tree_kem::node::NodeIndex;
 use crate::tree_kem::Lifetime;
-use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_core::crypto::CryptoProvider;
+use aws_mls_core::error::{AnyError, IntoAnyError};
 use aws_mls_core::extension::{ExtensionError, ExtensionList, ExtensionType};
 use aws_mls_core::group::{GroupStateStorage, ProposalType};
 use aws_mls_core::identity::CredentialType;
@@ -25,259 +25,383 @@ use aws_mls_core::keychain::KeychainStorage;
 use aws_mls_core::psk::ExternalPskId;
 use aws_mls_core::time::MlsTime;
 
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-#[derive(thiserror::Error, Debug)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 #[non_exhaustive]
 pub enum MlsError {
-    #[error(transparent)]
-    IdentityProviderError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    CryptoProviderError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    KeyPackageRepoError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
-    KeychainError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
-    GroupStorageError(Box<dyn Error + Sync + Send + 'static>),
-    #[error(transparent)]
-    PskStoreError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
-    UserDefinedProposalFilterError(Box<dyn Error + Send + Sync>),
-    #[error(transparent)]
-    SerializationError(#[from] aws_mls_codec::Error),
-    #[error(transparent)]
-    ExtensionError(#[from] ExtensionError),
-    #[error(transparent)]
-    SystemTimeError(#[from] crate::time::SystemTimeError),
-    #[error("Cipher suite does not match")]
+    #[cfg_attr(feature = "std", error(transparent))]
+    IdentityProviderError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    CryptoProviderError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    KeyPackageRepoError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    KeychainError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    GroupStorageError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    PskStoreError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    UserDefinedProposalFilterError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    SerializationError(aws_mls_codec::Error),
+    #[cfg_attr(feature = "std", error(transparent))]
+    ExtensionError(ExtensionError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    SystemTimeError(crate::time::SystemTimeError),
+    #[cfg_attr(feature = "std", error("Cipher suite does not match"))]
     CipherSuiteMismatch,
-    #[error("Invalid commit, missing required path")]
+    #[cfg_attr(feature = "std", error("Invalid commit, missing required path"))]
     CommitMissingPath,
-    #[error("plaintext message for incorrect epoch")]
+    #[cfg_attr(feature = "std", error("plaintext message for incorrect epoch"))]
     InvalidEpoch(u64),
-    #[error("invalid signature found")]
+    #[cfg_attr(feature = "std", error("invalid signature found"))]
     InvalidSignature,
-    #[error("invalid confirmation tag")]
+    #[cfg_attr(feature = "std", error("invalid confirmation tag"))]
     InvalidConfirmationTag,
-    #[error("invalid membership tag")]
+    #[cfg_attr(feature = "std", error("invalid membership tag"))]
     InvalidMembershipTag,
-    #[error("corrupt private key, missing required values")]
+    #[cfg_attr(feature = "std", error("corrupt private key, missing required values"))]
     InvalidTreeKemPrivateKey,
-    #[error("key package not found, unable to process")]
+    #[cfg_attr(feature = "std", error("key package not found, unable to process"))]
     WelcomeKeyPackageNotFound,
-    #[error("leaf not found in tree for index {0}")]
+    #[cfg_attr(feature = "std", error("leaf not found in tree for index {0}"))]
     LeafNotFound(u32),
-    #[error("message from self can't be processed")]
+    #[cfg_attr(feature = "std", error("message from self can't be processed"))]
     CantProcessMessageFromSelf,
-    #[error("pending proposals found, commit required before application messages can be sent")]
+    #[cfg_attr(
+        feature = "std",
+        error("pending proposals found, commit required before application messages can be sent")
+    )]
     CommitRequired,
-    #[error("ratchet tree not provided or discovered in GroupInfo")]
+    #[cfg_attr(
+        feature = "std",
+        error("ratchet tree not provided or discovered in GroupInfo")
+    )]
     RatchetTreeNotFound,
-    #[error("External sender cannot commit")]
+    #[cfg_attr(feature = "std", error("External sender cannot commit"))]
     ExternalSenderCannotCommit,
-    #[error("Unsupported protocol version {0:?}")]
+    #[cfg_attr(feature = "std", error("Unsupported protocol version {0:?}"))]
     UnsupportedProtocolVersion(ProtocolVersion),
-    #[error("Protocol version mismatch")]
+    #[cfg_attr(feature = "std", error("Protocol version mismatch"))]
     ProtocolVersionMismatch,
-    #[error("Unsupported cipher suite {0:?}")]
+    #[cfg_attr(feature = "std", error("Unsupported cipher suite {0:?}"))]
     UnsupportedCipherSuite(CipherSuite),
-    #[error("Signing key of external sender is unknown")]
+    #[cfg_attr(feature = "std", error("Signing key of external sender is unknown"))]
     UnknownSigningIdentityForExternalSender,
-    #[error("External proposals are disabled for this group")]
+    #[cfg_attr(
+        feature = "std",
+        error("External proposals are disabled for this group")
+    )]
     ExternalProposalsDisabled,
-    #[error("Signing identity is not allowed to externally propose")]
+    #[cfg_attr(
+        feature = "std",
+        error("Signing identity is not allowed to externally propose")
+    )]
     InvalidExternalSigningIdentity,
     #[cfg(feature = "external_commit")]
-    #[error("Missing ExternalPub extension")]
+    #[cfg_attr(
+        all(feature = "external_commit", feature = "std"),
+        error("Missing ExternalPub extension")
+    )]
     MissingExternalPubExtension,
-    #[error("Epoch {0} not found")]
+    #[cfg_attr(feature = "std", error("Epoch {0} not found"))]
     EpochNotFound(u64),
-    #[error("Unencrypted application message")]
+    #[cfg_attr(feature = "std", error("Unencrypted application message"))]
     UnencryptedApplicationMessage,
     #[cfg(feature = "external_commit")]
-    #[error("NewMemberCommit sender type can only be used to send Commit content")]
+    #[cfg_attr(
+        all(feature = "external_commit", feature = "std"),
+        error("NewMemberCommit sender type can only be used to send Commit content")
+    )]
     ExpectedCommitForNewMemberCommit,
-    #[error("NewMemberProposal sender type can only be used to send add proposals")]
+    #[cfg_attr(
+        feature = "std",
+        error("NewMemberProposal sender type can only be used to send add proposals")
+    )]
     ExpectedAddProposalForNewMemberProposal,
     #[cfg(feature = "external_commit")]
-    #[error("External commit missing ExternalInit proposal")]
+    #[cfg_attr(
+        all(feature = "external_commit", feature = "std"),
+        error("External commit missing ExternalInit proposal")
+    )]
     ExternalCommitMissingExternalInit,
-    #[error(
-        "A ReIinit has been applied. The next action must be creating or receiving a welcome."
+    #[cfg_attr(
+        feature = "std",
+        error(
+            "A ReIinit has been applied. The next action must be creating or receiving a welcome."
+        )
     )]
     GroupUsedAfterReInit,
-    #[error("Pending ReIinit not found.")]
+    #[cfg_attr(feature = "std", error("Pending ReIinit not found."))]
     PendingReInitNotFound,
-    #[error("A commit after ReIinit did not output a welcome message.")]
+    #[cfg_attr(
+        feature = "std",
+        error("A commit after ReIinit did not output a welcome message.")
+    )]
     ReInitCommitDidNotOutputWelcome,
-    #[error("The extensions in the welcome message {0:?} and in the reinit {1:?} do not match.")]
+    #[cfg_attr(
+        feature = "std",
+        error("The extensions in the welcome message {0:?} and in the reinit {1:?} do not match.")
+    )]
     ReInitExtensionsMismatch(ExtensionList, ExtensionList),
-    #[error("Expected commit message, found: {0:?}")]
+    #[cfg_attr(feature = "std", error("Expected commit message, found: {0:?}"))]
     NotCommitContent(ContentType),
-    #[error("Expected proposal message, found: {0:?}")]
+    #[cfg_attr(feature = "std", error("Expected proposal message, found: {0:?}"))]
     NotProposalContent(ContentType),
-    #[error("signer not found for given identity")]
+    #[cfg_attr(feature = "std", error("signer not found for given identity"))]
     SignerNotFound,
-    #[error("commit already pending")]
+    #[cfg_attr(feature = "std", error("commit already pending"))]
     ExistingPendingCommit,
-    #[error("pending commit not found")]
+    #[cfg_attr(feature = "std", error("pending commit not found"))]
     PendingCommitNotFound,
-    #[error("unexpected message type, expected {0:?}, found {1:?}")]
+    #[cfg_attr(
+        feature = "std",
+        error("unexpected message type, expected {0:?}, found {1:?}")
+    )]
     UnexpectedMessageType(Vec<WireFormat>, WireFormat),
-    #[error("membership tag on MLSPlaintext for non-member sender")]
+    #[cfg_attr(
+        feature = "std",
+        error("membership tag on MLSPlaintext for non-member sender")
+    )]
     MembershipTagForNonMember,
-    #[error("No member found for given identity id.")]
+    #[cfg_attr(feature = "std", error("No member found for given identity id."))]
     MemberNotFound,
-    #[error("group not found: {0:?}")]
+    #[cfg_attr(feature = "std", error("group not found: {0:?}"))]
     GroupNotFound(Vec<u8>),
-    #[error("unexpected PSK ID")]
+    #[cfg_attr(feature = "std", error("unexpected PSK ID"))]
     UnexpectedPskId,
-    #[error("invalid sender {0:?} for content type {1:?}")]
+    #[cfg_attr(feature = "std", error("invalid sender {0:?} for content type {1:?}"))]
     InvalidSender(Sender, ContentType),
-    #[error("GroupID mismatch")]
+    #[cfg_attr(feature = "std", error("GroupID mismatch"))]
     GroupIdMismatch,
-    #[error("invalid insert: expected {expected} found {found}")]
+    #[cfg_attr(
+        feature = "std",
+        error("invalid insert: expected {expected} found {found}")
+    )]
     UnexpectedEpochId { expected: u64, found: u64 },
-    #[error("storage retention can not be zero")]
+    #[cfg_attr(feature = "std", error("storage retention can not be zero"))]
     NonZeroRetentionRequired,
-    #[error("Too many PSK IDs ({0}) to compute PSK secret")]
+    #[cfg_attr(feature = "std", error("Too many PSK IDs ({0}) to compute PSK secret"))]
     TooManyPskIds(usize),
-    #[error("No PSK for ID {0:?}")]
+    #[cfg_attr(feature = "std", error("No PSK for ID {0:?}"))]
     NoPskForId(ExternalPskId),
-    #[error("Old group state not found")]
+    #[cfg_attr(feature = "std", error("Old group state not found"))]
     OldGroupStateNotFound,
-    #[error("leaf secret already consumed")]
+    #[cfg_attr(feature = "std", error("leaf secret already consumed"))]
     InvalidLeafConsumption,
-    #[error("key not available, invalid generation {0}")]
+    #[cfg_attr(feature = "std", error("key not available, invalid generation {0}"))]
     KeyMissing(u32),
-    #[error("requested generation {0} is too far ahead of current generation {1}")]
+    #[cfg_attr(
+        feature = "std",
+        error("requested generation {0} is too far ahead of current generation {1}")
+    )]
     InvalidFutureGeneration(u32, u32),
-    #[error("leaf node has no children")]
+    #[cfg_attr(feature = "std", error("leaf node has no children"))]
     LeafNodeNoChildren,
-    #[error("root node has no parent")]
+    #[cfg_attr(feature = "std", error("root node has no parent"))]
     LeafNodeNoParent,
-    #[error("index out of range")]
+    #[cfg_attr(feature = "std", error("index out of range"))]
     InvalidTreeIndex,
-    #[error("time overflow")]
+    #[cfg_attr(feature = "std", error("time overflow"))]
     TimeOverflow,
-    #[error("invalid leaf_node_source")]
+    #[cfg_attr(feature = "std", error("invalid leaf_node_source"))]
     InvalidLeafNodeSource,
-    #[error("{0:?} is not within lifetime {1:?}")]
+    #[cfg_attr(feature = "std", error("{0:?} is not within lifetime {1:?}"))]
     InvalidLifetime(MlsTime, Lifetime),
-    #[error("required extension not found")]
+    #[cfg_attr(feature = "std", error("required extension not found"))]
     RequiredExtensionNotFound(ExtensionType),
-    #[error("required proposal not found")]
+    #[cfg_attr(feature = "std", error("required proposal not found"))]
     RequiredProposalNotFound(ProposalType),
-    #[error("required credential not found")]
+    #[cfg_attr(feature = "std", error("required credential not found"))]
     RequiredCredentialNotFound(CredentialType),
-    #[error("capabilities must describe extensions used")]
+    #[cfg_attr(feature = "std", error("capabilities must describe extensions used"))]
     ExtensionNotInCapabilities(ExtensionType),
-    #[error("not a parent")]
+    #[cfg_attr(feature = "std", error("not a parent"))]
     ExpectedParentNode,
-    #[error("not a leaf")]
+    #[cfg_attr(feature = "std", error("not a leaf"))]
     ExpectedLeafNode,
-    #[error("node index is out of bounds {0}")]
+    #[cfg_attr(feature = "std", error("node index is out of bounds {0}"))]
     InvalidNodeIndex(NodeIndex),
-    #[error("unexpected empty node found")]
+    #[cfg_attr(feature = "std", error("unexpected empty node found"))]
     UnexpectedEmptyNode,
-    #[error("credential signature keys must be unique, duplicate key found at index: {0:?}")]
+    #[cfg_attr(
+        feature = "std",
+        error("credential signature keys must be unique, duplicate key found at index: {0:?}")
+    )]
     DuplicateSignatureKeys(u32),
-    #[error("hpke keys must be unique, duplicate key found at index: {0:?}")]
+    #[cfg_attr(
+        feature = "std",
+        error("hpke keys must be unique, duplicate key found at index: {0:?}")
+    )]
     DuplicateHpkeKey(u32),
-    #[error("identities must be unique, duplicate identity found at index {0:?}")]
+    #[cfg_attr(
+        feature = "std",
+        error("identities must be unique, duplicate identity found at index {0:?}")
+    )]
     DuplicateIdentity(u32),
-    #[error("In-use credential type {0:?} not supported by new leaf at index {1:?}")]
+    #[cfg_attr(
+        feature = "std",
+        error("In-use credential type {0:?} not supported by new leaf at index {1:?}")
+    )]
     InUseCredentialTypeUnsupportedByNewLeaf(CredentialType, u32),
-    #[error("Not all members support the credential type used by new leaf")]
+    #[cfg_attr(
+        feature = "std",
+        error("Not all members support the credential type used by new leaf")
+    )]
     CredentialTypeOfNewLeafIsUnsupported(CredentialType),
-    #[error("the length of the update path {0} different than the length of the direct path {1}")]
+    #[cfg_attr(
+        feature = "std",
+        error(
+            "the length of the update path {0} different than the length of the direct path {1}"
+        )
+    )]
     WrongPathLen(usize, usize),
-    #[error("same HPKE leaf key before and after applying the update path for leaf {0:?}")]
+    #[cfg_attr(
+        feature = "std",
+        error("same HPKE leaf key before and after applying the update path for leaf {0:?}")
+    )]
     SameHpkeKey(u32),
-    #[error("{0:?} is not within lifetime {1:?}")]
+    #[cfg_attr(feature = "std", error("{0:?} is not within lifetime {1:?}"))]
     InvalidKeyLifetime(MlsTime, Lifetime),
-    #[error("init key is not valid for cipher suite")]
+    #[cfg_attr(feature = "std", error("init key is not valid for cipher suite"))]
     InvalidInitKey,
-    #[error("init key can not be equal to leaf node public key")]
+    #[cfg_attr(
+        feature = "std",
+        error("init key can not be equal to leaf node public key")
+    )]
     InitLeafKeyEquality,
-    #[error("different identity in update for leaf {0:?}")]
+    #[cfg_attr(feature = "std", error("different identity in update for leaf {0:?}"))]
     DifferentIdentityInUpdate(u32),
-    #[error("update path pub key mismatch")]
+    #[cfg_attr(feature = "std", error("update path pub key mismatch"))]
     PubKeyMismatch,
-    #[error("tree hash mismatch")]
+    #[cfg_attr(feature = "std", error("tree hash mismatch"))]
     TreeHashMismatch,
-    #[error("bad update: no suitable secret key")]
+    #[cfg_attr(feature = "std", error("bad update: no suitable secret key"))]
     UpdateErrorNoSecretKey,
-    #[error("invalid lca, not found on direct path")]
+    #[cfg_attr(feature = "std", error("invalid lca, not found on direct path"))]
     LcaNotFoundInDirectPath,
-    #[error("update path parent hash mismatch")]
+    #[cfg_attr(feature = "std", error("update path parent hash mismatch"))]
     ParentHashMismatch,
-    #[error("unexpected pattern of unmerged leaves")]
+    #[cfg_attr(feature = "std", error("unexpected pattern of unmerged leaves"))]
     UnmergedLeavesMismatch,
-    #[error("empty tree")]
+    #[cfg_attr(feature = "std", error("empty tree"))]
     UnexpectedEmptyTree,
-    #[error("trailing blanks")]
+    #[cfg_attr(feature = "std", error("trailing blanks"))]
     UnexpectedTrailingBlanks,
     // Proposal Rules errors
-    #[error("Commiter must not include any update proposals generated by the commiter")]
+    #[cfg_attr(
+        feature = "std",
+        error("Commiter must not include any update proposals generated by the commiter")
+    )]
     InvalidCommitSelfUpdate,
-    #[error("A PreSharedKey proposal must have a PSK of type External or type Resumption and usage Application")]
+    #[cfg_attr(feature = "std", error("A PreSharedKey proposal must have a PSK of type External or type Resumption and usage Application"))]
     InvalidTypeOrUsageInPreSharedKeyProposal,
-    #[error("Expected PSK nonce with length {expected} but found length {found}")]
+    #[cfg_attr(
+        feature = "std",
+        error("Expected PSK nonce with length {expected} but found length {found}")
+    )]
     InvalidPskNonceLength { expected: usize, found: usize },
-    #[error("Protocol version {proposed:?} in ReInit proposal is less than version {original:?} in original group")]
+    #[cfg_attr(feature = "std", error("Protocol version {proposed:?} in ReInit proposal is less than version {original:?} in original group"))]
     InvalidProtocolVersionInReInit {
         proposed: ProtocolVersion,
         original: ProtocolVersion,
     },
-    #[error("More than one proposal applying to leaf {0:?}")]
+    #[cfg_attr(
+        feature = "std",
+        error("More than one proposal applying to leaf {0:?}")
+    )]
     MoreThanOneProposalForLeaf(u32),
-    #[error("More than one GroupContextExtensions proposal")]
+    #[cfg_attr(
+        feature = "std",
+        error("More than one GroupContextExtensions proposal")
+    )]
     MoreThanOneGroupContextExtensionsProposal,
-    #[error("Invalid proposal of type {proposal_type:?} for sender {sender:?}")]
+    #[cfg_attr(
+        feature = "std",
+        error("Invalid proposal of type {proposal_type:?} for sender {sender:?}")
+    )]
     InvalidProposalTypeForSender {
         proposal_type: ProposalType,
         sender: Sender,
         by_ref: bool,
     },
     #[cfg(feature = "external_commit")]
-    #[error("External commit must have exactly one ExternalInit proposal")]
+    #[cfg_attr(
+        all(feature = "external_commit", feature = "std"),
+        error("External commit must have exactly one ExternalInit proposal")
+    )]
     ExternalCommitMustHaveExactlyOneExternalInit,
     #[cfg(feature = "external_commit")]
-    #[error("External commit must have a new leaf")]
+    #[cfg_attr(
+        all(feature = "external_commit", feature = "std"),
+        error("External commit must have a new leaf")
+    )]
     ExternalCommitMustHaveNewLeaf,
     #[cfg(feature = "external_commit")]
-    #[error("External commit contains removal of other identity")]
+    #[cfg_attr(
+        all(feature = "external_commit", feature = "std"),
+        error("External commit contains removal of other identity")
+    )]
     ExternalCommitRemovesOtherIdentity,
     #[cfg(feature = "external_commit")]
-    #[error("External commit contains more than one Remove proposal")]
+    #[cfg_attr(
+        all(feature = "external_commit", feature = "std"),
+        error("External commit contains more than one Remove proposal")
+    )]
     ExternalCommitWithMoreThanOneRemove,
-    #[error("Duplicate PSK IDs")]
+    #[cfg_attr(feature = "std", error("Duplicate PSK IDs"))]
     DuplicatePskIds,
     #[cfg(feature = "external_commit")]
-    #[error("Invalid proposal type {0:?} in external commit")]
+    #[cfg_attr(
+        all(feature = "external_commit", feature = "std"),
+        error("Invalid proposal type {0:?} in external commit")
+    )]
     InvalidProposalTypeInExternalCommit(ProposalType),
-    #[error("Committer can not remove themselves")]
+    #[cfg_attr(feature = "std", error("Committer can not remove themselves"))]
     CommitterSelfRemoval,
-    #[error("Only members can commit proposals by reference")]
+    #[cfg_attr(
+        feature = "std",
+        error("Only members can commit proposals by reference")
+    )]
     OnlyMembersCanCommitProposalsByRef,
-    #[error("Other proposal with ReInit")]
+    #[cfg_attr(feature = "std", error("Other proposal with ReInit"))]
     OtherProposalWithReInit,
-    #[error("Unsupported group extension {0:?}")]
+    #[cfg_attr(feature = "std", error("Unsupported group extension {0:?}"))]
     UnsupportedGroupExtension(ExtensionType),
-    #[error("Unsupported custom proposal type {0:?}")]
+    #[cfg_attr(feature = "std", error("Unsupported custom proposal type {0:?}"))]
     UnsupportedCustomProposal(ProposalType),
-    #[error("Invalid index {0:?} for member proposer")]
+    #[cfg_attr(feature = "std", error("Invalid index {0:?} for member proposer"))]
     InvalidMemberProposer(u32),
-    #[error("Invalid external sender index {0}")]
+    #[cfg_attr(feature = "std", error("Invalid external sender index {0}"))]
     InvalidExternalSenderIndex(u32),
-    #[error("Proposal {0:?} not found")]
+    #[cfg_attr(feature = "std", error("Proposal {0:?} not found"))]
     ProposalNotFound(ProposalRef),
+}
+
+impl IntoAnyError for MlsError {
+    #[cfg(feature = "std")]
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
+    }
+}
+
+impl From<aws_mls_codec::Error> for MlsError {
+    fn from(e: aws_mls_codec::Error) -> Self {
+        MlsError::SerializationError(e)
+    }
+}
+
+impl From<ExtensionError> for MlsError {
+    fn from(e: ExtensionError) -> Self {
+        MlsError::ExtensionError(e)
+    }
+}
+
+impl From<crate::time::SystemTimeError> for MlsError {
+    fn from(e: crate::time::SystemTimeError) -> Self {
+        MlsError::SystemTimeError(e)
+    }
 }
 
 /// MLS client used to create key packages and manage groups.
@@ -350,14 +474,14 @@ where
             .keychain()
             .signer(&signing_identity)
             .await
-            .map_err(|e| MlsError::KeychainError(e.into()))?
+            .map_err(|e| MlsError::KeychainError(e.into_any_error()))?
             .ok_or(MlsError::SignerNotFound)?;
 
         let cipher_suite_provider = self
             .config
             .crypto_provider()
             .cipher_suite_provider(cipher_suite)
-            .ok_or_else(|| MlsError::UnsupportedCipherSuite(cipher_suite))?;
+            .ok_or(MlsError::UnsupportedCipherSuite(cipher_suite))?;
 
         let key_package_generator = KeyPackageGenerator {
             protocol_version,
@@ -382,7 +506,7 @@ where
             .key_package_repo()
             .insert(id, key_package_data)
             .await
-            .map_err(|e| MlsError::KeyPackageRepoError(e.into()))?;
+            .map_err(|e| MlsError::KeyPackageRepoError(e.into_any_error()))?;
 
         Ok(key_pkg_gen)
     }
@@ -535,7 +659,7 @@ where
             .group_state_storage()
             .state(group_id)
             .await
-            .map_err(|e| MlsError::GroupStorageError(e.into()))?
+            .map_err(|e| MlsError::GroupStorageError(e.into_any_error()))?
             .ok_or(MlsError::GroupNotFound(group_id.to_vec()))?;
 
         Group::from_snapshot(self.config.clone(), snapshot).await
@@ -572,9 +696,9 @@ where
             .config
             .crypto_provider()
             .cipher_suite_provider(group_info.group_context.cipher_suite)
-            .ok_or_else(|| {
-                MlsError::UnsupportedCipherSuite(group_info.group_context.cipher_suite)
-            })?;
+            .ok_or(MlsError::UnsupportedCipherSuite(
+                group_info.group_context.cipher_suite,
+            ))?;
 
         let group_context = process_group_info(
             protocol_version,
@@ -591,7 +715,7 @@ where
             .keychain()
             .signer(&signing_identity)
             .await
-            .map_err(|e| MlsError::KeychainError(e.into()))?
+            .map_err(|e| MlsError::KeychainError(e.into_any_error()))?
             .ok_or(MlsError::SignerNotFound)?;
 
         let key_package = self

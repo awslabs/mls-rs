@@ -45,6 +45,12 @@ pub enum SqLiteDataStorageError {
     SqlCipherKeyInvalidWithHeader,
 }
 
+impl aws_mls_core::error::IntoAnyError for SqLiteDataStorageError {
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
+    }
+}
+
 #[derive(Clone, Debug)]
 /// SQLite data storage engine.
 pub struct SqLiteDataStorageEngine<CS>

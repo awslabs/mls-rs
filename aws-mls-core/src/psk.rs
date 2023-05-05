@@ -3,16 +3,11 @@ use core::ops::Deref;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
+use crate::error::IntoAnyError;
 use async_trait::async_trait;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
 use zeroize::Zeroizing;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
 
 #[serde_as]
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -113,7 +108,7 @@ impl From<Vec<u8>> for ExternalPskId {
 pub trait PreSharedKeyStorage: Send + Sync {
     /// Error type that the underlying storage mechanism returns on internal
     /// failure.
-    type Error: Error + Send + Sync + 'static;
+    type Error: IntoAnyError;
 
     /// Get a pre-shared key by [`ExternalPskId`](ExternalPskId).
     ///

@@ -2,8 +2,9 @@ use core::fmt::Debug;
 
 use crate::alloc::borrow::ToOwned;
 
-use aws_mls_core::crypto::{
-    HpkeCiphertext, HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey,
+use aws_mls_core::{
+    crypto::{HpkeCiphertext, HpkeContextR, HpkeContextS, HpkePublicKey, HpkeSecretKey},
+    error::{AnyError, IntoAnyError},
 };
 
 use aws_mls_crypto_traits::{AeadType, KdfType, KemType, AEAD_ID_EXPORT_ONLY};
@@ -15,37 +16,47 @@ use crate::{
     kdf::HpkeKdf,
 };
 
-use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum HpkeError {
-    #[error(transparent)]
-    KemError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    KdfError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    AeadError(Box<dyn Error + Send + Sync + 'static>),
+    #[cfg_attr(feature = "std", error(transparent))]
+    KemError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    KdfError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    AeadError(AnyError),
     /// An invalid PSK was supplied. A PSK MUST have 32 bytes of entropy
-    #[error("PSK must be at least 32 bytes in length")]
+    #[cfg_attr(feature = "std", error("PSK must be at least 32 bytes in length"))]
     InsufficientPskLength,
     /// An AEAD nonce of incorrect length was supplied.
-    #[error("AEAD nonce of length {0} does not match the expected length {1}")]
+    #[cfg_attr(
+        feature = "std",
+        error("AEAD nonce of length {0} does not match the expected length {1}")
+    )]
     IncorrectNonceLen(usize, usize),
     /// An AEAD key of incorrect length was supplied.
-    #[error("AEAD key of length {0} does not match the expected length {1}")]
+    #[cfg_attr(
+        feature = "std",
+        error("AEAD key of length {0} does not match the expected length {1}")
+    )]
     IncorrectKeyLen(usize, usize),
-    #[error("Encryption API disabled due to export only AeadId")]
+    #[cfg_attr(
+        feature = "std",
+        error("Encryption API disabled due to export only AeadId")
+    )]
     ExportOnlyMode,
     /// Max sequence number exceeded, currently allowed up to MAX u64
-    #[error("Sequence number overflow")]
+    #[cfg_attr(feature = "std", error("Sequence number overflow"))]
     SequenceNumberOverflow,
+}
+
+impl IntoAnyError for HpkeError {
+    #[cfg(feature = "std")]
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
+    }
 }
 
 #[derive(Clone)]
@@ -155,7 +166,7 @@ where
         let kem_res = self
             .kem
             .encap(remote_key)
-            .map_err(|e| HpkeError::KemError(e.into()))?;
+            .map_err(|e| HpkeError::KemError(e.into_any_error()))?;
 
         let ctx = self.key_schedule(mode, kem_res.shared_secret(), info, psk)?;
 
@@ -179,7 +190,7 @@ where
         let shared_secret = self
             .kem
             .decap(enc, local_secret)
-            .map_err(|e| HpkeError::KemError(e.into()))?;
+            .map_err(|e| HpkeError::KemError(e.into_any_error()))?;
 
         self.key_schedule(mode, &shared_secret, info, psk)
             .map(ContextR)
@@ -188,19 +199,19 @@ where
     pub fn derive(&self, ikm: &[u8]) -> Result<(HpkeSecretKey, HpkePublicKey), HpkeError> {
         self.kem
             .derive(ikm)
-            .map_err(|e| HpkeError::KemError(e.into()))
+            .map_err(|e| HpkeError::KemError(e.into_any_error()))
     }
 
     pub fn generate(&self) -> Result<(HpkeSecretKey, HpkePublicKey), HpkeError> {
         self.kem
             .generate()
-            .map_err(|e| HpkeError::KemError(e.into()))
+            .map_err(|e| HpkeError::KemError(e.into_any_error()))
     }
 
     pub fn public_key_validate(&self, key: &HpkePublicKey) -> Result<(), HpkeError> {
         self.kem
             .public_key_validate(key)
-            .map_err(|e| HpkeError::KemError(e.into()))
+            .map_err(|e| HpkeError::KemError(e.into_any_error()))
     }
 
     fn key_schedule(
@@ -217,18 +228,18 @@ where
         let psk_id_hash = self
             .kdf
             .labeled_extract(&[], b"psk_id_hash", psk.id)
-            .map_err(|e| HpkeError::KdfError(e.into()))?;
+            .map_err(|e| HpkeError::KdfError(e.into_any_error()))?;
 
         let info_hash = self
             .kdf
             .labeled_extract(&[], b"info_hash", info)
-            .map_err(|e| HpkeError::KdfError(e.into()))?;
+            .map_err(|e| HpkeError::KdfError(e.into_any_error()))?;
 
         let secret = self
             .kdf
             .labeled_extract(shared_secret, b"secret", psk.value)
             .map(Zeroizing::new)
-            .map_err(|e| HpkeError::KdfError(e.into()))?;
+            .map_err(|e| HpkeError::KdfError(e.into_any_error()))?;
 
         let key_schedule_context = [
             &(mode as u8).to_be_bytes() as &[u8],
@@ -258,7 +269,7 @@ where
                 Ok(EncryptionContext::new(base_nonce, aead.clone(), key))
             })
             .transpose()
-            .map_err(|e: <KDF as KdfType>::Error| HpkeError::KdfError(e.into()))?
+            .map_err(|e: <KDF as KdfType>::Error| HpkeError::KdfError(e.into_any_error()))?
             .transpose()?;
 
         let len = self.kdf.extract_size();
@@ -266,7 +277,7 @@ where
         let exporter_secret = self
             .kdf
             .labeled_expand(&secret, b"exp", &key_schedule_context, len)
-            .map_err(|e| HpkeError::KdfError(e.into()))?;
+            .map_err(|e| HpkeError::KdfError(e.into_any_error()))?;
 
         Ok(Context::new(
             encryption_context,

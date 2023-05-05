@@ -10,7 +10,7 @@ use alloc::collections::VecDeque;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsEncode, MlsSize};
-use aws_mls_core::serde_util::vec_u8_as_base64::VecAsBase64;
+use aws_mls_core::{error::IntoAnyError, serde_util::vec_u8_as_base64::VecAsBase64};
 use serde_with::serde_as;
 
 #[cfg(feature = "std")]
@@ -64,7 +64,7 @@ impl TreeHashes {
 
         cipher_suite_provider
             .hash(&input.mls_encode_to_vec()?)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 
     pub fn hash_for_parent<P: CipherSuiteProvider>(
@@ -91,7 +91,7 @@ impl TreeHashes {
 
         cipher_suite_provider
             .hash(&input.mls_encode_to_vec()?)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
 

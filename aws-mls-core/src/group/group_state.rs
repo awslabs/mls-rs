@@ -1,12 +1,7 @@
+use crate::error::IntoAnyError;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use async_trait::async_trait;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
 
 /// Generic representation of a group's state.
 pub trait GroupState {
@@ -37,7 +32,7 @@ pub trait EpochRecord {
 
 #[async_trait]
 pub trait GroupStateStorage: Send + Sync {
-    type Error: Error + Send + Sync + 'static;
+    type Error: IntoAnyError;
 
     /// Fetch a group state from storage.
     async fn state<T>(&self, group_id: &[u8]) -> Result<Option<T>, Self::Error>

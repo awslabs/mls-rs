@@ -1,23 +1,26 @@
 use core::fmt::Debug;
 
-use aws_mls_core::crypto::CipherSuite;
+use aws_mls_core::{crypto::CipherSuite, error::IntoAnyError};
 use aws_mls_crypto_traits::KdfType;
 use hkdf::SimpleHkdf;
 use sha2::{Sha256, Sha384, Sha512};
-use thiserror::Error;
 
 use alloc::vec;
 use alloc::vec::Vec;
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum KdfError {
-    #[error("invalid prk length")]
+    #[cfg_attr(feature = "std", error("invalid prk length"))]
     InvalidPrkLength,
-    #[error("invalid length")]
+    #[cfg_attr(feature = "std", error("invalid length"))]
     InvalidLength,
-    #[error("the provided length of the key {0} is shorter than the minimum length {1}")]
+    #[cfg_attr(
+        feature = "std",
+        error("the provided length of the key {0} is shorter than the minimum length {1}")
+    )]
     TooShortKey(usize, usize),
-    #[error("unsupported cipher suite")]
+    #[cfg_attr(feature = "std", error("unsupported cipher suite"))]
     UnsupportedCipherSuite,
 }
 
@@ -30,6 +33,13 @@ impl From<hkdf::InvalidPrkLength> for KdfError {
 impl From<hkdf::InvalidLength> for KdfError {
     fn from(_value: hkdf::InvalidLength) -> Self {
         KdfError::InvalidLength
+    }
+}
+
+impl IntoAnyError for KdfError {
+    #[cfg(feature = "std")]
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
     }
 }
 

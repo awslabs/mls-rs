@@ -13,7 +13,7 @@ aws-mls-core = { path = "../aws-mls-core", version = "*" }
 aws-mls-identity-x509 = { path = "../aws-mls-identity-x509", optional = true, version = "*" }
 aws-mls-crypto-hpke = { path = "../aws-mls-crypto-hpke", version = "*" }
 aws-mls-crypto-traits = { path = "../aws-mls-crypto-traits", version = "*" }
-thiserror = "^1"
+thiserror = "1.0.40"
 enum-iterator = "1.1.2"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 

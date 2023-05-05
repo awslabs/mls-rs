@@ -1,16 +1,10 @@
-use crate::serde_util::vec_u8_as_base64::VecAsBase64;
+use crate::{error::IntoAnyError, serde_util::vec_u8_as_base64::VecAsBase64};
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use core::ops::Deref;
 use serde_with::serde_as;
 use zeroize::{Zeroize, Zeroizing};
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
 
 mod cipher_suite;
 pub use self::cipher_suite::*;
@@ -121,7 +115,7 @@ impl AsRef<[u8]> for HpkeSecretKey {
 ///
 /// This trait corresponds to ContextS from RFC 9180.
 pub trait HpkeContextS {
-    type Error: Error + Send + Sync + 'static;
+    type Error: IntoAnyError;
 
     /// Encrypt `data` using the cipher key of the context with optional `aad`.
     /// This function should internally increment the sequence number.
@@ -136,7 +130,7 @@ pub trait HpkeContextS {
 ///
 /// This trait corresponds to ContextR from RFC 9180.
 pub trait HpkeContextR {
-    type Error: Error + Send + Sync + 'static;
+    type Error: IntoAnyError;
 
     /// Decrypt `ciphertext` using the cipher key of the context with optional `aad`.
     /// This function should internally increment the sequence number.
@@ -222,7 +216,7 @@ pub trait CryptoProvider: Send + Sync {
 
 /// Provides all cryptographic operations required by MLS for a given cipher suite.
 pub trait CipherSuiteProvider: Send + Sync {
-    type Error: Error + Send + Sync + 'static;
+    type Error: IntoAnyError;
 
     type HpkeContextS: HpkeContextS + Send + Sync;
     type HpkeContextR: HpkeContextR + Send + Sync;

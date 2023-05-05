@@ -20,6 +20,7 @@ pub(crate) mod test_utils {
     use async_trait::async_trait;
     use aws_mls_core::{
         crypto::{CipherSuite, CipherSuiteProvider, SignatureSecretKey},
+        error::IntoAnyError,
         extension::ExtensionList,
         group::RosterUpdate,
         identity::{
@@ -27,19 +28,24 @@ pub(crate) mod test_utils {
         },
         time::MlsTime,
     };
-    use thiserror::Error;
 
     use crate::crypto::test_utils::test_cipher_suite_provider;
 
     use super::basic::{BasicCredential, BasicIdentityProvider, BasicIdentityProviderError};
 
-    #[derive(Debug, Error)]
+    #[derive(Debug, thiserror::Error)]
     #[error("expected basic or custom credential type 42 found: {0:?}")]
     pub struct BasicWithCustomProviderError(CredentialType);
 
     impl From<BasicIdentityProviderError> for BasicWithCustomProviderError {
         fn from(value: BasicIdentityProviderError) -> Self {
             BasicWithCustomProviderError(value.credential_type())
+        }
+    }
+
+    impl IntoAnyError for BasicWithCustomProviderError {
+        fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+            Ok(self.into())
         }
     }
 

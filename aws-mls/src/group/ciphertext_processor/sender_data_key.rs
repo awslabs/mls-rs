@@ -1,5 +1,6 @@
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use aws_mls_core::error::IntoAnyError;
 use zeroize::Zeroizing;
 
 use crate::{
@@ -81,7 +82,7 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
                 Some(&aad.mls_encode_to_vec()?),
                 &self.nonce,
             )
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 
     pub(crate) fn open(
@@ -96,7 +97,7 @@ impl<'a, CP: CipherSuiteProvider> SenderDataKey<'a, CP> {
                 Some(&aad.mls_encode_to_vec()?),
                 &self.nonce,
             )
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
             .and_then(|data| SenderData::mls_decode(&mut &**data).map_err(From::from))
     }
 }

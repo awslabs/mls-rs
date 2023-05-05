@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 #[cfg(not(feature = "std"))]
 use alloc::collections::BTreeMap;
-use aws_mls_core::psk::PreSharedKeyStorage;
+use aws_mls_core::{error::IntoAnyError, psk::PreSharedKeyStorage};
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct ProposalSetEffects {
@@ -225,7 +225,7 @@ impl ProposalCache {
         let new_proposals = user_rules
             .expand_custom_proposals(roster, group_extensions, proposal_bundle.custom_proposals())
             .await
-            .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into()))?;
+            .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into_any_error()))?;
 
         new_proposals
             .into_iter()
@@ -280,7 +280,7 @@ impl ProposalCache {
         let proposals = user_filter
             .filter(sender, roster, group_extensions, proposals)
             .await
-            .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into()))?;
+            .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into_any_error()))?;
 
         #[cfg(feature = "custom_proposal")]
         let mut proposals = proposals;
@@ -393,7 +393,7 @@ impl ProposalCache {
         user_rules
             .validate(sender, roster, group_extensions, &proposals)
             .await
-            .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into()))?;
+            .map_err(|e| MlsError::UserDefinedProposalFilterError(e.into_any_error()))?;
 
         #[cfg(feature = "custom_proposal")]
         let mut proposals = proposals;

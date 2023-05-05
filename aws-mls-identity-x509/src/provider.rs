@@ -6,17 +6,12 @@ use alloc::{boxed::Box, vec::Vec};
 use aws_mls_core::{
     async_trait::async_trait,
     crypto::SignaturePublicKey,
+    error::IntoAnyError,
     extension::ExtensionList,
     group::RosterUpdate,
     identity::{CredentialType, IdentityProvider, IdentityWarning},
     time::MlsTime,
 };
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
 
 #[cfg(all(test, feature = "std"))]
 use mockall::automock;
@@ -24,7 +19,7 @@ use mockall::automock;
 #[cfg_attr(all(test, feature = "std"), automock(type Error = crate::test_utils::TestError;))]
 /// X.509 certificate unique identity trait.
 pub trait X509IdentityExtractor {
-    type Error: Error + Send + Sync + 'static;
+    type Error: IntoAnyError;
 
     /// Produce a unique identity value to represent the entity controlling a
     /// certificate credential within an MLS group.
@@ -42,7 +37,7 @@ pub trait X509IdentityExtractor {
 #[cfg_attr(all(test, feature = "std"), automock(type Error = crate::test_utils::TestError;))]
 /// X.509 certificate validation trait.
 pub trait X509CredentialValidator {
-    type Error: Error + Send + Sync + 'static;
+    type Error: IntoAnyError;
 
     /// Validate a certificate chain.
     ///
@@ -57,7 +52,7 @@ pub trait X509CredentialValidator {
 #[cfg_attr(all(test, feature = "std"), automock(type Error = crate::test_utils::TestError;))]
 /// X.509 certificate identity warnings.
 pub trait X509WarningProvider {
-    type Error: Error + Send + Sync + 'static;
+    type Error: IntoAnyError;
 
     /// Produce any custom warnings that are created due to a [`RosterUpdate`]
     fn identity_warnings(&self, update: &RosterUpdate)
@@ -127,7 +122,7 @@ where
         let leaf_public_key = self
             .validator
             .validate_chain(&chain, timestamp)
-            .map_err(|e| X509IdentityError::X509ValidationError(e.into()))?;
+            .map_err(|e| X509IdentityError::X509ValidationError(e.into_any_error()))?;
 
         if leaf_public_key != signing_identity.signature_key {
             return Err(X509IdentityError::SignatureKeyMismatch);
@@ -144,7 +139,7 @@ where
     ) -> Result<Vec<u8>, X509IdentityError> {
         self.identity_extractor
             .identity(&credential_to_chain(&signing_id.credential)?)
-            .map_err(|e| X509IdentityError::IdentityExtractorError(e.into()))
+            .map_err(|e| X509IdentityError::IdentityExtractorError(e.into_any_error()))
     }
 
     /// Determine if `successor` is controlled by the same entity as
@@ -160,7 +155,7 @@ where
                 &credential_to_chain(&predecessor.credential)?,
                 &credential_to_chain(&successor.credential)?,
             )
-            .map_err(|e| X509IdentityError::IdentityExtractorError(e.into()))
+            .map_err(|e| X509IdentityError::IdentityExtractorError(e.into_any_error()))
     }
 
     /// Supported credential types.
@@ -178,7 +173,7 @@ where
     ) -> Result<Vec<IdentityWarning>, X509IdentityError> {
         self.warning_provider
             .identity_warnings(update)
-            .map_err(|e| X509IdentityError::IdentityWarningProviderError(e.into()))
+            .map_err(|e| X509IdentityError::IdentityWarningProviderError(e.into_any_error()))
     }
 }
 

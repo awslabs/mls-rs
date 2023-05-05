@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 use aws_mls_core::{
     crypto::CipherSuiteProvider,
+    error::IntoAnyError,
     group::GroupStateStorage,
     key_package::KeyPackageStorage,
     psk::{ExternalPskId, PreSharedKey, PreSharedKeyStorage},
@@ -66,7 +67,7 @@ impl<GS: GroupStateStorage, K: KeyPackageStorage, PS: PreSharedKeyStorage>
         self.psk_store
             .get(psk_id)
             .await
-            .map_err(|e| MlsError::PskStoreError(e.into()))?
+            .map_err(|e| MlsError::PskStoreError(e.into_any_error()))?
             .ok_or_else(|| MlsError::NoPskForId(psk_id.clone()))
     }
 

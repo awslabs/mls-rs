@@ -5,6 +5,7 @@ use crate::serde_utils::vec_u8_as_base64::VecAsBase64;
 use alloc::vec;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use aws_mls_core::error::IntoAnyError;
 use core::ops::Deref;
 use serde_with::serde_as;
 use zeroize::{Zeroize, Zeroizing};
@@ -58,7 +59,7 @@ impl PathSecret {
         cipher_suite_provider
             .random_bytes_vec(cipher_suite_provider.kdf_extract_size())
             .map(Into::into)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 
     pub fn empty<P: CipherSuiteProvider>(cipher_suite_provider: &P) -> Self {
@@ -102,7 +103,7 @@ impl<'a, P: CipherSuiteProvider> PathSecretGeneration<'a, P> {
 
         self.cipher_suite_provider
             .kem_derive(&node_secret)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
     }
 }
 
@@ -142,7 +143,7 @@ impl<'a, P: CipherSuiteProvider> PathSecretGenerator<'a, P> {
         } else if let Some(last) = self.last.take() {
             kdf_derive_secret(self.cipher_suite_provider, &last, "path")
                 .map(PathSecret::from)
-                .map_err(|e| MlsError::CryptoProviderError(e.into()))
+                .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))
         } else {
             PathSecret::random(self.cipher_suite_provider)
         }?;

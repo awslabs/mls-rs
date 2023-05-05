@@ -1,5 +1,4 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(not(feature = "std"), feature(error_in_core))]
 extern crate alloc;
 
 pub mod aead;
@@ -15,12 +14,6 @@ pub mod x509;
 #[cfg(feature = "x509")]
 mod ec_for_x509;
 
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
-
 use crate::aead::Aead;
 use aws_mls_crypto_hpke::{
     context::{ContextR, ContextS},
@@ -34,35 +27,63 @@ use kdf::Kdf;
 use mac::{Hash, HashError};
 use rand_core::{OsRng, RngCore};
 
-use aws_mls_core::crypto::{
-    CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey, HpkeSecretKey,
-    SignaturePublicKey, SignatureSecretKey,
+use aws_mls_core::{
+    crypto::{
+        CipherSuite, CipherSuiteProvider, CryptoProvider, HpkeCiphertext, HpkePublicKey,
+        HpkeSecretKey, SignaturePublicKey, SignatureSecretKey,
+    },
+    error::{AnyError, IntoAnyError},
 };
 use zeroize::Zeroizing;
 
-use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum RustCryptoError {
-    #[error(transparent)]
-    AeadError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    HpkeError(#[from] HpkeError),
-    #[error(transparent)]
-    KdfError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    HashError(#[from] HashError),
-    #[error("rand core error: {0:?}")]
+    #[cfg_attr(feature = "std", error(transparent))]
+    AeadError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    HpkeError(HpkeError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    KdfError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    HashError(HashError),
+    #[cfg_attr(feature = "std", error("rand core error: {0:?}"))]
     RandError(rand_core::Error),
-    #[error(transparent)]
-    EcSignerError(#[from] EcSignerError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    EcSignerError(EcSignerError),
 }
 
 impl From<rand_core::Error> for RustCryptoError {
     fn from(value: rand_core::Error) -> Self {
         RustCryptoError::RandError(value)
+    }
+}
+
+impl From<HpkeError> for RustCryptoError {
+    fn from(e: HpkeError) -> Self {
+        RustCryptoError::HpkeError(e)
+    }
+}
+
+impl From<HashError> for RustCryptoError {
+    fn from(e: HashError) -> Self {
+        RustCryptoError::HashError(e)
+    }
+}
+
+impl From<EcSignerError> for RustCryptoError {
+    fn from(e: EcSignerError) -> Self {
+        RustCryptoError::EcSignerError(e)
+    }
+}
+
+impl IntoAnyError for RustCryptoError {
+    #[cfg(feature = "std")]
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
     }
 }
 
@@ -197,7 +218,7 @@ where
     ) -> Result<Vec<u8>, Self::Error> {
         self.aead
             .seal(key, data, aad, nonce)
-            .map_err(|e| RustCryptoError::AeadError(e.into()))
+            .map_err(|e| RustCryptoError::AeadError(e.into_any_error()))
     }
 
     fn aead_open(
@@ -209,7 +230,7 @@ where
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.aead
             .open(key, cipher_text, aad, nonce)
-            .map_err(|e| RustCryptoError::AeadError(e.into()))
+            .map_err(|e| RustCryptoError::AeadError(e.into_any_error()))
             .map(Zeroizing::new)
     }
 
@@ -229,14 +250,14 @@ where
     ) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.kdf
             .expand(prk, info, len)
-            .map_err(|e| RustCryptoError::KdfError(e.into()))
+            .map_err(|e| RustCryptoError::KdfError(e.into_any_error()))
             .map(Zeroizing::new)
     }
 
     fn kdf_extract(&self, salt: &[u8], ikm: &[u8]) -> Result<Zeroizing<Vec<u8>>, Self::Error> {
         self.kdf
             .extract(salt, ikm)
-            .map_err(|e| RustCryptoError::KdfError(e.into()))
+            .map_err(|e| RustCryptoError::KdfError(e.into_any_error()))
             .map(Zeroizing::new)
     }
 

@@ -3,30 +3,44 @@ extern crate aead as rc_aead;
 use core::fmt::Debug;
 
 use aes_gcm::{Aes128Gcm, Aes256Gcm, KeyInit};
-use aws_mls_core::crypto::CipherSuite;
+use aws_mls_core::{crypto::CipherSuite, error::IntoAnyError};
 use aws_mls_crypto_traits::AeadType;
 use chacha20poly1305::ChaCha20Poly1305;
 use rc_aead::{generic_array::GenericArray, Payload};
 
 use alloc::vec::Vec;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum AeadError {
-    #[error("Rc AEAD Error")]
+    #[cfg_attr(feature = "std", error("Rc AEAD Error"))]
     RcAeadError(rc_aead::Error),
-    #[error("AEAD ciphertext of length {0} is too short to fit the tag")]
+    #[cfg_attr(
+        feature = "std",
+        error("AEAD ciphertext of length {0} is too short to fit the tag")
+    )]
     InvalidCipherLen(usize),
-    #[error("encrypted message cannot be empty")]
+    #[cfg_attr(feature = "std", error("encrypted message cannot be empty"))]
     EmptyPlaintext,
-    #[error("AEAD key of invalid length {0}. Expected length {1}")]
+    #[cfg_attr(
+        feature = "std",
+        error("AEAD key of invalid length {0}. Expected length {1}")
+    )]
     InvalidKeyLen(usize, usize),
-    #[error("unsupported cipher suite")]
+    #[cfg_attr(feature = "std", error("unsupported cipher suite"))]
     UnsupportedCipherSuite,
 }
 
 impl From<rc_aead::Error> for AeadError {
     fn from(value: rc_aead::Error) -> Self {
         AeadError::RcAeadError(value)
+    }
+}
+
+impl IntoAnyError for AeadError {
+    #[cfg(feature = "std")]
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
     }
 }
 

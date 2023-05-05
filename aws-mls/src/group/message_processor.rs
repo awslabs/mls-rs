@@ -39,6 +39,7 @@ use itertools::Itertools;
 #[cfg(feature = "state_update")]
 use aws_mls_core::{
     crypto::CipherSuite,
+    error::IntoAnyError,
     group::{MemberUpdate, RosterUpdate},
     identity::IdentityWarning,
     psk::ExternalPskId,
@@ -209,7 +210,7 @@ pub struct CommitMessageDescription {
     pub committer: u32,
     /// A full description of group state changes as a result of this commit.
     pub state_update: StateUpdate,
-    /// Plaintext authenticated data in the received MLS packet.   
+    /// Plaintext authenticated data in the received MLS packet.
     pub authenticated_data: Vec<u8>,
 }
 
@@ -247,7 +248,7 @@ pub struct ProposalMessageDescription {
     pub sender: ProposalSender,
     /// Proposal content.
     pub proposal: Proposal,
-    /// Plaintext authenticated data in the received MLS packet.    
+    /// Plaintext authenticated data in the received MLS packet.
     pub authenticated_data: Vec<u8>,
 }
 
@@ -478,7 +479,7 @@ pub(crate) trait MessageProcessor: Send + Sync {
             .identity_provider()
             .identity_warnings(&roster_update)
             .await
-            .map_err(|e| MlsError::IdentityProviderError(e.into()))?;
+            .map_err(|e| MlsError::IdentityProviderError(e.into_any_error()))?;
 
         let update = StateUpdate {
             roster_update,

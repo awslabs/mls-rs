@@ -2,17 +2,17 @@ use crate::{identity::CredentialType, identity::SigningIdentity, time::MlsTime};
 use alloc::vec;
 use alloc::{boxed::Box, vec::Vec};
 use async_trait::async_trait;
+pub use aws_mls_core::identity::BasicCredential;
 use aws_mls_core::{
+    error::IntoAnyError,
     extension::ExtensionList,
     group::RosterUpdate,
     identity::{IdentityProvider, IdentityWarning},
 };
-use thiserror::Error;
 
-pub use aws_mls_core::identity::BasicCredential;
-
-#[derive(Debug, Error)]
-#[error("unsupported credential type found: {0:?}")]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
+#[cfg_attr(feature = "std", error("unsupported credential type found: {0:?}"))]
 /// Error returned in the event that a non-basic
 /// credential is passed to a [`BasicIdentityProvider`].
 pub struct BasicIdentityProviderError(CredentialType);
@@ -20,6 +20,13 @@ pub struct BasicIdentityProviderError(CredentialType);
 impl From<CredentialType> for BasicIdentityProviderError {
     fn from(value: CredentialType) -> Self {
         BasicIdentityProviderError(value)
+    }
+}
+
+impl IntoAnyError for BasicIdentityProviderError {
+    #[cfg(feature = "std")]
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
     }
 }
 

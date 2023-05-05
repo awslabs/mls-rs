@@ -1,9 +1,8 @@
 use std::net::AddrParseError;
 
-use aws_mls_core::{crypto::CipherSuite, time::SystemTimeError};
+use aws_mls_core::{crypto::CipherSuite, error::IntoAnyError, time::SystemTimeError};
 use aws_mls_identity_x509::SubjectAltName;
 use spki::{der::Tag, ObjectIdentifier};
-use thiserror::Error;
 
 use crate::{ec::EcError, ec_for_x509::EcX509Error, ec_signer::EcSignerError};
 
@@ -17,53 +16,130 @@ pub use validator::X509Validator;
 pub use writer::X509Writer;
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum X509Error {
-    #[error(transparent)]
-    X509DerError(#[from] x509_cert::der::Error),
-    #[error(transparent)]
-    EcError(#[from] EcError),
-    #[error(transparent)]
-    RandError(#[from] rand_core::Error),
-    #[error(transparent)]
-    EcX509Error(#[from] EcX509Error),
-    #[error(transparent)]
-    ConstOidError(#[from] const_oid::Error),
-    #[error(transparent)]
-    EcSignerError(#[from] EcSignerError),
-    #[error(transparent)]
-    AddrParseError(#[from] AddrParseError),
-    #[error("cipher suite {0:?} is not a valid signing key")]
+    #[cfg_attr(feature = "std", error(transparent))]
+    X509DerError(x509_cert::der::Error),
+    #[cfg_attr(feature = "std", error(transparent))]
+    EcError(EcError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    RandError(rand_core::Error),
+    #[cfg_attr(feature = "std", error(transparent))]
+    EcX509Error(EcX509Error),
+    #[cfg_attr(feature = "std", error(transparent))]
+    ConstOidError(const_oid::Error),
+    #[cfg_attr(feature = "std", error(transparent))]
+    EcSignerError(EcSignerError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    AddrParseError(AddrParseError),
+    #[cfg_attr(
+        feature = "std",
+        error("cipher suite {0:?} is not a valid signing key")
+    )]
     InvalidSigningKey(CipherSuite),
-    #[error("subject alt name type of {0:?} is not supported")]
+    #[cfg_attr(
+        feature = "std",
+        error("subject alt name type of {0:?} is not supported")
+    )]
     UnsupportedSubjectAltName(SubjectAltName),
-    #[error("unexpected empty certificate chain")]
+    #[cfg_attr(feature = "std", error("unexpected empty certificate chain"))]
     EmptyCertificateChain,
-    #[error("a CA cert must have the basic constraint extension set to ca without the path length constraint, and the
-        key usage extension set to keyCertSign")]
+    #[cfg_attr(feature = "std", error("a CA cert must have the basic constraint extension set to ca without the path length constraint, and the
+        key usage extension set to keyCertSign"))]
     InvalidCaExtensions,
-    #[error("invalid certificate lifetime")]
+    #[cfg_attr(feature = "std", error("invalid certificate lifetime"))]
     InvalidCertificateLifetime,
-    #[error(transparent)]
-    SystemTimeError(#[from] SystemTimeError),
-    #[error("no trusted CA certificate found in the chain")]
+    #[cfg_attr(feature = "std", error(transparent))]
+    SystemTimeError(SystemTimeError),
+    #[cfg_attr(feature = "std", error("no trusted CA certificate found in the chain"))]
     CaNotFound,
-    #[error("pinned certificate not found in the chain")]
+    #[cfg_attr(feature = "std", error("pinned certificate not found in the chain"))]
     PinnedCertNotFound,
-    #[error("Current (commit) timestamp {0} outside of the validity period of certificate {1}")]
+    #[cfg_attr(
+        feature = "std",
+        error("Current (commit) timestamp {0} outside of the validity period of certificate {1}")
+    )]
     ValidityError(u64, String),
-    #[error("unsupported signing algorithm with OID {0}")]
+    #[cfg_attr(feature = "std", error("unsupported signing algorithm with OID {0}"))]
     UnsupportedAlgorithm(ObjectIdentifier),
-    #[error(transparent)]
-    SpkiError(#[from] spki::Error),
-    #[error("unsupported OID {0} for subject component")]
+    #[cfg_attr(feature = "std", error(transparent))]
+    SpkiError(spki::Error),
+    #[cfg_attr(feature = "std", error("unsupported OID {0} for subject component"))]
     UnsupportedSubjectComponentOid(ObjectIdentifier),
-    #[error("cannot parse component type {0} in X509 name")]
+    #[cfg_attr(feature = "std", error("cannot parse component type {0} in X509 name"))]
     UnexpectedComponentType(Tag),
-    #[error("cannot parse ip address with incorrect number of octets {0}")]
+    #[cfg_attr(
+        feature = "std",
+        error("cannot parse ip address with incorrect number of octets {0}")
+    )]
     IncorrectIpOctets(usize),
-    #[error("cannot parse subject alt name with type {0}")]
+    #[cfg_attr(feature = "std", error("cannot parse subject alt name with type {0}"))]
     CannotParseAltName(String),
-    #[error("self-signed certificate provided as chain of length {0} but it must have length 1")]
+    #[cfg_attr(
+        feature = "std",
+        error("self-signed certificate provided as chain of length {0} but it must have length 1")
+    )]
     SelfSignedWrongLength(usize),
+}
+
+impl From<x509_cert::der::Error> for X509Error {
+    fn from(e: x509_cert::der::Error) -> Self {
+        X509Error::X509DerError(e)
+    }
+}
+
+impl From<EcError> for X509Error {
+    fn from(e: EcError) -> Self {
+        X509Error::EcError(e)
+    }
+}
+
+impl From<rand_core::Error> for X509Error {
+    fn from(e: rand_core::Error) -> Self {
+        X509Error::RandError(e)
+    }
+}
+
+impl From<EcX509Error> for X509Error {
+    fn from(e: EcX509Error) -> Self {
+        X509Error::EcX509Error(e)
+    }
+}
+
+impl From<const_oid::Error> for X509Error {
+    fn from(e: const_oid::Error) -> Self {
+        X509Error::ConstOidError(e)
+    }
+}
+
+impl From<EcSignerError> for X509Error {
+    fn from(e: EcSignerError) -> Self {
+        X509Error::EcSignerError(e)
+    }
+}
+
+impl From<AddrParseError> for X509Error {
+    fn from(e: AddrParseError) -> X509Error {
+        X509Error::AddrParseError(e)
+    }
+}
+
+impl From<SystemTimeError> for X509Error {
+    fn from(e: SystemTimeError) -> Self {
+        X509Error::SystemTimeError(e)
+    }
+}
+
+impl From<spki::Error> for X509Error {
+    fn from(e: spki::Error) -> Self {
+        X509Error::SpkiError(e)
+    }
+}
+
+impl IntoAnyError for X509Error {
+    #[cfg(feature = "std")]
+    fn into_dyn_error(self) -> Result<Box<dyn std::error::Error + Send + Sync>, Self> {
+        Ok(self.into())
+    }
 }

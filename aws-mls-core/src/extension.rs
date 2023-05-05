@@ -1,15 +1,9 @@
 use core::ops::Deref;
 
-use alloc::boxed::Box;
+use crate::error::{AnyError, IntoAnyError};
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
 use serde_with::serde_as;
-
-#[cfg(feature = "std")]
-use std::error::Error;
-
-#[cfg(not(feature = "std"))]
-use core::error::Error;
 
 mod list;
 
@@ -75,13 +69,17 @@ impl Deref for ExtensionType {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum ExtensionError {
-    #[error(transparent)]
-    SerializationError(Box<dyn Error + Send + Sync + 'static>),
-    #[error(transparent)]
-    DeserializationError(Box<dyn Error + Send + Sync + 'static>),
-    #[error("incorrect extension type: {0:?}, expecting: {1:?}")]
+    #[cfg_attr(feature = "std", error(transparent))]
+    SerializationError(AnyError),
+    #[cfg_attr(feature = "std", error(transparent))]
+    DeserializationError(AnyError),
+    #[cfg_attr(
+        feature = "std",
+        error("incorrect extension type: {0:?}, expecting: {1:?}")
+    )]
     IncorrectType(ExtensionType, ExtensionType),
 }
 
@@ -125,10 +123,10 @@ impl Extension {
 /// Trait used to convert a type to and from an [Extension](self::Extension)
 pub trait MlsExtension: Sized {
     /// Error type of the underlying serializer that can convert this type into a `Vec<u8>`.
-    type SerializationError: Error + Send + Sync + 'static;
+    type SerializationError: IntoAnyError;
 
     /// Error type of the underlying deserializer that can convert a `Vec<u8>` into this type.
-    type DeserializationError: Error + Send + Sync + 'static;
+    type DeserializationError: IntoAnyError;
 
     /// Extension type value that this type represents.
     fn extension_type() -> ExtensionType;
@@ -144,7 +142,7 @@ pub trait MlsExtension: Sized {
         Ok(Extension::new(
             Self::extension_type(),
             self.to_bytes()
-                .map_err(|e| ExtensionError::SerializationError(e.into()))?,
+                .map_err(|e| ExtensionError::SerializationError(e.into_any_error()))?,
         ))
     }
 
@@ -158,7 +156,7 @@ pub trait MlsExtension: Sized {
         }
 
         Self::from_bytes(&ext.extension_data)
-            .map_err(|e| ExtensionError::DeserializationError(e.into()))
+            .map_err(|e| ExtensionError::DeserializationError(e.into_any_error()))
     }
 }
 

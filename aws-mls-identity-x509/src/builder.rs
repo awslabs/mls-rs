@@ -1,6 +1,7 @@
 use alloc::{string::String, vec::Vec};
 use aws_mls_core::{
     crypto::{CipherSuite, SignaturePublicKey, SignatureSecretKey},
+    error::IntoAnyError,
     identity::SigningIdentity,
 };
 
@@ -127,7 +128,7 @@ impl CertificateRequest {
                     .leaf()
                     .ok_or(X509IdentityError::EmptyCertificateChain)?,
             )
-            .map_err(|e| X509IdentityError::X509ReaderError(e.into()))?;
+            .map_err(|e| X509IdentityError::X509ReaderError(e.into_any_error()))?;
 
         if issued_public_key != self.public_key {
             return Err(X509IdentityError::SignatureKeyMismatch);

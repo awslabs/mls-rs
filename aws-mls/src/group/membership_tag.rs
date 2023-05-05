@@ -4,6 +4,7 @@ use crate::group::message_signature::{AuthenticatedContentTBS, FramedContentAuth
 use crate::group::GroupContext;
 use alloc::vec::Vec;
 use aws_mls_codec::{MlsDecode, MlsEncode, MlsSize};
+use aws_mls_core::error::IntoAnyError;
 use core::ops::Deref;
 
 use super::message_signature::AuthenticatedContent;
@@ -64,7 +65,7 @@ impl MembershipTag {
 
         let tag = cipher_suite_provider
             .mac(membership_key, &serialized_tbm)
-            .map_err(|e| MlsError::CryptoProviderError(e.into()))?;
+            .map_err(|e| MlsError::CryptoProviderError(e.into_any_error()))?;
 
         Ok(MembershipTag(tag))
     }
